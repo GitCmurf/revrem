@@ -17,6 +17,7 @@ revrem \
   --timeout-seconds 1800 \
   --summary-format both \
   --debug-status-detection \
+  --terminal-title \
   --check "pytest -q" \
   --check "git diff --check"
 ```

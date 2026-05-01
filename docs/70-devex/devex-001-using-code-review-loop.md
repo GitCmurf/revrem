@@ -110,6 +110,7 @@ revrem \
   --timeout-seconds 1800 \
   --summary-format both \
   --debug-status-detection \
+  --terminal-title \
   --check "pytest -q" \
   --check "git diff --check"
 ```
@@ -177,6 +178,11 @@ milestones land, use explicit flags or shell aliases for repeatable runs.
   the review text looks clear. The flag writes `*-status.json` files next to
   review artifacts and logs the compact reason for each clear/findings/unknown
   classification.
+- Use `--terminal-title` in a watched terminal to update the window/tab title as
+  the loop moves between review and remediation phases, for example
+  `rev 1/2 RevRem` and `rem 1/2 RevRem`. The tool uses terminal title-stack
+  escape sequences to restore the previous title on exit where the terminal
+  supports them; terminals that ignore those sequences will still run normally.
 
 ### Development checks
 
@@ -201,5 +207,5 @@ The wrapper runs tests, `ruff check .`, `mypy src`, and DocOps checks when
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
-| 0.2 | 2026-05-01 | Codex | Updated usage guidance for stable `revrem` entry point, dev/stable install boundary, and current CLI limitations |
+| 0.2 | 2026-05-01 | Codex | Updated usage guidance for stable `revrem` entry point, dev/stable install boundary, terminal title progress, and current CLI limitations |
 | 0.1 | 2026-04-30 | GitCmurf | Initial draft |

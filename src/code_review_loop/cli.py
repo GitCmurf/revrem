@@ -12,6 +12,7 @@ import subprocess
 import sys
 import textwrap
 from collections.abc import Callable, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -81,11 +82,70 @@ class LoopConfig:
     debug_status_detection: bool = False
     progress: bool = True
     progress_style: str = "compact"
+    terminal_title: bool = False
     initial_review_file: Path | None = None
     check_commands: tuple[str, ...] = field(default_factory=tuple)
 
 
 Runner = Callable[[Sequence[str], Path, str | None, float | None], CommandResult]
+
+TERMINAL_TITLE_SAVE = "\033]22;0\007"
+TERMINAL_TITLE_RESTORE = "\033]23;0\007"
+
+
+def terminal_title_supported(config: LoopConfig) -> bool:
+    return config.terminal_title and sys.stderr.isatty()
+
+
+def sanitize_terminal_title(value: str) -> str:
+    return value.replace("\033", "").replace("\007", "").replace("\n", " ").replace("\r", " ")
+
+
+def write_terminal_control(sequence: str) -> None:
+    sys.stderr.write(sequence)
+    sys.stderr.flush()
+
+
+def set_terminal_title(config: LoopConfig, title: str) -> None:
+    if not terminal_title_supported(config):
+        return
+    write_terminal_control(f"\033]0;{sanitize_terminal_title(title)}\007")
+
+
+def terminal_iteration_label(label: str, max_iterations: int) -> str:
+    if label.isdecimal():
+        return f"{label}/{max_iterations}"
+    if label == "final":
+        return "final"
+    return label
+
+
+def set_phase_terminal_title(config: LoopConfig, phase: str, label: str) -> None:
+    if phase == "review":
+        prefix = "rev"
+    elif phase == "remediate":
+        prefix = "rem"
+    else:
+        return
+    set_terminal_title(
+        config,
+        f"{prefix} {terminal_iteration_label(label, config.max_iterations)} RevRem",
+    )
+
+
+@contextmanager
+def terminal_title_context(config: LoopConfig):
+    if not terminal_title_supported(config):
+        yield
+        return
+    # There is no reliable cross-terminal way to read the current title. Xterm-
+    # compatible terminals support a title stack, which gives the desired
+    # save/restore behavior without querying terminal state.
+    write_terminal_control(TERMINAL_TITLE_SAVE)
+    try:
+        yield
+    finally:
+        write_terminal_control(TERMINAL_TITLE_RESTORE)
 
 
 def progress_log(config: LoopConfig, message: str) -> None:
@@ -428,6 +488,7 @@ def run_codex_review(
 ) -> tuple[str, CommandResult]:
     display_label = display_label or artifact_label
     command = build_review_command(config)
+    set_phase_terminal_title(config, "review", display_label)
     progress_event(config, "review", display_label, "start", shlex.join(command))
     if config.dry_run:
         result = CommandResult(command, 0, stdout="DRY_RUN\nREVIEW_STATUS: findings\n")
@@ -496,6 +557,7 @@ def run_remediation(
     )
     command = build_remediation_command(config, last_message_path)
     prompt = f"{DEFAULT_REMEDIATION_PROMPT}\n{trim_for_prompt(review_output, config.max_remediation_input_chars)}"
+    set_phase_terminal_title(config, "remediate", str(iteration))
     progress_event(config, "remediate", str(iteration), "start", shlex.join(command))
     if config.dry_run:
         result = CommandResult(command, 0, stdout="DRY_RUN remediation skipped\n")
@@ -641,6 +703,11 @@ def resolve_initial_review_file(value: str | None, search_root: Path) -> Path | 
 
 
 def run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, object]:
+    with terminal_title_context(config):
+        return _run_loop(config, runner)
+
+
+def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, object]:
     if config.max_iterations < 1:
         raise ValueError("--max-iterations must be at least 1")
 
@@ -926,6 +993,14 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         help="Progress log style. Compact is easier to scan in terminals.",
     )
     parser.add_argument(
+        "--terminal-title",
+        action="store_true",
+        help=(
+            "Update the terminal window/tab title with the active review or remediation phase. "
+            "Restores the previous title on exit in terminals with title-stack support."
+        ),
+    )
+    parser.add_argument(
         "--initial-review-file",
         type=str,
         default=None,
@@ -986,6 +1061,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         debug_status_detection=args.debug_status_detection,
         progress=not args.quiet_progress,
         progress_style=args.progress_style,
+        terminal_title=args.terminal_title,
         initial_review_file=initial_review_file,
         check_commands=tuple(args.check),
     )

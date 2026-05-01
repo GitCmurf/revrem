@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import re
 
 from code_review_loop import cli as MODULE
@@ -861,6 +862,79 @@ def test_quiet_progress_suppresses_progress_logs(tmp_path, capsys):
     captured = capsys.readouterr()
 
     assert captured.err == ""
+
+
+class TtyBuffer(io.StringIO):
+    def isatty(self):
+        return True
+
+
+def test_terminal_title_tracks_review_and_remediation_phases(tmp_path, monkeypatch):
+    stderr = TtyBuffer()
+    monkeypatch.setattr(MODULE.sys, "stderr", stderr)
+    review_outputs = iter(
+        [
+            "Needs work.\nREVIEW_STATUS: findings\n",
+            "No findings.\nREVIEW_STATUS: clear\n",
+        ]
+    )
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[1] == "review":
+            return MODULE.CommandResult(list(args), 0, stdout=next(review_outputs))
+        return MODULE.CommandResult(list(args), 0, stdout="fixed\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=2,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        progress=False,
+        terminal_title=True,
+    )
+
+    summary = MODULE.run_loop(config, runner)
+    output = stderr.getvalue()
+
+    assert summary["final_status"] == "clear"
+    assert output.startswith(MODULE.TERMINAL_TITLE_SAVE)
+    assert "\033]0;rev 1/2 RevRem\007" in output
+    assert "\033]0;rem 1/2 RevRem\007" in output
+    assert "\033]0;rev 2/2 RevRem\007" in output
+    assert output.endswith(MODULE.TERMINAL_TITLE_RESTORE)
+
+
+def test_terminal_title_restores_after_remediation_failure(tmp_path, monkeypatch):
+    stderr = TtyBuffer()
+    monkeypatch.setattr(MODULE.sys, "stderr", stderr)
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[1] == "review":
+            return MODULE.CommandResult(list(args), 0, stdout="Needs work.\nREVIEW_STATUS: findings\n")
+        return MODULE.CommandResult(list(args), 1, stderr="failed\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        progress=False,
+        terminal_title=True,
+    )
+
+    try:
+        MODULE.run_loop(config, runner)
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("expected remediation failure")
+
+    output = stderr.getvalue()
+    assert "\033]0;rev 1/1 RevRem\007" in output
+    assert "\033]0;rem 1/1 RevRem\007" in output
+    assert output.endswith(MODULE.TERMINAL_TITLE_RESTORE)
 
 
 def test_loop_writes_failure_summary_when_remediation_fails(tmp_path):
