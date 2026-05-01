@@ -1,0 +1,67 @@
+<h2>Three UI/UX Directions for code-review-loop</h2>
+<p class="subtitle">Each is a distinct paradigm — pick the one that fits how you want to work</p>
+
+<div class="options">
+
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Enhanced CLI + Profile System</h3>
+      <p style="margin:6px 0 8px;color:#94a3b8;font-size:13px;">Pure terminal, zero dependencies beyond Python</p>
+      <ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.7;color:#cbd5e1;">
+        <li>Named TOML profiles (<code style="font-size:12px">~/.config/crl/profiles.toml</code>)</li>
+        <li><code style="font-size:12px">crl config edit</code> opens $EDITOR; <code style="font-size:12px">crl run --profile fast</code></li>
+        <li>Rich-powered live progress bar + phase tracker</li>
+        <li>Pipeline steps defined declaratively in TOML</li>
+        <li>Sync via dotfiles git repo — dead simple</li>
+      </ul>
+      <div class="pros-cons" style="margin-top:10px">
+        <div class="pros"><h4>Pros</h4><ul><li>No new runtime deps</li><li>Agents use same CLI</li><li>Fast to build</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Config editing is text</li><li>No visual pipeline</li><li>Limited "wow" factor</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>TUI Dashboard (Textual)</h3>
+      <p style="margin:6px 0 8px;color:#94a3b8;font-size:13px;">Interactive terminal app — stays in the shell</p>
+      <ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.7;color:#cbd5e1;">
+        <li>Full-screen TUI: profile picker, pipeline builder, live log pane</li>
+        <li>Keyboard-driven config forms (no mouse required)</li>
+        <li>Pipeline steps as draggable/reorderable rows</li>
+        <li>Live phase progress with timing + status colours</li>
+        <li>Configs stored as TOML, synced via git/dotfiles</li>
+      </ul>
+      <div class="pros-cons" style="margin-top:10px">
+        <div class="pros"><h4>Pros</h4><ul><li>Premium terminal feel</li><li>Visual without a browser</li><li>Fast navigation</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Textual dependency</li><li>Pipeline "wiring" is limited vs. GUI</li><li>SSH sessions need care</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Local Web Companion</h3>
+      <p style="margin:6px 0 8px;color:#94a3b8;font-size:13px;">Browser UI launched on demand; CLI stays primary</p>
+      <ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.7;color:#cbd5e1;">
+        <li><code style="font-size:12px">crl ui</code> starts a local server, opens browser</li>
+        <li>Visual node-based pipeline editor (React Flow)</li>
+        <li>Profile manager: create, clone, diff, import/export</li>
+        <li>Real-time run monitor via SSE (no polling)</li>
+        <li>Config JSON synced via cloud (e.g. Syncthing, iCloud Drive, git)</li>
+      </ul>
+      <div class="pros-cons" style="margin-top:10px">
+        <div class="pros"><h4>Pros</h4><ul><li>Most "premium" feel</li><li>Best pipeline editor</li><li>Rich run history UI</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Heavier build (Node/React)</li><li>Two processes to manage</li><li>Overkill if rarely used</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div style="margin-top:24px;padding:14px 18px;background:#1e293b;border-radius:8px;border-left:3px solid #6366f1;">
+  <p style="margin:0;font-size:13px;color:#94a3b8;"><strong style="color:#a5b4fc">My recommendation: B (TUI)</strong> — gives you the premium feel and visual pipeline editor while staying entirely in the terminal. Agents continue to use the raw CLI unchanged. Option C is the right call if you want a genuine node-graph pipeline editor; Option A if you want zero new dependencies.</p>
+</div>
