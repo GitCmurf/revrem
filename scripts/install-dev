@@ -1,0 +1,30 @@
+#!/usr/bin/env sh
+set -eu
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+PYTHON=${PYTHON:-python3}
+
+cd "$REPO_ROOT"
+
+if [ ! -x ./.venv/bin/python ]; then
+  "$PYTHON" -m venv .venv
+fi
+
+if ./.venv/bin/python -m pip install -e ".[dev]"; then
+  printf '%s\n' "Development install ready: $REPO_ROOT/.venv/bin/code-review-loop"
+  exit 0
+fi
+
+cat > ./.venv/bin/code-review-loop <<EOF
+#!/usr/bin/env sh
+PYTHONPATH="$REPO_ROOT/src\${PYTHONPATH:+:\$PYTHONPATH}" exec "$REPO_ROOT/.venv/bin/python" -m code_review_loop "\$@"
+EOF
+cat > ./.venv/bin/revrem <<EOF
+#!/usr/bin/env sh
+PYTHONPATH="$REPO_ROOT/src\${PYTHONPATH:+:\$PYTHONPATH}" exec "$REPO_ROOT/.venv/bin/python" -m code_review_loop "\$@"
+EOF
+chmod +x ./.venv/bin/code-review-loop ./.venv/bin/revrem
+
+printf '%s\n' 'WARNING: editable pip install failed; wrote source-tree launchers instead.' >&2
+printf '%s\n' "Development launchers ready: $REPO_ROOT/.venv/bin/code-review-loop"

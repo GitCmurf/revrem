@@ -3,24 +3,25 @@ document_id: REVREM-PRD-001
 type: PRD
 title: Interactive TUI and Profile System for code-review-loop
 status: Draft
-version: "0.1"
+version: "0.2"
 last_updated: '2026-05-01'
 owner: GitCmurf
 area: product
 docops_version: "2.0"
 template_type: prd-standard
 template_version: "2.0"
-description: Adds a TOML profile system, Rich progress display, and Textual TUI to code-review-loop
+description: "Defines the staged revrem product upgrade: stable local distribution, TOML profiles, rich progress, and an optional Textual TUI"
 keywords:
   - code-review-loop
   - revrem
-  - tui
+  - distribution
   - profile
   - textual
   - rich
 related_ids:
   - REVREM-ADR-001
   - REVREM-DEVEX-001
+  - REVREM-TEST-001
 ---
 
 <!-- MEMINIT_METADATA_BLOCK -->
@@ -28,7 +29,7 @@ related_ids:
 > **Document ID:** REVREM-PRD-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 0.1
+> **Version:** 0.2
 > **Last Updated:** 2026-05-01
 > **Type:** PRD
 
@@ -43,11 +44,15 @@ related_ids:
 1. [Executive Summary](#1-executive-summary)
 2. [Problem Statement](#2-problem-statement)
 3. [Goals and Success Metrics](#3-goals-and-success-metrics)
-4. [Proposed Solution](#4-proposed-solution)
-5. [Requirements](#5-requirements)
-6. [Alternatives Considered](#6-alternatives-considered)
-7. [Open Questions](#7-open-questions)
-8. [Version History](#8-version-history)
+4. [Scope and Non-Goals](#4-scope-and-non-goals)
+5. [Proposed Solution](#5-proposed-solution)
+6. [Architecture and Quality Bar](#6-architecture-and-quality-bar)
+7. [Requirements](#7-requirements)
+8. [Delivery Plan](#8-delivery-plan)
+9. [Acceptance and Verification](#9-acceptance-and-verification)
+10. [Alternatives Considered](#10-alternatives-considered)
+11. [Resolved Decisions and Open Questions](#11-resolved-decisions-and-open-questions)
+12. [Version History](#12-version-history)
 
 ---
 
@@ -55,12 +60,17 @@ related_ids:
 
 <!-- MEMINIT_SECTION: executive_summary -->
 
-`code-review-loop` today requires operators to re-specify ~10 CLI flags on every invocation, has no
-config persistence, and reports progress as plain timestamped stderr lines. This PRD specifies a
-three-layer upgrade: a TOML profile system for named, persistent, cross-machine-syncable
-configurations; a Rich-powered live progress display; and an optional Textual TUI for interactive
-profile management and run monitoring. The CLI surface is preserved unchanged for AI-agent callers;
-a new `revrem` entry-point alias is registered for human ergonomics.
+`code-review-loop` is moving from a proven local script extraction to a durable local product named
+`revrem`. The product must support two distinct operator modes:
+
+- **Development mode:** this repository remains the editable testbed, installed in `./.venv` with
+  dev extras and full checks.
+- **Stable mode:** all other repositories run the last promoted version through launchers in
+  `~/.local/bin`, backed by an isolated stable virtualenv under `~/.local/share/revrem/`.
+
+This PRD defines the staged work after that distribution boundary: TOML profiles, a Rich progress
+surface, and an optional Textual TUI. The design keeps the existing `code-review-loop` CLI contract
+stable for agents while adding `revrem` as the human-facing alias and product namespace.
 
 ---
 
@@ -68,19 +78,23 @@ a new `revrem` entry-point alias is registered for human ergonomics.
 
 <!-- MEMINIT_SECTION: problem_statement -->
 
-The tool has **26 CLI flags today** with more planned (additional AI harnesses: `claude`, `gemini`,
-`opencode`, `kilo`; git-commit behaviours; pluggable prompts). The recommended production invocation
-in DEVEX-001 already uses 10 flags. This creates four compounding problems:
+The current tool is usable but still too operationally manual for repeated PR-readiness work:
 
-1. **No persistence.** Operators must reconstruct the full flag set on every run from memory or
-   shell history. There is no `--profile` concept.
-2. **No cross-machine parity.** The operator uses a laptop and two desktop machines; configs diverge
-   silently.
-3. **Opaque progress.** Progress is plain `HH:MM:SS|rev|1   | start: codex review …` text on
-   stderr. There is no visual phase tracker, elapsed timing, or finding preview.
-4. **Invisible pipeline.** The review → remediate → check → final-review loop structure can only be
-   understood by reading source code or the README. There is no interactive way to inspect or adjust
-   it.
+1. **Installation drift:** the original Meminit-local script can fall out of sync with the standalone
+   utility. Other repos need a stable command that is not implicitly coupled to active development
+   edits in this checkout.
+2. **Flag repetition:** the recommended final command already uses ten flags. Operators must
+   reconstruct model, timeout, base, summary, and check settings from shell history or docs.
+3. **No profile lifecycle:** there is no native way to create, inspect, export, or reuse named
+   review/remediation configurations.
+4. **Limited run observability:** compact progress logs are useful for watched terminals, but long
+   review/remediation runs need clearer phase state, elapsed time, findings preview, and artifact
+   locations.
+5. **Pipeline opacity:** the review -> remediate -> check -> final-review loop is testable in code,
+   but not inspectable or adjustable as an operator workflow.
+
+The product must solve these without weakening the original strengths: dependency-light runtime,
+bounded nested Codex execution, deterministic artifacts, plain shell compatibility, and strong tests.
 
 ---
 
@@ -90,220 +104,383 @@ in DEVEX-001 already uses 10 flags. This creates four compounding problems:
 
 ### Goals
 
-- G1: Operators configure a run once and invoke it by name on any machine.
-- G2: Progress during a run is visually scannable without reading raw log lines.
-- G3: The pipeline structure is inspectable and adjustable without editing source code.
-- G4: The CLI surface for AI agents is unchanged; new capabilities are purely additive.
-- G5: Config files are plain text, diffable, and syncable via a dotfiles git repo.
+- G1: Keep development and stable installs intentionally separate.
+- G2: Let an operator run a common PR-readiness loop by profile name from any local repo.
+- G3: Preserve the current `code-review-loop` flags and behavior for agent callers.
+- G4: Make run progress and close-down state visibly reliable, especially when review output goes
+  clear or status detection is uncertain.
+- G5: Keep configuration plain-text, diffable, and suitable for dotfiles synchronization.
+- G6: Add UI capabilities through optional extras, with zero import or dependency cost on the
+  minimal CLI path.
 
 ### Success Metrics
 
 | Metric | Target | Measurement |
 |---|---|---|
-| Flags required to start a common run | 1 (`--profile NAME`) | Manual test |
-| Cross-machine config sync | Works on laptop + 2 desktops via symlink | Manual smoke test |
-| New harness addable | ≤ 1 new file + 1 config key | Code review of first addition |
-| Agent-facing CLI unchanged | All 26 existing flags accepted, behaviour identical | Existing test suite green |
-| Progress display renders during dry-run | Rich panel visible | Manual test |
+| Stable command availability | `code-review-loop` and `revrem` resolve from `~/.local/bin` in other repos | Manual smoke test from `../Meminit` |
+| Development isolation | Active edits are visible only through `./.venv/bin/code-review-loop` until promoted | Manual smoke test |
+| Flags required for common run | `revrem --profile final-pr` | CLI integration test |
+| Existing CLI compatibility | Existing test suite green without changing current flag behavior | `./scripts/dev-check` |
+| Status close-down reliability | Clear final review exits `0` with `stopped_reason=review_clear` | Unit regression test |
+| Optional UI isolation | Bare install imports no `rich` or `textual` modules | Unit/import test |
 
 ---
 
-## 4. Proposed Solution
+## 4. Scope and Non-Goals
+
+<!-- MEMINIT_SECTION: scope -->
+
+### In Scope
+
+- Stable promotion script from this checkout into a shared local virtualenv.
+- `revrem` console-script alias alongside `code-review-loop`.
+- TOML profile loading, validation, merging, and CLI overrides.
+- `revrem config` subcommands for profile lifecycle management.
+- Rich progress display behind an optional extra.
+- Textual TUI behind an optional extra.
+- Run history metadata under `~/.local/share/revrem/`.
+
+### Non-Goals
+
+- Network service, daemon, or browser UI.
+- Multi-user server deployment.
+- Secret storage or credential management.
+- Automatic git commits or pushes.
+- Replacing `codex`; additional harnesses are designed for, but delivered after the profile and
+  progress foundations are stable.
+
+---
+
+## 5. Proposed Solution
 
 <!-- MEMINIT_SECTION: solution -->
 
-Three layers, each independently useful and backwards-compatible with the layer below it.
+### Phase 0: Development and Stable Distribution
 
-### Layer 1 — TOML Profile System (always installed)
+The repository owns two installation paths:
 
-Named profiles stored in `~/.config/code-review-loop/profiles.toml`. A second config location,
-`.crl.toml` in the project root, allows per-repository overrides. All 26 existing CLI flags remain
-available as ad-hoc overrides on top of any profile.
+| Mode | Command | Target | Purpose |
+|---|---|---|---|
+| Development | `./scripts/install-dev` | `./.venv` | Editable install with dev tooling for implementation work in this repo |
+| Stable | `./scripts/promote-stable` | `~/.local/share/revrem/releases/<timestamp>` plus `stable-venv` | Validated source snapshot for every other local repo |
 
-**Config resolution order (last wins):**
+`scripts/promote-stable` runs `./scripts/dev-check` before promotion unless
+`REVREM_SKIP_CHECKS=1` is explicitly set. It copies the source into a timestamped release directory,
+ensures a stable virtualenv exists for the Python interpreter, and updates these launchers:
 
+```text
+~/.local/bin/code-review-loop
+~/.local/bin/revrem
 ```
-~/.config/code-review-loop/profiles.toml  ← user-global named profiles
-.crl.toml (project root)                  ← project-local overrides
---profile NAME                            ← select a named profile
-individual CLI flags                       ← ad-hoc overrides
+
+This gives operators a clear promotion gate: experiment through `./.venv/bin/...`, then deliberately
+promote the tested version for cross-repo use.
+
+### Phase 1: TOML Profile System
+
+Profiles live at `~/.config/revrem/profiles.toml`. Project-local defaults live in `.revrem.toml` at
+the target repository root. User-global config is appropriate for model defaults and operator
+preferences; project-local config is appropriate for base branch, checks, and repo-specific artifact
+settings.
+
+**Resolution order, last wins:**
+
+```text
+built-in defaults
+~/.config/revrem/profiles.toml selected profile
+.revrem.toml project defaults and selected profile overrides
+individual CLI flags
 ```
 
-**TOML profile schema:**
+**Profile schema:**
 
 ```toml
 [profiles.final-pr]
 description = "Full PR readiness check"
 
 [profiles.final-pr.pipeline]
-base            = "main"
-max_iterations  = 2
-final_review    = true
+base = "main"
+max_iterations = 2
+final_review = true
 
-[[profiles.final-pr.pipeline.checks]]
-command = "pytest -q"
-
-[[profiles.final-pr.pipeline.checks]]
-command = "git diff --check"
+checks = [
+  "pytest -q",
+  "git diff --check",
+]
 
 [profiles.final-pr.review]
-harness           = "codex"   # extensible: "claude" | "gemini" | "opencode" | "kilo"
-model             = "gpt-5.5"
-reasoning_effort  = "medium"
-timeout_seconds   = 1800
+harness = "codex"
+model = "gpt-5.5"
+reasoning_effort = "medium"
+timeout_seconds = 1800
 
 [profiles.final-pr.remediation]
-harness           = "codex"
-model             = "gpt-5.4-mini"
-reasoning_effort  = "medium"
-timeout_seconds   = 1800
+harness = "codex"
+model = "gpt-5.4-mini"
+reasoning_effort = "medium"
+timeout_seconds = 1800
 
 [profiles.final-pr.output]
-summary_format          = "both"
-debug_status_detection  = true
-progress_style          = "compact"
+summary_format = "both"
+debug_status_detection = true
+progress_style = "compact"
 ```
 
-**`revrem config` subcommands:**
+### Phase 2: `revrem config`
 
-| Subcommand | Action |
+`revrem config` is a non-TUI management surface that works in plain terminals and from agent
+automation:
+
+| Subcommand | Required behavior |
 |---|---|
-| `revrem config list` | Table of profiles with descriptions and last-used timestamps |
-| `revrem config show NAME` | Pretty-print one profile |
-| `revrem config new` | Interactive wizard (prompts only, no TUI required) |
-| `revrem config edit NAME` | Opens profile in `$EDITOR` |
-| `revrem config delete NAME` | Removes profile with confirmation prompt |
-| `revrem config export NAME` | Writes portable TOML to stdout |
-| `revrem config import FILE` | Merges a portable TOML into user config |
+| `list` | Print profile name, description, source file, and last-used timestamp |
+| `show NAME` | Print the resolved profile as TOML or JSON |
+| `new NAME` | Create a minimal profile, refusing to overwrite without `--force` |
+| `edit NAME` | Open the owning config file in `$EDITOR` |
+| `delete NAME` | Remove profile after confirmation or with `--yes` |
+| `export NAME` | Write portable TOML to stdout |
+| `import FILE` | Validate and merge imported profiles |
+| `doctor` | Explain config paths, selected profile, and merge result |
 
-**Entry points registered:**
+### Phase 3: Rich Progress
 
-```toml
-[project.scripts]
-code-review-loop = "code_review_loop.cli:main"   # existing — unchanged
-revrem           = "code_review_loop.cli:main"   # new alias
-```
+The current `progress_event` shape remains the internal contract. A progress renderer interface
+receives the same phase events and emits either compact text or Rich live output. Rich is activated
+only when installed and requested; compact text remains the default for scripts and logs.
 
-### Layer 2 — Rich Progress Display (optional extra `[progress]`)
+### Phase 4: Textual TUI
 
-Replaces the `progress_log` / `progress_event` / `progress_continuation` stderr functions with a
-`ProgressManager` using `rich.live.Live`. The display updates in-place rather than appending lines.
-If `rich` is not installed the existing plain-text fallback is used transparently.
-
-Indicative display during a run:
-
-```
-┌─ revrem ────────────────────────────────────────────────────────┐
-│  Profile: final-pr    Base: main    Iteration: 1 / 2   ⏱ 00:23 │
-│                                                                  │
-│  ✓ Review       done      00:18  gpt-5.5    findings (2)        │
-│  ● Remediate    running   00:05  gpt-5.4-mini                   │
-│  ○ Check        waiting         pytest -q · git diff --check    │
-│  ○ Final review waiting                                          │
-└──────────────────────────────────────────────────────────────────┘
-  [P1] Missing null check in parse_args line 42
-  [P2] Unused import in cli.py
-```
-
-### Layer 3 — Textual TUI (optional extra `[tui]`)
-
-`revrem` with no arguments (or `revrem ui`) launches the TUI. Four keyboard-driven screens:
+`revrem ui` launches a Textual app with four screens:
 
 | Screen | Contents |
 |---|---|
-| **Home** | Recent runs table (timestamp, profile, status, duration); quick-run buttons |
-| **Profiles** | Table of all profiles; New / Edit / Clone / Delete / Export actions |
-| **Pipeline Builder** | Per-profile step list with enable/disable toggles, harness selector, model, timeout, editable checks list |
-| **Run Monitor** | Embedded Rich phase panel + scrollable log pane; launched from Home or Profiles |
+| Home | Recent runs, profile quick-start, current stable/dev version information |
+| Profiles | Profile table with New, Edit, Clone, Delete, Export, Import |
+| Pipeline Builder | Ordered phase list, checks editor, model selectors, timeout controls |
+| Run Monitor | Rich phase state, scrollable log, artifact links, final summary |
 
-`rich` and `textual` are never imported on the critical CLI path; both are imported inside their
-respective entry points only, so bare `code-review-loop` invocations carry zero new overhead.
-
-### Cross-machine Sync
-
-Config lives at `~/.config/code-review-loop/`. On Linux/WSL2:
-
-```bash
-mkdir -p ~/dotfiles/code-review-loop
-ln -s ~/dotfiles/code-review-loop ~/.config/code-review-loop
-```
-
-`~/dotfiles/` is a git repo; pushing syncs configs across all machines. Windows path is
-`%APPDATA%\code-review-loop\`; git-bash operators can use the same `~/.config/` path.
+The TUI shells out to the same tested core functions used by the CLI. It does not own remediation
+logic.
 
 ---
 
-## 5. Requirements
+## 6. Architecture and Quality Bar
+
+<!-- MEMINIT_SECTION: architecture -->
+
+Implementation must preserve these boundaries:
+
+- `cli.py` remains a thin orchestration layer around argument parsing and `LoopConfig`.
+- Profile loading and validation live in a separate module, for example
+  `src/code_review_loop/profiles.py`.
+- Progress rendering lives behind a small interface, for example
+  `src/code_review_loop/progress.py`, with compact and Rich implementations.
+- Harness execution is introduced as a registry only when a second harness is implemented; until
+  then, avoid speculative abstractions that obscure the Codex path.
+- Optional dependencies are imported inside feature entry points only.
+- Config writes are atomic and never mutate files outside the selected config path.
+- Errors produce actionable messages and still write summary artifacts where a loop has started.
+
+The quality bar for every phase is:
+
+- Code, docs, and tests land together.
+- No unbounded nested agent execution by default.
+- No global process state mutation for config, progress, filesystem, or subprocess behavior.
+- Unit tests cover merge precedence, edge cases, and failure modes.
+- Integration tests cover at least one dry run through the public console entry point.
+- `./scripts/dev-check`, `meminit check --format json`, and `git diff --check` pass before stable
+  promotion.
+
+---
+
+## 7. Requirements
 
 <!-- MEMINIT_SECTION: requirements -->
 
 ### Functional Requirements
 
-**Must have:**
-
-- [FR-1] Named TOML profiles with the schema defined in §4
-- [FR-2] Config resolution order: user global → project `.crl.toml` → `--profile` → CLI flags
-- [FR-3] `revrem config` subcommands: `list`, `show`, `new`, `edit`, `delete`, `export`, `import`
-- [FR-4] `--profile NAME` flag on `revrem run` and on bare `revrem [flags]` (backwards-compatible)
-- [FR-5] All 26 existing CLI flags work as overrides on top of any profile
-- [FR-6] Rich in-place progress display when `[progress]` extra is installed
-- [FR-7] Graceful degradation to existing plain-text progress when Rich is absent
-- [FR-8] `revrem` entry-point alias registered alongside `code-review-loop`
-- [NFR-1] Zero change to agent-facing CLI behaviour
-- [NFR-2] `tomllib` (stdlib ≥ 3.11) for TOML reading; `tomli-w` as the only new required runtime dep
-- [NFR-3] `rich` and `textual` are optional extras; never imported on the critical CLI path
-
-**Should have:**
-
-- [FR-9] Textual TUI with four screens (Home, Profiles, Pipeline Builder, Run Monitor)
-- [FR-10] Run history index at `~/.local/share/code-review-loop/runs.json`
-- [FR-11] Harness registry abstraction (codex today; pluggable for claude/gemini/opencode/kilo)
-
-**Could have:**
-
-- [FR-12] `revrem config sync` for explicit dotfiles push/pull (deferred; symlink approach preferred)
-- [FR-13] Profile import from a URL
+- [FR-1] Provide `scripts/install-dev` for editable development setup.
+- [FR-2] Provide `scripts/promote-stable` for validated stable local promotion.
+- [FR-3] Register `revrem` as an alias for the existing CLI entry point.
+- [FR-4] Add `--profile NAME` without changing existing flag semantics.
+- [FR-5] Load and validate `~/.config/revrem/profiles.toml`.
+- [FR-6] Load `.revrem.toml` from the target repository root.
+- [FR-7] Apply config precedence exactly as defined in section 5.
+- [FR-8] Implement `revrem config list/show/new/edit/delete/export/import/doctor`.
+- [FR-9] Record run metadata under `~/.local/share/revrem/runs.jsonl`.
+- [FR-10] Support compact text progress and optional Rich live progress.
+- [FR-11] Implement `revrem ui` behind the `[tui]` extra.
 
 ### Non-Functional Requirements
 
-- [NFR-4] TUI must work on WSL2 Ubuntu (primary) and Windows git-bash (secondary)
-- [NFR-5] `./scripts/dev-check` (ruff + mypy + pytest) must stay green at every step
-- [NFR-6] All new code follows the existing atomic-unit rule: code + docs + tests together
+- [NFR-1] Existing `code-review-loop` invocations remain valid.
+- [NFR-2] Bare runtime remains dependency-light; optional UI dependencies stay optional.
+- [NFR-3] TOML reads use `tomllib`; TOML writes may add a small dedicated dependency.
+- [NFR-4] Linux/WSL2 is the primary supported environment.
+- [NFR-5] Shell scripts are POSIX `sh` compatible.
+- [NFR-6] All generated artifacts remain under target-repo `tmp/` unless explicitly configured.
+- [NFR-7] Stable promotion must be explicit; no test command may silently update
+  `~/.local/bin`.
 
 ---
 
-## 6. Alternatives Considered
+## 8. Delivery Plan
+
+<!-- MEMINIT_SECTION: delivery_plan -->
+
+### Milestone 0: Local Distribution Boundary
+
+Deliverables:
+
+- `revrem` console alias.
+- `scripts/install-dev`.
+- `scripts/promote-stable`.
+- README and DEVEX installation guidance.
+- Packaging tests for entry points and script executability.
+
+Done when:
+
+- `./scripts/install-dev` produces `./.venv/bin/code-review-loop` and `./.venv/bin/revrem`.
+- `./scripts/promote-stable` produces `~/.local/bin/code-review-loop` and `~/.local/bin/revrem`.
+- Running `code-review-loop --dry-run --quiet-progress` from another repo uses the stable install.
+
+### Milestone 1: Profiles
+
+Deliverables:
+
+- Profile dataclasses or typed dictionaries.
+- TOML parser and validator.
+- Merge engine with explicit precedence tests.
+- `--profile` flag and resolved-config diagnostics.
+- DEVEX examples for global and project-local profiles.
+
+Done when:
+
+- `revrem --profile final-pr --dry-run --summary-format json` resolves the expected command shape.
+- Invalid profiles fail before any Codex subprocess starts.
+
+### Milestone 2: Config Commands
+
+Deliverables:
+
+- `revrem config` command group.
+- Atomic config writes.
+- Export/import tests.
+- `doctor` output suitable for operators and agents.
+
+Done when:
+
+- A profile can be created, shown, exported, deleted, imported, and used in one temp-home test.
+
+### Milestone 3: Progress Renderer
+
+Deliverables:
+
+- Renderer interface.
+- Compact renderer preserving current output.
+- Rich renderer behind optional extra.
+- Snapshot or behavioral tests for phase transitions.
+
+Done when:
+
+- Existing progress tests pass unchanged or with intentional fixture updates.
+- Rich mode degrades cleanly when the extra is absent.
+
+### Milestone 4: TUI
+
+Deliverables:
+
+- `revrem ui` entry point.
+- Home, Profiles, Pipeline Builder, and Run Monitor screens.
+- TUI smoke tests with dependency-guarded execution.
+- Screenshots or recorded terminal demo artifacts for PR review.
+
+Done when:
+
+- A user can select a profile, start a dry run, inspect phase state, and open artifact paths from
+  the TUI.
+
+---
+
+## 9. Acceptance and Verification
+
+<!-- MEMINIT_SECTION: acceptance -->
+
+Every milestone must finish with:
+
+```bash
+./scripts/dev-check
+meminit check --format json
+git diff --check
+```
+
+Distribution-specific verification:
+
+```bash
+./scripts/install-dev
+./.venv/bin/code-review-loop --dry-run --quiet-progress --summary-format json
+./.venv/bin/revrem --dry-run --quiet-progress --summary-format json
+
+./scripts/promote-stable
+cd ../Meminit
+code-review-loop --dry-run --quiet-progress --summary-format json
+revrem --dry-run --quiet-progress --summary-format json
+```
+
+Profile-specific verification, once implemented:
+
+```bash
+revrem config doctor
+revrem config show final-pr
+revrem --profile final-pr --dry-run --summary-format both
+```
+
+---
+
+## 10. Alternatives Considered
 
 <!-- MEMINIT_SECTION: alternatives -->
 
-- **Option A — Enhanced CLI only (no TUI):** Config persistence and Rich progress are delivered but
-  there is no visual pipeline editor and no interactive profile management. Rejected because the
-  "premium DevEx feel" goal and the pipeline-inspection requirement are unmet.
-
-- **Option C — Local Web UI (React + local server):** Highest design ceiling (true node-graph
-  pipeline editor via React Flow); rejected because it introduces a Node/React build chain, requires
-  two processes to manage, and is disproportionate for a solo-operator tool. Could be revisited if
-  team use is ever in scope.
+- **Keep one editable install on PATH:** rejected because every repo would immediately consume
+  in-progress code from this checkout.
+- **Copy the script into each repo:** rejected because fixes and tests drift across repositories.
+- **Use `pipx install -e .` for both dev and stable:** rejected because it blurs the promotion
+  boundary; editable installs are appropriate for this repo only.
+- **Local web UI:** deferred because it introduces a Node/browser runtime and a second process for a
+  solo-operator tool.
+- **Skill-only implementation:** rejected because executable loop behavior belongs in tested Python
+  code, with skills acting as operator guidance.
 
 ---
 
-## 7. Open Questions
+## 11. Resolved Decisions and Open Questions
 
 <!-- MEMINIT_SECTION: open_questions -->
 
-- [Q1] ✅ Resolved — `revrem` registered as alias alongside `code-review-loop` (both installed).
-- [Q2] ✅ Resolved — `tomli-w` required (profile system); `rich` + `textual` bundled together in a
-  single `[tui]` optional extra. Agents install bare; humans install `[tui]`. `dev` extra includes
-  both.
-- [Q3] Windows baseline: WSL2 is the tested primary target. Git-bash on Windows is the secondary
-  path. CI will run on Linux only for now.
+### Resolved Decisions
+
+- `revrem` is the human-facing alias; `code-review-loop` remains stable for scripts and agents.
+- Stable local install lives under `~/.local/share/revrem/` with launchers in `~/.local/bin`.
+- User config uses `~/.config/revrem/`; run history uses `~/.local/share/revrem/`.
+- WSL2/Linux is the primary target.
+- Rich and Textual remain optional extras.
+
+### Open Questions
+
+- Whether TOML writes should use `tomli-w`, `tomlkit`, or a small purpose-built writer for the
+  limited profile schema.
+- Whether run history should be JSONL from the first implementation or start as a compact JSON
+  index and migrate later.
+- Whether a future harness registry should be introduced with the first non-Codex harness or one
+  milestone earlier as part of profile validation.
 
 ---
 
-## 8. Version History
+## 12. Version History
 
 <!-- MEMINIT_SECTION: version_history -->
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 0.2 | 2026-05-01 | Codex | Reworked PRD into staged engineering contract; added dev/stable distribution boundary, architecture constraints, milestones, and acceptance gates |
 | 0.1 | 2026-05-01 | GitCmurf | Initial draft |

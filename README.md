@@ -8,7 +8,7 @@ verification commands, and leave review/remediation artifacts behind.
 ## Quick Start
 
 ```bash
-code-review-loop \
+revrem \
   --base main \
   --max-iterations 2 \
   --review-model gpt-5.5 \
@@ -16,9 +16,13 @@ code-review-loop \
   --reasoning-effort medium \
   --timeout-seconds 1800 \
   --summary-format both \
+  --debug-status-detection \
   --check "pytest -q" \
   --check "git diff --check"
 ```
+
+`revrem` and `code-review-loop` are equivalent entry points. Use `revrem` for
+human-facing usage and keep `code-review-loop` for existing scripts.
 
 The command exits `0` only when the final loop status is clear. It exits `2`
 when the bounded loop finishes with findings or unresolved check failures.
@@ -26,13 +30,33 @@ when the bounded loop finishes with findings or unresolved check failures.
 ## Development
 
 ```bash
-python -m venv .venv
-./.venv/bin/python -m pip install -e ".[dev]"
+./scripts/install-dev
 ./scripts/dev-check
 ```
 
 The development extra installs `ruff`, `mypy`, `pytest`, and build tooling.
 Ruff is a required local and CI gate for this project.
+
+## Stable Local Install
+
+Use the repo-local `.venv` for development and testing in this checkout. Promote
+a known-good version for use from other repositories with:
+
+```bash
+./scripts/promote-stable
+```
+
+The promotion script runs `./scripts/dev-check`, copies a source snapshot under
+`~/.local/share/revrem/releases/`, creates a stable interpreter at
+`~/.local/share/revrem/stable-venv`, and updates:
+
+```text
+~/.local/bin/code-review-loop
+~/.local/bin/revrem
+```
+
+That keeps active development changes isolated until they are deliberately
+promoted.
 
 Meminit DocOps gates:
 

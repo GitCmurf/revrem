@@ -1,0 +1,43 @@
+#!/usr/bin/env sh
+set -eu
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+PYTHON=${PYTHON:-python3}
+STABLE_HOME=${REVREM_STABLE_HOME:-"$HOME/.local/share/revrem"}
+STABLE_VENV=${REVREM_STABLE_VENV:-"$STABLE_HOME/stable-venv"}
+BIN_DIR=${REVREM_BIN_DIR:-"$HOME/.local/bin"}
+RELEASES_DIR=$STABLE_HOME/releases
+RELEASE_ID=$(date -u +%Y%m%dT%H%M%SZ)
+RELEASE_DIR=$RELEASES_DIR/$RELEASE_ID
+
+cd "$REPO_ROOT"
+
+if [ "${REVREM_SKIP_CHECKS:-0}" != "1" ]; then
+  ./scripts/dev-check
+fi
+
+mkdir -p "$RELEASE_DIR" "$BIN_DIR"
+cp -R "$REPO_ROOT/src" "$RELEASE_DIR/src"
+cp "$REPO_ROOT/pyproject.toml" "$RELEASE_DIR/pyproject.toml"
+cp "$REPO_ROOT/README.md" "$RELEASE_DIR/README.md"
+
+if [ ! -x "$STABLE_VENV/bin/python" ]; then
+  "$PYTHON" -m venv "$STABLE_VENV"
+fi
+
+cat > "$BIN_DIR/code-review-loop" <<EOF
+#!/usr/bin/env sh
+PYTHONPATH="$RELEASE_DIR/src\${PYTHONPATH:+:\$PYTHONPATH}" exec "$STABLE_VENV/bin/python" -m code_review_loop "\$@"
+EOF
+cat > "$BIN_DIR/revrem" <<EOF
+#!/usr/bin/env sh
+PYTHONPATH="$RELEASE_DIR/src\${PYTHONPATH:+:\$PYTHONPATH}" exec "$STABLE_VENV/bin/python" -m code_review_loop "\$@"
+EOF
+chmod +x "$BIN_DIR/code-review-loop" "$BIN_DIR/revrem"
+
+printf '%s\n' "Stable snapshot promoted: $RELEASE_DIR"
+printf '%s\n' "Stable interpreter: $STABLE_VENV/bin/python"
+printf '%s\n' "Launchers:"
+printf '%s\n' "  $BIN_DIR/code-review-loop"
+printf '%s\n' "  $BIN_DIR/revrem"

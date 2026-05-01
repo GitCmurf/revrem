@@ -3,8 +3,8 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '0.1'
-last_updated: '2026-04-30'
+version: '0.2'
+last_updated: '2026-05-01'
 owner: GitCmurf
 docops_version: '2.0'
 area: devex
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 0.1
-> **Last Updated:** 2026-04-30
+> **Version:** 0.2
+> **Last Updated:** 2026-05-01
 > **Type:** DEVEX
 > **Area:** devex
 > **Description:** Operator guide for the code-review-loop utility
@@ -28,7 +28,7 @@ keywords:
 
 ## Context
 
-`code-review-loop` is a local Linux CLI for running a bounded Codex review,
+`revrem` / `code-review-loop` is a local Linux CLI for running a bounded Codex review,
 remediation, and re-review workflow against the current git checkout. It exists
 because copying a repo-local script into every project creates drift, makes
 tests harder to share, and hides operator guidance in the wrong repository.
@@ -42,6 +42,10 @@ The command assumes:
   exec` to write within the workspace sandbox.
 - Verification commands are safe to run repeatedly.
 
+`revrem` and `code-review-loop` currently invoke the same CLI. Prefer `revrem`
+for interactive human use and keep `code-review-loop` for existing scripts,
+automation, and backwards-compatible documentation.
+
 ## Content
 
 ### Install for local development
@@ -49,19 +53,55 @@ The command assumes:
 From this repository:
 
 ```bash
-python -m venv .venv
-./.venv/bin/python -m pip install -e ".[dev]"
+./scripts/install-dev
 ```
 
-For machine-wide use, install with a tool runner such as `pipx` or `uv tool`
-once the repository is ready to be treated as a durable local utility.
+This creates or updates `./.venv` as an editable install. Use it for changes in
+this repository:
+
+```bash
+./.venv/bin/code-review-loop --dry-run --quiet-progress
+./.venv/bin/revrem --dry-run --quiet-progress
+```
+
+### Promote a stable local version
+
+Other repositories should use a promoted stable install, not the editable
+development environment in this checkout:
+
+```bash
+./scripts/promote-stable
+```
+
+The promotion script runs `./scripts/dev-check` unless
+`REVREM_SKIP_CHECKS=1` is set, copies a source snapshot under
+`~/.local/share/revrem/releases/`, creates a stable interpreter at
+`~/.local/share/revrem/stable-venv`, and updates:
+
+```text
+~/.local/bin/code-review-loop
+~/.local/bin/revrem
+```
+
+Override paths only when needed:
+
+```bash
+REVREM_STABLE_HOME=~/tools/revrem \
+REVREM_BIN_DIR=~/.local/bin \
+./scripts/promote-stable
+```
+
+This creates a deliberate boundary: active edits are tested through
+`./.venv/bin/...`; other repos consume only the last promoted version on
+`PATH`.
 
 ### Recommended final PR command
 
-Run from the target repository, not from the `code-review-loop` repository:
+Run from the target repository, not from the `code-review-loop` repository.
+Use the promoted stable command for normal PR-readiness checks:
 
 ```bash
-code-review-loop \
+revrem \
   --base main \
   --max-iterations 2 \
   --review-model gpt-5.5 \
@@ -73,6 +113,9 @@ code-review-loop \
   --check "pytest -q" \
   --check "git diff --check"
 ```
+
+Use `code-review-loop` with the same flags when preserving an existing script
+or command history matters.
 
 Use repository-specific checks. For Meminit-backed repositories, include:
 
@@ -93,7 +136,7 @@ The loop writes artifacts under `tmp/code-review-loop/<timestamp>/` by default.
 If a capped run ends with findings, continue from the final review artifact:
 
 ```bash
-code-review-loop \
+revrem \
   --base main \
   --max-iterations 2 \
   --initial-review-file tmp/code-review-loop/<timestamp>/review-final.txt \
@@ -102,6 +145,12 @@ code-review-loop \
 
 Use `--initial-review-file latest` only when the default artifact directory is
 being used and the latest final review is definitely the artifact to continue.
+
+### Current CLI boundary
+
+Profiles, `revrem config`, Rich progress, and `revrem ui` are planned in
+`REVREM-PRD-001`; they are not available in the current CLI. Until those
+milestones land, use explicit flags or shell aliases for repeatable runs.
 
 ### Exit codes
 
@@ -145,4 +194,12 @@ The wrapper runs tests, `ruff check .`, `mypy src`, and DocOps checks when
 
 - `REVREM-ADR-001` records why this is a Python CLI with companion skill
   guidance rather than a copied script or skill-only implementation.
+- `REVREM-PRD-001` defines the next profile, progress, and TUI milestones.
 - `REVREM-TEST-001` defines the verification gates for this utility.
+
+## Version History
+
+| Version | Date | Author | Changes |
+|---|---|---|---|
+| 0.2 | 2026-05-01 | Codex | Updated usage guidance for stable `revrem` entry point, dev/stable install boundary, and current CLI limitations |
+| 0.1 | 2026-04-30 | GitCmurf | Initial draft |
