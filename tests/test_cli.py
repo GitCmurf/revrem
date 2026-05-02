@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import io
+import os
 import re
+
+import pytest
 
 from code_review_loop import cli as MODULE
 
@@ -25,6 +28,18 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
     assert (
         MODULE.detect_review_status(
             "I did not find any discrete introduced bug that would break existing behavior."
+        )
+        == "clear"
+    )
+    assert (
+        MODULE.detect_review_status(
+            "I did not find a discrete introduced bug that should block the patch."
+        )
+        == "clear"
+    )
+    assert (
+        MODULE.detect_review_status(
+            "The changes pass locally without revealing any discrete correctness issue."
         )
         == "clear"
     )
@@ -59,21 +74,47 @@ Full review comments:
 
 def test_review_status_diagnostics_explain_clear_with_stderr_noise():
     output = (
-        "I did not find any discrete, actionable bugs in the diff.\n\n"
+        "The changes add the alias and tests without any clear regressions or actionable bugs.\n\n"
         "[stderr]\n"
         "review comments:\n- [P2] stale transcript example\n"
     )
 
     diagnostics = MODULE.review_status_diagnostics(output)
 
-    assert diagnostics == {
-        "actionable_chars": 57,
-        "clear_phrase_present": True,
-        "explicit_status": None,
-        "finding_line_count": 0,
-        "status": "clear",
-        "stderr_present": True,
-    }
+    assert diagnostics["status"] == "clear"
+    assert diagnostics["clear_phrase_present"] is True
+    assert diagnostics["stderr_present"] is True
+    assert diagnostics["explicit_status"] is None
+    assert diagnostics["finding_line_count"] == 0
+    assert diagnostics["actionable_chars"] > 0
+
+
+def test_config_show_accepts_reserved_harnesses(tmp_path, monkeypatch, capsys):
+    home = tmp_path / "home"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    config_path = home / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.future.review]
+harness = "claude"
+
+[profiles.future.triage]
+enabled = true
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("HOME", str(home))
+
+    exit_code = MODULE.config_main(["show", "future"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert 'harness = "claude"' in captured.out
+    assert "enabled = true" in captured.out
+    assert captured.err == ""
 
 
 def test_extract_finding_summaries_limits_codex_findings():
@@ -151,7 +192,8 @@ def test_model_overrides_and_reasoning_effort_are_passed_to_codex(tmp_path):
         model="gpt-5.4-mini",
         review_model="gpt-5.5",
         remediation_model="gpt-5.4-mini",
-        reasoning_effort="low",
+        review_reasoning_effort="medium",
+        remediation_reasoning_effort="low",
     )
 
     review_command = MODULE.build_review_command(config)
@@ -160,7 +202,7 @@ def test_model_overrides_and_reasoning_effort_are_passed_to_codex(tmp_path):
     assert review_command[:5] == [
         "codex",
         "-c",
-        'model_reasoning_effort="low"',
+        'model_reasoning_effort="medium"',
         "--model",
         "gpt-5.5",
     ]
@@ -282,7 +324,7 @@ def test_debug_status_detection_writes_diagnostic_artifact(tmp_path):
     assert summary["artifact_paths"]["reviews"] == [str(tmp_path / "artifacts" / "review-1.txt")]
 
 
-def test_loop_passes_configured_timeout_to_all_subprocess_phases(tmp_path):
+def test_loop_uses_phase_specific_timeouts_for_review_remediation_and_checks(tmp_path):
     calls = []
     review_outputs = iter(
         [
@@ -304,12 +346,75 @@ def test_loop_passes_configured_timeout_to_all_subprocess_phases(tmp_path):
         cwd=tmp_path,
         artifact_dir=tmp_path / "artifacts",
         check_commands=("python -m pytest tests/unit",),
-        timeout_seconds=900,
+        timeout_seconds=300,
+        review_timeout_seconds=300,
+        remediation_timeout_seconds=1800,
     )
 
     MODULE.run_loop(config, runner)
 
-    assert [call[2] for call in calls] == [900, 900, 900, 900]
+    assert [call[2] for call in calls] == [300, 1800, 1800, 300]
+
+
+def test_loop_preserves_disabled_global_timeout_for_remediation_and_checks(tmp_path):
+    calls = []
+    review_outputs = iter(
+        [
+            "Finding: add regression coverage.\nREVIEW_STATUS: findings\n",
+            "No actionable findings.\nREVIEW_STATUS: clear\n",
+        ]
+    )
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[1] == "review":
+            return MODULE.CommandResult(list(args), 0, stdout=next(review_outputs))
+        return MODULE.CommandResult(list(args), 0, stdout="ok\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        check_commands=("python -m pytest tests/unit",),
+        timeout_seconds=None,
+        review_timeout_seconds=300,
+        remediation_timeout_seconds=None,
+    )
+
+    MODULE.run_loop(config, runner)
+
+    assert [call[2] for call in calls] == [300, None, None, 300]
+
+
+def test_loop_uses_default_timeout_when_phase_timeouts_are_unset(tmp_path):
+    calls = []
+    review_outputs = iter(
+        [
+            "Finding: add regression coverage.\nREVIEW_STATUS: findings\n",
+            "No actionable findings.\nREVIEW_STATUS: clear\n",
+        ]
+    )
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[1] == "review":
+            return MODULE.CommandResult(list(args), 0, stdout=next(review_outputs))
+        return MODULE.CommandResult(list(args), 0, stdout="ok\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        check_commands=("python -m pytest tests/unit",),
+    )
+
+    MODULE.run_loop(config, runner)
+
+    assert [call[2] for call in calls] == [300, 300, 300, 300]
 
 
 def test_resolve_timeout_seconds_allows_disabling_timeout():
@@ -406,6 +511,7 @@ def test_main_resolves_latest_initial_review_from_custom_artifact_dir(tmp_path, 
         }
 
     monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
     monkeypatch.setattr(MODULE, "run_loop", fake_run_loop)
 
     exit_code = MODULE.main(
@@ -424,10 +530,72 @@ def test_main_resolves_latest_initial_review_from_custom_artifact_dir(tmp_path, 
     assert captured_configs[0].initial_review_file != default_review
 
 
+def test_main_resolves_latest_initial_review_from_profile_artifact_dir(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+
+    custom_root = tmp_path / "custom-artifacts"
+    custom_run = custom_root / "20260428T010000Z"
+    sibling_root = tmp_path / "other-artifacts"
+    sibling_run = sibling_root / "20260428T020000Z"
+    custom_run.mkdir(parents=True)
+    sibling_run.mkdir(parents=True)
+
+    custom_review = custom_run / "review-final.txt"
+    sibling_review = sibling_run / "review-final.txt"
+    custom_review.write_text("custom", encoding="utf-8")
+    sibling_review.write_text("sibling", encoding="utf-8")
+    os.utime(custom_review, (1_000_000, 1_000_000))
+    os.utime(sibling_review, (2_000_000, 2_000_000))
+
+    config_path = home / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        f"""
+[profiles.final-pr]
+description = "Final PR"
+
+[profiles.final-pr.output]
+artifact_dir = "{custom_root}"
+""",
+        encoding="utf-8",
+    )
+    captured_configs = []
+
+    def fake_run_loop(config):
+        captured_configs.append(config)
+        return {
+            "artifact_dir": str(config.artifact_dir),
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+            "iterations": [],
+        }
+
+    monkeypatch.setattr(MODULE, "run_loop", fake_run_loop)
+
+    exit_code = MODULE.main(
+        [
+            "--profile",
+            "final-pr",
+            "--initial-review-file",
+            "latest",
+            "--dry-run",
+        ]
+    )
+
+    assert exit_code == 0
+    assert captured_configs[0].artifact_dir == custom_root
+    assert captured_configs[0].initial_review_file == custom_review
+    assert captured_configs[0].initial_review_file != sibling_review
+
+
 def test_main_uses_profile_defaults_and_cli_overrides(tmp_path, monkeypatch):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
     config_path = home / ".config" / "revrem" / "profiles.toml"
     config_path.parent.mkdir(parents=True)
     config_path.write_text(
@@ -447,6 +615,7 @@ timeout_seconds = 1800
 
 [profiles.final-pr.remediation]
 model = "gpt-5.4-mini"
+reasoning_effort = "low"
 
 [profiles.final-pr.output]
 summary_format = "json"
@@ -476,21 +645,289 @@ quiet_progress = true
     assert config.max_iterations == 3
     assert config.review_model == "gpt-5.5"
     assert config.remediation_model == "gpt-5.4-mini"
-    assert config.reasoning_effort == "medium"
-    assert config.timeout_seconds == 1800
+    assert config.reasoning_effort is None
+    assert config.review_reasoning_effort == "medium"
+    assert config.remediation_reasoning_effort == "low"
+    assert config.timeout_seconds == 300
     assert config.check_commands == ("pytest -q", "git diff --check")
     assert config.debug_status_detection is True
     assert config.progress is False
+
+
+def test_main_reasoning_effort_override_applies_to_both_phases(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    config_path = home / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.final-pr]
+description = "Final PR"
+
+[profiles.final-pr.review]
+reasoning_effort = "medium"
+
+[profiles.final-pr.remediation]
+reasoning_effort = "low"
+""",
+        encoding="utf-8",
+    )
+    captured_configs = []
+
+    def fake_run_loop(config):
+        captured_configs.append(config)
+        return {
+            "artifact_dir": str(config.artifact_dir),
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+            "iterations": [],
+        }
+
+    monkeypatch.setattr(MODULE, "run_loop", fake_run_loop)
+
+    exit_code = MODULE.main(
+        ["--profile", "final-pr", "--reasoning-effort", "high", "--dry-run"]
+    )
+
+    assert exit_code == 0
+    config = captured_configs[0]
+    assert config.reasoning_effort == "high"
+    assert config.review_reasoning_effort == "high"
+    assert config.remediation_reasoning_effort == "high"
+
+
+def test_main_model_override_applies_to_both_phases(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    config_path = home / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.final-pr]
+description = "Final PR"
+
+[profiles.final-pr.review]
+model = "gpt-5.5"
+
+[profiles.final-pr.remediation]
+model = "gpt-5.4-mini"
+""",
+        encoding="utf-8",
+    )
+    captured_configs = []
+
+    def fake_run_loop(config):
+        captured_configs.append(config)
+        return {
+            "artifact_dir": str(config.artifact_dir),
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+            "iterations": [],
+        }
+
+    monkeypatch.setattr(MODULE, "run_loop", fake_run_loop)
+
+    exit_code = MODULE.main(["--profile", "final-pr", "--model", "gpt-test", "--dry-run"])
+
+    assert exit_code == 0
+    config = captured_configs[0]
+    assert config.model == "gpt-test"
+    assert config.review_model == "gpt-test"
+    assert config.remediation_model == "gpt-test"
+
+
+def test_main_uses_shared_defaults_without_an_explicit_profile(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    config_path = home / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[defaults.pipeline]
+base = "trunk"
+max_iterations = 4
+checks = ["pytest -q"]
+
+[defaults.review]
+model = "gpt-5.5"
+timeout_seconds = 300
+
+[defaults.remediation]
+model = "gpt-5.4-mini"
+timeout_seconds = 1800
+
+[defaults.output]
+summary_format = "both"
+quiet_progress = true
+""",
+        encoding="utf-8",
+    )
+    captured_configs = []
+
+    def fake_run_loop(config):
+        captured_configs.append(config)
+        return {
+            "artifact_dir": str(config.artifact_dir),
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+            "iterations": [],
+        }
+
+    monkeypatch.setattr(MODULE, "run_loop", fake_run_loop)
+
+    exit_code = MODULE.main(["--dry-run"])
+
+    assert exit_code == 0
+    config = captured_configs[0]
+    assert config.base == "trunk"
+    assert config.max_iterations == 4
+    assert config.check_commands == ("pytest -q",)
+    assert config.review_model == "gpt-5.5"
+    assert config.remediation_model == "gpt-5.4-mini"
+    assert config.review_timeout_seconds == 300
+    assert config.remediation_timeout_seconds == 1800
+    assert config.timeout_seconds == 300
+    assert config.progress is False
+    assert config.progress_style == "compact"
+
+
+def test_main_preserves_zero_timeout_from_profile(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    config_path = home / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.final-pr]
+description = "Final PR"
+
+[profiles.final-pr.review]
+timeout_seconds = 0
+
+[profiles.final-pr.remediation]
+timeout_seconds = 1800
+""",
+        encoding="utf-8",
+    )
+    args = MODULE.parse_args(["--profile", "final-pr", "--base", "main"])
+    config, summary_format = MODULE.build_loop_config(args, tmp_path)
+    calls = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text, timeout_seconds))
+        return MODULE.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+
+    assert summary_format == "text"
+    assert config.timeout_seconds == 300
+    assert config.review_timeout_seconds == 0
+    assert config.remediation_timeout_seconds == 1800
+
+    summary = MODULE.run_loop(config, runner)
+
+    assert summary["final_status"] == "clear"
+    assert len(calls) == 1
+    assert calls[0][2] is None
+
+
+def test_build_loop_config_rejects_negative_profile_timeout(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    config_path = home / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.final-pr]
+description = "Final PR"
+
+[profiles.final-pr.review]
+timeout_seconds = -1
+""",
+        encoding="utf-8",
+    )
+
+    args = MODULE.parse_args(["--profile", "final-pr", "--base", "main"])
+
+    with pytest.raises(ValueError, match="review.timeout_seconds must be 0 or greater"):
+        MODULE.build_loop_config(args, tmp_path)
+
+
+def test_main_uses_default_timeout_for_unset_phase_specific_timeout(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    config_path = home / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.final-pr]
+description = "Final PR"
+
+[profiles.final-pr.remediation]
+timeout_seconds = 1800
+""",
+        encoding="utf-8",
+    )
+    captured_configs = []
+
+    def fake_run_loop(config):
+        captured_configs.append(config)
+        return {
+            "artifact_dir": str(config.artifact_dir),
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+            "iterations": [],
+        }
+
+    monkeypatch.setattr(MODULE, "run_loop", fake_run_loop)
+
+    exit_code = MODULE.main(["--profile", "final-pr", "--base", "main", "--dry-run"])
+
+    assert exit_code == 0
+    assert captured_configs[0].timeout_seconds == 300
+    assert captured_configs[0].review_timeout_seconds == 300
+    assert captured_configs[0].remediation_timeout_seconds == 1800
 
 
 def test_config_commands_create_show_list_and_delete_profile(tmp_path, monkeypatch, capsys):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
 
     assert MODULE.main(["config", "new", "smoke", "--description", "Smoke profile"]) == 0
+
+    editor = tmp_path / "editor.sh"
+    editor.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' \"$1\" > \"$EDITOR_LOG\"\n"
+        "sed -i 's/Smoke profile/Edited profile/' \"$1\"\n",
+        encoding="utf-8",
+    )
+    editor.chmod(0o755)
+    editor_log = tmp_path / "editor.log"
+    monkeypatch.setenv("EDITOR", str(editor))
+    monkeypatch.setenv("EDITOR_LOG", str(editor_log))
+
+    assert MODULE.main(["config", "edit", "smoke"]) == 0
+    assert f"edited smoke in {home / '.config' / 'revrem' / 'profiles.toml'}" in capsys.readouterr().out
+    assert editor_log.read_text(encoding="utf-8").strip() == str(home / ".config" / "revrem" / "profiles.toml")
+    assert "Edited profile" in (home / ".config" / "revrem" / "profiles.toml").read_text(encoding="utf-8")
+    assert MODULE.main(["config", "show", "smoke", "--format", "json"]) == 0
+    assert '"description": "Edited profile"' in capsys.readouterr().out
+
     assert MODULE.main(["config", "list"]) == 0
-    assert "smoke - Smoke profile" in capsys.readouterr().out
+    assert "smoke - Edited profile" in capsys.readouterr().out
     assert MODULE.main(["config", "list", "--format", "json"]) == 0
     assert '"name": "smoke"' in capsys.readouterr().out
 
@@ -502,6 +939,33 @@ def test_config_commands_create_show_list_and_delete_profile(tmp_path, monkeypat
 
     assert MODULE.main(["config", "delete", "smoke", "--yes"]) == 0
     assert MODULE.main(["config", "show", "smoke"]) == 1
+
+
+def test_config_global_format_applies_before_subcommand_defaults(tmp_path, monkeypatch, capsys):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+
+    assert MODULE.main(["config", "new", "smoke", "--description", "Smoke profile"]) == 0
+    assert MODULE.main(["config", "--format", "json", "doctor", "--profile", "smoke"]) == 0
+
+    output = capsys.readouterr().out
+    assert '"resolved_profile"' in output
+    assert '"user_config"' in output
+
+
+def test_config_edit_requires_editor(tmp_path, monkeypatch, capsys):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    assert MODULE.main(["config", "new", "smoke"]) == 0
+
+    monkeypatch.delenv("EDITOR", raising=False)
+
+    assert MODULE.main(["config", "edit", "smoke"]) == 1
+    assert "EDITOR is not set" in capsys.readouterr().err
 
 
 def test_loop_caps_remediation_passes_and_runs_final_review(tmp_path):
@@ -840,6 +1304,29 @@ def test_terminal_summary_surfaces_latest_findings_and_paths():
     assert "- [P2] Fix summary counts" in text
 
 
+def test_terminal_summary_omits_latest_review_excerpt_when_clear():
+    summary = {
+        "artifact_dir": "tmp/run",
+        "final_status": "clear",
+        "stopped_reason": "review_clear",
+        "iterations": [
+            {"iteration": 1, "review_status": "clear", "check_failures": None},
+        ],
+        "artifact_paths": {
+            "reviews": ["tmp/run/review-1.txt"],
+            "summary": "tmp/run/summary.json",
+        },
+        "latest_review_excerpt": "I did not find any discrete, actionable bugs.",
+    }
+
+    text = MODULE.format_terminal_summary(summary)
+
+    assert "Review-remediation loop: clear (review_clear)" in text
+    assert "Latest review: tmp/run/review-1.txt" in text
+    assert "Latest actionable review output:" not in text
+    assert "discrete, actionable bugs" not in text
+
+
 def test_progress_logs_review_and_finding_summaries(tmp_path, capsys):
     review_outputs = iter(
         [
@@ -1085,6 +1572,60 @@ def test_default_runner_refreshes_active_terminal_title_during_child_process(tmp
     assert result.stdout == "done\n"
     assert output.count(title_sequence) >= 2
     assert output.endswith(MODULE.TERMINAL_TITLE_RESTORE)
+
+
+def test_subprocess_refresh_loop_preserves_stdin_after_timeout(tmp_path, monkeypatch):
+    refresh_calls = []
+
+    class FakeStdin:
+        def __init__(self):
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    class FakeProcess:
+        def __init__(self):
+            self.stdin = FakeStdin()
+            self.returncode = 0
+            self.communicate_calls = 0
+
+        def communicate(self, input=None, timeout=None):
+            self.communicate_calls += 1
+            if self.communicate_calls == 1:
+                assert input == "prompt"
+                raise MODULE.subprocess.TimeoutExpired(["codex", "exec"], timeout)
+            assert input is None
+            assert not self.stdin.closed, "stdin should stay open while retrying without input"
+            return ("stdout", "stderr")
+
+        def kill(self):
+            raise AssertionError("deadline branch is not expected in this test")
+
+    fake_process = FakeProcess()
+
+    def fake_popen(*args, **kwargs):
+        return fake_process
+
+    def fake_refresh():
+        refresh_calls.append("refresh")
+
+    monkeypatch.setattr(MODULE.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(MODULE, "refresh_terminal_title", fake_refresh)
+    monkeypatch.setattr(MODULE, "TERMINAL_TITLE_REFRESH_SECONDS", 0.01)
+
+    result = MODULE.run_subprocess_with_terminal_title_refresh(
+        ["codex", "exec"],
+        cwd=tmp_path,
+        input="prompt",
+        timeout=1,
+    )
+
+    assert result.stdout == "stdout"
+    assert result.stderr == "stderr"
+    assert fake_process.stdin.closed is False
+    assert fake_process.communicate_calls == 2
+    assert len(refresh_calls) == 2
 
 
 def test_loop_writes_failure_summary_when_remediation_fails(tmp_path):

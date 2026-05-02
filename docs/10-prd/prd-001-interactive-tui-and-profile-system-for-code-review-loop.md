@@ -192,6 +192,12 @@ built-in defaults
 individual CLI flags
 ```
 
+Selected profile names must exist in user or project config before defaults are applied, so a
+misspelled `--profile` fails fast instead of silently falling back to defaults. A configured
+`timeout_seconds = 0` remains a valid disable signal after profile resolution and reaches the
+matching phase subprocess unchanged. If a phase omits `timeout_seconds`, it uses the built-in
+default timeout rather than inheriting the sibling phase's value.
+
 **Profile schema:**
 
 ```toml

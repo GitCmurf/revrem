@@ -39,15 +39,15 @@ handling, and loop stop conditions without invoking real Codex sessions.
 
 The main test module is `tests/test_cli.py`. It covers:
 
-- Codex review status detection for explicit statuses, finding markers, and
-  ambiguous output.
+- Codex review status detection for explicit statuses, finding markers, common
+  clear-review prose, and ambiguous output.
 - Review and remediation command construction, including model and reasoning
   flags.
 - Bounded loop behavior, including final review behavior and exit status.
 - Check-command failure handling and prompt forwarding into the next
   remediation pass.
-- Artifact naming for review, remediation, last-message, check, and summary
-  outputs.
+- Artifact naming for review, remediation, last-message, check, and compact
+  terminal summary outputs.
 - Timeout propagation to review, remediation, and check subprocesses.
 - Status detection using only actionable review output, not noisy tool
   transcripts in captured stderr.

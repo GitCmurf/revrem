@@ -30,11 +30,20 @@ machine-readable stdout.
 The command exits `0` only when the final loop status is clear. It exits `2`
 when the bounded loop finishes with findings or unresolved check failures.
 
-Named profiles can hold the same settings in `~/.config/revrem/profiles.toml`
-and can be managed with `revrem config`:
+Named profiles can hold the same settings in `~/.config/revrem/profiles.toml`.
+That file can also carry a shared `[defaults]` table for user-wide model and
+operator preferences. Bare `revrem` invocations load those defaults too, and
+`revrem config` preserves existing profiles verbatim when it rewrites the
+file, so omitted fields keep inheriting shared defaults. If a profile
+intentionally resets a field back to the built-in default, the rewrite keeps
+that field when the file's `[defaults]` table would otherwise change behavior.
+`revrem config show`, `export`, and `doctor` accept reserved future harnesses
+as configuration syntax; only the execution path rejects unimplemented
+backends.
 
 ```bash
 revrem config new final-pr --description "Full PR readiness check"
+revrem config edit final-pr
 revrem config show final-pr
 revrem --profile final-pr
 ```

@@ -35,6 +35,7 @@ PROGRESS_PHASE_CODES = {
 COMPACT_PROGRESS_DETAIL_INDENT = 7
 DEFAULT_TERMINAL_COLUMNS = 120
 DEFAULT_TIMEOUT_SECONDS = 300
+REASONING_EFFORT_CHOICES = ("minimal", "low", "medium", "high")
 
 DEFAULT_REMEDIATION_PROMPT = """You are running a bounded review-remediation loop.
 
@@ -72,6 +73,8 @@ class LoopConfig:
     review_model: str | None = None
     remediation_model: str | None = None
     reasoning_effort: str | None = None
+    review_reasoning_effort: str | None = None
+    remediation_reasoning_effort: str | None = None
     exec_sandbox: str = "workspace-write"
     exec_color: str = "never"
     full_auto: bool = True
@@ -82,6 +85,8 @@ class LoopConfig:
     max_remediation_input_chars: int = 200_000
     terminal_excerpt_chars: int = 4_000
     timeout_seconds: float | None = DEFAULT_TIMEOUT_SECONDS
+    review_timeout_seconds: float | None = None
+    remediation_timeout_seconds: float | None = None
     debug_status_detection: bool = False
     progress: bool = True
     progress_style: str = "compact"
@@ -359,18 +364,22 @@ def detect_review_status(output: str) -> str:
     }
     if any(line in clear_lines for line in normalized_lines):
         return "clear"
-    clear_phrases = (
-        "did not find any discrete, actionable bugs",
-        "did not find any discrete introduced bug",
-        "did not find any actionable bugs",
-        "no discrete, actionable bugs",
-        "no actionable bugs",
-        "without any clear regressions or actionable bugs",
-        "without any clear regressions or actionable",
-    )
-    if any(phrase in normalized for phrase in clear_phrases):
+    if any(phrase in normalized for phrase in CLEAR_PHRASES):
         return "clear"
     return "unknown"
+
+
+CLEAR_PHRASES = (
+    "did not find any discrete, actionable bugs",
+    "did not find a discrete introduced bug",
+    "did not find any discrete introduced bug",
+    "did not find any actionable bugs",
+    "without revealing any discrete correctness issue",
+    "no discrete, actionable bugs",
+    "no actionable bugs",
+    "without any clear regressions or actionable bugs",
+    "without any clear regressions or actionable",
+)
 
 
 def review_status_diagnostics(output: str) -> dict[str, object]:
@@ -380,15 +389,7 @@ def review_status_diagnostics(output: str) -> dict[str, object]:
     explicit_status = STATUS_RE.search(actionable_output)
     finding_lines = CODEX_FINDING_RE.findall(actionable_output)
     normalized = actionable_output.lower()
-    clear_phrase_present = any(
-        phrase in normalized
-        for phrase in (
-            "did not find any discrete, actionable bugs",
-            "did not find any actionable bugs",
-            "no discrete, actionable bugs",
-            "no actionable bugs",
-        )
-    )
+    clear_phrase_present = any(phrase in normalized for phrase in CLEAR_PHRASES)
     return {
         "status": detect_review_status(output),
         "actionable_chars": len(actionable_output),
@@ -498,19 +499,20 @@ def strip_finding_priority(finding: str) -> tuple[str, str]:
     return match.group(1), match.group(2)
 
 
-def codex_config_args(config: LoopConfig) -> list[str]:
+def codex_config_args(config: LoopConfig, *, reasoning_effort: str | None = None) -> list[str]:
     args: list[str] = []
-    if config.reasoning_effort:
+    effort = reasoning_effort if reasoning_effort is not None else config.reasoning_effort
+    if effort:
         # Codex parses -c values as TOML; the quotes are part of the TOML string
         # syntax, not shell quoting. subprocess.run() intentionally receives one
         # argv item such as model_reasoning_effort="low".
-        args.extend(["-c", f'model_reasoning_effort="{config.reasoning_effort}"'])
+        args.extend(["-c", f'model_reasoning_effort="{effort}"'])
     return args
 
 
 def build_review_command(config: LoopConfig) -> list[str]:
     command = [config.codex_bin]
-    command.extend(codex_config_args(config))
+    command.extend(codex_config_args(config, reasoning_effort=config.review_reasoning_effort))
     model = config.review_model or config.model
     if model:
         command.extend(["--model", model])
@@ -520,7 +522,7 @@ def build_review_command(config: LoopConfig) -> list[str]:
 
 def build_remediation_command(config: LoopConfig, output_last_message: Path | None = None) -> list[str]:
     command = [config.codex_bin, "exec"]
-    command.extend(codex_config_args(config))
+    command.extend(codex_config_args(config, reasoning_effort=config.remediation_reasoning_effort))
     if config.full_auto:
         command.append("--full-auto")
     command.extend(["--sandbox", config.exec_sandbox])
@@ -534,6 +536,14 @@ def build_remediation_command(config: LoopConfig, output_last_message: Path | No
         command.extend(["--output-last-message", str(output_last_message)])
     command.append("-")
     return command
+
+
+def phase_timeout_seconds(config: LoopConfig, value: float | None) -> float | None:
+    if value is None:
+        return config.timeout_seconds
+    if value == 0:
+        return None
+    return value
 
 
 def write_artifact(path: Path, content: str) -> None:
@@ -554,7 +564,7 @@ def run_codex_review(
     if config.dry_run:
         result = CommandResult(command, 0, stdout="DRY_RUN\nREVIEW_STATUS: findings\n")
     else:
-        result = runner(command, config.cwd, None, config.timeout_seconds)
+        result = runner(command, config.cwd, None, phase_timeout_seconds(config, config.review_timeout_seconds))
     combined = _combined_output(result)
     artifact_path = config.artifact_dir / f"{artifact_label}.txt"
     write_artifact(artifact_path, combined)
@@ -623,7 +633,7 @@ def run_remediation(
     if config.dry_run:
         result = CommandResult(command, 0, stdout="DRY_RUN remediation skipped\n")
     else:
-        result = runner(command, config.cwd, prompt, config.timeout_seconds)
+        result = runner(command, config.cwd, prompt, phase_timeout_seconds(config, config.remediation_timeout_seconds))
     write_artifact(config.artifact_dir / f"remediation-{iteration}.txt", _combined_output(result))
     if result.returncode != 0:
         progress_event(config, "remediate", str(iteration), "failed", f"exit {result.returncode}")
@@ -643,7 +653,7 @@ def run_checks(config: LoopConfig, runner: Runner, iteration: int) -> list[Comma
         if config.dry_run:
             result = CommandResult(command, 0, stdout=f"DRY_RUN check skipped: {check}\n")
         else:
-            result = runner(command, config.cwd, None, config.timeout_seconds)
+            result = runner(command, config.cwd, None, phase_timeout_seconds(config, config.remediation_timeout_seconds))
         results.append(result)
         write_artifact(
             config.artifact_dir / f"check-{iteration}-{index}.txt",
@@ -929,7 +939,7 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
             lines.append(f"JSON summary: {summary_path}")
 
     excerpt = str(summary.get("latest_review_excerpt") or "").strip()
-    if excerpt:
+    if excerpt and status != "clear":
         lines.append("")
         lines.append("Latest actionable review output:")
         lines.append(excerpt)
@@ -963,9 +973,12 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     )
     parser.add_argument(
         "--reasoning-effort",
-        choices=("minimal", "low", "medium", "high"),
+        choices=REASONING_EFFORT_CHOICES,
         default=None,
-        help="Optional Codex model_reasoning_effort override for review and remediation.",
+        help=(
+            "Optional Codex model_reasoning_effort override for review and remediation; "
+            "profiles may still set phase-specific values."
+        ),
     )
     parser.add_argument(
         "--exec-sandbox",
@@ -1080,15 +1093,18 @@ def parse_config_args(argv: Sequence[str]) -> argparse.Namespace:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     list_parser = subparsers.add_parser("list", help="List available profiles.")
-    list_parser.add_argument("--format", choices=("text", "json"), default=None)
+    list_parser.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)
     show = subparsers.add_parser("show", help="Show a resolved profile.")
     show.add_argument("name")
-    show.add_argument("--format", choices=("toml", "json"), default="toml")
+    show.add_argument("--format", choices=("toml", "json"), default=argparse.SUPPRESS)
 
     new = subparsers.add_parser("new", help="Create a minimal user profile.")
     new.add_argument("name")
     new.add_argument("--description", default="")
     new.add_argument("--force", action="store_true")
+
+    edit = subparsers.add_parser("edit", help="Open the owning config file in $EDITOR.")
+    edit.add_argument("name")
 
     delete = subparsers.add_parser("delete", help="Delete a user profile.")
     delete.add_argument("name")
@@ -1103,8 +1119,46 @@ def parse_config_args(argv: Sequence[str]) -> argparse.Namespace:
 
     doctor = subparsers.add_parser("doctor", help="Show config paths and merge diagnostics.")
     doctor.add_argument("--profile", default=None)
-    doctor.add_argument("--format", choices=("text", "json"), default="text")
+    doctor.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)
     return parser.parse_args(argv)
+
+
+def _profile_config_owner_path(name: str, cwd: Path, home: Path | None = None) -> Path:
+    project_path = profiles.project_config_path(cwd)
+    project_file = profiles.load_profile_file(project_path)
+    if name in project_file.profiles:
+        return project_path
+
+    user_path = profiles.user_config_path(home)
+    user_file = profiles.load_profile_file(user_path)
+    if name in user_file.profiles:
+        return user_path
+
+    raise FileNotFoundError(f"profile not found: {name}")
+
+
+def _editor_command() -> list[str]:
+    editor = os.environ.get("EDITOR", "").strip()
+    if not editor:
+        raise RuntimeError("EDITOR is not set; cannot open a config editor")
+    command = shlex.split(editor)
+    if not command:
+        raise RuntimeError("EDITOR is empty; cannot open a config editor")
+    return command
+
+
+def edit_profile_config(name: str, *, cwd: Path, home: Path | None = None) -> Path:
+    path = _profile_config_owner_path(name, cwd, home)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.touch(exist_ok=True)
+    command = _editor_command() + [str(path)]
+    try:
+        subprocess.run(command, cwd=path.parent, check=True)
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(f"editor not found: {command[0]}") from exc
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(f"editor exited with status {exc.returncode}") from exc
+    return path
 
 
 def default_artifact_dir() -> Path:
@@ -1120,10 +1174,16 @@ def resolve_timeout_seconds(value: float) -> float | None:
     return value
 
 
+def resolve_profile_timeout_seconds(value: float | None) -> float | None:
+    if value is None:
+        return DEFAULT_TIMEOUT_SECONDS
+    return value
+
+
 def profile_or_default(name: str | None, cwd: Path) -> profiles.Profile:
     if name:
         return profiles.resolve_profile(name, cwd=cwd)
-    return profiles.Profile(name="<defaults>")
+    return profiles.resolve_defaults(cwd=cwd)
 
 
 def pick(cli_value, profile_value, fallback):
@@ -1136,24 +1196,23 @@ def pick(cli_value, profile_value, fallback):
 
 def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, str]:
     profile = profile_or_default(args.profile, cwd)
-    timeout_value = pick(
-        args.timeout_seconds,
-        profile.review.timeout_seconds or profile.remediation.timeout_seconds,
-        DEFAULT_TIMEOUT_SECONDS,
-    )
-    timeout_seconds = resolve_timeout_seconds(timeout_value)
+    if args.timeout_seconds is not None:
+        timeout_seconds = resolve_timeout_seconds(args.timeout_seconds)
+        review_timeout_seconds = timeout_seconds
+        remediation_timeout_seconds = timeout_seconds
+    else:
+        timeout_seconds = DEFAULT_TIMEOUT_SECONDS
+        review_timeout_seconds = resolve_profile_timeout_seconds(profile.review.timeout_seconds)
+        remediation_timeout_seconds = resolve_profile_timeout_seconds(profile.remediation.timeout_seconds)
     artifact_dir_value = args.artifact_dir or profile.output.artifact_dir
     artifact_dir = Path(artifact_dir_value) if artifact_dir_value else default_artifact_dir()
-    search_root = artifact_dir if args.artifact_dir else artifact_dir.parent
+    search_root = artifact_dir if artifact_dir_value else artifact_dir.parent
     initial_review_file = resolve_initial_review_file(args.initial_review_file, search_root)
     if initial_review_file is not None and not initial_review_file.is_file():
         raise FileNotFoundError(f"initial review file not found: {initial_review_file}")
     checks = tuple(args.check) if args.check is not None else profile.pipeline.checks
-    reasoning_effort = (
-        args.reasoning_effort
-        or profile.review.reasoning_effort
-        or profile.remediation.reasoning_effort
-    )
+    review_reasoning_effort = args.reasoning_effort or profile.review.reasoning_effort
+    remediation_reasoning_effort = args.reasoning_effort or profile.remediation.reasoning_effort
     config = LoopConfig(
         base=pick(args.base, profile.pipeline.base, "main"),
         max_iterations=pick(args.max_iterations, profile.pipeline.max_iterations, 2),
@@ -1161,9 +1220,11 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         cwd=cwd,
         artifact_dir=artifact_dir,
         model=args.model,
-        review_model=args.review_model or profile.review.model,
-        remediation_model=args.remediation_model or profile.remediation.model,
-        reasoning_effort=reasoning_effort,
+        review_model=args.review_model or args.model or profile.review.model,
+        remediation_model=args.remediation_model or args.model or profile.remediation.model,
+        reasoning_effort=args.reasoning_effort,
+        review_reasoning_effort=review_reasoning_effort,
+        remediation_reasoning_effort=remediation_reasoning_effort,
         exec_sandbox=pick(args.exec_sandbox, profile.runtime.exec_sandbox, "workspace-write"),
         exec_color=pick(args.exec_color, profile.runtime.exec_color, "never"),
         full_auto=profile.runtime.full_auto and not args.no_full_auto,
@@ -1182,6 +1243,8 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
             4_000,
         ),
         timeout_seconds=timeout_seconds,
+        review_timeout_seconds=review_timeout_seconds,
+        remediation_timeout_seconds=remediation_timeout_seconds,
         debug_status_detection=profile.output.debug_status_detection or args.debug_status_detection,
         progress=not args.quiet_progress and not profile.output.quiet_progress,
         progress_style=pick(args.progress_style, profile.output.progress_style, "compact"),
@@ -1233,9 +1296,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 def config_main(argv: Sequence[str]) -> int:
     args = parse_config_args(argv)
     try:
+        output_format = getattr(args, "format", None)
         if args.command == "list":
             items = profiles.list_profiles(cwd=Path.cwd())
-            if (args.format or "text") == "json":
+            if (output_format or "text") == "json":
                 print(json.dumps([profiles.profile_to_dict(item) for item in items], indent=2, sort_keys=True))
             else:
                 for item in items:
@@ -1244,8 +1308,12 @@ def config_main(argv: Sequence[str]) -> int:
                     print(f"{item.name}{desc}{src}")
             return 0
         if args.command == "show":
-            profile = profiles.resolve_profile(args.name, cwd=Path.cwd())
-            if args.format == "json":
+            profile = profiles.resolve_profile(
+                args.name,
+                cwd=Path.cwd(),
+                require_implemented=False,
+            )
+            if (output_format or "toml") == "json":
                 print(profiles.profile_to_json(profile), end="")
             else:
                 print(profiles.profile_to_toml(profile), end="")
@@ -1255,6 +1323,10 @@ def config_main(argv: Sequence[str]) -> int:
             path = profiles.write_user_profile(profile, force=args.force)
             print(f"created {args.name} in {path}")
             return 0
+        if args.command == "edit":
+            path = edit_profile_config(args.name, cwd=Path.cwd())
+            print(f"edited {args.name} in {path}")
+            return 0
         if args.command == "delete":
             if not args.yes:
                 print("ERROR: pass --yes to delete a profile non-interactively", file=sys.stderr)
@@ -1263,7 +1335,11 @@ def config_main(argv: Sequence[str]) -> int:
             print(f"deleted {args.name} from {path}")
             return 0
         if args.command == "export":
-            profile = profiles.resolve_profile(args.name, cwd=Path.cwd())
+            profile = profiles.resolve_profile(
+                args.name,
+                cwd=Path.cwd(),
+                require_implemented=False,
+            )
             print(profiles.profile_to_toml(profile, include_wrapper=True), end="")
             return 0
         if args.command == "import":
@@ -1279,16 +1355,20 @@ def config_main(argv: Sequence[str]) -> int:
             }
             if args.profile:
                 info["resolved_profile"] = profiles.profile_to_dict(
-                    profiles.resolve_profile(args.profile, cwd=Path.cwd())
+                    profiles.resolve_profile(
+                        args.profile,
+                        cwd=Path.cwd(),
+                        require_implemented=False,
+                    )
                 )
-            if args.format == "json":
+            if (output_format or "text") == "json":
                 print(json.dumps(info, indent=2, sort_keys=True))
             else:
                 print(f"user_config: {info['user_config']}")
                 print(f"project_config: {info['project_config']}")
                 print("profiles: " + ", ".join(profile_names))
             return 0
-    except (FileExistsError, FileNotFoundError, ValueError) as exc:
+    except (FileExistsError, FileNotFoundError, RuntimeError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
     raise AssertionError(f"unhandled config command: {args.command}")

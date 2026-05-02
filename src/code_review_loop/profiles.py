@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import tempfile
 import tomllib
+from contextlib import suppress
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -13,6 +16,10 @@ from code_review_loop.harnesses import require_implemented_harness, validate_har
 
 USER_CONFIG_RELATIVE = Path(".config") / "revrem" / "profiles.toml"
 PROJECT_CONFIG_NAME = ".revrem.toml"
+TOML_BARE_KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+EXEC_SANDBOX_CHOICES = ("read-only", "workspace-write", "danger-full-access")
+EXEC_COLOR_CHOICES = ("always", "never", "auto")
+REASONING_EFFORT_CHOICES = ("minimal", "low", "medium", "high")
 
 
 @dataclass(frozen=True)
@@ -89,7 +96,15 @@ def user_config_path(home: Path | None = None) -> Path:
 
 
 def project_config_path(cwd: Path) -> Path:
-    return cwd / PROJECT_CONFIG_NAME
+    return _repo_root(cwd) / PROJECT_CONFIG_NAME
+
+
+def _repo_root(cwd: Path) -> Path:
+    current = cwd.resolve()
+    for candidate in (current, *current.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return current
 
 
 def load_profile_file(path: Path) -> ProfileFile:
@@ -165,10 +180,15 @@ def parse_pipeline(raw: dict[str, Any]) -> PipelineConfig:
 def parse_phase(raw: dict[str, Any], field: str) -> PhaseConfig:
     harness = _str(raw.get("harness", "codex"), f"{field}.harness")
     validate_harness_name(harness, field=f"{field}.harness")
+    reasoning_effort = _optional_str(raw.get("reasoning_effort"), f"{field}.reasoning_effort")
+    if reasoning_effort is not None and reasoning_effort not in REASONING_EFFORT_CHOICES:
+        raise ValueError(
+            f"{field}.reasoning_effort must be one of {', '.join(REASONING_EFFORT_CHOICES)}"
+        )
     return PhaseConfig(
         harness=harness,
         model=_optional_str(raw.get("model"), f"{field}.model"),
-        reasoning_effort=_optional_str(raw.get("reasoning_effort"), f"{field}.reasoning_effort"),
+        reasoning_effort=reasoning_effort,
         timeout_seconds=_optional_float(raw.get("timeout_seconds"), f"{field}.timeout_seconds"),
     )
 
@@ -226,25 +246,53 @@ def parse_runtime(raw: dict[str, Any]) -> RuntimeConfig:
     )
 
 
-def resolve_profile(name: str, *, cwd: Path, home: Path | None = None) -> Profile:
+def resolve_profile(
+    name: str,
+    *,
+    cwd: Path,
+    home: Path | None = None,
+    require_implemented: bool = True,
+) -> Profile:
     user_file = load_profile_file(user_config_path(home))
     project_file = load_profile_file(project_config_path(cwd))
     raw: dict[str, Any] = {}
     source = None
+    found = False
+    if user_file.defaults is not None:
+        raw = _deep_merge(raw, user_file.raw_defaults)
+        source = str(user_file.path)
     if name in user_file.profiles:
         raw = _deep_merge(raw, user_file.raw_profiles[name])
         source = str(user_file.path)
+        found = True
     if project_file.defaults is not None:
         raw = _deep_merge(raw, project_file.raw_defaults)
         source = str(project_file.path)
     if name in project_file.profiles:
         raw = _deep_merge(raw, project_file.raw_profiles[name])
         source = str(project_file.path)
-    if not raw:
+        found = True
+    if not found:
         raise FileNotFoundError(f"profile not found: {name}")
     resolved = parse_profile(name, raw, source=source)
-    validate_profile(resolved, require_implemented=True)
+    validate_profile(resolved, require_implemented=require_implemented)
     return resolved
+
+
+def resolve_defaults(*, cwd: Path, home: Path | None = None) -> Profile:
+    user_file = load_profile_file(user_config_path(home))
+    project_file = load_profile_file(project_config_path(cwd))
+    raw: dict[str, Any] = {}
+    source = None
+    if user_file.defaults is not None:
+        raw = _deep_merge(raw, user_file.raw_defaults)
+        source = str(user_file.path)
+    if project_file.defaults is not None:
+        raw = _deep_merge(raw, project_file.raw_defaults)
+        source = str(project_file.path)
+    defaults = parse_profile("<defaults>", raw, source=source)
+    validate_profile(defaults, require_implemented=True)
+    return defaults
 
 
 def list_profiles(*, cwd: Path, home: Path | None = None) -> list[Profile]:
@@ -282,22 +330,48 @@ def profile_to_json(profile: Profile) -> str:
 
 
 def profile_to_toml(profile: Profile, *, include_wrapper: bool = False) -> str:
+    return _profile_to_toml_impl(
+        profile,
+        root=("profiles", profile.name) if include_wrapper else None,
+        omit_builtin_defaults=False,
+    )
+
+
+def _profile_to_toml_impl(
+    profile: Profile,
+    *,
+    root: tuple[str, ...] | None,
+    omit_builtin_defaults: bool,
+    omit_reference_defaults: bool = False,
+    reference: Profile | None = None,
+) -> str:
     lines: list[str] = []
-    prefix = f"profiles.{profile.name}." if include_wrapper else ""
-    if include_wrapper:
-        lines.append(f"[profiles.{profile.name}]")
-        lines.append(f"description = {_toml_string(profile.description)}")
-        lines.append("")
+    if root is not None:
+        lines.append(f"[{_toml_table_header(root)}]")
+        if profile.description:
+            lines.append(f"description = {_toml_string(profile.description)}")
+            lines.append("")
     elif profile.description:
         lines.append(f"description = {_toml_string(profile.description)}")
         lines.append("")
     for section_name in ("pipeline", "review", "triage", "remediation", "output", "runtime"):
         value = getattr(profile, section_name)
-        lines.append(f"[{prefix}{section_name}]")
+        header = (*root, section_name) if root is not None else (section_name,)
+        section_lines: list[str] = []
+        defaults = type(value)()
+        reference_value = getattr(reference, section_name) if reference is not None else None
         for key, item in asdict(value).items():
             if item is None:
                 continue
-            lines.append(f"{key} = {_toml_value(item)}")
+            if omit_builtin_defaults and item == getattr(defaults, key):
+                continue
+            if omit_reference_defaults and reference_value is not None and item == getattr(reference_value, key):
+                continue
+            section_lines.append(f"{key} = {_toml_value(item)}")
+        if not section_lines:
+            continue
+        lines.append(f"[{_toml_table_header(header)}]")
+        lines.extend(section_lines)
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
@@ -307,9 +381,16 @@ def write_user_profile(profile: Profile, *, home: Path | None = None, force: boo
     profile_file = load_profile_file(path)
     if profile.name in profile_file.profiles and not force:
         raise FileExistsError(f"profile already exists: {profile.name}")
-    profiles = dict(profile_file.profiles)
-    profiles[profile.name] = profile
-    _write_profiles(path, profiles)
+    _write_profile_file(
+        path,
+        defaults=profile_file.defaults,
+        raw_defaults=profile_file.raw_defaults if profile_file.defaults is not None else None,
+        rendered_profiles={
+            profile.name: profile,
+        },
+        raw_profiles=profile_file.raw_profiles,
+        omit_reference_defaults=True,
+    )
     return path
 
 
@@ -318,9 +399,15 @@ def delete_user_profile(name: str, *, home: Path | None = None) -> Path:
     profile_file = load_profile_file(path)
     if name not in profile_file.profiles:
         raise FileNotFoundError(f"profile not found: {name}")
-    profiles = dict(profile_file.profiles)
-    del profiles[name]
-    _write_profiles(path, profiles)
+    raw_profiles = dict(profile_file.raw_profiles)
+    del raw_profiles[name]
+    _write_profile_file(
+        path,
+        defaults=profile_file.defaults,
+        raw_defaults=profile_file.raw_defaults if profile_file.defaults is not None else None,
+        rendered_profiles={},
+        raw_profiles=raw_profiles,
+    )
     return path
 
 
@@ -328,12 +415,18 @@ def import_user_profiles(path: Path, *, home: Path | None = None, force: bool = 
     imported = load_profile_file(path)
     destination = user_config_path(home)
     current = load_profile_file(destination)
-    profiles = dict(current.profiles)
+    raw_profiles = dict(current.raw_profiles)
     for name, profile in imported.profiles.items():
-        if name in profiles and not force:
+        if name in current.profiles and not force:
             raise FileExistsError(f"profile already exists: {name}")
-        profiles[name] = profile
-    _write_profiles(destination, profiles)
+        raw_profiles[name] = imported.raw_profiles.get(name, profile_to_dict(profile))
+    _write_profile_file(
+        destination,
+        defaults=current.defaults,
+        raw_defaults=current.raw_defaults if current.defaults is not None else None,
+        rendered_profiles={},
+        raw_profiles=raw_profiles,
+    )
     return destination
 
 
@@ -344,6 +437,15 @@ def minimal_profile(name: str, *, description: str = "") -> Profile:
 def validate_profile(profile: Profile, *, require_implemented: bool) -> None:
     if profile.pipeline.max_iterations < 1:
         raise ValueError("pipeline.max_iterations must be at least 1")
+    for phase_name, phase in (("review", profile.review), ("remediation", profile.remediation)):
+        if phase.timeout_seconds is not None and phase.timeout_seconds < 0:
+            raise ValueError(f"{phase_name}.timeout_seconds must be 0 or greater")
+    if profile.runtime.exec_sandbox not in EXEC_SANDBOX_CHOICES:
+        known = ", ".join(EXEC_SANDBOX_CHOICES)
+        raise ValueError(f"runtime.exec_sandbox must be one of: {known}")
+    if profile.runtime.exec_color not in EXEC_COLOR_CHOICES:
+        known = ", ".join(EXEC_COLOR_CHOICES)
+        raise ValueError(f"runtime.exec_color must be one of: {known}")
     if profile.runtime.max_remediation_input_chars < 1:
         raise ValueError("runtime.max_remediation_input_chars must be positive")
     if profile.runtime.terminal_excerpt_chars < 1:
@@ -355,13 +457,82 @@ def validate_profile(profile: Profile, *, require_implemented: bool) -> None:
             raise ValueError("triage profiles are valid but triage execution is not implemented yet")
 
 
-def _write_profiles(path: Path, profiles: dict[str, Profile]) -> None:
+def _write_profile_file(
+    path: Path,
+    *,
+    defaults: Profile | None,
+    raw_defaults: dict[str, Any] | None = None,
+    rendered_profiles: dict[str, Profile],
+    raw_profiles: dict[str, dict[str, Any]] | None = None,
+    omit_reference_defaults: bool = False,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    content = "\n".join(
-        profile_to_toml(profile, include_wrapper=True).rstrip()
-        for _, profile in sorted(profiles.items())
-    )
-    path.write_text(content + "\n", encoding="utf-8")
+    blocks: list[str] = []
+    if raw_defaults is not None:
+        blocks.append(_raw_profile_to_toml_impl(raw_defaults, root=("defaults",)).rstrip())
+    elif defaults is not None:
+        blocks.append(
+            _profile_to_toml_impl(defaults, root=("defaults",), omit_builtin_defaults=True).rstrip()
+        )
+    raw_profiles = raw_profiles or {}
+    for name in sorted(set(raw_profiles) | set(rendered_profiles)):
+        if name in rendered_profiles:
+            blocks.append(
+                _profile_to_toml_impl(
+                    rendered_profiles[name],
+                    root=("profiles", name),
+                    omit_builtin_defaults=True,
+                    omit_reference_defaults=omit_reference_defaults,
+                    reference=defaults,
+                ).rstrip()
+            )
+        else:
+            blocks.append(_raw_profile_to_toml_impl(raw_profiles[name], root=("profiles", name)).rstrip())
+    _atomic_write_text(path, "\n\n".join(blocks) + "\n")
+
+
+def _raw_profile_to_toml_impl(raw: dict[str, Any], *, root: tuple[str, ...]) -> str:
+    lines: list[str] = []
+    if root:
+        lines.append(f"[{_toml_table_header(root)}]")
+    nested_tables: list[tuple[str, dict[str, Any]]] = []
+    for key, value in raw.items():
+        if isinstance(value, dict):
+            nested_tables.append((key, value))
+            continue
+        lines.append(f"{_toml_key_segment(key)} = {_toml_value(value)}")
+    for key, value in nested_tables:
+        nested = _raw_profile_to_toml_impl(value, root=(*root, key))
+        if nested:
+            lines.append("")
+            lines.append(nested.rstrip())
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _atomic_write_text(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        tmp_path.replace(path)
+        try:
+            dir_fd = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        except OSError:
+            return
+        try:
+            os.fsync(dir_fd)
+        except OSError:
+            pass
+        finally:
+            os.close(dir_fd)
+    except Exception:
+        with suppress(FileNotFoundError):
+            tmp_path.unlink()
+        raise
 
 
 def _merge_dataclass(base: Any, override: Any) -> Any:
@@ -410,15 +581,15 @@ def _bool(value: Any, field: str) -> bool:
 
 
 def _int(value: Any, field: str) -> int:
-    if not isinstance(value, int):
+    if isinstance(value, bool) or not isinstance(value, int):
         raise ValueError(f"{field} must be an integer")
-    return value
+    return int(value)
 
 
 def _optional_float(value: Any, field: str) -> float | None:
     if value is None:
         return None
-    if not isinstance(value, int | float):
+    if isinstance(value, bool) or not isinstance(value, int | float):
         raise ValueError(f"{field} must be a number")
     return float(value)
 
@@ -436,4 +607,14 @@ def _toml_value(value: Any) -> str:
 
 
 def _toml_string(value: str) -> str:
+    return json.dumps(value)
+
+
+def _toml_table_header(path: tuple[str, ...]) -> str:
+    return ".".join(_toml_key_segment(segment) for segment in path)
+
+
+def _toml_key_segment(value: str) -> str:
+    if TOML_BARE_KEY_RE.fullmatch(value):
+        return value
     return json.dumps(value)

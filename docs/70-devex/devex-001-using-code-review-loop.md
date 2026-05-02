@@ -4,7 +4,7 @@ type: DEVEX
 title: Using code-review-loop
 status: Draft
 version: '0.2'
-last_updated: '2026-05-01'
+last_updated: '2026-05-02'
 owner: GitCmurf
 docops_version: '2.0'
 area: devex
@@ -19,7 +19,7 @@ keywords:
 > **Owner:** GitCmurf
 > **Status:** Draft
 > **Version:** 0.2
-> **Last Updated:** 2026-05-01
+> **Last Updated:** 2026-05-02
 > **Type:** DEVEX
 > **Area:** devex
 > **Description:** Operator guide for the code-review-loop utility
@@ -121,6 +121,10 @@ or command history matters.
 Use `--summary-format text` for watched terminal runs. Use `json` or `both`
 only when the stdout JSON is being captured by another tool; `both` intentionally
 prints the full JSON summary after the human-readable summary.
+Clear terminal summaries stay compact and point to artifacts instead of
+reprinting the successful review prose. Non-clear summaries include the latest
+actionable excerpt so the next operator or agent can continue from the right
+failure.
 
 Use repository-specific checks. For Meminit-backed repositories, include:
 
@@ -148,13 +152,21 @@ revrem \
   --check "pytest -q"
 ```
 
-Use `--initial-review-file latest` only when the default artifact directory is
-being used and the latest final review is definitely the artifact to continue.
+Use `--initial-review-file latest` with the effective artifact directory. When
+`--artifact-dir` or a profile sets `output.artifact_dir`, `latest` resolves
+under that directory instead of the default workspace-local tree.
 
 ### Profile-based usage
 
 Profiles live in `~/.config/revrem/profiles.toml`. Project-local overrides live
-in `.revrem.toml` in the target repository. A minimal final-PR profile:
+in `.revrem.toml` at the target repository root, so subdirectory invocations
+still pick up the same project settings. User-global `[defaults]` entries in
+`profiles.toml` are loaded for bare `revrem` runs, merged before the selected
+user profile, and are preserved by `revrem config` writes. Existing profiles
+stay in their original explicit form when the file is rewritten, so omitted
+fields keep inheriting shared defaults. If a profile field is explicitly set
+back to a built-in default, the rewrite keeps it when the file's `[defaults]`
+table would otherwise change behavior. A minimal final-PR profile:
 
 ```toml
 [profiles.final-pr]
@@ -191,6 +203,18 @@ CLI flags override profile values, so this is valid:
 revrem --profile final-pr --base release/1.2 --check "pytest -q tests/smoke"
 ```
 
+Timeout fields are numeric. A TOML boolean such as `timeout_seconds = false`
+is rejected during profile loading so that accidental type mistakes cannot
+disable bounded execution. A phase timeout set to `0` stays disabled for that
+phase and is passed through to the matching subprocess unchanged. If a phase
+omits `timeout_seconds`, it falls back to the built-in default timeout instead
+of inheriting the sibling phase's value.
+Negative phase timeouts are rejected during profile loading as invalid
+configuration, matching the CLI's `--timeout-seconds` validation.
+Profile `review.reasoning_effort` and `remediation.reasoning_effort` values are
+validated during profile loading and must be one of `minimal`, `low`, `medium`,
+or `high`.
+
 Profile management commands:
 
 ```bash
@@ -201,6 +225,13 @@ revrem config export final-pr
 revrem config import profiles.toml
 revrem config doctor --profile final-pr --format json
 ```
+
+These management commands validate reserved harness names and triage syntax
+without requiring the backend to be executable yet; only `revrem --profile ...`
+rejects unimplemented harnesses before the loop starts.
+
+The `--format` flag is accepted both before and after the subcommand, so the
+global form `revrem config --format json doctor --profile final-pr` works too.
 
 Profiles reserve `review.harness`, `triage.harness`, and
 `remediation.harness` for future headless adapters such as `claude`, `gemini`,
@@ -245,6 +276,9 @@ available in the current CLI.
   supports them, and emits both common window-title escape forms for broader
   terminal compatibility. Terminals that ignore those sequences will still run
   normally.
+- If a subprocess refresh times out while a remediation prompt is still being
+  written, the loop retries without manually closing stdin so the child can
+  keep receiving the buffered prompt while title updates continue.
 
 ### Development checks
 
