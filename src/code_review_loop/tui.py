@@ -7,7 +7,10 @@ import importlib
 import importlib.util
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
+
+from code_review_loop import tui_state
 
 INSTALL_HINT = "Install it with: python -m pip install 'code-review-loop[tui]'"
 
@@ -38,6 +41,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
 
 
 def run_textual_app() -> None:
+    snapshot = tui_state.build_home_snapshot(cwd=Path.cwd())
     textual_app = importlib.import_module("textual.app")
     widgets = importlib.import_module("textual.widgets")
 
@@ -69,6 +73,12 @@ def run_textual_app() -> None:
                 "\n".join(
                     [
                         "[b]RevRem[/b]",
+                        "",
+                        f"Workspace: {snapshot.cwd}",
+                        f"Profiles: {len(snapshot.profiles)} available",
+                        f"Recent runs: {len(snapshot.recent_runs)} loaded",
+                        "Implemented harnesses: "
+                        + ", ".join(h.name for h in snapshot.harnesses if h.implemented),
                         "",
                         "Home: recent runs and quick-start profiles",
                         "Profiles: create, inspect, import, and export TOML profiles",

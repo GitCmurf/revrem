@@ -325,6 +325,9 @@ Implementation must preserve these boundaries:
   `src/code_review_loop/profiles.py`.
 - Progress rendering lives behind a small interface, for example
   `src/code_review_loop/progress.py`, with compact and Rich implementations.
+- TUI view state lives behind `src/code_review_loop/tui_state.py` so Textual
+  widgets consume reusable profile, history, pipeline, and harness view models
+  rather than reimplementing CLI orchestration.
 - Shared run history lives behind `src/code_review_loop/run_history.py`; loop
   orchestration writes per-run artifacts first and then appends compact shared
   metadata from the top-level CLI.
@@ -491,6 +494,7 @@ Deliverables:
 - `revrem ui` entry point.
 - Optional `tui` extra declaring Textual without adding default runtime
   dependencies.
+- Dependency-free TUI state module for Home/Profile/Pipeline/Run Monitor data.
 - Home, Profiles, Pipeline Builder, and Run Monitor screens.
 - TUI smoke tests with dependency-guarded execution.
 - Screenshots or recorded terminal demo artifacts for PR review.
@@ -499,6 +503,8 @@ Initial slice done when:
 
 - `revrem ui --dry-run` succeeds without Textual installed.
 - `revrem ui` exits cleanly with an installation hint when Textual is absent.
+- TUI state tests cover profile discovery, run-history loading, harness
+  metadata, and pipeline phase modeling without importing Textual.
 - The default development gate remains free of Textual imports.
 
 Full milestone done when:

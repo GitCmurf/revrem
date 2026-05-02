@@ -347,7 +347,9 @@ entry point for the planned Textual interface:
 Without the `tui` extra, `revrem ui` exits cleanly with an installation hint.
 The first TUI slice is a navigational shell; the CLI remains the authoritative
 execution path while the full Home, Profiles, Pipeline Builder, and Run Monitor
-screens are completed.
+screens are completed. The shell is backed by dependency-free view models for
+profiles, recent runs, harness metadata, and pipeline phases so future Textual
+widgets can reuse the same tested state without duplicating CLI logic.
 
 ### Exit codes
 

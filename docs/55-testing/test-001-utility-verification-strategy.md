@@ -85,6 +85,8 @@ handling for review text that contains Rich markup syntax.
 scripts, including optional extras metadata.
 `tests/test_tui.py` covers the dependency-gated `revrem ui` entry point without
 requiring Textual in the default development environment.
+`tests/test_tui_state.py` covers dependency-free TUI view models for profile
+discovery, run-history loading, harness metadata, and pipeline phase summaries.
 
 ### Local verification
 

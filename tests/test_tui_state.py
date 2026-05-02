@@ -1,0 +1,76 @@
+from __future__ import annotations
+
+import json
+
+from code_review_loop import profiles, tui_state
+
+
+def test_home_snapshot_collects_profiles_history_and_harnesses(tmp_path):
+    home = tmp_path / "home"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    config_path = profiles.user_config_path(home)
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.final-pr]
+description = "Final PR"
+
+[profiles.final-pr.pipeline]
+base = "main"
+max_iterations = 3
+checks = ["pytest -q", "git diff --check"]
+""",
+        encoding="utf-8",
+    )
+    history_path = tmp_path / "runs.jsonl"
+    history_path.write_text(
+        json.dumps({"run_id": "run-1", "final_status": "clear"}) + "\n",
+        encoding="utf-8",
+    )
+
+    snapshot = tui_state.build_home_snapshot(
+        cwd=repo,
+        home=home,
+        history_path=history_path,
+    )
+
+    assert snapshot.cwd == str(repo)
+    assert [profile.name for profile in snapshot.profiles] == ["final-pr"]
+    assert snapshot.profiles[0].checks == ("pytest -q", "git diff --check")
+    assert snapshot.recent_runs[0]["run_id"] == "run-1"
+    assert {harness.name for harness in snapshot.harnesses} >= {
+        "codex",
+        "claude",
+        "gemini",
+        "opencode",
+        "kilo",
+    }
+    assert next(harness for harness in snapshot.harnesses if harness.name == "codex").implemented is True
+    assert next(harness for harness in snapshot.harnesses if harness.name == "claude").implemented is False
+
+
+def test_pipeline_phases_model_review_triage_checks_and_commit():
+    profile = profiles.Profile(
+        name="demo",
+        pipeline=profiles.PipelineConfig(checks=("pytest -q",)),
+        review=profiles.PhaseConfig(model="gpt-5.5", reasoning_effort="high", timeout_seconds=600),
+        triage=profiles.TriageConfig(enabled=True, model="gpt-5.4-mini", reasoning_effort="low"),
+        remediation=profiles.PhaseConfig(model="gpt-5.4-mini", reasoning_effort="medium"),
+        commit=profiles.CommitConfig(enabled=True, message_model="gpt-5.3-codex-spark"),
+    )
+
+    phases = tui_state.pipeline_phases(profile)
+
+    assert [phase.name for phase in phases] == [
+        "review",
+        "triage",
+        "remediation",
+        "checks",
+        "commit",
+    ]
+    assert phases[0].model == "gpt-5.5"
+    assert phases[1].enabled is True
+    assert phases[2].reasoning_effort == "medium"
+    assert phases[3].command_count == 1
+    assert phases[4].model == "gpt-5.3-codex-spark"
