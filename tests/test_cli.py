@@ -601,6 +601,20 @@ def test_git_staging_commands_for_commit_reset_relative_artifact_dir(tmp_path):
     ]
 
 
+def test_git_staging_commands_skip_relative_artifact_dir_outside_cwd(tmp_path):
+    repo_root = tmp_path / "repo"
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=repo_root,
+        artifact_dir=Path("../revrem-artifacts"),
+    )
+
+    assert MODULE.git_add_command_for_commit(config) == ["git", "add", "-A"]
+    assert MODULE.git_reset_artifact_command_for_commit(config) is None
+
+
 def test_loop_skips_commit_when_checks_fail(tmp_path):
     calls = []
     review_outputs = iter(

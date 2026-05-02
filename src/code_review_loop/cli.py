@@ -815,17 +815,22 @@ def git_add_command_for_commit(_config: LoopConfig) -> list[str]:
 
 
 def git_reset_artifact_command_for_commit(config: LoopConfig) -> list[str] | None:
-    artifact_rel = config.artifact_dir
-    if artifact_rel.is_absolute():
-        try:
-            artifact_rel = artifact_rel.relative_to(config.cwd)
-        except ValueError:
-            return None
+    cwd_root = config.cwd.resolve()
+    artifact_root = (
+        config.artifact_dir
+        if config.artifact_dir.is_absolute()
+        else config.cwd / config.artifact_dir
+    )
+    resolved_root = artifact_root.resolve()
+    try:
+        artifact_rel = resolved_root.relative_to(cwd_root)
+    except ValueError:
+        return None
     if artifact_rel == Path("."):
         return None
-    # Keep generated loop artifacts out of the staged commit. Use reset instead
-    # of an exclude pathspec on git add; ignored artifact roots such as tmp/
-    # can make an add pathspec fail before the exclude is applied.
+    # Keep generated loop artifacts out of the staged commit. Resolve relative
+    # artifact roots against the working tree first so paths outside cwd are
+    # skipped instead of being handed to git reset as invalid pathspecs.
     return ["git", "reset", "--", artifact_rel.as_posix()]
 
 
