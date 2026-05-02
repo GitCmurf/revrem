@@ -1945,6 +1945,19 @@ def test_config_commands_create_show_list_and_delete_profile(tmp_path, monkeypat
     assert MODULE.main(["config", "show", "smoke"]) == 1
 
 
+def test_config_import_rejects_missing_source_file(tmp_path, monkeypatch, capsys):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+
+    missing = tmp_path / "missing.toml"
+
+    assert MODULE.main(["config", "import", str(missing)]) == 1
+    assert "profile import file not found" in capsys.readouterr().err
+    assert not (home / ".config" / "revrem" / "profiles.toml").exists()
+
+
 def test_config_list_includes_last_used_from_run_history(tmp_path, monkeypatch, capsys):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))

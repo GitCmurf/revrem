@@ -525,6 +525,8 @@ def delete_user_profile(name: str, *, home: Path | None = None) -> Path:
 
 
 def import_user_profiles(path: Path, *, home: Path | None = None, force: bool = False) -> Path:
+    if not path.is_file():
+        raise FileNotFoundError(f"profile import file not found: {path}")
     imported = load_profile_file(path)
     destination = user_config_path(home)
     current = load_profile_file(destination)

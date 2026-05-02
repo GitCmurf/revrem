@@ -263,6 +263,9 @@ revrem config import profiles.toml
 revrem config doctor --profile final-pr --format json
 ```
 
+`revrem config import` requires an existing TOML file and fails fast if the
+path is missing, rather than creating an empty destination config rewrite.
+
 `revrem config list` shows each profile's description, source file, and last-used timestamp from run history.
 
 Run-history commands:
