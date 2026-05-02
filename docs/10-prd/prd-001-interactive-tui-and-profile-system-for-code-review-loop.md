@@ -3,7 +3,7 @@ document_id: REVREM-PRD-001
 type: PRD
 title: Interactive TUI and Profile System for code-review-loop
 status: Draft
-version: "0.4"
+version: "0.5"
 last_updated: '2026-05-02'
 owner: GitCmurf
 area: product
@@ -29,7 +29,7 @@ related_ids:
 > **Document ID:** REVREM-PRD-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 0.4
+> **Version:** 0.5
 > **Last Updated:** 2026-05-02
 > **Type:** PRD
 
@@ -139,13 +139,14 @@ bounded nested Codex execution, deterministic artifacts, plain shell compatibili
 - Rich progress display behind an optional extra.
 - Textual TUI behind an optional extra.
 - Run history metadata under `~/.local/share/revrem/`.
+- Optional checkpoint commits after verified remediation passes.
 
 ### Non-Goals
 
 - Network service, daemon, or browser UI.
 - Multi-user server deployment.
 - Secret storage or credential management.
-- Automatic git commits or pushes.
+- Automatic pushes, branch creation, or remote repository mutation.
 - Replacing `codex`; additional harnesses are designed for, but delivered after the profile and
   progress foundations are stable.
 
@@ -234,6 +235,11 @@ model = "gpt-5.4-mini"
 reasoning_effort = "medium"
 timeout_seconds = 1800
 
+[profiles.final-pr.commit]
+enabled = false
+message_model = "gpt-5.3-codex-spark"
+message_prompt = "Write one concise git commit subject for the staged RevRem remediation changes."
+
 [profiles.final-pr.output]
 summary_format = "both"
 debug_status_detection = true
@@ -281,6 +287,14 @@ handoff and the original review/check context. Non-Codex triage harness names
 remain valid configuration syntax for management commands but are rejected on
 the executable path until their adapters exist.
 
+Optional commit-after-remediation is implemented as a separate post-check phase.
+Remediation agents do not own git history. After checks pass, RevRem may stage
+the current worktree with `git add -A`, skip clean trees, optionally ask a
+read-only Codex invocation for a concise subject, and run `git commit`
+deterministically. This keeps commits reproducible and preserves a future path
+for cheaper commit-message models without coupling history mutation to the
+remediation prompt.
+
 ### Phase 4: Textual TUI
 
 `revrem ui` launches a Textual app with four screens:
@@ -311,6 +325,9 @@ Implementation must preserve these boundaries:
 - Shared run history lives behind `src/code_review_loop/run_history.py`; loop
   orchestration writes per-run artifacts first and then appends compact shared
   metadata from the top-level CLI.
+- Commit creation is a deterministic local phase after successful checks.
+  Agent/model calls may draft the subject but must not perform staging,
+  committing, or pushing.
 - Harness execution is introduced as a registry only when a second harness is implemented; until
   then, avoid speculative abstractions that obscure the Codex path.
 - Optional dependencies are imported inside feature entry points only.
@@ -345,7 +362,8 @@ The quality bar for every phase is:
 - [FR-8] Implement `revrem config list/show/new/edit/delete/export/import/doctor`.
 - [FR-9] Record run metadata under `~/.local/share/revrem/runs.jsonl`.
 - [FR-10] Support compact text progress and optional Rich live progress.
-- [FR-11] Implement `revrem ui` behind the `[tui]` extra.
+- [FR-11] Support optional verified checkpoint commits after remediation passes.
+- [FR-12] Implement `revrem ui` behind the `[tui]` extra.
 
 Milestone status as of version 0.4:
 
@@ -354,7 +372,9 @@ Milestone status as of version 0.4:
 - FR-10 is partially implemented: compact progress remains the default and
   `--progress-style rich` activates optional Rich rendering when the `progress`
   extra is installed. Full live Rich layout remains part of the TUI-facing work.
-- FR-11 remains pending.
+- FR-11 is implemented for Codex commit-message drafting with deterministic
+  local git staging and commit execution after checks pass.
+- FR-12 remains pending.
 - Codex triage is implemented; non-Codex harnesses remain reserved syntax and
   executable runs fail fast when a resolved profile selects an unimplemented
   backend.
@@ -432,6 +452,9 @@ Deliverables:
 - Renderer interface.
 - Compact renderer preserving current output.
 - Rich renderer behind optional extra.
+- Optional commit-after-remediation phase with post-check gating, skipped clean
+  trees, read-only commit-message drafting, and commit-failure summary
+  artifacts.
 - Behavioral tests for history writes, opt-out, newest-first reads, and phase
   transitions.
 
@@ -442,6 +465,8 @@ Done when:
 - Dry runs and `--no-run-history` leave shared history untouched.
 - Triage-enabled Codex profiles run review -> triage -> remediation -> checks
   without allowing the triage phase to edit files.
+- Commit-after-remediation runs only after checks pass and records commit
+  artifacts or failure summaries without hiding the run state.
 - Existing progress tests pass unchanged or with intentional fixture updates.
 - Rich mode degrades cleanly when the extra is absent.
 
@@ -548,6 +573,7 @@ revrem history --format json list --limit 5
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 0.5 | 2026-05-02 | Codex | Added optional verified commit-after-remediation phase and clarified deterministic git boundary |
 | 0.4 | 2026-05-02 | Codex | Implemented FR-9 run history; added history CLI, JSONL architecture contract, optional read-only Codex triage, local progress timestamps, and initial optional Rich progress |
 | 0.3 | 2026-05-02 | Codex | Marked profile/config milestones implemented; clarified remaining run-history, Rich progress, and TUI scope |
 | 0.2 | 2026-05-01 | Codex | Reworked PRD into staged engineering contract; added dev/stable distribution boundary, architecture constraints, milestones, and acceptance gates |

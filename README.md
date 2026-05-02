@@ -37,6 +37,13 @@ artifact directory.
 Progress timestamps use local terminal time. Persisted history timestamps remain
 UTC ISO-8601 values for stable machine processing.
 
+Use `--commit-after-remediation` when each verified remediation pass should be
+captured as a git commit. RevRem stages the workspace with `git add -A` only
+after checks pass, skips the commit when there are no staged changes, and runs
+`git commit` itself. `--commit-message-model` controls the optional read-only
+Codex call that drafts the commit subject; profile configuration defaults that
+message model to `gpt-5.3-codex-spark`.
+
 Named profiles can hold the same settings in `~/.config/revrem/profiles.toml`.
 That file can also carry a shared `[defaults]` table for user-wide model and
 operator preferences. Bare `revrem` invocations load those defaults too, and

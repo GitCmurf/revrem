@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 import re
 
@@ -273,6 +274,42 @@ def test_triage_command_uses_read_only_exec_with_phase_model(tmp_path):
     assert command[-1] == "-"
 
 
+def test_commit_message_command_uses_read_only_exec_with_configured_model(tmp_path):
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        commit_message_model="gpt-5.3-codex-spark",
+    )
+
+    command = MODULE.build_commit_message_command(config)
+
+    assert command == [
+        "codex",
+        "exec",
+        "--sandbox",
+        "read-only",
+        "--color",
+        "never",
+        "--model",
+        "gpt-5.3-codex-spark",
+        "-",
+    ]
+
+
+def test_sanitize_commit_message_uses_first_plain_subject():
+    assert (
+        MODULE.sanitize_commit_message(
+            'Commit message: "Harden RevRem commit flow"\n\nExplanation...',
+            fallback="fallback",
+        )
+        == "Harden RevRem commit flow"
+    )
+    assert MODULE.sanitize_commit_message("", fallback="fallback") == "fallback"
+
+
 def test_loop_stops_after_review_reports_clear(tmp_path):
     calls = []
     review_outputs = iter(
@@ -409,6 +446,138 @@ def test_loop_writes_failure_summary_when_triage_fails(tmp_path):
     assert '"artifact_paths"' in summary
     assert "triage-1.txt" in summary
     assert '"1.txt"' not in summary
+
+
+def test_loop_commits_after_passing_checks(tmp_path):
+    calls = []
+    review_outputs = iter(
+        [
+            "Full review comments:\n\n- [P2] Fix profile merge\n",
+            "No actionable findings.\nREVIEW_STATUS: clear\n",
+        ]
+    )
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[0] == "codex" and "review" in args:
+            return MODULE.CommandResult(list(args), 0, stdout=next(review_outputs))
+        if args[0] == "pytest":
+            return MODULE.CommandResult(list(args), 0, stdout="1 passed\n")
+        if args[:3] == ["git", "add", "-A"]:
+            return MODULE.CommandResult(list(args), 0)
+        if args[:3] == ["git", "diff", "--cached"] and "--quiet" in args:
+            return MODULE.CommandResult(list(args), 1)
+        if args[:3] == ["git", "diff", "--cached"] and "--stat" in args:
+            return MODULE.CommandResult(list(args), 0, stdout=" src/code.py | 2 +-\n")
+        if args[:3] == ["git", "diff", "--cached"] and "--name-only" in args:
+            return MODULE.CommandResult(list(args), 0, stdout="src/code.py\n")
+        if args[0:2] == ["codex", "exec"] and "--sandbox" in args:
+            return MODULE.CommandResult(list(args), 0, stdout="Harden RevRem commit flow\n")
+        if args[:3] == ["git", "commit", "-m"]:
+            return MODULE.CommandResult(list(args), 0, stdout="[branch abc] Harden RevRem commit flow\n")
+        return MODULE.CommandResult(list(args), 0, stdout="remediated\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        check_commands=("pytest -q",),
+        commit_after_remediation=True,
+        commit_message_model="gpt-5.3-codex-spark",
+    )
+
+    summary = MODULE.run_loop(config, runner)
+
+    commands = [call[0] for call in calls]
+    assert ["git", "add", "-A"] in commands
+    assert ["git", "commit", "-m", "Harden RevRem commit flow"] in commands
+    assert any(command[:6] == ["codex", "exec", "--sandbox", "read-only", "--color", "never"] for command in commands)
+    assert summary["iterations"][0]["commit_status"] == "committed"
+    assert set(summary["artifact_paths"]["commits"]) == {
+        str(tmp_path / "artifacts" / "commit-1-add.txt"),
+        str(tmp_path / "artifacts" / "commit-1-message-draft.txt"),
+        str(tmp_path / "artifacts" / "commit-1.txt"),
+        str(tmp_path / "artifacts" / "commit-1-message.txt"),
+    }
+    commit_prompt = next(
+        input_text
+        for command, input_text, _timeout in calls
+        if command[:6] == ["codex", "exec", "--sandbox", "read-only", "--color", "never"]
+    )
+    assert commit_prompt is not None and "Files:" in commit_prompt
+
+
+def test_loop_skips_commit_when_checks_fail(tmp_path):
+    calls = []
+    review_outputs = iter(
+        [
+            "Full review comments:\n\n- [P2] Fix profile merge\n",
+            "No actionable findings.\nREVIEW_STATUS: clear\n",
+        ]
+    )
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[0] == "codex" and "review" in args:
+            return MODULE.CommandResult(list(args), 0, stdout=next(review_outputs))
+        if args[0] == "pytest":
+            return MODULE.CommandResult(list(args), 1, stdout="1 failed\n")
+        return MODULE.CommandResult(list(args), 0, stdout="remediated\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        check_commands=("pytest -q",),
+        commit_after_remediation=True,
+        commit_message_model="gpt-5.3-codex-spark",
+    )
+
+    summary = MODULE.run_loop(config, runner)
+
+    assert summary["iterations"][0]["check_failures"] == 1
+    assert "commit_status" not in summary["iterations"][0]
+    assert not any(command[0] == "git" for command, _input_text, _timeout in calls)
+
+
+def test_loop_writes_failure_summary_when_commit_fails(tmp_path):
+    review_outputs = iter(["Full review comments:\n\n- [P2] Fix profile merge\n"])
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[0] == "codex" and "review" in args:
+            return MODULE.CommandResult(list(args), 0, stdout=next(review_outputs))
+        if args[:3] == ["git", "add", "-A"]:
+            return MODULE.CommandResult(list(args), 0)
+        if args[:3] == ["git", "diff", "--cached"] and "--quiet" in args:
+            return MODULE.CommandResult(list(args), 1)
+        if args[:3] == ["git", "diff", "--cached"]:
+            return MODULE.CommandResult(list(args), 0, stdout="src/code.py\n")
+        if args[:3] == ["git", "commit", "-m"]:
+            return MODULE.CommandResult(list(args), 1, stderr="nothing to commit\n")
+        return MODULE.CommandResult(list(args), 0, stdout="ok\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        commit_after_remediation=True,
+        commit_message_model=None,
+    )
+
+    with pytest.raises(MODULE.RunLoopFailed):
+        MODULE.run_loop(config, runner)
+
+    summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
+    assert summary["final_status"] == "error"
+    assert summary["stopped_reason"] == "commit_failed"
+    assert summary["iterations"][0]["commit_failed"] is True
+    assert str(tmp_path / "artifacts" / "commit-1.txt") in summary["artifact_paths"]["commits"]
 
 
 def test_debug_status_detection_writes_diagnostic_artifact(tmp_path):
@@ -759,6 +928,9 @@ timeout_seconds = 1800
 model = "gpt-5.4-mini"
 reasoning_effort = "low"
 
+[profiles.final-pr.commit]
+enabled = true
+
 [profiles.final-pr.output]
 summary_format = "json"
 debug_status_detection = true
@@ -790,10 +962,61 @@ quiet_progress = true
     assert config.reasoning_effort is None
     assert config.review_reasoning_effort == "medium"
     assert config.remediation_reasoning_effort == "low"
+    assert config.commit_after_remediation is True
+    assert config.commit_message_model == "gpt-5.3-codex-spark"
     assert config.timeout_seconds == 300
     assert config.check_commands == ("pytest -q", "git diff --check")
     assert config.debug_status_detection is True
     assert config.progress is False
+
+
+def test_main_commit_message_model_override_wins_over_profile_default(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    config_path = home / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.final-pr.review]
+model = "gpt-5.5"
+
+[profiles.final-pr.remediation]
+model = "gpt-5.4-mini"
+
+[profiles.final-pr.commit]
+enabled = true
+message_model = "gpt-5.3-codex-spark"
+""",
+        encoding="utf-8",
+    )
+    captured_configs = []
+
+    def fake_run_loop(config):
+        captured_configs.append(config)
+        return {
+            "artifact_dir": str(config.artifact_dir),
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+            "iterations": [],
+        }
+
+    monkeypatch.setattr(MODULE, "run_loop", fake_run_loop)
+
+    exit_code = MODULE.main(
+        [
+            "--profile",
+            "final-pr",
+            "--commit-message-model",
+            "gpt-test-commit",
+            "--dry-run",
+        ]
+    )
+
+    assert exit_code == 0
+    assert captured_configs[0].commit_after_remediation is True
+    assert captured_configs[0].commit_message_model == "gpt-test-commit"
 
 
 def test_main_reasoning_effort_override_applies_to_review_and_remediation_only(
@@ -1641,6 +1864,32 @@ def test_terminal_summary_omits_latest_review_excerpt_when_clear():
     assert "Latest review: tmp/run/review-1.txt" in text
     assert "Latest actionable review output:" not in text
     assert "discrete, actionable bugs" not in text
+
+
+def test_terminal_summary_prefers_commit_output_artifact():
+    summary = {
+        "artifact_dir": "tmp/run",
+        "final_status": "findings",
+        "stopped_reason": "max_iterations_reached",
+        "iterations": [
+            {"iteration": 1, "review_status": "findings", "check_failures": 0, "commit_status": "committed"},
+        ],
+        "artifact_paths": {
+            "reviews": ["tmp/run/review-1.txt"],
+            "commits": [
+                "tmp/run/commit-1-add.txt",
+                "tmp/run/commit-1-message-draft.txt",
+                "tmp/run/commit-1.txt",
+                "tmp/run/commit-1-message.txt",
+            ],
+            "summary": "tmp/run/summary.json",
+        },
+    }
+
+    text = MODULE.format_terminal_summary(summary)
+
+    assert "1: review=findings, check failures: 0, commit=committed" in text
+    assert "Latest commit artifact: tmp/run/commit-1.txt" in text
 
 
 def test_summary_records_unknown_review_warning_and_bug_report(tmp_path):

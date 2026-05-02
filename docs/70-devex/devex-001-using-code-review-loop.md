@@ -209,6 +209,10 @@ timeout_seconds = 1800
 [profiles.final-pr.remediation]
 model = "gpt-5.4-mini"
 
+[profiles.final-pr.commit]
+enabled = false
+message_model = "gpt-5.3-codex-spark"
+
 [profiles.final-pr.output]
 summary_format = "text"
 debug_status_detection = true
@@ -269,6 +273,21 @@ Profiles reserve `review.harness`, `triage.harness`, and
 `opencode`, and `kilo`. The current executable loop supports only Codex; using
 another harness in a resolved run fails before starting subprocesses.
 
+Set `commit.enabled = true` or pass `--commit-after-remediation` only in a
+worktree where it is acceptable for RevRem to stage all current changes with
+`git add -A` after a verified remediation pass. The commit step is separate from
+the remediation model: checks must pass first, RevRem skips the commit if there
+are no staged changes, and RevRem runs `git commit` itself. The optional
+`commit.message_model` or `--commit-message-model` controls only the read-only
+Codex call that drafts the commit subject. If no explicit CLI value is supplied,
+the profile value is used; the built-in profile default is
+`gpt-5.3-codex-spark`.
+
+```bash
+revrem --profile final-pr --commit-after-remediation
+revrem --profile final-pr --commit-after-remediation --commit-message-model gpt-5.3-codex-spark
+```
+
 Optional Codex triage can run between review and remediation. It uses
 `codex exec` with `--sandbox read-only`, writes `triage-N.txt` beside the review
 and remediation artifacts, and passes a concise handoff plus the original
@@ -312,6 +331,9 @@ it is not available in the current CLI.
   loop is still actively remediating.
 - Inspect the working tree after each non-clear run before launching another
   remediation pass.
+- Enable `--commit-after-remediation` only when automatic staging of the current
+  worktree is intended. It is best suited to focused loop runs where each pass
+  should become a reviewable checkpoint commit.
 - Use `--debug-status-detection` when a run appears to keep remediating after
   the review text looks clear. The flag writes `*-status.json` files next to
   review artifacts and logs the compact reason for each clear/findings/unknown
@@ -354,6 +376,6 @@ The wrapper runs tests, `ruff check .`, `mypy src`, and DocOps checks when
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
-| 0.3 | 2026-05-02 | Codex | Added profile-based usage, config commands, and current harness/triage boundary |
+| 0.3 | 2026-05-02 | Codex | Added profile-based usage, config commands, current harness/triage boundary, history/progress hardening, and verified commit-after-remediation guidance |
 | 0.2 | 2026-05-01 | Codex | Updated usage guidance for stable `revrem` entry point, dev/stable install boundary, terminal title progress, and current CLI limitations |
 | 0.1 | 2026-04-30 | GitCmurf | Initial draft |

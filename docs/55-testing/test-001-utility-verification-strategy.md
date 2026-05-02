@@ -45,6 +45,10 @@ The main test module is `tests/test_cli.py`. It covers:
   flags.
 - Optional read-only triage command construction and review -> triage ->
   remediation prompt handoff.
+- Optional commit-after-remediation behavior, including post-check gating,
+  deterministic git commit execution, read-only commit-message drafting, skipped
+  commits when no staged diff exists, and failure-summary recording when git
+  commit fails.
 - Bounded loop behavior, including final review behavior and exit status.
 - Check-command failure handling and prompt forwarding into the next
   remediation pass.
@@ -64,7 +68,8 @@ The main test module is `tests/test_cli.py`. It covers:
 - Run-history write/opt-out behavior and `revrem history list` output.
 
 `tests/test_profiles.py` covers TOML profile parsing, validation, precedence,
-user-profile writes/deletes/imports, and reserved future harness handling.
+commit-message model defaults, user-profile writes/deletes/imports, and
+reserved future harness handling.
 `tests/test_run_history.py` covers shared JSONL history paths, record shape, and
 newest-first reads.
 `tests/test_progress.py` covers optional Rich renderer safety, including literal

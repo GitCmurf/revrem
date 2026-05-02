@@ -30,6 +30,7 @@ REVIEW_COMMENTS_HEADING_RE = re.compile(
 )
 PROGRESS_PHASE_CODES = {
     "check": "chk",
+    "commit": "com",
     "remediate": "rem",
     "review": "rev",
     "triage": "tri",
@@ -65,6 +66,17 @@ likely false positives, implementation order, and verification commands.
 Review and check output:
 """
 
+DEFAULT_COMMIT_MESSAGE_PROMPT = """Write one concise git commit subject for the staged RevRem remediation changes.
+
+Rules:
+- Output only the commit subject.
+- Use imperative mood.
+- Keep it under 72 characters.
+- Do not use Markdown or quotes.
+
+Staged change summary:
+"""
+
 
 @dataclass(frozen=True)
 class CommandResult:
@@ -87,6 +99,9 @@ class LoopConfig:
     reasoning_effort: str | None = None
     review_reasoning_effort: str | None = None
     remediation_reasoning_effort: str | None = None
+    commit_after_remediation: bool = False
+    commit_message_model: str | None = None
+    commit_message_prompt: str | None = None
     triage_enabled: bool = False
     triage_model: str | None = None
     triage_reasoning_effort: str | None = None
@@ -606,6 +621,16 @@ def build_triage_command(config: LoopConfig) -> list[str]:
     return command
 
 
+def build_commit_message_command(config: LoopConfig) -> list[str]:
+    command = [config.codex_bin, "exec"]
+    command.extend(["--sandbox", "read-only"])
+    command.extend(["--color", config.exec_color])
+    if config.commit_message_model:
+        command.extend(["--model", config.commit_message_model])
+    command.append("-")
+    return command
+
+
 def phase_timeout_seconds(config: LoopConfig, value: float | None) -> float | None:
     if value is None:
         return config.timeout_seconds
@@ -768,6 +793,93 @@ def run_checks(config: LoopConfig, runner: Runner, iteration: int) -> list[Comma
     return results
 
 
+def run_commit(config: LoopConfig, runner: Runner, iteration: int) -> str:
+    progress_event(config, "commit", str(iteration), "start", "stage and commit verified remediation")
+    if config.dry_run:
+        write_artifact(config.artifact_dir / f"commit-{iteration}.txt", "DRY_RUN commit skipped\n")
+        progress_event(config, "commit", str(iteration), "skipped", "dry-run")
+        return "skipped"
+
+    add_result = runner(["git", "add", "-A"], config.cwd, None, phase_timeout_seconds(config, config.timeout_seconds))
+    write_artifact(config.artifact_dir / f"commit-{iteration}-add.txt", _combined_output(add_result))
+    if add_result.returncode != 0:
+        progress_event(config, "commit", str(iteration), "failed", "git add failed")
+        raise RuntimeError(f"git add failed for iteration {iteration}")
+
+    diff_quiet = runner(
+        ["git", "diff", "--cached", "--quiet"],
+        config.cwd,
+        None,
+        phase_timeout_seconds(config, config.timeout_seconds),
+    )
+    if diff_quiet.returncode == 0:
+        write_artifact(config.artifact_dir / f"commit-{iteration}.txt", "No staged changes to commit.\n")
+        progress_event(config, "commit", str(iteration), "skipped", "no staged changes")
+        return "skipped"
+    if diff_quiet.returncode != 1:
+        write_artifact(config.artifact_dir / f"commit-{iteration}.txt", _combined_output(diff_quiet))
+        progress_event(config, "commit", str(iteration), "failed", "git diff --cached --quiet failed")
+        raise RuntimeError(f"git staged-diff check failed for iteration {iteration}")
+
+    message = commit_message_for_staged_changes(config, runner, iteration)
+    commit_result = runner(
+        ["git", "commit", "-m", message],
+        config.cwd,
+        None,
+        phase_timeout_seconds(config, config.timeout_seconds),
+    )
+    write_artifact(config.artifact_dir / f"commit-{iteration}.txt", _combined_output(commit_result))
+    if commit_result.returncode != 0:
+        progress_event(config, "commit", str(iteration), "failed", "git commit failed")
+        raise RuntimeError(f"git commit failed for iteration {iteration}")
+    write_artifact(config.artifact_dir / f"commit-{iteration}-message.txt", message + "\n")
+    progress_event(config, "commit", str(iteration), "committed", message)
+    return "committed"
+
+
+def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iteration: int) -> str:
+    fallback = deterministic_commit_message(iteration)
+    stat = runner(["git", "diff", "--cached", "--stat"], config.cwd, None, phase_timeout_seconds(config, config.timeout_seconds))
+    names = runner(["git", "diff", "--cached", "--name-only"], config.cwd, None, phase_timeout_seconds(config, config.timeout_seconds))
+    context = "\n".join(
+        part
+        for part in (
+            "Files:",
+            names.stdout.strip(),
+            "",
+            "Stat:",
+            stat.stdout.strip(),
+        )
+        if part is not None
+    )
+    if not config.commit_message_model:
+        return fallback
+    command = build_commit_message_command(config)
+    prompt_root = config.commit_message_prompt or DEFAULT_COMMIT_MESSAGE_PROMPT
+    prompt = f"{prompt_root}\n{trim_for_prompt(context, config.max_remediation_input_chars)}"
+    result = runner(command, config.cwd, prompt, phase_timeout_seconds(config, config.timeout_seconds))
+    write_artifact(config.artifact_dir / f"commit-{iteration}-message-draft.txt", _combined_output(result))
+    if result.returncode != 0:
+        return fallback
+    return sanitize_commit_message(actionable_review_output(_combined_output(result)), fallback=fallback)
+
+
+def deterministic_commit_message(iteration: int) -> str:
+    return f"revrem: remediate iteration {iteration}"
+
+
+def sanitize_commit_message(output: str, *, fallback: str) -> str:
+    for raw_line in output.splitlines():
+        line = raw_line.strip().strip("`\"'")
+        if not line:
+            continue
+        line = re.sub(r"^commit message:\s*", "", line, flags=re.IGNORECASE).strip()
+        line = line.strip("`\"'")
+        if line:
+            return line[:120]
+    return fallback
+
+
 def _format_check_failures(check_results: list[CommandResult]) -> str:
     failures = [r for r in check_results if r.returncode != 0]
     if not failures:
@@ -832,6 +944,7 @@ def add_artifact_paths(summary: dict[str, object], config: LoopConfig) -> None:
             if path.name.startswith("remediation-") and "last-message" not in path.name
         ],
         "triage": [str(path) for path in files if path.name.startswith("triage-")],
+        "commits": [str(path) for path in files if path.name.startswith("commit-")],
         "last_messages": [
             str(path)
             for path in files
@@ -979,6 +1092,16 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
         check_results = run_checks(config, runner, iteration)
         pending_check_failures = _format_check_failures(check_results)
         iterations[-1]["check_failures"] = sum(1 for result in check_results if result.returncode != 0)
+        if config.commit_after_remediation and not pending_check_failures:
+            try:
+                iterations[-1]["commit_status"] = run_commit(config, runner, iteration)
+            except Exception as exc:
+                summary["final_status"] = "error"
+                summary["stopped_reason"] = "commit_failed"
+                summary["error"] = str(exc)
+                iterations[-1]["commit_failed"] = True
+                write_summary(config, summary)
+                raise RunLoopFailed(summary, f"git commit failed for iteration {iteration}") from exc
 
     if config.final_review:
         status, final_review = run_codex_review(
@@ -1105,7 +1228,13 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
             check_failures = item.get("check_failures")
             check_text = "checks not run" if check_failures is None else f"check failures: {check_failures}"
             failed = " remediation failed" if item.get("remediation_failed") else ""
-            lines.append(f"  {iteration}: review={review_status}, {check_text}{failed}")
+            commit_status = item.get("commit_status")
+            commit_text = f", commit={commit_status}" if commit_status else ""
+            commit_failed = " commit failed" if item.get("commit_failed") else ""
+            lines.append(
+                f"  {iteration}: review={review_status}, {check_text}{failed}"
+                f"{commit_text}{commit_failed}"
+            )
 
     artifact_paths = summary.get("artifact_paths")
     if isinstance(artifact_paths, dict):
@@ -1120,6 +1249,14 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
             lines.append(f"Latest remediation summary: {last_messages[-1]}")
         if isinstance(checks, list) and checks:
             lines.append(f"Latest check outputs: {', '.join(str(path) for path in checks[-2:])}")
+        commits = artifact_paths.get("commits")
+        if isinstance(commits, list) and commits:
+            commit_outputs = [
+                str(path)
+                for path in commits
+                if re.search(r"(?:^|/)commit-\d+\.txt$", str(path))
+            ]
+            lines.append(f"Latest commit artifact: {(commit_outputs or commits)[-1]}")
         summary_path = artifact_paths.get("summary")
         if summary_path:
             lines.append(f"JSON summary: {summary_path}")
@@ -1207,6 +1344,19 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         action="append",
         default=None,
         help="Verification command to run after each remediation pass. Repeatable.",
+    )
+    parser.add_argument(
+        "--commit-after-remediation",
+        action="store_true",
+        help="Stage and commit after each remediation pass whose verification checks pass.",
+    )
+    parser.add_argument(
+        "--commit-message-model",
+        default=None,
+        help=(
+            "Optional model for drafting commit subjects. Defaults to profile commit.message_model, "
+            "then remediation/review model fallbacks."
+        ),
     )
     parser.add_argument(
         "--artifact-dir",
@@ -1433,6 +1583,15 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
     checks = tuple(args.check) if args.check is not None else profile.pipeline.checks
     review_reasoning_effort = args.reasoning_effort or profile.review.reasoning_effort
     remediation_reasoning_effort = args.reasoning_effort or profile.remediation.reasoning_effort
+    review_model = args.review_model or args.model or profile.review.model
+    remediation_model = args.remediation_model or args.model or profile.remediation.model
+    commit_message_model = (
+        args.commit_message_model
+        or profile.commit.message_model
+        or remediation_model
+        or args.model
+        or review_model
+    )
     config = LoopConfig(
         base=pick(args.base, profile.pipeline.base, "main"),
         max_iterations=pick(args.max_iterations, profile.pipeline.max_iterations, 2),
@@ -1440,11 +1599,14 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         cwd=cwd,
         artifact_dir=artifact_dir,
         model=args.model,
-        review_model=args.review_model or args.model or profile.review.model,
-        remediation_model=args.remediation_model or args.model or profile.remediation.model,
+        review_model=review_model,
+        remediation_model=remediation_model,
         reasoning_effort=args.reasoning_effort,
         review_reasoning_effort=review_reasoning_effort,
         remediation_reasoning_effort=remediation_reasoning_effort,
+        commit_after_remediation=profile.commit.enabled or args.commit_after_remediation,
+        commit_message_model=commit_message_model,
+        commit_message_prompt=profile.commit.message_prompt,
         triage_enabled=profile.triage.enabled,
         triage_model=profile.triage.model,
         triage_reasoning_effort=profile.triage.reasoning_effort,

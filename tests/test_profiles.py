@@ -280,6 +280,55 @@ prompt = "Break down the findings."
     assert resolved.triage.prompt == "Break down the findings."
 
 
+def test_profile_commit_defaults_to_spark_message_model(tmp_path):
+    path = tmp_path / "profiles.toml"
+    path.write_text(
+        """
+[profiles.demo.commit]
+enabled = true
+""",
+        encoding="utf-8",
+    )
+
+    loaded = profiles.load_profile_file(path)
+
+    assert loaded.profiles["demo"].commit.enabled is True
+    assert loaded.profiles["demo"].commit.message_model == "gpt-5.3-codex-spark"
+
+
+def test_profile_accepts_explicit_commit_message_model_and_prompt(tmp_path):
+    path = tmp_path / "profiles.toml"
+    path.write_text(
+        """
+[profiles.demo.commit]
+enabled = true
+message_model = "gpt-test-commit"
+message_prompt = "Write a subject."
+""",
+        encoding="utf-8",
+    )
+
+    loaded = profiles.load_profile_file(path)
+
+    assert loaded.profiles["demo"].commit.message_model == "gpt-test-commit"
+    assert loaded.profiles["demo"].commit.message_prompt == "Write a subject."
+
+
+def test_profile_rejects_unknown_commit_keys(tmp_path):
+    path = tmp_path / "profiles.toml"
+    path.write_text(
+        """
+[profiles.bad.commit]
+enabled = true
+model = "gpt-test"
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="commit contains unknown keys: model"):
+        profiles.load_profile_file(path)
+
+
 def test_profile_accepts_rich_progress_style(tmp_path):
     path = tmp_path / "profiles.toml"
     path.write_text(

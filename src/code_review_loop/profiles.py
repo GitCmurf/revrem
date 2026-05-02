@@ -26,12 +26,14 @@ PROFILE_KEYS = (
     "review",
     "triage",
     "remediation",
+    "commit",
     "output",
     "runtime",
 )
 PIPELINE_KEYS = ("base", "max_iterations", "final_review", "checks")
 PHASE_KEYS = ("harness", "model", "reasoning_effort", "timeout_seconds")
 TRIAGE_KEYS = ("enabled", "harness", "model", "reasoning_effort", "timeout_seconds", "prompt")
+COMMIT_KEYS = ("enabled", "message_model", "message_prompt")
 OUTPUT_KEYS = (
     "summary_format",
     "debug_status_detection",
@@ -80,6 +82,13 @@ class PipelineConfig:
 
 
 @dataclass(frozen=True)
+class CommitConfig:
+    enabled: bool = False
+    message_model: str | None = "gpt-5.3-codex-spark"
+    message_prompt: str | None = None
+
+
+@dataclass(frozen=True)
 class OutputConfig:
     summary_format: str = "text"
     debug_status_detection: bool = False
@@ -109,6 +118,7 @@ class Profile:
     review: PhaseConfig = field(default_factory=PhaseConfig)
     triage: TriageConfig = field(default_factory=TriageConfig)
     remediation: PhaseConfig = field(default_factory=PhaseConfig)
+    commit: CommitConfig = field(default_factory=CommitConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
     runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
     source: str | None = None
@@ -182,6 +192,7 @@ def parse_profile(name: str, raw: dict[str, Any], *, source: str | None = None) 
         f"{name}.remediation",
     )
     output = parse_output(_table(raw.get("output", {}), f"{name}.output"))
+    commit = parse_commit(_table(raw.get("commit", {}), f"{name}.commit"))
     runtime = parse_runtime(_table(raw.get("runtime", {}), f"{name}.runtime"))
     profile = Profile(
         name=name,
@@ -190,6 +201,7 @@ def parse_profile(name: str, raw: dict[str, Any], *, source: str | None = None) 
         review=review,
         triage=triage,
         remediation=remediation,
+        commit=commit,
         output=output,
         runtime=runtime,
         source=source,
@@ -246,6 +258,16 @@ def parse_triage(raw: dict[str, Any], field: str) -> TriageConfig:
         reasoning_effort=reasoning_effort,
         timeout_seconds=_optional_float(raw.get("timeout_seconds"), f"{field}.timeout_seconds"),
         prompt=_optional_str(raw.get("prompt"), f"{field}.prompt"),
+    )
+
+
+def parse_commit(raw: dict[str, Any]) -> CommitConfig:
+    _reject_unknown_keys(raw, COMMIT_KEYS, "commit")
+    return CommitConfig(
+        enabled=_bool(raw.get("enabled", False), "commit.enabled"),
+        message_model=_optional_str(raw.get("message_model"), "commit.message_model")
+        or "gpt-5.3-codex-spark",
+        message_prompt=_optional_str(raw.get("message_prompt"), "commit.message_prompt"),
     )
 
 
@@ -361,6 +383,7 @@ def merge_profiles(name: str, *profiles: Profile) -> Profile:
             review=_merge_dataclass(result.review, profile.review),
             triage=_merge_dataclass(result.triage, profile.triage),
             remediation=_merge_dataclass(result.remediation, profile.remediation),
+            commit=_merge_dataclass(result.commit, profile.commit),
             output=_merge_dataclass(result.output, profile.output),
             runtime=_merge_dataclass(result.runtime, profile.runtime),
             source=profile.source or result.source,
@@ -401,7 +424,7 @@ def _profile_to_toml_impl(
     elif profile.description:
         lines.append(f"description = {_toml_string(profile.description)}")
         lines.append("")
-    for section_name in ("pipeline", "review", "triage", "remediation", "output", "runtime"):
+    for section_name in ("pipeline", "review", "triage", "remediation", "commit", "output", "runtime"):
         value = getattr(profile, section_name)
         header = (*root, section_name) if root is not None else (section_name,)
         section_lines: list[str] = []
