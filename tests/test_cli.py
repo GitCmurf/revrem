@@ -63,6 +63,9 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
         == "clear"
     )
     assert (
+        MODULE.detect_review_status("This would warrant an inline finding.") == "unknown"
+    )
+    assert (
         MODULE.detect_review_status(
             "The changes add the alias and tests without any clear regressions or actionable bugs."
         )

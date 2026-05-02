@@ -433,6 +433,8 @@ def detect_review_status(output: str) -> str:
 
 
 CLEAR_PHRASES = (
+    # Keep only negated forms here. Broad phrases like "warrant an inline finding"
+    # can appear in positive review prose and must not force a clear status.
     "did not find any discrete, actionable bugs",
     "did not find any discrete, actionable correctness issues",
     "did not find a discrete introduced bug",
@@ -440,10 +442,10 @@ CLEAR_PHRASES = (
     "did not find any actionable bugs",
     "did not identify any actionable correctness, security, or maintainability issues",
     "did not identify any introduced correctness, security, or maintainability issues",
+    "did not identify any introduced correctness, security, or maintainability issues that warrant an inline finding",
     "without revealing any discrete correctness issue",
     "no discrete, actionable bugs",
     "no actionable bugs",
-    "warrant an inline finding",
     "without any clear regressions or actionable bugs",
     "without any clear regressions or actionable",
 )
