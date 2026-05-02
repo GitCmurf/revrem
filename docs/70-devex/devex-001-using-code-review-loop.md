@@ -276,20 +276,21 @@ another harness in a resolved run fails before starting subprocesses.
 Set `commit.enabled = true` or pass `--commit-after-remediation` only in a
 worktree where it is acceptable for RevRem to stage all current changes with
 `git add -A` after a verified remediation pass, while excluding the configured
-artifact directory from staging. The commit step is separate from the
-remediation model: checks must pass first, RevRem skips the commit if there are
-no staged changes, and RevRem runs `git commit` itself. The optional
-`commit.message_model` or `--commit-message-model` controls only the read-only
-Codex call that drafts the commit subject. If no explicit CLI value is
-supplied, the profile value is used; the built-in profile default is
-`gpt-5.3-codex-spark`. With the default prompt, RevRem normalizes the final
-subject to Conventional Commit syntax and appends ` (RevRem)`. Passing
-`--commit-message-prompt` intentionally disables that default subject policy so
-special-purpose commit formats can be tested without fighting the normalizer.
-If a verified remediation pass produces no staged changes, RevRem stops the
-loop immediately; an `unknown` review status in that no-op path is treated as a
-clear terminal result and still records the unexpected-status bug-report
-artifact.
+artifact directory from staging. If a profile enables commits by default but a
+single invocation should remain dry, pass `--no-commit-after-remediation` to
+override that profile setting. The commit step is separate from the remediation
+model: checks must pass first, RevRem skips the commit if there are no staged
+changes, and RevRem runs `git commit` itself. The optional `commit.message_model`
+or `--commit-message-model` controls only the read-only Codex call that drafts
+the commit subject. If no explicit CLI value is supplied, the profile value is
+used; the built-in profile default is `gpt-5.3-codex-spark`. With the default
+prompt, RevRem normalizes the final subject to Conventional Commit syntax and
+appends ` (RevRem)`. Passing `--commit-message-prompt` intentionally disables
+that default subject policy so special-purpose commit formats can be tested
+without fighting the normalizer. If a verified remediation pass produces no
+staged changes, RevRem stops the loop immediately; an `unknown` review status
+in that no-op path is treated as a clear terminal result and still records the
+unexpected-status bug-report artifact.
 
 ```bash
 revrem --profile final-pr --commit-after-remediation

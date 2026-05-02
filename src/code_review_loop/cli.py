@@ -810,19 +810,23 @@ def run_checks(config: LoopConfig, runner: Runner, iteration: int) -> list[Comma
     return results
 
 
-def git_add_command_for_commit(config: LoopConfig) -> list[str]:
-    command = ["git", "add", "-A", "--", "."]
+def git_add_command_for_commit(_config: LoopConfig) -> list[str]:
+    return ["git", "add", "-A"]
+
+
+def git_reset_artifact_command_for_commit(config: LoopConfig) -> list[str] | None:
     artifact_rel = config.artifact_dir
     if artifact_rel.is_absolute():
         try:
             artifact_rel = artifact_rel.relative_to(config.cwd)
         except ValueError:
-            return command
+            return None
     if artifact_rel == Path("."):
-        return command
-    # Keep generated loop artifacts out of the staged commit.
-    command.append(f":(exclude){artifact_rel.as_posix()}")
-    return command
+        return None
+    # Keep generated loop artifacts out of the staged commit. Use reset instead
+    # of an exclude pathspec on git add; ignored artifact roots such as tmp/
+    # can make an add pathspec fail before the exclude is applied.
+    return ["git", "reset", "--", artifact_rel.as_posix()]
 
 
 def run_commit(config: LoopConfig, runner: Runner, iteration: int) -> str:
@@ -841,7 +845,26 @@ def run_commit(config: LoopConfig, runner: Runner, iteration: int) -> str:
     write_artifact(config.artifact_dir / f"commit-{iteration}-add.txt", _combined_output(add_result))
     if add_result.returncode != 0:
         progress_event(config, "commit", str(iteration), "failed", "git add failed")
-        raise RuntimeError(f"git add failed for iteration {iteration}")
+        raise RuntimeError(
+            f"git add failed for iteration {iteration}; "
+            f"see {config.artifact_dir / f'commit-{iteration}-add.txt'}"
+        )
+
+    reset_command = git_reset_artifact_command_for_commit(config)
+    if reset_command is not None:
+        reset_result = runner(
+            reset_command,
+            config.cwd,
+            None,
+            phase_timeout_seconds(config, config.timeout_seconds),
+        )
+        write_artifact(config.artifact_dir / f"commit-{iteration}-reset-artifacts.txt", _combined_output(reset_result))
+        if reset_result.returncode != 0:
+            progress_event(config, "commit", str(iteration), "failed", "git reset artifacts failed")
+            raise RuntimeError(
+                f"git reset artifacts failed for iteration {iteration}; "
+                f"see {config.artifact_dir / f'commit-{iteration}-reset-artifacts.txt'}"
+            )
 
     diff_quiet = runner(
         ["git", "diff", "--cached", "--quiet"],
@@ -1442,10 +1465,19 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         default=None,
         help="Verification command to run after each remediation pass. Repeatable.",
     )
-    parser.add_argument(
+    commit_group = parser.add_mutually_exclusive_group()
+    commit_group.add_argument(
         "--commit-after-remediation",
+        dest="commit_after_remediation",
         action="store_true",
+        default=None,
         help="Stage and commit after each remediation pass whose verification checks pass.",
+    )
+    commit_group.add_argument(
+        "--no-commit-after-remediation",
+        dest="commit_after_remediation",
+        action="store_false",
+        help="Disable automatic commits even when the selected profile enables them.",
     )
     parser.add_argument(
         "--commit-message-model",
@@ -1719,7 +1751,11 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         reasoning_effort=args.reasoning_effort,
         review_reasoning_effort=review_reasoning_effort,
         remediation_reasoning_effort=remediation_reasoning_effort,
-        commit_after_remediation=profile.commit.enabled or args.commit_after_remediation,
+        commit_after_remediation=(
+            args.commit_after_remediation
+            if args.commit_after_remediation is not None
+            else profile.commit.enabled
+        ),
         commit_message_model=commit_message_model,
         commit_message_prompt=args.commit_message_prompt or profile.commit.message_prompt,
         commit_message_prompt_overridden=args.commit_message_prompt is not None,

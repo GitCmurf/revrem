@@ -489,7 +489,9 @@ def test_loop_commits_after_passing_checks(tmp_path):
             return MODULE.CommandResult(list(args), 0, stdout=next(review_outputs))
         if args[0] == "pytest":
             return MODULE.CommandResult(list(args), 0, stdout="1 passed\n")
-        if args[:4] == ["git", "add", "-A", "--"]:
+        if args[:3] == ["git", "add", "-A"]:
+            return MODULE.CommandResult(list(args), 0)
+        if args[:3] == ["git", "reset", "--"]:
             return MODULE.CommandResult(list(args), 0)
         if args[:3] == ["git", "diff", "--cached"] and "--quiet" in args:
             return MODULE.CommandResult(list(args), 1)
@@ -517,12 +519,14 @@ def test_loop_commits_after_passing_checks(tmp_path):
     summary = MODULE.run_loop(config, runner)
 
     commands = [call[0] for call in calls]
-    assert ["git", "add", "-A", "--", ".", ":(exclude)artifacts"] in commands
+    assert ["git", "add", "-A"] in commands
+    assert ["git", "reset", "--", "artifacts"] in commands
     assert ["git", "commit", "-m", "fix(cli): harden RevRem commit flow (RevRem)"] in commands
     assert any(command[:6] == ["codex", "exec", "--sandbox", "read-only", "--color", "never"] for command in commands)
     assert summary["iterations"][0]["commit_status"] == "committed"
     assert set(summary["artifact_paths"]["commits"]) == {
         str(tmp_path / "artifacts" / "commit-1-add.txt"),
+        str(tmp_path / "artifacts" / "commit-1-reset-artifacts.txt"),
         str(tmp_path / "artifacts" / "commit-1-message-draft.txt"),
         str(tmp_path / "artifacts" / "commit-1.txt"),
         str(tmp_path / "artifacts" / "commit-1-message.txt"),
@@ -537,7 +541,7 @@ def test_loop_commits_after_passing_checks(tmp_path):
     assert "(RevRem)" in commit_prompt
 
 
-def test_git_add_command_for_commit_excludes_relative_artifact_dir(tmp_path):
+def test_git_staging_commands_for_commit_reset_relative_artifact_dir(tmp_path):
     config = MODULE.LoopConfig(
         base="main",
         max_iterations=1,
@@ -546,13 +550,12 @@ def test_git_add_command_for_commit_excludes_relative_artifact_dir(tmp_path):
         artifact_dir=Path("artifacts/revrem"),
     )
 
-    assert MODULE.git_add_command_for_commit(config) == [
+    assert MODULE.git_add_command_for_commit(config) == ["git", "add", "-A"]
+    assert MODULE.git_reset_artifact_command_for_commit(config) == [
         "git",
-        "add",
-        "-A",
+        "reset",
         "--",
-        ".",
-        ":(exclude)artifacts/revrem",
+        "artifacts/revrem",
     ]
 
 
@@ -600,7 +603,9 @@ def test_loop_stops_after_unknown_review_when_remediation_has_no_staged_changes(
             return MODULE.CommandResult(list(args), 0, stdout="The implementation appears sound.\n")
         if args[0] == "pytest":
             return MODULE.CommandResult(list(args), 0, stdout="1 passed\n")
-        if args[:4] == ["git", "add", "-A", "--"]:
+        if args[:3] == ["git", "add", "-A"]:
+            return MODULE.CommandResult(list(args), 0)
+        if args[:3] == ["git", "reset", "--"]:
             return MODULE.CommandResult(list(args), 0)
         if args[:3] == ["git", "diff", "--cached"] and "--quiet" in args:
             return MODULE.CommandResult(list(args), 0)
@@ -632,7 +637,9 @@ def test_loop_writes_failure_summary_when_commit_fails(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[0] == "codex" and "review" in args:
             return MODULE.CommandResult(list(args), 0, stdout=next(review_outputs))
-        if args[:4] == ["git", "add", "-A", "--"]:
+        if args[:3] == ["git", "add", "-A"]:
+            return MODULE.CommandResult(list(args), 0)
+        if args[:3] == ["git", "reset", "--"]:
             return MODULE.CommandResult(list(args), 0)
         if args[:3] == ["git", "diff", "--cached"] and "--quiet" in args:
             return MODULE.CommandResult(list(args), 1)
@@ -1097,6 +1104,41 @@ quiet_progress = true
     assert config.check_commands == ("pytest -q", "git diff --check")
     assert config.debug_status_detection is True
     assert config.progress is False
+
+
+def test_main_can_disable_profile_commit_with_negative_flag(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    config_path = home / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.final-pr.commit]
+enabled = true
+""",
+        encoding="utf-8",
+    )
+    captured_configs = []
+
+    def fake_run_loop(config):
+        captured_configs.append(config)
+        return {
+            "artifact_dir": str(config.artifact_dir),
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+            "iterations": [],
+        }
+
+    monkeypatch.setattr(MODULE, "run_loop", fake_run_loop)
+
+    exit_code = MODULE.main(
+        ["--profile", "final-pr", "--no-commit-after-remediation", "--dry-run"]
+    )
+
+    assert exit_code == 0
+    assert captured_configs[0].commit_after_remediation is False
 
 
 def test_main_commit_message_model_override_wins_over_profile_default(tmp_path, monkeypatch):
