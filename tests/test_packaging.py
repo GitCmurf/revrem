@@ -93,6 +93,85 @@ exit 0
     assert not (home / ".local" / "bin" / "revrem").exists()
 
 
+def test_promote_stable_recreates_stale_stable_venv(tmp_path):
+    home = tmp_path / "home"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_python = fake_bin / "python3"
+    fake_python.write_text(
+        """#!/usr/bin/env sh
+case "$1" in
+  -c)
+    if [ "$FAKE_CURRENT_PYTHON_VERSION" = "old" ]; then
+      exit 1
+    fi
+    exit 0
+    ;;
+  -m)
+    if [ "$2" = "venv" ]; then
+      marker=${FAKE_VENV_MARKER:?}
+      mkdir -p "$3/bin"
+      cat > "$3/bin/python" <<'EOF'
+#!/usr/bin/env sh
+exit 0
+EOF
+      chmod +x "$3/bin/python"
+      touch "$marker"
+      exit 0
+    fi
+    ;;
+esac
+exit 0
+""",
+        encoding="utf-8",
+    )
+    fake_python.chmod(0o755)
+    stable_venv = home / ".local" / "share" / "revrem" / "stable-venv"
+    stable_bin = stable_venv / "bin"
+    stable_bin.mkdir(parents=True)
+    stale_python = stable_bin / "python"
+    stale_python.write_text(
+        """#!/usr/bin/env sh
+case "$1" in
+  -c)
+    exit 1
+    ;;
+esac
+exit 0
+""",
+        encoding="utf-8",
+    )
+    stale_python.chmod(0o755)
+    stale_marker = stable_venv / "obsolete.txt"
+    stale_marker.write_text("stale", encoding="utf-8")
+
+    marker = tmp_path / "stable-venv-recreated"
+    env = {
+        **os.environ,
+        "HOME": str(home),
+        "PATH": f"{fake_bin}:{os.environ.get('PATH', '')}",
+        "PYTHON": str(fake_python),
+        "REVREM_SKIP_CHECKS": "1",
+        "FAKE_VENV_MARKER": str(marker),
+    }
+
+    result = subprocess.run(
+        ["sh", str(ROOT / "scripts/promote-stable")],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert marker.exists()
+    assert not stale_marker.exists()
+    assert "exit 0" in stale_python.read_text(encoding="utf-8")
+    assert (home / ".local" / "bin" / "revrem").exists()
+    assert (home / ".local" / "bin" / "code-review-loop").exists()
+
+
 def test_install_dev_targets_repo_local_virtualenv():
     script = (ROOT / "scripts/install-dev").read_text(encoding="utf-8")
 

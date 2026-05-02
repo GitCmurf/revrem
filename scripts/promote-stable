@@ -41,7 +41,17 @@ cp -R "$REPO_ROOT/src" "$RELEASE_DIR/src"
 cp "$REPO_ROOT/pyproject.toml" "$RELEASE_DIR/pyproject.toml"
 cp "$REPO_ROOT/README.md" "$RELEASE_DIR/README.md"
 
-if [ ! -x "$STABLE_VENV/bin/python" ]; then
+stable_venv_needs_rebuild=0
+if [ -x "$STABLE_VENV/bin/python" ]; then
+  if ! "$STABLE_VENV/bin/python" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)'; then
+    stable_venv_needs_rebuild=1
+  fi
+else
+  stable_venv_needs_rebuild=1
+fi
+
+if [ "$stable_venv_needs_rebuild" -eq 1 ]; then
+  rm -rf "$STABLE_VENV"
   "$PYTHON" -m venv "$STABLE_VENV"
 fi
 

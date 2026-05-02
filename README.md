@@ -101,7 +101,8 @@ a known-good version for use from other repositories with:
 
 The promotion script runs `./scripts/dev-check`, copies a source snapshot under
 `~/.local/share/revrem/releases/`, creates a stable interpreter at
-`~/.local/share/revrem/stable-venv`, and updates:
+`~/.local/share/revrem/stable-venv`, recreating an older or missing stable
+venv before updating:
 
 ```text
 ~/.local/bin/code-review-loop

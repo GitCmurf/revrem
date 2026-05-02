@@ -76,7 +76,8 @@ development environment in this checkout:
 The promotion script runs `./scripts/dev-check` unless
 `REVREM_SKIP_CHECKS=1` is set, copies a source snapshot under
 `~/.local/share/revrem/releases/`, creates a stable interpreter at
-`~/.local/share/revrem/stable-venv`, and updates:
+`~/.local/share/revrem/stable-venv`, recreating an older or missing stable
+venv before updating:
 
 ```text
 ~/.local/bin/code-review-loop
