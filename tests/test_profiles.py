@@ -280,6 +280,21 @@ prompt = "Break down the findings."
     assert resolved.triage.prompt == "Break down the findings."
 
 
+def test_profile_accepts_rich_progress_style(tmp_path):
+    path = tmp_path / "profiles.toml"
+    path.write_text(
+        """
+[profiles.demo.output]
+progress_style = "rich"
+""",
+        encoding="utf-8",
+    )
+
+    loaded = profiles.load_profile_file(path)
+
+    assert loaded.profiles["demo"].output.progress_style == "rich"
+
+
 def test_resolve_profile_rejects_unimplemented_executable_triage_harness(tmp_path):
     home = tmp_path / "home"
     cwd = tmp_path / "repo"

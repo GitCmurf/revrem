@@ -270,6 +270,8 @@ The current `progress_event` shape remains the internal contract. A progress
 renderer interface receives the same phase events and emits either compact text
 or Rich live output. Rich is activated only when installed and requested;
 compact text remains the default for scripts and logs.
+Compact and verbose progress timestamps use local terminal wall time for watched
+runs. Persisted run-history timestamps remain UTC ISO-8601 values.
 
 Optional Codex triage is implemented as a read-only interpretative phase between
 review and remediation. It exists to turn review prose and check failures into a
@@ -349,7 +351,10 @@ Milestone status as of version 0.4:
 
 - FR-1 through FR-8 are implemented.
 - FR-9 is implemented.
-- FR-10 and FR-11 remain pending.
+- FR-10 is partially implemented: compact progress remains the default and
+  `--progress-style rich` activates optional Rich rendering when the `progress`
+  extra is installed. Full live Rich layout remains part of the TUI-facing work.
+- FR-11 remains pending.
 - Codex triage is implemented; non-Codex harnesses remain reserved syntax and
   executable runs fail fast when a resolved profile selects an unimplemented
   backend.
@@ -543,7 +548,7 @@ revrem history --format json list --limit 5
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
-| 0.4 | 2026-05-02 | Codex | Implemented FR-9 run history; added history CLI, JSONL architecture contract, and optional read-only Codex triage |
+| 0.4 | 2026-05-02 | Codex | Implemented FR-9 run history; added history CLI, JSONL architecture contract, optional read-only Codex triage, local progress timestamps, and initial optional Rich progress |
 | 0.3 | 2026-05-02 | Codex | Marked profile/config milestones implemented; clarified remaining run-history, Rich progress, and TUI scope |
 | 0.2 | 2026-05-01 | Codex | Reworked PRD into staged engineering contract; added dev/stable distribution boundary, architecture constraints, milestones, and acceptance gates |
 | 0.1 | 2026-05-01 | GitCmurf | Initial draft |

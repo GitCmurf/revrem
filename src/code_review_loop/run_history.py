@@ -72,7 +72,10 @@ def read_history(path: Path | None = None, *, limit: int | None = None) -> list[
     for line in target.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
-        value = json.loads(line)
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError:
+            continue
         if isinstance(value, dict):
             records.append(value)
     records.reverse()

@@ -125,12 +125,28 @@ Clear terminal summaries stay compact and point to artifacts instead of
 reprinting the successful review prose. Non-clear summaries include the latest
 actionable excerpt so the next operator or agent can continue from the right
 failure.
+Progress log timestamps use local terminal wall time, so watched runs line up
+with the operator's shell clock. Shared history keeps UTC ISO-8601 timestamps for
+machine processing.
 Non-dry-run invocations also append compact JSONL metadata to
 `~/.local/share/revrem/runs.jsonl` by default. The per-run transcripts remain in
 the target repository's artifact directory; the shared history file stores only
 the run identifier, cwd, base, profile, final status, iteration count, and
-artifact pointers. Set `XDG_DATA_HOME` to relocate the data root or pass
-`--no-run-history` for a run that should not update shared history.
+artifact pointers. `revrem history list` skips malformed or truncated JSONL
+entries so one interrupted append does not hide earlier valid runs. Set
+`XDG_DATA_HOME` to relocate the data root or pass `--no-run-history` for a run
+that should not update shared history.
+
+For richer watched-terminal output, install the optional progress extra and use
+`--progress-style rich`:
+
+```bash
+./.venv/bin/pip install -e ".[progress]"
+./.venv/bin/revrem --profile final-pr --progress-style rich
+```
+
+If Rich is requested but unavailable, RevRem prints one warning and falls back to
+compact progress. Existing commands do not need to change.
 
 Use repository-specific checks. For Meminit-backed repositories, include:
 
@@ -271,8 +287,9 @@ prompt = "Break down the review into confirmed actions, likely false positives, 
 
 ### Current CLI boundary
 
-Rich progress and `revrem ui` remain planned in `REVREM-PRD-001`; they are not
-available in the current CLI.
+Rich progress is available via `--progress-style rich` when the optional
+`progress` extra is installed. `revrem ui` remains planned in `REVREM-PRD-001`;
+it is not available in the current CLI.
 
 ### Exit codes
 

@@ -34,6 +34,9 @@ dev = [
   "pytest>=8",
   "ruff>=0.5",
 ]
+progress = [
+  "rich>=13.7",
+]
 
 [project.scripts]
 code-review-loop = "code_review_loop.cli:main"

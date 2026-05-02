@@ -33,6 +33,8 @@ Successful non-dry-run invocations append compact metadata to
 `~/.local/share/revrem/runs.jsonl`; use `revrem history list` to inspect recent
 runs. Pass `--no-run-history` for one-off runs that should leave only the
 workspace-local artifact directory.
+Progress timestamps use local terminal time. Persisted history timestamps remain
+UTC ISO-8601 values for stable machine processing.
 
 Named profiles can hold the same settings in `~/.config/revrem/profiles.toml`.
 That file can also carry a shared `[defaults]` table for user-wide model and
@@ -53,6 +55,14 @@ revrem config new final-pr --description "Full PR readiness check"
 revrem config edit final-pr
 revrem config show final-pr
 revrem --profile final-pr
+```
+
+For richer watched-terminal output, install the optional progress extra and
+request Rich rendering:
+
+```bash
+./.venv/bin/pip install -e ".[progress]"
+revrem --profile final-pr --progress-style rich
 ```
 
 ## Development

@@ -46,6 +46,7 @@ def test_read_history_returns_newest_first_and_applies_limit(tmp_path):
         "\n".join(
             [
                 json.dumps({"run_id": "old"}),
+                "{not valid json",
                 json.dumps({"run_id": "new"}),
             ]
         )
@@ -55,3 +56,20 @@ def test_read_history_returns_newest_first_and_applies_limit(tmp_path):
 
     assert [record["run_id"] for record in run_history.read_history(path)] == ["new", "old"]
     assert [record["run_id"] for record in run_history.read_history(path, limit=1)] == ["new"]
+
+
+def test_read_history_skips_malformed_lines(tmp_path):
+    path = tmp_path / "runs.jsonl"
+    path.write_text(
+        "\n".join(
+            [
+                json.dumps({"run_id": "old"}),
+                "{\"run_id\":",
+                json.dumps({"run_id": "new"}),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert [record["run_id"] for record in run_history.read_history(path)] == ["new", "old"]

@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
-from code_review_loop import profiles, run_history
+from code_review_loop import profiles, progress, run_history
 
 STATUS_RE = re.compile(r"^\s*REVIEW_STATUS:\s*(clear|findings)\s*$", re.IGNORECASE | re.MULTILINE)
 CODEX_FINDING_RE = re.compile(r"^\s*-\s*\[P[0-3]\]\s+", re.MULTILINE)
@@ -38,6 +38,7 @@ COMPACT_PROGRESS_DETAIL_INDENT = 7
 DEFAULT_TERMINAL_COLUMNS = 120
 DEFAULT_TIMEOUT_SECONDS = 300
 REASONING_EFFORT_CHOICES = ("minimal", "low", "medium", "high")
+PROGRESS_STYLE_CHOICES = ("compact", "verbose", "rich")
 
 DEFAULT_REMEDIATION_PROMPT = """You are running a bounded review-remediation loop.
 
@@ -119,6 +120,7 @@ TERMINAL_TITLE_SAVE = "\033[22;0t"
 TERMINAL_TITLE_RESTORE = "\033[23;0t"
 TERMINAL_TITLE_REFRESH_SECONDS = 1.0
 _CURRENT_TERMINAL_TITLE_SEQUENCE: str | None = None
+_RICH_UNAVAILABLE_WARNED = False
 
 
 def terminal_title_supported(config: LoopConfig) -> bool:
@@ -199,7 +201,7 @@ def terminal_title_context(config: LoopConfig):
 def progress_log(config: LoopConfig, message: str) -> None:
     if not config.progress:
         return
-    timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
     print(f"[{timestamp}] {message}", file=sys.stderr, flush=True)
 
 
@@ -214,7 +216,7 @@ def compact_progress_label(label: str) -> str:
 
 
 def compact_progress_prefix(phase: str, label: str) -> str:
-    timestamp = datetime.now(UTC).strftime("%H:%M:%S")
+    timestamp = datetime.now().strftime("%H:%M:%S")
     phase_code = PROGRESS_PHASE_CODES.get(phase, phase[:3])
     return f"{timestamp}|{phase_code:<3}|{compact_progress_label(label):<4}|"
 
@@ -266,6 +268,15 @@ def print_compact_progress(phase: str, label: str, text: str, *, head: str = "")
 def progress_event(config: LoopConfig, phase: str, label: str, status: str, detail: str = "") -> None:
     if not config.progress:
         return
+    if config.progress_style == "rich":
+        if progress.print_rich_event(phase, label, status, detail):
+            return
+        warn_rich_unavailable(phase, label)
+        if detail:
+            print_compact_progress(phase, label, detail, head=f"{status}: ")
+        else:
+            print_compact_progress(phase, label, status)
+        return
     if config.progress_style == "verbose":
         suffix = f": {detail}" if detail else ""
         progress_log(config, f"{phase} {label}: {status}{suffix}")
@@ -276,9 +287,21 @@ def progress_event(config: LoopConfig, phase: str, label: str, status: str, deta
         print_compact_progress(phase, label, status)
 
 
+def warn_rich_unavailable(phase: str, label: str) -> None:
+    global _RICH_UNAVAILABLE_WARNED
+    if _RICH_UNAVAILABLE_WARNED:
+        return
+    _RICH_UNAVAILABLE_WARNED = True
+    print_compact_progress(phase, label, "rich progress unavailable; using compact output", head="warn: ")
+
+
 def progress_continuation(config: LoopConfig, phase: str, label: str, text: str, indent: int = 2) -> None:
     if not config.progress:
         return
+    if config.progress_style == "rich":
+        if progress.print_rich_continuation(phase, label, text, indent=indent):
+            return
+        warn_rich_unavailable(phase, label)
     if config.progress_style == "verbose":
         progress_log(config, f"{phase} {label}: {' ' * indent}{text}")
         return
@@ -503,6 +526,10 @@ def log_review_findings(config: LoopConfig, label: str, output: str) -> bool:
 def print_progress_message(config: LoopConfig, phase: str, label: str, text: str, *, head: str = "") -> None:
     if not config.progress:
         return
+    if config.progress_style == "rich":
+        if progress.print_rich_message(phase, label, text, head=head):
+            return
+        warn_rich_unavailable(phase, label)
     if config.progress_style == "verbose":
         progress_log(config, f"{phase} {label}: {head}{text}")
         return
@@ -905,8 +932,16 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
         remediation_input = last_review_output
         if pending_check_failures:
             remediation_input = pending_check_failures + "\n\n" + remediation_input
-        if config.triage_enabled:
-            remediation_input = run_triage(config, runner, iteration, remediation_input)
+        try:
+            if config.triage_enabled:
+                remediation_input = run_triage(config, runner, iteration, remediation_input)
+        except Exception as exc:
+            summary["final_status"] = "error"
+            summary["stopped_reason"] = "triage_failed"
+            summary["error"] = str(exc)
+            iterations[-1]["triage_failed"] = True
+            write_summary(config, summary)
+            raise
 
         try:
             run_remediation(config, runner, iteration, remediation_input)
@@ -1132,9 +1167,9 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     )
     parser.add_argument(
         "--progress-style",
-        choices=("compact", "verbose"),
+        choices=PROGRESS_STYLE_CHOICES,
         default=None,
-        help="Progress log style. Compact is easier to scan in terminals.",
+        help="Progress log style. Compact is easiest to scan in logs; rich is used only when Rich is installed.",
     )
     parser.add_argument(
         "--terminal-title",

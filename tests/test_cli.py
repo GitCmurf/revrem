@@ -362,6 +362,37 @@ def test_loop_runs_optional_triage_between_review_and_remediation(tmp_path):
     assert summary["artifact_paths"]["triage"] == [str(tmp_path / "artifacts" / "triage-1.txt")]
 
 
+def test_loop_writes_failure_summary_when_triage_fails(tmp_path):
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[1] == "review":
+            return MODULE.CommandResult(list(args), 0, stdout="Full review comments:\n\n- [P2] Fix profile merge\n")
+        return MODULE.CommandResult(list(args), 1, stderr="Error: triage failed\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        triage_enabled=True,
+        triage_timeout_seconds=60,
+    )
+
+    try:
+        MODULE.run_loop(config, runner)
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("expected triage failure")
+
+    summary = (tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8")
+    assert '"final_status": "error"' in summary
+    assert '"stopped_reason": "triage_failed"' in summary
+    assert '"artifact_paths"' in summary
+    assert "triage-1.txt" in summary
+    assert '"1.txt"' not in summary
+
+
 def test_debug_status_detection_writes_diagnostic_artifact(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
@@ -844,6 +875,7 @@ def test_history_list_command_outputs_recent_runs(tmp_path, monkeypatch, capsys)
     history_path.parent.mkdir(parents=True)
     history_path.write_text(
         '{"run_id":"old","final_status":"findings","stopped_reason":"max_iterations_reached","base":"main","artifact_dir":"tmp/old"}\n'
+        '{"run_id":\n'
         '{"run_id":"new","final_status":"clear","stopped_reason":"review_clear","base":"main","artifact_dir":"tmp/new"}\n',
         encoding="utf-8",
     )
@@ -1519,6 +1551,65 @@ def test_progress_logs_review_and_finding_summaries(tmp_path, capsys):
     assert "findings-summary" not in captured.err
     assert "|rev|1   |[P2]   Fix queue parity" in captured.err
     assert "|rem|1   |done" in captured.err
+
+
+def test_compact_progress_uses_local_wall_time(monkeypatch):
+    class FakeNow:
+        def strftime(self, fmt):
+            assert fmt == "%H:%M:%S"
+            return "12:34:56"
+
+    class FakeDateTime:
+        @classmethod
+        def now(cls):
+            return FakeNow()
+
+    monkeypatch.setattr(MODULE, "datetime", FakeDateTime)
+
+    assert MODULE.compact_progress_prefix("review", "1") == "12:34:56|rev|1   |"
+
+
+def test_rich_progress_falls_back_to_compact_once(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(MODULE.progress, "print_rich_event", lambda *args, **kwargs: False)
+    monkeypatch.setattr(MODULE, "_RICH_UNAVAILABLE_WARNED", False)
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        progress_style="rich",
+    )
+
+    MODULE.progress_event(config, "review", "1", "start", "codex review --base main")
+    MODULE.progress_event(config, "review", "1", "clear")
+    captured = capsys.readouterr()
+
+    assert captured.err.count("rich progress unavailable; using compact output") == 1
+    assert "start: codex review --base main" in captured.err
+    assert "|rev|1   |clear" in captured.err
+
+
+def test_rich_progress_renderer_is_used_when_available(tmp_path, capsys, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        MODULE.progress,
+        "print_rich_event",
+        lambda phase, label, status, detail="": calls.append((phase, label, status, detail)) or True,
+    )
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        progress_style="rich",
+    )
+
+    MODULE.progress_event(config, "review", "1", "start", "codex review --base main")
+
+    assert calls == [("review", "1", "start", "codex review --base main")]
+    assert capsys.readouterr().err == ""
 
 
 def test_compact_progress_wraps_to_terminal_width(tmp_path, capsys, monkeypatch):

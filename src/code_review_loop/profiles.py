@@ -253,8 +253,8 @@ def parse_output(raw: dict[str, Any]) -> OutputConfig:
     if summary_format not in {"text", "json", "both"}:
         raise ValueError("output.summary_format must be text, json, or both")
     progress_style = _str(raw.get("progress_style", "compact"), "output.progress_style")
-    if progress_style not in {"compact", "verbose"}:
-        raise ValueError("output.progress_style must be compact or verbose")
+    if progress_style not in {"compact", "verbose", "rich"}:
+        raise ValueError("output.progress_style must be compact, verbose, or rich")
     return OutputConfig(
         summary_format=summary_format,
         debug_status_detection=_bool(
