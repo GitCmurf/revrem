@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from code_review_loop.harnesses import require_implemented_harness, validate_harness_name
+from code_review_loop import run_history
 
 USER_CONFIG_RELATIVE = Path(".config") / "revrem" / "profiles.toml"
 PROJECT_CONFIG_NAME = ".revrem.toml"
@@ -131,6 +132,14 @@ class ProfileFile:
     raw_profiles: dict[str, dict[str, Any]] = field(default_factory=dict)
     defaults: Profile | None = None
     raw_defaults: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ProfileListItem:
+    name: str
+    description: str
+    source: str | None
+    last_used_at: str | None
 
 
 def user_config_path(home: Path | None = None) -> Path:
@@ -373,6 +382,28 @@ def list_profiles(*, cwd: Path, home: Path | None = None) -> list[Profile]:
     return [seen[name] for name in sorted(seen)]
 
 
+def profile_list_items(
+    *,
+    cwd: Path,
+    home: Path | None = None,
+    history_path: Path | None = None,
+) -> list[ProfileListItem]:
+    last_used_at_by_profile = _profile_last_used_at_by_name(history_path)
+    return [
+        ProfileListItem(
+            name=profile.name,
+            description=profile.description,
+            source=profile.source,
+            last_used_at=last_used_at_by_profile.get(profile.name),
+        )
+        for profile in list_profiles(cwd=cwd, home=home)
+    ]
+
+
+def profile_list_item_to_dict(item: ProfileListItem) -> dict[str, Any]:
+    return asdict(item)
+
+
 def merge_profiles(name: str, *profiles: Profile) -> Profile:
     result = profiles[0]
     for profile in profiles[1:]:
@@ -397,6 +428,18 @@ def profile_to_dict(profile: Profile) -> dict[str, Any]:
 
 def profile_to_json(profile: Profile) -> str:
     return json.dumps(profile_to_dict(profile), indent=2, sort_keys=True) + "\n"
+
+
+def _profile_last_used_at_by_name(history_path: Path | None = None) -> dict[str, str]:
+    last_used_at_by_name: dict[str, str] = {}
+    for record in run_history.read_history(history_path):
+        profile_name = record.get("profile")
+        if not isinstance(profile_name, str) or profile_name in last_used_at_by_name:
+            continue
+        timestamp = record.get("finished_at") or record.get("started_at")
+        if isinstance(timestamp, str):
+            last_used_at_by_name[profile_name] = timestamp
+    return last_used_at_by_name
 
 
 def profile_to_toml(profile: Profile, *, include_wrapper: bool = False) -> str:

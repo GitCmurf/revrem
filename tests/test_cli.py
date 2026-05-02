@@ -1945,6 +1945,46 @@ def test_config_commands_create_show_list_and_delete_profile(tmp_path, monkeypat
     assert MODULE.main(["config", "show", "smoke"]) == 1
 
 
+def test_config_list_includes_last_used_from_run_history(tmp_path, monkeypatch, capsys):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+
+    assert MODULE.main(["config", "new", "smoke", "--description", "Smoke profile"]) == 0
+
+    history_path = home / ".local" / "share" / "revrem" / "runs.jsonl"
+    history_path.parent.mkdir(parents=True)
+    history_path.write_text(
+        "\n".join(
+            [
+                json.dumps({"profile": "smoke", "finished_at": "2026-05-01T08:00:00Z"}),
+                json.dumps({"profile": "other", "finished_at": "2026-05-01T09:00:00Z"}),
+                json.dumps({"profile": "smoke", "finished_at": "2026-05-02T10:00:00Z"}),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert MODULE.main(["config", "list"]) == 0
+    output = capsys.readouterr().out
+    assert "smoke - Smoke profile" in output
+    assert str(home / ".config" / "revrem" / "profiles.toml") in output
+    assert "last used 2026-05-02T10:00:00Z" in output
+
+    assert MODULE.main(["config", "list", "--format", "json"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data == [
+        {
+            "description": "Smoke profile",
+            "last_used_at": "2026-05-02T10:00:00Z",
+            "name": "smoke",
+            "source": str(home / ".config" / "revrem" / "profiles.toml"),
+        }
+    ]
+
+
 def test_config_new_reports_profile_write_oserror(tmp_path, monkeypatch, capsys):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))

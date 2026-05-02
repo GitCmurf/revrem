@@ -1948,14 +1948,18 @@ def config_main(argv: Sequence[str]) -> int:
     try:
         output_format = getattr(args, "format", None)
         if args.command == "list":
-            items = profiles.list_profiles(cwd=Path.cwd())
+            items = profiles.profile_list_items(cwd=Path.cwd())
             if (output_format or "text") == "json":
-                print(json.dumps([profiles.profile_to_dict(item) for item in items], indent=2, sort_keys=True))
+                print(
+                    json.dumps(
+                        [profiles.profile_list_item_to_dict(item) for item in items],
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
             else:
                 for item in items:
-                    desc = f" - {item.description}" if item.description else ""
-                    src = f" ({item.source})" if item.source else ""
-                    print(f"{item.name}{desc}{src}")
+                    print(_format_profile_list_item(item))
             return 0
         if args.command == "show":
             profile = profiles.resolve_profile(
@@ -2022,6 +2026,16 @@ def config_main(argv: Sequence[str]) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
     raise AssertionError(f"unhandled config command: {args.command}")
+
+
+def _format_profile_list_item(item: profiles.ProfileListItem) -> str:
+    desc = f" - {item.description}" if item.description else ""
+    details: list[str] = []
+    if item.source:
+        details.append(item.source)
+    details.append(f"last used {item.last_used_at or 'never'}")
+    suffix = f" ({', '.join(details)})" if details else ""
+    return f"{item.name}{desc}{suffix}"
 
 
 def history_main(argv: Sequence[str]) -> int:

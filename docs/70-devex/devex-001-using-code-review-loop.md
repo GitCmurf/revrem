@@ -260,6 +260,8 @@ revrem config import profiles.toml
 revrem config doctor --profile final-pr --format json
 ```
 
+`revrem config list` shows each profile's description, source file, and last-used timestamp from run history.
+
 Run-history commands:
 
 ```bash
