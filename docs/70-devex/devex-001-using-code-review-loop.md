@@ -245,6 +245,9 @@ omits `timeout_seconds`, it falls back to the built-in default timeout instead
 of inheriting the sibling phase's value.
 Negative phase timeouts are rejected during profile loading as invalid
 configuration, matching the CLI's `--timeout-seconds` validation.
+When terminal title refresh is enabled, the subprocess wrapper keeps waiting on
+the same child after a timeout without resending stdin, which avoids the
+`communicate()` retry error on long-running stdin-driven phases.
 Profile `review.reasoning_effort` and `remediation.reasoning_effort` values are
 validated during profile loading and must be one of `minimal`, `low`, `medium`,
 or `high`.

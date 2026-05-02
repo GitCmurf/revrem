@@ -4,6 +4,7 @@ import io
 import json
 import os
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -2800,7 +2801,7 @@ def test_default_runner_refreshes_active_terminal_title_during_child_process(tmp
     assert output.endswith(MODULE.TERMINAL_TITLE_RESTORE)
 
 
-def test_subprocess_refresh_loop_preserves_stdin_after_timeout(tmp_path, monkeypatch):
+def test_subprocess_refresh_loop_stops_resending_stdin_after_timeout(tmp_path, monkeypatch):
     refresh_calls = []
 
     class FakeStdin:
@@ -2815,14 +2816,16 @@ def test_subprocess_refresh_loop_preserves_stdin_after_timeout(tmp_path, monkeyp
             self.stdin = FakeStdin()
             self.returncode = 0
             self.communicate_calls = 0
+            self.inputs = []
 
         def communicate(self, input=None, timeout=None):
             self.communicate_calls += 1
+            self.inputs.append(input)
             if self.communicate_calls == 1:
                 assert input == "prompt"
                 raise MODULE.subprocess.TimeoutExpired(["codex", "exec"], timeout)
-            assert input == "prompt"
-            assert not self.stdin.closed, "stdin should stay open while retrying with the original input"
+            assert input is None
+            assert not self.stdin.closed, "stdin should stay open while waiting on the same child"
             return ("stdout", "stderr")
 
         def kill(self):
@@ -2851,6 +2854,7 @@ def test_subprocess_refresh_loop_preserves_stdin_after_timeout(tmp_path, monkeyp
     assert result.stderr == "stderr"
     assert fake_process.stdin.closed is False
     assert fake_process.communicate_calls == 2
+    assert fake_process.inputs == ["prompt", None]
     assert len(refresh_calls) == 2
 
 
