@@ -68,6 +68,11 @@ as configuration syntax. The executable path currently supports Codex for
 review, optional read-only triage, and remediation, and rejects unimplemented
 backends before the loop starts.
 
+True-by-default booleans also have positive CLI overrides. Use `--full-auto`,
+`--output-last-message`, or `--final-review` to restore the built-in `true`
+behavior for a one-off run when a profile disables one of those settings; use
+the `--no-*` or `--skip-final-review` forms to force them off.
+
 ```bash
 revrem config new final-pr --description "Full PR readiness check"
 revrem config edit final-pr

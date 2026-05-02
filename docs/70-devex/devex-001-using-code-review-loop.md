@@ -232,6 +232,11 @@ CLI flags override profile values, so this is valid:
 revrem --profile final-pr --base release/1.2 --check "pytest -q tests/smoke"
 ```
 
+True-by-default booleans also have positive CLI overrides. Use `--full-auto`,
+`--output-last-message`, or `--final-review` to restore the built-in `true`
+behavior for a one-off run when a profile disables one of those settings; use
+the `--no-*` or `--skip-final-review` forms to force them off.
+
 Timeout fields are numeric. A TOML boolean such as `timeout_seconds = false`
 is rejected during profile loading so that accidental type mistakes cannot
 disable bounded execution. A phase timeout set to `0` stays disabled for that

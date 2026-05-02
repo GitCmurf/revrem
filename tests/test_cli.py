@@ -1266,6 +1266,55 @@ quiet_progress = true
     assert config.progress is False
 
 
+def test_main_can_reenable_profile_disabled_true_by_default_booleans(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    config_path = home / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.final-pr.pipeline]
+final_review = false
+
+[profiles.final-pr.runtime]
+full_auto = false
+output_last_message = false
+""",
+        encoding="utf-8",
+    )
+    captured_configs = []
+
+    def fake_run_loop(config):
+        captured_configs.append(config)
+        return {
+            "artifact_dir": str(config.artifact_dir),
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+            "iterations": [],
+        }
+
+    monkeypatch.setattr(MODULE, "run_loop", fake_run_loop)
+
+    exit_code = MODULE.main(
+        [
+            "--profile",
+            "final-pr",
+            "--full-auto",
+            "--output-last-message",
+            "--final-review",
+            "--dry-run",
+        ]
+    )
+
+    assert exit_code == 0
+    config = captured_configs[0]
+    assert config.full_auto is True
+    assert config.output_last_message is True
+    assert config.final_review is True
+
+
 def test_main_can_disable_profile_commit_with_negative_flag(tmp_path, monkeypatch):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))

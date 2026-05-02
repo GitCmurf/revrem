@@ -1505,14 +1505,34 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         action="store_true",
         help="Pass --json to codex exec and capture JSONL event output.",
     )
-    parser.add_argument(
-        "--no-output-last-message",
+    output_last_message_group = parser.add_mutually_exclusive_group()
+    output_last_message_group.add_argument(
+        "--output-last-message",
+        dest="output_last_message",
         action="store_true",
+        default=None,
+        help="Pass --output-last-message to codex exec remediation passes.",
+    )
+    output_last_message_group.add_argument(
+        "--no-output-last-message",
+        dest="output_last_message",
+        action="store_false",
+        default=None,
         help="Do not pass --output-last-message to codex exec remediation passes.",
     )
-    parser.add_argument(
-        "--no-full-auto",
+    full_auto_group = parser.add_mutually_exclusive_group()
+    full_auto_group.add_argument(
+        "--full-auto",
+        dest="full_auto",
         action="store_true",
+        default=None,
+        help="Pass --full-auto to codex exec.",
+    )
+    full_auto_group.add_argument(
+        "--no-full-auto",
+        dest="full_auto",
+        action="store_false",
+        default=None,
         help="Do not pass --full-auto to codex exec.",
     )
     parser.add_argument(
@@ -1560,9 +1580,19 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         help="Directory for review/remediation/check transcripts.",
     )
     parser.add_argument("--dry-run", action="store_true", help="Print the loop shape without running Codex.")
-    parser.add_argument(
-        "--skip-final-review",
+    final_review_group = parser.add_mutually_exclusive_group()
+    final_review_group.add_argument(
+        "--final-review",
+        dest="final_review",
         action="store_true",
+        default=None,
+        help="Run the final review after the last remediation pass.",
+    )
+    final_review_group.add_argument(
+        "--skip-final-review",
+        dest="final_review",
+        action="store_false",
+        default=None,
         help="Do not run the final review after the last remediation pass.",
     )
     parser.add_argument(
@@ -1828,11 +1858,11 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         triage_prompt=profile.triage.prompt,
         exec_sandbox=pick(args.exec_sandbox, profile.runtime.exec_sandbox, "workspace-write"),
         exec_color=pick(args.exec_color, profile.runtime.exec_color, "never"),
-        full_auto=profile.runtime.full_auto and not args.no_full_auto,
+        full_auto=pick(args.full_auto, profile.runtime.full_auto, True),
         exec_json=profile.runtime.exec_json or args.exec_json,
-        output_last_message=profile.runtime.output_last_message and not args.no_output_last_message,
+        output_last_message=pick(args.output_last_message, profile.runtime.output_last_message, True),
         dry_run=args.dry_run,
-        final_review=profile.pipeline.final_review and not args.skip_final_review,
+        final_review=pick(args.final_review, profile.pipeline.final_review, True),
         max_remediation_input_chars=pick(
             args.max_remediation_input_chars,
             profile.runtime.max_remediation_input_chars,
