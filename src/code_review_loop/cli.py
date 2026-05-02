@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
-from code_review_loop import harnesses, profiles, progress, run_history
+from code_review_loop import __version__, harnesses, profiles, progress, run_history
 
 STATUS_RE = re.compile(r"^\s*REVIEW_STATUS:\s*(clear|findings)\s*$", re.IGNORECASE | re.MULTILINE)
 CODEX_FINDING_RE = re.compile(r"^\s*-\s*\[P[0-3]\]\s+", re.MULTILINE)
@@ -1453,8 +1453,10 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
 
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
+        prog="revrem",
         description="Run a bounded Codex review/remediation loop against a base branch.",
     )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("--profile", default=None, help="Named profile from RevRem TOML config.")
     parser.add_argument("--base", default=None, help="Base branch passed to codex review.")
     parser.add_argument(

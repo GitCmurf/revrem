@@ -3,7 +3,7 @@ document_id: REVREM-TEST-001
 type: TEST
 title: Utility verification strategy
 status: Draft
-version: '0.3'
+version: '0.4'
 last_updated: '2026-05-02'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-TEST-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 0.3
+> **Version:** 0.4
 > **Last Updated:** 2026-05-02
 > **Type:** TEST
 > **Area:** testing
@@ -73,6 +73,7 @@ The main test module is `tests/test_cli.py`. It covers:
 - Profile selection, CLI-over-profile overrides, and `revrem config` command
   behavior.
 - Run-history write/opt-out behavior and `revrem history list` output.
+- Package version reporting through `revrem --version`.
 
 `tests/test_profiles.py` covers TOML profile parsing, validation, precedence,
 commit-message model defaults, user-profile writes/deletes/imports, and
@@ -135,6 +136,7 @@ A release candidate should not be tagged unless:
 
 - tests pass locally and in CI,
 - `meminit check --format json` is green,
+- `revrem --version` reports the intended package version,
 - `REVREM-DEVEX-001` reflects current CLI flags and exit codes,
 - `REVREM-ADR-001` remains accurate for distribution and skill guidance,
 - a dry run from a separate repository produces the expected artifact layout.

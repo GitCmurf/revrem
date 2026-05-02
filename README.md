@@ -129,6 +129,24 @@ venv before updating:
 That keeps active development changes isolated until they are deliberately
 promoted.
 
+For the next release, use this sequence from this repository:
+
+```bash
+# 1. Bump the package version in pyproject.toml and src/code_review_loop/__init__.py.
+./scripts/dev-check
+git diff --check
+git add pyproject.toml src/code_review_loop/__init__.py
+git commit -m "chore: bump version to <version>"
+git tag v<version>
+./scripts/promote-stable
+revrem --version
+```
+
+The promotion script performs its own `./scripts/dev-check` before updating
+`~/.local/bin`. In sandboxed agent sessions, creating tags may require an
+approved `git tag` escalation because tag refs and annotated tag objects are
+written inside `.git`.
+
 Meminit DocOps gates:
 
 ```bash

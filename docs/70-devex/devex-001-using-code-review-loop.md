@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '0.5'
+version: '0.6'
 last_updated: '2026-05-02'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 0.5
+> **Version:** 0.6
 > **Last Updated:** 2026-05-02
 > **Type:** DEVEX
 > **Area:** devex
@@ -95,6 +95,27 @@ REVREM_BIN_DIR=~/.local/bin \
 This creates a deliberate boundary: active edits are tested through
 `./.venv/bin/...`; other repos consume only the last promoted version on
 `PATH`.
+
+### Release and promote the next version
+
+Use this sequence when the current development snapshot is ready to become the
+stable local version:
+
+```bash
+# Edit pyproject.toml and src/code_review_loop/__init__.py to the next version.
+./scripts/dev-check
+git diff --check
+git add pyproject.toml src/code_review_loop/__init__.py
+git commit -m "chore: bump version to <version>"
+git tag v<version>
+./scripts/promote-stable
+revrem --version
+```
+
+`./scripts/promote-stable` reruns `./scripts/dev-check` before it updates
+`~/.local/bin/revrem` and `~/.local/bin/code-review-loop`. In sandboxed agent
+sessions, `git tag` may need explicit escalation because Git writes tag refs,
+and annotated tags also write tag objects, under `.git`.
 
 ### Recommended final PR command
 
@@ -442,6 +463,7 @@ The wrapper runs tests, `ruff check .`, `mypy src`, and DocOps checks when
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 0.6 | 2026-05-03 | Codex | Added release/version promotion guidance and documented sandbox tagging behavior |
 | 0.5 | 2026-05-02 | Codex | Documented harness adapter boundary and TUI profile command previews |
 | 0.4 | 2026-05-02 | Codex | Documented Rich progress column styling and current dependency-gated TUI shell behavior |
 | 0.3 | 2026-05-02 | Codex | Added profile-based usage, config commands, current harness/triage boundary, history/progress hardening, and verified commit-after-remediation guidance |

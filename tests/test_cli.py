@@ -11,6 +11,17 @@ import pytest
 from code_review_loop import cli as MODULE
 
 
+def test_main_reports_package_version(capsys):
+    with pytest.raises(SystemExit) as excinfo:
+        MODULE.main(["--version"])
+
+    captured = capsys.readouterr()
+
+    assert excinfo.value.code == 0
+    assert captured.out.strip() == f"revrem {MODULE.__version__}"
+    assert captured.err == ""
+
+
 def test_detect_review_status_prefers_explicit_status_line():
     assert MODULE.detect_review_status("Looks good\nREVIEW_STATUS: clear\n") == "clear"
     assert MODULE.detect_review_status("One blocker\nREVIEW_STATUS: findings\n") == "findings"
