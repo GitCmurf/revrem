@@ -625,7 +625,7 @@ def test_loop_stops_after_unknown_review_when_remediation_has_no_staged_changes(
 
     review_calls = [command for command, _input_text, _timeout in calls if command[0] == "codex" and "review" in command]
     assert len(review_calls) == 1
-    assert summary["final_status"] == "clear"
+    assert summary["final_status"] == "unknown"
     assert summary["stopped_reason"] == "no_changes_after_remediation"
     assert summary["iterations"][0]["review_status"] == "unknown"
     assert summary["iterations"][0]["commit_status"] == "skipped_no_changes"
@@ -2164,6 +2164,46 @@ def test_summary_records_unknown_review_warning_and_bug_report(tmp_path):
     assert "iteration 1" in report_path.read_text(encoding="utf-8")
     assert "WARNING: unexpected loop behavior detected." in text
     assert f"Bug report details: {report_path}" in text
+
+
+def test_unknown_final_review_is_recorded_in_diagnostics(tmp_path):
+    review_outputs = iter(
+        [
+            "Needs work.\nREVIEW_STATUS: findings\n",
+            "This final review is ambiguous.\n",
+        ]
+    )
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[1] == "review":
+            return MODULE.CommandResult(list(args), 0, stdout=next(review_outputs))
+        return MODULE.CommandResult(list(args), 0, stdout="fixed\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        debug_status_detection=True,
+    )
+
+    summary = MODULE.run_loop(config, runner)
+    report_path = tmp_path / "artifacts" / "unexpected-behavior-report.txt"
+    final_status_path = tmp_path / "artifacts" / "review-final-status.json"
+
+    assert summary["final_status"] == "unknown"
+    assert summary["unexpected_behaviors"] == [
+        {
+            "kind": "unknown_review_status",
+            "iteration": "final",
+            "review_path": str(tmp_path / "artifacts" / "review-final.txt"),
+            "status_diagnostics_path": str(final_status_path),
+        }
+    ]
+    assert summary["bug_report_path"] == str(report_path)
+    assert report_path.is_file()
+    assert final_status_path.is_file()
 
 
 def test_progress_logs_review_and_finding_summaries(tmp_path, capsys):

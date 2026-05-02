@@ -1189,7 +1189,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                 write_summary(config, summary)
                 raise RunLoopFailed(summary, f"git commit failed for iteration {iteration}") from exc
             if iterations[-1]["commit_status"] == "skipped_no_changes":
-                summary["final_status"] = "clear" if status == "unknown" else status
+                summary["final_status"] = status
                 summary["stopped_reason"] = "no_changes_after_remediation"
                 summary["latest_review_excerpt"] = excerpt_for_terminal(
                     last_review_output,
@@ -1217,6 +1217,13 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
         else:
             summary["final_status"] = status
             summary["stopped_reason"] = "review_clear" if status == "clear" else "max_iterations_reached"
+            if status == "unknown":
+                iterations.append(
+                    {
+                        "iteration": "final",
+                        "review_status": status,
+                    }
+                )
     else:
         # Status after the last remediation is not known without a review.
         summary["final_status"] = "unknown"
