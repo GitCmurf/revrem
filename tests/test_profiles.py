@@ -350,6 +350,35 @@ def test_profile_rejects_invalid_runtime_enum_values(tmp_path, setting, value, m
         profiles.load_profile_file(path)
 
 
+def test_profile_rejects_unknown_keys_in_profile_and_nested_sections(tmp_path):
+    path = tmp_path / "profiles.toml"
+    path.write_text(
+        """
+[profiles.bad]
+description = "Bad profile"
+unexpected = true
+
+[profiles.good.pipeline]
+max_iteration = 3
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="bad contains unknown keys: unexpected"):
+        profiles.load_profile_file(path)
+
+    path.write_text(
+        """
+[profiles.good.pipeline]
+max_iteration = 3
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="pipeline contains unknown keys: max_iteration"):
+        profiles.load_profile_file(path)
+
+
 def test_write_delete_and_import_user_profiles(tmp_path, monkeypatch):
     home = tmp_path / "home"
     config_path = profiles.user_config_path(home)

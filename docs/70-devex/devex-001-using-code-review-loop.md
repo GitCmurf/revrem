@@ -166,7 +166,9 @@ user profile, and are preserved by `revrem config` writes. Existing profiles
 stay in their original explicit form when the file is rewritten, so omitted
 fields keep inheriting shared defaults. If a profile field is explicitly set
 back to a built-in default, the rewrite keeps it when the file's `[defaults]`
-table would otherwise change behavior. A minimal final-PR profile:
+table would otherwise change behavior. Profile loading rejects unknown keys in
+profile tables and nested sections, so typos fail fast instead of silently
+using defaults. A minimal final-PR profile:
 
 ```toml
 [profiles.final-pr]

@@ -20,6 +20,36 @@ TOML_BARE_KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 EXEC_SANDBOX_CHOICES = ("read-only", "workspace-write", "danger-full-access")
 EXEC_COLOR_CHOICES = ("always", "never", "auto")
 REASONING_EFFORT_CHOICES = ("minimal", "low", "medium", "high")
+PROFILE_KEYS = (
+    "description",
+    "pipeline",
+    "review",
+    "triage",
+    "remediation",
+    "output",
+    "runtime",
+)
+PIPELINE_KEYS = ("base", "max_iterations", "final_review", "checks")
+PHASE_KEYS = ("harness", "model", "reasoning_effort", "timeout_seconds")
+TRIAGE_KEYS = ("enabled", "harness", "model", "prompt")
+OUTPUT_KEYS = (
+    "summary_format",
+    "debug_status_detection",
+    "progress_style",
+    "quiet_progress",
+    "terminal_title",
+    "artifact_dir",
+)
+RUNTIME_KEYS = (
+    "codex_bin",
+    "exec_sandbox",
+    "exec_color",
+    "exec_json",
+    "output_last_message",
+    "full_auto",
+    "max_remediation_input_chars",
+    "terminal_excerpt_chars",
+)
 
 
 @dataclass(frozen=True)
@@ -138,6 +168,7 @@ def load_profile_file(path: Path) -> ProfileFile:
 
 
 def parse_profile(name: str, raw: dict[str, Any], *, source: str | None = None) -> Profile:
+    _reject_unknown_keys(raw, PROFILE_KEYS, f"{name}")
     description = _optional_str(raw.get("description"), f"{name}.description") or ""
     pipeline = parse_pipeline(_table(raw.get("pipeline", {}), f"{name}.pipeline"))
     review = parse_phase(_table(raw.get("review", {}), f"{name}.review"), f"{name}.review")
@@ -164,6 +195,7 @@ def parse_profile(name: str, raw: dict[str, Any], *, source: str | None = None) 
 
 
 def parse_pipeline(raw: dict[str, Any]) -> PipelineConfig:
+    _reject_unknown_keys(raw, PIPELINE_KEYS, "pipeline")
     checks = raw.get("checks", ())
     if checks is None:
         checks = ()
@@ -178,6 +210,7 @@ def parse_pipeline(raw: dict[str, Any]) -> PipelineConfig:
 
 
 def parse_phase(raw: dict[str, Any], field: str) -> PhaseConfig:
+    _reject_unknown_keys(raw, PHASE_KEYS, field)
     harness = _str(raw.get("harness", "codex"), f"{field}.harness")
     validate_harness_name(harness, field=f"{field}.harness")
     reasoning_effort = _optional_str(raw.get("reasoning_effort"), f"{field}.reasoning_effort")
@@ -194,6 +227,7 @@ def parse_phase(raw: dict[str, Any], field: str) -> PhaseConfig:
 
 
 def parse_triage(raw: dict[str, Any], field: str) -> TriageConfig:
+    _reject_unknown_keys(raw, TRIAGE_KEYS, field)
     harness = _str(raw.get("harness", "codex"), f"{field}.harness")
     validate_harness_name(harness, field=f"{field}.harness")
     return TriageConfig(
@@ -205,6 +239,7 @@ def parse_triage(raw: dict[str, Any], field: str) -> TriageConfig:
 
 
 def parse_output(raw: dict[str, Any]) -> OutputConfig:
+    _reject_unknown_keys(raw, OUTPUT_KEYS, "output")
     summary_format = _str(raw.get("summary_format", "text"), "output.summary_format")
     if summary_format not in {"text", "json", "both"}:
         raise ValueError("output.summary_format must be text, json, or both")
@@ -225,6 +260,7 @@ def parse_output(raw: dict[str, Any]) -> OutputConfig:
 
 
 def parse_runtime(raw: dict[str, Any]) -> RuntimeConfig:
+    _reject_unknown_keys(raw, RUNTIME_KEYS, "runtime")
     return RuntimeConfig(
         codex_bin=_str(raw.get("codex_bin", "codex"), "runtime.codex_bin"),
         exec_sandbox=_str(raw.get("exec_sandbox", "workspace-write"), "runtime.exec_sandbox"),
@@ -552,6 +588,13 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
         else:
             merged[key] = value
     return merged
+
+
+def _reject_unknown_keys(raw: dict[str, Any], allowed: tuple[str, ...], field: str) -> None:
+    unexpected = sorted(key for key in raw if key not in allowed)
+    if unexpected:
+        keys = ", ".join(unexpected)
+        raise ValueError(f"{field} contains unknown keys: {keys}")
 
 
 def _table(value: Any, field: str) -> dict[str, Any]:
