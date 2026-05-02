@@ -78,6 +78,18 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
         == "clear"
     )
     assert (
+        MODULE.detect_review_status(
+            "I did not identify any blocking defects in this patch. The tests pass."
+        )
+        == "clear"
+    )
+    assert (
+        MODULE.detect_review_status(
+            "I did not find any new regressions in the changed paths."
+        )
+        == "clear"
+    )
+    assert (
         MODULE.detect_review_status("This would warrant an inline finding.") == "unknown"
     )
     assert (
@@ -85,6 +97,24 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
             "The changes add the alias and tests without any clear regressions or actionable bugs."
         )
         == "clear"
+    )
+
+
+def test_detect_review_status_does_not_generalize_negated_clear_with_findings():
+    assert (
+        MODULE.detect_review_status(
+            "I did not identify any broad design problem.\n\n"
+            "Full review comments:\n\n"
+            "- [P2] Fix the actual bug — src/example.py:10\n"
+        )
+        == "findings"
+    )
+    assert (
+        MODULE.detect_review_status(
+            "I did not identify any broad design problem.\n\n"
+            "- [P3] Tighten docs — docs/example.md:1\n"
+        )
+        == "findings"
     )
 
 

@@ -440,9 +440,19 @@ def detect_review_status(output: str) -> str:
     }
     if any(line in clear_lines for line in normalized_lines):
         return "clear"
+    if has_negated_clear_review_start(normalized_lines):
+        return "clear"
     if any(phrase in normalized for phrase in CLEAR_PHRASES):
         return "clear"
     return "unknown"
+
+
+def has_negated_clear_review_start(lines: list[str]) -> bool:
+    for line in lines:
+        if not line:
+            continue
+        return line.startswith(("i did not identify any", "i did not find any"))
+    return False
 
 
 CLEAR_PHRASES = (
@@ -473,7 +483,11 @@ def review_status_diagnostics(output: str) -> dict[str, object]:
     explicit_status = STATUS_RE.search(actionable_output)
     finding_lines = CODEX_FINDING_RE.findall(actionable_output)
     normalized = actionable_output.lower()
-    clear_phrase_present = any(phrase in normalized for phrase in CLEAR_PHRASES)
+    normalized_lines = [line.strip().lower() for line in actionable_output.splitlines()]
+    clear_phrase_present = (
+        any(phrase in normalized for phrase in CLEAR_PHRASES)
+        or has_negated_clear_review_start(normalized_lines)
+    )
     return {
         "status": detect_review_status(output),
         "actionable_chars": len(actionable_output),
