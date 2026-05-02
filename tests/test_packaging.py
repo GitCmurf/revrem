@@ -32,6 +32,10 @@ def test_promote_stable_uses_home_local_stable_install_boundary():
     assert 'STABLE_HOME=${REVREM_STABLE_HOME:-"$HOME/.local/share/revrem"}' in script
     assert 'BIN_DIR=${REVREM_BIN_DIR:-"$HOME/.local/bin"}' in script
     assert 'RELEASES_DIR=$STABLE_HOME/releases' in script
+    assert 'mkdir -p "$RELEASES_DIR" "$BIN_DIR"' in script
+    assert 'RELEASE_SUFFIX=0' in script
+    assert 'if mkdir "$RELEASE_DIR"; then' in script
+    assert 'if [ -d "$RELEASE_DIR" ]; then' in script
     assert 'cp -R "$REPO_ROOT/src" "$RELEASE_DIR/src"' in script
     assert 'PYTHONPATH="$RELEASE_DIR/src\\${PYTHONPATH:+:\\$PYTHONPATH}"' in script
     assert 'cat > "$BIN_DIR/code-review-loop" <<EOF' in script

@@ -15,7 +15,7 @@ revrem \
   --remediation-model gpt-5.4-mini \
   --reasoning-effort medium \
   --timeout-seconds 1800 \
-  --summary-format both \
+  --summary-format text \
   --debug-status-detection \
   --terminal-title \
   --check "pytest -q" \
@@ -24,6 +24,8 @@ revrem \
 
 `revrem` and `code-review-loop` are equivalent entry points. Use `revrem` for
 human-facing usage and keep `code-review-loop` for existing scripts.
+Use `--summary-format json` or `--summary-format both` only when a caller needs
+machine-readable stdout.
 
 The command exits `0` only when the final loop status is clear. It exits `2`
 when the bounded loop finishes with findings or unresolved check failures.

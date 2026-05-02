@@ -22,6 +22,18 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
         MODULE.detect_review_status("I did not find any discrete, actionable bugs in the diff.")
         == "clear"
     )
+    assert (
+        MODULE.detect_review_status(
+            "I did not find any discrete introduced bug that would break existing behavior."
+        )
+        == "clear"
+    )
+    assert (
+        MODULE.detect_review_status(
+            "The changes add the alias and tests without any clear regressions or actionable bugs."
+        )
+        == "clear"
+    )
 
 
 def test_detect_review_status_ignores_stderr_transcript_noise():
@@ -899,9 +911,9 @@ def test_terminal_title_tracks_review_and_remediation_phases(tmp_path, monkeypat
 
     assert summary["final_status"] == "clear"
     assert output.startswith(MODULE.TERMINAL_TITLE_SAVE)
-    assert "\033]0;rev 1/2 RevRem\007" in output
-    assert "\033]0;rem 1/2 RevRem\007" in output
-    assert "\033]0;rev 2/2 RevRem\007" in output
+    assert "\033]0;rev 1/2 RevRem\007\033]2;rev 1/2 RevRem\007" in output
+    assert "\033]0;rem 1/2 RevRem\007\033]2;rem 1/2 RevRem\007" in output
+    assert "\033]0;rev 2/2 RevRem\007\033]2;rev 2/2 RevRem\007" in output
     assert output.endswith(MODULE.TERMINAL_TITLE_RESTORE)
 
 
@@ -932,8 +944,66 @@ def test_terminal_title_restores_after_remediation_failure(tmp_path, monkeypatch
         raise AssertionError("expected remediation failure")
 
     output = stderr.getvalue()
-    assert "\033]0;rev 1/1 RevRem\007" in output
-    assert "\033]0;rem 1/1 RevRem\007" in output
+    assert "\033]0;rev 1/1 RevRem\007\033]2;rev 1/1 RevRem\007" in output
+    assert "\033]0;rem 1/1 RevRem\007\033]2;rem 1/1 RevRem\007" in output
+    assert output.endswith(MODULE.TERMINAL_TITLE_RESTORE)
+
+
+def test_terminal_title_never_writes_to_stdout(tmp_path, monkeypatch):
+    stderr = io.StringIO()
+    stdout = TtyBuffer()
+    monkeypatch.setattr(MODULE.sys, "stderr", stderr)
+    monkeypatch.setattr(MODULE.sys, "stdout", stdout)
+    monkeypatch.setattr(MODULE.Path, "exists", lambda self: False)
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        progress=False,
+        terminal_title=True,
+    )
+
+    MODULE.set_terminal_title(config, "rev 1/1 RevRem")
+
+    assert stderr.getvalue() == ""
+    assert stdout.getvalue() == ""
+
+
+def test_default_runner_refreshes_active_terminal_title_during_child_process(tmp_path, monkeypatch):
+    stderr = TtyBuffer()
+    monkeypatch.setattr(MODULE.sys, "stderr", stderr)
+    monkeypatch.setattr(MODULE, "TERMINAL_TITLE_REFRESH_SECONDS", 0.01)
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        progress=False,
+        terminal_title=True,
+    )
+
+    with MODULE.terminal_title_context(config):
+        MODULE.set_terminal_title(config, "rev 1/1 RevRem")
+        result = MODULE.default_runner(
+            [
+                MODULE.sys.executable,
+                "-c",
+                "import time; time.sleep(0.05); print('done')",
+            ],
+            tmp_path,
+            None,
+            2,
+        )
+
+    output = stderr.getvalue()
+    title_sequence = "\033]0;rev 1/1 RevRem\007\033]2;rev 1/1 RevRem\007"
+    assert result.returncode == 0
+    assert result.stdout == "done\n"
+    assert output.count(title_sequence) >= 2
     assert output.endswith(MODULE.TERMINAL_TITLE_RESTORE)
 
 

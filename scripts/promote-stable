@@ -9,7 +9,6 @@ STABLE_VENV=${REVREM_STABLE_VENV:-"$STABLE_HOME/stable-venv"}
 BIN_DIR=${REVREM_BIN_DIR:-"$HOME/.local/bin"}
 RELEASES_DIR=$STABLE_HOME/releases
 RELEASE_ID=$(date -u +%Y%m%dT%H%M%SZ)
-RELEASE_DIR=$RELEASES_DIR/$RELEASE_ID
 
 cd "$REPO_ROOT"
 
@@ -17,7 +16,22 @@ if [ "${REVREM_SKIP_CHECKS:-0}" != "1" ]; then
   ./scripts/dev-check
 fi
 
-mkdir -p "$RELEASE_DIR" "$BIN_DIR"
+mkdir -p "$RELEASES_DIR" "$BIN_DIR"
+RELEASE_SUFFIX=0
+while :; do
+  RELEASE_DIR=$RELEASES_DIR/$RELEASE_ID
+  if [ "$RELEASE_SUFFIX" -gt 0 ]; then
+    RELEASE_DIR=$RELEASE_DIR-$RELEASE_SUFFIX
+  fi
+  if mkdir "$RELEASE_DIR"; then
+    break
+  fi
+  if [ -d "$RELEASE_DIR" ]; then
+    RELEASE_SUFFIX=$((RELEASE_SUFFIX + 1))
+    continue
+  fi
+  exit 1
+done
 cp -R "$REPO_ROOT/src" "$RELEASE_DIR/src"
 cp "$REPO_ROOT/pyproject.toml" "$RELEASE_DIR/pyproject.toml"
 cp "$REPO_ROOT/README.md" "$RELEASE_DIR/README.md"

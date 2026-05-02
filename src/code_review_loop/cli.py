@@ -11,6 +11,7 @@ import shlex
 import subprocess
 import sys
 import textwrap
+import time
 from collections.abc import Callable, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -89,12 +90,15 @@ class LoopConfig:
 
 Runner = Callable[[Sequence[str], Path, str | None, float | None], CommandResult]
 
-TERMINAL_TITLE_SAVE = "\033]22;0\007"
-TERMINAL_TITLE_RESTORE = "\033]23;0\007"
+# xterm-compatible title-stack controls use CSI, not OSC.
+TERMINAL_TITLE_SAVE = "\033[22;0t"
+TERMINAL_TITLE_RESTORE = "\033[23;0t"
+TERMINAL_TITLE_REFRESH_SECONDS = 1.0
+_CURRENT_TERMINAL_TITLE_SEQUENCE: str | None = None
 
 
 def terminal_title_supported(config: LoopConfig) -> bool:
-    return config.terminal_title and sys.stderr.isatty()
+    return config.terminal_title and (sys.stderr.isatty() or Path("/dev/tty").exists())
 
 
 def sanitize_terminal_title(value: str) -> str:
@@ -102,14 +106,32 @@ def sanitize_terminal_title(value: str) -> str:
 
 
 def write_terminal_control(sequence: str) -> None:
-    sys.stderr.write(sequence)
-    sys.stderr.flush()
+    if sys.stderr.isatty():
+        sys.stderr.write(sequence)
+        sys.stderr.flush()
+        return
+    try:
+        with Path("/dev/tty").open("w", encoding="utf-8") as tty:
+            tty.write(sequence)
+            tty.flush()
+    except OSError:
+        return
 
 
 def set_terminal_title(config: LoopConfig, title: str) -> None:
+    global _CURRENT_TERMINAL_TITLE_SEQUENCE
     if not terminal_title_supported(config):
         return
-    write_terminal_control(f"\033]0;{sanitize_terminal_title(title)}\007")
+    safe_title = sanitize_terminal_title(title)
+    # OSC 0 sets icon + window title. OSC 2 explicitly sets the window/tab
+    # title. Emitting both is harmless and covers more terminal emulators.
+    _CURRENT_TERMINAL_TITLE_SEQUENCE = f"\033]0;{safe_title}\007\033]2;{safe_title}\007"
+    write_terminal_control(_CURRENT_TERMINAL_TITLE_SEQUENCE)
+
+
+def refresh_terminal_title() -> None:
+    if _CURRENT_TERMINAL_TITLE_SEQUENCE:
+        write_terminal_control(_CURRENT_TERMINAL_TITLE_SEQUENCE)
 
 
 def terminal_iteration_label(label: str, max_iterations: int) -> str:
@@ -135,6 +157,7 @@ def set_phase_terminal_title(config: LoopConfig, phase: str, label: str) -> None
 
 @contextmanager
 def terminal_title_context(config: LoopConfig):
+    global _CURRENT_TERMINAL_TITLE_SEQUENCE
     if not terminal_title_supported(config):
         yield
         return
@@ -145,6 +168,7 @@ def terminal_title_context(config: LoopConfig):
     try:
         yield
     finally:
+        _CURRENT_TERMINAL_TITLE_SEQUENCE = None
         write_terminal_control(TERMINAL_TITLE_RESTORE)
 
 
@@ -247,13 +271,10 @@ def progress_continuation(config: LoopConfig, phase: str, label: str, text: str,
 
 def default_runner(args: Sequence[str], cwd: Path, input_text: str | None = None, timeout_seconds: float | None = None) -> CommandResult:
     try:
-        completed = subprocess.run(
+        completed = run_subprocess_with_terminal_title_refresh(
             list(args),
             cwd=cwd,
             input=input_text,
-            text=True,
-            capture_output=True,
-            check=False,
             timeout=timeout_seconds,
         )
         return CommandResult(
@@ -269,6 +290,41 @@ def default_runner(args: Sequence[str], cwd: Path, input_text: str | None = None
             stdout="",
             stderr=f"Command timed out after {timeout_seconds} seconds",
         )
+
+
+def run_subprocess_with_terminal_title_refresh(
+    args: list[str],
+    *,
+    cwd: Path,
+    input: str | None,
+    timeout: float | None,
+) -> subprocess.CompletedProcess[str]:
+    process = subprocess.Popen(
+        args,
+        cwd=cwd,
+        stdin=subprocess.PIPE if input is not None else None,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    deadline = None if timeout is None else time.monotonic() + timeout
+    pending_input = input
+    while True:
+        refresh_terminal_title()
+        wait = TERMINAL_TITLE_REFRESH_SECONDS
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                process.kill()
+                stdout, stderr = process.communicate()
+                assert timeout is not None
+                raise subprocess.TimeoutExpired(args, timeout, output=stdout, stderr=stderr)
+            wait = min(wait, remaining)
+        try:
+            stdout, stderr = process.communicate(input=pending_input, timeout=wait)
+            return subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
+        except subprocess.TimeoutExpired:
+            pending_input = None
 
 
 def detect_review_status(output: str) -> str:
@@ -303,9 +359,12 @@ def detect_review_status(output: str) -> str:
         return "clear"
     clear_phrases = (
         "did not find any discrete, actionable bugs",
+        "did not find any discrete introduced bug",
         "did not find any actionable bugs",
         "no discrete, actionable bugs",
         "no actionable bugs",
+        "without any clear regressions or actionable bugs",
+        "without any clear regressions or actionable",
     )
     if any(phrase in normalized for phrase in clear_phrases):
         return "clear"
@@ -997,7 +1056,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         action="store_true",
         help=(
             "Update the terminal window/tab title with the active review or remediation phase. "
-            "Restores the previous title on exit in terminals with title-stack support."
+            "Restores the previous title on exit in terminals with xterm-style title-stack support."
         ),
     )
     parser.add_argument(

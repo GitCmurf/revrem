@@ -108,7 +108,7 @@ revrem \
   --remediation-model gpt-5.4-mini \
   --reasoning-effort medium \
   --timeout-seconds 1800 \
-  --summary-format both \
+  --summary-format text \
   --debug-status-detection \
   --terminal-title \
   --check "pytest -q" \
@@ -117,6 +117,10 @@ revrem \
 
 Use `code-review-loop` with the same flags when preserving an existing script
 or command history matters.
+
+Use `--summary-format text` for watched terminal runs. Use `json` or `both`
+only when the stdout JSON is being captured by another tool; `both` intentionally
+prints the full JSON summary after the human-readable summary.
 
 Use repository-specific checks. For Meminit-backed repositories, include:
 
@@ -182,7 +186,9 @@ milestones land, use explicit flags or shell aliases for repeatable runs.
   the loop moves between review and remediation phases, for example
   `rev 1/2 RevRem` and `rem 1/2 RevRem`. The tool uses terminal title-stack
   escape sequences to restore the previous title on exit where the terminal
-  supports them; terminals that ignore those sequences will still run normally.
+  supports them, and emits both common window-title escape forms for broader
+  terminal compatibility. Terminals that ignore those sequences will still run
+  normally.
 
 ### Development checks
 
