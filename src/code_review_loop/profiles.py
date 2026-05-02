@@ -12,8 +12,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from code_review_loop.harnesses import require_implemented_harness, validate_harness_name
 from code_review_loop import run_history
+from code_review_loop.harnesses import require_implemented_harness, validate_harness_name
 
 USER_CONFIG_RELATIVE = Path(".config") / "revrem" / "profiles.toml"
 PROJECT_CONFIG_NAME = ".revrem.toml"
