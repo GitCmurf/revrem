@@ -453,6 +453,7 @@ CLEAR_PHRASES = (
     "did not find a discrete introduced bug",
     "did not find any discrete introduced bug",
     "did not find any actionable bugs",
+    "did not identify any discrete introduced bugs that should block the patch",
     "did not identify any discrete introduced bugs that would block the patch",
     "did not identify any actionable correctness, security, or maintainability issues",
     "did not identify any introduced correctness, security, or maintainability issues",

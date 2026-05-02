@@ -54,6 +54,13 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
     )
     assert (
         MODULE.detect_review_status(
+            "I did not identify any discrete introduced bugs that should block the patch. "
+            "The repository's dev-check suite passes locally."
+        )
+        == "clear"
+    )
+    assert (
+        MODULE.detect_review_status(
             "The changes pass locally without revealing any discrete correctness issue."
         )
         == "clear"
