@@ -316,6 +316,10 @@ it is not available in the current CLI.
   the review text looks clear. The flag writes `*-status.json` files next to
   review artifacts and logs the compact reason for each clear/findings/unknown
   classification.
+- If any review still classifies as `unknown`, the final text summary includes a
+  warning and writes `unexpected-behavior-report.txt` in the artifact directory.
+  Include that report, the referenced `review-N.txt`, and any
+  `review-N-status.json` diagnostics when filing a RevRem bug report.
 - Use `--terminal-title` in a watched terminal to update the window/tab title as
   the loop moves between review and remediation phases, for example
   `rev 1/2 RevRem` and `rem 1/2 RevRem`. The tool uses terminal title-stack

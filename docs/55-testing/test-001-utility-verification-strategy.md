@@ -54,6 +54,8 @@ The main test module is `tests/test_cli.py`. It covers:
 - Status detection using only actionable review output, not noisy tool
   transcripts in captured stderr.
 - Optional status-detection diagnostic artifacts.
+- Unexpected-behavior summary warnings and bug-report artifacts for remaining
+  unknown review classifications.
 - Progress-log formatting and quiet mode.
 - Local-time progress prefixes and optional Rich progress fallback behavior.
 - Terminal-title progress updates and stdout-safety.

@@ -419,12 +419,16 @@ def detect_review_status(output: str) -> str:
 
 CLEAR_PHRASES = (
     "did not find any discrete, actionable bugs",
+    "did not find any discrete, actionable correctness issues",
     "did not find a discrete introduced bug",
     "did not find any discrete introduced bug",
     "did not find any actionable bugs",
+    "did not identify any actionable correctness, security, or maintainability issues",
+    "did not identify any introduced correctness, security, or maintainability issues",
     "without revealing any discrete correctness issue",
     "no discrete, actionable bugs",
     "no actionable bugs",
+    "warrant an inline finding",
     "without any clear regressions or actionable bugs",
     "without any clear regressions or actionable",
 )
@@ -1006,8 +1010,60 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
 
 
 def write_summary(config: LoopConfig, summary: dict[str, object]) -> None:
+    update_unexpected_behaviors(config, summary)
     add_artifact_paths(summary, config)
     write_artifact(config.artifact_dir / "summary.json", json.dumps(summary, indent=2, sort_keys=True))
+
+
+def update_unexpected_behaviors(config: LoopConfig, summary: dict[str, object]) -> None:
+    iterations = summary.get("iterations")
+    if not isinstance(iterations, list):
+        return
+    unknowns = [
+        item
+        for item in iterations
+        if isinstance(item, dict) and item.get("review_status") == "unknown"
+    ]
+    if not unknowns:
+        summary.pop("unexpected_behaviors", None)
+        summary.pop("bug_report_path", None)
+        return
+
+    report_path = config.artifact_dir / "unexpected-behavior-report.txt"
+    behaviors: list[dict[str, object]] = []
+    lines = [
+        "RevRem unexpected behavior report",
+        "",
+        "A review status was classified as unknown during this run.",
+        "Please include this file and the referenced review/status artifacts in a bug report.",
+        "",
+        f"run_id: {summary.get('run_id')}",
+        f"base: {summary.get('base')}",
+        f"final_status: {summary.get('final_status')}",
+        f"stopped_reason: {summary.get('stopped_reason')}",
+        f"artifact_dir: {summary.get('artifact_dir')}",
+        "",
+        "Unknown review iterations:",
+    ]
+    for item in unknowns:
+        iteration = item.get("iteration")
+        review_path = config.artifact_dir / f"review-{iteration}.txt"
+        status_path = config.artifact_dir / f"review-{iteration}-status.json"
+        behavior = {
+            "kind": "unknown_review_status",
+            "iteration": iteration,
+            "review_path": str(review_path),
+        }
+        if status_path.is_file():
+            behavior["status_diagnostics_path"] = str(status_path)
+        behaviors.append(behavior)
+        lines.append(f"- iteration {iteration}: {review_path}")
+        if status_path.is_file():
+            lines.append(f"  diagnostics: {status_path}")
+    lines.append("")
+    write_artifact(report_path, "\n".join(lines))
+    summary["unexpected_behaviors"] = behaviors
+    summary["bug_report_path"] = str(report_path)
 
 
 def append_run_history(summary: dict[str, object], config: LoopConfig) -> Path:
@@ -1077,6 +1133,15 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
     if summary.get("error"):
         lines.append("")
         lines.append(f"Error: {summary['error']}")
+
+    unexpected = summary.get("unexpected_behaviors")
+    if isinstance(unexpected, list) and unexpected:
+        lines.append("")
+        lines.append("WARNING: unexpected loop behavior detected.")
+        lines.append("Review status was classified as unknown during this run.")
+        bug_report_path = summary.get("bug_report_path")
+        if bug_report_path:
+            lines.append(f"Bug report details: {bug_report_path}")
 
     return "\n".join(lines)
 

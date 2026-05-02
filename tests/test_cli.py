@@ -27,6 +27,12 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
     )
     assert (
         MODULE.detect_review_status(
+            "I did not find any discrete, actionable correctness issues in the changes."
+        )
+        == "clear"
+    )
+    assert (
+        MODULE.detect_review_status(
             "I did not find any discrete introduced bug that would break existing behavior."
         )
         == "clear"
@@ -40,6 +46,18 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
     assert (
         MODULE.detect_review_status(
             "The changes pass locally without revealing any discrete correctness issue."
+        )
+        == "clear"
+    )
+    assert (
+        MODULE.detect_review_status(
+            "I did not identify any actionable correctness, security, or maintainability issues introduced by the diff."
+        )
+        == "clear"
+    )
+    assert (
+        MODULE.detect_review_status(
+            "I did not identify any introduced correctness, security, or maintainability issues that warrant an inline finding."
         )
         == "clear"
     )
@@ -1623,6 +1641,48 @@ def test_terminal_summary_omits_latest_review_excerpt_when_clear():
     assert "Latest review: tmp/run/review-1.txt" in text
     assert "Latest actionable review output:" not in text
     assert "discrete, actionable bugs" not in text
+
+
+def test_summary_records_unknown_review_warning_and_bug_report(tmp_path):
+    review_outputs = iter(
+        [
+            "This review output is ambiguous.\n",
+            "No findings.\n",
+        ]
+    )
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[1] == "review":
+            return MODULE.CommandResult(list(args), 0, stdout=next(review_outputs))
+        return MODULE.CommandResult(list(args), 0, stdout="fixed\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        debug_status_detection=True,
+    )
+
+    summary = MODULE.run_loop(config, runner)
+    text = MODULE.format_terminal_summary(summary)
+    report_path = tmp_path / "artifacts" / "unexpected-behavior-report.txt"
+
+    assert summary["final_status"] == "clear"
+    assert summary["unexpected_behaviors"] == [
+        {
+            "kind": "unknown_review_status",
+            "iteration": 1,
+            "review_path": str(tmp_path / "artifacts" / "review-1.txt"),
+            "status_diagnostics_path": str(tmp_path / "artifacts" / "review-1-status.json"),
+        }
+    ]
+    assert summary["bug_report_path"] == str(report_path)
+    assert report_path.is_file()
+    assert "iteration 1" in report_path.read_text(encoding="utf-8")
+    assert "WARNING: unexpected loop behavior detected." in text
+    assert f"Bug report details: {report_path}" in text
 
 
 def test_progress_logs_review_and_finding_summaries(tmp_path, capsys):
