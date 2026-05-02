@@ -445,7 +445,39 @@ def test_loop_uses_phase_specific_timeouts_for_review_remediation_and_checks(tmp
 
     MODULE.run_loop(config, runner)
 
-    assert [call[2] for call in calls] == [300, 1800, 1800, 300]
+    assert [call[2] for call in calls] == [300, 1800, 300, 300]
+
+
+def test_loop_keeps_checks_on_global_timeout_when_remediation_is_disabled(tmp_path):
+    calls = []
+    review_outputs = iter(
+        [
+            "Finding: add regression coverage.\nREVIEW_STATUS: findings\n",
+            "No actionable findings.\nREVIEW_STATUS: clear\n",
+        ]
+    )
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[1] == "review":
+            return MODULE.CommandResult(list(args), 0, stdout=next(review_outputs))
+        return MODULE.CommandResult(list(args), 0, stdout="ok\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        check_commands=("python -m pytest tests/unit",),
+        timeout_seconds=300,
+        review_timeout_seconds=300,
+        remediation_timeout_seconds=0,
+    )
+
+    MODULE.run_loop(config, runner)
+
+    assert [call[2] for call in calls] == [300, None, 300, 300]
 
 
 def test_loop_preserves_disabled_global_timeout_for_remediation_and_checks(tmp_path):
@@ -1132,6 +1164,21 @@ def test_config_commands_create_show_list_and_delete_profile(tmp_path, monkeypat
 
     assert MODULE.main(["config", "delete", "smoke", "--yes"]) == 0
     assert MODULE.main(["config", "show", "smoke"]) == 1
+
+
+def test_config_new_reports_profile_write_oserror(tmp_path, monkeypatch, capsys):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+
+    def fail_write_user_profile(*_args, **_kwargs):
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(MODULE.profiles, "write_user_profile", fail_write_user_profile)
+
+    assert MODULE.main(["config", "new", "smoke"]) == 1
+    assert "ERROR: permission denied" in capsys.readouterr().err
 
 
 def test_config_global_format_applies_before_subcommand_defaults(tmp_path, monkeypatch, capsys):

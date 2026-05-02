@@ -125,9 +125,9 @@ Clear terminal summaries stay compact and point to artifacts instead of
 reprinting the successful review prose. Non-clear summaries include the latest
 actionable excerpt so the next operator or agent can continue from the right
 failure.
-Progress log timestamps use local terminal wall time, so watched runs line up
-with the operator's shell clock. Shared history keeps UTC ISO-8601 timestamps for
-machine processing.
+Progress log timestamps, including Rich progress timestamps, use local terminal
+wall time, so watched runs line up with the operator's shell clock. Shared
+history keeps UTC ISO-8601 timestamps for machine processing.
 Non-dry-run invocations also append compact JSONL metadata to
 `~/.local/share/revrem/runs.jsonl` by default. The per-run transcripts remain in
 the target repository's artifact directory; the shared history file stores only

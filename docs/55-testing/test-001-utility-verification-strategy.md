@@ -65,6 +65,8 @@ The main test module is `tests/test_cli.py`. It covers:
 user-profile writes/deletes/imports, and reserved future harness handling.
 `tests/test_run_history.py` covers shared JSONL history paths, record shape, and
 newest-first reads.
+`tests/test_progress.py` covers optional Rich renderer safety, including literal
+handling for review text that contains Rich markup syntax.
 `tests/test_packaging.py` covers console entry points and local distribution
 scripts.
 

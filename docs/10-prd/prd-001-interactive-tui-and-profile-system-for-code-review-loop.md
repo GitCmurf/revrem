@@ -270,8 +270,8 @@ The current `progress_event` shape remains the internal contract. A progress
 renderer interface receives the same phase events and emits either compact text
 or Rich live output. Rich is activated only when installed and requested;
 compact text remains the default for scripts and logs.
-Compact and verbose progress timestamps use local terminal wall time for watched
-runs. Persisted run-history timestamps remain UTC ISO-8601 values.
+Compact, verbose, and Rich progress timestamps use local terminal wall time for
+watched runs. Persisted run-history timestamps remain UTC ISO-8601 values.
 
 Optional Codex triage is implemented as a read-only interpretative phase between
 review and remediation. It exists to turn review prose and check failures into a

@@ -740,7 +740,10 @@ def run_checks(config: LoopConfig, runner: Runner, iteration: int) -> list[Comma
         if config.dry_run:
             result = CommandResult(command, 0, stdout=f"DRY_RUN check skipped: {check}\n")
         else:
-            result = runner(command, config.cwd, None, phase_timeout_seconds(config, config.remediation_timeout_seconds))
+            # Checks intentionally follow the global loop timeout, not the
+            # remediation-specific timeout, so remediation tuning does not make
+            # verification commands spuriously fail or run forever.
+            result = runner(command, config.cwd, None, phase_timeout_seconds(config, config.timeout_seconds))
         results.append(result)
         write_artifact(
             config.artifact_dir / f"check-{iteration}-{index}.txt",
@@ -1513,7 +1516,7 @@ def config_main(argv: Sequence[str]) -> int:
                 print(f"project_config: {info['project_config']}")
                 print("profiles: " + ", ".join(profile_names))
             return 0
-    except (FileExistsError, FileNotFoundError, RuntimeError, ValueError) as exc:
+    except (OSError, RuntimeError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
     raise AssertionError(f"unhandled config command: {args.command}")
