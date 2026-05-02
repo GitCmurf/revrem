@@ -66,12 +66,14 @@ likely false positives, implementation order, and verification commands.
 Review and check output:
 """
 
-DEFAULT_COMMIT_MESSAGE_PROMPT = """Write one concise git commit subject for the staged RevRem remediation changes.
+DEFAULT_COMMIT_MESSAGE_PROMPT = """Write one concise Conventional Commit subject for the staged RevRem remediation changes.
 
 Rules:
 - Output only the commit subject.
+- Use Conventional Commit syntax, for example: fix(cli): stop after no-op remediation.
 - Use imperative mood.
-- Keep it under 72 characters.
+- End the subject with:  (RevRem)
+- Keep it concise.
 - Do not use Markdown or quotes.
 
 Staged change summary:
@@ -102,6 +104,8 @@ class LoopConfig:
     commit_after_remediation: bool = False
     commit_message_model: str | None = None
     commit_message_prompt: str | None = None
+    commit_message_prompt_overridden: bool = False
+    commit_reasoning_effort: str | None = None
     triage_enabled: bool = False
     triage_model: str | None = None
     triage_reasoning_effort: str | None = None
@@ -449,6 +453,7 @@ CLEAR_PHRASES = (
     "did not find a discrete introduced bug",
     "did not find any discrete introduced bug",
     "did not find any actionable bugs",
+    "did not identify any discrete introduced bugs that would block the patch",
     "did not identify any actionable correctness, security, or maintainability issues",
     "did not identify any introduced correctness, security, or maintainability issues",
     "did not identify any introduced correctness, security, or maintainability issues that warrant an inline finding",
@@ -634,6 +639,7 @@ def build_triage_command(config: LoopConfig) -> list[str]:
 
 def build_commit_message_command(config: LoopConfig) -> list[str]:
     command = [config.codex_bin, "exec"]
+    command.extend(codex_config_args(config, reasoning_effort=config.commit_reasoning_effort))
     command.extend(["--sandbox", "read-only"])
     command.extend(["--color", config.exec_color])
     if config.commit_message_model:
@@ -846,7 +852,7 @@ def run_commit(config: LoopConfig, runner: Runner, iteration: int) -> str:
     if diff_quiet.returncode == 0:
         write_artifact(config.artifact_dir / f"commit-{iteration}.txt", "No staged changes to commit.\n")
         progress_event(config, "commit", str(iteration), "skipped", "no staged changes")
-        return "skipped"
+        return "skipped_no_changes"
     if diff_quiet.returncode != 1:
         write_artifact(config.artifact_dir / f"commit-{iteration}.txt", _combined_output(diff_quiet))
         progress_event(config, "commit", str(iteration), "failed", "git diff --cached --quiet failed")
@@ -892,14 +898,29 @@ def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iterat
     write_artifact(config.artifact_dir / f"commit-{iteration}-message-draft.txt", _combined_output(result))
     if result.returncode != 0:
         return fallback
-    return sanitize_commit_message(actionable_review_output(_combined_output(result)), fallback=fallback)
+    return sanitize_commit_message(
+        actionable_review_output(_combined_output(result)),
+        fallback=fallback,
+        enforce_revrem_conventional=not config.commit_message_prompt_overridden,
+    )
 
 
 def deterministic_commit_message(iteration: int) -> str:
-    return f"revrem: remediate iteration {iteration}"
+    return f"chore: remediate review iteration {iteration} (RevRem)"
 
 
-def sanitize_commit_message(output: str, *, fallback: str) -> str:
+CONVENTIONAL_COMMIT_RE = re.compile(
+    r"^(?:build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)"
+    r"(?:\([A-Za-z0-9_.-]+\))?!?:\s+\S.+$"
+)
+
+
+def sanitize_commit_message(
+    output: str,
+    *,
+    fallback: str,
+    enforce_revrem_conventional: bool = True,
+) -> str:
     for raw_line in output.splitlines():
         line = raw_line.strip().strip("`\"'")
         if not line:
@@ -907,8 +928,19 @@ def sanitize_commit_message(output: str, *, fallback: str) -> str:
         line = re.sub(r"^commit message:\s*", "", line, flags=re.IGNORECASE).strip()
         line = line.strip("`\"'")
         if line:
+            if enforce_revrem_conventional:
+                return normalize_revrem_conventional_subject(line)
             return line[:120]
-    return fallback
+    return normalize_revrem_conventional_subject(fallback) if enforce_revrem_conventional else fallback
+
+
+def normalize_revrem_conventional_subject(subject: str) -> str:
+    subject = subject.strip().rstrip(".")
+    subject = re.sub(r"\s+", " ", subject)
+    subject = re.sub(r"\s+\(RevRem\)$", "", subject)
+    if not CONVENTIONAL_COMMIT_RE.match(subject):
+        subject = f"chore: {subject}"
+    return f"{subject} (RevRem)"[:120]
 
 
 def _format_check_failures(check_results: list[CommandResult]) -> str:
@@ -1133,6 +1165,15 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                 iterations[-1]["commit_failed"] = True
                 write_summary(config, summary)
                 raise RunLoopFailed(summary, f"git commit failed for iteration {iteration}") from exc
+            if iterations[-1]["commit_status"] == "skipped_no_changes":
+                summary["final_status"] = "clear" if status == "unknown" else status
+                summary["stopped_reason"] = "no_changes_after_remediation"
+                summary["latest_review_excerpt"] = excerpt_for_terminal(
+                    last_review_output,
+                    config.terminal_excerpt_chars,
+                )
+                write_summary(config, summary)
+                return summary
 
     if config.final_review:
         status, final_review = run_codex_review(
@@ -1344,6 +1385,31 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--review-reasoning-effort",
+        choices=REASONING_EFFORT_CHOICES,
+        default=None,
+        help="Optional Codex model_reasoning_effort override for review only.",
+    )
+    parser.add_argument(
+        "--triage-reasoning-effort",
+        choices=REASONING_EFFORT_CHOICES,
+        default=None,
+        help="Optional Codex model_reasoning_effort override for triage only.",
+    )
+    parser.add_argument(
+        "--remediation-reasoning-effort",
+        "--remediate-reasoning-effort",
+        choices=REASONING_EFFORT_CHOICES,
+        default=None,
+        help="Optional Codex model_reasoning_effort override for remediation only.",
+    )
+    parser.add_argument(
+        "--commit-reasoning-effort",
+        choices=REASONING_EFFORT_CHOICES,
+        default=None,
+        help="Optional Codex model_reasoning_effort override for commit-message drafting only.",
+    )
+    parser.add_argument(
         "--exec-sandbox",
         default=None,
         choices=("read-only", "workspace-write", "danger-full-access"),
@@ -1387,6 +1453,14 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         help=(
             "Optional model for drafting commit subjects. Defaults to profile commit.message_model, "
             "then remediation/review model fallbacks."
+        ),
+    )
+    parser.add_argument(
+        "--commit-message-prompt",
+        default=None,
+        help=(
+            "Override the commit-message drafting prompt. When set, RevRem does not enforce "
+            "its default Conventional Commit + '(RevRem)' subject policy."
         ),
     )
     parser.add_argument(
@@ -1612,8 +1686,18 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
     if initial_review_file is not None and not initial_review_file.is_file():
         raise FileNotFoundError(f"initial review file not found: {initial_review_file}")
     checks = tuple(args.check) if args.check is not None else profile.pipeline.checks
-    review_reasoning_effort = args.reasoning_effort or profile.review.reasoning_effort
-    remediation_reasoning_effort = args.reasoning_effort or profile.remediation.reasoning_effort
+    review_reasoning_effort = (
+        args.review_reasoning_effort
+        or args.reasoning_effort
+        or profile.review.reasoning_effort
+    )
+    remediation_reasoning_effort = (
+        args.remediation_reasoning_effort
+        or args.reasoning_effort
+        or profile.remediation.reasoning_effort
+    )
+    triage_reasoning_effort = args.triage_reasoning_effort or profile.triage.reasoning_effort
+    commit_reasoning_effort = args.commit_reasoning_effort or remediation_reasoning_effort
     review_model = args.review_model or args.model or profile.review.model
     remediation_model = args.remediation_model or args.model or profile.remediation.model
     commit_message_model = (
@@ -1637,10 +1721,12 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         remediation_reasoning_effort=remediation_reasoning_effort,
         commit_after_remediation=profile.commit.enabled or args.commit_after_remediation,
         commit_message_model=commit_message_model,
-        commit_message_prompt=profile.commit.message_prompt,
+        commit_message_prompt=args.commit_message_prompt or profile.commit.message_prompt,
+        commit_message_prompt_overridden=args.commit_message_prompt is not None,
+        commit_reasoning_effort=commit_reasoning_effort,
         triage_enabled=profile.triage.enabled,
         triage_model=profile.triage.model,
-        triage_reasoning_effort=profile.triage.reasoning_effort,
+        triage_reasoning_effort=triage_reasoning_effort,
         triage_timeout_seconds=triage_timeout_seconds,
         triage_prompt=profile.triage.prompt,
         exec_sandbox=pick(args.exec_sandbox, profile.runtime.exec_sandbox, "workspace-write"),

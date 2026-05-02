@@ -282,11 +282,30 @@ no staged changes, and RevRem runs `git commit` itself. The optional
 `commit.message_model` or `--commit-message-model` controls only the read-only
 Codex call that drafts the commit subject. If no explicit CLI value is
 supplied, the profile value is used; the built-in profile default is
-`gpt-5.3-codex-spark`.
+`gpt-5.3-codex-spark`. With the default prompt, RevRem normalizes the final
+subject to Conventional Commit syntax and appends ` (RevRem)`. Passing
+`--commit-message-prompt` intentionally disables that default subject policy so
+special-purpose commit formats can be tested without fighting the normalizer.
+If a verified remediation pass produces no staged changes, RevRem stops the
+loop immediately; an `unknown` review status in that no-op path is treated as a
+clear terminal result and still records the unexpected-status bug-report
+artifact.
 
 ```bash
 revrem --profile final-pr --commit-after-remediation
 revrem --profile final-pr --commit-after-remediation --commit-message-model gpt-5.3-codex-spark
+revrem --profile final-pr --commit-after-remediation --commit-message-prompt "Write a release-note style subject."
+```
+
+Use phase-specific reasoning-effort flags when one phase needs a different
+cost/quality tradeoff:
+
+```bash
+revrem --profile final-pr \
+  --review-reasoning-effort high \
+  --triage-reasoning-effort low \
+  --remediation-reasoning-effort medium \
+  --commit-reasoning-effort minimal
 ```
 
 Optional Codex triage can run between review and remediation. It uses

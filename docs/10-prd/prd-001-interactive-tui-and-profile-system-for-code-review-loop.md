@@ -291,9 +291,12 @@ Optional commit-after-remediation is implemented as a separate post-check phase.
 Remediation agents do not own git history. After checks pass, RevRem may stage
 the current worktree with `git add -A` while excluding the configured artifact
 directory, skip clean trees, optionally ask a read-only Codex invocation for a
-concise subject, and run `git commit` deterministically. This keeps commits
-reproducible and preserves a future path for cheaper commit-message models
-without coupling history mutation to the remediation prompt.
+concise subject, normalize default subjects to Conventional Commit syntax with
+an appended ` (RevRem)`, and run `git commit` deterministically. A CLI
+`--commit-message-prompt` override intentionally disables that default subject
+policy. This keeps commits reproducible and preserves a future path for cheaper
+commit-message models without coupling history mutation to the remediation
+prompt.
 
 ### Phase 4: Textual TUI
 
@@ -328,6 +331,8 @@ Implementation must preserve these boundaries:
 - Commit creation is a deterministic local phase after successful checks.
   Agent/model calls may draft the subject but must not perform staging,
   committing, or pushing.
+- Reasoning-effort selection is phase-local: review, triage, remediation, and
+  commit-message drafting can each be overridden independently from the CLI.
 - Harness execution is introduced as a registry only when a second harness is implemented; until
   then, avoid speculative abstractions that obscure the Codex path.
 - Optional dependencies are imported inside feature entry points only.
@@ -373,7 +378,9 @@ Milestone status as of version 0.4:
   `--progress-style rich` activates optional Rich rendering when the `progress`
   extra is installed. Full live Rich layout remains part of the TUI-facing work.
 - FR-11 is implemented for Codex commit-message drafting with deterministic
-  local git staging and commit execution after checks pass.
+  local git staging and commit execution after checks pass. Default commit
+  subjects are normalized to Conventional Commit syntax and suffixed with
+  ` (RevRem)` unless the operator provides a custom commit-message prompt.
 - FR-12 remains pending.
 - Codex triage is implemented; non-Codex harnesses remain reserved syntax and
   executable runs fail fast when a resolved profile selects an unimplemented
@@ -455,6 +462,8 @@ Deliverables:
 - Optional commit-after-remediation phase with post-check gating, skipped clean
   trees, read-only commit-message drafting, and commit-failure summary
   artifacts.
+- CLI overrides for review, triage, remediation, and commit-message drafting
+  reasoning effort.
 - Behavioral tests for history writes, opt-out, newest-first reads, and phase
   transitions.
 
@@ -467,6 +476,9 @@ Done when:
   without allowing the triage phase to edit files.
 - Commit-after-remediation runs only after checks pass and records commit
   artifacts or failure summaries without hiding the run state.
+- A no-op remediation with passing checks and no staged changes stops the loop
+  immediately; unknown review status in that path is treated as a clear
+  terminal result while preserving unexpected-status diagnostics.
 - Existing progress tests pass unchanged or with intentional fixture updates.
 - Rich mode degrades cleanly when the extra is absent.
 
@@ -573,7 +585,7 @@ revrem history --format json list --limit 5
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
-| 0.5 | 2026-05-02 | Codex | Added optional verified commit-after-remediation phase and clarified deterministic git boundary |
+| 0.5 | 2026-05-02 | Codex | Added optional verified commit-after-remediation phase, Conventional Commit subject policy, phase-specific effort overrides, and no-op remediation close-down |
 | 0.4 | 2026-05-02 | Codex | Implemented FR-9 run history; added history CLI, JSONL architecture contract, optional read-only Codex triage, local progress timestamps, and initial optional Rich progress |
 | 0.3 | 2026-05-02 | Codex | Marked profile/config milestones implemented; clarified remaining run-history, Rich progress, and TUI scope |
 | 0.2 | 2026-05-01 | Codex | Reworked PRD into staged engineering contract; added dev/stable distribution boundary, architecture constraints, milestones, and acceptance gates |

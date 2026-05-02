@@ -49,6 +49,13 @@ The main test module is `tests/test_cli.py`. It covers:
   deterministic git commit execution, read-only commit-message drafting, skipped
   commits when no staged diff exists, and failure-summary recording when git
   commit fails.
+- Commit-message normalization to Conventional Commit syntax with the RevRem
+  suffix, plus the explicit prompt-override path that disables that default
+  subject policy.
+- Phase-specific reasoning-effort CLI overrides for review, triage,
+  remediation, and commit-message drafting.
+- No-op remediation close-down: when commit mode finds no staged changes after
+  passing checks, the loop stops instead of spending another review iteration.
 - Bounded loop behavior, including final review behavior and exit status.
 - Check-command failure handling and prompt forwarding into the next
   remediation pass.

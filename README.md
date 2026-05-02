@@ -43,7 +43,10 @@ after checks pass, excludes the configured artifact directory from staging,
 skips the commit when there are no staged changes, and runs `git commit`
 itself. `--commit-message-model` controls the optional read-only Codex call
 that drafts the commit subject; profile configuration defaults that message
-model to `gpt-5.3-codex-spark`.
+model to `gpt-5.3-codex-spark`. By default commit subjects are normalized to
+Conventional Commit syntax and end with ` (RevRem)`. Use
+`--commit-message-prompt` only when a run intentionally needs a different
+commit-subject policy.
 
 Named profiles can hold the same settings in `~/.config/revrem/profiles.toml`.
 That file can also carry a shared `[defaults]` table for user-wide model and

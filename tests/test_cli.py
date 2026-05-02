@@ -47,6 +47,13 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
     )
     assert (
         MODULE.detect_review_status(
+            "I did not identify any discrete introduced bugs that would block the patch. "
+            "The changed code compiles and the repository's dev-check suite passes."
+        )
+        == "clear"
+    )
+    assert (
+        MODULE.detect_review_status(
             "The changes pass locally without revealing any discrete correctness issue."
         )
         == "clear"
@@ -286,6 +293,7 @@ def test_commit_message_command_uses_read_only_exec_with_configured_model(tmp_pa
         cwd=tmp_path,
         artifact_dir=tmp_path / "artifacts",
         commit_message_model="gpt-5.3-codex-spark",
+        commit_reasoning_effort="minimal",
     )
 
     command = MODULE.build_commit_message_command(config)
@@ -293,6 +301,8 @@ def test_commit_message_command_uses_read_only_exec_with_configured_model(tmp_pa
     assert command == [
         "codex",
         "exec",
+        "-c",
+        'model_reasoning_effort="minimal"',
         "--sandbox",
         "read-only",
         "--color",
@@ -309,9 +319,21 @@ def test_sanitize_commit_message_uses_first_plain_subject():
             'Commit message: "Harden RevRem commit flow"\n\nExplanation...',
             fallback="fallback",
         )
-        == "Harden RevRem commit flow"
+        == "chore: Harden RevRem commit flow (RevRem)"
     )
-    assert MODULE.sanitize_commit_message("", fallback="fallback") == "fallback"
+    assert (
+        MODULE.sanitize_commit_message("fix(cli): stop on no-op remediation", fallback="fallback")
+        == "fix(cli): stop on no-op remediation (RevRem)"
+    )
+    assert MODULE.sanitize_commit_message("", fallback="fallback") == "chore: fallback (RevRem)"
+    assert (
+        MODULE.sanitize_commit_message(
+            "Use custom format",
+            fallback="fallback",
+            enforce_revrem_conventional=False,
+        )
+        == "Use custom format"
+    )
 
 
 def test_loop_stops_after_review_reports_clear(tmp_path):
@@ -476,9 +498,9 @@ def test_loop_commits_after_passing_checks(tmp_path):
         if args[:3] == ["git", "diff", "--cached"] and "--name-only" in args:
             return MODULE.CommandResult(list(args), 0, stdout="src/code.py\n")
         if args[0:2] == ["codex", "exec"] and "--sandbox" in args:
-            return MODULE.CommandResult(list(args), 0, stdout="Harden RevRem commit flow\n")
+            return MODULE.CommandResult(list(args), 0, stdout="fix(cli): harden RevRem commit flow\n")
         if args[:3] == ["git", "commit", "-m"]:
-            return MODULE.CommandResult(list(args), 0, stdout="[branch abc] Harden RevRem commit flow\n")
+            return MODULE.CommandResult(list(args), 0, stdout="[branch abc] fix(cli): harden RevRem commit flow\n")
         return MODULE.CommandResult(list(args), 0, stdout="remediated\n")
 
     config = MODULE.LoopConfig(
@@ -496,7 +518,7 @@ def test_loop_commits_after_passing_checks(tmp_path):
 
     commands = [call[0] for call in calls]
     assert ["git", "add", "-A", "--", ".", ":(exclude)artifacts"] in commands
-    assert ["git", "commit", "-m", "Harden RevRem commit flow"] in commands
+    assert ["git", "commit", "-m", "fix(cli): harden RevRem commit flow (RevRem)"] in commands
     assert any(command[:6] == ["codex", "exec", "--sandbox", "read-only", "--color", "never"] for command in commands)
     assert summary["iterations"][0]["commit_status"] == "committed"
     assert set(summary["artifact_paths"]["commits"]) == {
@@ -511,6 +533,8 @@ def test_loop_commits_after_passing_checks(tmp_path):
         if command[:6] == ["codex", "exec", "--sandbox", "read-only", "--color", "never"]
     )
     assert commit_prompt is not None and "Files:" in commit_prompt
+    assert "Conventional Commit" in commit_prompt
+    assert "(RevRem)" in commit_prompt
 
 
 def test_git_add_command_for_commit_excludes_relative_artifact_dir(tmp_path):
@@ -565,6 +589,41 @@ def test_loop_skips_commit_when_checks_fail(tmp_path):
     assert summary["iterations"][0]["check_failures"] == 1
     assert "commit_status" not in summary["iterations"][0]
     assert not any(command[0] == "git" for command, _input_text, _timeout in calls)
+
+
+def test_loop_stops_after_unknown_review_when_remediation_has_no_staged_changes(tmp_path):
+    calls = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[0] == "codex" and "review" in args:
+            return MODULE.CommandResult(list(args), 0, stdout="The implementation appears sound.\n")
+        if args[0] == "pytest":
+            return MODULE.CommandResult(list(args), 0, stdout="1 passed\n")
+        if args[:4] == ["git", "add", "-A", "--"]:
+            return MODULE.CommandResult(list(args), 0)
+        if args[:3] == ["git", "diff", "--cached"] and "--quiet" in args:
+            return MODULE.CommandResult(list(args), 0)
+        return MODULE.CommandResult(list(args), 0, stdout="No edits were needed.\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=3,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        check_commands=("pytest -q",),
+        commit_after_remediation=True,
+    )
+
+    summary = MODULE.run_loop(config, runner)
+
+    review_calls = [command for command, _input_text, _timeout in calls if command[0] == "codex" and "review" in command]
+    assert len(review_calls) == 1
+    assert summary["final_status"] == "clear"
+    assert summary["stopped_reason"] == "no_changes_after_remediation"
+    assert summary["iterations"][0]["review_status"] == "unknown"
+    assert summary["iterations"][0]["commit_status"] == "skipped_no_changes"
 
 
 def test_loop_writes_failure_summary_when_commit_fails(tmp_path):
@@ -1080,6 +1139,8 @@ message_model = "gpt-5.3-codex-spark"
             "final-pr",
             "--commit-message-model",
             "gpt-test-commit",
+            "--commit-message-prompt",
+            "Write a custom subject.",
             "--dry-run",
         ]
     )
@@ -1087,6 +1148,8 @@ message_model = "gpt-5.3-codex-spark"
     assert exit_code == 0
     assert captured_configs[0].commit_after_remediation is True
     assert captured_configs[0].commit_message_model == "gpt-test-commit"
+    assert captured_configs[0].commit_message_prompt == "Write a custom subject."
+    assert captured_configs[0].commit_message_prompt_overridden is True
 
 
 def test_main_reasoning_effort_override_applies_to_review_and_remediation_only(
@@ -1142,6 +1205,63 @@ timeout_seconds = 30
     assert config.triage_enabled is True
     assert config.triage_model == "gpt-4.1"
     assert config.triage_reasoning_effort == "minimal"
+
+
+def test_main_phase_reasoning_effort_overrides_win_independently(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    config_path = home / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.final-pr.triage]
+enabled = true
+reasoning_effort = "minimal"
+
+[profiles.final-pr.remediation]
+reasoning_effort = "low"
+""",
+        encoding="utf-8",
+    )
+    captured_configs = []
+
+    def fake_run_loop(config):
+        captured_configs.append(config)
+        return {
+            "artifact_dir": str(config.artifact_dir),
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+            "iterations": [],
+        }
+
+    monkeypatch.setattr(MODULE, "run_loop", fake_run_loop)
+
+    exit_code = MODULE.main(
+        [
+            "--profile",
+            "final-pr",
+            "--reasoning-effort",
+            "medium",
+            "--review-reasoning-effort",
+            "high",
+            "--triage-reasoning-effort",
+            "low",
+            "--remediation-reasoning-effort",
+            "minimal",
+            "--commit-reasoning-effort",
+            "high",
+            "--dry-run",
+        ]
+    )
+
+    assert exit_code == 0
+    config = captured_configs[0]
+    assert config.review_reasoning_effort == "high"
+    assert config.triage_reasoning_effort == "low"
+    assert config.remediation_reasoning_effort == "minimal"
+    assert config.commit_reasoning_effort == "high"
 
 
 def test_main_records_non_dry_run_history(tmp_path, monkeypatch, capsys):
