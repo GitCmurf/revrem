@@ -1770,7 +1770,9 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         ),
         commit_message_model=commit_message_model,
         commit_message_prompt=args.commit_message_prompt or profile.commit.message_prompt,
-        commit_message_prompt_overridden=args.commit_message_prompt is not None,
+        commit_message_prompt_overridden=(
+            args.commit_message_prompt is not None or profile.commit.message_prompt is not None
+        ),
         commit_reasoning_effort=commit_reasoning_effort,
         triage_enabled=profile.triage.enabled,
         triage_model=profile.triage.model,

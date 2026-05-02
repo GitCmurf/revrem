@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import stat
+import subprocess
 import tomllib
 from pathlib import Path
 
@@ -40,6 +42,55 @@ def test_promote_stable_uses_home_local_stable_install_boundary():
     assert 'PYTHONPATH="$RELEASE_DIR/src\\${PYTHONPATH:+:\\$PYTHONPATH}"' in script
     assert 'cat > "$BIN_DIR/code-review-loop" <<EOF' in script
     assert 'cat > "$BIN_DIR/revrem" <<EOF' in script
+
+
+def test_promote_stable_refuses_interpreters_older_than_python_311(tmp_path):
+    home = tmp_path / "home"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_python = fake_bin / "python3"
+    fake_python.write_text(
+        """#!/usr/bin/env sh
+case "$1" in
+  -c)
+    exit 1
+    ;;
+  -m)
+    if [ "$2" = "venv" ]; then
+      touch "${FAKE_VENV_MARKER:?}"
+      exit 0
+    fi
+    ;;
+esac
+exit 0
+""",
+        encoding="utf-8",
+    )
+    fake_python.chmod(0o755)
+    marker = tmp_path / "unexpected-venv-call"
+    env = {
+        **os.environ,
+        "HOME": str(home),
+        "PATH": f"{fake_bin}:{os.environ.get('PATH', '')}",
+        "PYTHON": str(fake_python),
+        "REVREM_SKIP_CHECKS": "1",
+        "FAKE_VENV_MARKER": str(marker),
+    }
+
+    result = subprocess.run(
+        ["sh", str(ROOT / "scripts/promote-stable")],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "Python 3.11 or newer" in result.stderr
+    assert not marker.exists()
+    assert not (home / ".local" / "share" / "revrem" / "releases").exists()
+    assert not (home / ".local" / "bin" / "revrem").exists()
 
 
 def test_install_dev_targets_repo_local_virtualenv():

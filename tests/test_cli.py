@@ -336,6 +336,38 @@ def test_sanitize_commit_message_uses_first_plain_subject():
     )
 
 
+def test_commit_message_for_staged_changes_respects_profile_prompt_override(tmp_path):
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        commit_message_model="gpt-test-commit",
+        commit_message_prompt="Write a custom subject.",
+        commit_message_prompt_overridden=True,
+        timeout_seconds=30,
+    )
+    calls = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text))
+        if args[:4] == ["git", "diff", "--cached", "--stat"]:
+            return MODULE.CommandResult(list(args), 0, stdout=" file.py | 2 +-\n")
+        if args[:4] == ["git", "diff", "--cached", "--name-only"]:
+            return MODULE.CommandResult(list(args), 0, stdout="file.py\n")
+        if args[:2] == ["codex", "exec"]:
+            return MODULE.CommandResult(list(args), 0, stdout="Use custom format\n")
+        raise AssertionError(f"unexpected command: {args!r}")
+
+    message = MODULE.commit_message_for_staged_changes(config, runner, 1)
+
+    assert message == "Use custom format"
+    assert "Write a custom subject." in next(
+        prompt for args, prompt in calls if args[:2] == ["codex", "exec"]
+    )
+
+
 def test_normalize_revrem_conventional_subject_preserves_suffix_when_truncated():
     subject = "fix(cli): " + "x" * 200
 
@@ -1200,6 +1232,45 @@ message_model = "gpt-5.3-codex-spark"
     assert exit_code == 0
     assert captured_configs[0].commit_after_remediation is True
     assert captured_configs[0].commit_message_model == "gpt-test-commit"
+    assert captured_configs[0].commit_message_prompt == "Write a custom subject."
+    assert captured_configs[0].commit_message_prompt_overridden is True
+
+
+def test_main_commit_message_prompt_override_applies_when_profile_sets_prompt(
+    tmp_path, monkeypatch
+):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    config_path = home / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.final-pr]
+description = "Final PR"
+
+[profiles.final-pr.commit]
+message_prompt = "Write a custom subject."
+""",
+        encoding="utf-8",
+    )
+    captured_configs = []
+
+    def fake_run_loop(config):
+        captured_configs.append(config)
+        return {
+            "artifact_dir": str(config.artifact_dir),
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+            "iterations": [],
+        }
+
+    monkeypatch.setattr(MODULE, "run_loop", fake_run_loop)
+
+    exit_code = MODULE.main(["--profile", "final-pr", "--commit-message-model", "gpt-test-commit", "--dry-run"])
+
+    assert exit_code == 0
     assert captured_configs[0].commit_message_prompt == "Write a custom subject."
     assert captured_configs[0].commit_message_prompt_overridden is True
 

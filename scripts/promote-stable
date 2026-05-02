@@ -16,6 +16,11 @@ if [ "${REVREM_SKIP_CHECKS:-0}" != "1" ]; then
   ./scripts/dev-check
 fi
 
+if ! "$PYTHON" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)'; then
+  printf '%s\n' "ERROR: $PYTHON must be Python 3.11 or newer to promote the stable launcher." >&2
+  exit 1
+fi
+
 mkdir -p "$RELEASES_DIR" "$BIN_DIR"
 RELEASE_SUFFIX=0
 while :; do
