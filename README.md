@@ -58,6 +58,9 @@ operator preferences. Bare `revrem` invocations load those defaults too, and
 file, so omitted fields keep inheriting shared defaults. If a profile
 intentionally resets a field back to the built-in default, the rewrite keeps
 that field when the file's `[defaults]` table would otherwise change behavior.
+When importing profiles from another TOML file, RevRem folds that file's
+defaults into each imported profile so the imported behavior does not depend on
+the destination config's defaults.
 Profile loading rejects unknown keys in the profile table and nested sections,
 so typos fail fast instead of silently falling back to built-in defaults.
 `revrem config show`, `export`, and `doctor` accept reserved future harnesses

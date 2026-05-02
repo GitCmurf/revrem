@@ -561,6 +561,51 @@ description = "Imported profile"
         profiles.resolve_profile("smoke", cwd=tmp_path, home=home)
 
 
+def test_import_user_profiles_preserves_source_defaults(tmp_path):
+    home = tmp_path / "home"
+    config_path = profiles.user_config_path(home)
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[defaults.review]
+model = "gpt-5.4-mini"
+""",
+        encoding="utf-8",
+    )
+
+    exported = tmp_path / "export.toml"
+    exported.write_text(
+        """
+[defaults.review]
+model = "gpt-5.5"
+reasoning_effort = "low"
+
+[defaults.pipeline]
+max_iterations = 5
+
+[profiles.imported.review]
+reasoning_effort = "medium"
+
+[profiles.imported.pipeline]
+base = "trunk"
+""",
+        encoding="utf-8",
+    )
+
+    profiles.import_user_profiles(exported, home=home)
+
+    rendered = config_path.read_text(encoding="utf-8")
+    assert 'model = "gpt-5.5"' in rendered
+    assert 'reasoning_effort = "medium"' in rendered
+    assert 'max_iterations = 5' in rendered
+
+    resolved = profiles.resolve_profile("imported", cwd=tmp_path, home=home)
+    assert resolved.review.model == "gpt-5.5"
+    assert resolved.review.reasoning_effort == "medium"
+    assert resolved.pipeline.max_iterations == 5
+    assert resolved.pipeline.base == "trunk"
+
+
 def test_rewrite_user_profiles_preserves_explicit_builtin_overrides(tmp_path):
     home = tmp_path / "home"
     config_path = profiles.user_config_path(home)

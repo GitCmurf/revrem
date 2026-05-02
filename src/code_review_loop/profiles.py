@@ -489,7 +489,8 @@ def import_user_profiles(path: Path, *, home: Path | None = None, force: bool = 
     for name, profile in imported.profiles.items():
         if name in current.profiles and not force:
             raise FileExistsError(f"profile already exists: {name}")
-        raw_profiles[name] = imported.raw_profiles.get(name, profile_to_dict(profile))
+        raw_profile = imported.raw_profiles.get(name, profile_to_dict(profile))
+        raw_profiles[name] = _deep_merge(imported.raw_defaults, raw_profile)
     _write_profile_file(
         destination,
         defaults=current.defaults,
