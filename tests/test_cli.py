@@ -70,6 +70,14 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
     )
     assert (
         MODULE.detect_review_status(
+            "The diff was reviewed and the repository verification suite passes. "
+            "I did not identify any discrete introduced correctness, security, or "
+            "maintainability issues that should block the patch."
+        )
+        == "clear"
+    )
+    assert (
+        MODULE.detect_review_status(
             "The changes pass locally without revealing any discrete correctness issue."
         )
         == "clear"
@@ -117,6 +125,13 @@ def test_detect_review_status_does_not_generalize_negated_clear_with_findings():
             "- [P2] Fix the actual bug — src/example.py:10\n"
         )
         == "findings"
+    )
+    assert (
+        MODULE.detect_review_status(
+            "The patch has a concrete issue. I did not identify any alternative approach.\n"
+            "Please fix the failure described above."
+        )
+        == "unknown"
     )
     assert (
         MODULE.detect_review_status(
