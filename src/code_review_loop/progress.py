@@ -42,7 +42,7 @@ def print_rich_event(phase: str, label: str, status: str, detail: str = "") -> b
     rendered = _styled_text(
         _timestamp_part(),
         (" ", None),
-        (phase, "bold"),
+        (phase, "bold green"),
         (" ", None),
         (label, "cyan"),
         (" ", None),
@@ -60,7 +60,7 @@ def print_rich_message(phase: str, label: str, text: str, *, head: str = "") -> 
     rendered = _styled_text(
         _timestamp_part(),
         (" ", None),
-        (phase, "bold"),
+        (phase, "bold green"),
         (" ", None),
         (label, "cyan"),
         (" ", None),

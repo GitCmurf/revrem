@@ -45,6 +45,8 @@ def test_rich_event_uses_text_objects_so_markup_in_output_is_literal(monkeypatch
 
     rendered = FakeConsole.printed[0]
     assert isinstance(rendered, FakeText)
+    assert ("review", "bold green") in rendered.parts
+    assert ("issue", "green") in rendered.parts
     assert (": bad [/]", None) in rendered.parts
 
 
@@ -58,5 +60,6 @@ def test_rich_message_and_continuation_escape_markup_like_text(monkeypatch):
     continuation = FakeConsole.printed[1]
     assert isinstance(message, FakeText)
     assert isinstance(continuation, FakeText)
+    assert ("review", "bold green") in message.parts
     assert ("path [/]", None) in message.parts
     assert ("detail [/]", None) in continuation.parts

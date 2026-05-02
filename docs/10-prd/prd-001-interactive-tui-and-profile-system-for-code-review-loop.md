@@ -3,7 +3,7 @@ document_id: REVREM-PRD-001
 type: PRD
 title: Interactive TUI and Profile System for code-review-loop
 status: Draft
-version: "0.5"
+version: "0.6"
 last_updated: '2026-05-02'
 owner: GitCmurf
 area: product
@@ -29,7 +29,7 @@ related_ids:
 > **Document ID:** REVREM-PRD-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 0.5
+> **Version:** 0.6
 > **Last Updated:** 2026-05-02
 > **Type:** PRD
 
@@ -482,8 +482,9 @@ Done when:
 - Commit-after-remediation runs only after checks pass and records commit
   artifacts or failure summaries without hiding the run state.
 - A no-op remediation with passing checks and no staged changes stops the loop
-  immediately; unknown review status in that path is treated as a clear
-  terminal result while preserving unexpected-status diagnostics.
+  immediately; a clear review status exits successfully, while an unknown
+  review status remains a conservative non-clear terminal result with
+  unexpected-status diagnostics.
 - Existing progress tests pass unchanged or with intentional fixture updates.
 - Rich mode degrades cleanly when the extra is absent.
 
@@ -505,6 +506,8 @@ Initial slice done when:
 - `revrem ui` exits cleanly with an installation hint when Textual is absent.
 - TUI state tests cover profile discovery, run-history loading, harness
   metadata, and pipeline phase modeling without importing Textual.
+- A dependency-guarded launch smoke test proves the Textual app can render the
+  home snapshot when Textual is available.
 - The default development gate remains free of Textual imports.
 
 Full milestone done when:
@@ -601,6 +604,7 @@ revrem history --format json list --limit 5
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 0.6 | 2026-05-02 | Codex | Hardened Rich progress styling expectations, corrected conservative no-op unknown close-down semantics, and added a dependency-guarded TUI launch smoke-test requirement |
 | 0.5 | 2026-05-02 | Codex | Added optional verified commit-after-remediation phase, Conventional Commit subject policy, phase-specific effort overrides, no-op remediation close-down, and first dependency-gated TUI entry slice |
 | 0.4 | 2026-05-02 | Codex | Implemented FR-9 run history; added history CLI, JSONL architecture contract, optional read-only Codex triage, local progress timestamps, and initial optional Rich progress |
 | 0.3 | 2026-05-02 | Codex | Marked profile/config milestones implemented; clarified remaining run-history, Rich progress, and TUI scope |

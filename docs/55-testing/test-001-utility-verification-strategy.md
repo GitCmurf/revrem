@@ -3,8 +3,8 @@ document_id: REVREM-TEST-001
 type: TEST
 title: Utility verification strategy
 status: Draft
-version: '0.1'
-last_updated: '2026-04-30'
+version: '0.2'
+last_updated: '2026-05-02'
 owner: GitCmurf
 docops_version: '2.0'
 area: testing
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-TEST-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 0.1
-> **Last Updated:** 2026-04-30
+> **Version:** 0.2
+> **Last Updated:** 2026-05-02
 > **Type:** TEST
 > **Area:** testing
 > **Description:** Test and release gates for code-review-loop
@@ -80,11 +80,13 @@ reserved future harness handling.
 `tests/test_run_history.py` covers shared JSONL history paths, record shape, and
 newest-first reads.
 `tests/test_progress.py` covers optional Rich renderer safety, including literal
-handling for review text that contains Rich markup syntax.
+handling for review text that contains Rich markup syntax and styling of the
+phase/action and status columns.
 `tests/test_packaging.py` covers console entry points and local distribution
 scripts, including optional extras metadata.
 `tests/test_tui.py` covers the dependency-gated `revrem ui` entry point without
-requiring Textual in the default development environment.
+requiring Textual in the default development environment, plus a fake-Textual
+launch smoke test for the current home shell.
 `tests/test_tui_state.py` covers dependency-free TUI view models for profile
 discovery, run-history loading, harness metadata, and pipeline phase summaries.
 

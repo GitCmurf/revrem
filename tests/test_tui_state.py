@@ -74,3 +74,27 @@ def test_pipeline_phases_model_review_triage_checks_and_commit():
     assert phases[2].reasoning_effort == "medium"
     assert phases[3].command_count == 1
     assert phases[4].model == "gpt-5.3-codex-spark"
+
+
+def test_pipeline_phases_preserve_disabled_optional_phase_shape():
+    profile = profiles.Profile(
+        name="minimal",
+        pipeline=profiles.PipelineConfig(checks=()),
+        triage=profiles.TriageConfig(enabled=False, model="gpt-5.3-codex-spark"),
+        commit=profiles.CommitConfig(enabled=False, message_model="gpt-5.3-codex-spark"),
+    )
+
+    phases = tui_state.pipeline_phases(profile)
+
+    assert [phase.name for phase in phases] == [
+        "review",
+        "triage",
+        "remediation",
+        "checks",
+        "commit",
+    ]
+    assert phases[1].enabled is False
+    assert phases[1].model == "gpt-5.3-codex-spark"
+    assert phases[3].enabled is False
+    assert phases[3].command_count == 0
+    assert phases[4].enabled is False

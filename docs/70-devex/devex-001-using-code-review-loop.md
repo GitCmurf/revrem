@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '0.3'
+version: '0.4'
 last_updated: '2026-05-02'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 0.3
+> **Version:** 0.4
 > **Last Updated:** 2026-05-02
 > **Type:** DEVEX
 > **Area:** devex
@@ -338,8 +338,13 @@ prompt = "Break down the review into confirmed actions, likely false positives, 
 ### Current CLI boundary
 
 Rich progress is available via `--progress-style rich` when the optional
-`progress` extra is installed. `revrem ui` is available as a dependency-gated
-entry point for the planned Textual interface:
+`progress` extra is installed. In Rich output, the timestamp is dimmed, the
+phase/action word and status word are highlighted, labels are cyan, and model
+or review text is rendered literally so markup-like review output cannot break
+the display.
+
+`revrem ui` is available as a dependency-gated entry point for the planned
+Textual interface:
 
 ```bash
 ./.venv/bin/pip install -e ".[tui]"
@@ -424,6 +429,7 @@ The wrapper runs tests, `ruff check .`, `mypy src`, and DocOps checks when
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 0.4 | 2026-05-02 | Codex | Documented Rich progress column styling and current dependency-gated TUI shell behavior |
 | 0.3 | 2026-05-02 | Codex | Added profile-based usage, config commands, current harness/triage boundary, history/progress hardening, and verified commit-after-remediation guidance |
 | 0.2 | 2026-05-01 | Codex | Updated usage guidance for stable `revrem` entry point, dev/stable install boundary, terminal title progress, and current CLI limitations |
 | 0.1 | 2026-04-30 | GitCmurf | Initial draft |

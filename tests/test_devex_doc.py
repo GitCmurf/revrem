@@ -15,7 +15,6 @@ def test_devex_front_matter_version_matches_latest_history_row():
     front_matter = lines[1:front_matter_end]
 
     version_line = next(line for line in front_matter if line.startswith("version: "))
-    assert version_line == "version: '0.3'"
 
     history_start = lines.index("## Version History")
     history_rows = [
@@ -27,4 +26,4 @@ def test_devex_front_matter_version_matches_latest_history_row():
     latest_row = history_rows[0]
     latest_version = latest_row.split("|")[1].strip()
 
-    assert latest_version == "0.3"
+    assert version_line == f"version: '{latest_version}'"
