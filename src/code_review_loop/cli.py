@@ -403,7 +403,10 @@ def run_subprocess_with_terminal_title_refresh(
                 stdout, stderr = process.communicate(input=pending_input, timeout=wait)
                 return subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
             except subprocess.TimeoutExpired:
-                pending_input = None
+                # Keep resupplying the original stdin on each retry. A timeout can
+                # happen before the child has fully consumed a large prompt, and a
+                # retry without input leaves stdin unregistered.
+                pass
     except BaseException:
         try:
             if process.poll() is None:

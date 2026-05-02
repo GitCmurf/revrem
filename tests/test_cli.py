@@ -2821,8 +2821,8 @@ def test_subprocess_refresh_loop_preserves_stdin_after_timeout(tmp_path, monkeyp
             if self.communicate_calls == 1:
                 assert input == "prompt"
                 raise MODULE.subprocess.TimeoutExpired(["codex", "exec"], timeout)
-            assert input is None
-            assert not self.stdin.closed, "stdin should stay open while retrying without input"
+            assert input == "prompt"
+            assert not self.stdin.closed, "stdin should stay open while retrying with the original input"
             return ("stdout", "stderr")
 
         def kill(self):
