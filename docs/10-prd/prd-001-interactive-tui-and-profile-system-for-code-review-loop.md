@@ -289,11 +289,11 @@ the executable path until their adapters exist.
 
 Optional commit-after-remediation is implemented as a separate post-check phase.
 Remediation agents do not own git history. After checks pass, RevRem may stage
-the current worktree with `git add -A`, skip clean trees, optionally ask a
-read-only Codex invocation for a concise subject, and run `git commit`
-deterministically. This keeps commits reproducible and preserves a future path
-for cheaper commit-message models without coupling history mutation to the
-remediation prompt.
+the current worktree with `git add -A` while excluding the configured artifact
+directory, skip clean trees, optionally ask a read-only Codex invocation for a
+concise subject, and run `git commit` deterministically. This keeps commits
+reproducible and preserves a future path for cheaper commit-message models
+without coupling history mutation to the remediation prompt.
 
 ### Phase 4: Textual TUI
 

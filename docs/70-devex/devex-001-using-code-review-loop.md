@@ -275,12 +275,13 @@ another harness in a resolved run fails before starting subprocesses.
 
 Set `commit.enabled = true` or pass `--commit-after-remediation` only in a
 worktree where it is acceptable for RevRem to stage all current changes with
-`git add -A` after a verified remediation pass. The commit step is separate from
-the remediation model: checks must pass first, RevRem skips the commit if there
-are no staged changes, and RevRem runs `git commit` itself. The optional
+`git add -A` after a verified remediation pass, while excluding the configured
+artifact directory from staging. The commit step is separate from the
+remediation model: checks must pass first, RevRem skips the commit if there are
+no staged changes, and RevRem runs `git commit` itself. The optional
 `commit.message_model` or `--commit-message-model` controls only the read-only
-Codex call that drafts the commit subject. If no explicit CLI value is supplied,
-the profile value is used; the built-in profile default is
+Codex call that drafts the commit subject. If no explicit CLI value is
+supplied, the profile value is used; the built-in profile default is
 `gpt-5.3-codex-spark`.
 
 ```bash

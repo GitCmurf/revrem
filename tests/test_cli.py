@@ -466,7 +466,7 @@ def test_loop_commits_after_passing_checks(tmp_path):
             return MODULE.CommandResult(list(args), 0, stdout=next(review_outputs))
         if args[0] == "pytest":
             return MODULE.CommandResult(list(args), 0, stdout="1 passed\n")
-        if args[:3] == ["git", "add", "-A"]:
+        if args[:4] == ["git", "add", "-A", "--"]:
             return MODULE.CommandResult(list(args), 0)
         if args[:3] == ["git", "diff", "--cached"] and "--quiet" in args:
             return MODULE.CommandResult(list(args), 1)
@@ -494,7 +494,7 @@ def test_loop_commits_after_passing_checks(tmp_path):
     summary = MODULE.run_loop(config, runner)
 
     commands = [call[0] for call in calls]
-    assert ["git", "add", "-A"] in commands
+    assert ["git", "add", "-A", "--", ".", ":(exclude)artifacts"] in commands
     assert ["git", "commit", "-m", "Harden RevRem commit flow"] in commands
     assert any(command[:6] == ["codex", "exec", "--sandbox", "read-only", "--color", "never"] for command in commands)
     assert summary["iterations"][0]["commit_status"] == "committed"
@@ -553,7 +553,7 @@ def test_loop_writes_failure_summary_when_commit_fails(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[0] == "codex" and "review" in args:
             return MODULE.CommandResult(list(args), 0, stdout=next(review_outputs))
-        if args[:3] == ["git", "add", "-A"]:
+        if args[:4] == ["git", "add", "-A", "--"]:
             return MODULE.CommandResult(list(args), 0)
         if args[:3] == ["git", "diff", "--cached"] and "--quiet" in args:
             return MODULE.CommandResult(list(args), 1)
@@ -729,6 +729,53 @@ def test_loop_uses_default_timeout_when_phase_timeouts_are_unset(tmp_path):
     MODULE.run_loop(config, runner)
 
     assert [call[2] for call in calls] == [300, 300, 300, 300]
+
+
+def test_subprocess_refresh_loop_kills_child_on_interrupt(tmp_path, monkeypatch):
+    refresh_calls = []
+
+    class FakeProcess:
+        def __init__(self):
+            self.killed = False
+            self.communicate_calls = 0
+
+        def communicate(self, input=None, timeout=None):
+            self.communicate_calls += 1
+            if self.communicate_calls == 1:
+                raise KeyboardInterrupt
+            assert self.killed is True
+            assert input is None
+            return ("stdout", "stderr")
+
+        def kill(self):
+            self.killed = True
+
+        def poll(self):
+            return None if not self.killed else 0
+
+    fake_process = FakeProcess()
+
+    def fake_popen(*args, **kwargs):
+        return fake_process
+
+    def fake_refresh():
+        refresh_calls.append("refresh")
+
+    monkeypatch.setattr(MODULE.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(MODULE, "refresh_terminal_title", fake_refresh)
+    monkeypatch.setattr(MODULE, "TERMINAL_TITLE_REFRESH_SECONDS", 0.01)
+
+    with pytest.raises(KeyboardInterrupt):
+        MODULE.run_subprocess_with_terminal_title_refresh(
+            ["codex", "exec"],
+            cwd=tmp_path,
+            input="prompt",
+            timeout=1,
+        )
+
+    assert fake_process.killed is True
+    assert fake_process.communicate_calls == 2
+    assert len(refresh_calls) == 1
 
 
 def test_resolve_timeout_seconds_allows_disabling_timeout():

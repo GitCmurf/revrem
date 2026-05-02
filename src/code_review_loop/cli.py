@@ -379,22 +379,31 @@ def run_subprocess_with_terminal_title_refresh(
     )
     deadline = None if timeout is None else time.monotonic() + timeout
     pending_input = input
-    while True:
-        refresh_terminal_title()
-        wait = TERMINAL_TITLE_REFRESH_SECONDS
-        if deadline is not None:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                process.kill()
-                stdout, stderr = process.communicate()
-                assert timeout is not None
-                raise subprocess.TimeoutExpired(args, timeout, output=stdout, stderr=stderr)
-            wait = min(wait, remaining)
+    try:
+        while True:
+            refresh_terminal_title()
+            wait = TERMINAL_TITLE_REFRESH_SECONDS
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    process.kill()
+                    stdout, stderr = process.communicate()
+                    assert timeout is not None
+                    raise subprocess.TimeoutExpired(args, timeout, output=stdout, stderr=stderr)
+                wait = min(wait, remaining)
+            try:
+                stdout, stderr = process.communicate(input=pending_input, timeout=wait)
+                return subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
+            except subprocess.TimeoutExpired:
+                pending_input = None
+    except BaseException:
         try:
-            stdout, stderr = process.communicate(input=pending_input, timeout=wait)
-            return subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
-        except subprocess.TimeoutExpired:
-            pending_input = None
+            if process.poll() is None:
+                process.kill()
+            process.communicate()
+        except Exception:
+            pass
+        raise
 
 
 def detect_review_status(output: str) -> str:
@@ -795,6 +804,19 @@ def run_checks(config: LoopConfig, runner: Runner, iteration: int) -> list[Comma
     return results
 
 
+def git_add_command_for_commit(config: LoopConfig) -> list[str]:
+    command = ["git", "add", "-A", "--", "."]
+    try:
+        artifact_rel = config.artifact_dir.relative_to(config.cwd)
+    except ValueError:
+        return command
+    if artifact_rel == Path("."):
+        return command
+    # Keep generated loop artifacts out of the staged commit.
+    command.append(f":(exclude){artifact_rel.as_posix()}")
+    return command
+
+
 def run_commit(config: LoopConfig, runner: Runner, iteration: int) -> str:
     progress_event(config, "commit", str(iteration), "start", "stage and commit verified remediation")
     if config.dry_run:
@@ -802,7 +824,12 @@ def run_commit(config: LoopConfig, runner: Runner, iteration: int) -> str:
         progress_event(config, "commit", str(iteration), "skipped", "dry-run")
         return "skipped"
 
-    add_result = runner(["git", "add", "-A"], config.cwd, None, phase_timeout_seconds(config, config.timeout_seconds))
+    add_result = runner(
+        git_add_command_for_commit(config),
+        config.cwd,
+        None,
+        phase_timeout_seconds(config, config.timeout_seconds),
+    )
     write_artifact(config.artifact_dir / f"commit-{iteration}-add.txt", _combined_output(add_result))
     if add_result.returncode != 0:
         progress_event(config, "commit", str(iteration), "failed", "git add failed")
