@@ -29,10 +29,11 @@ machine-readable stdout.
 
 The command exits `0` only when the final loop status is clear. It exits `2`
 when the bounded loop finishes with findings or unresolved check failures.
-Successful non-dry-run invocations append compact metadata to
-`~/.local/share/revrem/runs.jsonl`; use `revrem history list` to inspect recent
-runs. Pass `--no-run-history` for one-off runs that should leave only the
-workspace-local artifact directory.
+Non-dry-run invocations append compact metadata to
+`~/.local/share/revrem/runs.jsonl`, including failed terminal runs once their
+summary is written; use `revrem history list` to inspect recent runs. Pass
+`--no-run-history` for one-off runs that should leave only the workspace-local
+artifact directory.
 Progress timestamps use local terminal time. Persisted history timestamps remain
 UTC ISO-8601 values for stable machine processing.
 

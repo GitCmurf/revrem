@@ -115,6 +115,14 @@ class LoopConfig:
 
 Runner = Callable[[Sequence[str], Path, str | None, float | None], CommandResult]
 
+
+class RunLoopFailed(RuntimeError):
+    """Raised when a bounded loop finishes with an expected step failure."""
+
+    def __init__(self, summary: dict[str, object], message: str):
+        super().__init__(message)
+        self.summary = summary
+
 # xterm-compatible title-stack controls use CSI, not OSC.
 TERMINAL_TITLE_SAVE = "\033[22;0t"
 TERMINAL_TITLE_RESTORE = "\033[23;0t"
@@ -944,7 +952,11 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
             summary["error"] = str(exc)
             iterations[-1]["triage_failed"] = True
             write_summary(config, summary)
-            raise
+            raise RunLoopFailed(
+                summary,
+                f"codex exec triage failed for iteration {iteration}; "
+                f"see {config.artifact_dir / f'triage-{iteration}.txt'}",
+            ) from exc
 
         try:
             run_remediation(config, runner, iteration, remediation_input)
@@ -954,7 +966,11 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
             summary["error"] = str(exc)
             iterations[-1]["remediation_failed"] = True
             write_summary(config, summary)
-            raise
+            raise RunLoopFailed(
+                summary,
+                f"codex exec remediation failed for iteration {iteration}; "
+                f"see {config.artifact_dir / f'remediation-{iteration}.txt'}",
+            ) from exc
 
         check_results = run_checks(config, runner, iteration)
         pending_check_failures = _format_check_failures(check_results)
@@ -992,6 +1008,13 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
 def write_summary(config: LoopConfig, summary: dict[str, object]) -> None:
     add_artifact_paths(summary, config)
     write_artifact(config.artifact_dir / "summary.json", json.dumps(summary, indent=2, sort_keys=True))
+
+
+def append_run_history(summary: dict[str, object], config: LoopConfig) -> Path:
+    history_path = run_history.append_history(summary, cwd=config.cwd)
+    summary["history_path"] = str(history_path)
+    write_summary(config, summary)
+    return history_path
 
 
 def _combined_output(result: CommandResult) -> str:
@@ -1358,8 +1381,8 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         review_reasoning_effort=review_reasoning_effort,
         remediation_reasoning_effort=remediation_reasoning_effort,
         triage_enabled=profile.triage.enabled,
-        triage_model=args.model or profile.triage.model,
-        triage_reasoning_effort=args.reasoning_effort or profile.triage.reasoning_effort,
+        triage_model=profile.triage.model,
+        triage_reasoning_effort=profile.triage.reasoning_effort,
         triage_timeout_seconds=triage_timeout_seconds,
         triage_prompt=profile.triage.prompt,
         exec_sandbox=pick(args.exec_sandbox, profile.runtime.exec_sandbox, "workspace-write"),
@@ -1415,6 +1438,15 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         summary = run_loop(config)
+    except RunLoopFailed as exc:
+        summary = exc.summary
+        if not args.dry_run and not args.no_run_history and summary.get("run_id"):
+            try:
+                append_run_history(summary, config)
+            except OSError as history_exc:
+                print(f"WARNING: could not write run history: {history_exc}", file=sys.stderr)
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
     except KeyboardInterrupt:  # pragma: no cover - signal path
         print("Interrupted by user.", file=sys.stderr)
         return 130
@@ -1424,9 +1456,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if not args.dry_run and not args.no_run_history and summary.get("run_id"):
         try:
-            history_path = run_history.append_history(summary, cwd=config.cwd)
-            summary["history_path"] = str(history_path)
-            write_summary(config, summary)
+            append_run_history(summary, config)
         except OSError as exc:
             print(f"WARNING: could not write run history: {exc}", file=sys.stderr)
 

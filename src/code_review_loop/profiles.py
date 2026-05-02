@@ -50,6 +50,7 @@ RUNTIME_KEYS = (
     "max_remediation_input_chars",
     "terminal_excerpt_chars",
 )
+TOP_LEVEL_KEYS = ("defaults", "profiles")
 
 
 @dataclass(frozen=True)
@@ -145,6 +146,7 @@ def load_profile_file(path: Path) -> ProfileFile:
     raw = tomllib.loads(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
         raise ValueError(f"profile file is not a TOML table: {path}")
+    _reject_unknown_keys(raw, TOP_LEVEL_KEYS, f"profile file {path}")
     defaults = None
     defaults_raw: dict[str, Any] = {}
     if "defaults" in raw:

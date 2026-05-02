@@ -778,7 +778,9 @@ quiet_progress = true
     assert config.progress is False
 
 
-def test_main_reasoning_effort_override_applies_to_both_phases(tmp_path, monkeypatch):
+def test_main_reasoning_effort_override_applies_to_review_and_remediation_only(
+    tmp_path, monkeypatch
+):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.chdir(tmp_path)
@@ -795,6 +797,12 @@ reasoning_effort = "medium"
 
 [profiles.final-pr.remediation]
 reasoning_effort = "low"
+
+[profiles.final-pr.triage]
+enabled = true
+model = "gpt-4.1"
+reasoning_effort = "minimal"
+timeout_seconds = 30
 """,
         encoding="utf-8",
     )
@@ -820,6 +828,9 @@ reasoning_effort = "low"
     assert config.reasoning_effort == "high"
     assert config.review_reasoning_effort == "high"
     assert config.remediation_reasoning_effort == "high"
+    assert config.triage_enabled is True
+    assert config.triage_model == "gpt-4.1"
+    assert config.triage_reasoning_effort == "minimal"
 
 
 def test_main_records_non_dry_run_history(tmp_path, monkeypatch, capsys):
@@ -853,6 +864,45 @@ def test_main_records_non_dry_run_history(tmp_path, monkeypatch, capsys):
     assert history_path.is_file()
     assert f"Run history: {history_path}" in output
     assert '"run_id": "run-1"' in history_path.read_text(encoding="utf-8")
+
+
+def test_main_records_failed_runs_in_history(tmp_path, monkeypatch, capsys):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+
+    summary = {
+        "run_id": "run-1",
+        "started_at": "2026-05-02T10:00:00Z",
+        "base": "main",
+        "profile": "final-pr",
+        "artifact_dir": str(tmp_path / "artifacts"),
+        "max_iterations": 1,
+        "iterations": [{"iteration": 1, "review_status": "findings", "triage_failed": True}],
+        "final_status": "error",
+        "stopped_reason": "triage_failed",
+        "pending_check_failures": False,
+        "error": "codex exec triage failed for iteration 1",
+    }
+
+    def fake_run_loop(config):
+        raise MODULE.RunLoopFailed(summary, "codex exec triage failed for iteration 1")
+
+    monkeypatch.setattr(MODULE, "run_loop", fake_run_loop)
+
+    assert MODULE.main(["--base", "main", "--artifact-dir", str(tmp_path / "artifacts")]) == 1
+    capsys.readouterr()
+
+    history_path = home / ".local" / "share" / "revrem" / "runs.jsonl"
+
+    assert history_path.is_file()
+    history_text = history_path.read_text(encoding="utf-8")
+    summary_text = (tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8")
+    assert '"run_id": "run-1"' in history_text
+    assert '"final_status": "error"' in history_text
+    assert '"stopped_reason": "triage_failed"' in history_text
+    assert '"history_path": "' in summary_text
 
 
 def test_main_skips_history_for_dry_run_and_explicit_opt_out(tmp_path, monkeypatch):
@@ -923,7 +973,7 @@ def test_history_list_command_outputs_recent_runs(tmp_path, monkeypatch, capsys)
     assert '"run_id": "old"' not in json_text
 
 
-def test_main_model_override_applies_to_both_phases(tmp_path, monkeypatch):
+def test_main_model_override_applies_to_review_and_remediation_only(tmp_path, monkeypatch):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.chdir(tmp_path)
@@ -940,6 +990,11 @@ model = "gpt-5.5"
 
 [profiles.final-pr.remediation]
 model = "gpt-5.4-mini"
+
+[profiles.final-pr.triage]
+enabled = true
+model = "gpt-triage"
+reasoning_effort = "minimal"
 """,
         encoding="utf-8",
     )
@@ -963,6 +1018,9 @@ model = "gpt-5.4-mini"
     assert config.model == "gpt-test"
     assert config.review_model == "gpt-test"
     assert config.remediation_model == "gpt-test"
+    assert config.triage_enabled is True
+    assert config.triage_model == "gpt-triage"
+    assert config.triage_reasoning_effort == "minimal"
 
 
 def test_main_uses_shared_defaults_without_an_explicit_profile(tmp_path, monkeypatch):

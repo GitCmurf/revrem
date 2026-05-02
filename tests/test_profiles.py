@@ -441,6 +441,20 @@ max_iteration = 3
         profiles.load_profile_file(path)
 
 
+def test_profile_rejects_unknown_top_level_keys(tmp_path):
+    path = tmp_path / "profiles.toml"
+    path.write_text(
+        """
+[profile.bad.review]
+harness = "codex"
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match=r"profile file .* contains unknown keys: profile"):
+        profiles.load_profile_file(path)
+
+
 def test_write_delete_and_import_user_profiles(tmp_path, monkeypatch):
     home = tmp_path / "home"
     config_path = profiles.user_config_path(home)

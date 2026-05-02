@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '0.2'
+version: '0.3'
 last_updated: '2026-05-02'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 0.2
+> **Version:** 0.3
 > **Last Updated:** 2026-05-02
 > **Type:** DEVEX
 > **Area:** devex
@@ -189,7 +189,7 @@ stay in their original explicit form when the file is rewritten, so omitted
 fields keep inheriting shared defaults. If a profile field is explicitly set
 back to a built-in default, the rewrite keeps it when the file's `[defaults]`
 table would otherwise change behavior. Profile loading rejects unknown keys in
-profile tables and nested sections, so typos fail fast instead of silently
+top-level tables, profile tables, and nested sections, so typos fail fast instead of silently
 using defaults. A minimal final-PR profile:
 
 ```toml
