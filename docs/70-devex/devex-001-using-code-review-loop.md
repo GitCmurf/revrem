@@ -335,6 +335,9 @@ it is not available in the current CLI.
 - Enable `--commit-after-remediation` only when automatic staging of the current
   worktree is intended. It is best suited to focused loop runs where each pass
   should become a reviewable checkpoint commit.
+- Relative artifact directories are excluded from the staged commit too, so
+  `--artifact-dir artifacts/revrem` keeps generated loop transcripts out of the
+  checkpoint commit.
 - Use `--debug-status-detection` when a run appears to keep remediating after
   the review text looks clear. The flag writes `*-status.json` files next to
   review artifacts and logs the compact reason for each clear/findings/unknown

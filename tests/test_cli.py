@@ -4,6 +4,7 @@ import io
 import json
 import os
 import re
+from pathlib import Path
 
 import pytest
 
@@ -510,6 +511,25 @@ def test_loop_commits_after_passing_checks(tmp_path):
         if command[:6] == ["codex", "exec", "--sandbox", "read-only", "--color", "never"]
     )
     assert commit_prompt is not None and "Files:" in commit_prompt
+
+
+def test_git_add_command_for_commit_excludes_relative_artifact_dir(tmp_path):
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=Path("artifacts/revrem"),
+    )
+
+    assert MODULE.git_add_command_for_commit(config) == [
+        "git",
+        "add",
+        "-A",
+        "--",
+        ".",
+        ":(exclude)artifacts/revrem",
+    ]
 
 
 def test_loop_skips_commit_when_checks_fail(tmp_path):

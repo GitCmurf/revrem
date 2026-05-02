@@ -806,10 +806,12 @@ def run_checks(config: LoopConfig, runner: Runner, iteration: int) -> list[Comma
 
 def git_add_command_for_commit(config: LoopConfig) -> list[str]:
     command = ["git", "add", "-A", "--", "."]
-    try:
-        artifact_rel = config.artifact_dir.relative_to(config.cwd)
-    except ValueError:
-        return command
+    artifact_rel = config.artifact_dir
+    if artifact_rel.is_absolute():
+        try:
+            artifact_rel = artifact_rel.relative_to(config.cwd)
+        except ValueError:
+            return command
     if artifact_rel == Path("."):
         return command
     # Keep generated loop artifacts out of the staged commit.
