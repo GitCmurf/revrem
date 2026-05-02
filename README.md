@@ -29,6 +29,10 @@ machine-readable stdout.
 
 The command exits `0` only when the final loop status is clear. It exits `2`
 when the bounded loop finishes with findings or unresolved check failures.
+Successful non-dry-run invocations append compact metadata to
+`~/.local/share/revrem/runs.jsonl`; use `revrem history list` to inspect recent
+runs. Pass `--no-run-history` for one-off runs that should leave only the
+workspace-local artifact directory.
 
 Named profiles can hold the same settings in `~/.config/revrem/profiles.toml`.
 That file can also carry a shared `[defaults]` table for user-wide model and
@@ -40,8 +44,9 @@ that field when the file's `[defaults]` table would otherwise change behavior.
 Profile loading rejects unknown keys in the profile table and nested sections,
 so typos fail fast instead of silently falling back to built-in defaults.
 `revrem config show`, `export`, and `doctor` accept reserved future harnesses
-as configuration syntax; only the execution path rejects unimplemented
-backends.
+as configuration syntax. The executable path currently supports Codex for
+review, optional read-only triage, and remediation, and rejects unimplemented
+backends before the loop starts.
 
 ```bash
 revrem config new final-pr --description "Full PR readiness check"

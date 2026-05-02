@@ -3,7 +3,7 @@ document_id: REVREM-PRD-001
 type: PRD
 title: Interactive TUI and Profile System for code-review-loop
 status: Draft
-version: "0.3"
+version: "0.4"
 last_updated: '2026-05-02'
 owner: GitCmurf
 area: product
@@ -29,7 +29,7 @@ related_ids:
 > **Document ID:** REVREM-PRD-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 0.3
+> **Version:** 0.4
 > **Last Updated:** 2026-05-02
 > **Type:** PRD
 
@@ -220,6 +220,14 @@ model = "gpt-5.5"
 reasoning_effort = "medium"
 timeout_seconds = 1800
 
+[profiles.final-pr.triage]
+enabled = true
+harness = "codex"
+model = "gpt-5.4-mini"
+reasoning_effort = "low"
+timeout_seconds = 300
+prompt = "Break down the review into confirmed actions, likely false positives, and verification steps."
+
 [profiles.final-pr.remediation]
 harness = "codex"
 model = "gpt-5.4-mini"
@@ -248,11 +256,28 @@ automation:
 | `import FILE` | Validate and merge imported profiles |
 | `doctor` | Explain config paths, selected profile, and merge result |
 
-### Phase 3: Rich Progress
+### Phase 3: Run History and Progress Renderer
 
-The current `progress_event` shape remains the internal contract. A progress renderer interface
-receives the same phase events and emits either compact text or Rich live output. Rich is activated
-only when installed and requested; compact text remains the default for scripts and logs.
+Each non-dry-run invocation appends one compact metadata record to
+`~/.local/share/revrem/runs.jsonl`, or `$XDG_DATA_HOME/revrem/runs.jsonl` when
+`XDG_DATA_HOME` is set. This file is append-only JSONL so interrupted or
+partially failed runs still leave existing history readable. The record stores
+the run id, timestamps, cwd, base, selected profile, final status, iteration
+count, and artifact pointers; it does not duplicate review/remediation
+transcripts.
+
+The current `progress_event` shape remains the internal contract. A progress
+renderer interface receives the same phase events and emits either compact text
+or Rich live output. Rich is activated only when installed and requested;
+compact text remains the default for scripts and logs.
+
+Optional Codex triage is implemented as a read-only interpretative phase between
+review and remediation. It exists to turn review prose and check failures into a
+small action plan that a cheaper remediation model can execute. The triage
+artifact is stored as `triage-N.txt`; remediation receives both the triage
+handoff and the original review/check context. Non-Codex triage harness names
+remain valid configuration syntax for management commands but are rejected on
+the executable path until their adapters exist.
 
 ### Phase 4: Textual TUI
 
@@ -281,6 +306,9 @@ Implementation must preserve these boundaries:
   `src/code_review_loop/profiles.py`.
 - Progress rendering lives behind a small interface, for example
   `src/code_review_loop/progress.py`, with compact and Rich implementations.
+- Shared run history lives behind `src/code_review_loop/run_history.py`; loop
+  orchestration writes per-run artifacts first and then appends compact shared
+  metadata from the top-level CLI.
 - Harness execution is introduced as a registry only when a second harness is implemented; until
   then, avoid speculative abstractions that obscure the Codex path.
 - Optional dependencies are imported inside feature entry points only.
@@ -317,12 +345,14 @@ The quality bar for every phase is:
 - [FR-10] Support compact text progress and optional Rich live progress.
 - [FR-11] Implement `revrem ui` behind the `[tui]` extra.
 
-Milestone status as of version 0.3:
+Milestone status as of version 0.4:
 
 - FR-1 through FR-8 are implemented.
-- FR-9 through FR-11 remain pending.
-- Profile syntax reserves `triage` and non-Codex harnesses for extensibility, but executable runs
-  still fail fast when a resolved profile selects unimplemented harnesses or enabled triage.
+- FR-9 is implemented.
+- FR-10 and FR-11 remain pending.
+- Codex triage is implemented; non-Codex harnesses remain reserved syntax and
+  executable runs fail fast when a resolved profile selects an unimplemented
+  backend.
 
 ### Non-Functional Requirements
 
@@ -385,17 +415,28 @@ Done when:
 
 - A profile can be created, shown, exported, deleted, imported, and used in one temp-home test.
 
-### Milestone 3: Progress Renderer
+### Milestone 3: Run History and Progress Renderer
 
 Deliverables:
 
+- Append-only run metadata under `~/.local/share/revrem/runs.jsonl`, respecting
+  `$XDG_DATA_HOME` when present.
+- `revrem history list` for recent run inspection.
+- `--no-run-history` opt-out for sensitive one-off local runs.
+- Optional read-only Codex triage phase with `triage-N.txt` artifacts.
 - Renderer interface.
 - Compact renderer preserving current output.
 - Rich renderer behind optional extra.
-- Snapshot or behavioral tests for phase transitions.
+- Behavioral tests for history writes, opt-out, newest-first reads, and phase
+  transitions.
 
 Done when:
 
+- Non-dry-run CLI invocations append one compact history record after the
+  per-run summary artifact is written.
+- Dry runs and `--no-run-history` leave shared history untouched.
+- Triage-enabled Codex profiles run review -> triage -> remediation -> checks
+  without allowing the triage phase to edit files.
 - Existing progress tests pass unchanged or with intentional fixture updates.
 - Rich mode degrades cleanly when the extra is absent.
 
@@ -448,6 +489,13 @@ revrem config show final-pr
 revrem --profile final-pr --dry-run --summary-format both
 ```
 
+Run-history verification:
+
+```bash
+revrem history list
+revrem history --format json list --limit 5
+```
+
 ---
 
 ## 10. Alternatives Considered
@@ -482,8 +530,8 @@ revrem --profile final-pr --dry-run --summary-format both
 
 - Whether TOML writes should use `tomli-w`, `tomlkit`, or a small purpose-built writer for the
   limited profile schema.
-- Whether run history should be JSONL from the first implementation or start as a compact JSON
-  index and migrate later.
+- Run history starts as append-only JSONL to avoid read-modify-write corruption
+  and to keep future TUI recent-run views simple.
 - Whether a future harness registry should be introduced with the first non-Codex harness or one
   milestone earlier as part of profile validation.
 
@@ -495,6 +543,7 @@ revrem --profile final-pr --dry-run --summary-format both
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 0.4 | 2026-05-02 | Codex | Implemented FR-9 run history; added history CLI, JSONL architecture contract, and optional read-only Codex triage |
 | 0.3 | 2026-05-02 | Codex | Marked profile/config milestones implemented; clarified remaining run-history, Rich progress, and TUI scope |
 | 0.2 | 2026-05-01 | Codex | Reworked PRD into staged engineering contract; added dev/stable distribution boundary, architecture constraints, milestones, and acceptance gates |
 | 0.1 | 2026-05-01 | GitCmurf | Initial draft |

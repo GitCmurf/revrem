@@ -235,6 +235,26 @@ def test_remediation_command_uses_deterministic_output_options(tmp_path):
     assert command[-1] == "-"
 
 
+def test_triage_command_uses_read_only_exec_with_phase_model(tmp_path):
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        triage_model="gpt-5.4-mini",
+        triage_reasoning_effort="low",
+    )
+
+    command = MODULE.build_triage_command(config)
+
+    assert command[:4] == ["codex", "exec", "-c", 'model_reasoning_effort="low"']
+    assert command[command.index("--sandbox") + 1] == "read-only"
+    assert command[command.index("--model") + 1] == "gpt-5.4-mini"
+    assert "--full-auto" not in command
+    assert command[-1] == "-"
+
+
 def test_loop_stops_after_review_reports_clear(tmp_path):
     calls = []
     review_outputs = iter(
@@ -299,6 +319,47 @@ def test_loop_stops_when_clear_review_has_noisy_stderr(tmp_path):
 
     assert summary["final_status"] == "clear"
     assert [call[0][1] for call in calls] == ["review", "exec", "review"]
+
+
+def test_loop_runs_optional_triage_between_review_and_remediation(tmp_path):
+    calls = []
+    review_outputs = iter(
+        [
+            "Full review comments:\n\n- [P2] Fix profile merge\n",
+            "No actionable findings.\nREVIEW_STATUS: clear\n",
+        ]
+    )
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[1] == "review":
+            return MODULE.CommandResult(list(args), 0, stdout=next(review_outputs))
+        if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
+            return MODULE.CommandResult(list(args), 0, stdout="Confirmed: fix profile merge first.\n")
+        return MODULE.CommandResult(list(args), 0, stdout="remediated\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        triage_enabled=True,
+        triage_model="gpt-5.4-mini",
+        triage_reasoning_effort="low",
+        triage_timeout_seconds=60,
+    )
+
+    summary = MODULE.run_loop(config, runner)
+
+    assert summary["final_status"] == "clear"
+    assert [call[0][1] for call in calls] == ["review", "exec", "exec", "review"]
+    assert calls[1][2] == 60
+    assert "Do not edit files" in (calls[1][1] or "")
+    assert "Confirmed: fix profile merge first." in (calls[2][1] or "")
+    assert "Original review/check context" in (calls[2][1] or "")
+    assert (tmp_path / "artifacts" / "triage-1.txt").exists()
+    assert summary["artifact_paths"]["triage"] == [str(tmp_path / "artifacts" / "triage-1.txt")]
 
 
 def test_debug_status_detection_writes_diagnostic_artifact(tmp_path):
@@ -696,6 +757,106 @@ reasoning_effort = "low"
     assert config.reasoning_effort == "high"
     assert config.review_reasoning_effort == "high"
     assert config.remediation_reasoning_effort == "high"
+
+
+def test_main_records_non_dry_run_history(tmp_path, monkeypatch, capsys):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+
+    def fake_run_loop(config):
+        return {
+            "run_id": "run-1",
+            "started_at": "2026-05-02T10:00:00Z",
+            "base": config.base,
+            "profile": config.profile_name,
+            "artifact_dir": str(config.artifact_dir),
+            "max_iterations": config.max_iterations,
+            "iterations": [{"iteration": 1, "review_status": "clear"}],
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+            "pending_check_failures": False,
+            "artifact_paths": {"summary": str(config.artifact_dir / "summary.json")},
+        }
+
+    monkeypatch.setattr(MODULE, "run_loop", fake_run_loop)
+    monkeypatch.setattr(MODULE, "write_summary", lambda config, summary: None)
+
+    assert MODULE.main(["--base", "main"]) == 0
+    output = capsys.readouterr().out
+    history_path = home / ".local" / "share" / "revrem" / "runs.jsonl"
+
+    assert history_path.is_file()
+    assert f"Run history: {history_path}" in output
+    assert '"run_id": "run-1"' in history_path.read_text(encoding="utf-8")
+
+
+def test_main_skips_history_for_dry_run_and_explicit_opt_out(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+
+    def fake_run_loop(config):
+        return {
+            "run_id": "run-1",
+            "started_at": "2026-05-02T10:00:00Z",
+            "base": config.base,
+            "artifact_dir": str(config.artifact_dir),
+            "max_iterations": config.max_iterations,
+            "iterations": [],
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+        }
+
+    monkeypatch.setattr(MODULE, "run_loop", fake_run_loop)
+
+    assert MODULE.main(["--dry-run"]) == 0
+    assert MODULE.main(["--no-run-history"]) == 0
+    assert not (home / ".local" / "share" / "revrem" / "runs.jsonl").exists()
+
+
+def test_main_skips_history_when_summary_has_no_run_id(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+
+    def fake_run_loop(config):
+        return {
+            "artifact_dir": str(config.artifact_dir),
+            "iterations": [],
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+        }
+
+    monkeypatch.setattr(MODULE, "run_loop", fake_run_loop)
+
+    assert MODULE.main([]) == 0
+    assert not (home / ".local" / "share" / "revrem" / "runs.jsonl").exists()
+
+
+def test_history_list_command_outputs_recent_runs(tmp_path, monkeypatch, capsys):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    history_path = home / ".local" / "share" / "revrem" / "runs.jsonl"
+    history_path.parent.mkdir(parents=True)
+    history_path.write_text(
+        '{"run_id":"old","final_status":"findings","stopped_reason":"max_iterations_reached","base":"main","artifact_dir":"tmp/old"}\n'
+        '{"run_id":"new","final_status":"clear","stopped_reason":"review_clear","base":"main","artifact_dir":"tmp/new"}\n',
+        encoding="utf-8",
+    )
+
+    assert MODULE.main(["history", "list", "--limit", "1"]) == 0
+    text = capsys.readouterr().out
+    assert "new clear (review_clear) base=main artifacts=tmp/new" in text
+    assert "old" not in text
+
+    assert MODULE.main(["history", "--format", "json", "list", "--limit", "1"]) == 0
+    json_text = capsys.readouterr().out
+    assert '"run_id": "new"' in json_text
+    assert '"run_id": "old"' not in json_text
 
 
 def test_main_model_override_applies_to_both_phases(tmp_path, monkeypatch):

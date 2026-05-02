@@ -125,6 +125,12 @@ Clear terminal summaries stay compact and point to artifacts instead of
 reprinting the successful review prose. Non-clear summaries include the latest
 actionable excerpt so the next operator or agent can continue from the right
 failure.
+Non-dry-run invocations also append compact JSONL metadata to
+`~/.local/share/revrem/runs.jsonl` by default. The per-run transcripts remain in
+the target repository's artifact directory; the shared history file stores only
+the run identifier, cwd, base, profile, final status, iteration count, and
+artifact pointers. Set `XDG_DATA_HOME` to relocate the data root or pass
+`--no-run-history` for a run that should not update shared history.
 
 Use repository-specific checks. For Meminit-backed repositories, include:
 
@@ -228,6 +234,13 @@ revrem config import profiles.toml
 revrem config doctor --profile final-pr --format json
 ```
 
+Run-history commands:
+
+```bash
+revrem history list
+revrem history --format json list --limit 20
+```
+
 These management commands validate reserved harness names and triage syntax
 without requiring the backend to be executable yet; only `revrem --profile ...`
 rejects unimplemented harnesses before the loop starts.
@@ -238,8 +251,23 @@ global form `revrem config --format json doctor --profile final-pr` works too.
 Profiles reserve `review.harness`, `triage.harness`, and
 `remediation.harness` for future headless adapters such as `claude`, `gemini`,
 `opencode`, and `kilo`. The current executable loop supports only Codex; using
-another harness in a resolved run fails before starting subprocesses. Triage is
-also parsed and validated as profile syntax but is not executed yet.
+another harness in a resolved run fails before starting subprocesses.
+
+Optional Codex triage can run between review and remediation. It uses
+`codex exec` with `--sandbox read-only`, writes `triage-N.txt` beside the review
+and remediation artifacts, and passes a concise handoff plus the original
+review/check context into the remediation prompt. This is intended for cheaper
+interpretation models that can convert review prose into ordered action items
+without editing the workspace:
+
+```toml
+[profiles.final-pr.triage]
+enabled = true
+model = "gpt-5.4-mini"
+reasoning_effort = "low"
+timeout_seconds = 300
+prompt = "Break down the review into confirmed actions, likely false positives, and verification steps."
+```
 
 ### Current CLI boundary
 

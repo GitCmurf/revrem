@@ -252,6 +252,53 @@ enabled = true
     assert resolved.triage.enabled is True
 
 
+def test_resolve_profile_allows_executable_codex_triage(tmp_path):
+    home = tmp_path / "home"
+    cwd = tmp_path / "repo"
+    cwd.mkdir()
+    path = profiles.user_config_path(home)
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        """
+[profiles.triaged.triage]
+enabled = true
+model = "gpt-5.4-mini"
+reasoning_effort = "low"
+timeout_seconds = 60
+prompt = "Break down the findings."
+""",
+        encoding="utf-8",
+    )
+
+    resolved = profiles.resolve_profile("triaged", cwd=cwd, home=home)
+
+    assert resolved.triage.enabled is True
+    assert resolved.triage.harness == "codex"
+    assert resolved.triage.model == "gpt-5.4-mini"
+    assert resolved.triage.reasoning_effort == "low"
+    assert resolved.triage.timeout_seconds == 60
+    assert resolved.triage.prompt == "Break down the findings."
+
+
+def test_resolve_profile_rejects_unimplemented_executable_triage_harness(tmp_path):
+    home = tmp_path / "home"
+    cwd = tmp_path / "repo"
+    cwd.mkdir()
+    path = profiles.user_config_path(home)
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        """
+[profiles.future.triage]
+enabled = true
+harness = "gemini"
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="only the codex backend is implemented"):
+        profiles.resolve_profile("future", cwd=cwd, home=home)
+
+
 def test_profile_rejects_boolean_timeout_seconds(tmp_path):
     path = tmp_path / "profiles.toml"
     path.write_text(

@@ -12,13 +12,14 @@ import subprocess
 import sys
 import textwrap
 import time
+import uuid
 from collections.abc import Callable, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
-from code_review_loop import profiles
+from code_review_loop import profiles, run_history
 
 STATUS_RE = re.compile(r"^\s*REVIEW_STATUS:\s*(clear|findings)\s*$", re.IGNORECASE | re.MULTILINE)
 CODEX_FINDING_RE = re.compile(r"^\s*-\s*\[P[0-3]\]\s+", re.MULTILINE)
@@ -31,6 +32,7 @@ PROGRESS_PHASE_CODES = {
     "check": "chk",
     "remediate": "rem",
     "review": "rev",
+    "triage": "tri",
 }
 COMPACT_PROGRESS_DETAIL_INDENT = 7
 DEFAULT_TERMINAL_COLUMNS = 120
@@ -51,6 +53,15 @@ Rules:
 - If a finding is invalid or impossible to fix safely, explain that in your final response.
 
 Previous review output:
+"""
+
+DEFAULT_TRIAGE_PROMPT = """You are the triage step in a bounded review-remediation loop.
+
+Read the review output and produce a concise implementation handoff for the
+remediation agent. Do not edit files. Separate confirmed actionable findings,
+likely false positives, implementation order, and verification commands.
+
+Review and check output:
 """
 
 
@@ -75,6 +86,11 @@ class LoopConfig:
     reasoning_effort: str | None = None
     review_reasoning_effort: str | None = None
     remediation_reasoning_effort: str | None = None
+    triage_enabled: bool = False
+    triage_model: str | None = None
+    triage_reasoning_effort: str | None = None
+    triage_timeout_seconds: float | None = None
+    triage_prompt: str | None = None
     exec_sandbox: str = "workspace-write"
     exec_color: str = "never"
     full_auto: bool = True
@@ -93,6 +109,7 @@ class LoopConfig:
     terminal_title: bool = False
     initial_review_file: Path | None = None
     check_commands: tuple[str, ...] = field(default_factory=tuple)
+    profile_name: str | None = None
 
 
 Runner = Callable[[Sequence[str], Path, str | None, float | None], CommandResult]
@@ -538,6 +555,18 @@ def build_remediation_command(config: LoopConfig, output_last_message: Path | No
     return command
 
 
+def build_triage_command(config: LoopConfig) -> list[str]:
+    command = [config.codex_bin, "exec"]
+    command.extend(codex_config_args(config, reasoning_effort=config.triage_reasoning_effort))
+    command.extend(["--sandbox", "read-only"])
+    command.extend(["--color", config.exec_color])
+    model = config.triage_model
+    if model:
+        command.extend(["--model", model])
+    command.append("-")
+    return command
+
+
 def phase_timeout_seconds(config: LoopConfig, value: float | None) -> float | None:
     if value is None:
         return config.timeout_seconds
@@ -645,6 +674,37 @@ def run_remediation(
     return result
 
 
+def run_triage(
+    config: LoopConfig,
+    runner: Runner,
+    iteration: int,
+    review_output: str,
+) -> str:
+    command = build_triage_command(config)
+    prompt_root = config.triage_prompt or DEFAULT_TRIAGE_PROMPT
+    prompt = f"{prompt_root}\n{trim_for_prompt(review_output, config.max_remediation_input_chars)}"
+    progress_event(config, "triage", str(iteration), "start", shlex.join(command))
+    if config.dry_run:
+        result = CommandResult(command, 0, stdout="DRY_RUN triage skipped\n")
+    else:
+        result = runner(command, config.cwd, prompt, phase_timeout_seconds(config, config.triage_timeout_seconds))
+    write_artifact(config.artifact_dir / f"triage-{iteration}.txt", _combined_output(result))
+    if result.returncode != 0:
+        progress_event(config, "triage", str(iteration), "failed", f"exit {result.returncode}")
+        raise RuntimeError(
+            f"codex exec triage failed for iteration {iteration}; "
+            f"see {config.artifact_dir / f'triage-{iteration}.txt'}"
+        )
+    progress_event(config, "triage", str(iteration), "done")
+    triage_output = actionable_review_output(_combined_output(result))
+    return (
+        "Triage handoff from the previous review:\n"
+        f"{triage_output}\n\n"
+        "Original review/check context:\n"
+        f"{review_output}"
+    )
+
+
 def run_checks(config: LoopConfig, runner: Runner, iteration: int) -> list[CommandResult]:
     results: list[CommandResult] = []
     for index, check in enumerate(config.check_commands, start=1):
@@ -729,6 +789,7 @@ def add_artifact_paths(summary: dict[str, object], config: LoopConfig) -> None:
             for path in files
             if path.name.startswith("remediation-") and "last-message" not in path.name
         ],
+        "triage": [str(path) for path in files if path.name.startswith("triage-")],
         "last_messages": [
             str(path)
             for path in files
@@ -786,6 +847,9 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
     iterations: list[dict[str, object]] = []
     summary: dict[str, object] = {
         "base": config.base,
+        "run_id": uuid.uuid4().hex,
+        "started_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "profile": config.profile_name,
         "max_iterations": config.max_iterations,
         "artifact_dir": str(config.artifact_dir),
         "iterations": iterations,
@@ -841,6 +905,8 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
         remediation_input = last_review_output
         if pending_check_failures:
             remediation_input = pending_check_failures + "\n\n" + remediation_input
+        if config.triage_enabled:
+            remediation_input = run_triage(config, runner, iteration, remediation_input)
 
         try:
             run_remediation(config, runner, iteration, remediation_input)
@@ -907,6 +973,9 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
         f"Review-remediation loop: {status} ({reason})",
         f"Artifacts: {artifact_dir}",
     ]
+    history_path = summary.get("history_path")
+    if history_path:
+        lines.append(f"Run history: {history_path}")
 
     iterations = summary.get("iterations")
     if isinstance(iterations, list) and iterations:
@@ -1081,6 +1150,11 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         default=None,
         help="Start by remediating a previous review artifact. Use 'latest' for newest review-final.txt.",
     )
+    parser.add_argument(
+        "--no-run-history",
+        action="store_true",
+        help="Do not append metadata for this non-dry-run invocation to the local RevRem history.",
+    )
     return parser.parse_args(argv)
 
 
@@ -1120,6 +1194,20 @@ def parse_config_args(argv: Sequence[str]) -> argparse.Namespace:
     doctor = subparsers.add_parser("doctor", help="Show config paths and merge diagnostics.")
     doctor.add_argument("--profile", default=None)
     doctor.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)
+    return parser.parse_args(argv)
+
+
+def parse_history_args(argv: Sequence[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="revrem history",
+        description="Inspect local RevRem run history.",
+    )
+    parser.add_argument("--format", choices=("text", "json"), default=None)
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    list_parser = subparsers.add_parser("list", help="List recent runs.")
+    list_parser.add_argument("--limit", type=int, default=10)
+    list_parser.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)
     return parser.parse_args(argv)
 
 
@@ -1200,10 +1288,16 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         timeout_seconds = resolve_timeout_seconds(args.timeout_seconds)
         review_timeout_seconds = timeout_seconds
         remediation_timeout_seconds = timeout_seconds
+        triage_timeout_seconds = timeout_seconds if profile.triage.enabled else None
     else:
         timeout_seconds = DEFAULT_TIMEOUT_SECONDS
         review_timeout_seconds = resolve_profile_timeout_seconds(profile.review.timeout_seconds)
         remediation_timeout_seconds = resolve_profile_timeout_seconds(profile.remediation.timeout_seconds)
+        triage_timeout_seconds = (
+            resolve_profile_timeout_seconds(profile.triage.timeout_seconds)
+            if profile.triage.enabled
+            else None
+        )
     artifact_dir_value = args.artifact_dir or profile.output.artifact_dir
     artifact_dir = Path(artifact_dir_value) if artifact_dir_value else default_artifact_dir()
     search_root = artifact_dir if artifact_dir_value else artifact_dir.parent
@@ -1225,6 +1319,11 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         reasoning_effort=args.reasoning_effort,
         review_reasoning_effort=review_reasoning_effort,
         remediation_reasoning_effort=remediation_reasoning_effort,
+        triage_enabled=profile.triage.enabled,
+        triage_model=args.model or profile.triage.model,
+        triage_reasoning_effort=args.reasoning_effort or profile.triage.reasoning_effort,
+        triage_timeout_seconds=triage_timeout_seconds,
+        triage_prompt=profile.triage.prompt,
         exec_sandbox=pick(args.exec_sandbox, profile.runtime.exec_sandbox, "workspace-write"),
         exec_color=pick(args.exec_color, profile.runtime.exec_color, "never"),
         full_auto=profile.runtime.full_auto and not args.no_full_auto,
@@ -1251,6 +1350,7 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         terminal_title=profile.output.terminal_title or args.terminal_title,
         initial_review_file=initial_review_file,
         check_commands=checks,
+        profile_name=args.profile,
     )
     return config, (args.summary_format or profile.output.summary_format)
 
@@ -1259,6 +1359,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     if raw_argv and raw_argv[0] == "config":
         return config_main(raw_argv[1:])
+    if raw_argv and raw_argv[0] == "history":
+        return history_main(raw_argv[1:])
     if raw_argv and raw_argv[0] == "ui":
         print("ERROR: revrem ui is planned in REVREM-PRD-001 but is not implemented yet.", file=sys.stderr)
         return 1
@@ -1281,6 +1383,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     except Exception as exc:  # pragma: no cover - command-line reporting path
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
+
+    if not args.dry_run and not args.no_run_history and summary.get("run_id"):
+        try:
+            history_path = run_history.append_history(summary, cwd=config.cwd)
+            summary["history_path"] = str(history_path)
+            write_summary(config, summary)
+        except OSError as exc:
+            print(f"WARNING: could not write run history: {exc}", file=sys.stderr)
 
     if summary_format in {"text", "both"}:
         print(format_terminal_summary(summary))
@@ -1372,6 +1482,34 @@ def config_main(argv: Sequence[str]) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
     raise AssertionError(f"unhandled config command: {args.command}")
+
+
+def history_main(argv: Sequence[str]) -> int:
+    args = parse_history_args(argv)
+    try:
+        output_format = getattr(args, "format", None) or "text"
+        if args.command == "list":
+            if args.limit < 1:
+                raise ValueError("--limit must be at least 1")
+            records = run_history.read_history(limit=args.limit)
+            if output_format == "json":
+                print(json.dumps(records, indent=2, sort_keys=True))
+            else:
+                if not records:
+                    print("No RevRem run history found.")
+                    return 0
+                for record in records:
+                    run_id = record.get("run_id") or "<unknown>"
+                    status = record.get("final_status") or "unknown"
+                    reason = record.get("stopped_reason") or "unknown"
+                    base = record.get("base") or "unknown"
+                    artifact_dir = record.get("artifact_dir") or ""
+                    print(f"{run_id} {status} ({reason}) base={base} artifacts={artifact_dir}")
+            return 0
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    raise AssertionError(f"unhandled history command: {args.command}")
 
 
 if __name__ == "__main__":

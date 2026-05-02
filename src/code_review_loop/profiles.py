@@ -31,7 +31,7 @@ PROFILE_KEYS = (
 )
 PIPELINE_KEYS = ("base", "max_iterations", "final_review", "checks")
 PHASE_KEYS = ("harness", "model", "reasoning_effort", "timeout_seconds")
-TRIAGE_KEYS = ("enabled", "harness", "model", "prompt")
+TRIAGE_KEYS = ("enabled", "harness", "model", "reasoning_effort", "timeout_seconds", "prompt")
 OUTPUT_KEYS = (
     "summary_format",
     "debug_status_detection",
@@ -65,6 +65,8 @@ class TriageConfig:
     enabled: bool = False
     harness: str = "codex"
     model: str | None = None
+    reasoning_effort: str | None = None
+    timeout_seconds: float | None = None
     prompt: str | None = None
 
 
@@ -230,10 +232,17 @@ def parse_triage(raw: dict[str, Any], field: str) -> TriageConfig:
     _reject_unknown_keys(raw, TRIAGE_KEYS, field)
     harness = _str(raw.get("harness", "codex"), f"{field}.harness")
     validate_harness_name(harness, field=f"{field}.harness")
+    reasoning_effort = _optional_str(raw.get("reasoning_effort"), f"{field}.reasoning_effort")
+    if reasoning_effort is not None and reasoning_effort not in REASONING_EFFORT_CHOICES:
+        raise ValueError(
+            f"{field}.reasoning_effort must be one of {', '.join(REASONING_EFFORT_CHOICES)}"
+        )
     return TriageConfig(
         enabled=_bool(raw.get("enabled", False), f"{field}.enabled"),
         harness=harness,
         model=_optional_str(raw.get("model"), f"{field}.model"),
+        reasoning_effort=reasoning_effort,
+        timeout_seconds=_optional_float(raw.get("timeout_seconds"), f"{field}.timeout_seconds"),
         prompt=_optional_str(raw.get("prompt"), f"{field}.prompt"),
     )
 
@@ -476,6 +485,8 @@ def validate_profile(profile: Profile, *, require_implemented: bool) -> None:
     for phase_name, phase in (("review", profile.review), ("remediation", profile.remediation)):
         if phase.timeout_seconds is not None and phase.timeout_seconds < 0:
             raise ValueError(f"{phase_name}.timeout_seconds must be 0 or greater")
+    if profile.triage.timeout_seconds is not None and profile.triage.timeout_seconds < 0:
+        raise ValueError("triage.timeout_seconds must be 0 or greater")
     if profile.runtime.exec_sandbox not in EXEC_SANDBOX_CHOICES:
         known = ", ".join(EXEC_SANDBOX_CHOICES)
         raise ValueError(f"runtime.exec_sandbox must be one of: {known}")
@@ -490,7 +501,7 @@ def validate_profile(profile: Profile, *, require_implemented: bool) -> None:
         require_implemented_harness(profile.review.harness, field="review.harness")
         require_implemented_harness(profile.remediation.harness, field="remediation.harness")
         if profile.triage.enabled:
-            raise ValueError("triage profiles are valid but triage execution is not implemented yet")
+            require_implemented_harness(profile.triage.harness, field="triage.harness")
 
 
 def _write_profile_file(
