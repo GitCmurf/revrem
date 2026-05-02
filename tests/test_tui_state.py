@@ -9,6 +9,7 @@ def test_home_snapshot_collects_profiles_history_and_harnesses(tmp_path):
     home = tmp_path / "home"
     repo = tmp_path / "repo"
     repo.mkdir()
+    (repo / ".git").mkdir()
     config_path = profiles.user_config_path(home)
     config_path.parent.mkdir(parents=True)
     config_path.write_text(
@@ -52,6 +53,36 @@ checks = ["pytest -q", "git diff --check"]
     }
     assert next(harness for harness in snapshot.harnesses if harness.name == "codex").implemented is True
     assert next(harness for harness in snapshot.harnesses if harness.name == "claude").implemented is False
+
+
+def test_home_snapshot_resolves_shared_defaults_before_building_previews(tmp_path):
+    home = tmp_path / "home"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    config_path = profiles.user_config_path(home)
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[defaults.pipeline]
+base = "trunk"
+checks = ["pytest -q", "git diff --check"]
+
+[profiles.final-pr]
+description = "Final PR"
+""",
+        encoding="utf-8",
+    )
+
+    snapshot = tui_state.build_home_snapshot(cwd=repo, home=home)
+
+    assert [profile.name for profile in snapshot.profiles] == ["final-pr"]
+    assert snapshot.profiles[0].base == "trunk"
+    assert snapshot.profiles[0].checks == ("pytest -q", "git diff --check")
+    assert snapshot.run_previews[0].shell_command == (
+        "revrem --profile final-pr --base trunk --max-iterations 2 "
+        "--summary-format text --check 'pytest -q' --check 'git diff --check'"
+    )
 
 
 def test_pipeline_phases_model_review_triage_checks_and_commit():

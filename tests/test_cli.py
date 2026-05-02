@@ -4,7 +4,6 @@ import io
 import json
 import os
 import re
-import subprocess
 from pathlib import Path
 
 import pytest

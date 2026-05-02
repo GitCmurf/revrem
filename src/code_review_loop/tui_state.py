@@ -64,12 +64,16 @@ def build_home_snapshot(
     history_path: Path | None = None,
 ) -> HomeSnapshot:
     profile_list = tuple(profiles.list_profiles(cwd=cwd, home=home))
+    resolved_profiles = tuple(
+        profiles.resolve_profile(profile.name, cwd=cwd, home=home, require_implemented=False)
+        for profile in profile_list
+    )
     return HomeSnapshot(
         cwd=str(cwd),
-        profiles=tuple(profile_view(profile) for profile in profile_list),
+        profiles=tuple(profile_view(profile) for profile in resolved_profiles),
         recent_runs=tuple(run_history.read_history(history_path, limit=history_limit)),
         harnesses=harness_views(),
-        run_previews=tuple(run_preview(profile) for profile in profile_list),
+        run_previews=tuple(run_preview(profile) for profile in resolved_profiles),
     )
 
 
