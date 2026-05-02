@@ -331,8 +331,18 @@ prompt = "Break down the review into confirmed actions, likely false positives, 
 ### Current CLI boundary
 
 Rich progress is available via `--progress-style rich` when the optional
-`progress` extra is installed. `revrem ui` remains planned in `REVREM-PRD-001`;
-it is not available in the current CLI.
+`progress` extra is installed. `revrem ui` is available as a dependency-gated
+entry point for the planned Textual interface:
+
+```bash
+./.venv/bin/pip install -e ".[tui]"
+./.venv/bin/revrem ui
+```
+
+Without the `tui` extra, `revrem ui` exits cleanly with an installation hint.
+The first TUI slice is a navigational shell; the CLI remains the authoritative
+execution path while the full Home, Profiles, Pipeline Builder, and Run Monitor
+screens are completed.
 
 ### Exit codes
 

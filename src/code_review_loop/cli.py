@@ -463,6 +463,7 @@ CLEAR_PHRASES = (
     "did not find a discrete introduced bug",
     "did not find any discrete introduced bug",
     "did not find any actionable bugs",
+    "did not identify a discrete introduced correctness, security, or maintainability issue that should block the patch",
     "did not identify any discrete introduced bugs that should block the patch",
     "did not identify any discrete introduced bugs that would block the patch",
     "did not identify any actionable correctness, security, or maintainability issues",
@@ -1862,8 +1863,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if raw_argv and raw_argv[0] == "history":
         return history_main(raw_argv[1:])
     if raw_argv and raw_argv[0] == "ui":
-        print("ERROR: revrem ui is planned in REVREM-PRD-001 but is not implemented yet.", file=sys.stderr)
-        return 1
+        from code_review_loop import tui
+
+        return tui.main(raw_argv[1:])
 
     args = parse_args(raw_argv)
     try:

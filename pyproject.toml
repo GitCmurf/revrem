@@ -37,6 +37,9 @@ dev = [
 progress = [
   "rich>=13.7",
 ]
+tui = [
+  "textual>=0.80",
+]
 
 [project.scripts]
 code-review-loop = "code_review_loop.cli:main"

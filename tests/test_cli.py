@@ -61,6 +61,15 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
     )
     assert (
         MODULE.detect_review_status(
+            "The diff was reviewed against the merge base and the changed implementation "
+            "has corresponding tests and documentation. I did not identify a discrete "
+            "introduced correctness, security, or maintainability issue that should block "
+            "the patch."
+        )
+        == "clear"
+    )
+    assert (
+        MODULE.detect_review_status(
             "The changes pass locally without revealing any discrete correctness issue."
         )
         == "clear"

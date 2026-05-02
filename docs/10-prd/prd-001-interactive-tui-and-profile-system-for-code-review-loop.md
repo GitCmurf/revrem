@@ -381,7 +381,9 @@ Milestone status as of version 0.4:
   local git staging and commit execution after checks pass. Default commit
   subjects are normalized to Conventional Commit syntax and suffixed with
   ` (RevRem)` unless the operator provides a custom commit-message prompt.
-- FR-12 remains pending.
+- FR-12 is partially implemented: `revrem ui` now resolves to a dependency-
+  gated Textual entry point with a clean install hint when the optional `tui`
+  extra is absent. Full screen behavior remains pending.
 - Codex triage is implemented; non-Codex harnesses remain reserved syntax and
   executable runs fail fast when a resolved profile selects an unimplemented
   backend.
@@ -487,11 +489,19 @@ Done when:
 Deliverables:
 
 - `revrem ui` entry point.
+- Optional `tui` extra declaring Textual without adding default runtime
+  dependencies.
 - Home, Profiles, Pipeline Builder, and Run Monitor screens.
 - TUI smoke tests with dependency-guarded execution.
 - Screenshots or recorded terminal demo artifacts for PR review.
 
-Done when:
+Initial slice done when:
+
+- `revrem ui --dry-run` succeeds without Textual installed.
+- `revrem ui` exits cleanly with an installation hint when Textual is absent.
+- The default development gate remains free of Textual imports.
+
+Full milestone done when:
 
 - A user can select a profile, start a dry run, inspect phase state, and open artifact paths from
   the TUI.
@@ -585,7 +595,7 @@ revrem history --format json list --limit 5
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
-| 0.5 | 2026-05-02 | Codex | Added optional verified commit-after-remediation phase, Conventional Commit subject policy, phase-specific effort overrides, and no-op remediation close-down |
+| 0.5 | 2026-05-02 | Codex | Added optional verified commit-after-remediation phase, Conventional Commit subject policy, phase-specific effort overrides, no-op remediation close-down, and first dependency-gated TUI entry slice |
 | 0.4 | 2026-05-02 | Codex | Implemented FR-9 run history; added history CLI, JSONL architecture contract, optional read-only Codex triage, local progress timestamps, and initial optional Rich progress |
 | 0.3 | 2026-05-02 | Codex | Marked profile/config milestones implemented; clarified remaining run-history, Rich progress, and TUI scope |
 | 0.2 | 2026-05-01 | Codex | Reworked PRD into staged engineering contract; added dev/stable distribution boundary, architecture constraints, milestones, and acceptance gates |

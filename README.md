@@ -83,6 +83,14 @@ request Rich rendering:
 revrem --profile final-pr --progress-style rich
 ```
 
+The optional TUI entry point is dependency-gated so the default CLI stays
+dependency-light:
+
+```bash
+./.venv/bin/pip install -e ".[tui]"
+revrem ui
+```
+
 ## Development
 
 ```bash

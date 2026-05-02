@@ -18,6 +18,14 @@ def test_console_entry_points_include_stable_alias():
     assert scripts["revrem"] == "code_review_loop.cli:main"
 
 
+def test_optional_tui_extra_declares_textual_dependency():
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+
+    tui_extra = pyproject["project"]["optional-dependencies"]["tui"]
+
+    assert any(dependency.startswith("textual>=") for dependency in tui_extra)
+
+
 def test_distribution_scripts_are_executable_and_posix_sh():
     for relative in ("scripts/install-dev", "scripts/promote-stable"):
         path = ROOT / relative

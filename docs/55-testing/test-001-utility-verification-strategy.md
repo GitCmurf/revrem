@@ -82,7 +82,9 @@ newest-first reads.
 `tests/test_progress.py` covers optional Rich renderer safety, including literal
 handling for review text that contains Rich markup syntax.
 `tests/test_packaging.py` covers console entry points and local distribution
-scripts.
+scripts, including optional extras metadata.
+`tests/test_tui.py` covers the dependency-gated `revrem ui` entry point without
+requiring Textual in the default development environment.
 
 ### Local verification
 
