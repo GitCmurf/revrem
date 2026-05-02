@@ -39,6 +39,10 @@ checks = ["pytest -q", "git diff --check"]
     assert [profile.name for profile in snapshot.profiles] == ["final-pr"]
     assert snapshot.profiles[0].checks == ("pytest -q", "git diff --check")
     assert snapshot.recent_runs[0]["run_id"] == "run-1"
+    assert snapshot.run_previews[0].shell_command == (
+        "revrem --profile final-pr --base main --max-iterations 3 "
+        "--summary-format text --check 'pytest -q' --check 'git diff --check'"
+    )
     assert {harness.name for harness in snapshot.harnesses} >= {
         "codex",
         "claude",
@@ -98,3 +102,43 @@ def test_pipeline_phases_preserve_disabled_optional_phase_shape():
     assert phases[3].enabled is False
     assert phases[3].command_count == 0
     assert phases[4].enabled is False
+
+
+def test_run_preview_includes_operator_visible_profile_options():
+    profile = profiles.Profile(
+        name="showcase",
+        pipeline=profiles.PipelineConfig(
+            base="trunk",
+            max_iterations=5,
+            checks=("pytest -q",),
+        ),
+        commit=profiles.CommitConfig(enabled=True),
+        output=profiles.OutputConfig(
+            summary_format="both",
+            progress_style="rich",
+            debug_status_detection=True,
+            terminal_title=True,
+        ),
+    )
+
+    preview = tui_state.run_preview(profile)
+
+    assert preview.argv == (
+        "revrem",
+        "--profile",
+        "showcase",
+        "--base",
+        "trunk",
+        "--max-iterations",
+        "5",
+        "--summary-format",
+        "both",
+        "--progress-style",
+        "rich",
+        "--debug-status-detection",
+        "--terminal-title",
+        "--commit-after-remediation",
+        "--check",
+        "pytest -q",
+    )
+    assert preview.shell_command.endswith("--check 'pytest -q'")

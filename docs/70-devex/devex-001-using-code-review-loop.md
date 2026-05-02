@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '0.4'
+version: '0.5'
 last_updated: '2026-05-02'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 0.4
+> **Version:** 0.5
 > **Last Updated:** 2026-05-02
 > **Type:** DEVEX
 > **Area:** devex
@@ -356,7 +356,14 @@ The first TUI slice is a navigational shell; the CLI remains the authoritative
 execution path while the full Home, Profiles, Pipeline Builder, and Run Monitor
 screens are completed. The shell is backed by dependency-free view models for
 profiles, recent runs, harness metadata, and pipeline phases so future Textual
-widgets can reuse the same tested state without duplicating CLI logic.
+widgets can reuse the same tested state without duplicating CLI logic. Profile
+command previews are generated from the same profile data so the UI can show the
+operator the exact `revrem --profile ...` command before launch.
+
+Codex is currently the only executable review/remediation harness. The profile
+schema reserves `claude`, `gemini`, `opencode`, and `kilo` for future headless
+adapters; config management accepts those values, but executable runs fail fast
+until a backend adapter is implemented.
 
 ### Exit codes
 
@@ -429,6 +436,7 @@ The wrapper runs tests, `ruff check .`, `mypy src`, and DocOps checks when
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 0.5 | 2026-05-02 | Codex | Documented harness adapter boundary and TUI profile command previews |
 | 0.4 | 2026-05-02 | Codex | Documented Rich progress column styling and current dependency-gated TUI shell behavior |
 | 0.3 | 2026-05-02 | Codex | Added profile-based usage, config commands, current harness/triage boundary, history/progress hardening, and verified commit-after-remediation guidance |
 | 0.2 | 2026-05-01 | Codex | Updated usage guidance for stable `revrem` entry point, dev/stable install boundary, terminal title progress, and current CLI limitations |

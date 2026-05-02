@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -39,11 +40,20 @@ class PhaseView:
 
 
 @dataclass(frozen=True)
+class RunPreview:
+    profile_name: str
+    argv: tuple[str, ...]
+    shell_command: str
+    checks: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class HomeSnapshot:
     cwd: str
     profiles: tuple[ProfileView, ...]
     recent_runs: tuple[dict[str, Any], ...]
     harnesses: tuple[HarnessView, ...]
+    run_previews: tuple[RunPreview, ...]
 
 
 def build_home_snapshot(
@@ -53,11 +63,13 @@ def build_home_snapshot(
     history_limit: int = 5,
     history_path: Path | None = None,
 ) -> HomeSnapshot:
+    profile_list = tuple(profiles.list_profiles(cwd=cwd, home=home))
     return HomeSnapshot(
         cwd=str(cwd),
-        profiles=tuple(profile_view(profile) for profile in profiles.list_profiles(cwd=cwd, home=home)),
+        profiles=tuple(profile_view(profile) for profile in profile_list),
         recent_runs=tuple(run_history.read_history(history_path, limit=history_limit)),
         harnesses=harness_views(),
+        run_previews=tuple(run_preview(profile) for profile in profile_list),
     )
 
 
@@ -93,6 +105,36 @@ def pipeline_phases(profile: profiles.Profile) -> tuple[PhaseView, ...]:
         PhaseView("commit", profile.commit.enabled, model=profile.commit.message_model),
     ]
     return tuple(phases)
+
+
+def run_preview(profile: profiles.Profile) -> RunPreview:
+    argv = [
+        "revrem",
+        "--profile",
+        profile.name,
+        "--base",
+        profile.pipeline.base,
+        "--max-iterations",
+        str(profile.pipeline.max_iterations),
+        "--summary-format",
+        profile.output.summary_format,
+    ]
+    if profile.output.progress_style != "compact":
+        argv.extend(["--progress-style", profile.output.progress_style])
+    if profile.output.debug_status_detection:
+        argv.append("--debug-status-detection")
+    if profile.output.terminal_title:
+        argv.append("--terminal-title")
+    if profile.commit.enabled:
+        argv.append("--commit-after-remediation")
+    for check in profile.pipeline.checks:
+        argv.extend(["--check", check])
+    return RunPreview(
+        profile_name=profile.name,
+        argv=tuple(argv),
+        shell_command=shlex.join(argv),
+        checks=profile.pipeline.checks,
+    )
 
 
 def phase_view(name: str, enabled: bool, phase: profiles.PhaseConfig | profiles.TriageConfig) -> PhaseView:

@@ -3,7 +3,7 @@ document_id: REVREM-TEST-001
 type: TEST
 title: Utility verification strategy
 status: Draft
-version: '0.2'
+version: '0.3'
 last_updated: '2026-05-02'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-TEST-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 0.2
+> **Version:** 0.3
 > **Last Updated:** 2026-05-02
 > **Type:** TEST
 > **Area:** testing
@@ -79,6 +79,9 @@ commit-message model defaults, user-profile writes/deletes/imports, and
 reserved future harness handling.
 `tests/test_run_history.py` covers shared JSONL history paths, record shape, and
 newest-first reads.
+`tests/test_harnesses.py` covers the reusable harness command-planning boundary:
+Codex command construction is executable, while reserved future harnesses remain
+valid profile syntax but not runnable adapters.
 `tests/test_progress.py` covers optional Rich renderer safety, including literal
 handling for review text that contains Rich markup syntax and styling of the
 phase/action and status columns.
@@ -88,7 +91,8 @@ scripts, including optional extras metadata.
 requiring Textual in the default development environment, plus a fake-Textual
 launch smoke test for the current home shell.
 `tests/test_tui_state.py` covers dependency-free TUI view models for profile
-discovery, run-history loading, harness metadata, and pipeline phase summaries.
+discovery, run-history loading, harness metadata, pipeline phase summaries, and
+profile command previews.
 
 ### Local verification
 

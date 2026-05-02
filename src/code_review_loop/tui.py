@@ -79,6 +79,12 @@ def run_textual_app() -> None:
                         f"Recent runs: {len(snapshot.recent_runs)} loaded",
                         "Implemented harnesses: "
                         + ", ".join(h.name for h in snapshot.harnesses if h.implemented),
+                        "Quick start: "
+                        + (
+                            snapshot.run_previews[0].shell_command
+                            if snapshot.run_previews
+                            else "revrem config new final-pr"
+                        ),
                         "",
                         "Home: recent runs and quick-start profiles",
                         "Profiles: create, inspect, import, and export TOML profiles",

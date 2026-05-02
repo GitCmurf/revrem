@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
-from code_review_loop import profiles, progress, run_history
+from code_review_loop import harnesses, profiles, progress, run_history
 
 STATUS_RE = re.compile(r"^\s*REVIEW_STATUS:\s*(clear|findings)\s*$", re.IGNORECASE | re.MULTILINE)
 CODEX_FINDING_RE = re.compile(r"^\s*-\s*\[P[0-3]\]\s+", re.MULTILINE)
@@ -96,6 +96,10 @@ class LoopConfig:
     cwd: Path
     artifact_dir: Path
     model: str | None = None
+    review_harness: str = "codex"
+    remediation_harness: str = "codex"
+    triage_harness: str = "codex"
+    commit_message_harness: str = "codex"
     review_model: str | None = None
     remediation_model: str | None = None
     reasoning_effort: str | None = None
@@ -615,54 +619,64 @@ def codex_config_args(config: LoopConfig, *, reasoning_effort: str | None = None
 
 
 def build_review_command(config: LoopConfig) -> list[str]:
-    command = [config.codex_bin]
-    command.extend(codex_config_args(config, reasoning_effort=config.review_reasoning_effort))
-    model = config.review_model or config.model
-    if model:
-        command.extend(["--model", model])
-    command.extend(["review", "--base", config.base])
-    return command
+    return harnesses.build_phase_command(
+        harnesses.PhaseCommandRequest(
+            harness=config.review_harness,
+            role="review",
+            executable=config.codex_bin,
+            base=config.base,
+            model=config.review_model or config.model,
+            reasoning_effort=config.review_reasoning_effort or config.reasoning_effort,
+        )
+    )
 
 
 def build_remediation_command(config: LoopConfig, output_last_message: Path | None = None) -> list[str]:
-    command = [config.codex_bin, "exec"]
-    command.extend(codex_config_args(config, reasoning_effort=config.remediation_reasoning_effort))
-    if config.full_auto:
-        command.append("--full-auto")
-    command.extend(["--sandbox", config.exec_sandbox])
-    command.extend(["--color", config.exec_color])
-    if config.exec_json:
-        command.append("--json")
-    model = config.remediation_model or config.model
-    if model:
-        command.extend(["--model", model])
-    if output_last_message:
-        command.extend(["--output-last-message", str(output_last_message)])
-    command.append("-")
-    return command
+    return harnesses.build_phase_command(
+        harnesses.PhaseCommandRequest(
+            harness=config.remediation_harness,
+            role="remediation",
+            executable=config.codex_bin,
+            model=config.remediation_model or config.model,
+            reasoning_effort=config.remediation_reasoning_effort or config.reasoning_effort,
+            sandbox=config.exec_sandbox,
+            color=config.exec_color,
+            full_auto=config.full_auto,
+            json_output=config.exec_json,
+            output_last_message=config.output_last_message,
+            output_last_message_path=output_last_message,
+        )
+    )
 
 
 def build_triage_command(config: LoopConfig) -> list[str]:
-    command = [config.codex_bin, "exec"]
-    command.extend(codex_config_args(config, reasoning_effort=config.triage_reasoning_effort))
-    command.extend(["--sandbox", "read-only"])
-    command.extend(["--color", config.exec_color])
-    model = config.triage_model
-    if model:
-        command.extend(["--model", model])
-    command.append("-")
-    return command
+    return harnesses.build_phase_command(
+        harnesses.PhaseCommandRequest(
+            harness=config.triage_harness,
+            role="triage",
+            executable=config.codex_bin,
+            model=config.triage_model,
+            reasoning_effort=config.triage_reasoning_effort,
+            sandbox="read-only",
+            color=config.exec_color,
+            full_auto=False,
+        )
+    )
 
 
 def build_commit_message_command(config: LoopConfig) -> list[str]:
-    command = [config.codex_bin, "exec"]
-    command.extend(codex_config_args(config, reasoning_effort=config.commit_reasoning_effort))
-    command.extend(["--sandbox", "read-only"])
-    command.extend(["--color", config.exec_color])
-    if config.commit_message_model:
-        command.extend(["--model", config.commit_message_model])
-    command.append("-")
-    return command
+    return harnesses.build_phase_command(
+        harnesses.PhaseCommandRequest(
+            harness=config.commit_message_harness,
+            role="commit-message",
+            executable=config.codex_bin,
+            model=config.commit_message_model,
+            reasoning_effort=config.commit_reasoning_effort,
+            sandbox="read-only",
+            color=config.exec_color,
+            full_auto=False,
+        )
+    )
 
 
 def phase_timeout_seconds(config: LoopConfig, value: float | None) -> float | None:
@@ -1835,6 +1849,9 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         cwd=cwd,
         artifact_dir=artifact_dir,
         model=args.model,
+        review_harness=profile.review.harness,
+        remediation_harness=profile.remediation.harness,
+        triage_harness=profile.triage.harness,
         review_model=review_model,
         remediation_model=remediation_model,
         reasoning_effort=args.reasoning_effort,

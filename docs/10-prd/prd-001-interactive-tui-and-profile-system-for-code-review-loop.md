@@ -3,7 +3,7 @@ document_id: REVREM-PRD-001
 type: PRD
 title: Interactive TUI and Profile System for code-review-loop
 status: Draft
-version: "0.6"
+version: "0.7"
 last_updated: '2026-05-02'
 owner: GitCmurf
 area: product
@@ -29,7 +29,7 @@ related_ids:
 > **Document ID:** REVREM-PRD-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 0.6
+> **Version:** 0.7
 > **Last Updated:** 2026-05-02
 > **Type:** PRD
 
@@ -147,8 +147,9 @@ bounded nested Codex execution, deterministic artifacts, plain shell compatibili
 - Multi-user server deployment.
 - Secret storage or credential management.
 - Automatic pushes, branch creation, or remote repository mutation.
-- Replacing `codex`; additional harnesses are designed for, but delivered after the profile and
-  progress foundations are stable.
+- Implementing non-Codex execution backends; Claude, Gemini, opencode, and Kilo
+  remain reserved profile syntax until their headless adapters are implemented
+  and tested.
 
 ---
 
@@ -310,7 +311,9 @@ prompt.
 | Run Monitor | Rich phase state, scrollable log, artifact links, final summary |
 
 The TUI shells out to the same tested core functions used by the CLI. It does not own remediation
-logic.
+logic. It consumes dependency-free view models for profile discovery, harness
+metadata, recent run history, phase summaries, and profile command previews so
+interactive widgets cannot drift from CLI semantics.
 
 ---
 
@@ -336,8 +339,10 @@ Implementation must preserve these boundaries:
   committing, or pushing.
 - Reasoning-effort selection is phase-local: review, triage, remediation, and
   commit-message drafting can each be overridden independently from the CLI.
-- Harness execution is introduced as a registry only when a second harness is implemented; until
-  then, avoid speculative abstractions that obscure the Codex path.
+- Harness execution lives behind `src/code_review_loop/harnesses.py`. Codex is
+  the only implemented adapter; reserved adapters for Claude, Gemini, opencode,
+  and Kilo deliberately fail if execution is requested while remaining valid
+  management/config syntax.
 - Optional dependencies are imported inside feature entry points only.
 - Config writes are atomic and never mutate files outside the selected config path.
 - Errors produce actionable messages and still write summary artifacts where a loop has started.
@@ -373,7 +378,7 @@ The quality bar for every phase is:
 - [FR-11] Support optional verified checkpoint commits after remediation passes.
 - [FR-12] Implement `revrem ui` behind the `[tui]` extra.
 
-Milestone status as of version 0.4:
+Milestone status as of version 0.7:
 
 - FR-1 through FR-8 are implemented.
 - FR-9 is implemented.
@@ -386,10 +391,12 @@ Milestone status as of version 0.4:
   ` (RevRem)` unless the operator provides a custom commit-message prompt.
 - FR-12 is partially implemented: `revrem ui` now resolves to a dependency-
   gated Textual entry point with a clean install hint when the optional `tui`
-  extra is absent. Full screen behavior remains pending.
+  extra is absent. The current shell renders reusable profile, history, harness,
+  phase, and command-preview state. Full interactive screen behavior remains
+  pending.
 - Codex triage is implemented; non-Codex harnesses remain reserved syntax and
-  executable runs fail fast when a resolved profile selects an unimplemented
-  backend.
+  executable command planning fails fast when an unimplemented backend is
+  selected.
 
 ### Non-Functional Requirements
 
@@ -505,7 +512,8 @@ Initial slice done when:
 - `revrem ui --dry-run` succeeds without Textual installed.
 - `revrem ui` exits cleanly with an installation hint when Textual is absent.
 - TUI state tests cover profile discovery, run-history loading, harness
-  metadata, and pipeline phase modeling without importing Textual.
+  metadata, pipeline phase modeling, and profile command previews without
+  importing Textual.
 - A dependency-guarded launch smoke test proves the Textual app can render the
   home snapshot when Textual is available.
 - The default development gate remains free of Textual imports.
@@ -586,15 +594,20 @@ revrem history --format json list --limit 5
 - User config uses `~/.config/revrem/`; run history uses `~/.local/share/revrem/`.
 - WSL2/Linux is the primary target.
 - Rich and Textual remain optional extras.
+- TOML writes use a small purpose-built renderer for the limited profile schema
+  instead of adding a default runtime dependency.
+- Harness names are validated through an early registry and command-planning
+  adapter boundary; only the Codex adapter is executable today.
+- Run history is append-only JSONL to avoid read-modify-write corruption and to
+  keep TUI recent-run views simple.
 
 ### Open Questions
 
-- Whether TOML writes should use `tomli-w`, `tomlkit`, or a small purpose-built writer for the
-  limited profile schema.
-- Run history starts as append-only JSONL to avoid read-modify-write corruption
-  and to keep future TUI recent-run views simple.
-- Whether a future harness registry should be introduced with the first non-Codex harness or one
-  milestone earlier as part of profile validation.
+- Which non-Codex headless harness should be implemented first, and what exact
+  machine-readable review/remediation contract should its adapter expose.
+- Whether the full Textual Run Monitor should execute the existing CLI in a
+  subprocess for maximal isolation or call the loop core directly with an event
+  stream adapter.
 
 ---
 
@@ -604,6 +617,7 @@ revrem history --format json list --limit 5
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 0.7 | 2026-05-02 | Codex | Added reusable harness command-planning boundary and TUI profile command previews for future interactive screens |
 | 0.6 | 2026-05-02 | Codex | Hardened Rich progress styling expectations, corrected conservative no-op unknown close-down semantics, and added a dependency-guarded TUI launch smoke-test requirement |
 | 0.5 | 2026-05-02 | Codex | Added optional verified commit-after-remediation phase, Conventional Commit subject policy, phase-specific effort overrides, no-op remediation close-down, and first dependency-gated TUI entry slice |
 | 0.4 | 2026-05-02 | Codex | Implemented FR-9 run history; added history CLI, JSONL architecture contract, optional read-only Codex triage, local progress timestamps, and initial optional Rich progress |
