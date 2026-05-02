@@ -42,8 +42,10 @@ captured as a git commit, and `--no-commit-after-remediation` when a profile
 enables commits by default but a one-off run should stay dry. RevRem stages the
 workspace with `git add -A` only after checks pass, excludes the configured
 artifact directory from staging, skips the commit when there are no staged
-changes, and runs `git commit` itself. `--commit-message-model` controls the
-optional read-only Codex call that drafts the commit subject; profile
+changes, and runs `git commit` itself. Auto-commit requires a clean worktree
+before the loop starts so unrelated local edits cannot be captured
+accidentally. `--commit-message-model` controls the optional read-only Codex
+call that drafts the commit subject; profile
 configuration defaults that message model to `gpt-5.3-codex-spark`. By
 default commit subjects are normalized to Conventional Commit syntax and end
 with ` (RevRem)`. Use `--commit-message-prompt` only when a run intentionally

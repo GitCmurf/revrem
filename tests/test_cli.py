@@ -527,6 +527,8 @@ def test_loop_commits_after_passing_checks(tmp_path):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
+        if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+            return MODULE.CommandResult(list(args), 0, stdout="")
         if args[0] == "codex" and "review" in args:
             return MODULE.CommandResult(list(args), 0, stdout=next(review_outputs))
         if args[0] == "pytest":
@@ -626,6 +628,8 @@ def test_loop_skips_commit_when_checks_fail(tmp_path):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
+        if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+            return MODULE.CommandResult(list(args), 0, stdout="")
         if args[0] == "codex" and "review" in args:
             return MODULE.CommandResult(list(args), 0, stdout=next(review_outputs))
         if args[0] == "pytest":
@@ -647,7 +651,42 @@ def test_loop_skips_commit_when_checks_fail(tmp_path):
 
     assert summary["iterations"][0]["check_failures"] == 1
     assert "commit_status" not in summary["iterations"][0]
-    assert not any(command[0] == "git" for command, _input_text, _timeout in calls)
+    assert [command for command, _input_text, _timeout in calls if command[0] == "git"] == [
+        ["git", "status", "--porcelain=v1", "--untracked-files=all"]
+    ]
+
+
+def test_loop_refuses_to_auto_commit_from_dirty_worktree(tmp_path):
+    calls = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+            return MODULE.CommandResult(
+                list(args),
+                0,
+                stdout=" M src/other.py\n?? notes.txt\n",
+            )
+        raise AssertionError(f"unexpected command: {args!r}")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        commit_after_remediation=True,
+    )
+
+    with pytest.raises(RuntimeError) as excinfo:
+        MODULE.run_loop(config, runner)
+
+    assert "--commit-after-remediation" in str(excinfo.value)
+    assert "src/other.py" in str(excinfo.value)
+    assert "notes.txt" in str(excinfo.value)
+    assert [command for command, _input_text, _timeout in calls] == [
+        ["git", "status", "--porcelain=v1", "--untracked-files=all"]
+    ]
 
 
 def test_loop_stops_after_unknown_review_when_remediation_has_no_staged_changes(tmp_path):
@@ -655,6 +694,8 @@ def test_loop_stops_after_unknown_review_when_remediation_has_no_staged_changes(
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
+        if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+            return MODULE.CommandResult(list(args), 0, stdout="")
         if args[0] == "codex" and "review" in args:
             return MODULE.CommandResult(list(args), 0, stdout="The implementation appears sound.\n")
         if args[0] == "pytest":
@@ -691,6 +732,8 @@ def test_loop_writes_failure_summary_when_commit_fails(tmp_path):
     review_outputs = iter(["Full review comments:\n\n- [P2] Fix profile merge\n"])
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+            return MODULE.CommandResult(list(args), 0, stdout="")
         if args[0] == "codex" and "review" in args:
             return MODULE.CommandResult(list(args), 0, stdout=next(review_outputs))
         if args[:3] == ["git", "add", "-A"]:

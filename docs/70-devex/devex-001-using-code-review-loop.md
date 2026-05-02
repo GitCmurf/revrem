@@ -290,7 +290,9 @@ that default subject policy so special-purpose commit formats can be tested
 without fighting the normalizer. If a verified remediation pass produces no
 staged changes, RevRem stops the loop immediately; an `unknown` review status
 in that no-op path is treated as a clear terminal result and still records the
-unexpected-status bug-report artifact.
+unexpected-status bug-report artifact. Auto-commit also requires a clean
+worktree before the loop starts so unrelated local edits cannot be staged by
+the broad `git add -A` step.
 
 ```bash
 revrem --profile final-pr --commit-after-remediation

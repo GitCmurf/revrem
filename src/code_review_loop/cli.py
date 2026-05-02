@@ -814,6 +814,10 @@ def git_add_command_for_commit(_config: LoopConfig) -> list[str]:
     return ["git", "add", "-A"]
 
 
+def git_worktree_status_command_for_commit(_config: LoopConfig) -> list[str]:
+    return ["git", "status", "--porcelain=v1", "--untracked-files=all"]
+
+
 def git_reset_artifact_command_for_commit(config: LoopConfig) -> list[str] | None:
     cwd_root = config.cwd.resolve()
     artifact_root = (
@@ -1093,6 +1097,24 @@ def run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, o
 def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, object]:
     if config.max_iterations < 1:
         raise ValueError("--max-iterations must be at least 1")
+
+    if config.commit_after_remediation:
+        status_result = runner(
+            git_worktree_status_command_for_commit(config),
+            config.cwd,
+            None,
+            phase_timeout_seconds(config, config.timeout_seconds),
+        )
+        if status_result.returncode != 0:
+            raise RuntimeError("git worktree status check failed before auto-commit could start")
+        dirty_lines = [line for line in status_result.stdout.splitlines() if line.strip()]
+        if dirty_lines:
+            dirty_worktree = "\n".join(dirty_lines)
+            raise RuntimeError(
+                "refusing to enable --commit-after-remediation in a dirty worktree; "
+                "clean the checkout or pass --no-commit-after-remediation.\n"
+                f"Dirty paths:\n{dirty_worktree}"
+            )
 
     config.artifact_dir.mkdir(parents=True, exist_ok=True)
     iterations: list[dict[str, object]] = []
@@ -1488,7 +1510,10 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         dest="commit_after_remediation",
         action="store_true",
         default=None,
-        help="Stage and commit after each remediation pass whose verification checks pass.",
+        help=(
+            "Stage and commit after each remediation pass whose verification checks pass. "
+            "Requires a clean worktree before the loop starts."
+        ),
     )
     commit_group.add_argument(
         "--no-commit-after-remediation",
