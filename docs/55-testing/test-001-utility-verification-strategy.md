@@ -53,6 +53,14 @@ The main test module is `tests/test_cli.py`. It covers:
   transcripts in captured stderr.
 - Optional status-detection diagnostic artifacts.
 - Progress-log formatting and quiet mode.
+- Terminal-title progress updates and stdout-safety.
+- Profile selection, CLI-over-profile overrides, and `revrem config` command
+  behavior.
+
+`tests/test_profiles.py` covers TOML profile parsing, validation, precedence,
+user-profile writes/deletes/imports, and reserved future harness handling.
+`tests/test_packaging.py` covers console entry points and local distribution
+scripts.
 
 ### Local verification
 

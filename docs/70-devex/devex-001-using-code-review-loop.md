@@ -151,11 +151,67 @@ revrem \
 Use `--initial-review-file latest` only when the default artifact directory is
 being used and the latest final review is definitely the artifact to continue.
 
+### Profile-based usage
+
+Profiles live in `~/.config/revrem/profiles.toml`. Project-local overrides live
+in `.revrem.toml` in the target repository. A minimal final-PR profile:
+
+```toml
+[profiles.final-pr]
+description = "Full PR readiness check"
+
+[profiles.final-pr.pipeline]
+base = "main"
+max_iterations = 2
+checks = ["pytest -q", "git diff --check"]
+
+[profiles.final-pr.review]
+model = "gpt-5.5"
+reasoning_effort = "medium"
+timeout_seconds = 1800
+
+[profiles.final-pr.remediation]
+model = "gpt-5.4-mini"
+
+[profiles.final-pr.output]
+summary_format = "text"
+debug_status_detection = true
+terminal_title = true
+```
+
+Run it from the target repository:
+
+```bash
+revrem --profile final-pr
+```
+
+CLI flags override profile values, so this is valid:
+
+```bash
+revrem --profile final-pr --base release/1.2 --check "pytest -q tests/smoke"
+```
+
+Profile management commands:
+
+```bash
+revrem config list
+revrem config show final-pr
+revrem config new final-pr --description "Full PR readiness check"
+revrem config export final-pr
+revrem config import profiles.toml
+revrem config doctor --profile final-pr --format json
+```
+
+Profiles reserve `review.harness`, `triage.harness`, and
+`remediation.harness` for future headless adapters such as `claude`, `gemini`,
+`opencode`, and `kilo`. The current executable loop supports only Codex; using
+another harness in a resolved run fails before starting subprocesses. Triage is
+also parsed and validated as profile syntax but is not executed yet.
+
 ### Current CLI boundary
 
-Profiles, `revrem config`, Rich progress, and `revrem ui` are planned in
-`REVREM-PRD-001`; they are not available in the current CLI. Until those
-milestones land, use explicit flags or shell aliases for repeatable runs.
+Rich progress and `revrem ui` remain planned in `REVREM-PRD-001`; they are not
+available in the current CLI.
 
 ### Exit codes
 
@@ -206,12 +262,13 @@ The wrapper runs tests, `ruff check .`, `mypy src`, and DocOps checks when
 
 - `REVREM-ADR-001` records why this is a Python CLI with companion skill
   guidance rather than a copied script or skill-only implementation.
-- `REVREM-PRD-001` defines the next profile, progress, and TUI milestones.
+- `REVREM-PRD-001` defines the profile, progress, and TUI milestones.
 - `REVREM-TEST-001` defines the verification gates for this utility.
 
 ## Version History
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 0.3 | 2026-05-02 | Codex | Added profile-based usage, config commands, and current harness/triage boundary |
 | 0.2 | 2026-05-01 | Codex | Updated usage guidance for stable `revrem` entry point, dev/stable install boundary, terminal title progress, and current CLI limitations |
 | 0.1 | 2026-04-30 | GitCmurf | Initial draft |

@@ -30,6 +30,15 @@ machine-readable stdout.
 The command exits `0` only when the final loop status is clear. It exits `2`
 when the bounded loop finishes with findings or unresolved check failures.
 
+Named profiles can hold the same settings in `~/.config/revrem/profiles.toml`
+and can be managed with `revrem config`:
+
+```bash
+revrem config new final-pr --description "Full PR readiness check"
+revrem config show final-pr
+revrem --profile final-pr
+```
+
 ## Development
 
 ```bash

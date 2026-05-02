@@ -3,8 +3,8 @@ document_id: REVREM-PRD-001
 type: PRD
 title: Interactive TUI and Profile System for code-review-loop
 status: Draft
-version: "0.2"
-last_updated: '2026-05-01'
+version: "0.3"
+last_updated: '2026-05-02'
 owner: GitCmurf
 area: product
 docops_version: "2.0"
@@ -29,8 +29,8 @@ related_ids:
 > **Document ID:** REVREM-PRD-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 0.2
-> **Last Updated:** 2026-05-01
+> **Version:** 0.3
+> **Last Updated:** 2026-05-02
 > **Type:** PRD
 
 # PRD: Interactive TUI and Profile System for code-review-loop
@@ -311,6 +311,13 @@ The quality bar for every phase is:
 - [FR-10] Support compact text progress and optional Rich live progress.
 - [FR-11] Implement `revrem ui` behind the `[tui]` extra.
 
+Milestone status as of version 0.3:
+
+- FR-1 through FR-8 are implemented.
+- FR-9 through FR-11 remain pending.
+- Profile syntax reserves `triage` and non-Codex harnesses for extensibility, but executable runs
+  still fail fast when a resolved profile selects unimplemented harnesses or enabled triage.
+
 ### Non-Functional Requirements
 
 - [NFR-1] Existing `code-review-loop` invocations remain valid.
@@ -482,5 +489,6 @@ revrem --profile final-pr --dry-run --summary-format both
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 0.3 | 2026-05-02 | Codex | Marked profile/config milestones implemented; clarified remaining run-history, Rich progress, and TUI scope |
 | 0.2 | 2026-05-01 | Codex | Reworked PRD into staged engineering contract; added dev/stable distribution boundary, architecture constraints, milestones, and acceptance gates |
 | 0.1 | 2026-05-01 | GitCmurf | Initial draft |

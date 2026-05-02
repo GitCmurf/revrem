@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
+from code_review_loop import profiles
+
 STATUS_RE = re.compile(r"^\s*REVIEW_STATUS:\s*(clear|findings)\s*$", re.IGNORECASE | re.MULTILINE)
 CODEX_FINDING_RE = re.compile(r"^\s*-\s*\[P[0-3]\]\s+", re.MULTILINE)
 CODEX_FINDING_LINE_RE = re.compile(r"^\s*-\s*(\[P[0-3]\]\s+.+)$")
@@ -943,14 +945,15 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run a bounded Codex review/remediation loop against a base branch.",
     )
-    parser.add_argument("--base", default="main", help="Base branch passed to codex review.")
+    parser.add_argument("--profile", default=None, help="Named profile from RevRem TOML config.")
+    parser.add_argument("--base", default=None, help="Base branch passed to codex review.")
     parser.add_argument(
         "--max-iterations",
         type=int,
-        default=2,
+        default=None,
         help="Maximum remediation passes before stopping. Default: 2.",
     )
-    parser.add_argument("--codex-bin", default="codex", help="Codex executable path/name.")
+    parser.add_argument("--codex-bin", default=None, help="Codex executable path/name.")
     parser.add_argument("--model", default=None, help="Optional model passed to both Codex review and remediation.")
     parser.add_argument("--review-model", default=None, help="Optional model override for codex review only.")
     parser.add_argument(
@@ -966,13 +969,13 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     )
     parser.add_argument(
         "--exec-sandbox",
-        default="workspace-write",
+        default=None,
         choices=("read-only", "workspace-write", "danger-full-access"),
         help="Sandbox mode for codex exec remediation passes.",
     )
     parser.add_argument(
         "--exec-color",
-        default="never",
+        default=None,
         choices=("always", "never", "auto"),
         help="Color mode for codex exec remediation output. Default: never.",
     )
@@ -994,7 +997,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument(
         "--check",
         action="append",
-        default=[],
+        default=None,
         help="Verification command to run after each remediation pass. Repeatable.",
     )
     parser.add_argument(
@@ -1011,19 +1014,19 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument(
         "--max-remediation-input-chars",
         type=int,
-        default=200_000,
+        default=None,
         help="Maximum review/check text characters passed into each remediation prompt.",
     )
     parser.add_argument(
         "--terminal-excerpt-chars",
         type=int,
-        default=4_000,
+        default=None,
         help="Maximum latest-review characters shown in terminal text summaries.",
     )
     parser.add_argument(
         "--timeout-seconds",
         type=float,
-        default=DEFAULT_TIMEOUT_SECONDS,
+        default=None,
         help=(
             "Maximum seconds for each review, remediation, or check command. "
             "Use 0 to disable subprocess timeouts. Default: 300."
@@ -1032,7 +1035,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument(
         "--summary-format",
         choices=("text", "json", "both"),
-        default="text",
+        default=None,
         help="Summary format printed to stdout. Full JSON is always written to summary.json.",
     )
     parser.add_argument(
@@ -1048,7 +1051,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument(
         "--progress-style",
         choices=("compact", "verbose"),
-        default="compact",
+        default=None,
         help="Progress log style. Compact is easier to scan in terminals.",
     )
     parser.add_argument(
@@ -1068,6 +1071,42 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def parse_config_args(argv: Sequence[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="revrem config",
+        description="Manage RevRem TOML profiles.",
+    )
+    parser.add_argument("--format", choices=("text", "json"), default=None)
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    list_parser = subparsers.add_parser("list", help="List available profiles.")
+    list_parser.add_argument("--format", choices=("text", "json"), default=None)
+    show = subparsers.add_parser("show", help="Show a resolved profile.")
+    show.add_argument("name")
+    show.add_argument("--format", choices=("toml", "json"), default="toml")
+
+    new = subparsers.add_parser("new", help="Create a minimal user profile.")
+    new.add_argument("name")
+    new.add_argument("--description", default="")
+    new.add_argument("--force", action="store_true")
+
+    delete = subparsers.add_parser("delete", help="Delete a user profile.")
+    delete.add_argument("name")
+    delete.add_argument("--yes", action="store_true")
+
+    export = subparsers.add_parser("export", help="Export a resolved profile as TOML.")
+    export.add_argument("name")
+
+    import_parser = subparsers.add_parser("import", help="Import profiles from a TOML file.")
+    import_parser.add_argument("path")
+    import_parser.add_argument("--force", action="store_true")
+
+    doctor = subparsers.add_parser("doctor", help="Show config paths and merge diagnostics.")
+    doctor.add_argument("--profile", default=None)
+    doctor.add_argument("--format", choices=("text", "json"), default="text")
+    return parser.parse_args(argv)
+
+
 def default_artifact_dir() -> Path:
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     return Path("tmp") / "code-review-loop" / timestamp
@@ -1081,49 +1120,95 @@ def resolve_timeout_seconds(value: float) -> float | None:
     return value
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    args = parse_args(sys.argv[1:] if argv is None else argv)
-    artifact_dir = Path(args.artifact_dir) if args.artifact_dir else default_artifact_dir()
+def profile_or_default(name: str | None, cwd: Path) -> profiles.Profile:
+    if name:
+        return profiles.resolve_profile(name, cwd=cwd)
+    return profiles.Profile(name="<defaults>")
+
+
+def pick(cli_value, profile_value, fallback):
+    if cli_value is not None:
+        return cli_value
+    if profile_value is not None:
+        return profile_value
+    return fallback
+
+
+def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, str]:
+    profile = profile_or_default(args.profile, cwd)
+    timeout_value = pick(
+        args.timeout_seconds,
+        profile.review.timeout_seconds or profile.remediation.timeout_seconds,
+        DEFAULT_TIMEOUT_SECONDS,
+    )
+    timeout_seconds = resolve_timeout_seconds(timeout_value)
+    artifact_dir_value = args.artifact_dir or profile.output.artifact_dir
+    artifact_dir = Path(artifact_dir_value) if artifact_dir_value else default_artifact_dir()
     search_root = artifact_dir if args.artifact_dir else artifact_dir.parent
+    initial_review_file = resolve_initial_review_file(args.initial_review_file, search_root)
+    if initial_review_file is not None and not initial_review_file.is_file():
+        raise FileNotFoundError(f"initial review file not found: {initial_review_file}")
+    checks = tuple(args.check) if args.check is not None else profile.pipeline.checks
+    reasoning_effort = (
+        args.reasoning_effort
+        or profile.review.reasoning_effort
+        or profile.remediation.reasoning_effort
+    )
+    config = LoopConfig(
+        base=pick(args.base, profile.pipeline.base, "main"),
+        max_iterations=pick(args.max_iterations, profile.pipeline.max_iterations, 2),
+        codex_bin=pick(args.codex_bin, profile.runtime.codex_bin, "codex"),
+        cwd=cwd,
+        artifact_dir=artifact_dir,
+        model=args.model,
+        review_model=args.review_model or profile.review.model,
+        remediation_model=args.remediation_model or profile.remediation.model,
+        reasoning_effort=reasoning_effort,
+        exec_sandbox=pick(args.exec_sandbox, profile.runtime.exec_sandbox, "workspace-write"),
+        exec_color=pick(args.exec_color, profile.runtime.exec_color, "never"),
+        full_auto=profile.runtime.full_auto and not args.no_full_auto,
+        exec_json=profile.runtime.exec_json or args.exec_json,
+        output_last_message=profile.runtime.output_last_message and not args.no_output_last_message,
+        dry_run=args.dry_run,
+        final_review=profile.pipeline.final_review and not args.skip_final_review,
+        max_remediation_input_chars=pick(
+            args.max_remediation_input_chars,
+            profile.runtime.max_remediation_input_chars,
+            200_000,
+        ),
+        terminal_excerpt_chars=pick(
+            args.terminal_excerpt_chars,
+            profile.runtime.terminal_excerpt_chars,
+            4_000,
+        ),
+        timeout_seconds=timeout_seconds,
+        debug_status_detection=profile.output.debug_status_detection or args.debug_status_detection,
+        progress=not args.quiet_progress and not profile.output.quiet_progress,
+        progress_style=pick(args.progress_style, profile.output.progress_style, "compact"),
+        terminal_title=profile.output.terminal_title or args.terminal_title,
+        initial_review_file=initial_review_file,
+        check_commands=checks,
+    )
+    return config, (args.summary_format or profile.output.summary_format)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    if raw_argv and raw_argv[0] == "config":
+        return config_main(raw_argv[1:])
+    if raw_argv and raw_argv[0] == "ui":
+        print("ERROR: revrem ui is planned in REVREM-PRD-001 but is not implemented yet.", file=sys.stderr)
+        return 1
+
+    args = parse_args(raw_argv)
     try:
-        initial_review_file = resolve_initial_review_file(args.initial_review_file, search_root)
-        timeout_seconds = resolve_timeout_seconds(args.timeout_seconds)
+        config, summary_format = build_loop_config(args, Path.cwd())
     except FileNotFoundError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
-    if initial_review_file is not None and not initial_review_file.is_file():
-        print(f"ERROR: initial review file not found: {initial_review_file}", file=sys.stderr)
-        return 1
-    config = LoopConfig(
-        base=args.base,
-        max_iterations=args.max_iterations,
-        codex_bin=args.codex_bin,
-        cwd=Path.cwd(),
-        artifact_dir=artifact_dir,
-        model=args.model,
-        review_model=args.review_model,
-        remediation_model=args.remediation_model,
-        reasoning_effort=args.reasoning_effort,
-        exec_sandbox=args.exec_sandbox,
-        exec_color=args.exec_color,
-        full_auto=not args.no_full_auto,
-        exec_json=args.exec_json,
-        output_last_message=not args.no_output_last_message,
-        dry_run=args.dry_run,
-        final_review=not args.skip_final_review,
-        max_remediation_input_chars=args.max_remediation_input_chars,
-        terminal_excerpt_chars=args.terminal_excerpt_chars,
-        timeout_seconds=timeout_seconds,
-        debug_status_detection=args.debug_status_detection,
-        progress=not args.quiet_progress,
-        progress_style=args.progress_style,
-        terminal_title=args.terminal_title,
-        initial_review_file=initial_review_file,
-        check_commands=tuple(args.check),
-    )
 
     try:
         summary = run_loop(config)
@@ -1134,15 +1219,79 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
-    if args.summary_format in {"text", "both"}:
+    if summary_format in {"text", "both"}:
         print(format_terminal_summary(summary))
-    if args.summary_format in {"json", "both"}:
-        if args.summary_format == "both":
+    if summary_format in {"json", "both"}:
+        if summary_format == "both":
             print()
         print(json.dumps(summary, indent=2, sort_keys=True))
     if args.dry_run:
         return 0
     return 0 if summary.get("final_status") == "clear" else 2
+
+
+def config_main(argv: Sequence[str]) -> int:
+    args = parse_config_args(argv)
+    try:
+        if args.command == "list":
+            items = profiles.list_profiles(cwd=Path.cwd())
+            if (args.format or "text") == "json":
+                print(json.dumps([profiles.profile_to_dict(item) for item in items], indent=2, sort_keys=True))
+            else:
+                for item in items:
+                    desc = f" - {item.description}" if item.description else ""
+                    src = f" ({item.source})" if item.source else ""
+                    print(f"{item.name}{desc}{src}")
+            return 0
+        if args.command == "show":
+            profile = profiles.resolve_profile(args.name, cwd=Path.cwd())
+            if args.format == "json":
+                print(profiles.profile_to_json(profile), end="")
+            else:
+                print(profiles.profile_to_toml(profile), end="")
+            return 0
+        if args.command == "new":
+            profile = profiles.minimal_profile(args.name, description=args.description)
+            path = profiles.write_user_profile(profile, force=args.force)
+            print(f"created {args.name} in {path}")
+            return 0
+        if args.command == "delete":
+            if not args.yes:
+                print("ERROR: pass --yes to delete a profile non-interactively", file=sys.stderr)
+                return 1
+            path = profiles.delete_user_profile(args.name)
+            print(f"deleted {args.name} from {path}")
+            return 0
+        if args.command == "export":
+            profile = profiles.resolve_profile(args.name, cwd=Path.cwd())
+            print(profiles.profile_to_toml(profile, include_wrapper=True), end="")
+            return 0
+        if args.command == "import":
+            path = profiles.import_user_profiles(Path(args.path), force=args.force)
+            print(f"imported profiles into {path}")
+            return 0
+        if args.command == "doctor":
+            profile_names = [item.name for item in profiles.list_profiles(cwd=Path.cwd())]
+            info: dict[str, object] = {
+                "user_config": str(profiles.user_config_path()),
+                "project_config": str(profiles.project_config_path(Path.cwd())),
+                "profiles": profile_names,
+            }
+            if args.profile:
+                info["resolved_profile"] = profiles.profile_to_dict(
+                    profiles.resolve_profile(args.profile, cwd=Path.cwd())
+                )
+            if args.format == "json":
+                print(json.dumps(info, indent=2, sort_keys=True))
+            else:
+                print(f"user_config: {info['user_config']}")
+                print(f"project_config: {info['project_config']}")
+                print("profiles: " + ", ".join(profile_names))
+            return 0
+    except (FileExistsError, FileNotFoundError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    raise AssertionError(f"unhandled config command: {args.command}")
 
 
 if __name__ == "__main__":

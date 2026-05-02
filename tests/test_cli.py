@@ -424,6 +424,86 @@ def test_main_resolves_latest_initial_review_from_custom_artifact_dir(tmp_path, 
     assert captured_configs[0].initial_review_file != default_review
 
 
+def test_main_uses_profile_defaults_and_cli_overrides(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    config_path = home / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.final-pr]
+description = "Final PR"
+
+[profiles.final-pr.pipeline]
+base = "trunk"
+max_iterations = 3
+checks = ["pytest -q", "git diff --check"]
+
+[profiles.final-pr.review]
+model = "gpt-5.5"
+reasoning_effort = "medium"
+timeout_seconds = 1800
+
+[profiles.final-pr.remediation]
+model = "gpt-5.4-mini"
+
+[profiles.final-pr.output]
+summary_format = "json"
+debug_status_detection = true
+quiet_progress = true
+""",
+        encoding="utf-8",
+    )
+    captured_configs = []
+
+    def fake_run_loop(config):
+        captured_configs.append(config)
+        return {
+            "artifact_dir": str(config.artifact_dir),
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+            "iterations": [],
+        }
+
+    monkeypatch.setattr(MODULE, "run_loop", fake_run_loop)
+
+    exit_code = MODULE.main(["--profile", "final-pr", "--base", "main", "--dry-run"])
+
+    assert exit_code == 0
+    config = captured_configs[0]
+    assert config.base == "main"
+    assert config.max_iterations == 3
+    assert config.review_model == "gpt-5.5"
+    assert config.remediation_model == "gpt-5.4-mini"
+    assert config.reasoning_effort == "medium"
+    assert config.timeout_seconds == 1800
+    assert config.check_commands == ("pytest -q", "git diff --check")
+    assert config.debug_status_detection is True
+    assert config.progress is False
+
+
+def test_config_commands_create_show_list_and_delete_profile(tmp_path, monkeypatch, capsys):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+
+    assert MODULE.main(["config", "new", "smoke", "--description", "Smoke profile"]) == 0
+    assert MODULE.main(["config", "list"]) == 0
+    assert "smoke - Smoke profile" in capsys.readouterr().out
+    assert MODULE.main(["config", "list", "--format", "json"]) == 0
+    assert '"name": "smoke"' in capsys.readouterr().out
+
+    assert MODULE.main(["config", "show", "smoke", "--format", "json"]) == 0
+    assert '"name": "smoke"' in capsys.readouterr().out
+
+    assert MODULE.main(["config", "doctor", "--profile", "smoke", "--format", "json"]) == 0
+    assert '"resolved_profile"' in capsys.readouterr().out
+
+    assert MODULE.main(["config", "delete", "smoke", "--yes"]) == 0
+    assert MODULE.main(["config", "show", "smoke"]) == 1
+
+
 def test_loop_caps_remediation_passes_and_runs_final_review(tmp_path):
     calls = []
 
