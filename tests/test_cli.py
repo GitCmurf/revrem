@@ -336,6 +336,16 @@ def test_sanitize_commit_message_uses_first_plain_subject():
     )
 
 
+def test_normalize_revrem_conventional_subject_preserves_suffix_when_truncated():
+    subject = "fix(cli): " + "x" * 200
+
+    normalized = MODULE.normalize_revrem_conventional_subject(subject)
+
+    assert normalized.endswith(" (RevRem)")
+    assert len(normalized) == 120
+    assert normalized.startswith("fix(cli): ")
+
+
 def test_loop_stops_after_review_reports_clear(tmp_path):
     calls = []
     review_outputs = iter(

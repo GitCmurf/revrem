@@ -936,6 +936,8 @@ CONVENTIONAL_COMMIT_RE = re.compile(
     r"^(?:build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)"
     r"(?:\([A-Za-z0-9_.-]+\))?!?:\s+\S.+$"
 )
+REVREM_COMMIT_SUFFIX = " (RevRem)"
+MAX_COMMIT_SUBJECT_LEN = 120
 
 
 def sanitize_commit_message(
@@ -963,7 +965,10 @@ def normalize_revrem_conventional_subject(subject: str) -> str:
     subject = re.sub(r"\s+\(RevRem\)$", "", subject)
     if not CONVENTIONAL_COMMIT_RE.match(subject):
         subject = f"chore: {subject}"
-    return f"{subject} (RevRem)"[:120]
+    max_base_len = MAX_COMMIT_SUBJECT_LEN - len(REVREM_COMMIT_SUFFIX)
+    if len(subject) > max_base_len:
+        subject = subject[:max_base_len].rstrip()
+    return f"{subject}{REVREM_COMMIT_SUFFIX}"
 
 
 def _format_check_failures(check_results: list[CommandResult]) -> str:
