@@ -2913,7 +2913,7 @@ def test_subprocess_refresh_loop_stops_resending_stdin_after_timeout(tmp_path, m
             if self.communicate_calls == 1:
                 assert input == "prompt"
                 raise MODULE.subprocess.TimeoutExpired(["codex", "exec"], timeout)
-            assert input is None
+            assert input == "prompt"
             assert not self.stdin.closed, "stdin should stay open while waiting on the same child"
             return ("stdout", "stderr")
 
@@ -2943,7 +2943,7 @@ def test_subprocess_refresh_loop_stops_resending_stdin_after_timeout(tmp_path, m
     assert result.stderr == "stderr"
     assert fake_process.stdin.closed is False
     assert fake_process.communicate_calls == 2
-    assert fake_process.inputs == ["prompt", None]
+    assert fake_process.inputs == ["prompt", "prompt"]
     assert len(refresh_calls) == 2
 
 
