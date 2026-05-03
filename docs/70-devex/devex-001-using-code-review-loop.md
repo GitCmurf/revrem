@@ -460,8 +460,9 @@ until a backend adapter is implemented.
   `rev 1/2 RevRem` and `rem 1/2 RevRem`. The tool uses terminal title-stack
   escape sequences to restore the previous title on exit where the terminal
   supports them, and emits both common window-title escape forms for broader
-  terminal compatibility. Terminals that ignore those sequences will still run
-  normally.
+  terminal compatibility. In Rich progress mode, title controls are routed
+  through `/dev/tty` so they do not appear inside the live progress panel.
+  Terminals that ignore those sequences will still run normally.
 - If a subprocess refresh times out while a remediation prompt is still being
   written, the loop retries without manually closing stdin so the child can
   keep receiving the buffered prompt while title updates continue.

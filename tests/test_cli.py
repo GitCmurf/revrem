@@ -3056,6 +3056,35 @@ def test_terminal_title_never_writes_to_stdout(tmp_path, monkeypatch):
     assert stdout.getvalue() == ""
 
 
+def test_terminal_title_uses_tty_in_rich_mode_without_polluting_stderr(tmp_path, monkeypatch):
+    stderr = TtyBuffer()
+    tty_sequences = []
+    monkeypatch.setattr(MODULE.sys, "stderr", stderr)
+    monkeypatch.setattr(MODULE, "write_terminal_control_to_tty", lambda sequence: tty_sequences.append(sequence) or True)
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        progress_style="rich",
+        terminal_title=True,
+    )
+
+    with MODULE.terminal_title_context(config):
+        MODULE.set_terminal_title(config, "rev 1/1 RevRem")
+        MODULE.refresh_terminal_title()
+
+    title_sequence = "\033]0;rev 1/1 RevRem\007\033]2;rev 1/1 RevRem\007"
+    assert stderr.getvalue() == ""
+    assert tty_sequences == [
+        MODULE.TERMINAL_TITLE_SAVE,
+        title_sequence,
+        title_sequence,
+        MODULE.TERMINAL_TITLE_RESTORE,
+    ]
+
+
 def test_default_runner_refreshes_active_terminal_title_during_child_process(tmp_path, monkeypatch):
     stderr = TtyBuffer()
     monkeypatch.setattr(MODULE.sys, "stderr", stderr)

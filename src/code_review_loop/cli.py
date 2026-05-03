@@ -151,6 +151,7 @@ TERMINAL_TITLE_SAVE = "\033[22;0t"
 TERMINAL_TITLE_RESTORE = "\033[23;0t"
 TERMINAL_TITLE_REFRESH_SECONDS = 1.0
 _CURRENT_TERMINAL_TITLE_SEQUENCE: str | None = None
+_TERMINAL_TITLE_PREFER_TTY = False
 _RICH_UNAVAILABLE_WARNED = False
 
 
@@ -162,17 +163,26 @@ def sanitize_terminal_title(value: str) -> str:
     return value.replace("\033", "").replace("\007", "").replace("\n", " ").replace("\r", " ")
 
 
-def write_terminal_control(sequence: str) -> None:
+def write_terminal_control(sequence: str, *, prefer_tty: bool = False) -> None:
+    if prefer_tty and write_terminal_control_to_tty(sequence):
+        return
+    if prefer_tty:
+        return
     if sys.stderr.isatty():
         sys.stderr.write(sequence)
         sys.stderr.flush()
         return
+    write_terminal_control_to_tty(sequence)
+
+
+def write_terminal_control_to_tty(sequence: str) -> bool:
     try:
         with Path("/dev/tty").open("w", encoding="utf-8") as tty:
             tty.write(sequence)
             tty.flush()
+            return True
     except OSError:
-        return
+        return False
 
 
 def set_terminal_title(config: LoopConfig, title: str) -> None:
@@ -183,12 +193,17 @@ def set_terminal_title(config: LoopConfig, title: str) -> None:
     # OSC 0 sets icon + window title. OSC 2 explicitly sets the window/tab
     # title. Emitting both is harmless and covers more terminal emulators.
     _CURRENT_TERMINAL_TITLE_SEQUENCE = f"\033]0;{safe_title}\007\033]2;{safe_title}\007"
-    write_terminal_control(_CURRENT_TERMINAL_TITLE_SEQUENCE)
+    write_terminal_control(
+        _CURRENT_TERMINAL_TITLE_SEQUENCE,
+        prefer_tty=config.progress_style == "rich",
+    )
 
 
-def refresh_terminal_title() -> None:
+def refresh_terminal_title(*, prefer_tty: bool | None = None) -> None:
     if _CURRENT_TERMINAL_TITLE_SEQUENCE:
-        write_terminal_control(_CURRENT_TERMINAL_TITLE_SEQUENCE)
+        if prefer_tty is None:
+            prefer_tty = _TERMINAL_TITLE_PREFER_TTY
+        write_terminal_control(_CURRENT_TERMINAL_TITLE_SEQUENCE, prefer_tty=prefer_tty)
 
 
 def terminal_iteration_label(label: str, max_iterations: int) -> str:
@@ -214,19 +229,22 @@ def set_phase_terminal_title(config: LoopConfig, phase: str, label: str) -> None
 
 @contextmanager
 def terminal_title_context(config: LoopConfig):
-    global _CURRENT_TERMINAL_TITLE_SEQUENCE
+    global _CURRENT_TERMINAL_TITLE_SEQUENCE, _TERMINAL_TITLE_PREFER_TTY
     if not terminal_title_supported(config):
         yield
         return
+    previous_prefer_tty = _TERMINAL_TITLE_PREFER_TTY
+    _TERMINAL_TITLE_PREFER_TTY = config.progress_style == "rich"
     # There is no reliable cross-terminal way to read the current title. Xterm-
     # compatible terminals support a title stack, which gives the desired
     # save/restore behavior without querying terminal state.
-    write_terminal_control(TERMINAL_TITLE_SAVE)
+    write_terminal_control(TERMINAL_TITLE_SAVE, prefer_tty=_TERMINAL_TITLE_PREFER_TTY)
     try:
         yield
     finally:
         _CURRENT_TERMINAL_TITLE_SEQUENCE = None
-        write_terminal_control(TERMINAL_TITLE_RESTORE)
+        write_terminal_control(TERMINAL_TITLE_RESTORE, prefer_tty=_TERMINAL_TITLE_PREFER_TTY)
+        _TERMINAL_TITLE_PREFER_TTY = previous_prefer_tty
 
 
 def progress_log(config: LoopConfig, message: str) -> None:
