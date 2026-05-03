@@ -1071,7 +1071,7 @@ def has_python_test_surface(cwd: Path) -> bool:
     tests_dir = root / "tests"
     if tests_dir.is_dir() and any(path.suffix == ".py" for path in iter_project_files(tests_dir)):
         return True
-    return any(path.suffix == ".py" for path in iter_project_files(root))
+    return False
 
 
 def iter_project_files(root: Path):

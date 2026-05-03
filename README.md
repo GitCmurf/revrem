@@ -154,7 +154,8 @@ Use checks that match the target repository. Python repositories can use
 native checks, for example `--check "pnpm test"` and
 `--check "pnpm run typecheck"`. If a shared profile still includes pytest,
 RevRem skips it for repositories that look like Node/TypeScript projects and
-have no Python test surface, so pytest exit codes `2`, `4`, or `5` do not block
+have no recognized Python project/test surface, so a stray helper `.py` file
+does not keep pytest active and pytest exit codes `2`, `4`, or `5` do not block
 an otherwise clear review in a non-Python repo.
 
 For the next release, use this sequence from this repository:

@@ -815,6 +815,31 @@ def test_pytest_check_is_skipped_for_typescript_repo_without_python_surface(tmp_
     )
 
 
+def test_pytest_check_is_skipped_for_typescript_repo_with_incidental_python_file(tmp_path):
+    (tmp_path / "package.json").write_text('{"scripts":{"test":"vitest"}}\n', encoding="utf-8")
+    (tmp_path / "helper.py").write_text("print('helper')\n", encoding="utf-8")
+    calls = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append(list(args))
+        raise AssertionError("pytest should be skipped before subprocess execution")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        check_commands=("pytest -q",),
+    )
+
+    results = MODULE.run_checks(config, runner, 1)
+
+    assert calls == []
+    assert results[0].returncode == 0
+    assert "appears to be non-Python" in results[0].stdout
+
+
 @pytest.mark.parametrize("returncode", [2, 4, 5])
 def test_pytest_in_typescript_repo_is_normalized_when_subprocess_returns_non_python_codes(
     tmp_path,

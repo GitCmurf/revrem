@@ -196,9 +196,10 @@ the repository's native checks, for example:
 
 As a guardrail for shared profiles, RevRem treats a configured pytest command as
 not applicable when the target repository has Node/TypeScript project markers
-such as `package.json` or `tsconfig.json` and no Python project/test surface. In
-that case pytest is recorded as a skipped adaptive check instead of blocking a
-clear review because pytest returned `2`, `4`, or `5`.
+such as `package.json` or `tsconfig.json` and no recognized Python
+project/test surface. A stray helper `.py` file is not enough to keep pytest
+active. In that case pytest is recorded as a skipped adaptive check instead of
+blocking a clear review because pytest returned `2`, `4`, or `5`.
 
 ### Continuation after findings
 
