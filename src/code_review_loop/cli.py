@@ -447,9 +447,13 @@ def detect_review_status(output: str) -> str:
     }
     if any(line in clear_lines for line in normalized_lines):
         return "clear"
-    if has_negated_clear_review_statement(normalized):
+    if has_negated_clear_review_statement(normalized) and not has_affirmative_issue_prose(
+        actionable_output
+    ):
         return "clear"
-    if any(phrase in normalized for phrase in CLEAR_PHRASES):
+    if any(phrase in normalized for phrase in CLEAR_PHRASES) and not has_affirmative_issue_prose(
+        actionable_output
+    ):
         return "clear"
     return "unknown"
 
@@ -463,6 +467,31 @@ NEGATED_CLEAR_REVIEW_STATEMENT_RE = re.compile(
 
 def has_negated_clear_review_statement(normalized: str) -> bool:
     return NEGATED_CLEAR_REVIEW_STATEMENT_RE.search(normalized) is not None
+
+
+AFFIRMATIVE_ISSUE_WORD_RE = re.compile(
+    r"\b(?:bug|bugs|issue|issues|regression|regressions|defect|defects|problem|problems|"
+    r"failure|failures|finding|findings)\b",
+    re.IGNORECASE,
+)
+
+NEGATED_ISSUE_WORD_RE = re.compile(
+    r"\b(?:no|without|lack|lacks|lacked|lacking|did not|does not|do not|"
+    r"don't|doesn't|can't|cannot|free of)\b",
+    re.IGNORECASE,
+)
+
+
+def has_affirmative_issue_prose(output: str) -> bool:
+    for sentence in re.split(r"(?<=[.!?])\s+", output.strip()):
+        if not sentence:
+            continue
+        if not AFFIRMATIVE_ISSUE_WORD_RE.search(sentence):
+            continue
+        if NEGATED_ISSUE_WORD_RE.search(sentence):
+            continue
+        return True
+    return False
 
 
 CLEAR_PHRASES = (
@@ -853,7 +882,7 @@ def git_worktree_status_command_for_commit(_config: LoopConfig) -> list[str]:
     return ["git", "status", "--porcelain=v1", "--untracked-files=all"]
 
 
-def git_reset_artifact_command_for_commit(config: LoopConfig) -> list[str] | None:
+def commit_artifact_relative_path(config: LoopConfig) -> Path | None:
     cwd_root = config.cwd.resolve()
     artifact_root = (
         config.artifact_dir
@@ -866,6 +895,16 @@ def git_reset_artifact_command_for_commit(config: LoopConfig) -> list[str] | Non
     except ValueError:
         return None
     if artifact_rel == Path("."):
+        raise RuntimeError(
+            "refusing to auto-commit when --artifact-dir resolves to the repository root; "
+            "choose a subdirectory for generated artifacts."
+        )
+    return artifact_rel
+
+
+def git_reset_artifact_command_for_commit(config: LoopConfig) -> list[str] | None:
+    artifact_rel = commit_artifact_relative_path(config)
+    if artifact_rel is None:
         return None
     # Keep generated loop artifacts out of the staged commit. Resolve relative
     # artifact roots against the working tree first so paths outside cwd are
@@ -880,6 +919,7 @@ def run_commit(config: LoopConfig, runner: Runner, iteration: int) -> str:
         progress_event(config, "commit", str(iteration), "skipped", "dry-run")
         return "skipped"
 
+    commit_artifact_relative_path(config)
     add_result = runner(
         git_add_command_for_commit(config),
         config.cwd,
@@ -1569,7 +1609,8 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         default=None,
         help=(
             "Stage and commit after each remediation pass whose verification checks pass. "
-            "Requires a clean worktree before the loop starts."
+            "Requires a clean worktree before the loop starts and rejects artifact "
+            "directories that resolve to the repository root."
         ),
     )
     commit_group.add_argument(

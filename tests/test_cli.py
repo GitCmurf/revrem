@@ -161,6 +161,16 @@ def test_detect_review_status_does_not_generalize_negated_clear_with_findings():
     )
 
 
+def test_detect_review_status_does_not_treat_scoped_clear_prose_as_clear_when_issue_follows():
+    assert (
+        MODULE.detect_review_status(
+            "I did not find any discrete issue in the docs.\n\n"
+            "However, there is a bug in the parser."
+        )
+        == "unknown"
+    )
+
+
 def test_detect_review_status_ignores_stderr_transcript_noise():
     output = (
         "I did not find any discrete, actionable bugs in the diff.\n\n"
@@ -695,6 +705,28 @@ def test_git_staging_commands_skip_relative_artifact_dir_outside_cwd(tmp_path):
 
     assert MODULE.git_add_command_for_commit(config) == ["git", "add", "-A"]
     assert MODULE.git_reset_artifact_command_for_commit(config) is None
+
+
+def test_run_commit_refuses_repo_root_artifact_dir_before_staging(tmp_path):
+    calls = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text, timeout_seconds))
+        return MODULE.CommandResult(list(args), 0, stdout="unexpected\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=Path("."),
+        commit_after_remediation=True,
+    )
+
+    with pytest.raises(RuntimeError, match="artifact-dir resolves to the repository root"):
+        MODULE.run_commit(config, runner, 1)
+
+    assert calls == []
 
 
 def test_loop_skips_commit_when_checks_fail(tmp_path):
