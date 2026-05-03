@@ -187,17 +187,18 @@ def launch_plan(profile: profiles.Profile, *, dry_run: bool = True) -> LaunchPla
 def run_monitor_view(record: dict[str, Any]) -> RunMonitorView:
     artifact_dir = record.get("artifact_dir")
     artifact_paths = record.get("artifact_paths")
+    record_cwd = record.get("cwd")
     artifacts: list[ArtifactLinkView] = []
     if isinstance(artifact_paths, dict):
         for kind, value in artifact_paths.items():
             if kind == "artifact_dir":
                 continue
             if isinstance(value, str):
-                artifacts.append(artifact_link_view(kind, value))
+                artifacts.append(artifact_link_view(kind, value, record_cwd=record_cwd))
             elif isinstance(value, list):
                 for item in value:
                     if isinstance(item, str):
-                        artifacts.append(artifact_link_view(kind, item))
+                        artifacts.append(artifact_link_view(kind, item, record_cwd=record_cwd))
     return RunMonitorView(
         run_id=str(record.get("run_id") or ""),
         final_status=str(record.get("final_status") or "unknown"),
@@ -211,8 +212,11 @@ def run_monitor_view(record: dict[str, Any]) -> RunMonitorView:
     )
 
 
-def artifact_link_view(kind: str, path: str) -> ArtifactLinkView:
-    return ArtifactLinkView(kind=kind, path=path, exists=Path(path).exists())
+def artifact_link_view(kind: str, path: str, *, record_cwd: str | None = None) -> ArtifactLinkView:
+    resolved_path = Path(path)
+    if isinstance(record_cwd, str):
+        resolved_path = Path(record_cwd) / resolved_path
+    return ArtifactLinkView(kind=kind, path=path, exists=resolved_path.exists())
 
 
 def phase_view(name: str, enabled: bool, phase: profiles.PhaseConfig | profiles.TriageConfig) -> PhaseView:

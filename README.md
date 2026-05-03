@@ -34,6 +34,9 @@ Non-dry-run invocations append compact metadata to
 summary is written; use `revrem history list` to inspect recent runs. Pass
 `--no-run-history` for one-off runs that should leave only the workspace-local
 artifact directory.
+History-backed artifact pointers are resolved against the recorded run `cwd`,
+so the TUI can still show existing artifacts when you inspect a run from a
+different checkout.
 Progress timestamps use local terminal time. Persisted history timestamps remain
 UTC ISO-8601 values for stable machine processing.
 

@@ -222,3 +222,41 @@ def test_run_monitor_view_flattens_summary_artifacts():
     assert monitor.stopped_reason == "max_iterations_reached"
     assert [artifact.kind for artifact in monitor.artifacts] == ["summary", "reviews"]
     assert monitor.artifacts[0].path == summary_path
+
+
+def test_run_monitor_view_resolves_relative_artifacts_against_record_cwd(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    repo = tmp_path / "repo"
+    other_repo = tmp_path / "other-repo"
+    repo.mkdir()
+    other_repo.mkdir()
+    (repo / ".git").mkdir()
+    history_path = tmp_path / "runs.jsonl"
+    artifact_path = repo / "tmp" / "code-review-loop" / "run" / "summary.json"
+    artifact_path.parent.mkdir(parents=True)
+    artifact_path.write_text("{}\n", encoding="utf-8")
+    history_path.write_text(
+        json.dumps(
+            {
+                "run_id": "run-1",
+                "cwd": str(repo),
+                "final_status": "clear",
+                "stopped_reason": "review_clear",
+                "artifact_dir": "tmp/code-review-loop/run",
+                "artifact_paths": {"summary": "tmp/code-review-loop/run/summary.json"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(other_repo)
+
+    snapshot = tui_state.build_home_snapshot(
+        cwd=other_repo,
+        home=home,
+        history_path=history_path,
+    )
+
+    assert snapshot.run_monitors[0].artifacts[0].path == "tmp/code-review-loop/run/summary.json"
+    assert snapshot.run_monitors[0].artifacts[0].exists is True
