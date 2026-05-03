@@ -184,6 +184,14 @@ def test_detect_review_status_does_not_treat_scoped_clear_prose_as_clear_when_is
         )
         == "unknown"
     )
+    assert (
+        MODULE.detect_review_status(
+            "I did not identify any introduced correctness, security, or maintainability "
+            "issues that warrant an inline finding\n"
+            "There is a regression in the parser."
+        )
+        == "unknown"
+    )
 
 
 def test_detect_review_status_ignores_stderr_transcript_noise():

@@ -577,7 +577,7 @@ NEGATED_ISSUE_PROSE_RE = re.compile(
 
 
 def has_affirmative_issue_prose(output: str) -> bool:
-    for sentence in re.split(r"(?<=[.!?])\s+", output.strip()):
+    for sentence in iter_review_prose_sentences(output):
         if not sentence:
             continue
         normalized_sentence = sentence.lower()
@@ -589,6 +589,25 @@ def has_affirmative_issue_prose(output: str) -> bool:
             continue
         return True
     return False
+
+
+def iter_review_prose_sentences(output: str):
+    """Yield prose fragments, treating line breaks as hard boundaries.
+
+    Review summaries are often wrapped onto new lines without terminal
+    punctuation, so line boundaries must split before sentence heuristics are
+    applied. That keeps a clear statement on one line from suppressing an issue
+    reported on the next line.
+    """
+
+    for paragraph in re.split(r"\n+", output.strip()):
+        paragraph = paragraph.strip()
+        if not paragraph:
+            continue
+        for sentence in re.split(r"(?<=[.!?])\s+", paragraph):
+            sentence = sentence.strip()
+            if sentence:
+                yield sentence
 
 
 CLEAR_PHRASES = (
@@ -1069,9 +1088,9 @@ def has_python_test_surface(cwd: Path) -> bool:
     if any((root / marker).exists() for marker in PYTHON_PROJECT_MARKERS):
         return True
     tests_dir = root / "tests"
-    if tests_dir.is_dir() and any(path.suffix == ".py" for path in iter_project_files(tests_dir)):
-        return True
-    return False
+    return tests_dir.is_dir() and any(
+        path.suffix == ".py" for path in iter_project_files(tests_dir)
+    )
 
 
 def iter_project_files(root: Path):
