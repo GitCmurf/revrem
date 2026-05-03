@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '0.7'
+version: '0.8'
 last_updated: '2026-05-03'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 0.7
+> **Version:** 0.8
 > **Last Updated:** 2026-05-03
 > **Type:** DEVEX
 > **Area:** devex
@@ -184,6 +184,21 @@ For repositories that need a virtualenv-local checker, pass the concrete path:
 --check "./.venv/bin/pytest -q"
 --check "./.venv/bin/meminit check --format json"
 ```
+
+Do not carry a Python `pytest` check into TypeScript-only repositories. Prefer
+the repository's native checks, for example:
+
+```bash
+--check "pnpm test"
+--check "pnpm run typecheck"
+--check "pnpm run lint"
+```
+
+As a guardrail for shared profiles, RevRem treats a configured pytest command as
+not applicable when the target repository has Node/TypeScript project markers
+such as `package.json` or `tsconfig.json` and no Python project/test surface. In
+that case pytest is recorded as a skipped adaptive check instead of blocking a
+clear review because pytest returned `2`, `4`, or `5`.
 
 ### Continuation after findings
 
@@ -467,6 +482,7 @@ The wrapper runs tests, `ruff check .`, `mypy src`, and DocOps checks when
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 0.8 | 2026-05-03 | Codex | Documented adaptive pytest skipping for non-Python repositories and native TypeScript check guidance |
 | 0.7 | 2026-05-03 | Codex | Documented TUI launch-plan and run-monitor artifact state |
 | 0.6 | 2026-05-03 | Codex | Added release/version promotion guidance and documented sandbox tagging behavior |
 | 0.5 | 2026-05-02 | Codex | Documented harness adapter boundary and TUI profile command previews |

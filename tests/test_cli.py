@@ -780,6 +780,59 @@ def test_loop_skips_commit_when_checks_fail(tmp_path):
     ]
 
 
+def test_pytest_check_is_skipped_for_typescript_repo_without_python_surface(tmp_path):
+    (tmp_path / "package.json").write_text('{"scripts":{"test":"vitest"}}\n', encoding="utf-8")
+    calls = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append(list(args))
+        raise AssertionError("pytest should be skipped before subprocess execution")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        check_commands=("pytest -q",),
+    )
+
+    results = MODULE.run_checks(config, runner, 1)
+
+    assert calls == []
+    assert results[0].returncode == 0
+    assert "appears to be non-Python" in results[0].stdout
+    assert "SKIPPED adaptive check" in (tmp_path / "artifacts" / "check-1-1.txt").read_text(
+        encoding="utf-8"
+    )
+
+
+@pytest.mark.parametrize("returncode", [2, 4, 5])
+def test_pytest_in_typescript_repo_is_normalized_when_subprocess_returns_non_python_codes(
+    tmp_path,
+    returncode,
+):
+    (tmp_path / "package.json").write_text('{"scripts":{"test":"vitest"}}\n', encoding="utf-8")
+    command = ["pytest", "-q"]
+    result = MODULE.CommandResult(command, returncode, stdout="pytest output\n", stderr="pytest error\n")
+
+    normalized = MODULE.normalize_adaptive_check_result(command, tmp_path, result)
+
+    assert normalized.returncode == 0
+    assert f"pytest exited {returncode}" in normalized.stdout
+    assert "pytest output" in normalized.stdout
+    assert "pytest error" in normalized.stdout
+
+
+def test_pytest_failure_is_preserved_for_python_repo(tmp_path):
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='demo'\n", encoding="utf-8")
+    command = ["pytest", "-q"]
+    result = MODULE.CommandResult(command, 5, stdout="no tests ran\n")
+
+    assert MODULE.adaptive_check_skip_reason(command, tmp_path) is None
+    assert MODULE.normalize_adaptive_check_result(command, tmp_path, result) is result
+
+
 def test_loop_refuses_to_auto_commit_from_dirty_worktree(tmp_path):
     calls = []
 

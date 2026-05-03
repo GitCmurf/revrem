@@ -856,23 +856,140 @@ def run_checks(config: LoopConfig, runner: Runner, iteration: int) -> list[Comma
     for index, check in enumerate(config.check_commands, start=1):
         command = shlex.split(check)
         progress_event(config, "check", f"{iteration}.{index}", "start", check)
-        if config.dry_run:
+        adaptive_skip = adaptive_check_skip_reason(command, config.cwd)
+        if adaptive_skip:
+            result = CommandResult(
+                command,
+                0,
+                stdout=f"SKIPPED adaptive check: {adaptive_skip}\n",
+            )
+        elif config.dry_run:
             result = CommandResult(command, 0, stdout=f"DRY_RUN check skipped: {check}\n")
         else:
             # Checks intentionally follow the global loop timeout, not the
             # remediation-specific timeout, so remediation tuning does not make
             # verification commands spuriously fail or run forever.
             result = runner(command, config.cwd, None, phase_timeout_seconds(config, config.timeout_seconds))
+            result = normalize_adaptive_check_result(command, config.cwd, result)
         results.append(result)
         write_artifact(
             config.artifact_dir / f"check-{iteration}-{index}.txt",
             _combined_output(result),
         )
-        if result.returncode == 0:
+        if result.returncode == 0 and result.stdout.startswith("SKIPPED adaptive check:"):
+            progress_event(config, "check", f"{iteration}.{index}", "skipped", result.stdout.strip())
+        elif result.returncode == 0:
             progress_event(config, "check", f"{iteration}.{index}", "passed")
         else:
             progress_event(config, "check", f"{iteration}.{index}", "failed", f"exit {result.returncode}")
     return results
+
+
+def adaptive_check_skip_reason(command: Sequence[str], cwd: Path) -> str | None:
+    if (
+        is_pytest_command(command)
+        and has_non_python_project_surface(cwd)
+        and not has_python_test_surface(cwd)
+    ):
+        return "pytest check ignored because this repository appears to be non-Python"
+    return None
+
+
+def normalize_adaptive_check_result(
+    command: Sequence[str],
+    cwd: Path,
+    result: CommandResult,
+) -> CommandResult:
+    if (
+        is_pytest_command(command)
+        and result.returncode in {2, 4, 5}
+        and has_non_python_project_surface(cwd)
+        and not has_python_test_surface(cwd)
+    ):
+        return CommandResult(
+            list(result.args),
+            0,
+            stdout=(
+                "SKIPPED adaptive check: pytest exited "
+                f"{result.returncode}, but this repository appears to be non-Python\n"
+                + _combined_output(result)
+            ),
+        )
+    return result
+
+
+def is_pytest_command(command: Sequence[str]) -> bool:
+    if not command:
+        return False
+    first = Path(command[0]).name
+    if first in {"pytest", "py.test"}:
+        return True
+    if first.startswith("pytest"):
+        return True
+    return len(command) >= 3 and first.startswith("python") and command[1:3] == ["-m", "pytest"]
+
+
+PYTHON_PROJECT_MARKERS = (
+    "pyproject.toml",
+    "setup.py",
+    "setup.cfg",
+    "tox.ini",
+    "pytest.ini",
+    "requirements.txt",
+    "requirements-dev.txt",
+)
+PYTHON_SCAN_SKIP_DIRS = {
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".tox",
+    ".venv",
+    "dist",
+    "build",
+    "node_modules",
+    "tmp",
+}
+NON_PYTHON_PROJECT_MARKERS = (
+    "package.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
+    "package-lock.json",
+    "bun.lockb",
+    "deno.json",
+    "deno.jsonc",
+    "tsconfig.json",
+)
+
+
+def has_non_python_project_surface(cwd: Path) -> bool:
+    root = cwd.resolve()
+    return any((root / marker).exists() for marker in NON_PYTHON_PROJECT_MARKERS)
+
+
+def has_python_test_surface(cwd: Path) -> bool:
+    root = cwd.resolve()
+    if any((root / marker).exists() for marker in PYTHON_PROJECT_MARKERS):
+        return True
+    tests_dir = root / "tests"
+    if tests_dir.is_dir() and any(path.suffix == ".py" for path in iter_project_files(tests_dir)):
+        return True
+    return any(path.suffix == ".py" for path in iter_project_files(root))
+
+
+def iter_project_files(root: Path):
+    if not root.exists():
+        return
+    for current, dirnames, filenames in os.walk(root):
+        dirnames[:] = [
+            name
+            for name in dirnames
+            if name not in PYTHON_SCAN_SKIP_DIRS and not name.startswith(".")
+        ]
+        current_path = Path(current)
+        for filename in filenames:
+            yield current_path / filename
 
 
 def git_add_command_for_commit(_config: LoopConfig) -> list[str]:

@@ -3,7 +3,7 @@ document_id: REVREM-TEST-001
 type: TEST
 title: Utility verification strategy
 status: Draft
-version: '0.5'
+version: '0.6'
 last_updated: '2026-05-03'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-TEST-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 0.5
+> **Version:** 0.6
 > **Last Updated:** 2026-05-03
 > **Type:** TEST
 > **Area:** testing
@@ -59,6 +59,9 @@ The main test module is `tests/test_cli.py`. It covers:
 - Bounded loop behavior, including final review behavior and exit status.
 - Check-command failure handling and prompt forwarding into the next
   remediation pass.
+- Adaptive pytest handling for non-Python repositories: pytest commands are
+  skipped or normalized only when Node/TypeScript project markers are present
+  and no Python test surface is detected.
 - Artifact naming for review, remediation, last-message, check, and compact
   terminal summary outputs.
 - Timeout propagation to review, remediation, and check subprocesses.
