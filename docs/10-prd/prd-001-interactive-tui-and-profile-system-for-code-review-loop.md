@@ -420,9 +420,10 @@ Milestone status as of version 1.0:
 - [NFR-4] Linux/WSL2 is the primary supported environment.
 - [NFR-5] Shell scripts are POSIX `sh` compatible.
 - [NFR-6] All generated artifacts remain under target-repo `.revrem/runs/`
-  unless explicitly configured; RevRem adds `.revrem/runs/` to local
-  `.git/info/exclude`, falling back to `.revrem/.gitignore` outside Git
-  repositories, so run transcripts stay out of tracked ignore files.
+  unless explicitly configured; RevRem adds the default run path to the local
+  `.git/info/exclude` at the repository root, even for subdirectory invocations,
+  falling back to `.revrem/.gitignore` outside Git repositories, so run
+  transcripts stay out of tracked ignore files.
 - [NFR-7] Stable promotion must be explicit; no test command may silently update
   `~/.local/bin`.
 

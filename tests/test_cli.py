@@ -1489,6 +1489,67 @@ def test_run_loop_uses_git_info_exclude_for_default_artifacts_in_git_repo(tmp_pa
     assert not (tmp_path / ".revrem" / ".gitignore").exists()
 
 
+def test_run_loop_uses_repo_root_exclude_for_default_artifacts_from_subdirectory(tmp_path):
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[1] == "review":
+            return MODULE.CommandResult(list(args), 0, stdout="No findings.\n")
+        return MODULE.CommandResult(list(args), 0, stdout="fixed\n")
+
+    repo_root = tmp_path / "repo"
+    worktree = repo_root / "work"
+    git_info = repo_root / ".git" / "info"
+    git_info.mkdir(parents=True)
+    (git_info / "exclude").write_text("# local excludes\n", encoding="utf-8")
+    worktree.mkdir(parents=True)
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=worktree,
+        artifact_dir=worktree / ".revrem" / "runs" / "run-1",
+        progress=False,
+    )
+
+    MODULE.run_loop(config, runner)
+
+    assert (git_info / "exclude").read_text(encoding="utf-8") == (
+        "# local excludes\nwork/.revrem/runs/\n"
+    )
+    assert not (worktree / ".revrem" / ".gitignore").exists()
+
+
+def test_run_loop_falls_back_to_workspace_gitignore_for_symlinked_default_artifacts(tmp_path):
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[1] == "review":
+            return MODULE.CommandResult(list(args), 0, stdout="No findings.\n")
+        return MODULE.CommandResult(list(args), 0, stdout="fixed\n")
+
+    repo_root = tmp_path / "repo"
+    repo_git_info = repo_root / ".git" / "info"
+    repo_git_info.mkdir(parents=True)
+    (repo_git_info / "exclude").write_text("# local excludes\n", encoding="utf-8")
+    (repo_root / "nested").mkdir(parents=True)
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    linked_cwd = workspace / "linked"
+    linked_cwd.symlink_to(repo_root / "nested", target_is_directory=True)
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=linked_cwd,
+        artifact_dir=linked_cwd / ".revrem" / "runs" / "run-1",
+        progress=False,
+    )
+
+    MODULE.run_loop(config, runner)
+
+    assert (workspace / "linked" / ".revrem" / ".gitignore").read_text(encoding="utf-8") == "runs/\n"
+    assert (repo_git_info / "exclude").read_text(encoding="utf-8") == "# local excludes\n"
+
+
 def test_main_cli_boolean_negations_override_profile_enabled_values(tmp_path, monkeypatch):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
@@ -1560,6 +1621,25 @@ def test_main_uses_profile_commit_message_harness(tmp_path, monkeypatch):
 
     assert config.commit_message_harness == "claude"
     assert config.commit_message_model == "fast-commit"
+
+
+def test_build_loop_config_rejects_reserved_commit_harness_for_live_profile_runs(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        MODULE,
+        "profile_or_default",
+        lambda name, cwd: profiles.Profile(
+            name="final-pr",
+            commit=profiles.CommitConfig(
+                enabled=True,
+                harness="claude",
+                message_model="fast-commit",
+            ),
+        ),
+    )
+    args = MODULE.parse_args(["--profile", "final-pr", "--base", "main"])
+
+    with pytest.raises(ValueError, match="only the codex backend is implemented"):
+        MODULE.build_loop_config(args, tmp_path)
 
 
 def test_run_loop_skips_commit_cleanliness_check_during_dry_run(tmp_path):
@@ -2184,6 +2264,28 @@ timeout_seconds = -1
     args = MODULE.parse_args(["--profile", "final-pr", "--base", "main"])
 
     with pytest.raises(ValueError, match="review.timeout_seconds must be 0 or greater"):
+        MODULE.build_loop_config(args, tmp_path)
+
+
+def test_build_loop_config_rejects_reserved_commit_harness_when_cli_enables_commits(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    config_path = home / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.final-pr.commit]
+enabled = false
+harness = "claude"
+""",
+        encoding="utf-8",
+    )
+
+    args = MODULE.parse_args(["--profile", "final-pr", "--base", "main", "--commit-after-remediation"])
+
+    with pytest.raises(ValueError, match="only the codex backend is implemented"):
         MODULE.build_loop_config(args, tmp_path)
 
 

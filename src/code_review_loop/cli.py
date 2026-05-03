@@ -8,6 +8,7 @@ import atexit
 import json
 import os
 import re
+import tempfile
 import shlex
 import signal
 import subprocess
@@ -2097,8 +2098,17 @@ def ensure_default_artifact_ignore(config: LoopConfig) -> None:
         artifact_dir.relative_to(default_runs_dir)
     except ValueError:
         return
-    ignore_path = git_info_exclude_path(config.cwd)
-    ignore_entry = ".revrem/runs/" if ignore_path is not None else "runs/"
+    # Keep the ignore file scoped to the workspace path the operator invoked,
+    # rather than resolving through symlinked ancestry and mutating an
+    # unrelated checkout's metadata.
+    repo_root = lexical_git_repo_root(config.cwd)
+    if repo_root == Path(tempfile.gettempdir()).resolve():
+        repo_root = None
+    ignore_path = git_info_exclude_path(repo_root) if repo_root is not None else None
+    if ignore_path is not None and repo_root is not None:
+        ignore_entry = f"{default_runs_dir.relative_to(repo_root).as_posix()}/"
+    else:
+        ignore_entry = "runs/"
     ignore_path = ignore_path or (config.cwd / ".revrem" / ".gitignore")
     if ignore_path.exists():
         existing = ignore_path.read_text(encoding="utf-8")
@@ -2125,6 +2135,13 @@ def git_info_exclude_path(cwd: Path) -> Path | None:
     if not git_dir.is_absolute():
         git_dir = git_path.parent / git_dir
     return git_dir / "info" / "exclude"
+
+
+def lexical_git_repo_root(start: Path) -> Path | None:
+    for candidate in (start, *start.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return None
 
 
 def resolve_timeout_seconds(value: float) -> float | None:
@@ -2171,6 +2188,13 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
             if profile.triage.enabled
             else None
         )
+    commit_after_remediation = (
+        args.commit_after_remediation
+        if args.commit_after_remediation is not None
+        else profile.commit.enabled
+    )
+    if commit_after_remediation and not args.dry_run:
+        harnesses.require_implemented_harness(profile.commit.harness, field="commit.harness")
     artifact_dir_value = args.artifact_dir or profile.output.artifact_dir
     artifact_dir = Path(artifact_dir_value) if artifact_dir_value else default_artifact_dir()
     search_root = artifact_dir if artifact_dir_value else artifact_dir.parent
@@ -2215,11 +2239,7 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         reasoning_effort=args.reasoning_effort,
         review_reasoning_effort=review_reasoning_effort,
         remediation_reasoning_effort=remediation_reasoning_effort,
-        commit_after_remediation=(
-            args.commit_after_remediation
-            if args.commit_after_remediation is not None
-            else profile.commit.enabled
-        ),
+        commit_after_remediation=commit_after_remediation,
         commit_message_model=commit_message_model,
         commit_message_prompt=args.commit_message_prompt or profile.commit.message_prompt,
         commit_message_prompt_overridden=(

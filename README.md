@@ -37,8 +37,9 @@ artifact directory.
 Per-run artifacts are written under `.revrem/runs/<timestamp>/` by default.
 RevRem adds `.revrem/runs/` to the repository-local `.git/info/exclude` on the
 first default-artifact run, falling back to `.revrem/.gitignore` outside Git
-repositories, so local transcripts stay out of commits without editing the
-repository's tracked ignore files.
+repositories. The ignore file is scoped to the workspace path rather than
+crossing into unrelated parent checkouts, so local transcripts stay out of
+commits without editing tracked ignore files.
 History-backed artifact pointers are resolved against the recorded run `cwd`,
 so the TUI can still show existing artifacts when you inspect a run from a
 different checkout.
