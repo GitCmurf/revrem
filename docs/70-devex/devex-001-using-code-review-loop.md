@@ -153,8 +153,8 @@ history keeps UTC ISO-8601 timestamps for machine processing.
 Non-dry-run invocations also append compact JSONL metadata to
 `~/.local/share/revrem/runs.jsonl` by default. The per-run transcripts remain in
 the target repository's artifact directory; the shared history file stores only
-the run identifier, cwd, base, profile, final status, iteration count, and
-artifact pointers. `revrem history list` skips malformed or truncated JSONL
+the run identifier, cwd, base, profile, final status, iteration count, and the
+artifact pointer map used by the TUI, including the summary path. `revrem history list` skips malformed or truncated JSONL
 entries so one interrupted append does not hide earlier valid runs. Set
 `XDG_DATA_HOME` to relocate the data root or pass `--no-run-history` for a run
 that should not update shared history.

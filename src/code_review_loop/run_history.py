@@ -31,6 +31,7 @@ def history_record(summary: dict[str, Any], *, cwd: Path) -> dict[str, Any]:
     iterations = summary.get("iterations")
     if not isinstance(iterations, list):
         iterations = []
+    artifact_paths = summary.get("artifact_paths")
     return {
         "schema_version": HISTORY_SCHEMA_VERSION,
         "run_id": summary.get("run_id"),
@@ -46,10 +47,11 @@ def history_record(summary: dict[str, Any], *, cwd: Path) -> dict[str, Any]:
         "pending_check_failures": bool(summary.get("pending_check_failures")),
         "artifact_dir": summary.get("artifact_dir"),
         "summary_path": (
-            summary.get("artifact_paths", {}).get("summary")
-            if isinstance(summary.get("artifact_paths"), dict)
+            artifact_paths.get("summary")
+            if isinstance(artifact_paths, dict)
             else None
         ),
+        "artifact_paths": dict(artifact_paths) if isinstance(artifact_paths, dict) else None,
     }
 
 

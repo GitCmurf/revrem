@@ -1133,7 +1133,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
     if config.max_iterations < 1:
         raise ValueError("--max-iterations must be at least 1")
 
-    if config.commit_after_remediation:
+    if config.commit_after_remediation and not config.dry_run:
         status_result = runner(
             git_worktree_status_command_for_commit(config),
             config.cwd,

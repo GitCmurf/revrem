@@ -270,8 +270,8 @@ Each non-dry-run invocation appends one compact metadata record to
 `XDG_DATA_HOME` is set. This file is append-only JSONL so interrupted or
 partially failed runs still leave existing history readable. The record stores
 the run id, timestamps, cwd, base, selected profile, final status, iteration
-count, and artifact pointers; it does not duplicate review/remediation
-transcripts.
+count, and the artifact pointer map consumed by the TUI; it does not duplicate
+review/remediation transcripts.
 
 The current `progress_event` shape remains the internal contract. A progress
 renderer interface receives the same phase events and emits either compact text

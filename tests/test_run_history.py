@@ -18,7 +18,10 @@ def test_append_and_read_history_round_trip(tmp_path, monkeypatch):
         "pending_check_failures": False,
         "artifact_dir": "tmp/code-review-loop/run-1",
         "iterations": [{"iteration": 1, "review_status": "clear"}],
-        "artifact_paths": {"summary": "tmp/code-review-loop/run-1/summary.json"},
+        "artifact_paths": {
+            "summary": "tmp/code-review-loop/run-1/summary.json",
+            "reviews": ["tmp/code-review-loop/run-1/review-1.txt"],
+        },
     }
 
     path = run_history.append_history(summary, cwd=tmp_path)
@@ -31,6 +34,8 @@ def test_append_and_read_history_round_trip(tmp_path, monkeypatch):
     assert records[0]["profile"] == "final-pr"
     assert records[0]["iteration_count"] == 1
     assert records[0]["summary_path"] == "tmp/code-review-loop/run-1/summary.json"
+    assert records[0]["artifact_paths"]["summary"] == "tmp/code-review-loop/run-1/summary.json"
+    assert records[0]["artifact_paths"]["reviews"] == ["tmp/code-review-loop/run-1/review-1.txt"]
 
 
 def test_history_uses_xdg_data_home_when_configured(tmp_path, monkeypatch):

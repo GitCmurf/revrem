@@ -1285,6 +1285,32 @@ quiet_progress = true
     assert config.progress is False
 
 
+def test_run_loop_skips_commit_cleanliness_check_during_dry_run(tmp_path):
+    calls = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text, timeout_seconds))
+        return MODULE.CommandResult(list(args), 0, stdout="should not be used\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        commit_after_remediation=True,
+        dry_run=True,
+        final_review=False,
+        check_commands=("pytest -q",),
+    )
+
+    summary = MODULE.run_loop(config, runner)
+
+    assert calls == []
+    assert summary["final_status"] == "unknown"
+    assert summary["stopped_reason"] == "max_iterations_reached"
+
+
 def test_main_can_reenable_profile_disabled_true_by_default_booleans(tmp_path, monkeypatch):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
