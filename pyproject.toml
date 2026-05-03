@@ -32,12 +32,15 @@ dev = [
   "build>=1.2",
   "mypy>=1.8",
   "pytest>=8",
+  "rich>=13.7",
   "ruff>=0.5",
+  "textual>=0.80",
 ]
 progress = [
   "rich>=13.7",
 ]
 tui = [
+  "rich>=13.7",
   "textual>=0.80",
 ]
 

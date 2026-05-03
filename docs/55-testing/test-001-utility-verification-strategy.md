@@ -57,7 +57,8 @@ The main test module is `tests/test_cli.py`. It covers:
 - Positive and negative CLI boolean overrides for profile-controlled runtime
   and output flags.
 - Default artifact-directory namespace under `.revrem/runs/`, including the
-  local `.revrem/.gitignore` guardrail.
+  local `.git/info/exclude` guardrail and non-Git `.revrem/.gitignore`
+  fallback.
 - Timeout diagnostics that preserve command, cwd, timeout, and partial child
   output.
 - No-op remediation close-down: when commit mode finds no staged changes after
@@ -136,7 +137,8 @@ The convenience wrapper is:
 
 The GitHub Actions workflow runs:
 
-- editable package installation with dev extras,
+- editable package installation with dev extras, including Rich and Textual so
+  optional progress/TUI paths are importable in CI,
 - `pytest -q`,
 - `ruff check .`,
 - `mypy src`,

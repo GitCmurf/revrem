@@ -413,13 +413,16 @@ Milestone status as of version 1.0:
 ### Non-Functional Requirements
 
 - [NFR-1] Existing `code-review-loop` invocations remain valid.
-- [NFR-2] Bare runtime remains dependency-light; optional UI dependencies stay optional.
+- [NFR-2] Bare runtime remains dependency-light; optional UI dependencies stay
+  optional. The `tui` extra includes Rich and Textual, and the development
+  extra includes both so CI can exercise optional UI/progress paths.
 - [NFR-3] TOML reads use `tomllib`; TOML writes may add a small dedicated dependency.
 - [NFR-4] Linux/WSL2 is the primary supported environment.
 - [NFR-5] Shell scripts are POSIX `sh` compatible.
 - [NFR-6] All generated artifacts remain under target-repo `.revrem/runs/`
-  unless explicitly configured; RevRem creates `.revrem/.gitignore` to ignore
-  run transcripts without editing the repository root ignore file.
+  unless explicitly configured; RevRem adds `.revrem/runs/` to local
+  `.git/info/exclude`, falling back to `.revrem/.gitignore` outside Git
+  repositories, so run transcripts stay out of tracked ignore files.
 - [NFR-7] Stable promotion must be explicit; no test command may silently update
   `~/.local/bin`.
 

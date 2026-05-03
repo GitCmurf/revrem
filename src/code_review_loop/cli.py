@@ -382,6 +382,17 @@ def warn_rich_unavailable(phase: str, label: str) -> None:
     print_compact_progress(phase, label, "rich progress unavailable; using compact output", head="warn: ")
 
 
+@contextmanager
+def progress_warning_context():
+    global _RICH_UNAVAILABLE_WARNED
+    previous = _RICH_UNAVAILABLE_WARNED
+    _RICH_UNAVAILABLE_WARNED = False
+    try:
+        yield
+    finally:
+        _RICH_UNAVAILABLE_WARNED = previous
+
+
 def progress_continuation(config: LoopConfig, phase: str, label: str, text: str, indent: int = 2) -> None:
     if not config.progress:
         return
@@ -1379,6 +1390,7 @@ def run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, o
     with (
         terminal_recovery_context(),
         terminal_title_context(config),
+        progress_warning_context(),
         progress.rich_live_progress(config.progress and config.progress_style == "rich"),
     ):
         return _run_loop(config, runner)
@@ -2003,7 +2015,15 @@ def parse_config_args(argv: Sequence[str]) -> argparse.Namespace:
     export = subparsers.add_parser("export", help="Export a resolved profile as TOML.")
     export.add_argument("name")
 
-    import_parser = subparsers.add_parser("import", help="Import profiles from a TOML file.")
+    import_parser = subparsers.add_parser(
+        "import",
+        help="Import profiles from a TOML file.",
+        description=(
+            "Import profiles from a TOML file. If the source file contains [defaults], "
+            "RevRem folds those defaults into each imported profile before writing the "
+            "destination config, preserving the source profile behavior."
+        ),
+    )
     import_parser.add_argument("path")
     import_parser.add_argument("--force", action="store_true")
 
@@ -2077,11 +2097,34 @@ def ensure_default_artifact_ignore(config: LoopConfig) -> None:
         artifact_dir.relative_to(default_runs_dir)
     except ValueError:
         return
-    ignore_path = config.cwd / ".revrem" / ".gitignore"
+    ignore_path = git_info_exclude_path(config.cwd)
+    ignore_entry = ".revrem/runs/" if ignore_path is not None else "runs/"
+    ignore_path = ignore_path or (config.cwd / ".revrem" / ".gitignore")
     if ignore_path.exists():
+        existing = ignore_path.read_text(encoding="utf-8")
+        if ignore_entry in existing:
+            return
+        if existing and not existing.endswith("\n"):
+            existing += "\n"
+        ignore_path.write_text(f"{existing}{ignore_entry}\n", encoding="utf-8")
         return
     ignore_path.parent.mkdir(parents=True, exist_ok=True)
-    ignore_path.write_text("runs/\n", encoding="utf-8")
+    ignore_path.write_text(f"{ignore_entry}\n", encoding="utf-8")
+
+
+def git_info_exclude_path(cwd: Path) -> Path | None:
+    git_path = cwd / ".git"
+    if git_path.is_dir():
+        return git_path / "info" / "exclude"
+    if not git_path.is_file():
+        return None
+    content = git_path.read_text(encoding="utf-8", errors="replace").strip()
+    if not content.startswith("gitdir:"):
+        return None
+    git_dir = Path(content.split(":", 1)[1].strip())
+    if not git_dir.is_absolute():
+        git_dir = git_path.parent / git_dir
+    return git_dir / "info" / "exclude"
 
 
 def resolve_timeout_seconds(value: float) -> float | None:

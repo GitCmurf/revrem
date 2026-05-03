@@ -84,6 +84,7 @@ def run_textual_app(*, selected_profile_name: str | None = None) -> None:
             yield static(
                 tui_state.render_shell_text(model),
                 id="body",
+                markup=True,
             )
             yield footer()
 
@@ -101,13 +102,24 @@ def run_textual_app(*, selected_profile_name: str | None = None) -> None:
 
 
 def run_launch_plan(plan: tui_state.LaunchPlan, *, cwd: Path) -> subprocess.CompletedProcess[str]:
+    argv = current_entrypoint_argv(plan.argv)
     return subprocess.run(
-        list(plan.argv),
+        argv,
         cwd=cwd,
         text=True,
         capture_output=True,
         check=False,
     )
+
+
+def current_entrypoint_argv(argv: Sequence[str]) -> list[str]:
+    resolved = list(argv)
+    if not resolved or resolved[0] != "revrem":
+        return resolved
+    launcher = Path(sys.argv[0])
+    if launcher.name in {"revrem", "code-review-loop"} and launcher.exists():
+        resolved[0] = str(launcher)
+    return resolved
 
 
 def _notify(app: Any, message: str) -> None:

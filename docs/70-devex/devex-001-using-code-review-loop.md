@@ -203,9 +203,10 @@ clear review because pytest returned `2`, `4`, or `5`.
 ### Continuation after findings
 
 The loop writes artifacts under `.revrem/runs/<timestamp>/` by default. On the
-first default-artifact run in a repository, RevRem creates `.revrem/.gitignore`
-containing `runs/` so local transcripts stay out of commits without mutating the
-repository's root `.gitignore`.
+first default-artifact run in a Git repository, RevRem adds `.revrem/runs/` to
+the repository-local `.git/info/exclude`; outside Git repositories it falls
+back to `.revrem/.gitignore` containing `runs/`. This keeps local transcripts
+out of commits without mutating tracked ignore files.
 If a capped run ends with findings, continue from the final review artifact:
 
 ```bash
@@ -395,10 +396,11 @@ prompt = "Break down the review into confirmed actions, likely false positives, 
 ### Current CLI boundary
 
 Rich progress is available via `--progress-style rich` when the optional
-`progress` extra is installed. In Rich output, the active run is maintained in
-an in-place RevRem panel while the timestamp is dimmed, the phase/action word
-and status word are highlighted, labels are cyan, and model or review text is
-rendered literally so markup-like review output cannot break the display.
+`progress` extra is installed. The `tui` extra includes Rich as well as
+Textual. In Rich output, the active run is maintained in an in-place RevRem
+panel while the timestamp is dimmed, the phase/action word and status word are
+highlighted, labels are cyan, and model or review text is rendered literally so
+markup-like review output cannot break the display.
 
 `revrem ui` is available as a dependency-gated Textual interface:
 

@@ -36,6 +36,16 @@ def test_optional_tui_extra_declares_textual_dependency():
     tui_extra = pyproject["project"]["optional-dependencies"]["tui"]
 
     assert any(dependency.startswith("textual>=") for dependency in tui_extra)
+    assert any(dependency.startswith("rich>=") for dependency in tui_extra)
+
+
+def test_dev_extra_exercises_rich_and_textual_paths():
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+
+    dev_extra = pyproject["project"]["optional-dependencies"]["dev"]
+
+    assert any(dependency.startswith("rich>=") for dependency in dev_extra)
+    assert any(dependency.startswith("textual>=") for dependency in dev_extra)
 
 
 def test_distribution_scripts_are_executable_and_posix_sh():

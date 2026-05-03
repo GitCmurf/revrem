@@ -1465,6 +1465,30 @@ def test_run_loop_creates_repo_local_revrem_gitignore_for_default_artifacts(tmp_
     assert (tmp_path / ".revrem" / ".gitignore").read_text(encoding="utf-8") == "runs/\n"
 
 
+def test_run_loop_uses_git_info_exclude_for_default_artifacts_in_git_repo(tmp_path):
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[1] == "review":
+            return MODULE.CommandResult(list(args), 0, stdout="No findings.\n")
+        return MODULE.CommandResult(list(args), 0, stdout="fixed\n")
+
+    git_info = tmp_path / ".git" / "info"
+    git_info.mkdir(parents=True)
+    (git_info / "exclude").write_text("# local excludes\n", encoding="utf-8")
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / ".revrem" / "runs" / "run-1",
+        progress=False,
+    )
+
+    MODULE.run_loop(config, runner)
+
+    assert (git_info / "exclude").read_text(encoding="utf-8") == "# local excludes\n.revrem/runs/\n"
+    assert not (tmp_path / ".revrem" / ".gitignore").exists()
+
+
 def test_main_cli_boolean_negations_override_profile_enabled_values(tmp_path, monkeypatch):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
@@ -3125,6 +3149,18 @@ def test_terminal_title_context_restores_cursor_on_exit(tmp_path, monkeypatch):
     output = stderr.getvalue()
     assert MODULE.CURSOR_SHOW in output
     assert output.endswith(MODULE.TERMINAL_TITLE_RESTORE)
+
+
+def test_progress_warning_context_resets_rich_unavailable_latch(tmp_path, capsys):
+    MODULE._RICH_UNAVAILABLE_WARNED = True
+
+    with MODULE.progress_warning_context():
+        MODULE.warn_rich_unavailable("review", "1")
+        MODULE.warn_rich_unavailable("review", "1")
+
+    captured = capsys.readouterr()
+    assert captured.err.count("rich progress unavailable") == 1
+    assert MODULE._RICH_UNAVAILABLE_WARNED is True
 
 
 def test_default_runner_refreshes_active_terminal_title_during_child_process(tmp_path, monkeypatch):

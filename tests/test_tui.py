@@ -97,6 +97,7 @@ def test_tui_launches_textual_app_with_home_snapshot(monkeypatch, tmp_path):
     assert launched == ["RevRemApp"]
     body = rendered_widgets[1]
     assert body.kwargs["id"] == "body"
+    assert body.kwargs["markup"] is True
     assert f"Workspace: {tmp_path}" in body.args[0]
     assert "[b]Home[/b]" in body.args[0]
     assert "[b]Profiles[/b]" in body.args[0]
@@ -159,3 +160,29 @@ checks = ["git diff --check"]
     assert actions[0][1] == tmp_path
     assert actions[1] == "RevRemApp"
     assert notifications == ["Dry run completed: final-pr"]
+
+
+def test_run_launch_plan_uses_current_dev_entrypoint(tmp_path, monkeypatch):
+    launcher = tmp_path / ".venv" / "bin" / "revrem"
+    launcher.parent.mkdir(parents=True)
+    launcher.write_text("#!/bin/sh\n", encoding="utf-8")
+    plan = tui.tui_state.LaunchPlan(
+        profile_name="final-pr",
+        mode="dry-run",
+        argv=("revrem", "--profile", "final-pr", "--dry-run"),
+        shell_command="revrem --profile final-pr --dry-run",
+    )
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return types.SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(tui.sys, "argv", [str(launcher), "ui"])
+    monkeypatch.setattr(tui.subprocess, "run", fake_run)
+
+    result = tui.run_launch_plan(plan, cwd=tmp_path)
+
+    assert result.returncode == 0
+    assert calls[0][0] == [str(launcher), "--profile", "final-pr", "--dry-run"]
+    assert calls[0][1]["cwd"] == tmp_path

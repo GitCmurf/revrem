@@ -35,9 +35,10 @@ summary is written; use `revrem history list` to inspect recent runs. Pass
 `--no-run-history` for one-off runs that should leave only the workspace-local
 artifact directory.
 Per-run artifacts are written under `.revrem/runs/<timestamp>/` by default.
-RevRem creates `.revrem/.gitignore` with `runs/` on the first default-artifact
-run so local transcripts stay out of commits without editing the repository's
-root `.gitignore`.
+RevRem adds `.revrem/runs/` to the repository-local `.git/info/exclude` on the
+first default-artifact run, falling back to `.revrem/.gitignore` outside Git
+repositories, so local transcripts stay out of commits without editing the
+repository's tracked ignore files.
 History-backed artifact pointers are resolved against the recorded run `cwd`,
 so the TUI can still show existing artifacts when you inspect a run from a
 different checkout.
@@ -93,7 +94,7 @@ revrem --profile final-pr
 ```
 
 For richer watched-terminal output, install the optional progress extra and
-request Rich rendering:
+request Rich rendering. The TUI extra includes Rich too:
 
 ```bash
 ./.venv/bin/pip install -e ".[progress]"
@@ -122,7 +123,7 @@ the current process argv in the same way as `revrem ui`.
 ./scripts/dev-check
 ```
 
-The development extra installs `ruff`, `mypy`, `pytest`, and build tooling.
+The development extra installs `ruff`, `mypy`, `pytest`, Rich, Textual, and build tooling.
 Ruff is a required local and CI gate for this project.
 
 ## Stable Local Install
