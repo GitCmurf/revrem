@@ -2,8 +2,8 @@
 document_id: REVREM-PRD-001
 type: PRD
 title: Interactive TUI and Profile System for code-review-loop
-status: Draft
-version: "0.8"
+status: Approved
+version: "0.9"
 last_updated: '2026-05-03'
 owner: GitCmurf
 area: product
@@ -28,8 +28,8 @@ related_ids:
 
 > **Document ID:** REVREM-PRD-001
 > **Owner:** GitCmurf
-> **Status:** Draft
-> **Version:** 0.8
+> **Status:** Approved
+> **Version:** 0.9
 > **Last Updated:** 2026-05-03
 > **Type:** PRD
 
@@ -123,6 +123,7 @@ bounded nested Codex execution, deterministic artifacts, plain shell compatibili
 | Existing CLI compatibility | Existing test suite green without changing current flag behavior | `./scripts/dev-check` |
 | Status close-down reliability | Clear final review exits `0` with `stopped_reason=review_clear` | Unit regression test |
 | Optional UI isolation | Bare install imports no `rich` or `textual` modules | Unit/import test |
+| TUI dry-run launch | `revrem ui --profile final-pr` can launch a dry-run preview without duplicating CLI assembly | Fake-Textual smoke test |
 
 ---
 
@@ -310,10 +311,13 @@ prompt.
 | Pipeline Builder | Ordered phase list, checks editor, model selectors, timeout controls |
 | Run Monitor | Rich phase state, scrollable log, artifact links, final summary |
 
-The TUI shells out to the same tested core functions used by the CLI. It does not own remediation
-logic. It consumes dependency-free view models for profile discovery, harness
-metadata, recent run history, phase summaries, and profile command previews so
-interactive widgets cannot drift from CLI semantics.
+The TUI shells out to the same tested command plans used by the CLI preview
+layer. It does not own remediation logic. It consumes dependency-free view
+models for profile discovery, harness metadata, recent run history, phase
+summaries, and profile command previews so interactive widgets cannot drift
+from CLI semantics. The initial interactive shell renders Home, Profiles,
+Pipeline, and Run Monitor sections, accepts `--profile` to select the initial
+profile, and binds `d` to launch a dry-run preview for that profile.
 
 ---
 
@@ -378,7 +382,7 @@ The quality bar for every phase is:
 - [FR-11] Support optional verified checkpoint commits after remediation passes.
 - [FR-12] Implement `revrem ui` behind the `[tui]` extra.
 
-Milestone status as of version 0.8:
+Milestone status as of version 0.9:
 
 - FR-1 through FR-8 are implemented.
 - FR-9 is implemented.
@@ -389,11 +393,12 @@ Milestone status as of version 0.8:
   local git staging and commit execution after checks pass. Default commit
   subjects are normalized to Conventional Commit syntax and suffixed with
   ` (RevRem)` unless the operator provides a custom commit-message prompt.
-- FR-12 is partially implemented: `revrem ui` now resolves to a dependency-
-  gated Textual entry point with a clean install hint when the optional `tui`
-  extra is absent. The current shell renders reusable profile, history, harness,
-  phase, command-preview, dry-run launch-plan, and run-monitor artifact-link
-  state. Full interactive screen behavior remains pending.
+- FR-12 is implemented for the first complete local-operator TUI slice:
+  `revrem ui` resolves to a dependency-gated Textual entry point with a clean
+  install hint when the optional `tui` extra is absent, renders Home, Profiles,
+  Pipeline, and Run Monitor sections from reusable state, accepts `--profile`
+  for initial profile selection, and can launch a dry-run preview for the
+  selected profile. The CLI remains the authoritative execution engine.
 - Codex triage is implemented; non-Codex harnesses remain reserved syntax and
   executable command planning fails fast when an unimplemented backend is
   selected.
@@ -520,8 +525,9 @@ Initial slice done when:
 
 Full milestone done when:
 
-- A user can select a profile, start a dry run, inspect phase state, and open artifact paths from
-  the TUI.
+- A user can select the initial profile with `revrem ui --profile NAME`, start
+  a dry-run preview from the TUI, inspect phase state, and inspect artifact
+  paths from the Run Monitor section.
 
 ---
 
@@ -617,6 +623,7 @@ revrem history --format json list --limit 5
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 0.9 | 2026-05-03 | Codex | Completed the first interactive TUI slice with profile selection, four operator sections, dry-run launch action, and updated verification expectations |
 | 0.8 | 2026-05-03 | Codex | Added launch-plan and run-monitor artifact-link state for the TUI, and hardened another green Codex review-status phrase |
 | 0.7 | 2026-05-02 | Codex | Added reusable harness command-planning boundary and TUI profile command previews for future interactive screens |
 | 0.6 | 2026-05-02 | Codex | Hardened Rich progress styling expectations, corrected conservative no-op unknown close-down semantics, and added a dependency-guarded TUI launch smoke-test requirement |

@@ -98,7 +98,12 @@ dependency-light:
 ```bash
 ./.venv/bin/pip install -e ".[tui]"
 revrem ui
+revrem ui --profile final-pr
 ```
+
+The TUI renders Home, Profiles, Pipeline, and Run Monitor sections. Use
+`--profile NAME` to choose the initial profile and press `d` to launch a
+dry-run preview through the same command plan shown in the interface.
 
 ## Development
 

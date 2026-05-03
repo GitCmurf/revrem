@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from code_review_loop import profiles, tui_state
 
 
@@ -260,3 +262,77 @@ def test_run_monitor_view_resolves_relative_artifacts_against_record_cwd(tmp_pat
 
     assert snapshot.run_monitors[0].artifacts[0].path == "tmp/code-review-loop/run/summary.json"
     assert snapshot.run_monitors[0].artifacts[0].exists is True
+
+
+def test_shell_model_builds_four_operator_screens_and_selected_launch_plan(tmp_path):
+    home = tmp_path / "home"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    config_path = profiles.user_config_path(home)
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.final-pr]
+description = "Final PR"
+
+[profiles.final-pr.pipeline]
+base = "main"
+checks = ["git diff --check"]
+
+[profiles.final-pr.triage]
+enabled = true
+model = "gpt-5.3-codex-spark"
+reasoning_effort = "low"
+""",
+        encoding="utf-8",
+    )
+
+    model = tui_state.build_shell_model(
+        cwd=repo,
+        home=home,
+        selected_profile_name="final-pr",
+    )
+
+    assert [screen.name for screen in model.screens] == [
+        "home",
+        "profiles",
+        "pipeline",
+        "run-monitor",
+    ]
+    assert model.selected_profile_name == "final-pr"
+    assert model.selected_launch_plan is not None
+    assert model.selected_launch_plan.argv[-1] == "--dry-run"
+    rendered = tui_state.render_shell_text(model)
+    assert "Selected profile: final-pr" in rendered
+    assert "triage: enabled" in rendered
+    assert "Dry-run launch: revrem --profile final-pr" in rendered
+
+
+def test_shell_model_handles_missing_profiles_without_launch_plan(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+
+    model = tui_state.build_shell_model(cwd=repo, home=tmp_path / "home")
+
+    assert model.selected_profile_name is None
+    assert model.selected_launch_plan is None
+    assert "No profiles found" in tui_state.render_shell_text(model)
+
+
+def test_shell_model_rejects_unknown_selected_profile(tmp_path):
+    home = tmp_path / "home"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    config_path = profiles.user_config_path(home)
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text("[profiles.final-pr]\n", encoding="utf-8")
+
+    with pytest.raises(FileNotFoundError, match="profile not found: missing"):
+        tui_state.build_shell_model(
+            cwd=repo,
+            home=home,
+            selected_profile_name="missing",
+        )

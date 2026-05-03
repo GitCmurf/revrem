@@ -33,6 +33,25 @@ def test_tui_reports_missing_optional_dependency(monkeypatch, capsys):
     assert "code-review-loop[tui]" in captured.err
 
 
+def test_tui_reports_unknown_initial_profile(monkeypatch, tmp_path, capsys):
+    app_module = types.ModuleType("textual.app")
+    widgets_module = types.ModuleType("textual.widgets")
+    app_module.App = object
+    widgets_module.Header = object
+    widgets_module.Footer = object
+    widgets_module.Static = object
+    monkeypatch.setitem(sys.modules, "textual.app", app_module)
+    monkeypatch.setitem(sys.modules, "textual.widgets", widgets_module)
+    monkeypatch.setattr(tui.importlib.util, "find_spec", lambda name: object() if name == "textual" else None)
+    monkeypatch.setattr(tui.Path, "cwd", lambda: tmp_path)
+
+    assert cli.main(["ui", "--profile", "missing"]) == 1
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "ERROR: profile not found: missing" in captured.err
+
+
 def test_tui_launches_textual_app_with_home_snapshot(monkeypatch, tmp_path):
     rendered_widgets = []
     launched = []
@@ -64,4 +83,66 @@ def test_tui_launches_textual_app_with_home_snapshot(monkeypatch, tmp_path):
     body = rendered_widgets[1]
     assert body.kwargs["id"] == "body"
     assert f"Workspace: {tmp_path}" in body.args[0]
-    assert "Pipeline: review, triage, remediation, checks, and commit phases" in body.args[0]
+    assert "[b]Home[/b]" in body.args[0]
+    assert "[b]Profiles[/b]" in body.args[0]
+    assert "[b]Pipeline[/b]" in body.args[0]
+    assert "[b]Run Monitor[/b]" in body.args[0]
+
+
+def test_tui_dry_run_action_launches_selected_profile(monkeypatch, tmp_path):
+    actions = []
+    notifications = []
+
+    config_path = tmp_path / "home" / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.final-pr]
+description = "Final PR"
+
+[profiles.final-pr.pipeline]
+base = "main"
+checks = ["git diff --check"]
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+
+    class FakeApp:
+        def run(self):
+            self.action_launch_dry_run()
+            actions.append(type(self).__name__)
+
+        def notify(self, message):
+            notifications.append(message)
+
+    class FakeWidget:
+        def __init__(self, *args, **kwargs):
+            self.args = args
+            self.kwargs = kwargs
+
+    app_module = types.ModuleType("textual.app")
+    widgets_module = types.ModuleType("textual.widgets")
+    app_module.App = FakeApp
+    widgets_module.Header = FakeWidget
+    widgets_module.Footer = FakeWidget
+    widgets_module.Static = FakeWidget
+    monkeypatch.setitem(sys.modules, "textual.app", app_module)
+    monkeypatch.setitem(sys.modules, "textual.widgets", widgets_module)
+    monkeypatch.setattr(tui.importlib.util, "find_spec", lambda name: object() if name == "textual" else None)
+    monkeypatch.setattr(tui.Path, "cwd", lambda: tmp_path)
+
+    def fake_run_launch_plan(plan, *, cwd):
+        actions.append((plan.argv, cwd))
+        return types.SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(tui, "run_launch_plan", fake_run_launch_plan)
+
+    assert cli.main(["ui"]) == 0
+
+    assert actions[0][0][:4] == ("revrem", "--profile", "final-pr", "--base")
+    assert actions[0][0][-1] == "--dry-run"
+    assert "--check" in actions[0][0]
+    assert actions[0][1] == tmp_path
+    assert actions[1] == "RevRemApp"
+    assert notifications == ["Dry run completed: final-pr"]

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import importlib
 import importlib.util
+import subprocess
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -23,7 +24,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if importlib.util.find_spec("textual") is None:
         print(f"ERROR: revrem ui requires the optional Textual dependency. {INSTALL_HINT}", file=sys.stderr)
         return 1
-    run_textual_app()
+    try:
+        run_textual_app(selected_profile_name=args.profile)
+    except (OSError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -37,11 +42,15 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         action="store_true",
         help="Validate the TUI entry point without importing or launching Textual.",
     )
+    parser.add_argument(
+        "--profile",
+        help="Select the initial profile shown in the TUI.",
+    )
     return parser.parse_args(argv)
 
 
-def run_textual_app() -> None:
-    snapshot = tui_state.build_home_snapshot(cwd=Path.cwd())
+def run_textual_app(*, selected_profile_name: str | None = None) -> None:
+    model = tui_state.build_shell_model(cwd=Path.cwd(), selected_profile_name=selected_profile_name)
     textual_app = importlib.import_module("textual.app")
     widgets = importlib.import_module("textual.widgets")
 
@@ -65,36 +74,45 @@ def run_textual_app() -> None:
             text-style: bold;
         }
         """
-        BINDINGS = [("q", "quit", "Quit")]
+        BINDINGS = [
+            ("d", "launch_dry_run", "Dry run"),
+            ("q", "quit", "Quit"),
+        ]
 
         def compose(self):
             yield header(show_clock=True)
             yield static(
-                "\n".join(
-                    [
-                        "[b]RevRem[/b]",
-                        "",
-                        f"Workspace: {snapshot.cwd}",
-                        f"Profiles: {len(snapshot.profiles)} available",
-                        f"Recent runs: {len(snapshot.recent_runs)} loaded",
-                        f"Artifact links: {sum(len(run.artifacts) for run in snapshot.run_monitors)} indexed",
-                        "Implemented harnesses: "
-                        + ", ".join(h.name for h in snapshot.harnesses if h.implemented),
-                        "Quick start: "
-                        + (
-                            snapshot.run_previews[0].shell_command
-                            if snapshot.run_previews
-                            else "revrem config new final-pr"
-                        ),
-                        "",
-                        "Home: recent runs and quick-start profiles",
-                        "Profiles: create, inspect, import, and export TOML profiles",
-                        "Pipeline: review, triage, remediation, checks, and commit phases",
-                        "Run Monitor: phase state, progress output, artifacts, and summaries",
-                    ]
-                ),
+                tui_state.render_shell_text(model),
                 id="body",
             )
             yield footer()
 
+        def action_launch_dry_run(self) -> None:
+            if model.selected_launch_plan is None:
+                _notify(self, "No profile is available to dry-run.")
+                return
+            result = run_launch_plan(model.selected_launch_plan, cwd=Path(model.snapshot.cwd))
+            if result.returncode == 0:
+                _notify(self, f"Dry run completed: {model.selected_launch_plan.profile_name}")
+                return
+            _notify(self, f"Dry run failed with exit {result.returncode}: {model.selected_launch_plan.profile_name}")
+
     RevRemApp().run()
+
+
+def run_launch_plan(plan: tui_state.LaunchPlan, *, cwd: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        list(plan.argv),
+        cwd=cwd,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def _notify(app: Any, message: str) -> None:
+    notify = getattr(app, "notify", None)
+    if callable(notify):
+        notify(message)
+    else:
+        print(message)

@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '0.8'
+version: '0.9'
 last_updated: '2026-05-03'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 0.8
+> **Version:** 0.9
 > **Last Updated:** 2026-05-03
 > **Type:** DEVEX
 > **Area:** devex
@@ -388,24 +388,21 @@ phase/action word and status word are highlighted, labels are cyan, and model
 or review text is rendered literally so markup-like review output cannot break
 the display.
 
-`revrem ui` is available as a dependency-gated entry point for the planned
-Textual interface:
+`revrem ui` is available as a dependency-gated Textual interface:
 
 ```bash
 ./.venv/bin/pip install -e ".[tui]"
 ./.venv/bin/revrem ui
+./.venv/bin/revrem ui --profile final-pr
 ```
 
 Without the `tui` extra, `revrem ui` exits cleanly with an installation hint.
-The first TUI slice is a navigational shell; the CLI remains the authoritative
-execution path while the full Home, Profiles, Pipeline Builder, and Run Monitor
-screens are completed. The shell is backed by dependency-free view models for
-profiles, recent runs, harness metadata, and pipeline phases so future Textual
-widgets can reuse the same tested state without duplicating CLI logic. Profile
-command previews and dry-run launch plans are generated from the same profile
-data so the UI can show the operator the exact `revrem --profile ...` command
-before launch. Recent-run summaries are also flattened into artifact-link view
-models for the future Run Monitor screen.
+The CLI remains the authoritative execution path. The TUI renders Home,
+Profiles, Pipeline, and Run Monitor sections from dependency-free view models
+for profiles, recent runs, harness metadata, phase state, command previews, and
+artifact links. Use `--profile NAME` to select the initial profile; press `d`
+inside the TUI to launch a dry-run preview for that profile through the same
+command plan shown in the Pipeline section.
 
 Codex is currently the only executable review/remediation harness. The profile
 schema reserves `claude`, `gemini`, `opencode`, and `kilo` for future headless
@@ -483,6 +480,7 @@ The wrapper runs tests, `ruff check .`, `mypy src`, and DocOps checks when
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 0.9 | 2026-05-03 | Codex | Documented the completed first TUI slice with profile selection, operator sections, and dry-run launch action |
 | 0.8 | 2026-05-03 | Codex | Documented adaptive pytest skipping for non-Python repositories and native TypeScript check guidance |
 | 0.7 | 2026-05-03 | Codex | Documented TUI launch-plan and run-monitor artifact state |
 | 0.6 | 2026-05-03 | Codex | Added release/version promotion guidance and documented sandbox tagging behavior |
