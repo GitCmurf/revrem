@@ -8,11 +8,11 @@ import atexit
 import json
 import os
 import re
-import tempfile
 import shlex
 import signal
 import subprocess
 import sys
+import tempfile
 import textwrap
 import time
 import uuid
