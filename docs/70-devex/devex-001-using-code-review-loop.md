@@ -3,8 +3,8 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '0.6'
-last_updated: '2026-05-02'
+version: '0.7'
+last_updated: '2026-05-03'
 owner: GitCmurf
 docops_version: '2.0'
 area: devex
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 0.6
-> **Last Updated:** 2026-05-02
+> **Version:** 0.7
+> **Last Updated:** 2026-05-03
 > **Type:** DEVEX
 > **Area:** devex
 > **Description:** Operator guide for the code-review-loop utility
@@ -384,8 +384,10 @@ execution path while the full Home, Profiles, Pipeline Builder, and Run Monitor
 screens are completed. The shell is backed by dependency-free view models for
 profiles, recent runs, harness metadata, and pipeline phases so future Textual
 widgets can reuse the same tested state without duplicating CLI logic. Profile
-command previews are generated from the same profile data so the UI can show the
-operator the exact `revrem --profile ...` command before launch.
+command previews and dry-run launch plans are generated from the same profile
+data so the UI can show the operator the exact `revrem --profile ...` command
+before launch. Recent-run summaries are also flattened into artifact-link view
+models for the future Run Monitor screen.
 
 Codex is currently the only executable review/remediation harness. The profile
 schema reserves `claude`, `gemini`, `opencode`, and `kilo` for future headless
@@ -463,6 +465,7 @@ The wrapper runs tests, `ruff check .`, `mypy src`, and DocOps checks when
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 0.7 | 2026-05-03 | Codex | Documented TUI launch-plan and run-monitor artifact state |
 | 0.6 | 2026-05-03 | Codex | Added release/version promotion guidance and documented sandbox tagging behavior |
 | 0.5 | 2026-05-02 | Codex | Documented harness adapter boundary and TUI profile command previews |
 | 0.4 | 2026-05-02 | Codex | Documented Rich progress column styling and current dependency-gated TUI shell behavior |

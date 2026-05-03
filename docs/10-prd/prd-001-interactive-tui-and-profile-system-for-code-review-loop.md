@@ -3,8 +3,8 @@ document_id: REVREM-PRD-001
 type: PRD
 title: Interactive TUI and Profile System for code-review-loop
 status: Draft
-version: "0.7"
-last_updated: '2026-05-02'
+version: "0.8"
+last_updated: '2026-05-03'
 owner: GitCmurf
 area: product
 docops_version: "2.0"
@@ -29,8 +29,8 @@ related_ids:
 > **Document ID:** REVREM-PRD-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 0.7
-> **Last Updated:** 2026-05-02
+> **Version:** 0.8
+> **Last Updated:** 2026-05-03
 > **Type:** PRD
 
 # PRD: Interactive TUI and Profile System for code-review-loop
@@ -378,7 +378,7 @@ The quality bar for every phase is:
 - [FR-11] Support optional verified checkpoint commits after remediation passes.
 - [FR-12] Implement `revrem ui` behind the `[tui]` extra.
 
-Milestone status as of version 0.7:
+Milestone status as of version 0.8:
 
 - FR-1 through FR-8 are implemented.
 - FR-9 is implemented.
@@ -392,8 +392,8 @@ Milestone status as of version 0.7:
 - FR-12 is partially implemented: `revrem ui` now resolves to a dependency-
   gated Textual entry point with a clean install hint when the optional `tui`
   extra is absent. The current shell renders reusable profile, history, harness,
-  phase, and command-preview state. Full interactive screen behavior remains
-  pending.
+  phase, command-preview, dry-run launch-plan, and run-monitor artifact-link
+  state. Full interactive screen behavior remains pending.
 - Codex triage is implemented; non-Codex harnesses remain reserved syntax and
   executable command planning fails fast when an unimplemented backend is
   selected.
@@ -512,8 +512,8 @@ Initial slice done when:
 - `revrem ui --dry-run` succeeds without Textual installed.
 - `revrem ui` exits cleanly with an installation hint when Textual is absent.
 - TUI state tests cover profile discovery, run-history loading, harness
-  metadata, pipeline phase modeling, and profile command previews without
-  importing Textual.
+  metadata, pipeline phase modeling, profile command previews, launch plans, and
+  run-monitor artifact-link views without importing Textual.
 - A dependency-guarded launch smoke test proves the Textual app can render the
   home snapshot when Textual is available.
 - The default development gate remains free of Textual imports.
@@ -617,6 +617,7 @@ revrem history --format json list --limit 5
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 0.8 | 2026-05-03 | Codex | Added launch-plan and run-monitor artifact-link state for the TUI, and hardened another green Codex review-status phrase |
 | 0.7 | 2026-05-02 | Codex | Added reusable harness command-planning boundary and TUI profile command previews for future interactive screens |
 | 0.6 | 2026-05-02 | Codex | Hardened Rich progress styling expectations, corrected conservative no-op unknown close-down semantics, and added a dependency-guarded TUI launch smoke-test requirement |
 | 0.5 | 2026-05-02 | Codex | Added optional verified commit-after-remediation phase, Conventional Commit subject policy, phase-specific effort overrides, no-op remediation close-down, and first dependency-gated TUI entry slice |

@@ -26,9 +26,20 @@ checks = ["pytest -q", "git diff --check"]
     )
     history_path = tmp_path / "runs.jsonl"
     history_path.write_text(
-        json.dumps({"run_id": "run-1", "final_status": "clear"}) + "\n",
+        json.dumps(
+            {
+                "run_id": "run-1",
+                "final_status": "clear",
+                "stopped_reason": "review_clear",
+                "artifact_dir": str(tmp_path / "artifacts"),
+                "artifact_paths": {"summary": str(tmp_path / "artifacts" / "summary.json")},
+            }
+        )
+        + "\n",
         encoding="utf-8",
     )
+    (tmp_path / "artifacts").mkdir()
+    (tmp_path / "artifacts" / "summary.json").write_text("{}\n", encoding="utf-8")
 
     snapshot = tui_state.build_home_snapshot(
         cwd=repo,
@@ -40,6 +51,10 @@ checks = ["pytest -q", "git diff --check"]
     assert [profile.name for profile in snapshot.profiles] == ["final-pr"]
     assert snapshot.profiles[0].checks == ("pytest -q", "git diff --check")
     assert snapshot.recent_runs[0]["run_id"] == "run-1"
+    assert snapshot.run_monitors[0].run_id == "run-1"
+    assert snapshot.run_monitors[0].final_status == "clear"
+    assert snapshot.run_monitors[0].artifacts[0].kind == "summary"
+    assert snapshot.run_monitors[0].artifacts[0].exists is True
     assert snapshot.run_previews[0].shell_command == (
         "revrem --profile final-pr --base main --max-iterations 3 "
         "--summary-format text --check 'pytest -q' --check 'git diff --check'"
@@ -173,3 +188,37 @@ def test_run_preview_includes_operator_visible_profile_options():
         "pytest -q",
     )
     assert preview.shell_command.endswith("--check 'pytest -q'")
+
+
+def test_launch_plan_adds_dry_run_without_mutating_profile_preview():
+    profile = profiles.Profile(name="demo")
+
+    preview = tui_state.run_preview(profile)
+    plan = tui_state.launch_plan(profile, dry_run=True)
+
+    assert preview.argv[-1] == "text"
+    assert plan.mode == "dry-run"
+    assert plan.argv[-1] == "--dry-run"
+    assert plan.shell_command == "revrem --profile demo --base main --max-iterations 2 --summary-format text --dry-run"
+
+
+def test_run_monitor_view_flattens_summary_artifacts():
+    summary_path = "tmp/code-review-loop/run/summary.json"
+    record = {
+        "run_id": "abc",
+        "final_status": "findings",
+        "stopped_reason": "max_iterations_reached",
+        "artifact_dir": "tmp/code-review-loop/run",
+        "artifact_paths": {
+            "summary": summary_path,
+            "reviews": ["tmp/code-review-loop/run/review-1.txt"],
+        },
+    }
+
+    monitor = tui_state.run_monitor_view(record)
+
+    assert monitor.run_id == "abc"
+    assert monitor.final_status == "findings"
+    assert monitor.stopped_reason == "max_iterations_reached"
+    assert [artifact.kind for artifact in monitor.artifacts] == ["summary", "reviews"]
+    assert monitor.artifacts[0].path == summary_path

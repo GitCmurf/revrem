@@ -48,12 +48,37 @@ class RunPreview:
 
 
 @dataclass(frozen=True)
+class ArtifactLinkView:
+    kind: str
+    path: str
+    exists: bool
+
+
+@dataclass(frozen=True)
+class RunMonitorView:
+    run_id: str
+    final_status: str
+    stopped_reason: str | None
+    artifact_dir: str | None
+    artifacts: tuple[ArtifactLinkView, ...]
+
+
+@dataclass(frozen=True)
+class LaunchPlan:
+    profile_name: str
+    mode: str
+    argv: tuple[str, ...]
+    shell_command: str
+
+
+@dataclass(frozen=True)
 class HomeSnapshot:
     cwd: str
     profiles: tuple[ProfileView, ...]
     recent_runs: tuple[dict[str, Any], ...]
     harnesses: tuple[HarnessView, ...]
     run_previews: tuple[RunPreview, ...]
+    run_monitors: tuple[RunMonitorView, ...]
 
 
 def build_home_snapshot(
@@ -74,6 +99,10 @@ def build_home_snapshot(
         recent_runs=tuple(run_history.read_history(history_path, limit=history_limit)),
         harnesses=harness_views(),
         run_previews=tuple(run_preview(profile) for profile in resolved_profiles),
+        run_monitors=tuple(
+            run_monitor_view(record)
+            for record in run_history.read_history(history_path, limit=history_limit)
+        ),
     )
 
 
@@ -139,6 +168,51 @@ def run_preview(profile: profiles.Profile) -> RunPreview:
         shell_command=shlex.join(argv),
         checks=profile.pipeline.checks,
     )
+
+
+def launch_plan(profile: profiles.Profile, *, dry_run: bool = True) -> LaunchPlan:
+    preview = run_preview(profile)
+    argv = list(preview.argv)
+    mode = "dry-run" if dry_run else "run"
+    if dry_run:
+        argv.append("--dry-run")
+    return LaunchPlan(
+        profile_name=profile.name,
+        mode=mode,
+        argv=tuple(argv),
+        shell_command=shlex.join(argv),
+    )
+
+
+def run_monitor_view(record: dict[str, Any]) -> RunMonitorView:
+    artifact_dir = record.get("artifact_dir")
+    artifact_paths = record.get("artifact_paths")
+    artifacts: list[ArtifactLinkView] = []
+    if isinstance(artifact_paths, dict):
+        for kind, value in artifact_paths.items():
+            if kind == "artifact_dir":
+                continue
+            if isinstance(value, str):
+                artifacts.append(artifact_link_view(kind, value))
+            elif isinstance(value, list):
+                for item in value:
+                    if isinstance(item, str):
+                        artifacts.append(artifact_link_view(kind, item))
+    return RunMonitorView(
+        run_id=str(record.get("run_id") or ""),
+        final_status=str(record.get("final_status") or "unknown"),
+        stopped_reason=(
+            str(record["stopped_reason"])
+            if isinstance(record.get("stopped_reason"), str)
+            else None
+        ),
+        artifact_dir=str(artifact_dir) if isinstance(artifact_dir, str) else None,
+        artifacts=tuple(artifacts),
+    )
+
+
+def artifact_link_view(kind: str, path: str) -> ArtifactLinkView:
+    return ArtifactLinkView(kind=kind, path=path, exists=Path(path).exists())
 
 
 def phase_view(name: str, enabled: bool, phase: profiles.PhaseConfig | profiles.TriageConfig) -> PhaseView:

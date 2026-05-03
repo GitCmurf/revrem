@@ -77,6 +77,7 @@ def run_textual_app() -> None:
                         f"Workspace: {snapshot.cwd}",
                         f"Profiles: {len(snapshot.profiles)} available",
                         f"Recent runs: {len(snapshot.recent_runs)} loaded",
+                        f"Artifact links: {sum(len(run.artifacts) for run in snapshot.run_monitors)} indexed",
                         "Implemented harnesses: "
                         + ", ".join(h.name for h in snapshot.harnesses if h.implemented),
                         "Quick start: "

@@ -81,6 +81,14 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
     )
     assert (
         MODULE.detect_review_status(
+            "The changed code and accompanying tests pass the repository's dev-check suite, "
+            "and I did not identify any discrete introduced correctness, security, or "
+            "maintainability issue that should block the patch."
+        )
+        == "clear"
+    )
+    assert (
+        MODULE.detect_review_status(
             "The diff was reviewed and the repository verification suite passes. "
             "I did not identify any discrete introduced correctness, security, or "
             "maintainability issues that should block the patch."
