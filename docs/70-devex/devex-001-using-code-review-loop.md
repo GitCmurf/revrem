@@ -340,11 +340,12 @@ prompt, RevRem normalizes the final subject to Conventional Commit syntax and
 appends ` (RevRem)`. Passing `--commit-message-prompt` intentionally disables
 that default subject policy so special-purpose commit formats can be tested
 without fighting the normalizer. If a verified remediation pass produces no
-staged changes, RevRem stops the loop immediately; an `unknown` review status
-in that no-op path is treated as a clear terminal result and still records the
-unexpected-status bug-report artifact. Auto-commit also requires a clean
-worktree before the loop starts so unrelated local edits cannot be staged by
-the broad `git add -A` step.
+staged changes, RevRem stops the loop immediately; in that no-op path an
+`unknown` review status remains `final_status: "unknown"` with
+`stopped_reason: "no_changes_after_remediation"`, and the unexpected-status
+bug-report artifact is still recorded for operator follow-up. Auto-commit also
+requires a clean worktree before the loop starts so unrelated local edits
+cannot be staged by the broad `git add -A` step.
 
 ```bash
 revrem --profile final-pr --commit-after-remediation
