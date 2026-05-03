@@ -3348,7 +3348,7 @@ def test_default_runner_refreshes_active_terminal_title_during_child_process(tmp
             ],
             tmp_path,
             None,
-            2,
+            10,
         )
 
     output = stderr.getvalue()
