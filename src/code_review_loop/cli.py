@@ -544,7 +544,7 @@ def detect_review_status(output: str) -> str:
 
 
 NEGATED_CLEAR_REVIEW_STATEMENT_RE = re.compile(
-    r"(?:^|[.!?,;]\s+)(?:and\s+)?i did not (?:identify|find) "
+    r"(?:^|[.!?,;]\s+|,\s+and\s+|and\s+)(?:i\s+)?did not (?:identify|find) "
     r"(?:any(?: discrete(?: introduced)?)?|a discrete(?: introduced)?)\b"
     r"[^.!?]*(?:issue|issues|bug|bugs|defect|defects|regression|regressions|finding|findings|correctness|security|maintainability)"
 )

@@ -76,6 +76,7 @@ def run_textual_app(*, selected_profile_name: str | None = None) -> None:
         """
         BINDINGS = [
             ("d", "launch_dry_run", "Dry run"),
+            ("e", "edit_profile", "Edit profile"),
             ("q", "quit", "Quit"),
         ]
 
@@ -98,16 +99,37 @@ def run_textual_app(*, selected_profile_name: str | None = None) -> None:
                 return
             _notify(self, f"Dry run failed with exit {result.returncode}: {model.selected_launch_plan.profile_name}")
 
+        def action_edit_profile(self) -> None:
+            if model.selected_profile_name is None:
+                _notify(self, "No profile is available to edit.")
+                return
+            plan = tui_state.edit_plan_for_name(model.selected_profile_name)
+            suspend = getattr(self, "suspend", None)
+            if callable(suspend):
+                with suspend():
+                    result = run_launch_plan(plan, cwd=Path(model.snapshot.cwd), capture_output=False)
+            else:
+                result = run_launch_plan(plan, cwd=Path(model.snapshot.cwd), capture_output=False)
+            if result.returncode == 0:
+                _notify(self, f"Edited profile: {model.selected_profile_name}")
+                return
+            _notify(self, f"Profile edit failed with exit {result.returncode}: {model.selected_profile_name}")
+
     RevRemApp().run()
 
 
-def run_launch_plan(plan: tui_state.LaunchPlan, *, cwd: Path) -> subprocess.CompletedProcess[str]:
+def run_launch_plan(
+    plan: tui_state.LaunchPlan,
+    *,
+    cwd: Path,
+    capture_output: bool = True,
+) -> subprocess.CompletedProcess[str]:
     argv = current_entrypoint_argv(plan.argv)
     return subprocess.run(
         argv,
         cwd=cwd,
         text=True,
-        capture_output=True,
+        capture_output=capture_output,
         check=False,
     )
 

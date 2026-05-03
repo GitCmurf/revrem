@@ -123,6 +123,14 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
     )
     assert (
         MODULE.detect_review_status(
+            "I reviewed the diff against the specified merge base and did not identify "
+            "any discrete introduced correctness, security, or maintainability issues "
+            "that warrant inline findings. The test suite also passes locally."
+        )
+        == "clear"
+    )
+    assert (
+        MODULE.detect_review_status(
             "I did not identify any blocking defects in this patch. The tests pass."
         )
         == "clear"

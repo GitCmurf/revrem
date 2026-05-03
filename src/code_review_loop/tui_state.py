@@ -194,7 +194,7 @@ def home_screen(snapshot: HomeSnapshot, *, selected_profile_name: str | None = N
         lines.append(f"Quick start: {snapshot.run_previews[0].shell_command}")
     else:
         lines.append("Quick start: revrem config new final-pr")
-    lines.append("Press d to launch a dry-run preview for the selected profile; q quits.")
+    lines.append("Keys: d dry-runs the selected profile; e edits it in $EDITOR; q quits.")
     return TuiScreen(name="home", title="Home", lines=tuple(lines))
 
 
@@ -322,6 +322,20 @@ def launch_plan(profile: profiles.Profile, *, dry_run: bool = True) -> LaunchPla
         profile_name=profile.name,
         mode=mode,
         argv=tuple(argv),
+        shell_command=shlex.join(argv),
+    )
+
+
+def edit_plan(profile: profiles.Profile) -> LaunchPlan:
+    return edit_plan_for_name(profile.name)
+
+
+def edit_plan_for_name(profile_name: str) -> LaunchPlan:
+    argv = ("revrem", "config", "edit", profile_name)
+    return LaunchPlan(
+        profile_name=profile_name,
+        mode="edit",
+        argv=argv,
         shell_command=shlex.join(argv),
     )
 

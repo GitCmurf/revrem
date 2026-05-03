@@ -115,3 +115,20 @@ def test_rich_live_progress_updates_panel_in_place(monkeypatch):
     assert isinstance(latest, FakePanel)
     assert isinstance(latest.value, FakeGroup)
     assert len(latest.value.items) == 2
+
+
+def test_rich_live_progress_keeps_panel_compact(monkeypatch):
+    install_fake_rich(monkeypatch)
+
+    with progress.rich_live_progress(True) as active:
+        assert active is True
+        for index in range(progress.RICH_LIVE_MAX_LINES + 3):
+            assert progress.print_rich_event("review", str(index), "issue", "x" * 300)
+
+    latest = FakeLive.updates[-1]
+    assert latest.kwargs["title"] == "RevRem"
+    assert len(latest.value.items) == progress.RICH_LIVE_MAX_LINES
+    last_line = latest.value.items[-1]
+    rendered_values = [value for value, _style in last_line.parts]
+    assert "x" * 300 not in rendered_values
+    assert any(value.endswith("…") for value in rendered_values)

@@ -162,6 +162,67 @@ checks = ["git diff --check"]
     assert notifications == ["Dry run completed: final-pr"]
 
 
+def test_tui_edit_action_launches_profile_editor_with_suspended_app(monkeypatch, tmp_path):
+    actions = []
+    notifications = []
+
+    config_path = tmp_path / "home" / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text("[profiles.final-pr]\ndescription = \"Final PR\"\n", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+
+    class FakeSuspend:
+        def __enter__(self):
+            actions.append("suspend-enter")
+
+        def __exit__(self, exc_type, exc, tb):
+            actions.append("suspend-exit")
+            return False
+
+    class FakeApp:
+        def run(self):
+            self.action_edit_profile()
+            actions.append(type(self).__name__)
+
+        def suspend(self):
+            return FakeSuspend()
+
+        def notify(self, message):
+            notifications.append(message)
+
+    class FakeWidget:
+        def __init__(self, *args, **kwargs):
+            self.args = args
+            self.kwargs = kwargs
+
+    app_module = types.ModuleType("textual.app")
+    widgets_module = types.ModuleType("textual.widgets")
+    app_module.App = FakeApp
+    widgets_module.Header = FakeWidget
+    widgets_module.Footer = FakeWidget
+    widgets_module.Static = FakeWidget
+    monkeypatch.setitem(sys.modules, "textual.app", app_module)
+    monkeypatch.setitem(sys.modules, "textual.widgets", widgets_module)
+    monkeypatch.setattr(tui.importlib.util, "find_spec", lambda name: object() if name == "textual" else None)
+    monkeypatch.setattr(tui.Path, "cwd", lambda: tmp_path)
+
+    def fake_run_launch_plan(plan, *, cwd, capture_output=True):
+        actions.append((plan.argv, cwd, capture_output))
+        return types.SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(tui, "run_launch_plan", fake_run_launch_plan)
+
+    assert cli.main(["ui", "--profile", "final-pr"]) == 0
+
+    assert actions[:3] == [
+        "suspend-enter",
+        (("revrem", "config", "edit", "final-pr"), tmp_path, False),
+        "suspend-exit",
+    ]
+    assert actions[3] == "RevRemApp"
+    assert notifications == ["Edited profile: final-pr"]
+
+
 def test_run_launch_plan_uses_current_dev_entrypoint(tmp_path, monkeypatch):
     launcher = tmp_path / ".venv" / "bin" / "revrem"
     launcher.parent.mkdir(parents=True)

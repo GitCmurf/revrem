@@ -318,6 +318,8 @@ models for profile discovery, harness metadata, recent run history, phase
 summaries, and profile command previews so interactive widgets cannot drift
 from CLI semantics. The initial interactive shell renders Home, Profiles,
 Pipeline, and Run Monitor sections, accepts `--profile` to select the initial
+profile, binds `d` to a dry-run preview, binds `e` to `revrem config edit` for
+the selected profile, and binds `q` to quit.
 profile, and binds `d` to launch a dry-run preview for that profile.
 
 ---
@@ -539,7 +541,8 @@ Initial slice done when:
 Full milestone done when:
 
 - A user can select the initial profile with `revrem ui --profile NAME`, start
-  a dry-run preview from the TUI, inspect phase state, and inspect artifact
+  a dry-run preview from the TUI, edit the selected profile through the
+  existing config editor flow, inspect phase state, and inspect artifact
   paths from the Run Monitor section.
 
 ---

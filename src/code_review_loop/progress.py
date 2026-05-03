@@ -10,6 +10,8 @@ from typing import Any
 
 _ACTIVE_LIVE: Any | None = None
 _ACTIVE_LIVE_LINES: deque[Any] | None = None
+RICH_LIVE_MAX_LINES = 7
+RICH_TEXT_MAX_CHARS = 140
 
 
 def rich_available() -> bool:
@@ -58,12 +60,13 @@ def rich_live_progress(enabled: bool):
         return
 
     console = Console(file=sys.stderr, force_terminal=sys.stderr.isatty())
-    lines: deque[Any] = deque(maxlen=18)
+    lines: deque[Any] = deque(maxlen=RICH_LIVE_MAX_LINES)
     live = Live(
         Panel("Starting RevRem...", title="RevRem", border_style="green"),
         console=console,
         refresh_per_second=4,
         transient=False,
+        vertical_overflow="ellipsis",
     )
     previous_live = _ACTIVE_LIVE
     previous_lines = _ACTIVE_LIVE_LINES
@@ -86,6 +89,12 @@ def _update_live(text: Any) -> bool:
     return True
 
 
+def _clip(value: str) -> str:
+    if len(value) <= RICH_TEXT_MAX_CHARS:
+        return value
+    return f"{value[: RICH_TEXT_MAX_CHARS - 1]}…"
+
+
 def _timestamp_part() -> tuple[str, str]:
     return datetime.now().strftime("%H:%M:%S"), "dim"
 
@@ -99,7 +108,7 @@ def print_rich_event(phase: str, label: str, status: str, detail: str = "") -> b
         (label, "cyan"),
         (" ", None),
         (status, "green"),
-        (f": {detail}" if detail else "", None),
+        (f": {_clip(detail)}" if detail else "", None),
     )
     if rendered is None:
         return False
@@ -119,7 +128,7 @@ def print_rich_message(phase: str, label: str, text: str, *, head: str = "") -> 
         (label, "cyan"),
         (" ", None),
         (head, "yellow" if head else None),
-        (text, None),
+        (_clip(text), None),
     )
     if rendered is None:
         return False
@@ -136,7 +145,7 @@ def print_rich_continuation(phase: str, label: str, text: str, *, indent: int = 
         (" ", None),
         (f"{phase} {label}", "dim"),
         (" " * (indent + 1), None),
-        (text, None),
+        (_clip(text), None),
     )
     if rendered is None:
         return False

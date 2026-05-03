@@ -401,10 +401,11 @@ prompt = "Break down the review into confirmed actions, likely false positives, 
 
 Rich progress is available via `--progress-style rich` when the optional
 `progress` extra is installed. The `tui` extra includes Rich as well as
-Textual. In Rich output, the active run is maintained in an in-place RevRem
-panel while the timestamp is dimmed, the phase/action word and status word are
-highlighted, labels are cyan, and model or review text is rendered literally so
-markup-like review output cannot break the display.
+Textual. In Rich output, the active run is maintained in a compact in-place
+RevRem panel with the most recent events only. The timestamp is dimmed, the
+phase/action word and status word are highlighted, labels are cyan, and model
+or review text is rendered literally so markup-like review output cannot break
+the display.
 
 `revrem ui` is available as a dependency-gated Textual interface:
 
@@ -418,6 +419,8 @@ Without the `tui` extra, `revrem ui` exits cleanly with an installation hint.
 The CLI remains the authoritative execution path. The TUI renders Home,
 Profiles, Pipeline, and Run Monitor sections from dependency-free view models
 for profiles, recent runs, harness metadata, phase state, command previews, and
+artifact links. Current key bindings are `d` for a dry-run preview, `e` to
+edit the selected profile via `revrem config edit`, and `q` to quit.
 artifact links. Use `--profile NAME` to select the initial profile; press `d`
 inside the TUI to launch a dry-run preview for that profile through the same
 command plan shown in the Pipeline section.
