@@ -318,6 +318,39 @@ reasoning_effort = "low"
     assert "Dry-run launch: revrem --profile final-pr --dry-run" in rendered
 
 
+def test_shell_render_escapes_dynamic_markup_in_profile_paths(tmp_path):
+    profile_path = tmp_path / "home" / ".config" / "revrem" / "profiles.toml"
+    snapshot = tui_state.HomeSnapshot(
+        cwd=str(tmp_path),
+        profiles=(
+            tui_state.ProfileView(
+                name="final-pr",
+                description="Full PR",
+                source=str(profile_path),
+                base="main",
+                max_iterations=2,
+                checks=(),
+            ),
+        ),
+        recent_runs=(),
+        harnesses=(),
+        run_previews=(),
+        run_monitors=(),
+    )
+    model = tui_state.TuiShellModel(
+        snapshot=snapshot,
+        selected_profile_name="final-pr",
+        selected_launch_plan=None,
+        screens=(tui_state.profiles_screen(snapshot),),
+    )
+
+    rendered = tui_state.render_shell_text(model)
+
+    assert "[b]Profiles[/b]" in rendered
+    assert f"\\[{profile_path}\\]" in rendered
+    assert f"[{profile_path}]" not in rendered
+
+
 def test_shell_model_handles_missing_profiles_without_launch_plan(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()

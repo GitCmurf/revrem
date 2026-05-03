@@ -259,8 +259,13 @@ def run_monitor_screen(snapshot: HomeSnapshot) -> TuiScreen:
 def render_shell_text(model: TuiShellModel) -> str:
     sections: list[str] = []
     for screen in model.screens:
-        sections.append(f"[b]{screen.title}[/b]\n" + "\n".join(screen.lines))
+        escaped_lines = "\n".join(_markup_escape(line) for line in screen.lines)
+        sections.append(f"[b]{_markup_escape(screen.title)}[/b]\n{escaped_lines}")
     return "\n\n".join(sections)
+
+
+def _markup_escape(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
 
 
 def harness_views() -> tuple[HarnessView, ...]:
