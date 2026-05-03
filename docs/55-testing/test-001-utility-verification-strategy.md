@@ -56,7 +56,10 @@ The main test module is `tests/test_cli.py`. It covers:
   remediation, and commit-message drafting.
 - Positive and negative CLI boolean overrides for profile-controlled runtime
   and output flags.
-- Default artifact-directory namespace under `tmp/revrem/`.
+- Default artifact-directory namespace under `.revrem/runs/`, including the
+  local `.revrem/.gitignore` guardrail.
+- Timeout diagnostics that preserve command, cwd, timeout, and partial child
+  output.
 - No-op remediation close-down: when commit mode finds no staged changes after
   passing checks, the loop stops instead of spending another review iteration.
 - Bounded loop behavior, including final review behavior and exit status.
@@ -75,8 +78,9 @@ The main test module is `tests/test_cli.py`. It covers:
   unknown review classifications.
 - Progress-log formatting and quiet mode.
 - Local-time progress prefixes and optional Rich progress fallback behavior.
-- Terminal-title progress updates, stdout-safety, and Rich-mode `/dev/tty`
-  routing so title refreshes do not pollute the live panel stream.
+- Terminal-title progress updates, stdout-safety, Rich-mode `/dev/tty` routing
+  so title refreshes do not pollute the live panel stream, and terminal cursor
+  restoration on normal and interrupted exits.
 - Profile selection, CLI-over-profile overrides, and `revrem config` command
   behavior.
 - Run-history write/opt-out behavior and `revrem history list` output.

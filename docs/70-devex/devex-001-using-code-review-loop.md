@@ -202,14 +202,17 @@ clear review because pytest returned `2`, `4`, or `5`.
 
 ### Continuation after findings
 
-The loop writes artifacts under `tmp/revrem/<timestamp>/` by default.
+The loop writes artifacts under `.revrem/runs/<timestamp>/` by default. On the
+first default-artifact run in a repository, RevRem creates `.revrem/.gitignore`
+containing `runs/` so local transcripts stay out of commits without mutating the
+repository's root `.gitignore`.
 If a capped run ends with findings, continue from the final review artifact:
 
 ```bash
 revrem \
   --base main \
   --max-iterations 2 \
-  --initial-review-file tmp/revrem/<timestamp>/review-final.txt \
+  --initial-review-file .revrem/runs/<timestamp>/review-final.txt \
   --check "pytest -q"
 ```
 
@@ -433,7 +436,8 @@ until a backend adapter is implemented.
   posture; raise it only when the scope and verification budget justify it.
 - Use a bounded `--timeout-seconds` value for slow review models. `0` disables
   subprocess timeouts and should only be used when an operator is ready to
-  interrupt manually.
+  interrupt manually. Timeout artifacts include the command, cwd, timeout, and
+  any partial stdout/stderr captured before the subprocess was killed.
 - Keep checks deterministic and focused on PR readiness. Expensive full-suite
   checks are useful for a final pass, but narrow checks are better while the
   loop is still actively remediating.
@@ -462,7 +466,9 @@ until a backend adapter is implemented.
   supports them, and emits both common window-title escape forms for broader
   terminal compatibility. In Rich progress mode, title controls are routed
   through `/dev/tty` so they do not appear inside the live progress panel.
-  Terminals that ignore those sequences will still run normally.
+  Terminals that ignore those sequences will still run normally. RevRem also
+  emits the cursor-show control on normal exit, termination, and terminal
+  suspension signals so a forced stop is less likely to leave the cursor hidden.
 - If a subprocess refresh times out while a remediation prompt is still being
   written, the loop retries without manually closing stdin so the child can
   keep receiving the buffered prompt while title updates continue.
@@ -490,7 +496,7 @@ The wrapper runs tests, `ruff check .`, `mypy src`, and DocOps checks when
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
-| 1.0 | 2026-05-03 | Codex | Documented negative boolean CLI overrides, `tmp/revrem` artifact namespace, commit-message harness profile setting, Rich live progress, and import-default preservation semantics |
+| 1.0 | 2026-05-03 | Codex | Documented negative boolean CLI overrides, `.revrem/runs` artifact namespace, commit-message harness profile setting, Rich live progress, terminal recovery, timeout diagnostics, and import-default preservation semantics |
 | 0.9 | 2026-05-03 | Codex | Documented the completed first TUI slice with profile selection, operator sections, and dry-run launch action |
 | 0.8 | 2026-05-03 | Codex | Documented adaptive pytest skipping for non-Python repositories and native TypeScript check guidance |
 | 0.7 | 2026-05-03 | Codex | Documented TUI launch-plan and run-monitor artifact state |

@@ -1442,7 +1442,27 @@ quiet_progress = true
 def test_default_artifact_dir_uses_revrem_namespace():
     artifact_dir = MODULE.default_artifact_dir()
 
-    assert artifact_dir.parts[:2] == ("tmp", "revrem")
+    assert artifact_dir.parts[:2] == (".revrem", "runs")
+
+
+def test_run_loop_creates_repo_local_revrem_gitignore_for_default_artifacts(tmp_path):
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[1] == "review":
+            return MODULE.CommandResult(list(args), 0, stdout="No findings.\n")
+        return MODULE.CommandResult(list(args), 0, stdout="fixed\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / ".revrem" / "runs" / "run-1",
+        progress=False,
+    )
+
+    MODULE.run_loop(config, runner)
+
+    assert (tmp_path / ".revrem" / ".gitignore").read_text(encoding="utf-8") == "runs/\n"
 
 
 def test_main_cli_boolean_negations_override_profile_enabled_values(tmp_path, monkeypatch):
@@ -2998,7 +3018,7 @@ def test_terminal_title_tracks_review_and_remediation_phases(tmp_path, monkeypat
     assert "\033]0;rev 1/2 RevRem\007\033]2;rev 1/2 RevRem\007" in output
     assert "\033]0;rem 1/2 RevRem\007\033]2;rem 1/2 RevRem\007" in output
     assert "\033]0;rev 2/2 RevRem\007\033]2;rev 2/2 RevRem\007" in output
-    assert output.endswith(MODULE.TERMINAL_TITLE_RESTORE)
+    assert output.endswith(MODULE.TERMINAL_TITLE_RESTORE + MODULE.CURSOR_SHOW)
 
 
 def test_terminal_title_restores_after_remediation_failure(tmp_path, monkeypatch):
@@ -3030,7 +3050,7 @@ def test_terminal_title_restores_after_remediation_failure(tmp_path, monkeypatch
     output = stderr.getvalue()
     assert "\033]0;rev 1/1 RevRem\007\033]2;rev 1/1 RevRem\007" in output
     assert "\033]0;rem 1/1 RevRem\007\033]2;rem 1/1 RevRem\007" in output
-    assert output.endswith(MODULE.TERMINAL_TITLE_RESTORE)
+    assert output.endswith(MODULE.TERMINAL_TITLE_RESTORE + MODULE.CURSOR_SHOW)
 
 
 def test_terminal_title_never_writes_to_stdout(tmp_path, monkeypatch):
@@ -3081,8 +3101,30 @@ def test_terminal_title_uses_tty_in_rich_mode_without_polluting_stderr(tmp_path,
         MODULE.TERMINAL_TITLE_SAVE,
         title_sequence,
         title_sequence,
+        MODULE.CURSOR_SHOW,
         MODULE.TERMINAL_TITLE_RESTORE,
     ]
+
+
+def test_terminal_title_context_restores_cursor_on_exit(tmp_path, monkeypatch):
+    stderr = TtyBuffer()
+    monkeypatch.setattr(MODULE.sys, "stderr", stderr)
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        progress=False,
+        terminal_title=True,
+    )
+
+    with MODULE.terminal_title_context(config):
+        MODULE.set_terminal_title(config, "rev 1/1 RevRem")
+
+    output = stderr.getvalue()
+    assert MODULE.CURSOR_SHOW in output
+    assert output.endswith(MODULE.TERMINAL_TITLE_RESTORE)
 
 
 def test_default_runner_refreshes_active_terminal_title_during_child_process(tmp_path, monkeypatch):
@@ -3175,6 +3217,27 @@ def test_subprocess_refresh_loop_stops_resending_stdin_after_timeout(tmp_path, m
     assert fake_process.communicate_calls == 2
     assert fake_process.inputs == ["prompt", None]
     assert len(refresh_calls) == 2
+
+
+def test_default_runner_timeout_records_command_cwd_and_partial_output(tmp_path, monkeypatch):
+    def fake_run_subprocess(*args, **kwargs):
+        raise MODULE.subprocess.TimeoutExpired(
+            ["codex", "exec"],
+            12,
+            output="partial stdout\n",
+            stderr="partial stderr\n",
+        )
+
+    monkeypatch.setattr(MODULE, "run_subprocess_with_terminal_title_refresh", fake_run_subprocess)
+
+    result = MODULE.default_runner(["codex", "exec"], tmp_path, "prompt", 12)
+
+    assert result.returncode == -1
+    assert result.stdout == "partial stdout\n"
+    assert "Command timed out after 12 seconds" in result.stderr
+    assert "Command: codex exec" in result.stderr
+    assert f"cwd: {tmp_path}" in result.stderr
+    assert "[partial stderr]\npartial stderr" in result.stderr
 
 
 def test_loop_writes_failure_summary_when_remediation_fails(tmp_path):

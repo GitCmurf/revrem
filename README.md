@@ -34,6 +34,10 @@ Non-dry-run invocations append compact metadata to
 summary is written; use `revrem history list` to inspect recent runs. Pass
 `--no-run-history` for one-off runs that should leave only the workspace-local
 artifact directory.
+Per-run artifacts are written under `.revrem/runs/<timestamp>/` by default.
+RevRem creates `.revrem/.gitignore` with `runs/` on the first default-artifact
+run so local transcripts stay out of commits without editing the repository's
+root `.gitignore`.
 History-backed artifact pointers are resolved against the recorded run `cwd`,
 so the TUI can still show existing artifacts when you inspect a run from a
 different checkout.

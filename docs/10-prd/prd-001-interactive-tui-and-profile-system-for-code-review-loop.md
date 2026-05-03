@@ -417,7 +417,9 @@ Milestone status as of version 1.0:
 - [NFR-3] TOML reads use `tomllib`; TOML writes may add a small dedicated dependency.
 - [NFR-4] Linux/WSL2 is the primary supported environment.
 - [NFR-5] Shell scripts are POSIX `sh` compatible.
-- [NFR-6] All generated artifacts remain under target-repo `tmp/` unless explicitly configured.
+- [NFR-6] All generated artifacts remain under target-repo `.revrem/runs/`
+  unless explicitly configured; RevRem creates `.revrem/.gitignore` to ignore
+  run transcripts without editing the repository root ignore file.
 - [NFR-7] Stable promotion must be explicit; no test command may silently update
   `~/.local/bin`.
 
@@ -630,7 +632,7 @@ revrem history --format json list --limit 5
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
-| 1.0 | 2026-05-03 | Codex | Tightened profile override and harness contracts with negative boolean flags, commit-message harness configuration, Rich live progress, and RevRem artifact naming |
+| 1.0 | 2026-05-03 | Codex | Tightened profile override and harness contracts with negative boolean flags, commit-message harness configuration, Rich live progress, terminal recovery, timeout diagnostics, and `.revrem/runs` artifact naming |
 | 0.9 | 2026-05-03 | Codex | Completed the first interactive TUI slice with profile selection, four operator sections, dry-run launch action, and updated verification expectations |
 | 0.8 | 2026-05-03 | Codex | Added launch-plan and run-monitor artifact-link state for the TUI, and hardened another green Codex review-status phrase |
 | 0.7 | 2026-05-02 | Codex | Added reusable harness command-planning boundary and TUI profile command previews for future interactive screens |

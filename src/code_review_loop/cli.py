@@ -4,20 +4,23 @@
 from __future__ import annotations
 
 import argparse
+import atexit
 import json
 import os
 import re
 import shlex
+import signal
 import subprocess
 import sys
 import textwrap
 import time
 import uuid
 from collections.abc import Callable, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from code_review_loop import __version__, harnesses, profiles, progress, run_history
 
@@ -153,6 +156,7 @@ TERMINAL_TITLE_REFRESH_SECONDS = 1.0
 _CURRENT_TERMINAL_TITLE_SEQUENCE: str | None = None
 _TERMINAL_TITLE_PREFER_TTY = False
 _RICH_UNAVAILABLE_WARNED = False
+CURSOR_SHOW = "\033[?25h"
 
 
 def terminal_title_supported(config: LoopConfig) -> bool:
@@ -183,6 +187,11 @@ def write_terminal_control_to_tty(sequence: str) -> bool:
             return True
     except OSError:
         return False
+
+
+def restore_terminal_display() -> None:
+    """Best-effort terminal recovery for interrupted Rich/title sessions."""
+    write_terminal_control(CURSOR_SHOW, prefer_tty=_TERMINAL_TITLE_PREFER_TTY)
 
 
 def set_terminal_title(config: LoopConfig, title: str) -> None:
@@ -243,8 +252,37 @@ def terminal_title_context(config: LoopConfig):
         yield
     finally:
         _CURRENT_TERMINAL_TITLE_SEQUENCE = None
+        restore_terminal_display()
         write_terminal_control(TERMINAL_TITLE_RESTORE, prefer_tty=_TERMINAL_TITLE_PREFER_TTY)
         _TERMINAL_TITLE_PREFER_TTY = previous_prefer_tty
+
+
+@contextmanager
+def terminal_recovery_context():
+    previous_handlers: dict[signal.Signals, Any] = {}
+    handled_signals = [signal.SIGINT, signal.SIGTERM]
+    if hasattr(signal, "SIGTSTP"):
+        handled_signals.append(signal.SIGTSTP)
+
+    def handle_signal(signum: int, frame: object | None) -> None:
+        restore_terminal_display()
+        signal.signal(signum, signal.SIG_DFL)
+        os.kill(os.getpid(), signum)
+        if hasattr(signal, "SIGTSTP") and signum == signal.SIGTSTP:
+            signal.signal(signum, handle_signal)
+
+    for sig in handled_signals:
+        previous_handlers[sig] = signal.getsignal(sig)
+        signal.signal(sig, handle_signal)
+    atexit.register(restore_terminal_display)
+    try:
+        yield
+    finally:
+        restore_terminal_display()
+        with suppress(ValueError):
+            atexit.unregister(restore_terminal_display)
+        for sig, handler in previous_handlers.items():
+            signal.signal(sig, handler)
 
 
 def progress_log(config: LoopConfig, message: str) -> None:
@@ -379,13 +417,29 @@ def default_runner(args: Sequence[str], cwd: Path, input_text: str | None = None
             stdout=completed.stdout,
             stderr=completed.stderr,
         )
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
+        stdout = _timeout_stream_text(exc.output)
+        stderr = _timeout_stream_text(exc.stderr)
+        timeout_note = (
+            f"Command timed out after {timeout_seconds} seconds\n"
+            f"Command: {shlex.join(list(args))}\n"
+            f"cwd: {cwd}\n"
+        )
+        stderr = timeout_note + "\n[partial stderr]\n" + stderr if stderr else timeout_note
         return CommandResult(
             args=list(args),
             returncode=-1,
-            stdout="",
-            stderr=f"Command timed out after {timeout_seconds} seconds",
+            stdout=stdout,
+            stderr=stderr,
         )
+
+
+def _timeout_stream_text(value: str | bytes | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode(errors="replace")
+    return value
 
 
 def run_subprocess_with_terminal_title_refresh(
@@ -1323,6 +1377,7 @@ def resolve_initial_review_file(value: str | None, search_root: Path) -> Path | 
 
 def run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, object]:
     with (
+        terminal_recovery_context(),
         terminal_title_context(config),
         progress.rich_live_progress(config.progress and config.progress_style == "rich"),
     ):
@@ -1352,6 +1407,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
             )
 
     config.artifact_dir.mkdir(parents=True, exist_ok=True)
+    ensure_default_artifact_ignore(config)
     iterations: list[dict[str, object]] = []
     summary: dict[str, object] = {
         "base": config.base,
@@ -2011,7 +2067,21 @@ def edit_profile_config(name: str, *, cwd: Path, home: Path | None = None) -> Pa
 
 def default_artifact_dir() -> Path:
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    return Path("tmp") / "revrem" / timestamp
+    return Path(".revrem") / "runs" / timestamp
+
+
+def ensure_default_artifact_ignore(config: LoopConfig) -> None:
+    artifact_dir = config.artifact_dir if config.artifact_dir.is_absolute() else config.cwd / config.artifact_dir
+    default_runs_dir = config.cwd / ".revrem" / "runs"
+    try:
+        artifact_dir.relative_to(default_runs_dir)
+    except ValueError:
+        return
+    ignore_path = config.cwd / ".revrem" / ".gitignore"
+    if ignore_path.exists():
+        return
+    ignore_path.parent.mkdir(parents=True, exist_ok=True)
+    ignore_path.write_text("runs/\n", encoding="utf-8")
 
 
 def resolve_timeout_seconds(value: float) -> float | None:
