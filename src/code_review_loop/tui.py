@@ -17,7 +17,7 @@ INSTALL_HINT = "Install it with: python -m pip install 'code-review-loop[tui]'"
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = parse_args([] if argv is None else argv)
+    args = parse_args(sys.argv[1:] if argv is None else argv)
     if args.dry_run:
         print("RevRem TUI entry point is available.")
         return 0

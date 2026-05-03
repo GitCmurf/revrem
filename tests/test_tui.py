@@ -15,6 +15,21 @@ def test_tui_dry_run_does_not_require_textual(capsys):
     assert captured.err == ""
 
 
+def test_tui_main_uses_process_argv_when_called_without_explicit_argv(monkeypatch, capsys):
+    monkeypatch.setattr(tui.sys, "argv", ["revrem", "--dry-run"])
+
+    def fail_find_spec(name: str, *args, **kwargs):
+        raise AssertionError(f"unexpected dependency check for {name}")
+
+    monkeypatch.setattr(tui.importlib.util, "find_spec", fail_find_spec)
+
+    assert tui.main() == 0
+
+    captured = capsys.readouterr()
+    assert "RevRem TUI entry point is available." in captured.out
+    assert captured.err == ""
+
+
 def test_tui_reports_missing_optional_dependency(monkeypatch, capsys):
     real_find_spec = importlib.util.find_spec
 

@@ -104,6 +104,8 @@ revrem ui --profile final-pr
 The TUI renders Home, Profiles, Pipeline, and Run Monitor sections. Use
 `--profile NAME` to choose the initial profile and press `d` to launch a
 dry-run preview through the same command plan shown in the interface.
+When `code_review_loop.tui.main()` is used as a module entry point, it honors
+the current process argv in the same way as `revrem ui`.
 
 ## Development
 
