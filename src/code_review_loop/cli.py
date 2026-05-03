@@ -403,9 +403,10 @@ def run_subprocess_with_terminal_title_refresh(
                 stdout, stderr = process.communicate(input=pending_input, timeout=wait)
                 return subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
             except subprocess.TimeoutExpired:
-                # `communicate()` retains partially written stdin and resumes
-                # from the saved offset on the next call, so keep the original
-                # input available across refresh timeouts.
+                # `communicate()` cannot accept stdin again after it has started.
+                # Keep waiting without resending input; the subprocess object
+                # retains any buffered stdin internally.
+                pending_input = None
                 pass
     except BaseException:
         try:
@@ -882,8 +883,16 @@ def git_worktree_status_command_for_commit(_config: LoopConfig) -> list[str]:
     return ["git", "status", "--porcelain=v1", "--untracked-files=all"]
 
 
+def git_repo_root(start: Path) -> Path:
+    resolved_start = start.resolve()
+    for candidate in (resolved_start, *resolved_start.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    raise RuntimeError(f"unable to determine git repository root from {start}")
+
+
 def commit_artifact_relative_path(config: LoopConfig) -> Path | None:
-    cwd_root = config.cwd.resolve()
+    repo_root = git_repo_root(config.cwd)
     artifact_root = (
         config.artifact_dir
         if config.artifact_dir.is_absolute()
@@ -891,7 +900,7 @@ def commit_artifact_relative_path(config: LoopConfig) -> Path | None:
     )
     resolved_root = artifact_root.resolve()
     try:
-        artifact_rel = resolved_root.relative_to(cwd_root)
+        artifact_rel = resolved_root.relative_to(repo_root)
     except ValueError:
         return None
     if artifact_rel == Path("."):
@@ -906,10 +915,11 @@ def git_reset_artifact_command_for_commit(config: LoopConfig) -> list[str] | Non
     artifact_rel = commit_artifact_relative_path(config)
     if artifact_rel is None:
         return None
-    # Keep generated loop artifacts out of the staged commit. Resolve relative
-    # artifact roots against the working tree first so paths outside cwd are
-    # skipped instead of being handed to git reset as invalid pathspecs.
-    return ["git", "reset", "--", artifact_rel.as_posix()]
+    repo_root = git_repo_root(config.cwd)
+    # Keep generated loop artifacts out of the staged commit. Resolve artifact
+    # paths from the git root so subdirectory invocations can still reset files
+    # that live elsewhere inside the same repository.
+    return ["git", "-C", str(repo_root), "reset", "--", artifact_rel.as_posix()]
 
 
 def run_commit(config: LoopConfig, runner: Runner, iteration: int) -> str:
@@ -1610,7 +1620,8 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         help=(
             "Stage and commit after each remediation pass whose verification checks pass. "
             "Requires a clean worktree before the loop starts and rejects artifact "
-            "directories that resolve to the repository root."
+            "directories that resolve to the repository root; artifact paths are reset "
+            "from the git root so subdirectory runs can still exclude generated files."
         ),
     )
     commit_group.add_argument(

@@ -11,6 +11,13 @@ import pytest
 from code_review_loop import cli as MODULE
 
 
+def make_git_worktree(tmp_path: Path, cwd_rel: str | None = "work") -> tuple[Path, Path]:
+    (tmp_path / ".git").mkdir(exist_ok=True)
+    cwd = tmp_path if cwd_rel is None else tmp_path / cwd_rel
+    cwd.mkdir(parents=True, exist_ok=True)
+    return tmp_path, cwd
+
+
 def test_main_reports_package_version(capsys):
     with pytest.raises(SystemExit) as excinfo:
         MODULE.main(["--version"])
@@ -614,6 +621,7 @@ def test_loop_commits_after_passing_checks(tmp_path):
             "No actionable findings.\nREVIEW_STATUS: clear\n",
         ]
     )
+    repo_root, cwd = make_git_worktree(tmp_path)
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
@@ -625,7 +633,7 @@ def test_loop_commits_after_passing_checks(tmp_path):
             return MODULE.CommandResult(list(args), 0, stdout="1 passed\n")
         if args[:3] == ["git", "add", "-A"]:
             return MODULE.CommandResult(list(args), 0)
-        if args[:3] == ["git", "reset", "--"]:
+        if args[:4] == ["git", "-C", str(repo_root), "reset"]:
             return MODULE.CommandResult(list(args), 0)
         if args[:3] == ["git", "diff", "--cached"] and "--quiet" in args:
             return MODULE.CommandResult(list(args), 1)
@@ -643,7 +651,7 @@ def test_loop_commits_after_passing_checks(tmp_path):
         base="main",
         max_iterations=1,
         codex_bin="codex",
-        cwd=tmp_path,
+        cwd=cwd,
         artifact_dir=tmp_path / "artifacts",
         check_commands=("pytest -q",),
         commit_after_remediation=True,
@@ -654,7 +662,7 @@ def test_loop_commits_after_passing_checks(tmp_path):
 
     commands = [call[0] for call in calls]
     assert ["git", "add", "-A"] in commands
-    assert ["git", "reset", "--", "artifacts"] in commands
+    assert ["git", "-C", str(repo_root), "reset", "--", "artifacts"] in commands
     assert ["git", "commit", "-m", "fix(cli): harden RevRem commit flow (RevRem)"] in commands
     assert any(command[:6] == ["codex", "exec", "--sandbox", "read-only", "--color", "never"] for command in commands)
     assert summary["iterations"][0]["commit_status"] == "committed"
@@ -676,17 +684,20 @@ def test_loop_commits_after_passing_checks(tmp_path):
 
 
 def test_git_staging_commands_for_commit_reset_relative_artifact_dir(tmp_path):
+    repo_root, cwd = make_git_worktree(tmp_path)
     config = MODULE.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
-        cwd=tmp_path,
-        artifact_dir=Path("artifacts/revrem"),
+        cwd=cwd,
+        artifact_dir=Path("../artifacts/revrem"),
     )
 
     assert MODULE.git_add_command_for_commit(config) == ["git", "add", "-A"]
     assert MODULE.git_reset_artifact_command_for_commit(config) == [
         "git",
+        "-C",
+        str(repo_root),
         "reset",
         "--",
         "artifacts/revrem",
@@ -694,13 +705,13 @@ def test_git_staging_commands_for_commit_reset_relative_artifact_dir(tmp_path):
 
 
 def test_git_staging_commands_skip_relative_artifact_dir_outside_cwd(tmp_path):
-    repo_root = tmp_path / "repo"
+    _repo_root, cwd = make_git_worktree(tmp_path)
     config = MODULE.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
-        cwd=repo_root,
-        artifact_dir=Path("../revrem-artifacts"),
+        cwd=cwd,
+        artifact_dir=Path("../../revrem-artifacts"),
     )
 
     assert MODULE.git_add_command_for_commit(config) == ["git", "add", "-A"]
@@ -709,6 +720,7 @@ def test_git_staging_commands_skip_relative_artifact_dir_outside_cwd(tmp_path):
 
 def test_run_commit_refuses_repo_root_artifact_dir_before_staging(tmp_path):
     calls = []
+    make_git_worktree(tmp_path, cwd_rel=None)
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
@@ -803,6 +815,7 @@ def test_loop_refuses_to_auto_commit_from_dirty_worktree(tmp_path):
 
 def test_loop_stops_after_unknown_review_when_remediation_has_no_staged_changes(tmp_path):
     calls = []
+    repo_root, cwd = make_git_worktree(tmp_path)
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
@@ -814,7 +827,7 @@ def test_loop_stops_after_unknown_review_when_remediation_has_no_staged_changes(
             return MODULE.CommandResult(list(args), 0, stdout="1 passed\n")
         if args[:3] == ["git", "add", "-A"]:
             return MODULE.CommandResult(list(args), 0)
-        if args[:3] == ["git", "reset", "--"]:
+        if args[:4] == ["git", "-C", str(repo_root), "reset"]:
             return MODULE.CommandResult(list(args), 0)
         if args[:3] == ["git", "diff", "--cached"] and "--quiet" in args:
             return MODULE.CommandResult(list(args), 0)
@@ -824,7 +837,7 @@ def test_loop_stops_after_unknown_review_when_remediation_has_no_staged_changes(
         base="main",
         max_iterations=3,
         codex_bin="codex",
-        cwd=tmp_path,
+        cwd=cwd,
         artifact_dir=tmp_path / "artifacts",
         check_commands=("pytest -q",),
         commit_after_remediation=True,
@@ -842,6 +855,7 @@ def test_loop_stops_after_unknown_review_when_remediation_has_no_staged_changes(
 
 def test_loop_writes_failure_summary_when_commit_fails(tmp_path):
     review_outputs = iter(["Full review comments:\n\n- [P2] Fix profile merge\n"])
+    repo_root, cwd = make_git_worktree(tmp_path)
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
@@ -850,7 +864,7 @@ def test_loop_writes_failure_summary_when_commit_fails(tmp_path):
             return MODULE.CommandResult(list(args), 0, stdout=next(review_outputs))
         if args[:3] == ["git", "add", "-A"]:
             return MODULE.CommandResult(list(args), 0)
-        if args[:3] == ["git", "reset", "--"]:
+        if args[:4] == ["git", "-C", str(repo_root), "reset"]:
             return MODULE.CommandResult(list(args), 0)
         if args[:3] == ["git", "diff", "--cached"] and "--quiet" in args:
             return MODULE.CommandResult(list(args), 1)
@@ -864,7 +878,7 @@ def test_loop_writes_failure_summary_when_commit_fails(tmp_path):
         base="main",
         max_iterations=1,
         codex_bin="codex",
-        cwd=tmp_path,
+        cwd=cwd,
         artifact_dir=tmp_path / "artifacts",
         commit_after_remediation=True,
         commit_message_model=None,
@@ -1073,6 +1087,53 @@ def test_subprocess_refresh_loop_kills_child_on_interrupt(tmp_path, monkeypatch)
     assert fake_process.killed is True
     assert fake_process.communicate_calls == 2
     assert len(refresh_calls) == 1
+
+
+def test_subprocess_refresh_loop_does_not_resend_input_after_timeout(tmp_path, monkeypatch):
+    refresh_calls = []
+
+    class FakeProcess:
+        def __init__(self):
+            self.communicate_calls = 0
+            self.returncode = 0
+
+        def communicate(self, input=None, timeout=None):
+            self.communicate_calls += 1
+            if self.communicate_calls == 1:
+                assert input == "prompt"
+                raise MODULE.subprocess.TimeoutExpired(["codex", "exec"], timeout)
+            assert input is None
+            return ("stdout", "stderr")
+
+        def kill(self):
+            raise AssertionError("kill should not be called for a normal timeout retry")
+
+        def poll(self):
+            return None
+
+    fake_process = FakeProcess()
+
+    def fake_popen(*args, **kwargs):
+        return fake_process
+
+    def fake_refresh():
+        refresh_calls.append("refresh")
+
+    monkeypatch.setattr(MODULE.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(MODULE, "refresh_terminal_title", fake_refresh)
+    monkeypatch.setattr(MODULE, "TERMINAL_TITLE_REFRESH_SECONDS", 0.01)
+
+    completed = MODULE.run_subprocess_with_terminal_title_refresh(
+        ["codex", "exec"],
+        cwd=tmp_path,
+        input="prompt",
+        timeout=1,
+    )
+
+    assert completed.stdout == "stdout"
+    assert completed.stderr == "stderr"
+    assert fake_process.communicate_calls == 2
+    assert len(refresh_calls) == 2
 
 
 def test_resolve_timeout_seconds_allows_disabling_timeout():
@@ -2913,7 +2974,7 @@ def test_subprocess_refresh_loop_stops_resending_stdin_after_timeout(tmp_path, m
             if self.communicate_calls == 1:
                 assert input == "prompt"
                 raise MODULE.subprocess.TimeoutExpired(["codex", "exec"], timeout)
-            assert input == "prompt"
+            assert input is None
             assert not self.stdin.closed, "stdin should stay open while waiting on the same child"
             return ("stdout", "stderr")
 
@@ -2943,7 +3004,7 @@ def test_subprocess_refresh_loop_stops_resending_stdin_after_timeout(tmp_path, m
     assert result.stderr == "stderr"
     assert fake_process.stdin.closed is False
     assert fake_process.communicate_calls == 2
-    assert fake_process.inputs == ["prompt", "prompt"]
+    assert fake_process.inputs == ["prompt", None]
     assert len(refresh_calls) == 2
 
 
