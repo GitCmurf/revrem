@@ -39,7 +39,9 @@ RevRem adds `.revrem/runs/` to the repository-local `.git/info/exclude` on the
 first default-artifact run, falling back to `.revrem/.gitignore` outside Git
 repositories. The ignore file is scoped to the workspace path rather than
 crossing into unrelated parent checkouts, so local transcripts stay out of
-commits without editing tracked ignore files.
+commits without editing tracked ignore files. Existing ignore files are checked
+by exact line match so longer paths like `work/.revrem/runs/` do not suppress
+the root `.revrem/runs/` entry.
 History-backed artifact pointers are resolved against the recorded run `cwd`,
 so the TUI can still show existing artifacts when you inspect a run from a
 different checkout.

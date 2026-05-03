@@ -2131,7 +2131,8 @@ def ensure_default_artifact_ignore(config: LoopConfig) -> None:
     ignore_path = ignore_path or (config.cwd / ".revrem" / ".gitignore")
     if ignore_path.exists():
         existing = ignore_path.read_text(encoding="utf-8")
-        if ignore_entry in existing:
+        existing_entries = set(existing.splitlines())
+        if ignore_entry in existing_entries:
             return
         if existing and not existing.endswith("\n"):
             existing += "\n"

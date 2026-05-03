@@ -1551,6 +1551,32 @@ def test_run_loop_uses_repo_root_exclude_for_default_artifacts_from_subdirectory
     assert not (worktree / ".revrem" / ".gitignore").exists()
 
 
+def test_run_loop_appends_repo_root_exclude_when_existing_longer_entry_contains_substring(tmp_path):
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[1] == "review":
+            return MODULE.CommandResult(list(args), 0, stdout="No findings.\n")
+        return MODULE.CommandResult(list(args), 0, stdout="fixed\n")
+
+    repo_root = tmp_path
+    git_info = repo_root / ".git" / "info"
+    git_info.mkdir(parents=True)
+    (git_info / "exclude").write_text("work/.revrem/runs/\n", encoding="utf-8")
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=repo_root,
+        artifact_dir=repo_root / ".revrem" / "runs" / "run-1",
+        progress=False,
+    )
+
+    MODULE.run_loop(config, runner)
+
+    assert (git_info / "exclude").read_text(encoding="utf-8") == (
+        "work/.revrem/runs/\n.revrem/runs/\n"
+    )
+
+
 def test_run_loop_falls_back_to_workspace_gitignore_for_symlinked_default_artifacts(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
