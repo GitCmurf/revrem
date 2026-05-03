@@ -335,8 +335,45 @@ def resolve_profile(
     home: Path | None = None,
     require_implemented: bool = True,
 ) -> Profile:
-    user_file = load_profile_file(user_config_path(home))
-    project_file = load_profile_file(project_config_path(cwd))
+    user_file, project_file = load_profile_files(cwd=cwd, home=home)
+    return resolve_profile_from_files(
+        name,
+        user_file=user_file,
+        project_file=project_file,
+        require_implemented=require_implemented,
+    )
+
+
+def resolve_profiles(
+    *,
+    cwd: Path,
+    home: Path | None = None,
+    require_implemented: bool = True,
+) -> list[Profile]:
+    user_file, project_file = load_profile_files(cwd=cwd, home=home)
+    names = sorted(set(user_file.profiles) | set(project_file.profiles))
+    return [
+        resolve_profile_from_files(
+            name,
+            user_file=user_file,
+            project_file=project_file,
+            require_implemented=require_implemented,
+        )
+        for name in names
+    ]
+
+
+def load_profile_files(*, cwd: Path, home: Path | None = None) -> tuple[ProfileFile, ProfileFile]:
+    return load_profile_file(user_config_path(home)), load_profile_file(project_config_path(cwd))
+
+
+def resolve_profile_from_files(
+    name: str,
+    *,
+    user_file: ProfileFile,
+    project_file: ProfileFile,
+    require_implemented: bool = True,
+) -> Profile:
     raw: dict[str, Any] = {}
     source = None
     found = False
@@ -378,7 +415,7 @@ def resolve_defaults(*, cwd: Path, home: Path | None = None) -> Profile:
 
 
 def list_profiles(*, cwd: Path, home: Path | None = None) -> list[Profile]:
-    files = [load_profile_file(user_config_path(home)), load_profile_file(project_config_path(cwd))]
+    files = load_profile_files(cwd=cwd, home=home)
     seen: dict[str, Profile] = {}
     for profile_file in files:
         for name, profile in profile_file.profiles.items():

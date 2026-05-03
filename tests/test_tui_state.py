@@ -96,6 +96,33 @@ description = "Final PR"
     assert snapshot.run_previews[0].shell_command == "revrem --profile final-pr"
 
 
+def test_shell_model_reuses_batch_resolved_profiles(tmp_path, monkeypatch):
+    profile = profiles.Profile(
+        name="final-pr",
+        description="Final PR",
+        pipeline=profiles.PipelineConfig(base="trunk", checks=("git diff --check",)),
+    )
+    calls = []
+
+    def fake_resolve_profiles(*, cwd, home=None, require_implemented=True):
+        calls.append((cwd, home, require_implemented))
+        return [profile]
+
+    def fail_resolve_profile(*args, **kwargs):
+        raise AssertionError("build_shell_model should not re-read a selected profile")
+
+    monkeypatch.setattr(tui_state.profiles, "resolve_profiles", fake_resolve_profiles)
+    monkeypatch.setattr(tui_state.profiles, "resolve_profile", fail_resolve_profile)
+
+    model = tui_state.build_shell_model(cwd=tmp_path, selected_profile_name="final-pr")
+
+    assert calls == [(tmp_path, None, False)]
+    assert model.selected_profile_name == "final-pr"
+    assert model.selected_launch_plan is not None
+    assert model.selected_launch_plan.shell_command == "revrem --profile final-pr --dry-run"
+    assert model.snapshot.profiles[0].base == "trunk"
+
+
 def test_pipeline_phases_model_review_triage_checks_and_commit():
     profile = profiles.Profile(
         name="demo",

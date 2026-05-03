@@ -103,20 +103,32 @@ def build_home_snapshot(
     history_limit: int = 5,
     history_path: Path | None = None,
 ) -> HomeSnapshot:
-    profile_list = tuple(profiles.list_profiles(cwd=cwd, home=home))
-    resolved_profiles = tuple(
-        profiles.resolve_profile(profile.name, cwd=cwd, home=home, require_implemented=False)
-        for profile in profile_list
+    resolved_profiles = tuple(profiles.resolve_profiles(cwd=cwd, home=home, require_implemented=False))
+    return home_snapshot_for_profiles(
+        cwd=cwd,
+        resolved_profiles=resolved_profiles,
+        history_limit=history_limit,
+        history_path=history_path,
     )
+
+
+def home_snapshot_for_profiles(
+    *,
+    cwd: Path,
+    resolved_profiles: tuple[profiles.Profile, ...],
+    history_limit: int = 5,
+    history_path: Path | None = None,
+) -> HomeSnapshot:
+    recent_runs = tuple(run_history.read_history(history_path, limit=history_limit))
     return HomeSnapshot(
         cwd=str(cwd),
         profiles=tuple(profile_view(profile) for profile in resolved_profiles),
-        recent_runs=tuple(run_history.read_history(history_path, limit=history_limit)),
+        recent_runs=recent_runs,
         harnesses=harness_views(),
         run_previews=tuple(run_preview(profile) for profile in resolved_profiles),
         run_monitors=tuple(
             run_monitor_view(record)
-            for record in run_history.read_history(history_path, limit=history_limit)
+            for record in recent_runs
         ),
     )
 
@@ -129,13 +141,14 @@ def build_shell_model(
     history_path: Path | None = None,
     selected_profile_name: str | None = None,
 ) -> TuiShellModel:
-    snapshot = build_home_snapshot(
+    resolved_profiles = tuple(profiles.resolve_profiles(cwd=cwd, home=home, require_implemented=False))
+    snapshot = home_snapshot_for_profiles(
         cwd=cwd,
-        home=home,
+        resolved_profiles=resolved_profiles,
         history_limit=history_limit,
         history_path=history_path,
     )
-    selected_profile = _select_profile(cwd, home, snapshot, selected_profile_name)
+    selected_profile = _select_profile(resolved_profiles, selected_profile_name)
     plan = launch_plan(selected_profile, dry_run=True) if selected_profile is not None else None
     return TuiShellModel(
         snapshot=snapshot,
@@ -151,12 +164,10 @@ def build_shell_model(
 
 
 def _select_profile(
-    cwd: Path,
-    home: Path | None,
-    snapshot: HomeSnapshot,
+    resolved_profiles: tuple[profiles.Profile, ...],
     selected_profile_name: str | None = None,
 ) -> profiles.Profile | None:
-    profile_names = [profile.name for profile in snapshot.profiles]
+    profile_names = [profile.name for profile in resolved_profiles]
     if not profile_names:
         if selected_profile_name is not None:
             raise FileNotFoundError(f"profile not found: {selected_profile_name}")
@@ -164,7 +175,7 @@ def _select_profile(
     if selected_profile_name is not None and selected_profile_name not in profile_names:
         raise FileNotFoundError(f"profile not found: {selected_profile_name}")
     wanted_name = selected_profile_name or profile_names[0]
-    return profiles.resolve_profile(wanted_name, cwd=cwd, home=home, require_implemented=False)
+    return next(profile for profile in resolved_profiles if profile.name == wanted_name)
 
 
 def home_screen(snapshot: HomeSnapshot, *, selected_profile_name: str | None = None) -> TuiScreen:
