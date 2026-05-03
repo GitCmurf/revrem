@@ -142,6 +142,16 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
         )
         == "clear"
     )
+    assert (
+        MODULE.detect_review_status(
+            '{\n'
+            '  "findings": [],\n'
+            '  "explanation": "I did not identify any discrete introduced bugs that should '
+            'block the patch."\n'
+            '}\n'
+        )
+        == "clear"
+    )
 
 
 def test_detect_review_status_does_not_generalize_negated_clear_with_findings():

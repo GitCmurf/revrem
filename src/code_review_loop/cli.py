@@ -559,6 +559,10 @@ AFFIRMATIVE_ISSUE_WORD_RE = re.compile(
     r"failure|failures|finding|findings)\b",
     re.IGNORECASE,
 )
+STRUCTURED_EMPTY_FINDINGS_RE = re.compile(
+    r'(?<!\w)["\']?findings["\']?\s*:\s*\[\s*\](?!\w)',
+    re.IGNORECASE,
+)
 
 NEGATED_ISSUE_PREFIX_RE = r"(?:clear|discrete|actionable|introduced|known|new|obvious|blocking|material|major|serious|outstanding|significant|additional|further|remaining|open|critical|severe|real|actual|genuine|substantive|meaningful|correctness|security|maintainability)"
 NEGATED_ISSUE_PREFIX_CHAIN_RE = rf"{NEGATED_ISSUE_PREFIX_RE}(?:[\s,;:-]+{NEGATED_ISSUE_PREFIX_RE})*"
@@ -581,6 +585,11 @@ def has_affirmative_issue_prose(output: str) -> bool:
         if not sentence:
             continue
         normalized_sentence = sentence.lower()
+        if STRUCTURED_EMPTY_FINDINGS_RE.search(sentence):
+            # Codex-style structured output often includes a literal empty findings
+            # array alongside a clear explanation. Do not treat that field name as
+            # affirmative issue prose.
+            continue
         if not AFFIRMATIVE_ISSUE_WORD_RE.search(sentence):
             continue
         if has_negated_clear_review_statement(normalized_sentence):
