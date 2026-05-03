@@ -56,7 +56,9 @@ From this repository:
 ./scripts/install-dev
 ```
 
-This creates or updates `./.venv` as an editable install. Use it for changes in
+This creates or updates `./.venv` as an editable install. If the active
+interpreter is older than Python 3.11, it fails fast before writing fallback
+launchers, and it recreates a stale `./.venv` when needed. Use it for changes in
 this repository:
 
 ```bash

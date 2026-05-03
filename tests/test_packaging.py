@@ -9,6 +9,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _prepare_temp_repo(tmp_path: Path) -> Path:
+    repo = tmp_path / "repo"
+    script_dir = repo / "scripts"
+    script_dir.mkdir(parents=True)
+
+    install_dev = script_dir / "install-dev"
+    install_dev.write_text((ROOT / "scripts/install-dev").read_text(encoding="utf-8"), encoding="utf-8")
+    install_dev.chmod(0o755)
+
+    return repo
+
+
 def test_console_entry_points_include_stable_alias():
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
@@ -187,3 +199,158 @@ def test_install_dev_targets_repo_local_virtualenv():
     assert '"$PYTHON" -m venv .venv' in script
     assert './.venv/bin/python -m pip install -e ".[dev]"' in script
     assert 'PYTHONPATH="$REPO_ROOT/src\\${PYTHONPATH:+:\\$PYTHONPATH}"' in script
+
+
+def test_install_dev_refuses_interpreters_older_than_python_311(tmp_path):
+    repo = _prepare_temp_repo(tmp_path)
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_python = fake_bin / "python3"
+    fake_python.write_text(
+        """#!/usr/bin/env sh
+case "$1" in
+  -c)
+    exit 1
+    ;;
+  -m)
+    if [ "$2" = "venv" ]; then
+      mkdir -p "$3/bin"
+      cat > "$3/bin/python" <<'EOF'
+#!/usr/bin/env sh
+case "$1" in
+  -c)
+    exit 1
+    ;;
+  -m)
+    if [ "$2" = "pip" ]; then
+      touch "${FAKE_PIP_MARKER:?}"
+      exit 0
+    fi
+    ;;
+esac
+exit 0
+EOF
+      chmod +x "$3/bin/python"
+      touch "${FAKE_VENV_MARKER:?}"
+      exit 0
+    fi
+    ;;
+esac
+exit 0
+""",
+        encoding="utf-8",
+    )
+    fake_python.chmod(0o755)
+    pip_marker = tmp_path / "unexpected-pip-call"
+    venv_marker = tmp_path / "venv-created"
+    env = {
+        **os.environ,
+        "PATH": f"{fake_bin}:{os.environ.get('PATH', '')}",
+        "PYTHON": str(fake_python),
+        "FAKE_PIP_MARKER": str(pip_marker),
+        "FAKE_VENV_MARKER": str(venv_marker),
+    }
+
+    result = subprocess.run(
+        ["sh", str(repo / "scripts/install-dev")],
+        cwd=repo,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "Python 3.11 or newer" in result.stderr
+    assert venv_marker.exists()
+    assert not pip_marker.exists()
+    assert not (repo / ".venv" / "bin" / "code-review-loop").exists()
+    assert not (repo / ".venv" / "bin" / "revrem").exists()
+
+
+def test_install_dev_recreates_stale_virtualenv(tmp_path):
+    repo = _prepare_temp_repo(tmp_path)
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_python = fake_bin / "python3"
+    fake_python.write_text(
+        """#!/usr/bin/env sh
+case "$1" in
+  -c)
+    exit 0
+    ;;
+  -m)
+    if [ "$2" = "venv" ]; then
+      mkdir -p "$3/bin"
+      cat > "$3/bin/python" <<'EOF'
+#!/usr/bin/env sh
+case "$1" in
+  -c)
+    exit 0
+    ;;
+  -m)
+    if [ "$2" = "pip" ]; then
+      touch "${FAKE_PIP_MARKER:?}"
+      exit 0
+    fi
+    ;;
+esac
+exit 0
+EOF
+      chmod +x "$3/bin/python"
+      touch "${FAKE_VENV_MARKER:?}"
+      exit 0
+    fi
+    ;;
+esac
+exit 0
+""",
+        encoding="utf-8",
+    )
+    fake_python.chmod(0o755)
+
+    venv_dir = repo / ".venv"
+    stale_bin = venv_dir / "bin"
+    stale_bin.mkdir(parents=True)
+    stale_python = stale_bin / "python"
+    stale_python.write_text(
+        """#!/usr/bin/env sh
+case "$1" in
+  -c)
+    exit 1
+    ;;
+esac
+exit 0
+""",
+        encoding="utf-8",
+    )
+    stale_python.chmod(0o755)
+    stale_marker = venv_dir / "obsolete.txt"
+    stale_marker.write_text("stale", encoding="utf-8")
+
+    pip_marker = tmp_path / "pip-called"
+    venv_marker = tmp_path / "venv-recreated"
+    env = {
+        **os.environ,
+        "PATH": f"{fake_bin}:{os.environ.get('PATH', '')}",
+        "PYTHON": str(fake_python),
+        "FAKE_PIP_MARKER": str(pip_marker),
+        "FAKE_VENV_MARKER": str(venv_marker),
+    }
+
+    result = subprocess.run(
+        ["sh", str(repo / "scripts/install-dev")],
+        cwd=repo,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert venv_marker.exists()
+    assert pip_marker.exists()
+    assert not stale_marker.exists()
+    assert "exit 0" in stale_python.read_text(encoding="utf-8")
+    assert not (repo / ".venv" / "bin" / "code-review-loop").exists()
+    assert not (repo / ".venv" / "bin" / "revrem").exists()

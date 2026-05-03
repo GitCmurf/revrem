@@ -7,8 +7,21 @@ PYTHON=${PYTHON:-python3}
 
 cd "$REPO_ROOT"
 
+python_supports_requires_python() {
+  "$1" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)'
+}
+
+if [ -x ./.venv/bin/python ] && ! python_supports_requires_python ./.venv/bin/python; then
+  rm -rf ./.venv
+fi
+
 if [ ! -x ./.venv/bin/python ]; then
   "$PYTHON" -m venv .venv
+fi
+
+if ! python_supports_requires_python ./.venv/bin/python; then
+  printf '%s\n' "ERROR: ./.venv/bin/python must be Python 3.11 or newer to install development tooling." >&2
+  exit 1
 fi
 
 if ./.venv/bin/python -m pip install -e ".[dev]"; then
