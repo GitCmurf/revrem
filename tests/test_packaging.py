@@ -39,6 +39,14 @@ def test_optional_tui_extra_declares_textual_dependency():
     assert any(dependency.startswith("rich>=") for dependency in tui_extra)
 
 
+def test_readme_tui_install_and_launch_commands_use_the_same_venv():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert './.venv/bin/pip install -e ".[tui]"' in readme
+    assert "./.venv/bin/revrem ui" in readme
+    assert "./.venv/bin/revrem ui --profile final-pr" in readme
+
+
 def test_dev_extra_exercises_rich_and_textual_paths():
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 

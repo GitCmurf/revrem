@@ -109,8 +109,8 @@ dependency-light:
 
 ```bash
 ./.venv/bin/pip install -e ".[tui]"
-revrem ui
-revrem ui --profile final-pr
+./.venv/bin/revrem ui
+./.venv/bin/revrem ui --profile final-pr
 ```
 
 The TUI renders Home, Profiles, Pipeline, and Run Monitor sections. Use
