@@ -176,6 +176,13 @@ def test_detect_review_status_does_not_treat_scoped_clear_prose_as_clear_when_is
         )
         == "unknown"
     )
+    assert (
+        MODULE.detect_review_status(
+            "I did not find any actionable bugs.\n\n"
+            "No validation prevents this regression."
+        )
+        == "unknown"
+    )
 
 
 def test_detect_review_status_ignores_stderr_transcript_noise():

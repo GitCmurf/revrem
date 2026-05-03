@@ -476,9 +476,18 @@ AFFIRMATIVE_ISSUE_WORD_RE = re.compile(
     re.IGNORECASE,
 )
 
-NEGATED_ISSUE_WORD_RE = re.compile(
-    r"\b(?:no|without|lack|lacks|lacked|lacking|did not|does not|do not|"
-    r"don't|doesn't|can't|cannot|free of)\b",
+NEGATED_ISSUE_PREFIX_RE = r"(?:clear|discrete|actionable|introduced|known|new|obvious|blocking|material|major|serious|outstanding|significant|additional|further|remaining|open|critical|severe|real|actual|genuine|substantive|meaningful|correctness|security|maintainability)"
+NEGATED_ISSUE_PREFIX_CHAIN_RE = rf"{NEGATED_ISSUE_PREFIX_RE}(?:[\s,;:-]+{NEGATED_ISSUE_PREFIX_RE})*"
+NEGATED_ISSUE_WORD_RE = r"(?:bug|bugs|issue|issues|regression|regressions|defect|defects|problem|problems|failure|failures|finding|findings)"
+NEGATED_ISSUE_PROSE_RE = re.compile(
+    rf"\b(?:"
+    rf"no(?:\s+{NEGATED_ISSUE_PREFIX_CHAIN_RE})?\s+{NEGATED_ISSUE_WORD_RE}\b"
+    rf"|without(?:\s+any)?(?:\s+{NEGATED_ISSUE_PREFIX_CHAIN_RE})?\s+{NEGATED_ISSUE_WORD_RE}\b"
+    rf"|without\s+revealing(?:\s+any)?(?:\s+{NEGATED_ISSUE_PREFIX_CHAIN_RE})?\s+{NEGATED_ISSUE_WORD_RE}\b"
+    rf"|(?:did|does|do|didn't|doesn't|don't|cannot|can't)\s+not\s+"
+    rf"(?:find|identify|detect|see|spot|surface|observe|notice)\s+"
+    rf"(?:any\s+)?(?:{NEGATED_ISSUE_PREFIX_CHAIN_RE}\s+)?{NEGATED_ISSUE_WORD_RE}\b"
+    rf")",
     re.IGNORECASE,
 )
 
@@ -487,9 +496,12 @@ def has_affirmative_issue_prose(output: str) -> bool:
     for sentence in re.split(r"(?<=[.!?])\s+", output.strip()):
         if not sentence:
             continue
+        normalized_sentence = sentence.lower()
         if not AFFIRMATIVE_ISSUE_WORD_RE.search(sentence):
             continue
-        if NEGATED_ISSUE_WORD_RE.search(sentence):
+        if has_negated_clear_review_statement(normalized_sentence):
+            continue
+        if NEGATED_ISSUE_PROSE_RE.search(sentence):
             continue
         return True
     return False
