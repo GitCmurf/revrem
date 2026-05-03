@@ -159,7 +159,9 @@ the run identifier, cwd, base, profile, final status, iteration count, and the
 artifact pointer map used by the TUI, including the summary path. `revrem history list` skips malformed or truncated JSONL
 entries so one interrupted append does not hide earlier valid runs. Set
 `XDG_DATA_HOME` to relocate the data root or pass `--no-run-history` for a run
-that should not update shared history.
+that should not update shared history. Review invocation failures still write
+the per-run `summary.json` before the run is surfaced as a failed history entry,
+so auth, timeout, and startup errors remain inspectable.
 
 For richer watched-terminal output, install the optional progress extra and use
 `--progress-style rich`:

@@ -1479,12 +1479,20 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                 }
             )
         else:
-            status, review = run_codex_review(
-                config,
-                runner,
-                f"review-{iteration}",
-                display_label=str(iteration),
-            )
+            try:
+                status, review = run_codex_review(
+                    config,
+                    runner,
+                    f"review-{iteration}",
+                    display_label=str(iteration),
+                )
+            except RuntimeError as exc:
+                iterations.append({"iteration": iteration, "review_failed": True})
+                summary["final_status"] = "error"
+                summary["stopped_reason"] = "review_failed"
+                summary["error"] = str(exc)
+                write_summary(config, summary)
+                raise RunLoopFailed(summary, str(exc)) from exc
             last_review_output = actionable_review_output(_combined_output(review))
             iterations.append({"iteration": iteration, "review_status": status})
 
@@ -1554,12 +1562,20 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                 return summary
 
     if config.final_review:
-        status, final_review = run_codex_review(
-            config,
-            runner,
-            "review-final",
-            display_label="final",
-        )
+        try:
+            status, final_review = run_codex_review(
+                config,
+                runner,
+                "review-final",
+                display_label="final",
+            )
+        except RuntimeError as exc:
+            iterations.append({"iteration": "final", "review_failed": True})
+            summary["final_status"] = "error"
+            summary["stopped_reason"] = "review_failed"
+            summary["error"] = str(exc)
+            write_summary(config, summary)
+            raise RunLoopFailed(summary, str(exc)) from exc
         final_review_output = actionable_review_output(_combined_output(final_review))
         summary["latest_review_excerpt"] = excerpt_for_terminal(
             final_review_output,

@@ -3464,3 +3464,72 @@ def test_loop_writes_failure_summary_when_remediation_fails(tmp_path):
     assert '"artifact_paths"' in summary
     assert "review-1.txt" in summary
     assert '"1.txt"' not in summary
+
+
+def test_loop_writes_failure_summary_when_initial_review_invocation_fails(tmp_path):
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        return MODULE.CommandResult(list(args), 1, stderr="Error: failed to create session\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+    )
+
+    with pytest.raises(MODULE.RunLoopFailed) as excinfo:
+        MODULE.run_loop(config, runner)
+
+    summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
+    review_path = tmp_path / "artifacts" / "review-1.txt"
+
+    assert "review-1" in str(excinfo.value)
+    assert summary["final_status"] == "error"
+    assert summary["stopped_reason"] == "review_failed"
+    assert summary["error"].startswith("codex review failed for review-1; see ")
+    assert summary["iterations"] == [{"iteration": 1, "review_failed": True}]
+    assert summary["artifact_paths"]["summary"] == str(tmp_path / "artifacts" / "summary.json")
+    assert summary["artifact_paths"]["reviews"] == [str(review_path)]
+    assert review_path.is_file()
+
+
+def test_loop_writes_failure_summary_when_final_review_invocation_fails(tmp_path):
+    review_calls = 0
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        nonlocal review_calls
+        if args[1] == "review":
+            review_calls += 1
+            if review_calls == 1:
+                return MODULE.CommandResult(list(args), 0, stdout="Still failing.\nREVIEW_STATUS: findings\n")
+            return MODULE.CommandResult(list(args), 1, stderr="Error: failed to create session\n")
+        return MODULE.CommandResult(list(args), 0, stdout="attempted remediation\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+    )
+
+    with pytest.raises(MODULE.RunLoopFailed) as excinfo:
+        MODULE.run_loop(config, runner)
+
+    summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
+    review_path = tmp_path / "artifacts" / "review-final.txt"
+
+    assert "review-final" in str(excinfo.value)
+    assert summary["final_status"] == "error"
+    assert summary["stopped_reason"] == "review_failed"
+    assert summary["error"].startswith("codex review failed for review-final; see ")
+    assert summary["iterations"] == [
+        {"iteration": 1, "review_status": "findings", "check_failures": 0},
+        {"iteration": "final", "review_failed": True},
+    ]
+    assert summary["artifact_paths"]["reviews"] == [
+        str(tmp_path / "artifacts" / "review-1.txt"),
+        str(review_path),
+    ]
+    assert review_path.is_file()
