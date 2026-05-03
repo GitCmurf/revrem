@@ -3,12 +3,20 @@
 from __future__ import annotations
 
 import sys
+from collections import deque
+from contextlib import contextmanager
 from datetime import datetime
+from typing import Any
+
+_ACTIVE_LIVE: Any | None = None
+_ACTIVE_LIVE_LINES: deque[Any] | None = None
 
 
 def rich_available() -> bool:
     try:
         import rich.console  # type: ignore[import-not-found]  # noqa: F401
+        import rich.live  # type: ignore[import-not-found]  # noqa: F401
+        import rich.panel  # type: ignore[import-not-found]  # noqa: F401
     except ImportError:
         return False
     return True
@@ -34,6 +42,50 @@ def _styled_text(*parts: tuple[str, str | None]):
     return console, text
 
 
+@contextmanager
+def rich_live_progress(enabled: bool):
+    """Render Rich progress in one in-place panel when Rich is available."""
+    global _ACTIVE_LIVE, _ACTIVE_LIVE_LINES
+    if not enabled:
+        yield False
+        return
+    try:
+        from rich.console import Console, Group  # type: ignore[import-not-found]
+        from rich.live import Live  # type: ignore[import-not-found]
+        from rich.panel import Panel  # type: ignore[import-not-found]
+    except ImportError:
+        yield False
+        return
+
+    console = Console(file=sys.stderr, force_terminal=sys.stderr.isatty())
+    lines: deque[Any] = deque(maxlen=18)
+    live = Live(
+        Panel("Starting RevRem...", title="RevRem", border_style="green"),
+        console=console,
+        refresh_per_second=4,
+        transient=False,
+    )
+    previous_live = _ACTIVE_LIVE
+    previous_lines = _ACTIVE_LIVE_LINES
+    _ACTIVE_LIVE = (live, Panel, Group)
+    _ACTIVE_LIVE_LINES = lines
+    try:
+        with live:
+            yield True
+    finally:
+        _ACTIVE_LIVE = previous_live
+        _ACTIVE_LIVE_LINES = previous_lines
+
+
+def _update_live(text: Any) -> bool:
+    if _ACTIVE_LIVE is None or _ACTIVE_LIVE_LINES is None:
+        return False
+    live, panel_type, group_type = _ACTIVE_LIVE
+    _ACTIVE_LIVE_LINES.append(text)
+    live.update(panel_type(group_type(*_ACTIVE_LIVE_LINES), title="RevRem", border_style="green"))
+    return True
+
+
 def _timestamp_part() -> tuple[str, str]:
     return datetime.now().strftime("%H:%M:%S"), "dim"
 
@@ -52,6 +104,8 @@ def print_rich_event(phase: str, label: str, status: str, detail: str = "") -> b
     if rendered is None:
         return False
     console, text = rendered
+    if _update_live(text):
+        return True
     console.print(text)
     return True
 
@@ -70,6 +124,8 @@ def print_rich_message(phase: str, label: str, text: str, *, head: str = "") -> 
     if rendered is None:
         return False
     console, rendered_text = rendered
+    if _update_live(rendered_text):
+        return True
     console.print(rendered_text)
     return True
 
@@ -85,5 +141,7 @@ def print_rich_continuation(phase: str, label: str, text: str, *, indent: int = 
     if rendered is None:
         return False
     console, rendered_text = rendered
+    if _update_live(rendered_text):
+        return True
     console.print(rendered_text)
     return True

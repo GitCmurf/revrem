@@ -1304,7 +1304,10 @@ def resolve_initial_review_file(value: str | None, search_root: Path) -> Path | 
 
 
 def run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, object]:
-    with terminal_title_context(config):
+    with (
+        terminal_title_context(config),
+        progress.rich_live_progress(config.progress and config.progress_style == "rich"),
+    ):
         return _run_loop(config, runner)
 
 
@@ -1699,10 +1702,19 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         choices=("always", "never", "auto"),
         help="Color mode for codex exec remediation output. Default: never.",
     )
-    parser.add_argument(
+    exec_json_group = parser.add_mutually_exclusive_group()
+    exec_json_group.add_argument(
         "--exec-json",
+        dest="exec_json",
         action="store_true",
+        default=None,
         help="Pass --json to codex exec and capture JSONL event output.",
+    )
+    exec_json_group.add_argument(
+        "--no-exec-json",
+        dest="exec_json",
+        action="store_false",
+        help="Do not pass --json to codex exec even when a profile enables it.",
     )
     output_last_message_group = parser.add_mutually_exclusive_group()
     output_last_message_group.add_argument(
@@ -1823,15 +1835,33 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         default=None,
         help="Summary format printed to stdout. Full JSON is always written to summary.json.",
     )
-    parser.add_argument(
+    debug_status_group = parser.add_mutually_exclusive_group()
+    debug_status_group.add_argument(
         "--debug-status-detection",
+        dest="debug_status_detection",
         action="store_true",
+        default=None,
         help="Write per-review status-classification diagnostics next to review artifacts.",
     )
-    parser.add_argument(
+    debug_status_group.add_argument(
+        "--no-debug-status-detection",
+        dest="debug_status_detection",
+        action="store_false",
+        help="Disable status-classification diagnostics even when a profile enables them.",
+    )
+    quiet_progress_group = parser.add_mutually_exclusive_group()
+    quiet_progress_group.add_argument(
         "--quiet-progress",
+        dest="quiet_progress",
         action="store_true",
+        default=None,
         help="Suppress timestamped progress logs on stderr.",
+    )
+    quiet_progress_group.add_argument(
+        "--no-quiet-progress",
+        dest="quiet_progress",
+        action="store_false",
+        help="Show progress logs even when a profile suppresses them.",
     )
     parser.add_argument(
         "--progress-style",
@@ -1839,13 +1869,22 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         default=None,
         help="Progress log style. Compact is easiest to scan in logs; rich is used only when Rich is installed.",
     )
-    parser.add_argument(
+    terminal_title_group = parser.add_mutually_exclusive_group()
+    terminal_title_group.add_argument(
         "--terminal-title",
+        dest="terminal_title",
         action="store_true",
+        default=None,
         help=(
             "Update the terminal window/tab title with the active review or remediation phase. "
             "Restores the previous title on exit in terminals with xterm-style title-stack support."
         ),
+    )
+    terminal_title_group.add_argument(
+        "--no-terminal-title",
+        dest="terminal_title",
+        action="store_false",
+        help="Do not update the terminal title even when a profile enables it.",
     )
     parser.add_argument(
         "--initial-review-file",
@@ -1954,7 +1993,7 @@ def edit_profile_config(name: str, *, cwd: Path, home: Path | None = None) -> Pa
 
 def default_artifact_dir() -> Path:
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    return Path("tmp") / "code-review-loop" / timestamp
+    return Path("tmp") / "revrem" / timestamp
 
 
 def resolve_timeout_seconds(value: float) -> float | None:
@@ -2039,6 +2078,7 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         review_harness=profile.review.harness,
         remediation_harness=profile.remediation.harness,
         triage_harness=profile.triage.harness,
+        commit_message_harness=profile.commit.harness,
         review_model=review_model,
         remediation_model=remediation_model,
         reasoning_effort=args.reasoning_effort,
@@ -2063,7 +2103,7 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         exec_sandbox=pick(args.exec_sandbox, profile.runtime.exec_sandbox, "workspace-write"),
         exec_color=pick(args.exec_color, profile.runtime.exec_color, "never"),
         full_auto=pick(args.full_auto, profile.runtime.full_auto, True),
-        exec_json=profile.runtime.exec_json or args.exec_json,
+        exec_json=pick(args.exec_json, profile.runtime.exec_json, False),
         output_last_message=pick(args.output_last_message, profile.runtime.output_last_message, True),
         dry_run=args.dry_run,
         final_review=pick(args.final_review, profile.pipeline.final_review, True),
@@ -2080,10 +2120,14 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         timeout_seconds=timeout_seconds,
         review_timeout_seconds=review_timeout_seconds,
         remediation_timeout_seconds=remediation_timeout_seconds,
-        debug_status_detection=profile.output.debug_status_detection or args.debug_status_detection,
-        progress=not args.quiet_progress and not profile.output.quiet_progress,
+        debug_status_detection=pick(
+            args.debug_status_detection,
+            profile.output.debug_status_detection,
+            False,
+        ),
+        progress=not pick(args.quiet_progress, profile.output.quiet_progress, False),
         progress_style=pick(args.progress_style, profile.output.progress_style, "compact"),
-        terminal_title=profile.output.terminal_title or args.terminal_title,
+        terminal_title=pick(args.terminal_title, profile.output.terminal_title, False),
         initial_review_file=initial_review_file,
         check_commands=checks,
         profile_name=args.profile,

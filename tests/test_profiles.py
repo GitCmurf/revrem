@@ -302,6 +302,7 @@ def test_profile_accepts_explicit_commit_message_model_and_prompt(tmp_path):
         """
 [profiles.demo.commit]
 enabled = true
+harness = "claude"
 message_model = "gpt-test-commit"
 message_prompt = "Write a subject."
 """,
@@ -310,6 +311,7 @@ message_prompt = "Write a subject."
 
     loaded = profiles.load_profile_file(path)
 
+    assert loaded.profiles["demo"].commit.harness == "claude"
     assert loaded.profiles["demo"].commit.message_model == "gpt-test-commit"
     assert loaded.profiles["demo"].commit.message_prompt == "Write a subject."
 
@@ -353,6 +355,25 @@ def test_resolve_profile_rejects_unimplemented_executable_triage_harness(tmp_pat
     path.write_text(
         """
 [profiles.future.triage]
+enabled = true
+harness = "gemini"
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="only the codex backend is implemented"):
+        profiles.resolve_profile("future", cwd=cwd, home=home)
+
+
+def test_resolve_profile_rejects_unimplemented_executable_commit_harness(tmp_path):
+    home = tmp_path / "home"
+    cwd = tmp_path / "repo"
+    cwd.mkdir()
+    path = profiles.user_config_path(home)
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        """
+[profiles.future.commit]
 enabled = true
 harness = "gemini"
 """,

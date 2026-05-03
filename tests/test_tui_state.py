@@ -57,10 +57,7 @@ checks = ["pytest -q", "git diff --check"]
     assert snapshot.run_monitors[0].final_status == "clear"
     assert snapshot.run_monitors[0].artifacts[0].kind == "summary"
     assert snapshot.run_monitors[0].artifacts[0].exists is True
-    assert snapshot.run_previews[0].shell_command == (
-        "revrem --profile final-pr --base main --max-iterations 3 "
-        "--summary-format text --check 'pytest -q' --check 'git diff --check'"
-    )
+    assert snapshot.run_previews[0].shell_command == "revrem --profile final-pr"
     assert {harness.name for harness in snapshot.harnesses} >= {
         "codex",
         "claude",
@@ -96,10 +93,7 @@ description = "Final PR"
     assert [profile.name for profile in snapshot.profiles] == ["final-pr"]
     assert snapshot.profiles[0].base == "trunk"
     assert snapshot.profiles[0].checks == ("pytest -q", "git diff --check")
-    assert snapshot.run_previews[0].shell_command == (
-        "revrem --profile final-pr --base trunk --max-iterations 2 "
-        "--summary-format text --check 'pytest -q' --check 'git diff --check'"
-    )
+    assert snapshot.run_previews[0].shell_command == "revrem --profile final-pr"
 
 
 def test_pipeline_phases_model_review_triage_checks_and_commit():
@@ -152,7 +146,7 @@ def test_pipeline_phases_preserve_disabled_optional_phase_shape():
     assert phases[4].enabled is False
 
 
-def test_run_preview_includes_operator_visible_profile_options():
+def test_run_preview_keeps_profile_command_minimal_to_avoid_drift():
     profile = profiles.Profile(
         name="showcase",
         pipeline=profiles.PipelineConfig(
@@ -175,21 +169,9 @@ def test_run_preview_includes_operator_visible_profile_options():
         "revrem",
         "--profile",
         "showcase",
-        "--base",
-        "trunk",
-        "--max-iterations",
-        "5",
-        "--summary-format",
-        "both",
-        "--progress-style",
-        "rich",
-        "--debug-status-detection",
-        "--terminal-title",
-        "--commit-after-remediation",
-        "--check",
-        "pytest -q",
     )
-    assert preview.shell_command.endswith("--check 'pytest -q'")
+    assert preview.shell_command == "revrem --profile showcase"
+    assert preview.checks == ("pytest -q",)
 
 
 def test_launch_plan_adds_dry_run_without_mutating_profile_preview():
@@ -198,10 +180,10 @@ def test_launch_plan_adds_dry_run_without_mutating_profile_preview():
     preview = tui_state.run_preview(profile)
     plan = tui_state.launch_plan(profile, dry_run=True)
 
-    assert preview.argv[-1] == "text"
+    assert preview.argv[-1] == "demo"
     assert plan.mode == "dry-run"
     assert plan.argv[-1] == "--dry-run"
-    assert plan.shell_command == "revrem --profile demo --base main --max-iterations 2 --summary-format text --dry-run"
+    assert plan.shell_command == "revrem --profile demo --dry-run"
 
 
 def test_run_monitor_view_flattens_summary_artifacts():
@@ -306,7 +288,7 @@ reasoning_effort = "low"
     rendered = tui_state.render_shell_text(model)
     assert "Selected profile: final-pr" in rendered
     assert "triage: enabled" in rendered
-    assert "Dry-run launch: revrem --profile final-pr" in rendered
+    assert "Dry-run launch: revrem --profile final-pr --dry-run" in rendered
 
 
 def test_shell_model_handles_missing_profiles_without_launch_plan(tmp_path):

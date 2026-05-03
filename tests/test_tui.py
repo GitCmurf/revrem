@@ -155,9 +155,7 @@ checks = ["git diff --check"]
 
     assert cli.main(["ui"]) == 0
 
-    assert actions[0][0][:4] == ("revrem", "--profile", "final-pr", "--base")
-    assert actions[0][0][-1] == "--dry-run"
-    assert "--check" in actions[0][0]
+    assert actions[0][0] == ("revrem", "--profile", "final-pr", "--dry-run")
     assert actions[0][1] == tmp_path
     assert actions[1] == "RevRemApp"
     assert notifications == ["Dry run completed: final-pr"]

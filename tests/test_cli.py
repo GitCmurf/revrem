@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from code_review_loop import cli as MODULE
+from code_review_loop import profiles
 
 
 def make_git_worktree(tmp_path: Path, cwd_rel: str | None = "work") -> tuple[Path, Path]:
@@ -1436,6 +1437,85 @@ quiet_progress = true
     assert config.check_commands == ("pytest -q", "git diff --check")
     assert config.debug_status_detection is True
     assert config.progress is False
+
+
+def test_default_artifact_dir_uses_revrem_namespace():
+    artifact_dir = MODULE.default_artifact_dir()
+
+    assert artifact_dir.parts[:2] == ("tmp", "revrem")
+
+
+def test_main_cli_boolean_negations_override_profile_enabled_values(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    config_path = home / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.final-pr.runtime]
+exec_json = true
+
+[profiles.final-pr.output]
+debug_status_detection = true
+quiet_progress = true
+terminal_title = true
+""",
+        encoding="utf-8",
+    )
+    captured_configs = []
+
+    def fake_run_loop(config):
+        captured_configs.append(config)
+        return {
+            "artifact_dir": str(config.artifact_dir),
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+            "iterations": [],
+        }
+
+    monkeypatch.setattr(MODULE, "run_loop", fake_run_loop)
+
+    exit_code = MODULE.main(
+        [
+            "--profile",
+            "final-pr",
+            "--dry-run",
+            "--no-exec-json",
+            "--no-debug-status-detection",
+            "--no-quiet-progress",
+            "--no-terminal-title",
+        ]
+    )
+
+    assert exit_code == 0
+    config = captured_configs[0]
+    assert config.exec_json is False
+    assert config.debug_status_detection is False
+    assert config.progress is True
+    assert config.terminal_title is False
+
+
+def test_main_uses_profile_commit_message_harness(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        MODULE,
+        "profile_or_default",
+        lambda name, cwd: profiles.Profile(
+            name="final-pr",
+            commit=profiles.CommitConfig(
+                enabled=True,
+                harness="claude",
+                message_model="fast-commit",
+            ),
+        ),
+    )
+    args = MODULE.parse_args(["--profile", "final-pr", "--dry-run"])
+
+    config, _summary_format = MODULE.build_loop_config(args, tmp_path)
+
+    assert config.commit_message_harness == "claude"
+    assert config.commit_message_model == "fast-commit"
 
 
 def test_run_loop_skips_commit_cleanliness_check_during_dry_run(tmp_path):

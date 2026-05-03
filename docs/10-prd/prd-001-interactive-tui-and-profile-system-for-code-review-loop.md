@@ -3,7 +3,7 @@ document_id: REVREM-PRD-001
 type: PRD
 title: Interactive TUI and Profile System for code-review-loop
 status: Approved
-version: "0.9"
+version: "1.0"
 last_updated: '2026-05-03'
 owner: GitCmurf
 area: product
@@ -29,7 +29,7 @@ related_ids:
 > **Document ID:** REVREM-PRD-001
 > **Owner:** GitCmurf
 > **Status:** Approved
-> **Version:** 0.9
+> **Version:** 1.0
 > **Last Updated:** 2026-05-03
 > **Type:** PRD
 
@@ -239,6 +239,7 @@ timeout_seconds = 1800
 
 [profiles.final-pr.commit]
 enabled = false
+harness = "codex"
 message_model = "gpt-5.3-codex-spark"
 message_prompt = "Write one concise git commit subject for the staged RevRem remediation changes."
 
@@ -341,6 +342,9 @@ Implementation must preserve these boundaries:
 - Commit creation is a deterministic local phase after successful checks.
   Agent/model calls may draft the subject but must not perform staging,
   committing, or pushing.
+- Boolean profile settings are always one-off overridable from the CLI through
+  positive and negative flags, including execution JSON, status diagnostics,
+  quiet progress, terminal-title updates, and checkpoint commits.
 - Reasoning-effort selection is phase-local: review, triage, remediation, and
   commit-message drafting can each be overridden independently from the CLI.
 - Harness execution lives behind `src/code_review_loop/harnesses.py`. Codex is
@@ -382,13 +386,13 @@ The quality bar for every phase is:
 - [FR-11] Support optional verified checkpoint commits after remediation passes.
 - [FR-12] Implement `revrem ui` behind the `[tui]` extra.
 
-Milestone status as of version 0.9:
+Milestone status as of version 1.0:
 
 - FR-1 through FR-8 are implemented.
 - FR-9 is implemented.
-- FR-10 is partially implemented: compact progress remains the default and
-  `--progress-style rich` activates optional Rich rendering when the `progress`
-  extra is installed. Full live Rich layout remains part of the TUI-facing work.
+- FR-10 is implemented: compact progress remains the default and
+  `--progress-style rich` activates optional in-place Rich panel rendering when
+  the `progress` extra is installed.
 - FR-11 is implemented for Codex commit-message drafting with deterministic
   local git staging and commit execution after checks pass. Default commit
   subjects are normalized to Conventional Commit syntax and suffixed with
@@ -402,6 +406,9 @@ Milestone status as of version 0.9:
 - Codex triage is implemented; non-Codex harnesses remain reserved syntax and
   executable command planning fails fast when an unimplemented backend is
   selected.
+- Commit-message harness configuration is part of the same reserved harness
+  boundary. `commit.harness = "codex"` is executable today; other registered
+  harness names are valid management syntax but fail fast on executable runs.
 
 ### Non-Functional Requirements
 
@@ -623,6 +630,7 @@ revrem history --format json list --limit 5
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.0 | 2026-05-03 | Codex | Tightened profile override and harness contracts with negative boolean flags, commit-message harness configuration, Rich live progress, and RevRem artifact naming |
 | 0.9 | 2026-05-03 | Codex | Completed the first interactive TUI slice with profile selection, four operator sections, dry-run launch action, and updated verification expectations |
 | 0.8 | 2026-05-03 | Codex | Added launch-plan and run-monitor artifact-link state for the TUI, and hardened another green Codex review-status phrase |
 | 0.7 | 2026-05-02 | Codex | Added reusable harness command-planning boundary and TUI profile command previews for future interactive screens |

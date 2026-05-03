@@ -26,15 +26,51 @@ class FakeConsole:
         self.printed.append(value)
 
 
+class FakeGroup:
+    def __init__(self, *items):
+        self.items = items
+
+
+class FakePanel:
+    def __init__(self, value, **kwargs):
+        self.value = value
+        self.kwargs = kwargs
+
+
+class FakeLive:
+    updates = []
+
+    def __init__(self, value, **kwargs):
+        self.value = value
+        self.kwargs = kwargs
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def update(self, value):
+        self.updates.append(value)
+
+
 def install_fake_rich(monkeypatch):
     FakeConsole.printed = []
+    FakeLive.updates = []
     rich_module = types.ModuleType("rich")
     console_module = types.ModuleType("rich.console")
+    live_module = types.ModuleType("rich.live")
+    panel_module = types.ModuleType("rich.panel")
     text_module = types.ModuleType("rich.text")
     console_module.Console = FakeConsole
+    console_module.Group = FakeGroup
+    live_module.Live = FakeLive
+    panel_module.Panel = FakePanel
     text_module.Text = FakeText
     monkeypatch.setitem(sys.modules, "rich", rich_module)
     monkeypatch.setitem(sys.modules, "rich.console", console_module)
+    monkeypatch.setitem(sys.modules, "rich.live", live_module)
+    monkeypatch.setitem(sys.modules, "rich.panel", panel_module)
     monkeypatch.setitem(sys.modules, "rich.text", text_module)
 
 
@@ -63,3 +99,19 @@ def test_rich_message_and_continuation_escape_markup_like_text(monkeypatch):
     assert ("review", "bold green") in message.parts
     assert ("path [/]", None) in message.parts
     assert ("detail [/]", None) in continuation.parts
+
+
+def test_rich_live_progress_updates_panel_in_place(monkeypatch):
+    install_fake_rich(monkeypatch)
+
+    with progress.rich_live_progress(True) as active:
+        assert active is True
+        assert progress.print_rich_event("review", "1", "start", "codex review")
+        assert progress.print_rich_event("review", "1", "clear")
+
+    assert FakeConsole.printed == []
+    assert len(FakeLive.updates) == 2
+    latest = FakeLive.updates[-1]
+    assert isinstance(latest, FakePanel)
+    assert isinstance(latest.value, FakeGroup)
+    assert len(latest.value.items) == 2

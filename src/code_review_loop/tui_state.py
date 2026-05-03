@@ -287,27 +287,7 @@ def pipeline_phases(profile: profiles.Profile) -> tuple[PhaseView, ...]:
 
 
 def run_preview(profile: profiles.Profile) -> RunPreview:
-    argv = [
-        "revrem",
-        "--profile",
-        profile.name,
-        "--base",
-        profile.pipeline.base,
-        "--max-iterations",
-        str(profile.pipeline.max_iterations),
-        "--summary-format",
-        profile.output.summary_format,
-    ]
-    if profile.output.progress_style != "compact":
-        argv.extend(["--progress-style", profile.output.progress_style])
-    if profile.output.debug_status_detection:
-        argv.append("--debug-status-detection")
-    if profile.output.terminal_title:
-        argv.append("--terminal-title")
-    if profile.commit.enabled:
-        argv.append("--commit-after-remediation")
-    for check in profile.pipeline.checks:
-        argv.extend(["--check", check])
+    argv = ["revrem", "--profile", profile.name]
     return RunPreview(
         profile_name=profile.name,
         argv=tuple(argv),

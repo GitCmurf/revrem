@@ -76,6 +76,10 @@ True-by-default booleans also have positive CLI overrides. Use `--full-auto`,
 `--output-last-message`, or `--final-review` to restore the built-in `true`
 behavior for a one-off run when a profile disables one of those settings; use
 the `--no-*` or `--skip-final-review` forms to force them off.
+Profile-controlled `--exec-json`, `--debug-status-detection`,
+`--quiet-progress`, and `--terminal-title` settings also have matching
+`--no-*` flags so one-off invocations can override shared profile defaults in
+either direction.
 
 ```bash
 revrem config new final-pr --description "Full PR readiness check"

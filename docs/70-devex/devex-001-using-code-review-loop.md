@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '0.9'
+version: '1.0'
 last_updated: '2026-05-03'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 0.9
+> **Version:** 1.0
 > **Last Updated:** 2026-05-03
 > **Type:** DEVEX
 > **Area:** devex
@@ -202,14 +202,14 @@ clear review because pytest returned `2`, `4`, or `5`.
 
 ### Continuation after findings
 
-The loop writes artifacts under `tmp/code-review-loop/<timestamp>/` by default.
+The loop writes artifacts under `tmp/revrem/<timestamp>/` by default.
 If a capped run ends with findings, continue from the final review artifact:
 
 ```bash
 revrem \
   --base main \
   --max-iterations 2 \
-  --initial-review-file tmp/code-review-loop/<timestamp>/review-final.txt \
+  --initial-review-file tmp/revrem/<timestamp>/review-final.txt \
   --check "pytest -q"
 ```
 
@@ -250,6 +250,7 @@ model = "gpt-5.4-mini"
 
 [profiles.final-pr.commit]
 enabled = false
+harness = "codex"
 message_model = "gpt-5.3-codex-spark"
 
 [profiles.final-pr.output]
@@ -270,10 +271,11 @@ CLI flags override profile values, so this is valid:
 revrem --profile final-pr --base release/1.2 --check "pytest -q tests/smoke"
 ```
 
-True-by-default booleans also have positive CLI overrides. Use `--full-auto`,
-`--output-last-message`, or `--final-review` to restore the built-in `true`
-behavior for a one-off run when a profile disables one of those settings; use
-the `--no-*` or `--skip-final-review` forms to force them off.
+Boolean profile values can be overridden from the CLI. Use `--full-auto`,
+`--output-last-message`, `--final-review`, `--exec-json`,
+`--debug-status-detection`, `--quiet-progress`, or `--terminal-title` to force
+them on for a one-off run; use the matching `--no-*` form, or
+`--skip-final-review`, to force them off.
 
 Timeout fields are numeric. A TOML boolean such as `timeout_seconds = false`
 is rejected during profile loading so that accidental type mistakes cannot
@@ -302,7 +304,11 @@ revrem config doctor --profile final-pr --format json
 ```
 
 `revrem config import` requires an existing TOML file and fails fast if the
-path is missing, rather than creating an empty destination config rewrite.
+path is missing, rather than creating an empty destination config rewrite. When
+the imported file contains `[defaults]`, RevRem folds those source defaults
+into each imported profile before writing the destination config. This preserves
+the behavior of portable shared-profile files even when the destination
+`profiles.toml` has different user-wide defaults.
 
 `revrem config list` shows each profile's description, source file, and last-used timestamp from run history.
 
@@ -320,10 +326,11 @@ rejects unimplemented harnesses before the loop starts.
 The `--format` flag is accepted both before and after the subcommand, so the
 global form `revrem config --format json doctor --profile final-pr` works too.
 
-Profiles reserve `review.harness`, `triage.harness`, and
-`remediation.harness` for future headless adapters such as `claude`, `gemini`,
-`opencode`, and `kilo`. The current executable loop supports only Codex; using
-another harness in a resolved run fails before starting subprocesses.
+Profiles reserve `review.harness`, `triage.harness`,
+`remediation.harness`, and `commit.harness` for future headless adapters such
+as `claude`, `gemini`, `opencode`, and `kilo`. The current executable loop
+supports only Codex; using another harness in a resolved run fails before
+starting subprocesses.
 
 Set `commit.enabled = true` or pass `--commit-after-remediation` only in a
 worktree where it is acceptable for RevRem to stage all current changes with
@@ -332,10 +339,12 @@ artifact directory from staging. If a profile enables commits by default but a
 single invocation should remain dry, pass `--no-commit-after-remediation` to
 override that profile setting. The commit step is separate from the remediation
 model: checks must pass first, RevRem skips the commit if there are no staged
-changes, and RevRem runs `git commit` itself. The optional `commit.message_model`
-or `--commit-message-model` controls only the read-only Codex call that drafts
-the commit subject. If no explicit CLI value is supplied, the profile value is
-used; the built-in profile default is `gpt-5.3-codex-spark`. With the default
+changes, and RevRem runs `git commit` itself. The optional `commit.harness`
+field selects the commit-message drafting adapter; only `codex` is executable
+today. The optional `commit.message_model` or `--commit-message-model` controls
+only the read-only Codex call that drafts the commit subject. If no explicit
+CLI value is supplied, the profile value is used; the built-in profile default
+is `gpt-5.3-codex-spark`. With the default
 prompt, RevRem normalizes the final subject to Conventional Commit syntax and
 appends ` (RevRem)`. Passing `--commit-message-prompt` intentionally disables
 that default subject policy so special-purpose commit formats can be tested
@@ -383,10 +392,10 @@ prompt = "Break down the review into confirmed actions, likely false positives, 
 ### Current CLI boundary
 
 Rich progress is available via `--progress-style rich` when the optional
-`progress` extra is installed. In Rich output, the timestamp is dimmed, the
-phase/action word and status word are highlighted, labels are cyan, and model
-or review text is rendered literally so markup-like review output cannot break
-the display.
+`progress` extra is installed. In Rich output, the active run is maintained in
+an in-place RevRem panel while the timestamp is dimmed, the phase/action word
+and status word are highlighted, labels are cyan, and model or review text is
+rendered literally so markup-like review output cannot break the display.
 
 `revrem ui` is available as a dependency-gated Textual interface:
 
@@ -480,6 +489,7 @@ The wrapper runs tests, `ruff check .`, `mypy src`, and DocOps checks when
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.0 | 2026-05-03 | Codex | Documented negative boolean CLI overrides, `tmp/revrem` artifact namespace, commit-message harness profile setting, Rich live progress, and import-default preservation semantics |
 | 0.9 | 2026-05-03 | Codex | Documented the completed first TUI slice with profile selection, operator sections, and dry-run launch action |
 | 0.8 | 2026-05-03 | Codex | Documented adaptive pytest skipping for non-Python repositories and native TypeScript check guidance |
 | 0.7 | 2026-05-03 | Codex | Documented TUI launch-plan and run-monitor artifact state |

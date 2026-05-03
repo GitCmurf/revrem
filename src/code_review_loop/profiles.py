@@ -34,7 +34,7 @@ PROFILE_KEYS = (
 PIPELINE_KEYS = ("base", "max_iterations", "final_review", "checks")
 PHASE_KEYS = ("harness", "model", "reasoning_effort", "timeout_seconds")
 TRIAGE_KEYS = ("enabled", "harness", "model", "reasoning_effort", "timeout_seconds", "prompt")
-COMMIT_KEYS = ("enabled", "message_model", "message_prompt")
+COMMIT_KEYS = ("enabled", "harness", "message_model", "message_prompt")
 OUTPUT_KEYS = (
     "summary_format",
     "debug_status_detection",
@@ -85,6 +85,7 @@ class PipelineConfig:
 @dataclass(frozen=True)
 class CommitConfig:
     enabled: bool = False
+    harness: str = "codex"
     message_model: str | None = "gpt-5.3-codex-spark"
     message_prompt: str | None = None
 
@@ -272,8 +273,11 @@ def parse_triage(raw: dict[str, Any], field: str) -> TriageConfig:
 
 def parse_commit(raw: dict[str, Any]) -> CommitConfig:
     _reject_unknown_keys(raw, COMMIT_KEYS, "commit")
+    harness = _str(raw.get("harness", "codex"), "commit.harness")
+    validate_harness_name(harness, field="commit.harness")
     return CommitConfig(
         enabled=_bool(raw.get("enabled", False), "commit.enabled"),
+        harness=harness,
         message_model=_optional_str(raw.get("message_model"), "commit.message_model")
         or "gpt-5.3-codex-spark",
         message_prompt=_optional_str(raw.get("message_prompt"), "commit.message_prompt"),
@@ -573,6 +577,8 @@ def validate_profile(profile: Profile, *, require_implemented: bool) -> None:
         require_implemented_harness(profile.remediation.harness, field="remediation.harness")
         if profile.triage.enabled:
             require_implemented_harness(profile.triage.harness, field="triage.harness")
+        if profile.commit.enabled:
+            require_implemented_harness(profile.commit.harness, field="commit.harness")
 
 
 def _write_profile_file(

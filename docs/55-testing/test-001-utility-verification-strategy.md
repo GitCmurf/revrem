@@ -3,7 +3,7 @@ document_id: REVREM-TEST-001
 type: TEST
 title: Utility verification strategy
 status: Draft
-version: '0.7'
+version: '0.8'
 last_updated: '2026-05-03'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-TEST-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 0.7
+> **Version:** 0.8
 > **Last Updated:** 2026-05-03
 > **Type:** TEST
 > **Area:** testing
@@ -54,6 +54,9 @@ The main test module is `tests/test_cli.py`. It covers:
   subject policy.
 - Phase-specific reasoning-effort CLI overrides for review, triage,
   remediation, and commit-message drafting.
+- Positive and negative CLI boolean overrides for profile-controlled runtime
+  and output flags.
+- Default artifact-directory namespace under `tmp/revrem/`.
 - No-op remediation close-down: when commit mode finds no staged changes after
   passing checks, the loop stops instead of spending another review iteration.
 - Bounded loop behavior, including final review behavior and exit status.
@@ -88,7 +91,7 @@ Codex command construction is executable, while reserved future harnesses remain
 valid profile syntax but not runnable adapters.
 `tests/test_progress.py` covers optional Rich renderer safety, including literal
 handling for review text that contains Rich markup syntax and styling of the
-phase/action and status columns.
+phase/action and status columns, plus in-place Live panel updates.
 `tests/test_packaging.py` covers console entry points and local distribution
 scripts, including optional extras metadata.
 `tests/test_tui.py` covers the dependency-gated `revrem ui` entry point without
