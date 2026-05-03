@@ -119,6 +119,10 @@ def current_entrypoint_argv(argv: Sequence[str]) -> list[str]:
     launcher = Path(sys.argv[0])
     if launcher.name in {"revrem", "code-review-loop"} and launcher.exists():
         resolved[0] = str(launcher)
+        return resolved
+    if launcher.suffix == ".py":
+        # Preserve a runnable entrypoint when the TUI itself was started with `python -m`.
+        return [sys.executable, "-m", "code_review_loop", *resolved[1:]]
     return resolved
 
 
