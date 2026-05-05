@@ -434,7 +434,9 @@ Textual. In Rich output, the active run is maintained in a compact in-place
 RevRem panel with the most recent events only. The timestamp is dimmed, the
 phase/action word and status word are highlighted, labels are cyan, and model
 or review text is rendered literally so markup-like review output cannot break
-the display.
+the display. Terminal-title escape output is suppressed in Rich mode because
+some terminals render OSC title bytes inside the live panel instead of consuming
+them.
 
 `revrem ui` is available as a dependency-gated Textual interface:
 
@@ -502,8 +504,10 @@ until a backend adapter is implemented.
   `rev 1/2 RevRem` and `rem 1/2 RevRem`. The tool uses terminal title-stack
   escape sequences to restore the previous title on exit where the terminal
   supports them, and emits both common window-title escape forms for broader
-  terminal compatibility. In Rich progress mode, title controls are routed
-  through `/dev/tty` so they do not appear inside the live progress panel.
+  terminal compatibility. In Rich progress mode, phase title updates are
+  suppressed to avoid leaking OSC bytes into the live progress panel; use
+  compact or verbose progress when terminal-tab title updates are more valuable
+  than the Rich panel.
   Terminals that ignore those sequences will still run normally. RevRem also
   emits the cursor-show control on normal exit, termination, and terminal
   suspension signals so a forced stop is less likely to leave the cursor hidden.

@@ -195,6 +195,8 @@ def set_terminal_title(config: LoopConfig, title: str) -> None:
     global _CURRENT_TERMINAL_TITLE_SEQUENCE
     if not terminal_title_supported(config):
         return
+    if config.progress_style == "rich":
+        return
     safe_title = sanitize_terminal_title(title)
     # OSC 0 sets icon + window title. OSC 2 explicitly sets the window/tab
     # title. Emitting both is harmless and covers more terminal emulators.
@@ -1401,7 +1403,7 @@ def resolve_initial_review_file(value: str | None, search_root: Path) -> Path | 
                 search_root / "review-final.txt",
                 *search_root.glob("*/review-final.txt"),
             )
-            if path.is_file()
+            if path.is_file() and review_final_is_usable(path)
         ),
         key=lambda path: (path.stat().st_mtime, path.parent.name),
     )
@@ -1422,6 +1424,16 @@ def review_final_is_resolved(review_path: Path) -> bool:
     except (OSError, json.JSONDecodeError):
         return False
     return isinstance(summary, dict) and summary.get("final_status") == "clear"
+
+
+def review_final_is_usable(review_path: Path) -> bool:
+    try:
+        review_text = actionable_review_output(review_path.read_text(encoding="utf-8")).strip()
+    except OSError:
+        return False
+    if not review_text:
+        return False
+    return not review_text.startswith("DRY_RUN")
 
 
 def run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, object]:

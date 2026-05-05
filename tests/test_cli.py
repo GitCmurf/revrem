@@ -1359,6 +1359,32 @@ def test_resolve_initial_review_file_latest_returns_none_without_previous_runs(t
     assert MODULE.resolve_initial_review_file("latest", tmp_path) is None
 
 
+def test_resolve_initial_review_file_latest_skips_dry_run_review_stubs(tmp_path):
+    dry_run = tmp_path / "20260428T020000Z"
+    unresolved_run = tmp_path / "20260428T010000Z"
+    dry_run.mkdir()
+    unresolved_run.mkdir()
+    dry_review = dry_run / "review-final.txt"
+    unresolved_review = unresolved_run / "review-final.txt"
+    dry_review.write_text("DRY_RUN\nREVIEW_STATUS: findings\n", encoding="utf-8")
+    unresolved_review.write_text(
+        "Full review comments:\n\n- [P2] Fix the real issue\n",
+        encoding="utf-8",
+    )
+    (dry_run / "summary.json").write_text(
+        json.dumps({"final_status": "findings", "stopped_reason": "max_iterations_reached"}),
+        encoding="utf-8",
+    )
+    (unresolved_run / "summary.json").write_text(
+        json.dumps({"final_status": "findings", "stopped_reason": "max_iterations_reached"}),
+        encoding="utf-8",
+    )
+    os.utime(unresolved_review, (1, 1))
+    os.utime(dry_review, (2, 2))
+
+    assert MODULE.resolve_initial_review_file("latest", tmp_path) == unresolved_review
+
+
 def test_main_resolves_latest_initial_review_from_custom_artifact_dir(tmp_path, monkeypatch):
     custom_root = tmp_path / "custom-artifacts"
     custom_run = custom_root / "20260428T010000Z"
@@ -3388,7 +3414,7 @@ def test_terminal_title_never_writes_to_stdout(tmp_path, monkeypatch):
     assert stdout.getvalue() == ""
 
 
-def test_terminal_title_uses_stderr_in_rich_mode_when_stderr_is_tty(tmp_path, monkeypatch):
+def test_terminal_title_is_suppressed_in_rich_mode_to_avoid_escape_leaks(tmp_path, monkeypatch):
     stderr = TtyBuffer()
     tty_sequences = []
     monkeypatch.setattr(MODULE.sys, "stderr", stderr)
@@ -3407,11 +3433,9 @@ def test_terminal_title_uses_stderr_in_rich_mode_when_stderr_is_tty(tmp_path, mo
         MODULE.set_terminal_title(config, "rev 1/1 RevRem")
         MODULE.refresh_terminal_title()
 
-    title_sequence = "\033]0;rev 1/1 RevRem\007\033]2;rev 1/1 RevRem\007"
     assert stderr.getvalue() == "".join(
         (
         MODULE.TERMINAL_TITLE_SAVE,
-        title_sequence,
         MODULE.CURSOR_SHOW,
         MODULE.TERMINAL_TITLE_RESTORE,
         )
@@ -3518,7 +3542,7 @@ def test_default_runner_does_not_refresh_terminal_title_during_rich_progress(tmp
     title_sequence = "\033]0;rev 1/1 RevRem\007\033]2;rev 1/1 RevRem\007"
     assert result.returncode == 0
     assert result.stdout == "done\n"
-    assert output.count(title_sequence) == 1
+    assert title_sequence not in output
     assert output.endswith(MODULE.TERMINAL_TITLE_RESTORE)
 
 
