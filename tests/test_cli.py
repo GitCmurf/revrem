@@ -1337,6 +1337,8 @@ def test_resolve_initial_review_file_latest_returns_none_when_newest_run_is_clea
         json.dumps({"final_status": "findings", "stopped_reason": "max_iterations_reached"}),
         encoding="utf-8",
     )
+    os.utime(unresolved_review, (1, 1))
+    os.utime(clean_review, (2, 2))
 
     assert MODULE.resolve_initial_review_file("latest", tmp_path) is None
 
@@ -3410,7 +3412,6 @@ def test_terminal_title_uses_stderr_in_rich_mode_when_stderr_is_tty(tmp_path, mo
         (
         MODULE.TERMINAL_TITLE_SAVE,
         title_sequence,
-        title_sequence,
         MODULE.CURSOR_SHOW,
         MODULE.TERMINAL_TITLE_RESTORE,
         )
@@ -3483,6 +3484,41 @@ def test_default_runner_refreshes_active_terminal_title_during_child_process(tmp
     assert result.returncode == 0
     assert result.stdout == "done\n"
     assert output.count(title_sequence) >= 2
+    assert output.endswith(MODULE.TERMINAL_TITLE_RESTORE)
+
+
+def test_default_runner_does_not_refresh_terminal_title_during_rich_progress(tmp_path, monkeypatch):
+    stderr = TtyBuffer()
+    monkeypatch.setattr(MODULE.sys, "stderr", stderr)
+    monkeypatch.setattr(MODULE, "TERMINAL_TITLE_REFRESH_SECONDS", 0.01)
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        progress_style="rich",
+        terminal_title=True,
+    )
+
+    with MODULE.terminal_title_context(config):
+        MODULE.set_terminal_title(config, "rev 1/1 RevRem")
+        result = MODULE.default_runner(
+            [
+                MODULE.sys.executable,
+                "-c",
+                "import time; time.sleep(0.05); print('done')",
+            ],
+            tmp_path,
+            None,
+            10,
+        )
+
+    output = stderr.getvalue()
+    title_sequence = "\033]0;rev 1/1 RevRem\007\033]2;rev 1/1 RevRem\007"
+    assert result.returncode == 0
+    assert result.stdout == "done\n"
+    assert output.count(title_sequence) == 1
     assert output.endswith(MODULE.TERMINAL_TITLE_RESTORE)
 
 

@@ -155,7 +155,7 @@ TERMINAL_TITLE_SAVE = "\033[22;0t"
 TERMINAL_TITLE_RESTORE = "\033[23;0t"
 TERMINAL_TITLE_REFRESH_SECONDS = 1.0
 _CURRENT_TERMINAL_TITLE_SEQUENCE: str | None = None
-_TERMINAL_TITLE_PREFER_TTY = False
+_TERMINAL_TITLE_PREFER_TTY: bool | None = False
 _RICH_UNAVAILABLE_WARNED = False
 CURSOR_SHOW = "\033[?25h"
 
@@ -188,7 +188,7 @@ def write_terminal_control_to_tty(sequence: str) -> bool:
 
 def restore_terminal_display() -> None:
     """Best-effort terminal recovery for interrupted Rich/title sessions."""
-    write_terminal_control(CURSOR_SHOW, prefer_tty=_TERMINAL_TITLE_PREFER_TTY)
+    write_terminal_control(CURSOR_SHOW, prefer_tty=bool(_TERMINAL_TITLE_PREFER_TTY))
 
 
 def set_terminal_title(config: LoopConfig, title: str) -> None:
@@ -206,6 +206,8 @@ def refresh_terminal_title(*, prefer_tty: bool | None = None) -> None:
     if _CURRENT_TERMINAL_TITLE_SEQUENCE:
         if prefer_tty is None:
             prefer_tty = _TERMINAL_TITLE_PREFER_TTY
+        if prefer_tty is None:
+            return
         write_terminal_control(_CURRENT_TERMINAL_TITLE_SEQUENCE, prefer_tty=prefer_tty)
 
 
@@ -237,17 +239,17 @@ def terminal_title_context(config: LoopConfig):
         yield
         return
     previous_prefer_tty = _TERMINAL_TITLE_PREFER_TTY
-    _TERMINAL_TITLE_PREFER_TTY = False
+    _TERMINAL_TITLE_PREFER_TTY = None if config.progress_style == "rich" else False
     # There is no reliable cross-terminal way to read the current title. Xterm-
     # compatible terminals support a title stack, which gives the desired
     # save/restore behavior without querying terminal state.
-    write_terminal_control(TERMINAL_TITLE_SAVE, prefer_tty=_TERMINAL_TITLE_PREFER_TTY)
+    write_terminal_control(TERMINAL_TITLE_SAVE, prefer_tty=bool(_TERMINAL_TITLE_PREFER_TTY))
     try:
         yield
     finally:
         _CURRENT_TERMINAL_TITLE_SEQUENCE = None
         restore_terminal_display()
-        write_terminal_control(TERMINAL_TITLE_RESTORE, prefer_tty=_TERMINAL_TITLE_PREFER_TTY)
+        write_terminal_control(TERMINAL_TITLE_RESTORE, prefer_tty=bool(_TERMINAL_TITLE_PREFER_TTY))
         _TERMINAL_TITLE_PREFER_TTY = previous_prefer_tty
 
 
