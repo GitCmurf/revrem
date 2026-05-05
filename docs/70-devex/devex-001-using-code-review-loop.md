@@ -223,7 +223,11 @@ revrem \
 
 Use `--initial-review-file latest` with the effective artifact directory. When
 `--artifact-dir` or a profile sets `output.artifact_dir`, `latest` resolves
-under that directory instead of the default workspace-local tree.
+under that directory instead of the default workspace-local tree. `latest`
+uses the newest `review-final.txt` only when that run is still non-clear. If
+the newest run's `summary.json` reports `final_status = "clear"`, or there is
+no previous final review, RevRem starts with a fresh review instead of reviving
+older feedback.
 
 ### Profile-based usage
 
@@ -277,6 +281,31 @@ CLI flags override profile values, so this is valid:
 
 ```bash
 revrem --profile final-pr --base release/1.2 --check "pytest -q tests/smoke"
+```
+
+To capture a one-off command as a project-local profile, add
+`--save-profile NAME`. RevRem writes the effective configuration to
+`.revrem.toml` at the repository root and exits without running the loop. This
+is non-destructive by default; pass `--save-profile-force` only when replacing
+an existing project profile intentionally.
+
+```bash
+revrem \
+  --base main \
+  --max-iterations 11 \
+  --review-model gpt-5.5 \
+  --remediation-model gpt-5.4-mini \
+  --reasoning-effort medium \
+  --timeout-seconds 1800 \
+  --summary-format text \
+  --debug-status-detection \
+  --terminal-title \
+  --check "pytest -q" \
+  --check "git diff --check" \
+  --progress-style rich \
+  --commit-after-remediation \
+  --commit-message-model gpt-5.3-codex-spark \
+  --save-profile final-pr
 ```
 
 Boolean profile values can be overridden from the CLI. Use `--full-auto`,

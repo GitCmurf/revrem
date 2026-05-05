@@ -532,6 +532,15 @@ def _profile_to_toml_impl(
 
 def write_user_profile(profile: Profile, *, home: Path | None = None, force: bool = False) -> Path:
     path = user_config_path(home)
+    return write_profile_to_path(path, profile, force=force)
+
+
+def write_project_profile(profile: Profile, *, cwd: Path, force: bool = False) -> Path:
+    path = project_config_path(cwd)
+    return write_profile_to_path(path, profile, force=force)
+
+
+def write_profile_to_path(path: Path, profile: Profile, *, force: bool = False) -> Path:
     profile_file = load_profile_file(path)
     if profile.name in profile_file.profiles and not force:
         raise FileExistsError(f"profile already exists: {profile.name}")

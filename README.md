@@ -96,6 +96,17 @@ revrem config show final-pr
 revrem --profile final-pr
 ```
 
+If a one-off command has the settings you want to keep for this repository,
+save it as a project-local profile:
+
+```bash
+revrem --base main --max-iterations 11 --check "git diff --check" --save-profile final-pr
+```
+
+`--save-profile` writes `.revrem.toml` at the repository root and exits without
+running the loop. It refuses to overwrite an existing project profile unless
+`--save-profile-force` is supplied.
+
 For richer watched-terminal output, install the optional progress extra and
 request Rich rendering. The TUI extra includes Rich too:
 

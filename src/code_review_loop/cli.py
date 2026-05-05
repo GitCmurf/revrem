@@ -169,10 +169,6 @@ def sanitize_terminal_title(value: str) -> str:
 
 
 def write_terminal_control(sequence: str, *, prefer_tty: bool = False) -> None:
-    if prefer_tty and write_terminal_control_to_tty(sequence):
-        return
-    if prefer_tty:
-        return
     if sys.stderr.isatty():
         sys.stderr.write(sequence)
         sys.stderr.flush()
@@ -203,10 +199,7 @@ def set_terminal_title(config: LoopConfig, title: str) -> None:
     # OSC 0 sets icon + window title. OSC 2 explicitly sets the window/tab
     # title. Emitting both is harmless and covers more terminal emulators.
     _CURRENT_TERMINAL_TITLE_SEQUENCE = f"\033]0;{safe_title}\007\033]2;{safe_title}\007"
-    write_terminal_control(
-        _CURRENT_TERMINAL_TITLE_SEQUENCE,
-        prefer_tty=config.progress_style == "rich",
-    )
+    write_terminal_control(_CURRENT_TERMINAL_TITLE_SEQUENCE)
 
 
 def refresh_terminal_title(*, prefer_tty: bool | None = None) -> None:
@@ -244,7 +237,7 @@ def terminal_title_context(config: LoopConfig):
         yield
         return
     previous_prefer_tty = _TERMINAL_TITLE_PREFER_TTY
-    _TERMINAL_TITLE_PREFER_TTY = config.progress_style == "rich"
+    _TERMINAL_TITLE_PREFER_TTY = False
     # There is no reliable cross-terminal way to read the current title. Xterm-
     # compatible terminals support a title stack, which gives the desired
     # save/restore behavior without querying terminal state.
@@ -1411,8 +1404,22 @@ def resolve_initial_review_file(value: str | None, search_root: Path) -> Path | 
         key=lambda path: (path.stat().st_mtime, path.parent.name),
     )
     if not candidates:
-        raise FileNotFoundError(f"no review-final.txt found under {search_root}")
-    return candidates[-1]
+        return None
+    latest = candidates[-1]
+    if review_final_is_resolved(latest):
+        return None
+    return latest
+
+
+def review_final_is_resolved(review_path: Path) -> bool:
+    summary_path = review_path.with_name("summary.json")
+    if not summary_path.is_file():
+        return False
+    try:
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return isinstance(summary, dict) and summary.get("final_status") == "clear"
 
 
 def run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, object]:
@@ -2028,6 +2035,19 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         action="store_true",
         help="Do not append metadata for this non-dry-run invocation to the local RevRem history.",
     )
+    parser.add_argument(
+        "--save-profile",
+        metavar="NAME",
+        help=(
+            "Save the effective CLI/profile configuration as NAME in the project-local "
+            ".revrem.toml and exit without running the loop."
+        ),
+    )
+    parser.add_argument(
+        "--save-profile-force",
+        action="store_true",
+        help="Replace an existing project-local profile when used with --save-profile.",
+    )
     return parser.parse_args(argv)
 
 
@@ -2331,6 +2351,70 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
     return config, (args.summary_format or profile.output.summary_format)
 
 
+def profile_from_loop_config(
+    name: str,
+    config: LoopConfig,
+    *,
+    summary_format: str,
+    description: str = "",
+    include_artifact_dir: bool = False,
+) -> profiles.Profile:
+    return profiles.Profile(
+        name=name,
+        description=description,
+        pipeline=profiles.PipelineConfig(
+            base=config.base,
+            max_iterations=config.max_iterations,
+            final_review=config.final_review,
+            checks=config.check_commands,
+        ),
+        review=profiles.PhaseConfig(
+            harness=config.review_harness,
+            model=config.review_model or config.model,
+            reasoning_effort=config.review_reasoning_effort or config.reasoning_effort,
+            timeout_seconds=config.review_timeout_seconds,
+        ),
+        triage=profiles.TriageConfig(
+            enabled=config.triage_enabled,
+            harness=config.triage_harness,
+            model=config.triage_model,
+            reasoning_effort=config.triage_reasoning_effort,
+            timeout_seconds=config.triage_timeout_seconds,
+            prompt=config.triage_prompt,
+        ),
+        remediation=profiles.PhaseConfig(
+            harness=config.remediation_harness,
+            model=config.remediation_model or config.model,
+            reasoning_effort=config.remediation_reasoning_effort or config.reasoning_effort,
+            timeout_seconds=config.remediation_timeout_seconds,
+        ),
+        commit=profiles.CommitConfig(
+            enabled=config.commit_after_remediation,
+            harness=config.commit_message_harness,
+            message_model=config.commit_message_model,
+            message_prompt=config.commit_message_prompt,
+        ),
+        output=profiles.OutputConfig(
+            summary_format=summary_format,
+            debug_status_detection=config.debug_status_detection,
+            progress_style=config.progress_style,
+            quiet_progress=not config.progress,
+            terminal_title=config.terminal_title,
+            artifact_dir=str(config.artifact_dir) if include_artifact_dir else None,
+        ),
+        runtime=profiles.RuntimeConfig(
+            codex_bin=config.codex_bin,
+            exec_sandbox=config.exec_sandbox,
+            exec_color=config.exec_color,
+            exec_json=config.exec_json,
+            output_last_message=config.output_last_message,
+            full_auto=config.full_auto,
+            max_remediation_input_chars=config.max_remediation_input_chars,
+            terminal_excerpt_chars=config.terminal_excerpt_chars,
+        ),
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     if raw_argv and raw_argv[0] == "config":
@@ -2351,6 +2435,29 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
+
+    if args.save_profile:
+        profile = profile_from_loop_config(
+            args.save_profile,
+            config,
+            summary_format=summary_format,
+            description=f"Saved from RevRem CLI on {datetime.now(UTC).date().isoformat()}",
+            include_artifact_dir=args.artifact_dir is not None,
+        )
+        try:
+            path = profiles.write_project_profile(
+                profile,
+                cwd=Path.cwd(),
+                force=args.save_profile_force,
+            )
+        except FileExistsError as exc:
+            print(f"ERROR: {exc}; pass --save-profile-force to replace it", file=sys.stderr)
+            return 1
+        except OSError as exc:
+            print(f"ERROR: could not save project profile: {exc}", file=sys.stderr)
+            return 1
+        print(f"saved {args.save_profile} in {path}")
+        return 0
 
     try:
         summary = run_loop(config)

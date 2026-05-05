@@ -1320,6 +1320,43 @@ def test_resolve_initial_review_file_latest(tmp_path):
     assert MODULE.resolve_initial_review_file("latest", tmp_path) == newer_review
 
 
+def test_resolve_initial_review_file_latest_returns_none_when_newest_run_is_clean(tmp_path):
+    clean_run = tmp_path / "20260428T020000Z"
+    unresolved_run = tmp_path / "20260428T010000Z"
+    clean_run.mkdir()
+    unresolved_run.mkdir()
+    clean_review = clean_run / "review-final.txt"
+    unresolved_review = unresolved_run / "review-final.txt"
+    clean_review.write_text("clean", encoding="utf-8")
+    unresolved_review.write_text("findings", encoding="utf-8")
+    (clean_run / "summary.json").write_text(
+        json.dumps({"final_status": "clear", "stopped_reason": "review_clear"}),
+        encoding="utf-8",
+    )
+    (unresolved_run / "summary.json").write_text(
+        json.dumps({"final_status": "findings", "stopped_reason": "max_iterations_reached"}),
+        encoding="utf-8",
+    )
+
+    assert MODULE.resolve_initial_review_file("latest", tmp_path) is None
+
+
+def test_resolve_initial_review_file_latest_returns_none_for_only_clean_runs(tmp_path):
+    clean_run = tmp_path / "20260428T020000Z"
+    clean_run.mkdir()
+    (clean_run / "review-final.txt").write_text("clean", encoding="utf-8")
+    (clean_run / "summary.json").write_text(
+        json.dumps({"final_status": "clear", "stopped_reason": "review_clear"}),
+        encoding="utf-8",
+    )
+
+    assert MODULE.resolve_initial_review_file("latest", tmp_path) is None
+
+
+def test_resolve_initial_review_file_latest_returns_none_without_previous_runs(tmp_path):
+    assert MODULE.resolve_initial_review_file("latest", tmp_path) is None
+
+
 def test_main_resolves_latest_initial_review_from_custom_artifact_dir(tmp_path, monkeypatch):
     custom_root = tmp_path / "custom-artifacts"
     custom_run = custom_root / "20260428T010000Z"
@@ -1359,6 +1396,76 @@ def test_main_resolves_latest_initial_review_from_custom_artifact_dir(tmp_path, 
     assert captured_configs[0].artifact_dir == custom_root
     assert captured_configs[0].initial_review_file == custom_review
     assert captured_configs[0].initial_review_file != default_review
+
+
+def test_main_save_profile_writes_project_config_and_exits(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+
+    def fail_run_loop(config):
+        raise AssertionError("--save-profile should exit before running the loop")
+
+    monkeypatch.setattr(MODULE, "run_loop", fail_run_loop)
+
+    exit_code = MODULE.main(
+        [
+            "--base",
+            "trunk",
+            "--max-iterations",
+            "7",
+            "--review-model",
+            "gpt-5.5",
+            "--remediation-model",
+            "gpt-5.4-mini",
+            "--reasoning-effort",
+            "medium",
+            "--timeout-seconds",
+            "1800",
+            "--summary-format",
+            "text",
+            "--debug-status-detection",
+            "--terminal-title",
+            "--check",
+            "pytest -q",
+            "--check",
+            "git diff --check",
+            "--progress-style",
+            "rich",
+            "--commit-after-remediation",
+            "--commit-message-model",
+            "gpt-5.3-codex-spark",
+            "--save-profile",
+            "final-pr",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "saved final-pr in" in captured.out
+    project_config = profiles.project_config_path(tmp_path)
+    saved = project_config.read_text(encoding="utf-8")
+    assert "[profiles.final-pr]" in saved
+    assert "base = \"trunk\"" in saved
+    assert "max_iterations = 7" in saved
+    assert "checks = [\"pytest -q\", \"git diff --check\"]" in saved
+    assert "model = \"gpt-5.5\"" in saved
+    assert "progress_style = \"rich\"" in saved
+    assert "terminal_title = true" in saved
+    assert "enabled = true" in saved
+
+
+def test_main_save_profile_is_non_destructive_by_default(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    project_config = profiles.project_config_path(tmp_path)
+    project_config.write_text("[profiles.final-pr]\ndescription = \"Keep me\"\n", encoding="utf-8")
+
+    exit_code = MODULE.main(["--save-profile", "final-pr"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "profile already exists: final-pr" in captured.err
+    assert "Keep me" in project_config.read_text(encoding="utf-8")
 
 
 def test_main_resolves_latest_initial_review_from_profile_artifact_dir(tmp_path, monkeypatch):
@@ -3279,7 +3386,7 @@ def test_terminal_title_never_writes_to_stdout(tmp_path, monkeypatch):
     assert stdout.getvalue() == ""
 
 
-def test_terminal_title_uses_tty_in_rich_mode_without_polluting_stderr(tmp_path, monkeypatch):
+def test_terminal_title_uses_stderr_in_rich_mode_when_stderr_is_tty(tmp_path, monkeypatch):
     stderr = TtyBuffer()
     tty_sequences = []
     monkeypatch.setattr(MODULE.sys, "stderr", stderr)
@@ -3299,14 +3406,16 @@ def test_terminal_title_uses_tty_in_rich_mode_without_polluting_stderr(tmp_path,
         MODULE.refresh_terminal_title()
 
     title_sequence = "\033]0;rev 1/1 RevRem\007\033]2;rev 1/1 RevRem\007"
-    assert stderr.getvalue() == ""
-    assert tty_sequences == [
+    assert stderr.getvalue() == "".join(
+        (
         MODULE.TERMINAL_TITLE_SAVE,
         title_sequence,
         title_sequence,
         MODULE.CURSOR_SHOW,
         MODULE.TERMINAL_TITLE_RESTORE,
-    ]
+        )
+    )
+    assert tty_sequences == []
 
 
 def test_terminal_title_context_restores_cursor_on_exit(tmp_path, monkeypatch):

@@ -459,11 +459,14 @@ Deliverables:
 - TOML parser and validator.
 - Merge engine with explicit precedence tests.
 - `--profile` flag and resolved-config diagnostics.
+- Non-destructive project-local profile capture from effective CLI settings.
 - DEVEX examples for global and project-local profiles.
 
 Done when:
 
 - `revrem --profile final-pr --dry-run --summary-format json` resolves the expected command shape.
+- `revrem ... --save-profile NAME` writes `.revrem.toml` without running the
+  loop and refuses to overwrite an existing project profile unless forced.
 - Invalid profiles fail before any Codex subprocess starts.
 
 ### Milestone 2: Config Commands
