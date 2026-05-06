@@ -575,6 +575,7 @@ NEGATED_ISSUE_PROSE_RE = re.compile(
     rf")",
     re.IGNORECASE,
 )
+CONTRASTIVE_CLAUSE_RE = re.compile(r"\b(?:but|however|though|although|yet|nevertheless|nonetheless|still)\b", re.IGNORECASE)
 
 
 def has_affirmative_issue_prose(output: str) -> bool:
@@ -589,9 +590,31 @@ def has_affirmative_issue_prose(output: str) -> bool:
             continue
         if not AFFIRMATIVE_ISSUE_WORD_RE.search(sentence):
             continue
+        if has_affirmative_contrastive_issue_clause(sentence):
+            return True
         if has_negated_clear_review_statement(normalized_sentence):
             continue
         if NEGATED_ISSUE_PROSE_RE.search(sentence):
+            continue
+        return True
+    return False
+
+
+def has_affirmative_contrastive_issue_clause(sentence: str) -> bool:
+    """Return True when a contrastive clause still reports an issue.
+
+    A sentence can negate issues in one clause and then introduce a real
+    finding after a contrastive marker such as "but" or "however". The
+    negation should not suppress the later clause.
+    """
+
+    for match in CONTRASTIVE_CLAUSE_RE.finditer(sentence):
+        suffix = sentence[match.end() :]
+        if not suffix:
+            continue
+        if not AFFIRMATIVE_ISSUE_WORD_RE.search(suffix):
+            continue
+        if NEGATED_ISSUE_PROSE_RE.search(suffix):
             continue
         return True
     return False

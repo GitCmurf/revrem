@@ -190,6 +190,18 @@ def test_detect_review_status_does_not_generalize_negated_clear_with_findings():
 def test_detect_review_status_does_not_treat_scoped_clear_prose_as_clear_when_issue_follows():
     assert (
         MODULE.detect_review_status(
+            "I did not find any issue in the docs, but there is a bug in the CLI."
+        )
+        == "unknown"
+    )
+    assert (
+        MODULE.detect_review_status(
+            "I did not find any issue in the docs; however, there is a bug in the CLI."
+        )
+        == "unknown"
+    )
+    assert (
+        MODULE.detect_review_status(
             "I did not find any discrete issue in the docs.\n\n"
             "However, there is a bug in the parser."
         )
