@@ -3,7 +3,7 @@ document_id: REVREM-TASK-001
 type: TASK
 title: Public GitHub launch readiness
 status: Draft
-version: '0.1'
+version: '0.2'
 last_updated: '2026-05-06'
 owner: GitCmurf
 docops_version: '2.0'
@@ -24,7 +24,7 @@ related_ids:
 > **Document ID:** REVREM-TASK-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 0.1
+> **Version:** 0.2
 > **Last Updated:** 2026-05-06
 > **Type:** TASK
 > **Area:** release
@@ -49,6 +49,11 @@ review bots that compare pull requests to `main` cannot meaningfully review
 work that is already present on `main` unless the public repository is seeded
 carefully.
 
+Meminit is this project's governed documentation system. References to
+"Meminit docs" or "Meminit compliance" throughout this document refer to
+structured documents in the `docs/` tree validated by the `meminit` CLI.
+`CONTRIBUTING.md` must define this for external contributors (see task 7).
+
 ## Content
 
 ### Goal
@@ -58,9 +63,12 @@ Publish `code-review-loop` as a public GitHub repository with:
 - no secrets, private transcripts, PII, or non-public artifacts in the working
   tree or retained Git history;
 - Apache-2.0 licensing and notices that preserve Colin Farmer's copyright and
-  authorship attribution;
+  authorship attribution, with a `NOTICE` file that propagates attribution to
+  downstream redistributors;
 - a professional GitHub-facing project surface;
 - maintainable contribution, security, support, and issue-management defaults;
+- supply-chain integrity: pinned GitHub Actions, signed release artifacts, SBOM
+  generation, and OpenSSF Scorecard compliance;
 - an initial review/merge strategy that gives GitHub review bots useful diffs.
 
 ### Non-Goals
@@ -99,6 +107,43 @@ architecture decisions. For most pre-public projects it creates diff churn,
 stale-review noise, and avoidable conflict risk. Prefer one audited launch PR,
 then smaller forward PRs.
 
+### Task Dependencies
+
+Tasks must be executed in dependency order. Running tasks out of order risks
+publishing secrets before cleanup is done, creating branch protection without
+a CODEOWNERS file, or opening a PR before CI is green.
+
+```
+Task 1  →  Tasks 2, 3, 4, 5     (safety point before any modification)
+Tasks 2, 3  →  Task 12          (both scans must pass before launch PR)
+Task 4  →  Task 10              (ignore rules and pre-commit before CI references them)
+Task 5  →  Task 6               (license text before README references it)
+Task 5  →  Task 7               (license file before community files reference it)
+Task 7  →  Task 8               (CODEOWNERS must exist before branch protection enables required review)
+Task 8  →  Task 12              (public repo and protection must exist before PR is opened)
+Task 10  →  Task 11             (CI must be green before release and supply-chain jobs are added)
+Tasks 5–11  →  Task 12          (all content tasks complete before launch PR)
+```
+
+Tasks 2 and 3 may run in parallel. Tasks 4–10 may run in parallel once tasks
+1–3 are complete. Tasks 5 and 6 are co-dependent on content but can be drafted
+in parallel; task 6 must not be finalized before task 5 is committed.
+
+### Abort Criteria
+
+Stop the launch and return to remediation if any of the following occur:
+
+- Any secret scan pass (tasks 2 or 3) finds a real credential that is not a
+  clearly-labelled placeholder, even after one remediation cycle.
+- History rewriting (task 3) produces a state where `git fsck` shows unexpected
+  reachable objects or corruption.
+- GitHub Actions CI (task 10) cannot reach a green state on the `public-launch`
+  branch before the PR is opened.
+
+Rotate any credential found in history immediately, regardless of whether the
+repository has been made public. Record the rotation privately outside the repo
+— not in the repo, not in the PR body.
+
 ### Task List
 
 #### 1. Establish A Safety Point
@@ -106,303 +151,638 @@ then smaller forward PRs.
 **Purpose:** make all publication work reversible before any history rewrite or
 remote push.
 
+**Blocked by:** nothing — do this first.
+
 **Actions:**
 
-- Confirm the working tree is clean or intentionally staged.
-- Create a local tag or branch before any cleanup, for example
-  `pre-public-audit-2026-05-06`.
-- Record the current commit SHA in the launch notes.
-- Keep the public launch work on a dedicated branch.
+- Confirm `git status --short` is empty or all staged changes are intentional.
+- Create a local tag: `git tag pre-public-audit-2026-05-06`
+- Record the current commit SHA in the launch PR body.
+- Keep all launch work on a dedicated branch (`public-launch`). Never push the
+  safety tag to the public remote.
 
 **Done when:**
 
+- `git tag | grep pre-public-audit` returns the tag.
 - `git status --short` is empty except for intentional launch edits.
-- There is a named local recovery point.
-- No remote repository has been made public before the audit tasks below pass.
+- No remote repository has been created or made public.
+
+---
 
 #### 2. Sweep Working Tree For Secrets, PII, And Private Artifacts
 
 **Purpose:** prevent publishing credentials, personal data, local transcripts,
 or generated automation artifacts.
 
+**Blocked by:** task 1.
+
 **Actions:**
 
-- Run a machine scan with `detect-secrets scan`, `gitleaks detect`, or both.
-- Run targeted text searches for likely private material:
-  `api_key`, `token`, `secret`, `password`, `authorization`, `OPENAI`,
-  `ANTHROPIC`, `GITHUB_TOKEN`, email addresses, local absolute paths, shell
-  history fragments, and Codex transcript filenames.
-- Inspect ignored and untracked files with `git status --ignored --short`.
-- Confirm generated RevRem artifacts, `.revrem/runs/`, local virtualenvs,
-  caches, coverage output, build output, and local profile files cannot be
-  committed accidentally.
-- If a scan flags a fixture value, either replace it with a plainly fake value
-  or add the narrow scanner allowlist comment required by the scanner.
+1. Initialize the detect-secrets baseline before CI references it:
+   ```bash
+   detect-secrets scan > .secrets.baseline
+   detect-secrets audit .secrets.baseline   # interactively mark false positives
+   git add .secrets.baseline
+   git commit -m "chore: initialize detect-secrets baseline"
+   ```
+   The committed `.secrets.baseline` is what CI will use. Without it, CI scans
+   will fail on every fixture value and test stub.
+2. Verify the baseline is clean: `detect-secrets scan --baseline .secrets.baseline`
+   This is the exact command CI will run; it must exit 0 with no new findings.
+3. Run `gitleaks detect --source . --redact` if gitleaks is available.
+4. Run targeted text searches for likely private material:
+   `api_key`, `token`, `secret`, `password`, `authorization`, `OPENAI`,
+   `ANTHROPIC`, `GITHUB_TOKEN`, email addresses other than the public contact
+   address in `SECURITY.md`, local absolute paths (e.g. `/home/cmf/`), shell
+   history fragments, and Codex transcript filenames.
+5. Inspect ignored and untracked files: `git status --ignored --short`
+6. Confirm generated RevRem artifacts, `.revrem/runs/`, local virtualenvs,
+   caches, coverage output, build output, and local profile files cannot be
+   committed accidentally.
+7. Replace any fixture value flagged by a scanner with an obviously inert
+   placeholder (e.g. `EXAMPLE_TOKEN_DO_NOT_USE`) and add the scanner's narrow
+   allowlist comment if the value must remain in the file.
 
 **Done when:**
 
-- Working-tree scans produce no unexplained findings.
-- `.gitignore` or `.git/info/exclude` covers local-only artifacts.
-- Any retained example credentials are obviously inert placeholders.
-- The audit result is summarized in the launch PR.
+- `.secrets.baseline` is committed.
+- `detect-secrets scan --baseline .secrets.baseline` exits 0 with no output.
+- `gitleaks detect --source . --redact` exits 0, or its absence is recorded
+  in the launch PR with the reason.
+- Targeted text searches return no unexplained matches.
+- The full audit result — exact commands and exit statuses — is recorded in the
+  launch PR body.
+
+---
 
 #### 3. Sweep Git History Before Publication
 
 **Purpose:** avoid leaking removed secrets or private data through reachable
 history.
 
-**Actions:**
-
-- Run history-aware secret scanning before pushing to GitHub.
-- Review `git log --all --name-only` for generated artifacts, transcripts,
-  personal notes, binary dumps, or local-only files that were committed earlier.
-- If sensitive material appears in reachable history, rewrite locally with
-  `git filter-repo` or BFG before creating the public remote.
-- Re-run history scans after rewriting.
-- Treat any real credential exposure as compromised and rotate the credential,
-  even if the repository has not yet been public.
-
-**Done when:**
-
-- Reachable history contains no known secrets, PII, private transcripts, or
-  non-public data.
-- The public remote is created only after the cleaned history is final.
-- Any necessary credential rotations are complete and recorded privately, not
-  in the repo.
-
-#### 4. Harden `.gitignore` And Local Artifact Boundaries
-
-**Purpose:** make future accidental publication harder.
+**Blocked by:** task 1.
 
 **Actions:**
 
-- Add tracked ignores for Python caches, build outputs, coverage output,
-  virtualenvs, editor metadata, local env files, `.revrem/runs/`, and generated
-  review-loop artifacts.
-- Keep machine-specific secrets out of tracked config. Prefer documented
-  examples such as `.env.example` over real `.env` files.
-- Verify RevRem's artifact-directory behavior still protects generated run
-  output without hiding source files.
+1. Run `gitleaks detect --source . --redact --log-opts="--all"` to scan all
+   reachable history.
+2. Review `git log --all --name-only` for committed transcripts, personal notes,
+   binary dumps, or local-only files that were committed and later removed.
+3. If sensitive material appears in reachable history, rewrite locally with
+   `git filter-repo` or BFG before creating the public remote.
+4. Re-run both scanners after rewriting. Confirm `git fsck` exits 0 with no
+   unexpected output.
+5. Rotate any real credential found immediately, outside the repo. Record
+   rotation privately — not in the repo, not in the launch PR body.
 
 **Done when:**
 
-- `git status --ignored --short` shows expected local artifacts ignored.
-- `git diff --check` passes.
-- Ignore rules are broad enough for normal development but do not hide source,
-  docs, tests, or release assets.
+- Both scanners return clean on all reachable history.
+- `git fsck` exits 0.
+- Any credential rotation is complete and recorded privately.
+- The public remote does not yet exist.
+- Exact commands and their exit statuses are recorded in the launch PR body.
 
-#### 5. Make `README.md` A Strong GitHub Shop Window
+---
+
+#### 4. Harden `.gitignore`, `pre-commit`, And Local Artifact Boundaries
+
+**Purpose:** make future accidental publication of local artifacts and
+formatting violations structurally harder.
+
+**Blocked by:** task 1.
+
+**Actions:**
+
+1. Add or verify `.gitignore` entries for: Python caches (`__pycache__/`,
+   `*.pyc`, `.mypy_cache/`, `.ruff_cache/`), build outputs (`dist/`, `build/`,
+   `*.egg-info/`), coverage output (`.coverage`, `htmlcov/`), virtualenvs
+   (`.venv/`, `venv/`), editor metadata (`.vscode/`, `.idea/`), local env
+   files (`.env`), `.revrem/runs/`, and generated review-loop artifacts.
+2. Add an `.env.example` file documenting all required environment variables as
+   obviously fake placeholders. Do not commit a real `.env`.
+3. Add a `.editorconfig` at the project root:
+   ```ini
+   root = true
+   [*]
+   end_of_line = lf
+   insert_final_newline = true
+   trim_trailing_whitespace = true
+   charset = utf-8
+   [*.py]
+   indent_style = space
+   indent_size = 4
+   [*.{yml,yaml,toml,json,md}]
+   indent_style = space
+   indent_size = 2
+   ```
+4. Add a `.pre-commit-config.yaml` at the project root. Include at minimum:
+   - `trailing-whitespace` and `end-of-file-fixer` from `pre-commit/pre-commit-hooks`
+   - `detect-secrets` hook with `args: ['--baseline', '.secrets.baseline']`
+   - The project's linter (e.g. `ruff`)
+   - The project's type checker if it runs quickly enough for a pre-commit hook
+   `CONTRIBUTING.md` (task 7) must instruct contributors to run
+   `pre-commit install` after cloning.
+5. Verify RevRem's artifact-directory behavior still protects generated run
+   output without hiding source files.
+
+**Done when:**
+
+- `git status --ignored --short` shows expected local artifacts as ignored.
+- `git diff --check` exits 0. (This command detects whitespace errors and
+  mixed indentation introduced in staged changes.)
+- `.editorconfig` is committed and covers `.py`, `.yml`, `.toml`, `.json`.
+- `.pre-commit-config.yaml` is committed.
+- `pre-commit run --all-files` exits 0.
+- `.env.example` exists; `.env` is in `.gitignore` and not tracked.
+- Ignore rules do not hide source, docs, tests, or release assets.
+
+---
+
+#### 5. Complete Apache-2.0 Licensing And NOTICE Attribution
+
+**Purpose:** publish with clear rights, obligations, and attribution that
+propagate to downstream redistributors.
+
+**Blocked by:** task 1. Must be complete before task 6 (README references the
+license) and task 7 (community files reference the license).
+
+**Actions:**
+
+1. Verify `LICENSE` is the full Apache License 2.0 text. The copyright line
+   must read: `Copyright 2026 Colin Farmer`.
+2. Add a `NOTICE` file. Under Apache 2.0, the `NOTICE` file is the mechanism
+   by which attribution propagates downstream — it is not optional if
+   attribution matters to the project. At minimum:
+   ```
+   code-review-loop
+   Copyright 2026 Colin Farmer
+
+   This product includes software developed by Colin Farmer.
+   ```
+   After the dependency license review (step 4), add any third-party notices
+   required by dependencies.
+3. Add SPDX identifier comments to source files if the project style calls for
+   it: `# SPDX-License-Identifier: Apache-2.0`
+4. Review all direct and optional-extra dependency licenses for Apache-2.0
+   compatibility. Record the review result in the launch PR body.
+5. Verify `pyproject.toml` license field: `license = {text = "Apache-2.0"}`
+   or the SPDX expression form supported by the current PEP 639 toolchain.
+6. Do not overclaim legal effects in docs. Use plain attribution language. Get
+   legal review before making distribution requirements material.
+
+**Done when:**
+
+- `LICENSE` is the full Apache 2.0 text with `Copyright 2026 Colin Farmer`.
+- `NOTICE` exists and contains the project attribution block. Any third-party
+  notices required by dependencies are included.
+- `pyproject.toml` license field matches Apache-2.0.
+- Dependency license compatibility review is complete and recorded in the
+  launch PR body.
+- `LICENSE`, `NOTICE`, `pyproject.toml`, and `README.md` all agree on
+  `Apache-2.0` and `Copyright 2026 Colin Farmer`.
+
+---
+
+#### 6. Make `README.md` A Strong GitHub Shop Window
 
 **Purpose:** make the project understandable, credible, and attractive from the
 first public page.
 
+**Blocked by:** task 5 (README references the license text and must agree with it).
+
 **Actions:**
 
-- Rewrite the opening section around the project promise: bounded AI
-  review-remediation loops for local pre-merge confidence.
-- Add badges for CI, license, supported Python version, package/version status
-  once packaging is public, and documentation status if applicable.
-- Include a short feature list, installation instructions, quick start,
-  screenshots or terminal output examples, safety model, artifact model,
-  configuration profile examples, and development commands.
-- Keep positive marketing copy accurate: emphasize useful outcomes without
-  implying autonomous correctness, security guarantees, or hosted telemetry.
-- Add a concise "When to use this" and "When not to use this" section.
-- Link to governed docs that explain design and operating model.
+1. Rewrite the opening section around the project promise: bounded AI
+   review-remediation loops for local pre-merge confidence.
+2. Add badges **only for services that already exist and are green**. Do not
+   add a package/version badge before the package is published. Do not add a
+   documentation badge before the docs site is live. Do not add an OpenSSF
+   Scorecard badge before task 10 produces a result. A badge pointing at a
+   non-existent workflow or package actively damages credibility.
+   Acceptable badges at launch: CI status, license, supported Python version.
+3. Add the OpenSSF Scorecard badge after task 10 is complete and the first
+   Scorecard run has produced a score.
+4. Include: short feature list, installation instructions, quick start with an
+   example command and expected output, safety model, artifact model,
+   configuration profile examples, and development commands.
+5. Add a "When to use this" and "When not to use this" section.
+6. Keep positive marketing copy accurate: emphasize useful outcomes without
+   implying autonomous correctness, security guarantees, or hosted telemetry.
+7. Add a license section: `This project is licensed under the Apache License
+   2.0 — see [LICENSE](LICENSE) for details.`
+8. Link to Meminit-governed docs that explain design and operating model.
+   Include a one-sentence explanation of what Meminit is so external readers
+   are not confused by the reference. Example: "Design rationale is documented
+   in the `docs/` tree and validated by [Meminit](link), this project's
+   governed documentation system."
 
 **Done when:**
 
 - A new user can understand the tool, install it, run a dry run, and find
   artifacts from the README alone.
+- Every badge resolves to a real, currently-green target.
 - Claims in the README are backed by current code, tests, or docs.
-- Badges do not point at non-existent workflows or packages.
+- The README contains no Meminit reference that is not briefly explained.
+- The README license section agrees with `LICENSE` and `NOTICE`.
 
-#### 6. Complete Apache-2.0 Licensing And NOTICE Attribution
-
-**Purpose:** publish with clear rights, obligations, and attribution.
-
-**Actions:**
-
-- Verify `LICENSE` is the full Apache License 2.0 text with the appropriate
-  copyright line for `Copyright 2026 Colin Farmer`.
-- Add a `NOTICE` file if the project intends downstream redistributors to
-  preserve author/project attribution or if dependencies/assets require notice.
-- Add SPDX license identifiers to source files where appropriate for the
-  project's style.
-- Ensure `pyproject.toml` license metadata matches Apache-2.0.
-- Review dependency licenses for compatibility, including optional extras.
-- Avoid overclaiming legal effects in docs; use plain attribution language and
-  get legal review if distribution requirements become material.
-
-**Done when:**
-
-- `LICENSE`, `NOTICE`, package metadata, and README license sections agree.
-- Authorship and copyright ownership are visible without weakening the
-  Apache-2.0 grant.
-- Third-party notice obligations are either absent or represented accurately.
+---
 
 #### 7. Add GitHub Community And Governance Files
 
-**Purpose:** make the public repository legible to contributors and security
-reporters.
+**Purpose:** make the public repository legible to contributors, security
+reporters, and community members.
+
+**Blocked by:** tasks 4 and 5.
 
 **Actions:**
 
-- Add `CONTRIBUTING.md` with local setup, tests, style, DocOps expectations,
-  PR expectations, and review-loop guidance.
-- Add `CODE_OF_CONDUCT.md`, preferably the Contributor Covenant unless there
-  is a deliberate alternative.
-- Add `SECURITY.md` with supported versions, vulnerability reporting channel,
-  and a warning not to paste secrets into issues.
-- Add `SUPPORT.md` if issue boundaries need to be clear.
-- Add issue templates for bug reports, feature requests, and documentation
-  problems.
-- Add a pull request template that asks for tests, docs, security/privacy
-  impact, and Meminit compliance.
-- Add `CHANGELOG.md` using Keep a Changelog style if releases will be tagged.
-- Add `CITATION.cff` only if academic/software citation is desired.
+1. **`CONTRIBUTING.md`**: local setup, `pre-commit install` instructions,
+   tests, style, DocOps/Meminit expectations (define Meminit in one paragraph
+   for external contributors and link to its documentation), PR expectations,
+   and review-loop guidance. State the preferred merge strategy (squash, rebase,
+   or merge commit) — this must match the setting chosen in task 8. Explain
+   where roadmap and debt live (GitHub Issues for public work, Meminit docs for
+   internal sequencing).
+2. **`CODE_OF_CONDUCT.md`**: use the Contributor Covenant v2.1 unless there is
+   a deliberate alternative. Set the enforcement contact to the project's public
+   email address.
+3. **`SECURITY.md`**:
+   - Enable GitHub Private Vulnerability Reporting before publishing this file
+     (Settings → Security → Private vulnerability reporting → Enable). This
+     is also required in task 8.
+   - In the file, direct reporters to the GitHub security advisory form
+     (`github.com/<org>/<repo>/security/advisories/new`) as the primary
+     channel. This keeps reports private and auto-drafts a CVE record. An email
+     address is an acceptable fallback, not the primary.
+   - State supported versions.
+   - Include the warning: do not paste credentials or logs containing secrets
+     into public issues.
+4. **`SUPPORT.md`**: route general questions to GitHub Discussions (enable
+   Discussions in Settings → Features → Discussions before publishing this
+   file), bug reports to GitHub Issues, and security reports to `SECURITY.md`.
+   This three-way routing prevents Issues from becoming a general Q&A forum.
+5. **`.github/CODEOWNERS`**:
+   ```
+   * @GitCmurf
+   ```
+   This file is required for branch protection (task 8) to enforce required
+   reviewers. Without it, the "required review" rule has no nominated reviewer
+   to satisfy and may block all merges or be silently unsatisfied.
+6. **Issue templates as YAML forms** (not legacy Markdown templates):
+   - `.github/ISSUE_TEMPLATE/bug_report.yml`
+   - `.github/ISSUE_TEMPLATE/feature_request.yml`
+   - `.github/ISSUE_TEMPLATE/docs.yml`
+   - `.github/ISSUE_TEMPLATE/config.yml` with a `contact_links` entry routing
+     security reporters to the private advisory form. This prevents the "New
+     Issue" picker from showing a security template that would be publicly
+     visible.
+7. **`.github/pull_request_template.md`**: include checklist items for tests
+   updated, docs updated, security/privacy impact considered, and Meminit
+   compliance (`meminit check --format json` passes).
+8. **`CHANGELOG.md`**: initialize using Keep a Changelog format with a single
+   `[Unreleased]` section. Record relevant v0.x history in reverse-chronological
+   entries.
+9. **`CITATION.cff`**: add only if academic or software citation is desired.
 
 **Done when:**
 
-- GitHub's community profile checklist is intentionally satisfied or
-  intentionally deferred.
-- Templates route sensitive reports away from public issues.
-- Contribution instructions match the actual commands in this repo.
+- All files above are committed.
+- `SECURITY.md` references the GitHub advisory form as the primary reporting
+  channel.
+- GitHub Discussions is enabled in repository settings and `SUPPORT.md` links
+  to it.
+- `.github/CODEOWNERS` exists and names at least one reviewer.
+- `.github/ISSUE_TEMPLATE/` contains YAML form files; `config.yml` routes
+  security reports away from the public issue picker.
+- `CONTRIBUTING.md` defines Meminit for external readers, states the merge
+  strategy, and explains where roadmap and debt live.
+- GitHub's community profile checklist is intentionally satisfied, or each
+  omission is documented with a reason in the launch PR body.
+
+---
 
 #### 8. Configure Public GitHub Repository Settings
 
 **Purpose:** make GitHub enforce the quality bar instead of relying on memory.
 
+**Blocked by:** task 7 (CODEOWNERS and Discussions must exist before branch
+protection and SUPPORT.md reference them; GitHub Private Vulnerability
+Reporting must be enabled before SECURITY.md is published).
+
 **Actions:**
 
-- Enable branch protection for `main`.
-- Require PRs, status checks, and at least one review before merge.
-- Require the configured review bots on PRs if they are part of the quality
-  gate.
-- Disable force-pushes and deletion on protected branches.
-- Enable secret scanning, push protection, Dependabot alerts, and Dependabot
-  security updates where available.
-- Configure repository topics, description, homepage/documentation links, and
-  social preview image if useful.
-- Decide whether squash merge, rebase merge, or merge commits are preferred
-  and document it in `CONTRIBUTING.md`.
+1. Enable branch protection for `main`:
+   - Require a pull request before merging.
+   - Require at least one review. Required reviewers are satisfied by
+     `.github/CODEOWNERS` — that file must exist before enabling this rule.
+   - Require status checks to pass. Specify the exact check names from task 10
+     CI once CI is confirmed green; do not leave this as "any check."
+   - Disable force-pushes and branch deletion on `main`.
+2. Enable GitHub Private Vulnerability Reporting (Settings → Security →
+   Private vulnerability reporting → Enable). This must be done before
+   publishing `SECURITY.md`, which links to the advisory form.
+3. Enable secret scanning and push protection (Settings → Security → Code
+   security).
+4. Enable Dependabot alerts and Dependabot security updates (Settings →
+   Security → Dependabot).
+5. Configure repository metadata: topics, description, and homepage or
+   documentation link.
+6. Upload a social preview image (Settings → Social preview). GitHub requires
+   1280×640 px, maximum 1 MB. The image is uploaded via the UI and is not
+   committed to the repo.
+7. Set the preferred merge strategy in Settings → Pull Requests (squash, rebase,
+   or merge commit). This must match what `CONTRIBUTING.md` states.
 
 **Done when:**
 
-- `main` cannot be changed without review and checks.
-- Security features are enabled for the public repository.
-- The merge policy is visible to contributors.
+- `main` cannot receive a direct push or a PR without a passing required review
+  and named status checks.
+- Force-push and branch deletion are disabled on `main`.
+- Required status check names match the actual CI job names from task 10.
+- Secret scanning, push protection, Dependabot alerts, and Dependabot security
+  updates are confirmed enabled in the GitHub security dashboard.
+- GitHub Private Vulnerability Reporting is enabled.
+- The repository has topics, a description, and a homepage link.
+- The merge strategy is consistent between GitHub settings and `CONTRIBUTING.md`.
+
+---
 
 #### 9. Decide How To Track Known Technical Debt
 
 **Purpose:** keep debt visible without flooding the initial public issue
 tracker with internal notes.
 
+**Blocked by:** tasks 1–3 complete (so the scope of public debt is known).
+
 **Actions:**
 
 - Convert externally relevant, user-visible, or contributor-actionable debt to
   GitHub Issues.
-- Keep architecture rationale and internal sequencing in governed Meminit docs.
+- Keep architecture rationale and internal sequencing in Meminit docs.
 - Link issues back to Meminit document IDs where useful.
 - Use GitHub milestones or Projects for near-term release work, not for every
   speculative idea.
-- Label debt consistently, for example `debt`, `docs`, `security`,
-  `good first issue`, and `help wanted`.
+- Label debt consistently: `debt`, `docs`, `security`, `good first issue`,
+  and `help wanted`.
 
 **Done when:**
 
 - Public issues are actionable by someone who did not live through the private
   development history.
-- Internal-only notes remain in governed docs until they become public work.
-- The README or CONTRIBUTING file explains where roadmap and debt live.
+- Internal-only notes remain in Meminit docs until they become public work.
+- `CONTRIBUTING.md` explains where roadmap and debt live (added in task 7).
 
-#### 10. Add CI And Release Hygiene
+---
+
+#### 10. Add CI, Release Hygiene, And OpenSSF Scorecard
 
 **Purpose:** ensure the first public repository behaves like a maintained
-project.
+project and passes baseline supply-chain audits.
+
+**Blocked by:** tasks 4 and 5.
 
 **Actions:**
 
-- Add or verify GitHub Actions for linting, typing, tests, packaging, and
-  Meminit compliance.
-- Add a build check for source distributions and wheels if publishing to PyPI
-  is planned.
-- Add `dependabot.yml` for GitHub Actions and Python dependency updates.
-- Add release checklist documentation covering version bump, changelog, tag,
-  package build, and stable local promotion.
-- Confirm `./scripts/dev-check`, `meminit check --format json`, and
-  `git diff --check` are the local pre-PR gate.
+1. **CI workflow** (`.github/workflows/ci.yml`), running on every push and PR
+   to `main`:
+   - Linting: `ruff check .` (or the project's chosen linter)
+   - Type checking: `mypy` or `pyright` at the configured strictness
+   - Tests: `pytest` with coverage; fail if coverage drops below the current
+     threshold
+   - Python version matrix: test against all supported Python versions (e.g.
+     3.11, 3.12, 3.13) on `ubuntu-latest`
+   - Meminit compliance: `/path/to/meminit check --format json`
+   - Whitespace check: `git diff --check` (detects trailing whitespace and
+     mixed indentation introduced in the PR)
+   - Pre-commit: `pre-commit run --all-files`
+   - Secret scan: `detect-secrets scan --baseline .secrets.baseline`
+2. **Packaging check** (conditional on the PyPI open decision): if PyPI is in
+   scope, add a job running `python -m build --sdist --wheel && twine check
+   dist/*` on every CI run. If PyPI is deferred, omit this job entirely and
+   omit the package/version badge from the README.
+3. **Dependency update tool**: add `.github/dependabot.yml` for both
+   `github-actions` and `pip` ecosystems on a weekly schedule. Alternatively,
+   use Renovate — it offers better dependency grouping, automerge semantics,
+   and a dashboard; if Renovate is chosen, document the rationale in
+   `CONTRIBUTING.md` and omit `dependabot.yml` for package updates (keep
+   Dependabot security alerts if desired). The choice must match the open
+   decision in the table below.
+4. **OpenSSF Scorecard** (`.github/workflows/scorecard.yml`): add the
+   `ossf/scorecard-action` workflow, triggered on schedule and on pushes to
+   `main`. It publishes results to the OpenSSF database and the GitHub security
+   dashboard. Add the Scorecard badge to `README.md` after the first run
+   produces a score. Scorecard will flag unpinned GitHub Actions dependencies
+   (the "Pinned-Dependencies" check) — address all findings before the launch
+   PR merges, or document each deferral with a rationale in the PR body.
+5. **Pin all GitHub Actions** to commit SHAs, not version tags, in every
+   workflow file. Example:
+   ```yaml
+   uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+   ```
+   This is required to pass the Scorecard "Pinned-Dependencies" check.
+6. **Release checklist documentation**: version bump in `pyproject.toml`
+   (SemVer: `vMAJOR.MINOR.PATCH`), `CHANGELOG.md` update, git tag, package
+   build confirmation, and stable local promotion. Document in `CONTRIBUTING.md`
+   or `docs/05-planning/`.
+7. Confirm `./scripts/dev-check` runs the same checks as CI (lint, type, tests,
+   Meminit, diff check) so local failures predict CI failures precisely.
 
 **Done when:**
 
-- A clean checkout can run the documented local gate.
-- CI reproduces the important local checks.
+- CI workflow is committed and green on the `public-launch` branch.
+- The Python version matrix is explicit in the workflow YAML.
+- Every `uses:` line in every workflow file is pinned to a commit SHA with a
+  version comment.
+- Dependabot or Renovate config is committed; the choice is noted in
+  `CONTRIBUTING.md`.
+- `scorecard.yml` is committed; the first Scorecard run has completed and each
+  finding is reviewed — addressed or intentionally deferred with a rationale
+  recorded in the launch PR body.
 - Release steps are documented before the first public tag.
+- `./scripts/dev-check` and CI produce consistent results on the same code.
 
-#### 11. Prepare The Initial Launch PR
+---
+
+#### 11. Supply Chain And Artifact Integrity
+
+**Purpose:** ensure that published release artifacts can be verified by
+downstream consumers and that the build pipeline cannot be silently tampered
+with.
+
+**Blocked by:** task 10 (CI must be green before adding release jobs on top of it).
+
+**Actions:**
+
+1. Verify all GitHub Actions are pinned to commit SHAs across every workflow
+   file (this overlaps with task 10 step 5; confirm no workflow is missed).
+   The Scorecard "Pinned-Dependencies" check is the authoritative gate.
+2. Add `actions/attest-build-provenance` to the release workflow. This
+   generates a signed provenance statement attached to the GitHub release that
+   consumers can verify:
+   ```bash
+   gh attestation verify <artifact> --repo <org>/<repo>
+   ```
+3. Add SBOM generation to the release workflow using `anchore/sbom-action`
+   (CycloneDX JSON format) or `actions/attest-sbom`. Attach the SBOM as a
+   release asset alongside the distribution files.
+4. If PyPI is in scope: configure OIDC Trusted Publishing on PyPI and
+   test.pypi.org before the first publish job runs. Do not store a long-lived
+   PyPI API token in GitHub secrets. Trusted Publishing configuration must be
+   done on the PyPI side first, then referenced in the workflow with
+   `pypa/gh-action-pypi-publish`.
+5. Document in `CONTRIBUTING.md` how to verify a release artifact:
+   ```bash
+   gh attestation verify <artifact-path> --repo <org>/<repo>
+   ```
+
+**Done when:**
+
+- Every `uses:` line in every workflow is pinned to a SHA (Scorecard
+  "Pinned-Dependencies" check passes).
+- The release workflow includes `actions/attest-build-provenance` and produces
+  a `.sigstore` bundle attached to the GitHub release.
+- SBOM generation is in the release workflow; the SBOM is attached to the
+  GitHub release as an asset.
+- If PyPI is in scope: Trusted Publishing is configured on PyPI; no long-lived
+  API token for publishing is stored in GitHub secrets.
+- Verification instructions are in `CONTRIBUTING.md`.
+
+---
+
+#### 12. Prepare The Initial Launch PR
 
 **Purpose:** make review bots and human reviewers inspect the real public
 surface before `main` becomes the canonical baseline.
 
+**Blocked by:** tasks 2, 3, 5–11, and 8 (public repo must exist with
+protection in place before the PR is opened).
+
 **Actions:**
 
-- Create the public baseline branch as described above if PR review of the
-  existing project is required.
-- Push the current audited project state as `public-launch`.
-- Open the PR with a checklist covering security scan, history scan,
-  licensing, README, community files, CI, and known-debt triage.
-- Include explicit commands and scan summaries in the PR body.
-- Merge only after review bots and required checks are clear or after each
-  finding is intentionally dispositioned.
+- Create the public baseline branch as described in the Branch Strategy section
+  if PR review of the existing project is required.
+- Push the audited project state as `public-launch`.
+- Open the PR with a body that includes:
+  - Exact commands and exit statuses from secret scans (tasks 2 and 3)
+  - Dependency license compatibility summary (task 5)
+  - Abort criteria disposition: all clear, or description of any item that
+    required remediation and how it was resolved
+  - OpenSSF Scorecard findings and their disposition (addressed or deferred
+    with rationale)
+  - Checklist: security scan, history scan, detect-secrets baseline committed,
+    licensing and NOTICE, README, CODEOWNERS, community files, CI green, GitHub
+    Private Vulnerability Reporting enabled, supply-chain tasks complete,
+    known-debt triage complete
+- Merge only after all required CI checks are green and each Scorecard finding
+  is intentionally dispositioned.
 
 **Done when:**
 
-- The initial PR diff is large but coherent: it introduces the project once.
-- Review comments are actionable and not dominated by artificial replay
-  conflicts.
-- After merge, future work can proceed through normal small PRs against `main`.
+- The PR diff is large but coherent: it introduces the project once.
+- All required CI checks are green.
+- Scorecard findings are reviewed; deferred findings are documented in the PR
+  body with a rationale.
+- After merge, `main` is protected per task 8 and future work proceeds through
+  normal small PRs.
+
+---
 
 ### Verification Gate
 
-Before creating or publicizing the GitHub repository, run:
+Before creating or publicizing the GitHub repository, run all of the following
+and record each command and exit status in the launch PR body. Every command
+must exit 0; any non-zero exit is a blocker.
 
 ```bash
-git status --short
+# Confirms no staged whitespace errors or mixed indentation
 git diff --check
+
+# Meminit governance compliance
 /home/cmf/code/Meminit/.venv/bin/meminit check --format json
+
+# Local dev gate (lint, type, tests)
 ./scripts/dev-check
-detect-secrets scan
-```
 
-If `gitleaks` is available, also run:
+# Secret scan against committed baseline (exit 0 = no new findings)
+detect-secrets scan --baseline .secrets.baseline
 
-```bash
+# Pre-commit hooks across all files
+pre-commit run --all-files
+
+# Working-tree secret scan
 gitleaks detect --source . --redact
+
+# Full history secret scan
+gitleaks detect --source . --redact --log-opts="--all"
+
+# Safety point verification
+git tag | grep pre-public-audit
+git status --short
 ```
 
-For history-sensitive validation, run the selected scanner in history mode and
-record the exact command in the launch PR.
+If gitleaks is unavailable, document the reason in the launch PR and substitute
+an equivalent history-aware scanner. Do not skip the history scan step.
+
+---
 
 ### Open Decisions
 
-- Whether to use one launch PR against an orphan minimal baseline or to publish
-  the current cleaned state directly and accept that bots begin reviewing only
-  future changes.
-- Whether PyPI publication is in scope for the first public GitHub launch or a
-  follow-up release task.
-- Whether a `NOTICE` file should contain only project attribution or also
-  third-party notices after dependency/license review.
-- Which public contact channel should appear in `SECURITY.md`.
+Each open decision has a default that applies if the decision is not made before
+the task that depends on it begins. Decisions without an owner do not get made.
+
+| Decision | Owner | Must resolve before | Default if undecided |
+|---|---|---|---|
+| PyPI publication scope: in scope for v0.x launch, or deferred? | GitCmurf | Task 10 begins | Deferred: omit publish job and package/version badge |
+| `NOTICE` file scope: project attribution only, or include third-party notices after dependency review? | GitCmurf | Task 5 begins | Project attribution only; add third-party notices after dependency review if any are required |
+| Public fallback contact for `SECURITY.md` | GitCmurf | Task 7 begins | `colinfarmer.gg1@gmail.com` |
+| Dependency update tool: Dependabot or Renovate? | GitCmurf | Task 10 begins | Dependabot (simpler; switch to Renovate post-launch if grouping or automerge is needed) |
+
+---
+
+### Post-Launch Success Criteria
+
+The launch is considered successful when, within 30 days of the PR merging to
+`main`:
+
+- CI remains green on `main` with no manual intervention.
+- Dependabot or Renovate opens at least one dependency update PR, confirming
+  the update workflow functions end-to-end.
+- The OpenSSF Scorecard run on `main` completes and the score is visible in
+  the repository security dashboard.
+- At least one external user can install the package from source by following
+  the README instructions without additional guidance.
+- No post-launch security finding requires a hotfix within the first 7 days.
+
+---
 
 ### Acceptance Criteria
 
 - Security and history scans have no unresolved findings.
+- `.secrets.baseline` is committed and `detect-secrets scan --baseline .secrets.baseline`
+  exits 0.
+- `pre-commit run --all-files` exits 0.
 - Public-facing files exist and are internally consistent: `README.md`,
-  `LICENSE`, optional `NOTICE`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`,
-  `SECURITY.md`, issue templates, PR template, and release notes or changelog.
-- GitHub repository settings enforce PR review and required checks on `main`.
-- Known debt is either converted to actionable public issues or retained in
-  governed docs with a clear reason.
+  `LICENSE`, `NOTICE`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`,
+  `SUPPORT.md`, `.github/CODEOWNERS`, `.github/ISSUE_TEMPLATE/` (YAML forms
+  with `config.yml`), `.github/pull_request_template.md`, `CHANGELOG.md`,
+  `.editorconfig`, `.pre-commit-config.yaml`.
+- `SECURITY.md` references GitHub Private Vulnerability Reporting as the
+  primary channel.
+- All GitHub Actions `uses:` lines across all workflows are pinned to commit
+  SHAs with version comments.
+- OpenSSF Scorecard workflow is committed; each finding is addressed or
+  intentionally deferred with a recorded rationale before the launch PR merges.
+- Release workflow includes provenance attestation and SBOM generation.
+- `LICENSE`, `NOTICE`, `pyproject.toml`, and `README.md` agree on Apache-2.0
+  and `Copyright 2026 Colin Farmer`.
+- GitHub repository settings enforce PR review with named status checks on
+  `main`; `.github/CODEOWNERS` is in place.
+- GitHub Private Vulnerability Reporting is enabled.
+- Open Decisions are resolved before the task each one blocks.
+- Known debt is either converted to actionable public GitHub Issues or retained
+  in Meminit docs with a clear reason.
 - The initial publication PR receives meaningful bot review and lands cleanly.
-- `./scripts/dev-check`, `/home/cmf/code/Meminit/.venv/bin/meminit check
-  --format json`, and `git diff --check` pass.
+- `./scripts/dev-check`, `meminit check --format json`,
+  `detect-secrets scan --baseline .secrets.baseline`,
+  `pre-commit run --all-files`, and `git diff --check` all exit 0.
