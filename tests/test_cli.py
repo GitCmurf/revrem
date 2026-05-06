@@ -2574,6 +2574,11 @@ def test_config_commands_create_show_list_and_delete_profile(tmp_path, monkeypat
     assert MODULE.main(["config", "show", "smoke", "--format", "json"]) == 0
     assert '"name": "smoke"' in capsys.readouterr().out
 
+    assert MODULE.main(["config", "clone", "smoke", "smoke-copy"]) == 0
+    assert "cloned smoke to smoke-copy" in capsys.readouterr().out
+    assert MODULE.main(["config", "show", "smoke-copy", "--format", "json"]) == 0
+    assert '"description": "Edited profile"' in capsys.readouterr().out
+
     assert MODULE.main(["config", "doctor", "--profile", "smoke", "--format", "json"]) == 0
     assert '"resolved_profile"' in capsys.readouterr().out
 

@@ -223,6 +223,67 @@ def test_tui_edit_action_launches_profile_editor_with_suspended_app(monkeypatch,
     assert notifications == ["Edited profile: final-pr"]
 
 
+def test_tui_profile_lifecycle_actions_use_config_commands(monkeypatch, tmp_path):
+    actions = []
+    notifications = []
+
+    config_path = tmp_path / "home" / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text("[profiles.final-pr]\ndescription = \"Final PR\"\n", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+
+    class FakeInput:
+        def __init__(self, value):
+            self.value = value
+
+    class FakeApp:
+        def run(self):
+            self.action_clone_profile()
+            self.action_delete_profile()
+            actions.append(type(self).__name__)
+
+        def query_one(self, selector):
+            assert selector == "#profile-name"
+            return FakeInput("copy")
+
+        def notify(self, message):
+            notifications.append(message)
+
+    class FakeWidget:
+        def __init__(self, *args, **kwargs):
+            self.args = args
+            self.kwargs = kwargs
+
+    app_module = types.ModuleType("textual.app")
+    widgets_module = types.ModuleType("textual.widgets")
+    app_module.App = FakeApp
+    widgets_module.Header = FakeWidget
+    widgets_module.Footer = FakeWidget
+    widgets_module.Static = FakeWidget
+    monkeypatch.setitem(sys.modules, "textual.app", app_module)
+    monkeypatch.setitem(sys.modules, "textual.widgets", widgets_module)
+    monkeypatch.setattr(tui.importlib.util, "find_spec", lambda name: object() if name == "textual" else None)
+    monkeypatch.setattr(tui.Path, "cwd", lambda: tmp_path)
+
+    def fake_run_launch_plan(plan, *, cwd, capture_output=True):
+        actions.append((plan.argv, cwd, capture_output))
+        return types.SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(tui, "run_launch_plan", fake_run_launch_plan)
+
+    assert cli.main(["ui", "--profile", "final-pr"]) == 0
+
+    assert actions[:2] == [
+        (("revrem", "config", "clone", "final-pr", "copy"), tmp_path, True),
+        (("revrem", "config", "delete", "copy", "--yes"), tmp_path, True),
+    ]
+    assert actions[2] == "RevRemApp"
+    assert notifications == [
+        "Cloned profile: final-pr -> copy",
+        "Deleted profile: copy",
+    ]
+
+
 def test_run_launch_plan_uses_current_dev_entrypoint(tmp_path, monkeypatch):
     launcher = tmp_path / ".venv" / "bin" / "revrem"
     launcher.parent.mkdir(parents=True)

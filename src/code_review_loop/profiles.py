@@ -8,7 +8,7 @@ import re
 import tempfile
 import tomllib
 from contextlib import suppress
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -572,6 +572,21 @@ def delete_user_profile(name: str, *, home: Path | None = None) -> Path:
         raw_profiles=raw_profiles,
     )
     return path
+
+
+def clone_user_profile(
+    source_name: str,
+    target_name: str,
+    *,
+    cwd: Path,
+    home: Path | None = None,
+    force: bool = False,
+) -> Path:
+    if source_name == target_name:
+        raise ValueError("clone target must be different from source profile")
+    source = resolve_profile(source_name, cwd=cwd, home=home, require_implemented=False)
+    cloned = replace(source, name=target_name, source=None)
+    return write_user_profile(cloned, home=home, force=force)
 
 
 def import_user_profiles(path: Path, *, home: Path | None = None, force: bool = False) -> Path:

@@ -3,8 +3,8 @@ document_id: REVREM-TEST-001
 type: TEST
 title: Utility verification strategy
 status: Draft
-version: '0.8'
-last_updated: '2026-05-03'
+version: '0.9'
+last_updated: '2026-05-06'
 owner: GitCmurf
 docops_version: '2.0'
 area: testing
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-TEST-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 0.8
-> **Last Updated:** 2026-05-03
+> **Version:** 0.9
+> **Last Updated:** 2026-05-06
 > **Type:** TEST
 > **Area:** testing
 > **Description:** Test and release gates for code-review-loop
@@ -102,11 +102,13 @@ phase/action and status columns, plus in-place Live panel updates.
 scripts, including optional extras metadata.
 `tests/test_tui.py` covers the dependency-gated `revrem ui` entry point without
 requiring Textual in the default development environment, plus fake-Textual
-launch smoke tests for the four-section shell and dry-run launch action.
+launch smoke tests for the operator shell, dry-run launch action, and
+CLI-backed profile lifecycle actions.
 `tests/test_tui_state.py` covers dependency-free TUI view models for profile
 discovery, run-history loading, harness metadata, pipeline phase summaries, and
-profile command previews, launch plans, run-monitor artifact links, and the
-composed shell model used by the interactive entry point.
+profile command previews, launch plans, profile lifecycle command plans,
+run-monitor artifact links, and the composed shell model used by the
+interactive entry point.
 
 ### Local verification
 

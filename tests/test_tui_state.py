@@ -273,7 +273,7 @@ def test_run_monitor_view_resolves_relative_artifacts_against_record_cwd(tmp_pat
     assert snapshot.run_monitors[0].artifacts[0].exists is True
 
 
-def test_shell_model_builds_four_operator_screens_and_selected_launch_plan(tmp_path):
+def test_shell_model_builds_operator_screens_and_selected_launch_plan(tmp_path):
     home = tmp_path / "home"
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -308,6 +308,7 @@ reasoning_effort = "low"
         "profiles",
         "pipeline",
         "run-monitor",
+        "actions",
     ]
     assert model.selected_profile_name == "final-pr"
     assert model.selected_launch_plan is not None
@@ -316,6 +317,33 @@ reasoning_effort = "low"
     assert "Selected profile: final-pr" in rendered
     assert "triage: enabled" in rendered
     assert "Dry-run launch: revrem --profile final-pr --dry-run" in rendered
+    assert "New, Edit, Clone, Delete, Export, and Import" in rendered
+
+
+def test_profile_lifecycle_launch_plans_are_cli_backed():
+    assert tui_state.show_plan_for_name("final-pr").argv == ("revrem", "config", "show", "final-pr")
+    assert tui_state.new_plan_for_name("smoke").argv == ("revrem", "config", "new", "smoke")
+    assert tui_state.clone_plan_for_name("final-pr", "copy").argv == (
+        "revrem",
+        "config",
+        "clone",
+        "final-pr",
+        "copy",
+    )
+    assert tui_state.delete_plan_for_name("copy").argv == (
+        "revrem",
+        "config",
+        "delete",
+        "copy",
+        "--yes",
+    )
+    assert tui_state.export_plan_for_name("copy").argv == ("revrem", "config", "export", "copy")
+    assert tui_state.import_plan_for_path("profiles.toml").argv == (
+        "revrem",
+        "config",
+        "import",
+        "profiles.toml",
+    )
 
 
 def test_shell_render_escapes_dynamic_markup_in_profile_paths(tmp_path):
@@ -347,8 +375,8 @@ def test_shell_render_escapes_dynamic_markup_in_profile_paths(tmp_path):
     rendered = tui_state.render_shell_text(model)
 
     assert "[b]Profiles[/b]" in rendered
-    assert f"\\[{profile_path}\\]" in rendered
-    assert f"[{profile_path}]" not in rendered
+    assert str(profile_path) in rendered
+    assert "[profiles.toml]" not in rendered
 
 
 def test_shell_model_handles_missing_profiles_without_launch_plan(tmp_path):

@@ -627,6 +627,37 @@ base = "trunk"
     assert resolved.pipeline.base == "trunk"
 
 
+def test_clone_user_profile_writes_resolved_profile_to_user_config(tmp_path):
+    home = tmp_path / "home"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    project_config = repo / ".revrem.toml"
+    project_config.write_text(
+        """
+[defaults.review]
+model = "gpt-5.5"
+
+[profiles.source]
+description = "Source profile"
+
+[profiles.source.pipeline]
+base = "trunk"
+""",
+        encoding="utf-8",
+    )
+
+    path = profiles.clone_user_profile("source", "copy", cwd=repo, home=home)
+
+    assert path == profiles.user_config_path(home)
+    rendered = path.read_text(encoding="utf-8")
+    assert "[profiles.copy]" in rendered
+    assert 'description = "Source profile"' in rendered
+    cloned = profiles.resolve_profile("copy", cwd=repo, home=home)
+    assert cloned.review.model == "gpt-5.5"
+    assert cloned.pipeline.base == "trunk"
+
+
 def test_rewrite_user_profiles_preserves_explicit_builtin_overrides(tmp_path):
     home = tmp_path / "home"
     config_path = profiles.user_config_path(home)

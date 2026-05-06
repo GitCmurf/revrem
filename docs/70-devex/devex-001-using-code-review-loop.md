@@ -3,8 +3,8 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.0'
-last_updated: '2026-05-03'
+version: '1.1'
+last_updated: '2026-05-06'
 owner: GitCmurf
 docops_version: '2.0'
 area: devex
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.0
-> **Last Updated:** 2026-05-03
+> **Version:** 1.1
+> **Last Updated:** 2026-05-06
 > **Type:** DEVEX
 > **Area:** devex
 > **Description:** Operator guide for the code-review-loop utility
@@ -335,8 +335,11 @@ Profile management commands:
 revrem config list
 revrem config show final-pr
 revrem config new final-pr --description "Full PR readiness check"
+revrem config edit final-pr
+revrem config clone final-pr final-pr-copy
 revrem config export final-pr
 revrem config import profiles.toml
+revrem config delete final-pr-copy --yes
 revrem config doctor --profile final-pr --format json
 ```
 
@@ -448,13 +451,14 @@ them.
 
 Without the `tui` extra, `revrem ui` exits cleanly with an installation hint.
 The CLI remains the authoritative execution path. The TUI renders Home,
-Profiles, Pipeline, and Run Monitor sections from dependency-free view models
-for profiles, recent runs, harness metadata, phase state, command previews, and
-artifact links. Current key bindings are `d` for a dry-run preview, `e` to
-edit the selected profile via `revrem config edit`, and `q` to quit.
-artifact links. Use `--profile NAME` to select the initial profile; press `d`
-inside the TUI to launch a dry-run preview for that profile through the same
-command plan shown in the Pipeline section.
+Profiles, Pipeline, Run Monitor, and Controls views from dependency-free view
+models for profiles, recent runs, harness metadata, phase state, command
+previews, and artifact links. Use `--profile NAME` to select the initial
+profile. Key bindings shell through `revrem config` and the normal run CLI:
+`d` dry-runs the selected profile, `s` shows it, `e` edits it, `n` creates a
+profile, `c` clones the selected profile, `x` exports, `i` imports from the
+path field, `delete` deletes through `revrem config delete --yes`, and `q`
+quits.
 
 Codex is currently the only executable review/remediation harness. The profile
 schema reserves `claude`, `gemini`, `opencode`, and `kilo` for future headless
@@ -538,6 +542,7 @@ The wrapper runs tests, `ruff check .`, `mypy src`, and DocOps checks when
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.1 | 2026-05-06 | Codex | Documented CLI-backed TUI profile lifecycle actions, `config clone`, and current TUI controls |
 | 1.0 | 2026-05-03 | Codex | Documented negative boolean CLI overrides, `.revrem/runs` artifact namespace, commit-message harness profile setting, Rich live progress, terminal recovery, timeout diagnostics, and import-default preservation semantics |
 | 0.9 | 2026-05-03 | Codex | Documented the completed first TUI slice with profile selection, operator sections, and dry-run launch action |
 | 0.8 | 2026-05-03 | Codex | Documented adaptive pytest skipping for non-Python repositories and native TypeScript check guidance |

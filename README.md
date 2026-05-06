@@ -93,6 +93,7 @@ either direction.
 revrem config new final-pr --description "Full PR readiness check"
 revrem config edit final-pr
 revrem config show final-pr
+revrem config clone final-pr final-pr-copy
 revrem --profile final-pr
 ```
 
@@ -124,9 +125,12 @@ dependency-light:
 ./.venv/bin/revrem ui --profile final-pr
 ```
 
-The TUI renders Home, Profiles, Pipeline, and Run Monitor sections. Use
-`--profile NAME` to choose the initial profile and press `d` to launch a
-dry-run preview through the same command plan shown in the interface.
+The TUI renders Home, Profiles, Pipeline, Run Monitor, and Controls views. Use
+`--profile NAME` to choose the initial profile. Key bindings shell through the
+same CLI command plans as normal terminal use: `d` dry-runs the selected
+profile, `s` shows it, `e` edits it, `n` creates a profile, `c` clones, `x`
+exports, `i` imports from the path field, and `delete` removes a profile with
+the non-interactive `revrem config delete --yes` path.
 When `code_review_loop.tui.main()` is used as a module entry point, it honors
 the current process argv in the same way as `revrem ui`.
 

@@ -159,6 +159,7 @@ def build_shell_model(
             profiles_screen(snapshot),
             pipeline_screen(snapshot, selected_profile),
             run_monitor_screen(snapshot),
+            actions_screen(selected_profile.name if selected_profile else None),
         ),
     )
 
@@ -194,21 +195,22 @@ def home_screen(snapshot: HomeSnapshot, *, selected_profile_name: str | None = N
         lines.append(f"Quick start: {snapshot.run_previews[0].shell_command}")
     else:
         lines.append("Quick start: revrem config new final-pr")
-    lines.append("Keys: d dry-runs the selected profile; e edits it in $EDITOR; q quits.")
+    lines.append(
+        "Keys: d dry-run, s show, e edit, n new, c clone, x export, i import, delete delete, q quit."
+    )
     return TuiScreen(name="home", title="Home", lines=tuple(lines))
 
 
 def profiles_screen(snapshot: HomeSnapshot) -> TuiScreen:
-    lines: list[str] = []
+    lines: list[str] = ["Name | Description | Base | Max | Checks | Source"]
     if not snapshot.profiles:
         lines.append("No profiles found. Create one with revrem config new final-pr.")
     for profile in snapshot.profiles:
-        description = f" - {profile.description}" if profile.description else ""
-        source = f" [{profile.source}]" if profile.source else ""
         lines.append(
-            f"{profile.name}{description}{source} | base={profile.base} "
-            f"max={profile.max_iterations} checks={len(profile.checks)}"
+            f"{profile.name} | {profile.description or '-'} | {profile.base} | "
+            f"{profile.max_iterations} | {len(profile.checks)} | {profile.source or '-'}"
         )
+    lines.append("Actions: New, Edit, Clone, Delete, Export, and Import shell through revrem config.")
     return TuiScreen(name="profiles", title="Profiles", lines=tuple(lines))
 
 
@@ -254,6 +256,20 @@ def run_monitor_screen(snapshot: HomeSnapshot) -> TuiScreen:
         if len(monitor.artifacts) > 6:
             lines.append(f"  ... {len(monitor.artifacts) - 6} more artifact links")
     return TuiScreen(name="run-monitor", title="Run Monitor", lines=tuple(lines))
+
+
+def actions_screen(selected_profile_name: str | None) -> TuiScreen:
+    selected = selected_profile_name or "<none>"
+    return TuiScreen(
+        name="actions",
+        title="Actions",
+        lines=(
+            f"Selected profile: {selected}",
+            "Profile name field: target for New, Clone, Delete, Show, Edit, Export, and Dry run.",
+            "Path field: source path for Import; optional destination context for future export workflows.",
+            "Actions use revrem config commands so validation, atomic writes, and error handling stay shared.",
+        ),
+    )
 
 
 def render_shell_text(model: TuiShellModel) -> str:
@@ -335,6 +351,66 @@ def edit_plan_for_name(profile_name: str) -> LaunchPlan:
     return LaunchPlan(
         profile_name=profile_name,
         mode="edit",
+        argv=argv,
+        shell_command=shlex.join(argv),
+    )
+
+
+def show_plan_for_name(profile_name: str) -> LaunchPlan:
+    argv = ("revrem", "config", "show", profile_name)
+    return LaunchPlan(
+        profile_name=profile_name,
+        mode="show",
+        argv=argv,
+        shell_command=shlex.join(argv),
+    )
+
+
+def new_plan_for_name(profile_name: str) -> LaunchPlan:
+    argv = ("revrem", "config", "new", profile_name)
+    return LaunchPlan(
+        profile_name=profile_name,
+        mode="new",
+        argv=argv,
+        shell_command=shlex.join(argv),
+    )
+
+
+def clone_plan_for_name(source_name: str, target_name: str) -> LaunchPlan:
+    argv = ("revrem", "config", "clone", source_name, target_name)
+    return LaunchPlan(
+        profile_name=target_name,
+        mode="clone",
+        argv=argv,
+        shell_command=shlex.join(argv),
+    )
+
+
+def delete_plan_for_name(profile_name: str) -> LaunchPlan:
+    argv = ("revrem", "config", "delete", profile_name, "--yes")
+    return LaunchPlan(
+        profile_name=profile_name,
+        mode="delete",
+        argv=argv,
+        shell_command=shlex.join(argv),
+    )
+
+
+def export_plan_for_name(profile_name: str) -> LaunchPlan:
+    argv = ("revrem", "config", "export", profile_name)
+    return LaunchPlan(
+        profile_name=profile_name,
+        mode="export",
+        argv=argv,
+        shell_command=shlex.join(argv),
+    )
+
+
+def import_plan_for_path(path: str) -> LaunchPlan:
+    argv = ("revrem", "config", "import", path)
+    return LaunchPlan(
+        profile_name=Path(path).stem or "import",
+        mode="import",
         argv=argv,
         shell_command=shlex.join(argv),
     )

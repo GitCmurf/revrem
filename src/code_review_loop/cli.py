@@ -2042,7 +2042,10 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         "--initial-review-file",
         type=str,
         default=None,
-        help="Start by remediating a previous review artifact. Use 'latest' for newest review-final.txt.",
+        help=(
+            "Start by remediating a previous review artifact. Use 'latest' for the newest "
+            "usable non-clear review-final.txt; if none exists, start with a fresh review."
+        ),
     )
     parser.add_argument(
         "--no-run-history",
@@ -2086,6 +2089,11 @@ def parse_config_args(argv: Sequence[str]) -> argparse.Namespace:
 
     edit = subparsers.add_parser("edit", help="Open the owning config file in $EDITOR.")
     edit.add_argument("name")
+
+    clone = subparsers.add_parser("clone", help="Clone a resolved profile into the user config.")
+    clone.add_argument("source")
+    clone.add_argument("target")
+    clone.add_argument("--force", action="store_true")
 
     delete = subparsers.add_parser("delete", help="Delete a user profile.")
     delete.add_argument("name")
@@ -2545,6 +2553,15 @@ def config_main(argv: Sequence[str]) -> int:
         if args.command == "edit":
             path = edit_profile_config(args.name, cwd=Path.cwd())
             print(f"edited {args.name} in {path}")
+            return 0
+        if args.command == "clone":
+            path = profiles.clone_user_profile(
+                args.source,
+                args.target,
+                cwd=Path.cwd(),
+                force=args.force,
+            )
+            print(f"cloned {args.source} to {args.target} in {path}")
             return 0
         if args.command == "delete":
             if not args.yes:
