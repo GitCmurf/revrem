@@ -2082,9 +2082,26 @@ def parse_config_args(argv: Sequence[str]) -> argparse.Namespace:
     show.add_argument("name")
     show.add_argument("--format", choices=("toml", "json"), default=argparse.SUPPRESS)
 
-    new = subparsers.add_parser("new", help="Create a minimal user profile.")
+    new = subparsers.add_parser(
+        "new",
+        help="Create a user profile, prompting for common fields in interactive terminals.",
+    )
     new.add_argument("name")
     new.add_argument("--description", default="")
+    new_interactive = new.add_mutually_exclusive_group()
+    new_interactive.add_argument(
+        "--interactive",
+        dest="interactive",
+        action="store_true",
+        default=None,
+        help="Prompt for common profile fields before writing the profile.",
+    )
+    new_interactive.add_argument(
+        "--no-interactive",
+        dest="interactive",
+        action="store_false",
+        help="Create the minimal profile without prompting.",
+    )
     new.add_argument("--force", action="store_true")
 
     edit = subparsers.add_parser("edit", help="Open the owning config file in $EDITOR.")
@@ -2170,6 +2187,94 @@ def edit_profile_config(name: str, *, cwd: Path, home: Path | None = None) -> Pa
     except subprocess.CalledProcessError as exc:
         raise RuntimeError(f"editor exited with status {exc.returncode}") from exc
     return path
+
+
+def should_prompt_for_new_profile(args: argparse.Namespace) -> bool:
+    if args.interactive is not None:
+        return bool(args.interactive)
+    return sys.stdin.isatty() and sys.stdout.isatty() and not args.description
+
+
+def new_profile_from_args(args: argparse.Namespace) -> profiles.Profile:
+    if should_prompt_for_new_profile(args):
+        return prompt_for_new_profile(args.name)
+    return profiles.minimal_profile(args.name, description=args.description)
+
+
+def prompt_for_new_profile(
+    name: str,
+    *,
+    input_fn: Callable[[str], str] | None = None,
+) -> profiles.Profile:
+    input_fn = input_fn or input
+    print(f"Creating RevRem profile: {name}")
+    description = _prompt_text(input_fn, "Description", default="")
+    harness = _prompt_choice(
+        input_fn,
+        "Harness",
+        choices=tuple(harnesses.HARNESS_REGISTRY),
+        default="codex",
+    )
+    model = _prompt_text(input_fn, "Review/remediation model", default="")
+    reasoning_effort = _prompt_choice(
+        input_fn,
+        "Reasoning effort",
+        choices=REASONING_EFFORT_CHOICES,
+        default="medium",
+    )
+    timeout_seconds = _prompt_timeout(input_fn, "Timeout seconds", default=1800)
+    check = _prompt_text(input_fn, "First check command", default="")
+    checks = (check,) if check else ()
+    phase = profiles.PhaseConfig(
+        harness=harness,
+        model=model or None,
+        reasoning_effort=reasoning_effort,
+        timeout_seconds=timeout_seconds,
+    )
+    return profiles.Profile(
+        name=name,
+        description=description,
+        pipeline=profiles.PipelineConfig(checks=checks),
+        review=phase,
+        remediation=phase,
+    )
+
+
+def _prompt_text(input_fn: Callable[[str], str], label: str, *, default: str) -> str:
+    suffix = f" [{default}]" if default else ""
+    value = input_fn(f"{label}{suffix}: ").strip()
+    return value or default
+
+
+def _prompt_choice(
+    input_fn: Callable[[str], str],
+    label: str,
+    *,
+    choices: tuple[str, ...],
+    default: str,
+) -> str:
+    choices_text = "/".join(choices)
+    while True:
+        value = input_fn(f"{label} ({choices_text}) [{default}]: ").strip() or default
+        if value in choices:
+            return value
+        print(f"ERROR: {label.lower()} must be one of: {', '.join(choices)}", file=sys.stderr)
+
+
+def _prompt_timeout(
+    input_fn: Callable[[str], str],
+    label: str,
+    *,
+    default: float,
+) -> float | None:
+    while True:
+        value = input_fn(f"{label} [{default:g}; 0 disables]: ").strip()
+        if not value:
+            return default
+        try:
+            return resolve_timeout_seconds(float(value))
+        except ValueError:
+            print(f"ERROR: {label.lower()} must be 0 or greater", file=sys.stderr)
 
 
 def default_artifact_dir() -> Path:
@@ -2546,7 +2651,7 @@ def config_main(argv: Sequence[str]) -> int:
                 print(profiles.profile_to_toml(profile), end="")
             return 0
         if args.command == "new":
-            profile = profiles.minimal_profile(args.name, description=args.description)
+            profile = new_profile_from_args(args)
             path = profiles.write_user_profile(profile, force=args.force)
             print(f"created {args.name} in {path}")
             return 0

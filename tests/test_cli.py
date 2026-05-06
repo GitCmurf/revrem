@@ -2590,6 +2590,56 @@ def test_config_commands_create_show_list_and_delete_profile(tmp_path, monkeypat
     assert MODULE.main(["config", "show", "smoke"]) == 1
 
 
+def test_config_new_prompts_for_common_fields_when_interactive(tmp_path, monkeypatch, capsys):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    answers = iter(
+        [
+            "Interactive profile",
+            "codex",
+            "gpt-5.5",
+            "high",
+            "1800",
+            "git diff --check",
+        ]
+    )
+
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+
+    assert MODULE.main(["config", "new", "interactive", "--interactive"]) == 0
+
+    assert "created interactive" in capsys.readouterr().out
+    resolved = profiles.resolve_profile("interactive", cwd=tmp_path, home=home)
+    assert resolved.description == "Interactive profile"
+    assert resolved.review.harness == "codex"
+    assert resolved.review.model == "gpt-5.5"
+    assert resolved.review.reasoning_effort == "high"
+    assert resolved.review.timeout_seconds == 1800
+    assert resolved.remediation.model == "gpt-5.5"
+    assert resolved.pipeline.checks == ("git diff --check",)
+
+
+def test_config_new_no_interactive_preserves_scriptable_minimal_profile(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+
+    def fail_input(_prompt):
+        raise AssertionError("--no-interactive must not prompt")
+
+    monkeypatch.setattr("builtins.input", fail_input)
+
+    assert MODULE.main(["config", "new", "scripted", "--no-interactive"]) == 0
+
+    resolved = profiles.resolve_profile("scripted", cwd=tmp_path, home=home)
+    assert resolved.description == ""
+    assert resolved.review.model is None
+    assert resolved.pipeline.checks == ()
+
+
 def test_config_import_rejects_missing_source_file(tmp_path, monkeypatch, capsys):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))

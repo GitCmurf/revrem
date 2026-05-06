@@ -97,6 +97,11 @@ revrem config clone final-pr final-pr-copy
 revrem --profile final-pr
 ```
 
+In an interactive terminal, `revrem config new final-pr` opens a small prompt
+flow for the common fields: description, harness, model, reasoning effort,
+timeout, and first check command. Use `--no-interactive` from scripts, or pass
+`--description` for a quick minimal profile.
+
 If a one-off command has the settings you want to keep for this repository,
 save it as a project-local profile:
 

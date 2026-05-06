@@ -322,7 +322,13 @@ reasoning_effort = "low"
 
 def test_profile_lifecycle_launch_plans_are_cli_backed():
     assert tui_state.show_plan_for_name("final-pr").argv == ("revrem", "config", "show", "final-pr")
-    assert tui_state.new_plan_for_name("smoke").argv == ("revrem", "config", "new", "smoke")
+    assert tui_state.new_plan_for_name("smoke").argv == (
+        "revrem",
+        "config",
+        "new",
+        "smoke",
+        "--no-interactive",
+    )
     assert tui_state.clone_plan_for_name("final-pr", "copy").argv == (
         "revrem",
         "config",

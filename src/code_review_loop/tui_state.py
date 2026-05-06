@@ -280,8 +280,11 @@ def render_shell_text(model: TuiShellModel) -> str:
     return "\n\n".join(sections)
 
 
-def _markup_escape(value: str) -> str:
+def markup_escape(value: str) -> str:
     return value.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
+
+
+_markup_escape = markup_escape
 
 
 def harness_views() -> tuple[HarnessView, ...]:
@@ -367,7 +370,7 @@ def show_plan_for_name(profile_name: str) -> LaunchPlan:
 
 
 def new_plan_for_name(profile_name: str) -> LaunchPlan:
-    argv = ("revrem", "config", "new", profile_name)
+    argv = ("revrem", "config", "new", profile_name, "--no-interactive")
     return LaunchPlan(
         profile_name=profile_name,
         mode="new",

@@ -3,7 +3,7 @@ document_id: REVREM-PRD-001
 type: PRD
 title: Interactive TUI and Profile System for code-review-loop
 status: Approved
-version: "1.1"
+version: "1.2"
 last_updated: '2026-05-06'
 owner: GitCmurf
 area: product
@@ -29,7 +29,7 @@ related_ids:
 > **Document ID:** REVREM-PRD-001
 > **Owner:** GitCmurf
 > **Status:** Approved
-> **Version:** 1.1
+> **Version:** 1.2
 > **Last Updated:** 2026-05-06
 > **Type:** PRD
 
@@ -258,7 +258,7 @@ automation:
 |---|---|
 | `list` | Print profile name, description, source file, and last-used timestamp |
 | `show NAME` | Print the resolved profile as TOML or JSON |
-| `new NAME` | Create a minimal profile, refusing to overwrite without `--force` |
+| `new NAME` | In an interactive terminal, prompt for description, harness, model, reasoning effort, timeout, and a first check command; in non-interactive contexts, create a minimal profile unless `--interactive` is passed; refuse overwrite without `--force` |
 | `edit NAME` | Open the owning config file in `$EDITOR` |
 | `delete NAME` | Remove profile after confirmation or with `--yes` |
 | `export NAME` | Write portable TOML to stdout |
@@ -326,7 +326,8 @@ and exposes key-bound actions for the profile lifecycle:
 - `d`: launch a dry-run preview for the selected/profile-field profile.
 - `s`: show the resolved profile with `revrem config show`.
 - `e`: edit the owning profile file through `revrem config edit`.
-- `n`: create a user profile with `revrem config new`.
+- `n`: create a user profile with `revrem config new --no-interactive` so the
+  Textual event loop never blocks on hidden stdin prompts.
 - `c`: clone the selected profile with `revrem config clone`.
 - `x`: export a resolved profile with `revrem config export`.
 - `i`: import profiles from the path field with `revrem config import`.
@@ -399,7 +400,7 @@ The quality bar for every phase is:
 - [FR-11] Support optional verified checkpoint commits after remediation passes.
 - [FR-12] Implement `revrem ui` behind the `[tui]` extra.
 
-Milestone status as of version 1.1:
+Milestone status as of version 1.2:
 
 - FR-1 through FR-8 are implemented.
 - FR-9 is implemented.
@@ -555,6 +556,8 @@ Initial slice done when:
   home snapshot when Textual is available.
 - Fake-Textual action tests prove TUI key bindings shell to stable `revrem
   config` command plans rather than duplicating config mutation logic.
+- `revrem config new NAME --interactive` prompts for common profile fields, and
+  `--no-interactive` remains available for scripts and TUI actions.
 - The default development gate remains free of Textual imports.
 
 Full milestone done when:
@@ -659,6 +662,7 @@ revrem history --format json list --limit 5
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.2 | 2026-05-06 | Codex | Added the terminal-safe `revrem config new` wizard contract, documented non-interactive TUI profile creation, and verified stable promotion smoke behavior |
 | 1.1 | 2026-05-06 | Codex | Completed the CLI-backed TUI profile lifecycle slice with tabbed operator screens, controls pane, profile clone command, updated latest-review help text, and aligned verification expectations |
 | 1.0 | 2026-05-03 | Codex | Tightened profile override and harness contracts with negative boolean flags, commit-message harness configuration, Rich live progress, terminal recovery, timeout diagnostics, and `.revrem/runs` artifact naming |
 | 0.9 | 2026-05-03 | Codex | Completed the first interactive TUI slice with profile selection, four operator sections, dry-run launch action, and updated verification expectations |

@@ -252,14 +252,14 @@ def run_textual_app(*, selected_profile_name: str | None = None) -> None:
 
 
 def _screen_markup(screen: tui_state.TuiScreen) -> str:
-    escaped_lines = "\n".join(_markup_escape(line) for line in screen.lines)
-    return f"[b]{_markup_escape(screen.title)}[/b]\n{escaped_lines}"
+    escaped_lines = "\n".join(tui_state.markup_escape(line) for line in screen.lines)
+    return f"[b]{tui_state.markup_escape(screen.title)}[/b]\n{escaped_lines}"
 
 
 def _controls_markup(selected_profile_name: str | None) -> str:
     selected = selected_profile_name or "<none>"
     return (
-        f"[b]Selected[/b]\n{_markup_escape(selected)}\n\n"
+        f"[b]Selected[/b]\n{tui_state.markup_escape(selected)}\n\n"
         "[b]Profile lifecycle[/b]\n"
         "d dry-run | s show | e edit | n new | c clone | x export | i import | delete delete\n\n"
         "[b]Notes[/b]\n"
@@ -280,11 +280,6 @@ def _input_value(app: Any, selector: str) -> str | None:
         return None
     stripped = value.strip()
     return stripped or None
-
-
-def _markup_escape(value: str) -> str:
-    return value.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
-
 
 def run_launch_plan(
     plan: tui_state.LaunchPlan,
