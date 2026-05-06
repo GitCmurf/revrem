@@ -1429,6 +1429,8 @@ def test_main_resolves_latest_initial_review_from_custom_artifact_dir(tmp_path, 
 def test_main_save_profile_writes_project_config_and_exits(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
+    project_config = profiles.project_config_path(tmp_path)
+    project_config.write_text("[defaults.pipeline]\nfinal_review = false\n", encoding="utf-8")
 
     def fail_run_loop(config):
         raise AssertionError("--save-profile should exit before running the loop")
@@ -1441,6 +1443,7 @@ def test_main_save_profile_writes_project_config_and_exits(tmp_path, monkeypatch
             "trunk",
             "--max-iterations",
             "7",
+            "--final-review",
             "--review-model",
             "gpt-5.5",
             "--remediation-model",
@@ -1477,6 +1480,7 @@ def test_main_save_profile_writes_project_config_and_exits(tmp_path, monkeypatch
     assert "max_iterations = 7" in saved
     assert "checks = [\"pytest -q\", \"git diff --check\"]" in saved
     assert "model = \"gpt-5.5\"" in saved
+    assert "final_review = true" in saved
     assert "progress_style = \"rich\"" in saved
     assert "terminal_title = true" in saved
     assert "enabled = true" in saved

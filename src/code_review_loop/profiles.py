@@ -498,6 +498,7 @@ def _profile_to_toml_impl(
     omit_builtin_defaults: bool,
     omit_reference_defaults: bool = False,
     reference: Profile | None = None,
+    raw_profile: dict[str, Any] | None = None,
 ) -> str:
     lines: list[str] = []
     if root is not None:
@@ -514,12 +515,17 @@ def _profile_to_toml_impl(
         section_lines: list[str] = []
         defaults = type(value)()
         reference_value = getattr(reference, section_name) if reference is not None else None
+        raw_section = raw_profile.get(section_name) if raw_profile is not None else None
         for key, item in asdict(value).items():
             if item is None:
                 continue
-            if omit_builtin_defaults and item == getattr(defaults, key):
+            # Preserve explicit profile overrides even when they match a built-in default.
+            # File-level defaults must win first so saved/cloned profiles reload identically.
+            reference_item = getattr(reference_value, key) if reference_value is not None else None
+            if omit_reference_defaults and reference_value is not None and item == reference_item:
                 continue
-            if omit_reference_defaults and reference_value is not None and item == getattr(reference_value, key):
+            explicit = isinstance(raw_section, dict) and key in raw_section
+            if omit_builtin_defaults and item == getattr(defaults, key) and not explicit:
                 continue
             section_lines.append(f"{key} = {_toml_value(item)}")
         if not section_lines:
@@ -530,17 +536,25 @@ def _profile_to_toml_impl(
     return "\n".join(lines).rstrip() + "\n"
 
 
-def write_user_profile(profile: Profile, *, home: Path | None = None, force: bool = False) -> Path:
+def write_user_profile(
+    profile: Profile,
+    *,
+    home: Path | None = None,
+    force: bool = False,
+    raw_profile: dict[str, Any] | None = None,
+) -> Path:
     path = user_config_path(home)
-    return write_profile_to_path(path, profile, force=force)
+    return write_profile_to_path(path, profile, force=force, raw_profile=raw_profile)
 
 
-def write_project_profile(profile: Profile, *, cwd: Path, force: bool = False) -> Path:
+def write_project_profile(
+    profile: Profile,
+    *,
+    cwd: Path,
+    force: bool = False,
+    raw_profile: dict[str, Any] | None = None,
+) -> Path:
     path = project_config_path(cwd)
-    return write_profile_to_path(path, profile, force=force)
-
-
-def write_profile_to_path(path: Path, profile: Profile, *, force: bool = False) -> Path:
     profile_file = load_profile_file(path)
     if profile.name in profile_file.profiles and not force:
         raise FileExistsError(f"profile already exists: {profile.name}")
@@ -551,6 +565,42 @@ def write_profile_to_path(path: Path, profile: Profile, *, force: bool = False) 
         rendered_profiles={
             profile.name: profile,
         },
+        raw_rendered_profiles={
+            profile.name: raw_profile,
+        }
+        if raw_profile is not None
+        else None,
+        raw_profiles=profile_file.raw_profiles,
+        omit_reference_defaults=False,
+        omit_builtin_defaults_for_rendered=False,
+    )
+    return path
+
+
+def write_profile_to_path(
+    path: Path,
+    profile: Profile,
+    *,
+    force: bool = False,
+    raw_profile: dict[str, Any] | None = None,
+) -> Path:
+    profile_file = load_profile_file(path)
+    if profile.name in profile_file.profiles and not force:
+        raise FileExistsError(f"profile already exists: {profile.name}")
+    if raw_profile is None:
+        raw_profile = profile_file.raw_profiles.get(profile.name)
+    _write_profile_file(
+        path,
+        defaults=profile_file.defaults,
+        raw_defaults=profile_file.raw_defaults if profile_file.defaults is not None else None,
+        rendered_profiles={
+            profile.name: profile,
+        },
+        raw_rendered_profiles={
+            profile.name: raw_profile,
+        }
+        if raw_profile is not None
+        else None,
         raw_profiles=profile_file.raw_profiles,
         omit_reference_defaults=True,
     )
@@ -585,8 +635,10 @@ def clone_user_profile(
     if source_name == target_name:
         raise ValueError("clone target must be different from source profile")
     source = resolve_profile(source_name, cwd=cwd, home=home, require_implemented=False)
+    source_file = load_profile_file(Path(source.source)) if source.source is not None else None
+    raw_source_profile = source_file.raw_profiles.get(source_name) if source_file is not None else None
     cloned = replace(source, name=target_name, source=None)
-    return write_user_profile(cloned, home=home, force=force)
+    return write_user_profile(cloned, home=home, force=force, raw_profile=raw_source_profile)
 
 
 def import_user_profiles(path: Path, *, home: Path | None = None, force: bool = False) -> Path:
@@ -648,8 +700,10 @@ def _write_profile_file(
     defaults: Profile | None,
     raw_defaults: dict[str, Any] | None = None,
     rendered_profiles: dict[str, Profile],
+    raw_rendered_profiles: dict[str, dict[str, Any]] | None = None,
     raw_profiles: dict[str, dict[str, Any]] | None = None,
     omit_reference_defaults: bool = False,
+    omit_builtin_defaults_for_rendered: bool = True,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     blocks: list[str] = []
@@ -666,9 +720,10 @@ def _write_profile_file(
                 _profile_to_toml_impl(
                     rendered_profiles[name],
                     root=("profiles", name),
-                    omit_builtin_defaults=True,
+                    omit_builtin_defaults=omit_builtin_defaults_for_rendered,
                     omit_reference_defaults=omit_reference_defaults,
                     reference=defaults,
+                    raw_profile=(raw_rendered_profiles or {}).get(name),
                 ).rstrip()
             )
         else:

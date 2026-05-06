@@ -658,6 +658,35 @@ base = "trunk"
     assert cloned.pipeline.base == "trunk"
 
 
+def test_clone_user_profile_preserves_explicit_builtin_override_over_project_defaults(tmp_path):
+    home = tmp_path / "home"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    project_config = repo / ".revrem.toml"
+    project_config.write_text(
+        """
+[defaults.pipeline]
+final_review = false
+
+[profiles.source]
+description = "Source profile"
+
+[profiles.source.pipeline]
+final_review = true
+""",
+        encoding="utf-8",
+    )
+
+    path = profiles.clone_user_profile("source", "copy", cwd=repo, home=home)
+
+    rendered = path.read_text(encoding="utf-8")
+    assert "[profiles.copy.pipeline]" in rendered
+    assert "final_review = true" in rendered
+    cloned = profiles.resolve_profile("copy", cwd=tmp_path, home=home)
+    assert cloned.pipeline.final_review is True
+
+
 def test_rewrite_user_profiles_preserves_explicit_builtin_overrides(tmp_path):
     home = tmp_path / "home"
     config_path = profiles.user_config_path(home)
