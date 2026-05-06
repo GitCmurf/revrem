@@ -2273,6 +2273,9 @@ def git_info_exclude_path(cwd: Path) -> Path | None:
     git_dir = Path(content.split(":", 1)[1].strip())
     if not git_dir.is_absolute():
         git_dir = git_path.parent / git_dir
+    # Linked worktrees share the common repository's info/exclude file.
+    if git_dir.parent.name == "worktrees":
+        return git_dir.parent.parent / "info" / "exclude"
     return git_dir / "info" / "exclude"
 
 

@@ -1720,6 +1720,42 @@ def test_run_loop_uses_repo_root_exclude_for_default_artifacts_from_subdirectory
     assert not (worktree / ".revrem" / ".gitignore").exists()
 
 
+def test_run_loop_uses_common_exclude_for_default_artifacts_in_linked_worktree(tmp_path):
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[1] == "review":
+            return MODULE.CommandResult(list(args), 0, stdout="No findings.\n")
+        return MODULE.CommandResult(list(args), 0, stdout="fixed\n")
+
+    repo_root = tmp_path / "repo"
+    common_git_dir = repo_root / ".git"
+    worktrees_dir = common_git_dir / "worktrees"
+    linked_git_dir = worktrees_dir / "linked"
+    linked_worktree = tmp_path / "linked"
+
+    common_git_dir.mkdir(parents=True)
+    (common_git_dir / "info").mkdir()
+    (common_git_dir / "info" / "exclude").write_text("# local excludes\n", encoding="utf-8")
+    linked_git_dir.mkdir(parents=True)
+    linked_worktree.mkdir()
+    (linked_worktree / ".git").write_text(f"gitdir: {linked_git_dir}\n", encoding="utf-8")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=linked_worktree,
+        artifact_dir=linked_worktree / ".revrem" / "runs" / "run-1",
+        progress=False,
+    )
+
+    MODULE.run_loop(config, runner)
+
+    assert (common_git_dir / "info" / "exclude").read_text(encoding="utf-8") == (
+        "# local excludes\n.revrem/runs/\n"
+    )
+    assert not (linked_worktree / ".revrem" / ".gitignore").exists()
+
+
 def test_run_loop_appends_repo_root_exclude_when_existing_longer_entry_contains_substring(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
