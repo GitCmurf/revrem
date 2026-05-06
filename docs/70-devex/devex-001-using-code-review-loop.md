@@ -288,7 +288,9 @@ To capture a one-off command as a project-local profile, add
 `--save-profile NAME`. RevRem writes the effective configuration to
 `.revrem.toml` at the repository root and exits without running the loop. This
 is non-destructive by default; pass `--save-profile-force` only when replacing
-an existing project profile intentionally.
+an existing project profile intentionally. Explicit `--timeout-seconds 0`
+settings are written back as `timeout_seconds = 0` so a saved profile keeps the
+no-timeout behavior.
 
 ```bash
 revrem \

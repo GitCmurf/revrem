@@ -1498,6 +1498,31 @@ def test_main_save_profile_writes_project_config_and_exits(tmp_path, monkeypatch
     assert "enabled = true" in saved
 
 
+def test_main_save_profile_preserves_disabled_timeout(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+
+    def fail_run_loop(config):
+        raise AssertionError("--save-profile should exit before running the loop")
+
+    monkeypatch.setattr(MODULE, "run_loop", fail_run_loop)
+
+    exit_code = MODULE.main(
+        [
+            "--timeout-seconds",
+            "0",
+            "--save-profile",
+            "final-pr",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "saved final-pr in" in captured.out
+    saved = profiles.project_config_path(tmp_path).read_text(encoding="utf-8")
+    assert saved.count("timeout_seconds = 0") == 2
+
+
 def test_main_save_profile_is_non_destructive_by_default(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()

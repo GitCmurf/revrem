@@ -2435,7 +2435,16 @@ def profile_from_loop_config(
     summary_format: str,
     description: str = "",
     include_artifact_dir: bool = False,
+    timeout_seconds: float | None = None,
 ) -> profiles.Profile:
+    saved_timeout_seconds = (
+        timeout_seconds if timeout_seconds is not None else config.review_timeout_seconds
+    )
+    saved_triage_timeout_seconds = (
+        timeout_seconds
+        if timeout_seconds is not None and config.triage_enabled
+        else config.triage_timeout_seconds
+    )
     return profiles.Profile(
         name=name,
         description=description,
@@ -2449,21 +2458,21 @@ def profile_from_loop_config(
             harness=config.review_harness,
             model=config.review_model or config.model,
             reasoning_effort=config.review_reasoning_effort or config.reasoning_effort,
-            timeout_seconds=config.review_timeout_seconds,
+            timeout_seconds=saved_timeout_seconds,
         ),
         triage=profiles.TriageConfig(
             enabled=config.triage_enabled,
             harness=config.triage_harness,
             model=config.triage_model,
             reasoning_effort=config.triage_reasoning_effort,
-            timeout_seconds=config.triage_timeout_seconds,
+            timeout_seconds=saved_triage_timeout_seconds,
             prompt=config.triage_prompt,
         ),
         remediation=profiles.PhaseConfig(
             harness=config.remediation_harness,
             model=config.remediation_model or config.model,
             reasoning_effort=config.remediation_reasoning_effort or config.reasoning_effort,
-            timeout_seconds=config.remediation_timeout_seconds,
+            timeout_seconds=saved_timeout_seconds,
         ),
         commit=profiles.CommitConfig(
             enabled=config.commit_after_remediation,
@@ -2520,6 +2529,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             summary_format=summary_format,
             description=f"Saved from RevRem CLI on {datetime.now(UTC).date().isoformat()}",
             include_artifact_dir=args.artifact_dir is not None,
+            timeout_seconds=args.timeout_seconds,
         )
         try:
             path = profiles.write_project_profile(
