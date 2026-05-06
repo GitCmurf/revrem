@@ -2600,6 +2600,7 @@ def test_config_new_prompts_for_common_fields_when_interactive(tmp_path, monkeyp
             "Interactive profile",
             "codex",
             "gpt-5.5",
+            "gpt-5.4-mini",
             "high",
             "1800",
             "git diff --check",
@@ -2617,8 +2618,59 @@ def test_config_new_prompts_for_common_fields_when_interactive(tmp_path, monkeyp
     assert resolved.review.model == "gpt-5.5"
     assert resolved.review.reasoning_effort == "high"
     assert resolved.review.timeout_seconds == 1800
-    assert resolved.remediation.model == "gpt-5.5"
+    assert resolved.remediation.model == "gpt-5.4-mini"
     assert resolved.pipeline.checks == ("git diff --check",)
+
+
+def test_config_new_auto_prompts_when_default_invocation_is_tty(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    monkeypatch.setattr(MODULE.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(MODULE.sys.stdout, "isatty", lambda: True)
+    answers = iter(
+        [
+            "TTY profile",
+            "codex",
+            "gpt-5.5",
+            "gpt-5.4-mini",
+            "medium",
+            "0",
+            "pytest -q",
+        ]
+    )
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+
+    assert MODULE.main(["config", "new", "tty-profile"]) == 0
+
+    resolved = profiles.resolve_profile("tty-profile", cwd=tmp_path, home=home)
+    assert resolved.description == "TTY profile"
+    assert resolved.review.model == "gpt-5.5"
+    assert resolved.remediation.model == "gpt-5.4-mini"
+    assert resolved.review.timeout_seconds is None
+    assert resolved.pipeline.checks == ("pytest -q",)
+
+
+def test_config_new_auto_skips_prompt_when_default_invocation_is_not_tty(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    monkeypatch.setattr(MODULE.sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr(MODULE.sys.stdout, "isatty", lambda: False)
+
+    def fail_input(_prompt):
+        raise AssertionError("non-TTY default config new must not prompt")
+
+    monkeypatch.setattr("builtins.input", fail_input)
+
+    assert MODULE.main(["config", "new", "non-tty-profile"]) == 0
+
+    resolved = profiles.resolve_profile("non-tty-profile", cwd=tmp_path, home=home)
+    assert resolved.description == ""
+    assert resolved.review.model is None
+    assert resolved.pipeline.checks == ()
 
 
 def test_config_new_no_interactive_preserves_scriptable_minimal_profile(tmp_path, monkeypatch):

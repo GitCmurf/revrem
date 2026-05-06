@@ -3,7 +3,7 @@ document_id: REVREM-TEST-001
 type: TEST
 title: Utility verification strategy
 status: Draft
-version: '1.0'
+version: '1.1'
 last_updated: '2026-05-06'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-TEST-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.0
+> **Version:** 1.1
 > **Last Updated:** 2026-05-06
 > **Type:** TEST
 > **Area:** testing
@@ -84,7 +84,8 @@ The main test module is `tests/test_cli.py`. It covers:
   restoration on normal and interrupted exits.
 - Profile selection, CLI-over-profile overrides, and `revrem config` command
   behavior, including interactive `config new` prompts and the explicit
-  `--no-interactive` automation path.
+  `--no-interactive` automation path. The default auto-detection path is
+  covered for both TTY and non-TTY invocations.
 - Run-history write/opt-out behavior and `revrem history list` output.
 - Package version reporting through `revrem --version`.
 

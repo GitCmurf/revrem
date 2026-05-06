@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.2'
+version: '1.3'
 last_updated: '2026-05-06'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.2
+> **Version:** 1.3
 > **Last Updated:** 2026-05-06
 > **Type:** DEVEX
 > **Area:** devex
@@ -344,10 +344,10 @@ revrem config doctor --profile final-pr --format json
 ```
 
 In an interactive terminal, `revrem config new NAME` prompts for the common
-profile fields: description, harness, model, reasoning effort, timeout, and a
-first check command. Use `--no-interactive` for automation and TUI-launched
-profile creation, or pass `--interactive` to force the wizard when stdin/stdout
-are not detected as a terminal.
+profile fields: description, harness, review model, remediation model,
+reasoning effort, timeout, and a first check command. Use `--no-interactive`
+for automation and TUI-launched profile creation, or pass `--interactive` to
+force the wizard when stdin/stdout are not detected as a terminal.
 
 `revrem config import` requires an existing TOML file and fails fast if the
 path is missing, rather than creating an empty destination config rewrite. When
@@ -548,6 +548,7 @@ The wrapper runs tests, `ruff check .`, `mypy src`, and DocOps checks when
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.3 | 2026-05-06 | Codex | Clarified that the profile wizard prompts separately for review and remediation models |
 | 1.2 | 2026-05-06 | Codex | Documented the `config new` interactive wizard, non-interactive automation path, and current stable smoke expectations |
 | 1.1 | 2026-05-06 | Codex | Documented CLI-backed TUI profile lifecycle actions, `config clone`, and current TUI controls |
 | 1.0 | 2026-05-03 | Codex | Documented negative boolean CLI overrides, `.revrem/runs` artifact namespace, commit-message harness profile setting, Rich live progress, terminal recovery, timeout diagnostics, and import-default preservation semantics |

@@ -3,7 +3,7 @@ document_id: REVREM-PRD-001
 type: PRD
 title: Interactive TUI and Profile System for code-review-loop
 status: Approved
-version: "1.2"
+version: "1.4"
 last_updated: '2026-05-06'
 owner: GitCmurf
 area: product
@@ -22,6 +22,7 @@ related_ids:
   - REVREM-ADR-001
   - REVREM-DEVEX-001
   - REVREM-TEST-001
+  - REVREM-PLAN-002
 ---
 
 <!-- MEMINIT_METADATA_BLOCK -->
@@ -29,7 +30,7 @@ related_ids:
 > **Document ID:** REVREM-PRD-001
 > **Owner:** GitCmurf
 > **Status:** Approved
-> **Version:** 1.2
+> **Version:** 1.4
 > **Last Updated:** 2026-05-06
 > **Type:** PRD
 
@@ -258,7 +259,7 @@ automation:
 |---|---|
 | `list` | Print profile name, description, source file, and last-used timestamp |
 | `show NAME` | Print the resolved profile as TOML or JSON |
-| `new NAME` | In an interactive terminal, prompt for description, harness, model, reasoning effort, timeout, and a first check command; in non-interactive contexts, create a minimal profile unless `--interactive` is passed; refuse overwrite without `--force` |
+| `new NAME` | In an interactive terminal, prompt for description, harness, review model, remediation model, reasoning effort, timeout, and a first check command; in non-interactive contexts, create a minimal profile unless `--interactive` is passed; refuse overwrite without `--force` |
 | `edit NAME` | Open the owning config file in `$EDITOR` |
 | `delete NAME` | Remove profile after confirmation or with `--yes` |
 | `export NAME` | Write portable TOML to stdout |
@@ -318,6 +319,11 @@ layer. It does not own remediation logic or write profile files directly. It
 consumes dependency-free view models for profile discovery, harness metadata,
 recent run history, phase summaries, and profile command previews so
 interactive widgets cannot drift from CLI semantics.
+
+Running the full review/remediation loop inside the Textual app is explicitly
+deferred from this PR. `REVREM-PLAN-002` records that technical debt and the
+future acceptance criteria. The current TUI is a control panel and artifact
+viewer; the CLI remains the execution engine for `0.3.0`.
 
 The delivered Textual shell accepts `--profile` to select the initial profile,
 renders the operator screens in tabs when Textual supports tabbed containers,
@@ -400,7 +406,7 @@ The quality bar for every phase is:
 - [FR-11] Support optional verified checkpoint commits after remediation passes.
 - [FR-12] Implement `revrem ui` behind the `[tui]` extra.
 
-Milestone status as of version 1.2:
+Milestone status as of version 1.4:
 
 - FR-1 through FR-8 are implemented.
 - FR-9 is implemented.
@@ -556,8 +562,9 @@ Initial slice done when:
   home snapshot when Textual is available.
 - Fake-Textual action tests prove TUI key bindings shell to stable `revrem
   config` command plans rather than duplicating config mutation logic.
-- `revrem config new NAME --interactive` prompts for common profile fields, and
-  `--no-interactive` remains available for scripts and TUI actions.
+- `revrem config new NAME --interactive` prompts for common profile fields,
+  including separate review and remediation models, and `--no-interactive`
+  remains available for scripts and TUI actions.
 - The default development gate remains free of Textual imports.
 
 Full milestone done when:
@@ -645,14 +652,13 @@ revrem history --format json list --limit 5
   adapter boundary; only the Codex adapter is executable today.
 - Run history is append-only JSONL to avoid read-modify-write corruption and to
   keep TUI recent-run views simple.
+- Full in-TUI loop execution is deferred to `REVREM-PLAN-002`; the current TUI
+  launches tested CLI command plans and does not duplicate loop execution.
 
 ### Open Questions
 
 - Which non-Codex headless harness should be implemented first, and what exact
   machine-readable review/remediation contract should its adapter expose.
-- Whether the full Textual Run Monitor should execute the existing CLI in a
-  subprocess for maximal isolation or call the loop core directly with an event
-  stream adapter.
 
 ---
 
@@ -662,6 +668,8 @@ revrem history --format json list --limit 5
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.4 | 2026-05-06 | Codex | Clarified that the `config new` wizard captures separate review and remediation models and added default TTY-path coverage expectations |
+| 1.3 | 2026-05-06 | Codex | Documented explicit deferral of full in-TUI loop execution to REVREM-PLAN-002 and removed the design question from open PRD scope |
 | 1.2 | 2026-05-06 | Codex | Added the terminal-safe `revrem config new` wizard contract, documented non-interactive TUI profile creation, and verified stable promotion smoke behavior |
 | 1.1 | 2026-05-06 | Codex | Completed the CLI-backed TUI profile lifecycle slice with tabbed operator screens, controls pane, profile clone command, updated latest-review help text, and aligned verification expectations |
 | 1.0 | 2026-05-03 | Codex | Tightened profile override and harness contracts with negative boolean flags, commit-message harness configuration, Rich live progress, terminal recovery, timeout diagnostics, and `.revrem/runs` artifact naming |

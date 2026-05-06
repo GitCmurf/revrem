@@ -5,15 +5,21 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 import tempfile
 import tomllib
+from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
 from code_review_loop import run_history
-from code_review_loop.harnesses import require_implemented_harness, validate_harness_name
+from code_review_loop.harnesses import (
+    HARNESS_REGISTRY,
+    require_implemented_harness,
+    validate_harness_name,
+)
 
 USER_CONFIG_RELATIVE = Path(".config") / "revrem" / "profiles.toml"
 PROJECT_CONFIG_NAME = ".revrem.toml"
@@ -639,6 +645,92 @@ def clone_user_profile(
     raw_source_profile = source_file.raw_profiles.get(source_name) if source_file is not None else None
     cloned = replace(source, name=target_name, source=None)
     return write_user_profile(cloned, home=home, force=force, raw_profile=raw_source_profile)
+
+
+def prompt_for_new_profile(
+    name: str,
+    *,
+    input_fn: Callable[[str], str] | None = None,
+) -> Profile:
+    input_fn = input_fn or input
+    print(f"Creating RevRem profile: {name}")
+    description = _prompt_text(input_fn, "Description", default="")
+    harness = _prompt_choice(
+        input_fn,
+        "Harness",
+        choices=tuple(HARNESS_REGISTRY),
+        default="codex",
+    )
+    review_model = _prompt_text(input_fn, "Review model", default="")
+    remediation_model = _prompt_text(input_fn, "Remediation model", default="")
+    reasoning_effort = _prompt_choice(
+        input_fn,
+        "Reasoning effort",
+        choices=REASONING_EFFORT_CHOICES,
+        default="medium",
+    )
+    timeout_seconds = _prompt_timeout(input_fn, "Timeout seconds", default=1800)
+    check = _prompt_text(input_fn, "First check command", default="")
+    checks = (check,) if check else ()
+    return Profile(
+        name=name,
+        description=description,
+        pipeline=PipelineConfig(checks=checks),
+        review=PhaseConfig(
+            harness=harness,
+            model=review_model or None,
+            reasoning_effort=reasoning_effort,
+            timeout_seconds=timeout_seconds,
+        ),
+        remediation=PhaseConfig(
+            harness=harness,
+            model=remediation_model or None,
+            reasoning_effort=reasoning_effort,
+            timeout_seconds=timeout_seconds,
+        ),
+    )
+
+
+def _prompt_text(input_fn: Callable[[str], str], label: str, *, default: str) -> str:
+    suffix = f" [{default}]" if default else ""
+    value = input_fn(f"{label}{suffix}: ").strip()
+    return value or default
+
+
+def _prompt_choice(
+    input_fn: Callable[[str], str],
+    label: str,
+    *,
+    choices: tuple[str, ...],
+    default: str,
+) -> str:
+    choices_text = "/".join(choices)
+    while True:
+        value = input_fn(f"{label} ({choices_text}) [{default}]: ").strip() or default
+        if value in choices:
+            return value
+        print(f"ERROR: {label.lower()} must be one of: {', '.join(choices)}", file=sys.stderr)
+
+
+def _prompt_timeout(
+    input_fn: Callable[[str], str],
+    label: str,
+    *,
+    default: float,
+) -> float | None:
+    while True:
+        value = input_fn(f"{label} [{default:g}; 0 disables]: ").strip()
+        if not value:
+            return default
+        try:
+            timeout_seconds = float(value)
+        except ValueError:
+            print(f"ERROR: {label.lower()} must be a number", file=sys.stderr)
+            continue
+        if timeout_seconds < 0:
+            print(f"ERROR: {label.lower()} must be 0 or greater", file=sys.stderr)
+            continue
+        return None if timeout_seconds == 0 else timeout_seconds
 
 
 def import_user_profiles(path: Path, *, home: Path | None = None, force: bool = False) -> Path:

@@ -687,6 +687,31 @@ final_review = true
     assert cloned.pipeline.final_review is True
 
 
+def test_prompt_for_new_profile_collects_separate_review_and_remediation_models():
+    answers = iter(
+        [
+            "Wizard profile",
+            "codex",
+            "gpt-5.5",
+            "gpt-5.4-mini",
+            "medium",
+            "1800",
+            "git diff --check",
+        ]
+    )
+
+    profile = profiles.prompt_for_new_profile("wizard", input_fn=lambda _prompt: next(answers))
+
+    assert profile.name == "wizard"
+    assert profile.description == "Wizard profile"
+    assert profile.review.model == "gpt-5.5"
+    assert profile.remediation.model == "gpt-5.4-mini"
+    assert profile.review.reasoning_effort == "medium"
+    assert profile.remediation.reasoning_effort == "medium"
+    assert profile.review.timeout_seconds == 1800
+    assert profile.pipeline.checks == ("git diff --check",)
+
+
 def test_rewrite_user_profiles_preserves_explicit_builtin_overrides(tmp_path):
     home = tmp_path / "home"
     config_path = profiles.user_config_path(home)
