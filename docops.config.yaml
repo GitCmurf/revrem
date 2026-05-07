@@ -1,0 +1,53 @@
+project_name: code-review-loop
+repo_prefix: REVREM
+docops_version: '2.0'
+docs_root: docs
+schema_path: docs/00-governance/metadata.schema.json
+excluded_paths:
+- docs/00-governance/templates
+excluded_filename_prefixes:
+- WIP-
+document_types:
+  GOV:
+    directory: 00-governance
+  RFC:
+    directory: 00-governance
+  STRAT:
+    directory: 02-strategy
+  PRD:
+    directory: 10-prd
+    template: docs/00-governance/templates/prd.template.md
+  RESEARCH:
+    directory: 10-prd
+  PLAN:
+    directory: 05-planning
+  TASK:
+    directory: 05-planning/tasks
+  NOTES:
+    directory: 12-notes
+  SPEC:
+    directory: 20-specs
+  DESIGN:
+    directory: 30-design
+  DECISION:
+    directory: 40-decisions
+  ADR:
+    directory: 45-adr
+    template: docs/00-governance/templates/adr.template.md
+  FDD:
+    directory: 50-fdd
+    template: docs/00-governance/templates/fdd.template.md
+  INDEX:
+    directory: 01-indices
+  TESTING:
+    directory: 55-testing
+  LOG:
+    directory: 58-logs
+  DEVEX:
+    directory: 70-devex
+  GUIDE:
+    directory: 60-runbooks
+  RUNBOOK:
+    directory: 60-runbooks
+  REF:
+    directory: 70-devex

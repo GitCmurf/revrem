@@ -1,0 +1,50 @@
+name: Bug report
+description: Report a reproducible problem in code-review-loop.
+title: "bug: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include secrets, private logs, or local Codex transcripts.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `revrem --version`.
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Environment
+      description: Operating system, shell, and Python version.
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command
+      description: Command that reproduced the issue.
+      render: bash
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: artifacts
+    attributes:
+      label: Sanitized artifact excerpt
+      description: Include relevant summary output with secrets removed.
+      render: json
+    validations:
+      required: false

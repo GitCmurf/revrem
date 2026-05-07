@@ -1,0 +1,72 @@
+#!/usr/bin/env sh
+set -eu
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+PYTHON=${PYTHON:-python3}
+STABLE_HOME=${REVREM_STABLE_HOME:-"$HOME/.local/share/revrem"}
+STABLE_VENV=${REVREM_STABLE_VENV:-"$STABLE_HOME/stable-venv"}
+BIN_DIR=${REVREM_BIN_DIR:-"$HOME/.local/bin"}
+RELEASES_DIR=$STABLE_HOME/releases
+RELEASE_ID=$(date -u +%Y%m%dT%H%M%SZ)
+
+cd "$REPO_ROOT"
+
+if [ "${REVREM_SKIP_CHECKS:-0}" != "1" ]; then
+  ./scripts/dev-check
+fi
+
+if ! "$PYTHON" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)'; then
+  printf '%s\n' "ERROR: $PYTHON must be Python 3.11 or newer to promote the stable launcher." >&2
+  exit 1
+fi
+
+mkdir -p "$RELEASES_DIR" "$BIN_DIR"
+RELEASE_SUFFIX=0
+while :; do
+  RELEASE_DIR=$RELEASES_DIR/$RELEASE_ID
+  if [ "$RELEASE_SUFFIX" -gt 0 ]; then
+    RELEASE_DIR=$RELEASE_DIR-$RELEASE_SUFFIX
+  fi
+  if mkdir "$RELEASE_DIR"; then
+    break
+  fi
+  if [ -d "$RELEASE_DIR" ]; then
+    RELEASE_SUFFIX=$((RELEASE_SUFFIX + 1))
+    continue
+  fi
+  exit 1
+done
+cp -R "$REPO_ROOT/src" "$RELEASE_DIR/src"
+cp "$REPO_ROOT/pyproject.toml" "$RELEASE_DIR/pyproject.toml"
+cp "$REPO_ROOT/README.md" "$RELEASE_DIR/README.md"
+
+stable_venv_needs_rebuild=0
+if [ -x "$STABLE_VENV/bin/python" ]; then
+  if ! "$STABLE_VENV/bin/python" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)'; then
+    stable_venv_needs_rebuild=1
+  fi
+else
+  stable_venv_needs_rebuild=1
+fi
+
+if [ "$stable_venv_needs_rebuild" -eq 1 ]; then
+  rm -rf "$STABLE_VENV"
+  "$PYTHON" -m venv "$STABLE_VENV"
+fi
+
+cat > "$BIN_DIR/code-review-loop" <<EOF
+#!/usr/bin/env sh
+PYTHONPATH="$RELEASE_DIR/src\${PYTHONPATH:+:\$PYTHONPATH}" exec "$STABLE_VENV/bin/python" -m code_review_loop "\$@"
+EOF
+cat > "$BIN_DIR/revrem" <<EOF
+#!/usr/bin/env sh
+PYTHONPATH="$RELEASE_DIR/src\${PYTHONPATH:+:\$PYTHONPATH}" exec "$STABLE_VENV/bin/python" -m code_review_loop "\$@"
+EOF
+chmod +x "$BIN_DIR/code-review-loop" "$BIN_DIR/revrem"
+
+printf '%s\n' "Stable snapshot promoted: $RELEASE_DIR"
+printf '%s\n' "Stable interpreter: $STABLE_VENV/bin/python"
+printf '%s\n' "Launchers:"
+printf '%s\n' "  $BIN_DIR/code-review-loop"
+printf '%s\n' "  $BIN_DIR/revrem"
