@@ -3,8 +3,8 @@ document_id: REVREM-TASK-001
 type: TASK
 title: Public GitHub launch readiness
 status: Draft
-version: '0.3'
-last_updated: '2026-05-06'
+version: '0.4'
+last_updated: '2026-05-07'
 owner: GitCmurf
 docops_version: '2.0'
 area: release
@@ -24,8 +24,8 @@ related_ids:
 > **Document ID:** REVREM-TASK-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 0.3
-> **Last Updated:** 2026-05-06
+> **Version:** 0.4
+> **Last Updated:** 2026-05-07
 > **Type:** TASK
 > **Area:** release
 > **Description:** Task list for preparing code-review-loop for first public GitHub repository publication
@@ -182,8 +182,10 @@ or generated automation artifacts.
 
 1. Initialize the detect-secrets baseline before CI references it:
    ```bash
-   detect-secrets scan > .secrets.baseline
-   detect-secrets audit .secrets.baseline   # interactively mark false positives
+   detect-secrets scan --force-use-all-plugins \
+     --exclude-files '(^\.git/|^\.venv/|^\.mypy_cache/|^\.pytest_cache/|^\.ruff_cache/|^src/code_review_loop\.egg-info/|^tests/__pycache__/)' \
+     > .secrets.baseline
+   detect-secrets audit .secrets.baseline   # interactively mark false positives if findings exist
    git add .secrets.baseline
    git commit -m "chore: initialize detect-secrets baseline"
    ```
@@ -191,8 +193,8 @@ or generated automation artifacts.
    will fail on every fixture value and test stub.
 2. Verify the committed baseline is audited and clean. Prefer the same command
    shape that CI/pre-commit will run, for example
-   `detect-secrets-hook --baseline .secrets.baseline --all-files` when using
-   the standard detect-secrets pre-commit hook.
+   `git ls-files -z | xargs -0 detect-secrets-hook --baseline .secrets.baseline`
+   when using the standard detect-secrets pre-commit hook.
 3. Run `gitleaks detect --source . --redact` if gitleaks is available.
 4. Run targeted text searches for likely private material:
    `api_key`, `token`, `secret`, `password`, `authorization`, `OPENAI`,
@@ -333,8 +335,8 @@ license) and task 7 (community files reference the license).
    it: `# SPDX-License-Identifier: Apache-2.0`
 4. Review all direct and optional-extra dependency licenses for Apache-2.0
    compatibility. Record the review result in the launch PR body.
-5. Verify `pyproject.toml` license field: `license = {text = "Apache-2.0"}`
-   or the SPDX expression form supported by the current PEP 639 toolchain.
+5. Verify `pyproject.toml` uses the SPDX expression form supported by the
+   current PEP 639 toolchain: `license = "Apache-2.0"`.
 6. Do not overclaim legal effects in docs. Use plain attribution language. Get
    legal review before making distribution requirements material.
 
@@ -572,7 +574,8 @@ project and passes baseline supply-chain audits.
      mixed indentation introduced in the PR)
    - Pre-commit: `pre-commit run --all-files`
    - Secret scan: use the same audited-baseline command as the pre-commit hook,
-     for example `detect-secrets-hook --baseline .secrets.baseline --all-files`
+     for example
+     `git ls-files -z | xargs -0 detect-secrets-hook --baseline .secrets.baseline`
 2. **Packaging check** (conditional on the PyPI open decision): if PyPI is in
    scope, add a job running `python -m build --sdist --wheel && twine check
    dist/*` on every CI run. If PyPI is deferred, omit this job entirely and
@@ -721,7 +724,7 @@ meminit check --format json
 ./scripts/dev-check
 
 # Secret scan against committed baseline (exit 0 = no new findings)
-detect-secrets-hook --baseline .secrets.baseline --all-files
+git ls-files -z | xargs -0 detect-secrets-hook --baseline .secrets.baseline
 
 # Pre-commit hooks across all files
 pre-commit run --all-files
@@ -802,5 +805,5 @@ The launch is considered successful when, within 30 days of the PR merging to
   in Meminit docs with a clear reason.
 - The initial publication PR receives meaningful bot review and lands cleanly.
 - `./scripts/dev-check`, `meminit check --format json`,
-  `detect-secrets-hook --baseline .secrets.baseline --all-files`,
+  `git ls-files -z | xargs -0 detect-secrets-hook --baseline .secrets.baseline`,
   `pre-commit run --all-files`, and `git diff --check` all exit 0.

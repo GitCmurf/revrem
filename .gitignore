@@ -1,11 +1,34 @@
-.coverage
-.mypy_cache/
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
 .pytest_cache/
+.mypy_cache/
 .ruff_cache/
-.venv/
+.coverage
+htmlcov/
+
+# Build and packaging
 build/
 dist/
-*.egg-info/
-__pycache__/
-tmp/
+
+# Local environments and secrets
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# Editor and OS metadata
+.vscode/
+.idea/
+.DS_Store
+
+# Local agent and review artifacts
+.revrem/runs/
+.revrem/artifacts/
+.revrem/tmp/
 .aider*
+.claude/settings.local.json
+tmp/

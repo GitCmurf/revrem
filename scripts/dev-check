@@ -22,5 +22,8 @@ if command -v meminit >/dev/null 2>&1; then
   meminit doctor --format json
   meminit check --format json
 else
-  printf '%s\n' 'meminit not installed; skipping DocOps check' >&2
+  printf '%s\n' 'ERROR: meminit not installed; DocOps check cannot run' >&2
+  exit 1
 fi
+
+git diff --check
