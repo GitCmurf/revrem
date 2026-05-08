@@ -42,6 +42,7 @@ jobs:
         run: mypy src
 
       - name: DocOps check
+        if: matrix.python-version == '3.12'
         run: meminit check --format json
 
       - name: Whitespace check
@@ -51,4 +52,5 @@ jobs:
         run: git ls-files -z | xargs -0 detect-secrets-hook --baseline .secrets.baseline
 
       - name: Pre-commit
+        if: matrix.python-version == '3.12'
         run: pre-commit run --all-files --show-diff-on-failure
