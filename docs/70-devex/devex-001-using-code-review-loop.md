@@ -491,6 +491,9 @@ until a backend adapter is implemented.
   subprocess timeouts and should only be used when an operator is ready to
   interrupt manually. Timeout artifacts include the command, cwd, timeout, and
   any partial stdout/stderr captured before the subprocess was killed.
+  RevRem starts each child command in its own process group and kills the whole
+  group on timeout, so wrappers that leave pipe-holding descendants behind do
+  not block artifact creation indefinitely.
 - Keep checks deterministic and focused on PR readiness. Expensive full-suite
   checks are useful for a final pass, but narrow checks are better while the
   loop is still actively remediating.

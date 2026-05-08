@@ -4,6 +4,7 @@ import io
 import json
 import os
 import re
+import time
 from pathlib import Path
 
 import pytest
@@ -3807,6 +3808,21 @@ def test_default_runner_timeout_records_command_cwd_and_partial_output(tmp_path,
     assert "Command: codex exec" in result.stderr
     assert f"cwd: {tmp_path}" in result.stderr
     assert "[partial stderr]\npartial stderr" in result.stderr
+
+
+def test_default_runner_timeout_kills_process_group_with_pipe_holding_child(tmp_path):
+    start = time.monotonic()
+
+    result = MODULE.default_runner(
+        ["bash", "-lc", "sleep 30 & wait"],
+        tmp_path,
+        None,
+        0.2,
+    )
+
+    assert time.monotonic() - start < 5
+    assert result.returncode == -1
+    assert "Command timed out after 0.2 seconds" in result.stderr
 
 
 def test_loop_writes_failure_summary_when_remediation_fails(tmp_path):

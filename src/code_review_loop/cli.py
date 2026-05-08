@@ -467,6 +467,7 @@ def run_subprocess_with_terminal_title_refresh(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        start_new_session=True,
     )
     deadline = None if timeout is None else time.monotonic() + timeout
     pending_input = input
@@ -477,7 +478,7 @@ def run_subprocess_with_terminal_title_refresh(
             if deadline is not None:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
-                    process.kill()
+                    kill_process_tree(process)
                     stdout, stderr = process.communicate()
                     assert timeout is not None
                     raise subprocess.TimeoutExpired(args, timeout, output=stdout, stderr=stderr)
@@ -494,11 +495,25 @@ def run_subprocess_with_terminal_title_refresh(
     except BaseException:
         try:
             if process.poll() is None:
-                process.kill()
+                kill_process_tree(process)
             process.communicate()
         except Exception:
             pass
         raise
+
+
+def kill_process_tree(process: subprocess.Popen[str]) -> None:
+    """Kill a subprocess and descendants started in its process group."""
+    pid = getattr(process, "pid", None)
+    if pid is None:
+        process.kill()
+        return
+    try:
+        os.killpg(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return
+    except OSError:
+        process.kill()
 
 
 def detect_review_status(output: str) -> str:

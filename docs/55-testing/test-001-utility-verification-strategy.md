@@ -3,8 +3,8 @@ document_id: REVREM-TEST-001
 type: TEST
 title: Utility verification strategy
 status: Draft
-version: '1.1'
-last_updated: '2026-05-06'
+version: '1.2'
+last_updated: '2026-05-08'
 owner: GitCmurf
 docops_version: '2.0'
 area: testing
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-TEST-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.1
-> **Last Updated:** 2026-05-06
+> **Version:** 1.2
+> **Last Updated:** 2026-05-08
 > **Type:** TEST
 > **Area:** testing
 > **Description:** Test and release gates for code-review-loop
@@ -61,6 +61,9 @@ The main test module is `tests/test_cli.py`. It covers:
   fallback.
 - Timeout diagnostics that preserve command, cwd, timeout, and partial child
   output.
+- Timeout cleanup for subprocesses that spawn pipe-holding descendants, proving
+  timeout handling kills the child process group instead of blocking forever
+  while collecting stdout/stderr.
 - No-op remediation close-down: when commit mode finds no staged changes after
   passing checks, the loop stops instead of spending another review iteration.
 - Bounded loop behavior, including final review behavior and exit status.
