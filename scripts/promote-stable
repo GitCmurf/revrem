@@ -60,6 +60,7 @@ if [ "$stable_venv_needs_rebuild" -eq 1 ]; then
   esac
   rm -rf "$STABLE_VENV"
   "$PYTHON" -m venv "$STABLE_VENV"
+  "$STABLE_VENV/bin/python" -m pip install --quiet tomli-w
 fi
 
 cat > "$BIN_DIR/code-review-loop" <<EOF

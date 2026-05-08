@@ -117,9 +117,12 @@ CODEOWNERS exists, or opening a PR before CI is green.
 ```text
 Task 1  →  Tasks 2, 3, 4, 5     (safety point before any modification)
 Tasks 2, 3  →  Task 12          (both scans must pass before launch PR)
+Tasks 1-3  →  Task 9            (scans must complete before public debt is documented)
+Task 4  →  Task 7               (pre-commit and ignore rules before community files reference them)
 Task 4  →  Task 10              (ignore rules and pre-commit before CI references them)
 Task 5  →  Task 6               (license text before README references it)
 Task 5  →  Task 7               (license file before community files reference it)
+Task 5  →  Task 10              (licensing must be complete before CI/repo-hygiene is added)
 Task 7  →  Task 8               (CODEOWNERS must exist before optional code-owner review is required)
 Task 8  →  Task 12              (public repo and protection must exist before PR is opened)
 Task 10  →  Task 11             (CI must be green before release and supply-chain jobs are added)

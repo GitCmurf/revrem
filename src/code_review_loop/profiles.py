@@ -457,7 +457,7 @@ def profile_list_item_to_dict(item: ProfileListItem) -> dict[str, Any]:
 def merge_profiles(name: str, *profiles: Profile) -> Profile:
     if not profiles:
         raise ValueError("merge_profiles requires at least one profile")
-    result = profiles[0]
+    result = replace(profiles[0], name=name)
     for profile in profiles[1:]:
         result = Profile(
             name=name,

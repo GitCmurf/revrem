@@ -10,8 +10,7 @@ for candidate in python3.11 python3; do
     if "$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)'; then
       exec "$candidate" "$@"
     fi
-    printf '%s\n' "ERROR: $candidate is older than Python 3.11" >&2
-    exit 1
+    continue
   fi
 done
 

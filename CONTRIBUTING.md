@@ -9,7 +9,7 @@ traceability.
 
 ```bash
 git clone https://github.com/GitCmurf/revrem.git
-cd code-review-loop
+cd revrem
 ./scripts/install-dev
 pre-commit install
 ```

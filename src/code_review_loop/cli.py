@@ -2609,6 +2609,12 @@ def config_main(argv: Sequence[str]) -> int:
                     print(_format_profile_list_item(item))
             return 0
         if args.command == "show":
+            if output_format == "text":
+                print(
+                    "ERROR: 'text' format is not supported for 'show'. Use 'toml' or 'json'.",
+                    file=sys.stderr,
+                )
+                return 1
             profile = profiles.resolve_profile(
                 args.name,
                 cwd=Path.cwd(),
