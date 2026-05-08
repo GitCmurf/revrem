@@ -8,7 +8,7 @@ traceability.
 ## Local Setup
 
 ```bash
-git clone https://github.com/GitCmurf/code-review-loop.git
+git clone https://github.com/GitCmurf/revrem.git
 cd code-review-loop
 ./scripts/install-dev
 pre-commit install
@@ -99,5 +99,5 @@ available.
 Consumers can verify release artifacts with:
 
 ```bash
-gh attestation verify <artifact-path> --repo GitCmurf/code-review-loop
+gh attestation verify <artifact-path> --repo GitCmurf/revrem
 ```

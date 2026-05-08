@@ -296,7 +296,7 @@ Remediation agents do not own git history. After checks pass, RevRem may stage
 the current worktree with `git add -A` while excluding the configured artifact
 directory, skip clean trees, optionally ask a read-only Codex invocation for a
 concise subject, normalize default subjects to Conventional Commit syntax with
-an appended ` (RevRem)`, and run `git commit` deterministically. A CLI
+an appended `(RevRem)`, and run `git commit` deterministically. A CLI
 `--commit-message-prompt` override intentionally disables that default subject
 policy. This keeps commits reproducible and preserves a future path for cheaper
 commit-message models without coupling history mutation to the remediation
@@ -416,7 +416,7 @@ Milestone status as of version 1.4:
 - FR-11 is implemented for Codex commit-message drafting with deterministic
   local git staging and commit execution after checks pass. Default commit
   subjects are normalized to Conventional Commit syntax and suffixed with
-  ` (RevRem)` unless the operator provides a custom commit-message prompt.
+  `(RevRem)` unless the operator provides a custom commit-message prompt.
 - FR-12 is implemented for the local-operator TUI slice:
   `revrem ui` resolves to a dependency-gated Textual entry point with a clean
   install hint when the optional `tui` extra is absent, renders Home, Profiles,

@@ -1490,7 +1490,8 @@ def test_main_save_profile_writes_project_config_and_exits(tmp_path, monkeypatch
     assert "[profiles.final-pr]" in saved
     assert "base = \"trunk\"" in saved
     assert "max_iterations = 7" in saved
-    assert "checks = [\"pytest -q\", \"git diff --check\"]" in saved
+    assert "\"pytest -q\"" in saved
+    assert "\"git diff --check\"" in saved
     assert "model = \"gpt-5.5\"" in saved
     assert "final_review = true" in saved
     assert "progress_style = \"rich\"" in saved

@@ -14,7 +14,7 @@ template_version: "2.0"
 
 <!-- MEMINIT_METADATA_BLOCK -->
 
-> **Document ID:** {{document_id}}
+> **Document ID:** {{document_id}} (write-once; do not modify after initial creation)
 > **Owner:** {{owner}}
 > **Status:** {{status}}
 > **Version:** 0.1

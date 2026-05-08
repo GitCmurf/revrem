@@ -17,7 +17,7 @@ Document IDs follow `REVREM-TYPE-SEQ` (e.g., `REVREM-ADR-001`).
 ## Project Rules
 
 - The atomic unit of work is code + documentation + tests.
-- Keep the runtime dependency-free unless a dependency removes clear operational risk.
+- Keep the runtime dependency-free unless a dependency removes clear operational risk. `tomli-w` is an accepted exception: it eliminates an entire class of TOML encoding bugs (surrogate escapes, escaping edge cases) that would be fragile to maintain by hand.
 - Preserve operator-visible progress and artifact output; this tool is for watched local automation.
 - Keep nested Codex execution bounded by default. Any unbounded mode must be explicit.
 - Prefer portable POSIX/Linux behavior and avoid shell-specific assumptions in Python code.

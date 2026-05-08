@@ -169,11 +169,14 @@ def sanitize_terminal_title(value: str) -> str:
 
 
 def write_terminal_control(sequence: str, *, prefer_tty: bool = False) -> None:
+    if prefer_tty and write_terminal_control_to_tty(sequence):
+        return
     if sys.stderr.isatty():
         sys.stderr.write(sequence)
         sys.stderr.flush()
         return
-    write_terminal_control_to_tty(sequence)
+    if not prefer_tty:
+        write_terminal_control_to_tty(sequence)
 
 
 def write_terminal_control_to_tty(sequence: str) -> bool:
@@ -569,7 +572,10 @@ NEGATED_ISSUE_PROSE_RE = re.compile(
     rf"no(?:\s+{NEGATED_ISSUE_PREFIX_CHAIN_RE})?\s+{NEGATED_ISSUE_WORD_RE}\b"
     rf"|without(?:\s+any)?(?:\s+{NEGATED_ISSUE_PREFIX_CHAIN_RE})?\s+{NEGATED_ISSUE_WORD_RE}\b"
     rf"|without\s+revealing(?:\s+any)?(?:\s+{NEGATED_ISSUE_PREFIX_CHAIN_RE})?\s+{NEGATED_ISSUE_WORD_RE}\b"
-    rf"|(?:did|does|do|didn't|doesn't|don't|cannot|can't)\s+not\s+"
+    rf"|(?:did|does|do)\s+not\s+"
+    rf"(?:find|identify|detect|see|spot|surface|observe|notice)\s+"
+    rf"(?:any\s+)?(?:{NEGATED_ISSUE_PREFIX_CHAIN_RE}\s+)?{NEGATED_ISSUE_WORD_RE}\b"
+    rf"|(?:didn't|doesn't|don't|cannot|can't)\s+"
     rf"(?:find|identify|detect|see|spot|surface|observe|notice)\s+"
     rf"(?:any\s+)?(?:{NEGATED_ISSUE_PREFIX_CHAIN_RE}\s+)?{NEGATED_ISSUE_WORD_RE}\b"
     rf")",
@@ -2440,6 +2446,9 @@ def profile_from_loop_config(
     saved_timeout_seconds = (
         timeout_seconds if timeout_seconds is not None else config.review_timeout_seconds
     )
+    saved_remediation_timeout_seconds = (
+        timeout_seconds if timeout_seconds is not None else config.remediation_timeout_seconds
+    )
     saved_triage_timeout_seconds = (
         timeout_seconds
         if timeout_seconds is not None and config.triage_enabled
@@ -2472,7 +2481,7 @@ def profile_from_loop_config(
             harness=config.remediation_harness,
             model=config.remediation_model or config.model,
             reasoning_effort=config.remediation_reasoning_effort or config.reasoning_effort,
-            timeout_seconds=saved_timeout_seconds,
+            timeout_seconds=saved_remediation_timeout_seconds,
         ),
         commit=profiles.CommitConfig(
             enabled=config.commit_after_remediation,
@@ -2668,6 +2677,8 @@ def config_main(argv: Sequence[str]) -> int:
                 print(f"user_config: {info['user_config']}")
                 print(f"project_config: {info['project_config']}")
                 print("profiles: " + ", ".join(profile_names))
+                if "resolved_profile" in info:
+                    print(f"resolved_profile: {json.dumps(info['resolved_profile'], indent=2)}")
             return 0
     except (OSError, RuntimeError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

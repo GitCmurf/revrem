@@ -54,6 +54,8 @@ def test_codex_adapter_builds_remediation_exec_command():
         "--full-auto",
         "--sandbox",
     ]
+    assert command[command.index("--sandbox") + 1] == "workspace-write"
+    assert command[command.index("--color") + 1] == "never"
     assert "--json" in command
     assert command[command.index("--model") + 1] == "gpt-5.4-mini"
     assert command[-3:] == ["--output-last-message", "last.txt", "-"]

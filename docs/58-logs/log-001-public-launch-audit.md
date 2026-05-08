@@ -59,7 +59,7 @@ The safety tag is local-only and must not be pushed to the public remote.
 |---|---|---|
 | `detect-secrets scan` baseline generation | Pass | Generated `.secrets.baseline` with zero findings after excluding generated caches and virtualenv/build artifacts. |
 | `git ls-files --cached --others --exclude-standard -z \| xargs -0 ./.venv/bin/detect-secrets-hook --baseline .secrets.baseline` | Pass | Covered tracked and launch-created untracked files. |
-| Targeted working-tree text search | Reviewed | Matches were documentation terms, public contact email, placeholder `.env.example`, test decorators, and governed launch-plan text. No credential or private transcript found. |
+| Targeted working-tree text search | Reviewed | Matches were documentation terms, public contact email, placeholder `.env.example`, test decorators, and governed launch-plan text. No credential or private transcript found. The `.superpowers/` directory is gitignored and contains no tracked files; no local absolute paths or usernames were found in committed content. |
 | `command -v gitleaks` | Not available | `gitleaks` is not installed in this environment; use GitHub-side workflow or install before public launch for an additional scanner pass. |
 
 ### History Scan Evidence

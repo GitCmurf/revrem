@@ -91,4 +91,4 @@ ergonomics.
   after editable installation.
 - `meminit doctor --format json` passes.
 - `meminit check --format json` passes.
-- The final repository exists at `/home/cmf/code/code-review-loop`.
+- The final repository exists in the user's local workspace.

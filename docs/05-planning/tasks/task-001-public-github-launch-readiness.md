@@ -114,7 +114,7 @@ Tasks must be executed in dependency order. Running tasks out of order risks
 publishing secrets before cleanup is done, enabling code-owner review before
 CODEOWNERS exists, or opening a PR before CI is green.
 
-```
+```text
 Task 1  →  Tasks 2, 3, 4, 5     (safety point before any modification)
 Tasks 2, 3  →  Task 12          (both scans must pass before launch PR)
 Task 4  →  Task 10              (ignore rules and pre-commit before CI references them)

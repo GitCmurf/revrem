@@ -51,7 +51,7 @@ unbounded iteration counts for unattended automation.
 For development from a checkout:
 
 ```bash
-git clone https://github.com/GitCmurf/code-review-loop.git
+git clone https://github.com/GitCmurf/revrem.git
 cd code-review-loop
 ./scripts/install-dev
 ```

@@ -10,7 +10,7 @@ begin.
 
 Use GitHub Private Vulnerability Reporting as the primary channel:
 
-`https://github.com/GitCmurf/code-review-loop/security/advisories/new`
+`https://github.com/GitCmurf/revrem/security/advisories/new`
 
 If that channel is unavailable, email `colinfarmer.gg1@gmail.com` with a short
 summary and reproduction details.

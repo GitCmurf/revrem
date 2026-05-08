@@ -239,7 +239,7 @@ def run_textual_app(*, selected_profile_name: str | None = None) -> None:
             for profile in model.snapshot.profiles:
                 if profile.name == profile_name:
                     return profiles_by_name.get(profile_name)
-            return profiles_by_name.get(profile_name)
+            return None
 
     profiles_by_name = {
         profile.name: profile

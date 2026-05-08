@@ -395,7 +395,7 @@ only the read-only Codex call that drafts the commit subject. If no explicit
 CLI value is supplied, the profile value is used; the built-in profile default
 is `gpt-5.3-codex-spark`. With the default
 prompt, RevRem normalizes the final subject to Conventional Commit syntax and
-appends ` (RevRem)`. Passing `--commit-message-prompt` intentionally disables
+appends `(RevRem)`. Passing `--commit-message-prompt` intentionally disables
 that default subject policy so special-purpose commit formats can be tested
 without fighting the normalizer. If a verified remediation pass produces no
 staged changes, RevRem stops the loop immediately; in that no-op path an

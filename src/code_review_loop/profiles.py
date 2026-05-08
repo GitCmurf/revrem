@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import sys
 import tempfile
 import tomllib
@@ -13,6 +14,8 @@ from contextlib import suppress
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
+
+import tomli_w
 
 from code_review_loop import run_history
 from code_review_loop.harnesses import (
@@ -150,7 +153,7 @@ class ProfileListItem:
 
 
 def user_config_path(home: Path | None = None) -> Path:
-    root = home if home is not None else Path(os.environ.get("HOME", "~")).expanduser()
+    root = home if home is not None else Path.home()
     return root / USER_CONFIG_RELATIVE
 
 
@@ -452,6 +455,8 @@ def profile_list_item_to_dict(item: ProfileListItem) -> dict[str, Any]:
 
 
 def merge_profiles(name: str, *profiles: Profile) -> Profile:
+    if not profiles:
+        raise ValueError("merge_profiles requires at least one profile")
     result = profiles[0]
     for profile in profiles[1:]:
         result = Profile(
@@ -497,6 +502,41 @@ def profile_to_toml(profile: Profile, *, include_wrapper: bool = False) -> str:
     )
 
 
+def _profile_to_toml_dict(
+    profile: Profile,
+    *,
+    omit_builtin_defaults: bool,
+    omit_reference_defaults: bool = False,
+    reference: Profile | None = None,
+    raw_profile: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    if profile.description:
+        result["description"] = profile.description
+    for section_name in ("pipeline", "review", "triage", "remediation", "commit", "output", "runtime"):
+        value = getattr(profile, section_name)
+        defaults = type(value)()
+        reference_value = getattr(reference, section_name) if reference is not None else None
+        raw_section = raw_profile.get(section_name) if raw_profile is not None else None
+        section_dict: dict[str, Any] = {}
+        for key, item in asdict(value).items():
+            if item is None:
+                continue
+            reference_item = getattr(reference_value, key) if reference_value is not None else None
+            if omit_reference_defaults and reference_value is not None and item == reference_item:
+                continue
+            explicit = isinstance(raw_section, dict) and key in raw_section
+            if omit_builtin_defaults and item == getattr(defaults, key) and not explicit:
+                continue
+            if isinstance(item, tuple):
+                section_dict[key] = list(item)
+            else:
+                section_dict[key] = item
+        if section_dict:
+            result[section_name] = section_dict
+    return result
+
+
 def _profile_to_toml_impl(
     profile: Profile,
     *,
@@ -506,40 +546,22 @@ def _profile_to_toml_impl(
     reference: Profile | None = None,
     raw_profile: dict[str, Any] | None = None,
 ) -> str:
-    lines: list[str] = []
-    if root is not None:
-        lines.append(f"[{_toml_table_header(root)}]")
-        if profile.description:
-            lines.append(f"description = {_toml_string(profile.description)}")
-            lines.append("")
-    elif profile.description:
-        lines.append(f"description = {_toml_string(profile.description)}")
-        lines.append("")
-    for section_name in ("pipeline", "review", "triage", "remediation", "commit", "output", "runtime"):
-        value = getattr(profile, section_name)
-        header = (*root, section_name) if root is not None else (section_name,)
-        section_lines: list[str] = []
-        defaults = type(value)()
-        reference_value = getattr(reference, section_name) if reference is not None else None
-        raw_section = raw_profile.get(section_name) if raw_profile is not None else None
-        for key, item in asdict(value).items():
-            if item is None:
-                continue
-            # Preserve explicit profile overrides even when they match a built-in default.
-            # File-level defaults must win first so saved/cloned profiles reload identically.
-            reference_item = getattr(reference_value, key) if reference_value is not None else None
-            if omit_reference_defaults and reference_value is not None and item == reference_item:
-                continue
-            explicit = isinstance(raw_section, dict) and key in raw_section
-            if omit_builtin_defaults and item == getattr(defaults, key) and not explicit:
-                continue
-            section_lines.append(f"{key} = {_toml_value(item)}")
-        if not section_lines:
-            continue
-        lines.append(f"[{_toml_table_header(header)}]")
-        lines.extend(section_lines)
-        lines.append("")
-    return "\n".join(lines).rstrip() + "\n"
+    inner = _profile_to_toml_dict(
+        profile,
+        omit_builtin_defaults=omit_builtin_defaults,
+        omit_reference_defaults=omit_reference_defaults,
+        reference=reference,
+        raw_profile=raw_profile,
+    )
+    if root is None:
+        return tomli_w.dumps(inner)
+    nested: dict[str, Any] = {}
+    current = nested
+    for key in root:
+        current[key] = {}
+        current = current[key]
+    current.update(inner)
+    return tomli_w.dumps(nested)
 
 
 def write_user_profile(
@@ -824,21 +846,13 @@ def _write_profile_file(
 
 
 def _raw_profile_to_toml_impl(raw: dict[str, Any], *, root: tuple[str, ...]) -> str:
-    lines: list[str] = []
-    if root:
-        lines.append(f"[{_toml_table_header(root)}]")
-    nested_tables: list[tuple[str, dict[str, Any]]] = []
-    for key, value in raw.items():
-        if isinstance(value, dict):
-            nested_tables.append((key, value))
-            continue
-        lines.append(f"{_toml_key_segment(key)} = {_toml_value(value)}")
-    for key, value in nested_tables:
-        nested = _raw_profile_to_toml_impl(value, root=(*root, key))
-        if nested:
-            lines.append("")
-            lines.append(nested.rstrip())
-    return "\n".join(lines).rstrip() + "\n"
+    nested: dict[str, Any] = {}
+    current = nested
+    for key in root:
+        current[key] = {}
+        current = current[key]
+    current.update(raw)
+    return tomli_w.dumps(nested)
 
 
 def _atomic_write_text(path: Path, content: str) -> None:
@@ -846,10 +860,17 @@ def _atomic_write_text(path: Path, content: str) -> None:
     fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
     tmp_path = Path(tmp_name)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        try:
+            handle = os.fdopen(fd, "w", encoding="utf-8")
+        except Exception:
+            os.close(fd)
+            raise
+        with handle:
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
+        if path.exists():
+            shutil.copymode(path, tmp_path)
         tmp_path.replace(path)
         try:
             dir_fd = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
@@ -931,29 +952,3 @@ def _optional_float(value: Any, field: str) -> float | None:
     if isinstance(value, bool) or not isinstance(value, int | float):
         raise ValueError(f"{field} must be a number")
     return float(value)
-
-
-def _toml_value(value: Any) -> str:
-    if isinstance(value, str):
-        return _toml_string(value)
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, int | float):
-        return str(value)
-    if isinstance(value, tuple | list):
-        return "[" + ", ".join(_toml_value(item) for item in value) + "]"
-    raise TypeError(f"unsupported TOML value: {value!r}")
-
-
-def _toml_string(value: str) -> str:
-    return json.dumps(value)
-
-
-def _toml_table_header(path: tuple[str, ...]) -> str:
-    return ".".join(_toml_key_segment(segment) for segment in path)
-
-
-def _toml_key_segment(value: str) -> str:
-    if TOML_BARE_KEY_RE.fullmatch(value):
-        return value
-    return json.dumps(value)

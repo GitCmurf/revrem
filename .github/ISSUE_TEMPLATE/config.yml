@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Security vulnerability
-    url: https://github.com/GitCmurf/code-review-loop/security/advisories/new
+    url: https://github.com/GitCmurf/revrem/security/advisories/new
     about: Report vulnerabilities privately through GitHub Security Advisories.
   - name: Support policy
-    url: https://github.com/GitCmurf/code-review-loop/blob/main/SUPPORT.md
+    url: https://github.com/GitCmurf/revrem/blob/main/SUPPORT.md
     about: Read where to ask questions and what information to include.

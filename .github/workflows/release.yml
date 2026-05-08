@@ -26,6 +26,15 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+      - name: Install and test
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          python -m pip install "meminit @ git+https://github.com/GitCmurf/meminit.git@63547bc79f46200d25e4b7375b5c661f64aa34f8"
+          pytest -q
+          ruff check .
+          mypy src
+
       - name: Build distributions
         run: |
           python -m pip install --upgrade pip

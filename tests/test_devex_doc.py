@@ -23,7 +23,10 @@ def test_devex_front_matter_version_matches_latest_history_row():
         if line.startswith("| ") and not line.startswith("| Version ") and not line.startswith("|---")
     ]
 
-    latest_row = history_rows[0]
-    latest_version = latest_row.split("|")[1].strip()
+    assert history_rows, "Version History table is missing or empty"
 
-    assert version_line == f"version: '{latest_version}'"
+    latest_row = history_rows[0]
+    latest_version = latest_row.split("|")[1].strip().strip("'\"")
+    version_value = version_line.split(":", 1)[1].strip().strip("'\"")
+
+    assert version_value == latest_version

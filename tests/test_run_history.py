@@ -6,6 +6,7 @@ from code_review_loop import run_history
 
 
 def test_append_and_read_history_round_trip(tmp_path, monkeypatch):
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     summary = {
         "run_id": "run-1",

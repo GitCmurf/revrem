@@ -339,5 +339,5 @@ meminit state list --root . --format json
 
 - Brownfield migration runbook: `docs/60-runbooks/runbook-005-brownfield-repo-migration.md`
 - CI/CD enforcement runbook: `docs/60-runbooks/runbook-004-ci-cd-enforcement.md`
-- Agent output contract: `docs/20-specs/spec-008-agent-output-contract-v2.md`
+- Agent output contract: `docs/20-specs/spec-008-agent-output-contract.md`
 - Agent interface v2 PRD: `docs/10-prd/prd-005-agent-interface-v2.md`

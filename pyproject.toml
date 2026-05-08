@@ -24,7 +24,7 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Topic :: Software Development :: Quality Assurance",
 ]
-dependencies = []
+dependencies = ["tomli-w>=1.0"]
 
 [project.optional-dependencies]
 dev = [
@@ -52,8 +52,8 @@ code-review-loop = "code_review_loop.cli:main"
 revrem = "code_review_loop.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/GitCmurf/code-review-loop"
-Issues = "https://github.com/GitCmurf/code-review-loop/issues"
+Homepage = "https://github.com/GitCmurf/revrem"
+Issues = "https://github.com/GitCmurf/revrem/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]

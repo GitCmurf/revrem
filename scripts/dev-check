@@ -10,9 +10,7 @@ fi
 "$PYTHON" -m pytest -q
 "$PYTHON" -m ruff check .
 
-if command -v mypy >/dev/null 2>&1; then
-  mypy src
-elif "$PYTHON" -m mypy --version >/dev/null 2>&1; then
+if "$PYTHON" -m mypy --version >/dev/null 2>&1; then
   "$PYTHON" -m mypy src
 else
   printf '%s\n' 'mypy not installed; skipping type check' >&2
