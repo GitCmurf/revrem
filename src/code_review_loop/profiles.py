@@ -869,8 +869,10 @@ def _atomic_write_text(path: Path, content: str) -> None:
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
-        if path.exists():
+        try:
             shutil.copymode(path, tmp_path)
+        except FileNotFoundError:
+            pass
         tmp_path.replace(path)
         try:
             dir_fd = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))

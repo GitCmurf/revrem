@@ -18,7 +18,7 @@ def data_home(home: Path | None = None) -> Path:
     xdg_data_home = os.environ.get("XDG_DATA_HOME")
     if xdg_data_home:
         return Path(xdg_data_home).expanduser() / APP_DIR_NAME
-    root = home if home is not None else Path(os.environ.get("HOME", "~")).expanduser()
+    root = home if home is not None else Path.home()
     return root / ".local" / "share" / APP_DIR_NAME
 
 

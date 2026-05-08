@@ -174,8 +174,7 @@ def write_terminal_control(sequence: str, *, prefer_tty: bool = False) -> None:
     if sys.stderr.isatty():
         sys.stderr.write(sequence)
         sys.stderr.flush()
-        return
-    if not prefer_tty:
+    elif not prefer_tty:
         write_terminal_control_to_tty(sequence)
 
 

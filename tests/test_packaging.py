@@ -205,8 +205,6 @@ exit 0
     assert result.returncode == 0, result.stderr
     assert marker.exists()
     assert not stale_marker.exists()
-    # The fake venv creator writes "exit 0" into $3/bin/python, so if the stale
-    # venv's python now contains "exit 0", it was overwritten by the new venv.
     assert "exit 0" in stale_python.read_text(encoding="utf-8")
     assert (home / ".local" / "bin" / "revrem").exists()
     assert (home / ".local" / "bin" / "code-review-loop").exists()
