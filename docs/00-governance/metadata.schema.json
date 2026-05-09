@@ -1,0 +1,53 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://meminit.io/schemas/metadata.schema.json",
+  "title": "Meminit Governed Document Frontmatter",
+  "type": "object",
+  "required": [
+    "document_id",
+    "type",
+    "title",
+    "status",
+    "version",
+    "last_updated",
+    "owner",
+    "docops_version"
+  ],
+  "properties": {
+    "document_id": {
+      "type": "string",
+      "pattern": "^[A-Z]{3,10}-[A-Z]{3,10}-\\d{3}$"
+    },
+    "type": { "type": "string" },
+    "title": { "type": "string" },
+    "status": {
+      "type": "string",
+      "enum": ["Draft", "In Review", "Approved", "Superseded"]
+    },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+$" },
+    "last_updated": { "type": "string", "format": "date" },
+    "owner": { "type": "string" },
+    "docops_version": { "type": "string" },
+    "area": { "type": "string" },
+    "description": { "type": "string" },
+    "template_type": { "type": "string" },
+    "template_version": { "type": "string" },
+    "keywords": { "type": "array", "items": { "type": "string" } },
+    "tags": { "type": "array", "items": { "type": "string" } },
+    "superseded_by": {
+      "type": "string",
+      "pattern": "^[A-Z]{3,10}-[A-Z]{3,10}-\\d{3}$"
+    },
+    "related_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Z]{3,10}-[A-Z]{3,10}-\\d{3}$"
+      }
+    },
+    "approvers": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          python -m pip install "meminit @ git+https://github.com/GitCmurf/meminit.git@63547bc79f46200d25e4b7375b5c661f64aa34f8"
+
+      - name: Tests
+        run: pytest -q
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Type check
+        run: mypy src
+
+      - name: DocOps check
+        if: matrix.python-version == '3.12'
+        run: meminit check --format json
+
+      - name: Whitespace check
+        run: git diff --check
+
+      - name: Secret scan
+        run: git ls-files -z | xargs -0 detect-secrets-hook --baseline .secrets.baseline
+
+      - name: Pre-commit
+        if: matrix.python-version == '3.12'
+        run: pre-commit run --all-files --show-diff-on-failure

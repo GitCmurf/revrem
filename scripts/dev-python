@@ -1,0 +1,18 @@
+#!/usr/bin/env sh
+set -eu
+
+if [ -x ./.venv/bin/python ]; then
+  exec ./.venv/bin/python "$@"
+fi
+
+for candidate in python3.11 python3; do
+  if command -v "$candidate" >/dev/null 2>&1; then
+    if "$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)'; then
+      exec "$candidate" "$@"
+    fi
+    continue
+  fi
+done
+
+printf '%s\n' "ERROR: no Python >=3.11 found" >&2
+exit 1

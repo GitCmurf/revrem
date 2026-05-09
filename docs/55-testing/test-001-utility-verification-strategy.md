@@ -1,0 +1,166 @@
+---
+document_id: REVREM-TEST-001
+type: TEST
+title: Utility verification strategy
+status: Draft
+version: '1.2'
+last_updated: '2026-05-08'
+owner: GitCmurf
+docops_version: '2.0'
+area: testing
+description: Test and release gates for code-review-loop
+keywords:
+- pytest
+- cli
+- docops
+---
+
+> **Document ID:** REVREM-TEST-001
+> **Owner:** GitCmurf
+> **Status:** Draft
+> **Version:** 1.2
+> **Last Updated:** 2026-05-08
+> **Type:** TEST
+> **Area:** testing
+> **Description:** Test and release gates for code-review-loop
+
+# TEST: Utility verification strategy
+
+## Context
+
+`code-review-loop` delegates review and remediation to subprocesses, so most
+behavior can be tested deterministically with fake runners. The tests must
+prove command construction, status detection, artifact routing, timeout
+handling, and loop stop conditions without invoking real Codex sessions.
+
+## Content
+
+### Unit and behavior tests
+
+The main test module is `tests/test_cli.py`. It covers:
+
+- Codex review status detection for explicit statuses, finding markers, common
+  clear-review prose, and ambiguous output.
+- Review and remediation command construction, including model and reasoning
+  flags.
+- Optional read-only triage command construction and review -> triage ->
+  remediation prompt handoff.
+- Optional commit-after-remediation behavior, including post-check gating,
+  deterministic git commit execution, read-only commit-message drafting, skipped
+  commits when no staged diff exists, and failure-summary recording when git
+  commit fails.
+- Commit-message normalization to Conventional Commit syntax with the RevRem
+  suffix, plus the explicit prompt-override path that disables that default
+  subject policy.
+- Phase-specific reasoning-effort CLI overrides for review, triage,
+  remediation, and commit-message drafting.
+- Positive and negative CLI boolean overrides for profile-controlled runtime
+  and output flags.
+- Default artifact-directory namespace under `.revrem/runs/`, including the
+  local `.git/info/exclude` guardrail and non-Git `.revrem/.gitignore`
+  fallback.
+- Timeout diagnostics that preserve command, cwd, timeout, and partial child
+  output.
+- Timeout cleanup for subprocesses that spawn pipe-holding descendants, proving
+  timeout handling kills the child process group instead of blocking forever
+  while collecting stdout/stderr.
+- Review-base preflight behavior for invalid Git topology, including a local
+  `main` that has no merge base with the current branch while `origin/main`
+  remains usable.
+- No-op remediation close-down: when commit mode finds no staged changes after
+  passing checks, the loop stops instead of spending another review iteration.
+- Bounded loop behavior, including final review behavior and exit status.
+- Check-command failure handling and prompt forwarding into the next
+  remediation pass.
+- Adaptive pytest handling for non-Python repositories: pytest commands are
+  skipped or normalized only when Node/TypeScript project markers are present
+  and no Python test surface is detected.
+- Artifact naming for review, remediation, last-message, check, and compact
+  terminal summary outputs.
+- Timeout propagation to review, remediation, and check subprocesses.
+- Status detection using only actionable review output, not noisy tool
+  transcripts in captured stderr.
+- Optional status-detection diagnostic artifacts.
+- Unexpected-behavior summary warnings and bug-report artifacts for remaining
+  unknown review classifications.
+- Progress-log formatting and quiet mode.
+- Local-time progress prefixes and optional Rich progress fallback behavior.
+- Terminal-title progress updates, stdout-safety, Rich-mode `/dev/tty` routing
+  so title refreshes do not pollute the live panel stream, and terminal cursor
+  restoration on normal and interrupted exits.
+- Profile selection, CLI-over-profile overrides, and `revrem config` command
+  behavior, including interactive `config new` prompts and the explicit
+  `--no-interactive` automation path. The default auto-detection path is
+  covered for both TTY and non-TTY invocations.
+- Run-history write/opt-out behavior and `revrem history list` output.
+- Package version reporting through `revrem --version`.
+
+`tests/test_profiles.py` covers TOML profile parsing, validation, precedence,
+commit-message model defaults, user-profile writes/deletes/imports, and
+reserved future harness handling.
+`tests/test_run_history.py` covers shared JSONL history paths, record shape, and
+newest-first reads.
+`tests/test_harnesses.py` covers the reusable harness command-planning boundary:
+Codex command construction is executable, while reserved future harnesses remain
+valid profile syntax but not runnable adapters.
+`tests/test_progress.py` covers optional Rich renderer safety, including literal
+handling for review text that contains Rich markup syntax and styling of the
+phase/action and status columns, plus in-place Live panel updates.
+`tests/test_packaging.py` covers console entry points and local distribution
+scripts, including optional extras metadata.
+`tests/test_tui.py` covers the dependency-gated `revrem ui` entry point without
+requiring Textual in the default development environment, plus fake-Textual
+launch smoke tests for the operator shell, dry-run launch action, and
+CLI-backed profile lifecycle actions.
+`tests/test_tui_state.py` covers dependency-free TUI view models for profile
+discovery, run-history loading, harness metadata, pipeline phase summaries, and
+profile command previews, launch plans, profile lifecycle command plans,
+run-monitor artifact links, and the composed shell model used by the
+interactive entry point.
+
+### Local verification
+
+Run:
+
+```bash
+python -m pytest -q
+python -m code_review_loop --help
+python -m code_review_loop --dry-run --quiet-progress --summary-format json
+meminit doctor --format json
+meminit check --format json
+```
+
+When optional dev tools are installed, also run:
+
+```bash
+ruff check .
+mypy src
+```
+
+The convenience wrapper is:
+
+```bash
+./scripts/dev-check
+```
+
+### CI verification
+
+The GitHub Actions workflow runs:
+
+- editable package installation with dev extras, including Rich and Textual so
+  optional progress/TUI paths are importable in CI,
+- `pytest -q`,
+- `ruff check .`,
+- `mypy src`,
+- `meminit check --format json`.
+
+### Release gate
+
+A release candidate should not be tagged unless:
+
+- tests pass locally and in CI,
+- `meminit check --format json` is green,
+- `revrem --version` reports the intended package version,
+- `REVREM-DEVEX-001` reflects current CLI flags and exit codes,
+- `REVREM-ADR-001` remains accurate for distribution and skill guidance,
+- a dry run from a separate repository produces the expected artifact layout.

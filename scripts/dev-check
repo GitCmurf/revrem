@@ -1,0 +1,27 @@
+#!/usr/bin/env sh
+set -eu
+
+if [ -x ./.venv/bin/python ]; then
+  PYTHON=./.venv/bin/python
+else
+  PYTHON=${PYTHON:-python3}
+fi
+
+"$PYTHON" -m pytest -q
+"$PYTHON" -m ruff check .
+
+if "$PYTHON" -m mypy --version >/dev/null 2>&1; then
+  "$PYTHON" -m mypy src
+else
+  printf '%s\n' 'mypy not installed; skipping type check' >&2
+fi
+
+if command -v meminit >/dev/null 2>&1; then
+  meminit doctor --format json
+  meminit check --format json
+else
+  printf '%s\n' 'ERROR: meminit not installed; DocOps check cannot run' >&2
+  exit 1
+fi
+
+git diff --check

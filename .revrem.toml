@@ -1,0 +1,24 @@
+[profiles.default]
+description = "Saved from RevRem CLI on 2026-05-05"
+
+[profiles.default.pipeline]
+max_iterations = 11
+checks = ["pytest -q", "git diff --check"]
+
+[profiles.default.review]
+model = "gpt-5.5"
+reasoning_effort = "medium"
+timeout_seconds = 1800.0
+
+[profiles.default.remediation]
+model = "gpt-5.4-mini"
+reasoning_effort = "medium"
+timeout_seconds = 1800.0
+
+[profiles.default.commit]
+enabled = true
+
+[profiles.default.output]
+debug_status_detection = true
+progress_style = "rich"
+terminal_title = true
