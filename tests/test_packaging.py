@@ -210,6 +210,80 @@ exit 0
     assert (home / ".local" / "bin" / "code-review-loop").exists()
 
 
+def test_promote_stable_refreshes_runtime_dependency_on_reused_venv(tmp_path):
+    home = tmp_path / "home"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_python = fake_bin / "python3"
+    fake_python.write_text(
+        """#!/usr/bin/env sh
+case "$1" in
+  -c)
+    exit 0
+    ;;
+  -m)
+    if [ "$2" = "pip" ]; then
+      touch "${FAKE_PIP_MARKER:?}"
+      exit 0
+    fi
+    ;;
+esac
+exit 0
+""",
+        encoding="utf-8",
+    )
+    fake_python.chmod(0o755)
+    stable_venv = home / ".local" / "share" / "revrem" / "stable-venv"
+    stable_bin = stable_venv / "bin"
+    stable_bin.mkdir(parents=True)
+    stable_python = stable_bin / "python"
+    stable_python.write_text(
+        """#!/usr/bin/env sh
+case "$1" in
+  -c)
+    exit 0
+    ;;
+  -m)
+    if [ "$2" = "pip" ]; then
+      touch "${FAKE_PIP_MARKER:?}"
+      exit 0
+    fi
+    ;;
+esac
+exit 0
+""",
+        encoding="utf-8",
+    )
+    stable_python.chmod(0o755)
+    preserved_marker = stable_venv / "preserved.txt"
+    preserved_marker.write_text("keep", encoding="utf-8")
+
+    marker = tmp_path / "pip-called"
+    env = {
+        **os.environ,
+        "HOME": str(home),
+        "PATH": f"{fake_bin}:{os.environ.get('PATH', '')}",
+        "PYTHON": str(fake_python),
+        "REVREM_SKIP_CHECKS": "1",
+        "FAKE_PIP_MARKER": str(marker),
+    }
+
+    result = subprocess.run(
+        ["sh", str(ROOT / "scripts/promote-stable")],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert marker.exists()
+    assert preserved_marker.exists()
+    assert (home / ".local" / "bin" / "revrem").exists()
+    assert (home / ".local" / "bin" / "code-review-loop").exists()
+
+
 def test_install_dev_targets_repo_local_virtualenv():
     script = (ROOT / "scripts/install-dev").read_text(encoding="utf-8")
 

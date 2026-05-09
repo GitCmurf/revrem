@@ -115,9 +115,11 @@ revrem --version
 ```
 
 `./scripts/promote-stable` reruns `./scripts/dev-check` before it updates
-`~/.local/bin/revrem` and `~/.local/bin/code-review-loop`. In sandboxed agent
-sessions, `git tag` may need explicit escalation because Git writes tag refs,
-and annotated tags also write tag objects, under `.git`.
+`~/.local/bin/revrem` and `~/.local/bin/code-review-loop`. It also refreshes
+the stable runtime dependency install on every promotion so an older stable
+virtualenv keeps working after the launcher source tree advances. In sandboxed
+agent sessions, `git tag` may need explicit escalation because Git writes tag
+refs, and annotated tags also write tag objects, under `.git`.
 
 ### Recommended final PR command
 

@@ -63,6 +63,10 @@ For a stable local command available from other repositories:
 revrem --version
 ```
 
+`./scripts/promote-stable` refreshes the stable runtime dependency install on
+every promotion so older stable virtualenvs pick up the current launcher
+requirements.
+
 The stable promotion script updates:
 
 ```text
