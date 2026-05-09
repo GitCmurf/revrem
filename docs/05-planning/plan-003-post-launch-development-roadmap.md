@@ -24,6 +24,7 @@ related_ids:
 - REVREM-DEVEX-001
 - REVREM-TEST-001
 - REVREM-TASK-001
+- REVREM-TASK-002
 ---
 
 # PLAN: Post-Launch Development Roadmap
