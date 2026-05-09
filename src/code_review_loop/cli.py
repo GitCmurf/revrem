@@ -523,6 +523,10 @@ def detect_review_status(output: str) -> str:
     if match:
         return match.group(1).lower()
 
+    structured_status = structured_review_status(actionable_output)
+    if structured_status is not None:
+        return structured_status
+
     if CODEX_FINDING_RE.search(actionable_output):
         return "findings"
 
@@ -555,6 +559,20 @@ def detect_review_status(output: str) -> str:
     ):
         return "clear"
     return "unknown"
+
+
+def structured_review_status(output: str) -> str | None:
+    """Classify Codex structured JSON review output when it exposes findings."""
+    try:
+        parsed = json.loads(output)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    findings = parsed.get("findings")
+    if isinstance(findings, list):
+        return "findings" if findings else "clear"
+    return None
 
 
 NEGATED_CLEAR_REVIEW_STATEMENT_RE = re.compile(
@@ -2329,7 +2347,7 @@ def new_profile_from_args(args: argparse.Namespace) -> profiles.Profile:
 
 def default_artifact_dir() -> Path:
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    return Path(".revrem") / "runs" / timestamp
+    return Path(".revrem") / "runs" / f"{timestamp}-{uuid.uuid4().hex}"
 
 
 def ensure_default_artifact_ignore(config: LoopConfig) -> None:

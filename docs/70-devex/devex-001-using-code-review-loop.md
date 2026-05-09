@@ -207,7 +207,7 @@ blocking a clear review because pytest returned `2`, `4`, or `5`.
 
 ### Continuation after findings
 
-The loop writes artifacts under `.revrem/runs/<timestamp>/` by default. On the
+The loop writes artifacts under `.revrem/runs/<timestamp>-<suffix>/` by default. On the
 first default-artifact run in a Git repository, RevRem adds the default run
 path to the repository-local `.git/info/exclude` even when invoked from a
 subdirectory; outside Git repositories it falls back to `.revrem/.gitignore`
@@ -220,7 +220,7 @@ If a capped run ends with findings, continue from the final review artifact:
 revrem \
   --base main \
   --max-iterations 2 \
-  --initial-review-file .revrem/runs/<timestamp>/review-final.txt \
+  --initial-review-file .revrem/runs/<timestamp>-<suffix>/review-final.txt \
   --check "pytest -q"
 ```
 

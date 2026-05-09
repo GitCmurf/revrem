@@ -161,6 +161,12 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
         )
         == "clear"
     )
+    assert (
+        MODULE.detect_review_status(
+            '{"findings": [], "overall_correctness": "patch is correct"}\n'
+        )
+        == "clear"
+    )
 
 
 def test_detect_review_status_does_not_generalize_negated_clear_with_findings():
@@ -186,6 +192,35 @@ def test_detect_review_status_does_not_generalize_negated_clear_with_findings():
         )
         == "findings"
     )
+
+
+def test_run_loop_treats_structured_empty_findings_review_as_clear(tmp_path):
+    calls = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text))
+        if args[1] == "review":
+            return MODULE.CommandResult(
+                list(args),
+                0,
+                stdout='{"findings": [], "overall_correctness": "patch is correct"}\n',
+            )
+        raise AssertionError(f"unexpected command: {args}")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+    )
+
+    summary = MODULE.run_loop(config, runner)
+
+    assert summary["final_status"] == "clear"
+    assert summary["stopped_reason"] == "review_clear"
+    assert [call[0][1] for call in calls] == ["review"]
+    assert not (tmp_path / "artifacts" / "remediation-1.txt").exists()
 
 
 def test_detect_review_status_does_not_treat_scoped_clear_prose_as_clear_when_issue_follows():
@@ -1672,6 +1707,7 @@ def test_default_artifact_dir_uses_revrem_namespace():
     artifact_dir = MODULE.default_artifact_dir()
 
     assert artifact_dir.parts[:2] == (".revrem", "runs")
+    assert re.fullmatch(r"\d{8}T\d{6}Z-[0-9a-f]{32}", artifact_dir.name)
 
 
 def test_run_loop_creates_repo_local_revrem_gitignore_for_default_artifacts(tmp_path):
