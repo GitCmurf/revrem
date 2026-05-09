@@ -168,15 +168,16 @@ def _select_profile(
     resolved_profiles: tuple[profiles.Profile, ...],
     selected_profile_name: str | None = None,
 ) -> profiles.Profile | None:
-    profile_names = [profile.name for profile in resolved_profiles]
-    if not profile_names:
+    if not resolved_profiles:
         if selected_profile_name is not None:
             raise FileNotFoundError(f"profile not found: {selected_profile_name}")
         return None
-    if selected_profile_name is not None and selected_profile_name not in profile_names:
+    if selected_profile_name is not None:
+        for profile in resolved_profiles:
+            if profile.name == selected_profile_name:
+                return profile
         raise FileNotFoundError(f"profile not found: {selected_profile_name}")
-    wanted_name = selected_profile_name or profile_names[0]
-    return next(profile for profile in resolved_profiles if profile.name == wanted_name)
+    return resolved_profiles[0]
 
 
 def home_screen(snapshot: HomeSnapshot, *, selected_profile_name: str | None = None) -> TuiScreen:
@@ -275,16 +276,13 @@ def actions_screen(selected_profile_name: str | None) -> TuiScreen:
 def render_shell_text(model: TuiShellModel) -> str:
     sections: list[str] = []
     for screen in model.screens:
-        escaped_lines = "\n".join(_markup_escape(line) for line in screen.lines)
-        sections.append(f"[b]{_markup_escape(screen.title)}[/b]\n{escaped_lines}")
+        escaped_lines = "\n".join(markup_escape(line) for line in screen.lines)
+        sections.append(f"[b]{markup_escape(screen.title)}[/b]\n{escaped_lines}")
     return "\n\n".join(sections)
 
 
 def markup_escape(value: str) -> str:
     return value.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
-
-
-_markup_escape = markup_escape
 
 
 def harness_views() -> tuple[HarnessView, ...]:

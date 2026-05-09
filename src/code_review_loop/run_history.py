@@ -71,7 +71,7 @@ def read_history(path: Path | None = None, *, limit: int | None = None) -> list[
     if not target.is_file():
         return []
     records: list[dict[str, Any]] = []
-    for line in target.read_text(encoding="utf-8").splitlines():
+    for line in reversed(target.read_text(encoding="utf-8").splitlines()):
         if not line.strip():
             continue
         try:
@@ -80,7 +80,6 @@ def read_history(path: Path | None = None, *, limit: int | None = None) -> list[
             continue
         if isinstance(value, dict):
             records.append(value)
-    records.reverse()
-    if limit is not None:
-        return records[:limit]
+            if limit is not None and len(records) >= limit:
+                break
     return records

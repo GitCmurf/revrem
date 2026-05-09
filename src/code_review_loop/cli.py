@@ -823,17 +823,6 @@ def strip_finding_priority(finding: str) -> tuple[str, str]:
     return match.group(1), match.group(2)
 
 
-def codex_config_args(config: LoopConfig, *, reasoning_effort: str | None = None) -> list[str]:
-    args: list[str] = []
-    effort = reasoning_effort if reasoning_effort is not None else config.reasoning_effort
-    if effort:
-        # Codex parses -c values as TOML; the quotes are part of the TOML string
-        # syntax, not shell quoting. subprocess.run() intentionally receives one
-        # argv item such as model_reasoning_effort="low".
-        args.extend(["-c", f'model_reasoning_effort="{effort}"'])
-    return args
-
-
 def build_review_command(config: LoopConfig) -> list[str]:
     return harnesses.build_phase_command(
         harnesses.PhaseCommandRequest(

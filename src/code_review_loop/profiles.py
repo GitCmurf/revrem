@@ -555,13 +555,7 @@ def _profile_to_toml_impl(
     )
     if root is None:
         return tomli_w.dumps(inner)
-    nested: dict[str, Any] = {}
-    current = nested
-    for key in root:
-        current[key] = {}
-        current = current[key]
-    current.update(inner)
-    return tomli_w.dumps(nested)
+    return tomli_w.dumps(_nest_dict(root, inner))
 
 
 def write_user_profile(
@@ -819,7 +813,6 @@ def _write_profile_file(
     omit_reference_defaults: bool = False,
     omit_builtin_defaults_for_rendered: bool = True,
 ) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
     blocks: list[str] = []
     if raw_defaults is not None:
         blocks.append(_raw_profile_to_toml_impl(raw_defaults, root=("defaults",)).rstrip())
@@ -845,14 +838,18 @@ def _write_profile_file(
     _atomic_write_text(path, "\n\n".join(blocks) + "\n")
 
 
-def _raw_profile_to_toml_impl(raw: dict[str, Any], *, root: tuple[str, ...]) -> str:
+def _nest_dict(root: tuple[str, ...], inner: dict[str, Any]) -> dict[str, Any]:
     nested: dict[str, Any] = {}
     current = nested
     for key in root:
         current[key] = {}
         current = current[key]
-    current.update(raw)
-    return tomli_w.dumps(nested)
+    current.update(inner)
+    return nested
+
+
+def _raw_profile_to_toml_impl(raw: dict[str, Any], *, root: tuple[str, ...]) -> str:
+    return tomli_w.dumps(_nest_dict(root, raw))
 
 
 def _atomic_write_text(path: Path, content: str) -> None:
@@ -890,9 +887,9 @@ def _atomic_write_text(path: Path, content: str) -> None:
 
 def _merge_dataclass(base: Any, override: Any) -> Any:
     values = asdict(base)
+    defaults = asdict(type(override)())
     for key, value in asdict(override).items():
-        default = asdict(type(override)()).get(key)
-        if value != default:
+        if value != defaults[key]:
             values[key] = value
     return type(base)(**values)
 
