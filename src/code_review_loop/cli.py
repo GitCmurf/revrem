@@ -903,6 +903,11 @@ def run_codex_review(
     if config.dry_run:
         result = CommandResult(command, 0, stdout="DRY_RUN\nREVIEW_STATUS: findings\n")
     else:
+        artifact_path = config.artifact_dir / f"{artifact_label}.txt"
+        if preflight_error := review_base_preflight_error(config):
+            write_artifact(artifact_path, preflight_error)
+            progress_event(config, "review", display_label, "failed", "invalid base")
+            raise RuntimeError(f"codex review failed for {artifact_label}; see {artifact_path}")
         result = runner(command, config.cwd, None, phase_timeout_seconds(config, config.review_timeout_seconds))
     combined = _combined_output(result)
     artifact_path = config.artifact_dir / f"{artifact_label}.txt"
@@ -932,6 +937,84 @@ def run_codex_review(
     if status != "findings" or not log_review_findings(config, display_label, combined):
         progress_event(config, "review", display_label, status)
     return status, result
+
+
+def review_base_preflight_error(config: LoopConfig) -> str | None:
+    if config.dry_run or lexical_git_repo_root(config.cwd) is None:
+        return None
+
+    inside = run_git_preflight(config.cwd, ["rev-parse", "--is-inside-work-tree"])
+    if inside.returncode != 0 or inside.stdout.strip() != "true":
+        return None
+
+    base = config.base
+    base_result = run_git_preflight(config.cwd, ["rev-parse", "--verify", f"{base}^{{commit}}"])
+    if base_result.returncode != 0:
+        return (
+            f"Review base preflight failed: base {base!r} is not a local commit.\n"
+            f"Command: git rev-parse --verify {base}^{{commit}}\n"
+            f"{_combined_output(base_result)}"
+        )
+
+    merge_base = run_git_preflight(config.cwd, ["merge-base", "HEAD", base])
+    if merge_base.returncode == 0:
+        return None
+
+    head = run_git_preflight(config.cwd, ["rev-parse", "HEAD"]).stdout.strip() or "HEAD"
+    base_sha = base_result.stdout.strip() or base
+    hint = review_base_hint(config, base)
+    return (
+        f"Review base preflight failed: HEAD and base {base!r} do not share a merge base.\n"
+        f"HEAD: {head}\n"
+        f"{base}: {base_sha}\n"
+        f"Command: git merge-base HEAD {base}\n"
+        f"{_combined_output(merge_base)}"
+        f"{hint}"
+    )
+
+
+def review_base_hint(config: LoopConfig, base: str) -> str:
+    if "/" in base:
+        return "Use a base branch that shares history with HEAD, or realign the local branch.\n"
+    remote_base = f"origin/{base}"
+    remote_base_result = run_git_preflight(
+        config.cwd,
+        ["rev-parse", "--verify", f"{remote_base}^{{commit}}"],
+    )
+    if remote_base_result.returncode == 0:
+        remote_merge_base = run_git_preflight(config.cwd, ["merge-base", "HEAD", remote_base])
+        if remote_merge_base.returncode == 0:
+            return (
+                f"Hint: {remote_base!r} does share history with HEAD. "
+                f"Retry with --base {remote_base}, or update local {base!r} to match the PR base.\n"
+            )
+    return "Use a base branch that shares history with HEAD, or realign the local branch.\n"
+
+
+def run_git_preflight(cwd: Path, args: Sequence[str]) -> CommandResult:
+    command = ["git", *args]
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=cwd,
+            text=True,
+            capture_output=True,
+            timeout=15,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        return CommandResult(
+            command,
+            -1,
+            stdout=_timeout_stream_text(exc.output),
+            stderr=_timeout_stream_text(exc.stderr),
+        )
+    return CommandResult(
+        command,
+        completed.returncode,
+        stdout=completed.stdout,
+        stderr=completed.stderr,
+    )
 
 
 def review_failed_to_run(result: CommandResult) -> bool:

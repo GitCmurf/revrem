@@ -3092,6 +3092,83 @@ def test_review_failure_detection_allows_nonzero_findings_without_stderr():
     )
 
 
+def test_review_base_preflight_reports_unrelated_local_base_and_origin_hint(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "config", "user.email", "test@example.com")
+    run_git(repo, "config", "user.name", "Test User")
+    (repo / "local-main.txt").write_text("local main\n", encoding="utf-8")
+    run_git(repo, "add", "local-main.txt")
+    run_git(repo, "commit", "-m", "local main")
+    run_git(repo, "checkout", "--orphan", "public-launch")
+    run_git(repo, "rm", "-rf", ".")
+    (repo / "launch.txt").write_text("launch\n", encoding="utf-8")
+    run_git(repo, "add", "launch.txt")
+    run_git(repo, "commit", "-m", "public launch")
+    run_git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=repo,
+        artifact_dir=repo / "artifacts",
+    )
+
+    error = MODULE.review_base_preflight_error(config)
+
+    assert error is not None
+    assert "HEAD and base 'main' do not share a merge base" in error
+    assert "Retry with --base origin/main" in error
+
+
+def test_run_codex_review_fails_fast_when_base_has_no_merge_base(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "config", "user.email", "test@example.com")
+    run_git(repo, "config", "user.name", "Test User")
+    (repo / "main.txt").write_text("main\n", encoding="utf-8")
+    run_git(repo, "add", "main.txt")
+    run_git(repo, "commit", "-m", "main")
+    run_git(repo, "checkout", "--orphan", "feature")
+    run_git(repo, "rm", "-rf", ".")
+    (repo / "feature.txt").write_text("feature\n", encoding="utf-8")
+    run_git(repo, "add", "feature.txt")
+    run_git(repo, "commit", "-m", "feature")
+
+    def runner(*_args, **_kwargs):
+        raise AssertionError("codex review should not run when base preflight fails")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=repo,
+        artifact_dir=repo / "artifacts",
+    )
+
+    with pytest.raises(RuntimeError, match="codex review failed for review-1"):
+        MODULE.run_codex_review(config, runner, "review-1", display_label="1")
+
+    artifact_text = (repo / "artifacts" / "review-1.txt").read_text(encoding="utf-8")
+    assert "Review base preflight failed" in artifact_text
+    assert "git merge-base HEAD main" in artifact_text
+
+
+def run_git(cwd: Path, *args: str) -> None:
+    result = MODULE.subprocess.run(
+        ["git", *args],
+        cwd=cwd,
+        text=True,
+        stdout=MODULE.subprocess.PIPE,
+        stderr=MODULE.subprocess.PIPE,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_actionable_review_output_drops_verbose_stderr_transcript():
     output = "Full review comments:\n\n- [P1] Fix the bug\n\n[stderr]\n" + ("diff --git a/x b/x\n" * 100)
 

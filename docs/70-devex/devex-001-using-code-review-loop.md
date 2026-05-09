@@ -494,6 +494,11 @@ until a backend adapter is implemented.
   RevRem starts each child command in its own process group and kills the whole
   group on timeout, so wrappers that leave pipe-holding descendants behind do
   not block artifact creation indefinitely.
+- Ensure `--base` names a local commit that shares history with `HEAD`. During
+  branch-topology transitions, a stale local `main` can be unrelated to the
+  active PR branch even when `origin/main` is correct. RevRem preflights this
+  with `git merge-base HEAD <base>` and fails before launching Codex when the
+  base is invalid.
 - Keep checks deterministic and focused on PR readiness. Expensive full-suite
   checks are useful for a final pass, but narrow checks are better while the
   loop is still actively remediating.
