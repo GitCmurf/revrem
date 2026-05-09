@@ -3,7 +3,7 @@ document_id: REVREM-PLAN-003
 type: PLAN
 title: Post-Launch Development Roadmap
 status: Draft
-version: '0.3'
+version: '0.4'
 last_updated: '2026-05-09'
 owner: GitCmurf
 docops_version: '2.0'
@@ -57,7 +57,10 @@ The user-visible question is no longer "does the loop run?" It is:
    local-first agentic tool can be — not a demo, not a SaaS funnel?
 
 This plan answers those questions as a sequenced, parallelizable programme of
-work, with explicit non-goals, quality bars, and a 1.0 stability target.
+work, with explicit non-goals, quality bars, and a 1.0 stability target. It is
+intentionally ambitious, but every milestone must still be independently
+shippable by a small maintainer team. Ambition without slice discipline is a
+failure mode for this project.
 
 ## North Star
 
@@ -116,6 +119,60 @@ all measurable locally; none depend on telemetry.
 
 These metrics, not feature counts, define when the roadmap is "done".
 
+## Critical Assessment Of The Programme
+
+The roadmap is strong because it identifies the right product wedge: trusted
+local automation with inspectable evidence. The highest-risk parts of the plan
+are not model quality or UI polish; they are scope coupling and premature
+surface-area expansion.
+
+Final review corrections:
+
+- **Do not let the TUI become a second execution engine.** `run_loop()` or its
+  extracted successor remains the only execution owner. The TUI, reports, CI
+  comments, and replay consume events.
+- **Do not ship archive/daemon work before suppression and budget controls.**
+  A background reviewer without suppressions becomes noisy; one without budgets
+  becomes unsafe.
+- **Do not add real secondary harnesses before a fake harness contract.** The
+  fake harness is not a test convenience; it is the executable specification
+  for every future backend.
+- **Do not call PyPI "done" at first upload.** Distribution is done only when a
+  fresh user can install with `pipx`, run a documented profile, and diagnose a
+  failed setup without source access.
+- **Do not optimize for maximal autonomy before trust.** Hands-off operation
+  must be earned by preflights, schema stability, cost ceilings, cancellation,
+  and suppressions.
+
+The governing principle for roadmap triage is therefore:
+
+> If a feature increases autonomy, it must first increase or preserve
+> diagnosability, boundedness, and artifact quality.
+
+## Showcase Definition
+
+"Showcase" has a precise meaning in this plan. RevRem should be impressive
+because it is operationally composed, not because it has the largest feature
+list.
+
+The 1.0 showcase demo is:
+
+1. A maintainer installs RevRem with one public command.
+2. They run a bundled `pr-ready` or `security` profile on a sample repository.
+3. RevRem preflights the repo, explains the plan, and enforces an explicit time
+   and cost budget.
+4. It reviews, triages, remediates, verifies, and either exits clear or leaves
+   a compact, self-contained failure bundle.
+5. The same run can be replayed in compact terminal output, Rich/TUI output,
+   static HTML report, and CI comment without re-running a model.
+6. A repeated run suppresses intentionally-dismissed findings and highlights
+   only new or changed risk.
+7. The run artifacts are schema-versioned and privacy-scrubbed before any
+   export.
+
+Anything that does not move this demo forward is lower priority, even if it is
+technically interesting.
+
 ## Strategic Themes
 
 Five themes thread through every milestone. Each PR should be classifiable
@@ -132,6 +189,22 @@ under one or two of them; PRs that fit none should be questioned.
    pluralism, plugin entry points; one engine, many lenses.
 5. **Craft** — the showcase axis: terminal UX, error copy, README, demo asset
    quality, documentation tone, error messages a stranger would screenshot.
+
+## Dependency Gates
+
+These gates prevent late milestones from smuggling in unstable contracts.
+
+| Gate | Required before | Evidence |
+|---|---|---|
+| **G1: Public distribution smoke** | Any README install claim using PyPI/pipx | Fresh virtualenv or `pipx` CI job proves install and `revrem --version` |
+| **G2: Diagnostic schema v1** | Triage schema, events, report, CI Action, archive | JSON schema plus fixture validation in CI |
+| **G3: Suppression semantics** | Hooks, headless CI, daemon/watch | Tests prove suppressed findings do not trigger remediation but remain visible |
+| **G4: Budget enforcement** | Hooks, CI Action, daemon/watch, secondary harnesses | Fixture proves the next model call is not started after ceiling breach |
+| **G5: Event replay** | TUI run execution, static report, CI comments | `revrem replay` renders fixture runs without model/network access |
+| **G6: Fake harness contract** | Claude/Gemini/opencode adapters | Fake harness covers review, triage, remediation, timeout, cancellation, cost gaps |
+| **G7: Redaction harness** | Bug bundles, archive export, CI comments | Poisoned fixture with synthetic secrets is scrubbed by default |
+
+If a PR depends on a gate that has not landed, it should be split or deferred.
 
 ## Recommendation
 
@@ -226,6 +299,24 @@ what it is not.
 - **No ML/agent training inside RevRem.** The archive is shaped for export;
   consumers train.
 
+## Capability Maturity Checkpoints
+
+The plan deliberately separates "available", "default", and "stable". A
+feature should not skip levels because it works once on the maintainer's
+machine.
+
+| Level | Meaning | Required evidence |
+|---|---|---|
+| **Experimental** | Hidden behind an explicit flag or profile field; allowed to change | Unit tests plus one documented manual smoke |
+| **Preview** | Documented for adventurous users; schema may be additive-only but not frozen | Fixture tests, failure docs, and at least one non-maintainer-style example |
+| **Default-on for local use** | Safe for normal watched CLI usage | Preflight coverage, diagnostics, bounded cost/time, artifact schema validation |
+| **Default-on for hands-off use** | Safe in hooks/CI without a human watching stdout | Suppressions, budgets, cancellation, redaction, stable exit codes |
+| **Stable contract** | SemVer-protected public surface | Versioned schema, migration notes, compatibility tests against prior fixtures |
+
+Every milestone below must state which maturity level it reaches. For example,
+the first Claude adapter can be **Experimental** in M6; it is not allowed to
+become a default backend until it passes the same hands-off gates as Codex.
+
 ## Milestones
 
 Each milestone declares: goal, autonomy level reached, scope, acceptance
@@ -256,7 +347,8 @@ for every track that follows.
 **Acceptance criteria.**
 - GitHub shows `main` as the default branch; only expected long-lived
   remote branches remain.
-- CI is green on `main`; required checks include `dev-check` and `pre-commit`.
+- CI is green on `main`; the required CI job executes the same substantive
+  gates as local `./scripts/dev-check` and the configured pre-commit hooks.
 - Branch protection requires the Python CI checks before merge.
 - Security policy and dependency alerts are enabled.
 - README badges resolve to real, green, public targets.
@@ -307,6 +399,11 @@ maintainer.
   reference machine.
 - Release artifacts have provenance and checksum coverage.
 - README install section is updated only after the package is published.
+- Rollback is documented: a bad PyPI release can be yanked, the GitHub release
+  can be marked superseded, and users can pin the previous known-good version.
+- The release workflow refuses to publish if the working version in
+  `pyproject.toml`, `src/code_review_loop/__init__.py`, and the release tag do
+  not agree.
 
 **Quality bar.** A user who has never seen this repo can copy one line
 from the README and have a working `revrem` on `PATH` in under 90 seconds.
@@ -339,6 +436,9 @@ will depend on.
   Add a `schema_version` field to each.
 - Add `revrem bundle-bug-report` to produce a redacted, secret-free
   diagnostics tarball for issue submission.
+- Add stable failure fingerprints so repeated setup failures, timeout classes,
+  and review parsing failures can be searched across local history without
+  exposing raw review text.
 - Make run history append-safe under interruption and read-safe under
   truncation; add a fsync-once-per-run policy with a fallback for ENOSPC.
 - Add a corpus of "failure scenarios" fixtures to `REVREM-TEST-001`.
@@ -350,6 +450,8 @@ will depend on.
 - `revrem preflight --format json` validates against the published schema.
 - Schema doc is referenced from the README and CONTRIBUTING.
 - ≥ 95% of known misconfigurations in the test corpus are caught pre-launch.
+- `bundle-bug-report` redacts synthetic secrets and excludes raw local
+  transcripts unless explicitly requested.
 
 **Quality bar.** A failed run can be diagnosed without reading source code.
 A tester can construct a contrived breakage and predict the diagnostic
@@ -382,6 +484,9 @@ so dismissed findings stop returning every run.
   A suppressed finding produces a one-line `suppressed` event but does not
   trigger remediation. Suppressions can carry an `expires` field so they
   decay rather than rot.
+- Require suppressions to record provenance: who/what created the suppression,
+  original finding summary, creation time, optional expiry, and whether it is
+  repo-committed or user-local.
 - Add `revrem suppress add|list|remove|expire` for operator workflow.
 - Add tests for triage failure, timeout, false-positive handling,
   prompt-size truncation, suppression match/no-match, expiry.
@@ -394,6 +499,8 @@ so dismissed findings stop returning every run.
 - Invalid triage output fails safe rather than suppressing review findings.
 - Suppressions are honoured by both interactive and headless modes.
 - Triage precision on the labelled fixture set ≥ 0.85.
+- No suppression can hide a `critical` finding unless the operator passes an
+  explicit override flag that is recorded in the suppression entry.
 
 **Quality bar.** An operator running RevRem twice in a row on the same
 unchanged branch sees zero re-asked questions about findings they have
@@ -420,6 +527,9 @@ governance and reproducibility as first-class concerns.
   Compact/Rich renderers become consumers, not producers.
 - Persist `events.jsonl` per run; downstream surfaces read this file
   rather than re-parsing transcripts.
+- Define event compatibility rules: new event fields are additive within a
+  major version; removed or renamed fields require a schema-major bump and a
+  migration note.
 - **Cost governance.** Each run takes optional `--max-tokens`, `--max-usd`,
   `--max-wall-seconds`. Ceilings are checked between phases and on every
   `cost_charge` event; hitting one triggers `cost_ceiling_hit` and a
@@ -434,6 +544,9 @@ governance and reproducibility as first-class concerns.
 - Determinism affordances: pin model + harness version into `summary.json`;
   surface a `--seed` flag where the harness supports it; record the exact
   command line.
+- Add golden event fixtures for the reference scenarios: clear review,
+  actionable finding fixed, rejected false positive, timeout, check failure,
+  cancellation, and budget ceiling.
 - Update `REVREM-PLAN-002` when this foundation is ready to unblock real
   TUI-launched runs.
 
@@ -448,6 +561,7 @@ governance and reproducibility as first-class concerns.
   exceeds its ceiling fails *before* spending the next dollar.
 - `revrem replay` reproduces a finished run's terminal output byte-for-byte
   for the compact renderer (Rich/TUI may differ on theme).
+- Event fixture tests run without Codex, network, or GitHub access.
 
 **Quality bar.** Every downstream surface in this roadmap can be built
 *without* re-reading raw Codex transcripts.
@@ -728,6 +842,49 @@ Branch protection, Scorecard, sigstore (M0/M1) are baseline. Audit
 subprocess invocations for shell-injection surface; document the
 sandbox posture explicitly in a `SECURITY.md` extension. Run
 `pip-audit` / `osv-scanner` in CI; fail on known-exploitable CVEs.
+
+## Hands-Off Threat Model
+
+Hands-off operation is the product's most valuable and most dangerous axis.
+The threat model is intentionally local-first but still serious.
+
+### Assets
+
+- User source code and repository metadata.
+- Model prompts, review outputs, remediation diffs, and check output.
+- Local run history and archive datasets.
+- Git credentials indirectly reachable through the user's shell environment.
+- CI tokens and PR comment permissions for GitHub Action mode.
+
+### Adversaries And Failure Modes
+
+- **Prompt/output injection from repository content.** A file can ask the model
+  to ignore instructions, exfiltrate data, or modify unrelated paths.
+- **Command injection through user-configured checks.** Checks are shell
+  commands by design; the product must make that explicit and never synthesize
+  unsafe shell fragments from model text.
+- **Secret leakage through artifacts or bug bundles.** Logs can contain tokens,
+  paths, or proprietary code excerpts.
+- **Autonomous overreach.** A loop can spend too much money, rewrite too much
+  code, or keep re-raising known false positives.
+- **CI permission drift.** A GitHub Action can accidentally receive broader
+  token permissions than needed.
+- **Backend drift.** A provider CLI can change non-interactive semantics,
+  sandbox defaults, or output format.
+
+### Required Controls
+
+- Model text is never executed as shell without an explicit operator-authored
+  command boundary.
+- Remediation is constrained by sandbox, worktree preflight, iteration count,
+  wall-clock, and cost budget.
+- Bug bundles, CI comments, and archives use scrub-on-by-default redaction.
+- Suppressions are visible artifacts, not silent filters.
+- GitHub Action permissions are least-privilege and documented per event type.
+- Every harness declares capabilities and unsupported features before a run.
+
+Any milestone that weakens these controls must add an ADR or update this plan
+before implementation.
 
 ## Risks & Assumptions Register
 
