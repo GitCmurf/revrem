@@ -21,6 +21,8 @@ This project follows Semantic Versioning once public releases begin.
 - README rewritten as the public project entry point.
 - Package metadata now uses `revrem` as the public distribution identity while
   retaining `code-review-loop` as a compatibility console command.
+- CI now builds the `revrem` wheel, validates package metadata, and smoke-tests
+  the installed wheel on Linux and macOS.
 - Local development gate expanded to include `git diff --check`.
 
 ### Security

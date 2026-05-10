@@ -53,6 +53,17 @@ def test_project_version_matches_package_version():
     assert pyproject["project"]["version"] == match.group(1)
 
 
+def test_ci_builds_and_smokes_revrem_wheel():
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert "package-smoke:" in workflow
+    assert "python -m build --sdist --wheel" in workflow
+    assert "python -m twine check dist/*" in workflow
+    assert ".pkg-smoke/bin/python -m pip install dist/revrem-*.whl" in workflow
+    assert ".pkg-smoke/bin/revrem --version" in workflow
+    assert ".pkg-smoke/bin/code-review-loop --version" in workflow
+
+
 def test_optional_tui_extra_declares_textual_dependency():
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
