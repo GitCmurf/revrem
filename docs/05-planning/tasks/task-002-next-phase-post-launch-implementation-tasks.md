@@ -3,8 +3,8 @@ document_id: REVREM-TASK-002
 type: TASK
 title: Next-phase post-launch implementation tasks
 status: Draft
-version: '0.2'
-last_updated: '2026-05-09'
+version: '0.3'
+last_updated: '2026-05-10'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -20,6 +20,8 @@ keywords:
 - events
 - suppressions
 - harness
+- best-practices
+- traceability
 related_ids:
 - REVREM-PLAN-003
 - REVREM-PLAN-002
@@ -48,10 +50,12 @@ Read in this order:
    section in the document.** Do not skip it.
 4. **Phase Dependency Graph** + **Traceability Matrix** — what depends on what,
    and how each task ladders up to the plan's milestones and success metrics.
-5. **Global Engineering Rules** + **Modern Best-Practice Checklist** — the
+5. **Code / Tests / Docs Alignment Contract** — the anti-drift rules that
+   keep implementation, verification, and documentation moving together.
+6. **Global Engineering Rules** + **Modern Best-Practice Checklist** — the
    per-PR rules. Cited from each task; read once.
-6. **Tasks F0–F10** — PR-sized work packages.
-7. **Phase Exit Criteria & ADR Closure** — how we know the phase is done.
+7. **Tasks F0–F10** — PR-sized work packages.
+8. **Phase Exit Criteria & ADR Closure** — how we know the phase is done.
 
 If a task and the contracts registry disagree, the **registry wins**. Open a
 PR amending the registry rather than diverging silently.
@@ -129,6 +133,36 @@ Do **not** implement these in this task series:
 Those become eligible only after the phase exit criteria are satisfied. PRs
 that quietly add any of them must be split or rejected.
 
+## Final Review Corrections Applied
+
+This section records the critical review decisions that prevent the task list
+from becoming an impressive but brittle implementation script.
+
+- **No platform-dependent fingerprints.** Finding fingerprints use the path
+  spelling recorded by Git after POSIX normalization. They do not lowercase
+  paths based on the executing filesystem because that would make Linux and
+  macOS produce different fingerprints for the same repository.
+- **No accidental unbounded-timeout regression.** Existing RevRem behavior
+  allows explicit zero timeout values to disable a phase timeout. F3 may warn
+  when this weakens bounded execution, but it must not silently reclassify the
+  existing explicit behavior as invalid.
+- **No raw audit-log leakage by default.** Suppression audit logs can contain
+  emails, issue references, and rationale text. Bug bundles include a
+  redacted audit summary by default; raw audit logs require the same explicit
+  raw-transcript opt-in path as model transcripts.
+- **No changelog discipline without a changelog.** F0 must verify or create
+  `CHANGELOG.md` before the global rule requiring changelog updates becomes
+  enforceable.
+- **No schema work without a documented namespace.** F4 must create the
+  `docs/52-api/` schema area and document that JSON schema files there are
+  machine-readable reference artifacts, not Meminit-governed Markdown docs.
+- **No fake precision metric.** Triage precision in F6 is measured against a
+  labelled fixture corpus and deterministic parser/contract outputs. It is not
+  presented as proof of live model quality until live evaluation exists.
+- **No new release workflow secret debt.** F2 uses PyPI Trusted Publishing
+  where possible; any fallback to long-lived tokens must be documented as a
+  temporary risk with removal criteria.
+
 ## Glossary
 
 Fix vocabulary before scoping. Every F-task uses these terms with this
@@ -164,12 +198,13 @@ load-bearing — drift here causes silent bugs across modules.
 - **Breaking** changes (field removal, rename, type change, semantic change)
   bump major and require a migration note in the PR body and `CHANGELOG.md`.
 - A CI test (`tests/test_artifact_schema.py::test_no_unintentional_breaks`)
-  diffs each schema against its previous version on disk and fails on a
-  detected break without an accompanying major bump.
+  diffs each schema against its previous version on disk once a previous
+  version exists, and fails on a detected break without an accompanying major
+  bump.
 - JSON Schema files live under `docs/52-api/schemas/<name>-vN.schema.json`
   using **JSON Schema draft 2020-12**, with stable `$id` of form
-  `https://revrem.dev/schemas/<name>/v<major>` (the URL need not resolve;
-  it's an identifier, not a fetch target).
+  `https://github.com/GitCmurf/revrem/schemas/<name>/v<major>` (the URL need
+  not resolve; it is an identifier, not a fetch target).
 - Each artifact also records `cli_version`, `harness`, `harness_version`
   (when reportable), `profile`, and `command_line`.
 
@@ -194,11 +229,11 @@ def fingerprint(finding) -> str:
     """SHA-256 over a canonical, rename-tolerant tuple."""
     components = [
         finding.normalized_rule_id or "<none>",          # e.g. "B608" or "<none>"
-        finding.normalized_path,                         # repo-relative POSIX, lowercased on case-insensitive FS
+        finding.normalized_path,                         # repo-relative POSIX path as recorded by Git
         finding.normalized_message_stem,                 # message lower-cased, whitespace-collapsed, first 160 chars
         finding.severity_bucket,                         # info|low|medium|high|critical
     ]
-    blob = "".join(components).encode("utf-8")
+    blob = "\x1f".join(components).encode("utf-8")
     return "f1:" + hashlib.sha256(blob).hexdigest()[:16]
 ```
 
@@ -207,6 +242,8 @@ def fingerprint(finding) -> str:
 - The fingerprint is intentionally rename-fragile (path is part of the
   hash); suppressions are expected to expire when files move. This is
   documented behavior, not a bug.
+- Severity is intentionally part of the hash so an escalated finding does not
+  silently inherit a lower-severity suppression.
 - Implementation lives in `src/code_review_loop/fingerprints.py` and is
   unit-tested with golden vectors in `tests/test_fingerprints.py`.
 
@@ -258,9 +295,9 @@ each code is reachable.
 
 ### 7. Redaction Defaults (owned by F5)
 
-- On by default. `detect-secrets` (already a dev dep, promoted to runtime
-  via optional extra `[redaction]`) drives secret detection. A built-in
-  fallback regex set covers the case where the extra is not installed.
+- On by default. When the optional `[redaction]` extra is installed,
+  `detect-secrets` drives secret detection. A built-in fallback regex set
+  covers the case where the extra is not installed.
 - Always redacts: API key patterns, `Authorization:` headers, private key
   blocks, `.env` assignments, `$HOME` and `$USER` strings.
 - Replacement token `[REDACTED:<category>]` (e.g. `[REDACTED:env-var]`).
@@ -326,6 +363,35 @@ this matrix if scope shifts.
 | F9 | M4 | Cost-cap respected 100% | L2/L3 | Budget + cancellation + exit codes 3/5 |
 | F10 | M6 (slice) | Harness portability prerequisite | (gates L3) | Harness capability surface |
 
+## Code / Tests / Docs Alignment Contract
+
+Every PR in this phase must leave three surfaces in agreement: runtime
+behavior, tests, and documentation. This table makes that explicit so an
+agentic coding orchestrator has no discretion to ship code-only or docs-only
+drift.
+
+| Change type | Code surface | Required tests | Required docs |
+|---|---|---|---|
+| New CLI command or flag | `cli.py` parser plus focused module where behavior lives | Parser test, behavior test, exit-code test where applicable | README or `REVREM-DEVEX-001`, `--help`, CHANGELOG |
+| New profile key | `profiles.py` dataclass, parser, serializer, validation | Parse/merge/reject tests in `tests/test_profiles.py` | Profile examples in `REVREM-DEVEX-001`, schema notes if public |
+| New JSON artifact field | Artifact writer/model/schema | Fixture validation and backwards-compat test | `docs/52-api/` schema docs, CHANGELOG if public |
+| New diagnostic code | `diagnostics.py` registry | JSON schema test, text rendering test, live preflight integration test | Generated diagnostics table, README troubleshooting if user-facing |
+| New event kind | `events.py` envelope + schema | Golden fixture, replay test, renderer test where visible | Event schema docs and `REVREM-PLAN-002` if it affects TUI readiness |
+| New suppression behavior | `suppressions.py` and loop integration | Match/no-match, expiry, critical override, audit-log tests | Suppression workflow docs and ADR |
+| New harness capability | `harness_contract.py` and adapters | Fake harness contract test, reserved-real-harness rejection test | Harness capability table and ADR |
+| New packaging/release behavior | `pyproject.toml` / workflow | Build, install smoke, metadata test | README install, release runbook, CHANGELOG |
+
+Alignment rules:
+
+- A behavior is not "done" until its CLI help, public docs, and tests use the
+  same names, exit codes, and defaults.
+- Golden fixtures are reviewed as public contract changes, not incidental test
+  data.
+- Generated docs must be regenerated by a checked-in script; hand-edited
+  generated tables are not accepted.
+- If a PR deliberately leaves a doc or test gap, it must add a follow-up task
+  and explain why the gap is safe before merge.
+
 ## Global Engineering Rules
 
 Every PR in this task series must obey these. They are referenced — not
@@ -352,8 +418,9 @@ re-stated — by each F-task.
 - **Conventional Commits.** Commit subjects follow
   `<type>(<scope>): <summary>` per Conventional Commits 1.0; `type` ∈
   `feat|fix|docs|chore|refactor|test|build|ci|perf|revert`.
-- **CHANGELOG.** Every user-visible change updates `CHANGELOG.md` under
-  `## [Unreleased]` using Keep-a-Changelog sections.
+- **CHANGELOG.** After F0 creates or verifies `CHANGELOG.md`, every
+  user-visible change updates it under `## [Unreleased]` using
+  Keep-a-Changelog sections.
 - **ADRs.** Tasks marked "Freezes contract" in the traceability matrix
   produce an ADR (`meminit new ADR <Title>`) recording the decision and
   alternatives considered. The ADR is part of the same PR.
@@ -362,10 +429,12 @@ re-stated — by each F-task.
 
 Reviewers verify each box. Cite this list in the PR description.
 
-- [ ] **Typing.** `mypy --strict` passes for new modules. Public functions
-  carry full annotations.
+- [ ] **Typing.** New public functions carry full annotations. New modules
+  pass either `mypy --strict` directly or the project-documented strictness
+  gate introduced with that module.
 - [ ] **Lint.** `ruff check` passes with the project ruleset. New modules
-  enable `S` (bandit-style security) where practical.
+  opt into security linting where practical; if the repo has not enabled
+  bandit-style `S` rules yet, the PR records the evaluated risk and deferral.
 - [ ] **Coverage.** New modules ≥ 90% line + branch coverage; core safety
   modules (`fingerprints`, `redaction`, `budgets`, `events`) ≥ 95%.
 - [ ] **Property tests.** Where invariants exist (fingerprint stability,
@@ -385,9 +454,9 @@ Reviewers verify each box. Cite this list in the PR description.
   (`SOURCE_DATE_EPOCH` honored); pinned tool versions in CI matrix.
 - [ ] **Backward compatibility.** Schema changes additive within major;
   CLI flag changes additive; deprecations carry a release before removal.
-- [ ] **AI-Generated Code.** Verified that autogenerated drafts have 
-  been reviewed for architectural alignment, real APIs, and no 
-  unauthorized lexical/rule bloat (Principle 11).
+- [ ] **AI-generated code.** Autogenerated drafts have been reviewed for
+  architectural alignment, real APIs, security-sensitive edge cases, and
+  unnecessary rule or vocabulary sprawl.
 - [ ] **Docs.** README, governed docs, and `--help` all updated where
   user-visible behavior changes. ADR added if a contract is frozen.
 
@@ -462,6 +531,7 @@ fixture infrastructure later tasks depend on.
 - `docs/05-planning/tasks/task-002-next-phase-post-launch-implementation-tasks.md` (this file)
 - `tests/fixtures/reference-repo/` (new — minimal Python repo with seeded issues for benchmarks)
 - `docs/55-testing/test-001-utility-verification-strategy.md` (extend with phase entry checklist)
+- `CHANGELOG.md` (create if absent; Keep a Changelog format)
 - optional GitHub issue labels / project metadata outside this repo
 
 **Actions:**
@@ -483,6 +553,8 @@ fixture infrastructure later tasks depend on.
 6. Add `tests/fixtures/reference-repo/EXPECTED_FINDINGS.md` listing each
    seeded issue with class, file, line, and expected severity.
 7. Document the phase entry checklist in the testing strategy doc.
+8. Create or verify `CHANGELOG.md` with a `## [Unreleased]` section before
+   downstream PRs are required to update it.
 
 **Tests:** none new beyond fixture presence assertion
 (`tests/test_fixtures.py::test_reference_repo_present`).
@@ -494,6 +566,7 @@ fixture infrastructure later tasks depend on.
 - The phase task list is committed at v0.2 or later.
 - The local gate is green; output pasted in PR body.
 - Reference fixture repo exists and is referenced by F3/F4/F6 plans.
+- `CHANGELOG.md` exists and the global changelog rule is enforceable.
 - Each downstream task has a tracking issue or orchestrator entry.
 - No implementation feature has been mixed into the baseline PR.
 
@@ -715,10 +788,13 @@ stable, machine-readable diagnostics that downstream surfaces consume.
    - dirty worktree blocks commit mode;
    - artifact directory creatable and writable (and not on a read-only
      mount);
-   - configured harness executable on PATH and runnable
-     (`harness --version` smoke);
+   - configured harness executable on PATH and runnable via the
+     adapter-defined health check (Codex currently uses `--version`);
    - configured check commands resolvable;
-   - timeout values valid (non-zero, plausible upper bound);
+   - timeout values valid: negative values are blocking errors; explicit
+     zero values are accepted only where the existing CLI defines them as
+     "disable timeout" and produce a warning unless paired with a documented
+     bounded alternative;
    - profile names resolve to a config file;
    - reserved-but-unimplemented harnesses are rejected for live
      execution;
@@ -791,6 +867,7 @@ transcripts.
 - `src/code_review_loop/fingerprints.py` (new)
 - `src/code_review_loop/cli.py`
 - `src/code_review_loop/run_history.py`
+- `docs/52-api/README.md` (new — explains schema namespace and stability)
 - `docs/52-api/schemas/summary-v1.schema.json`
 - `docs/52-api/schemas/diagnostics-v1.schema.json` (extend from F3)
 - `docs/52-api/schemas/triage-v1.schema.json` (skeleton, finalized in F6)
@@ -813,11 +890,13 @@ transcripts.
 3. **JSON Schemas** for summary, diagnostics, triage (skeleton),
    events (skeleton), bug-bundle (skeleton). Validated with
    `jsonschema` (already a dev dep or added under `[dev]`).
-4. **Schema diff guard.** `tests/test_artifact_schema.py::test_no_unintentional_breaks`
-   walks each schema file, computes a structural diff against the
-   previous version on disk (kept under
-   `docs/52-api/schemas/_history/`), and fails if a breaking change
-   isn't paired with a major bump and a `CHANGELOG.md` entry.
+4. **Schema diff guard.** For the first v1 schema set, tests validate
+   fixtures against schemas and store a baseline copy under
+   `docs/52-api/schemas/_history/`. From the next schema change onward,
+   `tests/test_artifact_schema.py::test_no_unintentional_breaks` walks
+   each schema file, computes a structural diff against the previous version
+   on disk, and fails if a breaking change is not paired with a major bump
+   and a `CHANGELOG.md` entry.
 
 5. **Updated `summary.json`** includes:
    - `schema_version`;
@@ -845,6 +924,9 @@ transcripts.
 
 **Docs:**
 
+- `docs/52-api/README.md` documents the schema namespace, JSON Schema draft,
+  stability tiers, and the fact that schema files are machine-readable
+  reference artifacts rather than Meminit-governed Markdown docs.
 - Each schema documented in `docs/52-api/` with: stability tier,
   whether it can contain user code, retention policy.
 - README links to the schema directory.
@@ -1106,10 +1188,10 @@ around critical issues.
    `revrem doctor` output. `revrem suppress expire` removes them.
 6. **Audit log.** Every mutation appends a record to
    `.revrem/suppressions.audit.jsonl` (or user-config equivalent),
-   including before/after state and acting user. Redacted by F5
-   bundles by default? **No — the audit log is included** because it
-   is operator-authored metadata, not user content. Document this
-   choice in the ADR.
+   including before/after state and acting user. Bug bundles include a
+   redacted audit summary by default. Raw audit logs require explicit
+   `--include-raw-transcripts`-style opt-in because rationale text and
+   creator identifiers can be sensitive. Document this choice in the ADR.
 7. **Profile support** for declaring suppression scope policy
    (e.g., `suppressions.scope: repo`).
 
@@ -1123,6 +1205,8 @@ around critical issues.
   `summary.json` with `suppressed: true`.
 - Repo vs user scope precedence.
 - Audit log entries match mutations.
+- Bug-bundle fixture proves raw audit logs are excluded by default and the
+  redacted audit summary contains no email addresses or local paths.
 - TOML round-trip preserves comments where library supports it
   (acceptable to lose comments if documented).
 
@@ -1145,6 +1229,7 @@ flag for a follow-up task).
   re-remediate it.
 - Suppression entries are auditable and schema-tested.
 - Critical findings require explicit override + expiry to suppress.
+- Bug bundles cannot leak raw suppression audit rationale by default.
 - ADR landed.
 
 ---
@@ -1196,9 +1281,9 @@ transcripts.
    - `RendererSink` adapter for compact/Rich progress.
 4. **`events.jsonl` per run.** Append-only; LF newlines; one record
    per line. Crash-safe: a partially-written final line on SIGKILL is
-   tolerated by the replay reader (treated as truncation; replay
-   stops at last valid line and emits a synthetic
-   `failure{kind:truncated}` event).
+   tolerated by the replay reader (treated as truncation; replay stops at the
+   last valid line and emits a synthetic `failure` event with
+   `payload.reason: "truncated_events_jsonl"`).
 5. **`revrem replay <run-dir>`** renders from `events.jsonl` using
    the requested renderer (compact default, Rich/TUI optional).
    Replay never invokes the runner or harness — asserted by test.
@@ -1267,7 +1352,8 @@ work to start later.
 **Implementation requirements:**
 
 1. **CLI / profile options:**
-   - `--max-wall-seconds` (int);
+   - `--max-wall-seconds` (int; total run wall-clock ceiling, distinct from
+     per-phase `--timeout-seconds`);
    - `--max-tokens` (int);
    - `--max-usd` (Decimal);
    - `--soft-warn-fraction` (float, default 0.8) — emit a `warning`
