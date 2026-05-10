@@ -370,6 +370,19 @@ revrem history list
 revrem history --format json list --limit 20
 ```
 
+Local setup diagnostics:
+
+```bash
+revrem doctor --base main --check "pytest -q" --format json
+```
+
+`revrem doctor` validates deterministic preconditions before the first model
+call: the working directory is inside Git, the base ref resolves and shares
+history with `HEAD`, the artifact directory is writable, Codex is on `PATH`,
+and configured check executables exist. It exits `4` for blocking setup
+failures, `6` for warnings when `--strict` is used, and `0` when the local
+preflight is clear.
+
 These management commands validate reserved harness names and triage syntax
 without requiring the backend to be executable yet; only `revrem --profile ...`
 rejects unimplemented harnesses before the loop starts.

@@ -92,6 +92,16 @@ Use repository-native checks. Python repositories can use `pytest`; TypeScript
 repositories should usually use commands such as `pnpm test`,
 `pnpm run typecheck`, and `pnpm run lint`.
 
+Before a live model-backed loop, run local setup diagnostics:
+
+```bash
+revrem doctor --base main --check "pytest -q"
+```
+
+`revrem doctor` validates the local Git base, writable artifact path, Codex
+executable, and configured check executables without invoking a model. Use
+`--format json` for automation.
+
 ## How It Works
 
 RevRem is intentionally local, watched, and bounded:

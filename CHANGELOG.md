@@ -15,6 +15,9 @@ This project follows Semantic Versioning once public releases begin.
 - Reference fixture repository for the post-launch foundation phase, with
   expected seeded findings and regression coverage to keep future profile,
   diagnostics, triage, and event work aligned.
+- `revrem doctor` setup diagnostics for validating Git base refs, artifact
+  writability, Codex availability, and check executables before the first model
+  call.
 
 ### Changed
 

@@ -23,7 +23,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from code_review_loop import __version__, harnesses, profiles, progress, run_history
+from code_review_loop import __version__, diagnostics, harnesses, profiles, progress, run_history
 
 STATUS_RE = re.compile(r"^\s*REVIEW_STATUS:\s*(clear|findings)\s*$", re.IGNORECASE | re.MULTILINE)
 CODEX_FINDING_RE = re.compile(r"^\s*-\s*\[P[0-3]\]\s+", re.MULTILINE)
@@ -2284,6 +2284,26 @@ def parse_history_args(argv: Sequence[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def parse_doctor_args(argv: Sequence[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="revrem doctor",
+        description="Run local RevRem setup diagnostics without invoking a model.",
+    )
+    parser.add_argument("--format", choices=("text", "json"), default=None)
+    parser.add_argument("--strict", action="store_true", help="Exit non-zero when warnings are present.")
+    parser.add_argument("--profile", default=None, help="Resolve defaults from a named profile.")
+    parser.add_argument("--base", default=None, help="Base ref to validate. Defaults to profile/main.")
+    parser.add_argument("--codex-bin", default=None, help="Codex executable path/name to validate.")
+    parser.add_argument("--artifact-dir", default=None, help="Artifact directory to validate.")
+    parser.add_argument("--check", action="append", default=None, help="Check command to validate. Repeatable.")
+    parser.add_argument(
+        "--commit-after-remediation",
+        action="store_true",
+        help="Validate commit-mode preconditions such as a clean worktree.",
+    )
+    return parser.parse_args(argv)
+
+
 def _profile_config_owner_path(name: str, cwd: Path, home: Path | None = None) -> Path:
     project_path = profiles.project_config_path(cwd)
     project_file = profiles.load_profile_file(project_path)
@@ -2616,6 +2636,8 @@ def profile_from_loop_config(
 
 def main(argv: Sequence[str] | None = None) -> int:
     raw_argv = list(sys.argv[1:] if argv is None else argv)
+    if raw_argv and raw_argv[0] in {"doctor", "preflight"}:
+        return doctor_main(raw_argv[1:])
     if raw_argv and raw_argv[0] == "config":
         return config_main(raw_argv[1:])
     if raw_argv and raw_argv[0] == "history":
@@ -2804,6 +2826,50 @@ def _format_profile_list_item(item: profiles.ProfileListItem) -> str:
     details.append(f"last used {item.last_used_at or 'never'}")
     suffix = f" ({', '.join(details)})" if details else ""
     return f"{item.name}{desc}{suffix}"
+
+
+def doctor_main(argv: Sequence[str]) -> int:
+    args = parse_doctor_args(argv)
+    try:
+        profile = profile_or_default(args.profile, Path.cwd())
+    except (FileNotFoundError, ValueError) as exc:
+        issues = [
+            diagnostics.DiagnosticIssue(
+                code="revrem.preflight.profile_error",
+                severity="blocking",
+                message="RevRem profile configuration could not be resolved.",
+                hint=str(exc),
+                evidence={"profile": args.profile},
+            )
+        ]
+    else:
+        artifact_dir = (
+            Path(args.artifact_dir)
+            if args.artifact_dir is not None
+            else Path(profile.output.artifact_dir)
+            if profile.output.artifact_dir is not None
+            else None
+        )
+        issues = diagnostics.run_doctor(
+            diagnostics.DoctorConfig(
+                cwd=Path.cwd(),
+                base=args.base if args.base is not None else profile.pipeline.base,
+                artifact_dir=artifact_dir,
+                codex_bin=args.codex_bin if args.codex_bin is not None else profile.runtime.codex_bin,
+                check_commands=tuple(args.check) if args.check is not None else profile.pipeline.checks,
+                commit_after_remediation=args.commit_after_remediation or profile.commit.enabled,
+            )
+        )
+    output_format = args.format or ("text" if sys.stdout.isatty() else "json")
+    if output_format == "json":
+        print(diagnostics.doctor_json(issues), end="")
+    else:
+        print(diagnostics.doctor_text(issues), end="")
+    if diagnostics.has_blocking_issue(issues):
+        return 4
+    if args.strict and diagnostics.has_warning_issue(issues):
+        return 6
+    return 0
 
 
 def history_main(argv: Sequence[str]) -> int:

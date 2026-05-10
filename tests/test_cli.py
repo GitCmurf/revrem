@@ -3193,6 +3193,53 @@ def test_run_codex_review_fails_fast_when_base_has_no_merge_base(tmp_path):
     assert "git merge-base HEAD main" in artifact_text
 
 
+def test_doctor_json_reports_invalid_base_without_invoking_runner(tmp_path, monkeypatch, capsys):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "config", "user.email", "test@example.com")
+    run_git(repo, "config", "user.name", "Test User")
+    (repo / "README.md").write_text("# Fixture\n", encoding="utf-8")
+    run_git(repo, "add", "README.md")
+    run_git(repo, "commit", "-m", "initial")
+    monkeypatch.chdir(repo)
+
+    def runner(*_args, **_kwargs):
+        raise AssertionError("revrem doctor must not invoke the Codex runner")
+
+    monkeypatch.setattr(MODULE, "default_runner", runner)
+
+    exit_code = MODULE.main(
+        ["doctor", "--base", "missing", "--codex-bin", "git", "--format", "json"]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert exit_code == 4
+    assert payload["status"] == "blocking"
+    assert {issue["code"] for issue in payload["issues"]} == {"revrem.preflight.invalid_base"}
+    assert captured.err == ""
+
+
+def test_doctor_text_reports_ok_for_valid_repo(tmp_path, monkeypatch, capsys):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "config", "user.email", "test@example.com")
+    run_git(repo, "config", "user.name", "Test User")
+    (repo / "README.md").write_text("# Fixture\n", encoding="utf-8")
+    run_git(repo, "add", "README.md")
+    run_git(repo, "commit", "-m", "initial")
+    monkeypatch.chdir(repo)
+
+    exit_code = MODULE.main(["doctor", "--base", "main", "--codex-bin", "git", "--format", "text"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "OK: revrem.preflight.ok" in captured.out
+    assert captured.err == ""
+
+
 def run_git(cwd: Path, *args: str) -> None:
     result = MODULE.subprocess.run(
         ["git", *args],

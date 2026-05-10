@@ -67,6 +67,8 @@ The main test module is `tests/test_cli.py`. It covers:
 - Review-base preflight behavior for invalid Git topology, including a local
   `main` that has no merge base with the current branch while `origin/main`
   remains usable.
+- `revrem doctor` CLI diagnostics for local setup failures before the first
+  model invocation.
 - No-op remediation close-down: when commit mode finds no staged changes after
   passing checks, the loop stops instead of spending another review iteration.
 - Bounded loop behavior, including final review behavior and exit status.
@@ -103,6 +105,9 @@ newest-first reads.
 `tests/test_harnesses.py` covers the reusable harness command-planning boundary:
 Codex command construction is executable, while reserved future harnesses remain
 valid profile syntax but not runnable adapters.
+`tests/test_diagnostics.py` covers deterministic local setup diagnostics for
+Git topology, commit-mode cleanliness, Codex executable discovery, artifact
+directory writability, and configured check executables.
 `tests/test_progress.py` covers optional Rich renderer safety, including literal
 handling for review text that contains Rich markup syntax and styling of the
 phase/action and status columns, plus in-place Live panel updates.
