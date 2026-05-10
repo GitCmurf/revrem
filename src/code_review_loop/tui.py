@@ -13,7 +13,7 @@ from typing import Any
 
 from code_review_loop import profiles, tui_state
 
-INSTALL_HINT = "Install it with: python -m pip install 'code-review-loop[tui]'"
+INSTALL_HINT = "Install it with: python -m pip install 'revrem[tui]'"
 
 
 def main(argv: Sequence[str] | None = None) -> int:

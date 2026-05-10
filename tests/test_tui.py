@@ -45,7 +45,7 @@ def test_tui_reports_missing_optional_dependency(monkeypatch, capsys):
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "requires the optional Textual dependency" in captured.err
-    assert "code-review-loop[tui]" in captured.err
+    assert "revrem[tui]" in captured.err
 
 
 def test_tui_reports_unknown_initial_profile(monkeypatch, tmp_path, capsys):

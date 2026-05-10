@@ -2430,10 +2430,15 @@ def resolve_profile_timeout_seconds(value: float | None) -> float | None:
     return value
 
 
-def profile_or_default(name: str | None, cwd: Path) -> profiles.Profile:
+def profile_or_default(
+    name: str | None,
+    cwd: Path,
+    *,
+    require_implemented: bool = True,
+) -> profiles.Profile:
     if name:
-        return profiles.resolve_profile(name, cwd=cwd)
-    return profiles.resolve_defaults(cwd=cwd)
+        return profiles.resolve_profile(name, cwd=cwd, require_implemented=require_implemented)
+    return profiles.resolve_defaults(cwd=cwd, require_implemented=require_implemented)
 
 
 def pick(cli_value, profile_value, fallback):
@@ -2831,7 +2836,7 @@ def _format_profile_list_item(item: profiles.ProfileListItem) -> str:
 def doctor_main(argv: Sequence[str]) -> int:
     args = parse_doctor_args(argv)
     try:
-        profile = profile_or_default(args.profile, Path.cwd())
+        profile = profile_or_default(args.profile, Path.cwd(), require_implemented=False)
     except (FileNotFoundError, ValueError) as exc:
         issues = [
             diagnostics.DiagnosticIssue(

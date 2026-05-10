@@ -3240,6 +3240,46 @@ def test_doctor_text_reports_ok_for_valid_repo(tmp_path, monkeypatch, capsys):
     assert captured.err == ""
 
 
+def test_doctor_profile_allows_reserved_harnesses_without_profile_error(tmp_path, monkeypatch, capsys):
+    repo = tmp_path / "repo"
+    home = tmp_path / "home"
+    repo.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "config", "user.email", "test@example.com")
+    run_git(repo, "config", "user.name", "Test User")
+    (repo / "README.md").write_text("# Fixture\n", encoding="utf-8")
+    run_git(repo, "add", "README.md")
+    run_git(repo, "commit", "-m", "initial")
+    config_path = profiles.user_config_path(home)
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.smoke]
+description = "Smoke profile"
+
+[profiles.smoke.review]
+harness = "claude"
+
+[profiles.smoke.remediation]
+harness = "gemini"
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(repo)
+
+    exit_code = MODULE.main(
+        ["doctor", "--profile", "smoke", "--base", "main", "--codex-bin", "git", "--format", "json"]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert exit_code == 0
+    assert payload["status"] == "ok"
+    assert {issue["code"] for issue in payload["issues"]} == {"revrem.preflight.ok"}
+    assert captured.err == ""
+
+
 def run_git(cwd: Path, *args: str) -> None:
     result = MODULE.subprocess.run(
         ["git", *args],

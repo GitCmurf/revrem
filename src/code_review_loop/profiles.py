@@ -407,7 +407,12 @@ def resolve_profile_from_files(
     return resolved
 
 
-def resolve_defaults(*, cwd: Path, home: Path | None = None) -> Profile:
+def resolve_defaults(
+    *,
+    cwd: Path,
+    home: Path | None = None,
+    require_implemented: bool = True,
+) -> Profile:
     user_file = load_profile_file(user_config_path(home))
     project_file = load_profile_file(project_config_path(cwd))
     raw: dict[str, Any] = {}
@@ -419,7 +424,7 @@ def resolve_defaults(*, cwd: Path, home: Path | None = None) -> Profile:
         raw = _deep_merge(raw, project_file.raw_defaults)
         source = str(project_file.path)
     defaults = parse_profile("<defaults>", raw, source=source)
-    validate_profile(defaults, require_implemented=True)
+    validate_profile(defaults, require_implemented=require_implemented)
     return defaults
 
 
