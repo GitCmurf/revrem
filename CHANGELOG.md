@@ -18,6 +18,8 @@ This project follows Semantic Versioning once public releases begin.
 - `revrem doctor` setup diagnostics for validating Git base refs, artifact
   writability, Codex availability, and check executables before the first model
   call.
+- Shared finding fingerprint module and ADR-backed v1 algorithm for future
+  diagnostics, triage, suppressions, bug bundles, and event schemas.
 
 ### Changed
 

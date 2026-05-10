@@ -108,6 +108,8 @@ valid profile syntax but not runnable adapters.
 `tests/test_diagnostics.py` covers deterministic local setup diagnostics for
 Git topology, commit-mode cleanliness, Codex executable discovery, artifact
 directory writability, and configured check executables.
+`tests/test_fingerprints.py` covers the shared finding fingerprint contract
+with golden vectors and normalization invariants.
 `tests/test_progress.py` covers optional Rich renderer safety, including literal
 handling for review text that contains Rich markup syntax and styling of the
 phase/action and status columns, plus in-place Live panel updates.
