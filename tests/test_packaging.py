@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import stat
 import subprocess
 import tomllib
@@ -28,6 +29,28 @@ def test_console_entry_points_include_stable_alias():
 
     assert scripts["code-review-loop"] == "code_review_loop.cli:main"
     assert scripts["revrem"] == "code_review_loop.cli:main"
+
+
+def test_project_uses_revrem_distribution_identity():
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+
+    project = pyproject["project"]
+
+    assert project["name"] == "revrem"
+    assert project["description"].startswith("Bounded AI review")
+    assert project["urls"]["Homepage"] == "https://github.com/GitCmurf/revrem"
+    assert project["urls"]["Source"] == "https://github.com/GitCmurf/revrem"
+    assert project["urls"]["Issues"] == "https://github.com/GitCmurf/revrem/issues"
+    assert project["urls"]["Changelog"].endswith("/CHANGELOG.md")
+
+
+def test_project_version_matches_package_version():
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    init_text = (ROOT / "src/code_review_loop/__init__.py").read_text(encoding="utf-8")
+    match = re.search(r'^__version__ = "([^"]+)"$', init_text, re.MULTILINE)
+
+    assert match is not None
+    assert pyproject["project"]["version"] == match.group(1)
 
 
 def test_optional_tui_extra_declares_textual_dependency():

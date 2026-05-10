@@ -11,9 +11,9 @@ It asks Codex to review a branch against a base, applies valid actionable
 findings through a bounded remediation pass, reruns your verification commands,
 and leaves an artifact trail you can inspect before committing or merging.
 
-The repository and Python package are named `code-review-loop`; the human-facing
-command is `revrem`. The legacy `code-review-loop` command remains available for
-scripts.
+The repository and Python package use the public name `revrem`. The legacy
+`code-review-loop` command remains available as a compatibility alias for
+existing local scripts.
 
 ## Demo
 
