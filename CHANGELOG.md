@@ -12,6 +12,9 @@ This project follows Semantic Versioning once public releases begin.
   policy, support policy, issue templates, pull request template, CODEOWNERS,
   NOTICE, CI hardening, Scorecard workflow, and release provenance/SBOM
   workflow.
+- Reference fixture repository for the post-launch foundation phase, with
+  expected seeded findings and regression coverage to keep future profile,
+  diagnostics, triage, and event work aligned.
 
 ### Changed
 

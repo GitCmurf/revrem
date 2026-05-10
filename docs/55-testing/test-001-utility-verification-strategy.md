@@ -3,8 +3,8 @@ document_id: REVREM-TEST-001
 type: TEST
 title: Utility verification strategy
 status: Draft
-version: '1.2'
-last_updated: '2026-05-08'
+version: '1.3'
+last_updated: '2026-05-10'
 owner: GitCmurf
 docops_version: '2.0'
 area: testing
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-TEST-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.2
-> **Last Updated:** 2026-05-08
+> **Version:** 1.3
+> **Last Updated:** 2026-05-10
 > **Type:** TEST
 > **Area:** testing
 > **Description:** Test and release gates for code-review-loop
@@ -117,6 +117,32 @@ discovery, run-history loading, harness metadata, pipeline phase summaries, and
 profile command previews, launch plans, profile lifecycle command plans,
 run-monitor artifact links, and the composed shell model used by the
 interactive entry point.
+`tests/test_fixtures.py` covers long-lived fixture infrastructure, including
+the reference repository used by the post-launch foundation phase.
+
+### Reference fixture repository
+
+`tests/fixtures/reference-repo/` is the stable deliberately-flawed project used
+by `REVREM-TASK-002` foundation work and future profile benchmarks. It is not
+sample application code. It exists to give diagnostics, triage, suppression,
+event, and expert-profile work a shared target.
+
+The fixture currently seeds:
+
+- a SQL injection in `src/reference_app/auth.py`,
+- an unused import in `src/reference_app/auth.py`,
+- broad exception handling in `src/reference_app/auth.py` and
+  `src/reference_app/billing.py`,
+- duplicated email-normalization helpers in `src/reference_app/billing.py`,
+- nested-loop report generation in `src/reference_app/reporting.py`,
+- missing public-function documentation and type annotations in
+  `src/reference_app/docs.py`.
+
+`tests/fixtures/reference-repo/EXPECTED_FINDINGS.md` is the source of truth for
+the seeded findings. Any change to the fixture code must update that ledger and
+the fixture-presence tests in the same PR. Fixture files may contain
+deliberately poor code and can use file-level linter exclusions; production code
+must not copy those exclusions.
 
 ### Local verification
 
@@ -163,4 +189,5 @@ A release candidate should not be tagged unless:
 - `revrem --version` reports the intended package version,
 - `REVREM-DEVEX-001` reflects current CLI flags and exit codes,
 - `REVREM-ADR-001` remains accurate for distribution and skill guidance,
+- `CHANGELOG.md` contains an `[Unreleased]` entry for user-visible changes,
 - a dry run from a separate repository produces the expected artifact layout.
