@@ -92,6 +92,9 @@ Use repository-native checks. Python repositories can use `pytest`; TypeScript
 repositories should usually use commands such as `pnpm test`,
 `pnpm run typecheck`, and `pnpm run lint`.
 
+Machine-readable artifact contracts are documented under
+[`docs/52-api/`](docs/52-api/).
+
 Before a live model-backed loop, run local setup diagnostics:
 
 ```bash

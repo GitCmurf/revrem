@@ -110,6 +110,9 @@ Git topology, commit-mode cleanliness, Codex executable discovery, artifact
 directory writability, and configured check executables.
 `tests/test_fingerprints.py` covers the shared finding fingerprint contract
 with golden vectors and normalization invariants.
+`tests/test_artifacts.py` covers canonical JSON serialization, Decimal money
+encoding, NFC string normalization, atomic artifact writes, and run-directory
+path-safety checks.
 `tests/test_progress.py` covers optional Rich renderer safety, including literal
 handling for review text that contains Rich markup syntax and styling of the
 phase/action and status columns, plus in-place Live panel updates.

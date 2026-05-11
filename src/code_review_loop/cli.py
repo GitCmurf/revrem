@@ -23,7 +23,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from code_review_loop import __version__, diagnostics, harnesses, profiles, progress, run_history
+from code_review_loop import (
+    __version__,
+    artifacts,
+    diagnostics,
+    harnesses,
+    profiles,
+    progress,
+    run_history,
+)
 
 STATUS_RE = re.compile(r"^\s*REVIEW_STATUS:\s*(clear|findings)\s*$", re.IGNORECASE | re.MULTILINE)
 CODEX_FINDING_RE = re.compile(r"^\s*-\s*\[P[0-3]\]\s+", re.MULTILINE)
@@ -893,8 +901,7 @@ def phase_timeout_seconds(config: LoopConfig, value: float | None) -> float | No
 
 
 def write_artifact(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+    artifacts.write_text_artifact(path, content)
 
 
 def run_codex_review(

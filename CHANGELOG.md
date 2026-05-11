@@ -20,6 +20,8 @@ This project follows Semantic Versioning once public releases begin.
   call.
 - Shared finding fingerprint module and ADR-backed v1 algorithm for future
   diagnostics, triage, suppressions, bug bundles, and event schemas.
+- Artifact helper for canonical JSON serialization, atomic writes, and
+  run-directory path-safety checks.
 
 ### Changed
 
