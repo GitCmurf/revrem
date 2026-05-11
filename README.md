@@ -99,8 +99,9 @@ revrem doctor --base main --check "pytest -q"
 ```
 
 `revrem doctor` validates the local Git base, writable artifact path, Codex
-executable, and configured check executables without invoking a model. Use
-`--format json` for automation.
+executable, and configured check executables without invoking a model. Relative
+`--artifact-dir` values are resolved against the doctor `cwd`, not the process
+working directory. Use `--format json` for automation.
 
 ## How It Works
 

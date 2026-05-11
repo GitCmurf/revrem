@@ -154,7 +154,7 @@ def _artifact_dir_issues(config: DoctorConfig, git_root: Path | None) -> list[Di
     if config.artifact_dir is None:
         return []
     try:
-        target = config.artifact_dir
+        target = config.artifact_dir if config.artifact_dir.is_absolute() else config.cwd / config.artifact_dir
         target.mkdir(parents=True, exist_ok=True)
         probe = target / ".revrem-doctor-write-test"
         probe.write_text("ok", encoding="utf-8")
@@ -166,13 +166,16 @@ def _artifact_dir_issues(config: DoctorConfig, git_root: Path | None) -> list[Di
                 severity="blocking",
                 message="Artifact directory is not writable.",
                 hint="Choose a writable --artifact-dir path.",
-                evidence={"artifact_dir": str(config.artifact_dir), "error": str(exc)},
+                evidence={
+                    "artifact_dir": str(config.artifact_dir),
+                    "resolved_artifact_dir": str(target),
+                    "error": str(exc),
+                },
             )
         ]
     if config.commit_after_remediation and git_root is not None:
-        resolved_target = target if target.is_absolute() else config.cwd / target
         try:
-            artifact_rel = resolved_target.resolve().relative_to(git_root)
+            artifact_rel = target.resolve().relative_to(git_root)
         except ValueError:
             return []
         if artifact_rel == Path("."):
@@ -184,7 +187,7 @@ def _artifact_dir_issues(config: DoctorConfig, git_root: Path | None) -> list[Di
                     hint="Choose a subdirectory for generated artifacts.",
                     evidence={
                         "artifact_dir": str(config.artifact_dir),
-                        "resolved_artifact_dir": str(resolved_target.resolve()),
+                        "resolved_artifact_dir": str(target.resolve()),
                         "git_root": str(git_root),
                     },
                 )

@@ -90,6 +90,26 @@ def test_run_doctor_blocks_repo_root_artifact_dir_in_commit_mode(tmp_path):
     assert diagnostics.has_blocking_issue(issues)
 
 
+def test_run_doctor_resolves_relative_artifact_dir_against_doctor_cwd(tmp_path, monkeypatch):
+    repo = _make_repo(tmp_path)
+    process_cwd = tmp_path / "process-cwd"
+    process_cwd.mkdir()
+    monkeypatch.chdir(process_cwd)
+
+    issues = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(
+            cwd=repo,
+            base="main",
+            codex_bin="git",
+            artifact_dir=Path("artifacts"),
+        )
+    )
+
+    assert _issue_codes(issues) == {"revrem.preflight.ok"}
+    assert (repo / "artifacts").is_dir()
+    assert not (process_cwd / "artifacts").exists()
+
+
 def test_run_doctor_reports_missing_check_command(tmp_path):
     repo = _make_repo(tmp_path)
 

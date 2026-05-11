@@ -379,11 +379,12 @@ revrem doctor --base main --check "pytest -q" --format json
 `revrem doctor` validates deterministic preconditions before the first model
 call: the working directory is inside Git, the base ref resolves and shares
 history with `HEAD`, the effective artifact directory is writable, Codex is on
-`PATH`, and configured check executables exist. When no artifact directory is
-supplied, that effective path is the default `.revrem/runs/<timestamp>-<suffix>/`
-tree that a normal loop run will create. It exits `4` for blocking setup
-failures, `6` for warnings when `--strict` is used, and `0` when the local
-preflight is clear.
+`PATH`, and configured check executables exist. Relative `--artifact-dir`
+values are resolved against the doctor `cwd`, not the shell's current directory.
+When no artifact directory is supplied, that effective path is the default
+`.revrem/runs/<timestamp>-<suffix>/` tree that a normal loop run will create. It
+exits `4` for blocking setup failures, `6` for warnings when `--strict` is
+used, and `0` when the local preflight is clear.
 
 These management commands validate reserved harness names and triage syntax
 without requiring the backend to be executable yet; only `revrem --profile ...`
