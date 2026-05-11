@@ -62,7 +62,7 @@ def run_doctor(config: DoctorConfig) -> list[DiagnosticIssue]:
     else:
         issues.extend(_git_issues(config, git_root))
 
-    issues.extend(_artifact_dir_issues(config))
+    issues.extend(_artifact_dir_issues(config, git_root))
     issues.extend(_executable_issues(config))
 
     if not issues:
@@ -150,7 +150,7 @@ def _git_issues(config: DoctorConfig, git_root: Path) -> list[DiagnosticIssue]:
     return issues
 
 
-def _artifact_dir_issues(config: DoctorConfig) -> list[DiagnosticIssue]:
+def _artifact_dir_issues(config: DoctorConfig, git_root: Path | None) -> list[DiagnosticIssue]:
     if config.artifact_dir is None:
         return []
     try:
@@ -169,6 +169,26 @@ def _artifact_dir_issues(config: DoctorConfig) -> list[DiagnosticIssue]:
                 evidence={"artifact_dir": str(config.artifact_dir), "error": str(exc)},
             )
         ]
+    if config.commit_after_remediation and git_root is not None:
+        resolved_target = target if target.is_absolute() else config.cwd / target
+        try:
+            artifact_rel = resolved_target.resolve().relative_to(git_root)
+        except ValueError:
+            return []
+        if artifact_rel == Path("."):
+            return [
+                DiagnosticIssue(
+                    code="revrem.preflight.artifact_dir_resolves_to_repo_root",
+                    severity="blocking",
+                    message="Commit mode refuses to auto-commit when --artifact-dir resolves to the repository root.",
+                    hint="Choose a subdirectory for generated artifacts.",
+                    evidence={
+                        "artifact_dir": str(config.artifact_dir),
+                        "resolved_artifact_dir": str(resolved_target.resolve()),
+                        "git_root": str(git_root),
+                    },
+                )
+            ]
     return []
 
 

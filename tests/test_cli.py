@@ -3269,6 +3269,49 @@ def test_doctor_validates_default_artifact_dir_when_unset(tmp_path, monkeypatch,
     assert captured.err == ""
 
 
+def test_doctor_profile_blocks_repo_root_artifact_dir_in_commit_mode(tmp_path, monkeypatch, capsys):
+    repo = tmp_path / "repo"
+    home = tmp_path / "home"
+    repo.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "config", "user.email", "test@example.com")
+    run_git(repo, "config", "user.name", "Test User")
+    (repo / "README.md").write_text("# Fixture\n", encoding="utf-8")
+    run_git(repo, "add", "README.md")
+    run_git(repo, "commit", "-m", "initial")
+    config_path = profiles.user_config_path(home)
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.commit-root]
+description = "Commit mode with a root artifact dir"
+
+[profiles.commit-root.commit]
+enabled = true
+
+[profiles.commit-root.output]
+artifact_dir = "."
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(repo)
+
+    exit_code = MODULE.main(
+        ["doctor", "--profile", "commit-root", "--base", "main", "--codex-bin", "git", "--format", "json"]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert exit_code == 4
+    assert payload["status"] == "blocking"
+    assert {issue["code"] for issue in payload["issues"]} == {
+        "revrem.preflight.artifact_dir_resolves_to_repo_root",
+    }
+    assert payload["issues"][0]["evidence"]["artifact_dir"] == "."
+    assert captured.err == ""
+
+
 def test_doctor_profile_allows_reserved_harnesses_without_profile_error(tmp_path, monkeypatch, capsys):
     repo = tmp_path / "repo"
     home = tmp_path / "home"

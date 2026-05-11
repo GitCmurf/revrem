@@ -73,6 +73,23 @@ def test_run_doctor_blocks_dirty_worktree_in_commit_mode(tmp_path):
     assert "revrem.preflight.dirty_worktree_commit_mode" in _issue_codes(issues)
 
 
+def test_run_doctor_blocks_repo_root_artifact_dir_in_commit_mode(tmp_path):
+    repo = _make_repo(tmp_path)
+
+    issues = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(
+            cwd=repo,
+            base="main",
+            codex_bin="git",
+            artifact_dir=Path("."),
+            commit_after_remediation=True,
+        )
+    )
+
+    assert "revrem.preflight.artifact_dir_resolves_to_repo_root" in _issue_codes(issues)
+    assert diagnostics.has_blocking_issue(issues)
+
+
 def test_run_doctor_reports_missing_check_command(tmp_path):
     repo = _make_repo(tmp_path)
 
