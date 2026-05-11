@@ -106,6 +106,17 @@ executable, and configured check executables without invoking a model. Relative
 `--artifact-dir` values are resolved against the doctor `cwd`, not the process
 working directory. Use `--format json` for automation.
 
+To share a failed run safely, create a redacted bundle:
+
+```bash
+revrem bundle-bug-report .revrem/runs/<run-id> --output revrem-bug.tar.gz
+```
+
+Raw review/remediation transcripts are excluded by default. Use
+`--include-raw-transcripts` only when the extra context is necessary; contents
+are still redacted unless `--no-redact --i-understand-the-risks` is explicitly
+passed.
+
 ## How It Works
 
 RevRem is intentionally local, watched, and bounded:

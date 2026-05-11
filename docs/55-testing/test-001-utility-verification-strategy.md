@@ -119,6 +119,9 @@ against `diagnostics-v1.schema.json` and `summary-v1.schema.json`.
 `tests/test_redaction.py` covers the built-in redaction defaults used by future
 bug-report bundles, including poisoned fixtures for API keys, authorization
 headers, private keys, local paths, usernames, and idempotence.
+`tests/test_bug_bundle.py` covers deterministic redacted bug-report bundles,
+manifest schema validation, default transcript exclusion, and raw-transcript
+opt-in behavior.
 `tests/test_progress.py` covers optional Rich renderer safety, including literal
 handling for review text that contains Rich markup syntax and styling of the
 phase/action and status columns, plus in-place Live panel updates.

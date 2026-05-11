@@ -92,7 +92,8 @@ The foundation phase introduces these contracts:
 - `events-v1.schema.json` for replayable event streams;
 - `bug-bundle-v1.schema.json` for redacted issue-support bundles.
 
-`diagnostics-v1.schema.json` and `summary-v1.schema.json` are concrete schemas
-validated against generated payloads. The other v1 files are skeleton contracts
-that reserve names and versioning shape; their owning implementation tasks
-tighten fields before those artifacts become stable operator-facing outputs.
+`diagnostics-v1.schema.json`, `summary-v1.schema.json`, and
+`bug-bundle-v1.schema.json` are concrete schemas validated against generated
+payloads. The other v1 files are skeleton contracts that reserve names and
+versioning shape; their owning implementation tasks tighten fields before those
+artifacts become stable operator-facing outputs.

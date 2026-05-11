@@ -3376,6 +3376,35 @@ harness = "gemini"
     assert captured.err == ""
 
 
+def test_bundle_bug_report_cli_blocks_no_redact_without_explicit_risk_ack(tmp_path, capsys):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+
+    exit_code = MODULE.main(["bundle-bug-report", str(run_dir), "--no-redact"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 4
+    assert "--no-redact requires --i-understand-the-risks" in captured.err
+
+
+def test_bundle_bug_report_cli_writes_output_path(tmp_path, capsys):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "summary.json").write_text(
+        '{"schema_version":"1.0","run_id":"run-123"}\n',
+        encoding="utf-8",
+    )
+    (run_dir / "check-1.txt").write_text("Authorization: Bearer secret-token\n", encoding="utf-8")
+    output = tmp_path / "bundle.tar.gz"
+
+    exit_code = MODULE.main(["bundle-bug-report", str(run_dir), "--output", str(output)])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured.out.strip() == str(output.resolve())
+    assert output.is_file()
+
+
 def run_git(cwd: Path, *args: str) -> None:
     result = MODULE.subprocess.run(
         ["git", *args],

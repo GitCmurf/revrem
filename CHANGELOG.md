@@ -32,6 +32,8 @@ This project follows Semantic Versioning once public releases begin.
 - Built-in redaction helpers for future bug-report bundles, covering common API
   keys, authorization headers, private keys, sensitive environment assignments,
   home paths, and usernames.
+- `revrem bundle-bug-report` creates deterministic redacted support bundles
+  with manifest schema validation and raw-transcript opt-in.
 
 ### Changed
 

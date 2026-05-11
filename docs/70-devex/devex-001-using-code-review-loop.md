@@ -370,6 +370,18 @@ revrem history list
 revrem history --format json list --limit 20
 ```
 
+Bug-report bundle command:
+
+```bash
+revrem bundle-bug-report .revrem/runs/<run-id> --output revrem-bug.tar.gz
+```
+
+The bundle is deterministic and redacted by default. It includes the manifest,
+`summary.json`, diagnostics/event JSON when present, and sanitized check output.
+Raw text transcripts such as review and remediation artifacts are excluded
+unless `--include-raw-transcripts` is passed. Disabling redaction requires both
+`--no-redact` and `--i-understand-the-risks`.
+
 Local setup diagnostics:
 
 ```bash

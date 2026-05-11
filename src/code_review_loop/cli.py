@@ -26,6 +26,7 @@ from typing import Any
 from code_review_loop import (
     __version__,
     artifacts,
+    bug_bundle,
     diagnostics,
     harnesses,
     profiles,
@@ -2344,6 +2345,19 @@ def parse_doctor_args(argv: Sequence[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def parse_bundle_bug_report_args(argv: Sequence[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="revrem bundle-bug-report",
+        description="Create a redacted, deterministic bug-report bundle from a RevRem run directory.",
+    )
+    parser.add_argument("run_dir")
+    parser.add_argument("--output", default=None)
+    parser.add_argument("--include-raw-transcripts", action="store_true")
+    parser.add_argument("--no-redact", action="store_true")
+    parser.add_argument("--i-understand-the-risks", action="store_true")
+    return parser.parse_args(argv)
+
+
 def _profile_config_owner_path(name: str, cwd: Path, home: Path | None = None) -> Path:
     project_path = profiles.project_config_path(cwd)
     project_file = profiles.load_profile_file(project_path)
@@ -2681,6 +2695,8 @@ def profile_from_loop_config(
 
 def main(argv: Sequence[str] | None = None) -> int:
     raw_argv = list(sys.argv[1:] if argv is None else argv)
+    if raw_argv and raw_argv[0] == "bundle-bug-report":
+        return bundle_bug_report_main(raw_argv[1:])
     if raw_argv and raw_argv[0] in {"doctor", "preflight"}:
         return doctor_main(raw_argv[1:])
     if raw_argv and raw_argv[0] == "config":
@@ -2871,6 +2887,27 @@ def _format_profile_list_item(item: profiles.ProfileListItem) -> str:
     details.append(f"last used {item.last_used_at or 'never'}")
     suffix = f" ({', '.join(details)})" if details else ""
     return f"{item.name}{desc}{suffix}"
+
+
+def bundle_bug_report_main(argv: Sequence[str]) -> int:
+    args = parse_bundle_bug_report_args(argv)
+    if args.no_redact and not args.i_understand_the_risks:
+        print("ERROR: --no-redact requires --i-understand-the-risks", file=sys.stderr)
+        return 4
+    try:
+        result = bug_bundle.create_bug_bundle(
+            bug_bundle.BundleOptions(
+                run_dir=Path(args.run_dir),
+                output_path=Path(args.output) if args.output else None,
+                include_raw_transcripts=args.include_raw_transcripts,
+                redact=not args.no_redact,
+            )
+        )
+    except OSError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    print(str(result.output_path))
+    return 0
 
 
 def doctor_main(argv: Sequence[str]) -> int:
