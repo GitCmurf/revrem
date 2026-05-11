@@ -1,0 +1,71 @@
+{
+  "$id": "https://github.com/GitCmurf/revrem/schemas/diagnostics/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "issues": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "evidence": {
+            "type": "object"
+          },
+          "fingerprint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hint": {
+            "type": "string"
+          },
+          "message": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "1.0"
+          },
+          "severity": {
+            "enum": [
+              "ok",
+              "warn",
+              "blocking"
+            ]
+          }
+        },
+        "required": [
+          "schema_version",
+          "code",
+          "severity",
+          "message",
+          "hint",
+          "evidence",
+          "fingerprint"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0"
+    },
+    "status": {
+      "enum": [
+        "ok",
+        "blocking"
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "status",
+    "issues"
+  ],
+  "title": "RevRem diagnostics v1",
+  "type": "object"
+}

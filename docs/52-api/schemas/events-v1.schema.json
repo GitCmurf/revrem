@@ -1,0 +1,15 @@
+{
+  "$id": "https://github.com/GitCmurf/revrem/schemas/events/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    }
+  },
+  "required": [
+    "schema_version"
+  ],
+  "title": "RevRem event v1 skeleton",
+  "type": "object"
+}

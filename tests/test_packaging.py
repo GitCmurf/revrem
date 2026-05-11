@@ -86,6 +86,7 @@ def test_dev_extra_exercises_rich_and_textual_paths():
 
     dev_extra = pyproject["project"]["optional-dependencies"]["dev"]
 
+    assert any(dependency.startswith("jsonschema>=") for dependency in dev_extra)
     assert any(dependency.startswith("rich>=") for dependency in dev_extra)
     assert any(dependency.startswith("textual>=") for dependency in dev_extra)
 

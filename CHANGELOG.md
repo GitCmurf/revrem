@@ -22,6 +22,9 @@ This project follows Semantic Versioning once public releases begin.
   diagnostics, triage, suppressions, bug bundles, and event schemas.
 - Artifact helper for canonical JSON serialization, atomic writes, and
   run-directory path-safety checks.
+- Initial `docs/52-api/schemas/` JSON Schema namespace with concrete
+  diagnostics validation and reserved v1 skeletons for summary, triage, events,
+  and bug bundles.
 
 ### Changed
 

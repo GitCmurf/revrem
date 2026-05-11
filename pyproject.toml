@@ -30,6 +30,7 @@ dependencies = ["tomli-w>=1.0"]
 dev = [
   "build>=1.2",
   "detect-secrets>=1.5",
+  "jsonschema>=4.22",
   "mypy>=1.8",
   "pip-licenses>=5",
   "pre-commit>=4",

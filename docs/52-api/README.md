@@ -91,3 +91,8 @@ The foundation phase introduces these contracts:
 - `triage-v1.schema.json` for structured triage output;
 - `events-v1.schema.json` for replayable event streams;
 - `bug-bundle-v1.schema.json` for redacted issue-support bundles.
+
+`diagnostics-v1.schema.json` is the first concrete schema. The other v1 files
+are skeleton contracts that reserve names and versioning shape; their owning
+implementation tasks tighten fields before those artifacts become stable
+operator-facing outputs.
