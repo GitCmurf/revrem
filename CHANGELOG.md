@@ -39,6 +39,8 @@ This project follows Semantic Versioning once public releases begin.
 - Structured triage v1 support: JSON triage output is schema-validated, written
   to `triage-N.json`, and forwarded to remediation with original review context;
   invalid structured triage writes diagnostics and fails safe.
+- Added `REVREM-ADR-006` for structured triage artifacts and invalid-output
+  remediation policy.
 
 ### Changed
 
