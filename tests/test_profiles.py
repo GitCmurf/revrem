@@ -545,6 +545,7 @@ description = "Existing profile"
     assert path == profiles.user_config_path(home)
     assert "[defaults.review]" in path.read_text(encoding="utf-8")
     assert 'model = "gpt-5.5"' in path.read_text(encoding="utf-8")
+    assert "[profiles.smoke]" in path.read_text(encoding="utf-8")
     rendered = path.read_text(encoding="utf-8")
     assert 'base = "main"' not in rendered
     assert "max_iterations = 2" not in rendered

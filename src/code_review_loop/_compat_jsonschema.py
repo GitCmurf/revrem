@@ -1,8 +1,12 @@
-"""Tiny validator subset for Draft 2020-12 schemas used in this repository."""
+"""Minimal local JSON Schema support for the repo test suite."""
 
 from __future__ import annotations
 
 from collections.abc import Iterator
+
+
+def validate(instance, schema) -> None:
+    Draft202012Validator(schema).validate(instance)
 
 
 class Draft202012Validator:

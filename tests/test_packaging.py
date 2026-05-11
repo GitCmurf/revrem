@@ -91,6 +91,12 @@ def test_dev_extra_exercises_rich_and_textual_paths():
     assert any(dependency.startswith("textual>=") for dependency in dev_extra)
 
 
+def test_source_tree_does_not_publish_top_level_dependency_shims():
+    assert not (ROOT / "src" / "jsonschema" / "__init__.py").exists()
+    assert not (ROOT / "src" / "jsonschema" / "validators.py").exists()
+    assert not (ROOT / "src" / "tomli_w.py").exists()
+
+
 def test_distribution_scripts_are_executable_and_posix_sh():
     for relative in ("scripts/install-dev", "scripts/promote-stable"):
         path = ROOT / relative

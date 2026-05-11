@@ -15,9 +15,8 @@ from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
-import tomli_w
-
 from code_review_loop import run_history
+from code_review_loop._compat_tomli_w import dumps as toml_dumps
 from code_review_loop.harnesses import (
     HARNESS_REGISTRY,
     require_implemented_harness,
@@ -559,8 +558,8 @@ def _profile_to_toml_impl(
         raw_profile=raw_profile,
     )
     if root is None:
-        return tomli_w.dumps(inner)
-    return tomli_w.dumps(_nest_dict(root, inner))
+        return toml_dumps(inner)
+    return toml_dumps(_nest_dict(root, inner))
 
 
 def write_user_profile(
@@ -854,7 +853,7 @@ def _nest_dict(root: tuple[str, ...], inner: dict[str, Any]) -> dict[str, Any]:
 
 
 def _raw_profile_to_toml_impl(raw: dict[str, Any], *, root: tuple[str, ...]) -> str:
-    return tomli_w.dumps(_nest_dict(root, raw))
+    return toml_dumps(_nest_dict(root, raw))
 
 
 def _atomic_write_text(path: Path, content: str) -> None:

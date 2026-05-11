@@ -57,7 +57,15 @@ def _format_value(value: object) -> str:
     if value is None:
         return '""'
     if isinstance(value, str):
-        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+        escaped = (
+            value.replace("\\", "\\\\")
+            .replace("\b", "\\b")
+            .replace("\t", "\\t")
+            .replace("\n", "\\n")
+            .replace("\f", "\\f")
+            .replace("\r", "\\r")
+            .replace('"', '\\"')
+        )
         return f'"{escaped}"'
     raise TypeError(f"unsupported TOML value type: {type(value).__name__}")
 
