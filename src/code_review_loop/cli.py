@@ -2848,13 +2848,7 @@ def doctor_main(argv: Sequence[str]) -> int:
             )
         ]
     else:
-        artifact_dir = (
-            Path(args.artifact_dir)
-            if args.artifact_dir is not None
-            else Path(profile.output.artifact_dir)
-            if profile.output.artifact_dir is not None
-            else None
-        )
+        artifact_dir = _doctor_artifact_dir(args, profile)
         issues = diagnostics.run_doctor(
             diagnostics.DoctorConfig(
                 cwd=Path.cwd(),
@@ -2875,6 +2869,13 @@ def doctor_main(argv: Sequence[str]) -> int:
     if args.strict and diagnostics.has_warning_issue(issues):
         return 6
     return 0
+
+
+def _doctor_artifact_dir(args: argparse.Namespace, profile: profiles.Profile) -> Path:
+    artifact_dir = args.artifact_dir if args.artifact_dir is not None else profile.output.artifact_dir
+    if artifact_dir is not None:
+        return Path(artifact_dir)
+    return default_artifact_dir()
 
 
 def history_main(argv: Sequence[str]) -> int:

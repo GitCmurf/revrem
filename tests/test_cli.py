@@ -3240,6 +3240,35 @@ def test_doctor_text_reports_ok_for_valid_repo(tmp_path, monkeypatch, capsys):
     assert captured.err == ""
 
 
+def test_doctor_validates_default_artifact_dir_when_unset(tmp_path, monkeypatch, capsys):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "config", "user.email", "test@example.com")
+    run_git(repo, "config", "user.name", "Test User")
+    (repo / "README.md").write_text("# Fixture\n", encoding="utf-8")
+    run_git(repo, "add", "README.md")
+    run_git(repo, "commit", "-m", "initial")
+    monkeypatch.chdir(repo)
+
+    blocked_artifact_dir = repo / ".revrem" / "runs" / "blocked-default"
+    blocked_artifact_dir.parent.mkdir(parents=True)
+    blocked_artifact_dir.write_text("blocked\n", encoding="utf-8")
+    monkeypatch.setattr(MODULE, "default_artifact_dir", lambda: blocked_artifact_dir)
+
+    exit_code = MODULE.main(["doctor", "--base", "main", "--codex-bin", "git", "--format", "json"])
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert exit_code == 4
+    assert payload["status"] == "blocking"
+    assert {issue["code"] for issue in payload["issues"]} == {
+        "revrem.preflight.artifact_dir_not_writable",
+    }
+    assert payload["issues"][0]["evidence"]["artifact_dir"] == str(blocked_artifact_dir)
+    assert captured.err == ""
+
+
 def test_doctor_profile_allows_reserved_harnesses_without_profile_error(tmp_path, monkeypatch, capsys):
     repo = tmp_path / "repo"
     home = tmp_path / "home"
