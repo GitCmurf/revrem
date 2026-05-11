@@ -66,3 +66,16 @@ def test_safe_artifact_path_rejects_symlink_escape(tmp_path):
 
     with pytest.raises(artifacts.ArtifactPathError):
         artifacts.safe_artifact_path(run_dir, "linked/summary.json")
+
+
+def test_safe_artifact_path_does_not_create_symlink_target_directories(tmp_path):
+    run_dir = tmp_path / "run"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    run_dir.mkdir()
+    (run_dir / "linked").symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(artifacts.ArtifactPathError):
+        artifacts.safe_artifact_path(run_dir, "linked/new/summary.json")
+
+    assert not (outside / "new").exists()

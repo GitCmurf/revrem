@@ -205,6 +205,10 @@ tooling, `pre-commit`, `detect-secrets`, and license-review helpers. Ruff,
 mypy, pytest, DocOps checks, and `git diff --check` are required local and CI
 gates.
 
+The repository also carries tiny local compatibility shims for `tomli_w` and
+`jsonschema` so the test suite can collect in minimal environments. The
+published dependency declarations remain the supported install path.
+
 See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution expectations, governed
 documentation, and release process details.
 

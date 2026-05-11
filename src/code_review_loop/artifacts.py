@@ -29,10 +29,10 @@ def safe_artifact_path(run_dir: Path, relative_path: str | Path) -> Path:
     root = run_dir.resolve()
     target = run_dir / path
     parent = target.parent
-    parent.mkdir(parents=True, exist_ok=True)
-    resolved_parent = parent.resolve()
+    resolved_parent = parent.resolve(strict=False)
     if not _is_relative_to(resolved_parent, root):
         raise ArtifactPathError("artifact path resolves outside the run directory")
+    parent.mkdir(parents=True, exist_ok=True)
     return target
 
 
