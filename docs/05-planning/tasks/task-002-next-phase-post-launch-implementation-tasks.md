@@ -29,6 +29,8 @@ related_ids:
 - REVREM-DEVEX-001
 - REVREM-TEST-001
 - REVREM-TASK-001
+- REVREM-ADR-003
+- REVREM-ADR-004
 ---
 
 # TASK: Next-phase post-launch implementation tasks

@@ -27,6 +27,8 @@ This project follows Semantic Versioning once public releases begin.
   and bug bundles.
 - `summary.json` now carries the v1 artifact envelope fields and is validated
   against `summary-v1.schema.json`.
+- Added `REVREM-ADR-004` for artifact schema v1, canonical JSON, atomic writes,
+  and schema compatibility policy.
 
 ### Changed
 
