@@ -25,6 +25,8 @@ This project follows Semantic Versioning once public releases begin.
 - Initial `docs/52-api/schemas/` JSON Schema namespace with concrete
   diagnostics validation and reserved v1 skeletons for summary, triage, events,
   and bug bundles.
+- `summary.json` now carries the v1 artifact envelope fields and is validated
+  against `summary-v1.schema.json`.
 
 ### Changed
 

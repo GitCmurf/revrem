@@ -114,8 +114,8 @@ with golden vectors and normalization invariants.
 encoding, NFC string normalization, atomic artifact writes, and run-directory
 path-safety checks.
 `tests/test_artifact_schema.py` validates JSON Schema draft 2020-12 schema
-files and checks concrete diagnostics payloads against
-`diagnostics-v1.schema.json`.
+files and checks concrete diagnostics and generated run-summary payloads
+against `diagnostics-v1.schema.json` and `summary-v1.schema.json`.
 `tests/test_progress.py` covers optional Rich renderer safety, including literal
 handling for review text that contains Rich markup syntax and styling of the
 phase/action and status columns, plus in-place Live panel updates.

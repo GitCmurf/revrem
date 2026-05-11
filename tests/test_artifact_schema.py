@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from code_review_loop import cli as cli_module
 from code_review_loop import diagnostics
 from code_review_loop._compat_jsonschema import Draft202012Validator, validate
 
@@ -36,8 +37,41 @@ def test_doctor_payload_validates_against_diagnostics_schema():
     )
 
 
-def test_skeleton_schema_requires_schema_version():
+def test_summary_schema_validates_generated_summary(tmp_path):
     schema = _load_schema("summary-v1.schema.json")
+    review_outputs = iter(
+        [
+            "Full review comments:\n\n- [P2] Fix summary contract\n",
+            "No actionable findings.\nREVIEW_STATUS: clear\n",
+        ]
+    )
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[1] == "review":
+            return cli_module.CommandResult(list(args), 0, stdout=next(review_outputs))
+        return cli_module.CommandResult(list(args), 0, stdout="fixed\n")
+
+    config = cli_module.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+    )
+
+    summary = cli_module.run_loop(config, runner)
+    summary_payload = json.loads((tmp_path / "artifacts" / "summary.json").read_text())
+
+    validate(summary_payload, schema)
+    assert summary["schema_version"] == "1.0"
+    assert summary_payload["cli_version"] == cli_module.__version__
+    assert summary_payload["harness"] == "codex"
+    assert summary_payload["tokens"] is None
+    assert summary_payload["usd"] is None
+
+
+def test_skeleton_schema_requires_schema_version():
+    schema = _load_schema("triage-v1.schema.json")
 
     validate({"schema_version": "1.0", "extra": "allowed"}, schema)
     validator = Draft202012Validator(schema)

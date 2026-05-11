@@ -3,12 +3,116 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": true,
   "properties": {
+    "artifact_dir": {
+      "type": "string"
+    },
+    "artifact_paths": {
+      "type": "object"
+    },
+    "base": {
+      "type": "string"
+    },
+    "cli_version": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "command_line": {
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "duration_seconds": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "finished_at": {
+      "type": "string"
+    },
+    "final_status": {
+      "enum": [
+        "clear",
+        "findings",
+        "unknown",
+        "error"
+      ]
+    },
+    "harness": {
+      "type": "string"
+    },
+    "harness_version": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "iterations": {
+      "type": "array"
+    },
+    "max_iterations": {
+      "type": "integer"
+    },
+    "phases": {
+      "type": "object"
+    },
+    "profile": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "run_id": {
+      "minLength": 1,
+      "type": "string"
+    },
     "schema_version": {
       "const": "1.0"
+    },
+    "started_at": {
+      "type": "string"
+    },
+    "stopped_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "tokens": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "usd": {
+      "type": [
+        "string",
+        "null"
+      ]
     }
   },
   "required": [
-    "schema_version"
+    "schema_version",
+    "cli_version",
+    "harness",
+    "harness_version",
+    "profile",
+    "command_line",
+    "run_id",
+    "started_at",
+    "finished_at",
+    "duration_seconds",
+    "base",
+    "max_iterations",
+    "artifact_dir",
+    "iterations",
+    "final_status",
+    "stopped_reason",
+    "phases",
+    "artifact_paths",
+    "tokens",
+    "usd"
   ],
   "title": "RevRem summary v1",
   "type": "object"

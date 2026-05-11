@@ -1777,8 +1777,41 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
 
 def write_summary(config: LoopConfig, summary: dict[str, object]) -> None:
     update_unexpected_behaviors(config, summary)
+    add_summary_contract_fields(config, summary)
     add_artifact_paths(summary, config)
-    write_artifact(config.artifact_dir / "summary.json", json.dumps(summary, indent=2, sort_keys=True))
+    artifacts.write_json_artifact(config.artifact_dir, "summary.json", summary)
+
+
+def add_summary_contract_fields(config: LoopConfig, summary: dict[str, object]) -> None:
+    summary["schema_version"] = artifacts.JSON_SCHEMA_VERSION
+    summary.setdefault("cli_version", __version__)
+    summary.setdefault("harness", config.review_harness)
+    summary.setdefault("harness_version", None)
+    summary.setdefault("command_line", None)
+    summary.setdefault("tokens", None)
+    summary.setdefault("usd", None)
+    iterations = summary.get("iterations")
+    summary.setdefault(
+        "phases",
+        {
+            "iteration_count": len(iterations) if isinstance(iterations, list) else 0,
+        },
+    )
+    summary.setdefault("finished_at", datetime.now(UTC).isoformat().replace("+00:00", "Z"))
+    summary.setdefault("duration_seconds", _summary_duration_seconds(summary))
+
+
+def _summary_duration_seconds(summary: dict[str, object]) -> float | None:
+    started_at = summary.get("started_at")
+    finished_at = summary.get("finished_at")
+    if not isinstance(started_at, str) or not isinstance(finished_at, str):
+        return None
+    try:
+        started = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+        finished = datetime.fromisoformat(finished_at.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return max(0.0, (finished - started).total_seconds())
 
 
 def update_unexpected_behaviors(config: LoopConfig, summary: dict[str, object]) -> None:
