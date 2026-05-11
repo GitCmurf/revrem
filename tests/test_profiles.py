@@ -266,6 +266,7 @@ model = "gpt-5.4-mini"
 reasoning_effort = "low"
 timeout_seconds = 60
 prompt = "Break down the findings."
+on_invalid = "stop"
 """,
         encoding="utf-8",
     )
@@ -278,6 +279,25 @@ prompt = "Break down the findings."
     assert resolved.triage.reasoning_effort == "low"
     assert resolved.triage.timeout_seconds == 60
     assert resolved.triage.prompt == "Break down the findings."
+    assert resolved.triage.on_invalid == "stop"
+
+
+def test_profile_rejects_invalid_triage_on_invalid_policy(tmp_path):
+    home = tmp_path / "home"
+    cwd = tmp_path / "repo"
+    cwd.mkdir()
+    path = profiles.user_config_path(home)
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        """
+[profiles.triaged.triage]
+on_invalid = "hide-findings"
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="triage.on_invalid must be one of continue, stop"):
+        profiles.resolve_profile("triaged", cwd=cwd, home=home)
 
 
 def test_profile_commit_defaults_to_spark_message_model(tmp_path):

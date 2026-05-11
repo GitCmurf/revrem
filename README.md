@@ -132,6 +132,12 @@ Optional features include finding triage, JSON summaries, automatic remediation
 commits after passing checks, Rich progress rendering, and a dependency-gated
 Textual TUI.
 
+When triage output is structured JSON, RevRem validates it against
+`triage-v1.schema.json`, writes `triage-N.json`, and forwards the structured
+handoff plus the original review context to remediation. Invalid structured
+triage writes `diagnostics.json` and fails safe by continuing with the original
+review context.
+
 ## Profiles
 
 Profiles keep long commands repeatable:

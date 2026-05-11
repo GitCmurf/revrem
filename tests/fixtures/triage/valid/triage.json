@@ -1,0 +1,22 @@
+{
+  "confirmed_findings": [
+    {
+      "affected_paths": [
+        "src/reference_app/auth.py"
+      ],
+      "fingerprint": "f1:c6ace015ccd20120",
+      "rationale": "The SQL query is built with unescaped user-controlled input.",
+      "severity": "high",
+      "summary": "Fix SQL injection in user lookup."
+    }
+  ],
+  "implementation_order": [
+    "f1:c6ace015ccd20120"
+  ],
+  "needs_more_info": [],
+  "parsing_warnings": [],
+  "rejected_findings": [],
+  "verification_commands": [
+    "pytest -q"
+  ]
+}

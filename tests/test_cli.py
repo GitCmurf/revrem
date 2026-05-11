@@ -664,6 +664,90 @@ def test_loop_runs_optional_triage_between_review_and_remediation(tmp_path):
     assert summary["artifact_paths"]["triage"] == [str(tmp_path / "artifacts" / "triage-1.txt")]
 
 
+def test_loop_writes_structured_triage_artifact_and_handoff(tmp_path):
+    calls = []
+    triage_payload = {
+        "confirmed_findings": [
+            {
+                "affected_paths": ["src/app.py"],
+                "fingerprint": "f1:abc123",
+                "rationale": "The review finding is actionable.",
+                "severity": "medium",
+                "summary": "Fix the bug.",
+            }
+        ],
+        "implementation_order": ["f1:abc123"],
+        "needs_more_info": [],
+        "parsing_warnings": [],
+        "rejected_findings": [],
+        "verification_commands": ["pytest -q"],
+    }
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[1] == "review":
+            return MODULE.CommandResult(
+                list(args),
+                0,
+                stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
+            )
+        if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
+            return MODULE.CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
+        return MODULE.CommandResult(list(args), 0, stdout="remediated\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        triage_enabled=True,
+        final_review=False,
+    )
+
+    summary = MODULE.run_loop(config, runner)
+
+    triage_json = json.loads((tmp_path / "artifacts" / "triage-1.json").read_text(encoding="utf-8"))
+    assert triage_json["source_review_artifact"] == "review-1.txt"
+    assert triage_json["prompt_version"] == "triage-v1"
+    assert "Structured triage handoff" in (calls[2][1] or "")
+    assert "Original review/check context" in (calls[2][1] or "")
+    assert str(tmp_path / "artifacts" / "triage-1.json") in summary["artifact_paths"]["triage"]
+
+
+def test_loop_invalid_structured_triage_continues_with_original_review(tmp_path):
+    calls = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[1] == "review":
+            return MODULE.CommandResult(
+                list(args),
+                0,
+                stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
+            )
+        if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
+            return MODULE.CommandResult(list(args), 0, stdout='{"confirmed_findings": []')
+        return MODULE.CommandResult(list(args), 0, stdout="remediated\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        triage_enabled=True,
+        final_review=False,
+    )
+
+    MODULE.run_loop(config, runner)
+
+    diagnostics_payload = json.loads((tmp_path / "artifacts" / "diagnostics.json").read_text(encoding="utf-8"))
+    assert diagnostics_payload["issues"][0]["code"] == "revrem.triage.invalid_output"
+    assert "Structured triage handoff" not in (calls[2][1] or "")
+    assert "Full review comments:\n\n- [P2] Fix profile merge" in (calls[2][1] or "")
+
+
 def test_loop_writes_failure_summary_when_triage_fails(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":

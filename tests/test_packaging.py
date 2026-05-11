@@ -97,6 +97,14 @@ def test_source_tree_does_not_publish_top_level_dependency_shims():
     assert not (ROOT / "src" / "tomli_w.py").exists()
 
 
+def test_package_data_includes_versioned_prompts():
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+
+    package_data = pyproject["tool"]["setuptools"]["package-data"]["code_review_loop"]
+
+    assert "prompts/*.txt" in package_data
+
+
 def test_distribution_scripts_are_executable_and_posix_sh():
     for relative in ("scripts/install-dev", "scripts/promote-stable"):
         path = ROOT / relative

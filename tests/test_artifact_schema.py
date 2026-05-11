@@ -71,7 +71,7 @@ def test_summary_schema_validates_generated_summary(tmp_path):
 
 
 def test_skeleton_schema_requires_schema_version():
-    schema = _load_schema("triage-v1.schema.json")
+    schema = _load_schema("events-v1.schema.json")
 
     validate({"schema_version": "1.0", "extra": "allowed"}, schema)
     validator = Draft202012Validator(schema)

@@ -465,8 +465,17 @@ enabled = true
 model = "gpt-5.4-mini"
 reasoning_effort = "low"
 timeout_seconds = 300
+on_invalid = "continue"
 prompt = "Break down the review into confirmed actions, likely false positives, and verification steps."
 ```
+
+When the triage output is JSON, RevRem treats it as a structured v1 artifact:
+it stamps envelope fields, validates against `docs/52-api/schemas/triage-v1.schema.json`,
+writes `triage-N.json`, and still includes the original review/check context in
+the remediation prompt. Invalid structured triage writes `diagnostics.json` with
+`revrem.triage.invalid_output`. The default `triage.on_invalid = "continue"`
+fails safe by ignoring invalid triage guidance; set `triage.on_invalid = "stop"`
+when a workflow should halt on malformed triage output.
 
 ### Current CLI boundary
 

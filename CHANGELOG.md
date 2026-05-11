@@ -36,6 +36,9 @@ This project follows Semantic Versioning once public releases begin.
   with manifest schema validation and raw-transcript opt-in.
 - Added `REVREM-ADR-005` for redaction defaults and bug-report bundle privacy
   policy.
+- Structured triage v1 support: JSON triage output is schema-validated, written
+  to `triage-N.json`, and forwarded to remediation with original review context;
+  invalid structured triage writes diagnostics and fails safe.
 
 ### Changed
 

@@ -32,6 +32,7 @@ from code_review_loop import (
     profiles,
     progress,
     run_history,
+    triage,
 )
 
 STATUS_RE = re.compile(r"^\s*REVIEW_STATUS:\s*(clear|findings)\s*$", re.IGNORECASE | re.MULTILINE)
@@ -128,6 +129,7 @@ class LoopConfig:
     triage_reasoning_effort: str | None = None
     triage_timeout_seconds: float | None = None
     triage_prompt: str | None = None
+    triage_on_invalid: str = "continue"
     exec_sandbox: str = "workspace-write"
     exec_color: str = "never"
     full_auto: bool = True
@@ -1089,7 +1091,7 @@ def run_triage(
     review_output: str,
 ) -> str:
     command = build_triage_command(config)
-    prompt_root = config.triage_prompt or DEFAULT_TRIAGE_PROMPT
+    prompt_root = config.triage_prompt or triage.load_prompt()
     prompt = f"{prompt_root}\n{trim_for_prompt(review_output, config.max_remediation_input_chars)}"
     progress_event(config, "triage", str(iteration), "start", shlex.join(command))
     if config.dry_run:
@@ -1105,12 +1107,37 @@ def run_triage(
         )
     progress_event(config, "triage", str(iteration), "done")
     triage_output = actionable_review_output(_combined_output(result))
+    review_artifact = f"review-{iteration}.txt"
+    if triage.looks_structured_output(triage_output):
+        try:
+            payload = triage.parse_triage_payload(
+                triage_output,
+                run_id=current_run_id(config),
+                source_review_artifact=review_artifact,
+            )
+        except triage.TriageValidationError as exc:
+            issue = triage.invalid_triage_issue(exc, iteration=iteration)
+            artifacts.write_json_artifact(
+                config.artifact_dir,
+                "diagnostics.json",
+                triage.diagnostics_payload(issue),
+            )
+            progress_event(config, "triage", str(iteration), "invalid", str(exc))
+            if config.triage_on_invalid == "stop":
+                raise RuntimeError(f"invalid structured triage output for iteration {iteration}: {exc}") from exc
+            return review_output
+        triage.write_triage_artifact(config.artifact_dir, iteration, payload)
+        return triage.format_structured_handoff(payload, review_output)
     return (
         "Triage handoff from the previous review:\n"
         f"{triage_output}\n\n"
         "Original review/check context:\n"
         f"{review_output}"
     )
+
+
+def current_run_id(config: LoopConfig) -> str:
+    return config.artifact_dir.name or "unknown"
 
 
 def run_checks(config: LoopConfig, runner: Runner, iteration: int) -> list[CommandResult]:
@@ -2582,6 +2609,7 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         triage_reasoning_effort=triage_reasoning_effort,
         triage_timeout_seconds=triage_timeout_seconds,
         triage_prompt=profile.triage.prompt,
+        triage_on_invalid=profile.triage.on_invalid,
         exec_sandbox=pick(args.exec_sandbox, profile.runtime.exec_sandbox, "workspace-write"),
         exec_color=pick(args.exec_color, profile.runtime.exec_color, "never"),
         full_auto=pick(args.full_auto, profile.runtime.full_auto, True),
@@ -2659,6 +2687,7 @@ def profile_from_loop_config(
             reasoning_effort=config.triage_reasoning_effort,
             timeout_seconds=saved_triage_timeout_seconds,
             prompt=config.triage_prompt,
+            on_invalid=config.triage_on_invalid,
         ),
         remediation=profiles.PhaseConfig(
             harness=config.remediation_harness,

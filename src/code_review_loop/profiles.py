@@ -41,7 +41,16 @@ PROFILE_KEYS = (
 )
 PIPELINE_KEYS = ("base", "max_iterations", "final_review", "checks")
 PHASE_KEYS = ("harness", "model", "reasoning_effort", "timeout_seconds")
-TRIAGE_KEYS = ("enabled", "harness", "model", "reasoning_effort", "timeout_seconds", "prompt")
+TRIAGE_ON_INVALID_CHOICES = ("continue", "stop")
+TRIAGE_KEYS = (
+    "enabled",
+    "harness",
+    "model",
+    "reasoning_effort",
+    "timeout_seconds",
+    "prompt",
+    "on_invalid",
+)
 COMMIT_KEYS = ("enabled", "harness", "message_model", "message_prompt")
 OUTPUT_KEYS = (
     "summary_format",
@@ -80,6 +89,7 @@ class TriageConfig:
     reasoning_effort: str | None = None
     timeout_seconds: float | None = None
     prompt: str | None = None
+    on_invalid: str = "continue"
 
 
 @dataclass(frozen=True)
@@ -269,6 +279,11 @@ def parse_triage(raw: dict[str, Any], field: str) -> TriageConfig:
         raise ValueError(
             f"{field}.reasoning_effort must be one of {', '.join(REASONING_EFFORT_CHOICES)}"
         )
+    on_invalid = _str(raw.get("on_invalid", "continue"), f"{field}.on_invalid")
+    if on_invalid not in TRIAGE_ON_INVALID_CHOICES:
+        raise ValueError(
+            f"{field}.on_invalid must be one of {', '.join(TRIAGE_ON_INVALID_CHOICES)}"
+        )
     return TriageConfig(
         enabled=_bool(raw.get("enabled", False), f"{field}.enabled"),
         harness=harness,
@@ -276,6 +291,7 @@ def parse_triage(raw: dict[str, Any], field: str) -> TriageConfig:
         reasoning_effort=reasoning_effort,
         timeout_seconds=_optional_float(raw.get("timeout_seconds"), f"{field}.timeout_seconds"),
         prompt=_optional_str(raw.get("prompt"), f"{field}.prompt"),
+        on_invalid=on_invalid,
     )
 
 

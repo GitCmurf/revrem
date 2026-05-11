@@ -122,6 +122,8 @@ headers, private keys, local paths, usernames, and idempotence.
 `tests/test_bug_bundle.py` covers deterministic redacted bug-report bundles,
 manifest schema validation, default transcript exclusion, and raw-transcript
 opt-in behavior.
+`tests/test_triage.py` covers structured triage v1 parsing, schema validation,
+invalid-output diagnostics, and structured remediation handoff formatting.
 `tests/test_progress.py` covers optional Rich renderer safety, including literal
 handling for review text that contains Rich markup syntax and styling of the
 phase/action and status columns, plus in-place Live panel updates.
