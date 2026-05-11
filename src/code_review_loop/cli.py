@@ -2854,6 +2854,7 @@ def doctor_main(argv: Sequence[str]) -> int:
                 cwd=Path.cwd(),
                 base=args.base if args.base is not None else profile.pipeline.base,
                 artifact_dir=artifact_dir,
+                artifact_dir_is_default=args.artifact_dir is None and profile.output.artifact_dir is None,
                 codex_bin=args.codex_bin if args.codex_bin is not None else profile.runtime.codex_bin,
                 check_commands=tuple(args.check) if args.check is not None else profile.pipeline.checks,
                 commit_after_remediation=args.commit_after_remediation or profile.commit.enabled,

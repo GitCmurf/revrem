@@ -110,6 +110,24 @@ def test_run_doctor_resolves_relative_artifact_dir_against_doctor_cwd(tmp_path, 
     assert not (process_cwd / "artifacts").exists()
 
 
+def test_run_doctor_does_not_create_default_artifact_dir(tmp_path):
+    repo = _make_repo(tmp_path)
+    default_artifact_dir = repo / ".revrem" / "runs" / "default-run"
+
+    issues = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(
+            cwd=repo,
+            base="main",
+            codex_bin="git",
+            artifact_dir=default_artifact_dir,
+            artifact_dir_is_default=True,
+        )
+    )
+
+    assert _issue_codes(issues) == {"revrem.preflight.ok"}
+    assert not (repo / ".revrem").exists()
+
+
 def test_run_doctor_reports_missing_check_command(tmp_path):
     repo = _make_repo(tmp_path)
 

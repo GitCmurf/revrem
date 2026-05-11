@@ -3269,6 +3269,30 @@ def test_doctor_validates_default_artifact_dir_when_unset(tmp_path, monkeypatch,
     assert captured.err == ""
 
 
+def test_doctor_does_not_create_default_artifact_dir_on_clean_repo(tmp_path, monkeypatch, capsys):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "config", "user.email", "test@example.com")
+    run_git(repo, "config", "user.name", "Test User")
+    (repo / "README.md").write_text("# Fixture\n", encoding="utf-8")
+    run_git(repo, "add", "README.md")
+    run_git(repo, "commit", "-m", "initial")
+    monkeypatch.chdir(repo)
+
+    default_artifact_dir = repo / ".revrem" / "runs" / "default-run"
+    monkeypatch.setattr(MODULE, "default_artifact_dir", lambda: default_artifact_dir)
+
+    exit_code = MODULE.main(["doctor", "--base", "main", "--codex-bin", "git", "--format", "json"])
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert exit_code == 0
+    assert payload["status"] == "ok"
+    assert not (repo / ".revrem").exists()
+    assert captured.err == ""
+
+
 def test_doctor_profile_blocks_repo_root_artifact_dir_in_commit_mode(tmp_path, monkeypatch, capsys):
     repo = tmp_path / "repo"
     home = tmp_path / "home"

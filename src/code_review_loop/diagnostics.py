@@ -41,6 +41,7 @@ class DoctorConfig:
     cwd: Path
     base: str = "main"
     artifact_dir: Path | None = None
+    artifact_dir_is_default: bool = False
     codex_bin: str = "codex"
     check_commands: tuple[str, ...] = ()
     commit_after_remediation: bool = False
@@ -155,10 +156,14 @@ def _artifact_dir_issues(config: DoctorConfig, git_root: Path | None) -> list[Di
         return []
     try:
         target = config.artifact_dir if config.artifact_dir.is_absolute() else config.cwd / config.artifact_dir
-        target.mkdir(parents=True, exist_ok=True)
-        probe = target / ".revrem-doctor-write-test"
-        probe.write_text("ok", encoding="utf-8")
-        probe.unlink()
+        if config.artifact_dir_is_default:
+            if target.exists() and not target.is_dir():
+                raise NotADirectoryError(target)
+        else:
+            target.mkdir(parents=True, exist_ok=True)
+            probe = target / ".revrem-doctor-write-test"
+            probe.write_text("ok", encoding="utf-8")
+            probe.unlink()
     except OSError as exc:
         return [
             DiagnosticIssue(
