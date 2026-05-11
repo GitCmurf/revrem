@@ -41,10 +41,14 @@ def _write_table(lines: list[str], prefix: tuple[str, ...], table: Mapping[str, 
 
 
 def _format_key(key: str) -> str:
-    if key and all(ch.isalnum() or ch in {"-", "_"} for ch in key):
+    if key and all(_is_bare_key_char(ch) for ch in key):
         return key
     escaped = key.replace("\\", "\\\\").replace('"', '\\"')
     return f'"{escaped}"'
+
+
+def _is_bare_key_char(ch: str) -> bool:
+    return ch.isascii() and (ch.isalnum() or ch in {"-", "_"})
 
 
 def _format_value(value: object) -> str:

@@ -774,6 +774,18 @@ def test_write_user_profile_quotes_profile_names_and_round_trips(tmp_path):
     assert profiles.resolve_profile("foo.bar baz", cwd=tmp_path, home=home).description == "Quoted profile"
 
 
+def test_write_user_profile_quotes_non_ascii_profile_names(tmp_path):
+    home = tmp_path / "home"
+    profile = profiles.minimal_profile("démo", description="Non-ASCII profile")
+
+    path = profiles.write_user_profile(profile, home=home)
+    rendered = path.read_text(encoding="utf-8")
+
+    assert '[profiles."démo"]' in rendered
+    assert "[profiles.démo]" not in rendered
+    assert profiles.resolve_profile("démo", cwd=tmp_path, home=home).description == "Non-ASCII profile"
+
+
 def test_profile_json_is_stable():
     data = json.loads(profiles.profile_to_json(profiles.minimal_profile("demo")))
 
