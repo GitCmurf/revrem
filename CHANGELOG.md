@@ -34,6 +34,8 @@ This project follows Semantic Versioning once public releases begin.
   home paths, and usernames.
 - `revrem bundle-bug-report` creates deterministic redacted support bundles
   with manifest schema validation and raw-transcript opt-in.
+- Added `REVREM-ADR-005` for redaction defaults and bug-report bundle privacy
+  policy.
 
 ### Changed
 
