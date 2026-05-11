@@ -157,8 +157,7 @@ def _artifact_dir_issues(config: DoctorConfig, git_root: Path | None) -> list[Di
     try:
         target = config.artifact_dir if config.artifact_dir.is_absolute() else config.cwd / config.artifact_dir
         if config.artifact_dir_is_default:
-            if target.exists() and not target.is_dir():
-                raise NotADirectoryError(target)
+            _validate_default_artifact_dir(target)
         else:
             target.mkdir(parents=True, exist_ok=True)
             probe = target / ".revrem-doctor-write-test"
@@ -198,6 +197,37 @@ def _artifact_dir_issues(config: DoctorConfig, git_root: Path | None) -> list[Di
                 )
             ]
     return []
+
+
+def _validate_default_artifact_dir(target: Path) -> None:
+    conflict = _first_conflicting_path(target)
+    if conflict is not None:
+        raise NotADirectoryError(conflict)
+    probe_parent = _nearest_existing_directory(target.parent)
+    probe = probe_parent / ".revrem-doctor-write-test"
+    probe.write_text("ok", encoding="utf-8")
+    probe.unlink()
+
+
+def _first_conflicting_path(target: Path) -> Path | None:
+    current = target
+    while True:
+        if current.exists() and not current.is_dir():
+            return current
+        if current.parent == current:
+            return None
+        current = current.parent
+
+
+def _nearest_existing_directory(path: Path) -> Path:
+    current = path
+    while not current.exists():
+        if current.parent == current:
+            return current
+        current = current.parent
+    if not current.is_dir():
+        raise NotADirectoryError(current)
+    return current
 
 
 def _executable_issues(config: DoctorConfig) -> list[DiagnosticIssue]:

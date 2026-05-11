@@ -128,6 +128,53 @@ def test_run_doctor_does_not_create_default_artifact_dir(tmp_path):
     assert not (repo / ".revrem").exists()
 
 
+def test_run_doctor_blocks_default_artifact_dir_when_parent_is_unwritable(tmp_path, monkeypatch):
+    repo = _make_repo(tmp_path)
+    default_artifact_dir = repo / ".revrem" / "runs" / "default-run"
+
+    original_write_text = Path.write_text
+
+    def fake_write_text(self: Path, data: str, encoding: str | None = None, errors: str | None = None, newline: str | None = None):
+        if self.name == ".revrem-doctor-write-test":
+            raise PermissionError("blocked")
+        return original_write_text(self, data, encoding=encoding, errors=errors, newline=newline)
+
+    monkeypatch.setattr(Path, "write_text", fake_write_text)
+
+    issues = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(
+            cwd=repo,
+            base="main",
+            codex_bin="git",
+            artifact_dir=default_artifact_dir,
+            artifact_dir_is_default=True,
+        )
+    )
+
+    assert _issue_codes(issues) == {"revrem.preflight.artifact_dir_not_writable"}
+    assert issues[0].evidence["resolved_artifact_dir"] == str(repo / ".revrem" / "runs" / "default-run")
+    assert not (repo / ".revrem").exists()
+
+
+def test_run_doctor_blocks_default_artifact_dir_when_path_component_is_file(tmp_path):
+    repo = _make_repo(tmp_path)
+    default_artifact_dir = repo / ".revrem" / "runs" / "default-run"
+    repo.joinpath(".revrem").write_text("blocked\n", encoding="utf-8")
+
+    issues = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(
+            cwd=repo,
+            base="main",
+            codex_bin="git",
+            artifact_dir=default_artifact_dir,
+            artifact_dir_is_default=True,
+        )
+    )
+
+    assert _issue_codes(issues) == {"revrem.preflight.artifact_dir_not_writable"}
+    assert issues[0].evidence["error"] == str(repo / ".revrem")
+
+
 def test_run_doctor_reports_missing_check_command(tmp_path):
     repo = _make_repo(tmp_path)
 
