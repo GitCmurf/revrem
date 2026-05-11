@@ -190,6 +190,8 @@ shells through the same CLI command plans as normal terminal usage.
 - Human review, security review, and release approval still matter.
 - Avoid dirty worktrees unless the local edits are intentional and understood.
 - Do not use unbounded iteration counts for unattended automation.
+- Do not paste raw model transcripts or local run artifacts into public issues;
+  use the redacted bug-report workflow once available.
 
 ## Development
 

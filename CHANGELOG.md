@@ -29,6 +29,9 @@ This project follows Semantic Versioning once public releases begin.
   against `summary-v1.schema.json`.
 - Added `REVREM-ADR-004` for artifact schema v1, canonical JSON, atomic writes,
   and schema compatibility policy.
+- Built-in redaction helpers for future bug-report bundles, covering common API
+  keys, authorization headers, private keys, sensitive environment assignments,
+  home paths, and usernames.
 
 ### Changed
 

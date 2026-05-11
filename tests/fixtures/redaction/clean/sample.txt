@@ -1,0 +1,2 @@
+No credentials are present here.
+Paths are relative: .revrem/runs/example/summary.json

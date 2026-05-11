@@ -116,6 +116,9 @@ path-safety checks.
 `tests/test_artifact_schema.py` validates JSON Schema draft 2020-12 schema
 files and checks concrete diagnostics and generated run-summary payloads
 against `diagnostics-v1.schema.json` and `summary-v1.schema.json`.
+`tests/test_redaction.py` covers the built-in redaction defaults used by future
+bug-report bundles, including poisoned fixtures for API keys, authorization
+headers, private keys, local paths, usernames, and idempotence.
 `tests/test_progress.py` covers optional Rich renderer safety, including literal
 handling for review text that contains Rich markup syntax and styling of the
 phase/action and status columns, plus in-place Live panel updates.
