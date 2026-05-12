@@ -521,8 +521,10 @@ without running remediation and records `suppressed_findings_count` in
 `summary.json`. If structured triage returns only `rejected_findings` and no
 confirmed or `needs_more_info` items, RevRem stops without remediation only
 when there are no pending check failures; otherwise it continues the loop with
-the unresolved check context. `revrem doctor` warns about expired suppressions
-and unsupported future fingerprint versions.
+the unresolved check context. If a suppression file cannot be parsed or read,
+structured triage emits a warning and continues without applying suppressions.
+`revrem doctor` warns about expired suppressions and unsupported future
+fingerprint versions.
 Bug-report bundles include a redacted suppression audit summary by default; raw
 audit logs are included only with the same raw transcript opt-in used for review
 transcripts.

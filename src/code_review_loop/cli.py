@@ -1190,17 +1190,27 @@ def run_triage(
             return review_output, 0, False
         suppressed_count = 0
         if config.suppressions_enabled:
-            matches = suppressions.load_effective_suppressions(config.cwd)
-            payload, suppressed_findings = suppressions.apply_to_triage_payload(payload, matches)
-            suppressed_count = len(suppressed_findings)
-            if suppressed_findings:
+            try:
+                matches = suppressions.load_effective_suppressions(config.cwd)
+            except (OSError, ValueError) as exc:
                 progress_event(
                     config,
                     "triage",
                     str(iteration),
-                    "suppressed",
-                    f"{len(suppressed_findings)} finding(s)",
+                    "warning",
+                    f"suppressions unavailable; continuing without them: {exc}",
                 )
+            else:
+                payload, suppressed_findings = suppressions.apply_to_triage_payload(payload, matches)
+                suppressed_count = len(suppressed_findings)
+                if suppressed_findings:
+                    progress_event(
+                        config,
+                        "triage",
+                        str(iteration),
+                        "suppressed",
+                        f"{len(suppressed_findings)} finding(s)",
+                    )
         triage.write_triage_artifact(config.artifact_dir, iteration, payload)
         has_actionable_findings = bool(payload.get("confirmed_findings") or payload.get("needs_more_info"))
         if not has_actionable_findings:

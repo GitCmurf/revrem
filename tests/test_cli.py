@@ -1167,6 +1167,85 @@ def test_loop_invalid_structured_triage_continues_with_original_review(tmp_path)
     assert str(tmp_path / "artifacts" / "diagnostics-2.json") in summary["artifact_paths"]["diagnostics"]
 
 
+def test_loop_malformed_suppressions_fail_open_for_structured_triage(tmp_path):
+    repo_root, cwd = make_git_worktree(tmp_path)
+    suppressions_path = suppressions.repo_suppressions_path(cwd)
+    suppressions_path.parent.mkdir(parents=True, exist_ok=True)
+    suppressions_path.write_text("schema_version = \"1.0\"\nsuppressions = [\n", encoding="utf-8")
+
+    calls = []
+    remediation_inputs = []
+    run_count = 0
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        nonlocal run_count
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[1] == "review":
+            return MODULE.CommandResult(
+                list(args),
+                0,
+                stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
+            )
+        if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
+            return MODULE.CommandResult(
+                list(args),
+                0,
+                stdout=json.dumps(
+                    {
+                        "confirmed_findings": [
+                            {
+                                "affected_paths": ["src/code.py"],
+                                "fingerprint": "f1:abc123",
+                                "rationale": "Need fix",
+                                "severity": "medium",
+                                "summary": "Need fix",
+                            }
+                        ],
+                        "implementation_order": ["f1:abc123"],
+                        "needs_more_info": [],
+                        "parsing_warnings": [],
+                        "rejected_findings": [],
+                        "verification_commands": ["pytest -q"],
+                    }
+                ),
+            )
+        if args[0] == "codex" and "exec" in args:
+            run_count += 1
+            remediation_inputs.append(input_text or "")
+            return MODULE.CommandResult(list(args), 0, stdout="remediated\n")
+        if args[:3] == ["git", "add", "-A"]:
+            return MODULE.CommandResult(list(args), 0)
+        if args[:3] == ["git", "diff", "--cached"] and "--quiet" in args:
+            return MODULE.CommandResult(list(args), 1)
+        if args[:3] == ["git", "diff", "--cached"] and "--stat" in args:
+            return MODULE.CommandResult(list(args), 0, stdout=" src/code.py | 1 +\n")
+        if args[:3] == ["git", "diff", "--cached"] and "--name-only" in args:
+            return MODULE.CommandResult(list(args), 0, stdout="src/code.py\n")
+        if args[:3] == ["git", "commit", "-m"]:
+            return MODULE.CommandResult(list(args), 0, stdout="[branch abc] fix(cli): harden RevRem commit flow\n")
+        return MODULE.CommandResult(list(args), 0, stdout="passed\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=cwd,
+        artifact_dir=tmp_path / "artifacts",
+        triage_enabled=True,
+        final_review=False,
+        check_commands=(),
+    )
+
+    summary = MODULE.run_loop(config, runner)
+
+    assert summary["final_status"] == "unknown"
+    assert summary["stopped_reason"] == "max_iterations_reached"
+    assert run_count == 1
+    assert remediation_inputs and "Structured triage handoff" in remediation_inputs[0]
+    assert "Fix profile merge" in remediation_inputs[0]
+    assert len([call for call in calls if "--sandbox" in call[0]]) == 2
+
+
 def test_loop_writes_failure_summary_when_triage_fails(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
