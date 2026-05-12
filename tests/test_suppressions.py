@@ -3,10 +3,14 @@ from __future__ import annotations
 import json
 import tomllib
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
 from code_review_loop import suppressions
+from code_review_loop._compat_jsonschema import validate
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_suppression_add_list_remove_and_audit_round_trip(tmp_path, monkeypatch):
@@ -138,3 +142,44 @@ def test_apply_to_triage_payload_moves_suppressed_confirmed_findings(tmp_path):
     assert updated["implementation_order"] == []
     assert suppressed[0]["suppressed"] is True
     assert suppressed[0]["suppression"]["rationale"] == "Tracked elsewhere."
+
+
+def test_rendered_suppression_file_validates_against_schema(tmp_path):
+    entry = suppressions.make_entry(
+        fingerprint="f1:abc123",
+        summary="Accepted risk",
+        rationale="Tracked elsewhere.",
+        severity="medium",
+        scope="repo",
+        expires_at=None,
+        critical_override=False,
+        created_at="2026-05-12T00:00:00Z",
+    )
+    path = tmp_path / ".revrem" / "suppressions.toml"
+    suppressions.write_entries(path, [entry])
+
+    payload = tomllib.loads(path.read_text(encoding="utf-8"))
+    schema = json.loads(
+        (ROOT / "docs/52-api/schemas/suppressions-v1.schema.json").read_text(encoding="utf-8")
+    )
+
+    validate(payload, schema)
+
+
+def test_audit_summary_omits_rationale_and_actor_values(tmp_path):
+    path = tmp_path / ".revrem" / "suppressions.audit.jsonl"
+    suppressions.append_audit(
+        path,
+        "add",
+        [],
+        [
+            {
+                "fingerprint": "f1:abc123",
+                "rationale": "Sensitive rationale from colin@example.com",
+            }
+        ],
+    )
+
+    summary = suppressions.audit_summary(path)
+
+    assert summary == {"schema_version": "1.0", "total_records": 1, "actions": {"add": 1}}

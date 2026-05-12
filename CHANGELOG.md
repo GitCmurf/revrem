@@ -48,6 +48,9 @@ This project follows Semantic Versioning once public releases begin.
   suppressions, with audit logs, critical-finding guardrails, and
   structured-triage integration.
 - Added `REVREM-ADR-007` for the suppression file and CLI contract.
+- Suppression files are schema-tested, `revrem doctor` now warns about stale
+  suppression entries, and bug-report bundles include redacted suppression
+  audit summaries by default.
 
 ### Changed
 

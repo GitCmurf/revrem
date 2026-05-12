@@ -1122,7 +1122,7 @@ def run_triage(
     iteration: int,
     run_id: str,
     review_output: str,
-) -> str:
+) -> tuple[str, int]:
     command = build_triage_command(config)
     prompt_root = config.triage_prompt or triage.load_prompt()
     prompt = f"{prompt_root}\n{trim_for_prompt(review_output, config.max_remediation_input_chars)}"
@@ -1158,10 +1158,12 @@ def run_triage(
             progress_event(config, "triage", str(iteration), "invalid", str(exc))
             if config.triage_on_invalid == "stop":
                 raise RuntimeError(f"invalid structured triage output for iteration {iteration}: {exc}") from exc
-            return review_output
+            return review_output, 0
+        suppressed_count = 0
         if config.suppressions_enabled:
             matches = suppressions.load_effective_suppressions(config.cwd)
             payload, suppressed_findings = suppressions.apply_to_triage_payload(payload, matches)
+            suppressed_count = len(suppressed_findings)
             if suppressed_findings:
                 progress_event(
                     config,
@@ -1177,14 +1179,14 @@ def run_triage(
             and not payload.get("confirmed_findings")
             and "Check failures from the previous iteration:" not in review_output
         ):
-            return ""
-        return triage.format_structured_handoff(payload, review_output)
+            return "", suppressed_count
+        return triage.format_structured_handoff(payload, review_output), suppressed_count
     return (
         "Triage handoff from the previous review:\n"
         f"{triage_output}\n\n"
         "Original review/check context:\n"
         f"{review_output}"
-    )
+    ), 0
 
 
 def run_checks(config: LoopConfig, runner: Runner, iteration: int) -> list[CommandResult]:
@@ -1802,9 +1804,18 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
             remediation_input = pending_check_failures + "\n\n" + remediation_input
         try:
             if config.triage_enabled:
-                remediation_input = run_triage(config, runner, iteration, run_id, remediation_input)
+                remediation_input, suppressed_count = run_triage(
+                    config,
+                    runner,
+                    iteration,
+                    run_id,
+                    remediation_input,
+                )
+                if suppressed_count:
+                    iterations[-1]["suppressed_findings_count"] = suppressed_count
                 if not remediation_input.strip():
                     iterations[-1]["suppressed_findings"] = True
+                    summary["suppressed_findings_count"] = suppressed_count
                     iterations[-1]["check_failures"] = 0
                     summary["final_status"] = "clear"
                     summary["stopped_reason"] = "all_findings_suppressed"
@@ -3211,6 +3222,7 @@ def doctor_main(argv: Sequence[str]) -> int:
                 commit_after_remediation=args.commit_after_remediation or profile.commit.enabled,
             )
         )
+        issues.extend(_suppression_doctor_issues(Path.cwd()))
     output_format = args.format or ("text" if sys.stdout.isatty() else "json")
     if output_format == "json":
         print(diagnostics.doctor_json(issues), end="")
@@ -3221,6 +3233,51 @@ def doctor_main(argv: Sequence[str]) -> int:
     if args.strict and diagnostics.has_warning_issue(issues):
         return 6
     return 0
+
+
+def _suppression_doctor_issues(cwd: Path) -> list[diagnostics.DiagnosticIssue]:
+    issues: list[diagnostics.DiagnosticIssue] = []
+    for path in (suppressions.user_suppressions_path(), suppressions.repo_suppressions_path(cwd)):
+        try:
+            expired, unsupported = suppressions.stale_entries(path)
+        except ValueError as exc:
+            issues.append(
+                diagnostics.DiagnosticIssue(
+                    code="revrem.suppressions.invalid_file",
+                    severity="warn",
+                    message="A suppression file could not be parsed.",
+                    hint=str(exc),
+                    evidence={"path": str(path)},
+                )
+            )
+            continue
+        if expired:
+            issues.append(
+                diagnostics.DiagnosticIssue(
+                    code="revrem.suppressions.expired",
+                    severity="warn",
+                    message="A suppression file contains expired entries.",
+                    hint="Run revrem suppress expire for the affected scope.",
+                    evidence={
+                        "path": str(path),
+                        "fingerprints": [entry.fingerprint for entry in expired],
+                    },
+                )
+            )
+        if unsupported:
+            issues.append(
+                diagnostics.DiagnosticIssue(
+                    code="revrem.suppressions.unsupported_fingerprint_version",
+                    severity="warn",
+                    message="A suppression file contains fingerprints RevRem cannot match.",
+                    hint="Recreate these suppressions after the fingerprint migration tool exists.",
+                    evidence={
+                        "path": str(path),
+                        "fingerprints": [entry.fingerprint for entry in unsupported],
+                    },
+                )
+            )
+    return issues
 
 
 def _doctor_artifact_dir(args: argparse.Namespace, profile: profiles.Profile) -> Path:

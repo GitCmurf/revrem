@@ -91,11 +91,14 @@ The foundation phase introduces these contracts:
 - `triage-v1.schema.json` for structured triage output, including
   suppression-aware `suppressed_findings`; the runtime copy is packaged with
   `code_review_loop`.
+- `suppressions-v1.schema.json` for `.revrem/suppressions.toml` and
+  user-local suppression entries;
 - `events-v1.schema.json` for replayable event streams;
 - `bug-bundle-v1.schema.json` for redacted issue-support bundles.
 
 `diagnostics-v1.schema.json`, `summary-v1.schema.json`,
-`triage-v1.schema.json`, and `bug-bundle-v1.schema.json` are concrete schemas
-validated against generated payloads. The other v1 files are skeleton contracts
-that reserve names and versioning shape; their owning implementation tasks
-tighten fields before those artifacts become stable operator-facing outputs.
+`triage-v1.schema.json`, `suppressions-v1.schema.json`, and
+`bug-bundle-v1.schema.json` are concrete schemas validated against generated
+payloads. The other v1 files are skeleton contracts that reserve names and
+versioning shape; their owning implementation tasks tighten fields before those
+artifacts become stable operator-facing outputs.

@@ -28,6 +28,12 @@
     "source_run_dir_name": {
       "minLength": 1,
       "type": "string"
+    },
+    "suppression_audit_summaries": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [

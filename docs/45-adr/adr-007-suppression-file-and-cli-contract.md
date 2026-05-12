@@ -80,7 +80,14 @@ path:
 
 The audit record includes before/after state and the acting user. Raw audit
 logs are local artifacts and may contain rationale text or user identifiers.
-They should be redacted or summarized before inclusion in support bundles.
+Bug-report bundles include only a count-by-action audit summary by default.
+Raw audit logs require the same raw-transcript opt-in used for review
+transcripts.
+
+`revrem doctor` warns on expired entries and unsupported fingerprint versions
+so stale suppressions do not fail silently. This is intentionally a warning,
+not a blocking setup error, because suppressions should never be required for
+normal loop execution.
 
 Structured triage integration is deliberately conservative. When a structured
 triage `confirmed_findings` entry matches an active suppression, RevRem moves

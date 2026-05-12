@@ -114,3 +114,35 @@ def test_create_bug_bundle_skips_symlinked_artifacts(tmp_path):
     assert "check-output.txt" not in members
     assert "summary.json" not in members
     assert result.manifest["run_id"] == "run"
+
+
+def test_create_bug_bundle_includes_redacted_suppression_audit_summary(tmp_path):
+    run_dir = _make_run_dir(tmp_path)
+    audit_path = tmp_path / ".revrem" / "suppressions.audit.jsonl"
+    audit_path.parent.mkdir()
+    audit_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "action": "add",
+                "actor": "colin@example.com",
+                "after": [{"rationale": "Sensitive local path /home/cmf/project"}],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = bug_bundle.create_bug_bundle(
+        bug_bundle.BundleOptions(run_dir=run_dir, output_path=tmp_path / "bundle.tar.gz")
+    )
+
+    members = _bundle_members(result.output_path)
+    assert "suppressions/suppressions.audit.summary.json" in members
+    assert b"colin@example.com" not in members["suppressions/suppressions.audit.summary.json"]
+    assert b"/home/cmf" not in members["suppressions/suppressions.audit.summary.json"]
+    manifest = json.loads(members["bug-bundle.json"])
+    assert manifest["suppression_audit_summaries"] == [
+        "suppressions/suppressions.audit.summary.json"
+    ]
+    assert ".revrem/suppressions.audit.jsonl" not in members

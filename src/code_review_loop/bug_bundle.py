@@ -9,7 +9,7 @@ import tarfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from code_review_loop import artifacts, redaction
+from code_review_loop import artifacts, redaction, suppressions
 
 BUG_BUNDLE_SCHEMA_VERSION = "1.0"
 MANIFEST_NAME = "bug-bundle.json"
@@ -46,6 +46,13 @@ def create_bug_bundle(options: BundleOptions) -> BundleResult:
             content = result.text
             _merge_counts(redaction_counts, redaction.redaction_summary(result))
         entries.append((arcname, content.encode("utf-8")))
+    for path in _suppression_audit_paths(run_dir):
+        summary = suppressions.audit_summary(path)
+        if summary is None:
+            continue
+        arcname = f"suppressions/{path.stem}.summary.json"
+        content = json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+        entries.append((arcname, content.encode("utf-8")))
 
     manifest = {
         "schema_version": BUG_BUNDLE_SCHEMA_VERSION,
@@ -54,6 +61,9 @@ def create_bug_bundle(options: BundleOptions) -> BundleResult:
         "include_raw_transcripts": options.include_raw_transcripts,
         "redacted": options.redact,
         "files": [arcname for arcname, _content in entries],
+        "suppression_audit_summaries": [
+            arcname for arcname, _content in entries if arcname.startswith("suppressions/")
+        ],
         "redaction_counts": redaction_counts,
     }
     manifest_bytes = (
@@ -95,6 +105,9 @@ def _bundle_files(run_dir: Path, *, include_raw_transcripts: bool) -> list[Path]
         if path.name in DEFAULT_JSON_NAMES or path.name.startswith("check-"):
             candidates.append(path)
             continue
+        if include_raw_transcripts and path.name == "suppressions.audit.jsonl":
+            candidates.append(path)
+            continue
         if include_raw_transcripts and path.suffix == ".txt":
             candidates.append(path)
     return sorted(candidates, key=lambda item: item.relative_to(run_dir).as_posix())
@@ -123,6 +136,17 @@ def _run_id(run_dir: Path) -> str:
         if isinstance(run_id, str):
             return run_id
     return run_dir.name
+
+
+def _suppression_audit_paths(run_dir: Path) -> list[Path]:
+    paths = []
+    for candidate in (
+        run_dir / ".revrem" / "suppressions.audit.jsonl",
+        run_dir.parent / ".revrem" / "suppressions.audit.jsonl",
+    ):
+        if candidate.is_file() and not candidate.is_symlink():
+            paths.append(candidate)
+    return sorted(set(paths))
 
 
 def _merge_counts(target: dict[str, int], source: dict[str, int]) -> None:

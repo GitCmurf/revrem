@@ -506,7 +506,11 @@ findings require `--critical-override` and an expiry within 30 days. Each
 mutation appends to a local audit JSONL file. Suppressed findings remain visible
 in `triage-N.json` under `suppressed_findings`; if every confirmed finding is
 suppressed, RevRem stops with `stopped_reason: "all_findings_suppressed"`
-without running remediation.
+without running remediation and records `suppressed_findings_count` in
+`summary.json`. `revrem doctor` warns about expired suppressions and unsupported
+future fingerprint versions. Bug-report bundles include a redacted suppression
+audit summary by default; raw audit logs are included only with the same raw
+transcript opt-in used for review transcripts.
 
 ### Current CLI boundary
 

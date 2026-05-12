@@ -776,7 +776,9 @@ def test_loop_skips_remediation_when_structured_triage_finding_is_suppressed(tmp
     assert triage_json["suppressed_findings"][0]["fingerprint"] == "f1:abc123"
     assert summary["final_status"] == "clear"
     assert summary["stopped_reason"] == "all_findings_suppressed"
+    assert summary["suppressed_findings_count"] == 1
     assert summary["iterations"][0]["suppressed_findings"] is True
+    assert summary["iterations"][0]["suppressed_findings_count"] == 1
     assert len(calls) == 2
 
 
@@ -802,6 +804,43 @@ def test_suppress_cli_add_check_remove_round_trip(tmp_path, monkeypatch, capsys)
     assert MODULE.main(["suppress", "remove", "f1:abc123"]) == 0
     assert MODULE.main(["suppress", "check", "f1:abc123"]) == 2
     assert "added f1:abc123" in capsys.readouterr().out
+
+
+def test_doctor_warns_about_expired_and_unsupported_suppressions(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    suppressions.write_entries(
+        suppressions.repo_suppressions_path(tmp_path),
+        [
+            suppressions.make_entry(
+                fingerprint="f1:expired",
+                summary="Expired finding",
+                rationale="No longer valid.",
+                severity="medium",
+                scope="repo",
+                expires_at="2026-05-01T00:00:00Z",
+                critical_override=False,
+                created_at="2026-04-01T00:00:00Z",
+            ),
+            suppressions.make_entry(
+                fingerprint="f2:future",
+                summary="Unsupported version",
+                rationale="Created by a future migration.",
+                severity="medium",
+                scope="repo",
+                expires_at=None,
+                critical_override=False,
+                created_at="2026-05-12T00:00:00Z",
+            ),
+        ],
+    )
+
+    code = MODULE.main(["doctor", "--format", "json", "--base", "HEAD"])
+
+    assert code in {4, 6}
+    output = capsys.readouterr().out
+    assert "revrem.suppressions.expired" in output
+    assert "revrem.suppressions.unsupported_fingerprint_version" in output
 
 
 def test_loop_invalid_structured_triage_continues_with_original_review(tmp_path):

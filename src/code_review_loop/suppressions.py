@@ -197,6 +197,37 @@ def expire_entries(path: Path, *, now: datetime | None = None, audit_path: Path 
     return len(expired)
 
 
+def stale_entries(path: Path, *, now: datetime | None = None) -> tuple[list[SuppressionEntry], list[SuppressionEntry]]:
+    expired: list[SuppressionEntry] = []
+    unsupported: list[SuppressionEntry] = []
+    for entry in load_entries(path):
+        if is_expired(entry, now=now):
+            expired.append(entry)
+        if not entry.fingerprint.startswith("f1:"):
+            unsupported.append(entry)
+    return expired, unsupported
+
+
+def audit_summary(path: Path) -> dict[str, object] | None:
+    if not path.is_file():
+        return None
+    counts: dict[str, int] = {}
+    total = 0
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if not line.strip():
+            continue
+        total += 1
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            counts["invalid"] = counts.get("invalid", 0) + 1
+            continue
+        action = record.get("action")
+        key = action if isinstance(action, str) and action else "unknown"
+        counts[key] = counts.get(key, 0) + 1
+    return {"schema_version": SUPPRESSION_SCHEMA_VERSION, "total_records": total, "actions": counts}
+
+
 def append_audit(path: Path, action: str, before: list[dict[str, Any]], after: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     record = {
