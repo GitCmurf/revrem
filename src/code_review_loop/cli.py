@@ -28,6 +28,7 @@ from code_review_loop import (
     artifacts,
     bug_bundle,
     diagnostics,
+    events,
     harnesses,
     profiles,
     progress,
@@ -2892,6 +2893,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return bundle_bug_report_main(raw_argv[1:])
     if raw_argv and raw_argv[0] == "suppress":
         return suppress_main(raw_argv[1:])
+    if raw_argv and raw_argv[0] == "replay":
+        return replay_main(raw_argv[1:])
     if raw_argv and raw_argv[0] in {"doctor", "preflight"}:
         return doctor_main(raw_argv[1:])
     if raw_argv and raw_argv[0] == "config":
@@ -3198,6 +3201,28 @@ def bundle_bug_report_main(argv: Sequence[str]) -> int:
         return 1
     print(str(result.output_path))
     return 0
+
+
+def parse_replay_args(argv: Sequence[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="revrem replay",
+        description="Replay a RevRem run from events.jsonl without invoking a model.",
+    )
+    parser.add_argument("run_dir", help="Run directory containing events.jsonl.")
+    parser.add_argument("--renderer", choices=("compact",), default="compact")
+    return parser.parse_args(argv)
+
+
+def replay_main(argv: Sequence[str]) -> int:
+    args = parse_replay_args(argv)
+    path = Path(args.run_dir) / events.EVENTS_FILENAME
+    try:
+        records, truncated = events.read_events(path)
+    except (OSError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    print(events.render_compact(records), end="")
+    return 1 if truncated else 0
 
 
 def doctor_main(argv: Sequence[str]) -> int:

@@ -70,9 +70,21 @@ def test_summary_schema_validates_generated_summary(tmp_path):
     assert summary_payload["usd"] is None
 
 
-def test_skeleton_schema_requires_schema_version():
+def test_event_schema_validates_event_envelope():
     schema = _load_schema("events-v1.schema.json")
 
-    validate({"schema_version": "1.0", "extra": "allowed"}, schema)
+    validate(
+        {
+            "schema_version": "1.0",
+            "run_id": "run-1",
+            "seq": 1,
+            "ts": "2026-05-12T00:00:00Z",
+            "kind": "summary",
+            "phase": None,
+            "iteration": None,
+            "payload": {},
+        },
+        schema,
+    )
     validator = Draft202012Validator(schema)
     assert list(validator.iter_errors({"extra": "missing version"}))

@@ -97,8 +97,8 @@ The foundation phase introduces these contracts:
 - `bug-bundle-v1.schema.json` for redacted issue-support bundles.
 
 `diagnostics-v1.schema.json`, `summary-v1.schema.json`,
-`triage-v1.schema.json`, `suppressions-v1.schema.json`, and
-`bug-bundle-v1.schema.json` are concrete schemas validated against generated
-payloads. The other v1 files are skeleton contracts that reserve names and
-versioning shape; their owning implementation tasks tighten fields before those
-artifacts become stable operator-facing outputs.
+`triage-v1.schema.json`, `suppressions-v1.schema.json`,
+`events-v1.schema.json`, and `bug-bundle-v1.schema.json` are concrete schemas
+validated against generated payloads. Remaining skeleton contracts reserve
+names and versioning shape; their owning implementation tasks tighten fields
+before those artifacts become stable operator-facing outputs.

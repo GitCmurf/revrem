@@ -51,6 +51,8 @@ This project follows Semantic Versioning once public releases begin.
 - Suppression files are schema-tested, `revrem doctor` now warns about stale
   suppression entries, and bug-report bundles include redacted suppression
   audit summaries by default.
+- Added the event envelope model, JSONL event sink/reader, compact offline
+  `revrem replay`, and `REVREM-ADR-008` for the event/replay contract.
 
 ### Changed
 

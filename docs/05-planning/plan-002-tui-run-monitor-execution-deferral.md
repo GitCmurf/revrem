@@ -3,8 +3,8 @@ document_id: REVREM-PLAN-002
 type: PLAN
 title: TUI run monitor execution deferral
 status: Draft
-version: '0.2'
-last_updated: '2026-05-06'
+version: '0.3'
+last_updated: '2026-05-12'
 owner: GitCmurf
 docops_version: '2.0'
 area: product
@@ -88,6 +88,11 @@ Prefer an event-stream adapter over duplicating the loop:
 5. Preserve CLI artifact, summary, history, and exit-code semantics exactly.
 6. Add Textual Pilot coverage for launch, cancellation, artifact-link
    navigation, failure summaries, and unknown-status warnings.
+
+The first F8 replay slice has established the event envelope, JSONL reader and
+writer, and compact offline replay command. TUI execution remains deferred until
+fixture-backed replay covers the core clear, findings, failure, cancellation,
+and suppression scenarios and the live loop emits the same event stream.
 
 ### Non-Goals For The Future Slice
 

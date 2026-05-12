@@ -65,6 +65,9 @@ The main test module is `tests/test_cli.py`. It covers:
 - Timeout cleanup for subprocesses that spawn pipe-holding descendants, proving
   timeout handling kills the child process group instead of blocking forever
   while collecting stdout/stderr.
+- Event envelope and replay helpers in `tests/test_events.py` and
+  `tests/test_replay.py`, including schema validation, gap-free sequencing,
+  truncated-tail tolerance, and offline compact replay.
 - Review-base preflight behavior for invalid Git topology, including a local
   `main` that has no merge base with the current branch while `origin/main`
   remains usable.
