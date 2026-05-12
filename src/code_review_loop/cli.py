@@ -1150,7 +1150,7 @@ def run_triage(
             issue = triage.invalid_triage_issue(exc, iteration=iteration)
             artifacts.write_json_artifact(
                 config.artifact_dir,
-                "diagnostics.json",
+                f"diagnostics-{iteration}.json",
                 triage.diagnostics_payload(issue),
             )
             progress_event(config, "triage", str(iteration), "invalid", str(exc))
@@ -1591,7 +1591,11 @@ def add_artifact_paths(summary: dict[str, object], config: LoopConfig) -> None:
             if path.name.startswith("remediation-") and "last-message" in path.name
         ],
         "checks": [str(path) for path in files if path.name.startswith("check-")],
-        "diagnostics": [str(path) for path in files if path.name.endswith("-status.json")],
+        "diagnostics": [
+            str(path)
+            for path in files
+            if path.name.endswith("-status.json") or path.name.startswith("diagnostics-")
+        ],
     }
 
 

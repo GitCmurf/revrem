@@ -718,8 +718,10 @@ def test_loop_writes_structured_triage_artifact_and_handoff(tmp_path):
 
 def test_loop_invalid_structured_triage_continues_with_original_review(tmp_path):
     calls = []
+    triage_attempts = 0
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
+        nonlocal triage_attempts
         calls.append((list(args), input_text, timeout_seconds))
         if args[1] == "review":
             return MODULE.CommandResult(
@@ -728,12 +730,13 @@ def test_loop_invalid_structured_triage_continues_with_original_review(tmp_path)
                 stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
             )
         if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
+            triage_attempts += 1
             return MODULE.CommandResult(list(args), 0, stdout='{"confirmed_findings": []')
         return MODULE.CommandResult(list(args), 0, stdout="remediated\n")
 
     config = MODULE.LoopConfig(
         base="main",
-        max_iterations=1,
+        max_iterations=2,
         codex_bin="codex",
         cwd=tmp_path,
         artifact_dir=tmp_path / "artifacts",
@@ -743,10 +746,18 @@ def test_loop_invalid_structured_triage_continues_with_original_review(tmp_path)
 
     MODULE.run_loop(config, runner)
 
-    diagnostics_payload = json.loads((tmp_path / "artifacts" / "diagnostics.json").read_text(encoding="utf-8"))
-    assert diagnostics_payload["issues"][0]["code"] == "revrem.triage.invalid_output"
+    diagnostics_one = json.loads((tmp_path / "artifacts" / "diagnostics-1.json").read_text(encoding="utf-8"))
+    diagnostics_two = json.loads((tmp_path / "artifacts" / "diagnostics-2.json").read_text(encoding="utf-8"))
+    assert diagnostics_one["issues"][0]["code"] == "revrem.triage.invalid_output"
+    assert diagnostics_two["issues"][0]["code"] == "revrem.triage.invalid_output"
+    assert triage_attempts == 2
     assert "Structured triage handoff" not in (calls[2][1] or "")
     assert "Full review comments:\n\n- [P2] Fix profile merge" in (calls[2][1] or "")
+    assert "diagnostics-1.json" in {Path(path).name for path in (tmp_path / "artifacts").iterdir()}
+    assert "diagnostics-2.json" in {Path(path).name for path in (tmp_path / "artifacts").iterdir()}
+    summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
+    assert str(tmp_path / "artifacts" / "diagnostics-1.json") in summary["artifact_paths"]["diagnostics"]
+    assert str(tmp_path / "artifacts" / "diagnostics-2.json") in summary["artifact_paths"]["diagnostics"]
 
 
 def test_loop_writes_failure_summary_when_triage_fails(tmp_path):
