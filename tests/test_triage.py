@@ -47,6 +47,25 @@ def test_packaged_triage_schema_matches_reference_copy():
     assert packaged_schema == reference_schema
 
 
+def test_default_triage_prompt_spells_out_the_structured_contract():
+    prompt = triage.load_prompt()
+
+    for fragment in (
+        "confirmed_findings",
+        "rejected_findings",
+        "needs_more_info",
+        "implementation_order",
+        "verification_commands",
+        "parsing_warnings",
+        "fingerprint",
+        "affected_paths",
+        "rejection_reason",
+        "info_requested",
+        "Do not invent a new fingerprint",
+    ):
+        assert fragment in prompt
+
+
 @pytest.mark.parametrize("fixture_name", ["invalid_json", "missing_fields"])
 def test_parse_triage_payload_rejects_invalid_fixtures(fixture_name):
     with pytest.raises(triage.TriageValidationError):

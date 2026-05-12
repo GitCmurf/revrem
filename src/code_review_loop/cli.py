@@ -3272,12 +3272,12 @@ def _suppression_doctor_issues(cwd: Path) -> list[diagnostics.DiagnosticIssue]:
     for path in (suppressions.user_suppressions_path(), suppressions.repo_suppressions_path(cwd)):
         try:
             expired, unsupported = suppressions.stale_entries(path)
-        except ValueError as exc:
+        except (OSError, ValueError) as exc:
             issues.append(
                 diagnostics.DiagnosticIssue(
                     code="revrem.suppressions.invalid_file",
                     severity="warn",
-                    message="A suppression file could not be parsed.",
+                    message="A suppression file could not be parsed or read.",
                     hint=str(exc),
                     evidence={"path": str(path)},
                 )

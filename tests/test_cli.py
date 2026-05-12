@@ -1055,6 +1055,39 @@ def test_doctor_warns_about_expired_and_unsupported_suppressions(tmp_path, monke
     assert "revrem.suppressions.unsupported_fingerprint_version" in output
 
 
+def test_doctor_warns_about_unreadable_optional_suppression_state(
+    tmp_path, monkeypatch, capsys
+):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "config", "user.email", "test@example.com")
+    run_git(repo, "config", "user.name", "Test User")
+    (repo / "README.md").write_text("# Fixture\n", encoding="utf-8")
+    run_git(repo, "add", "README.md")
+    run_git(repo, "commit", "-m", "initial")
+    monkeypatch.chdir(repo)
+
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    unreadable_path = suppressions.user_suppressions_path(home)
+
+    def fake_stale_entries(path, *, now=None):
+        if path == unreadable_path:
+            raise PermissionError("blocked")
+        return ([], [])
+
+    monkeypatch.setattr(suppressions, "stale_entries", fake_stale_entries)
+
+    exit_code = MODULE.main(["doctor", "--base", "HEAD", "--codex-bin", "git", "--format", "json"])
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert exit_code == 0
+    assert payload["status"] == "ok"
+    assert "revrem.suppressions.invalid_file" in captured.out
+
+
 def test_loop_invalid_structured_triage_continues_with_original_review(tmp_path):
     calls = []
     triage_attempts = 0
