@@ -1182,7 +1182,7 @@ def run_triage(
             artifacts.write_json_artifact(
                 config.artifact_dir,
                 f"diagnostics-{iteration}.json",
-                triage.diagnostics_payload(issue),
+                diagnostics.doctor_payload([issue]),
             )
             progress_event(config, "triage", str(iteration), "invalid", str(exc))
             if config.triage_on_invalid == "stop":

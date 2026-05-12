@@ -76,10 +76,6 @@ def format_structured_handoff(payload: dict[str, Any], original_review: str) -> 
     )
 
 
-def diagnostics_payload(issue: diagnostics.DiagnosticIssue) -> dict[str, Any]:
-    return diagnostics.doctor_payload([issue])
-
-
 def _triage_schema() -> dict[str, Any]:
     schema = json.loads(files("code_review_loop").joinpath(TRIAGE_SCHEMA_RESOURCE).read_text(encoding="utf-8"))
     if not isinstance(schema, dict):

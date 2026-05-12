@@ -29,6 +29,7 @@ EVENT_KINDS = (
     "cost_charge",
     "cost_ceiling_hit",
 )
+FLUSH_KINDS = frozenset({"phase_result", "failure", "summary", "cancellation", "cost_ceiling_hit"})
 
 
 @dataclass(frozen=True)
@@ -115,7 +116,7 @@ class JsonlSink:
             payload=payload or {},
         )
         self._handle.write(json.dumps(event.to_dict(), ensure_ascii=False, sort_keys=True) + "\n")
-        if kind in {"phase_result", "failure", "summary", "cancellation", "cost_ceiling_hit"}:
+        if kind in FLUSH_KINDS:
             self._handle.flush()
         return event
 

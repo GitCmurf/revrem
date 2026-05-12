@@ -35,7 +35,8 @@ def create_bug_bundle(options: BundleOptions) -> BundleResult:
     if not run_dir.is_dir():
         raise FileNotFoundError(f"run directory not found: {options.run_dir}")
 
-    output_path = (options.output_path or default_output_path(run_dir)).resolve()
+    run_id = _run_id(run_dir)
+    output_path = (options.output_path or _default_output_path(run_id, run_dir)).resolve()
     entries: list[tuple[str, bytes]] = []
     redaction_counts: dict[str, int] = {}
     for path in _bundle_files(run_dir, include_raw_transcripts=options.include_raw_transcripts):
@@ -56,7 +57,7 @@ def create_bug_bundle(options: BundleOptions) -> BundleResult:
 
     manifest = {
         "schema_version": BUG_BUNDLE_SCHEMA_VERSION,
-        "run_id": _run_id(run_dir),
+        "run_id": run_id,
         "source_run_dir_name": run_dir.name,
         "include_raw_transcripts": options.include_raw_transcripts,
         "redacted": options.redact,
@@ -89,7 +90,11 @@ def create_bug_bundle(options: BundleOptions) -> BundleResult:
 
 
 def default_output_path(run_dir: Path) -> Path:
-    return Path.cwd() / f"revrem-bug-{_bundle_name_component(run_dir)}.tar.gz"
+    return _default_output_path(_run_id(run_dir), run_dir)
+
+
+def _default_output_path(run_id: str, run_dir: Path) -> Path:
+    return Path.cwd() / f"revrem-bug-{_bundle_name_component(run_dir, run_id=run_id)}.tar.gz"
 
 
 def _bundle_files(run_dir: Path, *, include_raw_transcripts: bool) -> list[Path]:
@@ -144,8 +149,8 @@ def _run_id(run_dir: Path) -> str:
     return run_dir.name
 
 
-def _bundle_name_component(run_dir: Path) -> str:
-    run_id = _run_id(run_dir)
+def _bundle_name_component(run_dir: Path, *, run_id: str | None = None) -> str:
+    run_id = run_id if run_id is not None else _run_id(run_dir)
     if run_id:
         candidate = Path(run_id).name
         if candidate not in {"", ".", ".."}:

@@ -11,6 +11,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from code_review_loop._compat_tomli_w import _escape_basic_string as _toml_escape_string
+
 SUPPRESSION_SCHEMA_VERSION = "1.0"
 SUPPRESSION_FILE_RELATIVE = Path(".revrem") / "suppressions.toml"
 SUPPRESSION_AUDIT_RELATIVE = Path(".revrem") / "suppressions.audit.jsonl"
@@ -176,8 +178,9 @@ def add_entry(
     *,
     audit_path: Path | None = None,
 ) -> None:
-    entries = [item for item in load_entries(path) if item.fingerprint != entry.fingerprint]
-    before = [asdict(item) for item in load_entries(path) if item.fingerprint == entry.fingerprint]
+    all_entries = load_entries(path)
+    before = [asdict(item) for item in all_entries if item.fingerprint == entry.fingerprint]
+    entries = [item for item in all_entries if item.fingerprint != entry.fingerprint]
     entries.append(entry)
     write_entries(path, sorted(entries, key=lambda item: item.fingerprint))
     append_audit(audit_path or default_audit_path_for(path), "add", before, [asdict(entry)])
@@ -195,10 +198,12 @@ def remove_entry(path: Path, fingerprint: str, *, audit_path: Path | None = None
 
 def expire_entries(path: Path, *, now: datetime | None = None, audit_path: Path | None = None) -> int:
     entries = load_entries(path)
-    expired = [entry for entry in entries if is_expired(entry, now=now)]
+    expired, kept = [], []
+    for entry in entries:
+        (expired if is_expired(entry, now=now) else kept).append(entry)
     if not expired:
         return 0
-    write_entries(path, [entry for entry in entries if not is_expired(entry, now=now)])
+    write_entries(path, kept)
     append_audit(audit_path or default_audit_path_for(path), "expire", [asdict(item) for item in expired], [])
     return len(expired)
 
@@ -361,16 +366,7 @@ def _toml_value(value: object) -> str:
 
 
 def _toml_string(value: str) -> str:
-    escaped = (
-        value.replace("\\", "\\\\")
-        .replace("\b", "\\b")
-        .replace("\t", "\\t")
-        .replace("\n", "\\n")
-        .replace("\f", "\\f")
-        .replace("\r", "\\r")
-        .replace('"', '\\"')
-    )
-    return f'"{escaped}"'
+    return f'"{_toml_escape_string(value)}"'
 
 
 def _required_str(raw: dict[str, object], key: str, path: Path) -> str:

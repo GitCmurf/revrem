@@ -30,7 +30,7 @@ def safe_artifact_path(run_dir: Path, relative_path: str | Path) -> Path:
     target = run_dir / path
     parent = target.parent
     resolved_parent = parent.resolve(strict=False)
-    if not _is_relative_to(resolved_parent, root):
+    if not resolved_parent.is_relative_to(root):
         raise ArtifactPathError("artifact path resolves outside the run directory")
     parent.mkdir(parents=True, exist_ok=True)
     return target
@@ -83,9 +83,3 @@ def _atomic_write(path: Path, content: bytes) -> None:
         raise
 
 
-def _is_relative_to(path: Path, root: Path) -> bool:
-    try:
-        path.relative_to(root)
-    except ValueError:
-        return False
-    return True

@@ -24,6 +24,8 @@ def _write_table(lines: list[str], prefix: tuple[str, ...], table: Mapping[str, 
         else:
             scalars.append((key, value))
 
+    # Implicit table: a node with only nested sub-tables needs no [header] line;
+    # its children emit their own fully-qualified [a.b.c] paths.
     container = not scalars and not arrays and nested
     if prefix and not container:
         lines.append(f"[{'.'.join(_format_key(part) for part in prefix)}]")
