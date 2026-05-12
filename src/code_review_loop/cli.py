@@ -435,7 +435,7 @@ def _progress_event_kind(status: str) -> str:
         return "phase_start"
     if status in {"failed", "invalid"}:
         return "failure"
-    if status == "retry":
+    if status in {"retry", "warning"}:
         return "warning"
     if status == "suppressed":
         return "suppressed"

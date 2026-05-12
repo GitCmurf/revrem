@@ -258,6 +258,24 @@ def test_run_loop_writes_replayable_events_jsonl(tmp_path, capsys):
     )
 
 
+def test_progress_warning_status_emits_warning_event(tmp_path):
+    sink = events.InMemorySink("run-1")
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        progress=False,
+        event_sink=sink,
+    )
+
+    MODULE.progress_event(config, "triage", "1", "warning", "suppressions unavailable")
+
+    assert sink.events[0].kind == "warning"
+    assert sink.events[0].payload["message"] == "suppressions unavailable"
+
+
 def test_detect_review_status_does_not_treat_scoped_clear_prose_as_clear_when_issue_follows():
     assert (
         MODULE.detect_review_status(

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from code_review_loop import cli, events
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_replay_renders_events_without_runner_or_harness(tmp_path, capsys):
@@ -29,3 +33,14 @@ def test_replay_returns_nonzero_for_truncated_events(tmp_path, capsys):
 
     assert code == 1
     assert "truncated_events_jsonl" in capsys.readouterr().out
+
+
+def test_replay_golden_event_fixtures():
+    for fixture in ("clear", "suppressed"):
+        fixture_dir = ROOT / "tests" / "fixtures" / "events" / fixture
+        records, truncated = events.read_events(fixture_dir / "events.jsonl")
+
+        assert truncated is False
+        assert events.render_compact(records) == (fixture_dir / "replay.compact.txt").read_text(
+            encoding="utf-8"
+        )
