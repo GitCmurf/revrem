@@ -620,6 +620,16 @@ description = "Imported profile"
         profiles.resolve_profile("smoke", cwd=tmp_path, home=home)
 
 
+def test_write_user_profile_round_trips_control_characters(tmp_path):
+    home = tmp_path / "home"
+    profile = profiles.Profile(name="smoke", description="before\x1bafter")
+
+    path = profiles.write_user_profile(profile, home=home)
+    loaded = profiles.load_profile_file(path)
+
+    assert loaded.profiles["smoke"].description == "before\x1bafter"
+
+
 def test_import_user_profiles_preserves_source_defaults(tmp_path):
     home = tmp_path / "home"
     config_path = profiles.user_config_path(home)

@@ -61,18 +61,35 @@ def _format_value(value: object) -> str:
     if value is None:
         return '""'
     if isinstance(value, str):
-        escaped = (
-            value.replace("\\", "\\\\")
-            .replace("\b", "\\b")
-            .replace("\t", "\\t")
-            .replace("\n", "\\n")
-            .replace("\f", "\\f")
-            .replace("\r", "\\r")
-            .replace('"', '\\"')
-        )
+        escaped = _escape_basic_string(value)
         return f'"{escaped}"'
     raise TypeError(f"unsupported TOML value type: {type(value).__name__}")
 
 
 def _format_array(values: Sequence[object]) -> str:
     return "[" + ", ".join(_format_value(value) for value in values) + "]"
+
+
+def _escape_basic_string(value: str) -> str:
+    parts: list[str] = []
+    for char in value:
+        codepoint = ord(char)
+        if char == "\\":
+            parts.append("\\\\")
+        elif char == '"':
+            parts.append('\\"')
+        elif char == "\b":
+            parts.append("\\b")
+        elif char == "\t":
+            parts.append("\\t")
+        elif char == "\n":
+            parts.append("\\n")
+        elif char == "\f":
+            parts.append("\\f")
+        elif char == "\r":
+            parts.append("\\r")
+        elif codepoint < 0x20 or codepoint == 0x7F:
+            parts.append(f"\\u{codepoint:04x}")
+        else:
+            parts.append(char)
+    return "".join(parts)

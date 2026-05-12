@@ -1583,6 +1583,7 @@ def test_loop_remediates_commit_hook_failure_by_default(tmp_path):
     assert summary["iterations"][0]["commit_status"] == "hook_failed"
     assert summary["iterations"][0]["commit_failed"] is True
     assert summary["iterations"][1]["commit_status"] == "committed"
+    assert summary["pending_check_failures"] is False
     assert summary["commit_on_hook_failure"] == "remediate"
     assert summary["commit_no_verify"] is False
     assert "Commit hook failure" in remediation_prompts[1]

@@ -1861,6 +1861,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
 
         check_results = run_checks(config, runner, iteration)
         pending_check_failures = _format_check_failures(check_results)
+        summary["pending_check_failures"] = bool(pending_check_failures)
         iterations[-1]["check_failures"] = sum(1 for result in check_results if result.returncode != 0)
         if config.commit_after_remediation and not pending_check_failures:
             try:

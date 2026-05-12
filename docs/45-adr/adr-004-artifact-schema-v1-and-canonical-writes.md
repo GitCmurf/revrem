@@ -63,7 +63,7 @@ writes. The helper owns:
 - `Decimal` serialization as JSON strings;
 - atomic write via temporary file and `os.replace`;
 - run-directory path safety, including traversal and symlink-escape
-  rejection.
+  rejection, with final artifact targets opened without following symlinks.
 
 Schema compatibility rules:
 

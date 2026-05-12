@@ -36,6 +36,17 @@ def test_jsonl_sink_writes_schema_valid_events(tmp_path):
         validate(json.loads(line), schema)
 
 
+def test_jsonl_sink_rejects_symlinked_event_target(tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "events.jsonl").symlink_to(outside / "events.jsonl")
+
+    with pytest.raises(events.artifacts.ArtifactPathError, match="symlink"):
+        events.JsonlSink(run_dir, "run-1")
+
+
 def test_read_events_tolerates_truncated_tail(tmp_path):
     path = tmp_path / "events.jsonl"
     path.write_text(

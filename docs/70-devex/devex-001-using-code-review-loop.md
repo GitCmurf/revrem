@@ -452,7 +452,9 @@ Use `commit.on_hook_failure = "stop"` or `--commit-on-hook-failure stop` when a
 hook failure should end the run immediately with `stopped_reason:
 "commit_hook_failed"`. Use `no-verify` only for explicit operator-controlled
 flows; RevRem records that policy as `commit_no_verify: true` in `summary.json`
-and runs `git commit --no-verify`.
+and runs `git commit --no-verify`. Once a later remediation pass and commit
+succeed, RevRem clears `pending_check_failures` before writing `summary.json`
+so the final status and summary flags stay aligned.
 
 ```bash
 revrem --profile final-pr --commit-after-remediation

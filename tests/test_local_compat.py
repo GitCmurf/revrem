@@ -32,6 +32,14 @@ def test_local_tomli_w_escapes_newlines_in_basic_strings():
     assert parsed["description"] == "first line\nsecond line"
 
 
+def test_local_tomli_w_escapes_control_characters_in_basic_strings():
+    rendered = dumps({"description": "before\x1bafter"})
+
+    parsed = tomllib.loads(rendered)
+
+    assert parsed["description"] == "before\x1bafter"
+
+
 def test_local_jsonschema_validator_handles_required_properties_and_constants():
     schema = {
         "type": "object",
