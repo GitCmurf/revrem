@@ -117,9 +117,18 @@ def test_create_bug_bundle_skips_symlinked_artifacts(tmp_path):
 
 
 def test_create_bug_bundle_includes_redacted_suppression_audit_summary(tmp_path):
-    run_dir = _make_run_dir(tmp_path)
-    audit_path = tmp_path / ".revrem" / "suppressions.audit.jsonl"
-    audit_path.parent.mkdir()
+    repo_root = tmp_path / "repo"
+    run_dir = repo_root / ".revrem" / "runs" / "run-123"
+    run_dir.mkdir(parents=True)
+    (run_dir / "summary.json").write_text(
+        json.dumps({"schema_version": "1.0", "run_id": "run-123"}) + "\n",
+        encoding="utf-8",
+    )
+    (run_dir / "check-1.txt").write_text("check output\n", encoding="utf-8")
+    (run_dir / "nested").mkdir()
+    (run_dir / "nested" / "events.jsonl").write_text('{"schema_version":"1.0"}\n', encoding="utf-8")
+    audit_path = repo_root / ".revrem" / "suppressions.audit.jsonl"
+    audit_path.parent.mkdir(parents=True, exist_ok=True)
     audit_path.write_text(
         json.dumps(
             {

@@ -381,6 +381,9 @@ The bundle is deterministic and redacted by default. It includes the manifest,
 Raw text transcripts such as review and remediation artifacts are excluded
 unless `--include-raw-transcripts` is passed. Disabling redaction requires both
 `--no-redact` and `--i-understand-the-risks`.
+When a repository-level suppression audit exists, the bundle also includes a
+redacted suppression-audit summary resolved from the owning repo, even for runs
+stored under `.revrem/runs/<run-id>`.
 
 Local setup diagnostics:
 

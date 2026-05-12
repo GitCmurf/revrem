@@ -141,12 +141,20 @@ def _run_id(run_dir: Path) -> str:
 def _suppression_audit_paths(run_dir: Path) -> list[Path]:
     paths = []
     for candidate in (
+        _owning_revrem_audit_path(run_dir),
+        suppressions.repo_audit_path(run_dir),
         run_dir / ".revrem" / "suppressions.audit.jsonl",
-        run_dir.parent / ".revrem" / "suppressions.audit.jsonl",
     ):
         if candidate.is_file() and not candidate.is_symlink():
             paths.append(candidate)
     return sorted(set(paths))
+
+
+def _owning_revrem_audit_path(run_dir: Path) -> Path:
+    for ancestor in (run_dir, *run_dir.parents):
+        if ancestor.name == ".revrem":
+            return ancestor / "suppressions.audit.jsonl"
+    return run_dir / ".revrem" / "suppressions.audit.jsonl"
 
 
 def _merge_counts(target: dict[str, int], source: dict[str, int]) -> None:

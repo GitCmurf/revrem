@@ -80,7 +80,8 @@ path:
 
 The audit record includes before/after state and the acting user. Raw audit
 logs are local artifacts and may contain rationale text or user identifiers.
-Bug-report bundles include only a count-by-action audit summary by default.
+Bug-report bundles include only a count-by-action audit summary by default,
+resolved from the owning repository for normal `.revrem/runs/<run-id>` layouts.
 Raw audit logs require the same raw-transcript opt-in used for review
 transcripts.
 
