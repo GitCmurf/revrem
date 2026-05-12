@@ -22,6 +22,17 @@ def _make_run_dir(tmp_path: Path) -> Path:
         "OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz1234567890\n",
         encoding="utf-8",
     )
+    (run_dir / "diagnostics-1.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "iteration": 1,
+                "detail": "OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz1234567890",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     (run_dir / "review-1.txt").write_text(
         "Raw transcript with ghp_abcdefghijklmnopqrstuvwxyzABCDE1234567890\n",
         encoding="utf-8",
@@ -53,6 +64,7 @@ def test_create_bug_bundle_redacts_default_contents_and_excludes_raw_transcripts
     assert sorted(members) == [
         "bug-bundle.json",
         "check-1.txt",
+        "diagnostics-1.json",
         "nested/events.jsonl",
         "summary.json",
     ]
@@ -62,10 +74,11 @@ def test_create_bug_bundle_redacts_default_contents_and_excludes_raw_transcripts
     assert b"ghp_" not in bundle_bytes
     manifest = json.loads(members["bug-bundle.json"])
     validate(manifest, json.loads((ROOT / "docs/52-api/schemas/bug-bundle-v1.schema.json").read_text()))
+    assert "diagnostics-1.json" in manifest["files"]
     assert manifest["include_raw_transcripts"] is False
     assert manifest["redacted"] is True
     assert manifest["redaction_counts"]["authorization-header"] == 1
-    assert manifest["redaction_counts"]["openai-key"] == 1
+    assert manifest["redaction_counts"]["openai-key"] == 2
 
 
 def test_create_bug_bundle_can_include_raw_transcripts_still_redacted(tmp_path):
