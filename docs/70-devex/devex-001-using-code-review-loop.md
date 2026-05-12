@@ -609,6 +609,9 @@ until a backend adapter is implemented.
   warning and writes `unexpected-behavior-report.txt` in the artifact directory.
   Include that report, the referenced `review-N.txt`, and any
   `review-N-status.json` diagnostics when filing a RevRem bug report.
+- `revrem bundle-bug-report` includes `review-N-status.json` status diagnostics
+  by default, so you can share the structured status evidence without adding
+  the raw transcript unless it is necessary for debugging.
 - Use `--terminal-title` in a watched terminal to update the window/tab title as
   the loop moves between review and remediation phases, for example
   `rev 1/2 RevRem` and `rem 1/2 RevRem`. The tool uses terminal title-stack

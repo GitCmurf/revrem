@@ -33,6 +33,17 @@ def _make_run_dir(tmp_path: Path) -> Path:
         + "\n",
         encoding="utf-8",
     )
+    (run_dir / "review-1-status.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "classification": "unknown",
+                "reason": "needs manual review",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     (run_dir / "review-1.txt").write_text(
         "Raw transcript with ghp_abcdefghijklmnopqrstuvwxyzABCDE1234567890\n",
         encoding="utf-8",
@@ -66,6 +77,7 @@ def test_create_bug_bundle_redacts_default_contents_and_excludes_raw_transcripts
         "check-1.txt",
         "diagnostics-1.json",
         "nested/events.jsonl",
+        "review-1-status.json",
         "summary.json",
     ]
     bundle_bytes = b"\n".join(members.values())
@@ -75,6 +87,7 @@ def test_create_bug_bundle_redacts_default_contents_and_excludes_raw_transcripts
     manifest = json.loads(members["bug-bundle.json"])
     validate(manifest, json.loads((ROOT / "docs/52-api/schemas/bug-bundle-v1.schema.json").read_text()))
     assert "diagnostics-1.json" in manifest["files"]
+    assert "review-1-status.json" in manifest["files"]
     assert manifest["include_raw_transcripts"] is False
     assert manifest["redacted"] is True
     assert manifest["redaction_counts"]["authorization-header"] == 1
@@ -112,6 +125,7 @@ def test_create_bug_bundle_can_include_raw_transcripts_still_redacted(tmp_path):
     members = _bundle_members(result.output_path)
     assert "review-1.txt" in members
     assert b"ghp_" not in members["review-1.txt"]
+    assert "review-1-status.json" in members
     manifest = json.loads(members["bug-bundle.json"])
     assert manifest["include_raw_transcripts"] is True
 

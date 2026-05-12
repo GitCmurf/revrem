@@ -95,7 +95,7 @@ class JsonlSink:
         self.run_id = run_id
         self.path = artifacts.safe_artifact_path(run_dir, EVENTS_FILENAME)
         self._seq = 0
-        self._handle = _open_append_artifact(self.path)
+        self._handle = _open_fresh_artifact(self.path)
 
     def emit(
         self,
@@ -124,11 +124,11 @@ class JsonlSink:
         self._handle.close()
 
 
-def _open_append_artifact(path: Path):
+def _open_fresh_artifact(path: Path):
     if path.is_symlink():
         raise artifacts.ArtifactPathError(f"artifact path must not be a symlink: {path}")
 
-    flags = os.O_APPEND | os.O_CREAT | os.O_WRONLY
+    flags = os.O_TRUNC | os.O_CREAT | os.O_WRONLY
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
 

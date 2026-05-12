@@ -105,6 +105,9 @@ def _bundle_files(run_dir: Path, *, include_raw_transcripts: bool) -> list[Path]
         if path.name in DEFAULT_JSON_NAMES or path.name.startswith("check-"):
             candidates.append(path)
             continue
+        if path.name.startswith("review-") and path.name.endswith("-status.json"):
+            candidates.append(path)
+            continue
         if path.name.startswith("diagnostics-") and path.suffix == ".json":
             candidates.append(path)
             continue

@@ -36,6 +36,33 @@ def test_jsonl_sink_writes_schema_valid_events(tmp_path):
         validate(json.loads(line), schema)
 
 
+def test_jsonl_sink_truncates_existing_file_for_new_run(tmp_path):
+    path = tmp_path / "events.jsonl"
+    path.write_text(
+        json.dumps(
+            events.make_event(
+                run_id="old-run",
+                seq=1,
+                kind="summary",
+                payload={"status": "done"},
+            ).to_dict()
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    sink = events.JsonlSink(tmp_path, "run-1")
+    sink.emit("phase_start", phase="review", iteration=1, payload={"command": "codex review"})
+    sink.close()
+
+    records, truncated = events.read_events(path)
+
+    assert truncated is False
+    assert len(records) == 1
+    assert records[0].run_id == "run-1"
+    assert records[0].seq == 1
+
+
 def test_jsonl_sink_rejects_symlinked_event_target(tmp_path):
     outside = tmp_path / "outside"
     outside.mkdir()
