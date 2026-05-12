@@ -910,6 +910,90 @@ def test_loop_skips_remediation_when_structured_triage_only_rejects_findings(tmp
     assert len(calls) == 2
 
 
+def test_loop_keeps_check_failure_gate_when_structured_triage_rejects_findings(tmp_path):
+    calls = []
+    review_outputs = iter(
+        [
+            "Full review comments:\n\n- [P2] Fix profile merge\n",
+            "No actionable findings.\nREVIEW_STATUS: clear\n",
+        ]
+    )
+    triage_outputs = iter(
+        [
+            {
+                "confirmed_findings": [
+                    {
+                        "fingerprint": "f1:abc123",
+                        "summary": "Fix profile merge",
+                        "severity": "medium",
+                        "affected_paths": ["src/code_review_loop/profiles.py"],
+                        "rationale": "The review comment is a real issue.",
+                    }
+                ],
+                "implementation_order": ["f1:abc123"],
+                "needs_more_info": [],
+                "parsing_warnings": [],
+                "rejected_findings": [],
+                "verification_commands": ["pytest -q"],
+            },
+            {
+                "confirmed_findings": [],
+                "implementation_order": [],
+                "needs_more_info": [],
+                "parsing_warnings": [],
+                "rejected_findings": [
+                    {
+                        "fingerprint": "f2:def456",
+                        "summary": "Suppress the false positive",
+                        "severity": "low",
+                        "affected_paths": ["src/code_review_loop/cli.py"],
+                        "rationale": "The remaining review item is not actionable.",
+                        "rejection_reason": "Not reproducible in the current code path.",
+                    }
+                ],
+                "verification_commands": ["pytest -q"],
+            },
+        ]
+    )
+    check_attempts = 0
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "pyproject.toml").write_text("[project]\nname = \"fixture\"\n", encoding="utf-8")
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        nonlocal check_attempts
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[1] == "review":
+            return MODULE.CommandResult(list(args), 0, stdout=next(review_outputs))
+        if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
+            return MODULE.CommandResult(list(args), 0, stdout=json.dumps(next(triage_outputs)))
+        if args[0] == "pytest":
+            check_attempts += 1
+            if check_attempts == 1:
+                return MODULE.CommandResult(list(args), 1, stdout="FAILED\n")
+            return MODULE.CommandResult(list(args), 0, stdout="passed\n")
+        return MODULE.CommandResult(list(args), 0, stdout="remediated\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=2,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        triage_enabled=True,
+        final_review=False,
+        check_commands=("pytest -q",),
+    )
+
+    summary = MODULE.run_loop(config, runner)
+
+    assert summary["final_status"] == "unknown"
+    assert summary["stopped_reason"] == "max_iterations_reached"
+    assert summary["pending_check_failures"] is False
+    assert len(calls) == 8
+    assert "Check failures from the previous iteration:" in (calls[6][1] or "")
+    assert "Structured triage handoff" not in (calls[6][1] or "")
+
+
 def test_suppress_cli_add_check_remove_round_trip(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()

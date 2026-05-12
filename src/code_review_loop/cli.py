@@ -1819,18 +1819,20 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                 if triage_no_actionable:
                     if suppressed_count:
                         iterations[-1]["suppressed_findings"] = True
-                    summary["suppressed_findings_count"] = suppressed_count
-                    iterations[-1]["check_failures"] = 0
-                    summary["final_status"] = "clear"
-                    summary["stopped_reason"] = (
-                        "all_findings_suppressed" if suppressed_count else "triage_rejected_all_findings"
-                    )
-                    summary["latest_review_excerpt"] = excerpt_for_terminal(
-                        last_review_output,
-                        config.terminal_excerpt_chars,
-                    )
-                    write_summary(config, summary)
-                    return summary
+                        summary["suppressed_findings_count"] = suppressed_count
+                    if not pending_check_failures:
+                        iterations[-1]["check_failures"] = 0
+                        summary["final_status"] = "clear"
+                        summary["stopped_reason"] = (
+                            "all_findings_suppressed" if suppressed_count else "triage_rejected_all_findings"
+                        )
+                        summary["latest_review_excerpt"] = excerpt_for_terminal(
+                            last_review_output,
+                            config.terminal_excerpt_chars,
+                        )
+                        write_summary(config, summary)
+                        return summary
+                    remediation_input = pending_check_failures
         except Exception as exc:
             summary["final_status"] = "error"
             summary["stopped_reason"] = "triage_failed"
