@@ -1249,6 +1249,18 @@ def run_checks(config: LoopConfig, runner: Runner, iteration: int) -> list[Comma
             config.artifact_dir / f"check-{iteration}-{index}.txt",
             _combined_output(result),
         )
+        if config.event_sink is not None:
+            config.event_sink.emit(
+                "check_result",
+                phase="check",
+                iteration=f"{iteration}.{index}",
+                payload={
+                    "command": check,
+                    "returncode": result.returncode,
+                    "status": "passed" if result.returncode == 0 else "failed",
+                    "artifact": f"check-{iteration}-{index}.txt",
+                },
+            )
         if result.returncode == 0 and result.stdout.startswith("SKIPPED adaptive check:"):
             progress_event(config, "check", f"{iteration}.{index}", "skipped", result.stdout.strip())
         elif result.returncode == 0:

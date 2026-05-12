@@ -53,6 +53,8 @@ This project follows Semantic Versioning once public releases begin.
   audit summaries by default.
 - Added the event envelope model, JSONL event sink/reader, compact offline
   `revrem replay`, and `REVREM-ADR-008` for the event/replay contract.
+- Loop verification checks now emit explicit `check_result` events with
+  command, status, return code, and artifact metadata.
 
 ### Changed
 

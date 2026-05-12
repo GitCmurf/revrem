@@ -67,7 +67,8 @@ The main test module is `tests/test_cli.py`. It covers:
   while collecting stdout/stderr.
 - Event envelope and replay helpers in `tests/test_events.py` and
   `tests/test_replay.py`, including schema validation, gap-free sequencing,
-  truncated-tail tolerance, and offline compact replay.
+  truncated-tail tolerance, offline compact replay, and loop-emitted
+  `check_result` events for passing and failing verification checks.
 - Review-base preflight behavior for invalid Git topology, including a local
   `main` that has no merge base with the current branch while `origin/main`
   remains usable.

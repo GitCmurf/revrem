@@ -198,7 +198,8 @@ def remove_entry(path: Path, fingerprint: str, *, audit_path: Path | None = None
 
 def expire_entries(path: Path, *, now: datetime | None = None, audit_path: Path | None = None) -> int:
     entries = load_entries(path)
-    expired, kept = [], []
+    expired: list[SuppressionEntry] = []
+    kept: list[SuppressionEntry] = []
     for entry in entries:
         (expired if is_expired(entry, now=now) else kept).append(entry)
     if not expired:

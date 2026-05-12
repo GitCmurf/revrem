@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from code_review_loop import cli as MODULE, events
-from code_review_loop import profiles, suppressions
+from code_review_loop import cli as MODULE
+from code_review_loop import events, profiles, suppressions
 
 
 def make_git_worktree(tmp_path: Path, cwd_rel: str | None = "work") -> tuple[Path, Path]:
@@ -3780,6 +3780,12 @@ def test_loop_continues_after_check_failure_and_feeds_output_into_next_pass(tmp_
     # The second remediation prompt must include the check-failure output from iter-1
     second_prompt = exec_calls[1][1]
     assert second_prompt is not None and "1 FAILED" in second_prompt
+    records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
+    check_events = [event for event in records if event.kind == "check_result"]
+    assert truncated is False
+    assert [event.payload["status"] for event in check_events] == ["failed", "passed"]
+    assert check_events[0].payload["command"] == "pytest tests/"
+    assert check_events[0].payload["artifact"] == "check-1-1.txt"
 
 
 def test_pending_check_failure_blocks_early_clear_status(tmp_path):
