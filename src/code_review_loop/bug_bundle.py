@@ -89,7 +89,7 @@ def create_bug_bundle(options: BundleOptions) -> BundleResult:
 
 
 def default_output_path(run_dir: Path) -> Path:
-    return Path.cwd() / f"revrem-bug-{_run_id(run_dir)}.tar.gz"
+    return Path.cwd() / f"revrem-bug-{_bundle_name_component(run_dir)}.tar.gz"
 
 
 def _bundle_files(run_dir: Path, *, include_raw_transcripts: bool) -> list[Path]:
@@ -139,6 +139,17 @@ def _run_id(run_dir: Path) -> str:
         if isinstance(run_id, str):
             return run_id
     return run_dir.name
+
+
+def _bundle_name_component(run_dir: Path) -> str:
+    run_id = _run_id(run_dir)
+    if run_id:
+        candidate = Path(run_id).name
+        if candidate not in {"", ".", ".."}:
+            return candidate
+    if run_dir.name not in {"", ".", ".."}:
+        return run_dir.name
+    return "run"
 
 
 def _suppression_audit_paths(run_dir: Path) -> list[Path]:

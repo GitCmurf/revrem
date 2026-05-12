@@ -81,6 +81,23 @@ def test_create_bug_bundle_redacts_default_contents_and_excludes_raw_transcripts
     assert manifest["redaction_counts"]["openai-key"] == 2
 
 
+def test_create_bug_bundle_uses_safe_default_output_path_for_untrusted_run_id(tmp_path, monkeypatch):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "summary.json").write_text(
+        json.dumps({"schema_version": "1.0", "run_id": "foo/../../evil"}) + "\n",
+        encoding="utf-8",
+    )
+    (run_dir / "check-1.txt").write_text("check output\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    result = bug_bundle.create_bug_bundle(bug_bundle.BundleOptions(run_dir=run_dir))
+
+    assert result.output_path == tmp_path / "revrem-bug-evil.tar.gz"
+    assert result.output_path.parent == tmp_path
+    assert result.output_path.is_file()
+
+
 def test_create_bug_bundle_can_include_raw_transcripts_still_redacted(tmp_path):
     run_dir = _make_run_dir(tmp_path)
 

@@ -376,6 +376,10 @@ Bug-report bundle command:
 revrem bundle-bug-report .revrem/runs/<run-id> --output revrem-bug.tar.gz
 ```
 
+If `--output` is omitted, the command writes `revrem-bug-<safe-run-id>.tar.gz`
+in the current working directory. The run-id component is reduced to a safe
+basename and falls back to the run directory name when necessary.
+
 The bundle is deterministic and redacted by default. It includes the manifest,
 `summary.json`, diagnostics/event JSON when present, and sanitized check output.
 Raw text transcripts such as review and remediation artifacts are excluded

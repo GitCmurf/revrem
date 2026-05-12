@@ -112,6 +112,10 @@ To share a failed run safely, create a redacted bundle:
 revrem bundle-bug-report .revrem/runs/<run-id> --output revrem-bug.tar.gz
 ```
 
+If `--output` is omitted, RevRem writes `revrem-bug-<safe-run-id>.tar.gz` in
+the current working directory, using a basename-derived component from the run
+metadata and falling back to the run directory name when needed.
+
 The bundle command ignores symlinked artifacts so the archive cannot follow
 links out of the run directory.
 
