@@ -81,6 +81,20 @@ def test_readme_tui_install_and_launch_commands_use_the_same_venv():
     assert "./.venv/bin/revrem ui --profile final-pr" in readme
 
 
+def test_readme_bundle_command_fence_closes_before_explanatory_prose():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+    bundle_snippet = """```bash
+revrem bundle-bug-report .revrem/runs/<run-id> --output revrem-bug.tar.gz
+```"""
+
+    assert bundle_snippet in readme
+    assert "The bundle command ignores symlinked artifacts" in readme
+    assert bundle_snippet.index("```", 3) < readme.index(
+        "The bundle command ignores symlinked artifacts"
+    )
+
+
 def test_dev_extra_exercises_rich_and_textual_paths():
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
