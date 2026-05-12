@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from importlib.resources import files
+from pathlib import Path
 from typing import Any
 
 from code_review_loop import artifacts, diagnostics

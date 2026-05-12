@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from code_review_loop import cli as MODULE
-from code_review_loop import profiles
+from code_review_loop import profiles, suppressions
 
 
 def make_git_worktree(tmp_path: Path, cwd_rel: str | None = "work") -> tuple[Path, Path]:
@@ -714,6 +714,94 @@ def test_loop_writes_structured_triage_artifact_and_handoff(tmp_path):
     assert "Structured triage handoff" in (calls[2][1] or "")
     assert "Original review/check context" in (calls[2][1] or "")
     assert str(tmp_path / "artifacts" / "triage-1.json") in summary["artifact_paths"]["triage"]
+
+
+def test_loop_skips_remediation_when_structured_triage_finding_is_suppressed(tmp_path):
+    calls = []
+    (tmp_path / ".git").mkdir()
+    suppression = suppressions.make_entry(
+        fingerprint="f1:abc123",
+        summary="Accepted finding",
+        rationale="Tracked in issue 123.",
+        severity="medium",
+        scope="repo",
+        expires_at=None,
+        critical_override=False,
+        created_at="2026-05-12T00:00:00Z",
+    )
+    suppressions.write_entries(suppressions.repo_suppressions_path(tmp_path), [suppression])
+    triage_payload = {
+        "confirmed_findings": [
+            {
+                "fingerprint": "f1:abc123",
+                "summary": "Fix profile merge",
+                "severity": "medium",
+                "affected_paths": ["src/code_review_loop/profiles.py"],
+                "rationale": "Merge drops fields.",
+            }
+        ],
+        "implementation_order": ["f1:abc123"],
+        "needs_more_info": [],
+        "parsing_warnings": [],
+        "rejected_findings": [],
+        "verification_commands": ["pytest -q"],
+    }
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[1] == "review":
+            return MODULE.CommandResult(
+                list(args),
+                0,
+                stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
+            )
+        if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
+            return MODULE.CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
+        raise AssertionError(f"remediation/check should not run after suppression: {args!r}")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        triage_enabled=True,
+        final_review=False,
+    )
+
+    summary = MODULE.run_loop(config, runner)
+
+    triage_json = json.loads((tmp_path / "artifacts" / "triage-1.json").read_text(encoding="utf-8"))
+    assert triage_json["confirmed_findings"] == []
+    assert triage_json["suppressed_findings"][0]["fingerprint"] == "f1:abc123"
+    assert summary["final_status"] == "clear"
+    assert summary["stopped_reason"] == "all_findings_suppressed"
+    assert summary["iterations"][0]["suppressed_findings"] is True
+    assert len(calls) == 2
+
+
+def test_suppress_cli_add_check_remove_round_trip(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    monkeypatch.setenv("REVREM_SUPPRESSION_ACTOR", "tester")
+
+    assert MODULE.main(
+        [
+            "suppress",
+            "add",
+            "f1:abc123",
+            "--summary",
+            "Accepted finding",
+            "--rationale",
+            "Tracked in issue 123.",
+            "--severity",
+            "medium",
+        ]
+    ) == 0
+    assert MODULE.main(["suppress", "check", "f1:abc123"]) == 0
+    assert MODULE.main(["suppress", "remove", "f1:abc123"]) == 0
+    assert MODULE.main(["suppress", "check", "f1:abc123"]) == 2
+    assert "added f1:abc123" in capsys.readouterr().out
 
 
 def test_loop_invalid_structured_triage_continues_with_original_review(tmp_path):

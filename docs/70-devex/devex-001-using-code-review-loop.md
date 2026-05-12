@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.4'
+version: '1.5'
 last_updated: '2026-05-12'
 owner: GitCmurf
 docops_version: '2.0'
@@ -487,6 +487,27 @@ the remediation prompt. Invalid structured triage writes `diagnostics.json` with
 fails safe by ignoring invalid triage guidance; set `triage.on_invalid = "stop"`
 when a workflow should halt on malformed triage output.
 
+Structured triage is also the suppression-aware path. Add an explicit
+suppression when a fingerprinted finding is accepted, tracked elsewhere, or
+known to be a false positive:
+
+```bash
+revrem suppress add f1:c6ace015ccd20120 \
+  --summary "Accepted generated-code finding" \
+  --rationale "Generated fixture is intentionally vulnerable for tests." \
+  --severity medium
+```
+
+Repo-local suppressions live in `.revrem/suppressions.toml`; user-local
+suppressions live in `~/.config/revrem/suppressions.toml`. Repo suppressions
+win when both scopes contain the same fingerprint. `revrem suppress check
+<fingerprint>` exits `0` when suppressed and `2` when not suppressed. Critical
+findings require `--critical-override` and an expiry within 30 days. Each
+mutation appends to a local audit JSONL file. Suppressed findings remain visible
+in `triage-N.json` under `suppressed_findings`; if every confirmed finding is
+suppressed, RevRem stops with `stopped_reason: "all_findings_suppressed"`
+without running remediation.
+
 ### Current CLI boundary
 
 Rich progress is available via `--progress-style rich` when the optional
@@ -608,6 +629,7 @@ The wrapper runs tests, `ruff check .`, `mypy src`, and DocOps checks when
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.5 | 2026-05-12 | Codex | Documented suppression CLI, repo/user suppression scope, critical suppression guardrails, and structured-triage suppression behavior |
 | 1.4 | 2026-05-12 | Codex | Documented commit hook failure policies, default bounded remediation retry, and explicit `--no-verify` recording |
 | 1.3 | 2026-05-06 | Codex | Clarified that the profile wizard prompts separately for review and remediation models |
 | 1.2 | 2026-05-06 | Codex | Documented the `config new` interactive wizard, non-interactive automation path, and current stable smoke expectations |

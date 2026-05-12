@@ -156,6 +156,22 @@
     "source_review_artifact": {
       "type": "string"
     },
+    "suppressed_findings": {
+      "items": {
+        "additionalProperties": true,
+        "required": [
+          "fingerprint",
+          "summary",
+          "severity",
+          "affected_paths",
+          "rationale",
+          "suppressed",
+          "suppression"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
     "verification_commands": {
       "items": {
         "type": "string"

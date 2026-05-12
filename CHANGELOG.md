@@ -44,6 +44,10 @@ This project follows Semantic Versioning once public releases begin.
 - Commit hook failures in `--commit-after-remediation` mode now default to a
   bounded remediation retry, with configurable `stop` and explicit `no-verify`
   policies.
+- `revrem suppress add|list|remove|expire|check` manages explicit finding
+  suppressions, with audit logs, critical-finding guardrails, and
+  structured-triage integration.
+- Added `REVREM-ADR-007` for the suppression file and CLI contract.
 
 ### Changed
 

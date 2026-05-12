@@ -3,8 +3,8 @@ document_id: REVREM-REF-001
 type: REF
 title: Artifact schema namespace
 status: Draft
-version: '0.1'
-last_updated: '2026-05-11'
+version: '0.2'
+last_updated: '2026-05-12'
 owner: __TBD__
 docops_version: '2.0'
 area: api
@@ -88,8 +88,9 @@ The foundation phase introduces these contracts:
 
 - `summary-v1.schema.json` for run summaries;
 - `diagnostics-v1.schema.json` for doctor and failed-run diagnostics;
-- `triage-v1.schema.json` for structured triage output; the runtime copy is
-  packaged with `code_review_loop`.
+- `triage-v1.schema.json` for structured triage output, including
+  suppression-aware `suppressed_findings`; the runtime copy is packaged with
+  `code_review_loop`.
 - `events-v1.schema.json` for replayable event streams;
 - `bug-bundle-v1.schema.json` for redacted issue-support bundles.
 

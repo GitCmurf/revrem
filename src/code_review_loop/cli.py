@@ -18,7 +18,7 @@ import time
 import uuid
 from collections.abc import Callable, Sequence
 from contextlib import contextmanager, suppress
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -32,6 +32,7 @@ from code_review_loop import (
     profiles,
     progress,
     run_history,
+    suppressions,
     triage,
 )
 
@@ -140,6 +141,7 @@ class LoopConfig:
     triage_timeout_seconds: float | None = None
     triage_prompt: str | None = None
     triage_on_invalid: str = "continue"
+    suppressions_enabled: bool = True
     exec_sandbox: str = "workspace-write"
     exec_color: str = "never"
     full_auto: bool = True
@@ -1157,7 +1159,25 @@ def run_triage(
             if config.triage_on_invalid == "stop":
                 raise RuntimeError(f"invalid structured triage output for iteration {iteration}: {exc}") from exc
             return review_output
+        if config.suppressions_enabled:
+            matches = suppressions.load_effective_suppressions(config.cwd)
+            payload, suppressed_findings = suppressions.apply_to_triage_payload(payload, matches)
+            if suppressed_findings:
+                progress_event(
+                    config,
+                    "triage",
+                    str(iteration),
+                    "suppressed",
+                    f"{len(suppressed_findings)} finding(s)",
+                )
         triage.write_triage_artifact(config.artifact_dir, iteration, payload)
+        if (
+            config.suppressions_enabled
+            and payload.get("suppressed_findings")
+            and not payload.get("confirmed_findings")
+            and "Check failures from the previous iteration:" not in review_output
+        ):
+            return ""
         return triage.format_structured_handoff(payload, review_output)
     return (
         "Triage handoff from the previous review:\n"
@@ -1783,6 +1803,17 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
         try:
             if config.triage_enabled:
                 remediation_input = run_triage(config, runner, iteration, run_id, remediation_input)
+                if not remediation_input.strip():
+                    iterations[-1]["suppressed_findings"] = True
+                    iterations[-1]["check_failures"] = 0
+                    summary["final_status"] = "clear"
+                    summary["stopped_reason"] = "all_findings_suppressed"
+                    summary["latest_review_excerpt"] = excerpt_for_terminal(
+                        last_review_output,
+                        config.terminal_excerpt_chars,
+                    )
+                    write_summary(config, summary)
+                    return summary
         except Exception as exc:
             summary["final_status"] = "error"
             summary["stopped_reason"] = "triage_failed"
@@ -2843,6 +2874,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     if raw_argv and raw_argv[0] == "bundle-bug-report":
         return bundle_bug_report_main(raw_argv[1:])
+    if raw_argv and raw_argv[0] == "suppress":
+        return suppress_main(raw_argv[1:])
     if raw_argv and raw_argv[0] in {"doctor", "preflight"}:
         return doctor_main(raw_argv[1:])
     if raw_argv and raw_argv[0] == "config":
@@ -2921,6 +2954,101 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.dry_run:
         return 0
     return 0 if summary.get("final_status") == "clear" else 2
+
+
+def parse_suppress_args(argv: Sequence[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="revrem suppress",
+        description="Manage explicit finding suppressions.",
+    )
+    parser.add_argument("--scope", choices=suppressions.SCOPES, default="repo")
+    parser.add_argument("--format", choices=("text", "json"), default="text")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    add = subparsers.add_parser("add", help="Add or replace a suppression.")
+    add.add_argument("fingerprint")
+    add.add_argument("--summary", required=True)
+    add.add_argument("--rationale", required=True)
+    add.add_argument("--severity", choices=suppressions.SEVERITIES, default="medium")
+    add.add_argument("--expires", default=None)
+    add.add_argument("--critical-override", action="store_true")
+    add.add_argument("--created-by", default=None)
+
+    remove = subparsers.add_parser("remove", help="Remove a suppression.")
+    remove.add_argument("fingerprint")
+
+    check = subparsers.add_parser("check", help="Exit 0 when a fingerprint is suppressed.")
+    check.add_argument("fingerprint")
+
+    subparsers.add_parser("list", help="List suppressions.")
+    subparsers.add_parser("expire", help="Remove expired suppressions.")
+    return parser.parse_args(argv)
+
+
+def suppress_main(argv: Sequence[str]) -> int:
+    args = parse_suppress_args(argv)
+    path = _suppression_path_for_scope(args.scope, Path.cwd())
+    audit_path = _suppression_audit_path_for_scope(args.scope, Path.cwd())
+    try:
+        if args.command == "add":
+            entry = suppressions.make_entry(
+                fingerprint=args.fingerprint,
+                summary=args.summary,
+                rationale=args.rationale,
+                severity=args.severity,
+                scope=args.scope,
+                expires_at=args.expires,
+                critical_override=args.critical_override,
+                created_by=args.created_by,
+            )
+            suppressions.add_entry(path, entry, audit_path=audit_path)
+            print(f"added {entry.fingerprint} to {path}")
+            return 0
+        if args.command == "remove":
+            if not suppressions.remove_entry(path, args.fingerprint, audit_path=audit_path):
+                print(f"ERROR: suppression not found: {args.fingerprint}", file=sys.stderr)
+                return 2
+            print(f"removed {args.fingerprint} from {path}")
+            return 0
+        if args.command == "expire":
+            count = suppressions.expire_entries(path, audit_path=audit_path)
+            print(f"expired {count} suppression(s) from {path}")
+            return 0
+        if args.command == "check":
+            matches = suppressions.load_effective_suppressions(Path.cwd())
+            match = matches.get(args.fingerprint)
+            if match is None:
+                return 2
+            if args.format == "json":
+                print(json.dumps(asdict(match.entry), indent=2, sort_keys=True))
+            else:
+                print(f"suppressed {args.fingerprint} via {match.source_path}")
+            return 0
+        if args.command == "list":
+            entries = suppressions.load_entries(path)
+            if args.format == "json":
+                print(json.dumps([asdict(entry) for entry in entries], indent=2, sort_keys=True))
+            else:
+                for entry in entries:
+                    expires = f" expires={entry.expires_at}" if entry.expires_at else ""
+                    print(f"{entry.fingerprint} {entry.severity_at_suppression} {entry.summary}{expires}")
+            return 0
+    except (OSError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    raise AssertionError(f"unhandled suppress command: {args.command}")
+
+
+def _suppression_path_for_scope(scope: str, cwd: Path) -> Path:
+    if scope == "repo":
+        return suppressions.repo_suppressions_path(cwd)
+    return suppressions.user_suppressions_path()
+
+
+def _suppression_audit_path_for_scope(scope: str, cwd: Path) -> Path:
+    if scope == "repo":
+        return suppressions.repo_audit_path(cwd)
+    return suppressions.user_audit_path()
 
 
 def config_main(argv: Sequence[str]) -> int:
