@@ -69,6 +69,32 @@ def test_critical_suppression_requires_override_and_short_expiry():
         )
 
 
+def test_load_entries_rejects_non_boolean_critical_override(tmp_path):
+    path = tmp_path / ".revrem" / "suppressions.toml"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        """
+schema_version = "1.0"
+
+[[suppressions]]
+fingerprint = "f1:critical"
+summary = "Critical issue"
+rationale = "Temporarily accepted."
+created_at = "2026-05-12T00:00:00Z"
+created_by = "tester"
+scope = "repo"
+severity_at_suppression = "critical"
+critical_override = "false"
+expires_at = "2026-05-13T00:00:00Z"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="critical_override must be a boolean"):
+        suppressions.load_entries(path)
+
+
 def test_effective_suppressions_ignore_expired_and_repo_overrides_user(tmp_path):
     home = tmp_path / "home"
     cwd = tmp_path / "repo"

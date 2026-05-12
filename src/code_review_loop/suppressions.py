@@ -98,7 +98,9 @@ def entry_from_raw(raw: object, *, path: Path) -> SuppressionEntry:
     scope = _required_str(raw, "scope", path)
     if scope not in SCOPES:
         raise ValueError(f"{path}: scope must be repo or user")
-    critical_override = bool(raw.get("critical_override", False))
+    critical_override = raw.get("critical_override", False)
+    if not isinstance(critical_override, bool):
+        raise ValueError(f"{path}: critical_override must be a boolean")
     expires_at = raw.get("expires_at")
     if expires_at is not None and not isinstance(expires_at, str):
         raise ValueError(f"{path}: expires_at must be a string when present")

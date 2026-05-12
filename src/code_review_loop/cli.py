@@ -162,6 +162,7 @@ class LoopConfig:
     initial_review_file: Path | None = None
     check_commands: tuple[str, ...] = field(default_factory=tuple)
     profile_name: str | None = None
+    event_sink: events.EventSink | None = None
 
 
 Runner = Callable[[Sequence[str], Path, str | None, float | None], CommandResult]
@@ -397,6 +398,17 @@ def print_compact_progress(phase: str, label: str, text: str, *, head: str = "")
 
 
 def progress_event(config: LoopConfig, phase: str, label: str, status: str, detail: str = "") -> None:
+    sink = config.event_sink
+    if sink is not None:
+        payload: dict[str, Any] = {"summary": status}
+        if detail:
+            payload["message"] = detail
+        sink.emit(
+            _progress_event_kind(status),
+            phase=phase,
+            iteration=label,
+            payload=payload,
+        )
     if not config.progress:
         return
     if config.progress_style == "rich":
@@ -416,6 +428,22 @@ def progress_event(config: LoopConfig, phase: str, label: str, status: str, deta
         print_compact_progress(phase, label, detail, head=f"{status}: ")
     else:
         print_compact_progress(phase, label, status)
+
+
+def _progress_event_kind(status: str) -> str:
+    if status == "start":
+        return "phase_start"
+    if status in {"failed", "invalid"}:
+        return "failure"
+    if status == "retry":
+        return "warning"
+    if status == "suppressed":
+        return "suppressed"
+    if status == "status-debug":
+        return "status_classification"
+    if status == "loaded":
+        return "phase_output"
+    return "phase_result"
 
 
 def warn_rich_unavailable(phase: str, label: str) -> None:
@@ -1745,168 +1773,56 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
         "stopped_reason": None,
     }
 
-    pending_check_failures = ""
-    initial_review_output = ""
-    if config.initial_review_file:
-        initial_review_output = actionable_review_output(
-            config.initial_review_file.read_text(encoding="utf-8")
-        )
-        write_artifact(config.artifact_dir / "review-initial.txt", initial_review_output + "\n")
-        progress_event(config, "review", "initial", "loaded", str(config.initial_review_file))
-        log_review_findings(config, "initial", initial_review_output)
+    event_sink: events.JsonlSink | None = None
+    previous_event_sink = config.event_sink
+    try:
+        event_sink = events.JsonlSink(config.artifact_dir, run_id)
+        object.__setattr__(config, "event_sink", event_sink)
 
-    for iteration in range(1, config.max_iterations + 1):
-        if iteration == 1 and initial_review_output:
-            status = detect_review_status(initial_review_output)
-            if status == "unknown":
-                status = "findings"
-            last_review_output = initial_review_output
-            iterations.append(
-                {
-                    "iteration": iteration,
-                    "review_status": status,
-                    "review_source": str(config.initial_review_file),
-                }
+        pending_check_failures = ""
+        initial_review_output = ""
+        if config.initial_review_file:
+            initial_review_output = actionable_review_output(
+                config.initial_review_file.read_text(encoding="utf-8")
             )
-        else:
-            try:
-                status, review = run_codex_review(
-                    config,
-                    runner,
-                    f"review-{iteration}",
-                    display_label=str(iteration),
-                )
-            except RuntimeError as exc:
-                iterations.append({"iteration": iteration, "review_failed": True})
-                summary["final_status"] = "error"
-                summary["stopped_reason"] = "review_failed"
-                summary["error"] = str(exc)
-                write_summary(config, summary)
-                raise RunLoopFailed(summary, str(exc)) from exc
-            last_review_output = actionable_review_output(_combined_output(review))
-            iterations.append({"iteration": iteration, "review_status": status})
+            write_artifact(config.artifact_dir / "review-initial.txt", initial_review_output + "\n")
+            progress_event(config, "review", "initial", "loaded", str(config.initial_review_file))
+            log_review_findings(config, "initial", initial_review_output)
 
-        if status == "clear" and not pending_check_failures:
-            summary["final_status"] = "clear"
-            summary["stopped_reason"] = "review_clear"
-            summary["latest_review_excerpt"] = excerpt_for_terminal(
-                last_review_output,
-                config.terminal_excerpt_chars,
-            )
-            write_summary(config, summary)
-            return summary
-
-        remediation_input = last_review_output
-        if pending_check_failures:
-            remediation_input = pending_check_failures + "\n\n" + remediation_input
-        try:
-            if config.triage_enabled:
-                # Resumed runs keep the loaded review in review-initial.txt, so triage must
-                # point at that artifact instead of assuming review-1.txt.
-                source_review_artifact = (
-                    "review-initial.txt" if iteration == 1 and initial_review_output else f"review-{iteration}.txt"
+        for iteration in range(1, config.max_iterations + 1):
+            if iteration == 1 and initial_review_output:
+                status = detect_review_status(initial_review_output)
+                if status == "unknown":
+                    status = "findings"
+                last_review_output = initial_review_output
+                iterations.append(
+                    {
+                        "iteration": iteration,
+                        "review_status": status,
+                        "review_source": str(config.initial_review_file),
+                    }
                 )
-                remediation_input, suppressed_count, triage_no_actionable = run_triage(
-                    config,
-                    runner,
-                    iteration,
-                    run_id,
-                    source_review_artifact,
-                    remediation_input,
-                )
-                if suppressed_count:
-                    iterations[-1]["suppressed_findings_count"] = suppressed_count
-                if triage_no_actionable:
-                    if suppressed_count:
-                        iterations[-1]["suppressed_findings"] = True
-                        summary["suppressed_findings_count"] = suppressed_count
-                    if not pending_check_failures:
-                        iterations[-1]["check_failures"] = 0
-                        summary["final_status"] = "clear"
-                        summary["stopped_reason"] = (
-                            "all_findings_suppressed" if suppressed_count else "triage_rejected_all_findings"
-                        )
-                        summary["latest_review_excerpt"] = excerpt_for_terminal(
-                            last_review_output,
-                            config.terminal_excerpt_chars,
-                        )
-                        write_summary(config, summary)
-                        return summary
-                    remediation_input = pending_check_failures
-        except Exception as exc:
-            summary["final_status"] = "error"
-            summary["stopped_reason"] = "triage_failed"
-            summary["error"] = str(exc)
-            iterations[-1]["triage_failed"] = True
-            write_summary(config, summary)
-            raise RunLoopFailed(
-                summary,
-                f"codex exec triage failed for iteration {iteration}; "
-                f"see {config.artifact_dir / f'triage-{iteration}.txt'}",
-            ) from exc
-
-        try:
-            run_remediation(config, runner, iteration, remediation_input)
-        except Exception as exc:
-            summary["final_status"] = "error"
-            summary["stopped_reason"] = "remediation_failed"
-            summary["error"] = str(exc)
-            iterations[-1]["remediation_failed"] = True
-            write_summary(config, summary)
-            raise RunLoopFailed(
-                summary,
-                f"codex exec remediation failed for iteration {iteration}; "
-                f"see {config.artifact_dir / f'remediation-{iteration}.txt'}",
-            ) from exc
-
-        check_results = run_checks(config, runner, iteration)
-        pending_check_failures = _format_check_failures(check_results)
-        summary["pending_check_failures"] = bool(pending_check_failures)
-        iterations[-1]["check_failures"] = sum(1 for result in check_results if result.returncode != 0)
-        if config.commit_after_remediation and not pending_check_failures:
-            try:
-                iterations[-1]["commit_status"] = run_commit(config, runner, iteration)
-            except CommitFailed as exc:
-                iterations[-1]["commit_status"] = exc.kind
-                iterations[-1]["commit_failed"] = True
-                iterations[-1]["commit_artifact"] = str(exc.artifact_path)
-                is_retryable_hook_failure = (
-                    exc.kind == "hook_failed"
-                    and config.commit_on_hook_failure == "remediate"
-                    and iteration < config.max_iterations
-                )
-                if is_retryable_hook_failure:
-                    pending_check_failures = format_commit_hook_failure_for_remediation(exc)
-                    summary["pending_check_failures"] = True
-                    progress_event(
+            else:
+                try:
+                    status, review = run_codex_review(
                         config,
-                        "commit",
-                        str(iteration),
-                        "retry",
-                        "hook output will feed next remediation",
+                        runner,
+                        f"review-{iteration}",
+                        display_label=str(iteration),
                     )
-                    continue
-                stopped_reason = (
-                    "commit_hook_failed" if exc.kind == "hook_failed" else "commit_failed"
-                )
-                summary["final_status"] = "error"
-                summary["stopped_reason"] = stopped_reason
-                summary["error"] = str(exc)
-                if exc.kind == "hook_failed":
-                    summary["staged_changes_left"] = True
-                    summary["pending_check_failures"] = True
-                write_summary(config, summary)
-                raise RunLoopFailed(summary, str(exc)) from exc
-            except Exception as exc:
-                summary["final_status"] = "error"
-                summary["stopped_reason"] = "commit_failed"
-                summary["error"] = str(exc)
-                iterations[-1]["commit_failed"] = True
-                write_summary(config, summary)
-                raise RunLoopFailed(summary, f"git commit failed for iteration {iteration}") from exc
-            if iterations[-1]["commit_status"] == "skipped_no_changes":
-                summary["final_status"] = status
-                summary["stopped_reason"] = "no_changes_after_remediation"
+                except RuntimeError as exc:
+                    iterations.append({"iteration": iteration, "review_failed": True})
+                    summary["final_status"] = "error"
+                    summary["stopped_reason"] = "review_failed"
+                    summary["error"] = str(exc)
+                    write_summary(config, summary)
+                    raise RunLoopFailed(summary, str(exc)) from exc
+                last_review_output = actionable_review_output(_combined_output(review))
+                iterations.append({"iteration": iteration, "review_status": status})
+
+            if status == "clear" and not pending_check_failures:
+                summary["final_status"] = "clear"
+                summary["stopped_reason"] = "review_clear"
                 summary["latest_review_excerpt"] = excerpt_for_terminal(
                     last_review_output,
                     config.terminal_excerpt_chars,
@@ -1914,54 +1830,184 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                 write_summary(config, summary)
                 return summary
 
-    if config.final_review:
-        try:
-            status, final_review = run_codex_review(
-                config,
-                runner,
-                "review-final",
-                display_label="final",
-            )
-        except RuntimeError as exc:
-            iterations.append({"iteration": "final", "review_failed": True})
-            summary["final_status"] = "error"
-            summary["stopped_reason"] = "review_failed"
-            summary["error"] = str(exc)
-            write_summary(config, summary)
-            raise RunLoopFailed(summary, str(exc)) from exc
-        final_review_output = actionable_review_output(_combined_output(final_review))
-        summary["latest_review_excerpt"] = excerpt_for_terminal(
-            final_review_output,
-            config.terminal_excerpt_chars,
-        )
-        if pending_check_failures:
-            summary["final_status"] = "findings"
-            summary["pending_check_failures"] = True
-            summary["stopped_reason"] = "max_iterations_reached_with_check_failures"
-        else:
-            summary["final_status"] = status
-            summary["stopped_reason"] = "review_clear" if status == "clear" else "max_iterations_reached"
-            if status == "unknown":
-                iterations.append(
-                    {
-                        "iteration": "final",
-                        "review_status": status,
-                    }
-                )
-    else:
-        # Status after the last remediation is not known without a review.
-        summary["final_status"] = "unknown"
-        summary["pending_check_failures"] = bool(pending_check_failures)
-        summary["stopped_reason"] = "max_iterations_reached"
+            remediation_input = last_review_output
+            if pending_check_failures:
+                remediation_input = pending_check_failures + "\n\n" + remediation_input
+            try:
+                if config.triage_enabled:
+                    # Resumed runs keep the loaded review in review-initial.txt, so triage must
+                    # point at that artifact instead of assuming review-1.txt.
+                    source_review_artifact = (
+                        "review-initial.txt" if iteration == 1 and initial_review_output else f"review-{iteration}.txt"
+                    )
+                    remediation_input, suppressed_count, triage_no_actionable = run_triage(
+                        config,
+                        runner,
+                        iteration,
+                        run_id,
+                        source_review_artifact,
+                        remediation_input,
+                    )
+                    if suppressed_count:
+                        iterations[-1]["suppressed_findings_count"] = suppressed_count
+                    if triage_no_actionable:
+                        if suppressed_count:
+                            iterations[-1]["suppressed_findings"] = True
+                            summary["suppressed_findings_count"] = suppressed_count
+                        if not pending_check_failures:
+                            iterations[-1]["check_failures"] = 0
+                            summary["final_status"] = "clear"
+                            summary["stopped_reason"] = (
+                                "all_findings_suppressed" if suppressed_count else "triage_rejected_all_findings"
+                            )
+                            summary["latest_review_excerpt"] = excerpt_for_terminal(
+                                last_review_output,
+                                config.terminal_excerpt_chars,
+                            )
+                            write_summary(config, summary)
+                            return summary
+                        remediation_input = pending_check_failures
+            except Exception as exc:
+                summary["final_status"] = "error"
+                summary["stopped_reason"] = "triage_failed"
+                summary["error"] = str(exc)
+                iterations[-1]["triage_failed"] = True
+                write_summary(config, summary)
+                raise RunLoopFailed(
+                    summary,
+                    f"codex exec triage failed for iteration {iteration}; "
+                    f"see {config.artifact_dir / f'triage-{iteration}.txt'}",
+                ) from exc
 
-    write_summary(config, summary)
-    return summary
+            try:
+                run_remediation(config, runner, iteration, remediation_input)
+            except Exception as exc:
+                summary["final_status"] = "error"
+                summary["stopped_reason"] = "remediation_failed"
+                summary["error"] = str(exc)
+                iterations[-1]["remediation_failed"] = True
+                write_summary(config, summary)
+                raise RunLoopFailed(
+                    summary,
+                    f"codex exec remediation failed for iteration {iteration}; "
+                    f"see {config.artifact_dir / f'remediation-{iteration}.txt'}",
+                ) from exc
+
+            check_results = run_checks(config, runner, iteration)
+            pending_check_failures = _format_check_failures(check_results)
+            summary["pending_check_failures"] = bool(pending_check_failures)
+            iterations[-1]["check_failures"] = sum(1 for result in check_results if result.returncode != 0)
+            if config.commit_after_remediation and not pending_check_failures:
+                try:
+                    iterations[-1]["commit_status"] = run_commit(config, runner, iteration)
+                except CommitFailed as exc:
+                    iterations[-1]["commit_status"] = exc.kind
+                    iterations[-1]["commit_failed"] = True
+                    iterations[-1]["commit_artifact"] = str(exc.artifact_path)
+                    is_retryable_hook_failure = (
+                        exc.kind == "hook_failed"
+                        and config.commit_on_hook_failure == "remediate"
+                        and iteration < config.max_iterations
+                    )
+                    if is_retryable_hook_failure:
+                        pending_check_failures = format_commit_hook_failure_for_remediation(exc)
+                        summary["pending_check_failures"] = True
+                        progress_event(
+                            config,
+                            "commit",
+                            str(iteration),
+                            "retry",
+                            "hook output will feed next remediation",
+                        )
+                        continue
+                    stopped_reason = (
+                        "commit_hook_failed" if exc.kind == "hook_failed" else "commit_failed"
+                    )
+                    summary["final_status"] = "error"
+                    summary["stopped_reason"] = stopped_reason
+                    summary["error"] = str(exc)
+                    if exc.kind == "hook_failed":
+                        summary["staged_changes_left"] = True
+                        summary["pending_check_failures"] = True
+                    write_summary(config, summary)
+                    raise RunLoopFailed(summary, str(exc)) from exc
+                except Exception as exc:
+                    summary["final_status"] = "error"
+                    summary["stopped_reason"] = "commit_failed"
+                    summary["error"] = str(exc)
+                    iterations[-1]["commit_failed"] = True
+                    write_summary(config, summary)
+                    raise RunLoopFailed(summary, f"git commit failed for iteration {iteration}") from exc
+                if iterations[-1]["commit_status"] == "skipped_no_changes":
+                    summary["final_status"] = status
+                    summary["stopped_reason"] = "no_changes_after_remediation"
+                    summary["latest_review_excerpt"] = excerpt_for_terminal(
+                        last_review_output,
+                        config.terminal_excerpt_chars,
+                    )
+                    write_summary(config, summary)
+                    return summary
+
+        if config.final_review:
+            try:
+                status, final_review = run_codex_review(
+                    config,
+                    runner,
+                    "review-final",
+                    display_label="final",
+                )
+            except RuntimeError as exc:
+                iterations.append({"iteration": "final", "review_failed": True})
+                summary["final_status"] = "error"
+                summary["stopped_reason"] = "review_failed"
+                summary["error"] = str(exc)
+                write_summary(config, summary)
+                raise RunLoopFailed(summary, str(exc)) from exc
+            final_review_output = actionable_review_output(_combined_output(final_review))
+            summary["latest_review_excerpt"] = excerpt_for_terminal(
+                final_review_output,
+                config.terminal_excerpt_chars,
+            )
+            if pending_check_failures:
+                summary["final_status"] = "findings"
+                summary["pending_check_failures"] = True
+                summary["stopped_reason"] = "max_iterations_reached_with_check_failures"
+            else:
+                summary["final_status"] = status
+                summary["stopped_reason"] = "review_clear" if status == "clear" else "max_iterations_reached"
+                if status == "unknown":
+                    iterations.append(
+                        {
+                            "iteration": "final",
+                            "review_status": status,
+                        }
+                    )
+        else:
+            # Status after the last remediation is not known without a review.
+            summary["final_status"] = "unknown"
+            summary["pending_check_failures"] = bool(pending_check_failures)
+            summary["stopped_reason"] = "max_iterations_reached"
+
+        write_summary(config, summary)
+        return summary
+    finally:
+        object.__setattr__(config, "event_sink", previous_event_sink)
+        if event_sink is not None:
+            event_sink.close()
 
 
 def write_summary(config: LoopConfig, summary: dict[str, object]) -> None:
     update_unexpected_behaviors(config, summary)
     add_summary_contract_fields(config, summary)
     add_artifact_paths(summary, config)
+    if config.event_sink is not None:
+        summary_detail = summary.get("stopped_reason") or summary.get("final_status") or "summary"
+        config.event_sink.emit(
+            "summary",
+            payload={
+                "summary": str(summary_detail),
+            },
+        )
     artifacts.write_json_artifact(config.artifact_dir, "summary.json", summary)
 
 

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from code_review_loop import cli as MODULE
+from code_review_loop import cli as MODULE, events
 from code_review_loop import profiles, suppressions
 
 
@@ -221,6 +221,41 @@ def test_run_loop_treats_structured_empty_findings_review_as_clear(tmp_path):
     assert summary["stopped_reason"] == "review_clear"
     assert [call[0][1] for call in calls] == ["review"]
     assert not (tmp_path / "artifacts" / "remediation-1.txt").exists()
+
+
+def test_run_loop_writes_replayable_events_jsonl(tmp_path, capsys):
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[1] == "review":
+            return MODULE.CommandResult(
+                list(args),
+                0,
+                stdout='{"findings": [], "overall_correctness": "patch is correct"}\n',
+            )
+        raise AssertionError(f"unexpected command: {args}")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        progress=False,
+        final_review=False,
+    )
+
+    summary = MODULE.run_loop(config, runner)
+    replay_code = MODULE.main(["replay", str(tmp_path / "artifacts")])
+    records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
+
+    assert summary["final_status"] == "clear"
+    assert replay_code == 0
+    assert truncated is False
+    assert [event.kind for event in records] == ["phase_start", "phase_result", "summary"]
+    assert capsys.readouterr().out == (
+        "0001|review|1|phase_start: codex review --base main\n"
+        "0002|review|1|phase_result: clear\n"
+        "0003|summary|summary: review_clear\n"
+    )
 
 
 def test_detect_review_status_does_not_treat_scoped_clear_prose_as_clear_when_issue_follows():

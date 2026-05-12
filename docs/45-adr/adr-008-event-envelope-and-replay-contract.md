@@ -71,5 +71,5 @@ wire live loop progress through the same envelope and add Rich/TUI renderers.
   single execution engine boundary from PLAN-002.
 - Compact replay is deterministic because it renders from `seq` and payload,
   not wall-clock time.
-- The first slice does not yet guarantee every live run writes events; that is
-  a follow-up F8 wiring step.
+- Live loop runs write `events.jsonl` through the same envelope used by replay
+  fixtures, so complete runs are directly replayable.
