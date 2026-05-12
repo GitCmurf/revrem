@@ -543,7 +543,7 @@ fixture infrastructure later tasks depend on.
 1. Confirm `main` is the default branch on GitHub and local `main` matches
    `origin/main`.
 2. Confirm no obsolete launch branches are targeted by open automation PRs.
-3. Run the full local gate (including `meminit check --format json`) and 
+3. Run the full local gate (including `meminit check --format json`) and
    record output in the PR body.
 4. Create GitHub issues / orchestrator tickets for F1–F10. Apply labels:
    `foundation`, `trust`, `diagnostics`, `schema`, `triage`, `events`,
