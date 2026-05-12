@@ -190,6 +190,27 @@ def test_run_doctor_reports_missing_check_command(tmp_path):
     assert "revrem.preflight.check_command_not_found" in _issue_codes(issues)
 
 
+def test_run_doctor_reports_missing_git_as_blocking_issue(tmp_path, monkeypatch):
+    repo = _make_repo(tmp_path)
+
+    def fake_run(*_args, **_kwargs):
+        raise FileNotFoundError("git")
+
+    monkeypatch.setattr(diagnostics.subprocess, "run", fake_run)
+
+    issues = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(
+            cwd=repo,
+            base="main",
+            codex_bin="git",
+        )
+    )
+
+    assert _issue_codes(issues) == {"revrem.preflight.git_not_found"}
+    assert diagnostics.has_blocking_issue(issues)
+    assert diagnostics.doctor_payload(issues)["status"] == "blocking"
+
+
 def test_run_doctor_reports_unparseable_check_command(tmp_path):
     repo = _make_repo(tmp_path)
 

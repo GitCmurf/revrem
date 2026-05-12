@@ -49,8 +49,19 @@ class DoctorConfig:
 
 def run_doctor(config: DoctorConfig) -> list[DiagnosticIssue]:
     issues: list[DiagnosticIssue] = []
-    git_root = _git_root(config.cwd)
-    if git_root is None:
+    git_root_result = _git(config.cwd, "rev-parse", "--show-toplevel")
+    if git_root_result.returncode == 127:
+        issues.append(
+            DiagnosticIssue(
+                code="revrem.preflight.git_not_found",
+                severity="blocking",
+                message="Git executable was not found on PATH.",
+                hint="Install Git or make it available on PATH before running RevRem doctor.",
+                evidence={"cwd": str(config.cwd), "error": git_root_result.stderr.strip()},
+            )
+        )
+        git_root = None
+    elif git_root_result.returncode != 0:
         issues.append(
             DiagnosticIssue(
                 code="revrem.preflight.not_git_repo",
@@ -60,7 +71,9 @@ def run_doctor(config: DoctorConfig) -> list[DiagnosticIssue]:
                 evidence={"cwd": str(config.cwd)},
             )
         )
+        git_root = None
     else:
+        git_root = Path(git_root_result.stdout.strip())
         issues.extend(_git_issues(config, git_root))
 
     issues.extend(_artifact_dir_issues(config, git_root))
@@ -270,18 +283,19 @@ def _executable_issues(config: DoctorConfig) -> list[DiagnosticIssue]:
     return issues
 
 
-def _git_root(cwd: Path) -> Path | None:
-    result = _git(cwd, "rev-parse", "--show-toplevel")
-    if result.returncode != 0:
-        return None
-    return Path(result.stdout.strip())
-
-
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args],
-        cwd=cwd,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
+    try:
+        return subprocess.run(
+            ["git", *args],
+            cwd=cwd,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        return subprocess.CompletedProcess(
+            ["git", *args],
+            127,
+            stdout="",
+            stderr=str(exc),
+        )

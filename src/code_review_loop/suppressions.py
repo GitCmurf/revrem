@@ -74,7 +74,11 @@ def write_entries(path: Path, entries: list[SuppressionEntry]) -> None:
 
 
 def render_entries(entries: list[SuppressionEntry]) -> str:
-    lines = [f"schema_version = {_toml_string(SUPPRESSION_SCHEMA_VERSION)}", ""]
+    lines = [f"schema_version = {_toml_string(SUPPRESSION_SCHEMA_VERSION)}"]
+    if not entries:
+        lines.append("suppressions = []")
+        return "\n".join(lines) + "\n"
+    lines.append("")
     for index, entry in enumerate(entries):
         if index:
             lines.append("")
@@ -285,6 +289,9 @@ def apply_to_triage_payload(
         fingerprint = item.get("fingerprint")
         match = matches.get(fingerprint) if isinstance(fingerprint, str) else None
         if match is None:
+            kept.append(item)
+            continue
+        if item.get("severity") == "critical" and not match.entry.critical_override:
             kept.append(item)
             continue
         suppressed_item = {

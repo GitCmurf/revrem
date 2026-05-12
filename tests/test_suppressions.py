@@ -37,6 +37,10 @@ def test_suppression_add_list_remove_and_audit_round_trip(tmp_path, monkeypatch)
 
     assert suppressions.remove_entry(path, "f1:abc123", audit_path=audit) is True
     assert suppressions.load_entries(path) == []
+    assert tomllib.loads(path.read_text(encoding="utf-8")) == {
+        "schema_version": "1.0",
+        "suppressions": [],
+    }
 
 
 def test_critical_suppression_requires_override_and_short_expiry():
@@ -142,6 +146,41 @@ def test_apply_to_triage_payload_moves_suppressed_confirmed_findings(tmp_path):
     assert updated["implementation_order"] == []
     assert suppressed[0]["suppressed"] is True
     assert suppressed[0]["suppression"]["rationale"] == "Tracked elsewhere."
+
+
+def test_apply_to_triage_payload_keeps_critical_findings_when_suppression_is_noncritical(tmp_path):
+    entry = suppressions.make_entry(
+        fingerprint="f1:abc123",
+        summary="Accepted risk",
+        rationale="Tracked elsewhere.",
+        severity="medium",
+        scope="repo",
+        expires_at=None,
+        critical_override=False,
+        created_at="2026-05-12T00:00:00Z",
+    )
+    payload = {
+        "confirmed_findings": [
+            {
+                "fingerprint": "f1:abc123",
+                "summary": "Fix SQL injection",
+                "severity": "critical",
+                "affected_paths": ["src/auth.py"],
+                "rationale": "Raw SQL uses user input.",
+            }
+        ],
+        "implementation_order": ["f1:abc123"],
+    }
+
+    updated, suppressed = suppressions.apply_to_triage_payload(
+        payload,
+        {"f1:abc123": suppressions.SuppressionMatch(entry, tmp_path / ".revrem/suppressions.toml")},
+    )
+
+    assert updated["confirmed_findings"] == payload["confirmed_findings"]
+    assert updated["implementation_order"] == payload["implementation_order"]
+    assert updated["suppressed_findings"] == []
+    assert suppressed == []
 
 
 def test_rendered_suppression_file_validates_against_schema(tmp_path):
