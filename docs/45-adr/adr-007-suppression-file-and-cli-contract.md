@@ -93,9 +93,10 @@ Structured triage integration is deliberately conservative. When a structured
 triage `confirmed_findings` entry matches an active suppression, RevRem moves
 it to `suppressed_findings`, removes the fingerprint from
 `implementation_order`, writes the updated `triage-N.json`, and skips
-remediation if no unsuppressed findings remain. The original review artifact
-still exists, and the structured triage artifact keeps the suppressed finding
-visible with suppression metadata.
+remediation if no unsuppressed findings remain and no `needs_more_info`
+entries are left to resolve. The original review artifact still exists, and
+the structured triage artifact keeps the suppressed finding visible with
+suppression metadata.
 
 ## Consequences
 

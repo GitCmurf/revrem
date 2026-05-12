@@ -1177,6 +1177,7 @@ def run_triage(
             config.suppressions_enabled
             and payload.get("suppressed_findings")
             and not payload.get("confirmed_findings")
+            and not payload.get("needs_more_info")
             and "Check failures from the previous iteration:" not in review_output
         ):
             return "", suppressed_count

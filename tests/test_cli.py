@@ -782,6 +782,80 @@ def test_loop_skips_remediation_when_structured_triage_finding_is_suppressed(tmp
     assert len(calls) == 2
 
 
+def test_loop_does_not_clear_when_structured_triage_still_needs_more_info(tmp_path):
+    calls = []
+    (tmp_path / ".git").mkdir()
+    suppression = suppressions.make_entry(
+        fingerprint="f1:abc123",
+        summary="Accepted finding",
+        rationale="Tracked in issue 123.",
+        severity="medium",
+        scope="repo",
+        expires_at=None,
+        critical_override=False,
+        created_at="2026-05-12T00:00:00Z",
+    )
+    suppressions.write_entries(suppressions.repo_suppressions_path(tmp_path), [suppression])
+    triage_payload = {
+        "confirmed_findings": [
+            {
+                "fingerprint": "f1:abc123",
+                "summary": "Fix profile merge",
+                "severity": "medium",
+                "affected_paths": ["src/code_review_loop/profiles.py"],
+                "rationale": "Merge drops fields.",
+            }
+        ],
+        "implementation_order": ["f1:abc123"],
+        "needs_more_info": [
+            {
+                "fingerprint": "f2:def456",
+                "summary": "Clarify config precedence",
+                "severity": "low",
+                "affected_paths": ["src/code_review_loop/cli.py"],
+                "rationale": "The suppression path depends on runtime config.",
+                "info_requested": "Document whether config values can override suppressions.",
+            }
+        ],
+        "parsing_warnings": [],
+        "rejected_findings": [],
+        "verification_commands": ["pytest -q"],
+    }
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[1] == "review":
+            return MODULE.CommandResult(
+                list(args),
+                0,
+                stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
+            )
+        if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
+            return MODULE.CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
+        return MODULE.CommandResult(list(args), 0, stdout="remediated\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        triage_enabled=True,
+        final_review=False,
+    )
+
+    summary = MODULE.run_loop(config, runner)
+
+    triage_json = json.loads((tmp_path / "artifacts" / "triage-1.json").read_text(encoding="utf-8"))
+    assert triage_json["confirmed_findings"] == []
+    assert triage_json["needs_more_info"][0]["fingerprint"] == "f2:def456"
+    assert triage_json["suppressed_findings"][0]["fingerprint"] == "f1:abc123"
+    assert summary["stopped_reason"] == "max_iterations_reached"
+    assert summary["final_status"] == "unknown"
+    assert "Structured triage handoff" in (calls[2][1] or "")
+    assert len(calls) == 3
+
+
 def test_suppress_cli_add_check_remove_round_trip(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
