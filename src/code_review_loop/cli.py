@@ -1123,7 +1123,7 @@ def run_triage(
     run_id: str,
     source_review_artifact: str,
     review_output: str,
-) -> tuple[str, int]:
+) -> tuple[str, int, bool]:
     command = build_triage_command(config)
     prompt_root = config.triage_prompt or triage.load_prompt()
     prompt = f"{prompt_root}\n{trim_for_prompt(review_output, config.max_remediation_input_chars)}"
@@ -1158,7 +1158,7 @@ def run_triage(
             progress_event(config, "triage", str(iteration), "invalid", str(exc))
             if config.triage_on_invalid == "stop":
                 raise RuntimeError(f"invalid structured triage output for iteration {iteration}: {exc}") from exc
-            return review_output, 0
+            return review_output, 0, False
         suppressed_count = 0
         if config.suppressions_enabled:
             matches = suppressions.load_effective_suppressions(config.cwd)
@@ -1173,21 +1173,16 @@ def run_triage(
                     f"{len(suppressed_findings)} finding(s)",
                 )
         triage.write_triage_artifact(config.artifact_dir, iteration, payload)
-        if (
-            config.suppressions_enabled
-            and payload.get("suppressed_findings")
-            and not payload.get("confirmed_findings")
-            and not payload.get("needs_more_info")
-            and "Check failures from the previous iteration:" not in review_output
-        ):
-            return "", suppressed_count
-        return triage.format_structured_handoff(payload, review_output), suppressed_count
+        has_actionable_findings = bool(payload.get("confirmed_findings") or payload.get("needs_more_info"))
+        if not has_actionable_findings:
+            return "", suppressed_count, True
+        return triage.format_structured_handoff(payload, review_output), suppressed_count, False
     return (
         "Triage handoff from the previous review:\n"
         f"{triage_output}\n\n"
         "Original review/check context:\n"
         f"{review_output}"
-    ), 0
+    ), 0, False
 
 
 def run_checks(config: LoopConfig, runner: Runner, iteration: int) -> list[CommandResult]:
@@ -1810,7 +1805,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                 source_review_artifact = (
                     "review-initial.txt" if iteration == 1 and initial_review_output else f"review-{iteration}.txt"
                 )
-                remediation_input, suppressed_count = run_triage(
+                remediation_input, suppressed_count, triage_no_actionable = run_triage(
                     config,
                     runner,
                     iteration,
@@ -1820,12 +1815,15 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                 )
                 if suppressed_count:
                     iterations[-1]["suppressed_findings_count"] = suppressed_count
-                if not remediation_input.strip():
-                    iterations[-1]["suppressed_findings"] = True
+                if triage_no_actionable:
+                    if suppressed_count:
+                        iterations[-1]["suppressed_findings"] = True
                     summary["suppressed_findings_count"] = suppressed_count
                     iterations[-1]["check_failures"] = 0
                     summary["final_status"] = "clear"
-                    summary["stopped_reason"] = "all_findings_suppressed"
+                    summary["stopped_reason"] = (
+                        "all_findings_suppressed" if suppressed_count else "triage_rejected_all_findings"
+                    )
                     summary["latest_review_excerpt"] = excerpt_for_terminal(
                         last_review_output,
                         config.terminal_excerpt_chars,

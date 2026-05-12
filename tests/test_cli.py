@@ -856,6 +856,60 @@ def test_loop_does_not_clear_when_structured_triage_still_needs_more_info(tmp_pa
     assert len(calls) == 3
 
 
+def test_loop_skips_remediation_when_structured_triage_only_rejects_findings(tmp_path):
+    calls = []
+    (tmp_path / ".git").mkdir()
+    triage_payload = {
+        "confirmed_findings": [],
+        "implementation_order": [],
+        "needs_more_info": [],
+        "parsing_warnings": [],
+        "rejected_findings": [
+            {
+                "fingerprint": "f1:abc123",
+                "summary": "Fix profile merge",
+                "severity": "medium",
+                "affected_paths": ["src/code_review_loop/profiles.py"],
+                "rationale": "The review comment is a false positive.",
+                "rejection_reason": "Not reproducible in the current code path.",
+            }
+        ],
+        "verification_commands": ["pytest -q"],
+    }
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[1] == "review":
+            return MODULE.CommandResult(
+                list(args),
+                0,
+                stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
+            )
+        if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
+            return MODULE.CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
+        raise AssertionError(f"remediation/check should not run after rejected-only triage: {args!r}")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        triage_enabled=True,
+        final_review=False,
+    )
+
+    summary = MODULE.run_loop(config, runner)
+
+    triage_json = json.loads((tmp_path / "artifacts" / "triage-1.json").read_text(encoding="utf-8"))
+    assert triage_json["rejected_findings"][0]["fingerprint"] == "f1:abc123"
+    assert triage_json["confirmed_findings"] == []
+    assert triage_json["needs_more_info"] == []
+    assert summary["final_status"] == "clear"
+    assert summary["stopped_reason"] == "triage_rejected_all_findings"
+    assert len(calls) == 2
+
+
 def test_suppress_cli_add_check_remove_round_trip(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
