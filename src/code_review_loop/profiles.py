@@ -42,6 +42,7 @@ PROFILE_KEYS = (
 PIPELINE_KEYS = ("base", "max_iterations", "final_review", "checks")
 PHASE_KEYS = ("harness", "model", "reasoning_effort", "timeout_seconds")
 TRIAGE_ON_INVALID_CHOICES = ("continue", "stop")
+COMMIT_ON_HOOK_FAILURE_CHOICES = ("remediate", "stop", "no-verify")
 TRIAGE_KEYS = (
     "enabled",
     "harness",
@@ -51,7 +52,13 @@ TRIAGE_KEYS = (
     "prompt",
     "on_invalid",
 )
-COMMIT_KEYS = ("enabled", "harness", "message_model", "message_prompt")
+COMMIT_KEYS = (
+    "enabled",
+    "harness",
+    "message_model",
+    "message_prompt",
+    "on_hook_failure",
+)
 OUTPUT_KEYS = (
     "summary_format",
     "debug_status_detection",
@@ -106,6 +113,7 @@ class CommitConfig:
     harness: str = "codex"
     message_model: str | None = "gpt-5.3-codex-spark"
     message_prompt: str | None = None
+    on_hook_failure: str = "remediate"
 
 
 @dataclass(frozen=True)
@@ -299,12 +307,19 @@ def parse_commit(raw: dict[str, Any]) -> CommitConfig:
     _reject_unknown_keys(raw, COMMIT_KEYS, "commit")
     harness = _str(raw.get("harness", "codex"), "commit.harness")
     validate_harness_name(harness, field="commit.harness")
+    on_hook_failure = _str(raw.get("on_hook_failure", "remediate"), "commit.on_hook_failure")
+    if on_hook_failure not in COMMIT_ON_HOOK_FAILURE_CHOICES:
+        raise ValueError(
+            "commit.on_hook_failure must be one of "
+            f"{', '.join(COMMIT_ON_HOOK_FAILURE_CHOICES)}"
+        )
     return CommitConfig(
         enabled=_bool(raw.get("enabled", False), "commit.enabled"),
         harness=harness,
         message_model=_optional_str(raw.get("message_model"), "commit.message_model")
         or "gpt-5.3-codex-spark",
         message_prompt=_optional_str(raw.get("message_prompt"), "commit.message_prompt"),
+        on_hook_failure=on_hook_failure,
     )
 
 

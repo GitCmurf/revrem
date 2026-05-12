@@ -314,6 +314,7 @@ enabled = true
 
     assert loaded.profiles["demo"].commit.enabled is True
     assert loaded.profiles["demo"].commit.message_model == "gpt-5.3-codex-spark"
+    assert loaded.profiles["demo"].commit.on_hook_failure == "remediate"
 
 
 def test_profile_accepts_explicit_commit_message_model_and_prompt(tmp_path):
@@ -325,6 +326,7 @@ enabled = true
 harness = "claude"
 message_model = "gpt-test-commit"
 message_prompt = "Write a subject."
+on_hook_failure = "stop"
 """,
         encoding="utf-8",
     )
@@ -334,6 +336,21 @@ message_prompt = "Write a subject."
     assert loaded.profiles["demo"].commit.harness == "claude"
     assert loaded.profiles["demo"].commit.message_model == "gpt-test-commit"
     assert loaded.profiles["demo"].commit.message_prompt == "Write a subject."
+    assert loaded.profiles["demo"].commit.on_hook_failure == "stop"
+
+
+def test_profile_rejects_invalid_commit_hook_failure_policy(tmp_path):
+    path = tmp_path / "profiles.toml"
+    path.write_text(
+        """
+[profiles.bad.commit]
+on_hook_failure = "maybe"
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="commit.on_hook_failure must be one of"):
+        profiles.load_profile_file(path)
 
 
 def test_profile_rejects_unknown_commit_keys(tmp_path):

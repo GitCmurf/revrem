@@ -3,8 +3,8 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.3'
-last_updated: '2026-05-06'
+version: '1.4'
+last_updated: '2026-05-12'
 owner: GitCmurf
 docops_version: '2.0'
 area: devex
@@ -435,6 +435,16 @@ bug-report artifact is still recorded for operator follow-up. Auto-commit also
 requires a clean worktree before the loop starts so unrelated local edits
 cannot be staged by the broad `git add -A` step.
 
+Commit hooks are part of the commit phase, not an afterthought. When `git
+commit` appears to fail inside hooks, RevRem defaults to `commit.on_hook_failure
+= "remediate"`: it leaves staged changes intact, records the hook output in
+`commit-N.txt`, and injects that output into the next bounded remediation pass.
+Use `commit.on_hook_failure = "stop"` or `--commit-on-hook-failure stop` when a
+hook failure should end the run immediately with `stopped_reason:
+"commit_hook_failed"`. Use `no-verify` only for explicit operator-controlled
+flows; RevRem records that policy as `commit_no_verify: true` in `summary.json`
+and runs `git commit --no-verify`.
+
 ```bash
 revrem --profile final-pr --commit-after-remediation
 revrem --profile final-pr --commit-after-remediation --commit-message-model gpt-5.3-codex-spark
@@ -598,6 +608,7 @@ The wrapper runs tests, `ruff check .`, `mypy src`, and DocOps checks when
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.4 | 2026-05-12 | Codex | Documented commit hook failure policies, default bounded remediation retry, and explicit `--no-verify` recording |
 | 1.3 | 2026-05-06 | Codex | Clarified that the profile wizard prompts separately for review and remediation models |
 | 1.2 | 2026-05-06 | Codex | Documented the `config new` interactive wizard, non-interactive automation path, and current stable smoke expectations |
 | 1.1 | 2026-05-06 | Codex | Documented CLI-backed TUI profile lifecycle actions, `config clone`, and current TUI controls |

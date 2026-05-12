@@ -3,8 +3,8 @@ document_id: REVREM-PLAN-003
 type: PLAN
 title: Post-Launch Development Roadmap
 status: Draft
-version: '0.4'
-last_updated: '2026-05-09'
+version: '0.5'
+last_updated: '2026-05-12'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -267,6 +267,7 @@ change how the project is perceived?).
 | Event stream + replay harness | High | Med | High | Med | Schema | P1 |
 | Cost governance (budgets, ceilings, accounting) | High | Low | Low | Med | Event stream | P1 |
 | Pre-push / pre-commit hook integration | High | Low | Low | Med | Cost caps + diagnostics | P1 |
+| Advisory check discovery from repo hooks/config | High | Low | Low | Med | Diagnostics + profiles | P1 |
 | Headless / non-TTY mode hardening | High | Low | Low | Low | Event stream | P1 |
 | TUI starts real runs | Med | High | High | High | Event stream + cancellation | P2 |
 | Expert profiles (security, perf, a11y, refactor) | High | Low | Med | High | Profile schema | P2 |
@@ -591,6 +592,34 @@ make RevRem behave correctly when nobody is watching.
   including uninstall and idempotency.
 - Hooks must respect cost ceilings and produce a one-line pass/fail
   summary; full output stays in `.revrem/runs/...`.
+- Treat `git commit` hook failures as first-class verification failures, not
+  unexpected crashes. The default policy is to feed the hook output into the
+  next bounded remediation pass when iterations remain, preserve staged
+  changes and artifacts, and stop gracefully with `stopped_reason:
+  commit_hook_failed` when the loop is exhausted. `--no-verify` is an explicit
+  operator policy only; it is recorded in run artifacts and never used as a
+  silent optimization.
+
+**Scope (advisory check discovery).**
+- Add a read-only `revrem checks suggest` / `revrem doctor checks` surface
+  that inspects the target repository and proposes `--check` commands with a
+  confidence level, rationale, and caveats.
+- Discover likely verification sources without executing them: configured
+  `core.hooksPath`, `.git/hooks/pre-commit`, `.git/hooks/pre-push`,
+  `.pre-commit-config.yaml`, `.githooks/`, package scripts, `tox.ini`,
+  `noxfile.py`, `pyproject.toml`, `Cargo.toml`, `go.mod`, and similar
+  language-native markers.
+- Model suggestions as structured data, e.g. `command`, `source`, `phase`
+  (`pre-commit`, `pre-push`, `test`, `lint`, `typecheck`), `confidence`,
+  `requires_network`, `estimated_cost`, and `notes`. This lets agents and
+  profile writers decide what to include without scraping prose.
+- Keep the first version advisory only. It must not auto-edit profiles,
+  install hooks, or assume hook parity. A future `--write-profile` can be
+  added only after users can preview and diff the generated profile.
+- Document the mental model clearly: pre-running discovered checks reduces
+  redundant hook failures, but the actual `git commit` remains the
+  authoritative integration point because hooks can depend on staged files,
+  environment variables, local tool versions, and hook-managed re-staging.
 
 **Scope (headless).**
 - `--no-tty`/auto-detect: disable progress animation, emit stable
@@ -607,6 +636,12 @@ make RevRem behave correctly when nobody is watching.
 - Pilot tests cover launch, cancellation, cost-ceiling, and ≥ 3 failure
   states.
 - Hook examples land green in CI for the reference repo.
+- `git commit` hook failures produce a commit artifact, a structured summary
+  reason, and either another remediation pass or a graceful bounded failure;
+  they do not leave the operator with a Python traceback as the primary
+  diagnostic.
+- Check discovery suggests the reference repo's substantive local checks and
+  rejects unsupported or unsafe guesses with explicit caveats.
 - Headless mode produces output that is grep-able and free of ANSI
   escapes when stdout is not a TTY.
 - `revrem resume` produces an identical final `summary.json` to a

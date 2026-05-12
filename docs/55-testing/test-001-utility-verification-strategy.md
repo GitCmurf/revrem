@@ -3,8 +3,8 @@ document_id: REVREM-TEST-001
 type: TEST
 title: Utility verification strategy
 status: Draft
-version: '1.3'
-last_updated: '2026-05-10'
+version: '1.4'
+last_updated: '2026-05-12'
 owner: GitCmurf
 docops_version: '2.0'
 area: testing
@@ -47,8 +47,9 @@ The main test module is `tests/test_cli.py`. It covers:
   remediation prompt handoff.
 - Optional commit-after-remediation behavior, including post-check gating,
   deterministic git commit execution, read-only commit-message drafting, skipped
-  commits when no staged diff exists, and failure-summary recording when git
-  commit fails.
+  commits when no staged diff exists, remediation-loop handling for commit hook
+  failures, explicit `--no-verify` policy recording, and failure-summary
+  recording when non-hook `git commit` failures occur.
 - Commit-message normalization to Conventional Commit syntax with the RevRem
   suffix, plus the explicit prompt-override path that disables that default
   subject policy.

@@ -54,6 +54,15 @@ DEFAULT_TERMINAL_COLUMNS = 120
 DEFAULT_TIMEOUT_SECONDS = 300
 REASONING_EFFORT_CHOICES = ("minimal", "low", "medium", "high")
 PROGRESS_STYLE_CHOICES = ("compact", "verbose", "rich")
+COMMIT_ON_HOOK_FAILURE_CHOICES = profiles.COMMIT_ON_HOOK_FAILURE_CHOICES
+COMMIT_HOOK_FAILURE_RE = re.compile(
+    r"\b("
+    r"pre-commit|pre-push|commit hook|hook failed|"
+    r"mypy|ruff|black|flake8|eslint|prettier|detect-secrets|"
+    r"files? were modified by this hook|found \d+ errors?"
+    r")\b",
+    re.IGNORECASE,
+)
 
 DEFAULT_REMEDIATION_PROMPT = """You are running a bounded review-remediation loop.
 
@@ -123,6 +132,7 @@ class LoopConfig:
     commit_message_model: str | None = None
     commit_message_prompt: str | None = None
     commit_message_prompt_overridden: bool = False
+    commit_on_hook_failure: str = "remediate"
     commit_reasoning_effort: str | None = None
     triage_enabled: bool = False
     triage_model: str | None = None
@@ -160,6 +170,26 @@ class RunLoopFailed(RuntimeError):
     def __init__(self, summary: dict[str, object], message: str):
         super().__init__(message)
         self.summary = summary
+
+
+class CommitFailed(RuntimeError):
+    """Raised when git commit fails after verified remediation staging."""
+
+    def __init__(
+        self,
+        *,
+        iteration: int,
+        kind: str,
+        artifact_path: Path,
+        output: str,
+    ):
+        super().__init__(
+            f"git commit failed for iteration {iteration}; see {artifact_path}"
+        )
+        self.iteration = iteration
+        self.kind = kind
+        self.artifact_path = artifact_path
+        self.output = output
 
 # xterm-compatible title-stack controls use CSI, not OSC.
 TERMINAL_TITLE_SAVE = "\033[22;0t"
@@ -1328,6 +1358,19 @@ def git_reset_artifact_command_for_commit(config: LoopConfig) -> list[str] | Non
     return ["git", "-C", str(repo_root), "reset", "--", artifact_rel.as_posix()]
 
 
+def commit_command_for_message(config: LoopConfig, message: str) -> list[str]:
+    command = ["git", "commit"]
+    if config.commit_on_hook_failure == "no-verify":
+        command.append("--no-verify")
+    command.extend(["-m", message])
+    return command
+
+
+def classify_commit_failure(result: CommandResult) -> str:
+    output = _combined_output(result)
+    return "hook_failed" if COMMIT_HOOK_FAILURE_RE.search(output) else "commit_failed"
+
+
 def run_commit(config: LoopConfig, runner: Runner, iteration: int) -> str:
     progress_event(config, "commit", str(iteration), "start", "stage and commit verified remediation")
     if config.dry_run:
@@ -1383,15 +1426,24 @@ def run_commit(config: LoopConfig, runner: Runner, iteration: int) -> str:
 
     message = commit_message_for_staged_changes(config, runner, iteration)
     commit_result = runner(
-        ["git", "commit", "-m", message],
+        commit_command_for_message(config, message),
         config.cwd,
         None,
         phase_timeout_seconds(config, config.timeout_seconds),
     )
-    write_artifact(config.artifact_dir / f"commit-{iteration}.txt", _combined_output(commit_result))
+    commit_artifact_path = config.artifact_dir / f"commit-{iteration}.txt"
+    commit_output = _combined_output(commit_result)
+    write_artifact(commit_artifact_path, commit_output)
     if commit_result.returncode != 0:
-        progress_event(config, "commit", str(iteration), "failed", "git commit failed")
-        raise RuntimeError(f"git commit failed for iteration {iteration}")
+        kind = classify_commit_failure(commit_result)
+        detail = "git commit hook failed" if kind == "hook_failed" else "git commit failed"
+        progress_event(config, "commit", str(iteration), "failed", detail)
+        raise CommitFailed(
+            iteration=iteration,
+            kind=kind,
+            artifact_path=commit_artifact_path,
+            output=commit_output,
+        )
     write_artifact(config.artifact_dir / f"commit-{iteration}-message.txt", message + "\n")
     progress_event(config, "commit", str(iteration), "committed", message)
     return "committed"
@@ -1604,6 +1656,23 @@ def review_final_is_usable(review_path: Path) -> bool:
     return not review_text.startswith("DRY_RUN")
 
 
+def format_commit_hook_failure_for_remediation(exc: CommitFailed) -> str:
+    return "\n".join(
+        [
+            "Commit hook failure from the previous RevRem iteration.",
+            "",
+            "Treat this as a verification failure. Remediate the underlying cause,",
+            "preserve staged work, and do not bypass hooks unless the operator explicitly",
+            "configured that policy.",
+            "",
+            f"Commit artifact: {exc.artifact_path}",
+            "",
+            "git commit output:",
+            trim_for_prompt(exc.output, 20_000),
+        ]
+    ).strip()
+
+
 def run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, object]:
     with (
         terminal_recovery_context(),
@@ -1647,6 +1716,8 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
         "max_iterations": config.max_iterations,
         "artifact_dir": str(config.artifact_dir),
         "iterations": iterations,
+        "commit_on_hook_failure": config.commit_on_hook_failure,
+        "commit_no_verify": config.commit_on_hook_failure == "no-verify",
         "final_status": "unknown",
         "initial_review_file": str(config.initial_review_file) if config.initial_review_file else None,
         "pending_check_failures": False,
@@ -1742,6 +1813,37 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
         if config.commit_after_remediation and not pending_check_failures:
             try:
                 iterations[-1]["commit_status"] = run_commit(config, runner, iteration)
+            except CommitFailed as exc:
+                iterations[-1]["commit_status"] = exc.kind
+                iterations[-1]["commit_failed"] = True
+                iterations[-1]["commit_artifact"] = str(exc.artifact_path)
+                is_retryable_hook_failure = (
+                    exc.kind == "hook_failed"
+                    and config.commit_on_hook_failure == "remediate"
+                    and iteration < config.max_iterations
+                )
+                if is_retryable_hook_failure:
+                    pending_check_failures = format_commit_hook_failure_for_remediation(exc)
+                    summary["pending_check_failures"] = True
+                    progress_event(
+                        config,
+                        "commit",
+                        str(iteration),
+                        "retry",
+                        "hook output will feed next remediation",
+                    )
+                    continue
+                stopped_reason = (
+                    "commit_hook_failed" if exc.kind == "hook_failed" else "commit_failed"
+                )
+                summary["final_status"] = "error"
+                summary["stopped_reason"] = stopped_reason
+                summary["error"] = str(exc)
+                if exc.kind == "hook_failed":
+                    summary["staged_changes_left"] = True
+                    summary["pending_check_failures"] = True
+                write_summary(config, summary)
+                raise RunLoopFailed(summary, str(exc)) from exc
             except Exception as exc:
                 summary["final_status"] = "error"
                 summary["stopped_reason"] = "commit_failed"
@@ -2138,6 +2240,16 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         help=(
             "Override the commit-message drafting prompt. When set, RevRem does not enforce "
             "its default Conventional Commit + '(RevRem)' subject policy."
+        ),
+    )
+    parser.add_argument(
+        "--commit-on-hook-failure",
+        choices=COMMIT_ON_HOOK_FAILURE_CHOICES,
+        default=None,
+        help=(
+            "Policy when git commit appears to fail inside hooks: remediate feeds hook output "
+            "into the next bounded pass, stop fails gracefully, no-verify commits with "
+            "--no-verify. Default: profile commit.on_hook_failure or remediate."
         ),
     )
     parser.add_argument(
@@ -2581,6 +2693,7 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         or args.model
         or review_model
     )
+    commit_on_hook_failure = args.commit_on_hook_failure or profile.commit.on_hook_failure
     config = LoopConfig(
         base=pick(args.base, profile.pipeline.base, "main"),
         max_iterations=pick(args.max_iterations, profile.pipeline.max_iterations, 2),
@@ -2603,6 +2716,7 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         commit_message_prompt_overridden=(
             args.commit_message_prompt is not None or profile.commit.message_prompt is not None
         ),
+        commit_on_hook_failure=commit_on_hook_failure,
         commit_reasoning_effort=commit_reasoning_effort,
         triage_enabled=profile.triage.enabled,
         triage_model=profile.triage.model,
@@ -2700,6 +2814,7 @@ def profile_from_loop_config(
             harness=config.commit_message_harness,
             message_model=config.commit_message_model,
             message_prompt=config.commit_message_prompt,
+            on_hook_failure=config.commit_on_hook_failure,
         ),
         output=profiles.OutputConfig(
             summary_format=summary_format,

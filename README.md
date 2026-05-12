@@ -176,7 +176,11 @@ Its safety posture is built around local operator control:
 Use `--commit-after-remediation` only when each verified remediation pass should
 become a git commit. RevRem stages with `git add -A` after checks pass, excludes
 the configured artifact directory, skips empty commits, and runs `git commit`
-itself.
+itself. If commit hooks fail, the default policy is to preserve the staged
+changes, write the hook output to the commit artifact, and feed that output into
+the next bounded remediation pass. Use `--commit-on-hook-failure stop` to fail
+gracefully instead, or `--commit-on-hook-failure no-verify` only when bypassing
+hooks is an intentional operator decision.
 
 ## Optional Progress And TUI
 

@@ -1138,6 +1138,153 @@ def test_loop_writes_failure_summary_when_commit_fails(tmp_path):
     assert str(tmp_path / "artifacts" / "commit-1.txt") in summary["artifact_paths"]["commits"]
 
 
+def test_loop_remediates_commit_hook_failure_by_default(tmp_path):
+    calls = []
+    remediation_prompts = []
+    review_outputs = iter(
+        [
+            "Full review comments:\n\n- [P2] Fix profile merge\n",
+            "Full review comments:\n\n- [P2] Fix commit-hook mypy failure\n",
+        ]
+    )
+    commit_attempts = 0
+    repo_root, cwd = make_git_worktree(tmp_path)
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        nonlocal commit_attempts
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+            return MODULE.CommandResult(list(args), 0, stdout="")
+        if args[0] == "codex" and "review" in args:
+            return MODULE.CommandResult(list(args), 0, stdout=next(review_outputs))
+        if args[0:2] == ["codex", "exec"]:
+            remediation_prompts.append(input_text or "")
+            return MODULE.CommandResult(list(args), 0, stdout="remediated\n")
+        if args[:3] == ["git", "add", "-A"]:
+            return MODULE.CommandResult(list(args), 0)
+        if args[:4] == ["git", "-C", str(repo_root), "reset"]:
+            return MODULE.CommandResult(list(args), 0)
+        if args[:3] == ["git", "diff", "--cached"] and "--quiet" in args:
+            return MODULE.CommandResult(list(args), 1)
+        if args[:3] == ["git", "diff", "--cached"]:
+            return MODULE.CommandResult(list(args), 0, stdout="src/code.py\n")
+        if args[:3] == ["git", "commit", "-m"]:
+            commit_attempts += 1
+            if commit_attempts == 1:
+                return MODULE.CommandResult(
+                    list(args),
+                    1,
+                    stdout=(
+                        "Running mypy on staged Python files...\n"
+                        "tests/unit/test_loop.py:195: error: Module has no attribute\n"
+                        "Found 1 error in 1 file\n"
+                    ),
+                )
+            return MODULE.CommandResult(list(args), 0, stdout="[branch abc] fix\n")
+        return MODULE.CommandResult(list(args), 0, stdout="ok\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=2,
+        codex_bin="codex",
+        cwd=cwd,
+        artifact_dir=tmp_path / "artifacts",
+        commit_after_remediation=True,
+        commit_message_model=None,
+        final_review=False,
+    )
+
+    summary = MODULE.run_loop(config, runner)
+
+    assert summary["iterations"][0]["commit_status"] == "hook_failed"
+    assert summary["iterations"][0]["commit_failed"] is True
+    assert summary["iterations"][1]["commit_status"] == "committed"
+    assert summary["commit_on_hook_failure"] == "remediate"
+    assert summary["commit_no_verify"] is False
+    assert "Commit hook failure" in remediation_prompts[1]
+    assert "Running mypy on staged Python files" in remediation_prompts[1]
+    assert str(tmp_path / "artifacts" / "commit-1.txt") in summary["artifact_paths"]["commits"]
+
+
+def test_loop_stops_on_commit_hook_failure_when_policy_is_stop(tmp_path):
+    review_outputs = iter(["Full review comments:\n\n- [P2] Fix profile merge\n"])
+    repo_root, cwd = make_git_worktree(tmp_path)
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+            return MODULE.CommandResult(list(args), 0, stdout="")
+        if args[0] == "codex" and "review" in args:
+            return MODULE.CommandResult(list(args), 0, stdout=next(review_outputs))
+        if args[:3] == ["git", "add", "-A"]:
+            return MODULE.CommandResult(list(args), 0)
+        if args[:4] == ["git", "-C", str(repo_root), "reset"]:
+            return MODULE.CommandResult(list(args), 0)
+        if args[:3] == ["git", "diff", "--cached"] and "--quiet" in args:
+            return MODULE.CommandResult(list(args), 1)
+        if args[:3] == ["git", "diff", "--cached"]:
+            return MODULE.CommandResult(list(args), 0, stdout="src/code.py\n")
+        if args[:3] == ["git", "commit", "-m"]:
+            return MODULE.CommandResult(
+                list(args),
+                1,
+                stderr="pre-commit hook failed: mypy found 1 error\n",
+            )
+        return MODULE.CommandResult(list(args), 0, stdout="ok\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=2,
+        codex_bin="codex",
+        cwd=cwd,
+        artifact_dir=tmp_path / "artifacts",
+        commit_after_remediation=True,
+        commit_message_model=None,
+        commit_on_hook_failure="stop",
+    )
+
+    with pytest.raises(MODULE.RunLoopFailed):
+        MODULE.run_loop(config, runner)
+
+    summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
+    assert summary["stopped_reason"] == "commit_hook_failed"
+    assert summary["staged_changes_left"] is True
+    assert summary["pending_check_failures"] is True
+    assert summary["iterations"][0]["commit_status"] == "hook_failed"
+
+
+def test_run_commit_uses_no_verify_when_policy_is_explicit(tmp_path):
+    calls = []
+    repo_root, cwd = make_git_worktree(tmp_path)
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append(list(args))
+        if args[:3] == ["git", "add", "-A"]:
+            return MODULE.CommandResult(list(args), 0)
+        if args[:4] == ["git", "-C", str(repo_root), "reset"]:
+            return MODULE.CommandResult(list(args), 0)
+        if args[:3] == ["git", "diff", "--cached"] and "--quiet" in args:
+            return MODULE.CommandResult(list(args), 1)
+        if args[:3] == ["git", "diff", "--cached"]:
+            return MODULE.CommandResult(list(args), 0, stdout="src/code.py\n")
+        if args[:3] == ["git", "commit", "--no-verify"]:
+            return MODULE.CommandResult(list(args), 0, stdout="[branch abc] fix\n")
+        return MODULE.CommandResult(list(args), 0, stdout="ok\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=cwd,
+        artifact_dir=tmp_path / "artifacts",
+        commit_after_remediation=True,
+        commit_message_model=None,
+        commit_on_hook_failure="no-verify",
+    )
+
+    assert MODULE.run_commit(config, runner, 1) == "committed"
+    assert ["git", "commit", "--no-verify", "-m", "chore: remediate review iteration 1 (RevRem)"] in calls
+
+
 def test_debug_status_detection_writes_diagnostic_artifact(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":

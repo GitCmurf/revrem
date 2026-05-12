@@ -41,6 +41,9 @@ This project follows Semantic Versioning once public releases begin.
   invalid structured triage writes diagnostics and fails safe.
 - Added `REVREM-ADR-006` for structured triage artifacts and invalid-output
   remediation policy.
+- Commit hook failures in `--commit-after-remediation` mode now default to a
+  bounded remediation retry, with configurable `stop` and explicit `no-verify`
+  policies.
 
 ### Changed
 
