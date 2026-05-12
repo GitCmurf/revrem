@@ -96,3 +96,21 @@ def test_create_bug_bundle_is_deterministic(tmp_path):
     )
 
     assert first.output_path.read_bytes() == second.output_path.read_bytes()
+
+
+def test_create_bug_bundle_skips_symlinked_artifacts(tmp_path):
+    run_dir = _make_run_dir(tmp_path)
+    outside_secret = tmp_path / "outside-secret.txt"
+    outside_secret.write_text("TOP SECRET\n", encoding="utf-8")
+    (run_dir / "check-output.txt").symlink_to(outside_secret)
+    (run_dir / "summary.json").unlink()
+    (run_dir / "summary.json").symlink_to(outside_secret)
+
+    result = bug_bundle.create_bug_bundle(
+        bug_bundle.BundleOptions(run_dir=run_dir, output_path=tmp_path / "bundle.tar.gz")
+    )
+
+    members = _bundle_members(result.output_path)
+    assert "check-output.txt" not in members
+    assert "summary.json" not in members
+    assert result.manifest["run_id"] == "run"

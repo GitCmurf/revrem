@@ -110,6 +110,9 @@ To share a failed run safely, create a redacted bundle:
 
 ```bash
 revrem bundle-bug-report .revrem/runs/<run-id> --output revrem-bug.tar.gz
+
+The bundle command ignores symlinked artifacts so the archive cannot follow
+links out of the run directory.
 ```
 
 Raw review/remediation transcripts are excluded by default. Use

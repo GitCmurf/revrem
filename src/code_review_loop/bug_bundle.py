@@ -85,6 +85,8 @@ def default_output_path(run_dir: Path) -> Path:
 def _bundle_files(run_dir: Path, *, include_raw_transcripts: bool) -> list[Path]:
     candidates = []
     for path in run_dir.rglob("*"):
+        if path.is_symlink():
+            continue
         if not path.is_file():
             continue
         relative = path.relative_to(run_dir).as_posix()
@@ -112,7 +114,7 @@ def _add_bytes(tar: tarfile.TarFile, arcname: str, content: bytes) -> None:
 
 def _run_id(run_dir: Path) -> str:
     summary_path = run_dir / "summary.json"
-    if summary_path.is_file():
+    if summary_path.is_file() and not summary_path.is_symlink():
         try:
             summary = json.loads(summary_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
