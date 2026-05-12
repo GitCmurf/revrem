@@ -88,7 +88,8 @@ The foundation phase introduces these contracts:
 
 - `summary-v1.schema.json` for run summaries;
 - `diagnostics-v1.schema.json` for doctor and failed-run diagnostics;
-- `triage-v1.schema.json` for structured triage output;
+- `triage-v1.schema.json` for structured triage output; the runtime copy is
+  packaged with `code_review_loop`.
 - `events-v1.schema.json` for replayable event streams;
 - `bug-bundle-v1.schema.json` for redacted issue-support bundles.
 

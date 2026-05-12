@@ -1118,6 +1118,7 @@ def run_triage(
     config: LoopConfig,
     runner: Runner,
     iteration: int,
+    run_id: str,
     review_output: str,
 ) -> str:
     command = build_triage_command(config)
@@ -1142,7 +1143,7 @@ def run_triage(
         try:
             payload = triage.parse_triage_payload(
                 triage_output,
-                run_id=current_run_id(config),
+                run_id=run_id,
                 source_review_artifact=review_artifact,
             )
         except triage.TriageValidationError as exc:
@@ -1164,10 +1165,6 @@ def run_triage(
         "Original review/check context:\n"
         f"{review_output}"
     )
-
-
-def current_run_id(config: LoopConfig) -> str:
-    return config.artifact_dir.name or "unknown"
 
 
 def run_checks(config: LoopConfig, runner: Runner, iteration: int) -> list[CommandResult]:
@@ -1708,9 +1705,10 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
     config.artifact_dir.mkdir(parents=True, exist_ok=True)
     ensure_default_artifact_ignore(config)
     iterations: list[dict[str, object]] = []
+    run_id = uuid.uuid4().hex
     summary: dict[str, object] = {
         "base": config.base,
-        "run_id": uuid.uuid4().hex,
+        "run_id": run_id,
         "started_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "profile": config.profile_name,
         "max_iterations": config.max_iterations,
@@ -1780,7 +1778,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
             remediation_input = pending_check_failures + "\n\n" + remediation_input
         try:
             if config.triage_enabled:
-                remediation_input = run_triage(config, runner, iteration, remediation_input)
+                remediation_input = run_triage(config, runner, iteration, run_id, remediation_input)
         except Exception as exc:
             summary["final_status"] = "error"
             summary["stopped_reason"] = "triage_failed"

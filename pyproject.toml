@@ -62,7 +62,7 @@ Changelog = "https://github.com/GitCmurf/revrem/blob/main/CHANGELOG.md"
 where = ["src"]
 
 [tool.setuptools.package-data]
-code_review_loop = ["prompts/*.txt"]
+code_review_loop = ["prompts/*.txt", "schemas/*.json"]
 
 [tool.pytest.ini_options]
 addopts = "-ra"

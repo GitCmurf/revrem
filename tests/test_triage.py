@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from importlib.resources import files
 from pathlib import Path
 
 import pytest
@@ -25,11 +26,25 @@ def test_parse_triage_payload_validates_fixture_against_schema():
         source_review_artifact="review-1.txt",
     )
 
-    validate(payload, json.loads(triage.TRIAGE_SCHEMA_PATH.read_text(encoding="utf-8")))
+    validate(
+        payload,
+        json.loads(files("code_review_loop").joinpath(triage.TRIAGE_SCHEMA_RESOURCE).read_text(encoding="utf-8")),
+    )
     assert payload["schema_version"] == "1.0"
     assert payload["prompt_version"] == "triage-v1"
     assert payload["source_review_artifact"] == "review-1.txt"
     assert payload["confirmed_findings"][0]["fingerprint"] == "f1:c6ace015ccd20120"
+
+
+def test_packaged_triage_schema_matches_reference_copy():
+    packaged_schema = json.loads(
+        files("code_review_loop").joinpath("schemas/triage-v1.schema.json").read_text(encoding="utf-8")
+    )
+    reference_schema = json.loads(
+        (ROOT / "docs" / "52-api" / "schemas" / "triage-v1.schema.json").read_text(encoding="utf-8")
+    )
+
+    assert packaged_schema == reference_schema
 
 
 @pytest.mark.parametrize("fixture_name", ["invalid_json", "missing_fields"])

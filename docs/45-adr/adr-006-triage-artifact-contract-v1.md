@@ -38,7 +38,9 @@ hide review findings or discard original context.
 
 Status: Accepted.
 
-Structured triage output uses `docs/52-api/schemas/triage-v1.schema.json`.
+Structured triage output uses the packaged schema resource
+`src/code_review_loop/schemas/triage-v1.schema.json` at runtime and keeps the
+authoritative reference copy in `docs/52-api/schemas/triage-v1.schema.json`.
 When a triage subprocess emits JSON, RevRem validates it, stamps envelope
 fields, writes `triage-N.json`, and forwards a structured handoff to the
 remediation phase.

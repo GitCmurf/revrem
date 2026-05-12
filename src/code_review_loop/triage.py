@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from importlib.resources import files
-from pathlib import Path
 from typing import Any
 
 from code_review_loop import artifacts, diagnostics
@@ -12,7 +11,7 @@ from code_review_loop._compat_jsonschema import Draft202012Validator
 
 TRIAGE_SCHEMA_VERSION = "1.0"
 TRIAGE_PROMPT_VERSION = "triage-v1"
-TRIAGE_SCHEMA_PATH = Path(__file__).resolve().parents[2] / "docs" / "52-api" / "schemas" / "triage-v1.schema.json"
+TRIAGE_SCHEMA_RESOURCE = "schemas/triage-v1.schema.json"
 
 
 class TriageValidationError(ValueError):
@@ -81,7 +80,7 @@ def diagnostics_payload(issue: diagnostics.DiagnosticIssue) -> dict[str, Any]:
 
 
 def _triage_schema() -> dict[str, Any]:
-    schema = json.loads(TRIAGE_SCHEMA_PATH.read_text(encoding="utf-8"))
+    schema = json.loads(files("code_review_loop").joinpath(TRIAGE_SCHEMA_RESOURCE).read_text(encoding="utf-8"))
     if not isinstance(schema, dict):
         raise TriageValidationError("triage schema must be a JSON object")
     return schema

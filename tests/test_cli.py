@@ -708,6 +708,7 @@ def test_loop_writes_structured_triage_artifact_and_handoff(tmp_path):
     summary = MODULE.run_loop(config, runner)
 
     triage_json = json.loads((tmp_path / "artifacts" / "triage-1.json").read_text(encoding="utf-8"))
+    assert triage_json["run_id"] == summary["run_id"]
     assert triage_json["source_review_artifact"] == "review-1.txt"
     assert triage_json["prompt_version"] == "triage-v1"
     assert "Structured triage handoff" in (calls[2][1] or "")
