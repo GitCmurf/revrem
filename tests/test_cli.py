@@ -1799,6 +1799,58 @@ def test_loop_can_start_from_initial_review_file(tmp_path):
     assert (tmp_path / "artifacts" / "review-initial.txt").exists()
 
 
+def test_loop_writes_structured_triage_source_for_initial_review_file(tmp_path):
+    calls = []
+    initial_review = tmp_path / "previous-review-final.txt"
+    initial_review.write_text(
+        "Full review comments:\n\n- [P2] Carry this forward — src/state.py:1\n",
+        encoding="utf-8",
+    )
+    triage_payload = {
+        "confirmed_findings": [
+            {
+                "affected_paths": ["src/app.py"],
+                "fingerprint": "f1:abc123",
+                "rationale": "The review finding is actionable.",
+                "severity": "medium",
+                "summary": "Fix the bug.",
+            }
+        ],
+        "implementation_order": ["f1:abc123"],
+        "needs_more_info": [],
+        "parsing_warnings": [],
+        "rejected_findings": [],
+        "verification_commands": ["pytest -q"],
+    }
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text))
+        if args[1] == "review":
+            return MODULE.CommandResult(list(args), 0, stdout="REVIEW_STATUS: findings\n")
+        if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
+            return MODULE.CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
+        return MODULE.CommandResult(list(args), 0, stdout="remediated\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        initial_review_file=initial_review,
+        triage_enabled=True,
+        final_review=False,
+    )
+
+    summary = MODULE.run_loop(config, runner)
+
+    triage_json = json.loads((tmp_path / "artifacts" / "triage-1.json").read_text(encoding="utf-8"))
+    assert triage_json["source_review_artifact"] == "review-initial.txt"
+    assert summary["artifact_paths"]["reviews"] == [str(tmp_path / "artifacts" / "review-initial.txt")]
+    assert (tmp_path / "artifacts" / "review-initial.txt").exists()
+    assert "Structured triage handoff" in (calls[1][1] or "")
+
+
 def test_resolve_initial_review_file_latest(tmp_path):
     older = tmp_path / "20260428T000000Z"
     newer = tmp_path / "20260428T010000Z"

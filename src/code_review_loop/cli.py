@@ -1121,6 +1121,7 @@ def run_triage(
     runner: Runner,
     iteration: int,
     run_id: str,
+    source_review_artifact: str,
     review_output: str,
 ) -> tuple[str, int]:
     command = build_triage_command(config)
@@ -1140,13 +1141,12 @@ def run_triage(
         )
     progress_event(config, "triage", str(iteration), "done")
     triage_output = actionable_review_output(_combined_output(result))
-    review_artifact = f"review-{iteration}.txt"
     if triage.looks_structured_output(triage_output):
         try:
             payload = triage.parse_triage_payload(
                 triage_output,
                 run_id=run_id,
-                source_review_artifact=review_artifact,
+                source_review_artifact=source_review_artifact,
             )
         except triage.TriageValidationError as exc:
             issue = triage.invalid_triage_issue(exc, iteration=iteration)
@@ -1805,11 +1805,17 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
             remediation_input = pending_check_failures + "\n\n" + remediation_input
         try:
             if config.triage_enabled:
+                # Resumed runs keep the loaded review in review-initial.txt, so triage must
+                # point at that artifact instead of assuming review-1.txt.
+                source_review_artifact = (
+                    "review-initial.txt" if iteration == 1 and initial_review_output else f"review-{iteration}.txt"
+                )
                 remediation_input, suppressed_count = run_triage(
                     config,
                     runner,
                     iteration,
                     run_id,
+                    source_review_artifact,
                     remediation_input,
                 )
                 if suppressed_count:
