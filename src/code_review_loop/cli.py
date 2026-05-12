@@ -446,6 +446,27 @@ def _progress_event_kind(status: str) -> str:
     return "phase_result"
 
 
+def emit_loop_failure_event(
+    config: LoopConfig,
+    *,
+    phase: str,
+    iteration: int | str | None,
+    reason: str,
+    error: str,
+) -> None:
+    if config.event_sink is None:
+        return
+    config.event_sink.emit(
+        "failure",
+        phase=phase,
+        iteration=iteration,
+        payload={
+            "reason": reason,
+            "message": error,
+        },
+    )
+
+
 def warn_rich_unavailable(phase: str, label: str) -> None:
     global _RICH_UNAVAILABLE_WARNED
     if _RICH_UNAVAILABLE_WARNED:
@@ -1837,6 +1858,13 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                     summary["final_status"] = "error"
                     summary["stopped_reason"] = "review_failed"
                     summary["error"] = str(exc)
+                    emit_loop_failure_event(
+                        config,
+                        phase="review",
+                        iteration=iteration,
+                        reason="review_failed",
+                        error=str(exc),
+                    )
                     write_summary(config, summary)
                     raise RunLoopFailed(summary, str(exc)) from exc
                 last_review_output = actionable_review_output(_combined_output(review))
@@ -1894,6 +1922,13 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                 summary["stopped_reason"] = "triage_failed"
                 summary["error"] = str(exc)
                 iterations[-1]["triage_failed"] = True
+                emit_loop_failure_event(
+                    config,
+                    phase="triage",
+                    iteration=iteration,
+                    reason="triage_failed",
+                    error=str(exc),
+                )
                 write_summary(config, summary)
                 raise RunLoopFailed(
                     summary,
@@ -1908,6 +1943,13 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                 summary["stopped_reason"] = "remediation_failed"
                 summary["error"] = str(exc)
                 iterations[-1]["remediation_failed"] = True
+                emit_loop_failure_event(
+                    config,
+                    phase="remediate",
+                    iteration=iteration,
+                    reason="remediation_failed",
+                    error=str(exc),
+                )
                 write_summary(config, summary)
                 raise RunLoopFailed(
                     summary,
@@ -1951,6 +1993,13 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                     if exc.kind == "hook_failed":
                         summary["staged_changes_left"] = True
                         summary["pending_check_failures"] = True
+                    emit_loop_failure_event(
+                        config,
+                        phase="commit",
+                        iteration=iteration,
+                        reason=stopped_reason,
+                        error=str(exc),
+                    )
                     write_summary(config, summary)
                     raise RunLoopFailed(summary, str(exc)) from exc
                 except Exception as exc:
@@ -1958,6 +2007,13 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                     summary["stopped_reason"] = "commit_failed"
                     summary["error"] = str(exc)
                     iterations[-1]["commit_failed"] = True
+                    emit_loop_failure_event(
+                        config,
+                        phase="commit",
+                        iteration=iteration,
+                        reason="commit_failed",
+                        error=str(exc),
+                    )
                     write_summary(config, summary)
                     raise RunLoopFailed(summary, f"git commit failed for iteration {iteration}") from exc
                 if iterations[-1]["commit_status"] == "skipped_no_changes":
@@ -1983,6 +2039,13 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                 summary["final_status"] = "error"
                 summary["stopped_reason"] = "review_failed"
                 summary["error"] = str(exc)
+                emit_loop_failure_event(
+                    config,
+                    phase="review",
+                    iteration="final",
+                    reason="review_failed",
+                    error=str(exc),
+                )
                 write_summary(config, summary)
                 raise RunLoopFailed(summary, str(exc)) from exc
             final_review_output = actionable_review_output(_combined_output(final_review))

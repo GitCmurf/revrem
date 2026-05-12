@@ -5004,11 +5004,16 @@ def test_loop_writes_failure_summary_when_remediation_fails(tmp_path):
         raise AssertionError("expected remediation failure")
 
     summary = (tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8")
+    records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
+    failure_events = [event for event in records if event.kind == "failure"]
+
     assert '"final_status": "error"' in summary
     assert '"stopped_reason": "remediation_failed"' in summary
     assert '"artifact_paths"' in summary
     assert "review-1.txt" in summary
     assert '"1.txt"' not in summary
+    assert truncated is False
+    assert any(event.payload.get("reason") == "remediation_failed" for event in failure_events)
 
 
 def test_loop_writes_failure_summary_when_initial_review_invocation_fails(tmp_path):
@@ -5037,6 +5042,12 @@ def test_loop_writes_failure_summary_when_initial_review_invocation_fails(tmp_pa
     assert summary["artifact_paths"]["summary"] == str(tmp_path / "artifacts" / "summary.json")
     assert summary["artifact_paths"]["reviews"] == [str(review_path)]
     assert review_path.is_file()
+    records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
+    assert truncated is False
+    assert any(
+        event.kind == "failure" and event.payload.get("reason") == "review_failed"
+        for event in records
+    )
 
 
 def test_loop_writes_failure_summary_when_final_review_invocation_fails(tmp_path):

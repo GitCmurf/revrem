@@ -57,6 +57,8 @@ This project follows Semantic Versioning once public releases begin.
   command, status, return code, and artifact metadata.
 - Replay fixtures now cover clear and fully suppressed runs, and warning
   progress statuses map to first-class `warning` events.
+- Loop failure paths now emit structured `failure` events with stable reason
+  payloads before writing the final summary.
 
 ### Changed
 
