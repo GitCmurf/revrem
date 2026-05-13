@@ -113,6 +113,21 @@ def test_release_runbook_documents_rollback_and_provenance():
         assert "hotfix" in text.lower()
 
 
+def test_release_runbook_documents_task_002_external_gates():
+    runbook = (ROOT / "docs/60-runbooks/runbook-001-release-and-rollback.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "TASK-002 External Gate Checklist" in runbook
+    assert "Merge the implementation branch to `main`" in runbook
+    assert "branch protection requires the CI workflow" in runbook
+    assert "dry_run=true" in runbook
+    assert "Trusted Publisher entries" in runbook
+    assert "Publish an RC tag to TestPyPI" in runbook
+    assert "Publish the final tag only after the RC install smoke passes" in runbook
+    assert "Record final PyPI/TestPyPI/GitHub Release URLs" in runbook
+
+
 def test_optional_tui_extra_declares_textual_dependency():
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 

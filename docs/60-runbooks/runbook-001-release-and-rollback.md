@@ -3,7 +3,7 @@ document_id: REVREM-RUNBOOK-001
 type: RUNBOOK
 title: Release And Rollback
 status: Draft
-version: '0.1'
+version: '0.2'
 last_updated: '2026-05-13'
 owner: GitCmurf
 docops_version: '2.0'
@@ -78,6 +78,31 @@ Inspect the workflow log for:
 - successful version validation;
 - successful build-provenance attestation;
 - no PyPI or TestPyPI publish step.
+
+## TASK-002 External Gate Checklist
+
+These gates complete the parts of `REVREM-TASK-002` that cannot be proven from
+an unpushed local branch:
+
+1. Merge the implementation branch to `main` only after CI and required review
+   checks are green.
+2. Confirm branch protection requires the CI workflow before merge.
+3. Run the `Release` workflow with `dry_run=true` and archive the workflow URL
+   in the release issue or PR closeout note.
+4. Confirm the dry-run artifact contains the sdist, wheel, `SHA256SUMS`,
+   CycloneDX SBOM, Sigstore outputs, and GitHub build-provenance attestation.
+5. Confirm no PyPI/TestPyPI publish step ran during dry-run mode.
+6. Confirm PyPI and TestPyPI Trusted Publisher entries target owner
+   `GitCmurf`, repository `revrem`, workflow `Release`, and package `revrem`.
+7. Publish an RC tag to TestPyPI, install it in a clean environment, and run
+   `revrem --version`, `revrem --help`, and
+   `revrem doctor --format json --base main --codex-bin git` in a throwaway
+   Git repository.
+8. Publish the final tag only after the RC install smoke passes.
+9. Confirm the GitHub Release has all artifacts attached and that checksums,
+   signatures, and attestations verify.
+10. Record final PyPI/TestPyPI/GitHub Release URLs in the release issue,
+    changelog closeout, or PR body.
 
 ## TestPyPI Release Candidate
 
@@ -193,4 +218,5 @@ Record the reason in `CHANGELOG.md` and in the GitHub Release body.
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 0.2 | 2026-05-13 | Codex | Added explicit TASK-002 external gate checklist |
 | 0.1 | 2026-05-13 | GitCmurf | Initial release and rollback runbook |
