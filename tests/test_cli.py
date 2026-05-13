@@ -5324,6 +5324,9 @@ def test_loop_writes_cancellation_summary_when_interrupted(tmp_path):
         MODULE.run_loop(config, runner)
 
     summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
+    diagnostics_payload = json.loads(
+        (tmp_path / "artifacts" / "diagnostics.json").read_text(encoding="utf-8")
+    )
     records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
 
     assert str(excinfo.value) == "cancelled by operator"
@@ -5331,6 +5334,8 @@ def test_loop_writes_cancellation_summary_when_interrupted(tmp_path):
     assert summary["stopped_reason"] == "cancelled"
     assert summary["error"] == "cancelled by operator"
     assert summary["artifact_paths"]["summary"] == str(tmp_path / "artifacts" / "summary.json")
+    assert summary["artifact_paths"]["diagnostics"] == [str(tmp_path / "artifacts" / "diagnostics.json")]
+    assert diagnostics_payload["issues"][0]["code"] == "revrem.run.cancelled"
     assert truncated is False
     assert any(
         event.kind == "cancellation" and event.payload.get("reason") == "operator_interrupt"

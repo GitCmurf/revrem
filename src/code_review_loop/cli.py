@@ -1798,7 +1798,9 @@ def add_artifact_paths(summary: dict[str, object], config: LoopConfig) -> None:
         "diagnostics": [
             str(path)
             for path in files
-            if path.name.endswith("-status.json") or path.name.startswith("diagnostics-")
+            if path.name == "diagnostics.json"
+            or path.name.endswith("-status.json")
+            or path.name.startswith("diagnostics-")
         ],
     }
 
@@ -2234,6 +2236,21 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
         summary["final_status"] = "error"
         summary["stopped_reason"] = "cancelled"
         summary["error"] = "cancelled by operator"
+        artifacts.write_json_artifact(
+            config.artifact_dir,
+            "diagnostics.json",
+            diagnostics.doctor_payload(
+                [
+                    diagnostics.DiagnosticIssue(
+                        code="revrem.run.cancelled",
+                        severity="blocking",
+                        message="RevRem run was cancelled by the operator.",
+                        hint="Inspect summary.json and events.jsonl to determine the last completed phase before resuming or rerunning.",
+                        evidence={"reason": "operator_interrupt"},
+                    )
+                ]
+            ),
+        )
         if config.event_sink is not None:
             config.event_sink.emit(
                 "cancellation",

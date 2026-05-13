@@ -82,7 +82,8 @@ The main test module is `tests/test_cli.py`. It covers:
   ceiling stops, token/USD `cost_charge` accumulation, null token/USD usage for
   unsupported cost reporting, and exit code `3` for budget ceiling hits.
   Cancellation tests assert interrupted runs write `summary.json`,
-  `events.jsonl`, a `cancellation` event, and exit through stable code `5`.
+  `diagnostics.json`, `events.jsonl`, a `cancellation` event, and exit through
+  stable code `5`.
 - Resume-safety metadata tests assert `summary.json` records current `HEAD`,
   base commit, merge base, and explicit unavailable values outside Git.
 - `tests/test_resume.py` covers resume preconditions: matching Git state,

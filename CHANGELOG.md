@@ -117,6 +117,8 @@ This project follows Semantic Versioning once public releases begin.
 - Failed or timed-out structured triage commands now write
   `diagnostics-N.json` before the loop exits, keeping triage failures
   inspectable from machine-readable artifacts.
+- Operator cancellation now writes `diagnostics.json` alongside `summary.json`
+  and `events.jsonl`.
 
 ### Changed
 
