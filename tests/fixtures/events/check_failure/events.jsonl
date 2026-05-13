@@ -1,0 +1,4 @@
+{"iteration":"1","kind":"phase_start","payload":{"message":"codex review --base main"},"phase":"review","run_id":"fixture-check-failure","schema_version":"1.0","seq":1,"ts":"2026-05-12T00:00:00Z"}
+{"iteration":"1","kind":"phase_result","payload":{"status":"findings","summary":"findings"},"phase":"review","run_id":"fixture-check-failure","schema_version":"1.0","seq":2,"ts":"2026-05-12T00:00:01Z"}
+{"iteration":"1.1","kind":"check_result","payload":{"command":"pytest -q","status":"failed","message":"exit 1"},"phase":"check","run_id":"fixture-check-failure","schema_version":"1.0","seq":3,"ts":"2026-05-12T00:00:02Z"}
+{"iteration":null,"kind":"summary","payload":{"summary":"max_iterations_reached_with_check_failures"},"phase":null,"run_id":"fixture-check-failure","schema_version":"1.0","seq":4,"ts":"2026-05-12T00:00:03Z"}

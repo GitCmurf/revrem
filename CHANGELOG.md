@@ -88,6 +88,8 @@ This project follows Semantic Versioning once public releases begin.
 - Harness-reported token and USD charges now emit `cost_charge`, accumulate in
   summary budgets, and enforce `--max-tokens` / `--max-usd` ceilings before the
   next model call.
+- Replay fixture coverage now spans clear, remediated, rejected-finding,
+  timeout, check-failure, cancellation, cost-ceiling, and suppressed scenarios.
 
 ### Changed
 

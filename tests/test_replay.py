@@ -36,8 +36,9 @@ def test_replay_returns_nonzero_for_truncated_events(tmp_path, capsys):
 
 
 def test_replay_golden_event_fixtures():
-    for fixture in ("clear", "suppressed"):
-        fixture_dir = ROOT / "tests" / "fixtures" / "events" / fixture
+    fixtures_dir = ROOT / "tests" / "fixtures" / "events"
+
+    for fixture_dir in sorted(path for path in fixtures_dir.iterdir() if path.is_dir()):
         records, truncated = events.read_events(fixture_dir / "events.jsonl")
 
         assert truncated is False

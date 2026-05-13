@@ -1,0 +1,4 @@
+0001|review|1|phase_start: codex review --base main
+0002|review|1|phase_result: findings
+0003|check|1.1|check_result: failed
+0004|summary|summary: max_iterations_reached_with_check_failures

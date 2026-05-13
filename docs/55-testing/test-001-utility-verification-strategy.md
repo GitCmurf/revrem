@@ -69,8 +69,9 @@ The main test module is `tests/test_cli.py`. It covers:
   `tests/test_replay.py`, including schema validation, gap-free sequencing,
   truncated-tail tolerance, offline compact replay, and loop-emitted
   `check_result` events for passing and failing verification checks. Golden
-  compact replay fixtures cover clear and fully suppressed runs. Failure-path
-  tests assert structured `failure` events with stable reason payloads. Renderer
+  compact replay fixtures cover clear, remediated, rejected-finding, timeout,
+  check-failure, cancellation, cost-ceiling, and fully suppressed runs.
+  Failure-path tests assert structured `failure` events with stable reason payloads. Renderer
   sink tests assert live renderer callbacks receive sequenced events, slow
   renderers do not block event producers, and renderer exceptions are contained
   as sink diagnostics. TUI state tests read `events.jsonl` through the replay

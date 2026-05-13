@@ -1,0 +1,5 @@
+{"iteration":"1","kind":"phase_start","payload":{"message":"codex review --base main"},"phase":"review","run_id":"fixture-rejected-fp","schema_version":"1.0","seq":1,"ts":"2026-05-12T00:00:00Z"}
+{"iteration":"1","kind":"phase_result","payload":{"status":"findings","summary":"findings"},"phase":"review","run_id":"fixture-rejected-fp","schema_version":"1.0","seq":2,"ts":"2026-05-12T00:00:01Z"}
+{"iteration":"1","kind":"phase_start","payload":{"message":"codex exec triage"},"phase":"triage","run_id":"fixture-rejected-fp","schema_version":"1.0","seq":3,"ts":"2026-05-12T00:00:02Z"}
+{"iteration":"1","kind":"phase_result","payload":{"status":"done","summary":"rejected_all_findings"},"phase":"triage","run_id":"fixture-rejected-fp","schema_version":"1.0","seq":4,"ts":"2026-05-12T00:00:03Z"}
+{"iteration":null,"kind":"summary","payload":{"summary":"triage_rejected_all_findings"},"phase":null,"run_id":"fixture-rejected-fp","schema_version":"1.0","seq":5,"ts":"2026-05-12T00:00:04Z"}
