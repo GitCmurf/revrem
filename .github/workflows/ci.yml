@@ -89,3 +89,11 @@ jobs:
           .pkg-smoke/bin/revrem --version
           .pkg-smoke/bin/revrem --help
           .pkg-smoke/bin/code-review-loop --version
+          git -C tests/fixtures/reference-repo init
+          git -C tests/fixtures/reference-repo config user.email "ci@example.invalid"
+          git -C tests/fixtures/reference-repo config user.name "RevRem CI"
+          git -C tests/fixtures/reference-repo add .
+          git -C tests/fixtures/reference-repo commit -m "fixture baseline"
+          git -C tests/fixtures/reference-repo branch -M main
+          cd tests/fixtures/reference-repo
+          ../../../.pkg-smoke/bin/revrem doctor --format json --base main --codex-bin git --artifact-dir .revrem/runs/smoke

@@ -62,6 +62,9 @@ def test_ci_builds_and_smokes_revrem_wheel():
     assert ".pkg-smoke/bin/python -m pip install dist/revrem-*.whl" in workflow
     assert ".pkg-smoke/bin/revrem --version" in workflow
     assert ".pkg-smoke/bin/code-review-loop --version" in workflow
+    assert "git -C tests/fixtures/reference-repo init" in workflow
+    assert "cd tests/fixtures/reference-repo" in workflow
+    assert "../../../.pkg-smoke/bin/revrem doctor --format json --base main --codex-bin git" in workflow
 
 
 def test_release_workflow_uses_trusted_publishing_and_dry_run():
