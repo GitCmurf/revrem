@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import locale
+import os
 import shlex
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -48,6 +51,10 @@ class DoctorConfig:
     codex_bin: str = "codex"
     check_commands: tuple[str, ...] = ()
     commit_after_remediation: bool = False
+    timeout_seconds: float | None = None
+    review_timeout_seconds: float | None = None
+    remediation_timeout_seconds: float | None = None
+    triage_timeout_seconds: float | None = None
 
 
 def run_doctor(config: DoctorConfig) -> list[DiagnosticIssue]:
@@ -81,6 +88,8 @@ def run_doctor(config: DoctorConfig) -> list[DiagnosticIssue]:
 
     issues.extend(_artifact_dir_issues(config, git_root))
     issues.extend(_executable_issues(config))
+    issues.extend(_timeout_issues(config))
+    issues.extend(_locale_issues())
 
     if not issues:
         issues.append(
@@ -185,6 +194,60 @@ def _git_issues(config: DoctorConfig, git_root: Path) -> list[DiagnosticIssue]:
                 )
             )
     return issues
+
+
+def _timeout_issues(config: DoctorConfig) -> list[DiagnosticIssue]:
+    issues: list[DiagnosticIssue] = []
+    for label, value in (
+        ("global", config.timeout_seconds),
+        ("review", config.review_timeout_seconds),
+        ("remediation", config.remediation_timeout_seconds),
+        ("triage", config.triage_timeout_seconds),
+    ):
+        if value is None:
+            continue
+        if value < 0:
+            issues.append(
+                DiagnosticIssue(
+                    code="revrem.preflight.negative_timeout",
+                    severity="blocking",
+                    message=f"{label.capitalize()} timeout must be zero or greater.",
+                    hint="Use a positive timeout, or use 0 only where you intentionally want to disable that phase timeout.",
+                    evidence={"phase": label, "timeout_seconds": value},
+                )
+            )
+        elif value == 0:
+            issues.append(
+                DiagnosticIssue(
+                    code="revrem.preflight.timeout_disabled",
+                    severity="warn",
+                    message=f"{label.capitalize()} timeout is disabled.",
+                    hint="Prefer a bounded timeout for unattended runs; use 0 only for watched sessions that an operator can interrupt.",
+                    evidence={"phase": label, "timeout_seconds": value},
+                )
+            )
+    return issues
+
+
+def _locale_issues() -> list[DiagnosticIssue]:
+    filesystem_encoding = sys.getfilesystemencoding() or ""
+    preferred_encoding = locale.getpreferredencoding(False) or ""
+    locale_vars = {name: os.environ.get(name, "") for name in ("LC_ALL", "LC_CTYPE", "LANG")}
+    if "UTF" in filesystem_encoding.upper() and "UTF" in preferred_encoding.upper():
+        return []
+    return [
+        DiagnosticIssue(
+            code="revrem.preflight.locale_not_utf8",
+            severity="warn",
+            message="The current locale does not appear to be UTF-8 capable.",
+            hint="Use a UTF-8 locale such as C.UTF-8 or en_US.UTF-8 so artifact text is encoded predictably.",
+            evidence={
+                "filesystem_encoding": filesystem_encoding,
+                "preferred_encoding": preferred_encoding,
+                "environment": locale_vars,
+            },
+        )
+    ]
 
 
 def _artifact_dir_issues(config: DoctorConfig, git_root: Path | None) -> list[DiagnosticIssue]:

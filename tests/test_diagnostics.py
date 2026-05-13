@@ -244,3 +244,48 @@ def test_run_doctor_reports_unparseable_check_command(tmp_path):
     )
 
     assert "revrem.preflight.check_command_unparseable" in _issue_codes(issues)
+
+
+def test_run_doctor_warns_when_timeout_is_explicitly_disabled(tmp_path):
+    repo = _make_repo(tmp_path)
+
+    issues = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(
+            cwd=repo,
+            base="main",
+            codex_bin="git",
+            review_timeout_seconds=0,
+        )
+    )
+
+    assert "revrem.preflight.timeout_disabled" in _issue_codes(issues)
+    assert diagnostics.has_warning_issue(issues)
+    assert not diagnostics.has_blocking_issue(issues)
+
+
+def test_run_doctor_blocks_negative_timeout(tmp_path):
+    repo = _make_repo(tmp_path)
+
+    issues = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(
+            cwd=repo,
+            base="main",
+            codex_bin="git",
+            timeout_seconds=-1,
+        )
+    )
+
+    assert "revrem.preflight.negative_timeout" in _issue_codes(issues)
+    assert diagnostics.has_blocking_issue(issues)
+
+
+def test_run_doctor_warns_on_non_utf8_locale(tmp_path, monkeypatch):
+    repo = _make_repo(tmp_path)
+    monkeypatch.setattr(diagnostics.sys, "getfilesystemencoding", lambda: "ascii")
+    monkeypatch.setattr(diagnostics.locale, "getpreferredencoding", lambda _do_setlocale=False: "ANSI_X3.4-1968")
+
+    issues = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(cwd=repo, base="main", codex_bin="git")
+    )
+
+    assert "revrem.preflight.locale_not_utf8" in _issue_codes(issues)

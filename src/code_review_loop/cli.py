@@ -1941,6 +1941,10 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                     codex_bin=config.codex_bin,
                     check_commands=config.check_commands,
                     commit_after_remediation=config.commit_after_remediation,
+                    timeout_seconds=config.timeout_seconds,
+                    review_timeout_seconds=config.review_timeout_seconds,
+                    remediation_timeout_seconds=config.remediation_timeout_seconds,
+                    triage_timeout_seconds=config.triage_timeout_seconds,
                 )
             )
             if diagnostics.has_blocking_issue(issues):
@@ -3707,6 +3711,11 @@ def doctor_main(argv: Sequence[str]) -> int:
                 codex_bin=args.codex_bin if args.codex_bin is not None else profile.runtime.codex_bin,
                 check_commands=tuple(args.check) if args.check is not None else profile.pipeline.checks,
                 commit_after_remediation=args.commit_after_remediation or profile.commit.enabled,
+                review_timeout_seconds=profile.review.timeout_seconds,
+                remediation_timeout_seconds=profile.remediation.timeout_seconds,
+                triage_timeout_seconds=(
+                    profile.triage.timeout_seconds if profile.triage.enabled else None
+                ),
             )
         )
         issues.extend(_suppression_doctor_issues(Path.cwd()))

@@ -446,7 +446,11 @@ of crashing. Relative `--artifact-dir` values are resolved against the doctor
 supplied, that effective path is the default `.revrem/runs/<timestamp>-<suffix>/`
 tree that a normal loop run will create. It exits `4` for blocking setup
 failures, `6` for warnings when `--strict` is used, and `0` when the local
-preflight is clear.
+preflight is clear. It warns when a profile explicitly disables a phase timeout
+with `timeout_seconds = 0` and when the current locale is not UTF-8 capable,
+because both conditions make unattended artifact generation less predictable.
+Regenerate the diagnostics table with `scripts/dev-render-diagnostics` after
+adding or changing diagnostic codes.
 
 Normal live CLI runs use the same diagnostics path before the first model call.
 When setup preflight blocks execution, RevRem writes `diagnostics.json`,
@@ -628,8 +632,11 @@ until a backend adapter is implemented.
 - `2`: the utility completed but the bounded loop still has findings or pending
   check failures.
 - `3`: a configured budget ceiling was reached before the next model call.
+- `4`: setup diagnostics blocked execution before the first model call, or a
+  resumability precondition failed.
 - `5`: the operator cancelled the run with Ctrl-C/SIGTERM and RevRem wrote
   best-effort cancellation artifacts.
+- `6`: `revrem doctor --strict` found warning-level diagnostics.
 
 ### Operator guidance
 

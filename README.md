@@ -104,7 +104,9 @@ revrem doctor --base main --check "pytest -q"
 `revrem doctor` validates the local Git base, writable artifact path, Codex
 executable, and configured check executables without invoking a model. Relative
 `--artifact-dir` values are resolved against the doctor `cwd`, not the process
-working directory. Use `--format json` for automation.
+working directory. It warns when profile timeouts explicitly disable a phase
+timeout and when the current locale is not UTF-8 capable. Use `--format json`
+for automation.
 
 To share a failed run safely, create a redacted bundle:
 

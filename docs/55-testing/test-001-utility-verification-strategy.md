@@ -141,8 +141,9 @@ partial remediation output, and deterministic token charges for budget-ceiling
 coverage.
 `tests/test_diagnostics.py` covers deterministic local setup diagnostics for
 Git topology, commit-mode cleanliness, Codex executable discovery, artifact
-directory writability, configured check executables, and stable diagnostic
-fingerprints across different worktree paths.
+directory writability, configured check executables, disabled and negative
+timeouts, non-UTF-8 locale warnings, and stable diagnostic fingerprints across
+different worktree paths.
 CLI preflight tests assert a normal live run uses the same diagnostics path,
 writes `diagnostics.json` and `summary.json`, exits `4`, and does not invoke
 review when setup is blocking.

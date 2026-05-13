@@ -101,6 +101,11 @@ This project follows Semantic Versioning once public releases begin.
 - Live CLI runs now execute the doctor diagnostics path before the first model
   call and fail with setup exit code `4` plus `diagnostics.json` when blocking
   preflight issues are found.
+- Doctor diagnostics now warn on explicitly disabled profile timeouts and
+  non-UTF-8 locales, and `scripts/dev-render-diagnostics` renders the
+  source-derived diagnostic code table for docs updates.
+- The release build backend is pinned to `setuptools==80.9.0` for reproducible
+  package builds.
 - Fake harness fixtures now cover partial remediation output that fails while
   preserving the remediation artifact.
 - Package smoke CI now covers Linux and macOS on Python 3.11 and 3.12, and the
