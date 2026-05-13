@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from code_review_loop import fingerprints
+
 DIAGNOSTICS_SCHEMA_VERSION = "1.0"
 SEVERITY_ORDER = {"blocking": 0, "warn": 1, "ok": 2}
 
@@ -25,6 +27,7 @@ class DiagnosticIssue:
     schema_version: str = DIAGNOSTICS_SCHEMA_VERSION
 
     def to_dict(self) -> dict[str, Any]:
+        fingerprint = self.fingerprint or diagnostic_fingerprint(self)
         return {
             "schema_version": self.schema_version,
             "code": self.code,
@@ -32,7 +35,7 @@ class DiagnosticIssue:
             "message": self.message,
             "hint": self.hint,
             "evidence": self.evidence,
-            "fingerprint": self.fingerprint,
+            "fingerprint": fingerprint,
         }
 
 
@@ -98,6 +101,26 @@ def has_blocking_issue(issues: list[DiagnosticIssue]) -> bool:
 
 def has_warning_issue(issues: list[DiagnosticIssue]) -> bool:
     return any(issue.severity == "warn" for issue in issues)
+
+
+def diagnostic_fingerprint(issue: DiagnosticIssue) -> str:
+    """Return a stable F4 fingerprint for a diagnostic issue."""
+    return fingerprints.finding_fingerprint(
+        fingerprints.FindingFingerprintInput(
+            rule_id=issue.code,
+            path=".",
+            message=issue.message,
+            severity=_diagnostic_severity_bucket(issue.severity),
+        )
+    )
+
+
+def _diagnostic_severity_bucket(severity: str) -> str:
+    if severity == "blocking":
+        return "high"
+    if severity == "warn":
+        return "medium"
+    return "info"
 
 
 def doctor_payload(issues: list[DiagnosticIssue]) -> dict[str, Any]:

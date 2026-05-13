@@ -96,6 +96,8 @@ This project follows Semantic Versioning once public releases begin.
 - The fake harness now exposes deterministic token-charge fixtures so budget
   ceilings can be tested through the same `CommandResult` accounting path used
   by model harnesses.
+- Doctor diagnostics now include stable `f1:` fingerprints derived from the
+  shared fingerprint algorithm without embedding absolute worktree paths.
 
 ### Changed
 

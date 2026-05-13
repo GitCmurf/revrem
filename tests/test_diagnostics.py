@@ -57,6 +57,26 @@ def test_run_doctor_reports_invalid_base(tmp_path):
     assert diagnostics.has_blocking_issue(issues)
 
 
+def test_diagnostic_fingerprints_are_stable_across_worktree_paths(tmp_path):
+    first_parent = tmp_path / "one"
+    second_parent = tmp_path / "two"
+    first_parent.mkdir()
+    second_parent.mkdir()
+    first = _make_repo(first_parent)
+    second = _make_repo(second_parent)
+
+    first_issue = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(cwd=first, base="missing", codex_bin="git")
+    )[0]
+    second_issue = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(cwd=second, base="missing", codex_bin="git")
+    )[0]
+
+    assert first_issue.to_dict()["code"] == "revrem.preflight.invalid_base"
+    assert first_issue.to_dict()["fingerprint"].startswith("f1:")
+    assert first_issue.to_dict()["fingerprint"] == second_issue.to_dict()["fingerprint"]
+
+
 def test_run_doctor_blocks_dirty_worktree_in_commit_mode(tmp_path):
     repo = _make_repo(tmp_path)
     (repo / "README.md").write_text("# Changed\n", encoding="utf-8")

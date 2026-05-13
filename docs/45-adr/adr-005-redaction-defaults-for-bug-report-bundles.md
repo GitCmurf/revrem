@@ -57,6 +57,13 @@ Raw review/remediation/triage transcripts are excluded unless the operator
 passes `--include-raw-transcripts`. When raw transcripts are included they are
 still redacted by default.
 
+Failure diagnostics carry stable `f1:` fingerprints derived from the shared F4
+fingerprint module. Diagnostic fingerprints use the diagnostic code as the rule
+id, `.` as the synthetic path, the human diagnostic message as the message stem,
+and a severity bucket mapped from diagnostic severity. They intentionally avoid
+embedding absolute worktree paths or usernames so the same failure class is
+searchable across machines and temporary directories.
+
 Disabling redaction requires both `--no-redact` and
 `--i-understand-the-risks`. This two-flag gate is intentional: a single
 negative flag is too easy to cargo-cult into scripts.
