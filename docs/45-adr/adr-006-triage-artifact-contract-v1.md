@@ -2,7 +2,7 @@
 document_id: REVREM-ADR-006
 type: ADR
 title: Triage artifact contract v1
-status: Draft
+status: Accepted
 version: '0.1'
 last_updated: '2026-05-12'
 owner: __TBD__

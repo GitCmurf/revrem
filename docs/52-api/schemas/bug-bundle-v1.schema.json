@@ -16,7 +16,11 @@
       "type": "boolean"
     },
     "redaction_counts": {
-      "type": "object"
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
     },
     "run_id": {
       "minLength": 1,

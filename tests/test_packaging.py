@@ -89,8 +89,8 @@ def test_release_workflow_uses_trusted_publishing_and_dry_run():
     assert "python -m twine check dist/*" in workflow
     assert "dist/SHA256SUMS" in workflow
     assert "actions/attest-build-provenance" in workflow
-    assert "sigstore/gh-action-sigstore-python" in workflow
-    assert "pypa/gh-action-pypi-publish@release/v1" in workflow
+    assert "sigstore/gh-action-sigstore-python@" in workflow
+    assert "pypa/gh-action-pypi-publish@" in workflow
     assert "repository-url: https://test.pypi.org/legacy/" in workflow
     assert "github.event_name == 'push' && contains(github.ref_name, '-rc')" in workflow
     assert "github.event_name == 'push' && !contains(github.ref_name, '-rc')" in workflow
@@ -166,7 +166,7 @@ def test_dev_extra_exercises_rich_and_textual_paths():
     dev_extra = pyproject["project"]["optional-dependencies"]["dev"]
     redaction_extra = pyproject["project"]["optional-dependencies"]["redaction"]
 
-    assert any(dependency.startswith("jsonschema>=") for dependency in dev_extra)
+    assert any(dependency.startswith("jsonschema>=") for dependency in pyproject["project"]["dependencies"])
     assert any(dependency.startswith("detect-secrets>=") for dependency in redaction_extra)
     assert any(dependency.startswith("rich>=") for dependency in dev_extra)
     assert any(dependency.startswith("textual>=") for dependency in dev_extra)

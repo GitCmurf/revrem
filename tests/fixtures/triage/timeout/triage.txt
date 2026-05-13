@@ -1,1 +1,1 @@
-Command timed out after 1 seconds
+Command timed out after 1 second

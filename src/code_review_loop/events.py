@@ -112,6 +112,7 @@ class RendererSink:
         self.dropped_events = 0
         self.render_errors = 0
         self._seq = 0
+        self._lock = threading.Lock()
         self._renderer = renderer
         self._close_timeout_seconds = close_timeout_seconds
         self._closed = False
@@ -129,10 +130,12 @@ class RendererSink:
     ) -> Event:
         if self._closed:
             raise ValueError("renderer sink is closed")
-        self._seq += 1
+        with self._lock:
+            self._seq += 1
+            seq = self._seq
         event = make_event(
             run_id=self.run_id,
-            seq=self._seq,
+            seq=seq,
             kind=kind,
             phase=phase,
             iteration=iteration,
@@ -259,6 +262,8 @@ def read_events(path: Path) -> tuple[list[Event], bool]:
             continue
         try:
             payload = json.loads(line)
+            if not isinstance(payload, dict):
+                raise ValueError("event line must be a JSON object")
             event = event_from_dict(payload)
         except (json.JSONDecodeError, ValueError, TypeError):
             truncated = True

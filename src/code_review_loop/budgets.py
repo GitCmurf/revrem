@@ -47,6 +47,8 @@ def parse_usd(value: str | None) -> Decimal | None:
         amount = Decimal(value)
     except InvalidOperation as exc:
         raise ValueError("--max-usd must be a decimal number") from exc
+    if not amount.is_finite():
+        raise ValueError("--max-usd must be a finite decimal number")
     if amount < 0:
         raise ValueError("--max-usd must be 0 or greater")
     return amount

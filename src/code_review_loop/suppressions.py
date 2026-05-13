@@ -153,6 +153,8 @@ def is_expired(entry: SuppressionEntry, *, now: datetime | None = None) -> bool:
     if entry.expires_at is None:
         return False
     current = now or datetime.now(UTC)
+    if current.tzinfo is None:
+        raise TypeError("now must be timezone-aware")
     return parse_timestamp(entry.expires_at, field="expires_at") <= current
 
 
@@ -231,6 +233,9 @@ def audit_summary(path: Path) -> dict[str, object] | None:
         total += 1
         try:
             record = json.loads(line)
+            if not isinstance(record, dict):
+                counts["invalid"] = counts.get("invalid", 0) + 1
+                continue
         except json.JSONDecodeError:
             counts["invalid"] = counts.get("invalid", 0) + 1
             continue

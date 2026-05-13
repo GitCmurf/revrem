@@ -10,6 +10,10 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "src" / "code_review_loop" / "diagnostics.py"
 
 
+def escape_md(cell: str) -> str:
+    return cell.replace("|", "\\|").replace("\n", " ")
+
+
 def _literalish(node: ast.AST) -> str:
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
@@ -38,7 +42,7 @@ def main() -> int:
     print("| Code | Message | Hint |")
     print("| --- | --- | --- |")
     for code, message, hint in sorted(set(rows)):
-        print(f"| `{code}` | {message} | {hint} |")
+        print(f"| `{escape_md(code)}` | {escape_md(message)} | {escape_md(hint)} |")
     return 0
 
 

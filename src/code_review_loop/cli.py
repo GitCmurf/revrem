@@ -563,7 +563,7 @@ def default_runner(args: Sequence[str], cwd: Path, input_text: str | None = None
         stdout = _timeout_stream_text(exc.output)
         stderr = _timeout_stream_text(exc.stderr)
         timeout_note = (
-            f"Command timed out after {timeout_seconds} seconds\n"
+            f"Command timed out after {timeout_seconds} second{'s' if timeout_seconds != 1 else ''}\n"
             f"Command: {shlex.join(list(args))}\n"
             f"cwd: {cwd}\n"
         )
@@ -2425,7 +2425,9 @@ def add_summary_contract_fields(config: LoopConfig, summary: dict[str, object]) 
     summary.setdefault(
         "phases",
         {
-            "iteration_count": len(iterations) if isinstance(iterations, list) else 0,
+            "_summary": {
+                "iteration_count": len(iterations) if isinstance(iterations, list) else 0,
+            },
         },
     )
     summary.setdefault("finished_at", datetime.now(UTC).isoformat().replace("+00:00", "Z"))
@@ -3849,11 +3851,13 @@ def resume_main(argv: Sequence[str]) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 4
     if args.format == "json":
-        print(diagnostics.doctor_json(issues), end="")
+        if diagnostics.has_blocking_issue(issues):
+            print(diagnostics.doctor_json(issues), end="")
+            return 4
     else:
         print(diagnostics.doctor_text(issues), end="")
-    if diagnostics.has_blocking_issue(issues):
-        return 4
+        if diagnostics.has_blocking_issue(issues):
+            return 4
     try:
         summary = resume_run(run_dir)
     except RunLoopFailed as exc:
@@ -3886,7 +3890,7 @@ def resume_precondition_issues(run_dir: Path, *, cwd: Path) -> list[diagnostics.
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     if not isinstance(summary, dict):
         raise ValueError("summary.json must contain a JSON object")
-    if latest_resume_review_path(summary) is None:
+    if latest_resume_review_path(summary, run_dir=run_dir) is None:
         issues.append(
             diagnostics.DiagnosticIssue(
                 code="revrem.resume.missing_review_artifact",
@@ -3965,7 +3969,7 @@ def resume_loop_config(summary: dict[str, object], *, run_dir: Path) -> LoopConf
     resume_config = summary.get("resume_config")
     if not isinstance(resume_config, dict):
         raise ValueError("summary.json is missing resume_config")
-    review_path = latest_resume_review_path(summary)
+    review_path = latest_resume_review_path(summary, run_dir=run_dir)
     if review_path is None:
         raise ValueError("summary.json is missing a resumable review artifact")
     return LoopConfig(
@@ -3996,7 +4000,7 @@ def resume_loop_config(summary: dict[str, object], *, run_dir: Path) -> LoopConf
     )
 
 
-def latest_resume_review_path(summary: dict[str, object]) -> Path | None:
+def latest_resume_review_path(summary: dict[str, object], *, run_dir: Path) -> Path | None:
     artifact_paths = summary.get("artifact_paths")
     if not isinstance(artifact_paths, dict):
         return None
@@ -4006,6 +4010,8 @@ def latest_resume_review_path(summary: dict[str, object]) -> Path | None:
     for item in reversed(reviews):
         if isinstance(item, str):
             path = Path(item)
+            if not path.is_absolute():
+                path = run_dir / path
             if path.is_file():
                 return path
     return None

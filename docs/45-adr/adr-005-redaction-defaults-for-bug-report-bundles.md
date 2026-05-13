@@ -2,7 +2,7 @@
 document_id: REVREM-ADR-005
 type: ADR
 title: Redaction defaults for bug report bundles
-status: Draft
+status: Accepted
 version: '0.1'
 last_updated: '2026-05-11'
 owner: __TBD__

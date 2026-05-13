@@ -71,13 +71,17 @@ def _atomic_write(path: Path, content: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
     tmp_path = Path(tmp_name)
+    fd_consumed = False
     try:
         with os.fdopen(fd, "wb") as handle:
+            fd_consumed = True
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(tmp_path, path)
     except Exception:
+        if not fd_consumed:
+            os.close(fd)
         with suppress(FileNotFoundError):
             tmp_path.unlink()
         raise

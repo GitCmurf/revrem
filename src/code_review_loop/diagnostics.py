@@ -113,7 +113,7 @@ def has_warning_issue(issues: list[DiagnosticIssue]) -> bool:
 
 
 def diagnostic_fingerprint(issue: DiagnosticIssue) -> str:
-    """Return a stable F4 fingerprint for a diagnostic issue."""
+    """Return a stable f1: fingerprint for a diagnostic issue."""
     return fingerprints.finding_fingerprint(
         fingerprints.FindingFingerprintInput(
             rule_id=issue.code,
@@ -302,7 +302,7 @@ def _validate_default_artifact_dir(target: Path) -> None:
     conflict = _first_conflicting_path(target)
     if conflict is not None:
         raise NotADirectoryError(conflict)
-    probe_parent = _nearest_existing_directory(target.parent)
+    probe_parent = _nearest_existing_directory(target)
     probe = probe_parent / ".revrem-doctor-write-test"
     probe.write_text("ok", encoding="utf-8")
     probe.unlink()

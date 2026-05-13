@@ -61,7 +61,7 @@ def _format_value(value: object) -> str:
     if isinstance(value, float):
         return repr(value)
     if value is None:
-        return '""'
+        raise TypeError("TOML does not support null/None values")
     if isinstance(value, str):
         escaped = _escape_basic_string(value)
         return f'"{escaped}"'

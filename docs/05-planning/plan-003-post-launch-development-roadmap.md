@@ -957,7 +957,7 @@ listed contract changes only with a major version bump.
 Three tracks run concurrently after M0 lands. Within a track, PRs are
 serial. Across tracks, they are independent.
 
-```
+```text
 Track A (Trust):    M0 ──> M1 ──> M2 ───────────────────────────────> 1.0
 Track B (Workflow):       M3 ──> M4 ──> M5 ─────────> M8 ──────────> 1.0
 Track C (Showcase):              M6 ──> M7 ──────────> M9 ──────────> 1.0

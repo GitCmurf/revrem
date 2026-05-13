@@ -1213,7 +1213,7 @@ def test_loop_failed_triage_command_writes_diagnostics(tmp_path):
             return MODULE.CommandResult(
                 list(args),
                 -1,
-                stderr="Command timed out after 1 seconds\n",
+                stderr="Command timed out after 1 second\n",
             )
         return MODULE.CommandResult(list(args), 0, stdout="remediated\n")
 
