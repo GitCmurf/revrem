@@ -1826,7 +1826,7 @@ def test_loop_stops_on_commit_hook_failure_when_policy_is_stop(tmp_path):
     assert summary["iterations"][0]["commit_status"] == "hook_failed"
 
 
-def test_run_commit_uses_no_verify_when_policy_is_explicit(tmp_path):
+def test_run_commit_uses_no_verify_only_on_retry(tmp_path):
     calls = []
     repo_root, cwd = make_git_worktree(tmp_path)
 
@@ -1856,6 +1856,11 @@ def test_run_commit_uses_no_verify_when_policy_is_explicit(tmp_path):
     )
 
     assert MODULE.run_commit(config, runner, 1) == "committed"
+    assert ["git", "commit", "-m", "chore: remediate review iteration 1 (RevRem)"] in calls
+    assert ["git", "commit", "--no-verify", "-m", "chore: remediate review iteration 1 (RevRem)"] not in calls
+
+    calls.clear()
+    assert MODULE.run_commit(config, runner, 1, retrying=True) == "committed"
     assert ["git", "commit", "--no-verify", "-m", "chore: remediate review iteration 1 (RevRem)"] in calls
 
 
@@ -5785,3 +5790,34 @@ def test_loop_writes_failure_summary_when_final_review_invocation_fails(tmp_path
         str(review_path),
     ]
     assert review_path.is_file()
+
+
+def test_append_run_history_preserves_budget_totals(tmp_path):
+    from decimal import Decimal
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[1] == "review":
+            return MODULE.CommandResult(
+                list(args), 0, stdout="No findings.\nREVIEW_STATUS: clear\n", tokens=500, usd=Decimal("0.03")
+            )
+        return MODULE.CommandResult(list(args), 0, stdout="ok\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+    )
+
+    summary = MODULE.run_loop(config, runner)
+    budgets_before = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))["budgets"]
+
+    assert budgets_before["tokens"] == 500
+    assert budgets_before["usd"] == "0.03"
+
+    MODULE.append_run_history(summary, config)
+    budgets_after = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))["budgets"]
+
+    assert budgets_after["tokens"] == budgets_before["tokens"]
+    assert budgets_after["usd"] == budgets_before["usd"]

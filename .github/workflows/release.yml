@@ -117,14 +117,14 @@ jobs:
           path: dist/*
 
       - name: Publish to TestPyPI
-        if: github.event_name == 'push' && contains(github.ref_name, '-rc')
+        if: github.event_name == 'push' && contains(github.ref_name, 'rc')
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
           packages-dir: dist/
 
       - name: Publish to PyPI
-        if: github.event_name == 'push' && !contains(github.ref_name, '-rc')
+        if: github.event_name == 'push' && !contains(github.ref_name, 'rc')
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
         with:
           packages-dir: dist/

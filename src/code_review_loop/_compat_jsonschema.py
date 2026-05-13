@@ -20,6 +20,9 @@ try:
 except ImportError:
     from collections.abc import Iterator
 
+    class ValidationError(ValueError):
+        """Minimal stand-in for jsonschema.exceptions.ValidationError."""
+
     def validate(instance, schema) -> None:  # type: ignore[misc]  # noqa: F811
         Draft202012Validator(schema).validate(instance)
 
@@ -35,7 +38,7 @@ except ImportError:
         def validate(self, instance) -> None:
             errors = list(self.iter_errors(instance))
             if errors:
-                raise ValueError(errors[0])
+                raise ValidationError(errors[0])
 
         def iter_errors(self, instance) -> Iterator[str]:
             yield from _validate(instance, self.schema, path="$")
@@ -84,6 +87,8 @@ except ImportError:
                     yield from _validate(value, properties[key], path=f"{path}.{key}")
                 elif additional is False:
                     yield f"{path}: unexpected property {key!r}"
+                elif isinstance(additional, dict):
+                    yield from _validate(value, additional, path=f"{path}.{key}")
 
     def _matches_type(instance, expected) -> bool:
         if isinstance(expected, list):

@@ -47,7 +47,8 @@
     "include_raw_transcripts",
     "redacted",
     "files",
-    "redaction_counts"
+    "redaction_counts",
+    "suppression_audit_summaries"
   ],
   "title": "RevRem bug bundle v1",
   "type": "object"

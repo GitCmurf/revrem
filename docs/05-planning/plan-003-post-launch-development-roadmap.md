@@ -369,10 +369,8 @@ maintainer.
 
 **Scope.**
 - Settle package identity before publication:
-  - keep `code-review-loop` as the distribution name and document `revrem`
-    as the command; or
-  - reserve/publish `revrem` if naming is available and governance allows
-    the migration.
+  - publish as `revrem` on PyPI (primary name); `code-review-loop` remains
+    as the distribution and console-script alias for backward compatibility.
 - Promote contributor release guidance into a governed release plan
   (`REVREM-PLAN-NNN`), separate from `README.md`.
 - Harden package metadata: description, URLs, classifiers, keywords,
@@ -959,8 +957,8 @@ serial. Across tracks, they are independent.
 
 ```text
 Track A (Trust):    M0 ──> M1 ──> M2 ───────────────────────────────> 1.0
-Track B (Workflow):       M3 ──> M4 ──> M5 ─────────> M8 ──────────> 1.0
-Track C (Showcase):              M6 ──> M7 ──────────> M9 ──────────> 1.0
+Track B (Workflow):       M3 ──> M4 ──> M5 ─────────────────────────> 1.0
+Track C (Showcase):              M6 ──> M7 ──> M8 ──> M9 ──────────> 1.0
                             (M3 unblocks B; M2 unblocks B & C)
 ```
 
@@ -1025,9 +1023,8 @@ Additional gates by area:
 These don't block the roadmap but should be resolved before the
 relevant milestone closes:
 
-- **OQ1 (M1).** Is `revrem` available on PyPI? If not, do we publish
-  under both names or leave `code-review-loop` as the dist name
-  permanently?
+- **OQ1 (M1).** ~~Is `revrem` available on PyPI?~~ Resolved: `revrem` is the
+  published name; `code-review-loop` is retained as the distribution alias.
 - **OQ2 (M3).** Should suppressions be repo-local (committed) or
   user-local (`~/.local/share/revrem/`)? Default likely committed
   for team workflows; user-local is opt-in.

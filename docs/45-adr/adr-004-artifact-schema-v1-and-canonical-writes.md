@@ -47,7 +47,9 @@ The first v1 schema set is:
 - `summary-v1.schema.json`;
 - `triage-v1.schema.json`;
 - `events-v1.schema.json`;
-- `bug-bundle-v1.schema.json`.
+- `bug-bundle-v1.schema.json`;
+- `harness-capabilities-v1.schema.json`;
+- `suppressions-v1.schema.json`.
 
 `diagnostics-v1` and `summary-v1` are concrete contracts validated against
 generated payloads. The other v1 files reserve names and envelope shape until

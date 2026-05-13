@@ -92,8 +92,8 @@ def test_release_workflow_uses_trusted_publishing_and_dry_run():
     assert "sigstore/gh-action-sigstore-python@" in workflow
     assert "pypa/gh-action-pypi-publish@" in workflow
     assert "repository-url: https://test.pypi.org/legacy/" in workflow
-    assert "github.event_name == 'push' && contains(github.ref_name, '-rc')" in workflow
-    assert "github.event_name == 'push' && !contains(github.ref_name, '-rc')" in workflow
+    assert "github.event_name == 'push' && contains(github.ref_name, 'rc')" in workflow
+    assert "github.event_name == 'push' && !contains(github.ref_name, 'rc')" in workflow
     assert "if: github.event_name == 'push'" in workflow
 
 

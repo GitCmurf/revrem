@@ -1576,9 +1576,9 @@ def git_reset_artifact_command_for_commit(config: LoopConfig) -> list[str] | Non
     return ["git", "-C", str(repo_root), "reset", "--", artifact_rel.as_posix()]
 
 
-def commit_command_for_message(config: LoopConfig, message: str) -> list[str]:
+def commit_command_for_message(message: str, *, allow_no_verify: bool = False) -> list[str]:
     command = ["git", "commit"]
-    if config.commit_on_hook_failure == "no-verify":
+    if allow_no_verify:
         command.append("--no-verify")
     command.extend(["-m", message])
     return command
@@ -1589,7 +1589,7 @@ def classify_commit_failure(result: CommandResult) -> str:
     return "hook_failed" if COMMIT_HOOK_FAILURE_RE.search(output) else "commit_failed"
 
 
-def run_commit(config: LoopConfig, runner: Runner, iteration: int) -> str:
+def run_commit(config: LoopConfig, runner: Runner, iteration: int, *, retrying: bool = False) -> str:
     progress_event(config, "commit", str(iteration), "start", "stage and commit verified remediation")
     if config.dry_run:
         write_artifact(config.artifact_dir / f"commit-{iteration}.txt", "DRY_RUN commit skipped\n")
@@ -1644,7 +1644,10 @@ def run_commit(config: LoopConfig, runner: Runner, iteration: int) -> str:
 
     message = commit_message_for_staged_changes(config, runner, iteration)
     commit_result = runner(
-        commit_command_for_message(config, message),
+        commit_command_for_message(
+            message,
+            allow_no_verify=retrying and config.commit_on_hook_failure == "no-verify",
+        ),
         config.cwd,
         None,
         phase_timeout_seconds(config, config.timeout_seconds),
@@ -1999,6 +2002,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                 raise RunLoopFailed(summary, str(summary["error"]))
 
         pending_check_failures = ""
+        _commit_retry = False
         initial_review_output = ""
         if config.initial_review_file:
             initial_review_output = actionable_review_output(
@@ -2139,7 +2143,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
             iterations[-1]["check_failures"] = sum(1 for result in check_results if result.returncode != 0)
             if config.commit_after_remediation and not pending_check_failures:
                 try:
-                    iterations[-1]["commit_status"] = run_commit(config, runner, iteration)
+                    iterations[-1]["commit_status"] = run_commit(config, runner, iteration, retrying=_commit_retry)
                 except CommitFailed as exc:
                     iterations[-1]["commit_status"] = exc.kind
                     iterations[-1]["commit_failed"] = True
@@ -2150,6 +2154,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                         and iteration < config.max_iterations
                     )
                     if is_retryable_hook_failure:
+                        _commit_retry = True
                         pending_check_failures = format_commit_hook_failure_for_remediation(exc)
                         summary["pending_check_failures"] = True
                         progress_event(
@@ -2298,7 +2303,8 @@ def write_summary(config: LoopConfig, summary: dict[str, object]) -> None:
     update_unexpected_behaviors(config, summary)
     add_summary_contract_fields(config, summary)
     add_artifact_paths(summary, config)
-    summary["budgets"] = summary_budget_payload(config)
+    if config.budget_state is not None or "budgets" not in summary:
+        summary["budgets"] = summary_budget_payload(config)
     if config.event_sink is not None:
         emit_artifact_write_events(config, summary)
         summary_detail = summary.get("stopped_reason") or summary.get("final_status") or "summary"
@@ -2366,6 +2372,13 @@ def resume_config_payload(config: LoopConfig) -> dict[str, object]:
         "debug_status_detection": config.debug_status_detection,
         "terminal_excerpt_chars": config.terminal_excerpt_chars,
         "max_remediation_input_chars": config.max_remediation_input_chars,
+        "commit_after_remediation": config.commit_after_remediation,
+        "commit_on_hook_failure": config.commit_on_hook_failure,
+        "exec_sandbox": config.exec_sandbox,
+        "exec_json": config.exec_json,
+        "output_last_message": config.output_last_message,
+        "triage_prompt": config.triage_prompt,
+        "triage_on_invalid": config.triage_on_invalid,
     }
 
 
@@ -3862,7 +3875,14 @@ def resume_main(argv: Sequence[str]) -> int:
         summary = resume_run(run_dir)
     except RunLoopFailed as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
+        if exc.summary.get("stopped_reason") == "budget_ceiling_hit":
+            return 3
+        if exc.summary.get("stopped_reason") == "cancelled":
+            return 5
         return 1
+    except KeyboardInterrupt:
+        print("Cancelled by user.", file=sys.stderr)
+        return 5
     except (OSError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 4
@@ -3943,14 +3963,14 @@ def resume_precondition_issues(run_dir: Path, *, cwd: Path) -> list[diagnostics.
                     evidence={"path": str(events_path)},
                 )
             )
-        if records and records[-1].kind not in {"summary", "failure", "cancellation", "cost_ceiling_hit"}:
+        if not records or records[-1].kind not in {"summary", "failure", "cancellation", "cost_ceiling_hit"}:
             issues.append(
                 diagnostics.DiagnosticIssue(
                     code="revrem.resume.unclean_event_boundary",
                     severity="blocking",
-                    message="The event stream does not end at a clean phase boundary.",
+                    message="The event stream is empty or does not end at a clean phase boundary.",
                     hint="Resume is only allowed after a summary, failure, cancellation, or ceiling event.",
-                    evidence={"last_event_kind": records[-1].kind},
+                    evidence={"last_event_kind": records[-1].kind if records else None},
                 )
             )
     issues.extend(resume_git_state_issues(summary, cwd=cwd))
@@ -3995,6 +4015,13 @@ def resume_loop_config(summary: dict[str, object], *, run_dir: Path) -> LoopConf
         terminal_excerpt_chars=_resume_int(resume_config, "terminal_excerpt_chars", 4_000),
         max_remediation_input_chars=_resume_int(resume_config, "max_remediation_input_chars", 200_000),
         check_commands=_resume_str_tuple(resume_config, "check_commands"),
+        commit_after_remediation=_resume_bool(resume_config, "commit_after_remediation", False),
+        commit_on_hook_failure=_resume_str(resume_config, "commit_on_hook_failure", "remediate"),
+        exec_sandbox=_resume_str(resume_config, "exec_sandbox", "workspace-write"),
+        exec_json=_resume_bool(resume_config, "exec_json", False),
+        output_last_message=_resume_bool(resume_config, "output_last_message", True),
+        triage_prompt=_resume_optional_str(resume_config, "triage_prompt"),
+        triage_on_invalid=_resume_str(resume_config, "triage_on_invalid", "continue"),
         initial_review_file=review_path,
         profile_name=str(summary["profile"]) if isinstance(summary.get("profile"), str) else None,
     )

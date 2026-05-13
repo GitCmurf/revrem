@@ -128,9 +128,9 @@ class RendererSink:
         iteration: int | str | None = None,
         payload: dict[str, Any] | None = None,
     ) -> Event:
-        if self._closed:
-            raise ValueError("renderer sink is closed")
         with self._lock:
+            if self._closed:
+                raise ValueError("renderer sink is closed")
             self._seq += 1
             seq = self._seq
         event = make_event(
@@ -144,7 +144,8 @@ class RendererSink:
         try:
             self._queue.put_nowait(event)
         except queue.Full:
-            self.dropped_events += 1
+            with self._lock:
+                self.dropped_events += 1
         return event
 
     def close(self) -> None:

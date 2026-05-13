@@ -82,8 +82,8 @@ Consequences:
 - Support bundles are safer to attach to public issues than raw run
   directories, but they are not a proof that every secret has been removed.
 - Operators remain responsible for inspecting bundles before publishing them.
-- Future integration with `detect-secrets` can add another scanning layer, but
-  the built-in regex pass remains mandatory so the default workflow works
-  without optional tooling.
+- Integration with `detect-secrets` adds another scanning layer when the
+  `redaction` extra is installed, but the built-in regex pass remains mandatory
+  so the default workflow works without optional tooling.
 - Suppression audit logs are not raw-bundled by default; future suppression
   summaries must be redacted before inclusion.
