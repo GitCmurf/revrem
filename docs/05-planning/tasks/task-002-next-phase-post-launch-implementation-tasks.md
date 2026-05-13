@@ -1599,24 +1599,30 @@ After this task series, the following work becomes eligible
 If any of those are attempted before the relevant F-task is
 complete, the PR should be rejected or split.
 
-## Open Questions (Resolve Before The Owning Task Closes)
+## Resolved Decisions
 
-- **Q-F1.** Is `revrem` available on PyPI? Resolve in F1 ADR;
-  fallback to `code-review-loop` is non-blocking.
-- **Q-F4.** Should `command_line` be redacted in `summary.json` for
-  runs that include secrets in env-derived flags? Default: redact
-  values, keep flag names. Confirm in F4 PR.
-- **Q-F6.** Default `triage.on_invalid` policy: `continue` (lenient,
-  keeps the loop usable) vs `stop` (strict, fails fast). Lean
-  `continue` with prominent warning; confirm in F6 ADR.
-- **Q-F7.** Default suppression scope: `repo` (committed,
-  team-shared) or `user` (private). Lean `repo`; confirm in F7 ADR.
-- **Q-F8.** Adopt CloudEvents conventions or remain bespoke?
-  Bespoke favoured for simplicity; revisit if CI/Action surface
-  needs interop.
-- **Q-F9.** Should `--max-usd` accept a currency suffix for future
-  multi-currency support? Default: USD only, document; revisit if a
-  harness reports non-USD.
-- **Q-F10.** Make `fake` harness opt-in via env var or compile-time
-  flag? Lean env var (`REVREM_ALLOW_FAKE_HARNESS=1`) for test
-  ergonomics; confirm in F10 ADR.
+The original open questions for F1/F4/F6/F7/F8/F9/F10 are resolved by
+the implemented ADRs and tests:
+
+- **F1 package identity:** `REVREM-ADR-002` chooses `revrem` as the public
+  distribution name while retaining `code-review-loop` as a console-script
+  alias for continuity.
+- **F4 command-line artifact field:** `summary.json` reserves
+  `command_line` but currently records `null`; future population must pass
+  through the F5 redaction helpers rather than writing raw argv/env-derived
+  values.
+- **F6 invalid triage policy:** `REVREM-ADR-006` and profile validation use
+  `triage.on_invalid = "continue"` by default, with `stop` available for strict
+  workflows. Invalid and failed triage artifacts write diagnostics.
+- **F7 suppression scope:** `REVREM-ADR-007` makes repo-local suppressions the
+  default shared scope and gives repo entries precedence over user-local
+  entries.
+- **F8 event envelope convention:** `REVREM-ADR-008` uses a bespoke, minimal
+  event envelope for this phase instead of CloudEvents; interop can be
+  reconsidered if the CI/Action surface later needs it.
+- **F9 money units:** `REVREM-ADR-009` treats `--max-usd` as USD-only and
+  serializes money as decimal strings; non-USD reporting is deferred until a
+  harness actually supplies it.
+- **F10 fake harness gating:** `REVREM-ADR-010` and the harness tests gate the
+  fake harness behind `REVREM_ALLOW_FAKE_HARNESS=1`; real secondary adapters
+  remain explicitly deferred.

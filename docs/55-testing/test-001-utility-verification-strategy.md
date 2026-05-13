@@ -3,8 +3,8 @@ document_id: REVREM-TEST-001
 type: TEST
 title: Utility verification strategy
 status: Draft
-version: '1.4'
-last_updated: '2026-05-12'
+version: '1.5'
+last_updated: '2026-05-13'
 owner: GitCmurf
 docops_version: '2.0'
 area: testing
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-TEST-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.3
-> **Last Updated:** 2026-05-10
+> **Version:** 1.5
+> **Last Updated:** 2026-05-13
 > **Type:** TEST
 > **Area:** testing
 > **Description:** Test and release gates for code-review-loop
