@@ -698,9 +698,7 @@ cloning the repository, with provenance and a clean rollback path.
    - run `revrem --version`;
    - run `revrem --help`;
    - run `revrem doctor --format json` against
-     `tests/fixtures/reference-repo/` (after F3 lands; until then run
-     `revrem config list --format json` if available, else skip with a
-     TODO referencing F3).
+     `tests/fixtures/reference-repo/`.
 2. **TestPyPI publish on RC tags** (`v*-rc*`) using PyPI's **Trusted
    Publisher (OIDC)** flow — no long-lived API tokens in repo secrets.
 3. **PyPI publish on signed release tags** (`v*` without `-rc`) via the
@@ -780,9 +778,7 @@ stable, machine-readable diagnostics that downstream surfaces consume.
    - `hint` — recommended fix, complete sentence;
    - `evidence` — structured payload (paths, command, exit codes);
    - `fingerprint` — uses the F4 algorithm where finding-shaped, else
-     a code-derived stable hash. **Until F4 lands, F3 reserves a
-     placeholder field but does not finalize the algorithm — the F4 PR
-     wires it.**
+     a code-derived stable hash.
    - `schema_version`.
 2. **`revrem doctor`** (alias `revrem preflight`) implements the
    ratified preflight set:
