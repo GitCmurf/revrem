@@ -518,7 +518,13 @@ def progress_continuation(config: LoopConfig, phase: str, label: str, text: str,
 def default_runner(args: Sequence[str], cwd: Path, input_text: str | None = None, timeout_seconds: float | None = None) -> CommandResult:
     if harnesses.is_fake_harness_command(tuple(args)):
         returncode, stdout, stderr = harnesses.run_fake_harness_command(tuple(args))
-        return CommandResult(args=list(args), returncode=returncode, stdout=stdout, stderr=stderr)
+        return CommandResult(
+            args=list(args),
+            returncode=returncode,
+            stdout=stdout,
+            stderr=stderr,
+            tokens=harnesses.fake_harness_token_charge(tuple(args)),
+        )
     try:
         completed = run_subprocess_with_terminal_title_refresh(
             list(args),

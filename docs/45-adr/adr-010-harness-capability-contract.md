@@ -54,9 +54,11 @@ The `fake` harness is reserved for the F10 contract runner and is hidden unless
 `REVREM_ALLOW_FAKE_HARNESS=1` is set. When enabled, it routes through an
 internal `revrem-fake-harness` command handled by RevRem's runner boundary.
 The fake command replays text fixtures from `tests/fixtures/harnesses` (or from
-`REVREM_FAKE_HARNESS_FIXTURE_DIR`) and never shells out. Real secondary
-backends such as Claude, Gemini, opencode, Kilo, OpenRouter, and HTTP remain
-reserved and non-executable.
+`REVREM_FAKE_HARNESS_FIXTURE_DIR`) and never shells out. Named fake cost
+fixtures report deterministic token charges through `CommandResult.tokens` so
+budget enforcement can be tested through the same loop path as real harness
+charges. Real secondary backends such as Claude, Gemini, opencode, Kilo,
+OpenRouter, and HTTP remain reserved and non-executable.
 
 ## Consequences
 

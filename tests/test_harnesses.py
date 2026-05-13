@@ -176,3 +176,18 @@ def test_fake_harness_command_can_simulate_unsupported(monkeypatch):
     assert returncode == 2
     assert stdout == ""
     assert "unsupported" in stderr
+
+
+def test_fake_harness_can_report_deterministic_token_charge():
+    assert (
+        harnesses.fake_harness_token_charge(
+            ["revrem-fake-harness", "review", "--scenario", "cost_ceiling"]
+        )
+        == 10
+    )
+    assert (
+        harnesses.fake_harness_token_charge(
+            ["revrem-fake-harness", "review", "--scenario", "review_clear"]
+        )
+        is None
+    )

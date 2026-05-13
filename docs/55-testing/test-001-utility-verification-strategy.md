@@ -136,8 +136,8 @@ harnesses remain valid profile syntax but not runnable adapters. Loop-level
 fake harness tests cover clear review, remediation, and structured triage
 without invoking Codex or a shell command. A structural-equivalence regression
 compares fake and Codex-shaped summaries on a matched clear-review scenario.
-Negative fixtures cover timeout, cancellation, and unsupported-capability
-paths.
+Negative fixtures cover timeout, cancellation, unsupported-capability paths,
+and deterministic token charges for budget-ceiling coverage.
 `tests/test_diagnostics.py` covers deterministic local setup diagnostics for
 Git topology, commit-mode cleanliness, Codex executable discovery, artifact
 directory writability, and configured check executables.

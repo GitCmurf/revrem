@@ -16,6 +16,10 @@ HARNESS_CAPABILITY_SCHEMA_VERSION = "1.0"
 FAKE_HARNESS_ENV = "REVREM_ALLOW_FAKE_HARNESS"
 FAKE_HARNESS_FIXTURE_ENV = "REVREM_FAKE_HARNESS_FIXTURE_DIR"
 FAKE_HARNESS_COMMAND = "revrem-fake-harness"
+FAKE_HARNESS_TOKEN_CHARGES = {
+    "cost_charge": 10,
+    "cost_ceiling": 10,
+}
 CostReporting = Literal["tokens", "usd", "none"]
 
 
@@ -272,6 +276,12 @@ def build_phase_command(request: PhaseCommandRequest) -> list[str]:
 
 def is_fake_harness_command(args: list[str] | tuple[str, ...]) -> bool:
     return bool(args) and args[0] == FAKE_HARNESS_COMMAND
+
+
+def fake_harness_token_charge(args: list[str] | tuple[str, ...]) -> int | None:
+    if len(args) != 4 or args[2] != "--scenario":
+        return None
+    return FAKE_HARNESS_TOKEN_CHARGES.get(args[3])
 
 
 def run_fake_harness_command(args: list[str] | tuple[str, ...]) -> tuple[int, str, str]:

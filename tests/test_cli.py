@@ -5396,6 +5396,33 @@ def test_fake_harness_unsupported_surfaces_as_review_failure(tmp_path, monkeypat
     assert "unsupported" in (tmp_path / "artifacts" / "review-1.txt").read_text(encoding="utf-8")
 
 
+def test_fake_harness_token_charge_drives_budget_ceiling(tmp_path, monkeypatch):
+    monkeypatch.setenv(MODULE.harnesses.FAKE_HARNESS_ENV, "1")
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="fake",
+        review_model="cost_ceiling",
+        budget_config=MODULE.budgets.BudgetConfig(max_tokens=10),
+    )
+
+    with pytest.raises(MODULE.RunLoopFailed) as excinfo:
+        MODULE.run_loop(config, MODULE.default_runner)
+
+    summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
+    records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
+
+    assert excinfo.value.summary["stopped_reason"] == "budget_ceiling_hit"
+    assert summary["budgets"]["tokens"] == 10
+    assert summary["budgets"]["usd"] is None
+    assert truncated is False
+    assert any(event.kind == "cost_charge" and event.payload["tokens"] == 10 for event in records)
+    assert any(event.kind == "cost_ceiling_hit" and event.payload["ceiling"] == "tokens" for event in records)
+
+
 def test_summary_records_git_state_for_resume(tmp_path, monkeypatch):
     monkeypatch.setattr(MODULE, "lexical_git_repo_root", lambda _cwd: tmp_path)
 

@@ -90,6 +90,9 @@ This project follows Semantic Versioning once public releases begin.
   next model call.
 - Replay fixture coverage now spans clear, remediated, rejected-finding,
   timeout, check-failure, cancellation, cost-ceiling, and suppressed scenarios.
+- The fake harness now exposes deterministic token-charge fixtures so budget
+  ceilings can be tested through the same `CommandResult` accounting path used
+  by model harnesses.
 
 ### Changed
 
