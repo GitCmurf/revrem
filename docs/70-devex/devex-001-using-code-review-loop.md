@@ -444,6 +444,14 @@ as `claude`, `gemini`, `opencode`, and `kilo`. The current executable loop
 supports only Codex; using another harness in a resolved run fails before
 starting subprocesses.
 
+Harnesses expose a schema-validated capability payload that records supported
+phases, sandbox modes, timeout/cancellation support, structured output, and
+cost reporting mode. Codex currently reports `cost_reporting = "none"`, so
+token/USD budgets remain declared ceilings until a cost-aware harness emits
+charges. The `fake` harness is reserved for deterministic test fixtures and is
+hidden unless `REVREM_ALLOW_FAKE_HARNESS=1` is set; even then, live execution
+remains disabled until the F10 fake runner lands.
+
 Set `commit.enabled = true` or pass `--commit-after-remediation` only in a
 worktree where it is acceptable for RevRem to stage all current changes with
 `git add -A` after a verified remediation pass, while excluding the configured

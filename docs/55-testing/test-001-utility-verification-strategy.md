@@ -121,8 +121,10 @@ reserved future harness handling.
 `tests/test_run_history.py` covers shared JSONL history paths, record shape, and
 newest-first reads.
 `tests/test_harnesses.py` covers the reusable harness command-planning boundary:
-Codex command construction is executable, while reserved future harnesses remain
-valid profile syntax but not runnable adapters.
+Codex command construction is executable, harness capabilities validate against
+`harness-capabilities-v1.schema.json`, the test-only `fake` harness remains
+hidden unless `REVREM_ALLOW_FAKE_HARNESS=1` is set, and reserved future
+harnesses remain valid profile syntax but not runnable adapters.
 `tests/test_diagnostics.py` covers deterministic local setup diagnostics for
 Git topology, commit-mode cleanliness, Codex executable discovery, artifact
 directory writability, and configured check executables.

@@ -7,8 +7,37 @@ construction behind a small boundary.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import os
+from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Literal, cast
+
+HARNESS_CAPABILITY_SCHEMA_VERSION = "1.0"
+FAKE_HARNESS_ENV = "REVREM_ALLOW_FAKE_HARNESS"
+CostReporting = Literal["tokens", "usd", "none"]
+
+
+@dataclass(frozen=True)
+class HarnessCapabilities:
+    review_supported: bool
+    remediation_supported: bool
+    triage_supported: bool
+    commit_message_supported: bool
+    non_interactive: bool
+    sandbox_modes: tuple[str, ...]
+    timeout_supported: bool
+    cancellation_supported: bool
+    structured_output_supported: bool
+    cost_reporting: CostReporting
+    supported_models: tuple[str, ...]
+    contract_version: str = HARNESS_CAPABILITY_SCHEMA_VERSION
+
+    def to_dict(self) -> dict[str, object]:
+        payload = asdict(self)
+        payload["schema_version"] = HARNESS_CAPABILITY_SCHEMA_VERSION
+        payload["sandbox_modes"] = list(self.sandbox_modes)
+        payload["supported_models"] = list(self.supported_models)
+        return cast(dict[str, object], payload)
 
 
 @dataclass(frozen=True)
@@ -17,6 +46,7 @@ class HarnessSpec:
     executable: str
     implemented: bool
     notes: str = ""
+    capabilities: HarnessCapabilities | None = None
 
 
 @dataclass(frozen=True)
@@ -97,6 +127,19 @@ HARNESS_REGISTRY: dict[str, HarnessSpec] = {
         executable="codex",
         implemented=True,
         notes="Implemented review/remediation backend.",
+        capabilities=HarnessCapabilities(
+            review_supported=True,
+            remediation_supported=True,
+            triage_supported=True,
+            commit_message_supported=True,
+            non_interactive=True,
+            sandbox_modes=("read-only", "workspace-write", "danger-full-access"),
+            timeout_supported=True,
+            cancellation_supported=True,
+            structured_output_supported=False,
+            cost_reporting="none",
+            supported_models=(),
+        ),
     ),
     "claude": HarnessSpec(
         name="claude",
@@ -124,6 +167,26 @@ HARNESS_REGISTRY: dict[str, HarnessSpec] = {
     ),
 }
 
+FAKE_HARNESS_SPEC = HarnessSpec(
+    name="fake",
+    executable="fake",
+    implemented=False,
+    notes="Test-only scripted harness; gated by REVREM_ALLOW_FAKE_HARNESS.",
+    capabilities=HarnessCapabilities(
+        review_supported=True,
+        remediation_supported=True,
+        triage_supported=True,
+        commit_message_supported=True,
+        non_interactive=True,
+        sandbox_modes=("read-only", "workspace-write"),
+        timeout_supported=True,
+        cancellation_supported=True,
+        structured_output_supported=True,
+        cost_reporting="tokens",
+        supported_models=("fake-clear", "fake-findings", "fake-timeout"),
+    ),
+)
+
 HARNESS_ADAPTERS: dict[str, HarnessAdapter] = {
     "codex": CodexHarnessAdapter(),
     "claude": ReservedHarnessAdapter("claude"),
@@ -133,19 +196,53 @@ HARNESS_ADAPTERS: dict[str, HarnessAdapter] = {
 }
 
 
+def fake_harness_enabled() -> bool:
+    return os.environ.get(FAKE_HARNESS_ENV) == "1"
+
+
+def harness_registry() -> dict[str, HarnessSpec]:
+    if not fake_harness_enabled():
+        return HARNESS_REGISTRY
+    return {**HARNESS_REGISTRY, "fake": FAKE_HARNESS_SPEC}
+
+
 def known_harness_names() -> tuple[str, ...]:
-    return tuple(HARNESS_REGISTRY)
+    return tuple(harness_registry())
+
+
+def harness_capabilities(name: str) -> HarnessCapabilities:
+    validate_harness_name(name, field="harness")
+    spec = harness_registry()[name]
+    if spec.capabilities is None:
+        return HarnessCapabilities(
+            review_supported=False,
+            remediation_supported=False,
+            triage_supported=False,
+            commit_message_supported=False,
+            non_interactive=False,
+            sandbox_modes=(),
+            timeout_supported=False,
+            cancellation_supported=False,
+            structured_output_supported=False,
+            cost_reporting="none",
+            supported_models=(),
+        )
+    return spec.capabilities
+
+
+def harness_capabilities_payload(name: str) -> dict[str, object]:
+    return harness_capabilities(name).to_dict()
 
 
 def validate_harness_name(name: str, *, field: str) -> None:
-    if name not in HARNESS_REGISTRY:
+    if name not in harness_registry():
         known = ", ".join(known_harness_names())
         raise ValueError(f"{field} must be one of: {known}")
 
 
 def require_implemented_harness(name: str, *, field: str) -> None:
     validate_harness_name(name, field=field)
-    spec = HARNESS_REGISTRY[name]
+    spec = harness_registry()[name]
     if not spec.implemented:
         raise ValueError(
             f"{field}={name!r} is valid profile syntax, but only the codex backend is implemented"
@@ -154,7 +251,8 @@ def require_implemented_harness(name: str, *, field: str) -> None:
 
 def build_phase_command(request: PhaseCommandRequest) -> list[str]:
     validate_harness_name(request.harness, field=f"{request.role}.harness")
-    return HARNESS_ADAPTERS[request.harness].command(request)
+    adapter = HARNESS_ADAPTERS.get(request.harness, ReservedHarnessAdapter(request.harness))
+    return adapter.command(request)
 
 
 def _codex_config_args(reasoning_effort: str | None) -> list[str]:

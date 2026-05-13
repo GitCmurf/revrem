@@ -70,6 +70,9 @@ This project follows Semantic Versioning once public releases begin.
   wall-clock soft warnings, and exit code `3` for pre-model-call ceiling hits.
 - Ctrl-C/SIGTERM cancellation now emits `cancellation`, writes run artifacts,
   restores terminal display state, and exits with stable code `5`.
+- Added the v1 harness capability contract, JSON Schema, Codex capability
+  metadata, and an explicit `REVREM_ALLOW_FAKE_HARNESS=1` gate for the future
+  deterministic fake harness.
 
 ### Changed
 

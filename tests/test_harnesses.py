@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
 from code_review_loop import harnesses
+from code_review_loop._compat_jsonschema import validate
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_codex_adapter_builds_review_command():
@@ -68,5 +72,48 @@ def test_reserved_harnesses_are_valid_but_not_executable():
                 harness="claude",
                 role="review",
                 executable="claude",
+            )
+        )
+
+
+def test_codex_capabilities_validate_against_schema():
+    schema = json.loads(
+        (ROOT / "docs/52-api/schemas/harness-capabilities-v1.schema.json").read_text(encoding="utf-8")
+    )
+    payload = harnesses.harness_capabilities_payload("codex")
+
+    validate(payload, schema)
+
+    assert payload["schema_version"] == "1.0"
+    assert payload["review_supported"] is True
+    assert payload["remediation_supported"] is True
+    assert payload["triage_supported"] is True
+    assert payload["commit_message_supported"] is True
+    assert payload["cost_reporting"] == "none"
+
+
+def test_fake_harness_is_hidden_unless_explicitly_enabled(monkeypatch):
+    monkeypatch.delenv(harnesses.FAKE_HARNESS_ENV, raising=False)
+
+    with pytest.raises(ValueError, match="review.harness"):
+        harnesses.validate_harness_name("fake", field="review.harness")
+
+    monkeypatch.setenv(harnesses.FAKE_HARNESS_ENV, "1")
+
+    harnesses.validate_harness_name("fake", field="review.harness")
+    payload = harnesses.harness_capabilities_payload("fake")
+    assert payload["structured_output_supported"] is True
+    assert payload["cost_reporting"] == "tokens"
+
+
+def test_fake_harness_remains_non_executable_until_contract_runner_lands(monkeypatch):
+    monkeypatch.setenv(harnesses.FAKE_HARNESS_ENV, "1")
+
+    with pytest.raises(NotImplementedError, match="fake"):
+        harnesses.build_phase_command(
+            harnesses.PhaseCommandRequest(
+                harness="fake",
+                role="review",
+                executable="fake",
             )
         )
