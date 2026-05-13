@@ -3,8 +3,8 @@ document_id: REVREM-TASK-002
 type: TASK
 title: Next-phase post-launch implementation tasks
 status: Draft
-version: '0.3'
-last_updated: '2026-05-10'
+version: '0.4'
+last_updated: '2026-05-13'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -1538,6 +1538,29 @@ This task series is complete when **all** of the following hold:
 - Plan success metrics owned by M0–M4 are measured against the
   reference fixture and recorded in
   `docs/55-testing/test-001-utility-verification-strategy.md`.
+
+## Implementation Audit Snapshot
+
+This snapshot records the local completion evidence for the TASK-002 programme.
+It is intentionally concrete so a release orchestrator can distinguish
+implemented, locally verified work from publication-only gates that require
+GitHub/PyPI credentials or a merge to `main`.
+
+| Requirement | Local evidence | Status |
+| --- | --- | --- |
+| F0 baseline fixture and changelog discipline | `tests/fixtures/reference-repo/`, `tests/test_fixtures.py`, `CHANGELOG.md`, and `REVREM-TEST-001` reference-fixture section. | Implemented locally |
+| F1 package identity, metadata, build checks | `pyproject.toml`, `src/code_review_loop/__init__.py`, `.github/workflows/ci.yml`, `tests/test_packaging.py`, `REVREM-ADR-002`. Build backend is pinned and console scripts include `revrem` and `code-review-loop`. | Implemented locally |
+| F2 public install smoke and rollback-proof release flow | CI package-smoke installs the built wheel on Linux/macOS for Python 3.11/3.12; release workflow supports dry-run, tag/version validation, Trusted Publishing routing, provenance, checksums, Sigstore, and rollback runbook `REVREM-RUNBOOK-001`; release trust is recorded in `REVREM-ADR-011`. | Implemented locally; live PyPI/TestPyPI publication remains external |
+| F3 diagnostics model and `revrem doctor` | `src/code_review_loop/diagnostics.py`, CLI doctor/preflight path, `diagnostics-v1.schema.json`, `scripts/dev-render-diagnostics`, and tests covering the 13/13 current local setup corpus. Exit codes `4` and `6` are directly tested. | Implemented locally |
+| F4 artifact schema v1 and fingerprint contract | `src/code_review_loop/artifacts.py`, `src/code_review_loop/fingerprints.py`, schemas in `docs/52-api/schemas/`, `_history` baselines, schema validation tests, and `REVREM-ADR-003` / `REVREM-ADR-004`. | Implemented locally |
+| F5 redacted bug bundles and failure fingerprints | `src/code_review_loop/redaction.py`, `src/code_review_loop/bug_bundle.py`, poisoned fixtures, optional `detect-secrets` support, deterministic tarball tests, sanitized profile/preflight snapshot inclusion, and `REVREM-ADR-005`. | Implemented locally |
+| F6 triage contract and remediation handoff | `src/code_review_loop/triage.py`, packaged/reference `triage-v1.schema.json`, triage fixtures including invalid, missing-field, rejected-only, and timeout cases, command-failure diagnostics, precision-floor test, profile validation tests, and `REVREM-ADR-006`. | Implemented locally |
+| F7 suppression file and CLI | `src/code_review_loop/suppressions.py`, `revrem suppress` CLI tests, schema validation, repo/user precedence, expiry, critical override enforcement, audit summary redaction, bug-bundle integration, and `REVREM-ADR-007`. | Implemented locally |
+| F8 event sink, `events.jsonl`, and replay | `src/code_review_loop/events.py`, event fixtures for clear/findings/timeout/check-failure/cancellation/cost-ceiling/suppressed/rejected-finding cases, offline replay tests, TUI state event-reader tests, and `REVREM-ADR-008`. | Implemented locally |
+| F9 budgets, cancellation, and resume | `src/code_review_loop/budgets.py`, budget ceiling tests, fake-harness token-charge tests, cancellation diagnostics/events/summary tests, resume precondition tests, exit codes `3`, `4`, and `5`, and `REVREM-ADR-009`. | Implemented locally |
+| F10 fake harness contract | `src/code_review_loop/harnesses.py`, `harness-capabilities-v1.schema.json`, fake harness fixtures, env-gated fake harness behavior, reserved non-Codex harness rejection, Codex/fake summary shape equivalence, and `REVREM-ADR-010`. | Implemented locally |
+| Required local gates | `./scripts/dev-check` passed with 391 tests; `pre-commit run --all-files` passed; `meminit check --format json` passed via both gates. | Verified locally |
+| Main-branch and publication gates | This branch has not been pushed or merged by this agent. Actual TestPyPI/PyPI publish, GitHub Release artifact attachment, and branch-protection/main-branch status must be performed by the release operator after review. | External/manual gate |
 
 ## ADR Closure
 
