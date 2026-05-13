@@ -75,6 +75,8 @@ This project follows Semantic Versioning once public releases begin.
   deterministic fake harness.
 - Added the gated fake harness runner and fixtures for clear review,
   findings/remediation, and structured triage contract tests without Codex.
+- Added a fake-vs-Codex summary structural-equivalence regression for the
+  clear-review fixture path.
 
 ### Changed
 

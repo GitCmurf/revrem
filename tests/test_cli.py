@@ -5235,6 +5235,52 @@ def test_fake_harness_can_drive_structured_triage(tmp_path, monkeypatch):
     assert triage_json["confirmed_findings"][0]["fingerprint"] == "f1:fake"
 
 
+def test_fake_and_codex_summary_shapes_are_structurally_equivalent(tmp_path, monkeypatch):
+    monkeypatch.setenv(MODULE.harnesses.FAKE_HARNESS_ENV, "1")
+    fake_dir = tmp_path / "fake"
+    codex_dir = tmp_path / "codex"
+    fake_dir.mkdir()
+    codex_dir.mkdir()
+
+    fake_config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=fake_dir,
+        artifact_dir=fake_dir / "artifacts",
+        review_harness="fake",
+        review_model="review_clear",
+    )
+    codex_config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=codex_dir,
+        artifact_dir=codex_dir / "artifacts",
+    )
+
+    def codex_runner(args, cwd, input_text=None, timeout_seconds=None):
+        return MODULE.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+
+    fake_summary = MODULE.run_loop(fake_config, MODULE.default_runner)
+    codex_summary = MODULE.run_loop(codex_config, codex_runner)
+
+    assert summary_shape(fake_summary) == summary_shape(codex_summary)
+    assert fake_summary["harness"] == "fake"
+    assert codex_summary["harness"] == "codex"
+    assert fake_summary["final_status"] == codex_summary["final_status"] == "clear"
+
+
+def summary_shape(value):
+    if isinstance(value, dict):
+        return {key: summary_shape(item) for key, item in sorted(value.items())}
+    if isinstance(value, list):
+        return [summary_shape(value[0])] if value else []
+    if value is None:
+        return None
+    return type(value).__name__
+
+
 def test_main_returns_exit_code_5_for_controlled_cancellation(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     summary = {
