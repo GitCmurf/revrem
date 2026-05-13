@@ -21,13 +21,13 @@ def test_redact_text_removes_poisoned_fixture_tokens():
     assert "secret-token" not in result.text
     assert "sk-proj-" not in result.text
     assert "ghp_" not in result.text
-    assert "AKIAABCDEFGHIJKLMNOP" not in result.text
+    assert "AKIAABCDEFGHIJKLMNOP" not in result.text  # pragma: allowlist secret
     assert "sk-ant-" not in result.text
-    assert "0123456789abcdef0123456789abcdef" not in result.text
-    assert "abcdef0123456789abcdef0123456789" not in result.text
+    assert "0123456789abcdef0123456789abcdef" not in result.text  # pragma: allowlist secret
+    assert "abcdef0123456789abcdef0123456789" not in result.text  # pragma: allowlist secret
     assert "/home/example-user" not in result.text
     assert "actor=example-user" not in result.text
-    assert "BEGIN PRIVATE KEY" not in result.text
+    assert "BEGIN PRIVATE KEY" not in result.text  # pragma: allowlist secret
     assert redaction.redaction_summary(result) == {
         "anthropic-key": 1,
         "authorization-header": 1,
@@ -67,7 +67,7 @@ def test_redact_text_leaves_clean_fixture_unchanged():
 
 def test_redact_text_uses_optional_detect_secrets_when_available(monkeypatch):
     class FakeSecret:
-        secret_value = "scanner-only-secret"
+        secret_value = "scanner-only-secret"  # pragma: allowlist secret
 
     class FakeScanModule:
         @staticmethod

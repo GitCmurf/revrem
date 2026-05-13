@@ -81,5 +81,3 @@ def _atomic_write(path: Path, content: bytes) -> None:
         with suppress(FileNotFoundError):
             tmp_path.unlink()
         raise
-
-

@@ -19,7 +19,7 @@ def _make_run_dir(tmp_path: Path) -> Path:
     )
     (run_dir / "check-1.txt").write_text(
         "Authorization: Bearer secret-token\n"
-        "OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz1234567890\n",
+        "OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz1234567890\n",  # pragma: allowlist secret
         encoding="utf-8",
     )
     (run_dir / "diagnostics-1.json").write_text(
@@ -27,7 +27,7 @@ def _make_run_dir(tmp_path: Path) -> Path:
             {
                 "schema_version": "1.0",
                 "iteration": 1,
-                "detail": "OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz1234567890",
+                "detail": "OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz1234567890",  # pragma: allowlist secret
             }
         )
         + "\n",
@@ -45,7 +45,7 @@ def _make_run_dir(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     (run_dir / "profile.toml").write_text(
-        'codex_bin = "codex"\n# token-like local value should be scrubbed\napi_key = "ghp_abcdefghijklmnopqrstuvwxyzABCDE1234567890"\n',
+        'codex_bin = "codex"\n# token-like local value should be scrubbed\napi_key = "ghp_abcdefghijklmnopqrstuvwxyzABCDE1234567890"\n',  # pragma: allowlist secret
         encoding="utf-8",
     )
     (run_dir / "doctor.json").write_text(
@@ -60,7 +60,7 @@ def _make_run_dir(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     (run_dir / "review-1.txt").write_text(
-        "Raw transcript with ghp_abcdefghijklmnopqrstuvwxyzABCDE1234567890\n",
+        "Raw transcript with ghp_abcdefghijklmnopqrstuvwxyzABCDE1234567890\n",  # pragma: allowlist secret
         encoding="utf-8",
     )
     (run_dir / "nested").mkdir()
