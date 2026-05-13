@@ -21,13 +21,21 @@ def test_schema_files_are_valid_draft_2020_12():
         Draft202012Validator.check_schema(json.loads(path.read_text(encoding="utf-8")))
 
 
-def test_v1_schema_history_baselines_are_present_and_current():
+def _assert_v1_schema_history_baselines_are_present_and_current() -> None:
     history_dir = SCHEMA_DIR / "_history"
 
     for path in sorted(SCHEMA_DIR.glob("*-v1.schema.json")):
         history_path = history_dir / path.name
         assert history_path.is_file(), f"missing schema history baseline for {path.name}"
         assert history_path.read_text(encoding="utf-8") == path.read_text(encoding="utf-8")
+
+
+def test_v1_schema_history_baselines_are_present_and_current():
+    _assert_v1_schema_history_baselines_are_present_and_current()
+
+
+def test_no_unintentional_breaks():
+    _assert_v1_schema_history_baselines_are_present_and_current()
 
 
 def test_doctor_payload_validates_against_diagnostics_schema():
