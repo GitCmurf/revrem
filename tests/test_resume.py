@@ -21,6 +21,18 @@ def write_resume_run(
         "final_status": "error",
         "stopped_reason": stopped_reason,
         "iterations": [],
+        "artifact_paths": {"reviews": [str(run_dir / "review-1.txt")]},
+        "resume_config": {
+            "base": "main",
+            "max_iterations": 1,
+            "codex_bin": "codex",
+            "review_harness": "fake",
+            "remediation_harness": "fake",
+            "review_model": "review_clear",
+            "remediation_model": "remediation",
+            "final_review": True,
+            "check_commands": [],
+        },
         "git_state": git_state
         or {
             "head": "head-sha",
@@ -30,6 +42,10 @@ def write_resume_run(
             "available": True,
         },
     }
+    (run_dir / "review-1.txt").write_text(
+        "Full review comments:\n\n- [P2] Resume this finding.\nREVIEW_STATUS: findings\n",
+        encoding="utf-8",
+    )
     (run_dir / "summary.json").write_text(json.dumps(summary), encoding="utf-8")
     sink = events.JsonlSink(run_dir, "run-1")
     sink.emit("cancellation", phase="run", payload={"reason": "operator_interrupt"})
@@ -98,3 +114,47 @@ def test_resume_main_returns_code_4_for_missing_summary(tmp_path, monkeypatch, c
 
     assert exit_code == 4
     assert "revrem.resume.missing_summary" in capsys.readouterr().out
+
+
+def test_resume_continues_from_existing_review_artifact(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv(MODULE.harnesses.FAKE_HARNESS_ENV, "1")
+    monkeypatch.chdir(tmp_path)
+    run_dir = tmp_path / "run"
+    write_resume_run(run_dir)
+    install_matching_git(monkeypatch)
+
+    exit_code = MODULE.main(["resume", str(run_dir)])
+    resumed_summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+
+    assert exit_code == 0
+    assert resumed_summary["final_status"] == "clear"
+    assert resumed_summary["iterations"][0]["review_source"] == str(run_dir / "review-1.txt")
+    assert (run_dir / "review-initial.txt").is_file()
+    output = capsys.readouterr().out
+    assert "revrem.resume" not in output
+    assert "Review-remediation loop: clear" in output
+
+
+def test_resume_and_uninterrupted_fake_run_have_same_final_status(tmp_path, monkeypatch):
+    monkeypatch.setenv(MODULE.harnesses.FAKE_HARNESS_ENV, "1")
+    monkeypatch.chdir(tmp_path)
+    run_dir = tmp_path / "run"
+    uninterrupted_dir = tmp_path / "uninterrupted"
+    write_resume_run(run_dir)
+    install_matching_git(monkeypatch)
+
+    resumed = MODULE.resume_run(run_dir)
+    uninterrupted = MODULE.run_loop(
+        MODULE.LoopConfig(
+            base="main",
+            max_iterations=1,
+            codex_bin="codex",
+            cwd=tmp_path,
+            artifact_dir=uninterrupted_dir,
+            review_harness="fake",
+            review_model="review_clear",
+        )
+    )
+
+    assert resumed["final_status"] == uninterrupted["final_status"] == "clear"
+    assert resumed["stopped_reason"] == uninterrupted["stopped_reason"] == "review_clear"

@@ -86,7 +86,9 @@ The main test module is `tests/test_cli.py`. It covers:
   base commit, merge base, and explicit unavailable values outside Git.
 - `tests/test_resume.py` covers resume preconditions: matching Git state,
   `HEAD` mismatch, base mismatch, truncated event streams, and CLI exit code
-  `4` for missing run summaries.
+  `4` for missing run summaries. It also covers continuation from an existing
+  review artifact and compares resumed versus uninterrupted fake-run final
+  status.
 - Review-base preflight behavior for invalid Git topology, including a local
   `main` that has no merge base with the current branch while `origin/main`
   remains usable.

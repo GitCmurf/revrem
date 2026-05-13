@@ -1851,6 +1851,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
     summary: dict[str, object] = {
         "base": config.base,
         "git_state": git_state_for_resume(config),
+        "resume_config": resume_config_payload(config),
         "run_id": run_id,
         "started_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "profile": config.profile_name,
@@ -2203,6 +2204,31 @@ def git_preflight_stdout(cwd: Path, args: Sequence[str]) -> str | None:
         return None
     value = result.stdout.strip()
     return value or None
+
+
+def resume_config_payload(config: LoopConfig) -> dict[str, object]:
+    return {
+        "base": config.base,
+        "max_iterations": config.max_iterations,
+        "codex_bin": config.codex_bin,
+        "review_harness": config.review_harness,
+        "remediation_harness": config.remediation_harness,
+        "triage_harness": config.triage_harness,
+        "review_model": config.review_model or config.model,
+        "remediation_model": config.remediation_model or config.model,
+        "triage_model": config.triage_model,
+        "triage_enabled": config.triage_enabled,
+        "final_review": config.final_review,
+        "check_commands": list(config.check_commands),
+        "timeout_seconds": config.timeout_seconds,
+        "review_timeout_seconds": config.review_timeout_seconds,
+        "remediation_timeout_seconds": config.remediation_timeout_seconds,
+        "triage_timeout_seconds": config.triage_timeout_seconds,
+        "progress_style": config.progress_style,
+        "debug_status_detection": config.debug_status_detection,
+        "terminal_excerpt_chars": config.terminal_excerpt_chars,
+        "max_remediation_input_chars": config.max_remediation_input_chars,
+    }
 
 
 def summary_budget_payload(config: LoopConfig) -> dict[str, object]:
@@ -3672,7 +3698,21 @@ def resume_main(argv: Sequence[str]) -> int:
         print(diagnostics.doctor_json(issues), end="")
     else:
         print(diagnostics.doctor_text(issues), end="")
-    return 4 if diagnostics.has_blocking_issue(issues) else 0
+    if diagnostics.has_blocking_issue(issues):
+        return 4
+    try:
+        summary = resume_run(run_dir)
+    except RunLoopFailed as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    except (OSError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 4
+    if args.format == "json":
+        print(json.dumps(summary, indent=2, sort_keys=True))
+    else:
+        print(format_terminal_summary(summary))
+    return 0 if summary.get("final_status") == "clear" else 2
 
 
 def resume_precondition_issues(run_dir: Path, *, cwd: Path) -> list[diagnostics.DiagnosticIssue]:
@@ -3692,6 +3732,26 @@ def resume_precondition_issues(run_dir: Path, *, cwd: Path) -> list[diagnostics.
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     if not isinstance(summary, dict):
         raise ValueError("summary.json must contain a JSON object")
+    if latest_resume_review_path(summary) is None:
+        issues.append(
+            diagnostics.DiagnosticIssue(
+                code="revrem.resume.missing_review_artifact",
+                severity="blocking",
+                message="Resume requires a previous review artifact.",
+                hint="Only runs with a review artifact can continue without re-running completed review phases.",
+                evidence={"run_dir": str(run_dir)},
+            )
+        )
+    if not isinstance(summary.get("resume_config"), dict):
+        issues.append(
+            diagnostics.DiagnosticIssue(
+                code="revrem.resume.missing_config",
+                severity="blocking",
+                message="Resume requires resume_config from the original run.",
+                hint="Run a fresh RevRem loop with a version that records resume_config.",
+                evidence={},
+            )
+        )
     reason = summary.get("stopped_reason")
     if reason not in RESUMABLE_STOPPED_REASONS:
         issues.append(
@@ -3737,6 +3797,100 @@ def resume_precondition_issues(run_dir: Path, *, cwd: Path) -> list[diagnostics.
             )
     issues.extend(resume_git_state_issues(summary, cwd=cwd))
     return issues
+
+
+def resume_run(run_dir: Path) -> dict[str, object]:
+    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    if not isinstance(summary, dict):
+        raise ValueError("summary.json must contain a JSON object")
+    config = resume_loop_config(summary, run_dir=run_dir)
+    return run_loop(config)
+
+
+def resume_loop_config(summary: dict[str, object], *, run_dir: Path) -> LoopConfig:
+    resume_config = summary.get("resume_config")
+    if not isinstance(resume_config, dict):
+        raise ValueError("summary.json is missing resume_config")
+    review_path = latest_resume_review_path(summary)
+    if review_path is None:
+        raise ValueError("summary.json is missing a resumable review artifact")
+    return LoopConfig(
+        base=_resume_str(resume_config, "base", "main"),
+        max_iterations=_resume_int(resume_config, "max_iterations", 1),
+        codex_bin=_resume_str(resume_config, "codex_bin", "codex"),
+        cwd=Path.cwd(),
+        artifact_dir=run_dir,
+        review_harness=_resume_str(resume_config, "review_harness", "codex"),
+        remediation_harness=_resume_str(resume_config, "remediation_harness", "codex"),
+        triage_harness=_resume_str(resume_config, "triage_harness", "codex"),
+        review_model=_resume_optional_str(resume_config, "review_model"),
+        remediation_model=_resume_optional_str(resume_config, "remediation_model"),
+        triage_model=_resume_optional_str(resume_config, "triage_model"),
+        triage_enabled=_resume_bool(resume_config, "triage_enabled", False),
+        final_review=_resume_bool(resume_config, "final_review", True),
+        timeout_seconds=_resume_optional_float(resume_config, "timeout_seconds"),
+        review_timeout_seconds=_resume_optional_float(resume_config, "review_timeout_seconds"),
+        remediation_timeout_seconds=_resume_optional_float(resume_config, "remediation_timeout_seconds"),
+        triage_timeout_seconds=_resume_optional_float(resume_config, "triage_timeout_seconds"),
+        debug_status_detection=_resume_bool(resume_config, "debug_status_detection", False),
+        progress_style=_resume_str(resume_config, "progress_style", "compact"),
+        terminal_excerpt_chars=_resume_int(resume_config, "terminal_excerpt_chars", 4_000),
+        max_remediation_input_chars=_resume_int(resume_config, "max_remediation_input_chars", 200_000),
+        check_commands=_resume_str_tuple(resume_config, "check_commands"),
+        initial_review_file=review_path,
+        profile_name=str(summary["profile"]) if isinstance(summary.get("profile"), str) else None,
+    )
+
+
+def latest_resume_review_path(summary: dict[str, object]) -> Path | None:
+    artifact_paths = summary.get("artifact_paths")
+    if not isinstance(artifact_paths, dict):
+        return None
+    reviews = artifact_paths.get("reviews")
+    if not isinstance(reviews, list) or not reviews:
+        return None
+    for item in reversed(reviews):
+        if isinstance(item, str):
+            path = Path(item)
+            if path.is_file():
+                return path
+    return None
+
+
+def _resume_str(payload: dict[object, object], key: str, fallback: str) -> str:
+    value = payload.get(key)
+    return value if isinstance(value, str) else fallback
+
+
+def _resume_optional_str(payload: dict[object, object], key: str) -> str | None:
+    value = payload.get(key)
+    return value if isinstance(value, str) else None
+
+
+def _resume_bool(payload: dict[object, object], key: str, fallback: bool) -> bool:
+    value = payload.get(key)
+    return value if isinstance(value, bool) else fallback
+
+
+def _resume_int(payload: dict[object, object], key: str, fallback: int) -> int:
+    value = payload.get(key)
+    return value if isinstance(value, int) and not isinstance(value, bool) else fallback
+
+
+def _resume_optional_float(payload: dict[object, object], key: str) -> float | None:
+    value = payload.get(key)
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int | float):
+        return float(value)
+    return None
+
+
+def _resume_str_tuple(payload: dict[object, object], key: str) -> tuple[str, ...]:
+    value = payload.get(key)
+    if not isinstance(value, list):
+        return ()
+    return tuple(item for item in value if isinstance(item, str))
 
 
 def resume_git_state_issues(summary: dict[str, object], *, cwd: Path) -> list[diagnostics.DiagnosticIssue]:

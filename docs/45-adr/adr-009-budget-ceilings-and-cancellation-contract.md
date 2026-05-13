@@ -71,8 +71,10 @@ implementation slices. The intended semantics remain:
   flushing and exits with the same stable code;
 - `revrem resume <run-dir>` may continue only from event/artifact states that
   prove completed phases do not need to be re-run.
-- the first resume implementation validates those preconditions and exits with
-  code 4 for unsafe resumes; execution continuation is gated on those checks.
+- resume validates those preconditions and exits with code 4 for unsafe
+  resumes; when checks pass, it rebuilds the loop config from `resume_config`,
+  starts from the latest review artifact as `review-initial.txt`, and does not
+  re-run completed review phases.
 
 ## Consequences
 

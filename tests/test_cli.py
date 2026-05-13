@@ -5257,6 +5257,7 @@ def test_fake_and_codex_summary_shapes_are_structurally_equivalent(tmp_path, mon
         codex_bin="codex",
         cwd=codex_dir,
         artifact_dir=codex_dir / "artifacts",
+        review_model="review_clear",
     )
 
     def codex_runner(args, cwd, input_text=None, timeout_seconds=None):
