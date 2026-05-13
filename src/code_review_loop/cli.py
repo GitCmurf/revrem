@@ -124,6 +124,8 @@ class LoopConfig:
     codex_bin: str
     cwd: Path
     artifact_dir: Path
+    preflight_enabled: bool = False
+    artifact_dir_is_default: bool = False
     model: str | None = None
     review_harness: str = "codex"
     remediation_harness: str = "codex"
@@ -1929,6 +1931,37 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
         if config.budget_state is None:
             object.__setattr__(config, "budget_state", budgets.started_now())
 
+        if config.preflight_enabled and not config.dry_run:
+            issues = diagnostics.run_doctor(
+                diagnostics.DoctorConfig(
+                    cwd=config.cwd,
+                    base=config.base,
+                    artifact_dir=config.artifact_dir,
+                    artifact_dir_is_default=config.artifact_dir_is_default,
+                    codex_bin=config.codex_bin,
+                    check_commands=config.check_commands,
+                    commit_after_remediation=config.commit_after_remediation,
+                )
+            )
+            if diagnostics.has_blocking_issue(issues):
+                summary["final_status"] = "error"
+                summary["stopped_reason"] = "setup_failed"
+                summary["error"] = "preflight diagnostics found blocking issue"
+                artifacts.write_json_artifact(
+                    config.artifact_dir,
+                    "diagnostics.json",
+                    diagnostics.doctor_payload(issues),
+                )
+                emit_loop_failure_event(
+                    config,
+                    phase="preflight",
+                    iteration=None,
+                    reason="setup_failed",
+                    error=str(summary["error"]),
+                )
+                write_summary(config, summary)
+                raise RunLoopFailed(summary, str(summary["error"]))
+
         pending_check_failures = ""
         initial_review_output = ""
         if config.initial_review_file:
@@ -3157,6 +3190,8 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         codex_bin=pick(args.codex_bin, profile.runtime.codex_bin, "codex"),
         cwd=cwd,
         artifact_dir=artifact_dir,
+        preflight_enabled=True,
+        artifact_dir_is_default=artifact_dir_value is None,
         model=args.model,
         review_harness=profile.review.harness,
         remediation_harness=profile.remediation.harness,
@@ -3368,6 +3403,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         if summary.get("stopped_reason") == "budget_ceiling_hit":
             return 3
+        if summary.get("stopped_reason") == "setup_failed":
+            return 4
         if summary.get("stopped_reason") == "cancelled":
             return 5
         return 1

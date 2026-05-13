@@ -98,6 +98,9 @@ This project follows Semantic Versioning once public releases begin.
   by model harnesses.
 - Doctor diagnostics now include stable `f1:` fingerprints derived from the
   shared fingerprint algorithm without embedding absolute worktree paths.
+- Live CLI runs now execute the doctor diagnostics path before the first model
+  call and fail with setup exit code `4` plus `diagnostics.json` when blocking
+  preflight issues are found.
 
 ### Changed
 

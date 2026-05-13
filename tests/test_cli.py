@@ -3386,6 +3386,7 @@ timeout_seconds = 1800
     assert config.review_timeout_seconds == 0
     assert config.remediation_timeout_seconds == 1800
 
+    object.__setattr__(config, "preflight_enabled", False)
     summary = MODULE.run_loop(config, runner)
 
     assert summary["final_status"] == "clear"
@@ -4048,6 +4049,39 @@ def test_doctor_json_reports_invalid_base_without_invoking_runner(tmp_path, monk
     assert payload["status"] == "blocking"
     assert {issue["code"] for issue in payload["issues"]} == {"revrem.preflight.invalid_base"}
     assert captured.err == ""
+
+
+def test_live_cli_preflight_blocks_before_review_invocation(tmp_path, monkeypatch, capsys):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "config", "user.email", "test@example.com")
+    run_git(repo, "config", "user.name", "Test User")
+    (repo / "README.md").write_text("# Fixture\n", encoding="utf-8")
+    run_git(repo, "add", "README.md")
+    run_git(repo, "commit", "-m", "initial")
+    monkeypatch.chdir(repo)
+
+    def fail_review(*_args, **_kwargs):
+        raise AssertionError("review must not run when live preflight blocks")
+
+    monkeypatch.setattr(MODULE, "run_codex_review", fail_review)
+
+    exit_code = MODULE.main(
+        ["--base", "missing", "--codex-bin", "git", "--artifact-dir", "artifacts"]
+    )
+
+    diagnostics_payload = json.loads((repo / "artifacts" / "diagnostics.json").read_text(encoding="utf-8"))
+    summary = json.loads((repo / "artifacts" / "summary.json").read_text(encoding="utf-8"))
+
+    assert exit_code == 4
+    assert diagnostics_payload["status"] == "blocking"
+    assert {issue["code"] for issue in diagnostics_payload["issues"]} == {
+        "revrem.preflight.invalid_base"
+    }
+    assert diagnostics_payload["issues"][0]["fingerprint"].startswith("f1:")
+    assert summary["stopped_reason"] == "setup_failed"
+    assert "preflight diagnostics found blocking issue" in capsys.readouterr().err
 
 
 def test_doctor_json_reports_missing_git_as_blocking_issue(tmp_path, monkeypatch, capsys):

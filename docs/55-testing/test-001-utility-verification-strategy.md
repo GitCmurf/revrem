@@ -142,6 +142,9 @@ and deterministic token charges for budget-ceiling coverage.
 Git topology, commit-mode cleanliness, Codex executable discovery, artifact
 directory writability, configured check executables, and stable diagnostic
 fingerprints across different worktree paths.
+CLI preflight tests assert a normal live run uses the same diagnostics path,
+writes `diagnostics.json` and `summary.json`, exits `4`, and does not invoke
+review when setup is blocking.
 `tests/test_fingerprints.py` covers the shared finding fingerprint contract
 with golden vectors and normalization invariants.
 `tests/test_artifacts.py` covers canonical JSON serialization, Decimal money

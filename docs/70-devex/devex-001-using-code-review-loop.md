@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.6'
+version: '1.7'
 last_updated: '2026-05-13'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.6
+> **Version:** 1.7
 > **Last Updated:** 2026-05-13
 > **Type:** DEVEX
 > **Area:** devex
@@ -441,6 +441,11 @@ tree that a normal loop run will create. It exits `4` for blocking setup
 failures, `6` for warnings when `--strict` is used, and `0` when the local
 preflight is clear.
 
+Normal live CLI runs use the same diagnostics path before the first model call.
+When setup preflight blocks execution, RevRem writes `diagnostics.json`,
+`summary.json`, and `events.jsonl` under the run artifact directory and exits
+with code `4` without invoking review or remediation.
+
 These management commands validate reserved harness names and triage syntax
 without requiring the backend to be executable yet; only `revrem --profile ...`
 rejects unimplemented harnesses before the loop starts.
@@ -724,6 +729,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.7 | 2026-05-13 | Codex | Documented live CLI preflight diagnostics before first model invocation |
 | 1.6 | 2026-05-13 | Codex | Documented release dry runs, Trusted Publishing stages, provenance artifacts, and rollback runbook linkage |
 | 1.5 | 2026-05-12 | Codex | Documented suppression CLI, repo/user suppression scope, critical suppression guardrails, and structured-triage suppression behavior |
 | 1.4 | 2026-05-12 | Codex | Documented commit hook failure policies, default bounded remediation retry, and explicit `--no-verify` recording |
