@@ -5821,3 +5821,37 @@ def test_append_run_history_preserves_budget_totals(tmp_path):
 
     assert budgets_after["tokens"] == budgets_before["tokens"]
     assert budgets_after["usd"] == budgets_before["usd"]
+
+
+def test_run_loop_preserves_existing_events_on_resume(tmp_path):
+    artifact_dir = tmp_path / "artifacts"
+    artifact_dir.mkdir()
+
+    first_events = artifact_dir / "events.jsonl"
+    for i in range(1, 4):
+        event = events.make_event(run_id="original-run", seq=i, kind="phase_start", phase="review")
+        with first_events.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(event.to_dict()) + "\n")
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        return MODULE.CommandResult(list(args), 0, stdout="No findings.\nREVIEW_STATUS: clear\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=artifact_dir,
+    )
+
+    MODULE.run_loop(config, runner)
+
+    preserved = artifact_dir / "events-original-run.jsonl"
+    assert preserved.is_file()
+    original_lines = preserved.read_text(encoding="utf-8").strip().splitlines()
+    assert len(original_lines) == 3
+
+    new_events = artifact_dir / "events.jsonl"
+    assert new_events.is_file()
+    new_first = json.loads(new_events.read_text(encoding="utf-8").splitlines()[0])
+    assert new_first["run_id"] != "original-run"

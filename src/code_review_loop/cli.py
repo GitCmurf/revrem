@@ -1961,6 +1961,11 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
     previous_event_sink = config.event_sink
     previous_budget_state = config.budget_state
     try:
+        events_path = config.artifact_dir / events.EVENTS_FILENAME
+        if events_path.is_file():
+            existing_run_id = events.first_run_id(events_path)
+            if existing_run_id is not None:
+                events_path.rename(events_path.with_name(f"events-{existing_run_id}.jsonl"))
         event_sink = events.JsonlSink(config.artifact_dir, run_id)
         object.__setattr__(config, "event_sink", event_sink)
         if config.budget_state is None:

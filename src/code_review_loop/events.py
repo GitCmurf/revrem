@@ -291,6 +291,22 @@ def read_events(path: Path) -> tuple[list[Event], bool]:
     return events, truncated
 
 
+def first_run_id(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if not line.strip():
+            continue
+        try:
+            payload = json.loads(line)
+            if isinstance(payload, dict) and isinstance(payload.get("run_id"), str):
+                return str(payload["run_id"])
+        except (json.JSONDecodeError, ValueError, TypeError):
+            continue
+        break
+    return None
+
+
 def event_from_dict(payload: dict[str, Any]) -> Event:
     if payload.get("schema_version") != EVENT_SCHEMA_VERSION:
         raise ValueError("unsupported event schema_version")
