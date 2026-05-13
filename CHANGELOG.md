@@ -79,6 +79,8 @@ This project follows Semantic Versioning once public releases begin.
   clear-review fixture path.
 - Fake harness fixtures now cover timeout, cancellation, and unsupported
   negative paths.
+- Summaries now record resume-safety Git state: `HEAD`, base ref, base commit,
+  merge base, and availability.
 
 ### Changed
 

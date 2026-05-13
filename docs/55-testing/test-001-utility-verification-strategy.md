@@ -82,6 +82,8 @@ The main test module is `tests/test_cli.py`. It covers:
   code `3` for budget ceiling hits. Cancellation tests assert interrupted runs
   write `summary.json`, `events.jsonl`, a `cancellation` event, and exit through
   stable code `5`.
+- Resume-safety metadata tests assert `summary.json` records current `HEAD`,
+  base commit, merge base, and explicit unavailable values outside Git.
 - Review-base preflight behavior for invalid Git topology, including a local
   `main` that has no merge base with the current branch while `origin/main`
   remains usable.

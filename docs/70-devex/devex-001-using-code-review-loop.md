@@ -165,6 +165,10 @@ entries so one interrupted append does not hide earlier valid runs. Set
 that should not update shared history. Review invocation failures still write
 the per-run `summary.json` before the run is surfaced as a failed history entry,
 so auth, timeout, and startup errors remain inspectable.
+Each `summary.json` also records `git_state` for resume safety: current `HEAD`,
+configured base ref, resolved base commit, merge base, and whether those values
+were available. Repositories without a Git worktree record explicit `null`
+values instead of pretending a resume precondition was checked.
 
 For richer watched-terminal output, install the optional progress extra and use
 `--progress-style rich`:

@@ -1850,6 +1850,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
     run_id = uuid.uuid4().hex
     summary: dict[str, object] = {
         "base": config.base,
+        "git_state": git_state_for_resume(config),
         "run_id": run_id,
         "started_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "profile": config.profile_name,
@@ -2169,6 +2170,39 @@ def write_summary(config: LoopConfig, summary: dict[str, object]) -> None:
             },
         )
     artifacts.write_json_artifact(config.artifact_dir, "summary.json", summary)
+
+
+def git_state_for_resume(config: LoopConfig) -> dict[str, object]:
+    if lexical_git_repo_root(config.cwd) is None:
+        return {
+            "head": None,
+            "base": config.base,
+            "base_commit": None,
+            "merge_base": None,
+            "available": False,
+        }
+    head = git_preflight_stdout(config.cwd, ["rev-parse", "HEAD"])
+    base_commit = git_preflight_stdout(config.cwd, ["rev-parse", "--verify", f"{config.base}^{{commit}}"])
+    merge_base = (
+        git_preflight_stdout(config.cwd, ["merge-base", "HEAD", config.base])
+        if base_commit is not None
+        else None
+    )
+    return {
+        "head": head,
+        "base": config.base,
+        "base_commit": base_commit,
+        "merge_base": merge_base,
+        "available": head is not None and base_commit is not None,
+    }
+
+
+def git_preflight_stdout(cwd: Path, args: Sequence[str]) -> str | None:
+    result = run_git_preflight(cwd, args)
+    if result.returncode != 0:
+        return None
+    value = result.stdout.strip()
+    return value or None
 
 
 def summary_budget_payload(config: LoopConfig) -> dict[str, object]:

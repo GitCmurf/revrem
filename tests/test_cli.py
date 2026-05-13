@@ -5332,6 +5332,69 @@ def test_fake_harness_unsupported_surfaces_as_review_failure(tmp_path, monkeypat
     assert "unsupported" in (tmp_path / "artifacts" / "review-1.txt").read_text(encoding="utf-8")
 
 
+def test_summary_records_git_state_for_resume(tmp_path, monkeypatch):
+    monkeypatch.setattr(MODULE, "lexical_git_repo_root", lambda _cwd: tmp_path)
+
+    def fake_run_git_preflight(cwd, args):
+        if list(args) == ["rev-parse", "HEAD"]:
+            return MODULE.CommandResult(["git", *args], 0, stdout="head-sha\n")
+        if list(args) == ["rev-parse", "--verify", "main^{commit}"]:
+            return MODULE.CommandResult(["git", *args], 0, stdout="base-sha\n")
+        if list(args) == ["merge-base", "HEAD", "main"]:
+            return MODULE.CommandResult(["git", *args], 0, stdout="merge-sha\n")
+        return MODULE.CommandResult(["git", *args], 1, stderr="unexpected")
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        return MODULE.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+
+    monkeypatch.setattr(MODULE, "run_git_preflight", fake_run_git_preflight)
+
+    summary = MODULE.run_loop(
+        MODULE.LoopConfig(
+            base="main",
+            max_iterations=1,
+            codex_bin="codex",
+            cwd=tmp_path,
+            artifact_dir=tmp_path / "artifacts",
+        ),
+        runner,
+    )
+
+    assert summary["git_state"] == {
+        "head": "head-sha",
+        "base": "main",
+        "base_commit": "base-sha",
+        "merge_base": "merge-sha",
+        "available": True,
+    }
+
+
+def test_summary_records_unavailable_git_state_outside_git(tmp_path, monkeypatch):
+    monkeypatch.setattr(MODULE, "lexical_git_repo_root", lambda _cwd: None)
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        return MODULE.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+
+    summary = MODULE.run_loop(
+        MODULE.LoopConfig(
+            base="main",
+            max_iterations=1,
+            codex_bin="codex",
+            cwd=tmp_path,
+            artifact_dir=tmp_path / "artifacts",
+        ),
+        runner,
+    )
+
+    assert summary["git_state"] == {
+        "head": None,
+        "base": "main",
+        "base_commit": None,
+        "merge_base": None,
+        "available": False,
+    }
+
+
 def summary_shape(value):
     if isinstance(value, dict):
         return {key: summary_shape(item) for key, item in sorted(value.items())}

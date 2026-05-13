@@ -65,6 +65,8 @@ model/check process running under normal local execution.
 Resume remains part of this ADR's contract but is not complete in the first
 implementation slices. The intended semantics remain:
 
+- every new summary records `git_state` with `HEAD`, configured base ref,
+  resolved base commit, merge base, and an availability flag;
 - a second interrupt within the hard-stop window performs best-effort artifact
   flushing and exits with the same stable code;
 - `revrem resume <run-dir>` may continue only from event/artifact states that
