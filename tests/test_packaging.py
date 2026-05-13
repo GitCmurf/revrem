@@ -64,6 +64,44 @@ def test_ci_builds_and_smokes_revrem_wheel():
     assert ".pkg-smoke/bin/code-review-loop --version" in workflow
 
 
+def test_release_workflow_uses_trusted_publishing_and_dry_run():
+    workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+
+    assert "workflow_dispatch:" in workflow
+    assert "dry_run:" in workflow
+    assert '"v*.*.*-rc*"' in workflow
+    assert "Validate release version" in workflow
+    assert "does not match package version" in workflow
+    assert "version.replace('rc', '-rc')" in workflow
+    assert "python -m build --sdist --wheel" in workflow
+    assert "python -m twine check dist/*" in workflow
+    assert "dist/SHA256SUMS" in workflow
+    assert "actions/attest-build-provenance" in workflow
+    assert "sigstore/gh-action-sigstore-python" in workflow
+    assert "pypa/gh-action-pypi-publish@release/v1" in workflow
+    assert "repository-url: https://test.pypi.org/legacy/" in workflow
+    assert "github.event_name == 'push' && contains(github.ref_name, '-rc')" in workflow
+    assert "github.event_name == 'push' && !contains(github.ref_name, '-rc')" in workflow
+    assert "if: github.event_name == 'push'" in workflow
+
+
+def test_release_runbook_documents_rollback_and_provenance():
+    runbook = (ROOT / "docs/60-runbooks/runbook-001-release-and-rollback.md").read_text(
+        encoding="utf-8"
+    )
+    adr = (ROOT / "docs/45-adr/adr-011-release-trust-and-rollback.md").read_text(
+        encoding="utf-8"
+    )
+
+    for text in (runbook, adr):
+        assert "Trusted Publishing" in text
+        assert "TestPyPI" in text
+        assert "SHA256SUMS" in text
+        assert "Sigstore" in text
+        assert "yank" in text.lower()
+        assert "hotfix" in text.lower()
+
+
 def test_optional_tui_extra_declares_textual_dependency():
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 

@@ -12,6 +12,9 @@ This project follows Semantic Versioning once public releases begin.
   policy, support policy, issue templates, pull request template, CODEOWNERS,
   NOTICE, CI hardening, Scorecard workflow, and release provenance/SBOM
   workflow.
+- Release workflow dry-run controls, TestPyPI/PyPI Trusted Publishing routing,
+  tag/version validation, SHA-256 checksum generation, Sigstore signing, and
+  `REVREM-RUNBOOK-001` rollback guidance.
 - Reference fixture repository for the post-launch foundation phase, with
   expected seeded findings and regression coverage to keep future profile,
   diagnostics, triage, and event work aligned.

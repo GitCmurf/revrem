@@ -3,8 +3,8 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.5'
-last_updated: '2026-05-12'
+version: '1.6'
+last_updated: '2026-05-13'
 owner: GitCmurf
 docops_version: '2.0'
 area: devex
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.3
-> **Last Updated:** 2026-05-06
+> **Version:** 1.6
+> **Last Updated:** 2026-05-13
 > **Type:** DEVEX
 > **Area:** devex
 > **Description:** Operator guide for the code-review-loop utility
@@ -692,10 +692,31 @@ extras and run:
 The wrapper runs tests, `ruff check .`, `mypy src`, and DocOps checks when
 `meminit` is available.
 
+## Release Dry Runs And Rollback
+
+RevRem is not published on PyPI until the release workflow has successfully
+completed the Trusted Publishing path. Maintainers validate the package path in
+three stages:
+
+1. `workflow_dispatch` dry run builds, checks, signs, attests, and uploads
+   artifacts without publishing.
+2. `vX.Y.Z-rcN` tags publish to TestPyPI.
+3. `vX.Y.Z` tags publish to PyPI and create the GitHub Release.
+
+The release workflow validates that the tag matches `__version__` (including
+`vX.Y.Z-rcN` tags for PEP 440 `X.Y.ZrcN` release-candidate versions), writes
+`SHA256SUMS`, emits build-provenance attestations, and signs artifacts with
+Sigstore. Rollback, yanking, and hotfix steps live in
+`REVREM-RUNBOOK-001`; the release trust decision is `REVREM-ADR-011`.
+
 ### Related documents
 
 - `REVREM-ADR-001` records why this is a Python CLI with companion skill
   guidance rather than a copied script or skill-only implementation.
+- `REVREM-ADR-011` records the Trusted Publishing, provenance, and rollback
+  release policy.
+- `REVREM-RUNBOOK-001` gives the operator checklist for release dry runs,
+  TestPyPI/PyPI publication, provenance checks, and rollback.
 - `REVREM-PRD-001` defines the profile, progress, and TUI milestones.
 - `REVREM-TEST-001` defines the verification gates for this utility.
 
@@ -703,6 +724,7 @@ The wrapper runs tests, `ruff check .`, `mypy src`, and DocOps checks when
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.6 | 2026-05-13 | Codex | Documented release dry runs, Trusted Publishing stages, provenance artifacts, and rollback runbook linkage |
 | 1.5 | 2026-05-12 | Codex | Documented suppression CLI, repo/user suppression scope, critical suppression guardrails, and structured-triage suppression behavior |
 | 1.4 | 2026-05-12 | Codex | Documented commit hook failure policies, default bounded remediation retry, and explicit `--no-verify` recording |
 | 1.3 | 2026-05-06 | Codex | Clarified that the profile wizard prompts separately for review and remediation models |
