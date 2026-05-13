@@ -53,6 +53,11 @@ The first v1 schema set is:
 generated payloads. The other v1 files reserve names and envelope shape until
 their owning implementation tasks finalize the fields.
 
+The first v1 schema set is copied into `docs/52-api/schemas/_history/`.
+Compatibility tests assert that each current v1 schema has a matching baseline.
+Future breaking schema edits must replace that baseline through a major-version
+schema and changelog entry instead of silently changing v1.
+
 RevRem uses `src/code_review_loop/artifacts.py` for public JSON artifact
 writes. The helper owns:
 

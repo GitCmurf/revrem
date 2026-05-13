@@ -153,7 +153,9 @@ encoding, NFC string normalization, atomic artifact writes, and run-directory
 path-safety checks.
 `tests/test_artifact_schema.py` validates JSON Schema draft 2020-12 schema
 files and checks concrete diagnostics and generated run-summary payloads
-against `diagnostics-v1.schema.json` and `summary-v1.schema.json`.
+against `diagnostics-v1.schema.json` and `summary-v1.schema.json`. It also
+asserts every current v1 schema has a matching `_history` baseline for future
+compatibility checks.
 `tests/test_redaction.py` covers the built-in redaction defaults used by future
 bug-report bundles, including poisoned fixtures for API keys, authorization
 headers, private keys, local paths, usernames, and idempotence.

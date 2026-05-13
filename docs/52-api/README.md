@@ -99,6 +99,6 @@ The foundation phase introduces these contracts:
 `diagnostics-v1.schema.json`, `summary-v1.schema.json`,
 `triage-v1.schema.json`, `suppressions-v1.schema.json`,
 `events-v1.schema.json`, and `bug-bundle-v1.schema.json` are concrete schemas
-validated against generated payloads. Remaining skeleton contracts reserve
-names and versioning shape; their owning implementation tasks tighten fields
-before those artifacts become stable operator-facing outputs.
+validated against generated payloads. The initial v1 schema set is also copied
+under `schemas/_history/` so future changes have an in-repository compatibility
+baseline.

@@ -1,0 +1,75 @@
+{
+  "$id": "https://github.com/GitCmurf/revrem/schemas/suppressions/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "suppressions": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "created_by": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "critical_override": {
+            "type": "boolean"
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "rationale": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "repo",
+              "user"
+            ]
+          },
+          "severity_at_suppression": {
+            "enum": [
+              "info",
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ]
+          },
+          "summary": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "fingerprint",
+          "summary",
+          "rationale",
+          "created_at",
+          "created_by",
+          "scope",
+          "severity_at_suppression",
+          "critical_override"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "suppressions"
+  ],
+  "title": "RevRem suppressions v1",
+  "type": "object"
+}

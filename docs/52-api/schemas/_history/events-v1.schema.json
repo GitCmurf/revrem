@@ -1,0 +1,66 @@
+{
+  "$id": "https://github.com/GitCmurf/revrem/schemas/events/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "kind": {
+      "enum": [
+        "phase_start",
+        "phase_output",
+        "phase_result",
+        "status_classification",
+        "check_result",
+        "artifact_write",
+        "warning",
+        "failure",
+        "summary",
+        "suppressed",
+        "cancellation",
+        "cost_charge",
+        "cost_ceiling_hit"
+      ]
+    },
+    "iteration": {
+      "type": [
+        "integer",
+        "string",
+        "null"
+      ]
+    },
+    "payload": {
+      "type": "object"
+    },
+    "phase": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "run_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0"
+    },
+    "seq": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "ts": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "seq",
+    "ts",
+    "kind",
+    "phase",
+    "iteration",
+    "payload"
+  ],
+  "title": "RevRem event v1",
+  "type": "object"
+}

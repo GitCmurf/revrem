@@ -1,0 +1,196 @@
+{
+  "$id": "https://github.com/GitCmurf/revrem/schemas/triage/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "confirmed_findings": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "affected_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "rationale": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "info",
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "fingerprint",
+          "summary",
+          "severity",
+          "affected_paths",
+          "rationale"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "implementation_order": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "needs_more_info": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "affected_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "info_requested": {
+            "type": "string"
+          },
+          "rationale": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "info",
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "fingerprint",
+          "summary",
+          "severity",
+          "affected_paths",
+          "rationale",
+          "info_requested"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "parsing_warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "prompt_version": {
+      "const": "triage-v1"
+    },
+    "rejected_findings": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "affected_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "rationale": {
+            "type": "string"
+          },
+          "rejection_reason": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "info",
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "fingerprint",
+          "summary",
+          "severity",
+          "affected_paths",
+          "rationale",
+          "rejection_reason"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "run_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0"
+    },
+    "source_review_artifact": {
+      "type": "string"
+    },
+    "suppressed_findings": {
+      "items": {
+        "additionalProperties": true,
+        "required": [
+          "fingerprint",
+          "summary",
+          "severity",
+          "affected_paths",
+          "rationale",
+          "suppressed",
+          "suppression"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "verification_commands": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "source_review_artifact",
+    "prompt_version",
+    "confirmed_findings",
+    "rejected_findings",
+    "needs_more_info",
+    "implementation_order",
+    "verification_commands",
+    "parsing_warnings"
+  ],
+  "title": "RevRem triage v1",
+  "type": "object"
+}
