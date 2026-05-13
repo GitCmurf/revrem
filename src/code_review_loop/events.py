@@ -5,6 +5,9 @@ from __future__ import annotations
 import errno
 import json
 import os
+import queue
+import threading
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -88,6 +91,81 @@ class InMemorySink:
 
     def close(self) -> None:
         return None
+
+
+class RendererSink:
+    """Asynchronously adapt events to a live renderer callback."""
+
+    def __init__(
+        self,
+        run_id: str,
+        renderer: Callable[[Event], None],
+        *,
+        max_queue: int = 256,
+        close_timeout_seconds: float = 2.0,
+    ):
+        if max_queue < 1:
+            raise ValueError("renderer sink max_queue must be positive")
+        if close_timeout_seconds < 0:
+            raise ValueError("renderer sink close timeout must be non-negative")
+        self.run_id = run_id
+        self.dropped_events = 0
+        self.render_errors = 0
+        self._seq = 0
+        self._renderer = renderer
+        self._close_timeout_seconds = close_timeout_seconds
+        self._closed = False
+        self._queue: queue.Queue[Event | None] = queue.Queue(maxsize=max_queue)
+        self._thread = threading.Thread(target=self._drain, name="revrem-renderer-sink", daemon=True)
+        self._thread.start()
+
+    def emit(
+        self,
+        kind: str,
+        *,
+        phase: str | None = None,
+        iteration: int | str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> Event:
+        if self._closed:
+            raise ValueError("renderer sink is closed")
+        self._seq += 1
+        event = make_event(
+            run_id=self.run_id,
+            seq=self._seq,
+            kind=kind,
+            phase=phase,
+            iteration=iteration,
+            payload=payload or {},
+        )
+        try:
+            self._queue.put_nowait(event)
+        except queue.Full:
+            self.dropped_events += 1
+        return event
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            self._queue.put(None, timeout=self._close_timeout_seconds)
+        except queue.Full:
+            return
+        self._thread.join(timeout=self._close_timeout_seconds)
+
+    def _drain(self) -> None:
+        while True:
+            item = self._queue.get()
+            try:
+                if item is None:
+                    return
+                try:
+                    self._renderer(item)
+                except Exception:
+                    self.render_errors += 1
+            finally:
+                self._queue.task_done()
 
 
 class JsonlSink:

@@ -59,6 +59,8 @@ This project follows Semantic Versioning once public releases begin.
   progress statuses map to first-class `warning` events.
 - Loop failure paths now emit structured `failure` events with stable reason
   payloads before writing the final summary.
+- Added an asynchronous `RendererSink` event adapter so live renderers can
+  consume sequenced events without blocking model/check execution.
 
 ### Changed
 

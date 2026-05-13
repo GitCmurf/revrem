@@ -70,7 +70,10 @@ The main test module is `tests/test_cli.py`. It covers:
   truncated-tail tolerance, offline compact replay, and loop-emitted
   `check_result` events for passing and failing verification checks. Golden
   compact replay fixtures cover clear and fully suppressed runs. Failure-path
-  tests assert structured `failure` events with stable reason payloads.
+  tests assert structured `failure` events with stable reason payloads. Renderer
+  sink tests assert live renderer callbacks receive sequenced events, slow
+  renderers do not block event producers, and renderer exceptions are contained
+  as sink diagnostics.
 - Review-base preflight behavior for invalid Git topology, including a local
   `main` that has no merge base with the current branch while `origin/main`
   remains usable.

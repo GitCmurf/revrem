@@ -61,8 +61,22 @@ The initial event kinds are:
 `suppressed`, `cancellation`, `cost_charge`, and `cost_ceiling_hit`.
 
 `revrem replay <run-dir>` reads `events.jsonl` and renders compact output
-offline. Replay does not call a harness, runner, or model. Later F8 slices can
-wire live loop progress through the same envelope and add Rich/TUI renderers.
+offline. Replay does not call a harness, runner, or model.
+
+Event producers write through the `EventSink` protocol. The initial
+implementations are:
+
+- `InMemorySink` for tests and deterministic assertions;
+- `JsonlSink` for durable run artifacts;
+- `RendererSink` for asynchronous live renderer callbacks.
+
+`RendererSink` intentionally decouples event production from terminal rendering:
+it assigns the same gap-free sequence numbers as other sinks, queues events for
+a renderer worker, drops queued renderer work rather than blocking the loop when
+the renderer is saturated, and records renderer errors as sink diagnostics
+instead of failing the model/check execution path. Durable replay remains backed
+by `JsonlSink`; renderer drops are therefore an operator-display degradation,
+not artifact loss.
 
 ## Consequences
 
