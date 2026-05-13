@@ -5271,6 +5271,67 @@ def test_fake_and_codex_summary_shapes_are_structurally_equivalent(tmp_path, mon
     assert fake_summary["final_status"] == codex_summary["final_status"] == "clear"
 
 
+def test_fake_harness_timeout_surfaces_as_review_failure(tmp_path, monkeypatch):
+    monkeypatch.setenv(MODULE.harnesses.FAKE_HARNESS_ENV, "1")
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="fake",
+        review_model="timeout",
+    )
+
+    with pytest.raises(MODULE.RunLoopFailed) as excinfo:
+        MODULE.run_loop(config, MODULE.default_runner)
+
+    assert excinfo.value.summary["stopped_reason"] == "review_failed"
+    assert "Fake harness timeout" in (
+        tmp_path / "artifacts" / "review-1.txt"
+    ).read_text(encoding="utf-8")
+
+
+def test_fake_harness_cancellation_uses_controlled_cancellation_path(tmp_path, monkeypatch):
+    monkeypatch.setenv(MODULE.harnesses.FAKE_HARNESS_ENV, "1")
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="fake",
+        review_model="cancellation",
+    )
+
+    with pytest.raises(MODULE.RunLoopFailed) as excinfo:
+        MODULE.run_loop(config, MODULE.default_runner)
+
+    assert excinfo.value.summary["stopped_reason"] == "cancelled"
+    records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
+    assert truncated is False
+    assert any(event.kind == "cancellation" for event in records)
+
+
+def test_fake_harness_unsupported_surfaces_as_review_failure(tmp_path, monkeypatch):
+    monkeypatch.setenv(MODULE.harnesses.FAKE_HARNESS_ENV, "1")
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="fake",
+        review_model="unsupported",
+    )
+
+    with pytest.raises(MODULE.RunLoopFailed) as excinfo:
+        MODULE.run_loop(config, MODULE.default_runner)
+
+    assert excinfo.value.summary["stopped_reason"] == "review_failed"
+    assert "unsupported" in (tmp_path / "artifacts" / "review-1.txt").read_text(encoding="utf-8")
+
+
 def summary_shape(value):
     if isinstance(value, dict):
         return {key: summary_shape(item) for key, item in sorted(value.items())}

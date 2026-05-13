@@ -281,6 +281,12 @@ def run_fake_harness_command(args: list[str] | tuple[str, ...]) -> tuple[int, st
         return 2, "", "usage: revrem-fake-harness <role> --scenario <scenario>\n"
     role = args[1]
     scenario = args[3]
+    if scenario == "cancellation":
+        raise KeyboardInterrupt
+    if scenario == "timeout":
+        return -1, "", "Fake harness timeout\n"
+    if scenario == "unsupported":
+        return 2, "", "Fake harness unsupported capability\n"
     fixture_dir = fake_harness_fixture_dir() / scenario
     output_path = fixture_dir / f"{role}.txt"
     if not output_path.is_file():

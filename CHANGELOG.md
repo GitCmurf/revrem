@@ -77,6 +77,8 @@ This project follows Semantic Versioning once public releases begin.
   findings/remediation, and structured triage contract tests without Codex.
 - Added a fake-vs-Codex summary structural-equivalence regression for the
   clear-review fixture path.
+- Fake harness fixtures now cover timeout, cancellation, and unsupported
+  negative paths.
 
 ### Changed
 

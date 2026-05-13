@@ -143,3 +143,36 @@ def test_fake_harness_command_is_env_gated(monkeypatch):
     assert returncode == 2
     assert stdout == ""
     assert harnesses.FAKE_HARNESS_ENV in stderr
+
+
+def test_fake_harness_command_can_simulate_timeout(monkeypatch):
+    monkeypatch.setenv(harnesses.FAKE_HARNESS_ENV, "1")
+
+    returncode, stdout, stderr = harnesses.run_fake_harness_command(
+        ["revrem-fake-harness", "review", "--scenario", "timeout"]
+    )
+
+    assert returncode == -1
+    assert stdout == ""
+    assert "timeout" in stderr
+
+
+def test_fake_harness_command_can_simulate_cancellation(monkeypatch):
+    monkeypatch.setenv(harnesses.FAKE_HARNESS_ENV, "1")
+
+    with pytest.raises(KeyboardInterrupt):
+        harnesses.run_fake_harness_command(
+            ["revrem-fake-harness", "review", "--scenario", "cancellation"]
+        )
+
+
+def test_fake_harness_command_can_simulate_unsupported(monkeypatch):
+    monkeypatch.setenv(harnesses.FAKE_HARNESS_ENV, "1")
+
+    returncode, stdout, stderr = harnesses.run_fake_harness_command(
+        ["revrem-fake-harness", "review", "--scenario", "unsupported"]
+    )
+
+    assert returncode == 2
+    assert stdout == ""
+    assert "unsupported" in stderr
