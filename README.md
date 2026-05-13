@@ -240,6 +240,11 @@ tooling, `pre-commit`, `detect-secrets`, and license-review helpers. Ruff,
 mypy, pytest, DocOps checks, and `git diff --check` are required local and CI
 gates.
 
+Optional runtime extras stay narrow: `.[progress]` installs Rich, `.[tui]`
+installs Textual and Rich, and `.[redaction]` installs optional
+`detect-secrets` support for workflows that want an additional scanner alongside
+RevRem's built-in redaction regexes.
+
 The repository also carries tiny local compatibility shims for `tomli_w` and
 `jsonschema` so the test suite can collect in minimal environments. The
 published dependency declarations remain the supported install path.

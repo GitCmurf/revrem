@@ -43,6 +43,9 @@ dev = [
 progress = [
   "rich>=13.7",
 ]
+redaction = [
+  "detect-secrets>=1.5",
+]
 tui = [
   "rich>=13.7",
   "textual>=0.80",

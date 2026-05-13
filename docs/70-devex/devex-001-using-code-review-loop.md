@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.7'
+version: '1.8'
 last_updated: '2026-05-13'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.7
+> **Version:** 1.8
 > **Last Updated:** 2026-05-13
 > **Type:** DEVEX
 > **Area:** devex
@@ -185,6 +185,13 @@ For richer watched-terminal output, install the optional progress extra and use
 
 If Rich is requested but unavailable, RevRem prints one warning and falls back to
 compact progress. Existing commands do not need to change.
+
+For workflows that want an additional secret scanner alongside RevRem's built-in
+bug-bundle redaction regexes, install the optional redaction extra:
+
+```bash
+./.venv/bin/pip install -e ".[redaction]"
+```
 
 Use repository-specific checks. For Meminit-backed repositories, include:
 
@@ -729,6 +736,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.8 | 2026-05-13 | Codex | Documented optional redaction extra alongside progress and TUI extras |
 | 1.7 | 2026-05-13 | Codex | Documented live CLI preflight diagnostics before first model invocation |
 | 1.6 | 2026-05-13 | Codex | Documented release dry runs, Trusted Publishing stages, provenance artifacts, and rollback runbook linkage |
 | 1.5 | 2026-05-12 | Codex | Documented suppression CLI, repo/user suppression scope, critical suppression guardrails, and structured-triage suppression behavior |

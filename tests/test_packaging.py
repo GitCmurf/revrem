@@ -57,6 +57,8 @@ def test_ci_builds_and_smokes_revrem_wheel():
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 
     assert "package-smoke:" in workflow
+    assert 'os: [ubuntu-latest, macos-latest]' in workflow
+    assert 'python-version: ["3.11", "3.12"]' in workflow
     assert "python -m build --sdist --wheel" in workflow
     assert "python -m twine check dist/*" in workflow
     assert ".pkg-smoke/bin/python -m pip install dist/revrem-*.whl" in workflow
@@ -140,8 +142,10 @@ def test_dev_extra_exercises_rich_and_textual_paths():
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
     dev_extra = pyproject["project"]["optional-dependencies"]["dev"]
+    redaction_extra = pyproject["project"]["optional-dependencies"]["redaction"]
 
     assert any(dependency.startswith("jsonschema>=") for dependency in dev_extra)
+    assert any(dependency.startswith("detect-secrets>=") for dependency in redaction_extra)
     assert any(dependency.startswith("rich>=") for dependency in dev_extra)
     assert any(dependency.startswith("textual>=") for dependency in dev_extra)
 

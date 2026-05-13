@@ -103,6 +103,8 @@ This project follows Semantic Versioning once public releases begin.
   preflight issues are found.
 - Fake harness fixtures now cover partial remediation output that fails while
   preserving the remediation artifact.
+- Package smoke CI now covers Linux and macOS on Python 3.11 and 3.12, and the
+  packaging metadata exposes the planned `redaction` extra.
 
 ### Changed
 
