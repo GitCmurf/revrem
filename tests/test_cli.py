@@ -2054,6 +2054,25 @@ def test_subprocess_refresh_loop_kills_child_on_interrupt(tmp_path, monkeypatch)
     assert len(refresh_calls) == 1
 
 
+def test_kill_process_tree_targets_child_process_group(monkeypatch):
+    calls = []
+
+    class FakeProcess:
+        pid = 12345
+
+        def kill(self):
+            calls.append(("kill", self.pid))
+
+    def fake_killpg(pid, sig):
+        calls.append(("killpg", pid, sig))
+
+    monkeypatch.setattr(MODULE.os, "killpg", fake_killpg)
+
+    MODULE.kill_process_tree(FakeProcess())
+
+    assert calls == [("killpg", 12345, MODULE.signal.SIGKILL)]
+
+
 def test_subprocess_refresh_loop_does_not_resend_input_after_timeout(tmp_path, monkeypatch):
     refresh_calls = []
 

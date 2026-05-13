@@ -64,7 +64,9 @@ The main test module is `tests/test_cli.py`. It covers:
   output.
 - Timeout cleanup for subprocesses that spawn pipe-holding descendants, proving
   timeout handling kills the child process group instead of blocking forever
-  while collecting stdout/stderr.
+  while collecting stdout/stderr. A focused process-wrapper test also asserts
+  the kill path targets the child process group with `SIGKILL` before falling
+  back to single-process termination.
 - Event envelope and replay helpers in `tests/test_events.py` and
   `tests/test_replay.py`, including schema validation, gap-free sequencing,
   truncated-tail tolerance, offline compact replay, and loop-emitted

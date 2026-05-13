@@ -1555,7 +1555,7 @@ GitHub/PyPI credentials or a merge to `main`.
 | F8 event sink, `events.jsonl`, and replay | `src/code_review_loop/events.py`, event fixtures for clear/findings/timeout/check-failure/cancellation/cost-ceiling/suppressed/rejected-finding cases, offline replay tests, TUI state event-reader tests, and `REVREM-ADR-008`. | Implemented locally |
 | F9 budgets, cancellation, and resume | `src/code_review_loop/budgets.py`, budget ceiling tests, fake-harness token-charge tests, cancellation diagnostics/events/summary tests, resume precondition tests, exit codes `3`, `4`, and `5`, and `REVREM-ADR-009`. | Implemented locally |
 | F10 fake harness contract | `src/code_review_loop/harnesses.py`, `harness-capabilities-v1.schema.json`, fake harness fixtures, env-gated fake harness behavior, reserved non-Codex harness rejection, Codex/fake summary shape equivalence, and `REVREM-ADR-010`. | Implemented locally |
-| Required local gates | `./scripts/dev-check` passed with 394 tests; `pre-commit run --all-files` passed; `meminit check --format json` passed via both gates. | Verified locally |
+| Required local gates | `./scripts/dev-check` passed with 395 tests; `pre-commit run --all-files` passed; `meminit check --format json` passed via both gates. | Verified locally |
 | Main-branch and publication gates | This branch has not been pushed or merged by this agent. Actual TestPyPI/PyPI publish, GitHub Release artifact attachment, and branch-protection/main-branch status must be performed by the release operator after review. | External/manual gate |
 
 ## ADR Closure
