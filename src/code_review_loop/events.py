@@ -141,6 +141,10 @@ class RendererSink:
             iteration=iteration,
             payload=payload or {},
         )
+        with self._lock:
+            if self._closed:
+                self.dropped_events += 1
+                return event
         try:
             self._queue.put_nowait(event)
         except queue.Full:
@@ -149,9 +153,10 @@ class RendererSink:
         return event
 
     def close(self) -> None:
-        if self._closed:
-            return
-        self._closed = True
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
         try:
             self._queue.put(None, timeout=self._close_timeout_seconds)
         except queue.Full:

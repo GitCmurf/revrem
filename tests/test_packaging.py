@@ -67,7 +67,7 @@ def test_ci_builds_and_smokes_revrem_wheel():
     assert 'python-version: ["3.11", "3.12"]' in workflow
     assert "python -m build --sdist --wheel" in workflow
     assert "python -m twine check dist/*" in workflow
-    assert "wheel=\"$(find dist -maxdepth 1 -name 'revrem-*.whl' -print -quit)\"" in workflow
+    assert "find dist -maxdepth 1 -name 'revrem-*.whl' -print" in workflow
     assert '.pkg-smoke/bin/python -m pip install "$wheel"' in workflow
     assert ".pkg-smoke/bin/revrem --version" in workflow
     assert ".pkg-smoke/bin/code-review-loop --version" in workflow

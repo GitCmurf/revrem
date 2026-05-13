@@ -86,7 +86,7 @@ jobs:
         run: |
           python -m venv .pkg-smoke
           .pkg-smoke/bin/python -m pip install --upgrade pip
-          wheel="$(find dist -maxdepth 1 -name 'revrem-*.whl' -print -quit)"
+          wheel="$(find dist -maxdepth 1 -name 'revrem-*.whl' -print | head -n1)"
           test -n "$wheel"
           .pkg-smoke/bin/python -m pip install "$wheel"
           .pkg-smoke/bin/revrem --version
