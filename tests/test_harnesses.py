@@ -178,6 +178,18 @@ def test_fake_harness_command_can_simulate_unsupported(monkeypatch):
     assert "unsupported" in stderr
 
 
+def test_fake_harness_command_can_return_partial_phase_output(monkeypatch):
+    monkeypatch.setenv(harnesses.FAKE_HARNESS_ENV, "1")
+
+    returncode, stdout, stderr = harnesses.run_fake_harness_command(
+        ["revrem-fake-harness", "remediation", "--scenario", "remediation_partial"]
+    )
+
+    assert returncode == 1
+    assert "partial progress" in stdout
+    assert stderr == ""
+
+
 def test_fake_harness_can_report_deterministic_token_charge():
     assert (
         harnesses.fake_harness_token_charge(

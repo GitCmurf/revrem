@@ -301,7 +301,8 @@ def run_fake_harness_command(args: list[str] | tuple[str, ...]) -> tuple[int, st
     output_path = fixture_dir / f"{role}.txt"
     if not output_path.is_file():
         return 2, "", f"fake harness fixture not found: {output_path}\n"
-    return 0, output_path.read_text(encoding="utf-8"), ""
+    returncode = 1 if scenario.endswith("_partial") else 0
+    return returncode, output_path.read_text(encoding="utf-8"), ""
 
 
 def fake_harness_fixture_dir() -> Path:

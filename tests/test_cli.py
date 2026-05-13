@@ -5302,6 +5302,30 @@ def test_fake_harness_can_drive_remediation_cycle(tmp_path, monkeypatch):
     ).read_text(encoding="utf-8")
 
 
+def test_fake_harness_partial_remediation_surfaces_artifact(tmp_path, monkeypatch):
+    monkeypatch.setenv(MODULE.harnesses.FAKE_HARNESS_ENV, "1")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="fake",
+        remediation_harness="fake",
+        review_model="review_findings",
+        remediation_model="remediation_partial",
+    )
+
+    with pytest.raises(MODULE.RunLoopFailed) as excinfo:
+        MODULE.run_loop(config, MODULE.default_runner)
+
+    assert excinfo.value.summary["stopped_reason"] == "remediation_failed"
+    assert "partial progress" in (
+        tmp_path / "artifacts" / "remediation-1.txt"
+    ).read_text(encoding="utf-8")
+
+
 def test_fake_harness_can_drive_structured_triage(tmp_path, monkeypatch):
     monkeypatch.setenv(MODULE.harnesses.FAKE_HARNESS_ENV, "1")
 
