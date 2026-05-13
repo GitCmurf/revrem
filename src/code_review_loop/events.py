@@ -328,7 +328,7 @@ def render_compact(events: list[Event]) -> str:
 
 
 def _compact_detail(event: Event) -> str:
-    for key in ("status", "reason", "message", "summary"):
+    for key in ("status", "reason", "message", "summary", "path"):
         value = event.payload.get(key)
         if isinstance(value, str):
             return value

@@ -84,6 +84,12 @@ tails explicitly, and reports invalid event sequences as monitor diagnostics.
 This keeps the optional TUI on the replay/event substrate rather than adding a
 second transcript parser.
 
+Run summaries emit `artifact_write` events for the public artifacts indexed in
+`summary.artifact_paths`. These events are intentionally emitted at summary
+time, after artifact discovery, so downstream replay/report surfaces can find
+review, remediation, check, diagnostic, commit, and summary artifacts from the
+event stream without depending on terminal text.
+
 ## Consequences
 
 - Event schema compatibility becomes a public artifact contract.

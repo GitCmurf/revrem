@@ -250,11 +250,23 @@ def test_run_loop_writes_replayable_events_jsonl(tmp_path, capsys):
     assert summary["final_status"] == "clear"
     assert replay_code == 0
     assert truncated is False
-    assert [event.kind for event in records] == ["phase_start", "phase_result", "summary"]
+    assert [event.kind for event in records] == [
+        "phase_start",
+        "phase_result",
+        "artifact_write",
+        "artifact_write",
+        "summary",
+    ]
+    assert [event.payload.get("kind") for event in records if event.kind == "artifact_write"] == [
+        "summary",
+        "reviews",
+    ]
     assert capsys.readouterr().out == (
         "0001|review|1|phase_start: codex review --base main\n"
         "0002|review|1|phase_result: clear\n"
-        "0003|summary|summary: review_clear\n"
+        f"0003|artifacts|artifact_write: {tmp_path / 'artifacts' / 'summary.json'}\n"
+        f"0004|artifacts|artifact_write: {tmp_path / 'artifacts' / 'review-1.txt'}\n"
+        "0005|summary|summary: review_clear\n"
     )
 
 

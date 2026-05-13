@@ -512,7 +512,7 @@ def run_event_view(event: event_model.Event) -> RunEventView:
 
 
 def event_detail(event: event_model.Event) -> str:
-    for key in ("status", "reason", "message", "summary"):
+    for key in ("status", "reason", "message", "summary", "path"):
         value = event.payload.get(key)
         if isinstance(value, str):
             return value

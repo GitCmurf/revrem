@@ -63,6 +63,8 @@ This project follows Semantic Versioning once public releases begin.
   consume sequenced events without blocking model/check execution.
 - Run-monitor TUI state now derives event summaries from `events.jsonl`,
   including truncated and invalid stream diagnostics.
+- Run summaries now emit `artifact_write` events for public artifact paths so
+  replay/report consumers can discover artifacts from the event stream.
 
 ### Changed
 

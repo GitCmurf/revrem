@@ -16,7 +16,7 @@ import tempfile
 import textwrap
 import time
 import uuid
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager, suppress
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
@@ -2086,6 +2086,7 @@ def write_summary(config: LoopConfig, summary: dict[str, object]) -> None:
     add_summary_contract_fields(config, summary)
     add_artifact_paths(summary, config)
     if config.event_sink is not None:
+        emit_artifact_write_events(config, summary)
         summary_detail = summary.get("stopped_reason") or summary.get("final_status") or "summary"
         config.event_sink.emit(
             "summary",
@@ -2094,6 +2095,32 @@ def write_summary(config: LoopConfig, summary: dict[str, object]) -> None:
             },
         )
     artifacts.write_json_artifact(config.artifact_dir, "summary.json", summary)
+
+
+def emit_artifact_write_events(config: LoopConfig, summary: dict[str, object]) -> None:
+    if config.event_sink is None:
+        return
+    artifact_paths = summary.get("artifact_paths")
+    if not isinstance(artifact_paths, dict):
+        return
+    for kind, path in iter_artifact_paths(artifact_paths):
+        payload: dict[str, object] = {"kind": kind, "path": path}
+        path_obj = Path(path)
+        if path_obj.is_file():
+            payload["bytes"] = path_obj.stat().st_size
+        config.event_sink.emit("artifact_write", phase="artifacts", payload=payload)
+
+
+def iter_artifact_paths(artifact_paths: dict[object, object]) -> Iterator[tuple[str, str]]:
+    for kind, value in artifact_paths.items():
+        if kind == "artifact_dir":
+            continue
+        if isinstance(kind, str) and isinstance(value, str):
+            yield kind, value
+        elif isinstance(kind, str) and isinstance(value, list):
+            for item in value:
+                if isinstance(item, str):
+                    yield kind, item
 
 
 def add_summary_contract_fields(config: LoopConfig, summary: dict[str, object]) -> None:

@@ -74,7 +74,8 @@ The main test module is `tests/test_cli.py`. It covers:
   sink tests assert live renderer callbacks receive sequenced events, slow
   renderers do not block event producers, and renderer exceptions are contained
   as sink diagnostics. TUI state tests read `events.jsonl` through the replay
-  reader and cover valid, truncated, and invalid event streams.
+  reader and cover valid, truncated, and invalid event streams. CLI loop tests
+  assert summary-time `artifact_write` events for public run artifacts.
 - Review-base preflight behavior for invalid Git topology, including a local
   `main` that has no merge base with the current branch while `origin/main`
   remains usable.
