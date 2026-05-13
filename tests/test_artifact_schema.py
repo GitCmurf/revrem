@@ -9,6 +9,7 @@ from code_review_loop._compat_jsonschema import Draft202012Validator, validate
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_DIR = ROOT / "docs" / "52-api" / "schemas"
+ARTIFACT_FIXTURE_DIR = ROOT / "tests" / "fixtures" / "artifacts"
 
 
 def _load_schema(name: str) -> dict[str, object]:
@@ -44,6 +45,29 @@ def test_doctor_payload_validates_against_diagnostics_schema():
         diagnostics.doctor_payload(issues),
         _load_schema("diagnostics-v1.schema.json"),
     )
+
+
+def test_artifact_scenario_fixtures_validate_against_schemas():
+    expected_scenarios = {
+        "clear",
+        "findings",
+        "setup_failure",
+        "timeout",
+        "check_failure",
+        "unknown",
+    }
+    schema_by_name = {
+        "summary.json": _load_schema("summary-v1.schema.json"),
+        "diagnostics.json": _load_schema("diagnostics-v1.schema.json"),
+    }
+
+    assert {path.name for path in ARTIFACT_FIXTURE_DIR.iterdir() if path.is_dir()} == expected_scenarios
+    for scenario_dir in sorted(path for path in ARTIFACT_FIXTURE_DIR.iterdir() if path.is_dir()):
+        assert (scenario_dir / "summary.json").is_file(), scenario_dir
+        for path in sorted(scenario_dir.glob("*.json")):
+            schema = schema_by_name.get(path.name)
+            assert schema is not None, f"no schema mapped for {path}"
+            validate(json.loads(path.read_text(encoding="utf-8")), schema)
 
 
 def test_summary_schema_validates_generated_summary(tmp_path):

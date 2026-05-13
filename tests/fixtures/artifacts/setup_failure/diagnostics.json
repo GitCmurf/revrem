@@ -1,0 +1,17 @@
+{
+  "issues": [
+    {
+      "code": "revrem.preflight.invalid_base",
+      "evidence": {
+        "base": "missing"
+      },
+      "fingerprint": "f1:setupfailure",
+      "hint": "Fetch the target branch or pass --base with an existing ref.",
+      "message": "Base ref 'missing' does not resolve.",
+      "schema_version": "1.0",
+      "severity": "blocking"
+    }
+  ],
+  "schema_version": "1.0",
+  "status": "blocking"
+}

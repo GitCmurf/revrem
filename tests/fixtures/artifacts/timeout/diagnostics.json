@@ -1,0 +1,18 @@
+{
+  "issues": [
+    {
+      "code": "revrem.run.timeout",
+      "evidence": {
+        "phase": "review",
+        "timeout_seconds": 1
+      },
+      "fingerprint": "f1:timeout",
+      "hint": "Increase the phase timeout or inspect the captured partial output.",
+      "message": "The review command timed out.",
+      "schema_version": "1.0",
+      "severity": "blocking"
+    }
+  ],
+  "schema_version": "1.0",
+  "status": "blocking"
+}
