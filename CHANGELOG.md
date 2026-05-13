@@ -73,6 +73,8 @@ This project follows Semantic Versioning once public releases begin.
 - Added the v1 harness capability contract, JSON Schema, Codex capability
   metadata, and an explicit `REVREM_ALLOW_FAKE_HARNESS=1` gate for the future
   deterministic fake harness.
+- Added the gated fake harness runner and fixtures for clear review,
+  findings/remediation, and structured triage contract tests without Codex.
 
 ### Changed
 

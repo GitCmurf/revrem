@@ -5148,6 +5148,93 @@ def test_loop_writes_cancellation_summary_when_interrupted(tmp_path):
     assert any(event.kind == "summary" and event.payload.get("summary") == "cancelled" for event in records)
 
 
+def test_fake_harness_can_drive_clear_review_without_shelling_out(tmp_path, monkeypatch):
+    monkeypatch.setenv(MODULE.harnesses.FAKE_HARNESS_ENV, "1")
+    calls = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append(list(args))
+        return MODULE.default_runner(args, cwd, input_text, timeout_seconds)
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="fake",
+        review_model="review_clear",
+    )
+
+    summary = MODULE.run_loop(config, runner)
+
+    assert summary["final_status"] == "clear"
+    assert summary["harness"] == "fake"
+    assert calls == [["revrem-fake-harness", "review", "--scenario", "review_clear"]]
+    assert (tmp_path / "artifacts" / "review-1.txt").read_text(encoding="utf-8") == (
+        "No actionable findings.\nREVIEW_STATUS: clear\n"
+    )
+
+
+def test_fake_harness_can_drive_remediation_cycle(tmp_path, monkeypatch):
+    monkeypatch.setenv(MODULE.harnesses.FAKE_HARNESS_ENV, "1")
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if list(args) == ["revrem-fake-harness", "review", "--scenario", "review_findings"]:
+            object.__setattr__(config, "review_model", "review_clear")
+        return MODULE.default_runner(args, cwd, input_text, timeout_seconds)
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="fake",
+        remediation_harness="fake",
+        review_model="review_findings",
+        remediation_model="remediation",
+    )
+
+    summary = MODULE.run_loop(config, runner)
+
+    assert summary["final_status"] == "clear"
+    assert summary["iterations"][0]["review_status"] == "findings"
+    assert "Fake remediation completed." in (
+        tmp_path / "artifacts" / "remediation-1.txt"
+    ).read_text(encoding="utf-8")
+
+
+def test_fake_harness_can_drive_structured_triage(tmp_path, monkeypatch):
+    monkeypatch.setenv(MODULE.harnesses.FAKE_HARNESS_ENV, "1")
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if list(args) == ["revrem-fake-harness", "review", "--scenario", "review_findings"]:
+            object.__setattr__(config, "review_model", "review_clear")
+        return MODULE.default_runner(args, cwd, input_text, timeout_seconds)
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="fake",
+        triage_harness="fake",
+        remediation_harness="fake",
+        review_model="review_findings",
+        triage_model="triage_valid",
+        remediation_model="remediation",
+        triage_enabled=True,
+    )
+
+    summary = MODULE.run_loop(config, runner)
+    triage_json = json.loads((tmp_path / "artifacts" / "triage-1.json").read_text(encoding="utf-8"))
+
+    assert summary["final_status"] == "clear"
+    assert triage_json["confirmed_findings"][0]["fingerprint"] == "f1:fake"
+
+
 def test_main_returns_exit_code_5_for_controlled_cancellation(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     summary = {

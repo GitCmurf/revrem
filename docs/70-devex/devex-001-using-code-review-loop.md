@@ -449,8 +449,9 @@ phases, sandbox modes, timeout/cancellation support, structured output, and
 cost reporting mode. Codex currently reports `cost_reporting = "none"`, so
 token/USD budgets remain declared ceilings until a cost-aware harness emits
 charges. The `fake` harness is reserved for deterministic test fixtures and is
-hidden unless `REVREM_ALLOW_FAKE_HARNESS=1` is set; even then, live execution
-remains disabled until the F10 fake runner lands.
+hidden unless `REVREM_ALLOW_FAKE_HARNESS=1` is set. When enabled, it replays
+local fixture files through RevRem's runner boundary and never shells out; it
+is for tests and contract development, not production review.
 
 Set `commit.enabled = true` or pass `--commit-after-remediation` only in a
 worktree where it is acceptable for RevRem to stage all current changes with

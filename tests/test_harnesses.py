@@ -106,14 +106,40 @@ def test_fake_harness_is_hidden_unless_explicitly_enabled(monkeypatch):
     assert payload["cost_reporting"] == "tokens"
 
 
-def test_fake_harness_remains_non_executable_until_contract_runner_lands(monkeypatch):
+def test_fake_harness_builds_internal_command_when_enabled(monkeypatch):
     monkeypatch.setenv(harnesses.FAKE_HARNESS_ENV, "1")
 
-    with pytest.raises(NotImplementedError, match="fake"):
-        harnesses.build_phase_command(
-            harnesses.PhaseCommandRequest(
-                harness="fake",
-                role="review",
-                executable="fake",
-            )
+    command = harnesses.build_phase_command(
+        harnesses.PhaseCommandRequest(
+            harness="fake",
+            role="review",
+            executable="fake",
+            model="review_clear",
         )
+    )
+
+    assert command == ["revrem-fake-harness", "review", "--scenario", "review_clear"]
+
+
+def test_fake_harness_command_replays_fixture(monkeypatch):
+    monkeypatch.setenv(harnesses.FAKE_HARNESS_ENV, "1")
+
+    returncode, stdout, stderr = harnesses.run_fake_harness_command(
+        ["revrem-fake-harness", "review", "--scenario", "review_clear"]
+    )
+
+    assert returncode == 0
+    assert "REVIEW_STATUS: clear" in stdout
+    assert stderr == ""
+
+
+def test_fake_harness_command_is_env_gated(monkeypatch):
+    monkeypatch.delenv(harnesses.FAKE_HARNESS_ENV, raising=False)
+
+    returncode, stdout, stderr = harnesses.run_fake_harness_command(
+        ["revrem-fake-harness", "review", "--scenario", "review_clear"]
+    )
+
+    assert returncode == 2
+    assert stdout == ""
+    assert harnesses.FAKE_HARNESS_ENV in stderr

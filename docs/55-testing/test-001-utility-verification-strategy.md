@@ -124,7 +124,9 @@ newest-first reads.
 Codex command construction is executable, harness capabilities validate against
 `harness-capabilities-v1.schema.json`, the test-only `fake` harness remains
 hidden unless `REVREM_ALLOW_FAKE_HARNESS=1` is set, and reserved future
-harnesses remain valid profile syntax but not runnable adapters.
+harnesses remain valid profile syntax but not runnable adapters. Loop-level
+fake harness tests cover clear review, remediation, and structured triage
+without invoking Codex or a shell command.
 `tests/test_diagnostics.py` covers deterministic local setup diagnostics for
 Git topology, commit-mode cleanliness, Codex executable discovery, artifact
 directory writability, and configured check executables.

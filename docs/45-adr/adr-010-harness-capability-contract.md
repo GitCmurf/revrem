@@ -51,10 +51,12 @@ phase, timeout/cancellation via RevRem's subprocess wrapper, and no token/USD
 cost reporting.
 
 The `fake` harness is reserved for the F10 contract runner and is hidden unless
-`REVREM_ALLOW_FAKE_HARNESS=1` is set. When enabled, its capabilities can be
-validated and inspected, but command execution still raises until the scripted
-fixture runner lands. Real secondary backends such as Claude, Gemini, opencode,
-Kilo, OpenRouter, and HTTP remain reserved and non-executable.
+`REVREM_ALLOW_FAKE_HARNESS=1` is set. When enabled, it routes through an
+internal `revrem-fake-harness` command handled by RevRem's runner boundary.
+The fake command replays text fixtures from `tests/fixtures/harnesses` (or from
+`REVREM_FAKE_HARNESS_FIXTURE_DIR`) and never shells out. Real secondary
+backends such as Claude, Gemini, opencode, Kilo, OpenRouter, and HTTP remain
+reserved and non-executable.
 
 ## Consequences
 
@@ -63,5 +65,5 @@ Kilo, OpenRouter, and HTTP remain reserved and non-executable.
   usage.
 - Tests can validate the capability payload independently from live model
   availability.
-- The fake harness gate prevents accidental production use while leaving a
-  clear path for deterministic F10 fixtures.
+- The fake harness gate prevents accidental production use while allowing
+  deterministic F10 fixtures to exercise the full loop without Codex installed.

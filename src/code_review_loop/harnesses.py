@@ -14,6 +14,8 @@ from typing import Literal, cast
 
 HARNESS_CAPABILITY_SCHEMA_VERSION = "1.0"
 FAKE_HARNESS_ENV = "REVREM_ALLOW_FAKE_HARNESS"
+FAKE_HARNESS_FIXTURE_ENV = "REVREM_FAKE_HARNESS_FIXTURE_DIR"
+FAKE_HARNESS_COMMAND = "revrem-fake-harness"
 CostReporting = Literal["tokens", "usd", "none"]
 
 
@@ -121,6 +123,18 @@ class ReservedHarnessAdapter(HarnessAdapter):
         )
 
 
+class FakeHarnessAdapter(HarnessAdapter):
+    name = "fake"
+
+    def command(self, request: PhaseCommandRequest) -> list[str]:
+        if not fake_harness_enabled():
+            raise NotImplementedError(
+                f"harness {request.harness!r} is test-only and requires {FAKE_HARNESS_ENV}=1"
+            )
+        scenario = request.model or f"{request.role}_clear"
+        return [FAKE_HARNESS_COMMAND, request.role, "--scenario", scenario]
+
+
 HARNESS_REGISTRY: dict[str, HarnessSpec] = {
     "codex": HarnessSpec(
         name="codex",
@@ -193,6 +207,7 @@ HARNESS_ADAPTERS: dict[str, HarnessAdapter] = {
     "gemini": ReservedHarnessAdapter("gemini"),
     "opencode": ReservedHarnessAdapter("opencode"),
     "kilo": ReservedHarnessAdapter("kilo"),
+    "fake": FakeHarnessAdapter(),
 }
 
 
@@ -253,6 +268,31 @@ def build_phase_command(request: PhaseCommandRequest) -> list[str]:
     validate_harness_name(request.harness, field=f"{request.role}.harness")
     adapter = HARNESS_ADAPTERS.get(request.harness, ReservedHarnessAdapter(request.harness))
     return adapter.command(request)
+
+
+def is_fake_harness_command(args: list[str] | tuple[str, ...]) -> bool:
+    return bool(args) and args[0] == FAKE_HARNESS_COMMAND
+
+
+def run_fake_harness_command(args: list[str] | tuple[str, ...]) -> tuple[int, str, str]:
+    if not fake_harness_enabled():
+        return 2, "", f"{FAKE_HARNESS_ENV}=1 is required for the fake harness\n"
+    if len(args) != 4 or args[2] != "--scenario":
+        return 2, "", "usage: revrem-fake-harness <role> --scenario <scenario>\n"
+    role = args[1]
+    scenario = args[3]
+    fixture_dir = fake_harness_fixture_dir() / scenario
+    output_path = fixture_dir / f"{role}.txt"
+    if not output_path.is_file():
+        return 2, "", f"fake harness fixture not found: {output_path}\n"
+    return 0, output_path.read_text(encoding="utf-8"), ""
+
+
+def fake_harness_fixture_dir() -> Path:
+    configured = os.environ.get(FAKE_HARNESS_FIXTURE_ENV)
+    if configured:
+        return Path(configured)
+    return Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "harnesses"
 
 
 def _codex_config_args(reasoning_effort: str | None) -> list[str]:

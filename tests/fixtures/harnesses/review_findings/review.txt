@@ -1,0 +1,4 @@
+Full review comments:
+
+- [P2] Add regression coverage for the fake harness contract.
+REVIEW_STATUS: findings
