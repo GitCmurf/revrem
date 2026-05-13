@@ -55,11 +55,16 @@ Token and USD usage are represented as `null` until a harness reports them.
 They are never silently treated as `0`, because unsupported accounting and zero
 usage have different operational meanings.
 
-Cancellation and resume remain part of this ADR's contract but are not complete
-in the first implementation slice. The intended semantics remain:
+Cancellation is a controlled stop path. SIGINT/SIGTERM restore terminal state
+and raise into the loop, where RevRem emits `cancellation`, writes
+`summary.json`, writes `events.jsonl`, records public artifact paths, and exits
+with code 5. The subprocess wrapper already kills the active child process
+group when unwinding from an interrupt, so cancellation does not leave the
+model/check process running under normal local execution.
 
-- first Ctrl-C/SIGTERM drains or kills the active child process group, writes
-  artifacts, emits `cancellation`, and exits with code 5;
+Resume remains part of this ADR's contract but is not complete in the first
+implementation slices. The intended semantics remain:
+
 - a second interrupt within the hard-stop window performs best-effort artifact
   flushing and exits with the same stable code;
 - `revrem resume <run-dir>` may continue only from event/artifact states that

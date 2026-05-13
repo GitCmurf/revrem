@@ -597,6 +597,8 @@ until a backend adapter is implemented.
 - `2`: the utility completed but the bounded loop still has findings or pending
   check failures.
 - `3`: a configured budget ceiling was reached before the next model call.
+- `5`: the operator cancelled the run with Ctrl-C/SIGTERM and RevRem wrote
+  best-effort cancellation artifacts.
 
 ### Operator guidance
 
@@ -610,6 +612,10 @@ until a backend adapter is implemented.
   RevRem starts each child command in its own process group and kills the whole
   group on timeout, so wrappers that leave pipe-holding descendants behind do
   not block artifact creation indefinitely.
+- Ctrl-C and SIGTERM are treated as controlled cancellation. RevRem restores
+  terminal display state, kills the active child process group through the
+  subprocess wrapper, emits a `cancellation` event, writes `summary.json`, and
+  exits with code `5`.
 - Ensure `--base` names a local commit that shares history with `HEAD`. During
   branch-topology transitions, a stale local `main` can be unrelated to the
   active PR branch even when `origin/main` is correct. RevRem preflights this

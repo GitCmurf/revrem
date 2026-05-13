@@ -79,7 +79,9 @@ The main test module is `tests/test_cli.py`. It covers:
 - Budget accounting in `tests/test_budgets.py` and loop-level budget tests in
   `tests/test_cli.py`, including wall-clock soft warnings, pre-model-call
   ceiling stops, null token/USD usage for unsupported cost reporting, and exit
-  code `3` for budget ceiling hits.
+  code `3` for budget ceiling hits. Cancellation tests assert interrupted runs
+  write `summary.json`, `events.jsonl`, a `cancellation` event, and exit through
+  stable code `5`.
 - Review-base preflight behavior for invalid Git topology, including a local
   `main` that has no merge base with the current branch while `origin/main`
   remains usable.

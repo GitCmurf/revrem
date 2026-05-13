@@ -314,6 +314,8 @@ def terminal_recovery_context():
 
     def handle_signal(signum: int, frame: object | None) -> None:
         restore_terminal_display()
+        if signum in {signal.SIGINT, signal.SIGTERM}:
+            raise KeyboardInterrupt
         signal.signal(signum, signal.SIG_DFL)
         os.kill(os.getpid(), signum)
         if hasattr(signal, "SIGTSTP") and signum == signal.SIGTSTP:
@@ -2122,6 +2124,21 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
 
         write_summary(config, summary)
         return summary
+    except KeyboardInterrupt as exc:
+        summary["final_status"] = "error"
+        summary["stopped_reason"] = "cancelled"
+        summary["error"] = "cancelled by operator"
+        if config.event_sink is not None:
+            config.event_sink.emit(
+                "cancellation",
+                phase="run",
+                payload={
+                    "reason": "operator_interrupt",
+                    "message": "cancelled by operator",
+                },
+            )
+        write_summary(config, summary)
+        raise RunLoopFailed(summary, "cancelled by operator") from exc
     except budgets.BudgetExceeded as exc:
         summary["final_status"] = "error"
         summary["stopped_reason"] = "budget_ceiling_hit"
@@ -3215,10 +3232,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         if summary.get("stopped_reason") == "budget_ceiling_hit":
             return 3
+        if summary.get("stopped_reason") == "cancelled":
+            return 5
         return 1
     except KeyboardInterrupt:  # pragma: no cover - signal path
-        print("Interrupted by user.", file=sys.stderr)
-        return 130
+        print("Cancelled by user.", file=sys.stderr)
+        return 5
     except Exception as exc:  # pragma: no cover - command-line reporting path
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1

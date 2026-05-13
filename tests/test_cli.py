@@ -2079,8 +2079,8 @@ def test_main_handles_keyboard_interrupt_without_traceback(tmp_path, monkeypatch
 
     exit_code = MODULE.main([])
 
-    assert exit_code == 130
-    assert capsys.readouterr().err == "Interrupted by user.\n"
+    assert exit_code == 5
+    assert capsys.readouterr().err == "Cancelled by user.\n"
 
 
 def test_loop_can_start_from_initial_review_file(tmp_path):
@@ -5115,6 +5115,57 @@ def test_main_returns_exit_code_3_for_budget_ceiling(tmp_path, monkeypatch, caps
 
     assert exit_code == 3
     assert "wall budget exceeded" in capsys.readouterr().err
+
+
+def test_loop_writes_cancellation_summary_when_interrupted(tmp_path):
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        raise KeyboardInterrupt
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+    )
+
+    with pytest.raises(MODULE.RunLoopFailed) as excinfo:
+        MODULE.run_loop(config, runner)
+
+    summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
+    records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
+
+    assert str(excinfo.value) == "cancelled by operator"
+    assert summary["final_status"] == "error"
+    assert summary["stopped_reason"] == "cancelled"
+    assert summary["error"] == "cancelled by operator"
+    assert summary["artifact_paths"]["summary"] == str(tmp_path / "artifacts" / "summary.json")
+    assert truncated is False
+    assert any(
+        event.kind == "cancellation" and event.payload.get("reason") == "operator_interrupt"
+        for event in records
+    )
+    assert any(event.kind == "summary" and event.payload.get("summary") == "cancelled" for event in records)
+
+
+def test_main_returns_exit_code_5_for_controlled_cancellation(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    summary = {
+        "run_id": "run-1",
+        "final_status": "error",
+        "stopped_reason": "cancelled",
+        "iterations": [],
+    }
+
+    def fake_run_loop(_config):
+        raise MODULE.RunLoopFailed(summary, "cancelled by operator")
+
+    monkeypatch.setattr(MODULE, "run_loop", fake_run_loop)
+
+    exit_code = MODULE.main(["--no-run-history"])
+
+    assert exit_code == 5
+    assert "cancelled by operator" in capsys.readouterr().err
 
 
 def test_loop_writes_failure_summary_when_initial_review_invocation_fails(tmp_path):

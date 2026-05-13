@@ -68,6 +68,8 @@ This project follows Semantic Versioning once public releases begin.
 - Added initial budget ceilings: `--max-wall-seconds`, `--max-tokens`,
   `--max-usd`, `--soft-warn-fraction`, profile `[budgets]` defaults,
   wall-clock soft warnings, and exit code `3` for pre-model-call ceiling hits.
+- Ctrl-C/SIGTERM cancellation now emits `cancellation`, writes run artifacts,
+  restores terminal display state, and exits with stable code `5`.
 
 ### Changed
 
