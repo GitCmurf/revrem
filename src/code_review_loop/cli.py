@@ -2850,6 +2850,16 @@ def parse_bundle_bug_report_args(argv: Sequence[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def parse_resume_args(argv: Sequence[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="revrem resume",
+        description="Validate whether a previous RevRem run is safe to resume.",
+    )
+    parser.add_argument("run_dir", help="Run directory containing summary.json and events.jsonl.")
+    parser.add_argument("--format", choices=("text", "json"), default="text")
+    return parser.parse_args(argv)
+
+
 def _profile_config_owner_path(name: str, cwd: Path, home: Path | None = None) -> Path:
     project_path = profiles.project_config_path(cwd)
     project_file = profiles.load_profile_file(project_path)
@@ -3212,6 +3222,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return suppress_main(raw_argv[1:])
     if raw_argv and raw_argv[0] == "replay":
         return replay_main(raw_argv[1:])
+    if raw_argv and raw_argv[0] == "resume":
+        return resume_main(raw_argv[1:])
     if raw_argv and raw_argv[0] in {"doctor", "preflight"}:
         return doctor_main(raw_argv[1:])
     if raw_argv and raw_argv[0] == "config":
@@ -3636,6 +3648,140 @@ def _doctor_artifact_dir(args: argparse.Namespace, profile: profiles.Profile) ->
     if artifact_dir is not None:
         return Path(artifact_dir)
     return default_artifact_dir()
+
+
+RESUMABLE_STOPPED_REASONS = frozenset(
+    {
+        "max_iterations_reached",
+        "max_iterations_reached_with_check_failures",
+        "budget_ceiling_hit",
+        "cancelled",
+    }
+)
+
+
+def resume_main(argv: Sequence[str]) -> int:
+    args = parse_resume_args(argv)
+    run_dir = Path(args.run_dir)
+    try:
+        issues = resume_precondition_issues(run_dir, cwd=Path.cwd())
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 4
+    if args.format == "json":
+        print(diagnostics.doctor_json(issues), end="")
+    else:
+        print(diagnostics.doctor_text(issues), end="")
+    return 4 if diagnostics.has_blocking_issue(issues) else 0
+
+
+def resume_precondition_issues(run_dir: Path, *, cwd: Path) -> list[diagnostics.DiagnosticIssue]:
+    summary_path = run_dir / "summary.json"
+    events_path = run_dir / events.EVENTS_FILENAME
+    issues: list[diagnostics.DiagnosticIssue] = []
+    if not summary_path.is_file():
+        return [
+            diagnostics.DiagnosticIssue(
+                code="revrem.resume.missing_summary",
+                severity="blocking",
+                message="Resume requires summary.json in the run directory.",
+                hint="Pass a RevRem run directory that contains summary.json.",
+                evidence={"path": str(summary_path)},
+            )
+        ]
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    if not isinstance(summary, dict):
+        raise ValueError("summary.json must contain a JSON object")
+    reason = summary.get("stopped_reason")
+    if reason not in RESUMABLE_STOPPED_REASONS:
+        issues.append(
+            diagnostics.DiagnosticIssue(
+                code="revrem.resume.not_resumable",
+                severity="blocking",
+                message="The run did not stop at a resumable boundary.",
+                hint="Only max-iteration, budget, and cancellation boundaries are resumable.",
+                evidence={"stopped_reason": reason},
+            )
+        )
+    if not events_path.is_file():
+        issues.append(
+            diagnostics.DiagnosticIssue(
+                code="revrem.resume.missing_events",
+                severity="blocking",
+                message="Resume requires events.jsonl in the run directory.",
+                hint="Only event-backed runs can be resumed safely.",
+                evidence={"path": str(events_path)},
+            )
+        )
+    else:
+        records, truncated = events.read_events(events_path)
+        if truncated:
+            issues.append(
+                diagnostics.DiagnosticIssue(
+                    code="revrem.resume.truncated_events",
+                    severity="blocking",
+                    message="Resume requires a complete events.jsonl stream.",
+                    hint="Inspect the run manually; the event stream ended with a truncated line.",
+                    evidence={"path": str(events_path)},
+                )
+            )
+        if records and records[-1].kind not in {"summary", "failure", "cancellation", "cost_ceiling_hit"}:
+            issues.append(
+                diagnostics.DiagnosticIssue(
+                    code="revrem.resume.unclean_event_boundary",
+                    severity="blocking",
+                    message="The event stream does not end at a clean phase boundary.",
+                    hint="Resume is only allowed after a summary, failure, cancellation, or ceiling event.",
+                    evidence={"last_event_kind": records[-1].kind},
+                )
+            )
+    issues.extend(resume_git_state_issues(summary, cwd=cwd))
+    return issues
+
+
+def resume_git_state_issues(summary: dict[str, object], *, cwd: Path) -> list[diagnostics.DiagnosticIssue]:
+    git_state = summary.get("git_state")
+    if not isinstance(git_state, dict) or not git_state.get("available"):
+        return [
+            diagnostics.DiagnosticIssue(
+                code="revrem.resume.missing_git_state",
+                severity="blocking",
+                message="Resume requires summary git_state from the original run.",
+                hint="Run a fresh RevRem loop with a version that records git_state.",
+                evidence={},
+            )
+        ]
+    expected_head = git_state.get("head")
+    expected_base = git_state.get("base")
+    expected_base_commit = git_state.get("base_commit")
+    current_head = git_preflight_stdout(cwd, ["rev-parse", "HEAD"])
+    current_base_commit = (
+        git_preflight_stdout(cwd, ["rev-parse", "--verify", f"{expected_base}^{{commit}}"])
+        if isinstance(expected_base, str)
+        else None
+    )
+    issues: list[diagnostics.DiagnosticIssue] = []
+    if current_head != expected_head:
+        issues.append(
+            diagnostics.DiagnosticIssue(
+                code="revrem.resume.head_mismatch",
+                severity="blocking",
+                message="Current HEAD does not match the original run.",
+                hint="Check out the same commit before resuming.",
+                evidence={"expected": expected_head, "actual": current_head},
+            )
+        )
+    if current_base_commit != expected_base_commit:
+        issues.append(
+            diagnostics.DiagnosticIssue(
+                code="revrem.resume.base_mismatch",
+                severity="blocking",
+                message="Current base commit does not match the original run.",
+                hint="Restore or fetch the original base ref before resuming.",
+                evidence={"base": expected_base, "expected": expected_base_commit, "actual": current_base_commit},
+            )
+        )
+    return issues
 
 
 def history_main(argv: Sequence[str]) -> int:

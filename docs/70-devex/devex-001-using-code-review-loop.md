@@ -169,6 +169,9 @@ Each `summary.json` also records `git_state` for resume safety: current `HEAD`,
 configured base ref, resolved base commit, merge base, and whether those values
 were available. Repositories without a Git worktree record explicit `null`
 values instead of pretending a resume precondition was checked.
+`revrem resume <run-dir>` currently validates the resume preconditions and
+returns code `4` when the summary, event stream, `HEAD`, or base commit do not
+match. Actual continuation is intentionally gated on those checks.
 
 For richer watched-terminal output, install the optional progress extra and use
 `--progress-style rich`:

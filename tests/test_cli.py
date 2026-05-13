@@ -5395,6 +5395,75 @@ def test_summary_records_unavailable_git_state_outside_git(tmp_path, monkeypatch
     }
 
 
+def write_resume_run(run_dir: Path, *, stopped_reason: str = "cancelled", git_state: dict[str, object] | None = None) -> None:
+    run_dir.mkdir(parents=True)
+    summary = {
+        "run_id": "run-1",
+        "base": "main",
+        "final_status": "error",
+        "stopped_reason": stopped_reason,
+        "iterations": [],
+        "git_state": git_state
+        or {
+            "head": "head-sha",
+            "base": "main",
+            "base_commit": "base-sha",
+            "merge_base": "merge-sha",
+            "available": True,
+        },
+    }
+    (run_dir / "summary.json").write_text(json.dumps(summary), encoding="utf-8")
+    sink = events.JsonlSink(run_dir, "run-1")
+    sink.emit("cancellation", phase="run", payload={"reason": "operator_interrupt"})
+    sink.emit("summary", payload={"summary": stopped_reason})
+    sink.close()
+
+
+def test_resume_preconditions_pass_for_matching_git_state(tmp_path, monkeypatch):
+    run_dir = tmp_path / "run"
+    write_resume_run(run_dir)
+
+    def fake_git(cwd, args):
+        if list(args) == ["rev-parse", "HEAD"]:
+            return MODULE.CommandResult(["git", *args], 0, stdout="head-sha\n")
+        if list(args) == ["rev-parse", "--verify", "main^{commit}"]:
+            return MODULE.CommandResult(["git", *args], 0, stdout="base-sha\n")
+        return MODULE.CommandResult(["git", *args], 1, stderr="unexpected")
+
+    monkeypatch.setattr(MODULE, "run_git_preflight", fake_git)
+
+    issues = MODULE.resume_precondition_issues(run_dir, cwd=tmp_path)
+
+    assert issues == []
+
+
+def test_resume_preconditions_block_head_mismatch(tmp_path, monkeypatch):
+    run_dir = tmp_path / "run"
+    write_resume_run(run_dir)
+
+    def fake_git(cwd, args):
+        if list(args) == ["rev-parse", "HEAD"]:
+            return MODULE.CommandResult(["git", *args], 0, stdout="different-head\n")
+        if list(args) == ["rev-parse", "--verify", "main^{commit}"]:
+            return MODULE.CommandResult(["git", *args], 0, stdout="base-sha\n")
+        return MODULE.CommandResult(["git", *args], 1, stderr="unexpected")
+
+    monkeypatch.setattr(MODULE, "run_git_preflight", fake_git)
+
+    issues = MODULE.resume_precondition_issues(run_dir, cwd=tmp_path)
+
+    assert [issue.code for issue in issues] == ["revrem.resume.head_mismatch"]
+
+
+def test_resume_main_returns_code_4_for_missing_summary(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+
+    exit_code = MODULE.main(["resume", str(tmp_path / "missing")])
+
+    assert exit_code == 4
+    assert "revrem.resume.missing_summary" in capsys.readouterr().out
+
+
 def summary_shape(value):
     if isinstance(value, dict):
         return {key: summary_shape(item) for key, item in sorted(value.items())}

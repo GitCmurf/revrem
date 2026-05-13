@@ -84,6 +84,8 @@ The main test module is `tests/test_cli.py`. It covers:
   stable code `5`.
 - Resume-safety metadata tests assert `summary.json` records current `HEAD`,
   base commit, merge base, and explicit unavailable values outside Git.
+- Resume precondition tests cover matching Git state, `HEAD` mismatch, and CLI
+  exit code `4` for missing run summaries.
 - Review-base preflight behavior for invalid Git topology, including a local
   `main` that has no merge base with the current branch while `origin/main`
   remains usable.

@@ -81,6 +81,8 @@ This project follows Semantic Versioning once public releases begin.
   negative paths.
 - Summaries now record resume-safety Git state: `HEAD`, base ref, base commit,
   merge base, and availability.
+- Added `revrem resume <run-dir>` precondition validation with stable exit code
+  `4` for unsafe resumes.
 
 ### Changed
 
