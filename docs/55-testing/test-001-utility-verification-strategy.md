@@ -206,6 +206,21 @@ the fixture-presence tests in the same PR. Fixture files may contain
 deliberately poor code and can use file-level linter exclusions; production code
 must not copy those exclusions.
 
+### TASK-002 M0-M4 metric evidence
+
+The first post-launch implementation programme tracks the `REVREM-PLAN-003`
+M0-M4 metrics with deterministic local evidence. Current status:
+
+| Metric | Target | Evidence |
+| --- | --- | --- |
+| Time from package install to first useful run | Fresh built artifact install works before publication | `.github/workflows/ci.yml` package-smoke builds the wheel, installs that wheel on Linux and macOS for Python 3.11/3.12, and runs `revrem --version`, `revrem --help`, and `revrem doctor --format json` against `tests/fixtures/reference-repo/`. |
+| `revrem doctor` catches known misconfigurations before launch | At least 95% of the seeded failure-mode corpus | `tests/test_diagnostics.py` and doctor CLI tests cover 13/13 current known setup failure or warning modes: missing Git, non-Git directory, invalid base, no merge base, dirty commit-mode worktree, unwritable artifact dir, artifact dir resolving to repo root in commit mode, missing Codex executable, unparseable check command, missing check executable, disabled timeout, negative timeout, and non-UTF-8 locale warning. The measured corpus is therefore 100% for currently seeded local setup modes. |
+| P50 wall-clock for a clear run on the reference repo | Trackable locally; real-model timing deferred until public package publication | Fake-harness clear-run tests keep deterministic local runtime bounded and replayable. Real-model timing is intentionally not asserted in unit tests because it depends on external model latency; record the first published-package timing in this section when TestPyPI/PyPI credentials are active. |
+| Triage precision on labelled fixture set | At least 0.85 precision | `tests/test_triage.py` uses labelled structured triage fixtures and asserts the current fixture precision target. Suppressed and rejected findings remain visible in artifacts rather than hiding original review context. |
+| Cost-cap respected | 100% of tested runs stop before the next model call after a ceiling hit | `tests/test_budgets.py` plus loop-level CLI budget tests cover soft warnings, token/USD accounting, missing-cost null semantics, pre-model-call ceiling checks, fake harness token charges, and exit code `3`. |
+| Replayable runs from event fixtures | 100% of event fixtures replay offline | `tests/test_replay.py` discovers every directory under `tests/fixtures/events/`, validates readable `events.jsonl`, and compares compact replay output to `replay.compact.txt` without invoking a runner or harness. |
+| Mean time to actionable diagnosis on a failing run | Less than 60 seconds reading structured artifacts | Preflight-blocking runs write `diagnostics.json`, `summary.json`, and `events.jsonl` before any model call. Tests assert stable diagnostic codes, messages, hints, fingerprints, and exit codes; this makes setup failures actionable from artifacts without parsing raw transcripts. |
+
 ### Local verification
 
 Run:

@@ -57,6 +57,33 @@ def test_run_doctor_reports_invalid_base(tmp_path):
     assert diagnostics.has_blocking_issue(issues)
 
 
+def test_run_doctor_reports_not_git_repo(tmp_path):
+    worktree = tmp_path / "not-a-repo"
+    worktree.mkdir()
+
+    issues = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(cwd=worktree, base="main", codex_bin="git")
+    )
+
+    assert _issue_codes(issues) == {"revrem.preflight.not_git_repo"}
+    assert diagnostics.has_blocking_issue(issues)
+
+
+def test_run_doctor_reports_no_merge_base(tmp_path):
+    repo = _make_repo(tmp_path)
+    _git(repo, "checkout", "--orphan", "unrelated")
+    (repo / "README.md").write_text("# Unrelated\n", encoding="utf-8")
+    _git(repo, "add", "README.md")
+    _git(repo, "commit", "-m", "unrelated")
+
+    issues = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(cwd=repo, base="main", codex_bin="git")
+    )
+
+    assert "revrem.preflight.no_merge_base" in _issue_codes(issues)
+    assert diagnostics.has_blocking_issue(issues)
+
+
 def test_diagnostic_fingerprints_are_stable_across_worktree_paths(tmp_path):
     first_parent = tmp_path / "one"
     second_parent = tmp_path / "two"

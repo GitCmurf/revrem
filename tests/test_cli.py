@@ -4182,6 +4182,56 @@ def test_doctor_does_not_create_default_artifact_dir_on_clean_repo(tmp_path, mon
     assert captured.err == ""
 
 
+def test_doctor_strict_returns_exit_code_6_for_warnings(tmp_path, monkeypatch, capsys):
+    repo = tmp_path / "repo"
+    home = tmp_path / "home"
+    repo.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "config", "user.email", "test@example.com")
+    run_git(repo, "config", "user.name", "Test User")
+    (repo / "README.md").write_text("# Fixture\n", encoding="utf-8")
+    run_git(repo, "add", "README.md")
+    run_git(repo, "commit", "-m", "initial")
+    config_path = profiles.user_config_path(home)
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.unbounded]
+description = "Explicitly unbounded review timeout"
+
+[profiles.unbounded.review]
+timeout_seconds = 0
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(repo)
+
+    exit_code = MODULE.main(
+        [
+            "doctor",
+            "--profile",
+            "unbounded",
+            "--base",
+            "main",
+            "--codex-bin",
+            "git",
+            "--strict",
+            "--format",
+            "json",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert exit_code == 6
+    assert payload["status"] == "ok"
+    assert {issue["code"] for issue in payload["issues"]} == {
+        "revrem.preflight.timeout_disabled",
+    }
+    assert captured.err == ""
+
+
 def test_doctor_profile_blocks_repo_root_artifact_dir_in_commit_mode(tmp_path, monkeypatch, capsys):
     repo = tmp_path / "repo"
     home = tmp_path / "home"
