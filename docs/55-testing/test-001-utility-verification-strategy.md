@@ -85,7 +85,8 @@ The main test module is `tests/test_cli.py`. It covers:
   unsupported cost reporting, and exit code `3` for budget ceiling hits.
   Cancellation tests assert interrupted runs write `summary.json`,
   `diagnostics.json`, `events.jsonl`, a `cancellation` event, and exit through
-  stable code `5`.
+  stable code `5`. Repeated signal tests assert a second SIGINT/SIGTERM inside
+  the five-second cancellation window is marked as forced cancellation.
 - Resume-safety metadata tests assert `summary.json` records current `HEAD`,
   base commit, merge base, and explicit unavailable values outside Git.
 - `tests/test_resume.py` covers resume preconditions: matching Git state,

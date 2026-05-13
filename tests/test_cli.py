@@ -2054,6 +2054,25 @@ def test_subprocess_refresh_loop_kills_child_on_interrupt(tmp_path, monkeypatch)
     assert len(refresh_calls) == 1
 
 
+def test_repeated_cancellation_signal_within_window_is_marked_forced(monkeypatch):
+    monkeypatch.setattr(MODULE, "_LAST_CANCELLATION_SIGNAL_AT", None)
+
+    first = MODULE.cancellation_interrupt_for_signal(MODULE.signal.SIGINT, now=100.0)
+    second = MODULE.cancellation_interrupt_for_signal(MODULE.signal.SIGINT, now=103.0)
+
+    assert "controlled cancellation" in str(first)
+    assert "forced cancellation" in str(second)
+
+
+def test_cancellation_signal_after_window_starts_new_controlled_stop(monkeypatch):
+    monkeypatch.setattr(MODULE, "_LAST_CANCELLATION_SIGNAL_AT", None)
+
+    MODULE.cancellation_interrupt_for_signal(MODULE.signal.SIGTERM, now=100.0)
+    later = MODULE.cancellation_interrupt_for_signal(MODULE.signal.SIGTERM, now=106.0)
+
+    assert "controlled cancellation" in str(later)
+
+
 def test_kill_process_tree_targets_child_process_group(monkeypatch):
     calls = []
 

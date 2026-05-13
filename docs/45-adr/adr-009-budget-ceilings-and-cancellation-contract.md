@@ -61,9 +61,11 @@ and event artifacts, and stops before the next model call.
 Cancellation is a controlled stop path. SIGINT/SIGTERM restore terminal state
 and raise into the loop, where RevRem emits `cancellation`, writes
 `summary.json`, writes `events.jsonl`, records public artifact paths, and exits
-with code 5. The subprocess wrapper already kills the active child process
-group when unwinding from an interrupt, so cancellation does not leave the
-model/check process running under normal local execution.
+with code 5. A repeated SIGINT/SIGTERM within five seconds is marked as forced
+cancellation, but it keeps the same best-effort artifact and exit-code path.
+The subprocess wrapper already kills the active child process group when
+unwinding from an interrupt, so cancellation does not leave the model/check
+process running under normal local execution.
 
 Resume remains part of this ADR's contract but is not complete in the first
 implementation slices. The intended semantics remain:

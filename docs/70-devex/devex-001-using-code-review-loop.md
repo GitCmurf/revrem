@@ -655,7 +655,9 @@ until a backend adapter is implemented.
 - Ctrl-C and SIGTERM are treated as controlled cancellation. RevRem restores
   terminal display state, kills the active child process group through the
   subprocess wrapper, emits a `cancellation` event, writes `summary.json`, and
-  exits with code `5`.
+  exits with code `5`. A repeated Ctrl-C/SIGTERM within five seconds is marked
+  as forced cancellation but still follows the same best-effort artifact and
+  exit-code path.
 - Ensure `--base` names a local commit that shares history with `HEAD`. During
   branch-topology transitions, a stale local `main` can be unrelated to the
   active PR branch even when `origin/main` is correct. RevRem preflights this

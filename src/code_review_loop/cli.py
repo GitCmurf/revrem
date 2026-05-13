@@ -56,6 +56,7 @@ PROGRESS_PHASE_CODES = {
 COMPACT_PROGRESS_DETAIL_INDENT = 7
 DEFAULT_TERMINAL_COLUMNS = 120
 DEFAULT_TIMEOUT_SECONDS = 300
+CANCELLATION_FORCE_WINDOW_SECONDS = 5.0
 REASONING_EFFORT_CHOICES = ("minimal", "low", "medium", "high")
 PROGRESS_STYLE_CHOICES = ("compact", "verbose", "rich")
 COMMIT_ON_HOOK_FAILURE_CHOICES = profiles.COMMIT_ON_HOOK_FAILURE_CHOICES
@@ -67,6 +68,7 @@ COMMIT_HOOK_FAILURE_RE = re.compile(
     r")\b",
     re.IGNORECASE,
 )
+_LAST_CANCELLATION_SIGNAL_AT: float | None = None
 
 DEFAULT_REMEDIATION_PROMPT = """You are running a bounded review-remediation loop.
 
@@ -312,7 +314,10 @@ def terminal_title_context(config: LoopConfig):
 
 @contextmanager
 def terminal_recovery_context():
+    global _LAST_CANCELLATION_SIGNAL_AT
     previous_handlers: dict[signal.Signals, Any] = {}
+    previous_cancellation_signal_at = _LAST_CANCELLATION_SIGNAL_AT
+    _LAST_CANCELLATION_SIGNAL_AT = None
     handled_signals = [signal.SIGINT, signal.SIGTERM]
     if hasattr(signal, "SIGTSTP"):
         handled_signals.append(signal.SIGTSTP)
@@ -320,7 +325,7 @@ def terminal_recovery_context():
     def handle_signal(signum: int, frame: object | None) -> None:
         restore_terminal_display()
         if signum in {signal.SIGINT, signal.SIGTERM}:
-            raise KeyboardInterrupt
+            raise cancellation_interrupt_for_signal(signum, now=time.monotonic())
         signal.signal(signum, signal.SIG_DFL)
         os.kill(os.getpid(), signum)
         if hasattr(signal, "SIGTSTP") and signum == signal.SIGTSTP:
@@ -336,8 +341,22 @@ def terminal_recovery_context():
         restore_terminal_display()
         with suppress(ValueError):
             atexit.unregister(restore_terminal_display)
+        _LAST_CANCELLATION_SIGNAL_AT = previous_cancellation_signal_at
         for sig, handler in previous_handlers.items():
             signal.signal(sig, handler)
+
+
+def cancellation_interrupt_for_signal(signum: int, *, now: float) -> KeyboardInterrupt:
+    global _LAST_CANCELLATION_SIGNAL_AT
+    forced = (
+        _LAST_CANCELLATION_SIGNAL_AT is not None
+        and now - _LAST_CANCELLATION_SIGNAL_AT <= CANCELLATION_FORCE_WINDOW_SECONDS
+    )
+    _LAST_CANCELLATION_SIGNAL_AT = now
+    signal_name = signal.Signals(signum).name
+    if forced:
+        return KeyboardInterrupt(f"forced cancellation after repeated {signal_name}")
+    return KeyboardInterrupt(f"controlled cancellation after {signal_name}")
 
 
 def progress_log(config: LoopConfig, message: str) -> None:
