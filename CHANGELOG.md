@@ -61,6 +61,8 @@ This project follows Semantic Versioning once public releases begin.
   payloads before writing the final summary.
 - Added an asynchronous `RendererSink` event adapter so live renderers can
   consume sequenced events without blocking model/check execution.
+- Run-monitor TUI state now derives event summaries from `events.jsonl`,
+  including truncated and invalid stream diagnostics.
 
 ### Changed
 

@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from code_review_loop import profiles, tui_state
+from code_review_loop import events, profiles, tui_state
 
 
 def test_home_snapshot_collects_profiles_history_and_harnesses(tmp_path):
@@ -271,6 +271,101 @@ def test_run_monitor_view_resolves_relative_artifacts_against_record_cwd(tmp_pat
 
     assert snapshot.run_monitors[0].artifacts[0].path == "tmp/code-review-loop/run/summary.json"
     assert snapshot.run_monitors[0].artifacts[0].exists is True
+
+
+def test_run_monitor_view_derives_state_from_events_jsonl(tmp_path):
+    repo = tmp_path / "repo"
+    run_dir = repo / ".revrem" / "runs" / "run-1"
+    run_dir.mkdir(parents=True)
+    event_sink = events.JsonlSink(run_dir, "run-1")
+    event_sink.emit("phase_start", phase="review", iteration=1, payload={"message": "start"})
+    event_sink.emit("check_result", phase="checks", iteration="1.1", payload={"status": "passed"})
+    event_sink.emit("summary", phase="summary", payload={"summary": "clear"})
+    event_sink.close()
+    record = {
+        "run_id": "run-1",
+        "cwd": str(repo),
+        "final_status": "clear",
+        "stopped_reason": "review_clear",
+        "artifact_dir": ".revrem/runs/run-1",
+        "artifact_paths": {"summary": ".revrem/runs/run-1/summary.json"},
+    }
+
+    monitor = tui_state.run_monitor_view(record)
+
+    assert monitor.event_error is None
+    assert monitor.events_truncated is False
+    assert [(event.seq, event.phase, event.kind, event.detail) for event in monitor.events] == [
+        (1, "review", "phase_start", "start"),
+        (2, "checks", "check_result", "passed"),
+        (3, "summary", "summary", "clear"),
+    ]
+    rendered = tui_state.run_monitor_screen(
+        tui_state.HomeSnapshot(
+            cwd=str(repo),
+            profiles=(),
+            recent_runs=(record,),
+            harnesses=(),
+            run_previews=(),
+            run_monitors=(monitor,),
+        )
+    )
+    assert "events: 3 loaded" in "\n".join(rendered.lines)
+    assert "0002|checks|1.1|check_result: passed" in "\n".join(rendered.lines)
+
+
+def test_run_monitor_view_reports_truncated_events_jsonl(tmp_path):
+    repo = tmp_path / "repo"
+    run_dir = repo / ".revrem" / "runs" / "run-1"
+    run_dir.mkdir(parents=True)
+    event = events.make_event(
+        run_id="run-1",
+        seq=1,
+        kind="phase_start",
+        phase="review",
+        payload={"message": "start"},
+    )
+    (run_dir / "events.jsonl").write_text(
+        json.dumps(event.to_dict()) + "\n" + '{"schema_version": "1.0", "run_id": ',
+        encoding="utf-8",
+    )
+
+    monitor = tui_state.run_monitor_view(
+        {
+            "run_id": "run-1",
+            "cwd": str(repo),
+            "final_status": "failed",
+            "artifact_dir": ".revrem/runs/run-1",
+            "artifact_paths": {},
+        }
+    )
+
+    assert monitor.events_truncated is True
+    assert [event.kind for event in monitor.events] == ["phase_start", "failure"]
+    assert monitor.events[-1].detail == "truncated_events_jsonl"
+
+
+def test_run_monitor_view_reports_invalid_events_jsonl(tmp_path):
+    repo = tmp_path / "repo"
+    run_dir = repo / ".revrem" / "runs" / "run-1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "events.jsonl").write_text(
+        json.dumps(events.make_event(run_id="run-1", seq=2, kind="summary").to_dict()) + "\n",
+        encoding="utf-8",
+    )
+
+    monitor = tui_state.run_monitor_view(
+        {
+            "run_id": "run-1",
+            "cwd": str(repo),
+            "final_status": "failed",
+            "artifact_dir": ".revrem/runs/run-1",
+            "artifact_paths": {},
+        }
+    )
+
+    assert monitor.events == ()
+    assert monitor.event_error == "event seq gap: expected 1, got 2"
 
 
 def test_shell_model_builds_operator_screens_and_selected_launch_plan(tmp_path):

@@ -78,6 +78,12 @@ instead of failing the model/check execution path. Durable replay remains backed
 by `JsonlSink`; renderer drops are therefore an operator-display degradation,
 not artifact loss.
 
+TUI state derives run-monitor details from `events.jsonl` when the artifact is
+available. It reads through the same tolerant replay reader, surfaces truncated
+tails explicitly, and reports invalid event sequences as monitor diagnostics.
+This keeps the optional TUI on the replay/event substrate rather than adding a
+second transcript parser.
+
 ## Consequences
 
 - Event schema compatibility becomes a public artifact contract.

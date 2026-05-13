@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from code_review_loop import events as event_model
 from code_review_loop import harnesses, profiles, run_history
 
 
@@ -55,12 +56,24 @@ class ArtifactLinkView:
 
 
 @dataclass(frozen=True)
+class RunEventView:
+    seq: int
+    kind: str
+    phase: str | None
+    iteration: int | str | None
+    detail: str
+
+
+@dataclass(frozen=True)
 class RunMonitorView:
     run_id: str
     final_status: str
     stopped_reason: str | None
     artifact_dir: str | None
     artifacts: tuple[ArtifactLinkView, ...]
+    events: tuple[RunEventView, ...] = ()
+    events_truncated: bool = False
+    event_error: str | None = None
 
 
 @dataclass(frozen=True)
@@ -256,6 +269,16 @@ def run_monitor_screen(snapshot: HomeSnapshot) -> TuiScreen:
             lines.append(f"  {artifact.kind}: {artifact.path} [{exists}]")
         if len(monitor.artifacts) > 6:
             lines.append(f"  ... {len(monitor.artifacts) - 6} more artifact links")
+        if monitor.event_error:
+            lines.append(f"  events: unavailable ({monitor.event_error})")
+        elif monitor.events:
+            suffix = " [truncated]" if monitor.events_truncated else ""
+            lines.append(f"  events: {len(monitor.events)} loaded{suffix}")
+            for event in monitor.events[-4:]:
+                phase = event.phase or event.kind
+                iteration = "" if event.iteration is None else f"|{event.iteration}"
+                detail = f": {event.detail}" if event.detail else ""
+                lines.append(f"    {event.seq:04d}|{phase}{iteration}|{event.kind}{detail}")
     return TuiScreen(name="run-monitor", title="Run Monitor", lines=tuple(lines))
 
 
@@ -432,6 +455,7 @@ def run_monitor_view(record: dict[str, Any]) -> RunMonitorView:
                 for item in value:
                     if isinstance(item, str):
                         artifacts.append(artifact_link_view(kind, item, record_cwd=record_cwd))
+    event_views, events_truncated, event_error = run_event_views(record)
     return RunMonitorView(
         run_id=str(record.get("run_id") or ""),
         final_status=str(record.get("final_status") or "unknown"),
@@ -442,14 +466,64 @@ def run_monitor_view(record: dict[str, Any]) -> RunMonitorView:
         ),
         artifact_dir=str(artifact_dir) if isinstance(artifact_dir, str) else None,
         artifacts=tuple(artifacts),
+        events=event_views,
+        events_truncated=events_truncated,
+        event_error=event_error,
     )
 
 
 def artifact_link_view(kind: str, path: str, *, record_cwd: str | None = None) -> ArtifactLinkView:
-    resolved_path = Path(path)
-    if isinstance(record_cwd, str):
-        resolved_path = Path(record_cwd) / resolved_path
+    resolved_path = resolve_record_path(path, record_cwd=record_cwd)
     return ArtifactLinkView(kind=kind, path=path, exists=resolved_path.exists())
+
+
+def run_event_views(record: dict[str, Any]) -> tuple[tuple[RunEventView, ...], bool, str | None]:
+    events_path = events_path_for_record(record)
+    if events_path is None or not events_path.is_file():
+        return (), False, None
+    try:
+        records, truncated = event_model.read_events(events_path)
+    except ValueError as exc:
+        return (), False, str(exc)
+    return tuple(run_event_view(event) for event in records), truncated, None
+
+
+def events_path_for_record(record: dict[str, Any]) -> Path | None:
+    record_cwd = record.get("cwd")
+    artifact_dir = record.get("artifact_dir")
+    artifact_paths = record.get("artifact_paths")
+    if not isinstance(artifact_dir, str) and isinstance(artifact_paths, dict):
+        artifact_dir_value = artifact_paths.get("artifact_dir")
+        if isinstance(artifact_dir_value, str):
+            artifact_dir = artifact_dir_value
+    if not isinstance(artifact_dir, str):
+        return None
+    return resolve_record_path(artifact_dir, record_cwd=record_cwd) / event_model.EVENTS_FILENAME
+
+
+def run_event_view(event: event_model.Event) -> RunEventView:
+    return RunEventView(
+        seq=event.seq,
+        kind=event.kind,
+        phase=event.phase,
+        iteration=event.iteration,
+        detail=event_detail(event),
+    )
+
+
+def event_detail(event: event_model.Event) -> str:
+    for key in ("status", "reason", "message", "summary"):
+        value = event.payload.get(key)
+        if isinstance(value, str):
+            return value
+    return ""
+
+
+def resolve_record_path(path: str, *, record_cwd: object) -> Path:
+    resolved_path = Path(path)
+    if not resolved_path.is_absolute() and isinstance(record_cwd, str):
+        return Path(record_cwd) / resolved_path
+    return resolved_path
 
 
 def phase_view(name: str, enabled: bool, phase: profiles.PhaseConfig | profiles.TriageConfig) -> PhaseView:
