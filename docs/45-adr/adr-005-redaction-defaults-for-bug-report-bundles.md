@@ -52,6 +52,11 @@ Status: Accepted.
 - the current home path;
 - the current username as a standalone token.
 
+When the optional `redaction` extra is installed, RevRem also invokes
+`detect-secrets` line scanning and replaces additional scanner-only values with
+`[REDACTED:detect-secrets]`. The built-in regex pass remains mandatory so
+redaction still works in minimal installations.
+
 Default bundles include schema-backed run metadata and sanitized check output.
 Raw review/remediation/triage transcripts are excluded unless the operator
 passes `--include-raw-transcripts`. When raw transcripts are included they are

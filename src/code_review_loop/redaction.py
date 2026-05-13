@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
+from importlib import import_module
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,9 @@ def redact_text(text: str, *, home: str | None = None, user: str | None = None) 
         redacted, count = rule.pattern.subn(rule.replacement, redacted)
         if count:
             counts[rule.category] = counts.get(rule.category, 0) + count
+    redacted, detected_count = _redact_detect_secrets_findings(redacted)
+    if detected_count:
+        counts["detect-secrets"] = counts.get("detect-secrets", 0) + detected_count
     return RedactionResult(
         text=redacted,
         findings=tuple(
@@ -115,3 +119,29 @@ def _rules(*, home: str | None, user: str | None) -> tuple[RedactionRule, ...]:
             )
         )
     return tuple(rules)
+
+
+def _redact_detect_secrets_findings(text: str) -> tuple[str, int]:
+    try:
+        scan_module = import_module("detect_secrets.core.scan")
+    except ModuleNotFoundError:
+        return text, 0
+    scan_line = getattr(scan_module, "scan_line", None)
+    if scan_line is None:
+        return text, 0
+
+    redacted = text
+    count = 0
+    for line in text.splitlines():
+        for secret in scan_line(line):
+            secret_value = getattr(secret, "secret_value", None)
+            if not isinstance(secret_value, str):
+                continue
+            if not secret_value or secret_value.startswith("[REDACTED:"):
+                continue
+            redacted, replacements = redacted.replace(
+                secret_value,
+                "[REDACTED:detect-secrets]",
+            ), redacted.count(secret_value)
+            count += replacements
+    return redacted, count
