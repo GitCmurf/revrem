@@ -1558,6 +1558,27 @@ GitHub/PyPI credentials or a merge to `main`.
 | Required local gates | `./scripts/dev-check` passed with 401 tests; `pre-commit run --all-files` passed; `meminit check --format json` passed via both gates. | Verified locally |
 | Main-branch and publication gates | This branch has not been pushed or merged by this agent. Actual TestPyPI/PyPI publish, GitHub Release artifact attachment, and branch-protection/main-branch status must be performed by the release operator after review. | External/manual gate |
 
+## Completion Audit Checklist
+
+This audit maps each phase exit criterion to live repository evidence. It is
+not a substitute for CI on the eventual merge commit; it is the local handoff
+state of branch `fix/code-quality-simplify`.
+
+| Exit criterion | Evidence inspected | Audit status |
+| --- | --- | --- |
+| F1-F10 merged or explicitly superseded | F0-F10 implementation evidence is listed in the audit snapshot above. Local commits are on `fix/code-quality-simplify`, not merged to `main`. | Locally complete; merge remains external |
+| `./scripts/dev-check`, `pre-commit run --all-files`, and `meminit check --format json` pass on `main` | Latest local run: `./scripts/dev-check` passed with 401 tests plus ruff, mypy, and Meminit; latest `pre-commit run --all-files` passed. These ran on the feature branch, not on `main`. | Locally verified; main verification remains external |
+| Fresh-install smoke exists in CI using the built artifact | `.github/workflows/ci.yml` defines package-smoke on Linux and macOS for Python 3.11/3.12, builds sdist/wheel, runs `twine check`, installs `dist/revrem-*.whl`, and runs `revrem --version`, `code-review-loop --version`, `revrem --help`, and `revrem doctor --format json`; `tests/test_packaging.py::test_ci_builds_and_smokes_revrem_wheel` guards this workflow text. | Implemented locally |
+| TestPyPI/PyPI and release provenance flow is ready | `.github/workflows/release.yml` supports dry-run dispatch, RC TestPyPI, final PyPI, SHA256SUMS, provenance attestation, and Sigstore; `REVREM-RUNBOOK-001`, `REVREM-ADR-011`, and packaging tests guard the release contract. Actual publication is not performed by this agent. | Workflow ready; publication remains external |
+| `revrem doctor --format json` catches at least 95% of seeded misconfigurations | `REVREM-TEST-001` records 13/13 current seeded setup modes covered by diagnostics and doctor CLI tests. | Verified locally |
+| Public artifacts have documented schemas with fixture validation | `docs/52-api/schemas/` contains v1 schemas and `_history` baselines for summary, diagnostics, triage, events, bug bundle, suppressions, and harness capabilities; `tests/test_artifact_schema.py` validates schemas and fixtures. | Verified locally |
+| `f1:` fingerprint is the shared source for diagnostics, triage, suppressions, bug bundles, and events | `src/code_review_loop/fingerprints.py`, `tests/test_fingerprints.py`, and consumers in diagnostics, triage, suppressions, bug bundle, and event/summary paths. | Verified locally |
+| Suppressions are auditable, expirable, and critical-safe | `src/code_review_loop/suppressions.py`, `tests/test_suppressions.py`, bug-bundle audit-summary tests, profile suppression-scope tests, and `REVREM-ADR-007`. | Verified locally |
+| `revrem replay` renders event fixtures offline without model/network access | `tests/fixtures/events/*`, `tests/test_replay.py`, `src/code_review_loop/events.py`, and `REVREM-ADR-008`. | Verified locally |
+| Budget, cancellation, resume, and exit codes 3, 4, 5, 6 are reachable and documented | `tests/test_budgets.py`, `tests/test_resume.py`, CLI budget/cancellation tests, doctor strict tests, `REVREM-ADR-009`, and `REVREM-DEVEX-001` exit-code docs. | Verified locally |
+| Fake harness contract is green and real secondary adapters remain deferred | `src/code_review_loop/harnesses.py`, `harness-capabilities-v1.schema.json`, fake harness fixtures, fake-vs-Codex shape tests, and reserved real-harness rejection tests. | Verified locally |
+| M0-M4 plan success metrics are measured against deterministic evidence | `REVREM-TEST-001` includes the TASK-002 M0-M4 metric table, including install smoke, 13/13 doctor coverage, triage precision, cost caps, replay fixtures, and actionable-diagnosis evidence. Real-model timing is explicitly deferred until published-package credentials are active. | Locally measured; real-model timing remains external |
+
 ## ADR Closure
 
 By phase end, the following ADRs exist (numbers assigned at
