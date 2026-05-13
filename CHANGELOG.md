@@ -34,9 +34,9 @@ This project follows Semantic Versioning once public releases begin.
   timeout, check-failure, and unknown-review runs.
 - Added `REVREM-ADR-004` for artifact schema v1, canonical JSON, atomic writes,
   and schema compatibility policy.
-- Built-in redaction helpers for future bug-report bundles, covering common API
-  keys, authorization headers, private keys, sensitive environment assignments,
-  home paths, and usernames.
+- Built-in redaction helpers for bug-report bundles, covering common API keys,
+  authorization headers, private keys, sensitive environment assignments, home
+  paths, and usernames.
 - `revrem bundle-bug-report` creates deterministic redacted support bundles
   with manifest schema validation and raw-transcript opt-in.
 - Added `REVREM-ADR-005` for redaction defaults and bug-report bundle privacy
@@ -111,7 +111,7 @@ This project follows Semantic Versioning once public releases begin.
 - Fake harness fixtures now cover partial remediation output that fails while
   preserving the remediation artifact.
 - Package smoke CI now covers Linux and macOS on Python 3.11 and 3.12, and the
-  packaging metadata exposes the planned `redaction` extra.
+  packaging metadata exposes the optional `redaction` extra.
 - Schema v1 reference files now have `_history` baselines guarded by artifact
   schema tests.
 - Bug-report bundles now include sanitized profile/preflight snapshot artifacts
