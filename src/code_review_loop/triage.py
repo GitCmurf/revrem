@@ -67,6 +67,16 @@ def invalid_triage_issue(error: Exception, *, iteration: int) -> diagnostics.Dia
     )
 
 
+def command_failed_issue(*, iteration: int, returncode: int, artifact: str) -> diagnostics.DiagnosticIssue:
+    return diagnostics.DiagnosticIssue(
+        code="revrem.triage.command_failed",
+        severity="blocking",
+        message="Structured triage command failed before producing valid guidance.",
+        hint="Inspect the triage artifact and rerun with a bounded triage timeout or disable triage for this run.",
+        evidence={"iteration": iteration, "returncode": returncode, "artifact": artifact},
+    )
+
+
 def format_structured_handoff(payload: dict[str, Any], original_review: str) -> str:
     return (
         "Structured triage handoff from the previous review:\n"

@@ -1282,13 +1282,24 @@ def run_triage(
         result = CommandResult(command, 0, stdout="DRY_RUN triage skipped\n")
     else:
         result = runner(command, config.cwd, prompt, phase_timeout_seconds(config, config.triage_timeout_seconds))
-    write_artifact(config.artifact_dir / f"triage-{iteration}.txt", _combined_output(result))
+    triage_artifact = config.artifact_dir / f"triage-{iteration}.txt"
+    write_artifact(triage_artifact, _combined_output(result))
     record_model_charge(config, result, phase="triage", iteration=iteration)
     if result.returncode != 0:
+        issue = triage.command_failed_issue(
+            iteration=iteration,
+            returncode=result.returncode,
+            artifact=str(triage_artifact),
+        )
+        artifacts.write_json_artifact(
+            config.artifact_dir,
+            f"diagnostics-{iteration}.json",
+            diagnostics.doctor_payload([issue]),
+        )
         progress_event(config, "triage", str(iteration), "failed", f"exit {result.returncode}")
         raise RuntimeError(
             f"codex exec triage failed for iteration {iteration}; "
-            f"see {config.artifact_dir / f'triage-{iteration}.txt'}"
+            f"see {triage_artifact}"
         )
     progress_event(config, "triage", str(iteration), "done")
     triage_output = actionable_review_output(_combined_output(result))

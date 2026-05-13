@@ -36,6 +36,31 @@ def test_parse_triage_payload_validates_fixture_against_schema():
     assert payload["confirmed_findings"][0]["fingerprint"] == "f1:c6ace015ccd20120"
 
 
+def test_rejected_only_triage_fixture_preserves_false_positive_rationale():
+    payload = triage.parse_triage_payload(
+        _fixture("rejected_only"),
+        run_id="run-123",
+        source_review_artifact="review-1.txt",
+    )
+
+    assert payload["confirmed_findings"] == []
+    assert payload["rejected_findings"][0]["fingerprint"] == "f1:rejected001"
+    assert payload["rejected_findings"][0]["rejection_reason"]
+
+
+def test_labelled_triage_fixture_precision_meets_plan_target():
+    payload = triage.parse_triage_payload(
+        _fixture("valid"),
+        run_id="run-123",
+        source_review_artifact="review-1.txt",
+    )
+    labelled_true_positive_fingerprints = {"f1:c6ace015ccd20120"}
+    confirmed = {item["fingerprint"] for item in payload["confirmed_findings"]}
+    precision = len(confirmed & labelled_true_positive_fingerprints) / len(confirmed)
+
+    assert precision >= 0.85
+
+
 def test_packaged_triage_schema_matches_reference_copy():
     packaged_schema = json.loads(
         files("code_review_loop").joinpath("schemas/triage-v1.schema.json").read_text(encoding="utf-8")

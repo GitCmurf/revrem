@@ -1198,6 +1198,50 @@ def test_loop_invalid_structured_triage_continues_with_original_review(tmp_path)
     assert str(tmp_path / "artifacts" / "diagnostics-2.json") in summary["artifact_paths"]["diagnostics"]
 
 
+def test_loop_failed_triage_command_writes_diagnostics(tmp_path):
+    calls = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[1] == "review":
+            return MODULE.CommandResult(
+                list(args),
+                0,
+                stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
+            )
+        if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
+            return MODULE.CommandResult(
+                list(args),
+                -1,
+                stderr="Command timed out after 1 seconds\n",
+            )
+        return MODULE.CommandResult(list(args), 0, stdout="remediated\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        triage_enabled=True,
+        triage_timeout_seconds=1,
+        final_review=False,
+    )
+
+    with pytest.raises(MODULE.RunLoopFailed):
+        MODULE.run_loop(config, runner)
+
+    diagnostics_payload = json.loads(
+        (tmp_path / "artifacts" / "diagnostics-1.json").read_text(encoding="utf-8")
+    )
+    summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
+    assert diagnostics_payload["issues"][0]["code"] == "revrem.triage.command_failed"
+    assert diagnostics_payload["issues"][0]["evidence"]["returncode"] == -1
+    assert summary["stopped_reason"] == "triage_failed"
+    assert str(tmp_path / "artifacts" / "diagnostics-1.json") in summary["artifact_paths"]["diagnostics"]
+    assert calls[1][2] == 1
+
+
 def test_loop_malformed_suppressions_fail_open_for_structured_triage(tmp_path):
     repo_root, cwd = make_git_worktree(tmp_path)
     suppressions_path = suppressions.repo_suppressions_path(cwd)

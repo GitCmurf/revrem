@@ -114,6 +114,9 @@ This project follows Semantic Versioning once public releases begin.
   schema tests.
 - Bug-report bundles now include sanitized profile/preflight snapshot artifacts
   when a run records them.
+- Failed or timed-out structured triage commands now write
+  `diagnostics-N.json` before the loop exits, keeping triage failures
+  inspectable from machine-readable artifacts.
 
 ### Changed
 
