@@ -65,6 +65,9 @@ This project follows Semantic Versioning once public releases begin.
   including truncated and invalid stream diagnostics.
 - Run summaries now emit `artifact_write` events for public artifact paths so
   replay/report consumers can discover artifacts from the event stream.
+- Added initial budget ceilings: `--max-wall-seconds`, `--max-tokens`,
+  `--max-usd`, `--soft-warn-fraction`, profile `[budgets]` defaults,
+  wall-clock soft warnings, and exit code `3` for pre-model-call ceiling hits.
 
 ### Changed
 

@@ -134,6 +134,7 @@ revrem \
   --remediation-model gpt-5.4-mini \
   --reasoning-effort medium \
   --timeout-seconds 1800 \
+  --max-wall-seconds 7200 \
   --summary-format text \
   --debug-status-detection \
   --terminal-title \
@@ -333,6 +334,29 @@ the same child after a timeout without resending stdin, which avoids the
 Profile `review.reasoning_effort` and `remediation.reasoning_effort` values are
 validated during profile loading and must be one of `minimal`, `low`, `medium`,
 or `high`.
+
+### Budgets
+
+`--timeout-seconds` bounds individual child processes. `--max-wall-seconds`
+bounds the total RevRem run and is checked before each model-invoking phase.
+When the wall-clock ceiling has already been reached, RevRem stops before the
+next model call, writes `summary.json` and `events.jsonl`, emits
+`cost_ceiling_hit`, and exits with code `3`.
+
+`--soft-warn-fraction` controls the warning threshold for configured ceilings
+and defaults to `0.8`. `--max-tokens` and `--max-usd` are accepted as contract
+fields for cost-aware harnesses; Codex does not currently report those values,
+so summaries record token and USD usage as `null` rather than `0`.
+
+Profiles may set the same defaults:
+
+```toml
+[profiles.final-pr.budgets]
+max_wall_seconds = 7200
+max_tokens = 250000
+max_usd = "2.50"
+soft_warn_fraction = 0.8
+```
 
 Profile management commands:
 
@@ -572,6 +596,7 @@ until a backend adapter is implemented.
   subprocess invocation.
 - `2`: the utility completed but the bounded loop still has findings or pending
   check failures.
+- `3`: a configured budget ceiling was reached before the next model call.
 
 ### Operator guidance
 

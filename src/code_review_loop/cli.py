@@ -26,6 +26,7 @@ from typing import Any
 from code_review_loop import (
     __version__,
     artifacts,
+    budgets,
     bug_bundle,
     diagnostics,
     events,
@@ -163,6 +164,8 @@ class LoopConfig:
     check_commands: tuple[str, ...] = field(default_factory=tuple)
     profile_name: str | None = None
     event_sink: events.EventSink | None = None
+    budget_config: budgets.BudgetConfig = field(default_factory=budgets.BudgetConfig)
+    budget_state: budgets.BudgetState | None = None
 
 
 Runner = Callable[[Sequence[str], Path, str | None, float | None], CommandResult]
@@ -985,6 +988,42 @@ def phase_timeout_seconds(config: LoopConfig, value: float | None) -> float | No
     return value
 
 
+def ensure_model_budget(config: LoopConfig, *, phase: str, iteration: int | str) -> None:
+    if config.budget_state is None:
+        return
+    warning_due, elapsed = budgets.wall_warning_due(config.budget_config, config.budget_state)
+    if warning_due:
+        config.budget_state.wall_warning_emitted = True
+        if config.event_sink is not None:
+            config.event_sink.emit(
+                "warning",
+                phase=phase,
+                iteration=iteration,
+                payload={
+                    "reason": "wall_budget_soft_warning",
+                    "elapsed_wall_seconds": elapsed,
+                    "max_wall_seconds": config.budget_config.max_wall_seconds,
+                    "soft_warn_fraction": config.budget_config.soft_warn_fraction,
+                },
+            )
+    try:
+        budgets.check_wall_budget(config.budget_config, config.budget_state)
+    except budgets.BudgetExceeded as exc:
+        if config.event_sink is not None:
+            config.event_sink.emit(
+                "cost_ceiling_hit",
+                phase=phase,
+                iteration=iteration,
+                payload={
+                    "ceiling": exc.ceiling,
+                    "limit": exc.limit,
+                    "actual": exc.actual,
+                    "message": str(exc),
+                },
+            )
+        raise
+
+
 def write_artifact(path: Path, content: str) -> None:
     artifacts.write_text_artifact(path, content)
 
@@ -998,6 +1037,7 @@ def run_codex_review(
     display_label = display_label or artifact_label
     command = build_review_command(config)
     set_phase_terminal_title(config, "review", display_label)
+    ensure_model_budget(config, phase="review", iteration=display_label)
     progress_event(config, "review", display_label, "start", shlex.join(command))
     if config.dry_run:
         result = CommandResult(command, 0, stdout="DRY_RUN\nREVIEW_STATUS: findings\n")
@@ -1150,6 +1190,7 @@ def run_remediation(
     command = build_remediation_command(config, last_message_path)
     prompt = f"{DEFAULT_REMEDIATION_PROMPT}\n{trim_for_prompt(review_output, config.max_remediation_input_chars)}"
     set_phase_terminal_title(config, "remediate", str(iteration))
+    ensure_model_budget(config, phase="remediate", iteration=iteration)
     progress_event(config, "remediate", str(iteration), "start", shlex.join(command))
     if config.dry_run:
         result = CommandResult(command, 0, stdout="DRY_RUN remediation skipped\n")
@@ -1177,6 +1218,7 @@ def run_triage(
     command = build_triage_command(config)
     prompt_root = config.triage_prompt or triage.load_prompt()
     prompt = f"{prompt_root}\n{trim_for_prompt(review_output, config.max_remediation_input_chars)}"
+    ensure_model_budget(config, phase="triage", iteration=iteration)
     progress_event(config, "triage", str(iteration), "start", shlex.join(command))
     if config.dry_run:
         result = CommandResult(command, 0, stdout="DRY_RUN triage skipped\n")
@@ -1556,6 +1598,7 @@ def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iterat
     command = build_commit_message_command(config)
     prompt_root = config.commit_message_prompt or DEFAULT_COMMIT_MESSAGE_PROMPT
     prompt = f"{prompt_root}\n{trim_for_prompt(context, config.max_remediation_input_chars)}"
+    ensure_model_budget(config, phase="commit-message", iteration=iteration)
     result = runner(command, config.cwd, prompt, phase_timeout_seconds(config, config.timeout_seconds))
     write_artifact(config.artifact_dir / f"commit-{iteration}-message-draft.txt", _combined_output(result))
     if result.returncode != 0:
@@ -1810,6 +1853,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
         "iterations": iterations,
         "commit_on_hook_failure": config.commit_on_hook_failure,
         "commit_no_verify": config.commit_on_hook_failure == "no-verify",
+        "budgets": summary_budget_payload(config),
         "final_status": "unknown",
         "initial_review_file": str(config.initial_review_file) if config.initial_review_file else None,
         "pending_check_failures": False,
@@ -1818,9 +1862,12 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
 
     event_sink: events.JsonlSink | None = None
     previous_event_sink = config.event_sink
+    previous_budget_state = config.budget_state
     try:
         event_sink = events.JsonlSink(config.artifact_dir, run_id)
         object.__setattr__(config, "event_sink", event_sink)
+        if config.budget_state is None:
+            object.__setattr__(config, "budget_state", budgets.started_now())
 
         pending_check_failures = ""
         initial_review_output = ""
@@ -2075,8 +2122,15 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
 
         write_summary(config, summary)
         return summary
+    except budgets.BudgetExceeded as exc:
+        summary["final_status"] = "error"
+        summary["stopped_reason"] = "budget_ceiling_hit"
+        summary["error"] = str(exc)
+        write_summary(config, summary)
+        raise RunLoopFailed(summary, str(exc)) from exc
     finally:
         object.__setattr__(config, "event_sink", previous_event_sink)
+        object.__setattr__(config, "budget_state", previous_budget_state)
         if event_sink is not None:
             event_sink.close()
 
@@ -2095,6 +2149,17 @@ def write_summary(config: LoopConfig, summary: dict[str, object]) -> None:
             },
         )
     artifacts.write_json_artifact(config.artifact_dir, "summary.json", summary)
+
+
+def summary_budget_payload(config: LoopConfig) -> dict[str, object]:
+    return {
+        "max_wall_seconds": config.budget_config.max_wall_seconds,
+        "max_tokens": config.budget_config.max_tokens,
+        "max_usd": str(config.budget_config.max_usd) if config.budget_config.max_usd is not None else None,
+        "soft_warn_fraction": config.budget_config.soft_warn_fraction,
+        "tokens": None,
+        "usd": None,
+    }
 
 
 def emit_artifact_write_events(config: LoopConfig, summary: dict[str, object]) -> None:
@@ -2506,6 +2571,29 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--max-wall-seconds",
+        type=float,
+        default=None,
+        help="Maximum total run wall-clock seconds before RevRem stops before the next model call.",
+    )
+    parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=None,
+        help="Maximum reported tokens for future cost-aware harnesses. Missing token data is recorded as null.",
+    )
+    parser.add_argument(
+        "--max-usd",
+        default=None,
+        help="Maximum reported USD cost for future cost-aware harnesses. Missing cost data is recorded as null.",
+    )
+    parser.add_argument(
+        "--soft-warn-fraction",
+        type=float,
+        default=None,
+        help="Fraction of a configured ceiling that emits a warning event before stopping. Default: 0.8.",
+    )
+    parser.add_argument(
         "--summary-format",
         choices=("text", "json", "both"),
         default=None,
@@ -2905,6 +2993,13 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         or review_model
     )
     commit_on_hook_failure = args.commit_on_hook_failure or profile.commit.on_hook_failure
+    budget_config = budgets.BudgetConfig(
+        max_wall_seconds=pick(args.max_wall_seconds, profile.budgets.max_wall_seconds, None),
+        max_tokens=pick(args.max_tokens, profile.budgets.max_tokens, None),
+        max_usd=budgets.parse_usd(args.max_usd) if args.max_usd is not None else profile.budgets.max_usd,
+        soft_warn_fraction=pick(args.soft_warn_fraction, profile.budgets.soft_warn_fraction, 0.8),
+    )
+    budgets.validate_config(budget_config)
     config = LoopConfig(
         base=pick(args.base, profile.pipeline.base, "main"),
         max_iterations=pick(args.max_iterations, profile.pipeline.max_iterations, 2),
@@ -2966,6 +3061,7 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         initial_review_file=initial_review_file,
         check_commands=checks,
         profile_name=args.profile,
+        budget_config=budget_config,
     )
     return config, (args.summary_format or profile.output.summary_format)
 
@@ -3045,6 +3141,12 @@ def profile_from_loop_config(
             max_remediation_input_chars=config.max_remediation_input_chars,
             terminal_excerpt_chars=config.terminal_excerpt_chars,
         ),
+        budgets=profiles.BudgetConfig(
+            max_wall_seconds=config.budget_config.max_wall_seconds,
+            max_tokens=config.budget_config.max_tokens,
+            max_usd=config.budget_config.max_usd,
+            soft_warn_fraction=config.budget_config.soft_warn_fraction,
+        ),
     )
 
 
@@ -3111,6 +3213,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             except OSError as history_exc:
                 print(f"WARNING: could not write run history: {history_exc}", file=sys.stderr)
         print(f"ERROR: {exc}", file=sys.stderr)
+        if summary.get("stopped_reason") == "budget_ceiling_hit":
+            return 3
         return 1
     except KeyboardInterrupt:  # pragma: no cover - signal path
         print("Interrupted by user.", file=sys.stderr)

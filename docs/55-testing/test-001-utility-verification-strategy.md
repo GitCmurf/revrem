@@ -76,6 +76,10 @@ The main test module is `tests/test_cli.py`. It covers:
   as sink diagnostics. TUI state tests read `events.jsonl` through the replay
   reader and cover valid, truncated, and invalid event streams. CLI loop tests
   assert summary-time `artifact_write` events for public run artifacts.
+- Budget accounting in `tests/test_budgets.py` and loop-level budget tests in
+  `tests/test_cli.py`, including wall-clock soft warnings, pre-model-call
+  ceiling stops, null token/USD usage for unsupported cost reporting, and exit
+  code `3` for budget ceiling hits.
 - Review-base preflight behavior for invalid Git topology, including a local
   `main` that has no merge base with the current branch while `origin/main`
   remains usable.

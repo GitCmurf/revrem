@@ -2480,6 +2480,12 @@ enabled = true
 summary_format = "json"
 debug_status_detection = true
 quiet_progress = true
+
+[profiles.final-pr.budgets]
+max_wall_seconds = 120
+max_tokens = 1000
+max_usd = "0.75"
+soft_warn_fraction = 0.5
 """,
         encoding="utf-8",
     )
@@ -2513,6 +2519,10 @@ quiet_progress = true
     assert config.check_commands == ("pytest -q", "git diff --check")
     assert config.debug_status_detection is True
     assert config.progress is False
+    assert config.budget_config.max_wall_seconds == 120
+    assert config.budget_config.max_tokens == 1000
+    assert str(config.budget_config.max_usd) == "0.75"
+    assert config.budget_config.soft_warn_fraction == 0.5
 
 
 def test_default_artifact_dir_uses_revrem_namespace():
@@ -5026,6 +5036,85 @@ def test_loop_writes_failure_summary_when_remediation_fails(tmp_path):
     assert '"1.txt"' not in summary
     assert truncated is False
     assert any(event.payload.get("reason") == "remediation_failed" for event in failure_events)
+
+
+def test_loop_stops_before_model_call_when_wall_budget_exceeded(tmp_path):
+    calls = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append(args)
+        return MODULE.CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        budget_config=MODULE.budgets.BudgetConfig(max_wall_seconds=0),
+        budget_state=MODULE.budgets.BudgetState(started_at_monotonic=0),
+    )
+
+    with pytest.raises(MODULE.RunLoopFailed) as excinfo:
+        MODULE.run_loop(config, runner)
+
+    summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
+    records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
+
+    assert calls == []
+    assert excinfo.value.summary["stopped_reason"] == "budget_ceiling_hit"
+    assert summary["final_status"] == "error"
+    assert summary["stopped_reason"] == "budget_ceiling_hit"
+    assert summary["budgets"]["max_wall_seconds"] == 0
+    assert summary["budgets"]["tokens"] is None
+    assert summary["budgets"]["usd"] is None
+    assert truncated is False
+    assert any(event.kind == "cost_ceiling_hit" and event.payload["ceiling"] == "wall" for event in records)
+
+
+def test_loop_emits_budget_soft_warning_before_model_call(tmp_path):
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        return MODULE.CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        budget_config=MODULE.budgets.BudgetConfig(max_wall_seconds=100, soft_warn_fraction=0.5),
+        budget_state=MODULE.budgets.BudgetState(started_at_monotonic=time.monotonic() - 60),
+    )
+
+    MODULE.run_loop(config, runner)
+
+    records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
+
+    assert truncated is False
+    assert any(
+        event.kind == "warning" and event.payload.get("reason") == "wall_budget_soft_warning"
+        for event in records
+    )
+
+
+def test_main_returns_exit_code_3_for_budget_ceiling(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    summary = {
+        "run_id": "run-1",
+        "final_status": "error",
+        "stopped_reason": "budget_ceiling_hit",
+        "iterations": [],
+    }
+
+    def fake_run_loop(_config):
+        raise MODULE.RunLoopFailed(summary, "wall budget exceeded")
+
+    monkeypatch.setattr(MODULE, "run_loop", fake_run_loop)
+
+    exit_code = MODULE.main(["--max-wall-seconds", "0", "--no-run-history"])
+
+    assert exit_code == 3
+    assert "wall budget exceeded" in capsys.readouterr().err
 
 
 def test_loop_writes_failure_summary_when_initial_review_invocation_fails(tmp_path):

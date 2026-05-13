@@ -71,6 +71,41 @@ terminal_title = true
     assert resolved.output.terminal_title is True
 
 
+def test_profile_accepts_budget_defaults(tmp_path):
+    path = tmp_path / "profiles.toml"
+    path.write_text(
+        """
+[profiles.demo.budgets]
+max_wall_seconds = 120
+max_tokens = 10000
+max_usd = "1.25"
+soft_warn_fraction = 0.5
+""",
+        encoding="utf-8",
+    )
+
+    loaded = profiles.load_profile_file(path)
+
+    assert loaded.profiles["demo"].budgets.max_wall_seconds == 120
+    assert loaded.profiles["demo"].budgets.max_tokens == 10000
+    assert str(loaded.profiles["demo"].budgets.max_usd) == "1.25"
+    assert loaded.profiles["demo"].budgets.soft_warn_fraction == 0.5
+
+
+def test_profile_rejects_invalid_budget_values(tmp_path):
+    path = tmp_path / "profiles.toml"
+    path.write_text(
+        """
+[profiles.demo.budgets]
+soft_warn_fraction = 0
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="budgets.soft_warn_fraction"):
+        profiles.load_profile_file(path)
+
+
 def test_resolve_profile_allows_project_to_override_boolean_to_false(tmp_path):
     home = tmp_path / "home"
     cwd = tmp_path / "repo"

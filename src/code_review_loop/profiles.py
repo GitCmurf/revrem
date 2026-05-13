@@ -12,8 +12,9 @@ import tomllib
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import asdict, dataclass, field, replace
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from code_review_loop import run_history
 from code_review_loop._compat_tomli_w import dumps as toml_dumps
@@ -38,6 +39,7 @@ PROFILE_KEYS = (
     "commit",
     "output",
     "runtime",
+    "budgets",
 )
 PIPELINE_KEYS = ("base", "max_iterations", "final_review", "checks")
 PHASE_KEYS = ("harness", "model", "reasoning_effort", "timeout_seconds")
@@ -77,6 +79,7 @@ RUNTIME_KEYS = (
     "max_remediation_input_chars",
     "terminal_excerpt_chars",
 )
+BUDGET_KEYS = ("max_wall_seconds", "max_tokens", "max_usd", "soft_warn_fraction")
 TOP_LEVEL_KEYS = ("defaults", "profiles")
 
 
@@ -139,6 +142,14 @@ class RuntimeConfig:
 
 
 @dataclass(frozen=True)
+class BudgetConfig:
+    max_wall_seconds: float | None = None
+    max_tokens: int | None = None
+    max_usd: Decimal | None = None
+    soft_warn_fraction: float = 0.8
+
+
+@dataclass(frozen=True)
 class Profile:
     name: str
     description: str = ""
@@ -149,6 +160,7 @@ class Profile:
     commit: CommitConfig = field(default_factory=CommitConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
     runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
+    budgets: BudgetConfig = field(default_factory=BudgetConfig)
     source: str | None = None
 
 
@@ -230,6 +242,7 @@ def parse_profile(name: str, raw: dict[str, Any], *, source: str | None = None) 
     output = parse_output(_table(raw.get("output", {}), f"{name}.output"))
     commit = parse_commit(_table(raw.get("commit", {}), f"{name}.commit"))
     runtime = parse_runtime(_table(raw.get("runtime", {}), f"{name}.runtime"))
+    budgets = parse_budgets(_table(raw.get("budgets", {}), f"{name}.budgets"))
     profile = Profile(
         name=name,
         description=description,
@@ -240,6 +253,7 @@ def parse_profile(name: str, raw: dict[str, Any], *, source: str | None = None) 
         commit=commit,
         output=output,
         runtime=runtime,
+        budgets=budgets,
         source=source,
     )
     validate_profile(profile, require_implemented=False)
@@ -364,6 +378,28 @@ def parse_runtime(raw: dict[str, Any]) -> RuntimeConfig:
             raw.get("terminal_excerpt_chars", 4_000),
             "runtime.terminal_excerpt_chars",
         ),
+    )
+
+
+def parse_budgets(raw: dict[str, Any]) -> BudgetConfig:
+    _reject_unknown_keys(raw, BUDGET_KEYS, "budgets")
+    soft_warn_fraction = _float(raw.get("soft_warn_fraction", 0.8), "budgets.soft_warn_fraction")
+    if not 0 < soft_warn_fraction <= 1:
+        raise ValueError("budgets.soft_warn_fraction must be greater than 0 and no more than 1")
+    max_tokens = _optional_int(raw.get("max_tokens"), "budgets.max_tokens")
+    if max_tokens is not None and max_tokens < 0:
+        raise ValueError("budgets.max_tokens must be 0 or greater")
+    max_wall_seconds = _optional_float(raw.get("max_wall_seconds"), "budgets.max_wall_seconds")
+    if max_wall_seconds is not None and max_wall_seconds < 0:
+        raise ValueError("budgets.max_wall_seconds must be 0 or greater")
+    max_usd = _optional_decimal(raw.get("max_usd"), "budgets.max_usd")
+    if max_usd is not None and max_usd < 0:
+        raise ValueError("budgets.max_usd must be 0 or greater")
+    return BudgetConfig(
+        max_wall_seconds=max_wall_seconds,
+        max_tokens=max_tokens,
+        max_usd=max_usd,
+        soft_warn_fraction=soft_warn_fraction,
     )
 
 
@@ -510,11 +546,23 @@ def merge_profiles(name: str, *profiles: Profile) -> Profile:
 
 
 def profile_to_dict(profile: Profile) -> dict[str, Any]:
-    return asdict(profile)
+    return cast(dict[str, Any], _json_ready(asdict(profile)))
 
 
 def profile_to_json(profile: Profile) -> str:
     return json.dumps(profile_to_dict(profile), indent=2, sort_keys=True) + "\n"
+
+
+def _json_ready(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(key): _json_ready(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_ready(item) for item in value]
+    if isinstance(value, tuple):
+        return [_json_ready(item) for item in value]
+    return value
 
 
 def _profile_last_used_at_by_name(history_path: Path | None = None) -> dict[str, str]:
@@ -548,7 +596,7 @@ def _profile_to_toml_dict(
     result: dict[str, Any] = {}
     if profile.description:
         result["description"] = profile.description
-    for section_name in ("pipeline", "review", "triage", "remediation", "commit", "output", "runtime"):
+    for section_name in ("pipeline", "review", "triage", "remediation", "commit", "output", "runtime", "budgets"):
         value = getattr(profile, section_name)
         defaults = type(value)()
         reference_value = getattr(reference, section_name) if reference is not None else None
@@ -565,6 +613,8 @@ def _profile_to_toml_dict(
                 continue
             if isinstance(item, tuple):
                 section_dict[key] = list(item)
+            elif isinstance(item, Decimal):
+                section_dict[key] = str(item)
             else:
                 section_dict[key] = item
         if section_dict:
@@ -978,9 +1028,30 @@ def _int(value: Any, field: str) -> int:
     return int(value)
 
 
-def _optional_float(value: Any, field: str) -> float | None:
+def _optional_int(value: Any, field: str) -> int | None:
     if value is None:
         return None
+    return _int(value, field)
+
+
+def _float(value: Any, field: str) -> float:
     if isinstance(value, bool) or not isinstance(value, int | float):
         raise ValueError(f"{field} must be a number")
     return float(value)
+
+
+def _optional_float(value: Any, field: str) -> float | None:
+    if value is None:
+        return None
+    return _float(value, field)
+
+
+def _optional_decimal(value: Any, field: str) -> Decimal | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int | float | str):
+        raise ValueError(f"{field} must be a decimal number")
+    try:
+        return Decimal(str(value))
+    except InvalidOperation as exc:
+        raise ValueError(f"{field} must be a decimal number") from exc
