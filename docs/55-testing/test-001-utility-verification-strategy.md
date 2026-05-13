@@ -3,7 +3,7 @@ document_id: REVREM-TEST-001
 type: TEST
 title: Utility verification strategy
 status: Draft
-version: '1.5'
+version: '1.6'
 last_updated: '2026-05-13'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-TEST-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.5
+> **Version:** 1.6
 > **Last Updated:** 2026-05-13
 > **Type:** TEST
 > **Area:** testing
@@ -128,8 +128,8 @@ The main test module is `tests/test_cli.py`. It covers:
 - Package version reporting through `revrem --version`.
 
 `tests/test_profiles.py` covers TOML profile parsing, validation, precedence,
-commit-message model defaults, user-profile writes/deletes/imports, and
-reserved future harness handling.
+commit-message model defaults, suppression scope policy validation,
+user-profile writes/deletes/imports, and reserved future harness handling.
 `tests/test_run_history.py` covers shared JSONL history paths, record shape, and
 newest-first reads.
 `tests/test_harnesses.py` covers the reusable harness command-planning boundary:

@@ -121,6 +121,8 @@ This project follows Semantic Versioning once public releases begin.
   inspectable from machine-readable artifacts.
 - Operator cancellation now writes `diagnostics.json` alongside `summary.json`
   and `events.jsonl`.
+- Profiles now support `[suppressions] scope = "repo" | "user"` so teams can
+  declare their expected suppression write policy alongside review settings.
 
 ### Changed
 

@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.8'
+version: '1.9'
 last_updated: '2026-05-13'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.8
+> **Version:** 1.9
 > **Last Updated:** 2026-05-13
 > **Type:** DEVEX
 > **Area:** devex
@@ -289,6 +289,9 @@ message_model = "gpt-5.3-codex-spark"
 summary_format = "text"
 debug_status_detection = true
 terminal_title = true
+
+[profiles.final-pr.suppressions]
+scope = "repo"
 ```
 
 Run it from the target repository:
@@ -586,6 +589,18 @@ the unresolved check context. If a suppression file cannot be parsed or read,
 structured triage emits a warning and continues without applying suppressions.
 `revrem doctor` warns about expired suppressions and unsupported future
 fingerprint versions.
+
+Profiles can declare the expected suppression write policy:
+
+```toml
+[profiles.final-pr.suppressions]
+scope = "repo"
+```
+
+`scope = "repo"` is the default and keeps project-wide dismissals reviewable in
+the repository. `scope = "user"` is for personal local dismissals that should
+not affect other operators. Explicit `revrem suppress add --scope ...` usage
+still controls each mutation.
 Bug-report bundles include a redacted suppression audit summary by default; raw
 audit logs are included only with the same raw transcript opt-in used for review
 transcripts.
@@ -747,6 +762,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.9 | 2026-05-13 | Codex | Documented profile-level suppression scope policy |
 | 1.8 | 2026-05-13 | Codex | Documented optional redaction extra alongside progress and TUI extras |
 | 1.7 | 2026-05-13 | Codex | Documented live CLI preflight diagnostics before first model invocation |
 | 1.6 | 2026-05-13 | Codex | Documented release dry runs, Trusted Publishing stages, provenance artifacts, and rollback runbook linkage |

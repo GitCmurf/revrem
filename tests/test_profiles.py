@@ -92,6 +92,79 @@ soft_warn_fraction = 0.5
     assert loaded.profiles["demo"].budgets.soft_warn_fraction == 0.5
 
 
+def test_profile_accepts_suppression_scope_policy(tmp_path):
+    path = tmp_path / "profiles.toml"
+    path.write_text(
+        """
+[profiles.demo.suppressions]
+scope = "user"
+""",
+        encoding="utf-8",
+    )
+
+    loaded = profiles.load_profile_file(path)
+
+    assert loaded.profiles["demo"].suppressions.scope == "user"
+    assert profiles.profile_to_dict(loaded.profiles["demo"])["suppressions"]["scope"] == "user"
+    assert 'scope = "user"' in profiles.profile_to_toml(loaded.profiles["demo"])
+
+
+def test_resolve_profile_merges_suppression_scope_defaults(tmp_path):
+    home = tmp_path / "home"
+    cwd = tmp_path / "repo"
+    cwd.mkdir()
+    user_path = profiles.user_config_path(home)
+    user_path.parent.mkdir(parents=True)
+    user_path.write_text(
+        """
+[defaults.suppressions]
+scope = "user"
+
+[profiles.demo]
+description = "Demo"
+""",
+        encoding="utf-8",
+    )
+    profiles.project_config_path(cwd).write_text(
+        """
+[profiles.demo.suppressions]
+scope = "repo"
+""",
+        encoding="utf-8",
+    )
+
+    resolved = profiles.resolve_profile("demo", cwd=cwd, home=home)
+
+    assert resolved.suppressions.scope == "repo"
+
+
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        (
+            """
+[profiles.demo.suppressions]
+scope = "workspace"
+""",
+            "suppressions.scope must be one of: repo, user",
+        ),
+        (
+            """
+[profiles.demo.suppressions]
+default = "repo"
+""",
+            "suppressions contains unknown keys: default",
+        ),
+    ],
+)
+def test_profile_rejects_invalid_suppression_policy(tmp_path, body, message):
+    path = tmp_path / "profiles.toml"
+    path.write_text(body, encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        profiles.load_profile_file(path)
+
+
 def test_profile_rejects_invalid_budget_values(tmp_path):
     path = tmp_path / "profiles.toml"
     path.write_text(

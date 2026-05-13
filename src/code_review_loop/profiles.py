@@ -40,6 +40,7 @@ PROFILE_KEYS = (
     "output",
     "runtime",
     "budgets",
+    "suppressions",
 )
 PIPELINE_KEYS = ("base", "max_iterations", "final_review", "checks")
 PHASE_KEYS = ("harness", "model", "reasoning_effort", "timeout_seconds")
@@ -80,6 +81,8 @@ RUNTIME_KEYS = (
     "terminal_excerpt_chars",
 )
 BUDGET_KEYS = ("max_wall_seconds", "max_tokens", "max_usd", "soft_warn_fraction")
+SUPPRESSION_SCOPE_CHOICES = ("repo", "user")
+SUPPRESSIONS_KEYS = ("scope",)
 TOP_LEVEL_KEYS = ("defaults", "profiles")
 
 
@@ -150,6 +153,11 @@ class BudgetConfig:
 
 
 @dataclass(frozen=True)
+class SuppressionsConfig:
+    scope: str = "repo"
+
+
+@dataclass(frozen=True)
 class Profile:
     name: str
     description: str = ""
@@ -161,6 +169,7 @@ class Profile:
     output: OutputConfig = field(default_factory=OutputConfig)
     runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
     budgets: BudgetConfig = field(default_factory=BudgetConfig)
+    suppressions: SuppressionsConfig = field(default_factory=SuppressionsConfig)
     source: str | None = None
 
 
@@ -243,6 +252,9 @@ def parse_profile(name: str, raw: dict[str, Any], *, source: str | None = None) 
     commit = parse_commit(_table(raw.get("commit", {}), f"{name}.commit"))
     runtime = parse_runtime(_table(raw.get("runtime", {}), f"{name}.runtime"))
     budgets = parse_budgets(_table(raw.get("budgets", {}), f"{name}.budgets"))
+    suppressions = parse_suppressions(
+        _table(raw.get("suppressions", {}), f"{name}.suppressions")
+    )
     profile = Profile(
         name=name,
         description=description,
@@ -254,6 +266,7 @@ def parse_profile(name: str, raw: dict[str, Any], *, source: str | None = None) 
         output=output,
         runtime=runtime,
         budgets=budgets,
+        suppressions=suppressions,
         source=source,
     )
     validate_profile(profile, require_implemented=False)
@@ -403,6 +416,17 @@ def parse_budgets(raw: dict[str, Any]) -> BudgetConfig:
     )
 
 
+def parse_suppressions(raw: dict[str, Any]) -> SuppressionsConfig:
+    _reject_unknown_keys(raw, SUPPRESSIONS_KEYS, "suppressions")
+    scope = _str(raw.get("scope", "repo"), "suppressions.scope")
+    if scope not in SUPPRESSION_SCOPE_CHOICES:
+        raise ValueError(
+            "suppressions.scope must be one of: "
+            f"{', '.join(SUPPRESSION_SCOPE_CHOICES)}"
+        )
+    return SuppressionsConfig(scope=scope)
+
+
 def resolve_profile(
     name: str,
     *,
@@ -540,6 +564,8 @@ def merge_profiles(name: str, *profiles: Profile) -> Profile:
             commit=_merge_dataclass(result.commit, profile.commit),
             output=_merge_dataclass(result.output, profile.output),
             runtime=_merge_dataclass(result.runtime, profile.runtime),
+            budgets=_merge_dataclass(result.budgets, profile.budgets),
+            suppressions=_merge_dataclass(result.suppressions, profile.suppressions),
             source=profile.source or result.source,
         )
     return result
@@ -596,7 +622,17 @@ def _profile_to_toml_dict(
     result: dict[str, Any] = {}
     if profile.description:
         result["description"] = profile.description
-    for section_name in ("pipeline", "review", "triage", "remediation", "commit", "output", "runtime", "budgets"):
+    for section_name in (
+        "pipeline",
+        "review",
+        "triage",
+        "remediation",
+        "commit",
+        "output",
+        "runtime",
+        "budgets",
+        "suppressions",
+    ):
         value = getattr(profile, section_name)
         defaults = type(value)()
         reference_value = getattr(reference, section_name) if reference is not None else None
