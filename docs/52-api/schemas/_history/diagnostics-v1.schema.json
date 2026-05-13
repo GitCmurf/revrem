@@ -21,6 +21,7 @@
             ]
           },
           "hint": {
+            "minLength": 1,
             "type": "string"
           },
           "message": {

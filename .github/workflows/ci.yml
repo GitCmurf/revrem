@@ -86,7 +86,9 @@ jobs:
         run: |
           python -m venv .pkg-smoke
           .pkg-smoke/bin/python -m pip install --upgrade pip
-          .pkg-smoke/bin/python -m pip install dist/revrem-*.whl
+          wheel="$(find dist -maxdepth 1 -name 'revrem-*.whl' -print -quit)"
+          test -n "$wheel"
+          .pkg-smoke/bin/python -m pip install "$wheel"
           .pkg-smoke/bin/revrem --version
           .pkg-smoke/bin/revrem --help
           .pkg-smoke/bin/code-review-loop --version
@@ -97,4 +99,4 @@ jobs:
           git -C tests/fixtures/reference-repo commit -m "fixture baseline"
           git -C tests/fixtures/reference-repo branch -M main
           cd tests/fixtures/reference-repo
-          ../../../.pkg-smoke/bin/revrem doctor --format json --base main --codex-bin git --artifact-dir .revrem/runs/smoke
+          "$GITHUB_WORKSPACE/.pkg-smoke/bin/revrem" doctor --format json --base main --codex-bin git --artifact-dir .revrem/runs/smoke

@@ -21,10 +21,17 @@
       ]
     },
     "iteration": {
-      "type": [
-        "integer",
-        "string",
-        "null"
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "pattern": "^(final|[0-9]+)$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
       ]
     },
     "payload": {
@@ -48,6 +55,7 @@
       "type": "integer"
     },
     "ts": {
+      "format": "date-time",
       "type": "string"
     }
   },

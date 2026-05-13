@@ -1,4 +1,4 @@
 0001|review|1|phase_start: codex review --base main
 0002|review|1|cost_charge
-0003|review|1|cost_ceiling_hit: tokens budget exceeded: 10 >= 10
+0003|review|1|cost_ceiling_hit: tokens budget reached: 10 >= 10
 0004|summary|summary: budget_ceiling_hit

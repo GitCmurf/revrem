@@ -46,7 +46,7 @@ def test_record_charge_enforces_token_ceiling():
         budgets.record_charge(config, state, tokens=10)
 
     assert excinfo.value.ceiling == "tokens"
-    assert excinfo.value.actual == "10"
+    assert excinfo.value.actual == 10
 
 
 def test_record_charge_enforces_usd_ceiling():

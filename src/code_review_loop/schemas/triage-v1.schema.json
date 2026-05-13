@@ -154,11 +154,76 @@
       "const": "1.0"
     },
     "source_review_artifact": {
+      "minLength": 1,
       "type": "string"
     },
     "suppressed_findings": {
       "items": {
         "additionalProperties": true,
+        "properties": {
+          "affected_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "fingerprint": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "rationale": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "info",
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "suppressed": {
+            "const": true
+          },
+          "suppression": {
+            "additionalProperties": false,
+            "properties": {
+              "expires_at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "rationale": {
+                "type": "string"
+              },
+              "scope": {
+                "enum": [
+                  "repo",
+                  "user"
+                ]
+              },
+              "source_path": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "scope",
+              "source_path",
+              "summary",
+              "rationale",
+              "expires_at"
+            ],
+            "type": "object"
+          }
+        },
         "required": [
           "fingerprint",
           "summary",

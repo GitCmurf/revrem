@@ -101,7 +101,9 @@ def test_summary_schema_validates_generated_summary(tmp_path):
     )
 
     summary = cli_module.run_loop(config, runner)
-    summary_payload = json.loads((tmp_path / "artifacts" / "summary.json").read_text())
+    summary_payload = json.loads(
+        (tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8")
+    )
 
     validate(summary_payload, schema)
     assert summary["schema_version"] == "1.0"

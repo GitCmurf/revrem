@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from time import monotonic
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -28,8 +29,8 @@ class BudgetState:
 class BudgetExceeded(Exception):
     """Raised when a configured run ceiling has already been reached."""
 
-    def __init__(self, *, ceiling: str, limit: str, actual: str):
-        super().__init__(f"{ceiling} budget exceeded: {actual} >= {limit}")
+    def __init__(self, *, ceiling: str, limit: Any, actual: Any):
+        super().__init__(f"{ceiling} budget reached: {actual} >= {limit}")
         self.ceiling = ceiling
         self.limit = limit
         self.actual = actual
@@ -115,8 +116,8 @@ def record_charge(
     if config.max_tokens is not None and state.tokens_used >= config.max_tokens:
         raise BudgetExceeded(
             ceiling="tokens",
-            limit=str(config.max_tokens),
-            actual=str(state.tokens_used),
+            limit=config.max_tokens,
+            actual=state.tokens_used,
         )
     if config.max_usd is not None and state.usd_used >= config.max_usd:
         raise BudgetExceeded(

@@ -112,8 +112,13 @@ This project follows Semantic Versioning once public releases begin.
   preserving the remediation artifact.
 - Package smoke CI now covers Linux and macOS on Python 3.11 and 3.12, and the
   packaging metadata exposes the optional `redaction` extra.
+- Package smoke CI now selects a single built wheel and uses the workspace path
+  for installed CLI checks instead of relying on directory depth.
 - Schema v1 reference files now have `_history` baselines guarded by artifact
   schema tests.
+- V1 artifact schemas now validate timestamp formats, summary collection item
+  shapes, suppression timestamps, and suppressed-finding payload structure more
+  tightly.
 - Bug-report bundles now include sanitized profile/preflight snapshot artifacts
   when a run records them.
 - Failed or timed-out structured triage commands now write

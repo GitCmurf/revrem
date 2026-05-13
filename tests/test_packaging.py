@@ -67,12 +67,13 @@ def test_ci_builds_and_smokes_revrem_wheel():
     assert 'python-version: ["3.11", "3.12"]' in workflow
     assert "python -m build --sdist --wheel" in workflow
     assert "python -m twine check dist/*" in workflow
-    assert ".pkg-smoke/bin/python -m pip install dist/revrem-*.whl" in workflow
+    assert "wheel=\"$(find dist -maxdepth 1 -name 'revrem-*.whl' -print -quit)\"" in workflow
+    assert '.pkg-smoke/bin/python -m pip install "$wheel"' in workflow
     assert ".pkg-smoke/bin/revrem --version" in workflow
     assert ".pkg-smoke/bin/code-review-loop --version" in workflow
     assert "git -C tests/fixtures/reference-repo init" in workflow
     assert "cd tests/fixtures/reference-repo" in workflow
-    assert "../../../.pkg-smoke/bin/revrem doctor --format json --base main --codex-bin git" in workflow
+    assert '"$GITHUB_WORKSPACE/.pkg-smoke/bin/revrem" doctor --format json --base main --codex-bin git' in workflow
 
 
 def test_release_workflow_uses_trusted_publishing_and_dry_run():

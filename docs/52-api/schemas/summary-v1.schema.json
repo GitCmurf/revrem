@@ -7,6 +7,19 @@
       "type": "string"
     },
     "artifact_paths": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        ]
+      },
       "type": "object"
     },
     "base": {
@@ -17,6 +30,9 @@
       "type": "string"
     },
     "command_line": {
+      "items": {
+        "type": "string"
+      },
       "type": [
         "array",
         "null"
@@ -29,6 +45,7 @@
       ]
     },
     "finished_at": {
+      "format": "date-time",
       "type": "string"
     },
     "final_status": {
@@ -49,12 +66,29 @@
       ]
     },
     "iterations": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
       "type": "array"
     },
     "max_iterations": {
+      "minimum": 1,
       "type": "integer"
     },
     "phases": {
+      "additionalProperties": {
+        "additionalProperties": {
+          "type": [
+            "integer",
+            "number",
+            "string",
+            "boolean",
+            "null"
+          ]
+        },
+        "type": "object"
+      },
       "type": "object"
     },
     "profile": {
@@ -71,6 +105,7 @@
       "const": "1.0"
     },
     "started_at": {
+      "format": "date-time",
       "type": "string"
     },
     "stopped_reason": {
@@ -80,6 +115,13 @@
       ]
     },
     "tokens": {
+      "additionalProperties": {
+        "type": [
+          "integer",
+          "number",
+          "null"
+        ]
+      },
       "type": [
         "object",
         "null"
