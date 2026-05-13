@@ -13,7 +13,15 @@ from code_review_loop import artifacts, redaction, suppressions
 
 BUG_BUNDLE_SCHEMA_VERSION = "1.0"
 MANIFEST_NAME = "bug-bundle.json"
-DEFAULT_JSON_NAMES = {"summary.json", "diagnostics.json", "events.jsonl"}
+DEFAULT_JSON_NAMES = {
+    "summary.json",
+    "diagnostics.json",
+    "events.jsonl",
+    "doctor.json",
+    "preflight.json",
+    "profile.json",
+}
+DEFAULT_TEXT_NAMES = {"profile.toml"}
 
 
 @dataclass(frozen=True)
@@ -108,6 +116,9 @@ def _bundle_files(run_dir: Path, *, include_raw_transcripts: bool) -> list[Path]
         if relative == MANIFEST_NAME:
             continue
         if path.name in DEFAULT_JSON_NAMES or path.name.startswith("check-"):
+            candidates.append(path)
+            continue
+        if path.name in DEFAULT_TEXT_NAMES:
             candidates.append(path)
             continue
         if path.name.startswith("review-") and path.name.endswith("-status.json"):

@@ -422,7 +422,9 @@ in the current working directory. The run-id component is reduced to a safe
 basename and falls back to the run directory name when necessary.
 
 The bundle is deterministic and redacted by default. It includes the manifest,
-`summary.json`, diagnostics/event JSON when present, and sanitized check output.
+`summary.json`, diagnostics/event JSON when present, sanitized check output,
+status diagnostics, and sanitized profile/preflight snapshots when the run
+recorded them.
 Raw text transcripts such as review and remediation artifacts are excluded
 unless `--include-raw-transcripts` is passed. Disabling redaction requires both
 `--no-redact` and `--i-understand-the-risks`.

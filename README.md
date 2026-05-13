@@ -119,7 +119,9 @@ the current working directory, using a basename-derived component from the run
 metadata and falling back to the run directory name when needed.
 
 The bundle command ignores symlinked artifacts so the archive cannot follow
-links out of the run directory.
+links out of the run directory. It includes `summary.json`, diagnostics/event
+JSON, status diagnostics, check output, and sanitized profile/preflight snapshots
+when those files are present in the run directory.
 
 Raw review/remediation transcripts are excluded by default. Use
 `--include-raw-transcripts` only when the extra context is necessary; contents

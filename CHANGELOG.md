@@ -112,6 +112,8 @@ This project follows Semantic Versioning once public releases begin.
   packaging metadata exposes the planned `redaction` extra.
 - Schema v1 reference files now have `_history` baselines guarded by artifact
   schema tests.
+- Bug-report bundles now include sanitized profile/preflight snapshot artifacts
+  when a run records them.
 
 ### Changed
 
