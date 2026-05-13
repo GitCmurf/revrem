@@ -2102,6 +2102,8 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                             write_summary(config, summary)
                             return summary
                         remediation_input = pending_check_failures
+            except budgets.BudgetExceeded:
+                raise
             except Exception as exc:
                 summary["final_status"] = "error"
                 summary["stopped_reason"] = "triage_failed"
@@ -2123,6 +2125,8 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
 
             try:
                 run_remediation(config, runner, iteration, remediation_input)
+            except budgets.BudgetExceeded:
+                raise
             except Exception as exc:
                 summary["final_status"] = "error"
                 summary["stopped_reason"] = "remediation_failed"
@@ -2188,6 +2192,8 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                     )
                     write_summary(config, summary)
                     raise RunLoopFailed(summary, str(exc)) from exc
+                except budgets.BudgetExceeded:
+                    raise
                 except Exception as exc:
                     summary["final_status"] = "error"
                     summary["stopped_reason"] = "commit_failed"

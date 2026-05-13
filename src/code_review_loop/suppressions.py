@@ -71,8 +71,10 @@ def load_entries(path: Path) -> list[SuppressionEntry]:
 
 
 def write_entries(path: Path, entries: list[SuppressionEntry]) -> None:
+    from code_review_loop import artifacts
+
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(render_entries(entries), encoding="utf-8")
+    artifacts._atomic_write(path, render_entries(entries).encode("utf-8"))
 
 
 def render_entries(entries: list[SuppressionEntry]) -> str:

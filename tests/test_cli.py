@@ -5823,6 +5823,82 @@ def test_append_run_history_preserves_budget_totals(tmp_path):
     assert budgets_after["usd"] == budgets_before["usd"]
 
 
+def test_budget_exceeded_propagates_through_triage(tmp_path, monkeypatch):
+    exc = MODULE.budgets.BudgetExceeded(ceiling="tokens", limit=100, actual=150)
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        return MODULE.CommandResult(
+            list(args), 0, stdout="## Finding\nbad code\nREVIEW_STATUS: findings\n"
+        )
+
+    monkeypatch.setattr(MODULE, "run_triage", lambda *a, **kw: (_ for _ in ()).throw(exc))
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=2,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        triage_enabled=True,
+    )
+
+    with pytest.raises(MODULE.RunLoopFailed) as excinfo:
+        MODULE.run_loop(config, runner)
+
+    assert excinfo.value.summary["stopped_reason"] == "budget_ceiling_hit"
+
+
+def test_budget_exceeded_propagates_through_remediation(tmp_path, monkeypatch):
+    exc = MODULE.budgets.BudgetExceeded(ceiling="tokens", limit=100, actual=150)
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        return MODULE.CommandResult(
+            list(args), 0, stdout="## Finding\nbad code\nREVIEW_STATUS: findings\n"
+        )
+
+    monkeypatch.setattr(MODULE, "run_remediation", lambda *a, **kw: (_ for _ in ()).throw(exc))
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=2,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+    )
+
+    with pytest.raises(MODULE.RunLoopFailed) as excinfo:
+        MODULE.run_loop(config, runner)
+
+    assert excinfo.value.summary["stopped_reason"] == "budget_ceiling_hit"
+
+
+def test_budget_exceeded_propagates_through_commit(tmp_path, monkeypatch):
+    exc = MODULE.budgets.BudgetExceeded(ceiling="tokens", limit=100, actual=150)
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if "status" in args:
+            return MODULE.CommandResult(list(args), 0, stdout="")
+        return MODULE.CommandResult(
+            list(args), 0, stdout="## Finding\nbad code\nREVIEW_STATUS: findings\n"
+        )
+
+    monkeypatch.setattr(MODULE, "run_commit", lambda *a, **kw: (_ for _ in ()).throw(exc))
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=2,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        commit_after_remediation=True,
+    )
+
+    with pytest.raises(MODULE.RunLoopFailed) as excinfo:
+        MODULE.run_loop(config, runner)
+
+    assert excinfo.value.summary["stopped_reason"] == "budget_ceiling_hit"
+
+
 def test_run_loop_preserves_existing_events_on_resume(tmp_path):
     artifact_dir = tmp_path / "artifacts"
     artifact_dir.mkdir()
