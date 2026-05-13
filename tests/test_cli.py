@@ -5,6 +5,7 @@ import json
 import os
 import re
 import time
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -5095,6 +5096,68 @@ def test_loop_emits_budget_soft_warning_before_model_call(tmp_path):
         event.kind == "warning" and event.payload.get("reason") == "wall_budget_soft_warning"
         for event in records
     )
+
+
+def test_loop_records_token_charge_and_stops_before_next_model_call(tmp_path):
+    calls = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append(list(args))
+        return MODULE.CommandResult(list(args), 0, stdout="REVIEW_STATUS: findings\n", tokens=10)
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        budget_config=MODULE.budgets.BudgetConfig(max_tokens=10),
+    )
+
+    with pytest.raises(MODULE.RunLoopFailed) as excinfo:
+        MODULE.run_loop(config, runner)
+
+    summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
+    records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
+
+    assert len(calls) == 1
+    assert excinfo.value.summary["stopped_reason"] == "budget_ceiling_hit"
+    assert summary["budgets"]["tokens"] == 10
+    assert summary["budgets"]["usd"] is None
+    assert (tmp_path / "artifacts" / "review-1.txt").read_text(encoding="utf-8") == "REVIEW_STATUS: findings\n"
+    assert truncated is False
+    assert any(event.kind == "cost_charge" and event.payload["tokens"] == 10 for event in records)
+    assert any(event.kind == "cost_ceiling_hit" and event.payload["ceiling"] == "tokens" for event in records)
+
+
+def test_loop_records_usd_charge_and_stops_before_next_model_call(tmp_path):
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        return MODULE.CommandResult(
+            list(args),
+            0,
+            stdout="REVIEW_STATUS: findings\n",
+            usd=Decimal("1.25"),
+        )
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        budget_config=MODULE.budgets.BudgetConfig(max_usd=Decimal("1.25")),
+    )
+
+    with pytest.raises(MODULE.RunLoopFailed):
+        MODULE.run_loop(config, runner)
+
+    summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
+    records, _truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
+
+    assert summary["budgets"]["tokens"] is None
+    assert summary["budgets"]["usd"] == "1.25"
+    assert any(event.kind == "cost_charge" and event.payload["usd"] == "1.25" for event in records)
+    assert any(event.kind == "cost_ceiling_hit" and event.payload["ceiling"] == "usd" for event in records)
 
 
 def test_main_returns_exit_code_3_for_budget_ceiling(tmp_path, monkeypatch, capsys):

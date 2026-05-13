@@ -20,6 +20,7 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager, suppress
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -112,6 +113,8 @@ class CommandResult:
     returncode: int
     stdout: str = ""
     stderr: str = ""
+    tokens: int | None = None
+    usd: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -1029,6 +1032,46 @@ def ensure_model_budget(config: LoopConfig, *, phase: str, iteration: int | str)
         raise
 
 
+def record_model_charge(
+    config: LoopConfig,
+    result: CommandResult,
+    *,
+    phase: str,
+    iteration: int | str,
+) -> None:
+    if config.budget_state is None:
+        return
+    if result.tokens is None and result.usd is None:
+        return
+    payload: dict[str, object] = {
+        "tokens": result.tokens,
+        "usd": str(result.usd) if result.usd is not None else None,
+    }
+    if config.event_sink is not None:
+        config.event_sink.emit("cost_charge", phase=phase, iteration=iteration, payload=payload)
+    try:
+        budgets.record_charge(
+            config.budget_config,
+            config.budget_state,
+            tokens=result.tokens,
+            usd=result.usd,
+        )
+    except budgets.BudgetExceeded as exc:
+        if config.event_sink is not None:
+            config.event_sink.emit(
+                "cost_ceiling_hit",
+                phase=phase,
+                iteration=iteration,
+                payload={
+                    "ceiling": exc.ceiling,
+                    "limit": exc.limit,
+                    "actual": exc.actual,
+                    "message": str(exc),
+                },
+            )
+        raise
+
+
 def write_artifact(path: Path, content: str) -> None:
     artifacts.write_text_artifact(path, content)
 
@@ -1056,6 +1099,7 @@ def run_codex_review(
     combined = _combined_output(result)
     artifact_path = config.artifact_dir / f"{artifact_label}.txt"
     write_artifact(artifact_path, combined)
+    record_model_charge(config, result, phase="review", iteration=display_label)
     if review_failed_to_run(result):
         progress_event(config, "review", display_label, "failed", f"exit {result.returncode}")
         raise RuntimeError(f"codex review failed for {artifact_label}; see {artifact_path}")
@@ -1202,6 +1246,7 @@ def run_remediation(
     else:
         result = runner(command, config.cwd, prompt, phase_timeout_seconds(config, config.remediation_timeout_seconds))
     write_artifact(config.artifact_dir / f"remediation-{iteration}.txt", _combined_output(result))
+    record_model_charge(config, result, phase="remediate", iteration=iteration)
     if result.returncode != 0:
         progress_event(config, "remediate", str(iteration), "failed", f"exit {result.returncode}")
         raise RuntimeError(
@@ -1230,6 +1275,7 @@ def run_triage(
     else:
         result = runner(command, config.cwd, prompt, phase_timeout_seconds(config, config.triage_timeout_seconds))
     write_artifact(config.artifact_dir / f"triage-{iteration}.txt", _combined_output(result))
+    record_model_charge(config, result, phase="triage", iteration=iteration)
     if result.returncode != 0:
         progress_event(config, "triage", str(iteration), "failed", f"exit {result.returncode}")
         raise RuntimeError(
@@ -1606,6 +1652,7 @@ def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iterat
     ensure_model_budget(config, phase="commit-message", iteration=iteration)
     result = runner(command, config.cwd, prompt, phase_timeout_seconds(config, config.timeout_seconds))
     write_artifact(config.artifact_dir / f"commit-{iteration}-message-draft.txt", _combined_output(result))
+    record_model_charge(config, result, phase="commit-message", iteration=iteration)
     if result.returncode != 0:
         return fallback
     return sanitize_commit_message(
@@ -2161,6 +2208,7 @@ def write_summary(config: LoopConfig, summary: dict[str, object]) -> None:
     update_unexpected_behaviors(config, summary)
     add_summary_contract_fields(config, summary)
     add_artifact_paths(summary, config)
+    summary["budgets"] = summary_budget_payload(config)
     if config.event_sink is not None:
         emit_artifact_write_events(config, summary)
         summary_detail = summary.get("stopped_reason") or summary.get("final_status") or "summary"
@@ -2232,13 +2280,20 @@ def resume_config_payload(config: LoopConfig) -> dict[str, object]:
 
 
 def summary_budget_payload(config: LoopConfig) -> dict[str, object]:
+    tokens = None
+    usd = None
+    if config.budget_state is not None:
+        if config.budget_state.tokens_reported:
+            tokens = config.budget_state.tokens_used
+        if config.budget_state.usd_reported:
+            usd = str(config.budget_state.usd_used)
     return {
         "max_wall_seconds": config.budget_config.max_wall_seconds,
         "max_tokens": config.budget_config.max_tokens,
         "max_usd": str(config.budget_config.max_usd) if config.budget_config.max_usd is not None else None,
         "soft_warn_fraction": config.budget_config.soft_warn_fraction,
-        "tokens": None,
-        "usd": None,
+        "tokens": tokens,
+        "usd": usd,
     }
 
 

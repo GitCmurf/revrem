@@ -19,6 +19,10 @@ class BudgetConfig:
 class BudgetState:
     started_at_monotonic: float
     wall_warning_emitted: bool = False
+    tokens_used: int = 0
+    tokens_reported: bool = False
+    usd_used: Decimal = Decimal("0")
+    usd_reported: bool = False
 
 
 class BudgetExceeded(Exception):
@@ -89,3 +93,34 @@ def check_wall_budget(
             actual=f"{elapsed:g}",
         )
     return elapsed
+
+
+def record_charge(
+    config: BudgetConfig,
+    state: BudgetState,
+    *,
+    tokens: int | None = None,
+    usd: Decimal | None = None,
+) -> None:
+    if tokens is not None:
+        if tokens < 0:
+            raise ValueError("token charge must be 0 or greater")
+        state.tokens_reported = True
+        state.tokens_used += tokens
+    if usd is not None:
+        if usd < 0:
+            raise ValueError("USD charge must be 0 or greater")
+        state.usd_reported = True
+        state.usd_used += usd
+    if config.max_tokens is not None and state.tokens_used >= config.max_tokens:
+        raise BudgetExceeded(
+            ceiling="tokens",
+            limit=str(config.max_tokens),
+            actual=str(state.tokens_used),
+        )
+    if config.max_usd is not None and state.usd_used >= config.max_usd:
+        raise BudgetExceeded(
+            ceiling="usd",
+            limit=str(config.max_usd),
+            actual=str(state.usd_used),
+        )

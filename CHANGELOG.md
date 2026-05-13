@@ -85,6 +85,9 @@ This project follows Semantic Versioning once public releases begin.
   `4` for unsafe resumes.
 - `revrem resume` now continues from the latest review artifact after passing
   safety checks, rebuilding the loop from recorded `resume_config`.
+- Harness-reported token and USD charges now emit `cost_charge`, accumulate in
+  summary budgets, and enforce `--max-tokens` / `--max-usd` ceilings before the
+  next model call.
 
 ### Changed
 

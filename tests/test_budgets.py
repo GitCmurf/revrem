@@ -36,3 +36,25 @@ def test_parse_usd_preserves_decimal_money():
 def test_validate_config_rejects_invalid_values():
     with pytest.raises(ValueError, match="--soft-warn-fraction"):
         budgets.validate_config(budgets.BudgetConfig(soft_warn_fraction=1.5))
+
+
+def test_record_charge_enforces_token_ceiling():
+    state = budgets.BudgetState(started_at_monotonic=0)
+    config = budgets.BudgetConfig(max_tokens=10)
+
+    with pytest.raises(budgets.BudgetExceeded) as excinfo:
+        budgets.record_charge(config, state, tokens=10)
+
+    assert excinfo.value.ceiling == "tokens"
+    assert excinfo.value.actual == "10"
+
+
+def test_record_charge_enforces_usd_ceiling():
+    state = budgets.BudgetState(started_at_monotonic=0)
+    config = budgets.BudgetConfig(max_usd=Decimal("1.25"))
+
+    with pytest.raises(budgets.BudgetExceeded) as excinfo:
+        budgets.record_charge(config, state, usd=Decimal("1.25"))
+
+    assert excinfo.value.ceiling == "usd"
+    assert excinfo.value.actual == "1.25"

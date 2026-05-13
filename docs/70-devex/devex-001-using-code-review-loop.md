@@ -353,9 +353,10 @@ next model call, writes `summary.json` and `events.jsonl`, emits
 `cost_ceiling_hit`, and exits with code `3`.
 
 `--soft-warn-fraction` controls the warning threshold for configured ceilings
-and defaults to `0.8`. `--max-tokens` and `--max-usd` are accepted as contract
-fields for cost-aware harnesses; Codex does not currently report those values,
-so summaries record token and USD usage as `null` rather than `0`.
+and defaults to `0.8`. `--max-tokens` and `--max-usd` are enforced once a
+harness reports usage through `cost_charge`; Codex does not currently report
+those values, so summaries record token and USD usage as `null` until a charge
+is observed rather than pretending unsupported accounting is zero usage.
 
 Profiles may set the same defaults:
 

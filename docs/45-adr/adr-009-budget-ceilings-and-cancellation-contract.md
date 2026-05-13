@@ -51,9 +51,12 @@ call, RevRem emits `cost_ceiling_hit`, writes `summary.json`, writes
 `events.jsonl`, appends public `artifact_write` events, and exits through the
 stable budget exit path.
 
-Token and USD usage are represented as `null` until a harness reports them.
-They are never silently treated as `0`, because unsupported accounting and zero
-usage have different operational meanings.
+Token and USD usage are represented as `null` until a harness reports them, and
+then accumulated from `cost_charge` events. They are never silently treated as
+`0` before the first reported charge, because unsupported accounting and zero
+usage have different operational meanings. When accumulated token or USD usage
+reaches a configured ceiling, RevRem emits `cost_ceiling_hit`, writes summary
+and event artifacts, and stops before the next model call.
 
 Cancellation is a controlled stop path. SIGINT/SIGTERM restore terminal state
 and raise into the loop, where RevRem emits `cancellation`, writes
