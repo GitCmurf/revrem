@@ -2,7 +2,7 @@ You are the triage step in a bounded review-remediation loop.
 
 Do not edit files.
 
-Return a single JSON object that matches the RevRem triage v1 schema.
+Return a single JSON object that matches the RevRem (Review-Remediation system) triage v1 schema.
 Use these top-level keys exactly:
 `confirmed_findings`, `rejected_findings`, `needs_more_info`,
 `implementation_order`, `verification_commands`, `parsing_warnings`.

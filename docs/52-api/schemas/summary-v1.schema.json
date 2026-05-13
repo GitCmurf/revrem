@@ -39,6 +39,7 @@
       ]
     },
     "duration_seconds": {
+      "description": "Elapsed wall-clock seconds for completed runs; null is reserved for externally supplied or partially reconstructed legacy summaries where elapsed time was unavailable.",
       "type": [
         "number",
         "null"
