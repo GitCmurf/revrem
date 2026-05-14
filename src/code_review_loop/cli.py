@@ -2159,7 +2159,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                     iterations[-1]["commit_artifact"] = str(exc.artifact_path)
                     is_retryable_hook_failure = (
                         exc.kind == "hook_failed"
-                        and config.commit_on_hook_failure == "remediate"
+                        and config.commit_on_hook_failure in {"remediate", "no-verify"}
                         and iteration < config.max_iterations
                     )
                     if is_retryable_hook_failure:
