@@ -12,12 +12,12 @@ import tomllib
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import asdict, dataclass, field, replace
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any
-
-import tomli_w
+from typing import Any, cast
 
 from code_review_loop import run_history
+from code_review_loop._compat_tomli_w import dumps as toml_dumps
 from code_review_loop.harnesses import (
     HARNESS_REGISTRY,
     require_implemented_harness,
@@ -39,11 +39,29 @@ PROFILE_KEYS = (
     "commit",
     "output",
     "runtime",
+    "budgets",
+    "suppressions",
 )
 PIPELINE_KEYS = ("base", "max_iterations", "final_review", "checks")
 PHASE_KEYS = ("harness", "model", "reasoning_effort", "timeout_seconds")
-TRIAGE_KEYS = ("enabled", "harness", "model", "reasoning_effort", "timeout_seconds", "prompt")
-COMMIT_KEYS = ("enabled", "harness", "message_model", "message_prompt")
+TRIAGE_ON_INVALID_CHOICES = ("continue", "stop")
+COMMIT_ON_HOOK_FAILURE_CHOICES = ("remediate", "stop", "no-verify")
+TRIAGE_KEYS = (
+    "enabled",
+    "harness",
+    "model",
+    "reasoning_effort",
+    "timeout_seconds",
+    "prompt",
+    "on_invalid",
+)
+COMMIT_KEYS = (
+    "enabled",
+    "harness",
+    "message_model",
+    "message_prompt",
+    "on_hook_failure",
+)
 OUTPUT_KEYS = (
     "summary_format",
     "debug_status_detection",
@@ -62,6 +80,9 @@ RUNTIME_KEYS = (
     "max_remediation_input_chars",
     "terminal_excerpt_chars",
 )
+BUDGET_KEYS = ("max_wall_seconds", "max_tokens", "max_usd", "soft_warn_fraction")
+SUPPRESSION_SCOPE_CHOICES = ("repo", "user")
+SUPPRESSIONS_KEYS = ("scope",)
 TOP_LEVEL_KEYS = ("defaults", "profiles")
 
 
@@ -81,6 +102,7 @@ class TriageConfig:
     reasoning_effort: str | None = None
     timeout_seconds: float | None = None
     prompt: str | None = None
+    on_invalid: str = "continue"
 
 
 @dataclass(frozen=True)
@@ -97,6 +119,7 @@ class CommitConfig:
     harness: str = "codex"
     message_model: str | None = "gpt-5.3-codex-spark"
     message_prompt: str | None = None
+    on_hook_failure: str = "remediate"
 
 
 @dataclass(frozen=True)
@@ -122,6 +145,19 @@ class RuntimeConfig:
 
 
 @dataclass(frozen=True)
+class BudgetConfig:
+    max_wall_seconds: float | None = None
+    max_tokens: int | None = None
+    max_usd: Decimal | None = None
+    soft_warn_fraction: float = 0.8
+
+
+@dataclass(frozen=True)
+class SuppressionsConfig:
+    scope: str = "repo"
+
+
+@dataclass(frozen=True)
 class Profile:
     name: str
     description: str = ""
@@ -132,6 +168,8 @@ class Profile:
     commit: CommitConfig = field(default_factory=CommitConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
     runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
+    budgets: BudgetConfig = field(default_factory=BudgetConfig)
+    suppressions: SuppressionsConfig = field(default_factory=SuppressionsConfig)
     source: str | None = None
 
 
@@ -213,6 +251,10 @@ def parse_profile(name: str, raw: dict[str, Any], *, source: str | None = None) 
     output = parse_output(_table(raw.get("output", {}), f"{name}.output"))
     commit = parse_commit(_table(raw.get("commit", {}), f"{name}.commit"))
     runtime = parse_runtime(_table(raw.get("runtime", {}), f"{name}.runtime"))
+    budgets = parse_budgets(_table(raw.get("budgets", {}), f"{name}.budgets"))
+    suppressions = parse_suppressions(
+        _table(raw.get("suppressions", {}), f"{name}.suppressions")
+    )
     profile = Profile(
         name=name,
         description=description,
@@ -223,6 +265,8 @@ def parse_profile(name: str, raw: dict[str, Any], *, source: str | None = None) 
         commit=commit,
         output=output,
         runtime=runtime,
+        budgets=budgets,
+        suppressions=suppressions,
         source=source,
     )
     validate_profile(profile, require_implemented=False)
@@ -270,6 +314,11 @@ def parse_triage(raw: dict[str, Any], field: str) -> TriageConfig:
         raise ValueError(
             f"{field}.reasoning_effort must be one of {', '.join(REASONING_EFFORT_CHOICES)}"
         )
+    on_invalid = _str(raw.get("on_invalid", "continue"), f"{field}.on_invalid")
+    if on_invalid not in TRIAGE_ON_INVALID_CHOICES:
+        raise ValueError(
+            f"{field}.on_invalid must be one of {', '.join(TRIAGE_ON_INVALID_CHOICES)}"
+        )
     return TriageConfig(
         enabled=_bool(raw.get("enabled", False), f"{field}.enabled"),
         harness=harness,
@@ -277,6 +326,7 @@ def parse_triage(raw: dict[str, Any], field: str) -> TriageConfig:
         reasoning_effort=reasoning_effort,
         timeout_seconds=_optional_float(raw.get("timeout_seconds"), f"{field}.timeout_seconds"),
         prompt=_optional_str(raw.get("prompt"), f"{field}.prompt"),
+        on_invalid=on_invalid,
     )
 
 
@@ -284,12 +334,19 @@ def parse_commit(raw: dict[str, Any]) -> CommitConfig:
     _reject_unknown_keys(raw, COMMIT_KEYS, "commit")
     harness = _str(raw.get("harness", "codex"), "commit.harness")
     validate_harness_name(harness, field="commit.harness")
+    on_hook_failure = _str(raw.get("on_hook_failure", "remediate"), "commit.on_hook_failure")
+    if on_hook_failure not in COMMIT_ON_HOOK_FAILURE_CHOICES:
+        raise ValueError(
+            "commit.on_hook_failure must be one of "
+            f"{', '.join(COMMIT_ON_HOOK_FAILURE_CHOICES)}"
+        )
     return CommitConfig(
         enabled=_bool(raw.get("enabled", False), "commit.enabled"),
         harness=harness,
         message_model=_optional_str(raw.get("message_model"), "commit.message_model")
         or "gpt-5.3-codex-spark",
         message_prompt=_optional_str(raw.get("message_prompt"), "commit.message_prompt"),
+        on_hook_failure=on_hook_failure,
     )
 
 
@@ -335,6 +392,39 @@ def parse_runtime(raw: dict[str, Any]) -> RuntimeConfig:
             "runtime.terminal_excerpt_chars",
         ),
     )
+
+
+def parse_budgets(raw: dict[str, Any]) -> BudgetConfig:
+    _reject_unknown_keys(raw, BUDGET_KEYS, "budgets")
+    soft_warn_fraction = _float(raw.get("soft_warn_fraction", 0.8), "budgets.soft_warn_fraction")
+    if not 0 < soft_warn_fraction <= 1:
+        raise ValueError("budgets.soft_warn_fraction must be greater than 0 and no more than 1")
+    max_tokens = _optional_int(raw.get("max_tokens"), "budgets.max_tokens")
+    if max_tokens is not None and max_tokens < 0:
+        raise ValueError("budgets.max_tokens must be 0 or greater")
+    max_wall_seconds = _optional_float(raw.get("max_wall_seconds"), "budgets.max_wall_seconds")
+    if max_wall_seconds is not None and max_wall_seconds < 0:
+        raise ValueError("budgets.max_wall_seconds must be 0 or greater")
+    max_usd = _optional_decimal(raw.get("max_usd"), "budgets.max_usd")
+    if max_usd is not None and max_usd < 0:
+        raise ValueError("budgets.max_usd must be 0 or greater")
+    return BudgetConfig(
+        max_wall_seconds=max_wall_seconds,
+        max_tokens=max_tokens,
+        max_usd=max_usd,
+        soft_warn_fraction=soft_warn_fraction,
+    )
+
+
+def parse_suppressions(raw: dict[str, Any]) -> SuppressionsConfig:
+    _reject_unknown_keys(raw, SUPPRESSIONS_KEYS, "suppressions")
+    scope = _str(raw.get("scope", "repo"), "suppressions.scope")
+    if scope not in SUPPRESSION_SCOPE_CHOICES:
+        raise ValueError(
+            "suppressions.scope must be one of: "
+            f"{', '.join(SUPPRESSION_SCOPE_CHOICES)}"
+        )
+    return SuppressionsConfig(scope=scope)
 
 
 def resolve_profile(
@@ -407,7 +497,12 @@ def resolve_profile_from_files(
     return resolved
 
 
-def resolve_defaults(*, cwd: Path, home: Path | None = None) -> Profile:
+def resolve_defaults(
+    *,
+    cwd: Path,
+    home: Path | None = None,
+    require_implemented: bool = True,
+) -> Profile:
     user_file = load_profile_file(user_config_path(home))
     project_file = load_profile_file(project_config_path(cwd))
     raw: dict[str, Any] = {}
@@ -419,7 +514,7 @@ def resolve_defaults(*, cwd: Path, home: Path | None = None) -> Profile:
         raw = _deep_merge(raw, project_file.raw_defaults)
         source = str(project_file.path)
     defaults = parse_profile("<defaults>", raw, source=source)
-    validate_profile(defaults, require_implemented=True)
+    validate_profile(defaults, require_implemented=require_implemented)
     return defaults
 
 
@@ -469,17 +564,31 @@ def merge_profiles(name: str, *profiles: Profile) -> Profile:
             commit=_merge_dataclass(result.commit, profile.commit),
             output=_merge_dataclass(result.output, profile.output),
             runtime=_merge_dataclass(result.runtime, profile.runtime),
+            budgets=_merge_dataclass(result.budgets, profile.budgets),
+            suppressions=_merge_dataclass(result.suppressions, profile.suppressions),
             source=profile.source or result.source,
         )
     return result
 
 
 def profile_to_dict(profile: Profile) -> dict[str, Any]:
-    return asdict(profile)
+    return cast(dict[str, Any], _json_ready(asdict(profile)))
 
 
 def profile_to_json(profile: Profile) -> str:
     return json.dumps(profile_to_dict(profile), indent=2, sort_keys=True) + "\n"
+
+
+def _json_ready(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(key): _json_ready(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_ready(item) for item in value]
+    if isinstance(value, tuple):
+        return [_json_ready(item) for item in value]
+    return value
 
 
 def _profile_last_used_at_by_name(history_path: Path | None = None) -> dict[str, str]:
@@ -513,7 +622,17 @@ def _profile_to_toml_dict(
     result: dict[str, Any] = {}
     if profile.description:
         result["description"] = profile.description
-    for section_name in ("pipeline", "review", "triage", "remediation", "commit", "output", "runtime"):
+    for section_name in (
+        "pipeline",
+        "review",
+        "triage",
+        "remediation",
+        "commit",
+        "output",
+        "runtime",
+        "budgets",
+        "suppressions",
+    ):
         value = getattr(profile, section_name)
         defaults = type(value)()
         reference_value = getattr(reference, section_name) if reference is not None else None
@@ -530,6 +649,8 @@ def _profile_to_toml_dict(
                 continue
             if isinstance(item, tuple):
                 section_dict[key] = list(item)
+            elif isinstance(item, Decimal):
+                section_dict[key] = str(item)
             else:
                 section_dict[key] = item
         if section_dict:
@@ -554,14 +675,8 @@ def _profile_to_toml_impl(
         raw_profile=raw_profile,
     )
     if root is None:
-        return tomli_w.dumps(inner)
-    nested: dict[str, Any] = {}
-    current = nested
-    for key in root:
-        current[key] = {}
-        current = current[key]
-    current.update(inner)
-    return tomli_w.dumps(nested)
+        return toml_dumps(inner)
+    return toml_dumps(_nest_dict(root, inner))
 
 
 def write_user_profile(
@@ -819,7 +934,6 @@ def _write_profile_file(
     omit_reference_defaults: bool = False,
     omit_builtin_defaults_for_rendered: bool = True,
 ) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
     blocks: list[str] = []
     if raw_defaults is not None:
         blocks.append(_raw_profile_to_toml_impl(raw_defaults, root=("defaults",)).rstrip())
@@ -845,14 +959,18 @@ def _write_profile_file(
     _atomic_write_text(path, "\n\n".join(blocks) + "\n")
 
 
-def _raw_profile_to_toml_impl(raw: dict[str, Any], *, root: tuple[str, ...]) -> str:
+def _nest_dict(root: tuple[str, ...], inner: dict[str, Any]) -> dict[str, Any]:
     nested: dict[str, Any] = {}
     current = nested
     for key in root:
         current[key] = {}
         current = current[key]
-    current.update(raw)
-    return tomli_w.dumps(nested)
+    current.update(inner)
+    return nested
+
+
+def _raw_profile_to_toml_impl(raw: dict[str, Any], *, root: tuple[str, ...]) -> str:
+    return toml_dumps(_nest_dict(root, raw))
 
 
 def _atomic_write_text(path: Path, content: str) -> None:
@@ -890,9 +1008,9 @@ def _atomic_write_text(path: Path, content: str) -> None:
 
 def _merge_dataclass(base: Any, override: Any) -> Any:
     values = asdict(base)
+    defaults = asdict(type(override)())
     for key, value in asdict(override).items():
-        default = asdict(type(override)()).get(key)
-        if value != default:
+        if value != defaults[key]:
             values[key] = value
     return type(base)(**values)
 
@@ -946,9 +1064,30 @@ def _int(value: Any, field: str) -> int:
     return int(value)
 
 
-def _optional_float(value: Any, field: str) -> float | None:
+def _optional_int(value: Any, field: str) -> int | None:
     if value is None:
         return None
+    return _int(value, field)
+
+
+def _float(value: Any, field: str) -> float:
     if isinstance(value, bool) or not isinstance(value, int | float):
         raise ValueError(f"{field} must be a number")
     return float(value)
+
+
+def _optional_float(value: Any, field: str) -> float | None:
+    if value is None:
+        return None
+    return _float(value, field)
+
+
+def _optional_decimal(value: Any, field: str) -> Decimal | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int | float | str):
+        raise ValueError(f"{field} must be a decimal number")
+    try:
+        return Decimal(str(value))
+    except InvalidOperation as exc:
+        raise ValueError(f"{field} must be a decimal number") from exc

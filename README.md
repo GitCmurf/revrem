@@ -1,98 +1,81 @@
-# code-review-loop
+# revrem
 
+[![CI](https://github.com/GitCmurf/revrem/actions/workflows/ci.yml/badge.svg)](https://github.com/GitCmurf/revrem/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/GitCmurf/revrem)](https://github.com/GitCmurf/revrem/releases)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Python: 3.11 | 3.12](https://img.shields.io/badge/python-3.11%20%7C%203.12-3776ab.svg)](pyproject.toml)
 
-`code-review-loop` packages the review-remediation loop that experienced
-operators run before a pull request is ready for serious review. It asks Codex
-to review a branch against a base, applies valid actionable findings through a
-bounded remediation pass, reruns your verification commands, and leaves a
-structured artifact trail you can inspect instead of trusting a transient chat.
+RevRem runs an automated review -> fix -> verify loop on your local branch before you open a pull request.
 
-The command is intentionally local, watched, and bounded. It does not run a
-hosted service, collect telemetry, or claim that AI review proves correctness.
-It is a practical pre-merge confidence tool for teams that already use agentic
-coding and want the loop to be repeatable.
+It asks Codex to review a branch against a base, applies valid actionable
+findings through a bounded remediation pass, reruns your verification commands,
+and leaves an artifact trail you can inspect before committing or merging.
 
-## What It Does
+The repository and Python package use the public name `revrem`. The legacy
+`code-review-loop` command remains available as a compatibility alias for
+existing local scripts.
 
-- Runs `codex review` against a chosen base branch.
-- Optionally triages review findings before remediation.
-- Runs bounded Codex remediation iterations with explicit `--max-iterations`.
-- Executes project-specific checks such as `pytest`, `mypy`, `pnpm test`, or
-  `git diff --check`.
-- Writes per-run artifacts under `.revrem/runs/<timestamp>/`.
-- Records compact local run history in `~/.local/share/revrem/runs.jsonl`.
-- Supports reusable profiles in user and project config files.
-- Provides an optional Rich progress renderer and Textual TUI.
+## Demo
 
-## When To Use This
+```text
+$ revrem --base main --max-iterations 2 --check "pytest -q"
+12:08:23|rev|1   |start: codex review --base main
+12:10:14|rev|1   |[P1] Preserve failure artifacts when review startup fails
+12:10:15|rem|1   |start: codex exec --full-auto --sandbox workspace-write ...
+12:13:41|rem|1   |done
+12:13:42|chk|1.1 |start: pytest -q
+12:14:18|chk|1.1 |passed
+12:14:19|rev|2   |clear
 
-Use RevRem when you have a local branch that already builds, you want a
-bounded adversarial review/remediation pass before opening or updating a pull
-request, and you are prepared to inspect the diff and artifacts afterwards.
-
-It is a good fit for:
-
-- final PR readiness checks;
-- repeated cleanup after AI-generated implementation work;
-- local automation where a human operator is watching progress;
-- repositories with clear verification commands.
-
-## When Not To Use This
-
-Do not use RevRem as a substitute for human review, security review, release
-approval, or tests. Avoid it on dirty worktrees unless the local edits are
-intentional and you understand what the remediation pass may change. Do not use
-unbounded iteration counts for unattended automation.
+Review-remediation loop: clear (review_clear)
+Artifacts: .revrem/runs/20260509T120823Z
+JSON summary: .revrem/runs/20260509T120823Z/summary.json
+```
 
 ## Install
 
-For development from a checkout:
+RevRem is not published on PyPI yet. Install it from a checkout:
 
 ```bash
 git clone https://github.com/GitCmurf/revrem.git
 cd revrem
 ./scripts/install-dev
+./.venv/bin/revrem --version
 ```
 
-For a stable local command available from other repositories:
+For a stable `revrem` command that is available from other local repositories:
 
 ```bash
 ./scripts/promote-stable
 revrem --version
 ```
 
-`./scripts/promote-stable` refreshes the stable runtime dependency install on
-every promotion so older stable virtualenvs pick up the current launcher
-requirements.
-
-The stable promotion script updates:
+`./scripts/promote-stable` runs the local verification gate, copies the current
+source snapshot under `~/.local/share/revrem/releases/`, builds an isolated
+stable virtualenv under `~/.local/share/revrem/`, and updates these launchers:
 
 ```text
 ~/.local/bin/revrem
 ~/.local/bin/code-review-loop
 ```
 
-`revrem` and `code-review-loop` are equivalent entry points. Use `revrem` for
-human-facing usage and keep `code-review-loop` for scripts that prefer the
-package name.
+Use `./.venv/bin/revrem` while developing this repository. Use the promoted
+`revrem` command when reviewing other repositories.
 
 ## Quick Start
 
 From the repository you want to review:
 
 ```bash
+revrem --base main --max-iterations 2 --check "pytest -q"
+```
+
+Add checks that match the target repository:
+
+```bash
 revrem \
   --base main \
   --max-iterations 2 \
-  --review-model gpt-5.5 \
-  --remediation-model gpt-5.4-mini \
-  --reasoning-effort medium \
-  --timeout-seconds 1800 \
-  --summary-format text \
-  --debug-status-detection \
-  --terminal-title \
   --check "pytest -q" \
   --check "git diff --check"
 ```
@@ -105,9 +88,71 @@ Expected behavior:
 - append run metadata to `~/.local/share/revrem/runs.jsonl` unless
   `--no-run-history` is used.
 
-Use checks that match the target repository. Python repositories can use
-`--check "pytest -q"`; TypeScript repositories should usually use native
-checks such as `--check "pnpm test"` and `--check "pnpm run typecheck"`.
+Use repository-native checks. Python repositories can use `pytest`; TypeScript
+repositories should usually use commands such as `pnpm test`,
+`pnpm run typecheck`, and `pnpm run lint`.
+
+Machine-readable artifact contracts are documented under
+[`docs/52-api/`](docs/52-api/).
+
+Before a live model-backed loop, run local setup diagnostics:
+
+```bash
+revrem doctor --base main --check "pytest -q"
+```
+
+`revrem doctor` validates the local Git base, writable artifact path, Codex
+executable, and configured check executables without invoking a model. Relative
+`--artifact-dir` values are resolved against the doctor `cwd`, not the process
+working directory. It warns when profile timeouts explicitly disable a phase
+timeout and when the current locale is not UTF-8 capable. Use `--format json`
+for automation.
+
+To share a failed run safely, create a redacted bundle:
+
+```bash
+revrem bundle-bug-report .revrem/runs/<run-id> --output revrem-bug.tar.gz
+```
+
+If `--output` is omitted, RevRem writes `revrem-bug-<safe-run-id>.tar.gz` in
+the current working directory, using a basename-derived component from the run
+metadata and falling back to the run directory name when needed.
+
+The bundle command ignores symlinked artifacts so the archive cannot follow
+links out of the run directory. It includes `summary.json`, diagnostics/event
+JSON, status diagnostics, check output, and sanitized profile/preflight snapshots
+when those files are present in the run directory.
+
+Raw review/remediation transcripts are excluded by default. Use
+`--include-raw-transcripts` only when the extra context is necessary; contents
+are still redacted unless `--no-redact --i-understand-the-risks` is explicitly
+passed.
+
+## How It Works
+
+RevRem is intentionally local, watched, and bounded:
+
+1. Runs `codex review` against a chosen base branch.
+2. Detects whether the review is clear or has findings.
+3. Runs a bounded Codex remediation pass for valid actionable findings.
+4. Runs your configured verification commands.
+5. Repeats until the review is clear or `--max-iterations` is reached.
+6. Writes review, remediation, check, and summary artifacts for inspection.
+
+Optional features include finding triage, JSON summaries, automatic remediation
+commits after passing checks, Rich progress rendering, and a dependency-gated
+Textual TUI.
+
+When triage output is structured JSON, RevRem validates it against
+`triage-v1.schema.json`, writes `triage-N.json`, and forwards the structured
+handoff plus the original review context to remediation. Invalid structured
+triage writes `diagnostics-N.json` and fails safe by continuing with the original
+review context. The bug-report bundle includes both `diagnostics.json` and
+numbered `diagnostics-N.json` artifacts so triage failures stay diagnosable.
+Structured triage also supports explicit suppressions via `revrem suppress`:
+matching confirmed findings are moved to
+`suppressed_findings`, remain visible in `triage-N.json`, and do not trigger
+remediation when no unsuppressed findings remain.
 
 ## Profiles
 
@@ -117,7 +162,6 @@ Profiles keep long commands repeatable:
 revrem config new final-pr --description "Full PR readiness check"
 revrem config edit final-pr
 revrem config show final-pr
-revrem config clone final-pr final-pr-copy
 revrem --profile final-pr
 ```
 
@@ -131,9 +175,10 @@ revrem --base main --max-iterations 2 --check "git diff --check" --save-profile 
 overwrite an existing project profile unless `--save-profile-force` is
 supplied.
 
-## Artifacts And Safety Model
+## Safety Model
 
-RevRem is designed for visible local automation:
+RevRem is a pre-merge confidence tool, not a substitute for review or tests.
+Its safety posture is built around local operator control:
 
 - iteration count is bounded by default;
 - generated run artifacts are kept out of normal commits;
@@ -141,12 +186,17 @@ RevRem is designed for visible local automation:
 - remediation commits are made only after configured checks pass;
 - machine-readable output is opt-in with `--summary-format json` or
   `--summary-format both`;
-- local run history can be disabled with `--no-run-history`.
+- local run history can be disabled with `--no-run-history`;
+- no hosted service or telemetry is part of RevRem itself.
 
-Use `--commit-after-remediation` only when each verified remediation pass
-should become a git commit. RevRem stages with `git add -A` after checks pass,
-excludes the configured artifact directory, skips empty commits, and runs
-`git commit` itself.
+Use `--commit-after-remediation` only when each verified remediation pass should
+become a git commit. RevRem stages with `git add -A` after checks pass, excludes
+the configured artifact directory, skips empty commits, and runs `git commit`
+itself. If commit hooks fail, the default policy is to preserve the staged
+changes, write the hook output to the commit artifact, and feed that output into
+the next bounded remediation pass. Use `--commit-on-hook-failure stop` to fail
+gracefully instead, or `--commit-on-hook-failure no-verify` only when bypassing
+hooks is an intentional operator decision.
 
 ## Optional Progress And TUI
 
@@ -168,6 +218,18 @@ The optional TUI is dependency-gated so the default CLI remains lightweight:
 The TUI renders Home, Profiles, Pipeline, Run Monitor, and Controls views. It
 shells through the same CLI command plans as normal terminal usage.
 
+## Limitations
+
+- Codex must be installed and authenticated locally.
+- The current directory must be the repository under review.
+- The selected `--base` branch must share history with the current branch.
+- Review/remediation quality depends on the model and the checks you provide.
+- Human review, security review, and release approval still matter.
+- Avoid dirty worktrees unless the local edits are intentional and understood.
+- Do not use unbounded iteration counts for unattended automation.
+- Do not paste raw model transcripts or local run artifacts into public issues;
+  use the redacted bug-report workflow instead.
+
 ## Development
 
 ```bash
@@ -179,46 +241,23 @@ pre-commit run --all-files
 
 The development extra installs `ruff`, `mypy`, `pytest`, Rich, Textual, build
 tooling, `pre-commit`, `detect-secrets`, and license-review helpers. Ruff,
-mypy, pytest, Meminit compliance, and `git diff --check` are required local and
-CI gates.
+mypy, pytest, DocOps checks, and `git diff --check` are required local and CI
+gates.
 
-Meminit is this repository's governed documentation system. Design rationale,
-operator guidance, and testing strategy live in `docs/` as governed documents
-validated by:
+Optional runtime extras stay narrow: `.[progress]` installs Rich, `.[tui]`
+installs Textual and Rich, and `.[redaction]` installs optional
+`detect-secrets` support for workflows that want an additional scanner alongside
+RevRem's built-in redaction regexes.
 
-```bash
-meminit doctor --format json
-meminit check --format json
-```
+The repository also carries tiny local compatibility shims for `tomli_w` and
+`jsonschema` so the test suite can collect in minimal environments. The
+published dependency declarations remain the supported install path.
 
-Useful governed docs:
-
-- `REVREM-ADR-001`: packaging decision for the Python CLI and companion skill.
-- `REVREM-DEVEX-001`: operator usage guide.
-- `REVREM-TEST-001`: utility verification strategy.
-- `REVREM-TASK-001`: public GitHub launch readiness plan.
-
-## Release Checklist
-
-For the next release:
-
-```bash
-# 1. Bump pyproject.toml and src/code_review_loop/__init__.py.
-./scripts/dev-check
-pre-commit run --all-files
-git diff --check
-git add pyproject.toml src/code_review_loop/__init__.py CHANGELOG.md
-git commit -m "chore: bump version to <version>"
-git tag v<version>
-./scripts/promote-stable
-revrem --version
-```
-
-Public release artifacts should be built by GitHub Actions so provenance
-attestations and the SBOM are attached to the release.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution expectations, governed
+documentation, and release process details.
 
 ## License
 
-This project is licensed under the Apache License 2.0; see the repository
-LICENSE file for details. The NOTICE file contains project attribution and
-must be preserved where Apache-2.0 notice requirements apply.
+This project is licensed under the Apache License 2.0; see [LICENSE](LICENSE)
+for details. [NOTICE](NOTICE) contains project attribution and must be preserved
+where Apache-2.0 notice requirements apply.

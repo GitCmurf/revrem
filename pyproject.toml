@@ -1,18 +1,18 @@
 [build-system]
-requires = ["setuptools>=69"]
+requires = ["setuptools==80.9.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "code-review-loop"
+name = "revrem"
 version = "0.3.0"
-description = "Bounded Codex review, remediation, and re-review automation for local repositories."
+description = "Bounded AI review, remediation, and re-review automation for local repositories."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
 authors = [
   { name = "Colin Farmer" }
 ]
-keywords = ["codex", "code-review", "automation", "devex", "cli"]
+keywords = ["ai", "code-review", "automation", "devex", "cli", "remediation"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: Console",
@@ -24,7 +24,7 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Topic :: Software Development :: Quality Assurance",
 ]
-dependencies = ["tomli-w>=1.0"]
+dependencies = ["jsonschema>=4.22", "tomli-w>=1.0"]
 
 [project.optional-dependencies]
 dev = [
@@ -42,6 +42,9 @@ dev = [
 progress = [
   "rich>=13.7",
 ]
+redaction = [
+  "detect-secrets>=1.5",
+]
 tui = [
   "rich>=13.7",
   "textual>=0.80",
@@ -53,10 +56,15 @@ revrem = "code_review_loop.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/GitCmurf/revrem"
+Source = "https://github.com/GitCmurf/revrem"
 Issues = "https://github.com/GitCmurf/revrem/issues"
+Changelog = "https://github.com/GitCmurf/revrem/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+code_review_loop = ["prompts/*.txt", "schemas/*.json"]
 
 [tool.pytest.ini_options]
 addopts = "-ra"

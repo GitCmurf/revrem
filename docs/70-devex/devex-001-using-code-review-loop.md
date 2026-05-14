@@ -3,8 +3,8 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.3'
-last_updated: '2026-05-06'
+version: '1.9'
+last_updated: '2026-05-13'
 owner: GitCmurf
 docops_version: '2.0'
 area: devex
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.3
-> **Last Updated:** 2026-05-06
+> **Version:** 1.9
+> **Last Updated:** 2026-05-13
 > **Type:** DEVEX
 > **Area:** devex
 > **Description:** Operator guide for the code-review-loop utility
@@ -134,6 +134,7 @@ revrem \
   --remediation-model gpt-5.4-mini \
   --reasoning-effort medium \
   --timeout-seconds 1800 \
+  --max-wall-seconds 7200 \
   --summary-format text \
   --debug-status-detection \
   --terminal-title \
@@ -164,6 +165,15 @@ entries so one interrupted append does not hide earlier valid runs. Set
 that should not update shared history. Review invocation failures still write
 the per-run `summary.json` before the run is surfaced as a failed history entry,
 so auth, timeout, and startup errors remain inspectable.
+Each `summary.json` also records `git_state` for resume safety: current `HEAD`,
+configured base ref, resolved base commit, merge base, and whether those values
+were available. Repositories without a Git worktree record explicit `null`
+values instead of pretending a resume precondition was checked.
+`revrem resume <run-dir>` validates the resume preconditions and returns code
+`4` when the summary, event stream, `HEAD`, or base commit do not match. When
+the checks pass, it rebuilds the loop config from `resume_config`, starts from
+the latest review artifact as `review-initial.txt`, and avoids re-running
+completed review phases.
 
 For richer watched-terminal output, install the optional progress extra and use
 `--progress-style rich`:
@@ -175,6 +185,13 @@ For richer watched-terminal output, install the optional progress extra and use
 
 If Rich is requested but unavailable, RevRem prints one warning and falls back to
 compact progress. Existing commands do not need to change.
+
+For workflows that want an additional secret scanner alongside RevRem's built-in
+bug-bundle redaction regexes, install the optional redaction extra:
+
+```bash
+./.venv/bin/pip install -e ".[redaction]"
+```
 
 Use repository-specific checks. For Meminit-backed repositories, include:
 
@@ -272,6 +289,9 @@ message_model = "gpt-5.3-codex-spark"
 summary_format = "text"
 debug_status_detection = true
 terminal_title = true
+
+[profiles.final-pr.suppressions]
+scope = "repo"
 ```
 
 Run it from the target repository:
@@ -334,6 +354,30 @@ Profile `review.reasoning_effort` and `remediation.reasoning_effort` values are
 validated during profile loading and must be one of `minimal`, `low`, `medium`,
 or `high`.
 
+### Budgets
+
+`--timeout-seconds` bounds individual child processes. `--max-wall-seconds`
+bounds the total RevRem run and is checked before each model-invoking phase.
+When the wall-clock ceiling has already been reached, RevRem stops before the
+next model call, writes `summary.json` and `events.jsonl`, emits
+`cost_ceiling_hit`, and exits with code `3`.
+
+`--soft-warn-fraction` controls the warning threshold for configured ceilings
+and defaults to `0.8`. `--max-tokens` and `--max-usd` are enforced once a
+harness reports usage through `cost_charge`; Codex does not currently report
+those values, so summaries record token and USD usage as `null` until a charge
+is observed rather than pretending unsupported accounting is zero usage.
+
+Profiles may set the same defaults:
+
+```toml
+[profiles.final-pr.budgets]
+max_wall_seconds = 7200
+max_tokens = 250000
+max_usd = "2.50"
+soft_warn_fraction = 0.8
+```
+
 Profile management commands:
 
 ```bash
@@ -370,6 +414,54 @@ revrem history list
 revrem history --format json list --limit 20
 ```
 
+Bug-report bundle command:
+
+```bash
+revrem bundle-bug-report .revrem/runs/<run-id> --output revrem-bug.tar.gz
+```
+
+If `--output` is omitted, the command writes `revrem-bug-<safe-run-id>.tar.gz`
+in the current working directory. The run-id component is reduced to a safe
+basename and falls back to the run directory name when necessary.
+
+The bundle is deterministic and redacted by default. It includes the manifest,
+`summary.json`, diagnostics/event JSON when present, sanitized check output,
+status diagnostics, and sanitized profile/preflight snapshots when the run
+recorded them.
+Raw text transcripts such as review and remediation artifacts are excluded
+unless `--include-raw-transcripts` is passed. Disabling redaction requires both
+`--no-redact` and `--i-understand-the-risks`.
+When a repository-level suppression audit exists, the bundle also includes a
+redacted suppression-audit summary resolved from the owning repo, even for runs
+stored under `.revrem/runs/<run-id>`.
+
+Local setup diagnostics:
+
+```bash
+revrem doctor --base main --check "pytest -q" --format json
+```
+
+`revrem doctor` validates deterministic preconditions before the first model
+call: the working directory is inside Git, the base ref resolves and shares
+history with `HEAD`, the effective artifact directory is writable, Codex is on
+`PATH`, and configured check executables exist. If Git itself is missing, the
+doctor returns a blocking `revrem.preflight.git_not_found` diagnostic instead
+of crashing. Relative `--artifact-dir` values are resolved against the doctor
+`cwd`, not the shell's current directory. When no artifact directory is
+supplied, that effective path is the default `.revrem/runs/<timestamp>-<suffix>/`
+tree that a normal loop run will create. It exits `4` for blocking setup
+failures, `6` for warnings when `--strict` is used, and `0` when the local
+preflight is clear. It warns when a profile explicitly disables a phase timeout
+with `timeout_seconds = 0` and when the current locale is not UTF-8 capable,
+because both conditions make unattended artifact generation less predictable.
+Regenerate the diagnostics table with `scripts/dev-render-diagnostics` after
+adding or changing diagnostic codes.
+
+Normal live CLI runs use the same diagnostics path before the first model call.
+When setup preflight blocks execution, RevRem writes `diagnostics.json`,
+`summary.json`, and `events.jsonl` under the run artifact directory and exits
+with code `4` without invoking review or remediation.
+
 These management commands validate reserved harness names and triage syntax
 without requiring the backend to be executable yet; only `revrem --profile ...`
 rejects unimplemented harnesses before the loop starts.
@@ -382,6 +474,15 @@ Profiles reserve `review.harness`, `triage.harness`,
 as `claude`, `gemini`, `opencode`, and `kilo`. The current executable loop
 supports only Codex; using another harness in a resolved run fails before
 starting subprocesses.
+
+Harnesses expose a schema-validated capability payload that records supported
+phases, sandbox modes, timeout/cancellation support, structured output, and
+cost reporting mode. Codex currently reports `cost_reporting = "none"`, so
+token/USD budgets remain declared ceilings until a cost-aware harness emits
+charges. The `fake` harness is reserved for deterministic test fixtures and is
+hidden unless `REVREM_ALLOW_FAKE_HARNESS=1` is set. When enabled, it replays
+local fixture files through RevRem's runner boundary and never shells out; it
+is for tests and contract development, not production review.
 
 Set `commit.enabled = true` or pass `--commit-after-remediation` only in a
 worktree where it is acceptable for RevRem to stage all current changes with
@@ -406,6 +507,18 @@ staged changes, RevRem stops the loop immediately; in that no-op path an
 bug-report artifact is still recorded for operator follow-up. Auto-commit also
 requires a clean worktree before the loop starts so unrelated local edits
 cannot be staged by the broad `git add -A` step.
+
+Commit hooks are part of the commit phase, not an afterthought. When `git
+commit` appears to fail inside hooks, RevRem defaults to `commit.on_hook_failure
+= "remediate"`: it leaves staged changes intact, records the hook output in
+`commit-N.txt`, and injects that output into the next bounded remediation pass.
+Use `commit.on_hook_failure = "stop"` or `--commit-on-hook-failure stop` when a
+hook failure should end the run immediately with `stopped_reason:
+"commit_hook_failed"`. Use `no-verify` only for explicit operator-controlled
+flows; RevRem records that policy as `commit_no_verify: true` in `summary.json`
+and runs `git commit --no-verify`. Once a later remediation pass and commit
+succeed, RevRem clears `pending_check_failures` before writing `summary.json`
+so the final status and summary flags stay aligned.
 
 ```bash
 revrem --profile final-pr --commit-after-remediation
@@ -437,8 +550,60 @@ enabled = true
 model = "gpt-5.4-mini"
 reasoning_effort = "low"
 timeout_seconds = 300
+on_invalid = "continue"
 prompt = "Break down the review into confirmed actions, likely false positives, and verification steps."
 ```
+
+When the triage output is JSON, RevRem treats it as a structured v1 artifact:
+it stamps envelope fields, validates against `docs/52-api/schemas/triage-v1.schema.json`,
+writes `triage-N.json`, and still includes the original review/check context in
+the remediation prompt. Invalid structured triage writes `diagnostics.json` with
+`revrem.triage.invalid_output`. The default `triage.on_invalid = "continue"`
+fails safe by ignoring invalid triage guidance; set `triage.on_invalid = "stop"`
+when a workflow should halt on malformed triage output.
+
+Structured triage is also the suppression-aware path. Add an explicit
+suppression when a fingerprinted finding is accepted, tracked elsewhere, or
+known to be a false positive:
+
+```bash
+revrem suppress add f1:c6ace015ccd20120 \
+  --summary "Accepted generated-code finding" \
+  --rationale "Generated fixture is intentionally vulnerable for tests." \
+  --severity medium
+```
+
+Repo-local suppressions live in `.revrem/suppressions.toml`; user-local
+suppressions live in `~/.config/revrem/suppressions.toml`. Repo suppressions
+win when both scopes contain the same fingerprint. `revrem suppress check
+<fingerprint>` exits `0` when suppressed and `2` when not suppressed. Critical
+findings require `--critical-override` and an expiry within 30 days. Each
+mutation appends to a local audit JSONL file. Suppressed findings remain visible
+in `triage-N.json` under `suppressed_findings`; if every confirmed finding is
+suppressed, RevRem stops with `stopped_reason: "all_findings_suppressed"`
+without running remediation and records `suppressed_findings_count` in
+`summary.json`. If structured triage returns only `rejected_findings` and no
+confirmed or `needs_more_info` items, RevRem stops without remediation only
+when there are no pending check failures; otherwise it continues the loop with
+the unresolved check context. If a suppression file cannot be parsed or read,
+structured triage emits a warning and continues without applying suppressions.
+`revrem doctor` warns about expired suppressions and unsupported future
+fingerprint versions.
+
+Profiles can declare the expected suppression write policy:
+
+```toml
+[profiles.final-pr.suppressions]
+scope = "repo"
+```
+
+`scope = "repo"` is the default and keeps project-wide dismissals reviewable in
+the repository. `scope = "user"` is for personal local dismissals that should
+not affect other operators. Explicit `revrem suppress add --scope ...` usage
+still controls each mutation.
+Bug-report bundles include a redacted suppression audit summary by default; raw
+audit logs are included only with the same raw transcript opt-in used for review
+transcripts.
 
 ### Current CLI boundary
 
@@ -483,6 +648,12 @@ until a backend adapter is implemented.
   subprocess invocation.
 - `2`: the utility completed but the bounded loop still has findings or pending
   check failures.
+- `3`: a configured budget ceiling was reached before the next model call.
+- `4`: setup diagnostics blocked execution before the first model call, or a
+  resumability precondition failed.
+- `5`: the operator cancelled the run with Ctrl-C/SIGTERM and RevRem wrote
+  best-effort cancellation artifacts.
+- `6`: `revrem doctor --strict` found warning-level diagnostics.
 
 ### Operator guidance
 
@@ -496,6 +667,12 @@ until a backend adapter is implemented.
   RevRem starts each child command in its own process group and kills the whole
   group on timeout, so wrappers that leave pipe-holding descendants behind do
   not block artifact creation indefinitely.
+- Ctrl-C and SIGTERM are treated as controlled cancellation. RevRem restores
+  terminal display state, kills the active child process group through the
+  subprocess wrapper, emits a `cancellation` event, writes `summary.json`, and
+  exits with code `5`. A repeated Ctrl-C/SIGTERM within five seconds is marked
+  as forced cancellation but still follows the same best-effort artifact and
+  exit-code path.
 - Ensure `--base` names a local commit that shares history with `HEAD`. During
   branch-topology transitions, a stale local `main` can be unrelated to the
   active PR branch even when `origin/main` is correct. RevRem preflights this
@@ -522,6 +699,9 @@ until a backend adapter is implemented.
   warning and writes `unexpected-behavior-report.txt` in the artifact directory.
   Include that report, the referenced `review-N.txt`, and any
   `review-N-status.json` diagnostics when filing a RevRem bug report.
+- `revrem bundle-bug-report` includes `review-N-status.json` status diagnostics
+  by default, so you can share the structured status evidence without adding
+  the raw transcript unless it is necessary for debugging.
 - Use `--terminal-title` in a watched terminal to update the window/tab title as
   the loop moves between review and remediation phases, for example
   `rev 1/2 RevRem` and `rem 1/2 RevRem`. The tool uses terminal title-stack
@@ -550,10 +730,31 @@ extras and run:
 The wrapper runs tests, `ruff check .`, `mypy src`, and DocOps checks when
 `meminit` is available.
 
+## Release Dry Runs And Rollback
+
+RevRem is not published on PyPI until the release workflow has successfully
+completed the Trusted Publishing path. Maintainers validate the package path in
+three stages:
+
+1. `workflow_dispatch` dry run builds, checks, signs, attests, and uploads
+   artifacts without publishing.
+2. `vX.Y.Z-rcN` tags publish to TestPyPI.
+3. `vX.Y.Z` tags publish to PyPI and create the GitHub Release.
+
+The release workflow validates that the tag matches `__version__` (including
+`vX.Y.Z-rcN` tags for PEP 440 `X.Y.ZrcN` release-candidate versions), writes
+`SHA256SUMS`, emits build-provenance attestations, and signs artifacts with
+Sigstore. Rollback, yanking, and hotfix steps live in
+`REVREM-RUNBOOK-001`; the release trust decision is `REVREM-ADR-011`.
+
 ### Related documents
 
 - `REVREM-ADR-001` records why this is a Python CLI with companion skill
   guidance rather than a copied script or skill-only implementation.
+- `REVREM-ADR-011` records the Trusted Publishing, provenance, and rollback
+  release policy.
+- `REVREM-RUNBOOK-001` gives the operator checklist for release dry runs,
+  TestPyPI/PyPI publication, provenance checks, and rollback.
 - `REVREM-PRD-001` defines the profile, progress, and TUI milestones.
 - `REVREM-TEST-001` defines the verification gates for this utility.
 
@@ -561,6 +762,12 @@ The wrapper runs tests, `ruff check .`, `mypy src`, and DocOps checks when
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.9 | 2026-05-13 | Codex | Documented profile-level suppression scope policy |
+| 1.8 | 2026-05-13 | Codex | Documented optional redaction extra alongside progress and TUI extras |
+| 1.7 | 2026-05-13 | Codex | Documented live CLI preflight diagnostics before first model invocation |
+| 1.6 | 2026-05-13 | Codex | Documented release dry runs, Trusted Publishing stages, provenance artifacts, and rollback runbook linkage |
+| 1.5 | 2026-05-12 | Codex | Documented suppression CLI, repo/user suppression scope, critical suppression guardrails, and structured-triage suppression behavior |
+| 1.4 | 2026-05-12 | Codex | Documented commit hook failure policies, default bounded remediation retry, and explicit `--no-verify` recording |
 | 1.3 | 2026-05-06 | Codex | Clarified that the profile wizard prompts separately for review and remediation models |
 | 1.2 | 2026-05-06 | Codex | Documented the `config new` interactive wizard, non-interactive automation path, and current stable smoke expectations |
 | 1.1 | 2026-05-06 | Codex | Documented CLI-backed TUI profile lifecycle actions, `config clone`, and current TUI controls |

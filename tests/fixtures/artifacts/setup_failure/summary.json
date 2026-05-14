@@ -1,0 +1,31 @@
+{
+  "artifact_dir": "tests/fixtures/artifacts/setup_failure",
+  "artifact_paths": {
+    "diagnostics": [
+      "diagnostics.json"
+    ],
+    "summary": "summary.json"
+  },
+  "base": "missing",
+  "cli_version": "0.3.0",
+  "command_line": null,
+  "duration_seconds": 0.1,
+  "finished_at": "2026-05-13T00:00:00Z",
+  "final_status": "error",
+  "harness": "codex",
+  "harness_version": null,
+  "iterations": [],
+  "max_iterations": 1,
+  "phases": {
+    "preflight": {
+      "count": 1
+    }
+  },
+  "profile": null,
+  "run_id": "fixture-setup-failure",
+  "schema_version": "1.0",
+  "started_at": "2026-05-13T00:00:00Z",
+  "stopped_reason": "setup_failed",
+  "tokens": null,
+  "usd": null
+}

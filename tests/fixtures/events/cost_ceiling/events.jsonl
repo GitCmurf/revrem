@@ -1,0 +1,4 @@
+{"iteration":"1","kind":"phase_start","payload":{"message":"codex review --base main"},"phase":"review","run_id":"fixture-cost-ceiling","schema_version":"1.0","seq":1,"ts":"2026-05-12T00:00:00Z"}
+{"iteration":"1","kind":"cost_charge","payload":{"tokens":10,"usd":null},"phase":"review","run_id":"fixture-cost-ceiling","schema_version":"1.0","seq":2,"ts":"2026-05-12T00:00:01Z"}
+{"iteration":"1","kind":"cost_ceiling_hit","payload":{"ceiling":"tokens","limit":10,"actual":10,"message":"tokens budget reached: 10 >= 10"},"phase":"review","run_id":"fixture-cost-ceiling","schema_version":"1.0","seq":3,"ts":"2026-05-12T00:00:02Z"}
+{"iteration":null,"kind":"summary","payload":{"summary":"budget_ceiling_hit"},"phase":null,"run_id":"fixture-cost-ceiling","schema_version":"1.0","seq":4,"ts":"2026-05-12T00:00:03Z"}

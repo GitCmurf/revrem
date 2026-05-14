@@ -71,6 +71,114 @@ terminal_title = true
     assert resolved.output.terminal_title is True
 
 
+def test_profile_accepts_budget_defaults(tmp_path):
+    path = tmp_path / "profiles.toml"
+    path.write_text(
+        """
+[profiles.demo.budgets]
+max_wall_seconds = 120
+max_tokens = 10000
+max_usd = "1.25"
+soft_warn_fraction = 0.5
+""",
+        encoding="utf-8",
+    )
+
+    loaded = profiles.load_profile_file(path)
+
+    assert loaded.profiles["demo"].budgets.max_wall_seconds == 120
+    assert loaded.profiles["demo"].budgets.max_tokens == 10000
+    assert str(loaded.profiles["demo"].budgets.max_usd) == "1.25"
+    assert loaded.profiles["demo"].budgets.soft_warn_fraction == 0.5
+
+
+def test_profile_accepts_suppression_scope_policy(tmp_path):
+    path = tmp_path / "profiles.toml"
+    path.write_text(
+        """
+[profiles.demo.suppressions]
+scope = "user"
+""",
+        encoding="utf-8",
+    )
+
+    loaded = profiles.load_profile_file(path)
+
+    assert loaded.profiles["demo"].suppressions.scope == "user"
+    assert profiles.profile_to_dict(loaded.profiles["demo"])["suppressions"]["scope"] == "user"
+    assert 'scope = "user"' in profiles.profile_to_toml(loaded.profiles["demo"])
+
+
+def test_resolve_profile_merges_suppression_scope_defaults(tmp_path):
+    home = tmp_path / "home"
+    cwd = tmp_path / "repo"
+    cwd.mkdir()
+    user_path = profiles.user_config_path(home)
+    user_path.parent.mkdir(parents=True)
+    user_path.write_text(
+        """
+[defaults.suppressions]
+scope = "user"
+
+[profiles.demo]
+description = "Demo"
+""",
+        encoding="utf-8",
+    )
+    profiles.project_config_path(cwd).write_text(
+        """
+[profiles.demo.suppressions]
+scope = "repo"
+""",
+        encoding="utf-8",
+    )
+
+    resolved = profiles.resolve_profile("demo", cwd=cwd, home=home)
+
+    assert resolved.suppressions.scope == "repo"
+
+
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        (
+            """
+[profiles.demo.suppressions]
+scope = "workspace"
+""",
+            "suppressions.scope must be one of: repo, user",
+        ),
+        (
+            """
+[profiles.demo.suppressions]
+default = "repo"
+""",
+            "suppressions contains unknown keys: default",
+        ),
+    ],
+)
+def test_profile_rejects_invalid_suppression_policy(tmp_path, body, message):
+    path = tmp_path / "profiles.toml"
+    path.write_text(body, encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        profiles.load_profile_file(path)
+
+
+def test_profile_rejects_invalid_budget_values(tmp_path):
+    path = tmp_path / "profiles.toml"
+    path.write_text(
+        """
+[profiles.demo.budgets]
+soft_warn_fraction = 0
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="budgets.soft_warn_fraction"):
+        profiles.load_profile_file(path)
+
+
 def test_resolve_profile_allows_project_to_override_boolean_to_false(tmp_path):
     home = tmp_path / "home"
     cwd = tmp_path / "repo"
@@ -266,6 +374,7 @@ model = "gpt-5.4-mini"
 reasoning_effort = "low"
 timeout_seconds = 60
 prompt = "Break down the findings."
+on_invalid = "stop"
 """,
         encoding="utf-8",
     )
@@ -278,6 +387,25 @@ prompt = "Break down the findings."
     assert resolved.triage.reasoning_effort == "low"
     assert resolved.triage.timeout_seconds == 60
     assert resolved.triage.prompt == "Break down the findings."
+    assert resolved.triage.on_invalid == "stop"
+
+
+def test_profile_rejects_invalid_triage_on_invalid_policy(tmp_path):
+    home = tmp_path / "home"
+    cwd = tmp_path / "repo"
+    cwd.mkdir()
+    path = profiles.user_config_path(home)
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        """
+[profiles.triaged.triage]
+on_invalid = "hide-findings"
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="triage.on_invalid must be one of continue, stop"):
+        profiles.resolve_profile("triaged", cwd=cwd, home=home)
 
 
 def test_profile_commit_defaults_to_spark_message_model(tmp_path):
@@ -294,6 +422,7 @@ enabled = true
 
     assert loaded.profiles["demo"].commit.enabled is True
     assert loaded.profiles["demo"].commit.message_model == "gpt-5.3-codex-spark"
+    assert loaded.profiles["demo"].commit.on_hook_failure == "remediate"
 
 
 def test_profile_accepts_explicit_commit_message_model_and_prompt(tmp_path):
@@ -305,6 +434,7 @@ enabled = true
 harness = "claude"
 message_model = "gpt-test-commit"
 message_prompt = "Write a subject."
+on_hook_failure = "stop"
 """,
         encoding="utf-8",
     )
@@ -314,6 +444,21 @@ message_prompt = "Write a subject."
     assert loaded.profiles["demo"].commit.harness == "claude"
     assert loaded.profiles["demo"].commit.message_model == "gpt-test-commit"
     assert loaded.profiles["demo"].commit.message_prompt == "Write a subject."
+    assert loaded.profiles["demo"].commit.on_hook_failure == "stop"
+
+
+def test_profile_rejects_invalid_commit_hook_failure_policy(tmp_path):
+    path = tmp_path / "profiles.toml"
+    path.write_text(
+        """
+[profiles.bad.commit]
+on_hook_failure = "maybe"
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="commit.on_hook_failure must be one of"):
+        profiles.load_profile_file(path)
 
 
 def test_profile_rejects_unknown_commit_keys(tmp_path):
@@ -545,6 +690,7 @@ description = "Existing profile"
     assert path == profiles.user_config_path(home)
     assert "[defaults.review]" in path.read_text(encoding="utf-8")
     assert 'model = "gpt-5.5"' in path.read_text(encoding="utf-8")
+    assert "[profiles.smoke]" in path.read_text(encoding="utf-8")
     rendered = path.read_text(encoding="utf-8")
     assert 'base = "main"' not in rendered
     assert "max_iterations = 2" not in rendered
@@ -580,6 +726,16 @@ description = "Imported profile"
     assert profiles.resolve_profile("imported", cwd=tmp_path, home=home).name == "imported"
     with pytest.raises(FileNotFoundError):
         profiles.resolve_profile("smoke", cwd=tmp_path, home=home)
+
+
+def test_write_user_profile_round_trips_control_characters(tmp_path):
+    home = tmp_path / "home"
+    profile = profiles.Profile(name="smoke", description="before\x1bafter")
+
+    path = profiles.write_user_profile(profile, home=home)
+    loaded = profiles.load_profile_file(path)
+
+    assert loaded.profiles["smoke"].description == "before\x1bafter"
 
 
 def test_import_user_profiles_preserves_source_defaults(tmp_path):
@@ -771,6 +927,18 @@ def test_write_user_profile_quotes_profile_names_and_round_trips(tmp_path):
     assert '[profiles."foo.bar baz"]' in rendered
     assert '[profiles."foo.bar baz".review]' not in rendered
     assert profiles.resolve_profile("foo.bar baz", cwd=tmp_path, home=home).description == "Quoted profile"
+
+
+def test_write_user_profile_quotes_non_ascii_profile_names(tmp_path):
+    home = tmp_path / "home"
+    profile = profiles.minimal_profile("démo", description="Non-ASCII profile")
+
+    path = profiles.write_user_profile(profile, home=home)
+    rendered = path.read_text(encoding="utf-8")
+
+    assert '[profiles."démo"]' in rendered
+    assert "[profiles.démo]" not in rendered
+    assert profiles.resolve_profile("démo", cwd=tmp_path, home=home).description == "Non-ASCII profile"
 
 
 def test_profile_json_is_stable():

@@ -1,0 +1,40 @@
+{
+  "artifact_dir": "tests/fixtures/artifacts/check_failure",
+  "artifact_paths": {
+    "checks": [
+      "check-1-1.txt"
+    ],
+    "summary": "summary.json"
+  },
+  "base": "main",
+  "cli_version": "0.3.0",
+  "command_line": null,
+  "duration_seconds": 3.0,
+  "finished_at": "2026-05-13T00:00:03Z",
+  "final_status": "findings",
+  "harness": "fake",
+  "harness_version": null,
+  "iterations": [
+    {
+      "check_failures": 1,
+      "iteration": 1,
+      "review_status": "clear"
+    }
+  ],
+  "max_iterations": 1,
+  "phases": {
+    "check": {
+      "count": 1
+    },
+    "review": {
+      "count": 1
+    }
+  },
+  "profile": null,
+  "run_id": "fixture-check-failure",
+  "schema_version": "1.0",
+  "started_at": "2026-05-13T00:00:00Z",
+  "stopped_reason": "max_iterations_reached_with_check_failures",
+  "tokens": null,
+  "usd": null
+}

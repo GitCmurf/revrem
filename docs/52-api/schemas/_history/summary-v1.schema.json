@@ -1,0 +1,162 @@
+{
+  "$id": "https://github.com/GitCmurf/revrem/schemas/summary/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "artifact_dir": {
+      "type": "string"
+    },
+    "artifact_paths": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        ]
+      },
+      "type": "object"
+    },
+    "base": {
+      "type": "string"
+    },
+    "cli_version": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "command_line": {
+      "items": {
+        "type": "string"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "duration_seconds": {
+      "description": "Elapsed wall-clock seconds for completed runs; null is reserved for externally supplied or partially reconstructed legacy summaries where elapsed time was unavailable.",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "finished_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "final_status": {
+      "enum": [
+        "clear",
+        "findings",
+        "unknown",
+        "error"
+      ]
+    },
+    "harness": {
+      "type": "string"
+    },
+    "harness_version": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "iterations": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "max_iterations": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "phases": {
+      "additionalProperties": {
+        "additionalProperties": {
+          "type": [
+            "integer",
+            "number",
+            "string",
+            "boolean",
+            "null"
+          ]
+        },
+        "type": "object"
+      },
+      "type": "object"
+    },
+    "profile": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "run_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0"
+    },
+    "started_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "stopped_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "tokens": {
+      "additionalProperties": {
+        "type": [
+          "integer",
+          "number",
+          "null"
+        ]
+      },
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "usd": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "cli_version",
+    "harness",
+    "harness_version",
+    "profile",
+    "command_line",
+    "run_id",
+    "started_at",
+    "finished_at",
+    "duration_seconds",
+    "base",
+    "max_iterations",
+    "artifact_dir",
+    "iterations",
+    "final_status",
+    "stopped_reason",
+    "phases",
+    "artifact_paths",
+    "tokens",
+    "usd"
+  ],
+  "title": "RevRem summary v1",
+  "type": "object"
+}

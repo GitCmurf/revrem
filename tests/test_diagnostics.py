@@ -1,0 +1,318 @@
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+
+from code_review_loop import diagnostics
+
+
+def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(
+        ["git", *args],
+        cwd=cwd,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    return result
+
+
+def _make_repo(tmp_path: Path) -> Path:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-b", "main")
+    _git(repo, "config", "user.email", "test@example.com")
+    _git(repo, "config", "user.name", "Test User")
+    (repo / "README.md").write_text("# Fixture\n", encoding="utf-8")
+    _git(repo, "add", "README.md")
+    _git(repo, "commit", "-m", "initial")
+    return repo
+
+
+def _issue_codes(issues: list[diagnostics.DiagnosticIssue]) -> set[str]:
+    return {issue.code for issue in issues}
+
+
+def test_run_doctor_reports_ok_for_valid_repo(tmp_path):
+    repo = _make_repo(tmp_path)
+
+    issues = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(cwd=repo, base="main", codex_bin="git")
+    )
+
+    assert _issue_codes(issues) == {"revrem.preflight.ok"}
+    assert not diagnostics.has_blocking_issue(issues)
+    assert diagnostics.doctor_payload(issues)["status"] == "ok"
+
+
+def test_run_doctor_reports_invalid_base(tmp_path):
+    repo = _make_repo(tmp_path)
+
+    issues = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(cwd=repo, base="missing", codex_bin="git")
+    )
+
+    assert "revrem.preflight.invalid_base" in _issue_codes(issues)
+    assert diagnostics.has_blocking_issue(issues)
+
+
+def test_run_doctor_reports_not_git_repo(tmp_path):
+    worktree = tmp_path / "not-a-repo"
+    worktree.mkdir()
+
+    issues = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(cwd=worktree, base="main", codex_bin="git")
+    )
+
+    assert _issue_codes(issues) == {"revrem.preflight.not_git_repo"}
+    assert diagnostics.has_blocking_issue(issues)
+
+
+def test_run_doctor_reports_no_merge_base(tmp_path):
+    repo = _make_repo(tmp_path)
+    _git(repo, "checkout", "--orphan", "unrelated")
+    (repo / "README.md").write_text("# Unrelated\n", encoding="utf-8")
+    _git(repo, "add", "README.md")
+    _git(repo, "commit", "-m", "unrelated")
+
+    issues = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(cwd=repo, base="main", codex_bin="git")
+    )
+
+    assert "revrem.preflight.no_merge_base" in _issue_codes(issues)
+    assert diagnostics.has_blocking_issue(issues)
+
+
+def test_diagnostic_fingerprints_are_stable_across_worktree_paths(tmp_path):
+    first_parent = tmp_path / "one"
+    second_parent = tmp_path / "two"
+    first_parent.mkdir()
+    second_parent.mkdir()
+    first = _make_repo(first_parent)
+    second = _make_repo(second_parent)
+
+    first_issue = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(cwd=first, base="missing", codex_bin="git")
+    )[0]
+    second_issue = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(cwd=second, base="missing", codex_bin="git")
+    )[0]
+
+    assert first_issue.to_dict()["code"] == "revrem.preflight.invalid_base"
+    assert first_issue.to_dict()["fingerprint"].startswith("f1:")
+    assert first_issue.to_dict()["fingerprint"] == second_issue.to_dict()["fingerprint"]
+
+
+def test_run_doctor_blocks_dirty_worktree_in_commit_mode(tmp_path):
+    repo = _make_repo(tmp_path)
+    (repo / "README.md").write_text("# Changed\n", encoding="utf-8")
+
+    issues = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(
+            cwd=repo,
+            base="main",
+            codex_bin="git",
+            commit_after_remediation=True,
+        )
+    )
+
+    assert "revrem.preflight.dirty_worktree_commit_mode" in _issue_codes(issues)
+
+
+def test_run_doctor_blocks_repo_root_artifact_dir_in_commit_mode(tmp_path):
+    repo = _make_repo(tmp_path)
+
+    issues = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(
+            cwd=repo,
+            base="main",
+            codex_bin="git",
+            artifact_dir=Path("."),
+            commit_after_remediation=True,
+        )
+    )
+
+    assert "revrem.preflight.artifact_dir_resolves_to_repo_root" in _issue_codes(issues)
+    assert diagnostics.has_blocking_issue(issues)
+
+
+def test_run_doctor_resolves_relative_artifact_dir_against_doctor_cwd(tmp_path, monkeypatch):
+    repo = _make_repo(tmp_path)
+    process_cwd = tmp_path / "process-cwd"
+    process_cwd.mkdir()
+    monkeypatch.chdir(process_cwd)
+
+    issues = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(
+            cwd=repo,
+            base="main",
+            codex_bin="git",
+            artifact_dir=Path("artifacts"),
+        )
+    )
+
+    assert _issue_codes(issues) == {"revrem.preflight.ok"}
+    assert (repo / "artifacts").is_dir()
+    assert not (process_cwd / "artifacts").exists()
+
+
+def test_run_doctor_does_not_create_default_artifact_dir(tmp_path):
+    repo = _make_repo(tmp_path)
+    default_artifact_dir = repo / ".revrem" / "runs" / "default-run"
+
+    issues = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(
+            cwd=repo,
+            base="main",
+            codex_bin="git",
+            artifact_dir=default_artifact_dir,
+            artifact_dir_is_default=True,
+        )
+    )
+
+    assert _issue_codes(issues) == {"revrem.preflight.ok"}
+    assert not (repo / ".revrem").exists()
+
+
+def test_run_doctor_blocks_default_artifact_dir_when_parent_is_unwritable(tmp_path, monkeypatch):
+    repo = _make_repo(tmp_path)
+    default_artifact_dir = repo / ".revrem" / "runs" / "default-run"
+
+    original_write_text = Path.write_text
+
+    def fake_write_text(self: Path, data: str, encoding: str | None = None, errors: str | None = None, newline: str | None = None):
+        if self.name == ".revrem-doctor-write-test":
+            raise PermissionError("blocked")
+        return original_write_text(self, data, encoding=encoding, errors=errors, newline=newline)
+
+    monkeypatch.setattr(Path, "write_text", fake_write_text)
+
+    issues = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(
+            cwd=repo,
+            base="main",
+            codex_bin="git",
+            artifact_dir=default_artifact_dir,
+            artifact_dir_is_default=True,
+        )
+    )
+
+    assert _issue_codes(issues) == {"revrem.preflight.artifact_dir_not_writable"}
+    assert issues[0].evidence["resolved_artifact_dir"] == str(repo / ".revrem" / "runs" / "default-run")
+    assert not (repo / ".revrem").exists()
+
+
+def test_run_doctor_blocks_default_artifact_dir_when_path_component_is_file(tmp_path):
+    repo = _make_repo(tmp_path)
+    default_artifact_dir = repo / ".revrem" / "runs" / "default-run"
+    repo.joinpath(".revrem").write_text("blocked\n", encoding="utf-8")
+
+    issues = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(
+            cwd=repo,
+            base="main",
+            codex_bin="git",
+            artifact_dir=default_artifact_dir,
+            artifact_dir_is_default=True,
+        )
+    )
+
+    assert _issue_codes(issues) == {"revrem.preflight.artifact_dir_not_writable"}
+    assert issues[0].evidence["error"] == str(repo / ".revrem")
+
+
+def test_run_doctor_reports_missing_check_command(tmp_path):
+    repo = _make_repo(tmp_path)
+
+    issues = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(
+            cwd=repo,
+            base="main",
+            codex_bin="git",
+            check_commands=("definitely-missing-revrem-check --flag",),
+        )
+    )
+
+    assert "revrem.preflight.check_command_not_found" in _issue_codes(issues)
+
+
+def test_run_doctor_reports_missing_git_as_blocking_issue(tmp_path, monkeypatch):
+    repo = _make_repo(tmp_path)
+
+    def fake_run(*_args, **_kwargs):
+        raise FileNotFoundError("git")
+
+    monkeypatch.setattr(diagnostics.subprocess, "run", fake_run)
+
+    issues = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(
+            cwd=repo,
+            base="main",
+            codex_bin="git",
+        )
+    )
+
+    assert _issue_codes(issues) == {"revrem.preflight.git_not_found"}
+    assert diagnostics.has_blocking_issue(issues)
+    assert diagnostics.doctor_payload(issues)["status"] == "blocking"
+
+
+def test_run_doctor_reports_unparseable_check_command(tmp_path):
+    repo = _make_repo(tmp_path)
+
+    issues = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(
+            cwd=repo,
+            base="main",
+            codex_bin="git",
+            check_commands=('pytest -q "unterminated',),
+        )
+    )
+
+    assert "revrem.preflight.check_command_unparseable" in _issue_codes(issues)
+
+
+def test_run_doctor_warns_when_timeout_is_explicitly_disabled(tmp_path):
+    repo = _make_repo(tmp_path)
+
+    issues = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(
+            cwd=repo,
+            base="main",
+            codex_bin="git",
+            review_timeout_seconds=0,
+        )
+    )
+
+    assert "revrem.preflight.timeout_disabled" in _issue_codes(issues)
+    assert diagnostics.has_warning_issue(issues)
+    assert not diagnostics.has_blocking_issue(issues)
+
+
+def test_run_doctor_blocks_negative_timeout(tmp_path):
+    repo = _make_repo(tmp_path)
+
+    issues = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(
+            cwd=repo,
+            base="main",
+            codex_bin="git",
+            timeout_seconds=-1,
+        )
+    )
+
+    assert "revrem.preflight.negative_timeout" in _issue_codes(issues)
+    assert diagnostics.has_blocking_issue(issues)
+
+
+def test_run_doctor_warns_on_non_utf8_locale(tmp_path, monkeypatch):
+    repo = _make_repo(tmp_path)
+    monkeypatch.setattr(diagnostics.sys, "getfilesystemencoding", lambda: "ascii")
+    monkeypatch.setattr(diagnostics.locale, "getpreferredencoding", lambda _do_setlocale=False: "ANSI_X3.4-1968")
+
+    issues = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(cwd=repo, base="main", codex_bin="git")
+    )
+
+    assert "revrem.preflight.locale_not_utf8" in _issue_codes(issues)

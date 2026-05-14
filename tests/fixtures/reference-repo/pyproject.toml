@@ -1,0 +1,8 @@
+[project]
+name = "revrem-reference-fixture"
+version = "0.0.0"
+requires-python = ">=3.11"
+description = "Deliberately flawed fixture project for RevRem tests."
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

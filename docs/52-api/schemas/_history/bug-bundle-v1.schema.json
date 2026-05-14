@@ -1,0 +1,55 @@
+{
+  "$id": "https://github.com/GitCmurf/revrem/schemas/bug-bundle/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "files": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "include_raw_transcripts": {
+      "type": "boolean"
+    },
+    "redacted": {
+      "type": "boolean"
+    },
+    "redaction_counts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "run_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0"
+    },
+    "source_run_dir_name": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "suppression_audit_summaries": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "source_run_dir_name",
+    "include_raw_transcripts",
+    "redacted",
+    "files",
+    "redaction_counts",
+    "suppression_audit_summaries"
+  ],
+  "title": "RevRem bug bundle v1",
+  "type": "object"
+}

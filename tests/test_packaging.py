@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import stat
 import subprocess
 import tomllib
@@ -30,6 +31,104 @@ def test_console_entry_points_include_stable_alias():
     assert scripts["revrem"] == "code_review_loop.cli:main"
 
 
+def test_project_uses_revrem_distribution_identity():
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+
+    project = pyproject["project"]
+
+    assert project["name"] == "revrem"
+    assert project["description"].startswith("Bounded AI review")
+    assert project["urls"]["Homepage"] == "https://github.com/GitCmurf/revrem"
+    assert project["urls"]["Source"] == "https://github.com/GitCmurf/revrem"
+    assert project["urls"]["Issues"] == "https://github.com/GitCmurf/revrem/issues"
+    assert project["urls"]["Changelog"].endswith("/CHANGELOG.md")
+
+
+def test_project_version_matches_package_version():
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    init_text = (ROOT / "src/code_review_loop/__init__.py").read_text(encoding="utf-8")
+    match = re.search(r'^__version__ = "([^"]+)"$', init_text, re.MULTILINE)
+
+    assert match is not None
+    assert pyproject["project"]["version"] == match.group(1)
+
+
+def test_build_backend_version_is_pinned_for_reproducible_release_builds():
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+
+    assert pyproject["build-system"]["requires"] == ["setuptools==80.9.0"]
+
+
+def test_ci_builds_and_smokes_revrem_wheel():
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert "package-smoke:" in workflow
+    assert 'os: [ubuntu-latest, macos-latest]' in workflow
+    assert 'python-version: ["3.11", "3.12"]' in workflow
+    assert "python -m build --sdist --wheel" in workflow
+    assert "python -m twine check dist/*" in workflow
+    assert "find dist -maxdepth 1 -name 'revrem-*.whl' -print" in workflow
+    assert '.pkg-smoke/bin/python -m pip install "$wheel"' in workflow
+    assert ".pkg-smoke/bin/revrem --version" in workflow
+    assert ".pkg-smoke/bin/code-review-loop --version" in workflow
+    assert "git -C tests/fixtures/reference-repo init" in workflow
+    assert "cd tests/fixtures/reference-repo" in workflow
+    assert '"$GITHUB_WORKSPACE/.pkg-smoke/bin/revrem" doctor --format json --base main --codex-bin git' in workflow
+
+
+def test_release_workflow_uses_trusted_publishing_and_dry_run():
+    workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+
+    assert "workflow_dispatch:" in workflow
+    assert "dry_run:" in workflow
+    assert '"v*.*.*-rc*"' in workflow
+    assert "Validate release version" in workflow
+    assert "does not match package version" in workflow
+    assert "version.replace('rc', '-rc')" in workflow
+    assert "python -m build --sdist --wheel" in workflow
+    assert "python -m twine check dist/*" in workflow
+    assert "dist/SHA256SUMS" in workflow
+    assert "actions/attest-build-provenance" in workflow
+    assert "sigstore/gh-action-sigstore-python@" in workflow
+    assert "pypa/gh-action-pypi-publish@" in workflow
+    assert "repository-url: https://test.pypi.org/legacy/" in workflow
+    assert "github.event_name == 'push' && contains(github.ref_name, 'rc')" in workflow
+    assert "github.event_name == 'push' && !contains(github.ref_name, 'rc')" in workflow
+    assert "if: github.event_name == 'push'" in workflow
+
+
+def test_release_runbook_documents_rollback_and_provenance():
+    runbook = (ROOT / "docs/60-runbooks/runbook-001-release-and-rollback.md").read_text(
+        encoding="utf-8"
+    )
+    adr = (ROOT / "docs/45-adr/adr-011-release-trust-and-rollback.md").read_text(
+        encoding="utf-8"
+    )
+
+    for text in (runbook, adr):
+        assert "Trusted Publishing" in text
+        assert "TestPyPI" in text
+        assert "SHA256SUMS" in text
+        assert "Sigstore" in text
+        assert "yank" in text.lower()
+        assert "hotfix" in text.lower()
+
+
+def test_release_runbook_documents_task_002_external_gates():
+    runbook = (ROOT / "docs/60-runbooks/runbook-001-release-and-rollback.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "TASK-002 External Gate Checklist" in runbook
+    assert "Merge the implementation branch to `main`" in runbook
+    assert "branch protection requires the CI workflow" in runbook
+    assert "dry_run=true" in runbook
+    assert "Trusted Publisher entries" in runbook
+    assert "Publish an RC tag to TestPyPI" in runbook
+    assert "Publish the final tag only after the RC install smoke passes" in runbook
+    assert "Record final PyPI/TestPyPI/GitHub Release URLs" in runbook
+
+
 def test_optional_tui_extra_declares_textual_dependency():
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
@@ -47,13 +146,44 @@ def test_readme_tui_install_and_launch_commands_use_the_same_venv():
     assert "./.venv/bin/revrem ui --profile final-pr" in readme
 
 
+def test_readme_bundle_command_fence_closes_before_explanatory_prose():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+    bundle_snippet = """```bash
+revrem bundle-bug-report .revrem/runs/<run-id> --output revrem-bug.tar.gz
+```"""
+
+    assert bundle_snippet in readme
+    assert "The bundle command ignores symlinked artifacts" in readme
+    assert bundle_snippet.index("```", 3) < readme.index(
+        "The bundle command ignores symlinked artifacts"
+    )
+
+
 def test_dev_extra_exercises_rich_and_textual_paths():
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
     dev_extra = pyproject["project"]["optional-dependencies"]["dev"]
+    redaction_extra = pyproject["project"]["optional-dependencies"]["redaction"]
 
+    assert any(dependency.startswith("jsonschema>=") for dependency in pyproject["project"]["dependencies"])
+    assert any(dependency.startswith("detect-secrets>=") for dependency in redaction_extra)
     assert any(dependency.startswith("rich>=") for dependency in dev_extra)
     assert any(dependency.startswith("textual>=") for dependency in dev_extra)
+
+
+def test_source_tree_does_not_publish_top_level_dependency_shims():
+    assert not (ROOT / "src" / "jsonschema" / "__init__.py").exists()
+    assert not (ROOT / "src" / "jsonschema" / "validators.py").exists()
+    assert not (ROOT / "src" / "tomli_w.py").exists()
+
+
+def test_package_data_includes_versioned_prompts():
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+
+    package_data = pyproject["tool"]["setuptools"]["package-data"]["code_review_loop"]
+
+    assert "prompts/*.txt" in package_data
 
 
 def test_distribution_scripts_are_executable_and_posix_sh():

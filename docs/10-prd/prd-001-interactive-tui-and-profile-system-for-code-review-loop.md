@@ -437,7 +437,8 @@ Milestone status as of version 1.4:
 - [NFR-2] Bare runtime remains dependency-light; optional UI dependencies stay
   optional. The `tui` extra includes Rich and Textual, and the development
   extra includes both so CI can exercise optional UI/progress paths.
-- [NFR-3] TOML reads use `tomllib`; TOML writes may add a small dedicated dependency.
+- [NFR-3] TOML reads use `tomllib`; TOML writes use the shared TOML writer
+  path and escape all control characters so saved profiles remain reloadable.
 - [NFR-4] Linux/WSL2 is the primary supported environment.
 - [NFR-5] Shell scripts are POSIX `sh` compatible.
 - [NFR-6] All generated artifacts remain under target-repo `.revrem/runs/`

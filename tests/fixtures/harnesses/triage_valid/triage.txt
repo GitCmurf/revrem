@@ -1,0 +1,23 @@
+{
+  "confirmed_findings": [
+    {
+      "affected_paths": [
+        "src/fake.py"
+      ],
+      "fingerprint": "f1:fake",
+      "severity": "medium",
+      "summary": "Add regression coverage for the fake harness contract.",
+      "rationale": "The fixture simulates an actionable review finding."
+    }
+  ],
+  "implementation_order": [
+    "f1:fake"
+  ],
+  "needs_more_info": [],
+  "parsing_warnings": [],
+  "rejected_findings": [],
+  "suppressed_findings": [],
+  "verification_commands": [
+    "pytest -q"
+  ]
+}

@@ -1,0 +1,50 @@
+#!/usr/bin/env python3
+"""Render the diagnostics code/message/hint table from diagnostics.py."""
+
+from __future__ import annotations
+
+import ast
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+SOURCE = ROOT / "src" / "code_review_loop" / "diagnostics.py"
+
+
+def escape_md(cell: str) -> str:
+    return cell.replace("|", "\\|").replace("\n", " ")
+
+
+def _literalish(node: ast.AST) -> str:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.JoinedStr):
+        return "".join(part.value if isinstance(part, ast.Constant) else "{...}" for part in node.values)
+    return ""
+
+
+def main() -> int:
+    tree = ast.parse(SOURCE.read_text(encoding="utf-8"), filename=str(SOURCE))
+    rows: list[tuple[str, str, str]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        function = node.func
+        if not isinstance(function, ast.Name) or function.id != "DiagnosticIssue":
+            continue
+        values = {
+            keyword.arg: _literalish(keyword.value)
+            for keyword in node.keywords
+            if keyword.arg in {"code", "message", "hint"}
+        }
+        if {"code", "message", "hint"} <= values.keys():
+            rows.append((values["code"], values["message"], values["hint"]))
+
+    print("| Code | Message | Hint |")
+    print("| --- | --- | --- |")
+    for code, message, hint in sorted(set(rows)):
+        print(f"| `{escape_md(code)}` | {escape_md(message)} | {escape_md(hint)} |")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

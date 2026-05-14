@@ -1,0 +1,3 @@
+0001|triage|1|phase_start: codex exec --sandbox read-only
+0002|triage|1|suppressed: 1 finding(s)
+0003|summary|summary: all_findings_suppressed

@@ -1,0 +1,2 @@
+Fake harness cost ceiling fixture.
+REVIEW_STATUS: findings

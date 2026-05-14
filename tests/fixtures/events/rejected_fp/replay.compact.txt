@@ -1,0 +1,5 @@
+0001|review|1|phase_start: codex review --base main
+0002|review|1|phase_result: findings
+0003|triage|1|phase_start: codex exec triage
+0004|triage|1|phase_result: done
+0005|summary|summary: triage_rejected_all_findings

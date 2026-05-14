@@ -5,6 +5,7 @@ docs_root: docs
 schema_path: docs/00-governance/metadata.schema.json
 excluded_paths:
 - docs/00-governance/templates
+- docs/52-api
 excluded_filename_prefixes:
 - WIP-
 document_types:

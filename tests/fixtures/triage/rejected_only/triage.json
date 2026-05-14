@@ -1,0 +1,19 @@
+{
+  "confirmed_findings": [],
+  "implementation_order": [],
+  "needs_more_info": [],
+  "parsing_warnings": [],
+  "rejected_findings": [
+    {
+      "affected_paths": [
+        "src/reference_app/docs.py"
+      ],
+      "fingerprint": "f1:rejected001",
+      "rationale": "The review comment requests a docstring for an internal fixture-only helper.",
+      "rejection_reason": "False positive for this labelled fixture.",
+      "severity": "low",
+      "summary": "Fixture-only helper is intentionally undocumented"
+    }
+  ],
+  "verification_commands": []
+}

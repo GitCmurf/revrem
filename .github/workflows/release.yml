@@ -1,9 +1,20 @@
 name: Release
 
 on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build and validate artifacts without publishing"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
   push:
     tags:
       - "v*.*.*"
+      - "v*.*.*-rc*"
 
 permissions:
   attestations: write
@@ -26,6 +37,30 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+      - name: Validate release version
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          import sys
+          from pathlib import Path
+
+          ref_type = os.environ.get("GITHUB_REF_TYPE")
+          ref_name = os.environ.get("GITHUB_REF_NAME", "")
+          init_text = Path("src/code_review_loop/__init__.py").read_text(encoding="utf-8")
+          match = re.search(r'^__version__ = "([^"]+)"$', init_text, re.MULTILINE)
+          if match is None:
+              raise SystemExit("__version__ not found")
+          version = match.group(1)
+          expected_tags = {f"v{version}"}
+          if "rc" in version:
+              expected_tags.add(f"v{version.replace('rc', '-rc')}")
+          if ref_type == "tag" and ref_name not in expected_tags:
+              raise SystemExit(f"release tag {ref_name!r} does not match package version {version!r}")
+          print(f"version={version}")
+          PY
+
       - name: Install and test
         run: |
           python -m pip install --upgrade pip
@@ -39,6 +74,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install build twine
+          rm -rf dist build src/revrem.egg-info src/code_review_loop.egg-info
           python -m build --sdist --wheel
           python -m twine check dist/*
 
@@ -47,12 +83,32 @@ jobs:
         with:
           path: .
           format: cyclonedx-json
-          output-file: dist/code-review-loop-sbom.cdx.json
+          output-file: dist/revrem-sbom.cdx.json
+
+      - name: Generate SHA-256 checksums
+        run: |
+          python - <<'PY'
+          import hashlib
+          from pathlib import Path
+
+          with Path("dist/SHA256SUMS").open("w", encoding="utf-8") as handle:
+              for path in sorted(Path("dist").iterdir()):
+                  if path.name == "SHA256SUMS" or not path.is_file():
+                      continue
+                  digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                  handle.write(f"{digest}  {path.name}\n")
+          PY
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-path: "dist/*"
+
+      - name: Sign release artifacts
+        if: github.event_name == 'push' || inputs.dry_run == 'false'
+        uses: sigstore/gh-action-sigstore-python@f7ad0af51a5648d09a20d00370f0a91c3bdf8f84 # v3.0.1
+        with:
+          inputs: dist/*
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -60,7 +116,29 @@ jobs:
           name: release-artifacts
           path: dist/*
 
+      - name: Stage release assets and clean dist for publishing
+        run: |
+          mkdir -p release-assets
+          cp dist/* release-assets/
+          cd dist && for f in *; do
+            case "$f" in *.whl|*.tar.gz) ;; *) rm -f "$f" ;; esac
+          done
+
+      - name: Publish to TestPyPI
+        if: github.event_name == 'push' && contains(github.ref_name, 'rc')
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: dist/
+
+      - name: Publish to PyPI
+        if: github.event_name == 'push' && !contains(github.ref_name, 'rc')
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
+        with:
+          packages-dir: dist/
+
       - name: Publish GitHub release
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@6cbd405e2c4e67a21c47fa9e383d020e4e28b836 # v2.3.3
         with:
-          files: dist/*
+          files: release-assets/*

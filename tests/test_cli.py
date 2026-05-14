@@ -5,12 +5,13 @@ import json
 import os
 import re
 import time
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
 
 from code_review_loop import cli as MODULE
-from code_review_loop import profiles
+from code_review_loop import events, profiles, suppressions
 
 
 def make_git_worktree(tmp_path: Path, cwd_rel: str | None = "work") -> tuple[Path, Path]:
@@ -221,6 +222,71 @@ def test_run_loop_treats_structured_empty_findings_review_as_clear(tmp_path):
     assert summary["stopped_reason"] == "review_clear"
     assert [call[0][1] for call in calls] == ["review"]
     assert not (tmp_path / "artifacts" / "remediation-1.txt").exists()
+
+
+def test_run_loop_writes_replayable_events_jsonl(tmp_path, capsys):
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[1] == "review":
+            return MODULE.CommandResult(
+                list(args),
+                0,
+                stdout='{"findings": [], "overall_correctness": "patch is correct"}\n',
+            )
+        raise AssertionError(f"unexpected command: {args}")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        progress=False,
+        final_review=False,
+    )
+
+    summary = MODULE.run_loop(config, runner)
+    replay_code = MODULE.main(["replay", str(tmp_path / "artifacts")])
+    records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
+
+    assert summary["final_status"] == "clear"
+    assert replay_code == 0
+    assert truncated is False
+    assert [event.kind for event in records] == [
+        "phase_start",
+        "phase_result",
+        "artifact_write",
+        "artifact_write",
+        "summary",
+    ]
+    assert [event.payload.get("kind") for event in records if event.kind == "artifact_write"] == [
+        "summary",
+        "reviews",
+    ]
+    assert capsys.readouterr().out == (
+        "0001|review|1|phase_start: codex review --base main\n"
+        "0002|review|1|phase_result: clear\n"
+        f"0003|artifacts|artifact_write: {tmp_path / 'artifacts' / 'summary.json'}\n"
+        f"0004|artifacts|artifact_write: {tmp_path / 'artifacts' / 'review-1.txt'}\n"
+        "0005|summary|summary: review_clear\n"
+    )
+
+
+def test_progress_warning_status_emits_warning_event(tmp_path):
+    sink = events.InMemorySink("run-1")
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        progress=False,
+        event_sink=sink,
+    )
+
+    MODULE.progress_event(config, "triage", "1", "warning", "suppressions unavailable")
+
+    assert sink.events[0].kind == "warning"
+    assert sink.events[0].payload["message"] == "suppressions unavailable"
 
 
 def test_detect_review_status_does_not_treat_scoped_clear_prose_as_clear_when_issue_follows():
@@ -664,6 +730,597 @@ def test_loop_runs_optional_triage_between_review_and_remediation(tmp_path):
     assert summary["artifact_paths"]["triage"] == [str(tmp_path / "artifacts" / "triage-1.txt")]
 
 
+def test_loop_writes_structured_triage_artifact_and_handoff(tmp_path):
+    calls = []
+    triage_payload = {
+        "confirmed_findings": [
+            {
+                "affected_paths": ["src/app.py"],
+                "fingerprint": "f1:abc123",
+                "rationale": "The review finding is actionable.",
+                "severity": "medium",
+                "summary": "Fix the bug.",
+            }
+        ],
+        "implementation_order": ["f1:abc123"],
+        "needs_more_info": [],
+        "parsing_warnings": [],
+        "rejected_findings": [],
+        "verification_commands": ["pytest -q"],
+    }
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[1] == "review":
+            return MODULE.CommandResult(
+                list(args),
+                0,
+                stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
+            )
+        if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
+            return MODULE.CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
+        return MODULE.CommandResult(list(args), 0, stdout="remediated\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        triage_enabled=True,
+        final_review=False,
+    )
+
+    summary = MODULE.run_loop(config, runner)
+
+    triage_json = json.loads((tmp_path / "artifacts" / "triage-1.json").read_text(encoding="utf-8"))
+    assert triage_json["run_id"] == summary["run_id"]
+    assert triage_json["source_review_artifact"] == "review-1.txt"
+    assert triage_json["prompt_version"] == "triage-v1"
+    assert "Structured triage handoff" in (calls[2][1] or "")
+    assert "Original review/check context" in (calls[2][1] or "")
+    assert str(tmp_path / "artifacts" / "triage-1.json") in summary["artifact_paths"]["triage"]
+
+
+def test_loop_skips_remediation_when_structured_triage_finding_is_suppressed(tmp_path):
+    calls = []
+    (tmp_path / ".git").mkdir()
+    suppression = suppressions.make_entry(
+        fingerprint="f1:abc123",
+        summary="Accepted finding",
+        rationale="Tracked in issue 123.",
+        severity="medium",
+        scope="repo",
+        expires_at=None,
+        critical_override=False,
+        created_at="2026-05-12T00:00:00Z",
+    )
+    suppressions.write_entries(suppressions.repo_suppressions_path(tmp_path), [suppression])
+    triage_payload = {
+        "confirmed_findings": [
+            {
+                "fingerprint": "f1:abc123",
+                "summary": "Fix profile merge",
+                "severity": "medium",
+                "affected_paths": ["src/code_review_loop/profiles.py"],
+                "rationale": "Merge drops fields.",
+            }
+        ],
+        "implementation_order": ["f1:abc123"],
+        "needs_more_info": [],
+        "parsing_warnings": [],
+        "rejected_findings": [],
+        "verification_commands": ["pytest -q"],
+    }
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[1] == "review":
+            return MODULE.CommandResult(
+                list(args),
+                0,
+                stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
+            )
+        if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
+            return MODULE.CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
+        raise AssertionError(f"remediation/check should not run after suppression: {args!r}")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        triage_enabled=True,
+        final_review=False,
+    )
+
+    summary = MODULE.run_loop(config, runner)
+
+    triage_json = json.loads((tmp_path / "artifacts" / "triage-1.json").read_text(encoding="utf-8"))
+    assert triage_json["confirmed_findings"] == []
+    assert triage_json["suppressed_findings"][0]["fingerprint"] == "f1:abc123"
+    assert summary["final_status"] == "clear"
+    assert summary["stopped_reason"] == "all_findings_suppressed"
+    assert summary["suppressed_findings_count"] == 1
+    assert summary["iterations"][0]["suppressed_findings"] is True
+    assert summary["iterations"][0]["suppressed_findings_count"] == 1
+    assert len(calls) == 2
+
+
+def test_loop_does_not_clear_when_structured_triage_still_needs_more_info(tmp_path):
+    calls = []
+    (tmp_path / ".git").mkdir()
+    suppression = suppressions.make_entry(
+        fingerprint="f1:abc123",
+        summary="Accepted finding",
+        rationale="Tracked in issue 123.",
+        severity="medium",
+        scope="repo",
+        expires_at=None,
+        critical_override=False,
+        created_at="2026-05-12T00:00:00Z",
+    )
+    suppressions.write_entries(suppressions.repo_suppressions_path(tmp_path), [suppression])
+    triage_payload = {
+        "confirmed_findings": [
+            {
+                "fingerprint": "f1:abc123",
+                "summary": "Fix profile merge",
+                "severity": "medium",
+                "affected_paths": ["src/code_review_loop/profiles.py"],
+                "rationale": "Merge drops fields.",
+            }
+        ],
+        "implementation_order": ["f1:abc123"],
+        "needs_more_info": [
+            {
+                "fingerprint": "f2:def456",
+                "summary": "Clarify config precedence",
+                "severity": "low",
+                "affected_paths": ["src/code_review_loop/cli.py"],
+                "rationale": "The suppression path depends on runtime config.",
+                "info_requested": "Document whether config values can override suppressions.",
+            }
+        ],
+        "parsing_warnings": [],
+        "rejected_findings": [],
+        "verification_commands": ["pytest -q"],
+    }
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[1] == "review":
+            return MODULE.CommandResult(
+                list(args),
+                0,
+                stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
+            )
+        if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
+            return MODULE.CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
+        return MODULE.CommandResult(list(args), 0, stdout="remediated\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        triage_enabled=True,
+        final_review=False,
+    )
+
+    summary = MODULE.run_loop(config, runner)
+
+    triage_json = json.loads((tmp_path / "artifacts" / "triage-1.json").read_text(encoding="utf-8"))
+    assert triage_json["confirmed_findings"] == []
+    assert triage_json["needs_more_info"][0]["fingerprint"] == "f2:def456"
+    assert triage_json["suppressed_findings"][0]["fingerprint"] == "f1:abc123"
+    assert summary["stopped_reason"] == "max_iterations_reached"
+    assert summary["final_status"] == "unknown"
+    assert "Structured triage handoff" in (calls[2][1] or "")
+    assert len(calls) == 3
+
+
+def test_loop_skips_remediation_when_structured_triage_only_rejects_findings(tmp_path):
+    calls = []
+    (tmp_path / ".git").mkdir()
+    triage_payload = {
+        "confirmed_findings": [],
+        "implementation_order": [],
+        "needs_more_info": [],
+        "parsing_warnings": [],
+        "rejected_findings": [
+            {
+                "fingerprint": "f1:abc123",
+                "summary": "Fix profile merge",
+                "severity": "medium",
+                "affected_paths": ["src/code_review_loop/profiles.py"],
+                "rationale": "The review comment is a false positive.",
+                "rejection_reason": "Not reproducible in the current code path.",
+            }
+        ],
+        "verification_commands": ["pytest -q"],
+    }
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[1] == "review":
+            return MODULE.CommandResult(
+                list(args),
+                0,
+                stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
+            )
+        if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
+            return MODULE.CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
+        raise AssertionError(f"remediation/check should not run after rejected-only triage: {args!r}")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        triage_enabled=True,
+        final_review=False,
+    )
+
+    summary = MODULE.run_loop(config, runner)
+
+    triage_json = json.loads((tmp_path / "artifacts" / "triage-1.json").read_text(encoding="utf-8"))
+    assert triage_json["rejected_findings"][0]["fingerprint"] == "f1:abc123"
+    assert triage_json["confirmed_findings"] == []
+    assert triage_json["needs_more_info"] == []
+    assert summary["final_status"] == "clear"
+    assert summary["stopped_reason"] == "triage_rejected_all_findings"
+    assert len(calls) == 2
+
+
+def test_loop_keeps_check_failure_gate_when_structured_triage_rejects_findings(tmp_path):
+    calls = []
+    review_outputs = iter(
+        [
+            "Full review comments:\n\n- [P2] Fix profile merge\n",
+            "No actionable findings.\nREVIEW_STATUS: clear\n",
+        ]
+    )
+    triage_outputs = iter(
+        [
+            {
+                "confirmed_findings": [
+                    {
+                        "fingerprint": "f1:abc123",
+                        "summary": "Fix profile merge",
+                        "severity": "medium",
+                        "affected_paths": ["src/code_review_loop/profiles.py"],
+                        "rationale": "The review comment is a real issue.",
+                    }
+                ],
+                "implementation_order": ["f1:abc123"],
+                "needs_more_info": [],
+                "parsing_warnings": [],
+                "rejected_findings": [],
+                "verification_commands": ["pytest -q"],
+            },
+            {
+                "confirmed_findings": [],
+                "implementation_order": [],
+                "needs_more_info": [],
+                "parsing_warnings": [],
+                "rejected_findings": [
+                    {
+                        "fingerprint": "f2:def456",
+                        "summary": "Suppress the false positive",
+                        "severity": "low",
+                        "affected_paths": ["src/code_review_loop/cli.py"],
+                        "rationale": "The remaining review item is not actionable.",
+                        "rejection_reason": "Not reproducible in the current code path.",
+                    }
+                ],
+                "verification_commands": ["pytest -q"],
+            },
+        ]
+    )
+    check_attempts = 0
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "pyproject.toml").write_text("[project]\nname = \"fixture\"\n", encoding="utf-8")
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        nonlocal check_attempts
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[1] == "review":
+            return MODULE.CommandResult(list(args), 0, stdout=next(review_outputs))
+        if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
+            return MODULE.CommandResult(list(args), 0, stdout=json.dumps(next(triage_outputs)))
+        if args[0] == "pytest":
+            check_attempts += 1
+            if check_attempts == 1:
+                return MODULE.CommandResult(list(args), 1, stdout="FAILED\n")
+            return MODULE.CommandResult(list(args), 0, stdout="passed\n")
+        return MODULE.CommandResult(list(args), 0, stdout="remediated\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=2,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        triage_enabled=True,
+        final_review=False,
+        check_commands=("pytest -q",),
+    )
+
+    summary = MODULE.run_loop(config, runner)
+
+    assert summary["final_status"] == "unknown"
+    assert summary["stopped_reason"] == "max_iterations_reached"
+    assert summary["pending_check_failures"] is False
+    assert len(calls) == 8
+    assert "Check failures from the previous iteration:" in (calls[6][1] or "")
+    assert "Structured triage handoff" not in (calls[6][1] or "")
+
+
+def test_suppress_cli_add_check_remove_round_trip(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    monkeypatch.setenv("REVREM_SUPPRESSION_ACTOR", "tester")
+
+    assert MODULE.main(
+        [
+            "suppress",
+            "add",
+            "f1:abc123",
+            "--summary",
+            "Accepted finding",
+            "--rationale",
+            "Tracked in issue 123.",
+            "--severity",
+            "medium",
+        ]
+    ) == 0
+    assert MODULE.main(["suppress", "check", "f1:abc123"]) == 0
+    assert MODULE.main(["suppress", "remove", "f1:abc123"]) == 0
+    assert MODULE.main(["suppress", "check", "f1:abc123"]) == 2
+    assert "added f1:abc123" in capsys.readouterr().out
+
+
+def test_doctor_warns_about_expired_and_unsupported_suppressions(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    suppressions.write_entries(
+        suppressions.repo_suppressions_path(tmp_path),
+        [
+            suppressions.make_entry(
+                fingerprint="f1:expired",
+                summary="Expired finding",
+                rationale="No longer valid.",
+                severity="medium",
+                scope="repo",
+                expires_at="2026-05-01T00:00:00Z",
+                critical_override=False,
+                created_at="2026-04-01T00:00:00Z",
+            ),
+            suppressions.make_entry(
+                fingerprint="f2:future",
+                summary="Unsupported version",
+                rationale="Created by a future migration.",
+                severity="medium",
+                scope="repo",
+                expires_at=None,
+                critical_override=False,
+                created_at="2026-05-12T00:00:00Z",
+            ),
+        ],
+    )
+
+    code = MODULE.main(["doctor", "--format", "json", "--base", "HEAD"])
+
+    assert code in {4, 6}
+    output = capsys.readouterr().out
+    assert "revrem.suppressions.expired" in output
+    assert "revrem.suppressions.unsupported_fingerprint_version" in output
+
+
+def test_doctor_warns_about_unreadable_optional_suppression_state(
+    tmp_path, monkeypatch, capsys
+):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "config", "user.email", "test@example.com")
+    run_git(repo, "config", "user.name", "Test User")
+    (repo / "README.md").write_text("# Fixture\n", encoding="utf-8")
+    run_git(repo, "add", "README.md")
+    run_git(repo, "commit", "-m", "initial")
+    monkeypatch.chdir(repo)
+
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    unreadable_path = suppressions.user_suppressions_path(home)
+
+    def fake_stale_entries(path, *, now=None):
+        if path == unreadable_path:
+            raise PermissionError("blocked")
+        return ([], [])
+
+    monkeypatch.setattr(suppressions, "stale_entries", fake_stale_entries)
+
+    exit_code = MODULE.main(["doctor", "--base", "HEAD", "--codex-bin", "git", "--format", "json"])
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert exit_code == 0
+    assert payload["status"] == "ok"
+    assert "revrem.suppressions.invalid_file" in captured.out
+
+
+def test_loop_invalid_structured_triage_continues_with_original_review(tmp_path):
+    calls = []
+    triage_attempts = 0
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        nonlocal triage_attempts
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[1] == "review":
+            return MODULE.CommandResult(
+                list(args),
+                0,
+                stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
+            )
+        if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
+            triage_attempts += 1
+            return MODULE.CommandResult(list(args), 0, stdout='{"confirmed_findings": []')
+        return MODULE.CommandResult(list(args), 0, stdout="remediated\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=2,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        triage_enabled=True,
+        final_review=False,
+    )
+
+    MODULE.run_loop(config, runner)
+
+    diagnostics_one = json.loads((tmp_path / "artifacts" / "diagnostics-1.json").read_text(encoding="utf-8"))
+    diagnostics_two = json.loads((tmp_path / "artifacts" / "diagnostics-2.json").read_text(encoding="utf-8"))
+    assert diagnostics_one["issues"][0]["code"] == "revrem.triage.invalid_output"
+    assert diagnostics_two["issues"][0]["code"] == "revrem.triage.invalid_output"
+    assert triage_attempts == 2
+    assert "Structured triage handoff" not in (calls[2][1] or "")
+    assert "Full review comments:\n\n- [P2] Fix profile merge" in (calls[2][1] or "")
+    assert "diagnostics-1.json" in {Path(path).name for path in (tmp_path / "artifacts").iterdir()}
+    assert "diagnostics-2.json" in {Path(path).name for path in (tmp_path / "artifacts").iterdir()}
+    summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
+    assert str(tmp_path / "artifacts" / "diagnostics-1.json") in summary["artifact_paths"]["diagnostics"]
+    assert str(tmp_path / "artifacts" / "diagnostics-2.json") in summary["artifact_paths"]["diagnostics"]
+
+
+def test_loop_failed_triage_command_writes_diagnostics(tmp_path):
+    calls = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[1] == "review":
+            return MODULE.CommandResult(
+                list(args),
+                0,
+                stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
+            )
+        if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
+            return MODULE.CommandResult(
+                list(args),
+                -1,
+                stderr="Command timed out after 1 second\n",
+            )
+        return MODULE.CommandResult(list(args), 0, stdout="remediated\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        triage_enabled=True,
+        triage_timeout_seconds=1,
+        final_review=False,
+    )
+
+    with pytest.raises(MODULE.RunLoopFailed):
+        MODULE.run_loop(config, runner)
+
+    diagnostics_payload = json.loads(
+        (tmp_path / "artifacts" / "diagnostics-1.json").read_text(encoding="utf-8")
+    )
+    summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
+    assert diagnostics_payload["issues"][0]["code"] == "revrem.triage.command_failed"
+    assert diagnostics_payload["issues"][0]["evidence"]["returncode"] == -1
+    assert summary["stopped_reason"] == "triage_failed"
+    assert str(tmp_path / "artifacts" / "diagnostics-1.json") in summary["artifact_paths"]["diagnostics"]
+    assert calls[1][2] == 1
+
+
+def test_loop_malformed_suppressions_fail_open_for_structured_triage(tmp_path):
+    repo_root, cwd = make_git_worktree(tmp_path)
+    suppressions_path = suppressions.repo_suppressions_path(cwd)
+    suppressions_path.parent.mkdir(parents=True, exist_ok=True)
+    suppressions_path.write_text("schema_version = \"1.0\"\nsuppressions = [\n", encoding="utf-8")
+
+    calls = []
+    remediation_inputs = []
+    run_count = 0
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        nonlocal run_count
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[1] == "review":
+            return MODULE.CommandResult(
+                list(args),
+                0,
+                stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
+            )
+        if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
+            return MODULE.CommandResult(
+                list(args),
+                0,
+                stdout=json.dumps(
+                    {
+                        "confirmed_findings": [
+                            {
+                                "affected_paths": ["src/code.py"],
+                                "fingerprint": "f1:abc123",
+                                "rationale": "Need fix",
+                                "severity": "medium",
+                                "summary": "Need fix",
+                            }
+                        ],
+                        "implementation_order": ["f1:abc123"],
+                        "needs_more_info": [],
+                        "parsing_warnings": [],
+                        "rejected_findings": [],
+                        "verification_commands": ["pytest -q"],
+                    }
+                ),
+            )
+        if args[0] == "codex" and "exec" in args:
+            run_count += 1
+            remediation_inputs.append(input_text or "")
+            return MODULE.CommandResult(list(args), 0, stdout="remediated\n")
+        if args[:3] == ["git", "add", "-A"]:
+            return MODULE.CommandResult(list(args), 0)
+        if args[:3] == ["git", "diff", "--cached"] and "--quiet" in args:
+            return MODULE.CommandResult(list(args), 1)
+        if args[:3] == ["git", "diff", "--cached"] and "--stat" in args:
+            return MODULE.CommandResult(list(args), 0, stdout=" src/code.py | 1 +\n")
+        if args[:3] == ["git", "diff", "--cached"] and "--name-only" in args:
+            return MODULE.CommandResult(list(args), 0, stdout="src/code.py\n")
+        if args[:3] == ["git", "commit", "-m"]:
+            return MODULE.CommandResult(list(args), 0, stdout="[branch abc] fix(cli): harden RevRem commit flow\n")
+        return MODULE.CommandResult(list(args), 0, stdout="passed\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=cwd,
+        artifact_dir=tmp_path / "artifacts",
+        triage_enabled=True,
+        final_review=False,
+        check_commands=(),
+    )
+
+    summary = MODULE.run_loop(config, runner)
+
+    assert summary["final_status"] == "unknown"
+    assert summary["stopped_reason"] == "max_iterations_reached"
+    assert run_count == 1
+    assert remediation_inputs and "Structured triage handoff" in remediation_inputs[0]
+    assert "Fix profile merge" in remediation_inputs[0]
+    assert len([call for call in calls if "--sandbox" in call[0]]) == 2
+
+
 def test_loop_writes_failure_summary_when_triage_fails(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
@@ -1054,6 +1711,159 @@ def test_loop_writes_failure_summary_when_commit_fails(tmp_path):
     assert str(tmp_path / "artifacts" / "commit-1.txt") in summary["artifact_paths"]["commits"]
 
 
+def test_loop_remediates_commit_hook_failure_by_default(tmp_path):
+    calls = []
+    remediation_prompts = []
+    review_outputs = iter(
+        [
+            "Full review comments:\n\n- [P2] Fix profile merge\n",
+            "Full review comments:\n\n- [P2] Fix commit-hook mypy failure\n",
+        ]
+    )
+    commit_attempts = 0
+    repo_root, cwd = make_git_worktree(tmp_path)
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        nonlocal commit_attempts
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+            return MODULE.CommandResult(list(args), 0, stdout="")
+        if args[0] == "codex" and "review" in args:
+            return MODULE.CommandResult(list(args), 0, stdout=next(review_outputs))
+        if args[0:2] == ["codex", "exec"]:
+            remediation_prompts.append(input_text or "")
+            return MODULE.CommandResult(list(args), 0, stdout="remediated\n")
+        if args[:3] == ["git", "add", "-A"]:
+            return MODULE.CommandResult(list(args), 0)
+        if args[:4] == ["git", "-C", str(repo_root), "reset"]:
+            return MODULE.CommandResult(list(args), 0)
+        if args[:3] == ["git", "diff", "--cached"] and "--quiet" in args:
+            return MODULE.CommandResult(list(args), 1)
+        if args[:3] == ["git", "diff", "--cached"]:
+            return MODULE.CommandResult(list(args), 0, stdout="src/code.py\n")
+        if args[:3] == ["git", "commit", "-m"]:
+            commit_attempts += 1
+            if commit_attempts == 1:
+                return MODULE.CommandResult(
+                    list(args),
+                    1,
+                    stdout=(
+                        "Running mypy on staged Python files...\n"
+                        "tests/unit/test_loop.py:195: error: Module has no attribute\n"
+                        "Found 1 error in 1 file\n"
+                    ),
+                )
+            return MODULE.CommandResult(list(args), 0, stdout="[branch abc] fix\n")
+        return MODULE.CommandResult(list(args), 0, stdout="ok\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=2,
+        codex_bin="codex",
+        cwd=cwd,
+        artifact_dir=tmp_path / "artifacts",
+        commit_after_remediation=True,
+        commit_message_model=None,
+        final_review=False,
+    )
+
+    summary = MODULE.run_loop(config, runner)
+
+    assert summary["iterations"][0]["commit_status"] == "hook_failed"
+    assert summary["iterations"][0]["commit_failed"] is True
+    assert summary["iterations"][1]["commit_status"] == "committed"
+    assert summary["pending_check_failures"] is False
+    assert summary["commit_on_hook_failure"] == "remediate"
+    assert summary["commit_no_verify"] is False
+    assert "Commit hook failure" in remediation_prompts[1]
+    assert "Running mypy on staged Python files" in remediation_prompts[1]
+    assert str(tmp_path / "artifacts" / "commit-1.txt") in summary["artifact_paths"]["commits"]
+
+
+def test_loop_stops_on_commit_hook_failure_when_policy_is_stop(tmp_path):
+    review_outputs = iter(["Full review comments:\n\n- [P2] Fix profile merge\n"])
+    repo_root, cwd = make_git_worktree(tmp_path)
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+            return MODULE.CommandResult(list(args), 0, stdout="")
+        if args[0] == "codex" and "review" in args:
+            return MODULE.CommandResult(list(args), 0, stdout=next(review_outputs))
+        if args[:3] == ["git", "add", "-A"]:
+            return MODULE.CommandResult(list(args), 0)
+        if args[:4] == ["git", "-C", str(repo_root), "reset"]:
+            return MODULE.CommandResult(list(args), 0)
+        if args[:3] == ["git", "diff", "--cached"] and "--quiet" in args:
+            return MODULE.CommandResult(list(args), 1)
+        if args[:3] == ["git", "diff", "--cached"]:
+            return MODULE.CommandResult(list(args), 0, stdout="src/code.py\n")
+        if args[:3] == ["git", "commit", "-m"]:
+            return MODULE.CommandResult(
+                list(args),
+                1,
+                stderr="pre-commit hook failed: mypy found 1 error\n",
+            )
+        return MODULE.CommandResult(list(args), 0, stdout="ok\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=2,
+        codex_bin="codex",
+        cwd=cwd,
+        artifact_dir=tmp_path / "artifacts",
+        commit_after_remediation=True,
+        commit_message_model=None,
+        commit_on_hook_failure="stop",
+    )
+
+    with pytest.raises(MODULE.RunLoopFailed):
+        MODULE.run_loop(config, runner)
+
+    summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
+    assert summary["stopped_reason"] == "commit_hook_failed"
+    assert summary["staged_changes_left"] is True
+    assert summary["pending_check_failures"] is True
+    assert summary["iterations"][0]["commit_status"] == "hook_failed"
+
+
+def test_run_commit_uses_no_verify_only_on_retry(tmp_path):
+    calls = []
+    repo_root, cwd = make_git_worktree(tmp_path)
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append(list(args))
+        if args[:3] == ["git", "add", "-A"]:
+            return MODULE.CommandResult(list(args), 0)
+        if args[:4] == ["git", "-C", str(repo_root), "reset"]:
+            return MODULE.CommandResult(list(args), 0)
+        if args[:3] == ["git", "diff", "--cached"] and "--quiet" in args:
+            return MODULE.CommandResult(list(args), 1)
+        if args[:3] == ["git", "diff", "--cached"]:
+            return MODULE.CommandResult(list(args), 0, stdout="src/code.py\n")
+        if args[:3] == ["git", "commit", "--no-verify"]:
+            return MODULE.CommandResult(list(args), 0, stdout="[branch abc] fix\n")
+        return MODULE.CommandResult(list(args), 0, stdout="ok\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=cwd,
+        artifact_dir=tmp_path / "artifacts",
+        commit_after_remediation=True,
+        commit_message_model=None,
+        commit_on_hook_failure="no-verify",
+    )
+
+    assert MODULE.run_commit(config, runner, 1) == "committed"
+    assert ["git", "commit", "-m", "chore: remediate review iteration 1 (RevRem)"] in calls
+    assert ["git", "commit", "--no-verify", "-m", "chore: remediate review iteration 1 (RevRem)"] not in calls
+
+    calls.clear()
+    assert MODULE.run_commit(config, runner, 1, retrying=True) == "committed"
+    assert ["git", "commit", "--no-verify", "-m", "chore: remediate review iteration 1 (RevRem)"] in calls
+
+
 def test_debug_status_detection_writes_diagnostic_artifact(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
@@ -1249,6 +2059,44 @@ def test_subprocess_refresh_loop_kills_child_on_interrupt(tmp_path, monkeypatch)
     assert len(refresh_calls) == 1
 
 
+def test_repeated_cancellation_signal_within_window_is_marked_forced(monkeypatch):
+    monkeypatch.setattr(MODULE, "_LAST_CANCELLATION_SIGNAL_AT", None)
+
+    first = MODULE.cancellation_interrupt_for_signal(MODULE.signal.SIGINT, now=100.0)
+    second = MODULE.cancellation_interrupt_for_signal(MODULE.signal.SIGINT, now=103.0)
+
+    assert "controlled cancellation" in str(first)
+    assert "forced cancellation" in str(second)
+
+
+def test_cancellation_signal_after_window_starts_new_controlled_stop(monkeypatch):
+    monkeypatch.setattr(MODULE, "_LAST_CANCELLATION_SIGNAL_AT", None)
+
+    MODULE.cancellation_interrupt_for_signal(MODULE.signal.SIGTERM, now=100.0)
+    later = MODULE.cancellation_interrupt_for_signal(MODULE.signal.SIGTERM, now=106.0)
+
+    assert "controlled cancellation" in str(later)
+
+
+def test_kill_process_tree_targets_child_process_group(monkeypatch):
+    calls = []
+
+    class FakeProcess:
+        pid = 12345
+
+        def kill(self):
+            calls.append(("kill", self.pid))
+
+    def fake_killpg(pid, sig):
+        calls.append(("killpg", pid, sig))
+
+    monkeypatch.setattr(MODULE.os, "killpg", fake_killpg)
+
+    MODULE.kill_process_tree(FakeProcess())
+
+    assert calls == [("killpg", 12345, MODULE.signal.SIGKILL)]
+
+
 def test_subprocess_refresh_loop_does_not_resend_input_after_timeout(tmp_path, monkeypatch):
     refresh_calls = []
 
@@ -1319,8 +2167,8 @@ def test_main_handles_keyboard_interrupt_without_traceback(tmp_path, monkeypatch
 
     exit_code = MODULE.main([])
 
-    assert exit_code == 130
-    assert capsys.readouterr().err == "Interrupted by user.\n"
+    assert exit_code == 5
+    assert capsys.readouterr().err == "Cancelled by user.\n"
 
 
 def test_loop_can_start_from_initial_review_file(tmp_path):
@@ -1353,6 +2201,58 @@ def test_loop_can_start_from_initial_review_file(tmp_path):
     assert calls[0][1] is not None and "Carry this forward" in calls[0][1]
     assert summary["iterations"][0]["review_source"] == str(initial_review)
     assert (tmp_path / "artifacts" / "review-initial.txt").exists()
+
+
+def test_loop_writes_structured_triage_source_for_initial_review_file(tmp_path):
+    calls = []
+    initial_review = tmp_path / "previous-review-final.txt"
+    initial_review.write_text(
+        "Full review comments:\n\n- [P2] Carry this forward — src/state.py:1\n",
+        encoding="utf-8",
+    )
+    triage_payload = {
+        "confirmed_findings": [
+            {
+                "affected_paths": ["src/app.py"],
+                "fingerprint": "f1:abc123",
+                "rationale": "The review finding is actionable.",
+                "severity": "medium",
+                "summary": "Fix the bug.",
+            }
+        ],
+        "implementation_order": ["f1:abc123"],
+        "needs_more_info": [],
+        "parsing_warnings": [],
+        "rejected_findings": [],
+        "verification_commands": ["pytest -q"],
+    }
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text))
+        if args[1] == "review":
+            return MODULE.CommandResult(list(args), 0, stdout="REVIEW_STATUS: findings\n")
+        if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
+            return MODULE.CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
+        return MODULE.CommandResult(list(args), 0, stdout="remediated\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        initial_review_file=initial_review,
+        triage_enabled=True,
+        final_review=False,
+    )
+
+    summary = MODULE.run_loop(config, runner)
+
+    triage_json = json.loads((tmp_path / "artifacts" / "triage-1.json").read_text(encoding="utf-8"))
+    assert triage_json["source_review_artifact"] == "review-initial.txt"
+    assert summary["artifact_paths"]["reviews"] == [str(tmp_path / "artifacts" / "review-initial.txt")]
+    assert (tmp_path / "artifacts" / "review-initial.txt").exists()
+    assert "Structured triage handoff" in (calls[1][1] or "")
 
 
 def test_resolve_initial_review_file_latest(tmp_path):
@@ -1668,6 +2568,12 @@ enabled = true
 summary_format = "json"
 debug_status_detection = true
 quiet_progress = true
+
+[profiles.final-pr.budgets]
+max_wall_seconds = 120
+max_tokens = 1000
+max_usd = "0.75"
+soft_warn_fraction = 0.5
 """,
         encoding="utf-8",
     )
@@ -1701,6 +2607,10 @@ quiet_progress = true
     assert config.check_commands == ("pytest -q", "git diff --check")
     assert config.debug_status_detection is True
     assert config.progress is False
+    assert config.budget_config.max_wall_seconds == 120
+    assert config.budget_config.max_tokens == 1000
+    assert str(config.budget_config.max_usd) == "0.75"
+    assert config.budget_config.soft_warn_fraction == 0.5
 
 
 def test_default_artifact_dir_uses_revrem_namespace():
@@ -2563,6 +3473,7 @@ timeout_seconds = 1800
     assert config.review_timeout_seconds == 0
     assert config.remediation_timeout_seconds == 1800
 
+    object.__setattr__(config, "preflight_enabled", False)
     summary = MODULE.run_loop(config, runner)
 
     assert summary["final_status"] == "clear"
@@ -2666,7 +3577,8 @@ def test_config_commands_create_show_list_and_delete_profile(tmp_path, monkeypat
     editor.write_text(
         "#!/bin/sh\n"
         "printf '%s\\n' \"$1\" > \"$EDITOR_LOG\"\n"
-        "sed -i 's/Smoke profile/Edited profile/' \"$1\"\n",
+        "sed -i.bak 's/Smoke profile/Edited profile/' \"$1\"\n"
+        "rm -f \"$1.bak\"\n",
         encoding="utf-8",
     )
     editor.chmod(0o755)
@@ -2998,6 +3910,12 @@ def test_loop_continues_after_check_failure_and_feeds_output_into_next_pass(tmp_
     # The second remediation prompt must include the check-failure output from iter-1
     second_prompt = exec_calls[1][1]
     assert second_prompt is not None and "1 FAILED" in second_prompt
+    records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
+    check_events = [event for event in records if event.kind == "check_result"]
+    assert truncated is False
+    assert [event.payload["status"] for event in check_events] == ["failed", "passed"]
+    assert check_events[0].payload["command"] == "pytest tests/"
+    assert check_events[0].payload["artifact"] == "check-1-1.txt"
 
 
 def test_pending_check_failure_blocks_early_clear_status(tmp_path):
@@ -3191,6 +4109,327 @@ def test_run_codex_review_fails_fast_when_base_has_no_merge_base(tmp_path):
     artifact_text = (repo / "artifacts" / "review-1.txt").read_text(encoding="utf-8")
     assert "Review base preflight failed" in artifact_text
     assert "git merge-base HEAD main" in artifact_text
+
+
+def test_doctor_json_reports_invalid_base_without_invoking_runner(tmp_path, monkeypatch, capsys):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "config", "user.email", "test@example.com")
+    run_git(repo, "config", "user.name", "Test User")
+    (repo / "README.md").write_text("# Fixture\n", encoding="utf-8")
+    run_git(repo, "add", "README.md")
+    run_git(repo, "commit", "-m", "initial")
+    monkeypatch.chdir(repo)
+
+    def runner(*_args, **_kwargs):
+        raise AssertionError("revrem doctor must not invoke the Codex runner")
+
+    monkeypatch.setattr(MODULE, "default_runner", runner)
+
+    exit_code = MODULE.main(
+        ["doctor", "--base", "missing", "--codex-bin", "git", "--format", "json"]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert exit_code == 4
+    assert payload["status"] == "blocking"
+    assert {issue["code"] for issue in payload["issues"]} == {"revrem.preflight.invalid_base"}
+    assert captured.err == ""
+
+
+def test_live_cli_preflight_blocks_before_review_invocation(tmp_path, monkeypatch, capsys):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "config", "user.email", "test@example.com")
+    run_git(repo, "config", "user.name", "Test User")
+    (repo / "README.md").write_text("# Fixture\n", encoding="utf-8")
+    run_git(repo, "add", "README.md")
+    run_git(repo, "commit", "-m", "initial")
+    monkeypatch.chdir(repo)
+
+    def fail_review(*_args, **_kwargs):
+        raise AssertionError("review must not run when live preflight blocks")
+
+    monkeypatch.setattr(MODULE, "run_codex_review", fail_review)
+
+    exit_code = MODULE.main(
+        ["--base", "missing", "--codex-bin", "git", "--artifact-dir", "artifacts"]
+    )
+
+    diagnostics_payload = json.loads((repo / "artifacts" / "diagnostics.json").read_text(encoding="utf-8"))
+    summary = json.loads((repo / "artifacts" / "summary.json").read_text(encoding="utf-8"))
+
+    assert exit_code == 4
+    assert diagnostics_payload["status"] == "blocking"
+    assert {issue["code"] for issue in diagnostics_payload["issues"]} == {
+        "revrem.preflight.invalid_base"
+    }
+    assert diagnostics_payload["issues"][0]["fingerprint"].startswith("f1:")
+    assert summary["stopped_reason"] == "setup_failed"
+    assert "preflight diagnostics found blocking issue" in capsys.readouterr().err
+
+
+def test_doctor_json_reports_missing_git_as_blocking_issue(tmp_path, monkeypatch, capsys):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "config", "user.email", "test@example.com")
+    run_git(repo, "config", "user.name", "Test User")
+    (repo / "README.md").write_text("# Fixture\n", encoding="utf-8")
+    run_git(repo, "add", "README.md")
+    run_git(repo, "commit", "-m", "initial")
+    monkeypatch.chdir(repo)
+
+    def fake_run(*_args, **_kwargs):
+        raise FileNotFoundError("git")
+
+    monkeypatch.setattr(MODULE.diagnostics.subprocess, "run", fake_run)
+
+    exit_code = MODULE.main(["doctor", "--base", "main", "--codex-bin", "git", "--format", "json"])
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert exit_code == 4
+    assert payload["status"] == "blocking"
+    assert {issue["code"] for issue in payload["issues"]} == {"revrem.preflight.git_not_found"}
+    assert captured.err == ""
+
+
+def test_doctor_text_reports_ok_for_valid_repo(tmp_path, monkeypatch, capsys):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "config", "user.email", "test@example.com")
+    run_git(repo, "config", "user.name", "Test User")
+    (repo / "README.md").write_text("# Fixture\n", encoding="utf-8")
+    run_git(repo, "add", "README.md")
+    run_git(repo, "commit", "-m", "initial")
+    monkeypatch.chdir(repo)
+
+    exit_code = MODULE.main(["doctor", "--base", "main", "--codex-bin", "git", "--format", "text"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "OK: revrem.preflight.ok" in captured.out
+    assert captured.err == ""
+
+
+def test_doctor_validates_default_artifact_dir_when_unset(tmp_path, monkeypatch, capsys):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "config", "user.email", "test@example.com")
+    run_git(repo, "config", "user.name", "Test User")
+    (repo / "README.md").write_text("# Fixture\n", encoding="utf-8")
+    run_git(repo, "add", "README.md")
+    run_git(repo, "commit", "-m", "initial")
+    monkeypatch.chdir(repo)
+
+    blocked_artifact_dir = repo / ".revrem" / "runs" / "blocked-default"
+    blocked_artifact_dir.parent.mkdir(parents=True)
+    blocked_artifact_dir.write_text("blocked\n", encoding="utf-8")
+    monkeypatch.setattr(MODULE, "default_artifact_dir", lambda: blocked_artifact_dir)
+
+    exit_code = MODULE.main(["doctor", "--base", "main", "--codex-bin", "git", "--format", "json"])
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert exit_code == 4
+    assert payload["status"] == "blocking"
+    assert {issue["code"] for issue in payload["issues"]} == {
+        "revrem.preflight.artifact_dir_not_writable",
+    }
+    assert payload["issues"][0]["evidence"]["artifact_dir"] == str(blocked_artifact_dir)
+    assert captured.err == ""
+
+
+def test_doctor_does_not_create_default_artifact_dir_on_clean_repo(tmp_path, monkeypatch, capsys):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "config", "user.email", "test@example.com")
+    run_git(repo, "config", "user.name", "Test User")
+    (repo / "README.md").write_text("# Fixture\n", encoding="utf-8")
+    run_git(repo, "add", "README.md")
+    run_git(repo, "commit", "-m", "initial")
+    monkeypatch.chdir(repo)
+
+    default_artifact_dir = repo / ".revrem" / "runs" / "default-run"
+    monkeypatch.setattr(MODULE, "default_artifact_dir", lambda: default_artifact_dir)
+
+    exit_code = MODULE.main(["doctor", "--base", "main", "--codex-bin", "git", "--format", "json"])
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert exit_code == 0
+    assert payload["status"] == "ok"
+    assert not (repo / ".revrem").exists()
+    assert captured.err == ""
+
+
+def test_doctor_strict_returns_exit_code_6_for_warnings(tmp_path, monkeypatch, capsys):
+    repo = tmp_path / "repo"
+    home = tmp_path / "home"
+    repo.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "config", "user.email", "test@example.com")
+    run_git(repo, "config", "user.name", "Test User")
+    (repo / "README.md").write_text("# Fixture\n", encoding="utf-8")
+    run_git(repo, "add", "README.md")
+    run_git(repo, "commit", "-m", "initial")
+    config_path = profiles.user_config_path(home)
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.unbounded]
+description = "Explicitly unbounded review timeout"
+
+[profiles.unbounded.review]
+timeout_seconds = 0
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(repo)
+
+    exit_code = MODULE.main(
+        [
+            "doctor",
+            "--profile",
+            "unbounded",
+            "--base",
+            "main",
+            "--codex-bin",
+            "git",
+            "--strict",
+            "--format",
+            "json",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert exit_code == 6
+    assert payload["status"] == "ok"
+    assert {issue["code"] for issue in payload["issues"]} == {
+        "revrem.preflight.timeout_disabled",
+    }
+    assert captured.err == ""
+
+
+def test_doctor_profile_blocks_repo_root_artifact_dir_in_commit_mode(tmp_path, monkeypatch, capsys):
+    repo = tmp_path / "repo"
+    home = tmp_path / "home"
+    repo.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "config", "user.email", "test@example.com")
+    run_git(repo, "config", "user.name", "Test User")
+    (repo / "README.md").write_text("# Fixture\n", encoding="utf-8")
+    run_git(repo, "add", "README.md")
+    run_git(repo, "commit", "-m", "initial")
+    config_path = profiles.user_config_path(home)
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.commit-root]
+description = "Commit mode with a root artifact dir"
+
+[profiles.commit-root.commit]
+enabled = true
+
+[profiles.commit-root.output]
+artifact_dir = "."
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(repo)
+
+    exit_code = MODULE.main(
+        ["doctor", "--profile", "commit-root", "--base", "main", "--codex-bin", "git", "--format", "json"]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert exit_code == 4
+    assert payload["status"] == "blocking"
+    assert {issue["code"] for issue in payload["issues"]} == {
+        "revrem.preflight.artifact_dir_resolves_to_repo_root",
+    }
+    assert payload["issues"][0]["evidence"]["artifact_dir"] == "."
+    assert captured.err == ""
+
+
+def test_doctor_profile_allows_reserved_harnesses_without_profile_error(tmp_path, monkeypatch, capsys):
+    repo = tmp_path / "repo"
+    home = tmp_path / "home"
+    repo.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "config", "user.email", "test@example.com")
+    run_git(repo, "config", "user.name", "Test User")
+    (repo / "README.md").write_text("# Fixture\n", encoding="utf-8")
+    run_git(repo, "add", "README.md")
+    run_git(repo, "commit", "-m", "initial")
+    config_path = profiles.user_config_path(home)
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.smoke]
+description = "Smoke profile"
+
+[profiles.smoke.review]
+harness = "claude"
+
+[profiles.smoke.remediation]
+harness = "gemini"
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(repo)
+
+    exit_code = MODULE.main(
+        ["doctor", "--profile", "smoke", "--base", "main", "--codex-bin", "git", "--format", "json"]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert exit_code == 0
+    assert payload["status"] == "ok"
+    assert {issue["code"] for issue in payload["issues"]} == {"revrem.preflight.ok"}
+    assert captured.err == ""
+
+
+def test_bundle_bug_report_cli_blocks_no_redact_without_explicit_risk_ack(tmp_path, capsys):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+
+    exit_code = MODULE.main(["bundle-bug-report", str(run_dir), "--no-redact"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 4
+    assert "--no-redact requires --i-understand-the-risks" in captured.err
+
+
+def test_bundle_bug_report_cli_writes_output_path(tmp_path, capsys):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "summary.json").write_text(
+        '{"schema_version":"1.0","run_id":"run-123"}\n',
+        encoding="utf-8",
+    )
+    (run_dir / "check-1.txt").write_text("Authorization: Bearer secret-token\n", encoding="utf-8")
+    output = tmp_path / "bundle.tar.gz"
+
+    exit_code = MODULE.main(["bundle-bug-report", str(run_dir), "--output", str(output)])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured.out.strip() == str(output.resolve())
+    assert output.is_file()
 
 
 def run_git(cwd: Path, *args: str) -> None:
@@ -3960,11 +5199,522 @@ def test_loop_writes_failure_summary_when_remediation_fails(tmp_path):
         raise AssertionError("expected remediation failure")
 
     summary = (tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8")
+    records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
+    failure_events = [event for event in records if event.kind == "failure"]
+
     assert '"final_status": "error"' in summary
     assert '"stopped_reason": "remediation_failed"' in summary
     assert '"artifact_paths"' in summary
     assert "review-1.txt" in summary
     assert '"1.txt"' not in summary
+    assert truncated is False
+    assert any(event.payload.get("reason") == "remediation_failed" for event in failure_events)
+
+
+def test_loop_stops_before_model_call_when_wall_budget_exceeded(tmp_path):
+    calls = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append(args)
+        return MODULE.CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        budget_config=MODULE.budgets.BudgetConfig(max_wall_seconds=0),
+        budget_state=MODULE.budgets.BudgetState(started_at_monotonic=0),
+    )
+
+    with pytest.raises(MODULE.RunLoopFailed) as excinfo:
+        MODULE.run_loop(config, runner)
+
+    summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
+    records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
+
+    assert calls == []
+    assert excinfo.value.summary["stopped_reason"] == "budget_ceiling_hit"
+    assert summary["final_status"] == "error"
+    assert summary["stopped_reason"] == "budget_ceiling_hit"
+    assert summary["budgets"]["max_wall_seconds"] == 0
+    assert summary["budgets"]["tokens"] is None
+    assert summary["budgets"]["usd"] is None
+    assert truncated is False
+    assert any(event.kind == "cost_ceiling_hit" and event.payload["ceiling"] == "wall" for event in records)
+
+
+def test_loop_emits_budget_soft_warning_before_model_call(tmp_path):
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        return MODULE.CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        budget_config=MODULE.budgets.BudgetConfig(max_wall_seconds=100, soft_warn_fraction=0.5),
+        budget_state=MODULE.budgets.BudgetState(started_at_monotonic=time.monotonic() - 60),
+    )
+
+    MODULE.run_loop(config, runner)
+
+    records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
+
+    assert truncated is False
+    assert any(
+        event.kind == "warning" and event.payload.get("reason") == "wall_budget_soft_warning"
+        for event in records
+    )
+
+
+def test_loop_records_token_charge_and_stops_before_next_model_call(tmp_path):
+    calls = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append(list(args))
+        return MODULE.CommandResult(list(args), 0, stdout="REVIEW_STATUS: findings\n", tokens=10)
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        budget_config=MODULE.budgets.BudgetConfig(max_tokens=10),
+    )
+
+    with pytest.raises(MODULE.RunLoopFailed) as excinfo:
+        MODULE.run_loop(config, runner)
+
+    summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
+    records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
+
+    assert len(calls) == 1
+    assert excinfo.value.summary["stopped_reason"] == "budget_ceiling_hit"
+    assert summary["budgets"]["tokens"] == 10
+    assert summary["budgets"]["usd"] is None
+    assert (tmp_path / "artifacts" / "review-1.txt").read_text(encoding="utf-8") == "REVIEW_STATUS: findings\n"
+    assert truncated is False
+    assert any(event.kind == "cost_charge" and event.payload["tokens"] == 10 for event in records)
+    assert any(event.kind == "cost_ceiling_hit" and event.payload["ceiling"] == "tokens" for event in records)
+
+
+def test_loop_records_usd_charge_and_stops_before_next_model_call(tmp_path):
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        return MODULE.CommandResult(
+            list(args),
+            0,
+            stdout="REVIEW_STATUS: findings\n",
+            usd=Decimal("1.25"),
+        )
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        budget_config=MODULE.budgets.BudgetConfig(max_usd=Decimal("1.25")),
+    )
+
+    with pytest.raises(MODULE.RunLoopFailed):
+        MODULE.run_loop(config, runner)
+
+    summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
+    records, _truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
+
+    assert summary["budgets"]["tokens"] is None
+    assert summary["budgets"]["usd"] == "1.25"
+    assert any(event.kind == "cost_charge" and event.payload["usd"] == "1.25" for event in records)
+    assert any(event.kind == "cost_ceiling_hit" and event.payload["ceiling"] == "usd" for event in records)
+
+
+def test_main_returns_exit_code_3_for_budget_ceiling(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    summary = {
+        "run_id": "run-1",
+        "final_status": "error",
+        "stopped_reason": "budget_ceiling_hit",
+        "iterations": [],
+    }
+
+    def fake_run_loop(_config):
+        raise MODULE.RunLoopFailed(summary, "wall budget exceeded")
+
+    monkeypatch.setattr(MODULE, "run_loop", fake_run_loop)
+
+    exit_code = MODULE.main(["--max-wall-seconds", "0", "--no-run-history"])
+
+    assert exit_code == 3
+    assert "wall budget exceeded" in capsys.readouterr().err
+
+
+def test_loop_writes_cancellation_summary_when_interrupted(tmp_path):
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        raise KeyboardInterrupt
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+    )
+
+    with pytest.raises(MODULE.RunLoopFailed) as excinfo:
+        MODULE.run_loop(config, runner)
+
+    summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
+    diagnostics_payload = json.loads(
+        (tmp_path / "artifacts" / "diagnostics.json").read_text(encoding="utf-8")
+    )
+    records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
+
+    assert str(excinfo.value) == "cancelled by operator"
+    assert summary["final_status"] == "error"
+    assert summary["stopped_reason"] == "cancelled"
+    assert summary["error"] == "cancelled by operator"
+    assert summary["artifact_paths"]["summary"] == str(tmp_path / "artifacts" / "summary.json")
+    assert summary["artifact_paths"]["diagnostics"] == [str(tmp_path / "artifacts" / "diagnostics.json")]
+    assert diagnostics_payload["issues"][0]["code"] == "revrem.run.cancelled"
+    assert truncated is False
+    assert any(
+        event.kind == "cancellation" and event.payload.get("reason") == "operator_interrupt"
+        for event in records
+    )
+    assert any(event.kind == "summary" and event.payload.get("summary") == "cancelled" for event in records)
+
+
+def test_fake_harness_can_drive_clear_review_without_shelling_out(tmp_path, monkeypatch):
+    monkeypatch.setenv(MODULE.harnesses.FAKE_HARNESS_ENV, "1")
+    calls = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append(list(args))
+        return MODULE.default_runner(args, cwd, input_text, timeout_seconds)
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="fake",
+        review_model="review_clear",
+    )
+
+    summary = MODULE.run_loop(config, runner)
+
+    assert summary["final_status"] == "clear"
+    assert summary["harness"] == "fake"
+    assert calls == [["revrem-fake-harness", "review", "--scenario", "review_clear"]]
+    assert (tmp_path / "artifacts" / "review-1.txt").read_text(encoding="utf-8") == (
+        "No actionable findings.\nREVIEW_STATUS: clear\n"
+    )
+
+
+def test_fake_harness_can_drive_remediation_cycle(tmp_path, monkeypatch):
+    monkeypatch.setenv(MODULE.harnesses.FAKE_HARNESS_ENV, "1")
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if list(args) == ["revrem-fake-harness", "review", "--scenario", "review_findings"]:
+            object.__setattr__(config, "review_model", "review_clear")
+        return MODULE.default_runner(args, cwd, input_text, timeout_seconds)
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="fake",
+        remediation_harness="fake",
+        review_model="review_findings",
+        remediation_model="remediation",
+    )
+
+    summary = MODULE.run_loop(config, runner)
+
+    assert summary["final_status"] == "clear"
+    assert summary["iterations"][0]["review_status"] == "findings"
+    assert "Fake remediation completed." in (
+        tmp_path / "artifacts" / "remediation-1.txt"
+    ).read_text(encoding="utf-8")
+
+
+def test_fake_harness_partial_remediation_surfaces_artifact(tmp_path, monkeypatch):
+    monkeypatch.setenv(MODULE.harnesses.FAKE_HARNESS_ENV, "1")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="fake",
+        remediation_harness="fake",
+        review_model="review_findings",
+        remediation_model="remediation_partial",
+    )
+
+    with pytest.raises(MODULE.RunLoopFailed) as excinfo:
+        MODULE.run_loop(config, MODULE.default_runner)
+
+    assert excinfo.value.summary["stopped_reason"] == "remediation_failed"
+    assert "partial progress" in (
+        tmp_path / "artifacts" / "remediation-1.txt"
+    ).read_text(encoding="utf-8")
+
+
+def test_fake_harness_can_drive_structured_triage(tmp_path, monkeypatch):
+    monkeypatch.setenv(MODULE.harnesses.FAKE_HARNESS_ENV, "1")
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if list(args) == ["revrem-fake-harness", "review", "--scenario", "review_findings"]:
+            object.__setattr__(config, "review_model", "review_clear")
+        return MODULE.default_runner(args, cwd, input_text, timeout_seconds)
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="fake",
+        triage_harness="fake",
+        remediation_harness="fake",
+        review_model="review_findings",
+        triage_model="triage_valid",
+        remediation_model="remediation",
+        triage_enabled=True,
+    )
+
+    summary = MODULE.run_loop(config, runner)
+    triage_json = json.loads((tmp_path / "artifacts" / "triage-1.json").read_text(encoding="utf-8"))
+
+    assert summary["final_status"] == "clear"
+    assert triage_json["confirmed_findings"][0]["fingerprint"] == "f1:fake"
+
+
+def test_fake_and_codex_summary_shapes_are_structurally_equivalent(tmp_path, monkeypatch):
+    monkeypatch.setenv(MODULE.harnesses.FAKE_HARNESS_ENV, "1")
+    fake_dir = tmp_path / "fake"
+    codex_dir = tmp_path / "codex"
+    fake_dir.mkdir()
+    codex_dir.mkdir()
+
+    fake_config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=fake_dir,
+        artifact_dir=fake_dir / "artifacts",
+        review_harness="fake",
+        review_model="review_clear",
+    )
+    codex_config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=codex_dir,
+        artifact_dir=codex_dir / "artifacts",
+        review_model="review_clear",
+    )
+
+    def codex_runner(args, cwd, input_text=None, timeout_seconds=None):
+        return MODULE.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+
+    fake_summary = MODULE.run_loop(fake_config, MODULE.default_runner)
+    codex_summary = MODULE.run_loop(codex_config, codex_runner)
+
+    assert summary_shape(fake_summary) == summary_shape(codex_summary)
+    assert fake_summary["harness"] == "fake"
+    assert codex_summary["harness"] == "codex"
+    assert fake_summary["final_status"] == codex_summary["final_status"] == "clear"
+
+
+def test_fake_harness_timeout_surfaces_as_review_failure(tmp_path, monkeypatch):
+    monkeypatch.setenv(MODULE.harnesses.FAKE_HARNESS_ENV, "1")
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="fake",
+        review_model="timeout",
+    )
+
+    with pytest.raises(MODULE.RunLoopFailed) as excinfo:
+        MODULE.run_loop(config, MODULE.default_runner)
+
+    assert excinfo.value.summary["stopped_reason"] == "review_failed"
+    assert "Fake harness timeout" in (
+        tmp_path / "artifacts" / "review-1.txt"
+    ).read_text(encoding="utf-8")
+
+
+def test_fake_harness_cancellation_uses_controlled_cancellation_path(tmp_path, monkeypatch):
+    monkeypatch.setenv(MODULE.harnesses.FAKE_HARNESS_ENV, "1")
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="fake",
+        review_model="cancellation",
+    )
+
+    with pytest.raises(MODULE.RunLoopFailed) as excinfo:
+        MODULE.run_loop(config, MODULE.default_runner)
+
+    assert excinfo.value.summary["stopped_reason"] == "cancelled"
+    records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
+    assert truncated is False
+    assert any(event.kind == "cancellation" for event in records)
+
+
+def test_fake_harness_unsupported_surfaces_as_review_failure(tmp_path, monkeypatch):
+    monkeypatch.setenv(MODULE.harnesses.FAKE_HARNESS_ENV, "1")
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="fake",
+        review_model="unsupported",
+    )
+
+    with pytest.raises(MODULE.RunLoopFailed) as excinfo:
+        MODULE.run_loop(config, MODULE.default_runner)
+
+    assert excinfo.value.summary["stopped_reason"] == "review_failed"
+    assert "unsupported" in (tmp_path / "artifacts" / "review-1.txt").read_text(encoding="utf-8")
+
+
+def test_fake_harness_token_charge_drives_budget_ceiling(tmp_path, monkeypatch):
+    monkeypatch.setenv(MODULE.harnesses.FAKE_HARNESS_ENV, "1")
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="fake",
+        review_model="cost_ceiling",
+        budget_config=MODULE.budgets.BudgetConfig(max_tokens=10),
+    )
+
+    with pytest.raises(MODULE.RunLoopFailed) as excinfo:
+        MODULE.run_loop(config, MODULE.default_runner)
+
+    summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
+    records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
+
+    assert excinfo.value.summary["stopped_reason"] == "budget_ceiling_hit"
+    assert summary["budgets"]["tokens"] == 10
+    assert summary["budgets"]["usd"] is None
+    assert truncated is False
+    assert any(event.kind == "cost_charge" and event.payload["tokens"] == 10 for event in records)
+    assert any(event.kind == "cost_ceiling_hit" and event.payload["ceiling"] == "tokens" for event in records)
+
+
+def test_summary_records_git_state_for_resume(tmp_path, monkeypatch):
+    monkeypatch.setattr(MODULE, "lexical_git_repo_root", lambda _cwd: tmp_path)
+
+    def fake_run_git_preflight(cwd, args):
+        if list(args) == ["rev-parse", "HEAD"]:
+            return MODULE.CommandResult(["git", *args], 0, stdout="head-sha\n")
+        if list(args) == ["rev-parse", "--verify", "main^{commit}"]:
+            return MODULE.CommandResult(["git", *args], 0, stdout="base-sha\n")
+        if list(args) == ["merge-base", "HEAD", "main"]:
+            return MODULE.CommandResult(["git", *args], 0, stdout="merge-sha\n")
+        return MODULE.CommandResult(["git", *args], 1, stderr="unexpected")
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        return MODULE.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+
+    monkeypatch.setattr(MODULE, "run_git_preflight", fake_run_git_preflight)
+
+    summary = MODULE.run_loop(
+        MODULE.LoopConfig(
+            base="main",
+            max_iterations=1,
+            codex_bin="codex",
+            cwd=tmp_path,
+            artifact_dir=tmp_path / "artifacts",
+        ),
+        runner,
+    )
+
+    assert summary["git_state"] == {
+        "head": "head-sha",
+        "base": "main",
+        "base_commit": "base-sha",
+        "merge_base": "merge-sha",
+        "available": True,
+    }
+
+
+def test_summary_records_unavailable_git_state_outside_git(tmp_path, monkeypatch):
+    monkeypatch.setattr(MODULE, "lexical_git_repo_root", lambda _cwd: None)
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        return MODULE.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+
+    summary = MODULE.run_loop(
+        MODULE.LoopConfig(
+            base="main",
+            max_iterations=1,
+            codex_bin="codex",
+            cwd=tmp_path,
+            artifact_dir=tmp_path / "artifacts",
+        ),
+        runner,
+    )
+
+    assert summary["git_state"] == {
+        "head": None,
+        "base": "main",
+        "base_commit": None,
+        "merge_base": None,
+        "available": False,
+    }
+
+
+def summary_shape(value):
+    if isinstance(value, dict):
+        return {key: summary_shape(item) for key, item in sorted(value.items())}
+    if isinstance(value, list):
+        return [summary_shape(value[0])] if value else []
+    if value is None:
+        return None
+    return type(value).__name__
+
+
+def test_main_returns_exit_code_5_for_controlled_cancellation(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    summary = {
+        "run_id": "run-1",
+        "final_status": "error",
+        "stopped_reason": "cancelled",
+        "iterations": [],
+    }
+
+    def fake_run_loop(_config):
+        raise MODULE.RunLoopFailed(summary, "cancelled by operator")
+
+    monkeypatch.setattr(MODULE, "run_loop", fake_run_loop)
+
+    exit_code = MODULE.main(["--no-run-history"])
+
+    assert exit_code == 5
+    assert "cancelled by operator" in capsys.readouterr().err
 
 
 def test_loop_writes_failure_summary_when_initial_review_invocation_fails(tmp_path):
@@ -3993,6 +5743,12 @@ def test_loop_writes_failure_summary_when_initial_review_invocation_fails(tmp_pa
     assert summary["artifact_paths"]["summary"] == str(tmp_path / "artifacts" / "summary.json")
     assert summary["artifact_paths"]["reviews"] == [str(review_path)]
     assert review_path.is_file()
+    records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
+    assert truncated is False
+    assert any(
+        event.kind == "failure" and event.payload.get("reason") == "review_failed"
+        for event in records
+    )
 
 
 def test_loop_writes_failure_summary_when_final_review_invocation_fails(tmp_path):
@@ -4034,3 +5790,144 @@ def test_loop_writes_failure_summary_when_final_review_invocation_fails(tmp_path
         str(review_path),
     ]
     assert review_path.is_file()
+
+
+def test_append_run_history_preserves_budget_totals(tmp_path):
+    from decimal import Decimal
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[1] == "review":
+            return MODULE.CommandResult(
+                list(args), 0, stdout="No findings.\nREVIEW_STATUS: clear\n", tokens=500, usd=Decimal("0.03")
+            )
+        return MODULE.CommandResult(list(args), 0, stdout="ok\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+    )
+
+    summary = MODULE.run_loop(config, runner)
+    budgets_before = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))["budgets"]
+
+    assert budgets_before["tokens"] == 500
+    assert budgets_before["usd"] == "0.03"
+
+    MODULE.append_run_history(summary, config)
+    budgets_after = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))["budgets"]
+
+    assert budgets_after["tokens"] == budgets_before["tokens"]
+    assert budgets_after["usd"] == budgets_before["usd"]
+
+
+def test_budget_exceeded_propagates_through_triage(tmp_path, monkeypatch):
+    exc = MODULE.budgets.BudgetExceeded(ceiling="tokens", limit=100, actual=150)
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        return MODULE.CommandResult(
+            list(args), 0, stdout="## Finding\nbad code\nREVIEW_STATUS: findings\n"
+        )
+
+    monkeypatch.setattr(MODULE, "run_triage", lambda *a, **kw: (_ for _ in ()).throw(exc))
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=2,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        triage_enabled=True,
+    )
+
+    with pytest.raises(MODULE.RunLoopFailed) as excinfo:
+        MODULE.run_loop(config, runner)
+
+    assert excinfo.value.summary["stopped_reason"] == "budget_ceiling_hit"
+
+
+def test_budget_exceeded_propagates_through_remediation(tmp_path, monkeypatch):
+    exc = MODULE.budgets.BudgetExceeded(ceiling="tokens", limit=100, actual=150)
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        return MODULE.CommandResult(
+            list(args), 0, stdout="## Finding\nbad code\nREVIEW_STATUS: findings\n"
+        )
+
+    monkeypatch.setattr(MODULE, "run_remediation", lambda *a, **kw: (_ for _ in ()).throw(exc))
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=2,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+    )
+
+    with pytest.raises(MODULE.RunLoopFailed) as excinfo:
+        MODULE.run_loop(config, runner)
+
+    assert excinfo.value.summary["stopped_reason"] == "budget_ceiling_hit"
+
+
+def test_budget_exceeded_propagates_through_commit(tmp_path, monkeypatch):
+    exc = MODULE.budgets.BudgetExceeded(ceiling="tokens", limit=100, actual=150)
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if "status" in args:
+            return MODULE.CommandResult(list(args), 0, stdout="")
+        return MODULE.CommandResult(
+            list(args), 0, stdout="## Finding\nbad code\nREVIEW_STATUS: findings\n"
+        )
+
+    monkeypatch.setattr(MODULE, "run_commit", lambda *a, **kw: (_ for _ in ()).throw(exc))
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=2,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        commit_after_remediation=True,
+    )
+
+    with pytest.raises(MODULE.RunLoopFailed) as excinfo:
+        MODULE.run_loop(config, runner)
+
+    assert excinfo.value.summary["stopped_reason"] == "budget_ceiling_hit"
+
+
+def test_run_loop_preserves_existing_events_on_resume(tmp_path):
+    artifact_dir = tmp_path / "artifacts"
+    artifact_dir.mkdir()
+
+    first_events = artifact_dir / "events.jsonl"
+    for i in range(1, 4):
+        event = events.make_event(run_id="original-run", seq=i, kind="phase_start", phase="review")
+        with first_events.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(event.to_dict()) + "\n")
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        return MODULE.CommandResult(list(args), 0, stdout="No findings.\nREVIEW_STATUS: clear\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=artifact_dir,
+    )
+
+    MODULE.run_loop(config, runner)
+
+    preserved = artifact_dir / "events-original-run.jsonl"
+    assert preserved.is_file()
+    original_lines = preserved.read_text(encoding="utf-8").strip().splitlines()
+    assert len(original_lines) == 3
+
+    new_events = artifact_dir / "events.jsonl"
+    assert new_events.is_file()
+    new_first = json.loads(new_events.read_text(encoding="utf-8").splitlines()[0])
+    assert new_first["run_id"] != "original-run"

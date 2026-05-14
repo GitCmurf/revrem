@@ -1,0 +1,75 @@
+{
+  "$id": "https://github.com/GitCmurf/revrem/schemas/harness-capabilities/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "cancellation_supported": {
+      "type": "boolean"
+    },
+    "commit_message_supported": {
+      "type": "boolean"
+    },
+    "contract_version": {
+      "const": "1.0"
+    },
+    "cost_reporting": {
+      "enum": [
+        "tokens",
+        "usd",
+        "none"
+      ]
+    },
+    "non_interactive": {
+      "type": "boolean"
+    },
+    "remediation_supported": {
+      "type": "boolean"
+    },
+    "review_supported": {
+      "type": "boolean"
+    },
+    "sandbox_modes": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array",
+      "uniqueItems": true
+    },
+    "schema_version": {
+      "const": "1.0"
+    },
+    "structured_output_supported": {
+      "type": "boolean"
+    },
+    "supported_models": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array",
+      "uniqueItems": true
+    },
+    "timeout_supported": {
+      "type": "boolean"
+    },
+    "triage_supported": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schema_version",
+    "review_supported",
+    "remediation_supported",
+    "triage_supported",
+    "commit_message_supported",
+    "non_interactive",
+    "sandbox_modes",
+    "timeout_supported",
+    "cancellation_supported",
+    "structured_output_supported",
+    "cost_reporting",
+    "supported_models",
+    "contract_version"
+  ],
+  "title": "RevRem harness capabilities v1",
+  "type": "object"
+}
