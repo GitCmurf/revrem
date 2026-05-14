@@ -142,3 +142,10 @@ This project follows Semantic Versioning once public releases begin.
 
 - Added detect-secrets baseline enforcement, gitleaks launch-scan guidance, and
   GitHub security reporting instructions.
+
+## [0.3.2] - 2026-05-14
+
+Release cut for the post-launch foundation work merged into `main`. This
+release packages the public install smoke, diagnostics, artifact schemas,
+fingerprints, suppressions, events, triage, budgets, and fake-harness
+contracts that now back the stable foundation line.
