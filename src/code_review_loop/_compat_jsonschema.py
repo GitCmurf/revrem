@@ -16,7 +16,7 @@ keywords should ensure ``jsonschema`` is present.
 from __future__ import annotations
 
 try:
-    from jsonschema import Draft202012Validator, validate  # type: ignore[attr-defined]
+    from jsonschema import Draft202012Validator, validate  # type: ignore[attr-defined,import-untyped]
 except ImportError:
     from collections.abc import Iterator
 

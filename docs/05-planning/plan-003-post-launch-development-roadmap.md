@@ -959,7 +959,7 @@ serial. Across tracks, they are independent.
 Track A (Trust):    M0 ──> M1 ──> M2 ───────────────────────────────> 1.0
 Track B (Workflow):       M3 ──> M4 ──> M5 ─────────────────────────> 1.0
 Track C (Showcase):              M6 ──> M7 ──> M8 ──> M9 ──────────> 1.0
-                            (M3 unblocks B; M2 unblocks B & C)
+                             (M0 unblocks B; M3 unblocks C)
 ```
 
 Indicative PR list (each scoped to one or two themes; "atomic unit of

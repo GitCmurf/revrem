@@ -3875,8 +3875,8 @@ def resume_main(argv: Sequence[str]) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 4
     if args.format == "json":
+        print(diagnostics.doctor_json(issues), end="")
         if diagnostics.has_blocking_issue(issues):
-            print(diagnostics.doctor_json(issues), end="")
             return 4
     else:
         print(diagnostics.doctor_text(issues), end="")
