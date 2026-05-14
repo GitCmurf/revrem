@@ -52,7 +52,7 @@ Create Trusted Publisher entries in both PyPI and TestPyPI:
 - owner: `GitCmurf`
 - repository: `revrem`
 - workflow name: `Release`
-- environment: leave unset unless the workflow later adds a named environment
+- environment: `release`
 - package name: `revrem`
 
 Do not add a long-lived PyPI token for the normal path. If an emergency token is
