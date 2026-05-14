@@ -193,9 +193,14 @@
             "additionalProperties": false,
             "properties": {
               "expires_at": {
-                "type": [
-                  "string",
-                  "null"
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  {
+                    "type": "null"
+                  }
                 ]
               },
               "rationale": {

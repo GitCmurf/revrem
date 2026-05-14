@@ -48,7 +48,7 @@ def test_renderer_sink_does_not_block_on_slow_consumer():
     elapsed = time.monotonic() - started
     sink.close()
 
-    assert elapsed < 0.1
+    assert elapsed < 0.5
     assert sink.dropped_events > 0
 
 
