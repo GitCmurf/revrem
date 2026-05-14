@@ -2,7 +2,7 @@
 document_id: REVREM-ADR-004
 type: ADR
 title: Artifact schema v1 and canonical writes
-status: Accepted
+status: Approved
 version: '0.1'
 last_updated: '2026-05-11'
 owner: __TBD__

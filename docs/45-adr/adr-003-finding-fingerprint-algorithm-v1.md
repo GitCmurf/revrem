@@ -2,7 +2,7 @@
 document_id: REVREM-ADR-003
 type: ADR
 title: Finding fingerprint algorithm v1
-status: Accepted
+status: Approved
 version: '0.1'
 last_updated: '2026-05-10'
 owner: __TBD__
