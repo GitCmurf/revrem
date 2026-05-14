@@ -5,6 +5,7 @@ from __future__ import annotations
 import gzip
 import io
 import json
+import os
 import tarfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -86,14 +87,20 @@ def create_bug_bundle(options: BundleOptions) -> BundleResult:
     ).encode("utf-8")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with (
-        output_path.open("wb") as raw,
-        gzip.GzipFile(fileobj=raw, mode="wb", filename="", mtime=0) as gz,
-        tarfile.open(fileobj=gz, mode="w") as tar,
-    ):
-        _add_bytes(tar, MANIFEST_NAME, manifest_bytes)
-        for arcname, bundle_bytes in entries:
-            _add_bytes(tar, arcname, bundle_bytes)
+    tmp_path = output_path.with_suffix(".tar.gz.tmp")
+    try:
+        with (
+            tmp_path.open("wb") as raw,
+            gzip.GzipFile(fileobj=raw, mode="wb", filename="", mtime=0) as gz,
+            tarfile.open(fileobj=gz, mode="w") as tar,
+        ):
+            _add_bytes(tar, MANIFEST_NAME, manifest_bytes)
+            for arcname, bundle_bytes in entries:
+                _add_bytes(tar, arcname, bundle_bytes)
+        os.replace(tmp_path, output_path)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
     return BundleResult(output_path=output_path, manifest=manifest)
 
 
