@@ -925,7 +925,7 @@ before implementation.
 | ID | Risk / assumption | Likelihood | Impact | Mitigation | Owning milestone |
 |---|---|---:|---:|---|---|
 | R1 | Codex CLI changes its non-interactive contract | Med | High | Pin a tested Codex version range; harness contract (M6) abstracts away | M6 |
-| R2 | PyPI naming for `revrem` unavailable | Low | Med | Plan B: keep `code-review-loop` as dist name; document `revrem` as command | M1 |
+| R2 | ~~PyPI naming for `revrem` unavailable~~ Resolved: `revrem` confirmed as published name | ~~Low~~ N/A | ~~Med~~ N/A | Plan B no longer needed; name secured in M1 | ~~M1~~ Closed |
 | R3 | Triage produces confident false negatives that suppress real bugs | Med | High | Labelled fixture set + precision metric ≥ 0.85; rejected findings carry rationale and stay in artifact | M3 |
 | R4 | Cost ceilings undercount due to harness-reported token gaps | Med | Med | `null` not `0`; document gap; CI fails when target harness's ceiling test underreports | M4 |
 | R5 | TUI complexity outpaces test coverage | Med | High | Pilot tests gating each new screen; replay-only screens until events stabilise | M5 |

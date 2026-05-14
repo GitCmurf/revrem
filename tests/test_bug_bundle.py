@@ -53,7 +53,7 @@ def _make_run_dir(tmp_path: Path) -> Path:
             {
                 "schema_version": "1.0",
                 "status": "ok",
-                "local_path": "/home/cmf/private",
+                "local_path": str(Path.home() / "private"),
             }
         )
         + "\n",

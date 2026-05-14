@@ -3890,6 +3890,8 @@ def resume_main(argv: Sequence[str]) -> int:
             return 3
         if exc.summary.get("stopped_reason") == "cancelled":
             return 5
+        if exc.summary.get("stopped_reason") == "setup_failed":
+            return 4
         return 1
     except KeyboardInterrupt:
         print("Cancelled by user.", file=sys.stderr)
