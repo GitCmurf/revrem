@@ -2362,6 +2362,7 @@ def git_preflight_stdout(cwd: Path, args: Sequence[str]) -> str | None:
 
 
 def resume_config_payload(config: LoopConfig) -> dict[str, object]:
+    """Persist the loop inputs required to resume with the same safety envelope."""
     return {
         "base": config.base,
         "max_iterations": config.max_iterations,
@@ -2388,6 +2389,11 @@ def resume_config_payload(config: LoopConfig) -> dict[str, object]:
         "exec_sandbox": config.exec_sandbox,
         "exec_json": config.exec_json,
         "output_last_message": config.output_last_message,
+        "full_auto": config.full_auto,
+        "max_wall_seconds": config.budget_config.max_wall_seconds,
+        "max_tokens": config.budget_config.max_tokens,
+        "max_usd": str(config.budget_config.max_usd) if config.budget_config.max_usd is not None else None,
+        "soft_warn_fraction": config.budget_config.soft_warn_fraction,
         "triage_prompt": config.triage_prompt,
         "triage_on_invalid": config.triage_on_invalid,
     }
@@ -4033,10 +4039,12 @@ def resume_loop_config(summary: dict[str, object], *, run_dir: Path) -> LoopConf
         exec_sandbox=_resume_str(resume_config, "exec_sandbox", "workspace-write"),
         exec_json=_resume_bool(resume_config, "exec_json", False),
         output_last_message=_resume_bool(resume_config, "output_last_message", True),
+        full_auto=_resume_bool(resume_config, "full_auto", True),
         triage_prompt=_resume_optional_str(resume_config, "triage_prompt"),
         triage_on_invalid=_resume_str(resume_config, "triage_on_invalid", "continue"),
         initial_review_file=review_path,
         profile_name=str(summary["profile"]) if isinstance(summary.get("profile"), str) else None,
+        budget_config=_resume_budget_config(resume_config),
     )
 
 
@@ -4050,10 +4058,12 @@ def latest_resume_review_path(summary: dict[str, object], *, run_dir: Path) -> P
     for item in reversed(reviews):
         if isinstance(item, str):
             path = Path(item)
-            if not path.is_absolute():
-                path = run_dir / path
             if path.is_file():
                 return path
+            if not path.is_absolute():
+                legacy_path = run_dir / path.name
+                if legacy_path.is_file():
+                    return legacy_path
     return None
 
 
@@ -4077,6 +4087,11 @@ def _resume_int(payload: dict[object, object], key: str, fallback: int) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) else fallback
 
 
+def _resume_optional_int(payload: dict[object, object], key: str) -> int | None:
+    value = payload.get(key)
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
 def _resume_optional_float(payload: dict[object, object], key: str) -> float | None:
     value = payload.get(key)
     if isinstance(value, bool) or value is None:
@@ -4091,6 +4106,28 @@ def _resume_str_tuple(payload: dict[object, object], key: str) -> tuple[str, ...
     if not isinstance(value, list):
         return ()
     return tuple(item for item in value if isinstance(item, str))
+
+
+def _resume_budget_config(payload: dict[object, object]) -> budgets.BudgetConfig:
+    """Rebuild persisted run ceilings for safe resumes; older summaries fall back to defaults."""
+    soft_warn_fraction = _resume_optional_float(payload, "soft_warn_fraction")
+    budget_config = budgets.BudgetConfig(
+        max_wall_seconds=_resume_optional_float(payload, "max_wall_seconds"),
+        max_tokens=_resume_optional_int(payload, "max_tokens"),
+        max_usd=_resume_optional_decimal(payload, "max_usd"),
+        soft_warn_fraction=soft_warn_fraction if soft_warn_fraction is not None else 0.8,
+    )
+    budgets.validate_config(budget_config)
+    return budget_config
+
+
+def _resume_optional_decimal(payload: dict[object, object], key: str) -> Decimal | None:
+    value = payload.get(key)
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (str, int, float, Decimal)):
+        return budgets.parse_usd(str(value))
+    return None
 
 
 def resume_git_state_issues(summary: dict[str, object], *, cwd: Path) -> list[diagnostics.DiagnosticIssue]:

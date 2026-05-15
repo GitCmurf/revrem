@@ -173,7 +173,10 @@ values instead of pretending a resume precondition was checked.
 `4` when the summary, event stream, `HEAD`, or base commit do not match. When
 the checks pass, it rebuilds the loop config from `resume_config`, starts from
 the latest review artifact as `review-initial.txt`, and avoids re-running
-completed review phases.
+completed review phases. Resume uses the recorded review artifact path from
+`summary.json` as written so default relative artifact directories keep working;
+older summaries that only stored a bare filename still fall back to the run
+directory.
 
 For richer watched-terminal output, install the optional progress extra and use
 `--progress-style rich`:

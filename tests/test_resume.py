@@ -77,6 +77,17 @@ def test_resume_preconditions_pass_for_matching_git_state(tmp_path, monkeypatch)
     assert issues == []
 
 
+def test_resume_preconditions_pass_for_relative_artifact_paths(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    run_dir = Path(".revrem/runs/run-1")
+    write_resume_run(run_dir)
+    install_matching_git(monkeypatch)
+
+    issues = MODULE.resume_precondition_issues(run_dir, cwd=tmp_path)
+
+    assert issues == []
+
+
 def test_resume_preconditions_block_head_mismatch(tmp_path, monkeypatch):
     run_dir = tmp_path / "run"
     write_resume_run(run_dir)

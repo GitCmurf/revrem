@@ -2,9 +2,9 @@
 document_id: REVREM-RUNBOOK-001
 type: RUNBOOK
 title: Release And Rollback
-status: Draft
+status: Approved
 version: '0.2'
-last_updated: '2026-05-13'
+last_updated: '2026-05-15'
 owner: GitCmurf
 docops_version: '2.0'
 area: release
