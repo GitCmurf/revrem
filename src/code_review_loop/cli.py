@@ -4055,9 +4055,8 @@ def resume_budget_ceiling_issues(summary: dict[str, object]) -> list[diagnostics
         _resume_optional_decimal,
     )
     used_usd = _resume_optional_decimal(budgets_payload, "usd")
-    if used_usd is not None:
-        if max_usd is not None and used_usd >= max_usd:
-            issues.append(
+    if used_usd is not None and max_usd is not None and used_usd >= max_usd:
+        issues.append(
                 diagnostics.DiagnosticIssue(
                     code="revrem.resume.usd_budget_exhausted",
                     severity="blocking",
