@@ -4005,7 +4005,12 @@ def resume_budget_ceiling_issues(summary: dict[str, object]) -> list[diagnostics
         return []
 
     issues: list[diagnostics.DiagnosticIssue] = []
-    max_tokens = _resume_optional_int(resume_config, "max_tokens")
+    max_tokens = _resume_budget_field(
+        resume_config,
+        budgets_payload,
+        "max_tokens",
+        _resume_optional_int,
+    )
     tokens_used = budgets_payload.get("tokens")
     if isinstance(tokens_used, int) and not isinstance(tokens_used, bool):
         if max_tokens is not None and tokens_used >= max_tokens:
@@ -4019,7 +4024,12 @@ def resume_budget_ceiling_issues(summary: dict[str, object]) -> list[diagnostics
                 )
             )
 
-    max_usd = _resume_optional_decimal(resume_config, "max_usd")
+    max_usd = _resume_budget_field(
+        resume_config,
+        budgets_payload,
+        "max_usd",
+        _resume_optional_decimal,
+    )
     usd_used = budgets_payload.get("usd")
     if isinstance(usd_used, str):
         used_usd = budgets.parse_usd(usd_used)
@@ -4052,6 +4062,7 @@ def resume_loop_config(summary: dict[str, object], *, run_dir: Path) -> LoopConf
     resume_config = summary.get("resume_config")
     if not isinstance(resume_config, dict):
         raise ValueError("summary.json is missing resume_config")
+    budgets_payload = summary.get("budgets")
     review_path = latest_resume_review_path(summary, run_dir=run_dir)
     if review_path is None:
         raise ValueError("summary.json is missing a resumable review artifact")
@@ -4093,7 +4104,7 @@ def resume_loop_config(summary: dict[str, object], *, run_dir: Path) -> LoopConf
         triage_on_invalid=_resume_str(resume_config, "triage_on_invalid", "continue"),
         initial_review_file=review_path,
         profile_name=str(summary["profile"]) if isinstance(summary.get("profile"), str) else None,
-        budget_config=_resume_budget_config(resume_config),
+        budget_config=_resume_budget_config(resume_config, budgets_payload),
         budget_state=budget_state,
     )
 
@@ -4158,13 +4169,48 @@ def _resume_str_tuple(payload: dict[object, object], key: str) -> tuple[str, ...
     return tuple(item for item in value if isinstance(item, str))
 
 
-def _resume_budget_config(payload: dict[object, object]) -> budgets.BudgetConfig:
-    """Rebuild persisted run ceilings for safe resumes; older summaries fall back to defaults."""
-    soft_warn_fraction = _resume_optional_float(payload, "soft_warn_fraction")
+def _resume_budget_field(
+    payload: dict[object, object],
+    budgets_payload: dict[object, object] | None,
+    key: str,
+    parser: Callable[[dict[object, object], str], Any | None],
+) -> Any | None:
+    value = parser(payload, key)
+    if value is not None or not isinstance(budgets_payload, dict):
+        return value
+    return parser(budgets_payload, key)
+
+
+def _resume_budget_config(
+    payload: dict[object, object],
+    budgets_payload: dict[object, object] | None = None,
+) -> budgets.BudgetConfig:
+    """Rebuild persisted run ceilings for safe resumes, including legacy budget payloads."""
+    soft_warn_fraction = _resume_budget_field(
+        payload,
+        budgets_payload,
+        "soft_warn_fraction",
+        _resume_optional_float,
+    )
     budget_config = budgets.BudgetConfig(
-        max_wall_seconds=_resume_optional_float(payload, "max_wall_seconds"),
-        max_tokens=_resume_optional_int(payload, "max_tokens"),
-        max_usd=_resume_optional_decimal(payload, "max_usd"),
+        max_wall_seconds=_resume_budget_field(
+            payload,
+            budgets_payload,
+            "max_wall_seconds",
+            _resume_optional_float,
+        ),
+        max_tokens=_resume_budget_field(
+            payload,
+            budgets_payload,
+            "max_tokens",
+            _resume_optional_int,
+        ),
+        max_usd=_resume_budget_field(
+            payload,
+            budgets_payload,
+            "max_usd",
+            _resume_optional_decimal,
+        ),
         soft_warn_fraction=soft_warn_fraction if soft_warn_fraction is not None else 0.8,
     )
     budgets.validate_config(budget_config)

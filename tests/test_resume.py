@@ -17,6 +17,7 @@ def write_resume_run(
     truncated: bool = False,
     budgets: dict[str, object] | None = None,
     resume_config: dict[str, object] | None = None,
+    copy_budget_limits_into_resume_config: bool = True,
 ) -> None:
     run_dir.mkdir(parents=True)
     resume_config_payload = dict(
@@ -33,7 +34,7 @@ def write_resume_run(
             "check_commands": [],
         }
     )
-    if budgets is not None:
+    if budgets is not None and copy_budget_limits_into_resume_config:
         if "max_tokens" in budgets and "max_tokens" not in resume_config_payload:
             resume_config_payload["max_tokens"] = budgets["max_tokens"]
         if "max_usd" in budgets and "max_usd" not in resume_config_payload:
@@ -175,6 +176,66 @@ def test_resume_run_rejects_persisted_budget_ceiling(tmp_path, monkeypatch):
         MODULE.resume_run(run_dir)
 
     assert called is False
+
+
+def test_resume_run_rejects_legacy_persisted_budget_ceiling(tmp_path, monkeypatch):
+    run_dir = tmp_path / "run"
+    write_resume_run(
+        run_dir,
+        stopped_reason="budget_ceiling_hit",
+        budgets={
+            "max_wall_seconds": 10,
+            "max_tokens": 100,
+            "max_usd": "1.25",
+            "soft_warn_fraction": 0.8,
+            "tokens": 100,
+            "usd": "0.45",
+        },
+        copy_budget_limits_into_resume_config=False,
+    )
+    install_matching_git(monkeypatch)
+
+    called = False
+
+    def fail_if_called(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("run_loop should not be invoked when the budget ceiling is already exhausted")
+
+    monkeypatch.setattr(MODULE, "run_loop", fail_if_called)
+
+    with pytest.raises(ValueError, match="remaining token budget headroom"):
+        MODULE.resume_run(run_dir)
+
+    assert called is False
+
+
+def test_resume_loop_config_uses_legacy_budget_ceiling(tmp_path):
+    review_path = tmp_path / "review-1.txt"
+    review_path.write_text("REVIEW_STATUS: findings\n", encoding="utf-8")
+    summary = {
+        "resume_config": {
+            "base": "main",
+            "max_iterations": 1,
+            "codex_bin": "codex",
+        },
+        "artifact_paths": {"reviews": [str(review_path)]},
+        "budgets": {
+            "max_wall_seconds": 10,
+            "max_tokens": 100,
+            "max_usd": "1.25",
+            "soft_warn_fraction": 0.8,
+            "tokens": 73,
+            "usd": "0.45",
+        },
+    }
+
+    resumed = MODULE.resume_loop_config(summary, run_dir=tmp_path)
+
+    assert resumed.budget_config.max_wall_seconds == 10
+    assert resumed.budget_config.max_tokens == 100
+    assert str(resumed.budget_config.max_usd) == "1.25"
+    assert resumed.budget_config.soft_warn_fraction == 0.8
 
 
 def test_resume_preconditions_block_head_mismatch(tmp_path, monkeypatch):
