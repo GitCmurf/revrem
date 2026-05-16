@@ -2,7 +2,7 @@
 document_id: REVREM-TASK-001
 type: TASK
 title: Public GitHub launch readiness
-status: Draft
+status: Approved
 version: '0.4'
 last_updated: '2026-05-07'
 owner: GitCmurf
@@ -23,7 +23,7 @@ related_ids:
 
 > **Document ID:** REVREM-TASK-001
 > **Owner:** GitCmurf
-> **Status:** Draft
+> **Status:** Approved
 > **Version:** 0.4
 > **Last Updated:** 2026-05-07
 > **Type:** TASK
