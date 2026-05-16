@@ -5661,6 +5661,116 @@ def test_summary_records_git_state_for_resume(tmp_path, monkeypatch):
     }
 
 
+def test_resume_payload_preserves_full_auto_and_budget_limits(tmp_path, monkeypatch):
+    monkeypatch.setattr(MODULE, "lexical_git_repo_root", lambda _cwd: tmp_path)
+
+    def fake_run_git_preflight(cwd, args):
+        if list(args) == ["rev-parse", "HEAD"]:
+            return MODULE.CommandResult(["git", *args], 0, stdout="head-sha\n")
+        if list(args) == ["rev-parse", "--verify", "main^{commit}"]:
+            return MODULE.CommandResult(["git", *args], 0, stdout="base-sha\n")
+        if list(args) == ["merge-base", "HEAD", "main"]:
+            return MODULE.CommandResult(["git", *args], 0, stdout="merge-sha\n")
+        return MODULE.CommandResult(["git", *args], 1, stderr="unexpected")
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        return MODULE.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+
+    monkeypatch.setattr(MODULE, "run_git_preflight", fake_run_git_preflight)
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        full_auto=False,
+        budget_config=MODULE.budgets.BudgetConfig(
+            max_wall_seconds=12.5,
+            max_tokens=100,
+            max_usd=Decimal("1.25"),
+            soft_warn_fraction=0.5,
+        ),
+    )
+
+    summary = MODULE.run_loop(config, runner)
+    resumed = MODULE.resume_loop_config(summary, run_dir=tmp_path / "artifacts")
+
+    assert summary["resume_config"]["full_auto"] is False
+    assert summary["resume_config"]["max_wall_seconds"] == 12.5
+    assert summary["resume_config"]["max_tokens"] == 100
+    assert summary["resume_config"]["max_usd"] == "1.25"
+    assert summary["resume_config"]["soft_warn_fraction"] == 0.5
+    assert resumed.full_auto is False
+    assert resumed.budget_config.max_wall_seconds == 12.5
+    assert resumed.budget_config.max_tokens == 100
+    assert str(resumed.budget_config.max_usd) == "1.25"
+    assert resumed.budget_config.soft_warn_fraction == 0.5
+
+
+def test_resume_loop_config_seeds_budget_state_from_summary_totals(tmp_path):
+    review_path = tmp_path / "review-1.txt"
+    review_path.write_text("REVIEW_STATUS: findings\n", encoding="utf-8")
+    summary = {
+        "resume_config": {
+            "base": "main",
+            "max_iterations": 1,
+            "codex_bin": "codex",
+        },
+        "artifact_paths": {"reviews": [str(review_path)]},
+        "budgets": {
+            "max_wall_seconds": 10,
+            "max_tokens": 100,
+            "max_usd": "1.25",
+            "soft_warn_fraction": 0.8,
+            "tokens": 73,
+            "usd": "0.45",
+        },
+    }
+
+    resumed = MODULE.resume_loop_config(summary, run_dir=tmp_path)
+
+    assert resumed.budget_state is not None
+    assert resumed.budget_state.tokens_used == 73
+    assert resumed.budget_state.tokens_reported is True
+    assert resumed.budget_state.usd_used == Decimal("0.45")
+    assert resumed.budget_state.usd_reported is True
+
+
+def test_resume_loop_config_defaults_legacy_missing_full_auto_to_true(tmp_path):
+    review_path = tmp_path / "review-1.txt"
+    review_path.write_text("REVIEW_STATUS: findings\n", encoding="utf-8")
+    summary = {
+        "resume_config": {
+            "base": "main",
+            "max_iterations": 1,
+            "codex_bin": "codex",
+        },
+        "artifact_paths": {"reviews": [str(review_path)]},
+    }
+
+    resumed = MODULE.resume_loop_config(summary, run_dir=tmp_path)
+
+    assert resumed.full_auto is True
+
+
+def test_resume_loop_config_rejects_float_max_usd(tmp_path):
+    review_path = tmp_path / "review-1.txt"
+    review_path.write_text("REVIEW_STATUS: findings\n", encoding="utf-8")
+    summary = {
+        "resume_config": {
+            "base": "main",
+            "max_iterations": 1,
+            "codex_bin": "codex",
+            "max_usd": 1.25,
+        },
+        "artifact_paths": {"reviews": [str(review_path)]},
+    }
+
+    with pytest.raises(ValueError, match="resume_config.max_usd must be a decimal string, not float"):
+        MODULE.resume_loop_config(summary, run_dir=tmp_path)
+
+
 def test_summary_records_unavailable_git_state_outside_git(tmp_path, monkeypatch):
     monkeypatch.setattr(MODULE, "lexical_git_repo_root", lambda _cwd: None)
 
@@ -5792,8 +5902,12 @@ def test_loop_writes_failure_summary_when_final_review_invocation_fails(tmp_path
     assert review_path.is_file()
 
 
-def test_append_run_history_preserves_budget_totals(tmp_path):
+def test_append_run_history_preserves_budget_totals(tmp_path, monkeypatch):
     from decimal import Decimal
+
+    home = tmp_path / "home"
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    monkeypatch.setenv("HOME", str(home))
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
@@ -5816,9 +5930,10 @@ def test_append_run_history_preserves_budget_totals(tmp_path):
     assert budgets_before["tokens"] == 500
     assert budgets_before["usd"] == "0.03"
 
-    MODULE.append_run_history(summary, config)
+    history_path = MODULE.append_run_history(summary, config)
     budgets_after = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))["budgets"]
 
+    assert history_path == home / ".local" / "share" / "revrem" / "runs.jsonl"
     assert budgets_after["tokens"] == budgets_before["tokens"]
     assert budgets_after["usd"] == budgets_before["usd"]
 

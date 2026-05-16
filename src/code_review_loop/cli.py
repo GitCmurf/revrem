@@ -22,7 +22,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from code_review_loop import (
     __version__,
@@ -2362,6 +2362,7 @@ def git_preflight_stdout(cwd: Path, args: Sequence[str]) -> str | None:
 
 
 def resume_config_payload(config: LoopConfig) -> dict[str, object]:
+    """Persist the loop inputs required to resume with the same safety envelope."""
     return {
         "base": config.base,
         "max_iterations": config.max_iterations,
@@ -2388,6 +2389,11 @@ def resume_config_payload(config: LoopConfig) -> dict[str, object]:
         "exec_sandbox": config.exec_sandbox,
         "exec_json": config.exec_json,
         "output_last_message": config.output_last_message,
+        "full_auto": config.full_auto,
+        "max_wall_seconds": config.budget_config.max_wall_seconds,
+        "max_tokens": config.budget_config.max_tokens,
+        "max_usd": str(config.budget_config.max_usd) if config.budget_config.max_usd is not None else None,
+        "soft_warn_fraction": config.budget_config.soft_warn_fraction,
         "triage_prompt": config.triage_prompt,
         "triage_on_invalid": config.triage_on_invalid,
     }
@@ -2396,7 +2402,9 @@ def resume_config_payload(config: LoopConfig) -> dict[str, object]:
 def summary_budget_payload(config: LoopConfig) -> dict[str, object]:
     tokens = None
     usd = None
+    wall_elapsed_seconds = None
     if config.budget_state is not None:
+        wall_elapsed_seconds = budgets.wall_elapsed_seconds(config.budget_state)
         if config.budget_state.tokens_reported:
             tokens = config.budget_state.tokens_used
         if config.budget_state.usd_reported:
@@ -2406,6 +2414,7 @@ def summary_budget_payload(config: LoopConfig) -> dict[str, object]:
         "max_tokens": config.budget_config.max_tokens,
         "max_usd": str(config.budget_config.max_usd) if config.budget_config.max_usd is not None else None,
         "soft_warn_fraction": config.budget_config.soft_warn_fraction,
+        "wall_elapsed_seconds": wall_elapsed_seconds,
         "tokens": tokens,
         "usd": usd,
     }
@@ -3923,6 +3932,7 @@ def resume_precondition_issues(run_dir: Path, *, cwd: Path) -> list[diagnostics.
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     if not isinstance(summary, dict):
         raise ValueError("summary.json must contain a JSON object")
+    issues.extend(resume_budget_ceiling_issues(summary))
     if latest_resume_review_path(summary, run_dir=run_dir) is None:
         issues.append(
             diagnostics.DiagnosticIssue(
@@ -3990,10 +4000,82 @@ def resume_precondition_issues(run_dir: Path, *, cwd: Path) -> list[diagnostics.
     return issues
 
 
+def resume_budget_ceiling_issues(summary: dict[str, object]) -> list[diagnostics.DiagnosticIssue]:
+    """Block resumes that would immediately re-enter a persisted wall, token, or USD ceiling."""
+    resume_config = summary.get("resume_config")
+    budgets_payload = summary.get("budgets")
+    if not isinstance(resume_config, dict) or not isinstance(budgets_payload, dict):
+        return []
+
+    issues: list[diagnostics.DiagnosticIssue] = []
+    max_wall_seconds = _resume_budget_field(
+        resume_config,
+        budgets_payload,
+        "max_wall_seconds",
+        _resume_optional_float,
+    )
+    wall_elapsed_seconds = _resume_wall_elapsed_seconds(summary, budgets_payload)
+    if (
+        max_wall_seconds is not None
+        and wall_elapsed_seconds is not None
+        and wall_elapsed_seconds >= max_wall_seconds
+    ):
+        issues.append(
+            diagnostics.DiagnosticIssue(
+                code="revrem.resume.wall_budget_exhausted",
+                severity="blocking",
+                message="Resume requires remaining wall budget headroom.",
+                hint="Start a new run or raise the persisted wall ceiling before resuming.",
+                evidence={"used": wall_elapsed_seconds, "limit": max_wall_seconds},
+            )
+        )
+
+    max_tokens = _resume_budget_field(
+        resume_config,
+        budgets_payload,
+        "max_tokens",
+        _resume_optional_int,
+    )
+    tokens_used = budgets_payload.get("tokens")
+    if isinstance(tokens_used, int) and not isinstance(tokens_used, bool) and max_tokens is not None and tokens_used >= max_tokens:
+        issues.append(
+                diagnostics.DiagnosticIssue(
+                    code="revrem.resume.token_budget_exhausted",
+                    severity="blocking",
+                    message="Resume requires remaining token budget headroom.",
+                    hint="Start a new run or raise the persisted token ceiling before resuming.",
+                    evidence={"used": tokens_used, "limit": max_tokens},
+                )
+            )
+
+    max_usd = _resume_budget_field(
+        resume_config,
+        budgets_payload,
+        "max_usd",
+        _resume_optional_decimal,
+    )
+    used_usd = _resume_optional_decimal(budgets_payload, "usd")
+    if used_usd is not None and max_usd is not None and used_usd >= max_usd:
+        issues.append(
+                diagnostics.DiagnosticIssue(
+                    code="revrem.resume.usd_budget_exhausted",
+                    severity="blocking",
+                    message="Resume requires remaining USD budget headroom.",
+                    hint="Start a new run or raise the persisted USD ceiling before resuming.",
+                    evidence={"used": str(used_usd), "limit": str(max_usd)},
+                )
+            )
+
+    return issues
+
+
 def resume_run(run_dir: Path) -> dict[str, object]:
     summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
     if not isinstance(summary, dict):
         raise ValueError("summary.json must contain a JSON object")
+    budget_issues = resume_budget_ceiling_issues(summary)
+    if budget_issues:
+        raise ValueError("; ".join(issue.message for issue in budget_issues))
     config = resume_loop_config(summary, run_dir=run_dir)
     return run_loop(config)
 
@@ -4002,9 +4084,14 @@ def resume_loop_config(summary: dict[str, object], *, run_dir: Path) -> LoopConf
     resume_config = summary.get("resume_config")
     if not isinstance(resume_config, dict):
         raise ValueError("summary.json is missing resume_config")
+    budgets_payload = summary.get("budgets")
     review_path = latest_resume_review_path(summary, run_dir=run_dir)
     if review_path is None:
         raise ValueError("summary.json is missing a resumable review artifact")
+    budget_state = _resume_budget_state(summary)
+    budget_issues = resume_budget_ceiling_issues(summary)
+    if budget_issues:
+        raise ValueError("; ".join(issue.message for issue in budget_issues))
     return LoopConfig(
         base=_resume_str(resume_config, "base", "main"),
         max_iterations=_resume_int(resume_config, "max_iterations", 1),
@@ -4033,10 +4120,14 @@ def resume_loop_config(summary: dict[str, object], *, run_dir: Path) -> LoopConf
         exec_sandbox=_resume_str(resume_config, "exec_sandbox", "workspace-write"),
         exec_json=_resume_bool(resume_config, "exec_json", False),
         output_last_message=_resume_bool(resume_config, "output_last_message", True),
+        # Legacy summaries omitted this field; historical resumes defaulted to full-auto.
+        full_auto=_resume_bool(resume_config, "full_auto", True),
         triage_prompt=_resume_optional_str(resume_config, "triage_prompt"),
         triage_on_invalid=_resume_str(resume_config, "triage_on_invalid", "continue"),
         initial_review_file=review_path,
         profile_name=str(summary["profile"]) if isinstance(summary.get("profile"), str) else None,
+        budget_config=_resume_budget_config(resume_config, budgets_payload if isinstance(budgets_payload, dict) else None),
+        budget_state=budget_state,
     )
 
 
@@ -4051,7 +4142,9 @@ def latest_resume_review_path(summary: dict[str, object], *, run_dir: Path) -> P
         if isinstance(item, str):
             path = Path(item)
             if not path.is_absolute():
-                path = run_dir / path
+                legacy_path = run_dir / path.name
+                if legacy_path.is_file():
+                    return legacy_path
             if path.is_file():
                 return path
     return None
@@ -4077,6 +4170,11 @@ def _resume_int(payload: dict[object, object], key: str, fallback: int) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) else fallback
 
 
+def _resume_optional_int(payload: dict[object, object], key: str) -> int | None:
+    value = payload.get(key)
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
 def _resume_optional_float(payload: dict[object, object], key: str) -> float | None:
     value = payload.get(key)
     if isinstance(value, bool) or value is None:
@@ -4091,6 +4189,109 @@ def _resume_str_tuple(payload: dict[object, object], key: str) -> tuple[str, ...
     if not isinstance(value, list):
         return ()
     return tuple(item for item in value if isinstance(item, str))
+
+
+_T = TypeVar("_T")
+
+
+def _resume_budget_field(
+    payload: dict[object, object],
+    budgets_payload: dict[object, object] | None,
+    key: str,
+    parser: Callable[[dict[object, object], str], _T | None],
+) -> _T | None:
+    value = parser(payload, key)
+    if value is not None or not isinstance(budgets_payload, dict):
+        return value
+    return parser(budgets_payload, key)
+
+
+def _resume_budget_config(
+    payload: dict[object, object],
+    budgets_payload: dict[object, object] | None = None,
+) -> budgets.BudgetConfig:
+    """Rebuild persisted run ceilings for safe resumes, including legacy budget payloads."""
+    soft_warn_fraction = _resume_budget_field(
+        payload,
+        budgets_payload,
+        "soft_warn_fraction",
+        _resume_optional_float,
+    )
+    budget_config = budgets.BudgetConfig(
+        max_wall_seconds=_resume_budget_field(
+            payload,
+            budgets_payload,
+            "max_wall_seconds",
+            _resume_optional_float,
+        ),
+        max_tokens=_resume_budget_field(
+            payload,
+            budgets_payload,
+            "max_tokens",
+            _resume_optional_int,
+        ),
+        max_usd=_resume_budget_field(
+            payload,
+            budgets_payload,
+            "max_usd",
+            _resume_optional_decimal,
+        ),
+        soft_warn_fraction=soft_warn_fraction if soft_warn_fraction is not None else 0.8,
+    )
+    budgets.validate_config(budget_config)
+    return budget_config
+
+
+def _resume_budget_state(summary: dict[str, object]) -> budgets.BudgetState | None:
+    """Restore spent wall, token, and USD totals from the previous run."""
+    budgets_payload = summary.get("budgets")
+    if not isinstance(budgets_payload, dict):
+        return None
+    state = budgets.started_now()
+    seeded = False
+    wall_elapsed_seconds = _resume_wall_elapsed_seconds(summary, budgets_payload)
+    if wall_elapsed_seconds is not None:
+        state.started_at_monotonic -= wall_elapsed_seconds
+        seeded = True
+    tokens = budgets_payload.get("tokens")
+    if isinstance(tokens, int) and not isinstance(tokens, bool):
+        state.tokens_used = tokens
+        state.tokens_reported = True
+        seeded = True
+    parsed_usd = _resume_optional_decimal(budgets_payload, "usd")
+    if parsed_usd is not None:
+        state.usd_used = parsed_usd
+        state.usd_reported = True
+        seeded = True
+    return state if seeded else None
+
+
+def _resume_wall_elapsed_seconds(
+    summary: dict[str, object],
+    budgets_payload: dict[object, object] | None,
+) -> float | None:
+    wall_elapsed_seconds = _resume_budget_field(
+        summary,  # type: ignore[arg-type]
+        budgets_payload,
+        "wall_elapsed_seconds",
+        _resume_optional_float,
+    )
+    if wall_elapsed_seconds is not None:
+        return wall_elapsed_seconds
+    return _resume_optional_float(summary, "duration_seconds")  # type: ignore[arg-type]
+
+
+def _resume_optional_decimal(payload: dict[object, object], key: str) -> Decimal | None:
+    value = payload.get(key)
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, float):
+        raise ValueError(
+            f"resume_config.{key} must be a decimal string, not float"
+        )
+    if isinstance(value, (str, int, Decimal)):
+        return budgets.parse_usd(str(value))
+    return None
 
 
 def resume_git_state_issues(summary: dict[str, object], *, cwd: Path) -> list[diagnostics.DiagnosticIssue]:
