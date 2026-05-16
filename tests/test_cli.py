@@ -5708,6 +5708,23 @@ def test_resume_payload_preserves_full_auto_and_budget_limits(tmp_path, monkeypa
     assert resumed.budget_config.soft_warn_fraction == 0.5
 
 
+def test_resume_loop_config_rejects_float_max_usd(tmp_path):
+    review_path = tmp_path / "review-1.txt"
+    review_path.write_text("REVIEW_STATUS: findings\n", encoding="utf-8")
+    summary = {
+        "resume_config": {
+            "base": "main",
+            "max_iterations": 1,
+            "codex_bin": "codex",
+            "max_usd": 1.25,
+        },
+        "artifact_paths": {"reviews": [str(review_path)]},
+    }
+
+    with pytest.raises(ValueError, match="resume_config.max_usd must be a decimal string, not float"):
+        MODULE.resume_loop_config(summary, run_dir=tmp_path)
+
+
 def test_summary_records_unavailable_git_state_outside_git(tmp_path, monkeypatch):
     monkeypatch.setattr(MODULE, "lexical_git_repo_root", lambda _cwd: None)
 
