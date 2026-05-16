@@ -5708,6 +5708,23 @@ def test_resume_payload_preserves_full_auto_and_budget_limits(tmp_path, monkeypa
     assert resumed.budget_config.soft_warn_fraction == 0.5
 
 
+def test_resume_loop_config_defaults_legacy_missing_full_auto_to_true(tmp_path):
+    review_path = tmp_path / "review-1.txt"
+    review_path.write_text("REVIEW_STATUS: findings\n", encoding="utf-8")
+    summary = {
+        "resume_config": {
+            "base": "main",
+            "max_iterations": 1,
+            "codex_bin": "codex",
+        },
+        "artifact_paths": {"reviews": [str(review_path)]},
+    }
+
+    resumed = MODULE.resume_loop_config(summary, run_dir=tmp_path)
+
+    assert resumed.full_auto is True
+
+
 def test_resume_loop_config_rejects_float_max_usd(tmp_path):
     review_path = tmp_path / "review-1.txt"
     review_path.write_text("REVIEW_STATUS: findings\n", encoding="utf-8")

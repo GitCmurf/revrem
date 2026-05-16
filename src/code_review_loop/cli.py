@@ -4039,7 +4039,8 @@ def resume_loop_config(summary: dict[str, object], *, run_dir: Path) -> LoopConf
         exec_sandbox=_resume_str(resume_config, "exec_sandbox", "workspace-write"),
         exec_json=_resume_bool(resume_config, "exec_json", False),
         output_last_message=_resume_bool(resume_config, "output_last_message", True),
-        full_auto=_resume_bool(resume_config, "full_auto", False),
+        # Legacy summaries omitted this field; historical resumes defaulted to full-auto.
+        full_auto=_resume_bool(resume_config, "full_auto", True),
         triage_prompt=_resume_optional_str(resume_config, "triage_prompt"),
         triage_on_invalid=_resume_str(resume_config, "triage_on_invalid", "continue"),
         initial_review_file=review_path,
