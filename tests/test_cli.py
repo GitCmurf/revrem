@@ -5708,6 +5708,35 @@ def test_resume_payload_preserves_full_auto_and_budget_limits(tmp_path, monkeypa
     assert resumed.budget_config.soft_warn_fraction == 0.5
 
 
+def test_resume_loop_config_seeds_budget_state_from_summary_totals(tmp_path):
+    review_path = tmp_path / "review-1.txt"
+    review_path.write_text("REVIEW_STATUS: findings\n", encoding="utf-8")
+    summary = {
+        "resume_config": {
+            "base": "main",
+            "max_iterations": 1,
+            "codex_bin": "codex",
+        },
+        "artifact_paths": {"reviews": [str(review_path)]},
+        "budgets": {
+            "max_wall_seconds": 10,
+            "max_tokens": 100,
+            "max_usd": "1.25",
+            "soft_warn_fraction": 0.8,
+            "tokens": 73,
+            "usd": "0.45",
+        },
+    }
+
+    resumed = MODULE.resume_loop_config(summary, run_dir=tmp_path)
+
+    assert resumed.budget_state is not None
+    assert resumed.budget_state.tokens_used == 73
+    assert resumed.budget_state.tokens_reported is True
+    assert resumed.budget_state.usd_used == Decimal("0.45")
+    assert resumed.budget_state.usd_reported is True
+
+
 def test_resume_loop_config_defaults_legacy_missing_full_auto_to_true(tmp_path):
     review_path = tmp_path / "review-1.txt"
     review_path.write_text("REVIEW_STATUS: findings\n", encoding="utf-8")

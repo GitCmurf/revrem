@@ -4011,6 +4011,7 @@ def resume_loop_config(summary: dict[str, object], *, run_dir: Path) -> LoopConf
     review_path = latest_resume_review_path(summary, run_dir=run_dir)
     if review_path is None:
         raise ValueError("summary.json is missing a resumable review artifact")
+    budget_state = _resume_budget_state(summary)
     return LoopConfig(
         base=_resume_str(resume_config, "base", "main"),
         max_iterations=_resume_int(resume_config, "max_iterations", 1),
@@ -4046,6 +4047,7 @@ def resume_loop_config(summary: dict[str, object], *, run_dir: Path) -> LoopConf
         initial_review_file=review_path,
         profile_name=str(summary["profile"]) if isinstance(summary.get("profile"), str) else None,
         budget_config=_resume_budget_config(resume_config),
+        budget_state=budget_state,
     )
 
 
@@ -4120,6 +4122,26 @@ def _resume_budget_config(payload: dict[object, object]) -> budgets.BudgetConfig
     )
     budgets.validate_config(budget_config)
     return budget_config
+
+
+def _resume_budget_state(summary: dict[str, object]) -> budgets.BudgetState | None:
+    """Restore spent token/USD totals from the previous run so resumes keep counting upward."""
+    budgets_payload = summary.get("budgets")
+    if not isinstance(budgets_payload, dict):
+        return None
+    state = budgets.started_now()
+    seeded = False
+    tokens = budgets_payload.get("tokens")
+    if isinstance(tokens, int) and not isinstance(tokens, bool):
+        state.tokens_used = tokens
+        state.tokens_reported = True
+        seeded = True
+    usd = budgets_payload.get("usd")
+    if isinstance(usd, str):
+        state.usd_used = budgets.parse_usd(usd)
+        state.usd_reported = True
+        seeded = True
+    return state if seeded else None
 
 
 def _resume_optional_decimal(payload: dict[object, object], key: str) -> Decimal | None:
