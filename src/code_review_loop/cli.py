@@ -4127,7 +4127,7 @@ def _resume_optional_decimal(payload: dict[object, object], key: str) -> Decimal
         return None
     if isinstance(value, float):
         raise ValueError(
-            f"summary.json resume_config.{key} must be a decimal string, not float"
+            f"resume_config.{key} must be a decimal string, not float"
         )
     if isinstance(value, (str, int, Decimal)):
         return budgets.parse_usd(str(value))
