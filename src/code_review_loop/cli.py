@@ -22,7 +22,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from code_review_loop import (
     __version__,
@@ -4054,9 +4054,8 @@ def resume_budget_ceiling_issues(summary: dict[str, object]) -> list[diagnostics
         "max_usd",
         _resume_optional_decimal,
     )
-    usd_used = budgets_payload.get("usd")
-    if isinstance(usd_used, str):
-        used_usd = budgets.parse_usd(usd_used)
+    used_usd = _resume_optional_decimal(budgets_payload, "usd")
+    if used_usd is not None:
         if max_usd is not None and used_usd >= max_usd:
             issues.append(
                 diagnostics.DiagnosticIssue(
@@ -4193,12 +4192,15 @@ def _resume_str_tuple(payload: dict[object, object], key: str) -> tuple[str, ...
     return tuple(item for item in value if isinstance(item, str))
 
 
+_T = TypeVar("_T")
+
+
 def _resume_budget_field(
     payload: dict[object, object],
     budgets_payload: dict[object, object] | None,
     key: str,
-    parser: Callable[[dict[object, object], str], Any | None],
-) -> Any | None:
+    parser: Callable[[dict[object, object], str], _T | None],
+) -> _T | None:
     value = parser(payload, key)
     if value is not None or not isinstance(budgets_payload, dict):
         return value
@@ -4257,13 +4259,11 @@ def _resume_budget_state(summary: dict[str, object]) -> budgets.BudgetState | No
         state.tokens_used = tokens
         state.tokens_reported = True
         seeded = True
-    usd = budgets_payload.get("usd")
-    if isinstance(usd, str):
-        parsed_usd = budgets.parse_usd(usd)
-        if parsed_usd is not None:
-            state.usd_used = parsed_usd
-            state.usd_reported = True
-            seeded = True
+    parsed_usd = _resume_optional_decimal(budgets_payload, "usd")
+    if parsed_usd is not None:
+        state.usd_used = parsed_usd
+        state.usd_reported = True
+        seeded = True
     return state if seeded else None
 
 
