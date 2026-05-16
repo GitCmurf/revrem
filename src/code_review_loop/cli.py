@@ -4128,7 +4128,7 @@ def resume_loop_config(summary: dict[str, object], *, run_dir: Path) -> LoopConf
         triage_on_invalid=_resume_str(resume_config, "triage_on_invalid", "continue"),
         initial_review_file=review_path,
         profile_name=str(summary["profile"]) if isinstance(summary.get("profile"), str) else None,
-        budget_config=_resume_budget_config(resume_config, budgets_payload),
+        budget_config=_resume_budget_config(resume_config, budgets_payload if isinstance(budgets_payload, dict) else None),
         budget_state=budget_state,
     )
 
@@ -4259,9 +4259,11 @@ def _resume_budget_state(summary: dict[str, object]) -> budgets.BudgetState | No
         seeded = True
     usd = budgets_payload.get("usd")
     if isinstance(usd, str):
-        state.usd_used = budgets.parse_usd(usd)
-        state.usd_reported = True
-        seeded = True
+        parsed_usd = budgets.parse_usd(usd)
+        if parsed_usd is not None:
+            state.usd_used = parsed_usd
+            state.usd_reported = True
+            seeded = True
     return state if seeded else None
 
 
@@ -4270,14 +4272,14 @@ def _resume_wall_elapsed_seconds(
     budgets_payload: dict[object, object] | None,
 ) -> float | None:
     wall_elapsed_seconds = _resume_budget_field(
-        summary,
+        summary,  # type: ignore[arg-type]
         budgets_payload,
         "wall_elapsed_seconds",
         _resume_optional_float,
     )
     if wall_elapsed_seconds is not None:
         return wall_elapsed_seconds
-    return _resume_optional_float(summary, "duration_seconds")
+    return _resume_optional_float(summary, "duration_seconds")  # type: ignore[arg-type]
 
 
 def _resume_optional_decimal(payload: dict[object, object], key: str) -> Decimal | None:
