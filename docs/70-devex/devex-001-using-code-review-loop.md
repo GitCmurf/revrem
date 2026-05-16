@@ -169,6 +169,9 @@ Each `summary.json` also records `git_state` for resume safety: current `HEAD`,
 configured base ref, resolved base commit, merge base, and whether those values
 were available. Repositories without a Git worktree record explicit `null`
 values instead of pretending a resume precondition was checked.
+When `--max-wall-seconds` is set, the summary also stores the cumulative wall
+seconds already spent so a resumed run continues against the same total wall
+budget instead of starting a fresh ceiling.
 `revrem resume <run-dir>` validates the resume preconditions and returns code
 `4` when the summary, event stream, `HEAD`, or base commit do not match. When
 the checks pass, it rebuilds the loop config from `resume_config`, starts from

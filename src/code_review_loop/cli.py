@@ -2402,7 +2402,9 @@ def resume_config_payload(config: LoopConfig) -> dict[str, object]:
 def summary_budget_payload(config: LoopConfig) -> dict[str, object]:
     tokens = None
     usd = None
+    wall_elapsed_seconds = None
     if config.budget_state is not None:
+        wall_elapsed_seconds = budgets.wall_elapsed_seconds(config.budget_state)
         if config.budget_state.tokens_reported:
             tokens = config.budget_state.tokens_used
         if config.budget_state.usd_reported:
@@ -2412,6 +2414,7 @@ def summary_budget_payload(config: LoopConfig) -> dict[str, object]:
         "max_tokens": config.budget_config.max_tokens,
         "max_usd": str(config.budget_config.max_usd) if config.budget_config.max_usd is not None else None,
         "soft_warn_fraction": config.budget_config.soft_warn_fraction,
+        "wall_elapsed_seconds": wall_elapsed_seconds,
         "tokens": tokens,
         "usd": usd,
     }
@@ -3998,13 +4001,35 @@ def resume_precondition_issues(run_dir: Path, *, cwd: Path) -> list[diagnostics.
 
 
 def resume_budget_ceiling_issues(summary: dict[str, object]) -> list[diagnostics.DiagnosticIssue]:
-    """Block resumes that would immediately re-enter a persisted token or USD ceiling."""
+    """Block resumes that would immediately re-enter a persisted wall, token, or USD ceiling."""
     resume_config = summary.get("resume_config")
     budgets_payload = summary.get("budgets")
     if not isinstance(resume_config, dict) or not isinstance(budgets_payload, dict):
         return []
 
     issues: list[diagnostics.DiagnosticIssue] = []
+    max_wall_seconds = _resume_budget_field(
+        resume_config,
+        budgets_payload,
+        "max_wall_seconds",
+        _resume_optional_float,
+    )
+    wall_elapsed_seconds = _resume_wall_elapsed_seconds(summary, budgets_payload)
+    if (
+        max_wall_seconds is not None
+        and wall_elapsed_seconds is not None
+        and wall_elapsed_seconds >= max_wall_seconds
+    ):
+        issues.append(
+            diagnostics.DiagnosticIssue(
+                code="revrem.resume.wall_budget_exhausted",
+                severity="blocking",
+                message="Resume requires remaining wall budget headroom.",
+                hint="Start a new run or raise the persisted wall ceiling before resuming.",
+                evidence={"used": wall_elapsed_seconds, "limit": max_wall_seconds},
+            )
+        )
+
     max_tokens = _resume_budget_field(
         resume_config,
         budgets_payload,
@@ -4218,12 +4243,16 @@ def _resume_budget_config(
 
 
 def _resume_budget_state(summary: dict[str, object]) -> budgets.BudgetState | None:
-    """Restore spent token/USD totals from the previous run so resumes keep counting upward."""
+    """Restore spent wall, token, and USD totals from the previous run."""
     budgets_payload = summary.get("budgets")
     if not isinstance(budgets_payload, dict):
         return None
     state = budgets.started_now()
     seeded = False
+    wall_elapsed_seconds = _resume_wall_elapsed_seconds(summary, budgets_payload)
+    if wall_elapsed_seconds is not None:
+        state.started_at_monotonic -= wall_elapsed_seconds
+        seeded = True
     tokens = budgets_payload.get("tokens")
     if isinstance(tokens, int) and not isinstance(tokens, bool):
         state.tokens_used = tokens
@@ -4235,6 +4264,21 @@ def _resume_budget_state(summary: dict[str, object]) -> budgets.BudgetState | No
         state.usd_reported = True
         seeded = True
     return state if seeded else None
+
+
+def _resume_wall_elapsed_seconds(
+    summary: dict[str, object],
+    budgets_payload: dict[object, object] | None,
+) -> float | None:
+    wall_elapsed_seconds = _resume_budget_field(
+        summary,
+        budgets_payload,
+        "wall_elapsed_seconds",
+        _resume_optional_float,
+    )
+    if wall_elapsed_seconds is not None:
+        return wall_elapsed_seconds
+    return _resume_optional_float(summary, "duration_seconds")
 
 
 def _resume_optional_decimal(payload: dict[object, object], key: str) -> Decimal | None:

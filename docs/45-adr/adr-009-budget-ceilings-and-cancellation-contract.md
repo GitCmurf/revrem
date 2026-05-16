@@ -78,8 +78,9 @@ implementation slices. The intended semantics remain:
   prove completed phases do not need to be re-run.
 - resume validates those preconditions and exits with code 4 for unsafe
   resumes; when checks pass, it rebuilds the loop config from `resume_config`,
-  starts from the latest review artifact as `review-initial.txt`, and does not
-  re-run completed review phases.
+  restores any persisted wall budget usage, starts from the latest review
+  artifact as `review-initial.txt`, and does not re-run completed review
+  phases.
 
 ## Consequences
 

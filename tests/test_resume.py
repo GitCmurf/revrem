@@ -147,6 +147,23 @@ def test_resume_preconditions_block_persisted_usd_ceiling(tmp_path, monkeypatch)
     assert any(issue.code == "revrem.resume.usd_budget_exhausted" for issue in issues)
 
 
+def test_resume_preconditions_block_persisted_wall_ceiling(tmp_path, monkeypatch):
+    run_dir = tmp_path / "run"
+    write_resume_run(
+        run_dir,
+        stopped_reason="max_iterations_reached",
+        budgets={
+            "max_wall_seconds": 10,
+            "wall_elapsed_seconds": 10,
+        },
+    )
+    install_matching_git(monkeypatch)
+
+    issues = MODULE.resume_precondition_issues(run_dir, cwd=tmp_path)
+
+    assert any(issue.code == "revrem.resume.wall_budget_exhausted" for issue in issues)
+
+
 def test_resume_run_rejects_persisted_budget_ceiling(tmp_path, monkeypatch):
     run_dir = tmp_path / "run"
     write_resume_run(
@@ -173,6 +190,33 @@ def test_resume_run_rejects_persisted_budget_ceiling(tmp_path, monkeypatch):
     monkeypatch.setattr(MODULE, "run_loop", fail_if_called)
 
     with pytest.raises(ValueError, match="remaining token budget headroom"):
+        MODULE.resume_run(run_dir)
+
+    assert called is False
+
+
+def test_resume_run_rejects_persisted_wall_budget_ceiling(tmp_path, monkeypatch):
+    run_dir = tmp_path / "run"
+    write_resume_run(
+        run_dir,
+        stopped_reason="max_iterations_reached",
+        budgets={
+            "max_wall_seconds": 10,
+            "wall_elapsed_seconds": 10,
+        },
+    )
+    install_matching_git(monkeypatch)
+
+    called = False
+
+    def fail_if_called(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("run_loop should not be invoked when the wall budget is already exhausted")
+
+    monkeypatch.setattr(MODULE, "run_loop", fail_if_called)
+
+    with pytest.raises(ValueError, match="remaining wall budget headroom"):
         MODULE.resume_run(run_dir)
 
     assert called is False
@@ -208,6 +252,45 @@ def test_resume_run_rejects_legacy_persisted_budget_ceiling(tmp_path, monkeypatc
         MODULE.resume_run(run_dir)
 
     assert called is False
+
+
+def test_resume_loop_config_seeds_cumulative_wall_budget_state(tmp_path, monkeypatch):
+    monkeypatch.setattr(MODULE, "lexical_git_repo_root", lambda _cwd: tmp_path)
+    monkeypatch.setattr(MODULE.budgets, "monotonic", lambda: 112.5)
+
+    def fake_run_git_preflight(cwd, args):
+        if list(args) == ["rev-parse", "HEAD"]:
+            return MODULE.CommandResult(["git", *args], 0, stdout="head-sha\n")
+        if list(args) == ["rev-parse", "--verify", "main^{commit}"]:
+            return MODULE.CommandResult(["git", *args], 0, stdout="base-sha\n")
+        if list(args) == ["merge-base", "HEAD", "main"]:
+            return MODULE.CommandResult(["git", *args], 0, stdout="merge-sha\n")
+        return MODULE.CommandResult(["git", *args], 1, stderr="unexpected")
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        return MODULE.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+
+    monkeypatch.setattr(MODULE, "run_git_preflight", fake_run_git_preflight)
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        budget_config=MODULE.budgets.BudgetConfig(max_wall_seconds=30),
+        budget_state=MODULE.budgets.BudgetState(started_at_monotonic=100.0),
+    )
+
+    summary = MODULE.run_loop(config, runner)
+
+    assert summary["budgets"]["wall_elapsed_seconds"] == 12.5
+
+    monkeypatch.setattr(MODULE.budgets, "monotonic", lambda: 200.0)
+    resumed = MODULE.resume_loop_config(summary, run_dir=tmp_path / "artifacts")
+
+    assert resumed.budget_state is not None
+    assert resumed.budget_state.started_at_monotonic == 187.5
 
 
 def test_resume_loop_config_uses_legacy_budget_ceiling(tmp_path):
