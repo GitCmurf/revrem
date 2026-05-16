@@ -35,10 +35,9 @@ def write_resume_run(
         }
     )
     if budgets is not None and copy_budget_limits_into_resume_config:
-        if "max_tokens" in budgets and "max_tokens" not in resume_config_payload:
-            resume_config_payload["max_tokens"] = budgets["max_tokens"]
-        if "max_usd" in budgets and "max_usd" not in resume_config_payload:
-            resume_config_payload["max_usd"] = budgets["max_usd"]
+        for field in ("max_wall_seconds", "max_tokens", "max_usd", "soft_warn_fraction"):
+            if field in budgets and field not in resume_config_payload:
+                resume_config_payload[field] = budgets[field]
     summary = {
         "run_id": "run-1",
         "base": "main",
