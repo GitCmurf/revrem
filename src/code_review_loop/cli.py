@@ -4039,7 +4039,7 @@ def resume_loop_config(summary: dict[str, object], *, run_dir: Path) -> LoopConf
         exec_sandbox=_resume_str(resume_config, "exec_sandbox", "workspace-write"),
         exec_json=_resume_bool(resume_config, "exec_json", False),
         output_last_message=_resume_bool(resume_config, "output_last_message", True),
-        full_auto=_resume_bool(resume_config, "full_auto", True),
+        full_auto=_resume_bool(resume_config, "full_auto", False),
         triage_prompt=_resume_optional_str(resume_config, "triage_prompt"),
         triage_on_invalid=_resume_str(resume_config, "triage_on_invalid", "continue"),
         initial_review_file=review_path,
@@ -4058,12 +4058,12 @@ def latest_resume_review_path(summary: dict[str, object], *, run_dir: Path) -> P
     for item in reversed(reviews):
         if isinstance(item, str):
             path = Path(item)
-            if path.is_file():
-                return path
             if not path.is_absolute():
                 legacy_path = run_dir / path.name
                 if legacy_path.is_file():
                     return legacy_path
+            if path.is_file():
+                return path
     return None
 
 
@@ -4125,7 +4125,7 @@ def _resume_optional_decimal(payload: dict[object, object], key: str) -> Decimal
     value = payload.get(key)
     if isinstance(value, bool) or value is None:
         return None
-    if isinstance(value, (str, int, float, Decimal)):
+    if isinstance(value, (str, int, Decimal)):
         return budgets.parse_usd(str(value))
     return None
 

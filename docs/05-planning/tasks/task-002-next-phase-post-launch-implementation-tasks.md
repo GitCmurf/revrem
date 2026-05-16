@@ -1569,8 +1569,8 @@ GitHub/PyPI credentials or a merge to `main`.
 ## Completion Audit Checklist
 
 This audit maps each phase exit criterion to live repository evidence. It is
-not a substitute for CI on the eventual merge commit; it is the local handoff
-state of branch `fix/code-quality-simplify`.
+not a substitute for CI on the eventual merge commit; it is the post-merge state
+on main.
 
 | Exit criterion | Evidence inspected | Audit status |
 | --- | --- | --- |
