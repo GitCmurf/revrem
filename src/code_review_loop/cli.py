@@ -3929,6 +3929,7 @@ def resume_precondition_issues(run_dir: Path, *, cwd: Path) -> list[diagnostics.
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     if not isinstance(summary, dict):
         raise ValueError("summary.json must contain a JSON object")
+    issues.extend(resume_budget_ceiling_issues(summary))
     if latest_resume_review_path(summary, run_dir=run_dir) is None:
         issues.append(
             diagnostics.DiagnosticIssue(
@@ -3996,10 +3997,53 @@ def resume_precondition_issues(run_dir: Path, *, cwd: Path) -> list[diagnostics.
     return issues
 
 
+def resume_budget_ceiling_issues(summary: dict[str, object]) -> list[diagnostics.DiagnosticIssue]:
+    """Block resumes that would immediately re-enter a persisted token or USD ceiling."""
+    resume_config = summary.get("resume_config")
+    budgets_payload = summary.get("budgets")
+    if not isinstance(resume_config, dict) or not isinstance(budgets_payload, dict):
+        return []
+
+    issues: list[diagnostics.DiagnosticIssue] = []
+    max_tokens = _resume_optional_int(resume_config, "max_tokens")
+    tokens_used = budgets_payload.get("tokens")
+    if isinstance(tokens_used, int) and not isinstance(tokens_used, bool):
+        if max_tokens is not None and tokens_used >= max_tokens:
+            issues.append(
+                diagnostics.DiagnosticIssue(
+                    code="revrem.resume.token_budget_exhausted",
+                    severity="blocking",
+                    message="Resume requires remaining token budget headroom.",
+                    hint="Start a new run or raise the persisted token ceiling before resuming.",
+                    evidence={"used": tokens_used, "limit": max_tokens},
+                )
+            )
+
+    max_usd = _resume_optional_decimal(resume_config, "max_usd")
+    usd_used = budgets_payload.get("usd")
+    if isinstance(usd_used, str):
+        used_usd = budgets.parse_usd(usd_used)
+        if max_usd is not None and used_usd >= max_usd:
+            issues.append(
+                diagnostics.DiagnosticIssue(
+                    code="revrem.resume.usd_budget_exhausted",
+                    severity="blocking",
+                    message="Resume requires remaining USD budget headroom.",
+                    hint="Start a new run or raise the persisted USD ceiling before resuming.",
+                    evidence={"used": str(used_usd), "limit": str(max_usd)},
+                )
+            )
+
+    return issues
+
+
 def resume_run(run_dir: Path) -> dict[str, object]:
     summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
     if not isinstance(summary, dict):
         raise ValueError("summary.json must contain a JSON object")
+    budget_issues = resume_budget_ceiling_issues(summary)
+    if budget_issues:
+        raise ValueError("; ".join(issue.message for issue in budget_issues))
     config = resume_loop_config(summary, run_dir=run_dir)
     return run_loop(config)
 
@@ -4012,6 +4056,9 @@ def resume_loop_config(summary: dict[str, object], *, run_dir: Path) -> LoopConf
     if review_path is None:
         raise ValueError("summary.json is missing a resumable review artifact")
     budget_state = _resume_budget_state(summary)
+    budget_issues = resume_budget_ceiling_issues(summary)
+    if budget_issues:
+        raise ValueError("; ".join(issue.message for issue in budget_issues))
     return LoopConfig(
         base=_resume_str(resume_config, "base", "main"),
         max_iterations=_resume_int(resume_config, "max_iterations", 1),

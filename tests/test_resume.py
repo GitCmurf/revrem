@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from code_review_loop import cli as MODULE
 from code_review_loop import events
 
@@ -13,16 +15,13 @@ def write_resume_run(
     stopped_reason: str = "cancelled",
     git_state: dict[str, object] | None = None,
     truncated: bool = False,
+    budgets: dict[str, object] | None = None,
+    resume_config: dict[str, object] | None = None,
 ) -> None:
     run_dir.mkdir(parents=True)
-    summary = {
-        "run_id": "run-1",
-        "base": "main",
-        "final_status": "error",
-        "stopped_reason": stopped_reason,
-        "iterations": [],
-        "artifact_paths": {"reviews": [str(run_dir / "review-1.txt")]},
-        "resume_config": {
+    resume_config_payload = dict(
+        resume_config
+        or {
             "base": "main",
             "max_iterations": 1,
             "codex_bin": "codex",
@@ -32,7 +31,21 @@ def write_resume_run(
             "remediation_model": "remediation",
             "final_review": True,
             "check_commands": [],
-        },
+        }
+    )
+    if budgets is not None:
+        if "max_tokens" in budgets and "max_tokens" not in resume_config_payload:
+            resume_config_payload["max_tokens"] = budgets["max_tokens"]
+        if "max_usd" in budgets and "max_usd" not in resume_config_payload:
+            resume_config_payload["max_usd"] = budgets["max_usd"]
+    summary = {
+        "run_id": "run-1",
+        "base": "main",
+        "final_status": "error",
+        "stopped_reason": stopped_reason,
+        "iterations": [],
+        "artifact_paths": {"reviews": [str(run_dir / "review-1.txt")]},
+        "resume_config": resume_config_payload,
         "git_state": git_state
         or {
             "head": "head-sha",
@@ -42,6 +55,8 @@ def write_resume_run(
             "available": True,
         },
     }
+    if budgets is not None:
+        summary["budgets"] = budgets
     (run_dir / "review-1.txt").write_text(
         "Full review comments:\n\n- [P2] Resume this finding.\nREVIEW_STATUS: findings\n",
         encoding="utf-8",
@@ -86,6 +101,80 @@ def test_resume_preconditions_pass_for_relative_artifact_paths(tmp_path, monkeyp
     issues = MODULE.resume_precondition_issues(run_dir, cwd=tmp_path)
 
     assert issues == []
+
+
+def test_resume_preconditions_block_persisted_budget_ceiling(tmp_path, monkeypatch):
+    run_dir = tmp_path / "run"
+    write_resume_run(
+        run_dir,
+        stopped_reason="budget_ceiling_hit",
+        budgets={
+            "max_wall_seconds": 10,
+            "max_tokens": 100,
+            "max_usd": "1.25",
+            "soft_warn_fraction": 0.8,
+            "tokens": 100,
+            "usd": "0.45",
+        },
+    )
+    install_matching_git(monkeypatch)
+
+    issues = MODULE.resume_precondition_issues(run_dir, cwd=tmp_path)
+
+    assert [issue.code for issue in issues][:1] == ["revrem.resume.token_budget_exhausted"]
+    assert any(issue.code == "revrem.resume.token_budget_exhausted" for issue in issues)
+
+
+def test_resume_preconditions_block_persisted_usd_ceiling(tmp_path, monkeypatch):
+    run_dir = tmp_path / "run"
+    write_resume_run(
+        run_dir,
+        stopped_reason="budget_ceiling_hit",
+        budgets={
+            "max_wall_seconds": 10,
+            "max_tokens": 100,
+            "max_usd": "0.45",
+            "soft_warn_fraction": 0.8,
+            "tokens": 42,
+            "usd": "0.45",
+        },
+    )
+    install_matching_git(monkeypatch)
+
+    issues = MODULE.resume_precondition_issues(run_dir, cwd=tmp_path)
+
+    assert any(issue.code == "revrem.resume.usd_budget_exhausted" for issue in issues)
+
+
+def test_resume_run_rejects_persisted_budget_ceiling(tmp_path, monkeypatch):
+    run_dir = tmp_path / "run"
+    write_resume_run(
+        run_dir,
+        stopped_reason="budget_ceiling_hit",
+        budgets={
+            "max_wall_seconds": 10,
+            "max_tokens": 100,
+            "max_usd": "1.25",
+            "soft_warn_fraction": 0.8,
+            "tokens": 100,
+            "usd": "0.45",
+        },
+    )
+    install_matching_git(monkeypatch)
+
+    called = False
+
+    def fail_if_called(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("run_loop should not be invoked when the budget ceiling is already exhausted")
+
+    monkeypatch.setattr(MODULE, "run_loop", fail_if_called)
+
+    with pytest.raises(ValueError, match="remaining token budget headroom"):
+        MODULE.resume_run(run_dir)
+
+    assert called is False
 
 
 def test_resume_preconditions_block_head_mismatch(tmp_path, monkeypatch):
