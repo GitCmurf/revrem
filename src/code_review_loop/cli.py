@@ -4037,9 +4037,8 @@ def resume_budget_ceiling_issues(summary: dict[str, object]) -> list[diagnostics
         _resume_optional_int,
     )
     tokens_used = budgets_payload.get("tokens")
-    if isinstance(tokens_used, int) and not isinstance(tokens_used, bool):
-        if max_tokens is not None and tokens_used >= max_tokens:
-            issues.append(
+    if isinstance(tokens_used, int) and not isinstance(tokens_used, bool) and max_tokens is not None and tokens_used >= max_tokens:
+        issues.append(
                 diagnostics.DiagnosticIssue(
                     code="revrem.resume.token_budget_exhausted",
                     severity="blocking",
