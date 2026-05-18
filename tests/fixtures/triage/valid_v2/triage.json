@@ -1,0 +1,50 @@
+{
+  "schema_version": "2.0",
+  "run_id": "run-123",
+  "source_review_artifact": "review-1.txt",
+  "prompt_version": "triage-v2",
+  "confirmed_findings": [
+    {
+      "fingerprint": "f1:c6ace015ccd20120",
+      "summary": "Fix summary contract",
+      "severity": "medium",
+      "affected_paths": ["src/code_review_loop/artifacts.py"],
+      "rationale": "The artifact schema requires a summary field."
+    }
+  ],
+  "rejected_findings": [],
+  "needs_more_info": [],
+  "implementation_order": ["f1:c6ace015ccd20120"],
+  "verification_commands": ["pytest tests/test_artifacts.py"],
+  "parsing_warnings": [],
+  "classification": {
+    "domain_tags": ["security", "auth"],
+    "risk_level": "high",
+    "refactor_depth": "localised",
+    "affected_modules": ["src/auth.py"],
+    "estimated_blast_radius": {
+      "module_count": 1,
+      "finding_count": 1
+    },
+    "safety_signals": ["sensitive-domain:auth"],
+    "failed_check_signals": ["pytest:tests/test_auth.py"]
+  },
+  "route_proposal": {
+    "route_tier": "security-specialist",
+    "harness": "codex",
+    "model": "gpt-4-security",
+    "reasoning_effort": "high",
+    "sandbox": "workspace-write",
+    "timeout_seconds": 1800,
+    "rationale": "The confirmed finding affects authentication code and a failing auth test."
+  },
+  "prompt_requirements": {
+    "required_fragments": ["engineering-principles", "security-checklist"],
+    "definition_of_done": [
+      "Fix the confirmed finding without weakening authentication checks.",
+      "Add or update regression coverage.",
+      "Run the configured checks."
+    ],
+    "triage_prompt_draft": "Please implement the fix for the auth issue."
+  }
+}

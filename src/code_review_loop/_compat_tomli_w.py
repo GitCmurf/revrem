@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from typing import Any, cast
 
 
 def dumps(data: Mapping[str, object]) -> str:
@@ -15,12 +16,16 @@ def _write_table(lines: list[str], prefix: tuple[str, ...], table: Mapping[str, 
     scalars: list[tuple[str, object]] = []
     nested: list[tuple[str, Mapping[str, object]]] = []
     arrays: list[tuple[str, Sequence[object]]] = []
+    array_of_tables: list[tuple[str, Sequence[Mapping[str, object]]]] = []
 
     for key, value in table.items():
         if isinstance(value, Mapping):
             nested.append((key, value))
         elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
-            arrays.append((key, value))
+            if value and all(isinstance(item, Mapping) for item in value):
+                array_of_tables.append((key, cast(Sequence[Mapping[str, Any]], value)))
+            else:
+                arrays.append((key, value))
         else:
             scalars.append((key, value))
 
@@ -36,9 +41,54 @@ def _write_table(lines: list[str], prefix: tuple[str, ...], table: Mapping[str, 
     for key, value in arrays:
         lines.append(f"{_format_key(key)} = {_format_array(value)}")
 
+    for key, values in array_of_tables:
+        for item in values:
+            if lines:
+                lines.append("")
+            header = f"[[{'.'.join(_format_key(part) for part in (*prefix, key))}]]"
+            lines.append(header)
+            _write_table_content(lines, (*prefix, key), item)
+
     for key, value in nested:
         if lines and (scalars or arrays or (prefix and not container)):
             lines.append("")
+        _write_table(lines, (*prefix, key), value)
+
+
+def _write_table_content(
+    lines: list[str], prefix: tuple[str, ...], table: Mapping[str, object]
+) -> None:
+    scalars: list[tuple[str, object]] = []
+    nested: list[tuple[str, Mapping[str, object]]] = []
+    arrays: list[tuple[str, Sequence[object]]] = []
+    array_of_tables: list[tuple[str, Sequence[Mapping[str, object]]]] = []
+
+    for key, value in table.items():
+        if isinstance(value, Mapping):
+            nested.append((key, value))
+        elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+            if value and all(isinstance(item, Mapping) for item in value):
+                array_of_tables.append((key, cast(Sequence[Mapping[str, Any]], value)))
+            else:
+                arrays.append((key, value))
+        else:
+            scalars.append((key, value))
+
+    for key, value in scalars:
+        lines.append(f"{_format_key(key)} = {_format_value(value)}")
+
+    for key, value in arrays:
+        lines.append(f"{_format_key(key)} = {_format_array(value)}")
+
+    for key, values in array_of_tables:
+        for item in values:
+            lines.append("")
+            header = f"[[{'.'.join(_format_key(part) for part in (*prefix, key))}]]"
+            lines.append(header)
+            _write_table_content(lines, (*prefix, key), item)
+
+    for key, value in nested:
+        lines.append("")
         _write_table(lines, (*prefix, key), value)
 
 

@@ -28,7 +28,7 @@ def test_parse_triage_payload_validates_fixture_against_schema():
 
     validate(
         payload,
-        json.loads(files("code_review_loop").joinpath(triage.TRIAGE_SCHEMA_RESOURCE).read_text(encoding="utf-8")),
+        json.loads(files("code_review_loop").joinpath(triage.TRIAGE_V1_SCHEMA_RESOURCE).read_text(encoding="utf-8")),
     )
     assert payload["schema_version"] == "1.0"
     assert payload["prompt_version"] == "triage-v1"

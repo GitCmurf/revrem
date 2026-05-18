@@ -1,0 +1,72 @@
+from __future__ import annotations
+
+import json
+from importlib.resources import files
+from pathlib import Path
+
+import pytest
+
+from code_review_loop import triage
+from code_review_loop._compat_jsonschema import validate
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _fixture(name: str) -> str:
+    path = ROOT / "tests" / "fixtures" / "triage" / name
+    if (path / "triage.json").is_file():
+        return (path / "triage.json").read_text(encoding="utf-8")
+    return (path / "triage.txt").read_text(encoding="utf-8")
+
+
+def test_parse_triage_payload_v2_validates_fixture_against_schema():
+    payload = triage.parse_triage_payload(
+        _fixture("valid_v2"),
+        run_id="run-123",
+        source_review_artifact="review-1.txt",
+        contract="v2",
+    )
+
+    validate(
+        payload,
+        json.loads(files("code_review_loop").joinpath("schemas/triage-v2.schema.json").read_text(encoding="utf-8")),
+    )
+    assert payload["schema_version"] == "2.0"
+    assert payload["prompt_version"] == "triage-v2"
+    assert payload["classification"]["risk_level"] == "high"
+    assert payload["route_proposal"]["route_tier"] == "security-specialist"
+    assert payload["prompt_requirements"]["required_fragments"] == ["engineering-principles", "security-checklist"]
+
+
+def test_parse_triage_payload_v2_fails_on_v1_contract():
+    # v1 fixture doesn't have classification/routing, so it should fail v2 schema
+    with pytest.raises(triage.TriageValidationError):
+        triage.parse_triage_payload(
+            _fixture("valid"),
+            run_id="run-123",
+            source_review_artifact="review-1.txt",
+            contract="v2",
+        )
+
+
+def test_load_prompt_v2_includes_v2_fields():
+    prompt = triage.load_prompt(contract="v2")
+
+    assert "classification" in prompt
+    assert "route_proposal" in prompt
+    assert "prompt_requirements" in prompt
+    assert "triage-v2" in prompt
+
+
+def test_write_routing_artifacts(tmp_path):
+    payload = {"effective_route": {"harness": "codex", "model": "m1"}}
+    path = triage.write_routing_artifact(tmp_path, 1, payload)
+    assert path.name == "routing-1.json"
+    assert json.loads(path.read_text()) == {**payload, "schema_version": "1.0"}
+
+
+def test_write_routing_outcome_artifacts(tmp_path):
+    payload = {"exit_code": 0, "wall_time_seconds": 10.5}
+    path = triage.write_routing_outcome_artifact(tmp_path, 1, payload)
+    assert path.name == "routing-outcome-1.json"
+    assert json.loads(path.read_text()) == {**payload, "schema_version": "1.0"}

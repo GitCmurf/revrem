@@ -32,8 +32,10 @@ from code_review_loop import (
     diagnostics,
     events,
     harnesses,
+    policy,
     profiles,
     progress,
+    prompts_composer,
     run_history,
     suppressions,
     triage,
@@ -150,6 +152,7 @@ class LoopConfig:
     triage_timeout_seconds: float | None = None
     triage_prompt: str | None = None
     triage_on_invalid: str = "continue"
+    triage_contract: str = "v1"
     suppressions_enabled: bool = True
     exec_sandbox: str = "workspace-write"
     exec_color: str = "never"
@@ -173,6 +176,7 @@ class LoopConfig:
     event_sink: events.EventSink | None = None
     budget_config: budgets.BudgetConfig = field(default_factory=budgets.BudgetConfig)
     budget_state: budgets.BudgetState | None = None
+    profile_v2: profiles.Profile | None = None
 
 
 Runner = Callable[[Sequence[str], Path, str | None, float | None], CommandResult]
@@ -967,15 +971,32 @@ def build_review_command(config: LoopConfig) -> list[str]:
     )
 
 
-def build_remediation_command(config: LoopConfig, output_last_message: Path | None = None) -> list[str]:
+def build_remediation_command(
+    config: LoopConfig,
+    output_last_message: Path | None = None,
+    resolved_route: policy.ResolvedRoute | None = None,
+) -> list[str]:
+    harness = resolved_route.harness if resolved_route else config.remediation_harness
+    model = (
+        (resolved_route.model if resolved_route else None)
+        or config.remediation_model
+        or config.model
+    )
+    reasoning_effort = (
+        (resolved_route.reasoning_effort if resolved_route else None)
+        or config.remediation_reasoning_effort
+        or config.reasoning_effort
+    )
+    sandbox = resolved_route.sandbox if resolved_route else config.exec_sandbox
+
     return harnesses.build_phase_command(
         harnesses.PhaseCommandRequest(
-            harness=config.remediation_harness,
+            harness=harness,
             role="remediation",
             executable=config.codex_bin,
-            model=config.remediation_model or config.model,
-            reasoning_effort=config.remediation_reasoning_effort or config.reasoning_effort,
-            sandbox=config.exec_sandbox,
+            model=model,
+            reasoning_effort=reasoning_effort,
+            sandbox=sandbox,
             color=config.exec_color,
             full_auto=config.full_auto,
             json_output=config.exec_json,
@@ -1256,22 +1277,30 @@ def run_remediation(
     config: LoopConfig,
     runner: Runner,
     iteration: int,
-    review_output: str,
+    remediation_input: str,
+    resolved_route: policy.ResolvedRoute | None = None,
 ) -> CommandResult:
     last_message_path = (
         config.artifact_dir / f"remediation-{iteration}-last-message.txt"
         if config.output_last_message
         else None
     )
-    command = build_remediation_command(config, last_message_path)
-    prompt = f"{DEFAULT_REMEDIATION_PROMPT}\n{trim_for_prompt(review_output, config.max_remediation_input_chars)}"
+    command = build_remediation_command(config, last_message_path, resolved_route=resolved_route)
+    
+    if resolved_route:
+        prompt = remediation_input
+        timeout = resolved_route.timeout_seconds
+    else:
+        prompt = f"{DEFAULT_REMEDIATION_PROMPT}\n{trim_for_prompt(remediation_input, config.max_remediation_input_chars)}"
+        timeout = config.remediation_timeout_seconds
+
     set_phase_terminal_title(config, "remediate", str(iteration))
     ensure_model_budget(config, phase="remediate", iteration=iteration)
     progress_event(config, "remediate", str(iteration), "start", shlex.join(command))
     if config.dry_run:
         result = CommandResult(command, 0, stdout="DRY_RUN remediation skipped\n")
     else:
-        result = runner(command, config.cwd, prompt, phase_timeout_seconds(config, config.remediation_timeout_seconds))
+        result = runner(command, config.cwd, prompt, phase_timeout_seconds(config, timeout))
     write_artifact(config.artifact_dir / f"remediation-{iteration}.txt", _combined_output(result))
     record_model_charge(config, result, phase="remediate", iteration=iteration)
     if result.returncode != 0:
@@ -1291,9 +1320,9 @@ def run_triage(
     run_id: str,
     source_review_artifact: str,
     review_output: str,
-) -> tuple[str, int, bool]:
+) -> tuple[str, int, bool, dict[str, Any] | None]:
     command = build_triage_command(config)
-    prompt_root = config.triage_prompt or triage.load_prompt()
+    prompt_root = config.triage_prompt or triage.load_prompt(contract=config.triage_contract)
     prompt = f"{prompt_root}\n{trim_for_prompt(review_output, config.max_remediation_input_chars)}"
     ensure_model_budget(config, phase="triage", iteration=iteration)
     progress_event(config, "triage", str(iteration), "start", shlex.join(command))
@@ -1328,6 +1357,7 @@ def run_triage(
                 triage_output,
                 run_id=run_id,
                 source_review_artifact=source_review_artifact,
+                contract=config.triage_contract,
             )
         except triage.TriageValidationError as exc:
             issue = triage.invalid_triage_issue(exc, iteration=iteration)
@@ -1339,7 +1369,7 @@ def run_triage(
             progress_event(config, "triage", str(iteration), "invalid", str(exc))
             if config.triage_on_invalid == "stop":
                 raise RuntimeError(f"invalid structured triage output for iteration {iteration}: {exc}") from exc
-            return review_output, 0, False
+            return review_output, 0, False, None
         suppressed_count = 0
         if config.suppressions_enabled:
             try:
@@ -1366,14 +1396,14 @@ def run_triage(
         triage.write_triage_artifact(config.artifact_dir, iteration, payload)
         has_actionable_findings = bool(payload.get("confirmed_findings") or payload.get("needs_more_info"))
         if not has_actionable_findings:
-            return "", suppressed_count, True
-        return triage.format_structured_handoff(payload, review_output), suppressed_count, False
+            return "", suppressed_count, True, payload
+        return triage.format_structured_handoff(payload, review_output), suppressed_count, False, payload
     return (
         "Triage handoff from the previous review:\n"
         f"{triage_output}\n\n"
         "Original review/check context:\n"
         f"{review_output}"
-    ), 0, False
+    ), 0, False, None
 
 
 def run_checks(config: LoopConfig, runner: Runner, iteration: int) -> list[CommandResult]:
@@ -2069,13 +2099,14 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
             if pending_check_failures:
                 remediation_input = pending_check_failures + "\n\n" + remediation_input
             try:
+                resolved_route = None
                 if config.triage_enabled:
                     # Resumed runs keep the loaded review in review-initial.txt, so triage must
                     # point at that artifact instead of assuming review-1.txt.
                     source_review_artifact = (
                         "review-initial.txt" if iteration == 1 and initial_review_output else f"review-{iteration}.txt"
                     )
-                    remediation_input, suppressed_count, triage_no_actionable = run_triage(
+                    remediation_input, suppressed_count, triage_no_actionable, triage_payload = run_triage(
                         config,
                         runner,
                         iteration,
@@ -2102,6 +2133,59 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                             write_summary(config, summary)
                             return summary
                         remediation_input = pending_check_failures
+
+                    if triage_payload and config.triage_contract == "v2" and config.profile_v2:
+                        # Resolve routing
+                        routing_context = triage.extract_routing_context(
+                            triage_payload,
+                            config.cwd,
+                            failed_checks=tuple(summary.get("last_checks_failing", ())),
+                        )
+                        model_proposal = triage_payload.get("route_proposal", {})
+                        resolved_route = policy.resolve_routing(
+                            config.profile_v2,
+                            routing_context,
+                            model_proposal_tier=model_proposal.get("route_tier"),
+                        )
+                        progress_event(
+                            config,
+                            "triage",
+                            str(iteration),
+                            "routing",
+                            f"routed to {resolved_route.route_tier} ({resolved_route.harness})",
+                        )
+
+                        # Compose prompt
+                        remediation_input = prompts_composer.compose_remediation_prompt(
+                            config.cwd,
+                            triage_payload,
+                            resolved_route,
+                            last_review_output,
+                            max_chars=config.max_remediation_input_chars,
+                        )
+
+                        # Record routing artifact
+                        routing_payload = {
+                            "run_id": run_id,
+                            "iteration": iteration,
+                            "source_triage_artifact": f"triage-{iteration}.json",
+                            "model_proposal": model_proposal,
+                            "policy_decision": {
+                                "decision": "proposal_accepted" if resolved_route.rule_id == "default" else "policy_override",
+                                "matched_rule_ids": [resolved_route.rule_id] if resolved_route.rule_id else [],
+                                "rationale": "Applied policy based on classification.",
+                            },
+                            "effective_route": asdict(resolved_route),
+                            "fallbacks_considered": [],
+                            "prompt": {
+                                "path": f"remediation-{iteration}-prompt.txt",
+                                "sha256": prompts_composer.compute_prompt_hash(remediation_input),
+                                "bytes": len(remediation_input),
+                                "fragments": list(resolved_route.prompt_fragments),
+                            },
+                        }
+                        triage.write_routing_artifact(config.artifact_dir, iteration, routing_payload)
+                        write_artifact(config.artifact_dir / f"remediation-{iteration}-prompt.txt", remediation_input)
             except budgets.BudgetExceeded:
                 raise
             except Exception as exc:
@@ -2124,7 +2208,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                 ) from exc
 
             try:
-                run_remediation(config, runner, iteration, remediation_input)
+                run_remediation(config, runner, iteration, remediation_input, resolved_route=resolved_route)
             except budgets.BudgetExceeded:
                 raise
             except Exception as exc:
@@ -3302,6 +3386,7 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         triage_timeout_seconds=triage_timeout_seconds,
         triage_prompt=profile.triage.prompt,
         triage_on_invalid=profile.triage.on_invalid,
+        triage_contract=profile.triage.contract,
         exec_sandbox=pick(args.exec_sandbox, profile.runtime.exec_sandbox, "workspace-write"),
         exec_color=pick(args.exec_color, profile.runtime.exec_color, "never"),
         full_auto=pick(args.full_auto, profile.runtime.full_auto, True),
@@ -3334,6 +3419,7 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         check_commands=checks,
         profile_name=args.profile,
         budget_config=budget_config,
+        profile_v2=profile,
     )
     return config, (args.summary_format or profile.output.summary_format)
 
@@ -3438,6 +3524,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return config_main(raw_argv[1:])
     if raw_argv and raw_argv[0] == "history":
         return history_main(raw_argv[1:])
+    if raw_argv and raw_argv[0] == "policy":
+        return policy_main(raw_argv[1:])
+    if raw_argv and raw_argv[0] == "triage":
+        return triage_main(raw_argv[1:])
     if raw_argv and raw_argv[0] == "ui":
         from code_review_loop import tui
 
@@ -4092,6 +4182,14 @@ def resume_loop_config(summary: dict[str, object], *, run_dir: Path) -> LoopConf
     budget_issues = resume_budget_ceiling_issues(summary)
     if budget_issues:
         raise ValueError("; ".join(issue.message for issue in budget_issues))
+    profile_name = str(summary["profile"]) if isinstance(summary.get("profile"), str) else None
+    profile_v2 = None
+    if profile_name:
+        try:
+            profile_v2 = profiles.resolve_profile(profile_name, cwd=Path.cwd(), require_implemented=False)
+        except Exception:
+            pass
+
     return LoopConfig(
         base=_resume_str(resume_config, "base", "main"),
         max_iterations=_resume_int(resume_config, "max_iterations", 1),
@@ -4124,10 +4222,12 @@ def resume_loop_config(summary: dict[str, object], *, run_dir: Path) -> LoopConf
         full_auto=_resume_bool(resume_config, "full_auto", True),
         triage_prompt=_resume_optional_str(resume_config, "triage_prompt"),
         triage_on_invalid=_resume_str(resume_config, "triage_on_invalid", "continue"),
+        triage_contract=_resume_str(resume_config, "triage_contract", "v1"),
         initial_review_file=review_path,
-        profile_name=str(summary["profile"]) if isinstance(summary.get("profile"), str) else None,
+        profile_name=profile_name,
         budget_config=_resume_budget_config(resume_config, budgets_payload if isinstance(budgets_payload, dict) else None),
         budget_state=budget_state,
+        profile_v2=profile_v2,
     )
 
 
@@ -4365,6 +4465,105 @@ def history_main(argv: Sequence[str]) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
     raise AssertionError(f"unhandled history command: {args.command}")
+
+
+def parse_policy_args(argv: Sequence[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="revrem policy",
+        description="Inspect and lint routing policy.",
+    )
+    parser.add_argument("--format", choices=("text", "json"), default=None)
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    lint = subparsers.add_parser("lint", help="Lint routing rules and routes in a profile.")
+    lint.add_argument("--profile", required=True)
+    lint.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)
+    return parser.parse_args(argv)
+
+
+def policy_main(argv: Sequence[str]) -> int:
+    args = parse_policy_args(argv)
+    try:
+        if args.command == "lint":
+            return policy_lint(args.profile, output_format=getattr(args, "format", None))
+    except (OSError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def policy_lint(profile_name: str, output_format: str | None = None) -> int:
+    try:
+        profiles.resolve_profile(profile_name, cwd=Path.cwd(), require_implemented=False)
+        if output_format == "json":
+            print(json.dumps({"status": "ok", "profile": profile_name}))
+        else:
+            print(f"Policy lint passed for profile: {profile_name}")
+        return 0
+    except Exception as exc:
+        if output_format == "json":
+            print(json.dumps({"status": "error", "message": str(exc)}))
+        else:
+            print(f"Policy lint FAILED for profile {profile_name}: {exc}", file=sys.stderr)
+        return 1
+
+
+def parse_triage_args(argv: Sequence[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="revrem triage",
+        description="Inspect triage and routing artifacts.",
+    )
+    parser.add_argument("--format", choices=("text", "json"), default=None)
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    explain = subparsers.add_parser("explain", help="Explain the routing decision for a run iteration.")
+    explain.add_argument("run_dir")
+    explain.add_argument("--iteration", type=int, default=1)
+    explain.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)
+    return explain.parse_args(argv)
+
+
+def triage_main(argv: Sequence[str]) -> int:
+    args = parse_triage_args(argv)
+    try:
+        if args.command == "explain":
+            return triage_explain(Path(args.run_dir), args.iteration, output_format=getattr(args, "format", None))
+    except (OSError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def triage_explain(run_dir: Path, iteration: int, output_format: str | None = None) -> int:
+    routing_path = run_dir / f"routing-{iteration}.json"
+    if not routing_path.is_file():
+        print(f"ERROR: routing artifact not found: {routing_path}", file=sys.stderr)
+        return 1
+
+    routing = json.loads(routing_path.read_text(encoding="utf-8"))
+    if output_format == "json":
+        print(json.dumps(routing, indent=2, sort_keys=True))
+    else:
+        print(f"Routing Explanation for {run_dir.name} iteration {iteration}:")
+        decision = routing.get("policy_decision", {})
+        print(f"  Decision: {decision.get('decision')}")
+        print(f"  Rationale: {decision.get('rationale')}")
+        print(f"  Matched Rules: {', '.join(decision.get('matched_rule_ids', []))}")
+
+        effective = routing.get("effective_route", {})
+        print(f"  Effective Route: {effective.get('route_tier')}")
+        print(f"    Harness: {effective.get('harness')}")
+        print(f"    Model: {effective.get('model')}")
+
+        proposal = routing.get("model_proposal", {})
+        print(f"  Model Proposal: {proposal.get('route_tier')}")
+        print(f"    Rationale: {proposal.get('rationale')}")
+
+        prompt = routing.get("prompt", {})
+        print(f"  Prompt Artifact: {prompt.get('path')}")
+        print(f"  Prompt Hash: {prompt.get('sha256')}")
+
+    return 0
 
 
 if __name__ == "__main__":

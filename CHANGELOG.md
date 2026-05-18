@@ -8,6 +8,23 @@ This project follows Semantic Versioning once public releases begin.
 
 ### Added
 
+- Triage Stage upgrade to v2: enables deterministic routing, dynamic model
+  selection, and structured handoffs between review and remediation phases.
+- Routing Policy Engine: supports first-match rule sets based on domain tags,
+  risk level, refactor depth, and module count.
+- Deterministic safety signal detection: automatically detects sensitive
+  keywords (auth, secrets, pii) in affected files to prevent de-escalation
+  to cheaper models for high-risk changes.
+- Multi-harness support: added thin CLI adapters for Claude, Gemini, OpenCode,
+  and KiloCode to enable heterogeneous model routing.
+- Remediation Prompt Composer: assembles prompts from deterministic fragments
+  (e.g., engineering principles) and quoted triage drafts.
+- `revrem policy lint --profile NAME`: validates routing configuration and
+  rule logic without executing models.
+- `revrem triage explain <run-dir>`: provides a human-readable explanation of
+  how the policy engine resolved a specific routing decision.
+- Triage v2 schema, routing-v1 schema, and routing-outcome-v1 schema added
+  to the public API definition.
 - Public GitHub launch materials: README, contribution guidance, security
   policy, support policy, issue templates, pull request template, CODEOWNERS,
   NOTICE, CI hardening, Scorecard workflow, and release provenance/SBOM

@@ -1,0 +1,48 @@
+{
+  "$id": "https://github.com/GitCmurf/revrem/schemas/routing-outcome/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "checks_passed": {
+      "type": "boolean"
+    },
+    "cost_usd": {
+      "type": "number"
+    },
+    "exit_code": {
+      "type": "integer"
+    },
+    "iteration": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "run_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0"
+    },
+    "source_routing_artifact": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "tokens_consumed": {
+      "type": "integer"
+    },
+    "wall_time_seconds": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "iteration",
+    "source_routing_artifact",
+    "exit_code",
+    "wall_time_seconds",
+    "checks_passed"
+  ],
+  "title": "RevRem routing outcome v1",
+  "type": "object"
+}

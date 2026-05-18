@@ -45,6 +45,8 @@ PROFILE_KEYS = (
 PIPELINE_KEYS = ("base", "max_iterations", "final_review", "checks")
 PHASE_KEYS = ("harness", "model", "reasoning_effort", "timeout_seconds")
 TRIAGE_ON_INVALID_CHOICES = ("continue", "stop")
+TRIAGE_CONTRACT_CHOICES = ("v1", "v2")
+ROUTING_MODE_CHOICES = ("first-match",)
 COMMIT_ON_HOOK_FAILURE_CHOICES = ("remediate", "stop", "no-verify")
 TRIAGE_KEYS = (
     "enabled",
@@ -54,7 +56,22 @@ TRIAGE_KEYS = (
     "timeout_seconds",
     "prompt",
     "on_invalid",
+    "contract",
+    "routing",
+    "routes",
 )
+ROUTING_KEYS = ("enabled", "mode", "default_route", "strict_on_unavailable_route", "rule")
+ROUTING_RULE_KEYS = ("id", "when", "then")
+ROUTING_WHEN_KEYS = (
+    "domain_tags_any",
+    "risk_level_any",
+    "risk_level_max",
+    "refactor_depth_any",
+    "module_count_gte",
+    "module_count_lt",
+)
+ROUTING_THEN_KEYS = ("route", "prompt_fragments", "allow_model_deescalation")
+ROUTE_KEYS = ("harness", "model", "reasoning_effort", "timeout_seconds", "sandbox", "fallback")
 COMMIT_KEYS = (
     "enabled",
     "harness",
@@ -95,6 +112,49 @@ class PhaseConfig:
 
 
 @dataclass(frozen=True)
+class TriageRouteConfig:
+    harness: str = "codex"
+    model: str | None = None
+    reasoning_effort: str | None = None
+    timeout_seconds: float | None = None
+    sandbox: str = "workspace-write"
+    fallback: str | None = None
+
+
+@dataclass(frozen=True)
+class TriageRoutingRuleWhen:
+    domain_tags_any: tuple[str, ...] = field(default_factory=tuple)
+    risk_level_any: tuple[str, ...] = field(default_factory=tuple)
+    risk_level_max: str | None = None
+    refactor_depth_any: tuple[str, ...] = field(default_factory=tuple)
+    module_count_gte: int | None = None
+    module_count_lt: int | None = None
+
+
+@dataclass(frozen=True)
+class TriageRoutingRuleThen:
+    route: str | None = None
+    prompt_fragments: tuple[str, ...] = field(default_factory=tuple)
+    allow_model_deescalation: bool = True
+
+
+@dataclass(frozen=True)
+class TriageRoutingRule:
+    id: str
+    when: TriageRoutingRuleWhen = field(default_factory=TriageRoutingRuleWhen)
+    then: TriageRoutingRuleThen = field(default_factory=TriageRoutingRuleThen)
+
+
+@dataclass(frozen=True)
+class TriageRoutingConfig:
+    enabled: bool = False
+    mode: str = "first-match"
+    default_route: str = "midtier-coder"
+    strict_on_unavailable_route: bool = True
+    rule: tuple[TriageRoutingRule, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
 class TriageConfig:
     enabled: bool = False
     harness: str = "codex"
@@ -103,6 +163,9 @@ class TriageConfig:
     timeout_seconds: float | None = None
     prompt: str | None = None
     on_invalid: str = "continue"
+    contract: str = "v1"
+    routing: TriageRoutingConfig = field(default_factory=TriageRoutingConfig)
+    routes: dict[str, TriageRouteConfig] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -319,6 +382,17 @@ def parse_triage(raw: dict[str, Any], field: str) -> TriageConfig:
         raise ValueError(
             f"{field}.on_invalid must be one of {', '.join(TRIAGE_ON_INVALID_CHOICES)}"
         )
+    contract = _str(raw.get("contract", "v1"), f"{field}.contract")
+    if contract not in TRIAGE_CONTRACT_CHOICES:
+        raise ValueError(f"{field}.contract must be one of {', '.join(TRIAGE_CONTRACT_CHOICES)}")
+
+    routing = parse_triage_routing(_table(raw.get("routing", {}), f"{field}.routing"), f"{field}.routing")
+    routes_raw = _table(raw.get("routes", {}), f"{field}.routes")
+    routes = {
+        name: parse_triage_route(_table(value, f"{field}.routes.{name}"), f"{field}.routes.{name}")
+        for name, value in routes_raw.items()
+    }
+
     return TriageConfig(
         enabled=_bool(raw.get("enabled", False), f"{field}.enabled"),
         harness=harness,
@@ -327,7 +401,99 @@ def parse_triage(raw: dict[str, Any], field: str) -> TriageConfig:
         timeout_seconds=_optional_float(raw.get("timeout_seconds"), f"{field}.timeout_seconds"),
         prompt=_optional_str(raw.get("prompt"), f"{field}.prompt"),
         on_invalid=on_invalid,
+        contract=contract,
+        routing=routing,
+        routes=routes,
     )
+
+
+def parse_triage_routing(raw: dict[str, Any], field: str) -> TriageRoutingConfig:
+    _reject_unknown_keys(raw, ROUTING_KEYS, field)
+    mode = _str(raw.get("mode", "first-match"), f"{field}.mode")
+    if mode not in ROUTING_MODE_CHOICES:
+        raise ValueError(f"{field}.mode must be one of {', '.join(ROUTING_MODE_CHOICES)}")
+
+    rules_raw = raw.get("rule", [])
+    if not isinstance(rules_raw, list):
+        raise ValueError(f"{field}.rule must be a list of tables")
+    rules = tuple(
+        parse_triage_routing_rule(_table(rule_raw, f"{field}.rule[{i}]"), f"{field}.rule[{i}]")
+        for i, rule_raw in enumerate(rules_raw)
+    )
+
+    return TriageRoutingConfig(
+        enabled=_bool(raw.get("enabled", False), f"{field}.enabled"),
+        mode=mode,
+        default_route=_str(raw.get("default_route", "midtier-coder"), f"{field}.default_route"),
+        strict_on_unavailable_route=_bool(
+            raw.get("strict_on_unavailable_route", True), f"{field}.strict_on_unavailable_route"
+        ),
+        rule=rules,
+    )
+
+
+def parse_triage_routing_rule(raw: dict[str, Any], field: str) -> TriageRoutingRule:
+    _reject_unknown_keys(raw, ROUTING_RULE_KEYS, field)
+    rule_id = _str(raw.get("id"), f"{field}.id")
+    when = parse_triage_routing_rule_when(_table(raw.get("when", {}), f"{field}.when"), f"{field}.when")
+    then = parse_triage_routing_rule_then(_table(raw.get("then", {}), f"{field}.then"), f"{field}.then")
+    return TriageRoutingRule(id=rule_id, when=when, then=then)
+
+
+def parse_triage_routing_rule_when(raw: dict[str, Any], field: str) -> TriageRoutingRuleWhen:
+    _reject_unknown_keys(raw, ROUTING_WHEN_KEYS, field)
+    return TriageRoutingRuleWhen(
+        domain_tags_any=tuple(_str_list(raw.get("domain_tags_any", []), f"{field}.domain_tags_any")),
+        risk_level_any=tuple(_str_list(raw.get("risk_level_any", []), f"{field}.risk_level_any")),
+        risk_level_max=_optional_str(raw.get("risk_level_max"), f"{field}.risk_level_max"),
+        refactor_depth_any=tuple(
+            _str_list(raw.get("refactor_depth_any", []), f"{field}.refactor_depth_any")
+        ),
+        module_count_gte=_optional_int(raw.get("module_count_gte"), f"{field}.module_count_gte"),
+        module_count_lt=_optional_int(raw.get("module_count_lt"), f"{field}.module_count_lt"),
+    )
+
+
+def parse_triage_routing_rule_then(raw: dict[str, Any], field: str) -> TriageRoutingRuleThen:
+    _reject_unknown_keys(raw, ROUTING_THEN_KEYS, field)
+    return TriageRoutingRuleThen(
+        route=_optional_str(raw.get("route"), f"{field}.route"),
+        prompt_fragments=tuple(
+            _str_list(raw.get("prompt_fragments", []), f"{field}.prompt_fragments")
+        ),
+        allow_model_deescalation=_bool(
+            raw.get("allow_model_deescalation", True), f"{field}.allow_model_deescalation"
+        ),
+    )
+
+
+def parse_triage_route(raw: dict[str, Any], field: str) -> TriageRouteConfig:
+    _reject_unknown_keys(raw, ROUTE_KEYS, field)
+    harness = _str(raw.get("harness", "codex"), f"{field}.harness")
+    validate_harness_name(harness, field=f"{field}.harness")
+    reasoning_effort = _optional_str(raw.get("reasoning_effort"), f"{field}.reasoning_effort")
+    if reasoning_effort is not None and reasoning_effort not in REASONING_EFFORT_CHOICES:
+        raise ValueError(
+            f"{field}.reasoning_effort must be one of {', '.join(REASONING_EFFORT_CHOICES)}"
+        )
+    sandbox = _str(raw.get("sandbox", "workspace-write"), f"{field}.sandbox")
+    if sandbox not in EXEC_SANDBOX_CHOICES:
+        raise ValueError(f"{field}.sandbox must be one of {', '.join(EXEC_SANDBOX_CHOICES)}")
+
+    return TriageRouteConfig(
+        harness=harness,
+        model=_optional_str(raw.get("model"), f"{field}.model"),
+        reasoning_effort=reasoning_effort,
+        timeout_seconds=_optional_float(raw.get("timeout_seconds"), f"{field}.timeout_seconds"),
+        sandbox=sandbox,
+        fallback=_optional_str(raw.get("fallback"), f"{field}.fallback"),
+    )
+
+
+def _str_list(value: Any, field: str) -> list[str]:
+    if not isinstance(value, list | tuple) or not all(isinstance(item, str) for item in value):
+        raise ValueError(f"{field} must be a list of strings")
+    return list(value)
 
 
 def parse_commit(raw: dict[str, Any]) -> CommitConfig:
@@ -647,15 +813,31 @@ def _profile_to_toml_dict(
             explicit = isinstance(raw_section, dict) and key in raw_section
             if omit_builtin_defaults and item == getattr(defaults, key) and not explicit:
                 continue
-            if isinstance(item, tuple):
-                section_dict[key] = list(item)
-            elif isinstance(item, Decimal):
-                section_dict[key] = str(item)
+            
+            # Nested structures (from routing) need deep None removal
+            clean_item = _deep_remove_none(item)
+            if clean_item is None:
+                continue
+
+            if isinstance(clean_item, tuple):
+                section_dict[key] = list(clean_item)
+            elif isinstance(clean_item, Decimal):
+                section_dict[key] = str(clean_item)
             else:
-                section_dict[key] = item
+                section_dict[key] = clean_item
         if section_dict:
             result[section_name] = section_dict
     return result
+
+
+def _deep_remove_none(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        return {k: _deep_remove_none(v) for k, v in value.items() if v is not None}
+    if isinstance(value, list | tuple):
+        return type(value)(_deep_remove_none(v) for v in value if v is not None) # type: ignore
+    return value
 
 
 def _profile_to_toml_impl(
@@ -914,6 +1096,33 @@ def validate_profile(profile: Profile, *, require_implemented: bool) -> None:
         raise ValueError("runtime.max_remediation_input_chars must be positive")
     if profile.runtime.terminal_excerpt_chars < 1:
         raise ValueError("runtime.terminal_excerpt_chars must be positive")
+
+    # Routing validation
+    if profile.triage.routing.enabled:
+        if profile.triage.contract != "v2":
+            raise ValueError("triage.routing.enabled requires triage.contract = 'v2'")
+
+        for i, rule in enumerate(profile.triage.routing.rule):
+            field = f"triage.routing.rule[{i}]"
+            if rule.then.route and rule.then.route not in profile.triage.routes:
+                raise ValueError(f"{field}.then.route refers to unknown route: {rule.then.route}")
+
+        if (
+            profile.triage.routing.default_route
+            and profile.triage.routing.default_route not in profile.triage.routes
+        ):
+            raise ValueError(
+                f"triage.routing.default_route refers to unknown route: {profile.triage.routing.default_route}"
+            )
+
+    for route_name, route in profile.triage.routes.items():
+        field = f"triage.routes.{route_name}"
+        validate_harness_name(route.harness, field=f"{field}.harness")
+        if route.timeout_seconds is not None and route.timeout_seconds < 0:
+            raise ValueError(f"{field}.timeout_seconds must be 0 or greater")
+        if route.fallback and route.fallback not in profile.triage.routes:
+            raise ValueError(f"{field}.fallback refers to unknown route: {route.fallback}")
+
     if require_implemented:
         require_implemented_harness(profile.review.harness, field="review.harness")
         require_implemented_harness(profile.remediation.harness, field="remediation.harness")
@@ -921,6 +1130,8 @@ def validate_profile(profile: Profile, *, require_implemented: bool) -> None:
             require_implemented_harness(profile.triage.harness, field="triage.harness")
         if profile.commit.enabled:
             require_implemented_harness(profile.commit.harness, field="commit.harness")
+        for route_name, route in profile.triage.routes.items():
+            require_implemented_harness(route.harness, field=f"triage.routes.{route_name}.harness")
 
 
 def _write_profile_file(

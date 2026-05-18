@@ -2860,7 +2860,7 @@ def test_main_uses_profile_commit_message_harness(tmp_path, monkeypatch):
     assert config.commit_message_model == "fast-commit"
 
 
-def test_build_loop_config_rejects_reserved_commit_harness_for_live_profile_runs(tmp_path, monkeypatch):
+def test_build_loop_config_allows_newly_implemented_commit_harness_for_live_profile_runs(tmp_path, monkeypatch):
     monkeypatch.setattr(
         MODULE,
         "profile_or_default",
@@ -2875,8 +2875,8 @@ def test_build_loop_config_rejects_reserved_commit_harness_for_live_profile_runs
     )
     args = MODULE.parse_args(["--profile", "final-pr", "--base", "main"])
 
-    with pytest.raises(ValueError, match="only the codex backend is implemented"):
-        MODULE.build_loop_config(args, tmp_path)
+    config, _summary_format = MODULE.build_loop_config(args, tmp_path)
+    assert config.commit_message_harness == "claude"
 
 
 def test_run_loop_skips_commit_cleanliness_check_during_dry_run(tmp_path):
@@ -3505,7 +3505,7 @@ timeout_seconds = -1
         MODULE.build_loop_config(args, tmp_path)
 
 
-def test_build_loop_config_rejects_reserved_commit_harness_when_cli_enables_commits(tmp_path, monkeypatch):
+def test_build_loop_config_allows_newly_implemented_commit_harness_when_cli_enables_commits(tmp_path, monkeypatch):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.chdir(tmp_path)
@@ -3523,8 +3523,8 @@ harness = "claude"
 
     args = MODULE.parse_args(["--profile", "final-pr", "--base", "main", "--commit-after-remediation"])
 
-    with pytest.raises(ValueError, match="only the codex backend is implemented"):
-        MODULE.build_loop_config(args, tmp_path)
+    config, _summary_format = MODULE.build_loop_config(args, tmp_path)
+    assert config.commit_message_harness == "claude"
 
 
 def test_main_uses_default_timeout_for_unset_phase_specific_timeout(tmp_path, monkeypatch):
