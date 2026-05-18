@@ -133,8 +133,6 @@ class TriageRoutingRuleWhen:
     module_count_lt: int | None = None
     safety_signals_any: tuple[str, ...] = field(default_factory=tuple)
     failed_checks_any: tuple[str, ...] = field(default_factory=tuple)
-    safety_signals_any: tuple[str, ...] = field(default_factory=tuple)
-    failed_checks_any: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -142,7 +140,6 @@ class TriageRoutingRuleThen:
     route: str | None = None
     prompt_fragments: tuple[str, ...] = field(default_factory=tuple)
     allow_model_deescalation: bool = True
-    allow_model_escalation: bool | None = None
     allow_model_escalation: bool | None = None
 
 
@@ -160,7 +157,6 @@ class TriageRoutingConfig:
     default_route: str = "midtier-coder"
     strict_on_unavailable_route: bool = True
     rule: tuple[TriageRoutingRule, ...] = field(default_factory=tuple)
-    allow_model_escalation: bool = False
     allow_model_escalation: bool = False
 
 

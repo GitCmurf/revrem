@@ -1461,7 +1461,7 @@ def run_checks(config: LoopConfig, runner: Runner, iteration: int) -> tuple[list
             progress_event(config, "check", f"{iteration}.{index}", "passed")
         else:
             progress_event(config, "check", f"{iteration}.{index}", "failed", f"exit {result.returncode}")
-    failed_commands = [r.args[0] for r in results if r.returncode != 0]
+    failed_commands = [config.check_commands[i] for i, r in enumerate(results) if r.returncode != 0]
     return results, failed_commands
 
 
@@ -2216,11 +2216,18 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                                 "fragments": list(resolved_route.prompt_fragments),
                             },
                         }
-                        # Validate routing artifact against schema
+                                                # Validate routing artifact against schema
                         try:
                             triage.validate_routing_payload(routing_payload)
-                        except Exception as exc:
-                            progress_event(config, "triage", str(iteration), "warning", f"routing payload schema validation failed: {exc}")
+                        except triage.TriageValidationError as exc:
+                            issue = triage.invalid_triage_issue(exc, iteration=iteration)
+                            artifacts.write_json_artifact(
+                                config.artifact_dir,
+                                f"diagnostics-{iteration}.json",
+                                diagnostics.doctor_payload([issue]),
+                            )
+                            progress_event(config, "triage", str(iteration), "invalid", f"routing payload schema validation failed: {exc}")
+                            raise RuntimeError(f"invalid routing decision artifact for iteration {iteration}: {exc}") from exc
 
                         triage.write_routing_artifact(config.artifact_dir, iteration, routing_payload)
                         if config.event_sink:
@@ -2229,8 +2236,6 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
             except budgets.BudgetExceeded:
                 raise
             except Exception as exc:
-                import traceback
-                traceback.print_exc()
                 summary["final_status"] = "error"
                 summary["stopped_reason"] = "triage_failed"
                 summary["error"] = str(exc)
@@ -2250,12 +2255,12 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                 ) from exc
 
             try:
+                rem_start_time = time.monotonic()
                 rem_result = run_remediation(config, runner, iteration, remediation_input, resolved_route=resolved_route)
+                rem_duration = time.monotonic() - rem_start_time
             except budgets.BudgetExceeded:
                 raise
             except Exception as exc:
-                import traceback
-                traceback.print_exc()
                 summary["final_status"] = "error"
                 summary["stopped_reason"] = "remediation_failed"
                 summary["error"] = str(exc)
@@ -2285,7 +2290,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                     "iteration": iteration,
                     "source_routing_artifact": f"routing-{iteration}.json",
                     "exit_code": rem_result.returncode,
-                    "wall_time_seconds": 0.0,
+                    "wall_time_seconds": round(rem_duration, 3),
                     "checks_passed": all(r.returncode == 0 for r in check_results),
                 }
                 triage.write_routing_outcome_artifact(config.artifact_dir, iteration, outcome_payload)

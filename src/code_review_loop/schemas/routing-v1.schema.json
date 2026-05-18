@@ -35,6 +35,8 @@
       "required": [
         "route_tier",
         "harness",
+        "model",
+        "reasoning_effort",
         "sandbox",
         "timeout_seconds"
       ],

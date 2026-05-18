@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from code_review_loop.profiles import Profile, TriageRoutingRule
@@ -30,6 +30,7 @@ class ResolvedRoute:
     allow_model_deescalation: bool
     rule_id: str | None = None
     fallback_applied: str | None = None
+    fallbacks_considered: tuple[str, ...] = field(default_factory=tuple)
 
 
 def resolve_routing(
@@ -88,22 +89,41 @@ def resolve_routing(
         else:
             effective_tier = model_proposal_tier
 
-    if effective_tier not in profile.triage.routes:
-        raise ValueError(f"Resolved to unknown route tier: {effective_tier}")
+    fallbacks_considered = []
+    current_tier = effective_tier
 
-    route_config = profile.triage.routes[effective_tier]
+    while True:
+        if current_tier not in profile.triage.routes:
+            raise ValueError(f"Resolved to unknown route tier: {current_tier}")
 
-    return ResolvedRoute(
-        route_tier=effective_tier,
-        harness=route_config.harness,
-        model=route_config.model,
-        reasoning_effort=route_config.reasoning_effort,
-        timeout_seconds=route_config.timeout_seconds,
-        sandbox=route_config.sandbox,
-        prompt_fragments=prompt_fragments,
-        allow_model_deescalation=allow_model_deescalation,
-        rule_id=rule_id,
-    )
+        route_config = profile.triage.routes[current_tier]
+
+        # Check if harness is implemented
+        from code_review_loop import harnesses
+        spec = harnesses.harness_registry().get(route_config.harness)
+        if spec and spec.implemented:
+            return ResolvedRoute(
+                route_tier=current_tier,
+                harness=route_config.harness,
+                model=route_config.model,
+                reasoning_effort=route_config.reasoning_effort,
+                timeout_seconds=route_config.timeout_seconds,
+                sandbox=route_config.sandbox,
+                prompt_fragments=prompt_fragments,
+                allow_model_deescalation=allow_model_deescalation,
+                rule_id=rule_id,
+                fallback_applied=current_tier if current_tier != effective_tier else None,
+                fallbacks_considered=tuple(fallbacks_considered),
+            )
+
+        # Try fallback
+        if not route_config.fallback:
+            raise ValueError(f"Route {current_tier!r} uses unimplemented harness {route_config.harness!r} and has no fallback.")
+
+        fallbacks_considered.append(current_tier)
+        current_tier = route_config.fallback
+        if current_tier in fallbacks_considered:
+            raise ValueError(f"Circular fallback detected: {' -> '.join(fallbacks_considered)} -> {current_tier}")
 
 
 def _matches(rule: TriageRoutingRule, context: RoutingContext) -> bool:

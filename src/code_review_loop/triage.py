@@ -24,6 +24,8 @@ class TriageValidationError(ValueError):
 
 
 def load_prompt(contract: str = "v1") -> str:
+    if contract not in {"v1", "v2"}:
+        raise ValueError(f"invalid triage contract version: {contract}")
     prompt_name = "triage_v1.txt" if contract == "v1" else "triage_v2.txt"
     return files("code_review_loop.prompts").joinpath(prompt_name).read_text(encoding="utf-8")
 
@@ -39,6 +41,8 @@ def parse_triage_payload(
     source_review_artifact: str,
     contract: str = "v1",
 ) -> dict[str, Any]:
+    if contract not in {"v1", "v2"}:
+        raise ValueError(f"invalid triage contract version: {contract}")
     try:
         payload = json.loads(output)
     except json.JSONDecodeError as exc:
@@ -63,8 +67,6 @@ def parse_triage_payload(
     validator = Draft202012Validator(_triage_schema(contract))
     errors = list(validator.iter_errors(payload))
     if errors:
-        import sys
-        print(f"VALIDATION ERRORS: {errors}", file=sys.stderr)
         raise TriageValidationError(str(errors[0]))
     return payload
 
@@ -180,6 +182,4 @@ def validate_routing_payload(payload: dict[str, Any]) -> None:
     validator = Draft202012Validator(schema)
     errors = list(validator.iter_errors(payload))
     if errors:
-        import sys
-        print(f"VALIDATION ERRORS: {errors}", file=sys.stderr)
         raise TriageValidationError(str(errors[0]))

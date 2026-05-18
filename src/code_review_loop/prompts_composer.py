@@ -33,6 +33,8 @@ def compose_remediation_prompt(
         frag_content = load_fragment(cwd, frag_name, trusted_repo=trusted_repo)
         if frag_content:
             header_parts.append(f"--- Fragment: {frag_name} ---\n{frag_content}")
+        else:
+            raise ValueError(f"Required prompt fragment {frag_name!r} could not be resolved or is untrusted.")
 
     triage_requirements = triage_payload.get("prompt_requirements", {})
     # Triage-prescribed Fragments
@@ -41,6 +43,8 @@ def compose_remediation_prompt(
             frag_content = load_fragment(cwd, frag_name, trusted_repo=trusted_repo)
             if frag_content:
                 header_parts.append(f"--- Fragment: {frag_name} ---\n{frag_content}")
+            else:
+                raise ValueError(f"Triage-prescribed prompt fragment {frag_name!r} could not be resolved or is untrusted.")
 
     # Definition of Done
     dod = triage_requirements.get("definition_of_done", [])
@@ -73,7 +77,7 @@ def compose_remediation_prompt(
             f"mandatory prompt header ({len(header)} chars) exceeds limit ({max_chars} chars)"
         )
 
-    remaining = max_chars - len(header) - 4  # 4 for newlines
+    remaining = max_chars - len(header) - 8  # 8 for double newlines around sections
     if remaining < 100:  # Very small limit
         return header
 
