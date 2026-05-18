@@ -12,7 +12,7 @@ def test_extract_routing_context_with_safety_signals(tmp_path):
     # Create a file with sensitive keywords
     auth_py = tmp_path / "auth.py"
     auth_py.write_text("def login(): password = '123'", encoding="utf-8")
-    
+
     payload = {
         "confirmed_findings": [
             {"affected_paths": ["auth.py"], "fingerprint": "f1", "summary": "s", "severity": "h", "rationale": "r"}
@@ -25,9 +25,9 @@ def test_extract_routing_context_with_safety_signals(tmp_path):
             "safety_signals": ["low-confidence-signal"]
         }
     }
-    
+
     context = triage.extract_routing_context(payload, tmp_path)
-    
+
     assert "api" in context.domain_tags
     assert context.risk_level == "medium"
     assert "low-confidence-signal" in context.safety_signals

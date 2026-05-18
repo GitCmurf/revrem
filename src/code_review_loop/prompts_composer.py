@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
@@ -16,51 +17,74 @@ def compose_remediation_prompt(
     resolved_route: policy.ResolvedRoute,
     original_review: str,
     max_chars: int = 200_000,
+    trusted_repo: bool = False,
 ) -> str:
-    fragments: list[str] = []
-    
-    # 1. System/Role Context (Baseline)
-    fragments.append(REMEDIATION_ROLE_PROMPT)
+    # 1. Immutable Sections (Safety frame, Policy Decision, DOD, Trusted Fragments)
+    header_parts: list[str] = [REMEDIATION_ROLE_PROMPT]
 
-    # 2. Policy-driven Fragments
+    header_parts.append(
+        f"--- Routing Policy Decision ---\n"
+        f"Matched Rule: {resolved_route.rule_id or 'default'}\n"
+        f"Route Tier: {resolved_route.route_tier}"
+    )
+
+    # Trusted Fragments (Policy-driven)
     for frag_name in resolved_route.prompt_fragments:
-        content = load_fragment(cwd, frag_name)
-        if content:
-            fragments.append(f"--- Fragment: {frag_name} ---\n{content}")
+        frag_content = load_fragment(cwd, frag_name, trusted_repo=trusted_repo)
+        if frag_content:
+            header_parts.append(f"--- Fragment: {frag_name} ---\n{frag_content}")
 
-    # 3. Triage-prescribed Fragments
     triage_requirements = triage_payload.get("prompt_requirements", {})
+    # Triage-prescribed Fragments
     for frag_name in triage_requirements.get("required_fragments", []):
         if frag_name not in resolved_route.prompt_fragments:
-             content = load_fragment(cwd, frag_name)
-             if content:
-                 fragments.append(f"--- Fragment: {frag_name} ---\n{content}")
+            frag_content = load_fragment(cwd, frag_name, trusted_repo=trusted_repo)
+            if frag_content:
+                header_parts.append(f"--- Fragment: {frag_name} ---\n{frag_content}")
 
-    # 4. Triage Handoff (The specific instructions for this iteration)
-    # This is "untrusted" model output, so we quote it clearly.
-    fragments.append("--- Triage Handoff (Draft Instructions) ---")
-    handoff_draft = triage_requirements.get("triage_prompt_draft", "")
-    if handoff_draft:
-        fragments.append(f"Instructions for this iteration:\n{handoff_draft}")
-    
-    fragments.append("--- Structured Classification & Context ---")
-    classification = triage_payload.get("classification", {})
-    fragments.append(f"Risk Level: {classification.get('risk_level')}")
-    fragments.append(f"Refactor Depth: {classification.get('refactor_depth')}")
-    
+    # Definition of Done
     dod = triage_requirements.get("definition_of_done", [])
     if dod:
-        fragments.append("Definition of Done:")
-        for item in dod:
-            fragments.append(f"- {item}")
+        dod_text = "Definition of Done:\n" + "\n".join(f"- {item}" for item in dod)
+        header_parts.append(dod_text)
 
-    # 5. Original Review Context (The "ground truth" findings)
-    fragments.append("--- Original Review Context ---")
-    fragments.append(original_review)
+    header = "\n\n".join(header_parts)
 
-    # Combine and trim
-    full_text = "\n\n".join(fragments)
-    return trim_for_prompt(full_text, max_chars)
+    # 2. Truncatable Sections
+    # Triage Draft
+    draft_parts = ["--- Triage Handoff (Draft Instructions) ---"]
+    handoff_draft = triage_requirements.get("triage_prompt_draft", "")
+    if handoff_draft:
+        draft_parts.append(f"Instructions for this iteration:\n{handoff_draft}")
+
+    classification = triage_payload.get("classification", {})
+    draft_parts.append(
+        f"Risk Level: {classification.get('risk_level')}\n"
+        f"Refactor Depth: {classification.get('refactor_depth')}"
+    )
+    draft = "\n\n".join(draft_parts)
+
+    # Original Review
+    footer = "--- Original Review Context ---\n" + original_review
+
+    # Check limits
+    if len(header) > max_chars:
+        raise ValueError(
+            f"mandatory prompt header ({len(header)} chars) exceeds limit ({max_chars} chars)"
+        )
+
+    remaining = max_chars - len(header) - 4  # 4 for newlines
+    if remaining < 100:  # Very small limit
+        return header
+
+    # Split remaining budget between draft and footer (e.g. 30/70)
+    draft_budget = int(remaining * 0.3)
+    footer_budget = remaining - draft_budget - 4
+
+    final_draft = trim_for_prompt(draft, draft_budget)
+    final_footer = trim_for_prompt(footer, footer_budget)
+
+    return f"{header}\n\n{final_draft}\n\n{final_footer}"
 
 
 REMEDIATION_ROLE_PROMPT = """You are running a bounded review-remediation loop.
@@ -78,15 +102,28 @@ Rules:
 """
 
 
-def load_fragment(cwd: Path, name: str) -> str | None:
-    # Try common extensions and naming patterns
+def load_fragment(cwd: Path, name: str, trusted_repo: bool = False) -> str | None:
+    # 1. Try package resources first (Built-in fragments)
+    try:
+        resource_path = files("code_review_loop.prompts").joinpath(f"fragments/{name}.txt")
+        if resource_path.is_file():
+            return resource_path.read_text(encoding="utf-8")
+    except (ImportError, OSError):
+        pass
+
+    # 2. Try repo-local only if trusted
+    if not trusted_repo:
+        return None
+
+    # Reject path traversal
+    if "/" in name or "\\" in name or name == "..":
+        return None
+
     candidates = [
         cwd / f"{name}.md",
         cwd / f"{name}.txt",
-        cwd / f"{name}-v1.1.md", # Specific for engineering-principles-v1.1.md
+        cwd / f"{name}-v1.1.md",
     ]
-    
-    # Special case for engineering-principles as it's a core concept
     if name == "engineering-principles":
         candidates.insert(0, cwd / "engineering-principles-v1.1.md")
 
@@ -101,7 +138,7 @@ def load_fragment(cwd: Path, name: str) -> str | None:
 
 def trim_for_prompt(text: str, max_chars: int) -> str:
     if max_chars < 1:
-        raise ValueError("max prompt characters must be positive")
+        return ""
     if len(text) <= max_chars:
         return text
     omitted = len(text) - max_chars
@@ -111,11 +148,7 @@ def trim_for_prompt(text: str, max_chars: int) -> str:
     keep_total = max_chars - len(marker)
     keep_head = keep_total // 2
     keep_tail = keep_total - keep_head
-    return (
-        text[:keep_head]
-        + marker
-        + text[-keep_tail:]
-    )
+    return text[:keep_head] + marker + text[-keep_tail:]
 
 
 def compute_prompt_hash(text: str) -> str:

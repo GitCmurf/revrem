@@ -266,7 +266,7 @@ debug_status_detection = false
     assert resolved.output.debug_status_detection is False
 
 
-def test_resolve_defaults_allows_newly_implemented_harness(tmp_path):
+def test_resolve_defaults_rejects_unimplemented_harness(tmp_path):
     home = tmp_path / "home"
     cwd = tmp_path / "repo"
     cwd.mkdir()
@@ -279,8 +279,8 @@ harness = "claude"
         encoding="utf-8",
     )
 
-    profile = profiles.resolve_defaults(cwd=cwd, home=home, require_implemented=True)
-    assert profile.review.harness == "claude"
+    with pytest.raises(ValueError, match="only the codex backend is implemented"):
+        profiles.resolve_defaults(cwd=cwd, home=home, require_implemented=True)
 
 
 
@@ -315,7 +315,7 @@ harness = "not-real"
         profiles.load_profile_file(path)
 
 
-def test_resolved_profile_allows_newly_implemented_harness(tmp_path):
+def test_resolved_profile_rejects_unimplemented_harness(tmp_path):
     home = tmp_path / "home"
     cwd = tmp_path / "repo"
     cwd.mkdir()
@@ -329,8 +329,8 @@ harness = "claude"
         encoding="utf-8",
     )
 
-    profile = profiles.resolve_profile("future", cwd=cwd, home=home, require_implemented=True)
-    assert profile.review.harness == "claude"
+    with pytest.raises(ValueError, match="only the codex backend is implemented"):
+        profiles.resolve_profile("future", cwd=cwd, home=home, require_implemented=True)
 
 
 
@@ -493,7 +493,7 @@ progress_style = "rich"
     assert loaded.profiles["demo"].output.progress_style == "rich"
 
 
-def test_resolve_profile_allows_newly_implemented_executable_triage_harness(tmp_path):
+def test_resolve_profile_rejects_unimplemented_executable_triage_harness(tmp_path):
     home = tmp_path / "home"
     cwd = tmp_path / "repo"
     cwd.mkdir()
@@ -508,11 +508,11 @@ harness = "gemini"
         encoding="utf-8",
     )
 
-    profile = profiles.resolve_profile("future", cwd=cwd, home=home)
-    assert profile.triage.harness == "gemini"
+    with pytest.raises(ValueError, match="only the codex backend is implemented"):
+        profiles.resolve_profile("future", cwd=cwd, home=home)
 
 
-def test_resolve_profile_allows_newly_implemented_executable_commit_harness(tmp_path):
+def test_resolve_profile_rejects_unimplemented_executable_commit_harness(tmp_path):
     home = tmp_path / "home"
     cwd = tmp_path / "repo"
     cwd.mkdir()
@@ -527,8 +527,8 @@ harness = "gemini"
         encoding="utf-8",
     )
 
-    profile = profiles.resolve_profile("future", cwd=cwd, home=home)
-    assert profile.commit.harness == "gemini"
+    with pytest.raises(ValueError, match="only the codex backend is implemented"):
+        profiles.resolve_profile("future", cwd=cwd, home=home)
 
 
 def test_profile_rejects_boolean_timeout_seconds(tmp_path):

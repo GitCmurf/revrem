@@ -60,7 +60,7 @@ TRIAGE_KEYS = (
     "routing",
     "routes",
 )
-ROUTING_KEYS = ("enabled", "mode", "default_route", "strict_on_unavailable_route", "rule")
+ROUTING_KEYS = ("enabled", "mode", "default_route", "strict_on_unavailable_route", "rule", "allow_model_escalation")
 ROUTING_RULE_KEYS = ("id", "when", "then")
 ROUTING_WHEN_KEYS = (
     "domain_tags_any",
@@ -69,8 +69,10 @@ ROUTING_WHEN_KEYS = (
     "refactor_depth_any",
     "module_count_gte",
     "module_count_lt",
+    "safety_signals_any",
+    "failed_checks_any",
 )
-ROUTING_THEN_KEYS = ("route", "prompt_fragments", "allow_model_deescalation")
+ROUTING_THEN_KEYS = ("route", "prompt_fragments", "allow_model_deescalation", "allow_model_escalation")
 ROUTE_KEYS = ("harness", "model", "reasoning_effort", "timeout_seconds", "sandbox", "fallback")
 COMMIT_KEYS = (
     "enabled",
@@ -129,6 +131,10 @@ class TriageRoutingRuleWhen:
     refactor_depth_any: tuple[str, ...] = field(default_factory=tuple)
     module_count_gte: int | None = None
     module_count_lt: int | None = None
+    safety_signals_any: tuple[str, ...] = field(default_factory=tuple)
+    failed_checks_any: tuple[str, ...] = field(default_factory=tuple)
+    safety_signals_any: tuple[str, ...] = field(default_factory=tuple)
+    failed_checks_any: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -136,6 +142,8 @@ class TriageRoutingRuleThen:
     route: str | None = None
     prompt_fragments: tuple[str, ...] = field(default_factory=tuple)
     allow_model_deescalation: bool = True
+    allow_model_escalation: bool | None = None
+    allow_model_escalation: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -152,6 +160,8 @@ class TriageRoutingConfig:
     default_route: str = "midtier-coder"
     strict_on_unavailable_route: bool = True
     rule: tuple[TriageRoutingRule, ...] = field(default_factory=tuple)
+    allow_model_escalation: bool = False
+    allow_model_escalation: bool = False
 
 
 @dataclass(frozen=True)
@@ -429,6 +439,7 @@ def parse_triage_routing(raw: dict[str, Any], field: str) -> TriageRoutingConfig
             raw.get("strict_on_unavailable_route", True), f"{field}.strict_on_unavailable_route"
         ),
         rule=rules,
+        allow_model_escalation=_bool(raw.get("allow_model_escalation", False), f"{field}.allow_model_escalation"),
     )
 
 
@@ -451,6 +462,8 @@ def parse_triage_routing_rule_when(raw: dict[str, Any], field: str) -> TriageRou
         ),
         module_count_gte=_optional_int(raw.get("module_count_gte"), f"{field}.module_count_gte"),
         module_count_lt=_optional_int(raw.get("module_count_lt"), f"{field}.module_count_lt"),
+        safety_signals_any=tuple(_str_list(raw.get("safety_signals_any", []), f"{field}.safety_signals_any")),
+        failed_checks_any=tuple(_str_list(raw.get("failed_checks_any", []), f"{field}.failed_checks_any")),
     )
 
 
@@ -463,6 +476,9 @@ def parse_triage_routing_rule_then(raw: dict[str, Any], field: str) -> TriageRou
         ),
         allow_model_deescalation=_bool(
             raw.get("allow_model_deescalation", True), f"{field}.allow_model_deescalation"
+        ),
+        allow_model_escalation=_optional_bool(
+            raw.get("allow_model_escalation"), f"{field}.allow_model_escalation"
         ),
     )
 
@@ -813,7 +829,7 @@ def _profile_to_toml_dict(
             explicit = isinstance(raw_section, dict) and key in raw_section
             if omit_builtin_defaults and item == getattr(defaults, key) and not explicit:
                 continue
-            
+
             # Nested structures (from routing) need deep None removal
             clean_item = _deep_remove_none(item)
             if clean_item is None:
@@ -1078,6 +1094,37 @@ def minimal_profile(name: str, *, description: str = "") -> Profile:
     return Profile(name=name, description=description)
 
 
+
+def validate_policy(profile: Profile) -> list[str]:
+    issues = []
+    triage = profile.triage
+    if not triage.routing.enabled:
+        return []
+
+    # Check routes
+    for name, route in triage.routes.items():
+        try:
+            validate_harness_name(route.harness)
+            spec = HARNESS_REGISTRY.get(route.harness)
+            if spec and not spec.implemented:
+                 issues.append(f"route {name!r} uses unimplemented harness {route.harness!r}")
+        except ValueError as exc:
+            issues.append(f"route {name!r} has invalid harness: {exc}")
+
+        if route.fallback and route.fallback not in triage.routes:
+            issues.append(f"route {name!r} has unknown fallback: {route.fallback!r}")
+
+    # Check rules
+    for i, rule in enumerate(triage.routing.rule):
+        if rule.then.route and rule.then.route not in triage.routes:
+            issues.append(f"rule {rule.id or i!r} refers to unknown route {rule.then.route!r}")
+
+    if triage.routing.default_route not in triage.routes:
+        issues.append(f"default_route {triage.routing.default_route!r} is unknown")
+
+    return issues
+
+
 def validate_profile(profile: Profile, *, require_implemented: bool) -> None:
     if profile.pipeline.max_iterations < 1:
         raise ValueError("pipeline.max_iterations must be at least 1")
@@ -1261,6 +1308,12 @@ def _optional_str(value: Any, field: str) -> str | None:
     if value is None:
         return None
     return _str(value, field)
+
+
+def _optional_bool(value: Any, field: str) -> bool | None:
+    if value is None:
+        return None
+    return _bool(value, field)
 
 
 def _bool(value: Any, field: str) -> bool:

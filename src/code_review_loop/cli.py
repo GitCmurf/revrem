@@ -123,11 +123,11 @@ class CommandResult:
 
 @dataclass(frozen=True)
 class LoopConfig:
-    base: str
-    max_iterations: int
-    codex_bin: str
-    cwd: Path
-    artifact_dir: Path
+    base: str = "main"
+    max_iterations: int = 1
+    codex_bin: str = "codex"
+    cwd: Path = field(default_factory=Path.cwd)
+    artifact_dir: Path = field(default_factory=Path.cwd)
     preflight_enabled: bool = False
     artifact_dir_is_default: bool = False
     model: str | None = None
@@ -177,6 +177,7 @@ class LoopConfig:
     budget_config: budgets.BudgetConfig = field(default_factory=budgets.BudgetConfig)
     budget_state: budgets.BudgetState | None = None
     profile_v2: profiles.Profile | None = None
+    trusted_repo: bool = False
 
 
 Runner = Callable[[Sequence[str], Path, str | None, float | None], CommandResult]
@@ -958,12 +959,22 @@ def strip_finding_priority(finding: str) -> tuple[str, str]:
     return match.group(1), match.group(2)
 
 
+
+def _resolve_executable(harness: str, config: LoopConfig) -> str:
+    if harness == "codex":
+        return config.codex_bin
+    registry = harnesses.harness_registry()
+    if harness in registry:
+        return registry[harness].executable
+    return harness
+
+
 def build_review_command(config: LoopConfig) -> list[str]:
     return harnesses.build_phase_command(
         harnesses.PhaseCommandRequest(
             harness=config.review_harness,
             role="review",
-            executable=config.codex_bin,
+            executable=_resolve_executable(config.review_harness, config),
             base=config.base,
             model=config.review_model or config.model,
             reasoning_effort=config.review_reasoning_effort or config.reasoning_effort,
@@ -993,7 +1004,7 @@ def build_remediation_command(
         harnesses.PhaseCommandRequest(
             harness=harness,
             role="remediation",
-            executable=config.codex_bin,
+            executable=_resolve_executable(harness, config),
             model=model,
             reasoning_effort=reasoning_effort,
             sandbox=sandbox,
@@ -1011,7 +1022,7 @@ def build_triage_command(config: LoopConfig) -> list[str]:
         harnesses.PhaseCommandRequest(
             harness=config.triage_harness,
             role="triage",
-            executable=config.codex_bin,
+            executable=_resolve_executable(config.triage_harness, config),
             model=config.triage_model,
             reasoning_effort=config.triage_reasoning_effort,
             sandbox="read-only",
@@ -1026,7 +1037,7 @@ def build_commit_message_command(config: LoopConfig) -> list[str]:
         harnesses.PhaseCommandRequest(
             harness=config.commit_message_harness,
             role="commit-message",
-            executable=config.codex_bin,
+            executable=_resolve_executable(config.commit_message_harness, config),
             model=config.commit_message_model,
             reasoning_effort=config.commit_reasoning_effort,
             sandbox="read-only",
@@ -1286,7 +1297,7 @@ def run_remediation(
         else None
     )
     command = build_remediation_command(config, last_message_path, resolved_route=resolved_route)
-    
+
     if resolved_route:
         prompt = remediation_input
         timeout = resolved_route.timeout_seconds
@@ -1351,6 +1362,7 @@ def run_triage(
         )
     progress_event(config, "triage", str(iteration), "done")
     triage_output = actionable_review_output(_combined_output(result))
+    import sys
     if triage.looks_structured_output(triage_output):
         try:
             payload = triage.parse_triage_payload(
@@ -1406,7 +1418,7 @@ def run_triage(
     ), 0, False, None
 
 
-def run_checks(config: LoopConfig, runner: Runner, iteration: int) -> list[CommandResult]:
+def run_checks(config: LoopConfig, runner: Runner, iteration: int) -> tuple[list[CommandResult], list[str]]:
     results: list[CommandResult] = []
     for index, check in enumerate(config.check_commands, start=1):
         command = shlex.split(check)
@@ -1449,7 +1461,8 @@ def run_checks(config: LoopConfig, runner: Runner, iteration: int) -> list[Comma
             progress_event(config, "check", f"{iteration}.{index}", "passed")
         else:
             progress_event(config, "check", f"{iteration}.{index}", "failed", f"exit {result.returncode}")
-    return results
+    failed_commands = [r.args[0] for r in results if r.returncode != 0]
+    return results, failed_commands
 
 
 def adaptive_check_skip_reason(command: Sequence[str], cwd: Path) -> str | None:
@@ -2037,6 +2050,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                 raise RunLoopFailed(summary, str(summary["error"]))
 
         pending_check_failures = ""
+        failed_check_names: list[str] = []
         _commit_retry = False
         initial_review_output = ""
         if config.initial_review_file:
@@ -2139,7 +2153,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                         routing_context = triage.extract_routing_context(
                             triage_payload,
                             config.cwd,
-                            failed_checks=tuple(summary.get("last_checks_failing", ())),
+                            failed_checks=tuple(failed_check_names),
                         )
                         model_proposal = triage_payload.get("route_proposal", {})
                         resolved_route = policy.resolve_routing(
@@ -2162,20 +2176,38 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                             resolved_route,
                             last_review_output,
                             max_chars=config.max_remediation_input_chars,
+                            trusted_repo=config.trusted_repo,
                         )
 
-                        # Record routing artifact
+                                                # Record routing artifact
                         routing_payload = {
+                            "schema_version": "1.0",
                             "run_id": run_id,
                             "iteration": iteration,
                             "source_triage_artifact": f"triage-{iteration}.json",
-                            "model_proposal": model_proposal,
+                            "model_proposal": {
+                                k: v for k, v in {
+                                    "route_tier": model_proposal.get("route_tier"),
+                                    "harness": model_proposal.get("harness"),
+                                    "model": model_proposal.get("model"),
+                                    "rationale": model_proposal.get("rationale"),
+                                }.items() if v is not None
+                            },
                             "policy_decision": {
                                 "decision": "proposal_accepted" if resolved_route.rule_id == "default" else "policy_override",
                                 "matched_rule_ids": [resolved_route.rule_id] if resolved_route.rule_id else [],
                                 "rationale": "Applied policy based on classification.",
                             },
-                            "effective_route": asdict(resolved_route),
+                            "effective_route": {
+                                k: v for k, v in {
+                                    "route_tier": resolved_route.route_tier,
+                                    "harness": resolved_route.harness,
+                                    "model": resolved_route.model,
+                                    "reasoning_effort": resolved_route.reasoning_effort,
+                                    "sandbox": resolved_route.sandbox,
+                                    "timeout_seconds": int(resolved_route.timeout_seconds) if resolved_route.timeout_seconds is not None else 300,
+                                }.items() if v is not None
+                            },
                             "fallbacks_considered": [],
                             "prompt": {
                                 "path": f"remediation-{iteration}-prompt.txt",
@@ -2184,11 +2216,21 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                                 "fragments": list(resolved_route.prompt_fragments),
                             },
                         }
+                        # Validate routing artifact against schema
+                        try:
+                            triage.validate_routing_payload(routing_payload)
+                        except Exception as exc:
+                            progress_event(config, "triage", str(iteration), "warning", f"routing payload schema validation failed: {exc}")
+
                         triage.write_routing_artifact(config.artifact_dir, iteration, routing_payload)
+                        if config.event_sink:
+                            config.event_sink.emit("routing_decision", phase="triage", iteration=iteration, payload=routing_payload)
                         write_artifact(config.artifact_dir / f"remediation-{iteration}-prompt.txt", remediation_input)
             except budgets.BudgetExceeded:
                 raise
             except Exception as exc:
+                import traceback
+                traceback.print_exc()
                 summary["final_status"] = "error"
                 summary["stopped_reason"] = "triage_failed"
                 summary["error"] = str(exc)
@@ -2208,10 +2250,12 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                 ) from exc
 
             try:
-                run_remediation(config, runner, iteration, remediation_input, resolved_route=resolved_route)
+                rem_result = run_remediation(config, runner, iteration, remediation_input, resolved_route=resolved_route)
             except budgets.BudgetExceeded:
                 raise
             except Exception as exc:
+                import traceback
+                traceback.print_exc()
                 summary["final_status"] = "error"
                 summary["stopped_reason"] = "remediation_failed"
                 summary["error"] = str(exc)
@@ -2230,10 +2274,23 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                     f"see {config.artifact_dir / f'remediation-{iteration}.txt'}",
                 ) from exc
 
-            check_results = run_checks(config, runner, iteration)
+            check_results, failed_check_names = run_checks(config, runner, iteration)
             pending_check_failures = _format_check_failures(check_results)
             summary["pending_check_failures"] = bool(pending_check_failures)
-            iterations[-1]["check_failures"] = sum(1 for result in check_results if result.returncode != 0)
+            iterations[-1]["check_failures"] = len(failed_check_names)
+            if resolved_route:
+                outcome_payload = {
+                    "schema_version": "1.0",
+                    "run_id": run_id,
+                    "iteration": iteration,
+                    "source_routing_artifact": f"routing-{iteration}.json",
+                    "exit_code": rem_result.returncode,
+                    "wall_time_seconds": 0.0,
+                    "checks_passed": all(r.returncode == 0 for r in check_results),
+                }
+                triage.write_routing_outcome_artifact(config.artifact_dir, iteration, outcome_payload)
+                if config.event_sink:
+                    config.event_sink.emit("routing_outcome", phase="remediate", iteration=iteration, payload=outcome_payload)
             if config.commit_after_remediation and not pending_check_failures:
                 try:
                     iterations[-1]["commit_status"] = run_commit(config, runner, iteration, retrying=_commit_retry)
@@ -2877,7 +2934,15 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         default=None,
         help="Directory for review/remediation/check transcripts.",
     )
-    parser.add_argument("--dry-run", action="store_true", help="Print the loop shape without running Codex.")
+    parser.add_argument(
+        "--trusted-repo",
+        action="store_true",
+        default=None,
+        help="Explicitly trust repo-local prompt fragments.",
+    )
+    parser.add_argument(
+        "--dry-run",
+ action="store_true", help="Print the loop shape without running Codex.")
     final_review_group = parser.add_mutually_exclusive_group()
     final_review_group.add_argument(
         "--final-review",
@@ -3419,6 +3484,7 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         check_commands=checks,
         profile_name=args.profile,
         budget_config=budget_config,
+        trusted_repo=pick(getattr(args, "trusted_repo", None), False, False),
         profile_v2=profile,
     )
     return config, (args.summary_format or profile.output.summary_format)
@@ -4228,6 +4294,7 @@ def resume_loop_config(summary: dict[str, object], *, run_dir: Path) -> LoopConf
         budget_config=_resume_budget_config(resume_config, budgets_payload if isinstance(budgets_payload, dict) else None),
         budget_state=budget_state,
         profile_v2=profile_v2,
+        trusted_repo=_resume_bool(resume_config, "trusted_repo", False),
     )
 
 
@@ -4494,7 +4561,10 @@ def policy_main(argv: Sequence[str]) -> int:
 
 def policy_lint(profile_name: str, output_format: str | None = None) -> int:
     try:
-        profiles.resolve_profile(profile_name, cwd=Path.cwd(), require_implemented=False)
+        profile = profiles.resolve_profile(profile_name, cwd=Path.cwd(), require_implemented=False)
+        policy_issues = profiles.validate_policy(profile)
+        if policy_issues:
+            raise ValueError("\n".join(policy_issues))
         if output_format == "json":
             print(json.dumps({"status": "ok", "profile": profile_name}))
         else:
@@ -4520,7 +4590,7 @@ def parse_triage_args(argv: Sequence[str]) -> argparse.Namespace:
     explain.add_argument("run_dir")
     explain.add_argument("--iteration", type=int, default=1)
     explain.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)
-    return explain.parse_args(argv)
+    return parser.parse_args(argv)
 
 
 def triage_main(argv: Sequence[str]) -> int:

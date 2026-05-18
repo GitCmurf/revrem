@@ -11,7 +11,7 @@ from code_review_loop import policy, prompts_composer
 def test_compose_remediation_prompt_includes_fragments(tmp_path):
     (tmp_path / "engineering-principles-v1.1.md").write_text("CORE PRINCIPLES", encoding="utf-8")
     (tmp_path / "custom.txt").write_text("CUSTOM RULES", encoding="utf-8")
-    
+
     triage_payload = {
         "classification": {"risk_level": "high", "refactor_depth": "atomic"},
         "prompt_requirements": {
@@ -20,7 +20,7 @@ def test_compose_remediation_prompt_includes_fragments(tmp_path):
             "definition_of_done": ["DONE"]
         }
     }
-    
+
     resolved_route = policy.ResolvedRoute(
         route_tier="t1",
         harness="h1",
@@ -31,11 +31,11 @@ def test_compose_remediation_prompt_includes_fragments(tmp_path):
         prompt_fragments=("custom",),
         allow_model_deescalation=True
     )
-    
+
     prompt = prompts_composer.compose_remediation_prompt(
-        tmp_path, triage_payload, resolved_route, "REVIEW CONTENT"
+        tmp_path, triage_payload, resolved_route, "REVIEW CONTENT", trusted_repo=True
     )
-    
+
     assert "CORE PRINCIPLES" in prompt
     assert "CUSTOM RULES" in prompt
     assert "FIX IT" in prompt

@@ -43,7 +43,7 @@ def test_resolve_routing_default(base_profile):
         failed_checks=(),
         safety_signals=(),
     )
-    
+
     resolved = policy.resolve_routing(base_profile, context)
     assert resolved.route_tier == "midtier"
     assert resolved.rule_id == "default"
@@ -58,7 +58,7 @@ def test_resolve_routing_rule_match(base_profile):
         failed_checks=(),
         safety_signals=(),
     )
-    
+
     resolved = policy.resolve_routing(base_profile, context)
     assert resolved.route_tier == "frontier"
     assert resolved.rule_id == "security-rule"
@@ -73,7 +73,7 @@ def test_resolve_routing_model_escalation(base_profile):
         failed_checks=(),
         safety_signals=(),
     )
-    
+
     # Model proposes frontier (higher than midtier)
     resolved = policy.resolve_routing(base_profile, context, model_proposal_tier="frontier")
     assert resolved.route_tier == "frontier"
@@ -88,7 +88,7 @@ def test_resolve_routing_model_deescalation_forbidden(base_profile):
         failed_checks=(),
         safety_signals=(),
     )
-    
+
     # Rule matched frontier and has allow_model_deescalation=False
     # Model proposes efficient (lower)
     resolved = policy.resolve_routing(base_profile, context, model_proposal_tier="efficient")
@@ -118,7 +118,7 @@ def test_resolve_routing_model_deescalation_allowed(base_profile):
         failed_checks=(),
         safety_signals=(),
     )
-    
+
     # Default route allows de-escalation by default (allow_model_deescalation=True)
     resolved = policy.resolve_routing(profile, context, model_proposal_tier="efficient")
     assert resolved.route_tier == "efficient"

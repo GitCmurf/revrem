@@ -21,7 +21,7 @@ harness = "codex"
     path = tmp_path / ".revrem.toml"
     path.write_text(toml, encoding="utf-8")
     monkeypatch.chdir(tmp_path)
-    
+
     # Run cli.main with policy lint
     assert cli.main(["policy", "lint", "--profile", "test"]) == 0
 
@@ -38,7 +38,7 @@ routing.default_route = "missing"
     path = tmp_path / ".revrem.toml"
     path.write_text(toml, encoding="utf-8")
     monkeypatch.chdir(tmp_path)
-    
+
     assert cli.main(["policy", "lint", "--profile", "test"]) == 1
 
 
@@ -50,7 +50,7 @@ def test_triage_explain_json(tmp_path):
         "prompt": {"path": "p.txt", "sha256": "abc", "bytes": 100, "fragments": []}
     }
     (tmp_path / "routing-1.json").write_text(json.dumps(routing), encoding="utf-8")
-    
+
     # We can't easily capture stdout from cli.main if it uses print()
     # But we can test the underlying function
     assert cli.triage_explain(tmp_path, 1, output_format="json") == 0

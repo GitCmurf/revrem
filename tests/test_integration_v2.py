@@ -24,7 +24,7 @@ def test_loop_with_v2_triage_routing(fake_harness, tmp_path, monkeypatch):
     clear_dir = fake_harness / "review_clear"
     clear_dir.mkdir()
     (clear_dir / "review.txt").write_text("Review: clear", encoding="utf-8")
-    
+
     # findings scenario
     findings_dir = fake_harness / "fake-findings"
     findings_dir.mkdir()
@@ -110,32 +110,32 @@ model = "frontier-model"
     # 3. Run loop
     # review uses profile.review.model (None) -> fixtures/review_clear
     # Wait, if I want findings, I must use --review-model fake-findings
-    
+
     # We need to provide fixtures for frontier-model remediation too
     frontier_dir = fake_harness / "frontier-model"
     frontier_dir.mkdir()
     (frontier_dir / "remediation.txt").write_text("Remediation: frontier done", encoding="utf-8")
-    
+
     exit_code = cli.main([
         "--profile", "test",
         "--review-model", "fake-findings",
         "--artifact-dir", "run1",
         "--max-iterations", "1",
-        "--skip-final-review"
+        "--skip-final-review",
+        "--trusted-repo"
     ])
-    
     assert exit_code in (0, 2)
-    
+
     # 4. Verify artifacts
     run_dir = tmp_path / "run1"
     assert (run_dir / "triage-1.json").is_file()
     assert (run_dir / "routing-1.json").is_file()
     assert (run_dir / "remediation-1-prompt.txt").is_file()
-    
+
     routing = json.loads((run_dir / "routing-1.json").read_text())
     assert routing["effective_route"]["route_tier"] == "frontier"
     assert routing["policy_decision"]["matched_rule_ids"] == ["sec"]
-    
+
     prompt = (run_dir / "remediation-1-prompt.txt").read_text()
     assert "PRINCIPLES" in prompt
     assert "FIX IT" in prompt

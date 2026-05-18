@@ -62,27 +62,26 @@ def resolve_routing(
         rule_id = matched_rule.id
         prompt_fragments = matched_rule.then.prompt_fragments
         allow_model_deescalation = matched_rule.then.allow_model_deescalation
+        allow_model_escalation = (
+            matched_rule.then.allow_model_escalation
+            if matched_rule.then.allow_model_escalation is not None
+            else routing.allow_model_escalation
+        )
     else:
         route_tier = routing.default_route
         rule_id = "default"
         prompt_fragments = ()
         allow_model_deescalation = True
+        allow_model_escalation = routing.allow_model_escalation
 
     # Model escalation: if model proposed a higher tier and policy allows it
     effective_tier = route_tier
     if model_proposal_tier and model_proposal_tier != route_tier:
-        # For now, we only support escalation if it's explicitly handled.
-        # Simple policy: if model proposed it, and matched rule allows it.
-        # Actually, the plan says: "A model proposal can escalate above the matched policy route 
-        # only when the policy allows escalation."
-        # And "A model proposal cannot de-escalate sensitive or deterministic safety signals when 
-        # allow_model_deescalation = false."
-        
         if _is_higher_tier(model_proposal_tier, route_tier):
-             # Model escalation is generally allowed unless we add a specific toggle.
-             # The plan says "only when policy allows escalation", but we didn't add that toggle yet.
-             # Let's assume escalation is okay, but de-escalation is gated.
-             effective_tier = model_proposal_tier
+            if allow_model_escalation:
+                effective_tier = model_proposal_tier
+            else:
+                effective_tier = route_tier
         elif not allow_model_deescalation:
             # De-escalation forbidden by policy
             effective_tier = route_tier
@@ -93,7 +92,7 @@ def resolve_routing(
         raise ValueError(f"Resolved to unknown route tier: {effective_tier}")
 
     route_config = profile.triage.routes[effective_tier]
-    
+
     return ResolvedRoute(
         route_tier=effective_tier,
         harness=route_config.harness,
@@ -120,6 +119,10 @@ def _matches(rule: TriageRoutingRule, context: RoutingContext) -> bool:
     if w.module_count_gte is not None and context.module_count < w.module_count_gte:
         return False
     if w.module_count_lt is not None and context.module_count >= w.module_count_lt:
+        return False
+    if w.safety_signals_any and not any(s in context.safety_signals for s in w.safety_signals_any):
+        return False
+    if w.failed_checks_any and not any(c in context.failed_checks for c in w.failed_checks_any):
         return False
     return True
 

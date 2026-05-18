@@ -63,6 +63,8 @@ def parse_triage_payload(
     validator = Draft202012Validator(_triage_schema(contract))
     errors = list(validator.iter_errors(payload))
     if errors:
+        import sys
+        print(f"VALIDATION ERRORS: {errors}", file=sys.stderr)
         raise TriageValidationError(str(errors[0]))
     return payload
 
@@ -172,3 +174,12 @@ def extract_routing_context(
         failed_checks=failed_checks,
         safety_signals=tuple(sorted(safety_signals)),
     )
+
+def validate_routing_payload(payload: dict[str, Any]) -> None:
+    schema = json.loads(files("code_review_loop").joinpath("schemas/routing-v1.schema.json").read_text(encoding="utf-8"))
+    validator = Draft202012Validator(schema)
+    errors = list(validator.iter_errors(payload))
+    if errors:
+        import sys
+        print(f"VALIDATION ERRORS: {errors}", file=sys.stderr)
+        raise TriageValidationError(str(errors[0]))

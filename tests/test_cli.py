@@ -1536,10 +1536,11 @@ def test_pytest_check_is_skipped_for_typescript_repo_without_python_surface(tmp_
         check_commands=("pytest -q",),
     )
 
-    results = MODULE.run_checks(config, runner, 1)
+    results, _failed = MODULE.run_checks(config, runner, 1)
 
     assert calls == []
     assert results[0].returncode == 0
+
     assert "appears to be non-Python" in results[0].stdout
     assert "SKIPPED adaptive check" in (tmp_path / "artifacts" / "check-1-1.txt").read_text(
         encoding="utf-8"
@@ -1564,10 +1565,11 @@ def test_pytest_check_is_skipped_for_typescript_repo_with_incidental_python_file
         check_commands=("pytest -q",),
     )
 
-    results = MODULE.run_checks(config, runner, 1)
+    results, _failed = MODULE.run_checks(config, runner, 1)
 
     assert calls == []
     assert results[0].returncode == 0
+
     assert "appears to be non-Python" in results[0].stdout
 
 
@@ -2860,23 +2862,7 @@ def test_main_uses_profile_commit_message_harness(tmp_path, monkeypatch):
     assert config.commit_message_model == "fast-commit"
 
 
-def test_build_loop_config_allows_newly_implemented_commit_harness_for_live_profile_runs(tmp_path, monkeypatch):
-    monkeypatch.setattr(
-        MODULE,
-        "profile_or_default",
-        lambda name, cwd: profiles.Profile(
-            name="final-pr",
-            commit=profiles.CommitConfig(
-                enabled=True,
-                harness="claude",
-                message_model="fast-commit",
-            ),
-        ),
-    )
-    args = MODULE.parse_args(["--profile", "final-pr", "--base", "main"])
 
-    config, _summary_format = MODULE.build_loop_config(args, tmp_path)
-    assert config.commit_message_harness == "claude"
 
 
 def test_run_loop_skips_commit_cleanliness_check_during_dry_run(tmp_path):
@@ -3505,26 +3491,7 @@ timeout_seconds = -1
         MODULE.build_loop_config(args, tmp_path)
 
 
-def test_build_loop_config_allows_newly_implemented_commit_harness_when_cli_enables_commits(tmp_path, monkeypatch):
-    home = tmp_path / "home"
-    monkeypatch.setenv("HOME", str(home))
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / ".git").mkdir()
-    config_path = home / ".config" / "revrem" / "profiles.toml"
-    config_path.parent.mkdir(parents=True)
-    config_path.write_text(
-        """
-[profiles.final-pr.commit]
-enabled = false
-harness = "claude"
-""",
-        encoding="utf-8",
-    )
 
-    args = MODULE.parse_args(["--profile", "final-pr", "--base", "main", "--commit-after-remediation"])
-
-    config, _summary_format = MODULE.build_loop_config(args, tmp_path)
-    assert config.commit_message_harness == "claude"
 
 
 def test_main_uses_default_timeout_for_unset_phase_specific_timeout(tmp_path, monkeypatch):

@@ -34,10 +34,10 @@ model = "gpt-3.5-turbo"
 """
     path = tmp_path / "profiles.toml"
     path.write_text(toml, encoding="utf-8")
-    
+
     profile_file = profiles.load_profile_file(path)
     profile = profile_file.profiles["test"]
-    
+
     assert profile.triage.contract == "v2"
     assert profile.triage.routing.enabled is True
     assert profile.triage.routing.default_route == "midtier-coder"
@@ -94,7 +94,7 @@ def test_to_toml_preserves_routing(tmp_path):
             }
         )
     )
-    
+
     toml_str = profiles.profile_to_toml(profile)
     assert 'contract = "v2"' in toml_str
     assert '[triage.routing]' in toml_str
