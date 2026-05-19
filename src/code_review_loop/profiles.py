@@ -1097,16 +1097,10 @@ def validate_policy(profile: Profile) -> list[str]:
     if not triage.routing.enabled:
         return []
 
-    from code_review_loop.harnesses import harness_registry
+    from code_review_loop import policy
 
     # Check routes and their fallback chains
     for name, route in triage.routes.items():
-        try:
-            validate_harness_name(route.harness)
-        except ValueError as exc:
-            issues.append(f"route {name!r} has invalid harness: {exc}")
-            continue
-
         # Check implementation status through fallback chain
         chain = [name]
         current_route_name = name
@@ -1115,10 +1109,11 @@ def validate_policy(profile: Profile) -> list[str]:
         while True:
             current_cfg = triage.routes.get(current_route_name)
             if not current_cfg:
-                 break
+                break
 
-            spec = harness_registry().get(current_cfg.harness)
-            if spec and spec.implemented and spec.capabilities:
+            issues_for_route = policy.check_route_capabilities(current_cfg)
+            if not issues_for_route:
+                # Found implemented and compatible route
                 resolved = True
                 break
 
@@ -1126,14 +1121,19 @@ def validate_policy(profile: Profile) -> list[str]:
                 break
 
             if current_cfg.fallback in chain:
-                issues.append(f"route {name!r} has circular fallback chain: {' -> '.join(chain)} -> {current_cfg.fallback}")
+                issues.append(
+                    f"route {name!r} has circular fallback chain: {' -> '.join(chain)} -> {current_cfg.fallback}"
+                )
                 break
 
             chain.append(current_cfg.fallback)
             current_route_name = current_cfg.fallback
 
         if not resolved:
-            issues.append(f"route {name!r} uses unimplemented harness {route.harness!r} and has no implemented fallback")
+            issues.append(
+                f"route {name!r} lacks an implemented and compatible fallback chain. "
+                f"Issues for {current_route_name!r}: {'; '.join(policy.check_route_capabilities(triage.routes[current_route_name]))}"
+            )
 
         if route.fallback and route.fallback not in triage.routes:
             issues.append(f"route {name!r} has unknown fallback: {route.fallback!r}")
@@ -1202,10 +1202,10 @@ def validate_profile(profile: Profile, *, require_implemented: bool) -> None:
         if profile.commit.enabled:
             require_implemented_harness(profile.commit.harness, field="commit.harness")
 
-        from code_review_loop.harnesses import harness_registry
+        from code_review_loop import policy
 
-        # Validate that every route eventually resolves to an implemented harness
-        for route_name, route in profile.triage.routes.items():
+        # Item 3: Validate that every route eventually resolves to an implemented harness
+        for route_name, _route in profile.triage.routes.items():
             chain = [route_name]
             curr_name = route_name
             resolved = False
@@ -1213,17 +1213,23 @@ def validate_profile(profile: Profile, *, require_implemented: bool) -> None:
                 curr_cfg = profile.triage.routes.get(curr_name)
                 if not curr_cfg:
                     break
-                spec = harness_registry().get(curr_cfg.harness)
-                if spec and spec.implemented and spec.capabilities:
+
+                issues_for_route = policy.check_route_capabilities(curr_cfg)
+                if not issues_for_route:
                     resolved = True
                     break
+
                 if not curr_cfg.fallback or curr_cfg.fallback in chain:
                     break
                 chain.append(curr_cfg.fallback)
                 curr_name = curr_cfg.fallback
 
             if not resolved:
-                require_implemented_harness(route.harness, field=f"triage.routes.{route_name}.harness")
+                issues = policy.check_route_capabilities(profile.triage.routes[curr_name])
+                raise ValueError(
+                    f"triage.routes.{route_name} lacks an implemented and compatible fallback chain. "
+                    f"Issues for {curr_name!r}: {'; '.join(issues)}"
+                )
 
 
 def _write_profile_file(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from code_review_loop.profiles import Profile, TriageRoutingRule
+from code_review_loop.profiles import Profile, TriageRouteConfig, TriageRoutingRule
 
 
 @dataclass(frozen=True)
@@ -30,6 +30,41 @@ class ResolvedRoute:
     rule_id: str | None = None
     fallbacks_considered: tuple[str, ...] = ()
     fallback_applied: str | None = None
+
+
+def check_route_capabilities(route_cfg: TriageRouteConfig) -> list[str]:
+    """Verify that the harness for a route is implemented and supports required capabilities."""
+    from code_review_loop.harnesses import harness_registry
+
+    spec = harness_registry().get(route_cfg.harness)
+    if not spec:
+        return [f"Unknown harness: {route_cfg.harness}"]
+    if not spec.implemented:
+        return [
+            f"Harness {route_cfg.harness!r} is valid syntax, but not yet implemented."
+        ]
+    if not spec.capabilities:
+        return [f"Harness {route_cfg.harness!r} has no capabilities defined."]
+
+    caps = spec.capabilities
+    issues = []
+    if not caps.remediation_supported:
+        issues.append(f"Harness {route_cfg.harness!r} does not support remediation.")
+    if not caps.non_interactive:
+        issues.append(
+            f"Harness {route_cfg.harness!r} is not suitable for automated loops (requires interactive session)."
+        )
+    if route_cfg.sandbox not in caps.sandbox_modes:
+        issues.append(
+            f"Harness {route_cfg.harness!r} does not support sandbox mode {route_cfg.sandbox!r}. "
+            f"Supported: {', '.join(caps.sandbox_modes)}"
+        )
+    if route_cfg.timeout_seconds is not None and not caps.timeout_supported:
+        issues.append(
+            f"Harness {route_cfg.harness!r} does not support execution timeouts."
+        )
+
+    return issues
 
 
 def resolve_routing(
@@ -92,40 +127,31 @@ def resolve_routing(
 
         route_cfg = profile.triage.routes[current_tier]
 
-        from code_review_loop.harnesses import harness_registry
-        registry = harness_registry()
-        spec = registry.get(route_cfg.harness)
-
-        # Item 9: Deep capability validation
-        if spec and spec.implemented and spec.capabilities:
-            caps = spec.capabilities
-            if (
-                caps.remediation_supported
-                and caps.non_interactive
-                and route_cfg.sandbox in caps.sandbox_modes
-            ):
-                return ResolvedRoute(
-                    route_tier=current_tier,
-                    harness=route_cfg.harness,
-                    model=route_cfg.model,
-                    reasoning_effort=route_cfg.reasoning_effort,
-                    timeout_seconds=route_cfg.timeout_seconds,
-                    sandbox=route_cfg.sandbox,
-                    prompt_fragments=prompt_fragments,
-                    rule_id=matched_rule.id if matched_rule else "default",
-                    fallbacks_considered=tuple(fallbacks_considered),
-                    fallback_applied=current_tier if fallbacks_considered else None
-                )
+        # Item 6 & 9: Deep capability validation
+        issues = check_route_capabilities(route_cfg)
+        if not issues:
+            return ResolvedRoute(
+                route_tier=current_tier,
+                harness=route_cfg.harness,
+                model=route_cfg.model,
+                reasoning_effort=route_cfg.reasoning_effort,
+                timeout_seconds=route_cfg.timeout_seconds,
+                sandbox=route_cfg.sandbox,
+                prompt_fragments=prompt_fragments,
+                rule_id=matched_rule.id if matched_rule else "default",
+                fallbacks_considered=tuple(fallbacks_considered),
+                fallback_applied=current_tier if fallbacks_considered else None,
+            )
 
         # Item 2: Strict fallbacks - only follow explicit fallback or fail
         if not route_cfg.fallback:
             raise RuntimeError(
                 f"Route {current_tier!r} (harness {route_cfg.harness!r}) is unavailable or lacks "
-                f"required capabilities, and no explicit fallback is configured."
+                f"required capabilities: {'; '.join(issues)}. No explicit fallback is configured."
             )
 
         if route_cfg.fallback == current_tier:
-             raise RuntimeError(f"Circular fallback detected for route {current_tier!r}.")
+            raise RuntimeError(f"Circular fallback detected for route {current_tier!r}.")
 
         fallbacks_considered.append(current_tier)
         current_tier = route_cfg.fallback
@@ -139,19 +165,13 @@ TIER_RANK = {
 }
 
 def _is_higher_tier(tier1: str, tier2: str) -> bool:
-    # Use partial matching for well-known tier names
-    rank1 = 0
-    for name, rank in TIER_RANK.items():
-        if name in tier1.lower():
-            rank1 = rank
-            break
+    # Item 7: Use exact matching for known tiers
+    rank1 = TIER_RANK.get(tier1, -1)
+    rank2 = TIER_RANK.get(tier2, -1)
 
-    rank2 = 0
-    for name, rank in TIER_RANK.items():
-        if name in tier2.lower():
-            rank2 = rank
-            break
-
+    # If either is unknown, we can't reliably say it's higher
+    if rank1 == -1 or rank2 == -1:
+        return False
     return rank1 > rank2
 
 

@@ -2179,10 +2179,47 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
 
                         # Record routing artifact
                         eff_harness = resolved_route.harness
-                        eff_model = resolved_route.model or config.remediation_model or config.model
-                        eff_reasoning = resolved_route.reasoning_effort or config.remediation_reasoning_effort or config.reasoning_effort
+                        eff_model = (
+                            resolved_route.model or config.remediation_model or config.model
+                        )
+                        eff_reasoning = (
+                            resolved_route.reasoning_effort
+                            or config.remediation_reasoning_effort
+                            or config.reasoning_effort
+                        )
                         eff_sandbox = resolved_route.sandbox
-                        eff_timeout = int(resolved_route.timeout_seconds) if resolved_route.timeout_seconds is not None else 300
+                        eff_timeout = (
+                            int(resolved_route.timeout_seconds)
+                            if resolved_route.timeout_seconds is not None
+                            else 300
+                        )
+
+                        effective_route: dict[str, Any] = {
+                            "route_tier": resolved_route.route_tier,
+                            "harness": eff_harness,
+                            "sandbox": eff_sandbox,
+                            "timeout_seconds": eff_timeout,
+                        }
+                        if eff_model:
+                            effective_route["model"] = eff_model
+                        if eff_reasoning:
+                            effective_route["reasoning_effort"] = eff_reasoning
+
+                        # Determine policy decision and rationale
+                        if resolved_route.fallback_applied:
+                            decision = "fallback_applied"
+                            original = (
+                                resolved_route.fallbacks_considered[0]
+                                if resolved_route.fallbacks_considered
+                                else "unknown"
+                            )
+                            rationale = f"Original route {original!r} fell back to {resolved_route.fallback_applied!r}."
+                        elif resolved_route.rule_id == "default":
+                            decision = "default_route_applied"
+                            rationale = "No model route proposal or rule match; applied default route."
+                        else:
+                            decision = "policy_override"
+                            rationale = "Applied policy based on classification."
 
                         routing_payload: dict[str, Any] = {
                             "schema_version": "1.0",
@@ -2190,39 +2227,49 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                             "iteration": iteration,
                             "source_triage_artifact": f"triage-{iteration}.json",
                             "policy_decision": {
-                                "decision": "default_route_applied" if resolved_route.rule_id == "default" else "policy_override",
-                                "matched_rule_ids": [resolved_route.rule_id] if resolved_route.rule_id else [],
-                                "rationale": "Applied policy based on classification." if resolved_route.rule_id != "default" else "No model route proposal or rule match; applied default route.",
+                                "decision": decision,
+                                "matched_rule_ids": (
+                                    [resolved_route.rule_id]
+                                    if resolved_route.rule_id
+                                    and resolved_route.rule_id != "default"
+                                    else []
+                                ),
+                                "rationale": rationale,
                             },
-                            "effective_route": {
-                                "route_tier": resolved_route.route_tier,
-                                "harness": eff_harness,
-                                "model": eff_model or "unknown",
-                                "reasoning_effort": eff_reasoning or "medium",
-                                "sandbox": eff_sandbox,
-                                "timeout_seconds": eff_timeout,
-                            },
-                            "fallbacks_considered": list(resolved_route.fallbacks_considered),
+                            "effective_route": effective_route,
+                            "fallbacks_considered": list(
+                                resolved_route.fallbacks_considered
+                            ),
                             "prompt": {
                                 "path": f"remediation-{iteration}-prompt.txt",
-                                "sha256": prompts_composer.compute_prompt_hash(remediation_input),
+                                "sha256": prompts_composer.compute_prompt_hash(
+                                    remediation_input
+                                ),
                                 "bytes": len(remediation_input),
                                 "fragments": list(resolved_route.prompt_fragments),
                             },
                         }
                         if triage_payload.get("route_proposal"):
                             p = triage_payload["route_proposal"]
+                            # Only include keys that are actually present to avoid fabricating data
                             routing_payload["model_proposal"] = {
-                                "route_tier": p.get("route_tier", "unknown"),
-                                "harness": p.get("harness", "unknown"),
-                                "model": p.get("model", "unknown"),
-                                "rationale": p.get("rationale", "none"),
+                                k: v
+                                for k, v in p.items()
+                                if k in ("route_tier", "harness", "model", "rationale")
                             }
-                            if resolved_route.route_tier == p.get("route_tier"):
+                            if (
+                                resolved_route.route_tier == p.get("route_tier")
+                                and not resolved_route.fallback_applied
+                            ):
                                 # Redefine policy_decision to satisfy mypy
                                 routing_payload["policy_decision"] = {
                                     "decision": "proposal_accepted",
-                                    "matched_rule_ids": [resolved_route.rule_id] if resolved_route.rule_id else [],
+                                    "matched_rule_ids": (
+                                        [resolved_route.rule_id]
+                                        if resolved_route.rule_id
+                                        and resolved_route.rule_id != "default"
+                                        else []
+                                    ),
                                     "rationale": "Model route proposal accepted by policy.",
                                 }
 

@@ -18,6 +18,8 @@ TRIAGE_V2_SCHEMA_VERSION = "2.0"
 TRIAGE_V2_PROMPT_VERSION = "triage-v2"
 TRIAGE_V2_SCHEMA_RESOURCE = "schemas/triage-v2.schema.json"
 
+MAX_SAFETY_SCAN_BYTES = 1024 * 1024
+
 
 class TriageValidationError(ValueError):
     """Raised when structured triage output does not match the contract."""
@@ -184,9 +186,11 @@ def extract_routing_context(
             if not full_path.is_relative_to(cwd_resolved):
                 continue
             if full_path.is_file():
-                # Cap file read at 1MB to prevent memory exhaustion
+                # Cap file read at 1MB to prevent memory exhaustion.
+                # If file is larger, we only scan the first MAX_SAFETY_SCAN_BYTES.
+                # This could result in missing signals at the end of huge files, which is a known trade-off.
                 with open(full_path, encoding="utf-8", errors="replace") as f:
-                    content = f.read(1024 * 1024).lower()
+                    content = f.read(MAX_SAFETY_SCAN_BYTES).lower()
                 for signal, tag in SENSITIVE_SIGNALS.items():
                     if signal in content:
                         safety_signals.add(tag)
