@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
 from code_review_loop import policy, profiles
 
 

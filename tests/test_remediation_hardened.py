@@ -9,6 +9,7 @@ import pytest
 from code_review_loop import cli, harnesses, policy, prompts_composer
 from code_review_loop._compat_jsonschema import validate
 
+
 @pytest.fixture
 def fake_harness(monkeypatch, tmp_path):
     monkeypatch.setenv(harnesses.FAKE_HARNESS_ENV, "1")

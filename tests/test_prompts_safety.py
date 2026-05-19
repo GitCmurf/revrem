@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
-
 import pytest
 
 from code_review_loop import policy, prompts_composer

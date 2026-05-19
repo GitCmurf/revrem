@@ -1,9 +1,8 @@
-"""Deterministic routing policy engine."""
+"""Triage routing policy engine."""
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
-from typing import Any
+from dataclasses import dataclass
 
 from code_review_loop.profiles import Profile, TriageRoutingRule
 
@@ -14,23 +13,23 @@ class RoutingContext:
     risk_level: str
     refactor_depth: str
     module_count: int
-    failed_checks: tuple[str, ...]
     safety_signals: tuple[str, ...]
+    failed_checks: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
 class ResolvedRoute:
     route_tier: str
     harness: str
-    model: str | None
-    reasoning_effort: str | None
-    timeout_seconds: float | None
-    sandbox: str
-    prompt_fragments: tuple[str, ...]
-    allow_model_deescalation: bool
+    model: str | None = None
+    reasoning_effort: str | None = None
+    timeout_seconds: float | None = None
+    sandbox: str = "workspace-write"
+    prompt_fragments: tuple[str, ...] = ()
+    allow_model_deescalation: bool = True
     rule_id: str | None = None
+    fallbacks_considered: tuple[str, ...] = ()
     fallback_applied: str | None = None
-    fallbacks_considered: tuple[str, ...] = field(default_factory=tuple)
 
 
 def resolve_routing(
@@ -38,127 +37,133 @@ def resolve_routing(
     context: RoutingContext,
     model_proposal_tier: str | None = None,
 ) -> ResolvedRoute:
-    routing = profile.triage.routing
-    if not routing.enabled:
-        # Fallback to standard remediation config if routing is disabled
-        return ResolvedRoute(
-            route_tier="legacy-remediation",
-            harness=profile.remediation.harness,
-            model=profile.remediation.model,
-            reasoning_effort=profile.remediation.reasoning_effort,
-            timeout_seconds=profile.remediation.timeout_seconds,
-            sandbox=profile.runtime.exec_sandbox,
-            prompt_fragments=(),
-            allow_model_deescalation=True,
-        )
+    routing_config = profile.triage.routing
 
-    matched_rule = None
-    for rule in routing.rule:
-        if _matches(rule, context):
-            matched_rule = rule
-            break
+    # 1. Start with initial route (from rule match or default)
+    matched_rule: TriageRoutingRule | None = None
+    if routing_config.enabled:
+        for rule in routing_config.rule:
+            if _match_rule(rule, context):
+                matched_rule = rule
+                break
 
     if matched_rule:
-        route_tier = matched_rule.then.route or routing.default_route
-        rule_id = matched_rule.id
+        route_tier = matched_rule.then.route or routing_config.default_route
+        allow_escalation = matched_rule.then.allow_model_escalation
+        allow_deescalation = matched_rule.then.allow_model_deescalation
         prompt_fragments = matched_rule.then.prompt_fragments
-        allow_model_deescalation = matched_rule.then.allow_model_deescalation
-        allow_model_escalation = (
-            matched_rule.then.allow_model_escalation
-            if matched_rule.then.allow_model_escalation is not None
-            else routing.allow_model_escalation
-        )
     else:
-        route_tier = routing.default_route
-        rule_id = "default"
+        route_tier = routing_config.default_route
+        allow_escalation = routing_config.allow_model_escalation
+        allow_deescalation = True  # Default route allows de-escalation by default
         prompt_fragments = ()
-        allow_model_deescalation = True
-        allow_model_escalation = routing.allow_model_escalation
 
-    # Model escalation: if model proposed a higher tier and policy allows it
+    # 2. Consider model proposal
     effective_tier = route_tier
-    if model_proposal_tier and model_proposal_tier != route_tier:
-        if _is_higher_tier(model_proposal_tier, route_tier):
-            if allow_model_escalation:
+    if model_proposal_tier and model_proposal_tier in profile.triage.routes and model_proposal_tier != route_tier:
+        is_escalation = _is_higher_tier(model_proposal_tier, route_tier)
+        if is_escalation:
+            if allow_escalation:
                 effective_tier = model_proposal_tier
-            else:
-                effective_tier = route_tier
-        elif not allow_model_deescalation:
-            # De-escalation forbidden by policy
-            effective_tier = route_tier
         else:
-            effective_tier = model_proposal_tier
+            # De-escalation
+            if allow_deescalation:
+                effective_tier = model_proposal_tier
 
+    # 3. Resolve with fallback loop for implementation status
     fallbacks_considered = []
     current_tier = effective_tier
 
     while True:
         if current_tier not in profile.triage.routes:
-            raise ValueError(f"Resolved to unknown route tier: {current_tier}")
+            if routing_config.strict_on_unavailable_route:
+                 raise ValueError(f"Route tier {current_tier!r} not defined in profile.")
+            if current_tier == routing_config.default_route:
+                 raise ValueError(f"Default route tier {current_tier!r} not defined in profile.")
+            fallbacks_considered.append(current_tier)
+            current_tier = routing_config.default_route
+            continue
 
-        route_config = profile.triage.routes[current_tier]
+        route_cfg = profile.triage.routes[current_tier]
 
-        # Check if harness is implemented
-        from code_review_loop import harnesses
-        spec = harnesses.harness_registry().get(route_config.harness)
+        from code_review_loop.harnesses import harness_registry
+        registry = harness_registry()
+        spec = registry.get(route_cfg.harness)
+
         if spec and spec.implemented:
             return ResolvedRoute(
                 route_tier=current_tier,
-                harness=route_config.harness,
-                model=route_config.model,
-                reasoning_effort=route_config.reasoning_effort,
-                timeout_seconds=route_config.timeout_seconds,
-                sandbox=route_config.sandbox,
+                harness=route_cfg.harness,
+                model=route_cfg.model,
+                reasoning_effort=route_cfg.reasoning_effort,
+                timeout_seconds=route_cfg.timeout_seconds,
+                sandbox=route_cfg.sandbox,
                 prompt_fragments=prompt_fragments,
-                allow_model_deescalation=allow_model_deescalation,
-                rule_id=rule_id,
-                fallback_applied=current_tier if current_tier != effective_tier else None,
+                rule_id=matched_rule.id if matched_rule else "default",
                 fallbacks_considered=tuple(fallbacks_considered),
+                fallback_applied=current_tier if fallbacks_considered else None
             )
 
-        # Try fallback
-        if not route_config.fallback:
-            raise ValueError(f"Route {current_tier!r} uses unimplemented harness {route_config.harness!r} and has no fallback.")
+        if current_tier == routing_config.default_route:
+             raise RuntimeError(f"Harness {route_cfg.harness!r} for default route {current_tier!r} is not implemented.")
 
         fallbacks_considered.append(current_tier)
-        current_tier = route_config.fallback
-        if current_tier in fallbacks_considered:
-            raise ValueError(f"Circular fallback detected: {' -> '.join(fallbacks_considered)} -> {current_tier}")
+        current_tier = route_cfg.fallback if route_cfg.fallback else routing_config.default_route
 
 
-def _matches(rule: TriageRoutingRule, context: RoutingContext) -> bool:
-    w = rule.when
-    if w.domain_tags_any and not any(tag in context.domain_tags for tag in w.domain_tags_any):
-        return False
-    if w.risk_level_any and context.risk_level not in w.risk_level_any:
-        return False
-    if w.risk_level_max and _is_higher_risk(context.risk_level, w.risk_level_max):
-        return False
-    if w.refactor_depth_any and context.refactor_depth not in w.refactor_depth_any:
-        return False
-    if w.module_count_gte is not None and context.module_count < w.module_count_gte:
-        return False
-    if w.module_count_lt is not None and context.module_count >= w.module_count_lt:
-        return False
-    if w.safety_signals_any and not any(s in context.safety_signals for s in w.safety_signals_any):
-        return False
-    if w.failed_checks_any and not any(c in context.failed_checks for c in w.failed_checks_any):
-        return False
-    return True
-
-
-_RISK_ORDER = {"trivial": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
-
-def _is_higher_risk(actual: str, maximum: str) -> bool:
-    return _RISK_ORDER.get(actual, 0) > _RISK_ORDER.get(maximum, 0)
-
-
-_TIER_ORDER = {
-    "efficient-coder": 0,
-    "midtier-coder": 1,
-    "frontier-thinking": 2,
-    "security-specialist": 3,
+TIER_RANK = {
+    "frontier": 100,
+    "midtier": 50,
+    "efficient": 10,
 }
 
-def _is_higher_tier(proposed: str, baseline: str) -> bool:
-    return _TIER_ORDER.get(proposed, 0) > _TIER_ORDER.get(baseline, 0)
+def _is_higher_tier(tier1: str, tier2: str) -> bool:
+    # Use partial matching for well-known tier names
+    rank1 = 0
+    for name, rank in TIER_RANK.items():
+        if name in tier1.lower():
+            rank1 = rank
+            break
+
+    rank2 = 0
+    for name, rank in TIER_RANK.items():
+        if name in tier2.lower():
+            rank2 = rank
+            break
+
+    return rank1 > rank2
+
+
+def _match_rule(rule: TriageRoutingRule, context: RoutingContext) -> bool:
+    cond = rule.when
+    if cond.risk_level_min and not _risk_gte(context.risk_level, cond.risk_level_min):
+        return False
+    if cond.risk_level_max and not _risk_lte(context.risk_level, cond.risk_level_max):
+        return False
+
+    if cond.refactor_depth_any and context.refactor_depth not in cond.refactor_depth_any:
+        return False
+
+    if cond.module_count_gte is not None and context.module_count < cond.module_count_gte:
+        return False
+    if cond.module_count_lt is not None and context.module_count >= cond.module_count_lt:
+        return False
+
+    if cond.domain_tags_any and not any(tag in cond.domain_tags_any for tag in context.domain_tags):
+        return False
+
+    if cond.safety_signals_any and not any(s in cond.safety_signals_any for s in context.safety_signals):
+        return False
+
+    return not cond.failed_checks_any or any(c in cond.failed_checks_any for c in context.failed_checks)
+
+
+RISK_ORDER = {"info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
+
+
+def _risk_gte(actual: str, minimum: str) -> bool:
+    return RISK_ORDER.get(actual, 1) >= RISK_ORDER.get(minimum, 1)
+
+
+def _risk_lte(actual: str, maximum: str) -> bool:
+    return RISK_ORDER.get(actual, 1) <= RISK_ORDER.get(maximum, 1)

@@ -64,7 +64,7 @@ ROUTING_KEYS = ("enabled", "mode", "default_route", "strict_on_unavailable_route
 ROUTING_RULE_KEYS = ("id", "when", "then")
 ROUTING_WHEN_KEYS = (
     "domain_tags_any",
-    "risk_level_any",
+    "risk_level_min",
     "risk_level_max",
     "refactor_depth_any",
     "module_count_gte",
@@ -126,7 +126,7 @@ class TriageRouteConfig:
 @dataclass(frozen=True)
 class TriageRoutingRuleWhen:
     domain_tags_any: tuple[str, ...] = field(default_factory=tuple)
-    risk_level_any: tuple[str, ...] = field(default_factory=tuple)
+    risk_level_min: str | None = None
     risk_level_max: str | None = None
     refactor_depth_any: tuple[str, ...] = field(default_factory=tuple)
     module_count_gte: int | None = None
@@ -157,7 +157,7 @@ class TriageRoutingConfig:
     default_route: str = "midtier-coder"
     strict_on_unavailable_route: bool = True
     rule: tuple[TriageRoutingRule, ...] = field(default_factory=tuple)
-    allow_model_escalation: bool = False
+    allow_model_escalation: bool = True
 
 
 @dataclass(frozen=True)
@@ -435,7 +435,7 @@ def parse_triage_routing(raw: dict[str, Any], field: str) -> TriageRoutingConfig
             raw.get("strict_on_unavailable_route", True), f"{field}.strict_on_unavailable_route"
         ),
         rule=rules,
-        allow_model_escalation=_bool(raw.get("allow_model_escalation", False), f"{field}.allow_model_escalation"),
+        allow_model_escalation=_bool(raw.get("allow_model_escalation", True), f"{field}.allow_model_escalation"),
     )
 
 
@@ -451,7 +451,7 @@ def parse_triage_routing_rule_when(raw: dict[str, Any], field: str) -> TriageRou
     _reject_unknown_keys(raw, ROUTING_WHEN_KEYS, field)
     return TriageRoutingRuleWhen(
         domain_tags_any=tuple(_str_list(raw.get("domain_tags_any", []), f"{field}.domain_tags_any")),
-        risk_level_any=tuple(_str_list(raw.get("risk_level_any", []), f"{field}.risk_level_any")),
+        risk_level_min=_optional_str(raw.get("risk_level_min"), f"{field}.risk_level_min"),
         risk_level_max=_optional_str(raw.get("risk_level_max"), f"{field}.risk_level_max"),
         refactor_depth_any=tuple(
             _str_list(raw.get("refactor_depth_any", []), f"{field}.refactor_depth_any")

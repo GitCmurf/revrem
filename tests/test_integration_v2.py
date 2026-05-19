@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
-from pathlib import Path
 
 import pytest
 
@@ -56,7 +54,7 @@ def test_loop_with_v2_triage_routing(fake_harness, tmp_path, monkeypatch):
             "rationale": "proposing frontier"
         },
         "prompt_requirements": {
-            "required_fragments": ["engineering-principles"],
+            "required_fragments": ["custom-principles"],
             "definition_of_done": ["DONE"],
             "triage_prompt_draft": "FIX IT"
         }
@@ -73,7 +71,7 @@ def test_loop_with_v2_triage_routing(fake_harness, tmp_path, monkeypatch):
     subprocess.run(["git", "add", "README"], cwd=tmp_path, check=True)
     subprocess.run(["git", "commit", "-m", "initial"], cwd=tmp_path, check=True)
 
-    (tmp_path / "engineering-principles-v1.1.md").write_text("PRINCIPLES", encoding="utf-8")
+    (tmp_path / "custom-principles.txt").write_text("PRINCIPLES", encoding="utf-8")
     toml = """
 [profiles.test.review]
 harness = "fake"
@@ -108,9 +106,6 @@ model = "frontier-model"
     monkeypatch.chdir(tmp_path)
 
     # 3. Run loop
-    # review uses profile.review.model (None) -> fixtures/review_clear
-    # Wait, if I want findings, I must use --review-model fake-findings
-
     # We need to provide fixtures for frontier-model remediation too
     frontier_dir = fake_harness / "frontier-model"
     frontier_dir.mkdir()
@@ -124,6 +119,14 @@ model = "frontier-model"
         "--skip-final-review",
         "--trusted-repo"
     ])
+
+    run_dir = tmp_path / "run1"
+    if exit_code not in (0, 2):
+        artifact = run_dir / "triage-1.txt"
+        if artifact.is_file():
+            print(f"FAILURE ARTIFACT: {artifact.read_text()}")
+        else:
+            print("FAILURE ARTIFACT NOT FOUND")
     assert exit_code in (0, 2)
 
     # 4. Verify artifacts

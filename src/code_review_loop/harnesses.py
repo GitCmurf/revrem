@@ -7,13 +7,8 @@ construction decoupled.
 
 from __future__ import annotations
 
-import json
 import os
-import shlex
-import subprocess
-from collections.abc import Sequence
-from dataclasses import asdict, dataclass, field
-from importlib.resources import files
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -77,12 +72,12 @@ class CodexHarnessAdapter(HarnessAdapter):
             command.extend(["--model", request.model])
         command.extend(["review", "--base", request.base])
         return command
-def _exec_command(self, request: PhaseCommandRequest) -> list[str]:
-    command = [request.executable, "exec"]
-    command.extend(_codex_config_args(request.reasoning_effort))
-    if request.role == "remediation" and request.full_auto:
-        command.append("--full-auto")
 
+    def _exec_command(self, request: PhaseCommandRequest) -> list[str]:
+        command = [request.executable, "exec"]
+        command.extend(_codex_config_args(request.reasoning_effort))
+        if request.role == "remediation" and request.full_auto:
+            command.append("--full-auto")
         command.extend(["--sandbox", request.sandbox])
         command.extend(["--color", request.color])
         if request.json_output:
@@ -236,6 +231,7 @@ def require_implemented_harness(name: str, *, field: str = "harness") -> None:
         )
 
 
+
 def build_phase_command(request: PhaseCommandRequest) -> list[str]:
     adapter = HARNESS_ADAPTERS.get(request.harness)
     if adapter is None:
@@ -274,67 +270,6 @@ def harness_capabilities_payload(name: str) -> dict[str, Any]:
         "contract_version": "1.0",
     }
 
-def run_fake_harness_command(args: list[str] | tuple[str, ...]) -> tuple[int, str, str]:
-    if not fake_harness_enabled():
-        return 2, "", f"ERROR: fake harness disabled; set {FAKE_HARNESS_ENV}=1\n"
-    if len(args) < 2:
-        return 1, "", "ERROR: too few arguments for fake harness\n"
-    phase = args[1]
-    scenario = "clear"
-    for i, arg in enumerate(args):
-        if arg == "--scenario" and i + 1 < len(args):
-            scenario = args[i + 1]
-
-    if scenario == "timeout":
-        return -1, "", "Fake harness timeout\n"
-    if scenario == "cancellation":
-        raise KeyboardInterrupt()
-    if scenario == "unsupported":
-        return 2, "", "REVREM_ALLOW_FAKE_HARNESS is enabled, but this scenario is unsupported\n"
-
-    fixture_dir = os.environ.get(FAKE_HARNESS_FIXTURE_ENV)
-    if fixture_dir:
-        base = Path(fixture_dir) / scenario
-    else:
-        base = HARNESS_FIXTURES_DIR / scenario
-
-    # Use specialized filenames for each role
-    if phase == "review":
-        path = base / "review.txt"
-    elif phase == "triage":
-        path = base / "triage.txt"
-    elif phase == "remediation":
-        path = base / "remediation.txt"
-    elif phase == "commit-message":
-        path = base / "commit.txt"
-    else:
-        return 1, "", f"ERROR: unknown fake phase: {phase}\n"
-
-    if not path.is_file():
-        # Fallback to general scenario file if role-specific one is missing
-        path = base / f"{phase}.txt"
-        if not path.is_file():
-            # Final fallback to base.txt or similar if needed? No, let's keep it strict.
-            return 2, "", f"ERROR: fake harness fixture not found: {path}\n"
-    if scenario == "remediation_partial":
-        return 1, path.read_text(encoding="utf-8"), ""
-    return 0, path.read_text(encoding="utf-8"), ""
-
-
-def is_fake_harness_command(args: list[str] | tuple[str, ...]) -> bool:
-    return bool(args and args[0] == FAKE_HARNESS_COMMAND)
-
-
-FAKE_HARNESS_TOKEN_CHARGES = {
-    "fake-findings": 5,
-    "cost_ceiling": 10,
-}
-
-
-def fake_harness_token_charge(args: list[str] | tuple[str, ...]) -> int | None:
-    if not is_fake_harness_command(args) or len(args) < 4:
-        return None
-    return FAKE_HARNESS_TOKEN_CHARGES.get(args[3])
 
 def run_fake_harness_command(args: list[str] | tuple[str, ...]) -> tuple[int, str, str]:
     if not fake_harness_enabled():
@@ -355,10 +290,7 @@ def run_fake_harness_command(args: list[str] | tuple[str, ...]) -> tuple[int, st
         return 2, "", "REVREM_ALLOW_FAKE_HARNESS is enabled, but this scenario is unsupported\n"
 
     fixture_dir = os.environ.get(FAKE_HARNESS_FIXTURE_ENV)
-    if fixture_dir:
-        base = Path(fixture_dir) / scenario
-    else:
-        base = HARNESS_FIXTURES_DIR / scenario
+    base = Path(fixture_dir) / scenario if fixture_dir else HARNESS_FIXTURES_DIR / scenario
 
     # Use specialized filenames for each role
     if phase == "review":

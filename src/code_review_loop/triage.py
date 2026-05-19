@@ -98,18 +98,54 @@ def command_failed_issue(*, iteration: int, returncode: int, artifact: str) -> d
         code="revrem.triage.command_failed",
         severity="blocking",
         message="Structured triage command failed before producing valid guidance.",
-        hint="Inspect the triage artifact and rerun with a bounded triage timeout or disable triage for this run.",
+        hint="Inspect the triage output artifact for harness errors or timeouts.",
         evidence={"iteration": iteration, "returncode": returncode, "artifact": artifact},
     )
 
 
+def validate_routing_payload(payload: dict[str, Any]) -> None:
+    schema = json.loads(files("code_review_loop").joinpath("schemas/routing-v1.schema.json").read_text(encoding="utf-8"))
+    validator = Draft202012Validator(schema)
+    errors = list(validator.iter_errors(payload))
+    if errors:
+        raise TriageValidationError(str(errors[0]))
+
+
 def format_structured_handoff(payload: dict[str, Any], original_review: str) -> str:
-    return (
-        "Structured triage handoff from the previous review:\n"
-        f"{json.dumps(payload, indent=2, sort_keys=True)}\n\n"
-        "Original review/check context:\n"
-        f"{original_review}"
-    )
+    parts = ["Structured triage handoff from the previous review:"]
+
+    confirmed = payload.get("confirmed_findings", [])
+    if confirmed:
+        parts.append("\nConfirmed Actionable Findings:")
+        for f in confirmed:
+            parts.append(f"- [{f['severity'].upper()}] {f['summary']} (Fingerprint: {f['fingerprint']})")
+            parts.append(f"  Rationale: {f['rationale']}")
+            if f.get("affected_paths"):
+                parts.append(f"  Files: {', '.join(f['affected_paths'])}")
+
+    info = payload.get("needs_more_info", [])
+    if info:
+        parts.append("\nFindings Requiring More Information:")
+        for f in info:
+            parts.append(f"- {f['summary']} (Fingerprint: {f['fingerprint']})")
+            parts.append(f"  Info Requested: {f['info_requested']}")
+
+    order = payload.get("implementation_order", [])
+    if order:
+        parts.append("\nSuggested Implementation Order:")
+        for i, fp in enumerate(order, 1):
+            parts.append(f"{i}. {fp}")
+
+    commands = payload.get("verification_commands", [])
+    if commands:
+        parts.append("\nSuggested Verification Commands:")
+        for cmd in commands:
+            parts.append(f"- {cmd}")
+
+    parts.append("\nOriginal review/check context:")
+    parts.append(original_review)
+
+    return "\n".join(parts)
 
 
 def _triage_schema(contract: str = "v1") -> dict[str, Any]:
@@ -118,22 +154,6 @@ def _triage_schema(contract: str = "v1") -> dict[str, Any]:
     if not isinstance(schema, dict):
         raise TriageValidationError("triage schema must be a JSON object")
     return schema
-
-
-SENSITIVE_KEYWORDS = {
-    "auth": "sensitive-domain:auth",
-    "login": "sensitive-domain:auth",
-    "password": "sensitive-domain:auth",
-    "secret": "sensitive-domain:secrets",
-    "token": "sensitive-domain:secrets",
-    "api_key": "sensitive-domain:secrets",
-    "private_key": "sensitive-domain:secrets",
-    "credit_card": "sensitive-domain:pii",
-    "ssn": "sensitive-domain:pii",
-    "cryptography": "sensitive-domain:crypto",
-    "encrypt": "sensitive-domain:crypto",
-    "decrypt": "sensitive-domain:crypto",
-}
 
 
 def extract_routing_context(
@@ -158,28 +178,34 @@ def extract_routing_context(
         affected_paths.update(finding.get("affected_paths", []))
 
     for rel_path in affected_paths:
-        abs_path = cwd / rel_path
-        if abs_path.is_file():
-            try:
-                content = abs_path.read_text(encoding="utf-8").lower()
-                for keyword, signal in SENSITIVE_KEYWORDS.items():
-                    if keyword in content:
-                        safety_signals.add(signal)
-            except OSError:
-                pass
+        full_path = cwd / rel_path
+        if full_path.is_file():
+            content = full_path.read_text(encoding="utf-8", errors="replace").lower()
+            for signal, tag in SENSITIVE_SIGNALS.items():
+                if signal in content:
+                    safety_signals.add(tag)
 
     return policy.RoutingContext(
         domain_tags=domain_tags,
         risk_level=risk_level,
         refactor_depth=refactor_depth,
         module_count=module_count,
-        failed_checks=failed_checks,
         safety_signals=tuple(sorted(safety_signals)),
+        failed_checks=failed_checks,
     )
 
-def validate_routing_payload(payload: dict[str, Any]) -> None:
-    schema = json.loads(files("code_review_loop").joinpath("schemas/routing-v1.schema.json").read_text(encoding="utf-8"))
-    validator = Draft202012Validator(schema)
-    errors = list(validator.iter_errors(payload))
-    if errors:
-        raise TriageValidationError(str(errors[0]))
+
+SENSITIVE_SIGNALS = {
+    "password": "sensitive-domain:secrets",
+    "secret": "sensitive-domain:secrets",
+    "api_key": "sensitive-domain:secrets",
+    "private_key": "sensitive-domain:secrets",
+    "auth": "sensitive-domain:auth",
+    "login": "sensitive-domain:auth",
+    "token": "sensitive-domain:auth",
+    "credit_card": "sensitive-domain:pii",
+    "ssn": "sensitive-domain:pii",
+    "cryptography": "sensitive-domain:crypto",
+    "encrypt": "sensitive-domain:crypto",
+    "decrypt": "sensitive-domain:crypto",
+}
