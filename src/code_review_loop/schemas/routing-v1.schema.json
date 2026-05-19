@@ -148,7 +148,6 @@
     "run_id",
     "iteration",
     "source_triage_artifact",
-    "model_proposal",
     "policy_decision",
     "effective_route",
     "fallbacks_considered",

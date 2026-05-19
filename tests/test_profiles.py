@@ -274,14 +274,13 @@ def test_resolve_defaults_rejects_unimplemented_harness(tmp_path):
     path.write_text(
         """
 [defaults.review]
-harness = "claude"
+harness = "reserved"
 """,
         encoding="utf-8",
     )
 
     with pytest.raises(ValueError, match="only the codex backend is implemented"):
         profiles.resolve_defaults(cwd=cwd, home=home, require_implemented=True)
-
 
 
 def test_resolve_profile_rejects_unknown_profile_when_only_defaults_exist(tmp_path):
@@ -324,14 +323,13 @@ def test_resolved_profile_rejects_unimplemented_harness(tmp_path):
     path.write_text(
         """
 [profiles.future.review]
-harness = "claude"
+harness = "reserved"
 """,
         encoding="utf-8",
     )
 
     with pytest.raises(ValueError, match="only the codex backend is implemented"):
         profiles.resolve_profile("future", cwd=cwd, home=home, require_implemented=True)
-
 
 
 def test_resolve_profile_allows_reserved_harnesses_for_management_commands(tmp_path):
@@ -503,7 +501,7 @@ def test_resolve_profile_rejects_unimplemented_executable_triage_harness(tmp_pat
         """
 [profiles.future.triage]
 enabled = true
-harness = "gemini"
+harness = "reserved"
 """,
         encoding="utf-8",
     )
@@ -522,7 +520,7 @@ def test_resolve_profile_rejects_unimplemented_executable_commit_harness(tmp_pat
         """
 [profiles.future.commit]
 enabled = true
-harness = "gemini"
+harness = "reserved"
 """,
         encoding="utf-8",
     )

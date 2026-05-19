@@ -65,8 +65,8 @@ checks = ["pytest -q", "git diff --check"]
         "opencode",
         "kilo",
     }
-    assert next(harness for harness in snapshot.harnesses if harness.name == "codex").implemented is True
-    assert next(harness for harness in snapshot.harnesses if harness.name == "claude").implemented is False
+    assert next(harness for harness in snapshot.harnesses if harness.name == "claude").implemented is True
+    assert next(harness for harness in snapshot.harnesses if harness.name == "reserved").implemented is False
 
 
 def test_home_snapshot_resolves_shared_defaults_before_building_previews(tmp_path):

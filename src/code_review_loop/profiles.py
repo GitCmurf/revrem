@@ -1097,15 +1097,43 @@ def validate_policy(profile: Profile) -> list[str]:
     if not triage.routing.enabled:
         return []
 
-    # Check routes
+    from code_review_loop.harnesses import harness_registry
+
+    # Check routes and their fallback chains
     for name, route in triage.routes.items():
         try:
             validate_harness_name(route.harness)
-            spec = HARNESS_REGISTRY.get(route.harness)
-            if spec and not spec.implemented:
-                 issues.append(f"route {name!r} uses unimplemented harness {route.harness!r}")
         except ValueError as exc:
             issues.append(f"route {name!r} has invalid harness: {exc}")
+            continue
+
+        # Check implementation status through fallback chain
+        chain = [name]
+        current_route_name = name
+        resolved = False
+
+        while True:
+            current_cfg = triage.routes.get(current_route_name)
+            if not current_cfg:
+                 break
+
+            spec = harness_registry().get(current_cfg.harness)
+            if spec and spec.implemented and spec.capabilities:
+                resolved = True
+                break
+
+            if not current_cfg.fallback:
+                break
+
+            if current_cfg.fallback in chain:
+                issues.append(f"route {name!r} has circular fallback chain: {' -> '.join(chain)} -> {current_cfg.fallback}")
+                break
+
+            chain.append(current_cfg.fallback)
+            current_route_name = current_cfg.fallback
+
+        if not resolved:
+            issues.append(f"route {name!r} uses unimplemented harness {route.harness!r} and has no implemented fallback")
 
         if route.fallback and route.fallback not in triage.routes:
             issues.append(f"route {name!r} has unknown fallback: {route.fallback!r}")
@@ -1173,8 +1201,29 @@ def validate_profile(profile: Profile, *, require_implemented: bool) -> None:
             require_implemented_harness(profile.triage.harness, field="triage.harness")
         if profile.commit.enabled:
             require_implemented_harness(profile.commit.harness, field="commit.harness")
+
+        from code_review_loop.harnesses import harness_registry
+
+        # Validate that every route eventually resolves to an implemented harness
         for route_name, route in profile.triage.routes.items():
-            require_implemented_harness(route.harness, field=f"triage.routes.{route_name}.harness")
+            chain = [route_name]
+            curr_name = route_name
+            resolved = False
+            while True:
+                curr_cfg = profile.triage.routes.get(curr_name)
+                if not curr_cfg:
+                    break
+                spec = harness_registry().get(curr_cfg.harness)
+                if spec and spec.implemented and spec.capabilities:
+                    resolved = True
+                    break
+                if not curr_cfg.fallback or curr_cfg.fallback in chain:
+                    break
+                chain.append(curr_cfg.fallback)
+                curr_name = curr_cfg.fallback
+
+            if not resolved:
+                require_implemented_harness(route.harness, field=f"triage.routes.{route_name}.harness")
 
 
 def _write_profile_file(

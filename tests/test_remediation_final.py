@@ -34,7 +34,7 @@ def test_fallback_behavior_for_unimplemented_harness():
             routing=profiles.TriageRoutingConfig(enabled=True, default_route="midtier"),
             routes={
                 "midtier": profiles.TriageRouteConfig(harness="codex", model="m1"),
-                "frontier": profiles.TriageRouteConfig(harness="claude", model="m2", fallback="midtier")
+                "frontier": profiles.TriageRouteConfig(harness="reserved", model="m2", fallback="midtier")
             }
         )
     )

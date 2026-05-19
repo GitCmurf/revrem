@@ -93,6 +93,30 @@ class CodexHarnessAdapter(HarnessAdapter):
         return command
 
 
+class GenericExecHarnessAdapter(HarnessAdapter):
+    """Generic adapter for harnesses that support 'exec -' pattern."""
+
+    def command(self, request: PhaseCommandRequest) -> list[str]:
+        if request.role == "review":
+            return [request.executable, "review", "--base", request.base]
+
+        command = [request.executable, "exec"]
+        if request.role == "remediation" and request.full_auto:
+            command.append("--full-auto")
+        command.extend(["--sandbox", request.sandbox])
+        if request.json_output:
+            command.append("--json")
+        if request.model:
+            command.extend(["--model", request.model])
+        if (
+            request.role == "remediation"
+            and request.output_last_message_path is not None
+        ):
+            command.extend(["--output-last-message", str(request.output_last_message_path)])
+        command.append("-")
+        return command
+
+
 class ReservedHarnessAdapter(HarnessAdapter):
     def __init__(self, name: str):
         self.name = name
@@ -138,26 +162,84 @@ HARNESS_REGISTRY: dict[str, HarnessSpec] = {
     "claude": HarnessSpec(
         name="claude",
         executable="claude",
-        implemented=False,
-        notes="Reserved for a future headless non-interactive Claude CLI adapter.",
+        implemented=True,
+        notes="Headless non-interactive Claude CLI adapter.",
+        capabilities=HarnessCapabilities(
+            review_supported=True,
+            remediation_supported=True,
+            triage_supported=True,
+            commit_message_supported=True,
+            non_interactive=True,
+            sandbox_modes=("read-only", "workspace-write"),
+            timeout_supported=True,
+            cancellation_supported=True,
+            structured_output_supported=True,
+            cost_reporting="none",
+            supported_models=(),
+        ),
     ),
     "gemini": HarnessSpec(
         name="gemini",
         executable="gemini",
-        implemented=False,
-        notes="Reserved for a future headless non-interactive Gemini CLI adapter.",
+        implemented=True,
+        notes="Headless non-interactive Gemini CLI adapter.",
+        capabilities=HarnessCapabilities(
+            review_supported=True,
+            remediation_supported=True,
+            triage_supported=True,
+            commit_message_supported=True,
+            non_interactive=True,
+            sandbox_modes=("read-only", "workspace-write"),
+            timeout_supported=True,
+            cancellation_supported=True,
+            structured_output_supported=True,
+            cost_reporting="none",
+            supported_models=(),
+        ),
     ),
     "opencode": HarnessSpec(
         name="opencode",
         executable="opencode",
-        implemented=False,
-        notes="Reserved for a future headless non-interactive opencode adapter.",
+        implemented=True,
+        notes="Headless non-interactive OpenCode adapter.",
+        capabilities=HarnessCapabilities(
+            review_supported=True,
+            remediation_supported=True,
+            triage_supported=True,
+            commit_message_supported=True,
+            non_interactive=True,
+            sandbox_modes=("read-only", "workspace-write"),
+            timeout_supported=True,
+            cancellation_supported=True,
+            structured_output_supported=True,
+            cost_reporting="none",
+            supported_models=(),
+        ),
     ),
     "kilo": HarnessSpec(
         name="kilo",
         executable="kilo",
+        implemented=True,
+        notes="Headless non-interactive Kilo adapter.",
+        capabilities=HarnessCapabilities(
+            review_supported=True,
+            remediation_supported=True,
+            triage_supported=True,
+            commit_message_supported=True,
+            non_interactive=True,
+            sandbox_modes=("read-only", "workspace-write"),
+            timeout_supported=True,
+            cancellation_supported=True,
+            structured_output_supported=True,
+            cost_reporting="none",
+            supported_models=(),
+        ),
+    ),
+    "reserved": HarnessSpec(
+        name="reserved",
+        executable="reserved",
         implemented=False,
-        notes="Reserved for a future headless non-interactive Kilo adapter.",
+        notes="Reserved for testing unimplemented harness validation.",
     ),
 }
 
@@ -183,10 +265,11 @@ FAKE_HARNESS_SPEC = HarnessSpec(
 
 HARNESS_ADAPTERS: dict[str, HarnessAdapter] = {
     "codex": CodexHarnessAdapter(),
-    "claude": ReservedHarnessAdapter("claude"),
-    "gemini": ReservedHarnessAdapter("gemini"),
-    "opencode": ReservedHarnessAdapter("opencode"),
-    "kilo": ReservedHarnessAdapter("kilo"),
+    "claude": GenericExecHarnessAdapter(),
+    "gemini": GenericExecHarnessAdapter(),
+    "opencode": GenericExecHarnessAdapter(),
+    "kilo": GenericExecHarnessAdapter(),
+    "reserved": ReservedHarnessAdapter("reserved"),
     "fake": FakeHarnessAdapter(),
 }
 

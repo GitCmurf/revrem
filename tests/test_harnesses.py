@@ -65,15 +65,14 @@ def test_codex_adapter_builds_remediation_exec_command():
     assert command[-3:] == ["--output-last-message", "last.txt", "-"]
 
 
-def test_reserved_harnesses_are_valid_but_not_executable():
-    with pytest.raises(NotImplementedError, match="claude"):
-        harnesses.build_phase_command(
-            harnesses.PhaseCommandRequest(
-                harness="claude",
-                role="remediation",
-                executable="claude",
-            )
-        )
+def test_unknown_harness_raises_value_error():
+    request = harnesses.PhaseCommandRequest(
+        harness="unknown",
+        role="remediation",
+        executable="unknown",
+    )
+    with pytest.raises(ValueError, match="unknown harness"):
+        harnesses.build_phase_command(request)
 
 
 def test_codex_capabilities_validate_against_schema():

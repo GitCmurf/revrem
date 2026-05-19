@@ -49,7 +49,13 @@ def resolve_routing(
 
     if matched_rule:
         route_tier = matched_rule.then.route or routing_config.default_route
-        allow_escalation = matched_rule.then.allow_model_escalation
+        # Item 4: inherit global escalation if rule-level is None
+        rule_escalation = matched_rule.then.allow_model_escalation
+        allow_escalation = (
+            rule_escalation
+            if rule_escalation is not None
+            else routing_config.allow_model_escalation
+        )
         allow_deescalation = matched_rule.then.allow_model_deescalation
         prompt_fragments = matched_rule.then.prompt_fragments
     else:
@@ -90,28 +96,43 @@ def resolve_routing(
         registry = harness_registry()
         spec = registry.get(route_cfg.harness)
 
-        if spec and spec.implemented:
-            return ResolvedRoute(
-                route_tier=current_tier,
-                harness=route_cfg.harness,
-                model=route_cfg.model,
-                reasoning_effort=route_cfg.reasoning_effort,
-                timeout_seconds=route_cfg.timeout_seconds,
-                sandbox=route_cfg.sandbox,
-                prompt_fragments=prompt_fragments,
-                rule_id=matched_rule.id if matched_rule else "default",
-                fallbacks_considered=tuple(fallbacks_considered),
-                fallback_applied=current_tier if fallbacks_considered else None
+        # Item 9: Deep capability validation
+        if spec and spec.implemented and spec.capabilities:
+            caps = spec.capabilities
+            if (
+                caps.remediation_supported
+                and caps.non_interactive
+                and route_cfg.sandbox in caps.sandbox_modes
+            ):
+                return ResolvedRoute(
+                    route_tier=current_tier,
+                    harness=route_cfg.harness,
+                    model=route_cfg.model,
+                    reasoning_effort=route_cfg.reasoning_effort,
+                    timeout_seconds=route_cfg.timeout_seconds,
+                    sandbox=route_cfg.sandbox,
+                    prompt_fragments=prompt_fragments,
+                    rule_id=matched_rule.id if matched_rule else "default",
+                    fallbacks_considered=tuple(fallbacks_considered),
+                    fallback_applied=current_tier if fallbacks_considered else None
+                )
+
+        # Item 2: Strict fallbacks - only follow explicit fallback or fail
+        if not route_cfg.fallback:
+            raise RuntimeError(
+                f"Route {current_tier!r} (harness {route_cfg.harness!r}) is unavailable or lacks "
+                f"required capabilities, and no explicit fallback is configured."
             )
 
-        if current_tier == routing_config.default_route:
-             raise RuntimeError(f"Harness {route_cfg.harness!r} for default route {current_tier!r} is not implemented.")
+        if route_cfg.fallback == current_tier:
+             raise RuntimeError(f"Circular fallback detected for route {current_tier!r}.")
 
         fallbacks_considered.append(current_tier)
-        current_tier = route_cfg.fallback if route_cfg.fallback else routing_config.default_route
+        current_tier = route_cfg.fallback
 
 
 TIER_RANK = {
+    "security-specialist": 200,
     "frontier": 100,
     "midtier": 50,
     "efficient": 10,

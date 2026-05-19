@@ -2126,7 +2126,6 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                         source_review_artifact,
                         remediation_input,
                     )
-                    import sys
                     if suppressed_count:
                         iterations[-1]["suppressed_findings_count"] = suppressed_count
                     if triage_no_actionable:
@@ -2179,33 +2178,29 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                         )
 
                         # Record routing artifact
-                        routing_payload = {
+                        eff_harness = resolved_route.harness
+                        eff_model = resolved_route.model or config.remediation_model or config.model
+                        eff_reasoning = resolved_route.reasoning_effort or config.remediation_reasoning_effort or config.reasoning_effort
+                        eff_sandbox = resolved_route.sandbox
+                        eff_timeout = int(resolved_route.timeout_seconds) if resolved_route.timeout_seconds is not None else 300
+
+                        routing_payload: dict[str, Any] = {
                             "schema_version": "1.0",
                             "run_id": run_id,
                             "iteration": iteration,
                             "source_triage_artifact": f"triage-{iteration}.json",
-                            "model_proposal": {
-                                k: v for k, v in {
-                                    "route_tier": model_proposal.get("route_tier") or "midtier-coder",
-                                    "harness": model_proposal.get("harness") or "codex",
-                                    "model": model_proposal.get("model") or "unknown",
-                                    "rationale": model_proposal.get("rationale") or "none",
-                                }.items() if v is not None
-                            },
                             "policy_decision": {
-                                "decision": "proposal_accepted" if resolved_route.rule_id == "default" else "policy_override",
+                                "decision": "default_route_applied" if resolved_route.rule_id == "default" else "policy_override",
                                 "matched_rule_ids": [resolved_route.rule_id] if resolved_route.rule_id else [],
-                                "rationale": "Applied policy based on classification.",
+                                "rationale": "Applied policy based on classification." if resolved_route.rule_id != "default" else "No model route proposal or rule match; applied default route.",
                             },
                             "effective_route": {
-                                k: v for k, v in {
-                                    "route_tier": resolved_route.route_tier,
-                                    "harness": resolved_route.harness,
-                                    "model": resolved_route.model or "unknown",
-                                    "reasoning_effort": resolved_route.reasoning_effort or "medium",
-                                    "sandbox": resolved_route.sandbox,
-                                    "timeout_seconds": int(resolved_route.timeout_seconds) if resolved_route.timeout_seconds is not None else 300,
-                                }.items() if v is not None
+                                "route_tier": resolved_route.route_tier,
+                                "harness": eff_harness,
+                                "model": eff_model or "unknown",
+                                "reasoning_effort": eff_reasoning or "medium",
+                                "sandbox": eff_sandbox,
+                                "timeout_seconds": eff_timeout,
                             },
                             "fallbacks_considered": list(resolved_route.fallbacks_considered),
                             "prompt": {
@@ -2215,6 +2210,22 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                                 "fragments": list(resolved_route.prompt_fragments),
                             },
                         }
+                        if triage_payload.get("route_proposal"):
+                            p = triage_payload["route_proposal"]
+                            routing_payload["model_proposal"] = {
+                                "route_tier": p.get("route_tier", "unknown"),
+                                "harness": p.get("harness", "unknown"),
+                                "model": p.get("model", "unknown"),
+                                "rationale": p.get("rationale", "none"),
+                            }
+                            if resolved_route.route_tier == p.get("route_tier"):
+                                # Redefine policy_decision to satisfy mypy
+                                routing_payload["policy_decision"] = {
+                                    "decision": "proposal_accepted",
+                                    "matched_rule_ids": [resolved_route.rule_id] if resolved_route.rule_id else [],
+                                    "rationale": "Model route proposal accepted by policy.",
+                                }
+
                         # Validate routing artifact against schema
                         try:
                             triage.validate_routing_payload(routing_payload)
@@ -2235,10 +2246,6 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
             except budgets.BudgetExceeded:
                 raise
             except Exception as exc:
-                import sys
-                import traceback
-                print(f"DEBUG: triage/routing block failed: {exc}", file=sys.stderr)
-                traceback.print_exc(file=sys.stderr)
                 summary["final_status"] = "error"
                 summary["stopped_reason"] = "triage_failed"
                 summary["error"] = str(exc)

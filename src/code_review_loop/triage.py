@@ -177,13 +177,22 @@ def extract_routing_context(
     for finding in payload.get("confirmed_findings", []):
         affected_paths.update(finding.get("affected_paths", []))
 
+    cwd_resolved = cwd.resolve()
     for rel_path in affected_paths:
-        full_path = cwd / rel_path
-        if full_path.is_file():
-            content = full_path.read_text(encoding="utf-8", errors="replace").lower()
-            for signal, tag in SENSITIVE_SIGNALS.items():
-                if signal in content:
-                    safety_signals.add(tag)
+        try:
+            full_path = (cwd / rel_path).resolve()
+            if not full_path.is_relative_to(cwd_resolved):
+                continue
+            if full_path.is_file():
+                # Cap file read at 1MB to prevent memory exhaustion
+                with open(full_path, encoding="utf-8", errors="replace") as f:
+                    content = f.read(1024 * 1024).lower()
+                for signal, tag in SENSITIVE_SIGNALS.items():
+                    if signal in content:
+                        safety_signals.add(tag)
+        except OSError:
+            # Ignore files that cannot be read or resolved
+            pass
 
     return policy.RoutingContext(
         domain_tags=domain_tags,
