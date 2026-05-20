@@ -1,0 +1,21 @@
+# Architecture Checklist
+
+This change was routed to an architecture-sensitive remediation tier because it
+spans multiple modules or alters structural boundaries. Confirm each item.
+
+- Respect existing module boundaries and dependency direction. Do not introduce
+  cycles or reach across layers that the current design keeps separate.
+- Keep public interfaces and contracts stable unless the finding requires a
+  change; when it does, update every caller and document the new contract.
+- Prefer extending existing abstractions over adding parallel ones. Do not
+  introduce a new pattern for something the codebase already solves.
+- Make the smallest structural change that resolves the finding. Defer unrelated
+  refactors; note them for a follow-up rather than bundling them in.
+- Preserve backward compatibility for persisted data, on-disk artifacts, and
+  serialized schemas unless a migration is explicitly part of the fix.
+- Keep configuration, defaults, and feature gating consistent with how the rest
+  of the system is configured.
+- Update architecture-relevant documentation (module docstrings, ADR pointers,
+  diagrams) so the design record matches the code after the change.
+- Add tests at the seams you touch, covering the integration between the
+  affected modules, not only the unit in isolation.

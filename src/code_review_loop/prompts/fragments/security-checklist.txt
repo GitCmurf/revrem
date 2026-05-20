@@ -1,0 +1,21 @@
+# Security Checklist
+
+This change was routed to a security-sensitive remediation tier. Before
+finishing, confirm each item or explain why it does not apply.
+
+- Do not weaken, bypass, or remove existing authentication, authorization, or
+  access-control checks while fixing the finding.
+- Never log, echo, or commit secrets, credentials, tokens, private keys, or PII.
+  Read secrets from the existing configuration mechanism, not hard-coded values.
+- Validate and sanitize all untrusted input at the boundary. Prevent injection
+  (SQL, shell, template, path traversal) and unsafe deserialization.
+- Use parameterized queries and the project's established escaping helpers;
+  never build security-sensitive strings by concatenation.
+- Preserve constant-time comparison for secrets and avoid introducing timing or
+  error-message oracles.
+- Keep cryptography on vetted library primitives. Do not invent algorithms,
+  reuse nonces/IVs, or downgrade key sizes or TLS settings.
+- Apply least privilege: do not broaden file permissions, network exposure, or
+  sandbox scope beyond what the fix requires.
+- Add regression tests that prove the vulnerability is closed, including a
+  negative test for the unsafe input that originally triggered the finding.

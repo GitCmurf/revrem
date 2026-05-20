@@ -41,7 +41,7 @@ def test_loop_generates_schema_compliant_routing_artifact(fake_harness, tmp_path
             "failed_check_signals": []
         },
         "route_proposal": {
-            "route_tier": "frontier",
+            "route_tier": "frontier-thinking",
             "harness": "fake",
             "model": "frontier-model",
             "reasoning_effort": "high",
@@ -83,10 +83,10 @@ harness = "fake"
 model = "fake-findings"
 [profiles.test.triage.routing]
 enabled = true
-default_route = "m"
-[profiles.test.triage.routes.m]
+default_route = "midtier-coder"
+[profiles.test.triage.routes.midtier-coder]
 harness = "fake"
-[profiles.test.triage.routes.frontier]
+[profiles.test.triage.routes.frontier-thinking]
 harness = "fake"
 model = "fake-clear"
 """

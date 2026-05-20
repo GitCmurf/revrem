@@ -13,22 +13,22 @@ def base_profile():
             contract="v2",
             routing=profiles.TriageRoutingConfig(
                 enabled=True,
-                default_route="midtier",
+                default_route="midtier-coder",
                 rule=(
                     profiles.TriageRoutingRule(
                         id="security-rule",
                         when=profiles.TriageRoutingRuleWhen(domain_tags_any=("security",)),
                         then=profiles.TriageRoutingRuleThen(
-                            route="frontier",
+                            route="frontier-thinking",
                             allow_model_deescalation=False
                         ),
                     ),
                 ),
             ),
             routes={
-                "midtier": profiles.TriageRouteConfig(harness="codex", model="m1"),
-                "frontier": profiles.TriageRouteConfig(harness="codex", model="m2"),
-                "efficient": profiles.TriageRouteConfig(harness="codex", model="m3"),
+                "midtier-coder": profiles.TriageRouteConfig(harness="codex", model="m1"),
+                "frontier-thinking": profiles.TriageRouteConfig(harness="codex", model="m2"),
+                "efficient-coder": profiles.TriageRouteConfig(harness="codex", model="m3"),
             }
         )
     )
@@ -45,7 +45,7 @@ def test_resolve_routing_default(base_profile):
     )
 
     resolved = policy.resolve_routing(base_profile, context)
-    assert resolved.route_tier == "midtier"
+    assert resolved.route_tier == "midtier-coder"
     assert resolved.rule_id == "default"
 
 
@@ -60,11 +60,25 @@ def test_resolve_routing_rule_match(base_profile):
     )
 
     resolved = policy.resolve_routing(base_profile, context)
-    assert resolved.route_tier == "frontier"
+    assert resolved.route_tier == "frontier-thinking"
     assert resolved.rule_id == "security-rule"
 
 
-def test_resolve_routing_model_escalation(base_profile):
+def test_resolve_routing_model_escalation():
+    profile = profiles.Profile(
+        name="test",
+        triage=profiles.TriageConfig(
+            contract="v2",
+            routing=profiles.TriageRoutingConfig(
+                enabled=True,
+                default_route="midtier-coder",
+            ),
+            routes={
+                "midtier-coder": profiles.TriageRouteConfig(harness="codex", model="m1"),
+                "frontier-thinking": profiles.TriageRouteConfig(harness="codex", model="m2"),
+            },
+        ),
+    )
     context = policy.RoutingContext(
         domain_tags=("docs",),
         risk_level="low",
@@ -74,9 +88,11 @@ def test_resolve_routing_model_escalation(base_profile):
         safety_signals=(),
     )
 
-    # Model proposes frontier (higher than midtier)
-    resolved = policy.resolve_routing(base_profile, context, model_proposal_tier="frontier")
-    assert resolved.route_tier == "frontier"
+    # Model proposes frontier-thinking (higher than midtier-coder)
+    resolved = policy.resolve_routing(
+        profile, context, model_proposal_tier="frontier-thinking"
+    )
+    assert resolved.route_tier == "frontier-thinking"
 
 
 def test_resolve_routing_model_deescalation_forbidden(base_profile):
@@ -89,10 +105,12 @@ def test_resolve_routing_model_deescalation_forbidden(base_profile):
         safety_signals=(),
     )
 
-    # Rule matched frontier and has allow_model_deescalation=False
-    # Model proposes efficient (lower)
-    resolved = policy.resolve_routing(base_profile, context, model_proposal_tier="efficient")
-    assert resolved.route_tier == "frontier"
+    # Rule matched frontier-thinking and has allow_model_deescalation=False
+    # Model proposes efficient-coder (lower)
+    resolved = policy.resolve_routing(
+        base_profile, context, model_proposal_tier="efficient-coder"
+    )
+    assert resolved.route_tier == "frontier-thinking"
 
 
 def test_resolve_routing_model_deescalation_allowed(base_profile):
@@ -102,11 +120,11 @@ def test_resolve_routing_model_deescalation_allowed(base_profile):
             contract="v2",
             routing=profiles.TriageRoutingConfig(
                 enabled=True,
-                default_route="midtier",
+                default_route="midtier-coder",
             ),
             routes={
-                "midtier": profiles.TriageRouteConfig(harness="codex", model="m1"),
-                "efficient": profiles.TriageRouteConfig(harness="codex", model="m3"),
+                "midtier-coder": profiles.TriageRouteConfig(harness="codex", model="m1"),
+                "efficient-coder": profiles.TriageRouteConfig(harness="codex", model="m3"),
             }
         )
     )
@@ -120,8 +138,10 @@ def test_resolve_routing_model_deescalation_allowed(base_profile):
     )
 
     # Default route allows de-escalation by default (allow_model_deescalation=True)
-    resolved = policy.resolve_routing(profile, context, model_proposal_tier="efficient")
-    assert resolved.route_tier == "efficient"
+    resolved = policy.resolve_routing(
+        profile, context, model_proposal_tier="efficient-coder"
+    )
+    assert resolved.route_tier == "efficient-coder"
 
 
 def test_resolve_routing_rejects_multi_hop_fallback_cycle():

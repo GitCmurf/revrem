@@ -59,10 +59,10 @@ def check_route_capabilities(route_cfg: TriageRouteConfig) -> list[str]:
             f"Harness {route_cfg.harness!r} does not support sandbox mode {route_cfg.sandbox!r}. "
             f"Supported: {', '.join(caps.sandbox_modes)}"
         )
-    if route_cfg.timeout_seconds is not None and not caps.timeout_supported:
-        issues.append(
-            f"Harness {route_cfg.harness!r} does not support execution timeouts."
-        )
+    # Note: timeouts are enforced by RevRem's own subprocess wrapper
+    # (run_with_timeout / default_runner), independent of whether the harness
+    # CLI exposes a native timeout flag. A route with timeout_seconds is
+    # therefore valid on any harness; caps.timeout_supported is metadata only.
     if caps.supported_models and route_cfg.model and route_cfg.model not in caps.supported_models:
         issues.append(
             f"Harness {route_cfg.harness!r} does not support model {route_cfg.model!r}. "
@@ -125,14 +125,14 @@ def resolve_routing(
     # 2. Consider model proposal
     effective_tier = route_tier
     if model_proposal_tier and model_proposal_tier in profile.triage.routes and model_proposal_tier != route_tier:
-        is_escalation = _is_higher_tier(model_proposal_tier, route_tier)
-        if is_escalation:
-            if allow_escalation:
-                effective_tier = model_proposal_tier
-        else:
-            # De-escalation
-            if allow_deescalation:
-                effective_tier = model_proposal_tier
+        # Apply the model proposal only when its direction relative to the policy
+        # route is known and permitted. direction None (uncomparable tiers) or 0
+        # (same rank) leaves the policy route in place.
+        direction = _tier_direction(model_proposal_tier, route_tier)
+        escalation_ok = direction == 1 and allow_escalation
+        deescalation_ok = direction == -1 and allow_deescalation
+        if escalation_ok or deescalation_ok:
+            effective_tier = model_proposal_tier
 
     # 3. Resolve with fallback loop for implementation status
     fallbacks_considered: list[str] = []
@@ -189,20 +189,28 @@ def resolve_routing(
 
 TIER_RANK = {
     "security-specialist": 200,
-    "frontier": 100,
-    "midtier": 50,
-    "efficient": 10,
+    "frontier-thinking": 100,
+    "midtier-coder": 50,
+    "efficient-coder": 10,
 }
 
-def _is_higher_tier(tier1: str, tier2: str) -> bool:
-    # Item 7: Use exact matching for known tiers
-    rank1 = TIER_RANK.get(tier1, -1)
-    rank2 = TIER_RANK.get(tier2, -1)
 
-    # If either is unknown, we can't reliably say it's higher
-    if rank1 == -1 or rank2 == -1:
-        return False
-    return rank1 > rank2
+def _tier_direction(proposed: str, current: str) -> int | None:
+    """Compare two route tiers by rank.
+
+    Returns 1 if ``proposed`` outranks ``current``, -1 if it is lower, 0 if
+    equal, and None when the tiers cannot be compared (either is outside the
+    known ranking). An uncomparable proposal must not override the policy route.
+    """
+    proposed_rank = TIER_RANK.get(proposed)
+    current_rank = TIER_RANK.get(current)
+    if proposed_rank is None or current_rank is None:
+        return None
+    if proposed_rank > current_rank:
+        return 1
+    if proposed_rank < current_rank:
+        return -1
+    return 0
 
 
 def _match_rule(rule: TriageRoutingRule, context: RoutingContext) -> bool:

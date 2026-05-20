@@ -26,15 +26,16 @@ def test_invalid_triage_contract_is_rejected():
         triage.parse_triage_payload("{}", run_id="r", source_review_artifact="s", contract="bogus")
 
 def test_fallback_behavior_for_unimplemented_harness():
-    # Setup profile where 'frontier' uses an unimplemented harness but has a fallback to 'midtier'
+    # Setup profile where 'frontier-thinking' uses an unimplemented harness but
+    # has a fallback to 'midtier-coder'
     profile = profiles.Profile(
         name="test",
         triage=profiles.TriageConfig(
             contract="v2",
-            routing=profiles.TriageRoutingConfig(enabled=True, default_route="midtier"),
+            routing=profiles.TriageRoutingConfig(enabled=True, default_route="midtier-coder"),
             routes={
-                "midtier": profiles.TriageRouteConfig(harness="codex", model="fake-clear"),
-                "frontier": profiles.TriageRouteConfig(harness="reserved", model="fake-clear", fallback="midtier")
+                "midtier-coder": profiles.TriageRouteConfig(harness="codex", model="fake-clear"),
+                "frontier-thinking": profiles.TriageRouteConfig(harness="reserved", model="fake-clear", fallback="midtier-coder")
             }
         )
     )
@@ -44,12 +45,12 @@ def test_fallback_behavior_for_unimplemented_harness():
         failed_checks=(), safety_signals=()
     )
 
-    # Model proposes frontier (claude - unimplemented)
-    resolved = policy.resolve_routing(profile, context, model_proposal_tier="frontier")
+    # Model proposes frontier-thinking (reserved - unimplemented)
+    resolved = policy.resolve_routing(profile, context, model_proposal_tier="frontier-thinking")
 
-    assert resolved.route_tier == "midtier"
-    assert resolved.fallback_applied == "midtier"
-    assert resolved.fallbacks_considered == ("frontier",)
+    assert resolved.route_tier == "midtier-coder"
+    assert resolved.fallback_applied == "midtier-coder"
+    assert resolved.fallbacks_considered == ("frontier-thinking",)
     assert resolved.harness == "codex"
 
 def test_failed_checks_any_matches_exact_command():
@@ -127,7 +128,7 @@ def test_routing_artifact_and_events_validate_against_schemas(fake_harness, tmp_
             "failed_check_signals": []
         },
         "route_proposal": {
-            "route_tier": "frontier",
+            "route_tier": "frontier-thinking",
             "harness": "fake",
             "model": "frontier-model",
             "reasoning_effort": "high",
@@ -169,10 +170,10 @@ harness = "fake"
 model = "fake-findings"
 [profiles.test.triage.routing]
 enabled = true
-default_route = "m"
-[profiles.test.triage.routes.m]
+default_route = "midtier-coder"
+[profiles.test.triage.routes.midtier-coder]
 harness = "fake"
-[profiles.test.triage.routes.frontier]
+[profiles.test.triage.routes.frontier-thinking]
 harness = "fake"
 model = "fake-clear"
 reasoning_effort = "high"

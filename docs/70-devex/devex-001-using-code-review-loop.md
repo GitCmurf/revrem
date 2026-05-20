@@ -600,23 +600,23 @@ model = "gpt-5.4-mini"
 
 [profiles.secure.triage.routing]
 enabled = true
-default_route = "midtier"
+default_route = "midtier-coder"
 
 [[profiles.secure.triage.routing.rule]]
 id = "security-frontier"
 when.domain_tags_any = ["security", "auth", "secrets", "pii"]
-then.route = "frontier"
+then.route = "frontier-thinking"
 then.allow_model_deescalation = false
-then.prompt_fragments = ["engineering-principles"]
+then.prompt_fragments = ["engineering-principles", "security-checklist"]
 
-[profiles.secure.triage.routes.frontier]
+[profiles.secure.triage.routes.frontier-thinking]
 harness = "codex"
 model = "gpt-5.5"
 reasoning_effort = "high"
 timeout_seconds = 1800
 sandbox = "workspace-write"
 
-[profiles.secure.triage.routes.midtier]
+[profiles.secure.triage.routes.midtier-coder]
 harness = "codex"
 model = "gpt-5.4-mini"
 reasoning_effort = "medium"
@@ -641,31 +641,31 @@ model = "gemini-3-flash"
 
 [profiles.multi.triage.routing]
 enabled = true
-default_route = "midtier"
+default_route = "midtier-coder"
 
 [[profiles.multi.triage.routing.rule]]
 id = "sensitive-frontier"
 when.safety_signals_any = ["sensitive-domain:auth", "sensitive-domain:secrets"]
-then.route = "frontier"
+then.route = "frontier-thinking"
 then.allow_model_deescalation = false
 
-[profiles.multi.triage.routes.frontier]
+[profiles.multi.triage.routes.frontier-thinking]
 harness = "claude"
 model = "sonnet"
 reasoning_effort = "high"
 timeout_seconds = 1800
 sandbox = "workspace-write"
-fallback = "midtier"
+fallback = "midtier-coder"
 
-[profiles.multi.triage.routes.midtier]
+[profiles.multi.triage.routes.midtier-coder]
 harness = "gemini"
 model = "gemini-3-flash"
 reasoning_effort = "medium"
 timeout_seconds = 900
 sandbox = "workspace-write"
-fallback = "efficient"
+fallback = "efficient-coder"
 
-[profiles.multi.triage.routes.efficient]
+[profiles.multi.triage.routes.efficient-coder]
 harness = "kilo"
 model = "provider/model"
 timeout_seconds = 300
