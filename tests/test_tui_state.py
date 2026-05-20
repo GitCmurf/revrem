@@ -314,6 +314,51 @@ def test_run_monitor_view_derives_state_from_events_jsonl(tmp_path):
     assert "0002|checks|1.1|check_result: passed" in "\n".join(rendered.lines)
 
 
+def test_run_monitor_view_renders_routing_event_details(tmp_path):
+    repo = tmp_path / "repo"
+    run_dir = repo / ".revrem" / "runs" / "run-1"
+    run_dir.mkdir(parents=True)
+    event_sink = events.JsonlSink(run_dir, "run-1")
+    event_sink.emit(
+        "routing_decision",
+        phase="triage",
+        iteration=1,
+        payload={
+            "policy_decision": {"decision": "policy_override"},
+            "effective_route": {"route_tier": "frontier", "harness": "claude"},
+        },
+    )
+    event_sink.emit(
+        "routing_outcome",
+        phase="remediate",
+        iteration=1,
+        payload={"exit_code": 0, "checks_passed": True},
+    )
+    event_sink.close()
+    record = {
+        "run_id": "run-1",
+        "cwd": str(repo),
+        "final_status": "unknown",
+        "artifact_dir": ".revrem/runs/run-1",
+    }
+
+    monitor = tui_state.run_monitor_view(record)
+    rendered = tui_state.run_monitor_screen(
+        tui_state.HomeSnapshot(
+            cwd=str(repo),
+            profiles=(),
+            recent_runs=(record,),
+            harnesses=(),
+            run_previews=(),
+            run_monitors=(monitor,),
+        )
+    )
+
+    output = "\n".join(rendered.lines)
+    assert "routing_decision: policy_override frontier via claude" in output
+    assert "routing_outcome: checks_passed exit=0" in output
+
+
 def test_run_monitor_view_reports_truncated_events_jsonl(tmp_path):
     repo = tmp_path / "repo"
     run_dir = repo / ".revrem" / "runs" / "run-1"

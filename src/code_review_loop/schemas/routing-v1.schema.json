@@ -17,6 +17,7 @@
         },
         "reasoning_effort": {
           "enum": [
+            "minimal",
             "low",
             "medium",
             "high"
@@ -29,6 +30,7 @@
           "type": "string"
         },
         "timeout_seconds": {
+          "minimum": 1,
           "type": "integer"
         }
       },
@@ -64,6 +66,7 @@
         },
         "reasoning_effort": {
           "enum": [
+            "minimal",
             "low",
             "medium",
             "high"
@@ -76,6 +79,7 @@
           "type": "string"
         },
         "timeout_seconds": {
+          "minimum": 1,
           "type": "integer"
         }
       },

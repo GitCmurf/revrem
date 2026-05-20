@@ -117,12 +117,12 @@ foundation for 0.5/0.6-era work:
   consume;
 - cost, wall-clock, cancellation, and replay behavior are testable without
   calling a real model;
-- the first non-Codex work is a **fake** harness contract, not a real vendor
-  adapter.
+- the fake harness contract establishes the executable boundary before real
+  vendor adapters are enabled by later routing work.
 
 ## Non-Goals For This Phase
 
-Do **not** implement these in this task series:
+Do **not** implement these in the original TASK-002 task series:
 
 - TUI-launched real runs.
 - Git hooks or `revrem install-hooks`.
@@ -130,12 +130,16 @@ Do **not** implement these in this task series:
 - Static HTML report (`revrem report`).
 - Background daemon / `revrem watch`.
 - Archive export / dataset export.
-- Real Claude, Gemini, opencode, Kilo, OpenRouter, or generic HTTP backend.
+- Real Claude, Gemini, opencode, Kilo, OpenRouter, or generic HTTP backend in
+  TASK-002 itself. REVREM-PLAN-004 is the governed follow-on that implements
+  the thin local Claude, Gemini, opencode, and Kilo adapters; OpenRouter and
+  generic HTTP remain non-executable.
 - Hosted service, telemetry, IDE extension, or web UI.
 - Plugin entry points (`revrem.harnesses`, `revrem.checks`, `revrem.renderers`).
 
-Those become eligible only after the phase exit criteria are satisfied. PRs
-that quietly add any of them must be split or rejected.
+Those became eligible only after the TASK-002 phase exit criteria were
+satisfied. Later work must cite its governing plan rather than silently adding
+new execution surfaces.
 
 ## Final Review Corrections Applied
 
@@ -796,8 +800,8 @@ stable, machine-readable diagnostics that downstream surfaces consume.
      "disable timeout" and produce a warning unless paired with a documented
      bounded alternative;
    - profile names resolve to a config file;
-   - reserved-but-unimplemented harnesses are rejected for live
-     execution;
+   - non-executable harnesses are rejected for live execution unless a later
+     governed plan implements the adapter and capability contract;
    - locale/encoding sane (UTF-8 capable filesystem; warn on POSIX-C
      locale where it would break artifact text).
 3. **Output.**
@@ -1466,8 +1470,10 @@ fixtures for replay).
    and command construction behind the harness boundary where
    practical. **Avoid a broad rewrite** — extract only what is
    needed to make the contract testable.
-4. **Reserved real harnesses** remain rejected for live execution
-   with clear diagnostics referencing F3 codes.
+4. **Harness availability is explicit.** Executable harnesses must have an
+   implemented adapter, declared capabilities, and a resolved executable; names
+   without those properties are rejected for live execution with clear
+   diagnostics.
 5. **Compatibility test.** A scenario-by-scenario assertion that
    Codex `summary.json` and fake `summary.json` are structurally
    equivalent (same shape, same fields, value differences only
@@ -1492,16 +1498,16 @@ fixtures for replay).
 **Docs:**
 
 - Capability table and semantics.
-- Statement that real secondary adapters are gated on this fake
-  harness.
+- Statement that real secondary adapters are gated on this fake harness
+  contract and later governed adapter implementation.
 - ADR.
 
 **Done when:**
 
 - Harness behavior can be tested without Codex installed.
 - Fake harness covers every loop phase.
-- Real non-Codex adapters remain unimplemented and explicitly
-  deferred.
+- Real non-Codex adapters are implemented only by a later governed adapter
+  plan after the fake harness contract is green.
 - ADR landed.
 
 ---
@@ -1531,8 +1537,8 @@ This task series is complete when **all** of the following hold:
   fixture.
 - Budget, cancellation, and resume behavior is enforced by tests;
   exit codes 3, 4, 5, 6 are reachable and documented.
-- The fake harness contract is green; no real secondary harness has
-  been added prematurely.
+- The fake harness contract is green; real secondary harnesses are only added
+  through later governed adapter work.
 - Plan success metrics owned by M0–M4 are measured against the
   reference fixture and recorded in
   `docs/55-testing/test-001-utility-verification-strategy.md`.
@@ -1556,7 +1562,7 @@ GitHub/PyPI credentials or a merge to `main`.
 | F7 suppression file and CLI | `src/code_review_loop/suppressions.py`, `revrem suppress` CLI tests, schema validation, repo/user precedence, expiry, critical override enforcement, profile-level suppression scope policy, audit summary redaction, bug-bundle integration, and `REVREM-ADR-007`. | Implemented locally |
 | F8 event sink, `events.jsonl`, and replay | `src/code_review_loop/events.py`, event fixtures for clear/findings/timeout/check-failure/cancellation/cost-ceiling/suppressed/rejected-finding cases, offline replay tests, TUI state event-reader tests, and `REVREM-ADR-008`. | Implemented locally |
 | F9 budgets, cancellation, and resume | `src/code_review_loop/budgets.py`, budget ceiling tests, fake-harness token-charge tests, cancellation diagnostics/events/summary tests, resume precondition tests, exit codes `3`, `4`, and `5`, and `REVREM-ADR-009`. | Implemented locally |
-| F10 fake harness contract | `src/code_review_loop/harnesses.py`, `harness-capabilities-v1.schema.json`, fake harness fixtures, env-gated fake harness behavior, reserved non-Codex harness rejection, Codex/fake summary shape equivalence, and `REVREM-ADR-010`. | Implemented locally |
+| F10 fake harness contract | `src/code_review_loop/harnesses.py`, `harness-capabilities-v1.schema.json`, fake harness fixtures, env-gated fake harness behavior, explicit harness capability validation, Codex/fake summary shape equivalence, and `REVREM-ADR-010`. | Implemented locally |
 | Required local gates | On 2026-05-15, `./scripts/dev-check` passed with 406 tests plus ruff, mypy, and Meminit run IDs `6b16ef4e` / `ea4b7ccb`; `pre-commit run --all-files` passed. `meminit check --format json` passed via both gates. After the release closeout bump, `./.venv/bin/python -m build --sdist --wheel` and `./.venv/bin/python -m twine check dist/*` passed for `revrem-0.3.2`; a fresh clean `/tmp` venv installed `dist/revrem-0.3.2-py3-none-any.whl` and ran `revrem --version`, `code-review-loop --version`, and `revrem --help`; CodeRabbit branch review was run against `main` and valid findings were remediated. | Verified locally |
 | Residual review findings | Remaining CodeRabbit findings point at intentionally flawed reference fixture entries already recorded in `tests/fixtures/reference-repo/EXPECTED_FINDINGS.md` (`RF-001` SQL injection, `RF-003` broad auth exception, `RF-004` duplicated billing helper, `RF-005` broad billing exception). These are not production defects and remain seeded for review/diagnostics fixtures. | Intentionally retained |
 | Main-branch and publication gates | `main` contains the release closeout commit, the `v0.3.2` tag is published, the GitHub Release exists, and the release workflow completed successfully. The remaining release operator duties are post-publication verification and any future maintenance. | Completed |
@@ -1587,7 +1593,7 @@ on main.
 | Suppressions are auditable, expirable, and critical-safe | `src/code_review_loop/suppressions.py`, `tests/test_suppressions.py`, bug-bundle audit-summary tests, profile suppression-scope tests, and `REVREM-ADR-007`. | Completed |
 | `revrem replay` renders event fixtures offline without model/network access | `tests/fixtures/events/*`, `tests/test_replay.py`, `src/code_review_loop/events.py`, and `REVREM-ADR-008`. | Completed |
 | Budget, cancellation, resume, and exit codes 3, 4, 5, 6 are reachable and documented | `tests/test_budgets.py`, `tests/test_resume.py`, CLI budget/cancellation tests, doctor strict tests, `REVREM-ADR-009`, and `REVREM-DEVEX-001` exit-code docs. | Completed |
-| Fake harness contract is green and real secondary adapters remain deferred | `src/code_review_loop/harnesses.py`, `harness-capabilities-v1.schema.json`, fake harness fixtures, fake-vs-Codex shape tests, and reserved real-harness rejection tests. | Completed |
+| Fake harness contract is green and real secondary adapters are governed by follow-on adapter work | `src/code_review_loop/harnesses.py`, `harness-capabilities-v1.schema.json`, fake harness fixtures, fake-vs-Codex shape tests, harness capability validation, and REVREM-PLAN-004 routing-adapter closure. | Completed |
 | M0-M4 plan success metrics are measured against deterministic evidence | `REVREM-TEST-001` includes the TASK-002 M0-M4 metric table, including install smoke, 13/13 doctor coverage, triage precision, cost caps, replay fixtures, and actionable-diagnosis evidence. Real-model timing is explicitly deferred until published-package credentials are active. | Completed |
 
 ## ADR Closure
@@ -1620,7 +1626,9 @@ After this task series, the following work becomes eligible
 - Hook / headless mode with stable exit codes.
 - Static HTML reports from run artifacts (`revrem report`).
 - GitHub Action / PR comment surface.
-- First real secondary harness adapter (Claude CLI preferred).
+- Follow-on refinement of the thin secondary harness adapters added by
+  REVREM-PLAN-004, including live smoke coverage and provider-specific
+  capability hardening.
 - Expert profile bundle and showcase demo capture.
 - Indexed remediation archive + dataset export.
 
@@ -1652,5 +1660,6 @@ the implemented ADRs and tests:
   serializes money as decimal strings; non-USD reporting is deferred until a
   harness actually supplies it.
 - **F10 fake harness gating:** `REVREM-ADR-010` and the harness tests gate the
-  fake harness behind `REVREM_ALLOW_FAKE_HARNESS=1`; real secondary adapters
-  remain explicitly deferred.
+  fake harness behind `REVREM_ALLOW_FAKE_HARNESS=1`; REVREM-PLAN-004 builds on
+  that contract to add the thin local Claude, Gemini, opencode, and Kilo
+  adapters.

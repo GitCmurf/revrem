@@ -50,6 +50,9 @@ def test_compute_prompt_hash():
 def test_load_fragment_rejects_traversal(tmp_path):
     assert prompts_composer.load_fragment(tmp_path, "../outside", trusted_repo=True) is None
     assert prompts_composer.load_fragment(tmp_path, "subdir/inside", trusted_repo=True) is None
+    assert prompts_composer.load_fragment(tmp_path, "/tmp/outside", trusted_repo=True) is None
+    assert prompts_composer.load_fragment(tmp_path, "foo/..bar", trusted_repo=True) is None
+
 
 def test_load_fragment_requires_trust(tmp_path):
     (tmp_path / "secret.txt").write_text("SECRET", encoding="utf-8")

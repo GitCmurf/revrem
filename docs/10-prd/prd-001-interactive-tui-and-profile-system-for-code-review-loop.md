@@ -659,8 +659,10 @@ revrem history --format json list --limit 5
 
 ### Open Questions
 
-- Which non-Codex headless harness should be implemented first, and what exact
-  machine-readable review/remediation contract should its adapter expose.
+- The first thin non-Codex headless adapters were implemented by
+  REVREM-PLAN-004. The remaining open question is which provider-specific live
+  smoke tests and capability refinements should be added first without
+  weakening the shared harness boundary.
 
 ---
 

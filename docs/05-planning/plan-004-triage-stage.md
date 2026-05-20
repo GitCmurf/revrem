@@ -2,9 +2,9 @@
 document_id: REVREM-PLAN-004
 type: PLAN
 title: Triage Stage as a Routing and Prompt-Construction Layer
-status: Draft
-version: '0.2'
-last_updated: '2026-05-18'
+status: Approved
+version: '1.0'
+last_updated: '2026-05-20'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -35,24 +35,23 @@ related_ids:
 
 ## Context
 
-RevRem already has an optional triage phase. Today it is deliberately narrow:
+RevRem already has an optional triage phase. The original implementation was
+deliberately narrow:
 
 - `src/code_review_loop/triage.py` loads `triage_v1.txt`, validates structured
   JSON against `triage-v1.schema.json`, stamps envelope fields, writes
   `triage-<iteration>.json`, and formats a structured handoff for remediation.
-- `src/code_review_loop/cli.py` runs triage with a read-only Codex `exec`
-  command before remediation when `profile.triage.enabled` is true.
+- `src/code_review_loop/cli.py` ran triage with a read-only Codex `exec`
+  command before remediation when `profile.triage.enabled` was true.
 - The v1 artifact can confirm, reject, or defer review findings, order the
   implementation, and suggest verification commands.
 - Invalid structured triage fails safe: `triage.on_invalid = "continue"`
   ignores invalid structured guidance and falls back to the original
   review/check context; `triage.on_invalid = "stop"` fails the run.
-- The harness registry already reserves Codex, Claude, Gemini, OpenCode
-  (`opencode`), and KiloCode (`kilo`) names. On the maintainer workstation all
-  five CLIs are installed and usable, but RevRem's current adapter registry
-  still treats non-Codex harnesses as reserved. This plan must therefore close
-  the product gap between locally available CLIs and first-class RevRem
-  adapters.
+- The harness registry reserved Codex, Claude, Gemini, OpenCode (`opencode`),
+  and KiloCode (`kilo`) names. On the maintainer workstation all five CLIs are
+  installed and usable, so this plan closes the product gap between local CLI
+  availability and first-class RevRem adapter execution.
 
 That v1 contract is useful as a finding filter, but it does not yet answer the
 more important operator question:
@@ -62,10 +61,11 @@ more important operator question:
 > what prompt, and why?
 
 This plan upgrades triage into a routing and prompt-construction stage without
-turning it into an uncontrolled autonomous agent. The triage model may propose
-classification, route, and prompt content. A deterministic policy resolver then
-validates the proposal, applies user-configured if-then routing rules, composes
-the effective prompt, and hands the loop an executable remediation request.
+turning it into an uncontrolled autonomous agent. The implemented v2 contract
+lets the triage model propose classification, route, and prompt content. A
+deterministic policy resolver validates the proposal, applies user-configured
+if-then routing rules, composes the effective prompt, and hands the loop an
+executable remediation request.
 
 ## Corrections To The Initial Draft
 
@@ -93,14 +93,14 @@ errors that must not be carried into implementation:
   policy-bounded, recorded exactly, and may include the triage model's draft
   only inside a clearly marked untrusted guidance section.
 - **Installed CLI is not the same as implemented RevRem adapter.** Claude,
-  Gemini, OpenCode, and KiloCode are installed locally, but
-  `require_implemented_harness` still rejects their reserved adapter entries.
-  Routing must distinguish "known", "installed", "capable", and "enabled by
-  RevRem adapter".
-- **The current executable model is Codex-specific.** `PhaseCommandRequest`
-  takes a single `executable` value from `runtime.codex_bin`. Real multi-harness
-  routing requires per-harness executable resolution instead of passing
-  `codex_bin` into every adapter.
+  Gemini, OpenCode, and KiloCode are installed locally, but the routing layer
+  still needed implemented adapters, capability metadata, and executable
+  resolution before it could call them safely. Routing must distinguish
+  "known", "installed", "capable", and "selected for this run".
+- **The original executable model was Codex-specific.** `PhaseCommandRequest`
+  originally took a single `executable` value from `runtime.codex_bin`. Real
+  multi-harness routing requires per-harness executable resolution instead of
+  passing `codex_bin` into every adapter.
 
 ## North Star
 
@@ -287,6 +287,9 @@ exact prompt as a text artifact:
     "route_tier": "security-specialist",
     "harness": "codex",
     "model": "operator-configured-security-model",
+    "reasoning_effort": "high",
+    "sandbox": "workspace-write",
+    "timeout_seconds": 1800,
     "rationale": "..."
   },
   "policy_decision": {
@@ -432,8 +435,9 @@ The policy resolver should obey these rules:
 - Unknown rule keys fail `revrem policy lint`.
 - Unknown routes fail profile validation.
 - Unknown harness names fail profile validation.
-- Known but unimplemented harnesses may remain valid in profile syntax but
-  cannot execute unless an implemented fallback is available.
+- Known harnesses may remain valid in profile syntax, but a route cannot
+  execute unless the selected harness has an implemented adapter, a resolvable
+  executable, and the required capabilities for the selected role.
 - A model proposal can escalate above the matched policy route only when the
   policy allows escalation.
 - A model proposal cannot de-escalate sensitive or deterministic safety
@@ -700,6 +704,54 @@ This plan is not complete until:
   with clear fallback guidance for machines where those CLIs are absent.
 - `meminit check --format json` passes.
 - `./scripts/dev-check` passes before PR.
+
+## Implementation Closeout Evidence
+
+The implementation now satisfies the plan's first complete routing slice:
+
+- `triage-v2` exists as a source schema, API-doc schema, prompt, parser path,
+  and fixture-backed contract. Existing v1 triage behavior remains covered for
+  profiles that do not enable routing.
+- Routing writes `routing-<iteration>.json`,
+  `remediation-<iteration>-prompt.txt`, and
+  `routing-outcome-<iteration>.json`; routing JSON references the exact prompt
+  path, hash, byte count, fragments, model proposal, effective route, policy
+  decision, and fallback history.
+- The routing artifact records proposal presence and proposal acceptance
+  honestly. If the triage proposal is absent, the artifact records that absence;
+  if policy changes any proposed executable field, the artifact records a
+  policy override and the overridden fields.
+- Policy resolution is deterministic, validates route references, validates
+  routing taxonomy values, rejects circular fallback chains, respects remaining
+  wall-clock budget, and applies only explicit configured fallbacks.
+- Prompt composition is deterministic and includes execution frame, route
+  rationale, confirmed/rejected/needs-more-info findings, previous failed
+  checks, configured policy fragments, untrusted triage guidance, and
+  verification expectations.
+- Codex, Claude, Gemini, OpenCode, KiloCode, and fake harness adapters share
+  the same non-interactive command-construction boundary. Operators can set
+  per-harness executable paths through `runtime.harness_executables` or the
+  `--harness-bin HARNESS=EXECUTABLE` CLI override.
+- Routing emits `routing_decision` and `routing_outcome` events through
+  `events.jsonl`; replay and TUI run-monitor views render the route and
+  outcome without invoking a model or printing full prompts.
+- `summary.json` includes first-class prompt and routing artifact paths while
+  preserving artifact privacy by not inlining prompt content.
+- Operator surfaces include `revrem policy lint`, `revrem triage explain`, and
+  read-only `revrem policy review --artifact-dir <run-dir>`.
+- DevEx documentation includes portable Codex-only and multi-harness examples,
+  per-harness executable configuration, routing artifacts, event kinds,
+  prompt sensitivity, policy linting, triage explain, and policy review.
+- Scenario fixtures cover sensitive finding, architectural refactor, careful
+  refactor, trivial atomic change, invalid route, unavailable harness, and v1
+  compatibility.
+
+Verification evidence for this closeout:
+
+- `./scripts/dev-check` passed on 2026-05-20 with `494 passed`, Ruff clean,
+  mypy clean, and Meminit checks clean.
+- `git diff --check` must also pass on the completed branch immediately before
+  opening the PR.
 
 ## Risks And Mitigations
 

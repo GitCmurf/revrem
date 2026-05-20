@@ -72,6 +72,11 @@ def test_packaged_triage_schema_matches_reference_copy():
     assert packaged_schema == reference_schema
 
 
+def test_triage_schema_rejects_unknown_contract():
+    with pytest.raises(ValueError, match="invalid triage contract"):
+        triage._triage_schema("v3")
+
+
 def test_default_triage_prompt_spells_out_the_structured_contract():
     prompt = triage.load_prompt()
 

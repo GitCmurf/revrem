@@ -22,7 +22,7 @@ def test_loop_generates_schema_compliant_routing_artifact(fake_harness, tmp_path
     # Setup mock fixtures
     findings_dir = fake_harness / "fake-findings"
     findings_dir.mkdir()
-    (findings_dir / "review.txt").write_text("Findings: f1", encoding="utf-8")
+    (findings_dir / "review.txt").write_text("Finding: f1\nREVIEW_STATUS: findings\n", encoding="utf-8")
 
     triage_payload = {
         "confirmed_findings": [{"fingerprint": "f1", "summary": "s", "severity": "high", "affected_paths": ["a.py"], "rationale": "r"}],
@@ -94,7 +94,7 @@ model = "fake-clear"
     monkeypatch.chdir(tmp_path)
 
     exit_code = cli.main(["--profile", "test", "--review-model", "fake-findings", "--max-iterations", "1", "--skip-final-review", "--trusted-repo"])
-    assert exit_code in (0, 2)
+    assert exit_code == 2
 
     routing_path = tmp_path / ".revrem/runs"
     run_dir = next(routing_path.iterdir())

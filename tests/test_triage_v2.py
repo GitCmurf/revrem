@@ -38,6 +38,47 @@ def test_parse_triage_payload_v2_validates_fixture_against_schema():
     assert payload["prompt_requirements"]["required_fragments"] == ["engineering-principles"]
 
 
+@pytest.mark.parametrize(
+    "fixture_name",
+    [
+        "sensitive_finding",
+        "architectural_refactor",
+        "careful_refactor",
+        "trivial_atomic",
+        "invalid_route",
+        "unavailable_harness",
+    ],
+)
+def test_parse_triage_payload_v2_validates_policy_scenario_fixtures(fixture_name):
+    payload = triage.parse_triage_payload(
+        _fixture(fixture_name),
+        run_id="run-123",
+        source_review_artifact="review-1.txt",
+        contract="v2",
+    )
+
+    validate(
+        payload,
+        json.loads(files("code_review_loop").joinpath("schemas/triage-v2.schema.json").read_text(encoding="utf-8")),
+    )
+    assert payload["confirmed_findings"]
+    assert payload["classification"]["estimated_blast_radius"]["finding_count"] == 1
+
+
+def test_parse_triage_payload_v2_accepts_minimal_reasoning_effort():
+    fixture = json.loads(_fixture("valid_v2"))
+    fixture["route_proposal"]["reasoning_effort"] = "minimal"
+
+    payload = triage.parse_triage_payload(
+        json.dumps(fixture),
+        run_id="run-123",
+        source_review_artifact="review-1.txt",
+        contract="v2",
+    )
+
+    assert payload["route_proposal"]["reasoning_effort"] == "minimal"
+
+
 def test_parse_triage_payload_v2_fails_on_v1_contract():
     # v1 fixture doesn't have classification/routing, so it should fail v2 schema
     with pytest.raises(triage.TriageValidationError):

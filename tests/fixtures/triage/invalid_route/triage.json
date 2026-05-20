@@ -1,0 +1,39 @@
+{
+  "confirmed_findings": [
+    {
+      "affected_paths": ["src/unknown.py"],
+      "fingerprint": "f1:invalid-route",
+      "rationale": "The triage model proposed a route not present in policy.",
+      "severity": "medium",
+      "summary": "Exercise unknown route handling"
+    }
+  ],
+  "rejected_findings": [],
+  "needs_more_info": [],
+  "implementation_order": ["f1:invalid-route"],
+  "verification_commands": [],
+  "parsing_warnings": [],
+  "classification": {
+    "domain_tags": ["tests"],
+    "risk_level": "medium",
+    "refactor_depth": "atomic",
+    "affected_modules": ["src/unknown.py"],
+    "estimated_blast_radius": {"module_count": 1, "finding_count": 1},
+    "safety_signals": [],
+    "failed_check_signals": []
+  },
+  "route_proposal": {
+    "route_tier": "not-configured",
+    "harness": "codex",
+    "model": "model",
+    "reasoning_effort": "medium",
+    "sandbox": "workspace-write",
+    "timeout_seconds": 600,
+    "rationale": "This fixture is schema-valid but policy-invalid."
+  },
+  "prompt_requirements": {
+    "required_fragments": [],
+    "definition_of_done": ["Policy must not execute an unknown route directly."],
+    "triage_prompt_draft": "Unknown route fixture."
+  }
+}

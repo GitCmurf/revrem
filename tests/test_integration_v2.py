@@ -21,12 +21,12 @@ def test_loop_with_v2_triage_routing(fake_harness, tmp_path, monkeypatch):
     # review_clear scenario
     clear_dir = fake_harness / "review_clear"
     clear_dir.mkdir()
-    (clear_dir / "review.txt").write_text("Review: clear", encoding="utf-8")
+    (clear_dir / "review.txt").write_text("No actionable findings.\nREVIEW_STATUS: clear\n", encoding="utf-8")
 
     # findings scenario
     findings_dir = fake_harness / "fake-findings"
     findings_dir.mkdir()
-    (findings_dir / "review.txt").write_text("Findings: f1", encoding="utf-8")
+    (findings_dir / "review.txt").write_text("Finding: f1\nREVIEW_STATUS: findings\n", encoding="utf-8")
     # Triage v2 output
     triage_payload = {
         "confirmed_findings": [{"fingerprint": "f1", "summary": "s", "severity": "high", "affected_paths": ["a.py"], "rationale": "r"}],
@@ -121,13 +121,13 @@ model = "fake-clear"
     ])
 
     run_dir = tmp_path / "run1"
-    if exit_code not in (0, 2):
+    if exit_code != 2:
         artifact = run_dir / "triage-1.txt"
         if artifact.is_file():
             print(f"FAILURE ARTIFACT: {artifact.read_text()}")
         else:
             print("FAILURE ARTIFACT NOT FOUND")
-    assert exit_code in (0, 2)
+    assert exit_code == 2
 
     # 4. Verify artifacts
     run_dir = tmp_path / "run1"

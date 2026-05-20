@@ -109,9 +109,8 @@ def load_fragment(cwd: Path, name: str, trusted_repo: bool = False) -> str | Non
     # 1. Try package resources first (Built-in fragments)
     try:
         resource_path = files("code_review_loop.prompts").joinpath(f"fragments/{name}.txt")
-        if resource_path.is_file():
-            return resource_path.read_text(encoding="utf-8")
-    except (ImportError, OSError):
+        return resource_path.read_text(encoding="utf-8")
+    except (ImportError, FileNotFoundError, IsADirectoryError, OSError):
         pass
 
     # 2. Try repo-local only if trusted
@@ -119,7 +118,8 @@ def load_fragment(cwd: Path, name: str, trusted_repo: bool = False) -> str | Non
         return None
 
     # Reject path traversal
-    if "/" in name or "\\" in name or name == "..":
+    fragment_path = Path(name)
+    if fragment_path.is_absolute() or len(fragment_path.parts) != 1 or any(part == ".." for part in fragment_path.parts):
         return None
 
     candidates = [

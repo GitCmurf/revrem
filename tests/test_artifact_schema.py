@@ -16,6 +16,17 @@ def _load_schema(name: str) -> dict[str, object]:
     return json.loads((SCHEMA_DIR / name).read_text(encoding="utf-8"))
 
 
+def _validation_error_paths(errors: list[object]) -> list[object]:
+    paths: list[object] = []
+    for error in errors:
+        path = getattr(error, "path", None)
+        if path is None:
+            paths.append(str(error))
+        else:
+            paths.append(list(path))
+    return paths
+
+
 def test_schema_files_are_valid_draft_2020_12():
     for path in sorted(SCHEMA_DIR.glob("*.schema.json")):
         Draft202012Validator.check_schema(json.loads(path.read_text(encoding="utf-8")))
@@ -131,3 +142,103 @@ def test_event_schema_validates_event_envelope():
     )
     validator = Draft202012Validator(schema)
     assert list(validator.iter_errors({"extra": "missing version"}))
+
+
+def test_routing_schema_rejects_non_positive_timeouts():
+    schema = _load_schema("routing-v1.schema.json")
+    payload = {
+        "schema_version": "1.0",
+        "run_id": "run-1",
+        "iteration": 1,
+        "source_triage_artifact": "triage-1.json",
+        "policy_decision": {
+            "matched_rule_ids": [],
+            "decision": "proposal_accepted",
+            "rationale": "accepted",
+        },
+        "effective_route": {
+            "route_tier": "efficient",
+            "harness": "codex",
+            "model": "gpt-test",
+            "reasoning_effort": "low",
+            "sandbox": "workspace-write",
+            "timeout_seconds": 0,
+        },
+        "fallbacks_considered": [],
+        "prompt": {
+            "path": "remediation-1-prompt.txt",
+            "sha256": "a" * 64,
+            "bytes": 1,
+            "fragments": [],
+        },
+    }
+
+    errors = list(Draft202012Validator(schema).iter_errors(payload))
+
+    paths = _validation_error_paths(errors)
+    assert ["effective_route", "timeout_seconds"] in paths or any(
+        ".effective_route.timeout_seconds" in path for path in paths if isinstance(path, str)
+    )
+
+
+def test_routing_schema_accepts_minimal_reasoning_effort():
+    schema = _load_schema("routing-v1.schema.json")
+    payload = {
+        "schema_version": "1.0",
+        "run_id": "run-1",
+        "iteration": 1,
+        "source_triage_artifact": "triage-1.json",
+        "policy_decision": {
+            "matched_rule_ids": [],
+            "decision": "proposal_accepted",
+            "rationale": "accepted",
+        },
+        "effective_route": {
+            "route_tier": "efficient",
+            "harness": "codex",
+            "model": "gpt-test",
+            "reasoning_effort": "minimal",
+            "sandbox": "workspace-write",
+            "timeout_seconds": 1,
+        },
+        "model_proposal": {
+            "route_tier": "efficient",
+            "harness": "codex",
+            "model": "gpt-test",
+            "reasoning_effort": "minimal",
+            "sandbox": "workspace-write",
+            "timeout_seconds": 1,
+            "rationale": "accepted",
+        },
+        "fallbacks_considered": [],
+        "prompt": {
+            "path": "remediation-1-prompt.txt",
+            "sha256": "a" * 64,
+            "bytes": 1,
+            "fragments": [],
+        },
+    }
+
+    validate(payload, schema)
+
+
+def test_routing_outcome_schema_rejects_negative_metrics():
+    schema = _load_schema("routing-outcome-v1.schema.json")
+    payload = {
+        "schema_version": "1.0",
+        "run_id": "run-1",
+        "iteration": 1,
+        "source_routing_artifact": "routing-1.json",
+        "exit_code": 0,
+        "wall_time_seconds": -0.1,
+        "checks_passed": True,
+        "cost_usd": -1,
+        "tokens_consumed": -1,
+    }
+
+    errors = list(Draft202012Validator(schema).iter_errors(payload))
+
+    paths = _validation_error_paths(errors)
+    assert ["wall_time_seconds"] in paths or any(".wall_time_seconds" in path for path in paths if isinstance(path, str))
+    assert ["cost_usd"] in paths or any(".cost_usd" in path for path in paths if isinstance(path, str))
+    assert ["tokens_consumed"] in paths or any(".tokens_consumed" in path for path in paths if isinstance(path, str))

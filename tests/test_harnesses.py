@@ -202,3 +202,5 @@ def test_fake_harness_can_report_deterministic_token_charge():
         )
         is None
     )
+    assert harnesses.fake_harness_token_charge(["revrem-fake-harness", "review", "--scenario=cost_ceiling"]) == 10
+    assert harnesses.fake_harness_token_charge(["revrem-fake-harness", "review", "--model", "x"]) is None

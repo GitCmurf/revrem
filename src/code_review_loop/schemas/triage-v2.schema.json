@@ -258,6 +258,7 @@
         },
         "reasoning_effort": {
           "enum": [
+            "minimal",
             "low",
             "medium",
             "high"

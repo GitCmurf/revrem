@@ -457,6 +457,18 @@ FAKE_HARNESS_TOKEN_CHARGES = {
 
 
 def fake_harness_token_charge(args: list[str] | tuple[str, ...]) -> int | None:
-    if not is_fake_harness_command(args) or len(args) < 4:
+    if not is_fake_harness_command(args):
         return None
-    return FAKE_HARNESS_TOKEN_CHARGES.get(args[3])
+    scenario: str | None = None
+    for index, arg in enumerate(args):
+        if arg == "--scenario":
+            if index + 1 >= len(args):
+                return None
+            scenario = args[index + 1]
+            break
+        if arg.startswith("--scenario="):
+            scenario = arg.split("=", 1)[1]
+            break
+    if scenario is None:
+        return None
+    return FAKE_HARNESS_TOKEN_CHARGES.get(scenario)

@@ -108,7 +108,7 @@ def test_routing_artifact_and_events_validate_against_schemas(fake_harness, tmp_
     # Setup mock fixtures
     findings_dir = fake_harness / "fake-findings"
     findings_dir.mkdir()
-    (findings_dir / "review.txt").write_text("Findings: f1", encoding="utf-8")
+    (findings_dir / "review.txt").write_text("Finding: f1\nREVIEW_STATUS: findings\n", encoding="utf-8")
 
     triage_payload = {
         "confirmed_findings": [{"fingerprint": "f1", "summary": "s", "severity": "high", "affected_paths": ["a.py"], "rationale": "r"}],
@@ -182,7 +182,7 @@ reasoning_effort = "high"
 
     # Run loop
     exit_code = cli.main(["--profile", "test", "--review-model", "fake-findings", "--max-iterations", "1", "--skip-final-review", "--trusted-repo"])
-    assert exit_code in (0, 2)
+    assert exit_code == 2
 
     # 1. Validate routing artifact
     routing_path = tmp_path / ".revrem/runs"

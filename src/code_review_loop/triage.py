@@ -151,7 +151,12 @@ def format_structured_handoff(payload: dict[str, Any], original_review: str) -> 
 
 
 def _triage_schema(contract: str = "v1") -> dict[str, Any]:
-    resource = TRIAGE_V1_SCHEMA_RESOURCE if contract == "v1" else TRIAGE_V2_SCHEMA_RESOURCE
+    if contract == "v1":
+        resource = TRIAGE_V1_SCHEMA_RESOURCE
+    elif contract == "v2":
+        resource = TRIAGE_V2_SCHEMA_RESOURCE
+    else:
+        raise ValueError(f"invalid triage contract: {contract}")
     schema = json.loads(files("code_review_loop").joinpath(resource).read_text(encoding="utf-8"))
     if not isinstance(schema, dict):
         raise TriageValidationError("triage schema must be a JSON object")
