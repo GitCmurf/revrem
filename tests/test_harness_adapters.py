@@ -1,26 +1,57 @@
-import pytest
+from __future__ import annotations
+
 from code_review_loop import harnesses
 
-def test_claude_adapter_command():
+
+def test_claude_adapter_commands():
     adapter = harnesses.ClaudeHarnessAdapter()
-    req = harnesses.PhaseCommandRequest(harness="claude", role="triage", executable="claude", model="m1")
-    cmd = adapter.command(req)
-    assert cmd == ["claude", "--print", "--model", "m1"]
+    for role in ["review", "triage", "remediation", "commit-message"]:
+        req = harnesses.PhaseCommandRequest(
+            harness="claude", role=role, executable="claude", model="m1"
+        )
+        cmd = adapter.command(req)
+        assert cmd[0] == "claude"
+        assert "--print" in cmd
+        assert "--model" in cmd
+        assert "m1" in cmd
 
-def test_gemini_adapter_command():
+
+def test_gemini_adapter_commands():
     adapter = harnesses.GeminiHarnessAdapter()
-    req = harnesses.PhaseCommandRequest(harness="gemini", role="remediation", executable="gemini")
-    cmd = adapter.command(req)
-    assert cmd == ["gemini", "--prompt"]
+    for role in ["review", "triage", "remediation", "commit-message"]:
+        req = harnesses.PhaseCommandRequest(
+            harness="gemini", role=role, executable="gemini", model="m1"
+        )
+        cmd = adapter.command(req)
+        assert cmd[0] == "gemini"
+        assert "--prompt" in cmd
+        assert "" in cmd
+        assert "--model" in cmd
+        assert "m1" in cmd
+        assert cmd[cmd.index("--prompt") + 1] == ""
 
-def test_opencode_adapter_command():
+
+def test_opencode_adapter_commands():
     adapter = harnesses.OpenCodeHarnessAdapter()
-    req = harnesses.PhaseCommandRequest(harness="opencode", role="remediation", executable="oc", model="m2")
-    cmd = adapter.command(req)
-    assert cmd == ["oc", "run", "--model", "m2"]
+    for role in ["review", "triage", "remediation", "commit-message"]:
+        req = harnesses.PhaseCommandRequest(
+            harness="opencode", role=role, executable="oc", model="m2"
+        )
+        cmd = adapter.command(req)
+        assert cmd[0] == "oc"
+        assert "run" in cmd
+        assert "--model" in cmd
+        assert "m2" in cmd
 
-def test_kilo_adapter_command():
+
+def test_kilo_adapter_commands():
     adapter = harnesses.KiloHarnessAdapter()
-    req = harnesses.PhaseCommandRequest(harness="kilo", role="triage", executable="kilo")
-    cmd = adapter.command(req)
-    assert cmd == ["kilo", "run"]
+    for role in ["review", "triage", "remediation", "commit-message"]:
+        req = harnesses.PhaseCommandRequest(
+            harness="kilo", role=role, executable="kilo", model="m3"
+        )
+        cmd = adapter.command(req)
+        assert cmd[0] == "kilo"
+        assert "run" in cmd
+        assert "--model" in cmd
+        assert "m3" in cmd

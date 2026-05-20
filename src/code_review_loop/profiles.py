@@ -1115,7 +1115,6 @@ def validate_policy(profile: Profile) -> list[str]:
             if not issues_for_route:
                 # Found implemented and compatible route
                 resolved = True
-                break
 
             if not current_cfg.fallback:
                 break
@@ -1126,6 +1125,9 @@ def validate_policy(profile: Profile) -> list[str]:
                 )
                 break
 
+            if current_cfg.fallback not in triage.routes:
+                issues.append(f"route {name!r} has unknown fallback: {current_cfg.fallback!r}")
+                break
             chain.append(current_cfg.fallback)
             current_route_name = current_cfg.fallback
 
@@ -1138,8 +1140,7 @@ def validate_policy(profile: Profile) -> list[str]:
                     f"Issues for {current_route_name!r}: {'; '.join(policy.check_route_capabilities(triage.routes[current_route_name]))}"
                 )
 
-        if route.fallback and route.fallback not in triage.routes:
-            issues.append(f"route {name!r} has unknown fallback: {route.fallback!r}")
+
 
     # Check rules
     for i, rule in enumerate(triage.routing.rule):
@@ -1220,7 +1221,6 @@ def validate_profile(profile: Profile, *, require_implemented: bool) -> None:
                 issues_for_route = policy.check_route_capabilities(curr_cfg)
                 if not issues_for_route:
                     resolved = True
-                    break
 
                 if not curr_cfg.fallback or curr_cfg.fallback in chain:
                     break

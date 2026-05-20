@@ -104,18 +104,20 @@ class ClaudeHarnessAdapter(HarnessAdapter):
 
 class GeminiHarnessAdapter(HarnessAdapter):
     def command(self, request: PhaseCommandRequest) -> list[str]:
-        # Gemini uses -p/--prompt
-        command = [request.executable, "--prompt"]
+        # Gemini uses --prompt string; supplying "" as placeholder for stdin
+        command = [request.executable, "--prompt", ""]
         if request.model:
             command.extend(["--model", request.model])
         return command
 
 class OpenCodeHarnessAdapter(HarnessAdapter):
     def command(self, request: PhaseCommandRequest) -> list[str]:
-        # OpenCode uses run
+        # OpenCode uses run [message..]
         command = [request.executable, "run"]
         if request.model:
             command.extend(["--model", request.model])
+        # Prompt will be appended as message argument by runner if it supports it,
+        # or we just rely on RevRem runner logic.
         return command
 
 class KiloHarnessAdapter(HarnessAdapter):

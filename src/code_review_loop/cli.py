@@ -2188,7 +2188,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                         )
                         eff_sandbox = resolved_route.sandbox
                         eff_timeout = (
-                            resolved_route.timeout_seconds
+                            int(resolved_route.timeout_seconds)
                             if resolved_route.timeout_seconds is not None
                             else 300
                         )

@@ -1,5 +1,7 @@
-import pytest
+from __future__ import annotations
+
 from code_review_loop import profiles
+
 
 def test_validate_policy_handles_unknown_fallback_without_keyerror():
     profile = profiles.Profile(
@@ -8,9 +10,11 @@ def test_validate_policy_handles_unknown_fallback_without_keyerror():
             contract="v2",
             routing=profiles.TriageRoutingConfig(enabled=True, default_route="midtier"),
             routes={
-                "midtier": profiles.TriageRouteConfig(harness="codex", model="m1", fallback="missing")
-            }
-        )
+                "midtier": profiles.TriageRouteConfig(
+                    harness="codex", model="m1", fallback="missing"
+                )
+            },
+        ),
     )
     # This should not raise KeyError
     issues = profiles.validate_policy(profile)
