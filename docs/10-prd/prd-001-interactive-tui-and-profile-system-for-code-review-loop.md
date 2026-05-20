@@ -149,9 +149,9 @@ bounded nested Codex execution, deterministic artifacts, plain shell compatibili
 - Multi-user server deployment.
 - Secret storage or credential management.
 - Automatic pushes, branch creation, or remote repository mutation.
-- Implementing non-Codex execution backends; Claude, Gemini, opencode, and Kilo
-  remain reserved profile syntax until their headless adapters are implemented
-  and tested.
+- Secret storage or credential management for non-Codex execution backends.
+  Claude, Gemini, opencode, and KiloCode adapters may execute through installed
+  local CLIs, but RevRem does not store or manage their credentials.
 
 ---
 
@@ -367,10 +367,12 @@ Implementation must preserve these boundaries:
   quiet progress, terminal-title updates, and checkpoint commits.
 - Reasoning-effort selection is phase-local: review, triage, remediation, and
   commit-message drafting can each be overridden independently from the CLI.
-- Harness execution lives behind `src/code_review_loop/harnesses.py`. Codex is
-  the only implemented adapter; reserved adapters for Claude, Gemini, opencode,
-  and Kilo deliberately fail if execution is requested while remaining valid
-  management/config syntax.
+- Harness execution lives behind `src/code_review_loop/harnesses.py`. Codex,
+  Claude, Gemini, opencode, and KiloCode have implemented headless CLI adapter
+  surfaces. Each adapter must declare its role support, prompt-delivery mode,
+  sandbox/full-auto mapping, timeout/cancellation behavior, and model-selection
+  semantics through the harness capability boundary before profile routes can
+  rely on it.
 - Optional dependencies are imported inside feature entry points only.
 - Config writes are atomic and never mutate files outside the selected config path.
 - Errors produce actionable messages and still write summary artifacts where a loop has started.
@@ -424,12 +426,10 @@ Milestone status as of version 1.4:
   `--profile` for initial profile selection, launches dry-run previews, and
   shells profile lifecycle actions through `revrem config` so the CLI remains
   the authoritative execution engine.
-- Codex triage is implemented; non-Codex harnesses remain reserved syntax and
-  executable command planning fails fast when an unimplemented backend is
-  selected.
-- Commit-message harness configuration is part of the same reserved harness
-  boundary. `commit.harness = "codex"` is executable today; other registered
-  harness names are valid management syntax but fail fast on executable runs.
+- Triage and commit-message harness configuration are part of the shared
+  harness boundary. Codex, Claude, Gemini, opencode, and KiloCode can be
+  selected when their declared capabilities match the phase and route; reserved
+  names still fail fast on executable runs.
 
 ### Non-Functional Requirements
 

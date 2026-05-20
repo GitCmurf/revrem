@@ -47,6 +47,13 @@ PHASE_KEYS = ("harness", "model", "reasoning_effort", "timeout_seconds")
 TRIAGE_ON_INVALID_CHOICES = ("continue", "stop")
 TRIAGE_CONTRACT_CHOICES = ("v1", "v2")
 ROUTING_MODE_CHOICES = ("first-match",)
+TRIAGE_RISK_LEVEL_CHOICES = ("trivial", "low", "medium", "high", "critical")
+TRIAGE_REFACTOR_DEPTH_CHOICES = (
+    "atomic",
+    "localised",
+    "cross-module",
+    "architectural",
+)
 COMMIT_ON_HOOK_FAILURE_CHOICES = ("remediate", "stop", "no-verify")
 TRIAGE_KEYS = (
     "enabled",
@@ -449,13 +456,32 @@ def parse_triage_routing_rule(raw: dict[str, Any], field: str) -> TriageRoutingR
 
 def parse_triage_routing_rule_when(raw: dict[str, Any], field: str) -> TriageRoutingRuleWhen:
     _reject_unknown_keys(raw, ROUTING_WHEN_KEYS, field)
+    risk_level_min = _optional_str(raw.get("risk_level_min"), f"{field}.risk_level_min")
+    risk_level_max = _optional_str(raw.get("risk_level_max"), f"{field}.risk_level_max")
+    refactor_depth_any = tuple(
+        _str_list(raw.get("refactor_depth_any", []), f"{field}.refactor_depth_any")
+    )
+    if risk_level_min is not None and risk_level_min not in TRIAGE_RISK_LEVEL_CHOICES:
+        raise ValueError(
+            f"{field}.risk_level_min must be one of {', '.join(TRIAGE_RISK_LEVEL_CHOICES)}"
+        )
+    if risk_level_max is not None and risk_level_max not in TRIAGE_RISK_LEVEL_CHOICES:
+        raise ValueError(
+            f"{field}.risk_level_max must be one of {', '.join(TRIAGE_RISK_LEVEL_CHOICES)}"
+        )
+    invalid_refactor_depths = [
+        value for value in refactor_depth_any if value not in TRIAGE_REFACTOR_DEPTH_CHOICES
+    ]
+    if invalid_refactor_depths:
+        raise ValueError(
+            f"{field}.refactor_depth_any must contain only: "
+            f"{', '.join(TRIAGE_REFACTOR_DEPTH_CHOICES)}"
+        )
     return TriageRoutingRuleWhen(
         domain_tags_any=tuple(_str_list(raw.get("domain_tags_any", []), f"{field}.domain_tags_any")),
-        risk_level_min=_optional_str(raw.get("risk_level_min"), f"{field}.risk_level_min"),
-        risk_level_max=_optional_str(raw.get("risk_level_max"), f"{field}.risk_level_max"),
-        refactor_depth_any=tuple(
-            _str_list(raw.get("refactor_depth_any", []), f"{field}.refactor_depth_any")
-        ),
+        risk_level_min=risk_level_min,
+        risk_level_max=risk_level_max,
+        refactor_depth_any=refactor_depth_any,
         module_count_gte=_optional_int(raw.get("module_count_gte"), f"{field}.module_count_gte"),
         module_count_lt=_optional_int(raw.get("module_count_lt"), f"{field}.module_count_lt"),
         safety_signals_any=tuple(_str_list(raw.get("safety_signals_any", []), f"{field}.safety_signals_any")),
@@ -1100,7 +1126,7 @@ def validate_policy(profile: Profile) -> list[str]:
     from code_review_loop import policy
 
     # Check routes and their fallback chains
-    for name, route in triage.routes.items():
+    for name, _route in triage.routes.items():
         # Check implementation status through fallback chain
         chain = [name]
         current_route_name = name
@@ -1222,8 +1248,13 @@ def validate_profile(profile: Profile, *, require_implemented: bool) -> None:
                 if not issues_for_route:
                     resolved = True
 
-                if not curr_cfg.fallback or curr_cfg.fallback in chain:
+                if not curr_cfg.fallback:
                     break
+                if curr_cfg.fallback in chain:
+                    raise ValueError(
+                        f"triage.routes.{route_name} has circular fallback chain: "
+                        f"{' -> '.join(chain)} -> {curr_cfg.fallback}"
+                    )
                 chain.append(curr_cfg.fallback)
                 curr_name = curr_cfg.fallback
 

@@ -457,6 +457,66 @@ def test_review_model_is_top_level_codex_option(tmp_path):
     assert command == ["codex", "--model", "gpt-test", "review", "--base", "main"]
 
 
+def test_non_codex_review_receives_explicit_review_prompt(tmp_path):
+    calls: list[tuple[list[str], str | None]] = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text))
+        return MODULE.CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="claude",
+        review_model="sonnet",
+    )
+
+    MODULE.run_loop(config, runner)
+
+    assert calls[0][0] == [
+        "claude",
+        "--print",
+        "--permission-mode",
+        "auto",
+        "--model",
+        "sonnet",
+    ]
+    assert calls[0][1] is not None
+    assert "Review the current repository changes" in calls[0][1]
+    assert "REVIEW_STATUS: findings" in calls[0][1]
+
+
+def test_opencode_review_prompt_is_passed_as_message_argument(tmp_path):
+    calls: list[tuple[list[str], str | None]] = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text))
+        return MODULE.CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="opencode",
+        review_model="provider/model",
+    )
+
+    MODULE.run_loop(config, runner)
+
+    assert calls[0][0][:5] == [
+        "opencode",
+        "run",
+        "--dangerously-skip-permissions",
+        "--model",
+        "provider/model",
+    ]
+    assert "Review the current repository changes" in calls[0][0][-1]
+    assert calls[0][1] is None
+
+
 def test_model_overrides_and_reasoning_effort_are_passed_to_codex(tmp_path):
     config = MODULE.LoopConfig(
         base="main",

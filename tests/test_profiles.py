@@ -279,7 +279,7 @@ harness = "reserved"
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="only the codex backend is implemented"):
+    with pytest.raises(ValueError, match="command execution is not implemented"):
         profiles.resolve_defaults(cwd=cwd, home=home, require_implemented=True)
 
 
@@ -328,7 +328,7 @@ harness = "reserved"
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="only the codex backend is implemented"):
+    with pytest.raises(ValueError, match="command execution is not implemented"):
         profiles.resolve_profile("future", cwd=cwd, home=home, require_implemented=True)
 
 
@@ -506,7 +506,7 @@ harness = "reserved"
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="only the codex backend is implemented"):
+    with pytest.raises(ValueError, match="command execution is not implemented"):
         profiles.resolve_profile("future", cwd=cwd, home=home)
 
 
@@ -525,7 +525,7 @@ harness = "reserved"
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="only the codex backend is implemented"):
+    with pytest.raises(ValueError, match="command execution is not implemented"):
         profiles.resolve_profile("future", cwd=cwd, home=home)
 
 

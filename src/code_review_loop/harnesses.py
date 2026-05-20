@@ -95,35 +95,35 @@ class CodexHarnessAdapter(HarnessAdapter):
 
 class ClaudeHarnessAdapter(HarnessAdapter):
     def command(self, request: PhaseCommandRequest) -> list[str]:
-        # Claude uses -p/--print
-        # Assuming we pass prompt via stdin and use --print
         command = [request.executable, "--print"]
+        command.extend(_claude_permission_args(request))
         if request.model:
             command.extend(["--model", request.model])
         return command
+
 
 class GeminiHarnessAdapter(HarnessAdapter):
     def command(self, request: PhaseCommandRequest) -> list[str]:
-        # Gemini uses --prompt string; supplying "" as placeholder for stdin
         command = [request.executable, "--prompt", ""]
+        command.extend(_gemini_permission_args(request))
         if request.model:
             command.extend(["--model", request.model])
         return command
+
 
 class OpenCodeHarnessAdapter(HarnessAdapter):
     def command(self, request: PhaseCommandRequest) -> list[str]:
-        # OpenCode uses run [message..]
         command = [request.executable, "run"]
+        command.extend(_opencode_permission_args(request))
         if request.model:
             command.extend(["--model", request.model])
-        # Prompt will be appended as message argument by runner if it supports it,
-        # or we just rely on RevRem runner logic.
         return command
+
 
 class KiloHarnessAdapter(HarnessAdapter):
     def command(self, request: PhaseCommandRequest) -> list[str]:
-        # Kilo uses run
         command = [request.executable, "run"]
+        command.extend(_kilo_permission_args(request))
         if request.model:
             command.extend(["--model", request.model])
         return command
@@ -305,6 +305,34 @@ def _codex_config_args(reasoning_effort: str | None) -> list[str]:
     return ["-c", f'model_reasoning_effort="{reasoning_effort}"']
 
 
+def _claude_permission_args(request: PhaseCommandRequest) -> list[str]:
+    if request.sandbox == "read-only":
+        return ["--permission-mode", "plan"]
+    if request.full_auto:
+        return ["--permission-mode", "auto"]
+    return []
+
+
+def _gemini_permission_args(request: PhaseCommandRequest) -> list[str]:
+    if request.sandbox == "read-only":
+        return ["--approval-mode", "plan"]
+    if request.full_auto:
+        return ["--approval-mode", "auto_edit"]
+    return []
+
+
+def _opencode_permission_args(request: PhaseCommandRequest) -> list[str]:
+    if request.full_auto and request.sandbox == "workspace-write":
+        return ["--dangerously-skip-permissions"]
+    return []
+
+
+def _kilo_permission_args(request: PhaseCommandRequest) -> list[str]:
+    if request.full_auto and request.sandbox == "workspace-write":
+        return ["--auto"]
+    return []
+
+
 def harness_registry() -> dict[str, HarnessSpec]:
     registry = dict(HARNESS_REGISTRY)
     if fake_harness_enabled():
@@ -322,7 +350,7 @@ def require_implemented_harness(name: str, *, field: str = "harness") -> None:
     spec = harness_registry().get(name)
     if spec and not spec.implemented:
         raise ValueError(
-            f"{field}={name!r} is valid profile syntax, but only the codex backend is implemented"
+            f"{field}={name!r} is valid profile syntax, but command execution is not implemented"
         )
 
 
@@ -332,6 +360,22 @@ def build_phase_command(request: PhaseCommandRequest) -> list[str]:
     if adapter is None:
         raise ValueError(f"unknown harness: {request.harness}")
     return adapter.command(request)
+
+
+ARGV_PROMPT_HARNESSES = frozenset({"opencode", "kilo"})
+
+
+def prepare_prompt_invocation(
+    harness: str,
+    command: list[str],
+    prompt: str | None,
+) -> tuple[list[str], str | None]:
+    """Adapt prompt delivery to each harness' non-interactive CLI contract."""
+    if prompt is None:
+        return command, None
+    if harness in ARGV_PROMPT_HARNESSES:
+        return [*command, prompt], None
+    return command, prompt
 
 
 def harness_capabilities_payload(name: str) -> dict[str, Any]:

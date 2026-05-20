@@ -62,8 +62,21 @@
         "rationale": {
           "type": "string"
         },
+        "reasoning_effort": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
         "route_tier": {
           "type": "string"
+        },
+        "sandbox": {
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "type": "integer"
         }
       },
       "required": [

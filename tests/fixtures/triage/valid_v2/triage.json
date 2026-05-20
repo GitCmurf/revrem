@@ -18,33 +18,33 @@
   "verification_commands": ["pytest tests/test_artifacts.py"],
   "parsing_warnings": [],
   "classification": {
-    "domain_tags": ["security", "auth"],
-    "risk_level": "high",
+    "domain_tags": ["artifact-schema", "artifact-output"],
+    "risk_level": "medium",
     "refactor_depth": "localised",
-    "affected_modules": ["src/auth.py"],
+    "affected_modules": ["src/code_review_loop/artifacts.py"],
     "estimated_blast_radius": {
       "module_count": 1,
       "finding_count": 1
     },
-    "safety_signals": ["sensitive-domain:auth"],
-    "failed_check_signals": ["pytest:tests/test_auth.py"]
+    "safety_signals": ["artifact-contract"],
+    "failed_check_signals": ["pytest:tests/test_artifacts.py"]
   },
   "route_proposal": {
-    "route_tier": "security-specialist",
+    "route_tier": "midtier",
     "harness": "codex",
-    "model": "gpt-4-security",
-    "reasoning_effort": "high",
+    "model": "gpt-5.4-mini",
+    "reasoning_effort": "medium",
     "sandbox": "workspace-write",
-    "timeout_seconds": 1800,
-    "rationale": "The confirmed finding affects authentication code and a failing auth test."
+    "timeout_seconds": 900,
+    "rationale": "The confirmed finding is a local artifact schema contract fix with a targeted artifact test."
   },
   "prompt_requirements": {
-    "required_fragments": ["engineering-principles", "security-checklist"],
+    "required_fragments": ["engineering-principles"],
     "definition_of_done": [
-      "Fix the confirmed finding without weakening authentication checks.",
+      "Fix the artifact schema summary contract.",
       "Add or update regression coverage.",
       "Run the configured checks."
     ],
-    "triage_prompt_draft": "Please implement the fix for the auth issue."
+    "triage_prompt_draft": "Please implement the artifact schema summary fix."
   }
 }

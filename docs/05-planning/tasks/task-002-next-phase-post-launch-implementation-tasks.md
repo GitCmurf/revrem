@@ -1472,8 +1472,10 @@ fixtures for replay).
    Codex `summary.json` and fake `summary.json` are structurally
    equivalent (same shape, same fields, value differences only
    where harness identity differs).
-6. **No real backends in this PR.** Claude/Gemini/opencode/Kilo/
-   OpenRouter/HTTP remain explicitly deferred.
+6. **Real local CLI adapters are contract-backed.** Claude/Gemini/opencode/Kilo
+   routes execute only through the harness adapter boundary, with explicit
+   prompt delivery, model flag handling, sandbox/full-auto mapping, and tests.
+   OpenRouter/HTTP remain outside this task.
 
 **Tests:**
 

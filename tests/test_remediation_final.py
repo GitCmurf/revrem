@@ -193,6 +193,12 @@ reasoning_effort = "high"
     routing_data = json.loads(routing_file.read_text())
     routing_schema = json.loads(files("code_review_loop").joinpath("schemas/routing-v1.schema.json").read_text(encoding="utf-8"))
     validate(routing_data, routing_schema)
+    assert routing_data["model_proposal"]["model"] == "frontier-model"
+    assert routing_data["model_proposal"]["reasoning_effort"] == "high"
+    assert routing_data["model_proposal"]["sandbox"] == "workspace-write"
+    assert routing_data["model_proposal"]["timeout_seconds"] == 60
+    assert routing_data["policy_decision"]["decision"] == "policy_override"
+    assert "model" in routing_data["policy_decision"]["rationale"]
 
     # 2. Validate routing outcome artifact
     outcome_file = run_dir / "routing-outcome-1.json"
@@ -219,3 +225,96 @@ reasoning_effort = "high"
 
     assert has_decision
     assert has_outcome
+
+
+def test_routed_remediation_prompt_preserves_pending_check_failures(tmp_path, monkeypatch):
+    monkeypatch.setenv(harnesses.FAKE_HARNESS_ENV, "1")
+    review_outputs = iter(
+        [
+            "Initial finding.\nREVIEW_STATUS: findings\n",
+            "Review clear but checks failed previously.\nREVIEW_STATUS: clear\n",
+        ]
+    )
+    check_outputs = iter(
+        [
+            (1, "FAILED tests/test_example.py::test_previous\n"),
+            (0, "passed\n"),
+        ]
+    )
+    triage_payload = {
+        "confirmed_findings": [
+            {
+                "fingerprint": "f1",
+                "summary": "s",
+                "severity": "high",
+                "affected_paths": ["a.py"],
+                "rationale": "r",
+            }
+        ],
+        "rejected_findings": [],
+        "needs_more_info": [],
+        "implementation_order": ["f1"],
+        "verification_commands": [],
+        "parsing_warnings": [],
+        "classification": {
+            "domain_tags": ["tests"],
+            "risk_level": "low",
+            "refactor_depth": "atomic",
+            "affected_modules": ["a.py"],
+            "estimated_blast_radius": {"module_count": 1, "finding_count": 1},
+            "safety_signals": [],
+            "failed_check_signals": [],
+        },
+        "prompt_requirements": {
+            "required_fragments": [],
+            "definition_of_done": ["checks pass"],
+            "triage_prompt_draft": "Fix the finding.",
+        },
+    }
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[0] == "revrem-fake-harness" and args[1] == "review":
+            return cli.CommandResult(list(args), 0, stdout=next(review_outputs))
+        if args[0] == "revrem-fake-harness" and args[1] == "triage":
+            return cli.CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
+        if args[0] == "revrem-fake-harness" and args[1] == "remediation":
+            return cli.CommandResult(list(args), 0, stdout="remediated\n")
+        if args[0] == "pytest":
+            returncode, stdout = next(check_outputs)
+            return cli.CommandResult(list(args), returncode, stdout=stdout)
+        raise AssertionError(f"unexpected command: {args}")
+
+    profile = profiles.Profile(
+        name="test",
+        triage=profiles.TriageConfig(
+            contract="v2",
+            routing=profiles.TriageRoutingConfig(enabled=True, default_route="midtier"),
+            routes={
+                "midtier": profiles.TriageRouteConfig(harness="fake", model="fake-clear")
+            },
+        ),
+    )
+    config = cli.LoopConfig(
+        base="main",
+        max_iterations=2,
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="fake",
+        review_model="review_findings",
+        triage_enabled=True,
+        triage_contract="v2",
+        triage_harness="fake",
+        triage_model="triage_valid",
+        remediation_harness="fake",
+        check_commands=("pytest tests/",),
+        final_review=False,
+        profile_v2=profile,
+    )
+
+    summary = cli.run_loop(config, runner)
+
+    assert summary["final_status"] == "unknown"
+    prompt = (tmp_path / "artifacts" / "remediation-2-prompt.txt").read_text(
+        encoding="utf-8"
+    )
+    assert "FAILED tests/test_example.py::test_previous" in prompt

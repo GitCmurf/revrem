@@ -117,15 +117,21 @@ def resolve_routing(
                 effective_tier = model_proposal_tier
 
     # 3. Resolve with fallback loop for implementation status
-    fallbacks_considered = []
+    fallbacks_considered: list[str] = []
+    visited_tiers: set[str] = set()
     current_tier = effective_tier
 
     while True:
+        if current_tier in visited_tiers:
+            cycle = " -> ".join((*fallbacks_considered, current_tier))
+            raise RuntimeError(f"Circular fallback detected in route chain: {cycle}.")
+        visited_tiers.add(current_tier)
+
         if current_tier not in profile.triage.routes:
             if routing_config.strict_on_unavailable_route:
-                 raise ValueError(f"Route tier {current_tier!r} not defined in profile.")
+                raise ValueError(f"Route tier {current_tier!r} not defined in profile.")
             if current_tier == routing_config.default_route:
-                 raise ValueError(f"Default route tier {current_tier!r} not defined in profile.")
+                raise ValueError(f"Default route tier {current_tier!r} not defined in profile.")
             fallbacks_considered.append(current_tier)
             current_tier = routing_config.default_route
             continue
@@ -155,9 +161,6 @@ def resolve_routing(
                 f"Route {current_tier!r} (harness {route_cfg.harness!r}) is unavailable or lacks "
                 f"required capabilities: {'; '.join(issues)}. No explicit fallback is configured."
             )
-
-        if route_cfg.fallback == current_tier:
-            raise RuntimeError(f"Circular fallback detected for route {current_tier!r}.")
 
         fallbacks_considered.append(current_tier)
         current_tier = route_cfg.fallback
@@ -205,7 +208,7 @@ def _match_rule(rule: TriageRoutingRule, context: RoutingContext) -> bool:
     return not cond.failed_checks_any or any(c in cond.failed_checks_any for c in context.failed_checks)
 
 
-RISK_ORDER = {"info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
+RISK_ORDER = {"trivial": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
 
 
 def _risk_gte(actual: str, minimum: str) -> bool:

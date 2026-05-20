@@ -97,6 +97,14 @@ likely false positives, implementation order, and verification commands.
 Review and check output:
 """
 
+DEFAULT_REVIEW_PROMPT = """Review the current repository changes against the configured base branch.
+
+Prioritize correctness, security, behavioral regressions, missing tests, and
+maintainability risks. Return findings first, with file and line references
+where possible. End with `REVIEW_STATUS: findings` if remediation is required,
+or `REVIEW_STATUS: clear` if no actionable findings remain.
+"""
+
 DEFAULT_COMMIT_MESSAGE_PROMPT = """Write one concise Conventional Commit subject for the staged RevRem remediation changes.
 
 Rules:
@@ -1141,6 +1149,17 @@ def run_codex_review(
 ) -> tuple[str, CommandResult]:
     display_label = display_label or artifact_label
     command = build_review_command(config)
+    review_prompt = None
+    if config.review_harness not in {"codex", "fake"}:
+        review_prompt = (
+            f"{DEFAULT_REVIEW_PROMPT}\n\nBase branch: {config.base}\n"
+            f"Working directory: {config.cwd}\n"
+        )
+        command, review_prompt = harnesses.prepare_prompt_invocation(
+            config.review_harness,
+            command,
+            review_prompt,
+        )
     set_phase_terminal_title(config, "review", display_label)
     ensure_model_budget(config, phase="review", iteration=display_label)
     progress_event(config, "review", display_label, "start", shlex.join(command))
@@ -1152,7 +1171,7 @@ def run_codex_review(
             write_artifact(artifact_path, preflight_error)
             progress_event(config, "review", display_label, "failed", "invalid base")
             raise RuntimeError(f"codex review failed for {artifact_label}; see {artifact_path}")
-        result = runner(command, config.cwd, None, phase_timeout_seconds(config, config.review_timeout_seconds))
+        result = runner(command, config.cwd, review_prompt, phase_timeout_seconds(config, config.review_timeout_seconds))
     combined = _combined_output(result)
     artifact_path = config.artifact_dir / f"{artifact_label}.txt"
     write_artifact(artifact_path, combined)
@@ -1295,6 +1314,9 @@ def run_remediation(
         else None
     )
     command = build_remediation_command(config, last_message_path, resolved_route=resolved_route)
+    remediation_harness = (
+        resolved_route.harness if resolved_route else config.remediation_harness
+    )
 
     if resolved_route:
         prompt = remediation_input
@@ -1302,6 +1324,11 @@ def run_remediation(
     else:
         prompt = f"{DEFAULT_REMEDIATION_PROMPT}\n{trim_for_prompt(remediation_input, config.max_remediation_input_chars)}"
         timeout = config.remediation_timeout_seconds
+    command, prompt_input = harnesses.prepare_prompt_invocation(
+        remediation_harness,
+        command,
+        prompt,
+    )
 
     set_phase_terminal_title(config, "remediate", str(iteration))
     ensure_model_budget(config, phase="remediate", iteration=iteration)
@@ -1309,7 +1336,7 @@ def run_remediation(
     if config.dry_run:
         result = CommandResult(command, 0, stdout="DRY_RUN remediation skipped\n")
     else:
-        result = runner(command, config.cwd, prompt, phase_timeout_seconds(config, timeout))
+        result = runner(command, config.cwd, prompt_input, phase_timeout_seconds(config, timeout))
     write_artifact(config.artifact_dir / f"remediation-{iteration}.txt", _combined_output(result))
     record_model_charge(config, result, phase="remediate", iteration=iteration)
     if result.returncode != 0:
@@ -1333,12 +1360,17 @@ def run_triage(
     command = build_triage_command(config)
     prompt_root = config.triage_prompt or triage.load_prompt(contract=config.triage_contract)
     prompt = f"{prompt_root}\n{trim_for_prompt(review_output, config.max_remediation_input_chars)}"
+    command, prompt_input = harnesses.prepare_prompt_invocation(
+        config.triage_harness,
+        command,
+        prompt,
+    )
     ensure_model_budget(config, phase="triage", iteration=iteration)
     progress_event(config, "triage", str(iteration), "start", shlex.join(command))
     if config.dry_run:
         result = CommandResult(command, 0, stdout="DRY_RUN triage skipped\n")
     else:
-        result = runner(command, config.cwd, prompt, phase_timeout_seconds(config, config.triage_timeout_seconds))
+        result = runner(command, config.cwd, prompt_input, phase_timeout_seconds(config, config.triage_timeout_seconds))
     triage_artifact = config.artifact_dir / f"triage-{iteration}.txt"
     write_artifact(triage_artifact, _combined_output(result))
     record_model_charge(config, result, phase="triage", iteration=iteration)
@@ -1730,8 +1762,13 @@ def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iterat
     command = build_commit_message_command(config)
     prompt_root = config.commit_message_prompt or DEFAULT_COMMIT_MESSAGE_PROMPT
     prompt = f"{prompt_root}\n{trim_for_prompt(context, config.max_remediation_input_chars)}"
+    command, prompt_input = harnesses.prepare_prompt_invocation(
+        config.commit_message_harness,
+        command,
+        prompt,
+    )
     ensure_model_budget(config, phase="commit-message", iteration=iteration)
-    result = runner(command, config.cwd, prompt, phase_timeout_seconds(config, config.timeout_seconds))
+    result = runner(command, config.cwd, prompt_input, phase_timeout_seconds(config, config.timeout_seconds))
     write_artifact(config.artifact_dir / f"commit-{iteration}-message-draft.txt", _combined_output(result))
     record_model_charge(config, result, phase="commit-message", iteration=iteration)
     if result.returncode != 0:
@@ -2171,7 +2208,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                             config.cwd,
                             triage_payload,
                             resolved_route,
-                            last_review_output,
+                            remediation_input,
                             max_chars=config.max_remediation_input_chars,
                             trusted_repo=config.trusted_repo,
                         )
@@ -2204,6 +2241,41 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                         if eff_reasoning:
                             effective_route["reasoning_effort"] = eff_reasoning
 
+                        proposal_present = bool(triage_payload.get("route_proposal"))
+                        proposal_matches_effective = False
+                        proposal_overrides: list[str] = []
+                        if proposal_present:
+                            p = triage_payload["route_proposal"]
+                            proposed_fields = {
+                                k: p[k]
+                                for k in (
+                                    "route_tier",
+                                    "harness",
+                                    "model",
+                                    "reasoning_effort",
+                                    "sandbox",
+                                    "timeout_seconds",
+                                    "rationale",
+                                )
+                                if k in p
+                            }
+                            routing_payload_model_proposal = proposed_fields
+                            comparable_keys = (
+                                "route_tier",
+                                "harness",
+                                "model",
+                                "reasoning_effort",
+                                "sandbox",
+                                "timeout_seconds",
+                            )
+                            proposal_overrides = [
+                                key
+                                for key in comparable_keys
+                                if key in proposed_fields
+                                and effective_route.get(key) != proposed_fields[key]
+                            ]
+                            proposal_matches_effective = not proposal_overrides
+
                         # Determine policy decision and rationale
                         if resolved_route.fallback_applied:
                             decision = "fallback_applied"
@@ -2213,6 +2285,19 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                                 else "unknown"
                             )
                             rationale = f"Original route {original!r} fell back to {resolved_route.fallback_applied!r}."
+                        elif proposal_present and proposal_matches_effective:
+                            decision = "proposal_accepted"
+                            rationale = "Model route proposal accepted by policy."
+                        elif proposal_present:
+                            decision = "policy_override"
+                            if proposal_overrides:
+                                fields = ", ".join(proposal_overrides)
+                                rationale = (
+                                    "Policy selected the proposed tier but overrode "
+                                    f"proposal field(s): {fields}."
+                                )
+                            else:
+                                rationale = "Policy overrode the model route proposal."
                         elif resolved_route.rule_id == "default":
                             decision = "default_route_applied"
                             rationale = "No model route proposal or rule match; applied default route."
@@ -2249,28 +2334,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                             },
                         }
                         if triage_payload.get("route_proposal"):
-                            p = triage_payload["route_proposal"]
-                            # Only include keys that are actually present to avoid fabricating data
-                            routing_payload["model_proposal"] = {
-                                k: v
-                                for k, v in p.items()
-                                if k in ("route_tier", "harness", "model", "rationale")
-                            }
-                            if (
-                                resolved_route.route_tier == p.get("route_tier")
-                                and not resolved_route.fallback_applied
-                            ):
-                                # Redefine policy_decision to satisfy mypy
-                                routing_payload["policy_decision"] = {
-                                    "decision": "proposal_accepted",
-                                    "matched_rule_ids": (
-                                        [resolved_route.rule_id]
-                                        if resolved_route.rule_id
-                                        and resolved_route.rule_id != "default"
-                                        else []
-                                    ),
-                                    "rationale": "Model route proposal accepted by policy.",
-                                }
+                            routing_payload["model_proposal"] = routing_payload_model_proposal
 
                         # Validate routing artifact against schema
                         try:

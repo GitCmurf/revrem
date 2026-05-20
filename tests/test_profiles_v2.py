@@ -71,6 +71,74 @@ then.route = "missing"
         profiles.load_profile_file(path)
 
 
+def test_parse_triage_routing_rule_rejects_unknown_risk_and_refactor_values(tmp_path):
+    path = tmp_path / "profiles.toml"
+
+    path.write_text(
+        """
+[profiles.test.triage]
+contract = "v2"
+routing.enabled = true
+
+[[profiles.test.triage.routing.rule]]
+id = "bad-risk"
+when.risk_level_min = "urgent"
+then.route = "midtier"
+
+[profiles.test.triage.routes.midtier]
+harness = "codex"
+""",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="risk_level_min must be one of"):
+        profiles.load_profile_file(path)
+
+    path.write_text(
+        """
+[profiles.test.triage]
+contract = "v2"
+routing.enabled = true
+
+[[profiles.test.triage.routing.rule]]
+id = "bad-refactor"
+when.refactor_depth_any = ["wide"]
+then.route = "midtier"
+
+[profiles.test.triage.routes.midtier]
+harness = "codex"
+""",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="refactor_depth_any must contain only"):
+        profiles.load_profile_file(path)
+
+
+def test_validate_profile_rejects_circular_route_fallback_chain():
+    profile = profiles.Profile(
+        name="test",
+        triage=profiles.TriageConfig(
+            contract="v2",
+            routing=profiles.TriageRoutingConfig(
+                enabled=True,
+                default_route="frontier",
+            ),
+            routes={
+                "frontier": profiles.TriageRouteConfig(
+                    harness="reserved",
+                    fallback="midtier",
+                ),
+                "midtier": profiles.TriageRouteConfig(
+                    harness="reserved",
+                    fallback="frontier",
+                ),
+            },
+        ),
+    )
+
+    with pytest.raises(ValueError, match="circular fallback chain"):
+        profiles.validate_profile(profile, require_implemented=True)
+
+
 def test_to_toml_preserves_routing(tmp_path):
     profile = profiles.Profile(
         name="test",

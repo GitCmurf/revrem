@@ -33,9 +33,9 @@ def test_parse_triage_payload_v2_validates_fixture_against_schema():
     )
     assert payload["schema_version"] == "2.0"
     assert payload["prompt_version"] == "triage-v2"
-    assert payload["classification"]["risk_level"] == "high"
-    assert payload["route_proposal"]["route_tier"] == "security-specialist"
-    assert payload["prompt_requirements"]["required_fragments"] == ["engineering-principles", "security-checklist"]
+    assert payload["classification"]["risk_level"] == "medium"
+    assert payload["route_proposal"]["route_tier"] == "midtier"
+    assert payload["prompt_requirements"]["required_fragments"] == ["engineering-principles"]
 
 
 def test_parse_triage_payload_v2_fails_on_v1_contract():

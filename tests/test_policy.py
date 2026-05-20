@@ -122,3 +122,71 @@ def test_resolve_routing_model_deescalation_allowed(base_profile):
     # Default route allows de-escalation by default (allow_model_deescalation=True)
     resolved = policy.resolve_routing(profile, context, model_proposal_tier="efficient")
     assert resolved.route_tier == "efficient"
+
+
+def test_resolve_routing_rejects_multi_hop_fallback_cycle():
+    profile = profiles.Profile(
+        name="test",
+        triage=profiles.TriageConfig(
+            contract="v2",
+            routing=profiles.TriageRoutingConfig(
+                enabled=True,
+                default_route="frontier",
+            ),
+            routes={
+                "frontier": profiles.TriageRouteConfig(
+                    harness="reserved",
+                    fallback="midtier",
+                ),
+                "midtier": profiles.TriageRouteConfig(
+                    harness="reserved",
+                    fallback="frontier",
+                ),
+            },
+        ),
+    )
+    context = policy.RoutingContext(
+        domain_tags=(),
+        risk_level="low",
+        refactor_depth="atomic",
+        module_count=1,
+        failed_checks=(),
+        safety_signals=(),
+    )
+
+    with pytest.raises(RuntimeError, match="Circular fallback detected"):
+        policy.resolve_routing(profile, context)
+
+
+def test_trivial_risk_does_not_match_low_minimum(base_profile):
+    rule = profiles.TriageRoutingRule(
+        id="low-risk",
+        when=profiles.TriageRoutingRuleWhen(risk_level_min="low"),
+        then=profiles.TriageRoutingRuleThen(route="frontier"),
+    )
+    profile = profiles.Profile(
+        name="test",
+        triage=profiles.TriageConfig(
+            contract="v2",
+            routing=profiles.TriageRoutingConfig(
+                enabled=True,
+                default_route="midtier",
+                rule=(rule,),
+            ),
+            routes={
+                "midtier": profiles.TriageRouteConfig(harness="codex", model="m1"),
+                "frontier": profiles.TriageRouteConfig(harness="codex", model="m2"),
+            },
+        ),
+    )
+    context = policy.RoutingContext(
+        domain_tags=(),
+        risk_level="trivial",
+        refactor_depth="atomic",
+        module_count=1,
+        failed_checks=(),
+        safety_signals=(),
+    )
+
+    resolved = policy.resolve_routing(profile, context)
+    assert resolved.route_tier == "midtier"

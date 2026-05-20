@@ -46,7 +46,7 @@ backends. The schema is published as
 - supported model identifiers;
 - `contract_version`.
 
-Codex advertises the implemented local behavior today. It supports every loop
+Codex advertises the primary implemented local behavior. It supports every loop
 phase, timeout/cancellation via RevRem's subprocess wrapper, and no token/USD
 cost reporting.
 
@@ -57,8 +57,15 @@ The fake command replays text fixtures from `tests/fixtures/harnesses` (or from
 `REVREM_FAKE_HARNESS_FIXTURE_DIR`) and never shells out. Named fake cost
 fixtures report deterministic token charges through `CommandResult.tokens` so
 budget enforcement can be tested through the same loop path as real harness
-charges. Real secondary backends such as Claude, Gemini, opencode, Kilo,
-OpenRouter, and HTTP remain reserved and non-executable.
+charges.
+
+Claude, Gemini, opencode, and KiloCode are implemented as local headless CLI
+adapters behind the same boundary. Claude and Gemini receive prompts through
+stdin. opencode and KiloCode receive prompts through their documented `run
+[message..]` argument surface. Their capability metadata must stay aligned with
+the supported role flags, sandbox/full-auto option mapping, model flag behavior,
+and RevRem-owned timeout/cancellation wrapper behavior. OpenRouter and HTTP
+remain reserved and non-executable.
 
 ## Consequences
 
