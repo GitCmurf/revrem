@@ -314,6 +314,39 @@ harness = "not-real"
         profiles.load_profile_file(path)
 
 
+def test_profile_parses_harness_executable_overrides(tmp_path):
+    path = tmp_path / "profiles.toml"
+    path.write_text(
+        """
+[profiles.multi.runtime.harness_executables]
+claude = "/opt/claude"
+gemini = "gemini-dev"
+""",
+        encoding="utf-8",
+    )
+
+    profile = profiles.load_profile_file(path).profiles["multi"]
+
+    assert profile.runtime.harness_executables == {
+        "claude": "/opt/claude",
+        "gemini": "gemini-dev",
+    }
+
+
+def test_profile_rejects_unknown_harness_executable_override(tmp_path):
+    path = tmp_path / "profiles.toml"
+    path.write_text(
+        """
+[profiles.bad.runtime.harness_executables]
+not-real = "/opt/not-real"
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="runtime.harness_executables.not-real"):
+        profiles.load_profile_file(path)
+
+
 def test_resolved_profile_rejects_unimplemented_harness(tmp_path):
     home = tmp_path / "home"
     cwd = tmp_path / "repo"

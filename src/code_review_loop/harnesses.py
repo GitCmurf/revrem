@@ -1,9 +1,4 @@
-"""Harness metadata for review/remediation backends.
-
-The loop only executes Codex today, but profiles should not bake Codex-specific
-shape into user configuration. This registry keeps validation and future command
-construction decoupled.
-"""
+"""Harness metadata and command adapters for review/remediation backends."""
 
 from __future__ import annotations
 

@@ -190,3 +190,74 @@ def test_trivial_risk_does_not_match_low_minimum(base_profile):
 
     resolved = policy.resolve_routing(profile, context)
     assert resolved.route_tier == "midtier"
+
+
+def test_resolve_routing_uses_explicit_fallback_when_route_exceeds_wall_budget():
+    profile = profiles.Profile(
+        name="test",
+        triage=profiles.TriageConfig(
+            contract="v2",
+            routing=profiles.TriageRoutingConfig(
+                enabled=True,
+                default_route="frontier",
+            ),
+            routes={
+                "frontier": profiles.TriageRouteConfig(
+                    harness="codex",
+                    model="m1",
+                    timeout_seconds=1800,
+                    fallback="efficient",
+                ),
+                "efficient": profiles.TriageRouteConfig(
+                    harness="codex",
+                    model="m2",
+                    timeout_seconds=120,
+                ),
+            },
+        ),
+    )
+    context = policy.RoutingContext(
+        domain_tags=(),
+        risk_level="low",
+        refactor_depth="atomic",
+        module_count=1,
+        failed_checks=(),
+        safety_signals=(),
+    )
+
+    resolved = policy.resolve_routing(profile, context, max_timeout_seconds=300)
+
+    assert resolved.route_tier == "efficient"
+    assert resolved.fallback_applied == "efficient"
+    assert resolved.fallbacks_considered == ("frontier",)
+
+
+def test_resolve_routing_fails_when_budget_exceeded_route_has_no_fallback():
+    profile = profiles.Profile(
+        name="test",
+        triage=profiles.TriageConfig(
+            contract="v2",
+            routing=profiles.TriageRoutingConfig(
+                enabled=True,
+                default_route="frontier",
+            ),
+            routes={
+                "frontier": profiles.TriageRouteConfig(
+                    harness="codex",
+                    model="m1",
+                    timeout_seconds=1800,
+                ),
+            },
+        ),
+    )
+    context = policy.RoutingContext(
+        domain_tags=(),
+        risk_level="low",
+        refactor_depth="atomic",
+        module_count=1,
+        failed_checks=(),
+        safety_signals=(),
+    )
+
+    with pytest.raises(RuntimeError, match="remaining wall budget"):
+        policy.resolve_routing(profile, context, max_timeout_seconds=300)

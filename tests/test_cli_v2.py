@@ -39,6 +39,42 @@ routing.default_route = "missing"
     assert cli.main(["policy", "lint", "--profile", "test"]) == 1
 
 
+def test_policy_review_summarizes_routing_outcomes(tmp_path, capsys):
+    routing = {
+        "iteration": 1,
+        "policy_decision": {
+            "decision": "policy_override",
+            "rationale": "ok",
+            "matched_rule_ids": ["r1"],
+        },
+        "effective_route": {
+            "route_tier": "frontier",
+            "harness": "claude",
+            "model": "sonnet",
+            "reasoning_effort": "high",
+            "sandbox": "workspace-write",
+            "timeout_seconds": 600,
+        },
+        "fallbacks_considered": [],
+        "prompt": {"path": "p.txt", "sha256": "abc", "bytes": 100, "fragments": []},
+    }
+    outcome = {
+        "exit_code": 0,
+        "wall_time_seconds": 10.0,
+        "checks_passed": True,
+    }
+    (tmp_path / "routing-1.json").write_text(json.dumps(routing), encoding="utf-8")
+    (tmp_path / "routing-outcome-1.json").write_text(json.dumps(outcome), encoding="utf-8")
+
+    assert cli.main(["policy", "review", "--artifact-dir", str(tmp_path)]) == 0
+
+    output = capsys.readouterr().out
+    assert "decision=policy_override" in output
+    assert "route=frontier" in output
+    assert "harness=claude" in output
+    assert "checks_passed=True" in output
+
+
 def test_triage_explain_json(tmp_path):
     routing = {
         "policy_decision": {"decision": "proposal_accepted", "rationale": "ok", "matched_rule_ids": []},

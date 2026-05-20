@@ -105,6 +105,7 @@ RUNTIME_KEYS = (
     "full_auto",
     "max_remediation_input_chars",
     "terminal_excerpt_chars",
+    "harness_executables",
 )
 BUDGET_KEYS = ("max_wall_seconds", "max_tokens", "max_usd", "soft_warn_fraction")
 SUPPRESSION_SCOPE_CHOICES = ("repo", "user")
@@ -211,6 +212,7 @@ class OutputConfig:
 @dataclass(frozen=True)
 class RuntimeConfig:
     codex_bin: str = "codex"
+    harness_executables: dict[str, str] = field(default_factory=dict)
     exec_sandbox: str = "workspace-write"
     exec_color: str = "never"
     exec_json: bool = False
@@ -577,8 +579,15 @@ def parse_output(raw: dict[str, Any]) -> OutputConfig:
 
 def parse_runtime(raw: dict[str, Any]) -> RuntimeConfig:
     _reject_unknown_keys(raw, RUNTIME_KEYS, "runtime")
+    harness_executables = _str_map(
+        raw.get("harness_executables", {}),
+        "runtime.harness_executables",
+    )
+    for harness_name in harness_executables:
+        validate_harness_name(harness_name, field=f"runtime.harness_executables.{harness_name}")
     return RuntimeConfig(
         codex_bin=_str(raw.get("codex_bin", "codex"), "runtime.codex_bin"),
+        harness_executables=harness_executables,
         exec_sandbox=_str(raw.get("exec_sandbox", "workspace-write"), "runtime.exec_sandbox"),
         exec_color=_str(raw.get("exec_color", "never"), "runtime.exec_color"),
         exec_json=_bool(raw.get("exec_json", False), "runtime.exec_json"),
@@ -1383,6 +1392,16 @@ def _table(value: Any, field: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"{field} must be a table")
     return value
+
+
+def _str_map(value: Any, field: str) -> dict[str, str]:
+    table = _table(value, field)
+    result: dict[str, str] = {}
+    for key, item in table.items():
+        if not isinstance(key, str):
+            raise ValueError(f"{field} keys must be strings")
+        result[key] = _str(item, f"{field}.{key}")
+    return result
 
 
 def _str(value: Any, field: str) -> str:

@@ -357,6 +357,21 @@ def render_compact(events: list[Event]) -> str:
 
 
 def _compact_detail(event: Event) -> str:
+    if event.kind == "routing_decision":
+        effective_route = event.payload.get("effective_route")
+        policy_decision = event.payload.get("policy_decision")
+        if isinstance(effective_route, dict) and isinstance(policy_decision, dict):
+            decision = policy_decision.get("decision")
+            route_tier = effective_route.get("route_tier")
+            harness = effective_route.get("harness")
+            if all(isinstance(value, str) for value in (decision, route_tier, harness)):
+                return f"{decision} {route_tier} via {harness}"
+    if event.kind == "routing_outcome":
+        checks_passed = event.payload.get("checks_passed")
+        exit_code = event.payload.get("exit_code")
+        if isinstance(checks_passed, bool) and isinstance(exit_code, int):
+            status = "checks_passed" if checks_passed else "checks_failed"
+            return f"{status} exit={exit_code}"
     for key in ("status", "reason", "message", "summary", "path"):
         value = event.payload.get(key)
         if isinstance(value, str):

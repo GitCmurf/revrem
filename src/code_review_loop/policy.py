@@ -72,10 +72,28 @@ def check_route_capabilities(route_cfg: TriageRouteConfig) -> list[str]:
     return issues
 
 
+def check_route_budget(
+    route_cfg: TriageRouteConfig,
+    *,
+    max_timeout_seconds: float | None = None,
+) -> list[str]:
+    if (
+        max_timeout_seconds is not None
+        and route_cfg.timeout_seconds is not None
+        and route_cfg.timeout_seconds > max_timeout_seconds
+    ):
+        return [
+            f"Route timeout {route_cfg.timeout_seconds:g}s exceeds remaining wall budget "
+            f"{max_timeout_seconds:g}s."
+        ]
+    return []
+
+
 def resolve_routing(
     profile: Profile,
     context: RoutingContext,
     model_proposal_tier: str | None = None,
+    max_timeout_seconds: float | None = None,
 ) -> ResolvedRoute:
     routing_config = profile.triage.routing
 
@@ -139,7 +157,10 @@ def resolve_routing(
         route_cfg = profile.triage.routes[current_tier]
 
         # Item 6 & 9: Deep capability validation
-        issues = check_route_capabilities(route_cfg)
+        issues = [
+            *check_route_capabilities(route_cfg),
+            *check_route_budget(route_cfg, max_timeout_seconds=max_timeout_seconds),
+        ]
         if not issues:
             return ResolvedRoute(
                 route_tier=current_tier,

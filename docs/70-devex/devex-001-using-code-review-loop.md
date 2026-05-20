@@ -468,18 +468,30 @@ When setup preflight blocks execution, RevRem writes `diagnostics.json`,
 `summary.json`, and `events.jsonl` under the run artifact directory and exits
 with code `4` without invoking review or remediation.
 
-These management commands validate reserved harness names and triage syntax
-without requiring the backend to be executable yet; only `revrem --profile ...`
-rejects unimplemented harnesses before the loop starts.
+These management commands validate harness names, triage syntax, routing rules,
+and route capability chains without invoking a model. Executable runs still
+fail before remediation when the selected route names an unimplemented or
+incapable harness without an explicit valid fallback.
 
 The `--format` flag is accepted both before and after the subcommand, so the
 global form `revrem config --format json doctor --profile final-pr` works too.
 
-Profiles reserve `review.harness`, `triage.harness`,
-`remediation.harness`, and `commit.harness` for future headless adapters such
-as `claude`, `gemini`, `opencode`, and `kilo`. The current executable loop
-supports only Codex; using another harness in a resolved run fails before
-starting subprocesses.
+Profiles use `review.harness`, `triage.harness`, `remediation.harness`, and
+`commit.harness` to select headless adapters. Codex, Claude, Gemini, opencode,
+and KiloCode are executable when their installed CLIs satisfy the declared
+capabilities. Override non-default executable names from the profile:
+
+```toml
+[profiles.multi.runtime.harness_executables]
+claude = "/opt/claude/bin/claude"
+gemini = "gemini-dev"
+```
+
+or for a single run:
+
+```bash
+revrem --profile multi --harness-bin claude=/opt/claude/bin/claude
+```
 
 Harnesses expose a schema-validated capability payload that records supported
 phases, sandbox modes, timeout/cancellation support, structured output, and
@@ -498,9 +510,9 @@ single invocation should remain dry, pass `--no-commit-after-remediation` to
 override that profile setting. The commit step is separate from the remediation
 model: checks must pass first, RevRem skips the commit if there are no staged
 changes, and RevRem runs `git commit` itself. The optional `commit.harness`
-field selects the commit-message drafting adapter; only `codex` is executable
-today. The optional `commit.message_model` or `--commit-message-model` controls
-only the read-only Codex call that drafts the commit subject. If no explicit
+field selects the commit-message drafting adapter. The optional
+`commit.message_model` or `--commit-message-model` controls only the read-only
+model call that drafts the commit subject. If no explicit
 CLI value is supplied, the profile value is used; the built-in profile default
 is `gpt-5.3-codex-spark`. With the default
 prompt, RevRem normalizes the final subject to Conventional Commit syntax and
@@ -543,9 +555,9 @@ revrem --profile final-pr \
   --commit-reasoning-effort minimal
 ```
 
-Optional Codex triage can run between review and remediation. It uses
-`codex exec` with `--sandbox read-only`, writes `triage-N.txt` beside the review
-and remediation artifacts, and passes a concise handoff plus the original
+Optional triage can run between review and remediation. It uses the configured
+triage harness in read-only mode, writes `triage-N.txt` beside the review and
+remediation artifacts, and passes a concise handoff plus the original
 review/check context into the remediation prompt. This is intended for cheaper
 interpretation models that can convert review prose into ordered action items
 without editing the workspace:
@@ -567,6 +579,103 @@ the remediation prompt. Invalid structured triage writes `diagnostics.json` with
 `revrem.triage.invalid_output`. The default `triage.on_invalid = "continue"`
 fails safe by ignoring invalid triage guidance; set `triage.on_invalid = "stop"`
 when a workflow should halt on malformed triage output.
+
+For routing, use `triage.contract = "v2"` plus
+`triage.routing.enabled = true`. RevRem validates `triage-v2`, resolves the
+effective route through profile policy, writes `routing-N.json`,
+`remediation-N-prompt.txt`, and `routing-outcome-N.json`, and emits
+`routing_decision` / `routing_outcome` events into `events.jsonl`. Prompt and
+routing artifacts are also listed under `summary.artifact_paths.prompts` and
+`summary.artifact_paths.routing` for auditability; treat prompt artifacts as
+sensitive transcript-like local data.
+
+Codex-only routing profile:
+
+```toml
+[profiles.secure.triage]
+enabled = true
+contract = "v2"
+harness = "codex"
+model = "gpt-5.4-mini"
+
+[profiles.secure.triage.routing]
+enabled = true
+default_route = "midtier"
+
+[[profiles.secure.triage.routing.rule]]
+id = "security-frontier"
+when.domain_tags_any = ["security", "auth", "secrets", "pii"]
+then.route = "frontier"
+then.allow_model_deescalation = false
+then.prompt_fragments = ["engineering-principles"]
+
+[profiles.secure.triage.routes.frontier]
+harness = "codex"
+model = "gpt-5.5"
+reasoning_effort = "high"
+timeout_seconds = 1800
+sandbox = "workspace-write"
+
+[profiles.secure.triage.routes.midtier]
+harness = "codex"
+model = "gpt-5.4-mini"
+reasoning_effort = "medium"
+timeout_seconds = 900
+sandbox = "workspace-write"
+```
+
+Multi-harness routing profile:
+
+```toml
+[profiles.multi.runtime.harness_executables]
+claude = "claude"
+gemini = "gemini"
+opencode = "opencode"
+kilo = "kilo"
+
+[profiles.multi.triage]
+enabled = true
+contract = "v2"
+harness = "gemini"
+model = "gemini-3-flash"
+
+[profiles.multi.triage.routing]
+enabled = true
+default_route = "midtier"
+
+[[profiles.multi.triage.routing.rule]]
+id = "sensitive-frontier"
+when.safety_signals_any = ["sensitive-domain:auth", "sensitive-domain:secrets"]
+then.route = "frontier"
+then.allow_model_deescalation = false
+
+[profiles.multi.triage.routes.frontier]
+harness = "claude"
+model = "sonnet"
+reasoning_effort = "high"
+timeout_seconds = 1800
+sandbox = "workspace-write"
+fallback = "midtier"
+
+[profiles.multi.triage.routes.midtier]
+harness = "gemini"
+model = "gemini-3-flash"
+reasoning_effort = "medium"
+timeout_seconds = 900
+sandbox = "workspace-write"
+fallback = "efficient"
+
+[profiles.multi.triage.routes.efficient]
+harness = "kilo"
+model = "provider/model"
+timeout_seconds = 300
+sandbox = "workspace-write"
+```
+
+Use `revrem policy lint --profile multi` to verify rule and fallback chains,
+`revrem triage explain <run-dir>` to inspect one routing decision, and
+`revrem policy review --artifact-dir <run-dir>` to summarize route outcomes
+without printing full prompts.
 
 Structured triage is also the suppression-aware path. Add an explicit
 suppression when a fingerprinted finding is accepted, tracked elsewhere, or
@@ -642,10 +751,11 @@ profile, `c` clones the selected profile, `x` exports, `i` imports from the
 path field, `delete` deletes through `revrem config delete --yes`, and `q`
 quits.
 
-Codex is currently the only executable review/remediation harness. The profile
-schema reserves `claude`, `gemini`, `opencode`, and `kilo` for future headless
-adapters; config management accepts those values, but executable runs fail fast
-until a backend adapter is implemented.
+Codex, Claude, Gemini, opencode, and KiloCode are executable
+review/remediation harnesses through the shared adapter boundary. Their CLIs
+must be installed and discoverable through `PATH`,
+`runtime.harness_executables`, or `--harness-bin`. Reserved harness names
+remain valid management syntax but fail fast on executable runs.
 
 ### Exit codes
 

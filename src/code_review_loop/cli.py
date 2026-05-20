@@ -134,6 +134,7 @@ class LoopConfig:
     base: str = "main"
     max_iterations: int = 1
     codex_bin: str = "codex"
+    harness_executables: dict[str, str] = field(default_factory=dict)
     cwd: Path = field(default_factory=Path.cwd)
     artifact_dir: Path = field(default_factory=Path.cwd)
     preflight_enabled: bool = False
@@ -968,6 +969,8 @@ def strip_finding_priority(finding: str) -> tuple[str, str]:
 
 
 def _resolve_executable(harness: str, config: LoopConfig) -> str:
+    if harness in config.harness_executables:
+        return config.harness_executables[harness]
     if harness == "codex":
         return config.codex_bin
     registry = harnesses.harness_registry()
@@ -1095,6 +1098,16 @@ def ensure_model_budget(config: LoopConfig, *, phase: str, iteration: int | str)
                 },
             )
         raise
+
+
+def remaining_wall_budget_seconds(config: LoopConfig) -> float | None:
+    if (
+        config.budget_state is None
+        or config.budget_config.max_wall_seconds is None
+    ):
+        return None
+    elapsed = budgets.wall_elapsed_seconds(config.budget_state)
+    return max(0.0, config.budget_config.max_wall_seconds - elapsed)
 
 
 def record_model_charge(
@@ -1884,8 +1897,16 @@ def add_artifact_paths(summary: dict[str, object], config: LoopConfig) -> None:
         "remediations": [
             str(path)
             for path in files
-            if path.name.startswith("remediation-") and "last-message" not in path.name
+            if path.name.startswith("remediation-")
+            and "last-message" not in path.name
+            and not path.name.endswith("-prompt.txt")
         ],
+        "prompts": [
+            str(path)
+            for path in files
+            if path.name.startswith("remediation-") and path.name.endswith("-prompt.txt")
+        ],
+        "routing": [str(path) for path in files if path.name.startswith("routing-")],
         "triage": [str(path) for path in files if path.name.startswith("triage-")],
         "commits": [str(path) for path in files if path.name.startswith("commit-")],
         "last_messages": [
@@ -2194,6 +2215,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                             config.profile_v2,
                             routing_context,
                             model_proposal_tier=model_proposal.get("route_tier"),
+                            max_timeout_seconds=remaining_wall_budget_seconds(config),
                         )
                         progress_event(
                             config,
@@ -2633,6 +2655,7 @@ def resume_config_payload(config: LoopConfig) -> dict[str, object]:
         "base": config.base,
         "max_iterations": config.max_iterations,
         "codex_bin": config.codex_bin,
+        "harness_executables": dict(config.harness_executables),
         "review_harness": config.review_harness,
         "remediation_harness": config.remediation_harness,
         "triage_harness": config.triage_harness,
@@ -2906,6 +2929,13 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         help="Maximum remediation passes before stopping. Default: 2.",
     )
     parser.add_argument("--codex-bin", default=None, help="Codex executable path/name.")
+    parser.add_argument(
+        "--harness-bin",
+        action="append",
+        default=[],
+        metavar="HARNESS=EXECUTABLE",
+        help="Override an executable for a named harness, for example claude=/opt/bin/claude.",
+    )
     parser.add_argument("--model", default=None, help="Optional model passed to both Codex review and remediation.")
     parser.add_argument("--review-model", default=None, help="Optional model override for codex review only.")
     parser.add_argument(
@@ -3458,6 +3488,21 @@ def resolve_timeout_seconds(value: float) -> float | None:
     return value
 
 
+def parse_harness_bin_overrides(values: Sequence[str]) -> dict[str, str]:
+    overrides: dict[str, str] = {}
+    for value in values:
+        if "=" not in value:
+            raise ValueError("--harness-bin must use HARNESS=EXECUTABLE syntax")
+        harness, executable = value.split("=", 1)
+        harness = harness.strip()
+        executable = executable.strip()
+        if not harness or not executable:
+            raise ValueError("--harness-bin must use non-empty HARNESS=EXECUTABLE values")
+        harnesses.validate_harness_name(harness, field="--harness-bin")
+        overrides[harness] = executable
+    return overrides
+
+
 def resolve_profile_timeout_seconds(value: float | None) -> float | None:
     if value is None:
         return DEFAULT_TIMEOUT_SECONDS
@@ -3542,10 +3587,15 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         soft_warn_fraction=pick(args.soft_warn_fraction, profile.budgets.soft_warn_fraction, 0.8),
     )
     budgets.validate_config(budget_config)
+    harness_executables = {
+        **profile.runtime.harness_executables,
+        **parse_harness_bin_overrides(args.harness_bin),
+    }
     config = LoopConfig(
         base=pick(args.base, profile.pipeline.base, "main"),
         max_iterations=pick(args.max_iterations, profile.pipeline.max_iterations, 2),
         codex_bin=pick(args.codex_bin, profile.runtime.codex_bin, "codex"),
+        harness_executables=harness_executables,
         cwd=cwd,
         artifact_dir=artifact_dir,
         preflight_enabled=True,
@@ -3874,7 +3924,7 @@ def suppress_main(argv: Sequence[str]) -> int:
                     expires = f" expires={entry.expires_at}" if entry.expires_at else ""
                     print(f"{entry.fingerprint} {entry.severity_at_suppression} {entry.summary}{expires}")
             return 0
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
     raise AssertionError(f"unhandled suppress command: {args.command}")
@@ -4375,6 +4425,7 @@ def resume_loop_config(summary: dict[str, object], *, run_dir: Path) -> LoopConf
         base=_resume_str(resume_config, "base", "main"),
         max_iterations=_resume_int(resume_config, "max_iterations", 1),
         codex_bin=_resume_str(resume_config, "codex_bin", "codex"),
+        harness_executables=_resume_str_dict(resume_config, "harness_executables"),
         cwd=Path.cwd(),
         artifact_dir=run_dir,
         review_harness=_resume_str(resume_config, "review_harness", "codex"),
@@ -4468,6 +4519,17 @@ def _resume_str_tuple(payload: dict[object, object], key: str) -> tuple[str, ...
     if not isinstance(value, list):
         return ()
     return tuple(item for item in value if isinstance(item, str))
+
+
+def _resume_str_dict(payload: dict[object, object], key: str) -> dict[str, str]:
+    value = payload.get(key)
+    if not isinstance(value, dict):
+        return {}
+    return {
+        str(k): v
+        for k, v in value.items()
+        if isinstance(k, str) and isinstance(v, str)
+    }
 
 
 _T = TypeVar("_T")
@@ -4658,6 +4720,9 @@ def parse_policy_args(argv: Sequence[str]) -> argparse.Namespace:
     lint = subparsers.add_parser("lint", help="Lint routing rules and routes in a profile.")
     lint.add_argument("--profile", required=True)
     lint.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)
+    review = subparsers.add_parser("review", help="Summarize routing outcomes from run artifacts.")
+    review.add_argument("--artifact-dir", required=True)
+    review.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)
     return parser.parse_args(argv)
 
 
@@ -4666,6 +4731,8 @@ def policy_main(argv: Sequence[str]) -> int:
     try:
         if args.command == "lint":
             return policy_lint(args.profile, output_format=getattr(args, "format", None))
+        if args.command == "review":
+            return policy_review(Path(args.artifact_dir), output_format=getattr(args, "format", None))
     except (OSError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
@@ -4689,6 +4756,62 @@ def policy_lint(profile_name: str, output_format: str | None = None) -> int:
         else:
             print(f"Policy lint FAILED for profile {profile_name}: {exc}", file=sys.stderr)
         return 1
+
+
+def policy_review(artifact_dir: Path, output_format: str | None = None) -> int:
+    if not artifact_dir.is_dir():
+        raise ValueError(f"artifact directory not found: {artifact_dir}")
+
+    decisions: list[dict[str, Any]] = []
+    for routing_path in sorted(artifact_dir.glob("routing-*.json")):
+        payload = json.loads(routing_path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            continue
+        outcome_path = artifact_dir / routing_path.name.replace("routing-", "routing-outcome-", 1)
+        outcome: dict[str, Any] = {}
+        if outcome_path.is_file():
+            outcome_payload = json.loads(outcome_path.read_text(encoding="utf-8"))
+            if isinstance(outcome_payload, dict):
+                outcome = outcome_payload
+        effective_route = payload.get("effective_route")
+        policy_decision = payload.get("policy_decision")
+        prompt = payload.get("prompt")
+        if not isinstance(effective_route, dict) or not isinstance(policy_decision, dict):
+            continue
+        decisions.append(
+            {
+                "iteration": payload.get("iteration"),
+                "decision": policy_decision.get("decision"),
+                "route_tier": effective_route.get("route_tier"),
+                "harness": effective_route.get("harness"),
+                "model": effective_route.get("model"),
+                "fallbacks_considered": payload.get("fallbacks_considered", []),
+                "prompt_sha256": prompt.get("sha256") if isinstance(prompt, dict) else None,
+                "checks_passed": outcome.get("checks_passed"),
+                "exit_code": outcome.get("exit_code"),
+            }
+        )
+
+    summary = {
+        "artifact_dir": str(artifact_dir),
+        "routing_decisions": decisions,
+        "decision_count": len(decisions),
+    }
+    if output_format == "json":
+        print(json.dumps(summary, indent=2, sort_keys=True))
+        return 0
+    if not decisions:
+        print(f"No routing decisions found in {artifact_dir}.")
+        return 0
+    print(f"Routing policy review for {artifact_dir}:")
+    for decision in decisions:
+        print(
+            "iteration={iteration} decision={decision} route={route_tier} "
+            "harness={harness} model={model} checks_passed={checks_passed}".format(
+                **decision
+            )
+        )
+    return 0
 
 
 def parse_triage_args(argv: Sequence[str]) -> argparse.Namespace:

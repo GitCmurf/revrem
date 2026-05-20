@@ -283,13 +283,13 @@ compact text remains the default for scripts and logs.
 Compact, verbose, and Rich progress timestamps use local terminal wall time for
 watched runs. Persisted run-history timestamps remain UTC ISO-8601 values.
 
-Optional Codex triage is implemented as a read-only interpretative phase between
+Optional triage is implemented as a read-only interpretative phase between
 review and remediation. It exists to turn review prose and check failures into a
-small action plan that a cheaper remediation model can execute. The triage
-artifact is stored as `triage-N.txt`; remediation receives both the triage
-handoff and the original review/check context. Non-Codex triage harness names
-remain valid configuration syntax for management commands but are rejected on
-the executable path until their adapters exist.
+small action plan that a cheaper remediation model can execute. With
+`triage.contract = "v2"` and routing enabled, RevRem also records the effective
+route and exact remediation prompt before invoking the selected remediation
+harness. Codex, Claude, Gemini, opencode, and KiloCode can be selected when
+their adapter capabilities satisfy the phase and route.
 
 Optional commit-after-remediation is implemented as a separate post-check phase.
 Remediation agents do not own git history. After checks pass, RevRem may stage
@@ -510,7 +510,8 @@ Deliverables:
   `$XDG_DATA_HOME` when present.
 - `revrem history list` for recent run inspection.
 - `--no-run-history` opt-out for sensitive one-off local runs.
-- Optional read-only Codex triage phase with `triage-N.txt` artifacts.
+- Optional read-only triage phase with `triage-N.txt`, `triage-N.json`, and
+  routing artifacts when the v2 routing contract is enabled.
 - Renderer interface.
 - Compact renderer preserving current output.
 - Rich renderer behind optional extra.
@@ -649,8 +650,8 @@ revrem history --format json list --limit 5
 - Rich and Textual remain optional extras.
 - TOML writes use a small purpose-built renderer for the limited profile schema
   instead of adding a default runtime dependency.
-- Harness names are validated through an early registry and command-planning
-  adapter boundary; only the Codex adapter is executable today.
+- Harness names are validated through an adapter boundary that supports Codex,
+  Claude, Gemini, opencode, and KiloCode command planning.
 - Run history is append-only JSONL to avoid read-modify-write corruption and to
   keep TUI recent-run views simple.
 - Full in-TUI loop execution is deferred to `REVREM-PLAN-002`; the current TUI

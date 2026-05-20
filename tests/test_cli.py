@@ -517,6 +517,39 @@ def test_opencode_review_prompt_is_passed_as_message_argument(tmp_path):
     assert calls[0][1] is None
 
 
+def test_harness_bin_override_controls_non_codex_executable(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.multi.review]
+harness = "claude"
+model = "sonnet"
+""",
+        encoding="utf-8",
+    )
+    captured: list[MODULE.LoopConfig] = []
+
+    def fake_run_loop(config):
+        captured.append(config)
+        return {"final_status": "clear", "stopped_reason": "review_clear"}
+
+    monkeypatch.setattr(MODULE, "run_loop", fake_run_loop)
+
+    exit_code = MODULE.main(
+        [
+            "--profile",
+            "multi",
+            "--harness-bin",
+            "claude=/tmp/claude-dev",
+            "--dry-run",
+        ]
+    )
+
+    assert exit_code == 0
+    assert captured[0].harness_executables == {"claude": "/tmp/claude-dev"}
+    assert MODULE.build_review_command(captured[0])[0] == "/tmp/claude-dev"
+
+
 def test_model_overrides_and_reasoning_effort_are_passed_to_codex(tmp_path):
     config = MODULE.LoopConfig(
         base="main",

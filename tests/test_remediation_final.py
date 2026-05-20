@@ -199,6 +199,10 @@ reasoning_effort = "high"
     assert routing_data["model_proposal"]["timeout_seconds"] == 60
     assert routing_data["policy_decision"]["decision"] == "policy_override"
     assert "model" in routing_data["policy_decision"]["rationale"]
+    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    assert any(path.endswith("remediation-1-prompt.txt") for path in summary["artifact_paths"]["prompts"])
+    assert any(path.endswith("routing-1.json") for path in summary["artifact_paths"]["routing"])
+    assert any(path.endswith("routing-outcome-1.json") for path in summary["artifact_paths"]["routing"])
 
     # 2. Validate routing outcome artifact
     outcome_file = run_dir / "routing-outcome-1.json"
