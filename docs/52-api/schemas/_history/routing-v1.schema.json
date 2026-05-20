@@ -29,7 +29,7 @@
           "type": "string"
         },
         "timeout_seconds": {
-          "type": "integer"
+          "type": "number"
         }
       },
       "required": [

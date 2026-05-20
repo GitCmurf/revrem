@@ -1130,10 +1130,13 @@ def validate_policy(profile: Profile) -> list[str]:
             current_route_name = current_cfg.fallback
 
         if not resolved:
-            issues.append(
-                f"route {name!r} lacks an implemented and compatible fallback chain. "
-                f"Issues for {current_route_name!r}: {'; '.join(policy.check_route_capabilities(triage.routes[current_route_name]))}"
-            )
+            if current_route_name not in triage.routes:
+                issues.append(f"route {name!r} has unknown fallback: {current_route_name!r}")
+            else:
+                issues.append(
+                    f"route {name!r} lacks an implemented and compatible fallback chain. "
+                    f"Issues for {current_route_name!r}: {'; '.join(policy.check_route_capabilities(triage.routes[current_route_name]))}"
+                )
 
         if route.fallback and route.fallback not in triage.routes:
             issues.append(f"route {name!r} has unknown fallback: {route.fallback!r}")
@@ -1225,6 +1228,8 @@ def validate_profile(profile: Profile, *, require_implemented: bool) -> None:
                 curr_name = curr_cfg.fallback
 
             if not resolved:
+                if curr_name not in profile.triage.routes:
+                    raise ValueError(f"triage.routes.{route_name} has unknown fallback: {curr_name!r}")
                 issues = policy.check_route_capabilities(profile.triage.routes[curr_name])
                 raise ValueError(
                     f"triage.routes.{route_name} lacks an implemented and compatible fallback chain. "

@@ -6,7 +6,7 @@ Return a single JSON object that matches the RevRem (Review-Remediation system) 
 Use these top-level keys exactly:
 `confirmed_findings`, `rejected_findings`, `needs_more_info`,
 `implementation_order`, `verification_commands`, `parsing_warnings`,
-`classification`, `route_proposal`, `prompt_requirements`.
+`classification`, `prompt_requirements`, and optionally `route_proposal`.
 
 RevRem stamps `schema_version`, `run_id`, `source_review_artifact`, and
 `prompt_version` after parsing, but if you include `prompt_version` it must be

@@ -33,8 +33,8 @@ def test_fallback_behavior_for_unimplemented_harness():
             contract="v2",
             routing=profiles.TriageRoutingConfig(enabled=True, default_route="midtier"),
             routes={
-                "midtier": profiles.TriageRouteConfig(harness="codex", model="m1"),
-                "frontier": profiles.TriageRouteConfig(harness="reserved", model="m2", fallback="midtier")
+                "midtier": profiles.TriageRouteConfig(harness="codex", model="fake-clear"),
+                "frontier": profiles.TriageRouteConfig(harness="reserved", model="fake-clear", fallback="midtier")
             }
         )
     )
@@ -144,7 +144,7 @@ def test_routing_artifact_and_events_validate_against_schemas(fake_harness, tmp_
     (findings_dir / "triage.txt").write_text(json.dumps(triage_payload), encoding="utf-8")
 
     # Provide remediation fixture for frontier-model
-    frontier_dir = fake_harness / "frontier-model"
+    frontier_dir = fake_harness / "fake-clear"
     frontier_dir.mkdir()
     (frontier_dir / "remediation.txt").write_text("Remediation: done", encoding="utf-8")
 
@@ -174,7 +174,7 @@ default_route = "m"
 harness = "fake"
 [profiles.test.triage.routes.frontier]
 harness = "fake"
-model = "frontier-model"
+model = "fake-clear"
 reasoning_effort = "high"
 """
     (tmp_path / ".revrem.toml").write_text(toml, encoding="utf-8")

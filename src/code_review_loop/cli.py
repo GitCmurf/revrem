@@ -1010,7 +1010,6 @@ def build_remediation_command(
             color=config.exec_color,
             full_auto=config.full_auto,
             json_output=config.exec_json,
-            output_last_message=config.output_last_message,
             output_last_message_path=output_last_message,
         )
     )
@@ -2189,7 +2188,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                         )
                         eff_sandbox = resolved_route.sandbox
                         eff_timeout = (
-                            int(resolved_route.timeout_seconds)
+                            resolved_route.timeout_seconds
                             if resolved_route.timeout_seconds is not None
                             else 300
                         )

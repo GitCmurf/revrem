@@ -63,6 +63,11 @@ def check_route_capabilities(route_cfg: TriageRouteConfig) -> list[str]:
         issues.append(
             f"Harness {route_cfg.harness!r} does not support execution timeouts."
         )
+    if caps.supported_models and route_cfg.model and route_cfg.model not in caps.supported_models:
+        issues.append(
+            f"Harness {route_cfg.harness!r} does not support model {route_cfg.model!r}. "
+            f"Supported: {', '.join(caps.supported_models)}"
+        )
 
     return issues
 
@@ -138,6 +143,7 @@ def resolve_routing(
                 timeout_seconds=route_cfg.timeout_seconds,
                 sandbox=route_cfg.sandbox,
                 prompt_fragments=prompt_fragments,
+                allow_model_deescalation=allow_deescalation,
                 rule_id=matched_rule.id if matched_rule else "default",
                 fallbacks_considered=tuple(fallbacks_considered),
                 fallback_applied=current_tier if fallbacks_considered else None,

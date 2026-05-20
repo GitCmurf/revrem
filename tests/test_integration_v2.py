@@ -96,18 +96,18 @@ then.route = "frontier"
 
 [profiles.test.triage.routes.midtier]
 harness = "fake"
-model = "midtier-model"
+model = "fake-clear"
 
 [profiles.test.triage.routes.frontier]
 harness = "fake"
-model = "frontier-model"
+model = "fake-clear"
 """
     (tmp_path / ".revrem.toml").write_text(toml, encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
     # 3. Run loop
     # We need to provide fixtures for frontier-model remediation too
-    frontier_dir = fake_harness / "frontier-model"
+    frontier_dir = fake_harness / "fake-clear"
     frontier_dir.mkdir()
     (frontier_dir / "remediation.txt").write_text("Remediation: frontier done", encoding="utf-8")
 

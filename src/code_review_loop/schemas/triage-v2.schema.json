@@ -314,7 +314,6 @@
     "verification_commands",
     "parsing_warnings",
     "classification",
-    "route_proposal",
     "prompt_requirements"
   ],
   "title": "RevRem triage v2",

@@ -58,7 +58,7 @@ def test_loop_generates_schema_compliant_routing_artifact(fake_harness, tmp_path
     (findings_dir / "triage.txt").write_text(json.dumps(triage_payload), encoding="utf-8")
 
     # Provide remediation fixture for frontier-model
-    frontier_dir = fake_harness / "frontier-model"
+    frontier_dir = fake_harness / "fake-clear"
     frontier_dir.mkdir()
     (frontier_dir / "remediation.txt").write_text("Remediation: done", encoding="utf-8")
 
@@ -88,7 +88,7 @@ default_route = "m"
 harness = "fake"
 [profiles.test.triage.routes.frontier]
 harness = "fake"
-model = "frontier-model"
+model = "fake-clear"
 """
     (tmp_path / ".revrem.toml").write_text(toml, encoding="utf-8")
     monkeypatch.chdir(tmp_path)
