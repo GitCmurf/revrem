@@ -150,6 +150,62 @@ def test_resolve_routing_indeterminate_tier_keeps_policy_route():
     assert resolved.route_tier == "midtier-coder"
 
 
+# --- M1: deterministic safety backstop reaches domain_tags_any rules --------
+
+
+def test_deterministic_detection_escalates_domain_tags_any_rule(tmp_path):
+    # Mirrors the documented `secure` profile: a domain_tags_any security rule
+    # must escalate even when the model omits the security tag, because the
+    # finding's file content deterministically reveals a sensitive domain.
+    from code_review_loop import triage
+
+    auth_py = tmp_path / "auth.py"
+    auth_py.write_text("def login(user, password): ...", encoding="utf-8")
+
+    profile = profiles.Profile(
+        name="secure",
+        triage=profiles.TriageConfig(
+            contract="v2",
+            routing=profiles.TriageRoutingConfig(
+                enabled=True,
+                default_route="midtier-coder",
+                rule=(
+                    profiles.TriageRoutingRule(
+                        id="security-frontier",
+                        when=profiles.TriageRoutingRuleWhen(
+                            domain_tags_any=("security", "auth", "secrets", "pii")
+                        ),
+                        then=profiles.TriageRoutingRuleThen(
+                            route="frontier-thinking", allow_model_deescalation=False
+                        ),
+                    ),
+                ),
+            ),
+            routes={
+                "midtier-coder": profiles.TriageRouteConfig(harness="codex", model="m1"),
+                "frontier-thinking": profiles.TriageRouteConfig(harness="codex", model="m2"),
+            },
+        ),
+    )
+
+    payload = {
+        "confirmed_findings": [
+            {"affected_paths": ["auth.py"], "fingerprint": "f1", "summary": "s", "severity": "high", "rationale": "r"}
+        ],
+        "classification": {
+            "domain_tags": ["docs"],  # model omits any security tag
+            "risk_level": "low",
+            "refactor_depth": "atomic",
+            "estimated_blast_radius": {"module_count": 1, "finding_count": 1},
+        },
+    }
+
+    context = triage.extract_routing_context(payload, tmp_path)
+    resolved = policy.resolve_routing(profile, context)
+    assert resolved.route_tier == "frontier-thinking"
+    assert resolved.rule_id == "security-frontier"
+
+
 # --- B3: built-in prompt fragments ------------------------------------------
 
 CANONICAL_FRAGMENTS = [

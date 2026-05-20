@@ -170,7 +170,7 @@ def extract_routing_context(
 ) -> policy.RoutingContext:
     classification = payload.get("classification", {})
 
-    domain_tags = tuple(classification.get("domain_tags", ()))
+    domain_tags = set(classification.get("domain_tags", ()))
     risk_level = classification.get("risk_level", "low")
     refactor_depth = classification.get("refactor_depth", "atomic")
 
@@ -199,12 +199,19 @@ def extract_routing_context(
                 for signal, tag in SENSITIVE_SIGNALS.items():
                     if signal in content:
                         safety_signals.add(tag)
+                        # Surface the detected domain (e.g. "sensitive-domain:auth"
+                        # -> "auth") as a plain domain tag so that natural
+                        # domain_tags_any rules escalate even when the model
+                        # omitted the tag. safety_signals retains the provenance.
+                        _, _, domain = tag.partition(":")
+                        if domain:
+                            domain_tags.add(domain)
         except OSError:
             # Ignore files that cannot be read or resolved
             pass
 
     return policy.RoutingContext(
-        domain_tags=domain_tags,
+        domain_tags=tuple(sorted(domain_tags)),
         risk_level=risk_level,
         refactor_depth=refactor_depth,
         module_count=module_count,
