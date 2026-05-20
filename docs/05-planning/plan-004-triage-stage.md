@@ -707,6 +707,12 @@ This plan is not complete until:
 
 ## Implementation Closeout Evidence
 
+> **Status note (2026-05-20, post-review remediation).** A critical review after
+> the initial closeout found that several items below were claimed complete but
+> failed in practice. They have since been fixed; see *Post-Review Remediation*
+> at the end of this section. Read the bullet list as the intended contract, not
+> as independently re-verified at original-closeout time.
+
 The implementation now satisfies the plan's first complete routing slice:
 
 - `triage-v2` exists as a source schema, API-doc schema, prompt, parser path,
@@ -746,10 +752,49 @@ The implementation now satisfies the plan's first complete routing slice:
   refactor, trivial atomic change, invalid route, unavailable harness, and v1
   compatibility.
 
+### Post-Review Remediation (2026-05-20)
+
+A post-closeout critical review found three blocking defects and one safety gap
+that the original `494 passed` suite masked because its policy tests used a
+tier vocabulary the shipped product never uses. All are now fixed with
+regression coverage:
+
+- **B1 — multi-harness routing was unusable with timeouts.** Non-Codex harnesses
+  were marked `timeout_supported=false`, and the route capability check rejected
+  any route that set `timeout_seconds`, so the documented multi-harness profile
+  failed both `revrem policy lint` and runtime resolution. RevRem enforces
+  timeouts through its own subprocess wrapper, so the gate was wrong; it has been
+  removed and `timeout_supported` is now metadata only.
+- **B2 — escalation ranking was dead for the real tier names.** `TIER_RANK` used
+  `frontier`/`midtier`/`efficient`, but the product ships
+  `frontier-thinking`/`midtier-coder`/`efficient-coder`/`security-specialist`.
+  Ranking now uses the canonical names, and an uncomparable model proposal keeps
+  the policy route instead of being silently applied (closing a policy-bypass).
+- **B3 — five of six prompt fragments were missing.** Only
+  `engineering-principles` shipped; the composer hard-crashed on the rest. All
+  six fragments now ship, and `prompts/fragments/*.txt` is included in
+  `package-data` so they survive installed builds.
+- **M1 — deterministic safety backstop never reached `domain_tags_any` rules.**
+  Deterministic detection wrote only to `safety_signals`. It now also folds the
+  detected domain into `domain_tags` (retaining `sensitive-domain:*` provenance),
+  so a security rule escalates even when the model omits the tag.
+- **M2 — Gemini adapter passed an empty `--prompt`.** Adapters were verified
+  against the installed CLIs; the Gemini adapter now passes the prompt as the
+  value of `-p/--prompt`. Claude, OpenCode, and Kilo adapters were confirmed
+  correct. Adapter contract tests now assert the exact non-interactive argv and
+  prompt-delivery channel per CLI.
+
+Remaining known follow-ups (not blocking this slice):
+
+- Live end-to-end smoke runs against each installed CLI (the contract tests
+  encode the verified argv but do not invoke live models).
+- `src/code_review_loop/cli.py` has grown into a large module and should be
+  split in a later refactor.
+
 Verification evidence for this closeout:
 
-- `./scripts/dev-check` passed on 2026-05-20 with `494 passed`, Ruff clean,
-  mypy clean, and Meminit checks clean.
+- `./scripts/dev-check` passed on 2026-05-20 after remediation with `513
+  passed`, Ruff clean, mypy clean, and Meminit checks clean.
 - `git diff --check` must also pass on the completed branch immediately before
   opening the PR.
 
