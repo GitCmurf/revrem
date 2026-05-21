@@ -4,7 +4,7 @@ type: PLAN
 title: Triage Stage as a Routing and Prompt-Construction Layer
 status: Approved
 version: '1.0'
-last_updated: '2026-05-20'
+last_updated: '2026-05-21'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -273,7 +273,7 @@ exact prompt as a text artifact:
 - `routing-<iteration>.json`: effective routing decision metadata.
 - `remediation-<iteration>-prompt.txt`: exact prompt passed to the remediation
   harness.
-- `routing-<iteration>-outcome.json`: post-remediation outcome metadata.
+- `routing-outcome-<iteration>.json`: post-remediation outcome metadata.
 
 `routing-<iteration>.json` should contain:
 
@@ -683,7 +683,7 @@ Documentation:
 
 ## Quality Gates
 
-This plan is not complete until:
+The first routed-remediation slice is not complete until:
 
 - Existing v1 triage behavior and tests remain unchanged for profiles not using
   routing.
@@ -700,18 +700,26 @@ This plan is not complete until:
 - Artifact path tests prove routing and prompt artifacts are excluded from
   auto-commits.
 - Documentation shows one portable Codex-only profile and one multi-harness
-  profile using the installed Claude, Gemini, OpenCode, and KiloCode adapters,
-  with clear fallback guidance for machines where those CLIs are absent.
+  profile using the Claude, Gemini, OpenCode, and KiloCode adapters, with
+  executable-path configuration and clear fallback guidance for machines where
+  those CLIs are absent.
 - `meminit check --format json` passes.
 - `./scripts/dev-check` passes before PR.
 
+Live model smoke tests for each non-Codex CLI are not part of this first-slice
+completion gate. They are a follow-up hardening gate because they require
+provider credentials, quotas, and network access that are outside the
+deterministic local contract. The first slice must instead prove exact command
+construction, prompt-delivery channel, policy linting, artifact schemas, fake
+end-to-end routing, and operator documentation locally.
+
 ## Implementation Closeout Evidence
 
-> **Status note (2026-05-20, post-review remediation).** A critical review after
+> **Status note (2026-05-21, post-review remediation).** A critical review after
 > the initial closeout found that several items below were claimed complete but
 > failed in practice. They have since been fixed; see *Post-Review Remediation*
-> at the end of this section. Read the bullet list as the intended contract, not
-> as independently re-verified at original-closeout time.
+> in this section. The remaining follow-ups are explicitly scoped outside the
+> first routed-remediation slice.
 
 The implementation now satisfies the plan's first complete routing slice:
 
@@ -748,9 +756,11 @@ The implementation now satisfies the plan's first complete routing slice:
 - DevEx documentation includes portable Codex-only and multi-harness examples,
   per-harness executable configuration, routing artifacts, event kinds,
   prompt sensitivity, policy linting, triage explain, and policy review.
-- Scenario fixtures cover sensitive finding, architectural refactor, careful
-  refactor, trivial atomic change, invalid route, unavailable harness, and v1
-  compatibility.
+- Scenario fixtures and regression tests cover sensitive finding,
+  architectural refactor, careful refactor, trivial atomic change, invalid
+  route, unavailable harness, v1 compatibility, canonical route-tier ranking,
+  deterministic safety escalation, built-in prompt fragments, and
+  provider-specific prompt-delivery argv.
 
 ### Post-Review Remediation (2026-05-20)
 
@@ -784,10 +794,11 @@ regression coverage:
   correct. Adapter contract tests now assert the exact non-interactive argv and
   prompt-delivery channel per CLI.
 
-Remaining known follow-ups (not blocking this slice):
+Deferred follow-ups (not blocking this slice):
 
-- Live end-to-end smoke runs against each installed CLI (the contract tests
-  encode the verified argv but do not invoke live models).
+- Live end-to-end smoke runs against each installed non-Codex CLI. The contract
+  tests encode the verified argv and prompt-delivery channel but intentionally
+  do not invoke live models.
 - `src/code_review_loop/cli.py` has grown into a large module and should be
   split in a later refactor.
 
@@ -822,11 +833,15 @@ Verification evidence for this closeout:
   Mitigation: progress output, `triage explain`, and TUI Routing panel make the
   cross-harness handoff explicit.
 
-## Open Questions For Peer Review
+## Resolved Design Decisions
 
-### OQ1. Does `triage.contract = "v2"` imply routing?
+These questions were open during drafting. The implementation has now selected
+the decisions below; the alternatives remain here as rationale for future
+changes.
 
-Options:
+### D1. Does `triage.contract = "v2"` imply routing?
+
+Considered options:
 
 - **A: v2 always means routing.** Simple mental model, but it prevents using
   v2 classification and richer prompt handoff before teams trust automated
@@ -838,14 +853,14 @@ Options:
   `triage-classification-v1` and `triage-routing-v1`. This is explicit, but
   creates more schema churn before the shape is proven.
 
-Recommendation: choose **B**. v2 should unlock the richer structured payload,
+Decision: choose **B**. v2 unlocks the richer structured payload,
 while routing remains separately gated. This lets operators adopt safer prompt
 handoff and audit artifacts first, then enable executable routing once policy
 and harness adapters are trusted.
 
-### OQ2. Can project policy select a more expensive route than user defaults?
+### D2. Can project policy select a more expensive route than user defaults?
 
-Options:
+Considered options:
 
 - **A: project policy may freely escalate.** Best for repo safety, but a cloned
   repository could unexpectedly spend the operator's model budget.
@@ -856,15 +871,15 @@ Options:
   main purpose of repo-local policy for security or architecture-sensitive
   work.
 
-Recommendation: choose **B**. Project config may require a minimum route tier
+Decision: choose **B**. Project config may require a minimum route tier
 for certain risks, but effective execution is still bounded by user-selected
 profile, CLI flags, and budgets. If the required route violates the operator's
 ceilings, RevRem should fail before remediation with a clear diagnostic instead
 of silently downgrading.
 
-### OQ3. What happens when the preferred route exceeds remaining budget?
+### D3. What happens when the preferred route exceeds remaining budget?
 
-Options:
+Considered options:
 
 - **A: automatically choose the cheapest allowed fallback.** Keeps runs moving,
   but can silently assign hard work to an underpowered model unless the audit is
@@ -875,14 +890,14 @@ Options:
 - **C: ask interactively.** Good for watched local runs, but not viable for
   hooks, CI, or hands-off operation.
 
-Recommendation: choose **B**, with optional **C** later for interactive TUI
+Decision: choose **B**, with optional **C** later for interactive TUI
 mode. The default CLI and CI behavior should never invent a cheaper route. A
 fallback is safe only when the policy explicitly says the fallback is
 acceptable for that class of work.
 
-### OQ4. How strict should deterministic sensitive-signal detection be?
+### D4. How strict should deterministic sensitive-signal detection be?
 
-Options:
+Considered options:
 
 - **A: broad detection.** Escalate on security/auth/secrets/PII terms in
   findings, paths, failed checks, and changed-file names. This over-escalates
@@ -894,14 +909,14 @@ Options:
   escalation; low-confidence signals add a warning and prevent de-escalation
   below mid-tier.
 
-Recommendation: choose **C**. Security-sensitive misses are worse than some
+Decision: choose **C**. Security-sensitive misses are worse than some
 over-escalation, but broad keyword matching alone is noisy. A two-tier signal
 model gives policy useful safety brakes without routing every mention of
 "token" or "auth" to the most expensive model.
 
-### OQ5. Should user-defined prompt fragments ship in the first routing release?
+### D5. Should user-defined prompt fragments ship in the first routing release?
 
-Options:
+Considered options:
 
 - **A: built-in fragments only.** Safest and easiest to validate, but less
   useful for repos with strong local engineering principles.
@@ -911,15 +926,15 @@ Options:
 - **C: allow repo-defined fragments only after an explicit trust flag.** Safer
   for cloned repos, but still lets maintainers opt into project-local guidance.
 
-Recommendation: choose **B for user-profile fragments and C for repo fragments**.
+Decision: choose **B for user-profile fragments and C for repo fragments**.
 User-profile fragments are operator-controlled and should be allowed in v1.
 Repo-local fragments should require an explicit trust setting because a cloned
 repository should not silently inject arbitrary remediation instructions into a
 write-capable model.
 
-### OQ6. Should prompt artifacts be first-class summary artifacts?
+### D6. Should prompt artifacts be first-class summary artifacts?
 
-Options:
+Considered options:
 
 - **A: reference prompt artifacts only from routing JSON and events.** Keeps
   `summary.json` smaller but makes prompts harder for operators and reports to
@@ -930,14 +945,14 @@ Options:
 - **C: include only hashes in `summary.json`.** Privacy-conservative, but makes
   diagnosis more cumbersome.
 
-Recommendation: choose **B**, with redaction/export safeguards. The prompt is
+Decision: choose **B**, with redaction/export safeguards. The prompt is
 the exact instruction sent to the remediator; it is central audit evidence and
 should be discoverable from `summary.json`. Export surfaces must treat it as
 sensitive transcript-like data.
 
-### OQ7. Should multi-route fan-out happen inside one loop iteration?
+### D7. Should multi-route fan-out happen inside one loop iteration?
 
-Options:
+Considered options:
 
 - **A: one route per iteration only.** Simple, preserves current loop
   semantics, and keeps outcome attribution clear.
@@ -947,14 +962,14 @@ Options:
 - **C: parallel fan-out inside one iteration.** Fastest, but the riskiest for
   conflicting edits, budget control, cancellation, and operator comprehension.
 
-Recommendation: choose **A for this plan**. Multi-route fan-out should be a
+Decision: choose **A for this plan**. Multi-route fan-out should be a
 separate plan after single-route routing is reliable. If later implemented,
 start with sequential fan-out and disjoint write scopes before considering any
 parallel execution.
 
-### OQ8. Should installed non-Codex CLIs be enabled in the first slice?
+### D8. Should installed non-Codex CLIs be enabled in the first slice?
 
-Options:
+Considered options:
 
 - **A: Codex plus fake harness only.** Lowest implementation risk, but leaves
   the central multi-harness value untested despite the CLIs being installed.
@@ -964,16 +979,15 @@ Options:
 - **C: one additional adapter first.** Reduces scope, but risks overfitting the
   route contract to the first non-Codex CLI.
 
-Recommendation: choose **B**, constrained to a thin common surface. Because
-Gemini, Claude, OpenCode, and KiloCode CLIs are installed and working locally,
-the first routing slice should include adapters for all four if they can meet
-the minimum non-interactive contract. If one CLI lacks a required capability,
-mark that capability unsupported and route around it rather than blocking the
-others.
+Decision: choose **B**, constrained to a thin common surface. Gemini, Claude,
+OpenCode, and KiloCode adapters are included behind the shared harness
+contract. Live provider smoke tests and provider-specific capability hardening
+remain follow-up work; route policy must mark unsupported capabilities honestly
+and route around unavailable tools rather than blocking the other adapters.
 
-## Recommended First Slice
+## Implemented First Slice
 
-The first implementation should be intentionally narrow:
+The implemented first slice is intentionally narrow:
 
 1. Add v2 schema/prompt and routing artifacts.
 2. Implement the shared adapter contract and fake-harness tests first.
@@ -981,15 +995,17 @@ The first implementation should be intentionally narrow:
    OpenCode, and KiloCode CLIs.
 4. Implement policy tiers and prompt composition.
 5. Prove route selection changes the actual remediation command across fake
-   harness fixtures and at least one smoke fixture per installed CLI.
+   harness fixtures, and prove provider-specific non-interactive argv and
+   prompt-delivery contracts without invoking live models.
 6. Ship `revrem policy lint` and `revrem triage explain`.
 7. Document multi-harness routing as an active supported path on machines with
    the configured CLIs installed, with explicit fallbacks for machines where a
    chosen CLI is absent.
 
 This slice gives operators the core value, better remediation prompts and
-auditable model choice, while validating the multi-harness design against the
-CLIs available on the maintainer workstation.
+auditable model choice, while validating the shared multi-harness boundary with
+deterministic tests. Live provider smoke coverage is tracked as follow-up
+hardening rather than as evidence for first-slice completion.
 
 ## Pointers
 

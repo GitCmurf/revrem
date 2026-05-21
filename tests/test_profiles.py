@@ -228,6 +228,33 @@ base = "trunk"
     assert resolved.pipeline.base == "trunk"
 
 
+def test_project_config_path_ignores_bare_temp_root_git_marker(tmp_path, monkeypatch):
+    temp_root = tmp_path / "tmp-root"
+    cwd = temp_root / "work"
+    cwd.mkdir(parents=True)
+    (temp_root / ".git").mkdir()
+    (temp_root / ".revrem.toml").write_text(
+        """
+[profiles.wrong.pipeline]
+base = "wrong"
+""",
+        encoding="utf-8",
+    )
+    (cwd / ".revrem.toml").write_text(
+        """
+[profiles.local.pipeline]
+base = "local"
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(profiles.tempfile, "gettempdir", lambda: str(temp_root))
+
+    assert profiles.project_config_path(cwd) == cwd / ".revrem.toml"
+    resolved = profiles.resolve_profile("local", cwd=cwd)
+
+    assert resolved.pipeline.base == "local"
+
+
 def test_resolve_defaults_allows_project_defaults_to_reset_user_defaults(tmp_path):
     home = tmp_path / "home"
     cwd = tmp_path / "repo"

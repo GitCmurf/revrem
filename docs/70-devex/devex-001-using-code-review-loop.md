@@ -3,8 +3,8 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.9'
-last_updated: '2026-05-13'
+version: '1.10'
+last_updated: '2026-05-21'
 owner: GitCmurf
 docops_version: '2.0'
 area: devex
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.9
-> **Last Updated:** 2026-05-13
+> **Version:** 1.10
+> **Last Updated:** 2026-05-21
 > **Type:** DEVEX
 > **Area:** devex
 > **Description:** Operator guide for the code-review-loop utility
@@ -259,7 +259,10 @@ older feedback.
 
 Profiles live in `~/.config/revrem/profiles.toml`. Project-local overrides live
 in `.revrem.toml` at the target repository root, so subdirectory invocations
-still pick up the same project settings. User-global `[defaults]` entries in
+still pick up the same project settings. If a temporary filesystem root such as
+`/tmp` contains an incidental `.git` marker, RevRem ignores that marker when
+discovering project config so isolated scratch work can still use its local
+`.revrem.toml`. User-global `[defaults]` entries in
 `profiles.toml` are loaded for bare `revrem` runs, merged before the selected
 user profile, and are preserved by `revrem config` writes. Existing profiles
 stay in their original explicit form when the file is rewritten, so omitted
@@ -878,6 +881,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.10 | 2026-05-21 | Codex | Documented temp-root `.git` marker handling during project profile discovery |
 | 1.9 | 2026-05-13 | Codex | Documented profile-level suppression scope policy |
 | 1.8 | 2026-05-13 | Codex | Documented optional redaction extra alongside progress and TUI extras |
 | 1.7 | 2026-05-13 | Codex | Documented live CLI preflight diagnostics before first model invocation |

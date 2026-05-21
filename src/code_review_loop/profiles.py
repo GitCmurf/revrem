@@ -279,7 +279,11 @@ def project_config_path(cwd: Path) -> Path:
 
 def _repo_root(cwd: Path) -> Path:
     current = cwd.resolve()
+    temp_roots = {Path(tempfile.gettempdir()).resolve()}
+    temp_roots.add(Path(os.environ.get("TMPDIR") or "/tmp").resolve())
     for candidate in (current, *current.parents):
+        if candidate in temp_roots:
+            continue
         if (candidate / ".git").exists():
             return candidate
     return current
