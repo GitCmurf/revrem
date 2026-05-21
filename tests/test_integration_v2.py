@@ -50,7 +50,7 @@ def test_loop_with_v2_triage_routing(fake_harness, tmp_path, monkeypatch):
             "model": "frontier-model",
             "reasoning_effort": "high",
             "sandbox": "workspace-write",
-            "timeout_seconds": 60,
+            "timeout_seconds": 0,
             "rationale": "proposing frontier"
         },
         "prompt_requirements": {
@@ -100,6 +100,7 @@ model = "fake-clear"
 [profiles.test.triage.routes.frontier]
 harness = "fake"
 model = "fake-clear"
+timeout_seconds = 0
 """
     (tmp_path / ".revrem.toml").write_text(toml, encoding="utf-8")
     monkeypatch.chdir(tmp_path)
@@ -145,7 +146,9 @@ model = "fake-clear"
     routing = json.loads((run_dir / "routing-1.json").read_text())
     assert routing["effective_route"]["route_tier"] == "frontier"
     assert routing["effective_route"]["model"] == "fake-clear"
+    assert routing["effective_route"]["timeout_seconds"] == 0
     assert routing["model_proposal"]["model"] == "frontier-model"
+    assert routing["model_proposal"]["timeout_seconds"] == 0
     assert routing["policy_decision"]["decision"] == "policy_override"
     assert routing["policy_decision"]["matched_rule_ids"] == ["sec"]
     assert (run_dir / "remediation-1.txt").read_text(encoding="utf-8") == (

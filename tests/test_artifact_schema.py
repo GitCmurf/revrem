@@ -144,7 +144,7 @@ def test_event_schema_validates_event_envelope():
     assert list(validator.iter_errors({"extra": "missing version"}))
 
 
-def test_routing_schema_rejects_non_positive_timeouts():
+def test_routing_schema_accepts_unbounded_timeouts():
     schema = _load_schema("routing-v1.schema.json")
     payload = {
         "schema_version": "1.0",
@@ -163,6 +163,38 @@ def test_routing_schema_rejects_non_positive_timeouts():
             "reasoning_effort": "low",
             "sandbox": "workspace-write",
             "timeout_seconds": 0,
+        },
+        "fallbacks_considered": [],
+        "prompt": {
+            "path": "remediation-1-prompt.txt",
+            "sha256": "a" * 64,
+            "bytes": 1,
+            "fragments": [],
+        },
+    }
+
+    assert list(Draft202012Validator(schema).iter_errors(payload)) == []
+
+
+def test_routing_schema_rejects_negative_timeouts():
+    schema = _load_schema("routing-v1.schema.json")
+    payload = {
+        "schema_version": "1.0",
+        "run_id": "run-1",
+        "iteration": 1,
+        "source_triage_artifact": "triage-1.json",
+        "policy_decision": {
+            "matched_rule_ids": [],
+            "decision": "proposal_accepted",
+            "rationale": "accepted",
+        },
+        "effective_route": {
+            "route_tier": "efficient",
+            "harness": "codex",
+            "model": "gpt-test",
+            "reasoning_effort": "low",
+            "sandbox": "workspace-write",
+            "timeout_seconds": -1,
         },
         "fallbacks_considered": [],
         "prompt": {

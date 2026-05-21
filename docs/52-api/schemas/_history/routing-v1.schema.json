@@ -30,7 +30,7 @@
           "type": "string"
         },
         "timeout_seconds": {
-          "minimum": 1,
+          "minimum": 0,
           "type": "integer"
         }
       },
@@ -79,7 +79,7 @@
           "type": "string"
         },
         "timeout_seconds": {
-          "minimum": 1,
+          "minimum": 0,
           "type": "integer"
         }
       },
