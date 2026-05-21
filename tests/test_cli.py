@@ -4474,6 +4474,65 @@ harness = "gemini"
     assert captured.err == ""
 
 
+def test_doctor_profile_skips_unused_route_harnesses_when_routing_disabled(
+    tmp_path, monkeypatch, capsys
+):
+    repo = tmp_path / "repo"
+    home = tmp_path / "home"
+    repo.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "config", "user.email", "test@example.com")
+    run_git(repo, "config", "user.name", "Test User")
+    (repo / "README.md").write_text("# Fixture\n", encoding="utf-8")
+    run_git(repo, "add", "README.md")
+    run_git(repo, "commit", "-m", "initial")
+    config_path = profiles.user_config_path(home)
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.smoke]
+description = "Smoke profile"
+
+[profiles.smoke.review]
+harness = "claude"
+
+[profiles.smoke.remediation]
+harness = "claude"
+
+[profiles.smoke.triage]
+enabled = true
+harness = "claude"
+
+[profiles.smoke.triage.routing]
+enabled = false
+
+[profiles.smoke.triage.routes.future]
+harness = "gemini"
+""",
+        encoding="utf-8",
+    )
+
+    def fake_which(executable: str):
+        if executable == "claude":
+            return "/usr/bin/claude"
+        return None
+
+    monkeypatch.setattr(MODULE.diagnostics.shutil, "which", fake_which)
+    monkeypatch.chdir(repo)
+
+    exit_code = MODULE.main(
+        ["doctor", "--profile", "smoke", "--base", "main", "--codex-bin", "git", "--format", "json"]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert exit_code == 0
+    assert payload["status"] == "ok"
+    assert {issue["code"] for issue in payload["issues"]} == {"revrem.preflight.ok"}
+    assert captured.err == ""
+
+
 def test_bundle_bug_report_cli_blocks_no_redact_without_explicit_risk_ack(tmp_path, capsys):
     run_dir = tmp_path / "run"
     run_dir.mkdir()

@@ -2064,7 +2064,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                     triage_harness=config.triage_harness,
                     commit_message_harness=config.commit_message_harness,
                     routed_harnesses=(
-                        tuple(route.harness for route in config.profile_v2.triage.routes.values())
+                        profile_routed_harnesses(config.profile_v2)
                         if config.profile_v2 is not None
                         else ()
                     ),
@@ -4126,7 +4126,7 @@ def doctor_main(argv: Sequence[str]) -> int:
                 triage_enabled=profile.triage.enabled,
                 triage_harness=profile.triage.harness,
                 commit_message_harness=profile.commit.harness,
-                routed_harnesses=tuple(route.harness for route in profile.triage.routes.values()),
+                routed_harnesses=profile_routed_harnesses(profile),
                 harness_executables=profile.runtime.harness_executables,
                 check_commands=tuple(args.check) if args.check is not None else profile.pipeline.checks,
                 commit_after_remediation=args.commit_after_remediation or profile.commit.enabled,
@@ -4148,6 +4148,12 @@ def doctor_main(argv: Sequence[str]) -> int:
     if args.strict and diagnostics.has_warning_issue(issues):
         return 6
     return 0
+
+
+def profile_routed_harnesses(profile: profiles.Profile) -> tuple[str, ...]:
+    if not profile.triage.enabled or not profile.triage.routing.enabled:
+        return ()
+    return tuple(route.harness for route in profile.triage.routes.values())
 
 
 def _suppression_doctor_issues(cwd: Path) -> list[diagnostics.DiagnosticIssue]:
