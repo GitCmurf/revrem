@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from code_review_loop import triage
 
 
@@ -54,3 +56,30 @@ def test_extract_routing_context_folds_deterministic_domain_into_tags(tmp_path):
 
     assert "auth" in context.domain_tags
     assert "sensitive-domain:auth" in context.safety_signals
+
+
+def test_load_schema_uses_cache(monkeypatch):
+    triage._load_schema.cache_clear()
+    calls = {"read_text": 0}
+
+    class FakeResource:
+        def read_text(self, encoding: str) -> str:
+            assert encoding == "utf-8"
+            calls["read_text"] += 1
+            return json.dumps({"type": "object"})
+
+    class FakePackage:
+        def joinpath(self, resource: str) -> FakeResource:
+            assert resource == "schemas/triage-v1.schema.json"
+            return FakeResource()
+
+    monkeypatch.setattr(triage, "files", lambda package: FakePackage())
+
+    first = triage._load_schema("schemas/triage-v1.schema.json")
+    second = triage._load_schema("schemas/triage-v1.schema.json")
+
+    assert first == {"type": "object"}
+    assert second == {"type": "object"}
+    assert calls["read_text"] == 1
+
+    triage._load_schema.cache_clear()

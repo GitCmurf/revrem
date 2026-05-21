@@ -151,7 +151,8 @@ def format_structured_handoff(payload: dict[str, Any], original_review: str) -> 
     return "\n".join(parts)
 
 
-@functools.lru_cache(maxsize=None)
+# Cache imported schema resources so repeated triage validation does not reread package data.
+@functools.cache
 def _load_schema(resource: str) -> dict[str, Any]:
     schema = json.loads(files("code_review_loop").joinpath(resource).read_text(encoding="utf-8"))
     if not isinstance(schema, dict):
