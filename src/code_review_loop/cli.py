@@ -2677,6 +2677,8 @@ def resume_config_payload(config: LoopConfig) -> dict[str, object]:
         "soft_warn_fraction": config.budget_config.soft_warn_fraction,
         "triage_prompt": config.triage_prompt,
         "triage_on_invalid": config.triage_on_invalid,
+        "triage_contract": config.triage_contract,
+        "profile_name": config.profile_name,
     }
 
 
@@ -4435,6 +4437,14 @@ def resume_loop_config(summary: dict[str, object], *, run_dir: Path) -> LoopConf
     budget_issues = resume_budget_ceiling_issues(summary)
     if budget_issues:
         raise ValueError("; ".join(issue.message for issue in budget_issues))
+    profile_name = _resume_optional_str(resume_config, "profile_name")
+    if profile_name is None and isinstance(summary.get("profile"), str):
+        profile_name = str(summary["profile"])
+    profile_v2 = None
+    triage_contract = _resume_str(resume_config, "triage_contract", "v1")
+    if profile_name is not None:
+        profile_v2 = profiles.resolve_profile(profile_name, cwd=Path.cwd(), require_implemented=False)
+        triage_contract = profile_v2.triage.contract
     return LoopConfig(
         base=_resume_str(resume_config, "base", "main"),
         max_iterations=_resume_int(resume_config, "max_iterations", 1),
@@ -4468,10 +4478,12 @@ def resume_loop_config(summary: dict[str, object], *, run_dir: Path) -> LoopConf
         full_auto=_resume_bool(resume_config, "full_auto", True),
         triage_prompt=_resume_optional_str(resume_config, "triage_prompt"),
         triage_on_invalid=_resume_str(resume_config, "triage_on_invalid", "continue"),
+        triage_contract=triage_contract,
         initial_review_file=review_path,
-        profile_name=str(summary["profile"]) if isinstance(summary.get("profile"), str) else None,
+        profile_name=profile_name,
         budget_config=_resume_budget_config(resume_config, budgets_payload if isinstance(budgets_payload, dict) else None),
         budget_state=budget_state,
+        profile_v2=profile_v2,
     )
 
 

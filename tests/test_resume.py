@@ -320,6 +320,51 @@ def test_resume_loop_config_uses_legacy_budget_ceiling(tmp_path):
     assert resumed.budget_config.soft_warn_fraction == 0.8
 
 
+def test_resume_loop_config_restores_v2_triage_profile(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.test.triage]
+enabled = true
+contract = "v2"
+[profiles.test.triage.routing]
+enabled = true
+default_route = "midtier"
+[profiles.test.triage.routes.midtier]
+harness = "codex"
+[profiles.test.triage.routes.frontier]
+harness = "claude"
+""",
+        encoding="utf-8",
+    )
+    run_dir = tmp_path / "run"
+    write_resume_run(
+        run_dir,
+        resume_config={
+            "base": "main",
+            "max_iterations": 1,
+            "codex_bin": "codex",
+            "profile_name": "test",
+            "triage_contract": "v2",
+            "review_harness": "fake",
+            "remediation_harness": "fake",
+            "review_model": "review_clear",
+            "remediation_model": "remediation",
+            "final_review": True,
+            "check_commands": [],
+        },
+    )
+
+    resumed = MODULE.resume_loop_config(json.loads((run_dir / "summary.json").read_text()), run_dir=run_dir)
+
+    assert resumed.profile_name == "test"
+    assert resumed.triage_contract == "v2"
+    assert resumed.profile_v2 is not None
+    assert resumed.profile_v2.triage.contract == "v2"
+    assert MODULE.profile_routed_harnesses(resumed.profile_v2) == ("codex", "claude")
+
+
 def test_resume_preconditions_block_head_mismatch(tmp_path, monkeypatch):
     run_dir = tmp_path / "run"
     write_resume_run(run_dir)
