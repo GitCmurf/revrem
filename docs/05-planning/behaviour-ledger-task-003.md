@@ -56,4 +56,31 @@ There is no silent third option.
 
 ## Entries
 
-_No intentional output changes recorded yet. Waves A0–A1 are behaviour-preserving by construction._
+### 2026-05-21 — A1 Clock + RunIdentity seam (Wave A1)
+
+- **Contract:** machine
+- **What changed:** nothing observable. The loop now reads wall/monotonic time
+  via an injected `Clock` and run-scoped ids via an injected `RunIdentity`
+  (`clock.py`, `identity.py`), threaded as keyword args through `run_loop` /
+  `_run_loop` / `write_summary` / `add_summary_contract_fields` /
+  `default_artifact_dir`, and `events.JsonlSink` stamps `Event.ts` from its
+  injected clock. **Defaults are the real clock / real `uuid4`, so production
+  output is byte-for-byte identical.** Determinism only appears when a fake is
+  injected (tests).
+- **Why:** remove the #1 nondeterminism source so the A2 golden-master suite
+  can pin the machine contract (C6).
+- **Before / After:** identical for real runs; `tests/test_clock_identity_seam.py`
+  demonstrates that a fake clock/identity makes `run_id`, `started_at`,
+  `finished_at`, every `events.jsonl` `ts`, and the default artifact-dir suffix
+  deterministic.
+- **schema_version impact:** none.
+- **Carve-out recorded for A2:** budget wall-time fields
+  (`summary["wall_elapsed_seconds"]` and the `budgets` elapsed) are **not**
+  injected in A1 — they stay on the real monotonic clock and must be
+  **normalized by the A2 comparator**. Rationale: injecting them would require
+  threading a clock through the budget read helpers, expanding A1's blast
+  radius for no machine-contract benefit (the fields are measured durations
+  that snapshots normalize regardless). The real-time-sensitive sites
+  (double-Ctrl-C debounce, subprocess timeout deadlines) and human-display
+  timestamps stay real by design, annotated `# det-exempt:` and enforced by
+  `tests/test_determinism_gate.py`.

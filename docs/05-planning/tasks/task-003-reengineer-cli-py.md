@@ -522,20 +522,32 @@ the machine contract is either **injected** (made a seam) or **normalized**
 (canonicalized in the snapshot comparator). The plan commits a strategy per
 source rather than discovering uncovered ones during A2:
 
-| Source | Site | Strategy |
-|---|---|---|
-| `datetime.now()` / `time.monotonic()` / `time.sleep()` | 11 sites in the loop | **Inject** via `ctx.clock`. |
-| `run_id = uuid.uuid4().hex` | `cli.py:2019` | **Inject** via a `RunIdentity` port (seeded/fixed in tests). |
-| `Event.ts` default factory (`datetime.now`) | `events.py:48` | **Inject** — route the default through `ctx.clock` so emitted-event timestamps are deterministic, rather than hiding a clock inside `events.py`. |
-| Artifact-dir suffix `{timestamp}-{uuid}` | `cli.py:3435` | **Inject** (clock + `RunIdentity`). |
-| Cwd, git state (`git_state_for_resume`), absolute paths | resume payload | **Normalize** in the comparator (path/cwd canonicalization). |
-| Artifact byte-size / mtime fields | summary | **Normalize** in the comparator. |
+Three dispositions, not one. *(As-built in A1; the original "11 sites → inject"
+line was a simplification that did not survive contact with the code — some
+monotonic reads govern real I/O/signals and **must** stay real, and budget
+wall-time is cheaper to normalize than to thread a clock through its helpers.)*
 
-- All wall-clock and monotonic reads go through `ctx.clock`; all run-scoped
-  identifiers go through `ctx.identity` (`RunIdentity`). Defaults are the real
-  clock / real `uuid4`; tests inject deterministic fakes.
-- No `datetime.now()` / `time.monotonic()` / `time.sleep()` / `uuid.uuid4()`
-  appears in `core/` after A1. A grep-gate test enforces this.
+| Source | Site | Disposition |
+|---|---|---|
+| `run_id` | `cli.py` loop | **Inject** via `RunIdentity.new_run_id()`. |
+| `started_at`, `finished_at` | summary | **Inject** via `clock.now()` (the latter through `write_summary`/`add_summary_contract_fields`). |
+| Remediation `wall_time_seconds` | routing-outcome artifact + event | **Inject** via `clock.monotonic()`. |
+| `Event.ts` | every emitted event | **Inject** — stamped at `JsonlSink.emit` time from the sink's injected clock. The dataclass `default_factory` stays as a test-time fallback. |
+| Artifact-dir suffix `{timestamp}-{id}` | `default_artifact_dir` | **Inject** (clock + `RunIdentity`). |
+| Double-Ctrl-C debounce; subprocess timeout deadline | signal handler; runner | **Exempt (stays real)** — real-time semantics; faking breaks cancellation/process-killing. Annotated `# det-exempt:`. |
+| Terminal display timestamps; bundle "Saved on" date | progress/bundle | **Exempt (stays real)** — human presentation (C3), not machine contract. Annotated `# det-exempt:`. |
+| Budget wall-time fields (`wall_elapsed_seconds`, budget elapsed) | summary | **Normalize** in the A2 comparator — *not* injected in A1, to avoid threading a clock through the budget helpers (`budgets.py` keeps its existing `now=` seam). |
+| Cwd, git state, absolute paths, byte-size/mtime | summary/resume | **Normalize** in the A2 comparator. |
+
+- Determinism-critical reads go through `clock` / `identity` (passed as kwargs
+  in A1, wrapped into `RunContext` in B0). Defaults are the real clock / real
+  `uuid4`; tests inject deterministic fakes.
+- The grep-gate (`tests/test_determinism_gate.py`) scans the engine-path files
+  (`cli.py`, `events.py`) and fails on any raw `datetime.now` / `time.monotonic`
+  / `uuid.uuid4` read that is **neither** routed through a seam **nor** annotated
+  `# det-exempt: <reason>` on the same line. It is line-number-free (keys off the
+  marker), so it survives edits. `budgets.py` is out of the gate's scope this
+  wave (its wall-time is normalized, per the row above).
 - The A2 golden masters cover the **machine contract only** (JSON summary,
   `events.jsonl`, exit codes) through the comparator's normalizer; human
   presentation is explicitly out of snapshot scope (C3).
@@ -645,14 +657,20 @@ them.
 - *Intent:* remove the nondeterminism sources so output can be pinned. The
   Clock alone is insufficient (see C6 table) — `uuid4` and `Event.ts` are
   pinned in the same wave so A2 is not built on a leaky seam.
-- *Changes:* add `Clock` and `RunIdentity` to `core/ports.py` (or pre-core
-  shims pending B0); thread `ctx.clock` through the 11 time sites; thread
-  `ctx.identity` through the `run_id` (`cli.py:2019`) and artifact-dir
-  (`cli.py:3435`) generators; route `Event.ts`'s default factory through the
-  clock. Real clock / real `uuid4` are the defaults so behaviour is identical.
-- *Tests:* fake clock + fake identity make `started_at`, durations, `run_id`,
-  and event timestamps deterministic; grep-gate forbids raw time/uuid reads in
-  the engine path.
+- *Changes:* add `clock.py` (`Clock`/`SystemClock`/`utc_iso`) and `identity.py`
+  (`RunIdentity`/`SystemRunIdentity`) as pre-core shims (re-homed as ports in
+  B0); thread `clock`/`identity` as kwargs through `run_loop` → `_run_loop`,
+  `write_summary` → `add_summary_contract_fields`, and `default_artifact_dir`;
+  inject `run_id`, `started_at`, `finished_at`, remediation `wall_time_seconds`,
+  and the artifact-dir suffix; stamp `Event.ts` at `JsonlSink.emit` from the
+  injected clock. Real clock / real `uuid4` are the defaults so behaviour is
+  identical. Per the C6 dispositions, real-I/O/signal monotonic reads and
+  human-display timestamps stay real (annotated `# det-exempt:`), and budget
+  wall-time is deferred to A2 normalization.
+- *Tests:* `tests/test_clock_identity_seam.py` proves a fake clock + identity
+  make `run_id`, `started_at`, `finished_at`, every event `ts`, and the
+  artifact-dir suffix deterministic; `tests/test_determinism_gate.py` fails on
+  any unmarked raw time/uuid read in `cli.py`/`events.py`.
 - *Exit:* loop output is reproducible under a fixed clock and identity.
 - *Risk:* medium — touch points are scattered; mitigated by default-real.
 

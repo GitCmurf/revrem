@@ -15,7 +15,6 @@ import sys
 import tempfile
 import textwrap
 import time
-import uuid
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager, suppress
 from dataclasses import asdict, dataclass, field
@@ -40,6 +39,8 @@ from code_review_loop import (
     suppressions,
     triage,
 )
+from code_review_loop.clock import SYSTEM_CLOCK, Clock, utc_iso
+from code_review_loop.identity import SYSTEM_IDENTITY, RunIdentity
 
 STATUS_RE = re.compile(r"^\s*REVIEW_STATUS:\s*(clear|findings)\s*$", re.IGNORECASE | re.MULTILINE)
 CODEX_FINDING_RE = re.compile(r"^\s*-\s*\[P[0-3]\]\s+", re.MULTILINE)
@@ -339,7 +340,7 @@ def terminal_recovery_context():
     def handle_signal(signum: int, frame: object | None) -> None:
         restore_terminal_display()
         if signum in {signal.SIGINT, signal.SIGTERM}:
-            raise cancellation_interrupt_for_signal(signum, now=time.monotonic())
+            raise cancellation_interrupt_for_signal(signum, now=time.monotonic())  # det-exempt: real-time debounce of double Ctrl-C; faking breaks the cancellation semantic
         signal.signal(signum, signal.SIG_DFL)
         os.kill(os.getpid(), signum)
         if hasattr(signal, "SIGTSTP") and signum == signal.SIGTSTP:
@@ -376,7 +377,7 @@ def cancellation_interrupt_for_signal(signum: int, *, now: float) -> KeyboardInt
 def progress_log(config: LoopConfig, message: str) -> None:
     if not config.progress:
         return
-    timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
+    timestamp = datetime.now().astimezone().isoformat(timespec="seconds")  # det-exempt: human-display timestamp (terminal output), not machine contract
     print(f"[{timestamp}] {message}", file=sys.stderr, flush=True)
 
 
@@ -391,7 +392,7 @@ def compact_progress_label(label: str) -> str:
 
 
 def compact_progress_prefix(phase: str, label: str) -> str:
-    timestamp = datetime.now().strftime("%H:%M:%S")
+    timestamp = datetime.now().strftime("%H:%M:%S")  # det-exempt: human-display timestamp (terminal output), not machine contract
     phase_code = PROGRESS_PHASE_CODES.get(phase, phase[:3])
     return f"{timestamp}|{phase_code:<3}|{compact_progress_label(label):<4}|"
 
@@ -614,14 +615,14 @@ def run_subprocess_with_terminal_title_refresh(
         text=True,
         start_new_session=True,
     )
-    deadline = None if timeout is None else time.monotonic() + timeout
+    deadline = None if timeout is None else time.monotonic() + timeout  # det-exempt: governs a real subprocess I/O timeout; faking breaks process killing
     pending_input = input
     try:
         while True:
             refresh_terminal_title()
             wait = TERMINAL_TITLE_REFRESH_SECONDS
             if deadline is not None:
-                remaining = deadline - time.monotonic()
+                remaining = deadline - time.monotonic()  # det-exempt: governs a real subprocess I/O timeout; faking breaks process killing
                 if remaining <= 0:
                     kill_process_tree(process)
                     stdout, stderr = process.communicate()
@@ -1981,17 +1982,29 @@ def format_commit_hook_failure_for_remediation(exc: CommitFailed) -> str:
     ).strip()
 
 
-def run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, object]:
+def run_loop(
+    config: LoopConfig,
+    runner: Runner = default_runner,
+    *,
+    clock: Clock = SYSTEM_CLOCK,
+    identity: RunIdentity = SYSTEM_IDENTITY,
+) -> dict[str, object]:
     with (
         terminal_recovery_context(),
         terminal_title_context(config),
         progress_warning_context(),
         progress.rich_live_progress(config.progress and config.progress_style == "rich"),
     ):
-        return _run_loop(config, runner)
+        return _run_loop(config, runner, clock=clock, identity=identity)
 
 
-def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, object]:
+def _run_loop(
+    config: LoopConfig,
+    runner: Runner = default_runner,
+    *,
+    clock: Clock = SYSTEM_CLOCK,
+    identity: RunIdentity = SYSTEM_IDENTITY,
+) -> dict[str, object]:
     if config.max_iterations < 1:
         raise ValueError("--max-iterations must be at least 1")
 
@@ -2016,13 +2029,13 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
     config.artifact_dir.mkdir(parents=True, exist_ok=True)
     ensure_default_artifact_ignore(config)
     iterations: list[dict[str, object]] = []
-    run_id = uuid.uuid4().hex
+    run_id = identity.new_run_id()
     summary: dict[str, object] = {
         "base": config.base,
         "git_state": git_state_for_resume(config),
         "resume_config": resume_config_payload(config),
         "run_id": run_id,
-        "started_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "started_at": utc_iso(clock.now()),
         "profile": config.profile_name,
         "max_iterations": config.max_iterations,
         "artifact_dir": str(config.artifact_dir),
@@ -2045,7 +2058,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
             existing_run_id = events.first_run_id(events_path)
             if existing_run_id is not None:
                 events_path.rename(events_path.with_name(f"events-{existing_run_id}.jsonl"))
-        event_sink = events.JsonlSink(config.artifact_dir, run_id)
+        event_sink = events.JsonlSink(config.artifact_dir, run_id, clock=clock)
         object.__setattr__(config, "event_sink", event_sink)
         if config.budget_state is None:
             object.__setattr__(config, "budget_state", budgets.started_now())
@@ -2093,7 +2106,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                     reason="setup_failed",
                     error=str(summary["error"]),
                 )
-                write_summary(config, summary)
+                write_summary(config, summary, clock=clock)
                 raise RunLoopFailed(summary, str(summary["error"]))
 
         pending_check_failures = ""
@@ -2141,7 +2154,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                         reason="review_failed",
                         error=str(exc),
                     )
-                    write_summary(config, summary)
+                    write_summary(config, summary, clock=clock)
                     raise RunLoopFailed(summary, str(exc)) from exc
                 last_review_output = actionable_review_output(_combined_output(review))
                 iterations.append({"iteration": iteration, "review_status": status})
@@ -2153,7 +2166,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                     last_review_output,
                     config.terminal_excerpt_chars,
                 )
-                write_summary(config, summary)
+                write_summary(config, summary, clock=clock)
                 return summary
 
             remediation_input = last_review_output
@@ -2191,7 +2204,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                                 last_review_output,
                                 config.terminal_excerpt_chars,
                             )
-                            write_summary(config, summary)
+                            write_summary(config, summary, clock=clock)
                             return summary
                         remediation_input = pending_check_failures
 
@@ -2399,7 +2412,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                     reason="triage_failed",
                     error=str(exc),
                 )
-                write_summary(config, summary)
+                write_summary(config, summary, clock=clock)
                 raise RunLoopFailed(
                     summary,
                     f"codex exec triage failed for iteration {iteration}; "
@@ -2407,9 +2420,9 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                 ) from exc
 
             try:
-                rem_start_time = time.monotonic()
+                rem_start_time = clock.monotonic()
                 rem_result = run_remediation(config, runner, iteration, remediation_input, resolved_route=resolved_route)
-                rem_duration = time.monotonic() - rem_start_time
+                rem_duration = clock.monotonic() - rem_start_time
             except budgets.BudgetExceeded:
                 raise
             except Exception as exc:
@@ -2424,7 +2437,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                     reason="remediation_failed",
                     error=str(exc),
                 )
-                write_summary(config, summary)
+                write_summary(config, summary, clock=clock)
                 raise RunLoopFailed(
                     summary,
                     f"codex exec remediation failed for iteration {iteration}; "
@@ -2488,7 +2501,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                         reason=stopped_reason,
                         error=str(exc),
                     )
-                    write_summary(config, summary)
+                    write_summary(config, summary, clock=clock)
                     raise RunLoopFailed(summary, str(exc)) from exc
                 except budgets.BudgetExceeded:
                     raise
@@ -2504,7 +2517,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                         reason="commit_failed",
                         error=str(exc),
                     )
-                    write_summary(config, summary)
+                    write_summary(config, summary, clock=clock)
                     raise RunLoopFailed(summary, f"git commit failed for iteration {iteration}") from exc
                 if iterations[-1]["commit_status"] == "skipped_no_changes":
                     summary["final_status"] = status
@@ -2513,7 +2526,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                         last_review_output,
                         config.terminal_excerpt_chars,
                     )
-                    write_summary(config, summary)
+                    write_summary(config, summary, clock=clock)
                     return summary
 
         if config.final_review:
@@ -2536,7 +2549,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                     reason="review_failed",
                     error=str(exc),
                 )
-                write_summary(config, summary)
+                write_summary(config, summary, clock=clock)
                 raise RunLoopFailed(summary, str(exc)) from exc
             final_review_output = actionable_review_output(_combined_output(final_review))
             summary["latest_review_excerpt"] = excerpt_for_terminal(
@@ -2563,7 +2576,7 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
             summary["pending_check_failures"] = bool(pending_check_failures)
             summary["stopped_reason"] = "max_iterations_reached"
 
-        write_summary(config, summary)
+        write_summary(config, summary, clock=clock)
         return summary
     except KeyboardInterrupt as exc:
         summary["final_status"] = "error"
@@ -2593,13 +2606,13 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                     "message": "cancelled by operator",
                 },
             )
-        write_summary(config, summary)
+        write_summary(config, summary, clock=clock)
         raise RunLoopFailed(summary, "cancelled by operator") from exc
     except budgets.BudgetExceeded as exc:
         summary["final_status"] = "error"
         summary["stopped_reason"] = "budget_ceiling_hit"
         summary["error"] = str(exc)
-        write_summary(config, summary)
+        write_summary(config, summary, clock=clock)
         raise RunLoopFailed(summary, str(exc)) from exc
     finally:
         object.__setattr__(config, "event_sink", previous_event_sink)
@@ -2608,9 +2621,11 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
             event_sink.close()
 
 
-def write_summary(config: LoopConfig, summary: dict[str, object]) -> None:
+def write_summary(
+    config: LoopConfig, summary: dict[str, object], *, clock: Clock = SYSTEM_CLOCK
+) -> None:
     update_unexpected_behaviors(config, summary)
-    add_summary_contract_fields(config, summary)
+    add_summary_contract_fields(config, summary, clock=clock)
     add_artifact_paths(summary, config)
     if config.budget_state is not None or "budgets" not in summary:
         summary["budgets"] = summary_budget_payload(config)
@@ -2747,7 +2762,9 @@ def iter_artifact_paths(artifact_paths: dict[object, object]) -> Iterator[tuple[
                     yield kind, item
 
 
-def add_summary_contract_fields(config: LoopConfig, summary: dict[str, object]) -> None:
+def add_summary_contract_fields(
+    config: LoopConfig, summary: dict[str, object], *, clock: Clock = SYSTEM_CLOCK
+) -> None:
     summary["schema_version"] = artifacts.JSON_SCHEMA_VERSION
     summary.setdefault("cli_version", __version__)
     summary.setdefault("harness", config.review_harness)
@@ -2764,7 +2781,7 @@ def add_summary_contract_fields(config: LoopConfig, summary: dict[str, object]) 
             },
         },
     )
-    summary.setdefault("finished_at", datetime.now(UTC).isoformat().replace("+00:00", "Z"))
+    summary.setdefault("finished_at", utc_iso(clock.now()))
     summary.setdefault("duration_seconds", _summary_duration_seconds(summary))
 
 
@@ -3430,9 +3447,11 @@ def new_profile_from_args(args: argparse.Namespace) -> profiles.Profile:
     return profiles.minimal_profile(args.name, description=args.description)
 
 
-def default_artifact_dir() -> Path:
-    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    return Path(".revrem") / "runs" / f"{timestamp}-{uuid.uuid4().hex}"
+def default_artifact_dir(
+    *, clock: Clock = SYSTEM_CLOCK, identity: RunIdentity = SYSTEM_IDENTITY
+) -> Path:
+    timestamp = clock.now().strftime("%Y%m%dT%H%M%SZ")
+    return Path(".revrem") / "runs" / f"{timestamp}-{identity.new_run_id()}"
 
 
 def ensure_default_artifact_ignore(config: LoopConfig) -> None:
@@ -3808,7 +3827,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.save_profile,
             config,
             summary_format=summary_format,
-            description=f"Saved from RevRem CLI on {datetime.now(UTC).date().isoformat()}",
+            description=f"Saved from RevRem CLI on {datetime.now(UTC).date().isoformat()}",  # det-exempt: bundle subcommand human-facing description, not the loop machine contract
             include_artifact_dir=args.artifact_dir is not None,
             timeout_seconds=args.timeout_seconds,
         )
