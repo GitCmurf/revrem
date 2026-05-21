@@ -3,7 +3,7 @@ document_id: REVREM-TASK-003
 type: TASK
 title: Re-engineer cli.py from God object into a hexagonal review-loop core
 status: Draft
-version: '0.1'
+version: '0.2'
 last_updated: '2026-05-21'
 owner: GitCmurf
 docops_version: '2.0'
@@ -69,8 +69,8 @@ Read in this order:
 
 ## Context & Evidence
 
-`src/code_review_loop/cli.py` is **4,892 lines** and is the package's
-single largest module by a factor of 3.3 (next is `profiles.py` at 1,467).
+`src/code_review_loop/cli.py` is **4,946 lines** and is the package's
+single largest module by a factor of 3.4 (next is `profiles.py` at 1,467).
 It is the entry point for both console scripts (`code-review-loop` and
 `revrem` both resolve to `code_review_loop.cli:main`). It is criticised — 
 correctly — as a God object. This task fixes the cause, not the symptom.
@@ -80,15 +80,38 @@ file as it stands, and each one is a defect this plan must retire:
 
 | Evidence | Measurement | What it proves |
 |---|---|---|
-| File size | 4,892 lines, ~140 top-level defs | One module owns parsing, dispatch, config assembly, the loop, five phase executors, progress/terminal I/O, NLP heuristics, summaries, resume, and nine subcommand `*_main` entry points. |
-| The loop function | `_run_loop` is **588 lines** (1994–2582) | A single function interleaves preflight, event-sink wiring, phase orchestration, triage routing, policy resolution, prompt composition, artifact writes, terminal I/O, and exit semantics. Engineering-principle target is ≤40. |
+| File size | 4,946 lines, 166 top-level defs | One module owns parsing, dispatch, config assembly, the loop, five phase executors, progress/terminal I/O, NLP heuristics, summaries, resume, and nine subcommand `*_main` entry points. |
+| The loop function | `_run_loop` is **617 lines** (1994–2610) | A single function interleaves preflight, event-sink wiring, phase orchestration, triage routing, policy resolution, prompt composition, artifact writes, terminal I/O, and exit semantics. Engineering-principle target is ≤40. |
 | Mutable run state | `summary` dict written **60×**; `iterations` list mutated **17×** | The run's truth is an untyped `dict[str, object]` smeared across the file. This is primitive obsession: a missing domain object. |
 | Frozen-config abuse | `object.__setattr__(config, …)` **4×** | A *frozen* dataclass is mutated through a back door to carry run state (`event_sink`, `budget_state`). Config and mutable state are conflated. |
 | Time leakage | `datetime.now` / `time.monotonic` at **11 sites** | The loop is nondeterministic. You cannot characterise its output until time is a seam. |
 | Half-finished DI | `runner: Runner` is injected, but the five `run_*` phases are called as **module globals** | Dependency injection was started and abandoned. This is the direct cause of the test coupling below. |
 | Test reach-in | tests reference **64** distinct `cli.*` symbols and **monkeypatch 18** internals (`run_loop` ×26, `run_codex_review`, `run_remediation`, `run_triage`, `run_commit`, `run_git_preflight`, `refresh_terminal_title`, …) | Tests must reach inside because the module exposes no seams. The coupling is a symptom of the missing abstractions, not a property to preserve. |
-| Test monolith | `tests/test_cli.py` is **6,121 lines** | The test file is a parallel God object and a co-symptom of the same disease. |
+| Test monolith | `tests/test_cli.py` is **6,245 lines** | The test file is a parallel God object and a co-symptom of the same disease. |
 | Duplicated truth | run state lives in **four** hand-synced shapes: the `summary` dict, the resume payload, run-history, and `events.jsonl` | The same information is maintained four ways, which is why resume is fragile and the summary drifts. |
+
+**Measurement provenance (reproducible; re-run before handoff).** The numbers
+above are a snapshot of `feat/triage` as of `last_updated`. They drift as the
+file changes, so each is backed by an exact command rather than an adjective:
+
+```bash
+wc -l src/code_review_loop/cli.py tests/test_cli.py src/code_review_loop/profiles.py
+# _run_loop length: span from its def to the next top-level def
+awk '/^def _run_loop/{s=NR} s&&NR>s&&/^(def |class )/{print NR-s" lines ("s"–"NR-1")";exit}' \
+  src/code_review_loop/cli.py
+# run_loop monkeypatch call-sites (note: spans test_cli.py AND test_resume.py)
+grep -rnc 'setattr(MODULE, "run_loop"' tests/ | awk -F: '{n+=$2} END{print n" sites"}'
+# distinct internal symbols monkeypatched (C2 ratchet baseline)
+grep -rohE 'monkeypatch\.setattr\(MODULE, "[^"]+"' tests/ | sort -u | wc -l
+```
+
+A reviewer who re-runs these and finds a delta should treat the delta as the
+current truth and update this table; the *shape* of the argument (one module
+owning four roles) is invariant to ±100 lines. One caveat already found in
+review: the `run_loop` patch count is **26** (23 in `tests/test_cli.py`, 3 in
+`tests/test_resume.py`) — a count that scopes only `test_cli.py` under-reports
+it as 23. The C2 ratchet (below) counts *distinct internal symbols* (18), a
+different metric from *call-sites*; do not conflate them.
 
 The repo already has healthy seams to build with (`budgets.py`, `events.py`,
 `profiles.py`, `progress.py`, `triage.py`, `policy.py`, `diagnostics.py`,
@@ -197,8 +220,8 @@ hexagonal cosplay.
   `RunState`, `RunOutcome`, review interpretation, policy. Imports no
   adapter, no `argparse`, no terminal codes.
 - **Port** — an interface (`Protocol`/ABC) the core *declares* and depends
-  on: `Clock`, `ProcessRunner`, `Harness`, `EventSink`, `ProgressReporter`,
-  `ArtifactStore`, `GitGateway`.
+  on: `Clock`, `RunIdentity`, `ProcessRunner`, `Harness`, `EventSink`,
+  `ProgressReporter`, `ArtifactStore`, `GitGateway`.
 - **Adapter** — a concrete implementation of a port living at the edge
   (real subprocess, real git, codex harness, terminal/Rich renderer, jsonl
   sink). **Driven adapters** are called by the core; **driving adapters**
@@ -231,6 +254,9 @@ file layout is a consequence shown at the end.
 class Clock(Protocol):
     def now(self) -> datetime: ...
     def monotonic(self) -> float: ...
+
+class RunIdentity(Protocol):                    # deterministic run-scoped ids
+    def new_run_id(self) -> str: ...
 
 class ProcessRunner(Protocol):
     def run(self, args: Sequence[str], cwd: Path, *,
@@ -329,7 +355,8 @@ core/                         # dependency-free; import-linter enforced
   engine.py                   # run(state, ctx) state machine + pure decide() (was _run_loop)
   phases/                     # review / triage / remediate / check / commit (decide+execute split)
   review_interpretation.py    # the NLP heuristics, pure, with a fixture corpus
-  policy.py                   # EXISTING remediation routing (resolve_routing); unchanged by this task
+  policy.py                   # remediation routing (resolve_routing): pure logic only
+  routing_types.py            # Profile/TriageRouteConfig/TriageRoutingRule DTOs lifted from profiles.py
 adapters/
   subprocess_runner.py        # default_runner + process-tree kill + timeout streaming
   terminal.py                 # titles, escape codes, recovery -> ProgressReporter sink
@@ -346,9 +373,44 @@ cli.py                        # TEMPORARY facade re-exporting the public surface
 ```
 
 `code_review_loop.cli:main` remains the entry point throughout (it becomes a
-re-export, then the registry dispatcher). `tui.py` is migrated to construct a
-`RunContext` and call `core.engine.run` directly (Wave D), proving the
-library/driver split.
+re-export, then the registry dispatcher). The library/driver split is proven
+in Wave D by a **headless, non-CLI test driver** that builds a `RunContext`
+and calls `core.engine.run` directly — **not** by rewiring `tui.py` into the
+execution path at runtime. The TUI's runtime role is unchanged this phase
+(it stays a control panel and artifact viewer, per the `REVREM-TASK-002`
+"no second execution engine" constraint); making the engine *drivable by* a
+non-CLI caller is the deliverable, and lifting the TUI into execution is a
+later, separately-gated milestone. See Wave D for the exact scope boundary.
+
+### `policy.py` cannot enter the core "unchanged" — and won't
+
+`policy.py` is the one existing module that the naive layout would drop into
+`core/` verbatim, and it is the one that would break the dependency rule on
+arrival: it imports `from code_review_loop.profiles import Profile,
+TriageRouteConfig, TriageRoutingRule`, and `profiles.py` is an edge module
+(config loading, validation against harness capabilities). A core module that
+imports an edge module violates C4 the moment it lands. The plan resolves this
+explicitly rather than discovering it at B0:
+
+- **Chosen resolution (a): lift the pure routing DTOs into the core.** The
+  three types `policy.py` consumes are pure, frozen config records with no I/O.
+  They move into `core/routing_types.py`; `profiles.py` re-exports them during
+  transition and keeps its *edge* concerns (loading from disk, validating a
+  profile against installed harnesses). `policy.py` then imports only core
+  types and is genuinely dependency-free.
+- **Rejected alternative (b): keep `policy.py` outside `core/`** as a
+  driver-side domain module, with the engine consuming routing decisions
+  through a port. Rejected because routing is pure decision logic with no
+  effect to abstract — a port here would be hexagonal cosplay (see Non-Goals),
+  and `decide`/`resolve_routing` already want to call it directly.
+
+Earlier drafts of the layout described `policy.py` as "unchanged by this
+task"; that was **wrong** and the layout above is corrected. The routing
+*logic* (`resolve_routing`) is behaviour-preserved, but its imports change and
+its config DTOs relocate.
+This split is owned by **B1** (alongside `review_interpretation`), gated by the
+import-linter contract from **B0**, and the DTO lift carries a C2-style
+re-export burn-down line.
 
 ## Shared Contracts Registry
 
@@ -382,11 +444,19 @@ The 18 monkeypatched internals are classified and retired, not preserved:
 | Consumed *inside* the loop | `run_codex_review`, `run_remediation`, `run_triage`, `run_commit`, `run_subprocess_with_terminal_title_refresh`, `default_runner`, `run_git_preflight`, `lexical_git_repo_root`, `refresh_terminal_title`, `terminal_columns`, `write_terminal_control_to_tty` | Replaced by **fake ports** in `RunContext`. Patching is deleted, not migrated. |
 | Module-level state / config knobs | `TERMINAL_TITLE_REFRESH_SECONDS`, `_LAST_CANCELLATION_SIGNAL_AT`, `_RICH_UNAVAILABLE_WARNED`, `datetime` | Become explicit config on the relevant adapter or the `Clock` port. |
 
+- **Two distinct metrics, do not conflate them.** The *burn-down narrative*
+  tracks **18 distinct internal symbols** (the table above; goal: 0). The
+  *ratchet test* tracks **module-targeted call-sites** — every
+  `monkeypatch.setattr(MODULE, …)` occurrence — seeded at the current count of
+  **57**, asserting it never increases. (The all-tests `monkeypatch.setattr`
+  total is ~119, but most target non-`MODULE` objects and are out of scope.)
 - Each extracting PR includes a **burn-down line** in its body: symbols
-  retired this PR / symbols remaining. The phase exits when the count is 0
-  (or a residue is documented with rationale).
-- A ratchet test (`tests/test_monkeypatch_ratchet.py`) asserts the count of
-  `monkeypatch.setattr(MODULE, …)` call sites never increases.
+  retired this PR / symbols remaining (of 18), and call-sites remaining (of
+  57). The phase exits when the symbol count is 0 (or a residue is documented
+  with rationale).
+- The ratchet test (`tests/test_monkeypatch_ratchet.py`) asserts the
+  call-site count is `<=` its committed baseline and updates the baseline
+  downward as patches are retired.
 
 ### C3. Output Contract Governance — relaxed but instrumented (owned by A2)
 
@@ -410,7 +480,9 @@ not a change-*preventer*:
 
 - The core (`core/`) imports **only** the standard library, ports, and other
   core modules. It must not import `argparse`, `adapters/*`, `cli/*`,
-  `terminal`, or `tui`.
+  `terminal`, `tui`, or `profiles` (an edge module — its pure routing DTOs are
+  lifted into `core/routing_types.py` in B1b precisely so the core never
+  reaches into it).
 - Adapters import core; drivers import both. **No cycles.**
 - Enforced mechanically by `import-linter` contracts in CI
   (`importlinter` config in `pyproject.toml`), plus a layered-architecture
@@ -422,18 +494,51 @@ not a change-*preventer*:
 - Terminal results are a closed sum type. Exit codes are produced by a single
   total function `exit_code(outcome) -> int`, exhaustive under `mypy`
   (`assert_never` in the fallthrough).
-- The mapping preserves today's codes exactly (0 clear, 1 error, 2 findings
-  remain, 3 budget, 4 setup, 5 cancelled — per `REVREM-TASK-002` C5) unless a
-  change is ledgered under C3.
+- **Scope: `RunOutcome` is the *loop-execution* outcome only**, mapping to
+  codes 0 clear, 1 error, 2 findings remain, 3 budget, 4 setup, 5 cancelled
+  (per `REVREM-TASK-002` C5), unless a change is ledgered under C3.
+- **Subcommands have their own outcomes; code 6 is not lost.** `revrem doctor
+  --strict` returns **6** today (`cli.py:4169`, documented at
+  `REVREM-DEVEX-001`) — a *command-level* result, not a loop result. The C1
+  registry must not re-introduce ad-hoc `return 6` literals (that is the smell
+  C5 exists to kill). Chosen model: each outcome type — `RunOutcome` and each
+  subcommand's own closed `CommandOutcome` (e.g. doctor's
+  `Ok`/`WarningsStrict`/`SetupFailed`) — owns a **total** `exit_code(self) ->
+  int`, exhaustive under `mypy` *within that type* (`assert_never` per ADT).
+  No subcommand holds a bare `return <int>`; the registry just calls
+  `outcome.exit_code()`. (Rejected: a single `exit_code(RunOutcome |
+  CommandOutcome)` function — an open-ended union grows with every new
+  subcommand and **loses** the `assert_never` guarantee, defeating C5's
+  purpose. Also rejected: one mega-ADT subsuming loop and every subcommand —
+  it couples unrelated commands and bloats the loop's outcome type.)
 - No `stopped_reason` string is read to decide control flow after B3; strings
   become display labels derived *from* the outcome, not inputs *to* it.
 
-### C6. The `Clock` Seam (owned by A1)
+### C6. The Determinism Seam: Clock **and** `RunIdentity` (owned by A1)
 
-- All wall-clock and monotonic reads go through `ctx.clock`. The default
-  adapter is the real clock; tests inject a deterministic fake.
-- No `datetime.now()` / `time.monotonic()` / `time.sleep()` appears in
-  `core/` after A1. A grep-gate test enforces this.
+The Clock is necessary but **not sufficient** for reproducible snapshots. A2's
+golden-master promise is only honest if *every* nondeterminism source feeding
+the machine contract is either **injected** (made a seam) or **normalized**
+(canonicalized in the snapshot comparator). The plan commits a strategy per
+source rather than discovering uncovered ones during A2:
+
+| Source | Site | Strategy |
+|---|---|---|
+| `datetime.now()` / `time.monotonic()` / `time.sleep()` | 11 sites in the loop | **Inject** via `ctx.clock`. |
+| `run_id = uuid.uuid4().hex` | `cli.py:2019` | **Inject** via a `RunIdentity` port (seeded/fixed in tests). |
+| `Event.ts` default factory (`datetime.now`) | `events.py:48` | **Inject** — route the default through `ctx.clock` so emitted-event timestamps are deterministic, rather than hiding a clock inside `events.py`. |
+| Artifact-dir suffix `{timestamp}-{uuid}` | `cli.py:3435` | **Inject** (clock + `RunIdentity`). |
+| Cwd, git state (`git_state_for_resume`), absolute paths | resume payload | **Normalize** in the comparator (path/cwd canonicalization). |
+| Artifact byte-size / mtime fields | summary | **Normalize** in the comparator. |
+
+- All wall-clock and monotonic reads go through `ctx.clock`; all run-scoped
+  identifiers go through `ctx.identity` (`RunIdentity`). Defaults are the real
+  clock / real `uuid4`; tests inject deterministic fakes.
+- No `datetime.now()` / `time.monotonic()` / `time.sleep()` / `uuid.uuid4()`
+  appears in `core/` after A1. A grep-gate test enforces this.
+- The A2 golden masters cover the **machine contract only** (JSON summary,
+  `events.jsonl`, exit codes) through the comparator's normalizer; human
+  presentation is explicitly out of snapshot scope (C3).
 
 ### C7. `RunContext` & Construction (owned by B0)
 
@@ -452,7 +557,7 @@ A0 baseline + public-surface pin + import-linter scaffold
   │     └─> A2 golden-master + fake ports   (the safety net; needs A1)
   │           └─> A3 RunState behind dict   (to_dict == current, byte-for-byte)
   └─> B0 ports + RunContext + dependency rule (needs A0)
-        ├─> B1 review_interpretation (pure + corpus)
+        ├─> B1 review_interpretation + routing DTOs into core (frees policy.py)
         ├─> B2 Phase protocol + 5 executors as ports  (retires run_* patches; needs A2,B0)
         │     └─> B3 engine = decision loop + RunOutcome ADT  (kills _run_loop; needs A3,B2)
         └─> B4 terminal -> ProgressReporter sink           (engine drops terminal import)
@@ -474,9 +579,9 @@ Wave E is a named sequel, not part of this task's exit criteria.
 | A0 | REVREM-PLAN-003 hardening | — (baseline) | C1 public surface | Safe incremental extraction |
 | A1 | REVREM-TEST-001 determinism | Time leakage (11 sites) | C6 Clock | Deterministic tests |
 | A2 | REVREM-TEST-001 | Test reach-in (precondition) | C3 output governance | Change-detector safety net |
-| A3 | REVREM-PLAN-003 | Mutable dict (60×); frozen abuse (4×) | — | Typed run state |
-| B0 | REVREM-ADR-006 architecture | Half-finished DI | C4, C7 | Hexagon + injectable core |
-| B1 | engineering-principles §4 | Heuristics inline | — | Reusable, fixture-backed NLP |
+| A3 | REVREM-PLAN-003 | Mutable dict (60×) | — | Typed run state |
+| B0 | REVREM-ADR-006 architecture | Half-finished DI; frozen abuse (4×) | C4, C7 | Hexagon + injectable core |
+| B1 | engineering-principles §4 | Heuristics inline; `policy.py`→`profiles.py` edge import | C4 (policy.py) | Reusable, fixture-backed NLP + edge-free routing |
 | B2 | REVREM-TASK-002 F10 fake harness | Phases as globals; 11 internal patches | C2 burn-down | Mock-free phase tests |
 | B3 | REVREM-TASK-002 C5 exit codes | 588-line loop; stringly-typed exits | C5 RunOutcome | Exhaustive exit contract |
 | B4 | REVREM-PLAN-002 TUI readiness | Engine welded to terminal | — | Engine renderer-agnostic |
@@ -530,42 +635,65 @@ them.
 - *Intent:* make extraction safe before touching structure.
 - *Changes:* add `import-linter` (dev dep) with a placeholder contract; add
   `tests/test_public_surface.py` (C1); create the behavior ledger file (C3);
-  add the C2 ratchet test seeded at the current count (18).
+  add the C2 ratchet test seeded at the current call-site count (57; the
+  burn-down narrative separately tracks the 18 distinct symbols — see C2).
 - *Tests:* surface test green; ratchet asserts ≤ current.
 - *Exit:* CI green; no production code moved.
 - *Risk:* low. Pure scaffolding.
 
-**A1. Introduce the `Clock` port** (C6)
-- *Intent:* remove the #1 nondeterminism source so output can be pinned.
-- *Changes:* add `Clock` to `core/ports.py` (or a pre-core `clock.py`
-  pending B0); thread `ctx.clock`/parameter through the 11 time sites; real
-  clock is the default so behaviour is identical.
-- *Tests:* a fake clock makes `started_at`/durations deterministic; grep-gate
-  forbids raw time reads in the engine path.
-- *Exit:* loop output is reproducible under a fixed clock.
+**A1. Introduce the `Clock` and `RunIdentity` ports** (C6)
+- *Intent:* remove the nondeterminism sources so output can be pinned. The
+  Clock alone is insufficient (see C6 table) — `uuid4` and `Event.ts` are
+  pinned in the same wave so A2 is not built on a leaky seam.
+- *Changes:* add `Clock` and `RunIdentity` to `core/ports.py` (or pre-core
+  shims pending B0); thread `ctx.clock` through the 11 time sites; thread
+  `ctx.identity` through the `run_id` (`cli.py:2019`) and artifact-dir
+  (`cli.py:3435`) generators; route `Event.ts`'s default factory through the
+  clock. Real clock / real `uuid4` are the defaults so behaviour is identical.
+- *Tests:* fake clock + fake identity make `started_at`, durations, `run_id`,
+  and event timestamps deterministic; grep-gate forbids raw time/uuid reads in
+  the engine path.
+- *Exit:* loop output is reproducible under a fixed clock and identity.
 - *Risk:* medium — touch points are scattered; mitigated by default-real.
 
 **A2. Golden-master suite + fake ports** (C3)
 - *Intent:* the change-detector that makes every later wave safe.
-- *Changes:* add `tests/support/` with a `FakeRunner`/fake-harness and fake
-  clock; capture golden snapshots of JSON summary, `events.jsonl`, and exit
-  codes for every subcommand and the loop happy/sad/budget/cancel paths.
+- *Changes:* add `tests/support/` with a `FakeRunner`/fake-harness, fake
+  clock, and fake `RunIdentity`; add a **snapshot normalizer** that
+  canonicalizes the residual non-injected sources from the C6 table (cwd,
+  git-state, absolute paths, byte-size/mtime fields); capture golden snapshots
+  of JSON summary, `events.jsonl`, and exit codes for every subcommand and the
+  loop happy/sad/budget/cancel paths. Snapshots cover the **machine contract
+  only**, not human presentation (C3).
 - *Tests:* snapshots committed; a diff harness fails on unledgered change.
-- *Exit:* every public behaviour has a pinned snapshot. **Depends on A1.**
-- *Risk:* medium — building deterministic fixtures is the real work; this is
-  why A1 precedes it.
+- *Exit:* every machine-contract behaviour has a pinned, normalized snapshot.
+  **Depends on A1** (both ports) so the fixtures are not leaky.
+- *Risk:* medium — building deterministic fixtures + the normalizer is the
+  real work; this is why A1 precedes it.
 
-**A3. `RunState` behind the dict**
-- *Intent:* introduce the typed aggregate without changing output.
+**A3. `RunState` behind the dict** (shadow only)
+- *Intent:* introduce the typed aggregate without changing output. **Scope is
+  deliberately narrow:** A3 shadows the `summary` dict; it does **not** touch
+  the frozen-config back door, because that is not just run state (see below).
 - *Changes:* add `core/state.py`; build `RunState` inside the loop and assert
-  `RunState.to_dict()` equals the current `summary` dict byte-for-byte;
-  remove the 4 `object.__setattr__` calls by moving run state off the frozen
-  config.
-- *Tests:* equivalence test against A2 snapshots; frozen-config no longer
-  mutated.
-- *Exit:* dict is produced *from* `RunState`; 60 scattered writes become
-  transitions.
+  `RunState.to_dict()` equals the current `summary` dict byte-for-byte; the
+  60 scattered `summary[...]` writes become `RunState` transitions while the
+  dict is still the emitted artifact.
+- *Non-change (intentional):* the 4 `object.__setattr__(config, …)` calls set
+  `event_sink` and `budget_state`, which are **collaborators read across
+  review/triage/remediation/summary/budget accounting**, not mere run-state
+  fields. They have nowhere to live until `RunContext` exists, so their
+  removal is **owned by B0/C7**, not A3. Attempting it here would force a
+  premature, half-built context.
+- *Tests:* equivalence test against A2 snapshots.
+- *Exit:* the summary dict is produced *from* `RunState`; the frozen-config
+  mutation still exists and is explicitly carried into B0.
 - *Risk:* medium.
+
+  > **B0 follow-through (cross-reference, not duplicated work):** when
+  > `RunContext` lands in B0, `event_sink` and `budget_state` move onto it and
+  > the 4 `object.__setattr__` calls are deleted there. B0's exit criterion
+  > includes "frozen-config no longer mutated"; A3's does not.
 
 ### Wave B — Free the Reusable Core
 
@@ -573,18 +701,34 @@ them.
 - *Intent:* establish the hexagon spine.
 - *Changes:* create `core/ports.py` with all Protocols; `RunContext`; wire
   the real adapters; turn the A1 clock into a port; promote the import-linter
-  contract to enforce core-imports-no-edge.
-- *Tests:* import-linter contract passes; a `RunContext` builds from fakes.
-- *Exit:* engine receives all collaborators via `RunContext`.
+  contract to enforce core-imports-no-edge. **Relocate `event_sink` and
+  `budget_state` off the frozen `LoopConfig` onto `RunContext`, deleting the 4
+  `object.__setattr__` calls** that A3 deliberately left in place.
+- *Tests:* import-linter contract passes; a `RunContext` builds from fakes;
+  grep-gate asserts zero `object.__setattr__(config, …)` remain.
+- *Exit:* engine receives all collaborators via `RunContext`; the frozen
+  config is no longer mutated.
 - *Risk:* medium-high — defines the boundary everything else assumes.
 
-**B1. `review_interpretation` (pure)** (engineering-principles §4)
-- *Intent:* extract the reusable, dependency-free NLP heuristics.
-- *Changes:* move `detect_review_status` and the prose/finding helpers to
-  `core/review_interpretation.py`; add a fixture corpus with provenance.
-- *Tests:* fixture-based table tests; cli re-exports during transition.
-- *Exit:* heuristics testable and reusable in isolation.
-- *Risk:* low — pure functions.
+**B1. Pure-domain extraction: `review_interpretation` + routing DTOs**
+(engineering-principles §4) — **two PRs**
+- *Intent:* extract the reusable, dependency-free domain logic and sever the
+  one core-bound module (`policy.py`) from its edge import of `profiles.py`.
+- *Changes:*
+  - **B1a — `review_interpretation`.** Move `detect_review_status` and the
+    prose/finding helpers to `core/review_interpretation.py`; add a fixture
+    corpus with provenance; `cli` re-exports during transition.
+  - **B1b — routing DTOs into core.** Lift `Profile`, `TriageRouteConfig`,
+    `TriageRoutingRule` into `core/routing_types.py`; `profiles.py` re-exports
+    them (and keeps its edge loading/validation); repoint `policy.py` to the
+    core types so it imports no edge module. `resolve_routing` behaviour is
+    unchanged.
+- *Tests:* fixture-based table tests for the heuristics; routing tests import
+  from core homes; import-linter (from B0) proves `policy.py` is edge-free.
+- *Exit:* heuristics and routing testable/reusable in isolation; `policy.py`
+  satisfies C4.
+- *Risk:* low — pure functions and a mechanical DTO move; the only hazard is a
+  missed re-export, caught by the import-from-final-home test.
 
 **B2. `Phase` protocol + five executors as ports** (C2)
 - *Intent:* finish the abandoned DI; retire the internal monkeypatches.
@@ -599,10 +743,20 @@ them.
 **B3. Engine state machine + `RunOutcome` ADT** (C5) — **three PRs**
 - *Intent:* kill the 588-line function and the stringly-typed exits. This is
   too large for one atomic PR; it lands as three, each green and shippable:
-  - **B3a — Extract the engine as a procedural shell.** Move the loop body to
-    `core/engine.py` as `run(state, ctx)`, calling phases via `ctx` (building
-    directly on B2). Behaviour and structure otherwise unchanged. Retires the
-    `run_loop`-internal coupling.
+  - **B3a — Read `_run_loop` in full, then extract the engine as a procedural
+    shell.** *Mandatory first deliverable (a gate, not a note):* read the whole
+    function (1994–2610) line-by-line and produce a **branch → transition →
+    outcome table** committed to the behavior ledger, with one row per
+    control-flow branch — at minimum: routing outcome, commit-hook retry, final
+    review, cancellation (incl. the double-Ctrl-C path), and budget-failure
+    (the retry logic ~line 2392) — mapping each to its `RunState` transition and
+    its `RunOutcome` variant. This table is what B3b/B3c are audited against;
+    without it, "the state machine preserves behaviour" is unverifiable. *Then*
+    move the loop body to `core/engine.py` as `run(state, ctx)`, calling phases
+    via `ctx` (building directly on B2). Behaviour and structure otherwise
+    unchanged. Retires the `run_loop`-internal coupling. **If a branch in the
+    tail contradicts the fixed-sequence `decide` shape, raise it against this
+    doc before writing B3b.**
   - **B3b — Introduce the state-machine shape.** Add the pure `decide(state)`
     function (encoding the current fixed sequence) and the `execute` shell;
     the loop becomes `decide`/`execute`. Pure-function value tests added.
@@ -633,8 +787,11 @@ them.
 - *Intent:* replace the `if/elif` ladder with a registry.
 - *Changes:* `cli/__init__.py` registry; per-subcommand modules under
   `cli/commands/` (config, suppress, doctor, replay, resume, history, policy,
-  triage, bundle); `main()` becomes table dispatch (~10 lines).
-- *Tests:* per-subcommand tests relocated; dispatch test; snapshots hold.
+  triage, bundle); `main()` becomes table dispatch (~10 lines). Each command
+  returns a `CommandOutcome` whose own total `exit_code()` produces its code
+  (C5) — no command holds a literal `return <int>` (including doctor's code 6).
+- *Tests:* per-subcommand tests relocated; dispatch test; snapshots hold; a
+  grep-gate asserts no bare `return <int>` exit literals survive in `cli/`.
 - *Exit:* adding a subcommand touches only its module + the registry table.
 - *Risk:* medium — `resume` carries the ~15 `_resume_*` deserialisers; folds
   into `RunState.from_dict` (symmetry with A3).
@@ -777,9 +934,11 @@ Pre-empting the sharp questions a reviewer will (rightly) ask:
   contract clarity; confirm at B0.)
 - Exact home for `CommandResult` (a port-adjacent value type): `core/ports.py`
   vs. a dedicated `core/types.py`. (Cosmetic; decide at B0.)
-- **`_run_loop` has not been read in full for this plan** (≈ lines
-  2260–2582, including budget-retry logic around line 2392, were sampled
-  rather than read line-by-line). B3a must begin by reading the whole
-  function; the plan's risk rating for B3 already assumes control-flow
-  surprises in the unread tail. If a surprise contradicts the state-machine
-  shape, raise it against this doc before proceeding.
+- **`_run_loop` full-read is resolved into a B3a gate, not left open.** This
+  plan was written from a sampling of `_run_loop` (1994–2610, with the
+  budget-retry tail ~line 2392 read in outline only), which is acceptable for
+  a *plan* but not for *implementation*. Rather than leave it as a risk, B3a
+  now **mandates** a line-by-line read plus a committed branch → transition →
+  outcome table as its first deliverable (see Wave B3a). The B3 risk rating
+  already assumes control-flow surprises in the tail; the gate forces them to
+  surface before B3b/B3c build on the state-machine shape.
