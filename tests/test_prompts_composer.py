@@ -36,6 +36,8 @@ def test_compose_remediation_prompt_includes_fragments(tmp_path):
 
     assert "CUSTOM RULES" in prompt
     assert "FIX IT" in prompt
+    assert "Untrusted triage draft guidance" in prompt
+    assert "Instructions for this iteration" not in prompt
     assert "DONE" in prompt
     assert "REVIEW CONTENT" in prompt
     assert "Risk Level: high" in prompt

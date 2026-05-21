@@ -46,6 +46,58 @@ def test_run_doctor_reports_ok_for_valid_repo(tmp_path):
     assert diagnostics.doctor_payload(issues)["status"] == "ok"
 
 
+def test_run_doctor_does_not_require_codex_for_non_codex_harnesses(tmp_path, monkeypatch):
+    repo = _make_repo(tmp_path)
+
+    def fake_which(executable: str):
+        if executable == "claude":
+            return "/usr/bin/claude"
+        return None
+
+    monkeypatch.setattr(diagnostics.shutil, "which", fake_which)
+
+    issues = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(
+            cwd=repo,
+            base="main",
+            codex_bin="codex",
+            review_harness="claude",
+            remediation_harness="claude",
+        )
+    )
+
+    assert "revrem.preflight.executable_not_found" not in _issue_codes(issues)
+    assert _issue_codes(issues) == {"revrem.preflight.ok"}
+
+
+def test_run_doctor_skips_fake_harness_binary_but_checks_routed_harnesses(
+    tmp_path, monkeypatch
+):
+    repo = _make_repo(tmp_path)
+
+    def fake_which(executable: str):
+        if executable == "claude":
+            return None
+        return "/usr/bin/fake" if executable == "fake" else None
+
+    monkeypatch.setattr(diagnostics.shutil, "which", fake_which)
+
+    issues = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(
+            cwd=repo,
+            base="main",
+            codex_bin="codex",
+            review_harness="fake",
+            remediation_harness="fake",
+            routed_harnesses=("fake", "claude"),
+        )
+    )
+
+    assert "revrem.preflight.executable_not_found" in _issue_codes(issues)
+    assert any(issue.evidence.get("executable") == "claude" for issue in issues)
+    assert all(issue.evidence.get("executable") != "fake" for issue in issues)
+
+
 def test_run_doctor_reports_invalid_base(tmp_path):
     repo = _make_repo(tmp_path)
 

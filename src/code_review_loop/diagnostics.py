@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from code_review_loop import fingerprints
+from code_review_loop.harnesses import FAKE_HARNESS_COMMAND
 
 DIAGNOSTICS_SCHEMA_VERSION = "1.0"
 SEVERITY_ORDER = {"blocking": 0, "warn": 1, "ok": 2}
@@ -49,6 +50,13 @@ class DoctorConfig:
     artifact_dir: Path | None = None
     artifact_dir_is_default: bool = False
     codex_bin: str = "codex"
+    review_harness: str = "codex"
+    remediation_harness: str = "codex"
+    triage_enabled: bool = False
+    triage_harness: str = "codex"
+    commit_message_harness: str = "codex"
+    routed_harnesses: tuple[str, ...] = ()
+    harness_executables: dict[str, str] = field(default_factory=dict)
     check_commands: tuple[str, ...] = ()
     commit_after_remediation: bool = False
     timeout_seconds: float | None = None
@@ -331,14 +339,17 @@ def _nearest_existing_directory(path: Path) -> Path:
 
 def _executable_issues(config: DoctorConfig) -> list[DiagnosticIssue]:
     issues: list[DiagnosticIssue] = []
-    if shutil.which(config.codex_bin) is None:
+    required_executables = _required_executables(config)
+    for executable_name, source in required_executables:
+        if shutil.which(executable_name) is not None:
+            continue
         issues.append(
             DiagnosticIssue(
-                code="revrem.preflight.codex_not_found",
+                code="revrem.preflight.executable_not_found",
                 severity="blocking",
-                message=f"Codex executable {config.codex_bin!r} was not found on PATH.",
-                hint="Install Codex or pass --codex-bin with the executable path.",
-                evidence={"codex_bin": config.codex_bin},
+                message=f"Executable {executable_name!r} for {source} was not found on PATH.",
+                hint="Install the executable or update the profile to point at a valid path.",
+                evidence={"executable": executable_name, "source": source},
             )
         )
     for command in config.check_commands:
@@ -367,6 +378,45 @@ def _executable_issues(config: DoctorConfig) -> list[DiagnosticIssue]:
                 )
             )
     return issues
+
+
+def _required_executables(config: DoctorConfig) -> list[tuple[str, str]]:
+    required: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
+    def add(harness: str, source: str) -> None:
+        executable = _resolve_harness_executable(config, harness)
+        if harness == "fake" or executable == FAKE_HARNESS_COMMAND:
+            # The fake harness is intercepted by the local adapter and never
+            # spawned as an external binary.
+            return
+        if executable in seen:
+            return
+        seen.add(executable)
+        required.append((executable, source))
+
+    add(config.review_harness, "review.harness")
+    add(config.remediation_harness, "remediation.harness")
+    if config.triage_enabled:
+        add(config.triage_harness, "triage.harness")
+    if config.commit_after_remediation:
+        add(config.commit_message_harness, "commit.harness")
+    for route_harness in config.routed_harnesses:
+        add(route_harness, "triage.routes.harness")
+    return required
+
+
+def _resolve_harness_executable(config: DoctorConfig, harness: str) -> str:
+    if harness in config.harness_executables:
+        return config.harness_executables[harness]
+    if harness == "codex":
+        return config.codex_bin
+    from code_review_loop import harnesses
+
+    registry = harnesses.harness_registry()
+    if harness in registry:
+        return registry[harness].executable
+    return harness
 
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:

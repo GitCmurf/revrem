@@ -102,7 +102,10 @@ revrem doctor --base main --check "pytest -q"
 ```
 
 `revrem doctor` validates the local Git base, writable artifact path, Codex
-executable, and configured check executables without invoking a model. Relative
+executable, routed remediation harness executables, and configured check
+executables without invoking a model. The internal `fake` harness used by local
+tests is exempt from PATH checks because it is handled by RevRem itself rather
+than launched as a standalone binary. Relative
 `--artifact-dir` values are resolved against the doctor `cwd`, not the process
 working directory. It warns when profile timeouts explicitly disable a phase
 timeout and when the current locale is not UTF-8 capable. Use `--format json`
