@@ -38,6 +38,9 @@ jobs:
       - name: Lint
         run: ruff check .
 
+      - name: Import contracts
+        run: lint-imports
+
       - name: Type check
         run: mypy src
 

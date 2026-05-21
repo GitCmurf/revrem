@@ -30,6 +30,7 @@ dependencies = ["jsonschema>=4.22", "tomli-w>=1.0"]
 dev = [
   "build>=1.2",
   "detect-secrets>=1.5",
+  "import-linter>=2.0",
   "mypy>=1.8",
   "pip-licenses>=5",
   "pre-commit>=4",
@@ -84,3 +85,25 @@ python_version = "3.11"
 check_untyped_defs = true
 warn_return_any = true
 warn_unused_configs = true
+
+# REVREM-TASK-003 Wave A0: import-linter scaffold. This placeholder contract
+# encodes a true-today slice of the dependency rule (domain leaf modules must
+# not import the cli God object). The full layered core/adapters/cli contract
+# (Contract C4) replaces it in Wave B0.
+[tool.importlinter]
+root_package = "code_review_loop"
+
+[[tool.importlinter.contracts]]
+name = "Domain leaf modules must not import the cli God object (placeholder, superseded in B0)"
+type = "forbidden"
+source_modules = [
+  "code_review_loop.events",
+  "code_review_loop.budgets",
+  "code_review_loop.triage",
+  "code_review_loop.policy",
+  "code_review_loop.artifacts",
+  "code_review_loop.fingerprints",
+  "code_review_loop.redaction",
+  "code_review_loop.run_history",
+]
+forbidden_modules = ["code_review_loop.cli"]
