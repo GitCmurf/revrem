@@ -60,7 +60,6 @@ def test_loop_with_v2_triage_routing(fake_harness, tmp_path, monkeypatch):
         }
     }
     (findings_dir / "triage.txt").write_text(json.dumps(triage_payload), encoding="utf-8")
-    (findings_dir / "remediation.txt").write_text("Remediation: done", encoding="utf-8")
 
     # 2. Setup profile with routing
     import subprocess
@@ -105,11 +104,19 @@ model = "fake-clear"
     (tmp_path / ".revrem.toml").write_text(toml, encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
-    # 3. Run loop
-    # We need to provide fixtures for frontier-model remediation too
-    frontier_dir = fake_harness / "fake-clear"
-    frontier_dir.mkdir()
-    (frontier_dir / "remediation.txt").write_text("Remediation: frontier done", encoding="utf-8")
+    # 3. Run loop. The triage model proposes the same route tier but a
+    # different model. Proposals are advisory: the configured route's model is
+    # the executable decision, so the fake-clear fixture must be used.
+    configured_route_dir = fake_harness / "fake-clear"
+    configured_route_dir.mkdir()
+    (configured_route_dir / "remediation.txt").write_text(
+        "Remediation: configured route model\n", encoding="utf-8"
+    )
+    proposed_model_dir = fake_harness / "frontier-model"
+    proposed_model_dir.mkdir()
+    (proposed_model_dir / "remediation.txt").write_text(
+        "Remediation: proposed model\n", encoding="utf-8"
+    )
 
     exit_code = cli.main([
         "--profile", "test",
@@ -137,7 +144,13 @@ model = "fake-clear"
 
     routing = json.loads((run_dir / "routing-1.json").read_text())
     assert routing["effective_route"]["route_tier"] == "frontier"
+    assert routing["effective_route"]["model"] == "fake-clear"
+    assert routing["model_proposal"]["model"] == "frontier-model"
+    assert routing["policy_decision"]["decision"] == "policy_override"
     assert routing["policy_decision"]["matched_rule_ids"] == ["sec"]
+    assert (run_dir / "remediation-1.txt").read_text(encoding="utf-8") == (
+        "Remediation: configured route model\n"
+    )
 
     prompt = (run_dir / "remediation-1-prompt.txt").read_text()
     assert "PRINCIPLES" in prompt

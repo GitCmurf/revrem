@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping, Sequence
 from typing import Any, cast
 
@@ -109,6 +110,8 @@ def _format_value(value: object) -> str:
     if isinstance(value, int) and not isinstance(value, bool):
         return str(value)
     if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("TOML floats must be finite")
         return repr(value)
     if value is None:
         raise TypeError("TOML does not support null/None values")

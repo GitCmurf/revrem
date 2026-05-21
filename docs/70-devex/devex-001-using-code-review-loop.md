@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.10'
+version: '1.11'
 last_updated: '2026-05-21'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.10
+> **Version:** 1.11
 > **Last Updated:** 2026-05-21
 > **Type:** DEVEX
 > **Area:** devex
@@ -356,6 +356,10 @@ omits `timeout_seconds`, it falls back to the built-in default timeout instead
 of inheriting the sibling phase's value.
 Negative phase timeouts are rejected during profile loading as invalid
 configuration, matching the CLI's `--timeout-seconds` validation.
+`--max-iterations` and profile `pipeline.max_iterations` must be positive
+integers; invalid values fail before the review/remediation loop starts.
+Generated TOML config output rejects non-finite floats instead of writing
+non-portable `nan` or `inf` tokens.
 When terminal title refresh is enabled, the subprocess wrapper keeps waiting on
 the same child after a timeout without resending stdin, which avoids the
 `communicate()` retry error on long-running stdin-driven phases.
@@ -881,6 +885,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.11 | 2026-05-21 | Codex | Documented positive iteration validation and finite TOML numeric output |
 | 1.10 | 2026-05-21 | Codex | Documented temp-root `.git` marker handling during project profile discovery |
 | 1.9 | 2026-05-13 | Codex | Documented profile-level suppression scope policy |
 | 1.8 | 2026-05-13 | Codex | Documented optional redaction extra alongside progress and TUI extras |

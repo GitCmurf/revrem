@@ -2253,6 +2253,17 @@ def test_main_rejects_negative_timeout(tmp_path, monkeypatch, capsys):
     assert "--timeout-seconds must be 0 or greater" in capsys.readouterr().err
 
 
+def test_main_rejects_nonpositive_max_iterations(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+
+    exit_code = MODULE.main(["--max-iterations", "0"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "--max-iterations must be at least 1" in captured.err
+    assert "Traceback" not in captured.err
+
+
 def test_main_handles_keyboard_interrupt_without_traceback(tmp_path, monkeypatch, capsys):
     def interrupted_run_loop(config):
         raise KeyboardInterrupt

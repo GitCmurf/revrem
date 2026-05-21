@@ -413,6 +413,38 @@ def test_run_monitor_view_reports_invalid_events_jsonl(tmp_path):
     assert monitor.event_error == "event seq gap: expected 1, got 2"
 
 
+def test_run_monitor_view_reports_malformed_complete_events_jsonl(tmp_path):
+    repo = tmp_path / "repo"
+    run_dir = repo / ".revrem" / "runs" / "run-1"
+    run_dir.mkdir(parents=True)
+    event = events.make_event(
+        run_id="run-1",
+        seq=1,
+        kind="phase_start",
+        phase="review",
+        payload={"message": "start"},
+    )
+    (run_dir / "events.jsonl").write_text(
+        json.dumps(event.to_dict()) + "\n" + "{not json}\n",
+        encoding="utf-8",
+    )
+
+    monitor = tui_state.run_monitor_view(
+        {
+            "run_id": "run-1",
+            "cwd": str(repo),
+            "final_status": "failed",
+            "artifact_dir": ".revrem/runs/run-1",
+            "artifact_paths": {},
+        }
+    )
+
+    assert monitor.events_truncated is True
+    assert [event.kind for event in monitor.events] == ["phase_start", "failure"]
+    assert monitor.events[-1].detail == "truncated_events_jsonl"
+    assert monitor.event_error is None
+
+
 def test_shell_model_builds_operator_screens_and_selected_launch_plan(tmp_path):
     home = tmp_path / "home"
     repo = tmp_path / "repo"

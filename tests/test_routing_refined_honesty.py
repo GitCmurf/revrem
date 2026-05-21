@@ -1,100 +1,127 @@
 from __future__ import annotations
 
-from code_review_loop import policy, triage
+import json
+import subprocess
+
+import pytest
+
+from code_review_loop import cli, harnesses
 
 
-def test_routing_artifact_honesty_full_logic():
-    # Setup inputs mimicking _run_loop
+@pytest.fixture
+def fake_harness(monkeypatch, tmp_path):
+    monkeypatch.setenv(harnesses.FAKE_HARNESS_ENV, "1")
+    fixture_dir = tmp_path / "fixtures"
+    fixture_dir.mkdir()
+    monkeypatch.setenv(harnesses.FAKE_HARNESS_FIXTURE_ENV, str(fixture_dir))
+    return fixture_dir
+
+
+def _init_git_repo(path):
+    subprocess.run(["git", "init", "-b", "main"], cwd=path, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=path, check=True)
+    (path / "README").touch()
+    subprocess.run(["git", "add", "README"], cwd=path, check=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=path, check=True)
+
+
+def test_default_route_artifact_honesty_uses_production_loop(
+    fake_harness, tmp_path, monkeypatch
+):
+    findings_dir = fake_harness / "fake-findings"
+    findings_dir.mkdir()
+    (findings_dir / "review.txt").write_text(
+        "Finding: f1\nREVIEW_STATUS: findings\n", encoding="utf-8"
+    )
     triage_payload = {
-        "confirmed_findings": [],
+        "confirmed_findings": [
+            {
+                "fingerprint": "f1",
+                "summary": "s",
+                "severity": "medium",
+                "affected_paths": ["a.py"],
+                "rationale": "r",
+            }
+        ],
         "rejected_findings": [],
         "needs_more_info": [],
-        "classification": {"risk_level": "low"},
-        "prompt_requirements": {"definition_of_done": []},
-    }
-
-    resolved_route = policy.ResolvedRoute(
-        route_tier="midtier",
-        harness="codex",
-        sandbox="workspace-write",
-        timeout_seconds=300.0,
-        rule_id="default",
-    )
-
-    run_id = "r1"
-    iteration = 1
-
-    # Logic extracted from cli.py
-    eff_harness = resolved_route.harness
-    eff_model = resolved_route.model or "gpt-5.4-mini"
-    eff_reasoning = resolved_route.reasoning_effort or "low"
-    eff_sandbox = resolved_route.sandbox
-    eff_timeout = (
-        int(resolved_route.timeout_seconds)
-        if resolved_route.timeout_seconds is not None
-        else 300
-    )
-
-    effective_route = {
-        "route_tier": resolved_route.route_tier,
-        "harness": eff_harness,
-        "sandbox": eff_sandbox,
-        "timeout_seconds": eff_timeout,
-    }
-    if eff_model:
-        effective_route["model"] = eff_model
-    if eff_reasoning:
-        effective_route["reasoning_effort"] = eff_reasoning
-
-    if resolved_route.fallback_applied:
-        decision = "fallback_applied"
-        original = (
-            resolved_route.fallbacks_considered[0]
-            if resolved_route.fallbacks_considered
-            else "unknown"
-        )
-        rationale = (
-            f"Original route {original!r} fell back to {resolved_route.fallback_applied!r}."
-        )
-    elif resolved_route.rule_id == "default":
-        decision = "default_route_applied"
-        rationale = "No model route proposal or rule match; applied default route."
-    else:
-        decision = "policy_override"
-        rationale = "Applied policy based on classification."
-
-    routing_payload = {
-        "schema_version": "1.0",
-        "run_id": run_id,
-        "iteration": iteration,
-        "source_triage_artifact": f"triage-{iteration}.json",
-        "policy_decision": {
-            "decision": decision,
-            "matched_rule_ids": (
-                [resolved_route.rule_id]
-                if resolved_route.rule_id and resolved_route.rule_id != "default"
-                else []
-            ),
-            "rationale": rationale,
+        "implementation_order": ["f1"],
+        "verification_commands": [],
+        "parsing_warnings": [],
+        "classification": {
+            "domain_tags": ["docs"],
+            "risk_level": "low",
+            "refactor_depth": "atomic",
+            "affected_modules": ["docs"],
+            "estimated_blast_radius": {"module_count": 1, "finding_count": 1},
+            "safety_signals": [],
+            "failed_check_signals": [],
         },
-        "effective_route": effective_route,
-        "fallbacks_considered": list(resolved_route.fallbacks_considered),
-        "prompt": {
-            "path": f"remediation-{iteration}-prompt.txt",
-            "sha256": "abc",
-            "bytes": 10,
-            "fragments": [],
+        "prompt_requirements": {
+            "required_fragments": [],
+            "definition_of_done": ["DONE"],
+            "triage_prompt_draft": "",
         },
     }
+    (findings_dir / "triage.txt").write_text(json.dumps(triage_payload), encoding="utf-8")
 
-    if triage_payload.get("route_proposal"):
-        p = triage_payload["route_proposal"]
-        routing_payload["model_proposal"] = {
-            k: v
-            for k, v in p.items()
-            if k in ("route_tier", "harness", "model", "rationale")
-        }
+    default_route_dir = fake_harness / "fake-clear"
+    default_route_dir.mkdir()
+    (default_route_dir / "remediation.txt").write_text(
+        "Remediation: default route\n", encoding="utf-8"
+    )
 
-    assert "model_proposal" not in routing_payload
-    assert routing_payload["policy_decision"]["decision"] == "default_route_applied"
-    triage.validate_routing_payload(routing_payload)
+    _init_git_repo(tmp_path)
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.test.review]
+harness = "fake"
+
+[profiles.test.remediation]
+harness = "fake"
+
+[profiles.test.triage]
+contract = "v2"
+enabled = true
+harness = "fake"
+model = "fake-findings"
+
+[profiles.test.triage.routing]
+enabled = true
+default_route = "midtier-coder"
+
+[profiles.test.triage.routes.midtier-coder]
+harness = "fake"
+model = "fake-clear"
+timeout_seconds = 300
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    exit_code = cli.main(
+        [
+            "--profile",
+            "test",
+            "--review-model",
+            "fake-findings",
+            "--artifact-dir",
+            "run1",
+            "--max-iterations",
+            "1",
+            "--skip-final-review",
+            "--trusted-repo",
+        ]
+    )
+
+    assert exit_code == 2
+    routing = json.loads((tmp_path / "run1" / "routing-1.json").read_text())
+    assert "model_proposal" not in routing
+    assert routing["policy_decision"]["decision"] == "default_route_applied"
+    assert routing["policy_decision"]["matched_rule_ids"] == []
+    assert routing["effective_route"]["route_tier"] == "midtier-coder"
+    assert routing["effective_route"]["model"] == "fake-clear"
+    assert (tmp_path / "run1" / "remediation-1.txt").read_text(encoding="utf-8") == (
+        "Remediation: default route\n"
+    )

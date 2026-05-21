@@ -3488,6 +3488,12 @@ def resolve_timeout_seconds(value: float) -> float | None:
     return value
 
 
+def resolve_max_iterations(value: int) -> int:
+    if value < 1:
+        raise ValueError("--max-iterations must be at least 1")
+    return value
+
+
 def parse_harness_bin_overrides(values: Sequence[str]) -> dict[str, str]:
     overrides: dict[str, str] = {}
     for value in values:
@@ -3591,9 +3597,12 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         **profile.runtime.harness_executables,
         **parse_harness_bin_overrides(args.harness_bin),
     }
+    max_iterations = pick(args.max_iterations, profile.pipeline.max_iterations, 2)
+    if args.max_iterations is not None:
+        max_iterations = resolve_max_iterations(max_iterations)
     config = LoopConfig(
         base=pick(args.base, profile.pipeline.base, "main"),
-        max_iterations=pick(args.max_iterations, profile.pipeline.max_iterations, 2),
+        max_iterations=max_iterations,
         codex_bin=pick(args.codex_bin, profile.runtime.codex_bin, "codex"),
         harness_executables=harness_executables,
         cwd=cwd,
