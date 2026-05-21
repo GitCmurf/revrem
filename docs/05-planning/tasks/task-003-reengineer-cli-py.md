@@ -674,20 +674,31 @@ them.
 - *Exit:* loop output is reproducible under a fixed clock and identity.
 - *Risk:* medium — touch points are scattered; mitigated by default-real.
 
-**A2. Golden-master suite + fake ports** (C3)
-- *Intent:* the change-detector that makes every later wave safe.
-- *Changes:* add `tests/support/` with a `FakeRunner`/fake-harness, fake
-  clock, and fake `RunIdentity`; add a **snapshot normalizer** that
-  canonicalizes the residual non-injected sources from the C6 table (cwd,
-  git-state, absolute paths, byte-size/mtime fields); capture golden snapshots
-  of JSON summary, `events.jsonl`, and exit codes for every subcommand and the
-  loop happy/sad/budget/cancel paths. Snapshots cover the **machine contract
-  only**, not human presentation (C3).
+**A2. Golden-master suite + fake ports** (C3) — **two PRs**
+- *Intent:* the change-detector that makes every later wave safe. Too large for
+  one atomic PR (the plan itself notes "building deterministic fixtures is the
+  real work"); split so the machinery lands and proves itself before the
+  breadth of cases is added.
+  - **A2a — vertical slice (machinery + one path).** Add `tests/support/`
+    (`fakes.py` with `FakeClock`/`FakeRunIdentity`/`FakeRunner`,
+    `normalize.py`, `snapshot.py`) and `tests/conftest.py` to make `support`
+    importable; capture the loop **review-clear** path as the first committed
+    golden snapshot (summary + `events.jsonl`), normalized to the machine
+    contract; prove the detector *fails on diff* with a negative test. The
+    normalizer is kept minimal — only the canonicalizations this path exercises
+    (run-dir paths → `<RUN_DIR>`, `wall_elapsed_seconds` → `<DURATION>`); git
+    SHAs are null here and byte sizes are stable, so those placeholders are
+    deferred to A2b with their first real consumer.
+  - **A2b — breadth.** Using the A2a helpers, add golden snapshots for the
+    findings-remain / budget / cancel loop paths and each subcommand; extend
+    the normalizer (git SHA, byte-size/mtime) only as each consumer needs it.
 - *Tests:* snapshots committed; a diff harness fails on unledgered change.
-- *Exit:* every machine-contract behaviour has a pinned, normalized snapshot.
+- *Exit:* the machinery is in place and proven on one path (A2a); every
+  machine-contract behaviour has a pinned, normalized snapshot (A2b).
   **Depends on A1** (both ports) so the fixtures are not leaky.
 - *Risk:* medium — building deterministic fixtures + the normalizer is the
-  real work; this is why A1 precedes it.
+  real work; this is why A1 precedes it and A2a proves the harness end-to-end
+  before A2b scales it.
 
 **A3. `RunState` behind the dict** (shadow only)
 - *Intent:* introduce the typed aggregate without changing output. **Scope is

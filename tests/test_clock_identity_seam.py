@@ -8,34 +8,10 @@ precondition the golden-master suite (A2) builds on.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from support.fakes import FIXED_ISO, FIXED_RUN_ID, FakeClock, FakeRunIdentity
 
 from code_review_loop import cli as MODULE
 from code_review_loop import events
-
-FIXED_MOMENT = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
-FIXED_ISO = "2026-01-02T03:04:05Z"
-FIXED_RUN_ID = "deadbeefcafe0000deadbeefcafe0000"
-
-
-class FakeClock:
-    def __init__(self, moment: datetime = FIXED_MOMENT, monotonic: float = 1000.0):
-        self._moment = moment
-        self._monotonic = monotonic
-
-    def now(self) -> datetime:
-        return self._moment
-
-    def monotonic(self) -> float:
-        return self._monotonic
-
-
-class FakeRunIdentity:
-    def __init__(self, value: str = FIXED_RUN_ID):
-        self._value = value
-
-    def new_run_id(self) -> str:
-        return self._value
 
 
 def _clear_review_runner(args, cwd, input_text=None, timeout_seconds=None):

@@ -56,6 +56,24 @@ There is no silent third option.
 
 ## Entries
 
+### 2026-05-21 — A2a golden-master baseline (Wave A2a)
+
+- **Contract:** machine (baseline capture, no behaviour change)
+- **What changed:** nothing in production code. Added the golden-master
+  machinery (`tests/support/{fakes,normalize,snapshot}.py`, `tests/conftest.py`)
+  and committed the first pinned machine-contract snapshots for the loop
+  **review-clear** path: `tests/snapshots/loop_clear_summary.json` and
+  `loop_clear_events.json`.
+- **Why:** establish the change-detector (C3) so later waves cannot silently
+  alter the machine contract.
+- **Before / After:** baseline; these snapshots are now authoritative. Any
+  future diff is either a ledgered intentional change (regenerate with
+  `REVREM_UPDATE_SNAPSHOTS=1`) or a CI failure.
+- **Normalizer scope:** run-dir paths → `<RUN_DIR>`, `wall_elapsed_seconds` →
+  `<DURATION>` (the budget wall-time carve-out from the A1 entry). git-SHA and
+  byte-size placeholders are deferred to A2b (null / stable on this path).
+- **schema_version impact:** none.
+
 ### 2026-05-21 — A1 Clock + RunIdentity seam (Wave A1)
 
 - **Contract:** machine
