@@ -5631,6 +5631,71 @@ def test_fake_harness_can_drive_structured_triage(tmp_path, monkeypatch):
     assert triage_json["confirmed_findings"][0]["fingerprint"] == "f1:fake"
 
 
+def test_fake_harness_v2_triage_without_routing_uses_direct_remediation(tmp_path, monkeypatch):
+    monkeypatch.setenv(MODULE.harnesses.FAKE_HARNESS_ENV, "1")
+
+    triage_payload = {
+        "confirmed_findings": [
+            {
+                "fingerprint": "f1:fake",
+                "summary": "Fix profile merge",
+                "severity": "high",
+                "affected_paths": ["src/code.py"],
+                "rationale": "It is blocking remediation.",
+            }
+        ],
+        "rejected_findings": [],
+        "needs_more_info": [],
+        "implementation_order": ["f1:fake"],
+        "verification_commands": [],
+        "parsing_warnings": [],
+        "classification": {
+            "domain_tags": ["quality"],
+            "risk_level": "medium",
+            "refactor_depth": "atomic",
+            "affected_modules": ["code_review_loop"],
+            "estimated_blast_radius": {"module_count": 1, "finding_count": 1},
+            "safety_signals": [],
+            "failed_check_signals": [],
+        },
+        "prompt_requirements": {
+            "required_fragments": [],
+            "definition_of_done": ["DONE"],
+            "triage_prompt_draft": "Please use the direct remediation fallback.",
+        },
+    }
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if list(args) == ["revrem-fake-harness", "review", "--scenario", "review_findings"]:
+            object.__setattr__(config, "review_model", "review_clear")
+        if list(args) == ["revrem-fake-harness", "triage", "--scenario", "triage_valid"]:
+            return MODULE.CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
+        return MODULE.default_runner(args, cwd, input_text, timeout_seconds)
+
+    config = MODULE.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="fake",
+        triage_harness="fake",
+        remediation_harness="fake",
+        review_model="review_findings",
+        triage_model="triage_valid",
+        remediation_model="remediation",
+        triage_enabled=True,
+        triage_contract="v2",
+    )
+
+    summary = MODULE.run_loop(config, runner)
+    run_dir = tmp_path / "artifacts"
+
+    assert summary["final_status"] == "clear"
+    assert json.loads((run_dir / "triage-1.json").read_text(encoding="utf-8"))["prompt_version"] == "triage-v2"
+    assert (run_dir / "remediation-1.txt").read_text(encoding="utf-8") == "Fake remediation completed.\n"
+
+
 def test_fake_and_codex_summary_shapes_are_structurally_equivalent(tmp_path, monkeypatch):
     monkeypatch.setenv(MODULE.harnesses.FAKE_HARNESS_ENV, "1")
     fake_dir = tmp_path / "fake"

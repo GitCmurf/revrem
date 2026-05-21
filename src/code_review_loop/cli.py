@@ -2196,26 +2196,44 @@ def _run_loop(config: LoopConfig, runner: Runner = default_runner) -> dict[str, 
                         remediation_input = pending_check_failures
 
                     if triage_payload and config.triage_contract == "v2" and config.profile_v2:
-                        # Resolve routing
-                        routing_context = triage.extract_routing_context(
-                            triage_payload,
-                            config.cwd,
-                            failed_checks=tuple(failed_check_names),
-                        )
-                        model_proposal = triage_payload.get("route_proposal", {})
-                        resolved_route = policy.resolve_routing(
-                            config.profile_v2,
-                            routing_context,
-                            model_proposal_tier=model_proposal.get("route_tier"),
-                            max_timeout_seconds=remaining_wall_budget_seconds(config),
-                        )
-                        progress_event(
-                            config,
-                            "triage",
-                            str(iteration),
-                            "routing",
-                            f"routed to {resolved_route.route_tier} ({resolved_route.harness})",
-                        )
+                        routing_config = config.profile_v2.triage.routing
+                        if routing_config.enabled:
+                            # Resolve policy routing only when the profile has opted into it.
+                            routing_context = triage.extract_routing_context(
+                                triage_payload,
+                                config.cwd,
+                                failed_checks=tuple(failed_check_names),
+                            )
+                            model_proposal = triage_payload.get("route_proposal", {})
+                            resolved_route = policy.resolve_routing(
+                                config.profile_v2,
+                                routing_context,
+                                model_proposal_tier=model_proposal.get("route_tier"),
+                                max_timeout_seconds=remaining_wall_budget_seconds(config),
+                            )
+                            progress_event(
+                                config,
+                                "triage",
+                                str(iteration),
+                                "routing",
+                                f"routed to {resolved_route.route_tier} ({resolved_route.harness})",
+                            )
+                        else:
+                            # Non-routing v2 profiles still need a concrete remediation target.
+                            # Fall back to the configured remediation phase so the structured
+                            # handoff can proceed without a route table.
+                            resolved_route = policy.ResolvedRoute(
+                                route_tier="default",
+                                harness=config.remediation_harness,
+                                model=config.remediation_model or config.model,
+                                reasoning_effort=config.remediation_reasoning_effort
+                                or config.reasoning_effort,
+                                timeout_seconds=config.remediation_timeout_seconds,
+                                sandbox=config.exec_sandbox,
+                                prompt_fragments=(),
+                                allow_model_deescalation=True,
+                                rule_id="default",
+                            )
 
                         # Compose prompt
                         remediation_input = prompts_composer.compose_remediation_prompt(
