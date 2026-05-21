@@ -153,7 +153,8 @@ object into:
 - a set of **adapters** behind those ports (subprocess runner, git, codex
   harness, terminal/Rich progress, jsonl event sink, artifact store, clock);
 - a **thin CLI driver** (registry + per-subcommand modules + config
-  assembly) and a demonstrated path for **`tui.py` to drive the same core**;
+  assembly) and a demonstrated path for a **non-CLI caller (TUI/SDK) to
+  drive the same core** (without changing the TUI's runtime role this phase);
 - a **typed `RunState` and `RunOutcome` ADT** replacing the dict-as-object
   and stringly-typed exit logic;
 - a **decomposed test suite** that exercises the core with values and fakes
@@ -257,28 +258,44 @@ The **dependency rule** is absolute and machine-enforced (Contract C4): the
 core imports ports only; adapters import the core; drivers wire adapters into
 a `RunContext` and call the core. No edge type ever appears in a core import.
 
-### The engine as a decision-driven loop
+### The engine as a state machine (functional core / imperative shell)
 
 The 588-line `_run_loop` is replaced by a short imperative shell over a pure
-decision function — landing the refactor *with the grain* of the routing /
-triage-v2 / policy work already in the codebase
-(`triage.extract_routing_context` → `policy.resolve_routing` →
-`prompts_composer.compose_remediation_prompt`):
+decision function. The **concrete deliverable is a small state machine over
+the existing fixed phase sequence** (`review → triage → remediate → check →
+commit`); the value is that the loop's *shape* becomes data and its decisions
+become pure:
 
 ```python
 def run(state: RunState, ctx: RunContext) -> RunOutcome:
     while True:
-        decision = policy.next_action(state)        # PURE: state -> Action
+        decision = decide(state)                     # PURE: RunState -> Decision
         if isinstance(decision, Stop):
             return decision.outcome
         state = execute(decision.action, state, ctx) # SHELL: effects via ports
 ```
 
-`policy.next_action` is a pure function of `RunState` (no I/O, no clock, no
-subprocess) and is therefore tested with values alone. `execute` is the only
-place ports are touched. This is what makes the 18 monkeypatches unnecessary:
-the decisions have no collaborators to patch, and the effects are swapped by
-constructing a `RunContext` with fake ports.
+`decide` is a **new** pure function introduced by this task and living in
+`core/engine.py` — it is *not* an existing function and is deliberately
+**distinct from `policy.resolve_routing`**, which already exists but solves a
+different problem (selecting the *remediation harness/model* once we have
+decided to remediate). `decide` selects the *next phase*; `resolve_routing`
+configures *one* phase. Today `decide` simply encodes the current fixed
+sequence, so behaviour is preserved.
+
+The forward-looking move — landing the refactor *with the grain* of the
+triage-v2 / routing work already in the codebase
+(`triage.extract_routing_context` → `policy.resolve_routing` →
+`prompts_composer.compose_remediation_prompt`) — is that `decide` is the
+documented **extension seam** where future policy-driven phase selection
+plugs in *without touching the shell*. We are not building that now (it is not
+in scope); we are leaving the one seam that makes it a local change later.
+
+Because `decide` is a pure function of `RunState` (no I/O, no clock, no
+subprocess) it is tested with values alone, and `execute` is the only place
+ports are touched. This is what makes the 18 monkeypatches unnecessary: the
+decisions have no collaborators to patch, and effects are swapped by building
+a `RunContext` with fake ports.
 
 ### Phases unified honestly
 
@@ -309,10 +326,10 @@ core/                         # dependency-free; import-linter enforced
   ports.py                    # the Protocols above + CommandResult, Event, PhaseOutcome
   state.py                    # RunState aggregate + transitions
   outcome.py                  # RunOutcome ADT + exit-code mapping
-  engine.py                   # run(state, ctx) decision loop (was _run_loop)
+  engine.py                   # run(state, ctx) state machine + pure decide() (was _run_loop)
   phases/                     # review / triage / remediate / check / commit (decide+execute split)
   review_interpretation.py    # the NLP heuristics, pure, with a fixture corpus
-  policy.py                   # next_action(state) + existing routing (already a module)
+  policy.py                   # EXISTING remediation routing (resolve_routing); unchanged by this task
 adapters/
   subprocess_runner.py        # default_runner + process-tree kill + timeout streaming
   terminal.py                 # titles, escape codes, recovery -> ProgressReporter sink
@@ -442,7 +459,7 @@ A0 baseline + public-surface pin + import-linter scaffold
               └─> C1 command registry + slim main()
                     └─> C2 config-assembly + arg-parsing units
                           └─> C3 DELETE facade + split test_cli.py + enforce gates
-                                └─> D1 prove leverage (TUI drives core; acceptance scenarios)
+                                └─> D1 prove leverage (engine drivable headless; acceptance scenarios)
                                       └─> E1+ (SEQUEL) events-as-source-of-truth folds
 ```
 
@@ -466,7 +483,7 @@ Wave E is a named sequel, not part of this task's exit criteria.
 | C1 | REVREM-DEVEX-001 | `if/elif` dispatch ladder | — | Add subcommand w/o central edit |
 | C2 | REVREM-DEVEX-001 | Config assembly in God object | — | Isolated front-end |
 | C3 | REVREM-TEST-001 | 6,121-line test monolith; facade | C1 sunset, C2 zero | Tests mirror modules |
-| D1 | REVREM-PLAN-002 | "Library trapped in driver" | — | TUI/SDK drive same core |
+| D1 | REVREM-PLAN-002 | "Library trapped in driver" | — | Engine drivable by non-CLI caller (TUI/SDK-ready) |
 
 ## Code / Tests / Docs Alignment
 
@@ -502,8 +519,10 @@ These augment (do not restate) the rules in `REVREM-TASK-002` and
 
 ## Waves
 
-Each wave is a PR-sized package. Format: **Intent · Changes · Tests · Exit ·
-Risk**. Waves cite contracts by id rather than restating them.
+Each wave is a work package that lands as **one or more** PR-sized changes
+(noted where a wave is necessarily multiple PRs). Format: **Intent · Changes
+· Tests · Exit · Risk**. Waves cite contracts by id rather than restating
+them.
 
 ### Wave A — Seams & Safety Net
 
@@ -577,15 +596,26 @@ Risk**. Waves cite contracts by id rather than restating them.
 - *Exit:* engine calls phases through `ctx`, not globals.
 - *Risk:* high — the central seam; gated by A2 snapshots.
 
-**B3. Engine = decision loop + `RunOutcome` ADT** (C5)
-- *Intent:* kill the 588-line function and the stringly-typed exits.
-- *Changes:* `core/engine.py` with `run(state, ctx)` over
-  `policy.next_action`; `core/outcome.py` with the ADT + total exit mapping;
-  `main()` maps outcome → exit via the one function.
-- *Tests:* pure `next_action` value tests; exhaustiveness + per-exit-code
-  reachability; snapshots unchanged (or ledgered).
-- *Exit:* `_run_loop` deleted; no control-flow reads `stopped_reason`.
-- *Risk:* high — the heart. **Depends on A3, B2.**
+**B3. Engine state machine + `RunOutcome` ADT** (C5) — **three PRs**
+- *Intent:* kill the 588-line function and the stringly-typed exits. This is
+  too large for one atomic PR; it lands as three, each green and shippable:
+  - **B3a — Extract the engine as a procedural shell.** Move the loop body to
+    `core/engine.py` as `run(state, ctx)`, calling phases via `ctx` (building
+    directly on B2). Behaviour and structure otherwise unchanged. Retires the
+    `run_loop`-internal coupling.
+  - **B3b — Introduce the state-machine shape.** Add the pure `decide(state)`
+    function (encoding the current fixed sequence) and the `execute` shell;
+    the loop becomes `decide`/`execute`. Pure-function value tests added.
+  - **B3c — `RunOutcome` ADT + total exit mapping.** Add `core/outcome.py`;
+    `decide` returns `Stop(outcome)`; `main()` maps outcome → exit via one
+    total function; no control-flow reads `stopped_reason`.
+- *Tests:* pure `decide` value tests; exit-code exhaustiveness
+  (`assert_never`) + per-code reachability; A2 snapshots unchanged (or
+  ledgered under C3).
+- *Exit:* `_run_loop` deleted; `decide`/`execute` separation in place;
+  exits exhaustive.
+- *Risk:* high — the heart. **Depends on A3, B2.** Risk is contained by the
+  three-PR split and the A2 net.
 
 **B4. Terminal → `ProgressReporter` sink**
 - *Intent:* decouple the engine from the terminal entirely.
@@ -619,23 +649,44 @@ Risk**. Waves cite contracts by id rather than restating them.
 
 **C3. Delete the facade + split the test monolith** (C1 sunset, C2 zero)
 - *Intent:* remove scaffolding; finish the co-symptom.
-- *Changes:* delete `cli.py` re-exports (keep the thin entry-point shim);
-  migrate residual `MODULE.X` references; split `tests/test_cli.py` per the
-  Decomposition section; promote import-linter + ratchet + grep gates to
-  required.
+- *Changes (largest line item first):*
+  - **Migrate the 26 `monkeypatch.setattr(MODULE, "run_loop", …)` sites.**
+    These keep working through Waves A–C only because `main()` and the facade
+    co-locate `run_loop`; deleting the facade removes the patch target. This
+    is the biggest single item in the wave and is **not purely mechanical** —
+    each site is rewritten to either patch the engine at its final home
+    (`core.engine.run`, where `main()` looks it up) or, preferably, to drive
+    `main()` with a `RunContext`/fakes so the engine runs for real. Done in
+    its own PR before the facade is removed.
+  - Delete `cli.py` re-exports (keep only the thin entry-point shim so
+    `code_review_loop.cli:main` resolves); migrate residual read-only
+    `MODULE.X` references.
+  - Split `tests/test_cli.py` per the Decomposition section.
+  - Promote import-linter + ratchet + grep gates from advisory to required.
 - *Tests:* full suite green from the new layout; ratchet at 0.
 - *Exit:* no facade; monkeypatch count 0; `test_cli.py` decomposed.
-- *Risk:* medium — large mechanical diff; do last, when seams exist.
+- *Risk:* medium-high — the `run_loop` site migration is real work; do last,
+  when the engine seam (B3) exists to migrate onto.
 
 ### Wave D — Prove Leverage
 
 **D1. Demonstrate the library/driver split**
 - *Intent:* prove the thesis, not just assert it.
-- *Changes:* migrate `tui.py` to build a `RunContext` and call
-  `core.engine.run` directly; add acceptance tests for the leverage claims.
+- *Constraint:* `REVREM-TASK-002` mandates the TUI remain "a control panel
+  and artifact viewer, not a second execution engine" and that "no second
+  execution engine has been introduced." This task **honours that**: we prove
+  the engine is *drivable by a non-CLI caller*, **without** turning the TUI
+  into an execution engine at runtime.
+- *Changes:* add a headless SDK-style driver in tests/support that builds a
+  `RunContext` and calls `core.engine.run`; add acceptance tests for the
+  leverage claims. No runtime change wires the TUI into execution — that is
+  gated by the milestone that lifts the task-002 constraint.
 - *Tests:* (a) import-linter proves `core` has zero CLI/terminal/argparse
-  deps; (b) TUI-drives-core integration test; (c) "add a no-op subcommand in
-  one module" test; (d) "swap a review heuristic via a fake `Harness`" test.
+  deps; (b) a **headless integration test** drives a full loop through a
+  `RunContext` with no `argparse` and no real subprocess (proving the engine
+  is driver-agnostic and *available* to the TUI/SDK); (c) "add a no-op
+  subcommand in one module" test; (d) "swap a review heuristic via a fake
+  `Harness`" test.
 - *Exit:* all Exit Criteria below demonstrably met.
 - *Risk:* low — mostly verification.
 
@@ -659,7 +710,7 @@ separate cleanup:
   regression).
 - **During C3:** the residue splits to mirror modules:
   `test_review_interpretation.py` (fixture corpus),
-  `test_engine.py` (pure `next_action` + loop transitions with fakes),
+  `test_engine.py` (pure `decide` + loop transitions with fakes),
   `test_phase_*.py`, `test_<subcommand>.py`, and a thin
   `test_cli_e2e.py` for golden `main()` paths.
 - **End state:** the 64-symbol / `MODULE.X` reach-in shrinks to the intended
@@ -673,7 +724,11 @@ The task is complete when **all** hold:
    `argparse`, no `adapters/*`, no `cli/*`, no terminal, no `tui`. (C4)
 2. **Engine is drivable without the CLI.** A test constructs a `RunContext`
    and runs a full loop with fakes, no `argparse` and no real subprocess.
-3. **The TUI drives the same core** through a `RunContext` (D1).
+3. **The engine is drivable by a non-CLI caller** — a headless integration
+   test runs a full loop through a `RunContext`, proving the core is
+   *available* to the TUI/SDK. (Wiring the TUI into execution at runtime is
+   out of scope while the `REVREM-TASK-002` "no second execution engine"
+   constraint holds; D1.)
 4. **Adding a subcommand or swapping a heuristic is a one-module change**,
    demonstrated by acceptance tests (D1).
 5. **Monkeypatch count is 0** (C2 ratchet) and the facade is deleted (C1).
@@ -720,7 +775,11 @@ Pre-empting the sharp questions a reviewer will (rightly) ask:
 - Final package shape: `core/` + `adapters/` + `cli/` subpackages vs. flat
   modules with naming discipline. (Leaning subpackages for the import-linter
   contract clarity; confirm at B0.)
-- Whether `policy.next_action` subsumes the existing `policy.resolve_routing`
-  or sits beside it. (Resolve when B3 meets the routing code.)
 - Exact home for `CommandResult` (a port-adjacent value type): `core/ports.py`
   vs. a dedicated `core/types.py`. (Cosmetic; decide at B0.)
+- **`_run_loop` has not been read in full for this plan** (≈ lines
+  2260–2582, including budget-retry logic around line 2392, were sampled
+  rather than read line-by-line). B3a must begin by reading the whole
+  function; the plan's risk rating for B3 already assumes control-flow
+  surprises in the unread tail. If a surprise contradicts the state-machine
+  shape, raise it against this doc before proceeding.
