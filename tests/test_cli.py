@@ -4522,9 +4522,11 @@ def test_actionable_review_output_drops_verbose_stderr_transcript():
 
 
 def test_trim_for_prompt_caps_large_review_text():
+    from code_review_loop import prompts_composer
+
     text = "a" * 100 + "MIDDLE" + "z" * 100
 
-    trimmed = MODULE.trim_for_prompt(text, 80)
+    trimmed = prompts_composer.trim_for_prompt(text, 80)
 
     assert len(trimmed) <= 80
     assert "omitted" in trimmed

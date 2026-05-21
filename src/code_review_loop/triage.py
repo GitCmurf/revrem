@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import json
 from importlib.resources import files
 from pathlib import Path
@@ -17,6 +18,7 @@ TRIAGE_V1_SCHEMA_RESOURCE = "schemas/triage-v1.schema.json"
 TRIAGE_V2_SCHEMA_VERSION = "2.0"
 TRIAGE_V2_PROMPT_VERSION = "triage-v2"
 TRIAGE_V2_SCHEMA_RESOURCE = "schemas/triage-v2.schema.json"
+ROUTING_V1_SCHEMA_RESOURCE = "schemas/routing-v1.schema.json"
 
 MAX_SAFETY_SCAN_BYTES = 1024 * 1024
 
@@ -106,8 +108,7 @@ def command_failed_issue(*, iteration: int, returncode: int, artifact: str) -> d
 
 
 def validate_routing_payload(payload: dict[str, Any]) -> None:
-    schema = json.loads(files("code_review_loop").joinpath("schemas/routing-v1.schema.json").read_text(encoding="utf-8"))
-    validator = Draft202012Validator(schema)
+    validator = Draft202012Validator(_load_schema(ROUTING_V1_SCHEMA_RESOURCE))
     errors = list(validator.iter_errors(payload))
     if errors:
         raise TriageValidationError(str(errors[0]))
@@ -150,6 +151,14 @@ def format_structured_handoff(payload: dict[str, Any], original_review: str) -> 
     return "\n".join(parts)
 
 
+@functools.lru_cache(maxsize=None)
+def _load_schema(resource: str) -> dict[str, Any]:
+    schema = json.loads(files("code_review_loop").joinpath(resource).read_text(encoding="utf-8"))
+    if not isinstance(schema, dict):
+        raise TriageValidationError("schema must be a JSON object")
+    return schema
+
+
 def _triage_schema(contract: str = "v1") -> dict[str, Any]:
     if contract == "v1":
         resource = TRIAGE_V1_SCHEMA_RESOURCE
@@ -157,10 +166,7 @@ def _triage_schema(contract: str = "v1") -> dict[str, Any]:
         resource = TRIAGE_V2_SCHEMA_RESOURCE
     else:
         raise ValueError(f"invalid triage contract: {contract}")
-    schema = json.loads(files("code_review_loop").joinpath(resource).read_text(encoding="utf-8"))
-    if not isinstance(schema, dict):
-        raise TriageValidationError("triage schema must be a JSON object")
-    return schema
+    return _load_schema(resource)
 
 
 def extract_routing_context(

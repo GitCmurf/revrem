@@ -107,7 +107,6 @@ def resolve_routing(
 
     if matched_rule:
         route_tier = matched_rule.then.route or routing_config.default_route
-        # Item 4: inherit global escalation if rule-level is None
         rule_escalation = matched_rule.then.allow_model_escalation
         allow_escalation = (
             rule_escalation
@@ -156,7 +155,6 @@ def resolve_routing(
 
         route_cfg = profile.triage.routes[current_tier]
 
-        # Item 6 & 9: Deep capability validation
         issues = [
             *check_route_capabilities(route_cfg),
             *check_route_budget(route_cfg, max_timeout_seconds=max_timeout_seconds),
@@ -176,7 +174,6 @@ def resolve_routing(
                 fallback_applied=current_tier if fallbacks_considered else None,
             )
 
-        # Item 2: Strict fallbacks - only follow explicit fallback or fail
         if not route_cfg.fallback:
             raise RuntimeError(
                 f"Route {current_tier!r} (harness {route_cfg.harness!r}) is unavailable or lacks "

@@ -1335,7 +1335,7 @@ def run_remediation(
         prompt = remediation_input
         timeout = resolved_route.timeout_seconds
     else:
-        prompt = f"{DEFAULT_REMEDIATION_PROMPT}\n{trim_for_prompt(remediation_input, config.max_remediation_input_chars)}"
+        prompt = f"{DEFAULT_REMEDIATION_PROMPT}\n{prompts_composer.trim_for_prompt(remediation_input, config.max_remediation_input_chars)}"
         timeout = config.remediation_timeout_seconds
     command, prompt_input = harnesses.prepare_prompt_invocation(
         remediation_harness,
@@ -1372,7 +1372,7 @@ def run_triage(
 ) -> tuple[str, int, bool, dict[str, Any] | None]:
     command = build_triage_command(config)
     prompt_root = config.triage_prompt or triage.load_prompt(contract=config.triage_contract)
-    prompt = f"{prompt_root}\n{trim_for_prompt(review_output, config.max_remediation_input_chars)}"
+    prompt = f"{prompt_root}\n{prompts_composer.trim_for_prompt(review_output, config.max_remediation_input_chars)}"
     command, prompt_input = harnesses.prepare_prompt_invocation(
         config.triage_harness,
         command,
@@ -1774,7 +1774,7 @@ def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iterat
         return fallback
     command = build_commit_message_command(config)
     prompt_root = config.commit_message_prompt or DEFAULT_COMMIT_MESSAGE_PROMPT
-    prompt = f"{prompt_root}\n{trim_for_prompt(context, config.max_remediation_input_chars)}"
+    prompt = f"{prompt_root}\n{prompts_composer.trim_for_prompt(context, config.max_remediation_input_chars)}"
     command, prompt_input = harnesses.prepare_prompt_invocation(
         config.commit_message_harness,
         command,
@@ -1854,30 +1854,11 @@ def actionable_review_output(output: str) -> str:
     return review_text
 
 
-def trim_for_prompt(text: str, max_chars: int) -> str:
-    if max_chars < 1:
-        raise ValueError("max prompt characters must be positive")
-    if len(text) <= max_chars:
-        return text
-    omitted = len(text) - max_chars
-    marker = f"\n\n[... omitted {omitted} characters to stay under prompt limit ...]\n\n"
-    if len(marker) >= max_chars:
-        return marker[:max_chars]
-    keep_total = max_chars - len(marker)
-    keep_head = keep_total // 2
-    keep_tail = keep_total - keep_head
-    return (
-        text[:keep_head]
-        + marker
-        + text[-keep_tail:]
-    )
-
-
 def excerpt_for_terminal(text: str, max_chars: int) -> str:
     text = text.strip()
     if not text:
         return ""
-    return trim_for_prompt(text, max_chars)
+    return prompts_composer.trim_for_prompt(text, max_chars)
 
 
 def add_artifact_paths(summary: dict[str, object], config: LoopConfig) -> None:
@@ -1995,7 +1976,7 @@ def format_commit_hook_failure_for_remediation(exc: CommitFailed) -> str:
             f"Commit artifact: {exc.artifact_path}",
             "",
             "git commit output:",
-            trim_for_prompt(exc.output, 20_000),
+            prompts_composer.trim_for_prompt(exc.output, 20_000),
         ]
     ).strip()
 

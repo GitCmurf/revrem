@@ -18,7 +18,6 @@ def compose_remediation_prompt(
     max_chars: int = 200_000,
     trusted_repo: bool = False,
 ) -> str:
-    # 1. Immutable Sections (Safety frame, Policy Decision, DOD, Trusted Fragments)
     header_parts: list[str] = [REMEDIATION_ROLE_PROMPT]
 
     header_parts.append(
@@ -53,7 +52,6 @@ def compose_remediation_prompt(
 
     header = "\n\n".join(header_parts)
 
-    # 2. Truncatable Sections
     # Triage Draft
     draft_parts = ["--- Triage Handoff (Draft Instructions) ---"]
     handoff_draft = triage_requirements.get("triage_prompt_draft", "")
@@ -106,14 +104,12 @@ Rules:
 
 
 def load_fragment(cwd: Path, name: str, trusted_repo: bool = False) -> str | None:
-    # 1. Try package resources first (Built-in fragments)
     try:
         resource_path = files("code_review_loop.prompts").joinpath(f"fragments/{name}.txt")
         return resource_path.read_text(encoding="utf-8")
     except (ImportError, FileNotFoundError, IsADirectoryError, OSError):
         pass
 
-    # 2. Try repo-local only if trusted
     if not trusted_repo:
         return None
 

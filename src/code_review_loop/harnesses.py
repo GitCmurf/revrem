@@ -340,8 +340,9 @@ def harness_registry() -> dict[str, HarnessSpec]:
 
 
 def validate_harness_name(name: str, *, field: str = "harness") -> None:
-    if name not in harness_registry():
-        known = ", ".join(sorted(harness_registry().keys()))
+    registry = harness_registry()
+    if name not in registry:
+        known = ", ".join(sorted(registry.keys()))
         raise ValueError(f"{field} must be one of: {known}")
 
 
