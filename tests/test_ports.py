@@ -15,6 +15,7 @@ from code_review_loop.core.ports import (
     CommandResult,
     EventSink,
     ProcessRunner,
+    ProgressReporter,
     RunContext,
     RunIdentity,
 )
@@ -34,14 +35,14 @@ def test_cli_reexports_the_same_command_result_object():
 
 
 def test_ports_surface_exposes_the_declared_protocols():
-    for name in ("Clock", "RunIdentity", "ProcessRunner", "EventSink", "RunContext"):
+    for name in ("Clock", "RunIdentity", "ProcessRunner", "EventSink", "RunContext", "ProgressReporter"):
         assert hasattr(ports, name), f"core.ports missing {name}"
 
 
 def test_deferred_ports_are_not_defined_yet():
-    # B0a deliberately defers these to B2/B4 (no consumer today, avoid cosplay).
-    for name in ("Harness", "ProgressReporter", "ArtifactStore", "GitGateway"):
-        assert not hasattr(ports, name), f"core.ports should defer {name} to B2/B4"
+    # B0a deliberately defers these; ProgressReporter was added in B4.
+    for name in ("Harness", "ArtifactStore", "GitGateway"):
+        assert not hasattr(ports, name), f"core.ports should defer {name} to B2+"
 
 
 def test_run_context_bundles_collaborators_only():
@@ -79,3 +80,4 @@ def test_protocols_are_runtime_importable_types():
     assert RunIdentity is not None
     assert ProcessRunner is not None
     assert EventSink is not None
+    assert ProgressReporter is not None

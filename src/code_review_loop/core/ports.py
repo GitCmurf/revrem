@@ -22,9 +22,11 @@ Scope discipline (B0a):
   `LoopConfig` lives in `cli.py` and pulls in `profiles` (an edge module). Until
   `LoopConfig` is core-homed (post-B1), phases take `config` and `ctx`
   separately; config folds onto `RunContext` then.
-- `Harness`, `ProgressReporter`, `ArtifactStore`, and `GitGateway` are
-  **deliberately not defined yet** — they gain consumers in B2/B4, and writing
-  protocols with no implementation is the "hexagonal cosplay" the plan declines.
+- `ProgressReporter` is **defined here** (B4) — it decouples the engine from
+  the terminal; `TerminalProgressReporter` in `adapters/terminal.py` implements it.
+- `Harness`, `ArtifactStore`, and `GitGateway` are **deliberately not defined
+  yet** — they gain consumers in B2+, and writing protocols with no implementation
+  is the "hexagonal cosplay" the plan declines.
 
 The core imports only the standard library and these ports (Contract C4).
 """
@@ -53,6 +55,19 @@ class CommandResult:
     stderr: str = ""
     tokens: int | None = None
     usd: Decimal | None = None
+
+
+class ProgressReporter(Protocol):
+    """Renders loop progress to the terminal (semantic, not raw escape codes).
+
+    Separates rendering from the event-sink (machine output) contract so that
+    core phase functions never import terminal or progress modules (Contract C4).
+    The driver creates a concrete adapter and injects it via RunContext.
+    """
+
+    def phase(self, phase: str, label: str, status: str, detail: str = "") -> None:
+        """Render one phase progress line."""
+        ...
 
 
 class ProcessRunner(Protocol):
@@ -84,3 +99,4 @@ class RunContext:
     runner: ProcessRunner
     event_sink: EventSink | None = None
     budget_state: BudgetState | None = None
+    progress_reporter: ProgressReporter | None = None

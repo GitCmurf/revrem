@@ -40,7 +40,7 @@ from code_review_loop import (
     triage,
 )
 from code_review_loop.clock import SYSTEM_CLOCK, Clock, utc_iso
-from code_review_loop.core.ports import CommandResult, RunContext
+from code_review_loop.core.ports import CommandResult, ProgressReporter, RunContext
 from code_review_loop.core.review_interpretation import (
     actionable_review_output,
     detect_review_status,
@@ -449,6 +449,10 @@ def progress_event(config: LoopConfig, phase: str, label: str, status: str, deta
             iteration=label,
             payload=payload,
         )
+    # delegate rendering to the injected ProgressReporter if available
+    if ctx is not None and ctx.progress_reporter is not None:
+        ctx.progress_reporter.phase(phase, label, status, detail)
+        return
     if not config.progress:
         return
     if config.progress_style == "rich":
@@ -1787,7 +1791,12 @@ def _run_loop(
                 events_path.rename(events_path.with_name(f"events-{existing_run_id}.jsonl"))
         event_sink = events.JsonlSink(config.artifact_dir, run_id, clock=clock)
         active_budget_state = budget_state if budget_state is not None else budgets.started_now()
-        ctx = RunContext(clock=clock, identity=identity, runner=runner, event_sink=event_sink, budget_state=active_budget_state)
+        from code_review_loop.adapters.terminal import TerminalProgressReporter
+        if config.progress and config.progress_style in ("rich", "compact"):
+            progress_reporter: ProgressReporter | None = TerminalProgressReporter(config.progress_style)
+        else:
+            progress_reporter = None
+        ctx = RunContext(clock=clock, identity=identity, runner=runner, event_sink=event_sink, budget_state=active_budget_state, progress_reporter=progress_reporter)
 
         if config.preflight_enabled and not config.dry_run:
             issues = diagnostics.run_doctor(
