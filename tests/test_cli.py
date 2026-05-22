@@ -6143,7 +6143,9 @@ def test_budget_exceeded_propagates_through_triage(tmp_path, monkeypatch):
             list(args), 0, stdout="## Finding\nbad code\nREVIEW_STATUS: findings\n"
         )
 
-    monkeypatch.setattr(MODULE, "run_triage", lambda *a, **kw: (_ for _ in ()).throw(exc))
+    # B2e: patch TriageAdapter.execute instead of the legacy run_triage shim
+    import code_review_loop.adapters.triage as _triage_mod
+    monkeypatch.setattr(_triage_mod.TriageAdapter, "execute", lambda *a, **kw: (_ for _ in ()).throw(exc))
 
     config = MODULE.LoopConfig(
         base="main",

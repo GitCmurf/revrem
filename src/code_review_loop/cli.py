@@ -40,7 +40,7 @@ from code_review_loop import (
     triage,
 )
 from code_review_loop.clock import SYSTEM_CLOCK, Clock, utc_iso
-from code_review_loop.core.ports import ChecksRequest, CommitRequest, CommandResult, ProgressReporter, RemediationRequest, RunContext
+from code_review_loop.core.ports import ChecksRequest, CommitRequest, CommandResult, ProgressReporter, RemediationRequest, RunContext, TriageRequest
 from code_review_loop.core.review_interpretation import (
     actionable_review_output,
     detect_review_status,
@@ -1794,6 +1794,7 @@ def _run_loop(
         from code_review_loop.adapters.checks import ChecksAdapter  # lazy — avoids cli→adapters.*→cli cycle
         from code_review_loop.adapters.commit import CommitAdapter  # lazy — same reason
         from code_review_loop.adapters.remediation import RemediationAdapter  # lazy — same reason
+        from code_review_loop.adapters.triage import TriageAdapter  # lazy — same reason
         from code_review_loop.adapters.terminal import TerminalProgressReporter
         if config.progress and config.progress_style in ("rich", "compact"):
             progress_reporter: ProgressReporter | None = TerminalProgressReporter(config.progress_style)
@@ -1809,6 +1810,7 @@ def _run_loop(
             phase_checks=ChecksAdapter(config),
             phase_commit=CommitAdapter(config),
             phase_remediation=RemediationAdapter(config),
+            phase_triage=TriageAdapter(config),
         )
 
         if config.preflight_enabled and not config.dry_run:
@@ -1930,15 +1932,30 @@ def _run_loop(
                     source_review_artifact = (
                         "review-initial.txt" if iteration == 1 and initial_review_output else f"review-{iteration}.txt"
                     )
-                    remediation_input, suppressed_count, triage_no_actionable, triage_payload = run_triage(
-                        config,
-                        runner,
-                        iteration,
-                        run_id,
-                        source_review_artifact,
-                        remediation_input,
-                        ctx=ctx,
-                    )
+                    if ctx.phase_triage is not None:
+                        _triage_outcome = ctx.phase_triage.execute(
+                            TriageRequest(
+                                iteration=iteration,
+                                run_id=run_id,
+                                source_review_artifact=source_review_artifact,
+                                review_output=remediation_input,
+                            ),
+                            ctx,
+                        )
+                        remediation_input = _triage_outcome.handoff
+                        suppressed_count = _triage_outcome.suppressed_count
+                        triage_no_actionable = _triage_outcome.is_clear
+                        triage_payload = _triage_outcome.payload
+                    else:  # legacy shim path; dead once phase_triage is always wired (C3)
+                        remediation_input, suppressed_count, triage_no_actionable, triage_payload = run_triage(
+                            config,
+                            runner,
+                            iteration,
+                            run_id,
+                            source_review_artifact,
+                            remediation_input,
+                            ctx=ctx,
+                        )
                     if suppressed_count:
                         iterations[-1]["suppressed_findings_count"] = suppressed_count
                     if triage_no_actionable:
