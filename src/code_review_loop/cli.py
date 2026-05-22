@@ -40,7 +40,7 @@ from code_review_loop import (
     triage,
 )
 from code_review_loop.clock import SYSTEM_CLOCK, Clock, utc_iso
-from code_review_loop.core.ports import ChecksRequest, CommitRequest, CommandResult, ProgressReporter, RunContext
+from code_review_loop.core.ports import ChecksRequest, CommitRequest, CommandResult, ProgressReporter, RemediationRequest, RunContext
 from code_review_loop.core.review_interpretation import (
     actionable_review_output,
     detect_review_status,
@@ -1791,8 +1791,9 @@ def _run_loop(
                 events_path.rename(events_path.with_name(f"events-{existing_run_id}.jsonl"))
         event_sink = events.JsonlSink(config.artifact_dir, run_id, clock=clock)
         active_budget_state = budget_state if budget_state is not None else budgets.started_now()
-        from code_review_loop.adapters.checks import ChecksAdapter  # lazy — avoids cli→adapters.checks→cli cycle
+        from code_review_loop.adapters.checks import ChecksAdapter  # lazy — avoids cli→adapters.*→cli cycle
         from code_review_loop.adapters.commit import CommitAdapter  # lazy — same reason
+        from code_review_loop.adapters.remediation import RemediationAdapter  # lazy — same reason
         from code_review_loop.adapters.terminal import TerminalProgressReporter
         if config.progress and config.progress_style in ("rich", "compact"):
             progress_reporter: ProgressReporter | None = TerminalProgressReporter(config.progress_style)
@@ -1807,6 +1808,7 @@ def _run_loop(
             progress_reporter=progress_reporter,
             phase_checks=ChecksAdapter(config),
             phase_commit=CommitAdapter(config),
+            phase_remediation=RemediationAdapter(config),
         )
 
         if config.preflight_enabled and not config.dry_run:
@@ -2171,7 +2173,14 @@ def _run_loop(
 
             try:
                 rem_start_time = clock.monotonic()
-                rem_result = run_remediation(config, runner, iteration, remediation_input, resolved_route=resolved_route, ctx=ctx)
+                if ctx.phase_remediation is not None:
+                    _rem_outcome = ctx.phase_remediation.execute(
+                        RemediationRequest(iteration=iteration, remediation_input=remediation_input, resolved_route=resolved_route),
+                        ctx,
+                    )
+                    rem_result = _rem_outcome.result
+                else:  # legacy shim path; dead once phase_remediation is always wired (C3)
+                    rem_result = run_remediation(config, runner, iteration, remediation_input, resolved_route=resolved_route, ctx=ctx)
                 rem_duration = clock.monotonic() - rem_start_time
             except budgets.BudgetExceeded:
                 raise

@@ -6168,7 +6168,9 @@ def test_budget_exceeded_propagates_through_remediation(tmp_path, monkeypatch):
             list(args), 0, stdout="## Finding\nbad code\nREVIEW_STATUS: findings\n"
         )
 
-    monkeypatch.setattr(MODULE, "run_remediation", lambda *a, **kw: (_ for _ in ()).throw(exc))
+    # B2d: patch RemediationAdapter.execute instead of the legacy run_remediation shim
+    import code_review_loop.adapters.remediation as _rem_mod
+    monkeypatch.setattr(_rem_mod.RemediationAdapter, "execute", lambda *a, **kw: (_ for _ in ()).throw(exc))
 
     config = MODULE.LoopConfig(
         base="main",
