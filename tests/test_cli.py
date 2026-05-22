@@ -4226,7 +4226,9 @@ def test_live_cli_preflight_blocks_before_review_invocation(tmp_path, monkeypatc
     def fail_review(*_args, **_kwargs):
         raise AssertionError("review must not run when live preflight blocks")
 
-    monkeypatch.setattr(MODULE, "run_codex_review", fail_review)
+    # B2f: patch ReviewAdapter.execute instead of the legacy run_codex_review shim
+    import code_review_loop.adapters.review as _review_mod
+    monkeypatch.setattr(_review_mod.ReviewAdapter, "execute", fail_review)
 
     exit_code = MODULE.main(
         ["--base", "missing", "--codex-bin", "git", "--artifact-dir", "artifacts"]

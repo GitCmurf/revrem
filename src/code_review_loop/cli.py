@@ -40,7 +40,7 @@ from code_review_loop import (
     triage,
 )
 from code_review_loop.clock import SYSTEM_CLOCK, Clock, utc_iso
-from code_review_loop.core.ports import ChecksRequest, CommitRequest, CommandResult, ProgressReporter, RemediationRequest, RunContext, TriageRequest
+from code_review_loop.core.ports import ChecksRequest, CommitRequest, CommandResult, ProgressReporter, RemediationRequest, ReviewRequest, RunContext, TriageRequest
 from code_review_loop.core.review_interpretation import (
     actionable_review_output,
     detect_review_status,
@@ -1794,6 +1794,7 @@ def _run_loop(
         from code_review_loop.adapters.checks import ChecksAdapter  # lazy — avoids cli→adapters.*→cli cycle
         from code_review_loop.adapters.commit import CommitAdapter  # lazy — same reason
         from code_review_loop.adapters.remediation import RemediationAdapter  # lazy — same reason
+        from code_review_loop.adapters.review import ReviewAdapter  # lazy — same reason
         from code_review_loop.adapters.triage import TriageAdapter  # lazy — same reason
         from code_review_loop.adapters.terminal import TerminalProgressReporter
         if config.progress and config.progress_style in ("rich", "compact"):
@@ -1810,6 +1811,7 @@ def _run_loop(
             phase_checks=ChecksAdapter(config),
             phase_commit=CommitAdapter(config),
             phase_remediation=RemediationAdapter(config),
+            phase_review=ReviewAdapter(config),
             phase_triage=TriageAdapter(config),
         )
 
@@ -1887,13 +1889,20 @@ def _run_loop(
                 )
             else:
                 try:
-                    status, review = run_codex_review(
-                        config,
-                        runner,
-                        f"review-{iteration}",
-                        display_label=str(iteration),
-                        ctx=ctx,
-                    )
+                    if ctx.phase_review is not None:
+                        _review_outcome = ctx.phase_review.execute(
+                            ReviewRequest(artifact_label=f"review-{iteration}", display_label=str(iteration)),
+                            ctx,
+                        )
+                        status, review = _review_outcome.status, _review_outcome.result
+                    else:  # legacy shim path; dead once phase_review is always wired (C3)
+                        status, review = run_codex_review(
+                            config,
+                            runner,
+                            f"review-{iteration}",
+                            display_label=str(iteration),
+                            ctx=ctx,
+                        )
                 except RuntimeError as exc:
                     iterations.append({"iteration": iteration, "review_failed": True})
                     state.set_final_status("error")
@@ -2319,13 +2328,20 @@ def _run_loop(
 
         if config.final_review:
             try:
-                status, final_review = run_codex_review(
-                    config,
-                    runner,
-                    "review-final",
-                    display_label="final",
-                    ctx=ctx,
-                )
+                if ctx.phase_review is not None:
+                    _final_outcome = ctx.phase_review.execute(
+                        ReviewRequest(artifact_label="review-final", display_label="final"),
+                        ctx,
+                    )
+                    status, final_review = _final_outcome.status, _final_outcome.result
+                else:  # legacy shim path; dead once phase_review is always wired (C3)
+                    status, final_review = run_codex_review(
+                        config,
+                        runner,
+                        "review-final",
+                        display_label="final",
+                        ctx=ctx,
+                    )
             except RuntimeError as exc:
                 iterations.append({"iteration": "final", "review_failed": True})
                 state.set_final_status("error")

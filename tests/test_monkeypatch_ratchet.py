@@ -19,6 +19,7 @@ Burn-down log:
   56 — B2c CommitHarness: migrate test_budget_exceeded_propagates_through_commit
   55 — B2d RemediationHarness: migrate test_budget_exceeded_propagates_through_remediation
   54 — B2e TriageHarness: migrate test_budget_exceeded_propagates_through_triage
+  53 — B2f ReviewHarness: migrate test_live_cli_preflight_blocks_before_review_invocation
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ from pathlib import Path
 
 # Committed baseline: measured call-site count of ``monkeypatch.setattr(MODULE, ...)``
 # across tests/ at the start of REVREM-TASK-003. Ratchets downward only.
-BASELINE = 54
+BASELINE = 53
 
 _TESTS_DIR = Path(__file__).parent
 _PATTERN = re.compile(r"monkeypatch\.setattr\(MODULE,")
