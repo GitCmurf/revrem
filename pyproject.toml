@@ -92,6 +92,7 @@ warn_unused_configs = true
 # (Contract C4) replaces it in Wave B0.
 [tool.importlinter]
 root_package = "code_review_loop"
+include_external_packages = true
 
 [[tool.importlinter.contracts]]
 name = "Domain leaf modules must not import the cli God object (placeholder, superseded in B0)"
@@ -108,3 +109,22 @@ source_modules = [
   "code_review_loop.core.state",
 ]
 forbidden_modules = ["code_review_loop.cli"]
+
+# REVREM-TASK-003 Wave B0a: the dependency rule (Contract C4), partial form. The
+# core may not import the CLI driver or argparse. This is intentionally an
+# expanded forbidden-list rather than a layered core->adapters->cli contract:
+# the adapters package does not exist yet (B2/B4), so a layered contract would be
+# near-empty theatre. It converts to the full layered contract in B2 when the
+# adapters land. core.ports re-exports Clock/RunIdentity/EventSink from their
+# current homes, so core->adapter is not yet forbidden here.
+[[tool.importlinter.contracts]]
+name = "Core must not import the cli driver or argparse (C4, partial; layered in B2)"
+type = "forbidden"
+source_modules = [
+  "code_review_loop.core.state",
+  "code_review_loop.core.ports",
+]
+forbidden_modules = [
+  "code_review_loop.cli",
+  "argparse",
+]

@@ -56,6 +56,41 @@ There is no silent third option.
 
 ## Entries
 
+### 2026-05-22 — B0a structural spine: ports.py + RunContext (Wave B0a)
+
+- **Contract:** machine (no behaviour change — structural)
+- **What changed:** nothing observable. Added `core/ports.py` as the canonical
+  port import surface: **moved `CommandResult` here** (out of `cli.py`, which now
+  re-exports it), defined the `ProcessRunner` Protocol, and defined `RunContext`
+  (a frozen bundle of collaborators: `clock`, `identity`, `runner`, `event_sink`,
+  `budget_state`). `Clock`/`RunIdentity`/`EventSink` are **re-exported** from
+  their current homes, not moved. Promoted the import-linter config with a partial
+  C4 contract (`core.*` must not import `cli` or `argparse`;
+  `include_external_packages=true`).
+- **Plan divergences resolved (amended in this commit):**
+  1. **B0 split into B0a/B0b** (this is B0a) — structural spine vs. the risky
+     collaborator relocation.
+  2. **`RunContext` carries collaborators only, not config.** C7's literal
+     "config + ports" collides with C4: `LoopConfig` is an edge type (`cli.py`,
+     imports `profiles`) so a core-homed `RunContext` cannot hold it. Glossary +
+     C7 softened; config folds onto `RunContext` once `LoopConfig` is core-homed
+     post-B1. Phases will take `config` + `ctx` separately in B0b.
+  3. **`Harness`/`ProgressReporter`/`ArtifactStore`/`GitGateway` deferred** to
+     B2/B4 (no consumer today — avoids the "hexagonal cosplay" Non-Goal).
+  4. **Clock/RunIdentity/EventSink re-exported, not physically re-homed.**
+     Physically moving `Clock` into the core while `events` still imports it
+     would create an import cycle (`ports → events → clock → ports`). The
+     dependency *inversion* is deferred to B2 when the layered contract and the
+     `adapters/` package land. The partial forbidden-list contract is honest to
+     what exists today rather than near-empty `layered` theatre.
+- **Why move `CommandResult`:** the `ProcessRunner` port returns it, and the core
+  cannot import `cli` (C4) — so the value type had to come into the core. The
+  plan's Open Question ("home for `CommandResult`") is resolved: `core/ports.py`.
+- **Tests:** `tests/test_ports.py` pins the surface (CommandResult homed +
+  cli re-export identity, the declared protocols present, the deferred ports
+  absent, RunContext bundles collaborators with no `config` field).
+- **schema_version impact:** none.
+
 ### 2026-05-22 — A3 RunState behind the summary dict (Wave A3)
 
 - **Contract:** machine (no behaviour change — shadow refactor)

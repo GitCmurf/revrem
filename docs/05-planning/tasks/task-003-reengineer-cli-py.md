@@ -226,8 +226,13 @@ hexagonal cosplay.
   (real subprocess, real git, codex harness, terminal/Rich renderer, jsonl
   sink). **Driven adapters** are called by the core; **driving adapters**
   (CLI, TUI, SDK) call into the core.
-- **`RunContext`** — the immutable bundle of config + injected ports handed
-  to the engine. Replaces the frozen-config-mutation hack.
+- **`RunContext`** — the immutable bundle of injected **collaborators / ports**
+  handed to the engine. Replaces the frozen-config-mutation hack. *(As-built
+  from B0a: config is **not** a `RunContext` field yet — `LoopConfig` lives in
+  `cli.py` and pulls in `profiles` (edge), so a core-homed `RunContext` holding
+  it would violate C4. Phases take `config` and `ctx` separately until
+  `LoopConfig` is core-homed post-B1, at which point config folds onto the
+  context.)*
 - **`RunState`** — the typed, in-memory aggregate for one run; replaces the
   `summary` dict and `iterations` list. Built via explicit transitions.
 - **`RunOutcome`** — a closed sum type of terminal results (`Clear`,
@@ -556,7 +561,12 @@ wall-time is cheaper to normalize than to thread a clock through its helpers.)*
 
 - The engine receives **all** collaborators through one immutable
   `RunContext`; it constructs none itself and reads no module globals for
-  behaviour.
+  behaviour. *(As-built clarification from B0a: **config is not one of the
+  collaborators** carried on `RunContext` yet. C7's literal "config + ports"
+  collides with C4 — `LoopConfig` is an edge type (`cli.py`, imports
+  `profiles`) and a core-homed `RunContext` cannot import it. Phases consume
+  `config` alongside `ctx` until `LoopConfig` is core-homed post-B1. The
+  contract still holds: every **collaborator** flows through `RunContext`.)*
 - Exactly one production assembler (`cli/config_builder.py`) and one test
   helper (`tests/support/fake_context.py`) build a `RunContext`. Drivers
   (CLI, TUI) differ only in which adapters they wire.
@@ -747,18 +757,42 @@ them.
 
 ### Wave B — Free the Reusable Core
 
-**B0. Ports, `RunContext`, dependency rule** (C4, C7)
-- *Intent:* establish the hexagon spine.
-- *Changes:* create `core/ports.py` with all Protocols; `RunContext`; wire
-  the real adapters; turn the A1 clock into a port; promote the import-linter
-  contract to enforce core-imports-no-edge. **Relocate `event_sink` and
-  `budget_state` off the frozen `LoopConfig` onto `RunContext`, deleting the 4
-  `object.__setattr__` calls** that A3 deliberately left in place.
-- *Tests:* import-linter contract passes; a `RunContext` builds from fakes;
-  grep-gate asserts zero `object.__setattr__(config, …)` remain.
+**B0. Ports, `RunContext`, dependency rule** (C4, C7) — **two PRs**
+- *Intent:* establish the hexagon spine. Split into two commits because the spec
+  does two unrelated things — define the structural spine, and surgically
+  relocate live collaborators off a frozen dataclass — and bundling both is the
+  "big-bang" risk the Adversarial-Review section warns against.
+  - **B0a — structural spine (additive, low risk).** Create `core/ports.py` as
+    the canonical import surface. **Home `CommandResult` here** (moved out of
+    `cli.py`, which re-exports it — it is the value type the runner port forces
+    into the core). Define `ProcessRunner` (formalizing the `Runner` callable)
+    and `RunContext` (**collaborators only**: `clock`, `identity`, `runner`,
+    `event_sink`, `budget_state` — *not* config; see C7 as-built note).
+    **Re-export** `Clock`/`RunIdentity`/`EventSink` from their current homes
+    rather than physically moving them — moving `Clock` into the core while
+    `events` still imports it would create an import cycle; the dependency
+    *inversion* is deferred to B2 with the layered contract. Promote the
+    import-linter contract to a **partial** dependency rule: `core.*` may not
+    import `cli` or `argparse` (expanded forbidden-list, not a near-empty
+    `layered` contract — there is no `adapters/` package to layer against until
+    B2). **Defer** `Harness`/`ProgressReporter`/`ArtifactStore`/`GitGateway` to
+    B2/B4 (no consumer today; writing them now is the "hexagonal cosplay"
+    Non-Goal). No relocation, no `setattr` removal, no `ctx` threading.
+  - **B0b — relocation (behavioral, medium-high risk).** Build `RunContext` in
+    `run_loop`; thread `ctx` through `_run_loop` and the phase functions
+    (strategy: add a `ctx` param to the functions that read
+    `event_sink`/`budget_state`, keeping their `config` param — the dual param
+    vanishes when `LoopConfig` is core-homed); **relocate `event_sink` and
+    `budget_state` off the frozen `LoopConfig` onto `RunContext`, deleting the 4
+    `object.__setattr__` calls** that A3 deliberately left in place; remove the
+    two `LoopConfig` fields; add the grep-gate.
+- *Tests:* import-linter contract passes; a `RunContext` builds from fakes
+  (B0a); grep-gate asserts zero `object.__setattr__(config, …)` remain (B0b);
+  A2 snapshots unchanged across the relocation.
 - *Exit:* engine receives all collaborators via `RunContext`; the frozen
   config is no longer mutated.
-- *Risk:* medium-high — defines the boundary everything else assumes.
+- *Risk:* medium-high — defines the boundary everything else assumes (the risk
+  is concentrated in B0b; B0a is additive).
 
 **B1. Pure-domain extraction: `review_interpretation` + routing DTOs**
 (engineering-principles §4) — **two PRs**

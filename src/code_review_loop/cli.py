@@ -40,6 +40,7 @@ from code_review_loop import (
     triage,
 )
 from code_review_loop.clock import SYSTEM_CLOCK, Clock, utc_iso
+from code_review_loop.core.ports import CommandResult
 from code_review_loop.core.state import RunState
 from code_review_loop.identity import SYSTEM_IDENTITY, RunIdentity
 
@@ -121,14 +122,6 @@ Staged change summary:
 """
 
 
-@dataclass(frozen=True)
-class CommandResult:
-    args: list[str]
-    returncode: int
-    stdout: str = ""
-    stderr: str = ""
-    tokens: int | None = None
-    usd: Decimal | None = None
 
 
 @dataclass(frozen=True)
