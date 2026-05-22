@@ -11,13 +11,64 @@ import tempfile
 import tomllib
 from collections.abc import Callable
 from contextlib import suppress
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, replace
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, cast
 
 from code_review_loop import run_history
 from code_review_loop._compat_tomli_w import dumps as toml_dumps
+from code_review_loop.core.routing_types import (
+    COMMIT_ON_HOOK_FAILURE_CHOICES as COMMIT_ON_HOOK_FAILURE_CHOICES,
+)
+from code_review_loop.core.routing_types import (
+    BudgetConfig as BudgetConfig,
+)
+from code_review_loop.core.routing_types import (
+    CommitConfig as CommitConfig,
+)
+from code_review_loop.core.routing_types import (
+    OutputConfig as OutputConfig,
+)
+from code_review_loop.core.routing_types import (
+    PhaseConfig as PhaseConfig,
+)
+from code_review_loop.core.routing_types import (
+    PipelineConfig as PipelineConfig,
+)
+from code_review_loop.core.routing_types import (
+    Profile as Profile,
+)
+from code_review_loop.core.routing_types import (
+    ProfileFile as ProfileFile,
+)
+from code_review_loop.core.routing_types import (
+    ProfileListItem as ProfileListItem,
+)
+from code_review_loop.core.routing_types import (
+    RuntimeConfig as RuntimeConfig,
+)
+from code_review_loop.core.routing_types import (
+    SuppressionsConfig as SuppressionsConfig,
+)
+from code_review_loop.core.routing_types import (
+    TriageConfig as TriageConfig,
+)
+from code_review_loop.core.routing_types import (
+    TriageRouteConfig as TriageRouteConfig,
+)
+from code_review_loop.core.routing_types import (
+    TriageRoutingConfig as TriageRoutingConfig,
+)
+from code_review_loop.core.routing_types import (
+    TriageRoutingRule as TriageRoutingRule,
+)
+from code_review_loop.core.routing_types import (
+    TriageRoutingRuleThen as TriageRoutingRuleThen,
+)
+from code_review_loop.core.routing_types import (
+    TriageRoutingRuleWhen as TriageRoutingRuleWhen,
+)
 from code_review_loop.harnesses import (
     HARNESS_REGISTRY,
     require_implemented_harness,
@@ -54,7 +105,6 @@ TRIAGE_REFACTOR_DEPTH_CHOICES = (
     "cross-module",
     "architectural",
 )
-COMMIT_ON_HOOK_FAILURE_CHOICES = ("remediate", "stop", "no-verify")
 TRIAGE_KEYS = (
     "enabled",
     "harness",
@@ -111,161 +161,6 @@ BUDGET_KEYS = ("max_wall_seconds", "max_tokens", "max_usd", "soft_warn_fraction"
 SUPPRESSION_SCOPE_CHOICES = ("repo", "user")
 SUPPRESSIONS_KEYS = ("scope",)
 TOP_LEVEL_KEYS = ("defaults", "profiles")
-
-
-@dataclass(frozen=True)
-class PhaseConfig:
-    harness: str = "codex"
-    model: str | None = None
-    reasoning_effort: str | None = None
-    timeout_seconds: float | None = None
-
-
-@dataclass(frozen=True)
-class TriageRouteConfig:
-    harness: str = "codex"
-    model: str | None = None
-    reasoning_effort: str | None = None
-    timeout_seconds: float | None = None
-    sandbox: str = "workspace-write"
-    fallback: str | None = None
-
-
-@dataclass(frozen=True)
-class TriageRoutingRuleWhen:
-    domain_tags_any: tuple[str, ...] = field(default_factory=tuple)
-    risk_level_min: str | None = None
-    risk_level_max: str | None = None
-    refactor_depth_any: tuple[str, ...] = field(default_factory=tuple)
-    module_count_gte: int | None = None
-    module_count_lt: int | None = None
-    safety_signals_any: tuple[str, ...] = field(default_factory=tuple)
-    failed_checks_any: tuple[str, ...] = field(default_factory=tuple)
-
-
-@dataclass(frozen=True)
-class TriageRoutingRuleThen:
-    route: str | None = None
-    prompt_fragments: tuple[str, ...] = field(default_factory=tuple)
-    allow_model_deescalation: bool = True
-    allow_model_escalation: bool | None = None
-
-
-@dataclass(frozen=True)
-class TriageRoutingRule:
-    id: str
-    when: TriageRoutingRuleWhen = field(default_factory=TriageRoutingRuleWhen)
-    then: TriageRoutingRuleThen = field(default_factory=TriageRoutingRuleThen)
-
-
-@dataclass(frozen=True)
-class TriageRoutingConfig:
-    enabled: bool = False
-    mode: str = "first-match"
-    default_route: str = "midtier-coder"
-    strict_on_unavailable_route: bool = True
-    rule: tuple[TriageRoutingRule, ...] = field(default_factory=tuple)
-    allow_model_escalation: bool = True
-
-
-@dataclass(frozen=True)
-class TriageConfig:
-    enabled: bool = False
-    harness: str = "codex"
-    model: str | None = None
-    reasoning_effort: str | None = None
-    timeout_seconds: float | None = None
-    prompt: str | None = None
-    on_invalid: str = "continue"
-    contract: str = "v1"
-    routing: TriageRoutingConfig = field(default_factory=TriageRoutingConfig)
-    routes: dict[str, TriageRouteConfig] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class PipelineConfig:
-    base: str = "main"
-    max_iterations: int = 2
-    final_review: bool = True
-    checks: tuple[str, ...] = field(default_factory=tuple)
-
-
-@dataclass(frozen=True)
-class CommitConfig:
-    enabled: bool = False
-    harness: str = "codex"
-    message_model: str | None = "gpt-5.3-codex-spark"
-    message_prompt: str | None = None
-    on_hook_failure: str = "remediate"
-
-
-@dataclass(frozen=True)
-class OutputConfig:
-    summary_format: str = "text"
-    debug_status_detection: bool = False
-    progress_style: str = "compact"
-    quiet_progress: bool = False
-    terminal_title: bool = False
-    artifact_dir: str | None = None
-
-
-@dataclass(frozen=True)
-class RuntimeConfig:
-    codex_bin: str = "codex"
-    harness_executables: dict[str, str] = field(default_factory=dict)
-    exec_sandbox: str = "workspace-write"
-    exec_color: str = "never"
-    exec_json: bool = False
-    output_last_message: bool = True
-    full_auto: bool = True
-    max_remediation_input_chars: int = 200_000
-    terminal_excerpt_chars: int = 4_000
-
-
-@dataclass(frozen=True)
-class BudgetConfig:
-    max_wall_seconds: float | None = None
-    max_tokens: int | None = None
-    max_usd: Decimal | None = None
-    soft_warn_fraction: float = 0.8
-
-
-@dataclass(frozen=True)
-class SuppressionsConfig:
-    scope: str = "repo"
-
-
-@dataclass(frozen=True)
-class Profile:
-    name: str
-    description: str = ""
-    pipeline: PipelineConfig = field(default_factory=PipelineConfig)
-    review: PhaseConfig = field(default_factory=PhaseConfig)
-    triage: TriageConfig = field(default_factory=TriageConfig)
-    remediation: PhaseConfig = field(default_factory=PhaseConfig)
-    commit: CommitConfig = field(default_factory=CommitConfig)
-    output: OutputConfig = field(default_factory=OutputConfig)
-    runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
-    budgets: BudgetConfig = field(default_factory=BudgetConfig)
-    suppressions: SuppressionsConfig = field(default_factory=SuppressionsConfig)
-    source: str | None = None
-
-
-@dataclass(frozen=True)
-class ProfileFile:
-    path: Path
-    profiles: dict[str, Profile]
-    raw_profiles: dict[str, dict[str, Any]] = field(default_factory=dict)
-    defaults: Profile | None = None
-    raw_defaults: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class ProfileListItem:
-    name: str
-    description: str
-    source: str | None
-    last_used_at: str | None
 
 
 def user_config_path(home: Path | None = None) -> Path:

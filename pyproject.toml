@@ -128,3 +128,16 @@ forbidden_modules = [
   "code_review_loop.cli",
   "argparse",
 ]
+
+# REVREM-TASK-003 Wave B1b: policy.py top-level imports must not reach the
+# profiles edge module. The lazy import of harnesses inside check_route_capabilities
+# is a function-local import and is intentionally permitted here.
+[[tool.importlinter.contracts]]
+name = "policy.py must not import profiles at the top level (B1b, C4 burn-down)"
+type = "forbidden"
+source_modules = [
+  "code_review_loop.policy",
+]
+forbidden_modules = [
+  "code_review_loop.profiles",
+]

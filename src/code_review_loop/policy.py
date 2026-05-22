@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from code_review_loop.profiles import Profile, TriageRouteConfig, TriageRoutingRule
+from code_review_loop.core.routing_types import Profile, TriageRouteConfig, TriageRoutingRule
 
 
 @dataclass(frozen=True)
