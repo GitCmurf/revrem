@@ -4,7 +4,7 @@ type: TASK
 title: Re-engineer cli.py from God object into a hexagonal review-loop core
 status: Draft
 version: '0.2'
-last_updated: '2026-05-21'
+last_updated: '2026-05-22'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -689,12 +689,25 @@ them.
     (run-dir paths → `<RUN_DIR>`, `wall_elapsed_seconds` → `<DURATION>`); git
     SHAs are null here and byte sizes are stable, so those placeholders are
     deferred to A2b with their first real consumer.
-  - **A2b — breadth.** Using the A2a helpers, add golden snapshots for the
-    findings-remain / budget / cancel loop paths and each subcommand; extend
-    the normalizer (git SHA, byte-size/mtime) only as each consumer needs it.
+  - **A2b — loop-path breadth.** Using the A2a helpers, add golden snapshots
+    for the remaining **loop terminations**: findings-remain/exhausted (no
+    triage, `final_review=False`, `max_iterations=1`), token-budget ceiling, and
+    operator cancellation. The latter two terminate by raising `RunLoopFailed`
+    (the test reads `exc.summary`). The FakeRunner gains a one-line extension —
+    a mapped `BaseException` is raised rather than returned — so cancellation can
+    be driven through `run_loop(config, runner, …)`. No new normalizer
+    placeholders are required on these paths (non-git fixture → null
+    `git_state`, no SHAs; byte sizes stable).
+  - **A2c — subcommand breadth.** Add per-subcommand machine-contract snapshots
+    and extend the normalizer (git SHA, byte-size/mtime) as each consumer needs
+    it. **Split out of A2b** because a subcommand's terminal result is its own
+    `CommandOutcome` ADT (C5), not the loop's `RunOutcome`; pinning those is
+    cleaner once C1/C5 stabilise the outcome types, and bundling them into A2b
+    would make one commit span two unrelated output shapes.
 - *Tests:* snapshots committed; a diff harness fails on unledgered change.
 - *Exit:* the machinery is in place and proven on one path (A2a); every
-  machine-contract behaviour has a pinned, normalized snapshot (A2b).
+  machine-contract **loop** behaviour has a pinned, normalized snapshot (A2b);
+  every subcommand machine-contract behaviour is pinned (A2c).
   **Depends on A1** (both ports) so the fixtures are not leaky.
 - *Risk:* medium — building deterministic fixtures + the normalizer is the
   real work; this is why A1 precedes it and A2a proves the harness end-to-end

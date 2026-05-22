@@ -1,0 +1,67 @@
+[
+  {
+    "iteration": "1",
+    "kind": "phase_start",
+    "payload": {
+      "message": "codex review --base main",
+      "summary": "start"
+    },
+    "phase": "review",
+    "run_id": "deadbeefcafe0000deadbeefcafe0000",
+    "schema_version": "1.0",
+    "seq": 1,
+    "ts": "2026-01-02T03:04:05Z"
+  },
+  {
+    "iteration": null,
+    "kind": "cancellation",
+    "payload": {
+      "message": "cancelled by operator",
+      "reason": "operator_interrupt"
+    },
+    "phase": "run",
+    "run_id": "deadbeefcafe0000deadbeefcafe0000",
+    "schema_version": "1.0",
+    "seq": 2,
+    "ts": "2026-01-02T03:04:05Z"
+  },
+  {
+    "iteration": null,
+    "kind": "artifact_write",
+    "payload": {
+      "kind": "summary",
+      "path": "<RUN_DIR>/artifacts/summary.json"
+    },
+    "phase": "artifacts",
+    "run_id": "deadbeefcafe0000deadbeefcafe0000",
+    "schema_version": "1.0",
+    "seq": 3,
+    "ts": "2026-01-02T03:04:05Z"
+  },
+  {
+    "iteration": null,
+    "kind": "artifact_write",
+    "payload": {
+      "bytes": 480,
+      "kind": "diagnostics",
+      "path": "<RUN_DIR>/artifacts/diagnostics.json"
+    },
+    "phase": "artifacts",
+    "run_id": "deadbeefcafe0000deadbeefcafe0000",
+    "schema_version": "1.0",
+    "seq": 4,
+    "ts": "2026-01-02T03:04:05Z"
+  },
+  {
+    "iteration": null,
+    "kind": "summary",
+    "payload": {
+      "summary": "cancelled"
+    },
+    "phase": null,
+    "run_id": "deadbeefcafe0000deadbeefcafe0000",
+    "schema_version": "1.0",
+    "seq": 5,
+    "ts": "2026-01-02T03:04:05Z"
+  }
+]

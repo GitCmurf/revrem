@@ -4,7 +4,7 @@ type: LEDGER
 title: Behaviour ledger for the cli.py re-engineering (REVREM-TASK-003)
 status: Active
 version: '0.1'
-last_updated: '2026-05-21'
+last_updated: '2026-05-22'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -55,6 +55,37 @@ There is no silent third option.
 ```
 
 ## Entries
+
+### 2026-05-22 — A2b loop-path golden masters (Wave A2b)
+
+- **Contract:** machine (additional baseline captures, no behaviour change)
+- **What changed:** nothing in production code. Pinned the three remaining
+  **loop terminations** using the A2a machinery:
+  `loop_findings_summary.json` / `loop_findings_events.json`
+  (findings remain, iterations exhausted — `stopped_reason=max_iterations_reached`,
+  `final_status=unknown`), `loop_budget_summary.json` / `loop_budget_events.json`
+  (token-budget ceiling — `stopped_reason=budget_ceiling_hit`,
+  `error="tokens budget reached: 100 >= 10"`, with `cost_charge`/`cost_ceiling_hit`
+  events), and `loop_cancel_summary.json` / `loop_cancel_events.json`
+  (operator `KeyboardInterrupt` — `stopped_reason=cancelled`,
+  `error="cancelled by operator"`, `diagnostics.json` + `cancellation` event).
+- **Test-support change (not production):** `tests/support/fakes.py` `FakeRunner`
+  now raises a mapped value when it is a `BaseException` (returns it otherwise),
+  so the cancel path is drivable through `run_loop(config, runner, …)`.
+- **Why:** complete the loop half of the C3 change-detector so B2/B3 cannot
+  silently alter the failure/exhaustion machine contract.
+- **Before / After:** baseline; these snapshots are now authoritative alongside
+  the A2a clear-path pair.
+- **Normalizer scope:** unchanged from A2a (run-dir paths → `<RUN_DIR>`,
+  `wall_elapsed_seconds` → `<DURATION>`). No git-SHA / byte-size placeholders
+  were needed — the loop fixture runs in a non-git tmp dir (`git_state.available`
+  = false, all SHAs null) and no path emits a byte size. Those placeholders
+  remain deferred to A2c with their first real consumer.
+- **Scope note:** per-subcommand snapshots were **split out of A2b into a new
+  A2c** (plan amended in this commit). Rationale: a subcommand's result is its
+  own `CommandOutcome` ADT (C5), a different output shape from the loop's
+  `RunOutcome`; pinning them belongs after C1/C5 stabilise those types.
+- **schema_version impact:** none.
 
 ### 2026-05-21 — A2a golden-master baseline (Wave A2a)
 

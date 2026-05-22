@@ -2,8 +2,9 @@
 
 A2a vertical slice: one end-to-end path (loop, review-clear) proving the whole
 machinery — fakes -> deterministic run -> normalizer -> committed snapshot ->
-fail-on-diff. A2b adds the remaining loop paths and per-subcommand snapshots on
-top of these helpers.
+fail-on-diff. A2b adds the remaining loop terminations (findings-exhausted,
+budget-ceiling, cancel) on top of these helpers; per-subcommand snapshots are
+deferred to A2c.
 
 Snapshots cover the machine contract only (summary JSON, events.jsonl); human
 presentation is out of scope (C3).
@@ -16,26 +17,47 @@ from support.fakes import FIXED_RUN_ID, FakeClock, FakeRunIdentity, FakeRunner
 from support.normalize import CWD_PLACEHOLDER, DURATION_PLACEHOLDER, normalize
 from support.snapshot import assert_snapshot
 
+from code_review_loop import budgets, events
 from code_review_loop import cli as MODULE
-from code_review_loop import events
 
 CLEAR_REVIEW_STDOUT = '{"findings": [], "overall_correctness": "patch is correct"}\n'
+FINDINGS_REVIEW_STDOUT = "REVIEW_STATUS: findings\n"
+
+
+def _loop_config(tmp_path, **overrides):
+    base = {
+        "base": "main",
+        "max_iterations": 1,
+        "codex_bin": "codex",
+        "cwd": tmp_path,
+        "artifact_dir": tmp_path / "artifacts",
+        "progress": False,
+        "final_review": False,
+    }
+    base.update(overrides)
+    return MODULE.LoopConfig(**base)
+
+
+def _drive_loop(config, runner, tmp_path):
+    """Run the loop and return (summary, event_dicts) for any termination.
+
+    Paths that fail (budget, cancel) raise ``RunLoopFailed`` carrying the
+    summary; both the returned and the raised summary are part of the machine
+    contract, so normalize either. Callers must assert the expected termination
+    shape (e.g. ``stopped_reason``) before snapshotting, since this helper hides
+    the return-vs-raise distinction.
+    """
+    try:
+        summary = MODULE.run_loop(config, runner, clock=FakeClock(), identity=FakeRunIdentity())
+    except MODULE.RunLoopFailed as exc:
+        summary = exc.summary
+    records, _ = events.read_events(tmp_path / "artifacts" / "events.jsonl")
+    return summary, [event.to_dict() for event in records]
 
 
 def _run_clear_path(tmp_path):
     runner = FakeRunner({"review": MODULE.CommandResult([], 0, stdout=CLEAR_REVIEW_STDOUT)})
-    config = MODULE.LoopConfig(
-        base="main",
-        max_iterations=1,
-        codex_bin="codex",
-        cwd=tmp_path,
-        artifact_dir=tmp_path / "artifacts",
-        progress=False,
-        final_review=False,
-    )
-    summary = MODULE.run_loop(config, runner, clock=FakeClock(), identity=FakeRunIdentity())
-    records, _ = events.read_events(tmp_path / "artifacts" / "events.jsonl")
-    return summary, [event.to_dict() for event in records]
+    return _drive_loop(_loop_config(tmp_path), runner, tmp_path)
 
 
 def test_loop_clear_path_summary_matches_golden(tmp_path):
@@ -46,6 +68,71 @@ def test_loop_clear_path_summary_matches_golden(tmp_path):
 def test_loop_clear_path_events_match_golden(tmp_path):
     _, event_dicts = _run_clear_path(tmp_path)
     assert_snapshot("loop_clear_events", normalize(event_dicts, run_dir=tmp_path))
+
+
+# --- A2b: findings remain, iterations exhausted (no triage, no final review) ---
+
+
+def _run_findings_path(tmp_path):
+    runner = FakeRunner(
+        {
+            "review": MODULE.CommandResult([], 0, stdout=FINDINGS_REVIEW_STDOUT),
+            "exec": MODULE.CommandResult([], 0, stdout="remediated\n"),
+        }
+    )
+    return _drive_loop(_loop_config(tmp_path), runner, tmp_path)
+
+
+def test_loop_findings_path_summary_matches_golden(tmp_path):
+    summary, _ = _run_findings_path(tmp_path)
+    assert summary["stopped_reason"] == "max_iterations_reached"
+    assert_snapshot("loop_findings_summary", normalize(summary, run_dir=tmp_path))
+
+
+def test_loop_findings_path_events_match_golden(tmp_path):
+    _, event_dicts = _run_findings_path(tmp_path)
+    assert_snapshot("loop_findings_events", normalize(event_dicts, run_dir=tmp_path))
+
+
+# --- A2b: token budget ceiling hit during review ---
+
+
+def _run_budget_path(tmp_path):
+    runner = FakeRunner(
+        {"review": MODULE.CommandResult([], 0, stdout=FINDINGS_REVIEW_STDOUT, tokens=100)}
+    )
+    config = _loop_config(tmp_path, budget_config=budgets.BudgetConfig(max_tokens=10))
+    return _drive_loop(config, runner, tmp_path)
+
+
+def test_loop_budget_path_summary_matches_golden(tmp_path):
+    summary, _ = _run_budget_path(tmp_path)
+    assert summary["stopped_reason"] == "budget_ceiling_hit"
+    assert_snapshot("loop_budget_summary", normalize(summary, run_dir=tmp_path))
+
+
+def test_loop_budget_path_events_match_golden(tmp_path):
+    _, event_dicts = _run_budget_path(tmp_path)
+    assert_snapshot("loop_budget_events", normalize(event_dicts, run_dir=tmp_path))
+
+
+# --- A2b: operator cancellation (KeyboardInterrupt during review) ---
+
+
+def _run_cancel_path(tmp_path):
+    runner = FakeRunner({"review": KeyboardInterrupt("operator interrupt")})
+    return _drive_loop(_loop_config(tmp_path), runner, tmp_path)
+
+
+def test_loop_cancel_path_summary_matches_golden(tmp_path):
+    summary, _ = _run_cancel_path(tmp_path)
+    assert summary["stopped_reason"] == "cancelled"
+    assert_snapshot("loop_cancel_summary", normalize(summary, run_dir=tmp_path))
+
+
+def test_loop_cancel_path_events_match_golden(tmp_path):
+    _, event_dicts = _run_cancel_path(tmp_path)
+    assert_snapshot("loop_cancel_events", normalize(event_dicts, run_dir=tmp_path))
 
 
 # --- normalizer unit tests (pure; no loop run needed) ---

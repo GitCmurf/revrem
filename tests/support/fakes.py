@@ -45,10 +45,12 @@ class FakeRunner:
     """A subprocess runner that maps a phase (``args[1]``) to a canned result.
 
     Records each call so tests can assert on the phase sequence. Construct with
-    a mapping of phase name -> ``CommandResult``; an unmapped phase raises.
+    a mapping of phase name -> ``CommandResult`` (returned) or ``BaseException``
+    (raised, e.g. ``KeyboardInterrupt`` to drive the cancel path); an unmapped
+    phase raises ``AssertionError``.
     """
 
-    def __init__(self, responses: dict[str, CommandResult]):
+    def __init__(self, responses: dict[str, CommandResult | BaseException]):
         self._responses = responses
         self.calls: list[tuple[list[str], str | None]] = []
 
@@ -66,6 +68,8 @@ class FakeRunner:
             template = self._responses[phase]
         except KeyError:
             raise AssertionError(f"FakeRunner: no response for phase {phase!r} (args={argv})") from None
+        if isinstance(template, BaseException):
+            raise template
         # Rebuild with the real call args so artifacts/events reflect the actual invocation.
         return CommandResult(
             argv,
