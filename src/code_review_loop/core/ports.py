@@ -1,4 +1,4 @@
-"""The ports the review-loop core declares (REVREM-TASK-003 B0a).
+"""The ports the review-loop core declares (REVREM-TASK-003 B0a, B2a).
 
 This module is the canonical *import surface* for the hexagon's ports and the
 port-adjacent value types. The core depends on these interfaces; adapters at the
@@ -8,25 +8,31 @@ the core.
 Scope discipline (B0a):
 
 - `CommandResult` is **homed here** (moved out of `cli.py`); `cli.py` re-exports
-  it so existing imports keep working. It is the one value type the runner port
-  forces into the core, so it cannot live in the driver.
+  it so existing imports keep working.
 - `Clock`, `RunIdentity`, and `EventSink` Protocols are **re-exported** from
-  their current modules (`clock.py`, `identity.py`, `events.py`) rather than
-  physically moved. Physically inverting those definitions into the core would
-  create an import cycle today (`events` imports `clock`); the dependency
-  *inversion* is deferred to B2 when the layered import-linter contract lands and
-  the adapter package exists to receive them.
-- `ProcessRunner` is a new Protocol formalizing the `cli.Runner` callable.
-- `RunContext` bundles the injected **collaborators only** — not config. C7's
-  literal "config + ports" collides with the dependency rule because
-  `LoopConfig` lives in `cli.py` and pulls in `profiles` (an edge module). Until
-  `LoopConfig` is core-homed (post-B1), phases take `config` and `ctx`
-  separately; config folds onto `RunContext` then.
-- `ProgressReporter` is **defined here** (B4) — it decouples the engine from
-  the terminal; `TerminalProgressReporter` in `adapters/terminal.py` implements it.
-- `Harness`, `ArtifactStore`, and `GitGateway` are **deliberately not defined
-  yet** — they gain consumers in B2+, and writing protocols with no implementation
-  is the "hexagonal cosplay" the plan declines.
+  their current modules rather than physically moved; the inversion is deferred
+  to B2 when the adapter package is ready to receive them.
+- `ProcessRunner` formalises the `cli.Runner` callable.
+- `ProgressReporter` (B4) decouples the engine from the terminal.
+
+B2a adds per-phase request/outcome value types and per-phase `*Harness` Protocols:
+
+- **Per-phase protocols** (`ChecksHarness`, `CommitHarness`, `RemediationHarness`,
+  `TriageHarness`, `ReviewHarness`) over a single `Harness` Protocol: each adapter
+  carries one typed `execute()` with no sum-type dispatch; each `RunContext` field
+  is individually optional, enabling incremental phase migration (B2b–f).
+- **Adapters close over `LoopConfig`** in `__init__`; request types carry only
+  the per-call variance (iteration, runtime inputs). `LoopConfig` never appears
+  in core types.
+- **Legacy fallback**: while a harness field is `None`, the engine calls the
+  legacy `run_<phase>` shim in `cli.py`. Shims are deleted in C3.
+- **Errors still raise**: harness.execute() raises on failure (same contract as
+  the current phase functions); outcome types cover success paths only.
+- **"Decide" is read-only-IO-allowed**: `ChecksRequest` etc. carry pre-call data;
+  disk introspection (e.g. adaptive-check skip) happens inside `execute()`.
+
+`ArtifactStore` and `GitGateway` are deliberately absent — they gain consumers
+in B3+; writing protocols with no implementation is hexagonal cosplay.
 
 The core imports only the standard library and these ports (Contract C4).
 """
@@ -37,10 +43,11 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Literal, Protocol
 
 from code_review_loop.budgets import BudgetState
 from code_review_loop.clock import Clock as Clock
+from code_review_loop.core.routing_types import ResolvedRoute as ResolvedRoute
 from code_review_loop.events import EventSink as EventSink
 from code_review_loop.identity import RunIdentity as RunIdentity
 
@@ -82,6 +89,130 @@ class ProcessRunner(Protocol):
     ) -> CommandResult: ...
 
 
+# ---------------------------------------------------------------------------
+# B2a — per-phase request / outcome value types
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class ChecksRequest:
+    """Inputs for one checks phase invocation."""
+
+    iteration: int
+
+
+@dataclass(frozen=True)
+class ChecksOutcome:
+    """Result of a successful checks phase."""
+
+    results: tuple[CommandResult, ...]
+    failed_commands: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class CommitRequest:
+    """Inputs for one commit phase invocation."""
+
+    iteration: int
+    retrying: bool = False
+
+
+@dataclass(frozen=True)
+class CommitOutcome:
+    """Result of a successful commit phase."""
+
+    status: Literal["committed", "skipped", "skipped_no_changes"]
+
+
+@dataclass(frozen=True)
+class RemediationRequest:
+    """Inputs for one remediation phase invocation."""
+
+    iteration: int
+    remediation_input: str
+    resolved_route: ResolvedRoute | None = None
+
+
+@dataclass(frozen=True)
+class RemediationOutcome:
+    """Result of a successful remediation phase."""
+
+    result: CommandResult
+
+
+@dataclass(frozen=True)
+class TriageRequest:
+    """Inputs for one triage phase invocation."""
+
+    iteration: int
+    run_id: str
+    source_review_artifact: str
+    review_output: str
+
+
+@dataclass(frozen=True)
+class TriageOutcome:
+    """Result of a successful triage phase."""
+
+    handoff: str
+    suppressed_count: int
+    is_clear: bool
+    payload: dict[str, Any] | None
+
+
+@dataclass(frozen=True)
+class ReviewRequest:
+    """Inputs for one review phase invocation."""
+
+    artifact_label: str
+    display_label: str | None = None
+
+
+@dataclass(frozen=True)
+class ReviewOutcome:
+    """Result of a successful review phase."""
+
+    status: str
+    result: CommandResult
+
+
+# ---------------------------------------------------------------------------
+# B2a — per-phase harness Protocols
+#
+# Each adapter closes over LoopConfig in __init__; request types carry only
+# the per-call variance. RunContext fields are all Optional so phases migrate
+# one at a time (B2b–f); None means "use the legacy cli.py shim".
+# ---------------------------------------------------------------------------
+
+class ChecksHarness(Protocol):
+    """Executes the checks phase."""
+
+    def execute(self, request: ChecksRequest, ctx: RunContext) -> ChecksOutcome: ...
+
+
+class CommitHarness(Protocol):
+    """Executes the commit phase."""
+
+    def execute(self, request: CommitRequest, ctx: RunContext) -> CommitOutcome: ...
+
+
+class RemediationHarness(Protocol):
+    """Executes the remediation phase."""
+
+    def execute(self, request: RemediationRequest, ctx: RunContext) -> RemediationOutcome: ...
+
+
+class TriageHarness(Protocol):
+    """Executes the triage phase."""
+
+    def execute(self, request: TriageRequest, ctx: RunContext) -> TriageOutcome: ...
+
+
+class ReviewHarness(Protocol):
+    """Executes the review phase."""
+
+    def execute(self, request: ReviewRequest, ctx: RunContext) -> ReviewOutcome: ...
+
+
 @dataclass(frozen=True)
 class RunContext:
     """Immutable bundle of injected collaborators handed to the loop.
@@ -100,3 +231,9 @@ class RunContext:
     event_sink: EventSink | None = None
     budget_state: BudgetState | None = None
     progress_reporter: ProgressReporter | None = None
+    # B2a phase harnesses — None while the legacy cli.py shim is still active.
+    phase_checks: ChecksHarness | None = None
+    phase_commit: CommitHarness | None = None
+    phase_remediation: RemediationHarness | None = None
+    phase_triage: TriageHarness | None = None
+    phase_review: ReviewHarness | None = None

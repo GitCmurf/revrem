@@ -1,10 +1,9 @@
-"""Unit tests for the hexagon's structural spine (REVREM-TASK-003 B0a).
+"""Unit tests for the hexagon's structural spine (REVREM-TASK-003 B0a, B2a).
 
 `core/ports.py` is the canonical import surface for the ports the core declares
-and the port-adjacent value types. B0a defines only the ports with a consumer
-today (Clock, RunIdentity, ProcessRunner, EventSink) plus CommandResult and the
-collaborator bundle RunContext; the remaining ports (Harness, ProgressReporter,
-ArtifactStore, GitGateway) are deferred to B2/B4 where they gain consumers.
+and the port-adjacent value types. B0a defines the foundational collaborator
+bundle and base protocols; B4 added ProgressReporter; B2a adds per-phase
+request/outcome types and five Harness Protocols.
 """
 
 from __future__ import annotations
@@ -40,9 +39,9 @@ def test_ports_surface_exposes_the_declared_protocols():
 
 
 def test_deferred_ports_are_not_defined_yet():
-    # B0a deliberately defers these; ProgressReporter was added in B4.
-    for name in ("Harness", "ArtifactStore", "GitGateway"):
-        assert not hasattr(ports, name), f"core.ports should defer {name} to B2+"
+    # ArtifactStore and GitGateway gain consumers in B3+; premature to define them.
+    for name in ("ArtifactStore", "GitGateway"):
+        assert not hasattr(ports, name), f"core.ports should defer {name} to B3+"
 
 
 def test_run_context_bundles_collaborators_only():
@@ -81,3 +80,35 @@ def test_protocols_are_runtime_importable_types():
     assert ProcessRunner is not None
     assert EventSink is not None
     assert ProgressReporter is not None
+
+
+def test_b2a_harness_protocols_exported():
+    for name in (
+        "ChecksHarness", "CommitHarness", "RemediationHarness", "TriageHarness", "ReviewHarness",
+    ):
+        assert hasattr(ports, name), f"core.ports missing B2a {name}"
+
+
+def test_b2a_phase_types_exported():
+    for name in (
+        "ChecksRequest", "ChecksOutcome",
+        "CommitRequest", "CommitOutcome",
+        "RemediationRequest", "RemediationOutcome",
+        "TriageRequest", "TriageOutcome",
+        "ReviewRequest", "ReviewOutcome",
+    ):
+        assert hasattr(ports, name), f"core.ports missing B2a {name}"
+
+
+def test_b2a_run_context_has_harness_fields():
+    class _Clock:
+        def now(self): raise NotImplementedError
+        def monotonic(self): return 0.0
+    class _Identity:
+        def new_run_id(self): return "id"
+    def _runner(args, cwd, input_text=None, timeout_seconds=None):
+        return CommandResult(list(args), 0)
+
+    ctx = RunContext(clock=_Clock(), identity=_Identity(), runner=_runner)
+    for field in ("phase_checks", "phase_commit", "phase_remediation", "phase_triage", "phase_review"):
+        assert getattr(ctx, field) is None, f"RunContext.{field} should default to None"
