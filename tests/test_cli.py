@@ -6194,7 +6194,9 @@ def test_budget_exceeded_propagates_through_commit(tmp_path, monkeypatch):
             list(args), 0, stdout="## Finding\nbad code\nREVIEW_STATUS: findings\n"
         )
 
-    monkeypatch.setattr(MODULE, "run_commit", lambda *a, **kw: (_ for _ in ()).throw(exc))
+    # B2c: patch CommitAdapter.execute instead of the legacy run_commit shim
+    import code_review_loop.adapters.commit as _commit_mod
+    monkeypatch.setattr(_commit_mod.CommitAdapter, "execute", lambda *a, **kw: (_ for _ in ()).throw(exc))
 
     config = MODULE.LoopConfig(
         base="main",

@@ -40,7 +40,7 @@ from code_review_loop import (
     triage,
 )
 from code_review_loop.clock import SYSTEM_CLOCK, Clock, utc_iso
-from code_review_loop.core.ports import ChecksRequest, CommandResult, ProgressReporter, RunContext
+from code_review_loop.core.ports import ChecksRequest, CommitRequest, CommandResult, ProgressReporter, RunContext
 from code_review_loop.core.review_interpretation import (
     actionable_review_output,
     detect_review_status,
@@ -1792,6 +1792,7 @@ def _run_loop(
         event_sink = events.JsonlSink(config.artifact_dir, run_id, clock=clock)
         active_budget_state = budget_state if budget_state is not None else budgets.started_now()
         from code_review_loop.adapters.checks import ChecksAdapter  # lazy — avoids cli→adapters.checks→cli cycle
+        from code_review_loop.adapters.commit import CommitAdapter  # lazy — same reason
         from code_review_loop.adapters.terminal import TerminalProgressReporter
         if config.progress and config.progress_style in ("rich", "compact"):
             progress_reporter: ProgressReporter | None = TerminalProgressReporter(config.progress_style)
@@ -1805,6 +1806,7 @@ def _run_loop(
             budget_state=active_budget_state,
             progress_reporter=progress_reporter,
             phase_checks=ChecksAdapter(config),
+            phase_commit=CommitAdapter(config),
         )
 
         if config.preflight_enabled and not config.dry_run:
@@ -2217,7 +2219,11 @@ def _run_loop(
                     ctx.event_sink.emit("routing_outcome", phase="remediate", iteration=iteration, payload=outcome_payload)
             if config.commit_after_remediation and not pending_check_failures:
                 try:
-                    iterations[-1]["commit_status"] = run_commit(config, runner, iteration, retrying=_commit_retry, ctx=ctx)
+                    if ctx.phase_commit is not None:
+                        _commit_outcome = ctx.phase_commit.execute(CommitRequest(iteration=iteration, retrying=_commit_retry), ctx)
+                        iterations[-1]["commit_status"] = _commit_outcome.status
+                    else:  # legacy shim path; dead once phase_commit is always wired (C3)
+                        iterations[-1]["commit_status"] = run_commit(config, runner, iteration, retrying=_commit_retry, ctx=ctx)
                 except CommitFailed as exc:
                     iterations[-1]["commit_status"] = exc.kind
                     iterations[-1]["commit_failed"] = True

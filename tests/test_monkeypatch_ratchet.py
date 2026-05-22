@@ -13,6 +13,10 @@ Two distinct metrics (do not conflate — see C2):
 As phases become ports the call-sites are deleted; when they drop, lower
 ``BASELINE`` to the new count so the ratchet keeps tightening. The end state
 (Wave C3) is 0.
+
+Burn-down log:
+  57 — REVREM-TASK-003 baseline (Wave A complete)
+  56 — B2c CommitHarness: migrate test_budget_exceeded_propagates_through_commit
 """
 
 from __future__ import annotations
@@ -22,7 +26,7 @@ from pathlib import Path
 
 # Committed baseline: measured call-site count of ``monkeypatch.setattr(MODULE, ...)``
 # across tests/ at the start of REVREM-TASK-003. Ratchets downward only.
-BASELINE = 57
+BASELINE = 56
 
 _TESTS_DIR = Path(__file__).parent
 _PATTERN = re.compile(r"monkeypatch\.setattr\(MODULE,")
