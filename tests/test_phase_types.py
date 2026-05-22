@@ -152,10 +152,15 @@ class TestTriageOutcome:
 
 
 class TestReviewOutcome:
-    def test_fields(self) -> None:
+    @pytest.mark.parametrize("status", ["clear", "findings", "unknown"])
+    def test_valid_statuses(self, status: str) -> None:
         cr = _cr()
-        o = ReviewOutcome(status="clean", result=cr)
-        assert o.status == "clean"
+        o = ReviewOutcome(status=status, result=cr)  # type: ignore[arg-type]
+        assert o.status == status
+
+    def test_result_field(self) -> None:
+        cr = _cr()
+        o = ReviewOutcome(status="clear", result=cr)
         assert o.result is cr
 
 
@@ -218,7 +223,7 @@ class FakeTriageHarness:
 
 class FakeReviewHarness:
     def execute(self, request: ReviewRequest, ctx: RunContext) -> ReviewOutcome:
-        return ReviewOutcome(status="clean", result=_cr())
+        return ReviewOutcome(status="clear", result=_cr())
 
 
 class TestProtocolCompliance:
@@ -249,4 +254,4 @@ class TestProtocolCompliance:
     def test_review_harness_callable(self) -> None:
         ctx = _ctx(phase_review=FakeReviewHarness())
         outcome = ctx.phase_review.execute(ReviewRequest(artifact_label="review-1"), ctx)  # type: ignore[union-attr]
-        assert outcome.status == "clean"
+        assert outcome.status == "clear"

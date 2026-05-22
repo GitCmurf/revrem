@@ -77,3 +77,11 @@ def test_profiles_re_exports_routing_types() -> None:
     assert profiles.SuppressionsConfig is SuppressionsConfig
     assert profiles.ProfileFile is ProfileFile
     assert profiles.ProfileListItem is ProfileListItem
+
+
+def test_policy_reexports_resolved_route() -> None:
+    """policy.py must re-export ResolvedRoute from its new core home."""
+    import code_review_loop.policy as policy
+    from code_review_loop.core.routing_types import ResolvedRoute
+
+    assert policy.ResolvedRoute is ResolvedRoute

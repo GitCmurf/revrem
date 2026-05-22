@@ -171,7 +171,7 @@ class ReviewRequest:
 class ReviewOutcome:
     """Result of a successful review phase."""
 
-    status: str
+    status: Literal["clear", "findings", "unknown"]
     result: CommandResult
 
 
