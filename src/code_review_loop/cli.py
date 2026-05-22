@@ -1791,7 +1791,7 @@ def _run_loop(
                 events_path.rename(events_path.with_name(f"events-{existing_run_id}.jsonl"))
         event_sink = events.JsonlSink(config.artifact_dir, run_id, clock=clock)
         active_budget_state = budget_state if budget_state is not None else budgets.started_now()
-        from code_review_loop.adapters.checks import ChecksAdapter
+        from code_review_loop.adapters.checks import ChecksAdapter  # lazy — avoids cli→adapters.checks→cli cycle
         from code_review_loop.adapters.terminal import TerminalProgressReporter
         if config.progress and config.progress_style in ("rich", "compact"):
             progress_reporter: ProgressReporter | None = TerminalProgressReporter(config.progress_style)
@@ -2197,7 +2197,7 @@ def _run_loop(
                 _checks_outcome = ctx.phase_checks.execute(ChecksRequest(iteration=iteration), ctx)
                 check_results = list(_checks_outcome.results)
                 failed_check_names = list(_checks_outcome.failed_commands)
-            else:
+            else:  # legacy shim path; dead once phase_checks is always wired (C3)
                 check_results, failed_check_names = run_checks(config, runner, iteration, ctx=ctx)
             pending_check_failures = _format_check_failures(check_results)
             state.set_pending_check_failures(bool(pending_check_failures))

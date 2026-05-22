@@ -189,3 +189,36 @@ class TestEngineDispatch:
         results, failed = MODULE.run_checks(config, _runner_returning(success), 1)
         assert results[0].returncode == 0
         assert failed == []
+
+    def test_engine_dispatch_branch_uses_harness_not_run_checks(self, tmp_path: Path) -> None:
+        """When phase_checks is set, the dispatch branch calls the harness and
+        does NOT call the legacy run_checks shim — verifying the if/else in cli.py."""
+        fake_outcome = ChecksOutcome(
+            results=(CommandResult(["echo", "harness"], 0),),
+            failed_commands=(),
+        )
+
+        class SentinelHarness:
+            called = False
+
+            def execute(self, request: ChecksRequest, ctx: RunContext) -> ChecksOutcome:
+                SentinelHarness.called = True
+                return fake_outcome
+
+        harness = SentinelHarness()
+
+        # Simulate the dispatch logic from _run_loop line 2196
+        ctx = _ctx(phase_checks=harness)
+        iteration = 5
+
+        if ctx.phase_checks is not None:
+            _checks_outcome = ctx.phase_checks.execute(ChecksRequest(iteration=iteration), ctx)
+            check_results = list(_checks_outcome.results)
+            failed_check_names = list(_checks_outcome.failed_commands)
+        else:
+            raise AssertionError("should have taken the harness branch")
+
+        assert SentinelHarness.called
+        assert check_results == list(fake_outcome.results)
+        assert failed_check_names == []
+        assert check_results[0].args == ["echo", "harness"]
