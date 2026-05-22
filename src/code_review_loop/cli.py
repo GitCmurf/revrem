@@ -40,7 +40,7 @@ from code_review_loop import (
     triage,
 )
 from code_review_loop.clock import SYSTEM_CLOCK, Clock, utc_iso
-from code_review_loop.core.ports import CommandResult
+from code_review_loop.core.ports import CommandResult, RunContext
 from code_review_loop.core.state import RunState
 from code_review_loop.identity import SYSTEM_IDENTITY, RunIdentity
 
@@ -176,9 +176,7 @@ class LoopConfig:
     initial_review_file: Path | None = None
     check_commands: tuple[str, ...] = field(default_factory=tuple)
     profile_name: str | None = None
-    event_sink: events.EventSink | None = None
     budget_config: budgets.BudgetConfig = field(default_factory=budgets.BudgetConfig)
-    budget_state: budgets.BudgetState | None = None
     profile_v2: profiles.Profile | None = None
     trusted_repo: bool = False
     triage_contract: str = "v1"
@@ -435,8 +433,8 @@ def print_compact_progress(phase: str, label: str, text: str, *, head: str = "")
         print(line, file=sys.stderr, flush=True)
 
 
-def progress_event(config: LoopConfig, phase: str, label: str, status: str, detail: str = "") -> None:
-    sink = config.event_sink
+def progress_event(config: LoopConfig, phase: str, label: str, status: str, detail: str = "", *, ctx: RunContext | None = None) -> None:
+    sink = ctx.event_sink if ctx is not None else None
     if sink is not None:
         payload: dict[str, Any] = {"summary": status}
         if detail:
@@ -491,10 +489,11 @@ def emit_loop_failure_event(
     iteration: int | str | None,
     reason: str,
     error: str,
+    ctx: RunContext | None = None,
 ) -> None:
-    if config.event_sink is None:
+    if ctx is None or ctx.event_sink is None:
         return
-    config.event_sink.emit(
+    ctx.event_sink.emit(
         "failure",
         phase=phase,
         iteration=iteration,
@@ -918,7 +917,7 @@ def extract_review_summary(output: str) -> str:
     return ""
 
 
-def log_review_findings(config: LoopConfig, label: str, output: str) -> bool:
+def log_review_findings(config: LoopConfig, label: str, output: str, ctx: RunContext | None = None) -> bool:
     blocks = extract_finding_blocks(output)
     if not blocks:
         return False
@@ -929,7 +928,7 @@ def log_review_findings(config: LoopConfig, label: str, output: str) -> bool:
         else:
             print_progress_message(config, "review", label, summary, head="issue: ")
     else:
-        progress_event(config, "review", label, f"findings-summary ({len(blocks)})")
+        progress_event(config, "review", label, f"findings-summary ({len(blocks)})", ctx=ctx)
     for block in blocks:
         print_progress_message(
             config,
@@ -1059,14 +1058,14 @@ def phase_timeout_seconds(config: LoopConfig, value: float | None) -> float | No
     return value
 
 
-def ensure_model_budget(config: LoopConfig, *, phase: str, iteration: int | str) -> None:
-    if config.budget_state is None:
+def ensure_model_budget(config: LoopConfig, *, phase: str, iteration: int | str, ctx: RunContext | None = None) -> None:
+    if ctx is None or ctx.budget_state is None:
         return
-    warning_due, elapsed = budgets.wall_warning_due(config.budget_config, config.budget_state)
+    warning_due, elapsed = budgets.wall_warning_due(config.budget_config, ctx.budget_state)
     if warning_due:
-        config.budget_state.wall_warning_emitted = True
-        if config.event_sink is not None:
-            config.event_sink.emit(
+        ctx.budget_state.wall_warning_emitted = True
+        if ctx.event_sink is not None:
+            ctx.event_sink.emit(
                 "warning",
                 phase=phase,
                 iteration=iteration,
@@ -1078,10 +1077,10 @@ def ensure_model_budget(config: LoopConfig, *, phase: str, iteration: int | str)
                 },
             )
     try:
-        budgets.check_wall_budget(config.budget_config, config.budget_state)
+        budgets.check_wall_budget(config.budget_config, ctx.budget_state)
     except budgets.BudgetExceeded as exc:
-        if config.event_sink is not None:
-            config.event_sink.emit(
+        if ctx.event_sink is not None:
+            ctx.event_sink.emit(
                 "cost_ceiling_hit",
                 phase=phase,
                 iteration=iteration,
@@ -1095,13 +1094,14 @@ def ensure_model_budget(config: LoopConfig, *, phase: str, iteration: int | str)
         raise
 
 
-def remaining_wall_budget_seconds(config: LoopConfig) -> float | None:
+def remaining_wall_budget_seconds(config: LoopConfig, ctx: RunContext | None = None) -> float | None:
     if (
-        config.budget_state is None
+        ctx is None
+        or ctx.budget_state is None
         or config.budget_config.max_wall_seconds is None
     ):
         return None
-    elapsed = budgets.wall_elapsed_seconds(config.budget_state)
+    elapsed = budgets.wall_elapsed_seconds(ctx.budget_state)
     return max(0.0, config.budget_config.max_wall_seconds - elapsed)
 
 
@@ -1111,8 +1111,9 @@ def record_model_charge(
     *,
     phase: str,
     iteration: int | str,
+    ctx: RunContext | None = None,
 ) -> None:
-    if config.budget_state is None:
+    if ctx is None or ctx.budget_state is None:
         return
     if result.tokens is None and result.usd is None:
         return
@@ -1120,18 +1121,18 @@ def record_model_charge(
         "tokens": result.tokens,
         "usd": str(result.usd) if result.usd is not None else None,
     }
-    if config.event_sink is not None:
-        config.event_sink.emit("cost_charge", phase=phase, iteration=iteration, payload=payload)
+    if ctx.event_sink is not None:
+        ctx.event_sink.emit("cost_charge", phase=phase, iteration=iteration, payload=payload)
     try:
         budgets.record_charge(
             config.budget_config,
-            config.budget_state,
+            ctx.budget_state,
             tokens=result.tokens,
             usd=result.usd,
         )
     except budgets.BudgetExceeded as exc:
-        if config.event_sink is not None:
-            config.event_sink.emit(
+        if ctx.event_sink is not None:
+            ctx.event_sink.emit(
                 "cost_ceiling_hit",
                 phase=phase,
                 iteration=iteration,
@@ -1154,6 +1155,7 @@ def run_codex_review(
     runner: Runner,
     artifact_label: str,
     display_label: str | None = None,
+    ctx: RunContext | None = None,
 ) -> tuple[str, CommandResult]:
     display_label = display_label or artifact_label
     command = build_review_command(config)
@@ -1169,23 +1171,23 @@ def run_codex_review(
             review_prompt,
         )
     set_phase_terminal_title(config, "review", display_label)
-    ensure_model_budget(config, phase="review", iteration=display_label)
-    progress_event(config, "review", display_label, "start", shlex.join(command))
+    ensure_model_budget(config, phase="review", iteration=display_label, ctx=ctx)
+    progress_event(config, "review", display_label, "start", shlex.join(command), ctx=ctx)
     if config.dry_run:
         result = CommandResult(command, 0, stdout="DRY_RUN\nREVIEW_STATUS: findings\n")
     else:
         artifact_path = config.artifact_dir / f"{artifact_label}.txt"
         if preflight_error := review_base_preflight_error(config):
             write_artifact(artifact_path, preflight_error)
-            progress_event(config, "review", display_label, "failed", "invalid base")
+            progress_event(config, "review", display_label, "failed", "invalid base", ctx=ctx)
             raise RuntimeError(f"codex review failed for {artifact_label}; see {artifact_path}")
         result = runner(command, config.cwd, review_prompt, phase_timeout_seconds(config, config.review_timeout_seconds))
     combined = _combined_output(result)
     artifact_path = config.artifact_dir / f"{artifact_label}.txt"
     write_artifact(artifact_path, combined)
-    record_model_charge(config, result, phase="review", iteration=display_label)
+    record_model_charge(config, result, phase="review", iteration=display_label, ctx=ctx)
     if review_failed_to_run(result):
-        progress_event(config, "review", display_label, "failed", f"exit {result.returncode}")
+        progress_event(config, "review", display_label, "failed", f"exit {result.returncode}", ctx=ctx)
         raise RuntimeError(f"codex review failed for {artifact_label}; see {artifact_path}")
     status = detect_review_status(combined)
     if config.debug_status_detection:
@@ -1205,9 +1207,10 @@ def run_codex_review(
                 f"clear_phrase={diagnostics['clear_phrase_present']} "
                 f"stderr={diagnostics['stderr_present']}"
             ),
+            ctx=ctx,
         )
-    if status != "findings" or not log_review_findings(config, display_label, combined):
-        progress_event(config, "review", display_label, status)
+    if status != "findings" or not log_review_findings(config, display_label, combined, ctx=ctx):
+        progress_event(config, "review", display_label, status, ctx=ctx)
     return status, result
 
 
@@ -1315,6 +1318,7 @@ def run_remediation(
     iteration: int,
     remediation_input: str,
     resolved_route: policy.ResolvedRoute | None = None,
+    ctx: RunContext | None = None,
 ) -> CommandResult:
     last_message_path = (
         config.artifact_dir / f"remediation-{iteration}-last-message.txt"
@@ -1339,21 +1343,21 @@ def run_remediation(
     )
 
     set_phase_terminal_title(config, "remediate", str(iteration))
-    ensure_model_budget(config, phase="remediate", iteration=iteration)
-    progress_event(config, "remediate", str(iteration), "start", shlex.join(command))
+    ensure_model_budget(config, phase="remediate", iteration=iteration, ctx=ctx)
+    progress_event(config, "remediate", str(iteration), "start", shlex.join(command), ctx=ctx)
     if config.dry_run:
         result = CommandResult(command, 0, stdout="DRY_RUN remediation skipped\n")
     else:
         result = runner(command, config.cwd, prompt_input, phase_timeout_seconds(config, timeout))
     write_artifact(config.artifact_dir / f"remediation-{iteration}.txt", _combined_output(result))
-    record_model_charge(config, result, phase="remediate", iteration=iteration)
+    record_model_charge(config, result, phase="remediate", iteration=iteration, ctx=ctx)
     if result.returncode != 0:
-        progress_event(config, "remediate", str(iteration), "failed", f"exit {result.returncode}")
+        progress_event(config, "remediate", str(iteration), "failed", f"exit {result.returncode}", ctx=ctx)
         raise RuntimeError(
             f"codex exec remediation failed for iteration {iteration}; "
             f"see {config.artifact_dir / f'remediation-{iteration}.txt'}"
         )
-    progress_event(config, "remediate", str(iteration), "done")
+    progress_event(config, "remediate", str(iteration), "done", ctx=ctx)
     return result
 
 
@@ -1364,6 +1368,7 @@ def run_triage(
     run_id: str,
     source_review_artifact: str,
     review_output: str,
+    ctx: RunContext | None = None,
 ) -> tuple[str, int, bool, dict[str, Any] | None]:
     command = build_triage_command(config)
     prompt_root = config.triage_prompt or triage.load_prompt(contract=config.triage_contract)
@@ -1373,15 +1378,15 @@ def run_triage(
         command,
         prompt,
     )
-    ensure_model_budget(config, phase="triage", iteration=iteration)
-    progress_event(config, "triage", str(iteration), "start", shlex.join(command))
+    ensure_model_budget(config, phase="triage", iteration=iteration, ctx=ctx)
+    progress_event(config, "triage", str(iteration), "start", shlex.join(command), ctx=ctx)
     if config.dry_run:
         result = CommandResult(command, 0, stdout="DRY_RUN triage skipped\n")
     else:
         result = runner(command, config.cwd, prompt_input, phase_timeout_seconds(config, config.triage_timeout_seconds))
     triage_artifact = config.artifact_dir / f"triage-{iteration}.txt"
     write_artifact(triage_artifact, _combined_output(result))
-    record_model_charge(config, result, phase="triage", iteration=iteration)
+    record_model_charge(config, result, phase="triage", iteration=iteration, ctx=ctx)
     if result.returncode != 0:
         issue = triage.command_failed_issue(
             iteration=iteration,
@@ -1393,12 +1398,12 @@ def run_triage(
             f"diagnostics-{iteration}.json",
             diagnostics.doctor_payload([issue]),
         )
-        progress_event(config, "triage", str(iteration), "failed", f"exit {result.returncode}")
+        progress_event(config, "triage", str(iteration), "failed", f"exit {result.returncode}", ctx=ctx)
         raise RuntimeError(
             f"codex exec triage failed for iteration {iteration}; "
             f"see {triage_artifact}"
         )
-    progress_event(config, "triage", str(iteration), "done")
+    progress_event(config, "triage", str(iteration), "done", ctx=ctx)
     triage_output = actionable_review_output(_combined_output(result))
     if triage.looks_structured_output(triage_output):
         try:
@@ -1415,7 +1420,7 @@ def run_triage(
                 f"diagnostics-{iteration}.json",
                 diagnostics.doctor_payload([issue]),
             )
-            progress_event(config, "triage", str(iteration), "invalid", str(exc))
+            progress_event(config, "triage", str(iteration), "invalid", str(exc), ctx=ctx)
             if config.triage_on_invalid == "stop":
                 raise RuntimeError(f"invalid structured triage output for iteration {iteration}: {exc}") from exc
             return review_output, 0, False, None
@@ -1430,6 +1435,7 @@ def run_triage(
                     str(iteration),
                     "warning",
                     f"suppressions unavailable; continuing without them: {exc}",
+                    ctx=ctx,
                 )
             else:
                 payload, suppressed_findings = suppressions.apply_to_triage_payload(payload, matches)
@@ -1441,6 +1447,7 @@ def run_triage(
                         str(iteration),
                         "suppressed",
                         f"{len(suppressed_findings)} finding(s)",
+                        ctx=ctx,
                     )
         triage.write_triage_artifact(config.artifact_dir, iteration, payload)
         has_actionable_findings = bool(payload.get("confirmed_findings") or payload.get("needs_more_info"))
@@ -1455,11 +1462,11 @@ def run_triage(
     ), 0, False, None
 
 
-def run_checks(config: LoopConfig, runner: Runner, iteration: int) -> tuple[list[CommandResult], list[str]]:
+def run_checks(config: LoopConfig, runner: Runner, iteration: int, ctx: RunContext | None = None) -> tuple[list[CommandResult], list[str]]:
     results: list[CommandResult] = []
     for index, check in enumerate(config.check_commands, start=1):
         command = shlex.split(check)
-        progress_event(config, "check", f"{iteration}.{index}", "start", check)
+        progress_event(config, "check", f"{iteration}.{index}", "start", check, ctx=ctx)
         adaptive_skip = adaptive_check_skip_reason(command, config.cwd)
         if adaptive_skip:
             result = CommandResult(
@@ -1480,8 +1487,8 @@ def run_checks(config: LoopConfig, runner: Runner, iteration: int) -> tuple[list
             config.artifact_dir / f"check-{iteration}-{index}.txt",
             _combined_output(result),
         )
-        if config.event_sink is not None:
-            config.event_sink.emit(
+        if ctx is not None and ctx.event_sink is not None:
+            ctx.event_sink.emit(
                 "check_result",
                 phase="check",
                 iteration=f"{iteration}.{index}",
@@ -1493,11 +1500,11 @@ def run_checks(config: LoopConfig, runner: Runner, iteration: int) -> tuple[list
                 },
             )
         if result.returncode == 0 and result.stdout.startswith("SKIPPED adaptive check:"):
-            progress_event(config, "check", f"{iteration}.{index}", "skipped", result.stdout.strip())
+            progress_event(config, "check", f"{iteration}.{index}", "skipped", result.stdout.strip(), ctx=ctx)
         elif result.returncode == 0:
-            progress_event(config, "check", f"{iteration}.{index}", "passed")
+            progress_event(config, "check", f"{iteration}.{index}", "passed", ctx=ctx)
         else:
-            progress_event(config, "check", f"{iteration}.{index}", "failed", f"exit {result.returncode}")
+            progress_event(config, "check", f"{iteration}.{index}", "failed", f"exit {result.returncode}", ctx=ctx)
     failed_commands = [config.check_commands[i] for i, r in enumerate(results) if r.returncode != 0]
     return results, failed_commands
 
@@ -1669,11 +1676,11 @@ def classify_commit_failure(result: CommandResult) -> str:
     return "hook_failed" if COMMIT_HOOK_FAILURE_RE.search(output) else "commit_failed"
 
 
-def run_commit(config: LoopConfig, runner: Runner, iteration: int, *, retrying: bool = False) -> str:
-    progress_event(config, "commit", str(iteration), "start", "stage and commit verified remediation")
+def run_commit(config: LoopConfig, runner: Runner, iteration: int, *, retrying: bool = False, ctx: RunContext | None = None) -> str:
+    progress_event(config, "commit", str(iteration), "start", "stage and commit verified remediation", ctx=ctx)
     if config.dry_run:
         write_artifact(config.artifact_dir / f"commit-{iteration}.txt", "DRY_RUN commit skipped\n")
-        progress_event(config, "commit", str(iteration), "skipped", "dry-run")
+        progress_event(config, "commit", str(iteration), "skipped", "dry-run", ctx=ctx)
         return "skipped"
 
     commit_artifact_relative_path(config)
@@ -1685,7 +1692,7 @@ def run_commit(config: LoopConfig, runner: Runner, iteration: int, *, retrying: 
     )
     write_artifact(config.artifact_dir / f"commit-{iteration}-add.txt", _combined_output(add_result))
     if add_result.returncode != 0:
-        progress_event(config, "commit", str(iteration), "failed", "git add failed")
+        progress_event(config, "commit", str(iteration), "failed", "git add failed", ctx=ctx)
         raise RuntimeError(
             f"git add failed for iteration {iteration}; "
             f"see {config.artifact_dir / f'commit-{iteration}-add.txt'}"
@@ -1701,7 +1708,7 @@ def run_commit(config: LoopConfig, runner: Runner, iteration: int, *, retrying: 
         )
         write_artifact(config.artifact_dir / f"commit-{iteration}-reset-artifacts.txt", _combined_output(reset_result))
         if reset_result.returncode != 0:
-            progress_event(config, "commit", str(iteration), "failed", "git reset artifacts failed")
+            progress_event(config, "commit", str(iteration), "failed", "git reset artifacts failed", ctx=ctx)
             raise RuntimeError(
                 f"git reset artifacts failed for iteration {iteration}; "
                 f"see {config.artifact_dir / f'commit-{iteration}-reset-artifacts.txt'}"
@@ -1715,14 +1722,14 @@ def run_commit(config: LoopConfig, runner: Runner, iteration: int, *, retrying: 
     )
     if diff_quiet.returncode == 0:
         write_artifact(config.artifact_dir / f"commit-{iteration}.txt", "No staged changes to commit.\n")
-        progress_event(config, "commit", str(iteration), "skipped", "no staged changes")
+        progress_event(config, "commit", str(iteration), "skipped", "no staged changes", ctx=ctx)
         return "skipped_no_changes"
     if diff_quiet.returncode != 1:
         write_artifact(config.artifact_dir / f"commit-{iteration}.txt", _combined_output(diff_quiet))
-        progress_event(config, "commit", str(iteration), "failed", "git diff --cached --quiet failed")
+        progress_event(config, "commit", str(iteration), "failed", "git diff --cached --quiet failed", ctx=ctx)
         raise RuntimeError(f"git staged-diff check failed for iteration {iteration}")
 
-    message = commit_message_for_staged_changes(config, runner, iteration)
+    message = commit_message_for_staged_changes(config, runner, iteration, ctx=ctx)
     commit_result = runner(
         commit_command_for_message(
             message,
@@ -1738,7 +1745,7 @@ def run_commit(config: LoopConfig, runner: Runner, iteration: int, *, retrying: 
     if commit_result.returncode != 0:
         kind = classify_commit_failure(commit_result)
         detail = "git commit hook failed" if kind == "hook_failed" else "git commit failed"
-        progress_event(config, "commit", str(iteration), "failed", detail)
+        progress_event(config, "commit", str(iteration), "failed", detail, ctx=ctx)
         raise CommitFailed(
             iteration=iteration,
             kind=kind,
@@ -1746,11 +1753,11 @@ def run_commit(config: LoopConfig, runner: Runner, iteration: int, *, retrying: 
             output=commit_output,
         )
     write_artifact(config.artifact_dir / f"commit-{iteration}-message.txt", message + "\n")
-    progress_event(config, "commit", str(iteration), "committed", message)
+    progress_event(config, "commit", str(iteration), "committed", message, ctx=ctx)
     return "committed"
 
 
-def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iteration: int) -> str:
+def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iteration: int, ctx: RunContext | None = None) -> str:
     fallback = deterministic_commit_message(iteration)
     stat = runner(["git", "diff", "--cached", "--stat"], config.cwd, None, phase_timeout_seconds(config, config.timeout_seconds))
     names = runner(["git", "diff", "--cached", "--name-only"], config.cwd, None, phase_timeout_seconds(config, config.timeout_seconds))
@@ -1775,10 +1782,10 @@ def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iterat
         command,
         prompt,
     )
-    ensure_model_budget(config, phase="commit-message", iteration=iteration)
+    ensure_model_budget(config, phase="commit-message", iteration=iteration, ctx=ctx)
     result = runner(command, config.cwd, prompt_input, phase_timeout_seconds(config, config.timeout_seconds))
     write_artifact(config.artifact_dir / f"commit-{iteration}-message-draft.txt", _combined_output(result))
-    record_model_charge(config, result, phase="commit-message", iteration=iteration)
+    record_model_charge(config, result, phase="commit-message", iteration=iteration, ctx=ctx)
     if result.returncode != 0:
         return fallback
     return sanitize_commit_message(
@@ -1982,6 +1989,7 @@ def run_loop(
     *,
     clock: Clock = SYSTEM_CLOCK,
     identity: RunIdentity = SYSTEM_IDENTITY,
+    budget_state: budgets.BudgetState | None = None,
 ) -> dict[str, object]:
     with (
         terminal_recovery_context(),
@@ -1989,7 +1997,7 @@ def run_loop(
         progress_warning_context(),
         progress.rich_live_progress(config.progress and config.progress_style == "rich"),
     ):
-        return _run_loop(config, runner, clock=clock, identity=identity)
+        return _run_loop(config, runner, clock=clock, identity=identity, budget_state=budget_state)
 
 
 def _run_loop(
@@ -1998,6 +2006,7 @@ def _run_loop(
     *,
     clock: Clock = SYSTEM_CLOCK,
     identity: RunIdentity = SYSTEM_IDENTITY,
+    budget_state: budgets.BudgetState | None = None,
 ) -> dict[str, object]:
     if config.max_iterations < 1:
         raise ValueError("--max-iterations must be at least 1")
@@ -2040,8 +2049,7 @@ def _run_loop(
     summary = state.to_dict()
 
     event_sink: events.JsonlSink | None = None
-    previous_event_sink = config.event_sink
-    previous_budget_state = config.budget_state
+    ctx: RunContext | None = None
     try:
         events_path = config.artifact_dir / events.EVENTS_FILENAME
         if events_path.is_file():
@@ -2049,9 +2057,8 @@ def _run_loop(
             if existing_run_id is not None:
                 events_path.rename(events_path.with_name(f"events-{existing_run_id}.jsonl"))
         event_sink = events.JsonlSink(config.artifact_dir, run_id, clock=clock)
-        object.__setattr__(config, "event_sink", event_sink)
-        if config.budget_state is None:
-            object.__setattr__(config, "budget_state", budgets.started_now())
+        active_budget_state = budget_state if budget_state is not None else budgets.started_now()
+        ctx = RunContext(clock=clock, identity=identity, runner=runner, event_sink=event_sink, budget_state=active_budget_state)
 
         if config.preflight_enabled and not config.dry_run:
             issues = diagnostics.run_doctor(
@@ -2095,8 +2102,9 @@ def _run_loop(
                     iteration=None,
                     reason="setup_failed",
                     error=str(summary["error"]),
+                    ctx=ctx,
                 )
-                write_summary(config, summary, clock=clock)
+                write_summary(config, summary, clock=clock, ctx=ctx)
                 raise RunLoopFailed(summary, str(summary["error"]))
 
         pending_check_failures = ""
@@ -2108,8 +2116,8 @@ def _run_loop(
                 config.initial_review_file.read_text(encoding="utf-8")
             )
             write_artifact(config.artifact_dir / "review-initial.txt", initial_review_output + "\n")
-            progress_event(config, "review", "initial", "loaded", str(config.initial_review_file))
-            log_review_findings(config, "initial", initial_review_output)
+            progress_event(config, "review", "initial", "loaded", str(config.initial_review_file), ctx=ctx)
+            log_review_findings(config, "initial", initial_review_output, ctx=ctx)
 
         for iteration in range(1, config.max_iterations + 1):
             if iteration == 1 and initial_review_output:
@@ -2131,6 +2139,7 @@ def _run_loop(
                         runner,
                         f"review-{iteration}",
                         display_label=str(iteration),
+                        ctx=ctx,
                     )
                 except RuntimeError as exc:
                     iterations.append({"iteration": iteration, "review_failed": True})
@@ -2143,8 +2152,9 @@ def _run_loop(
                         iteration=iteration,
                         reason="review_failed",
                         error=str(exc),
+                        ctx=ctx,
                     )
-                    write_summary(config, summary, clock=clock)
+                    write_summary(config, summary, clock=clock, ctx=ctx)
                     raise RunLoopFailed(summary, str(exc)) from exc
                 last_review_output = actionable_review_output(_combined_output(review))
                 iterations.append({"iteration": iteration, "review_status": status})
@@ -2155,7 +2165,7 @@ def _run_loop(
                 state.set_latest_review_excerpt(
                     excerpt_for_terminal(last_review_output, config.terminal_excerpt_chars)
                 )
-                write_summary(config, summary, clock=clock)
+                write_summary(config, summary, clock=clock, ctx=ctx)
                 return summary
 
             remediation_input = last_review_output
@@ -2176,6 +2186,7 @@ def _run_loop(
                         run_id,
                         source_review_artifact,
                         remediation_input,
+                        ctx=ctx,
                     )
                     if suppressed_count:
                         iterations[-1]["suppressed_findings_count"] = suppressed_count
@@ -2192,7 +2203,7 @@ def _run_loop(
                             state.set_latest_review_excerpt(
                                 excerpt_for_terminal(last_review_output, config.terminal_excerpt_chars)
                             )
-                            write_summary(config, summary, clock=clock)
+                            write_summary(config, summary, clock=clock, ctx=ctx)
                             return summary
                         remediation_input = pending_check_failures
 
@@ -2210,7 +2221,7 @@ def _run_loop(
                                 config.profile_v2,
                                 routing_context,
                                 model_proposal_tier=model_proposal.get("route_tier"),
-                                max_timeout_seconds=remaining_wall_budget_seconds(config),
+                                max_timeout_seconds=remaining_wall_budget_seconds(config, ctx),
                             )
                             progress_event(
                                 config,
@@ -2218,6 +2229,7 @@ def _run_loop(
                                 str(iteration),
                                 "routing",
                                 f"routed to {resolved_route.route_tier} ({resolved_route.harness})",
+                                ctx=ctx,
                             )
                         else:
                             # Non-routing v2 profiles still need a concrete remediation target.
@@ -2379,12 +2391,12 @@ def _run_loop(
                                 f"diagnostics-{iteration}.json",
                                 diagnostics.doctor_payload([issue]),
                             )
-                            progress_event(config, "triage", str(iteration), "invalid", f"routing payload schema validation failed: {exc}")
+                            progress_event(config, "triage", str(iteration), "invalid", f"routing payload schema validation failed: {exc}", ctx=ctx)
                             raise RuntimeError(f"invalid routing decision artifact for iteration {iteration}: {exc}") from exc
 
                         triage.write_routing_artifact(config.artifact_dir, iteration, routing_payload)
-                        if config.event_sink:
-                            config.event_sink.emit("routing_decision", phase="triage", iteration=iteration, payload=routing_payload)
+                        if ctx is not None and ctx.event_sink:
+                            ctx.event_sink.emit("routing_decision", phase="triage", iteration=iteration, payload=routing_payload)
                         write_artifact(config.artifact_dir / f"remediation-{iteration}-prompt.txt", remediation_input)
             except budgets.BudgetExceeded:
                 raise
@@ -2399,8 +2411,9 @@ def _run_loop(
                     iteration=iteration,
                     reason="triage_failed",
                     error=str(exc),
+                    ctx=ctx,
                 )
-                write_summary(config, summary, clock=clock)
+                write_summary(config, summary, clock=clock, ctx=ctx)
                 raise RunLoopFailed(
                     summary,
                     f"codex exec triage failed for iteration {iteration}; "
@@ -2409,7 +2422,7 @@ def _run_loop(
 
             try:
                 rem_start_time = clock.monotonic()
-                rem_result = run_remediation(config, runner, iteration, remediation_input, resolved_route=resolved_route)
+                rem_result = run_remediation(config, runner, iteration, remediation_input, resolved_route=resolved_route, ctx=ctx)
                 rem_duration = clock.monotonic() - rem_start_time
             except budgets.BudgetExceeded:
                 raise
@@ -2424,15 +2437,16 @@ def _run_loop(
                     iteration=iteration,
                     reason="remediation_failed",
                     error=str(exc),
+                    ctx=ctx,
                 )
-                write_summary(config, summary, clock=clock)
+                write_summary(config, summary, clock=clock, ctx=ctx)
                 raise RunLoopFailed(
                     summary,
                     f"codex exec remediation failed for iteration {iteration}; "
                     f"see {config.artifact_dir / f'remediation-{iteration}.txt'}",
                 ) from exc
 
-            check_results, failed_check_names = run_checks(config, runner, iteration)
+            check_results, failed_check_names = run_checks(config, runner, iteration, ctx=ctx)
             pending_check_failures = _format_check_failures(check_results)
             state.set_pending_check_failures(bool(pending_check_failures))
             iterations[-1]["check_failures"] = len(failed_check_names)
@@ -2447,11 +2461,11 @@ def _run_loop(
                     "checks_passed": all(r.returncode == 0 for r in check_results),
                 }
                 triage.write_routing_outcome_artifact(config.artifact_dir, iteration, outcome_payload)
-                if config.event_sink:
-                    config.event_sink.emit("routing_outcome", phase="remediate", iteration=iteration, payload=outcome_payload)
+                if ctx is not None and ctx.event_sink:
+                    ctx.event_sink.emit("routing_outcome", phase="remediate", iteration=iteration, payload=outcome_payload)
             if config.commit_after_remediation and not pending_check_failures:
                 try:
-                    iterations[-1]["commit_status"] = run_commit(config, runner, iteration, retrying=_commit_retry)
+                    iterations[-1]["commit_status"] = run_commit(config, runner, iteration, retrying=_commit_retry, ctx=ctx)
                 except CommitFailed as exc:
                     iterations[-1]["commit_status"] = exc.kind
                     iterations[-1]["commit_failed"] = True
@@ -2471,6 +2485,7 @@ def _run_loop(
                             str(iteration),
                             "retry",
                             "hook output will feed next remediation",
+                            ctx=ctx,
                         )
                         continue
                     stopped_reason = (
@@ -2488,8 +2503,9 @@ def _run_loop(
                         iteration=iteration,
                         reason=stopped_reason,
                         error=str(exc),
+                        ctx=ctx,
                     )
-                    write_summary(config, summary, clock=clock)
+                    write_summary(config, summary, clock=clock, ctx=ctx)
                     raise RunLoopFailed(summary, str(exc)) from exc
                 except budgets.BudgetExceeded:
                     raise
@@ -2504,8 +2520,9 @@ def _run_loop(
                         iteration=iteration,
                         reason="commit_failed",
                         error=str(exc),
+                        ctx=ctx,
                     )
-                    write_summary(config, summary, clock=clock)
+                    write_summary(config, summary, clock=clock, ctx=ctx)
                     raise RunLoopFailed(summary, f"git commit failed for iteration {iteration}") from exc
                 if iterations[-1]["commit_status"] == "skipped_no_changes":
                     state.set_final_status(status)
@@ -2513,7 +2530,7 @@ def _run_loop(
                     state.set_latest_review_excerpt(
                         excerpt_for_terminal(last_review_output, config.terminal_excerpt_chars)
                     )
-                    write_summary(config, summary, clock=clock)
+                    write_summary(config, summary, clock=clock, ctx=ctx)
                     return summary
 
         if config.final_review:
@@ -2523,6 +2540,7 @@ def _run_loop(
                     runner,
                     "review-final",
                     display_label="final",
+                    ctx=ctx,
                 )
             except RuntimeError as exc:
                 iterations.append({"iteration": "final", "review_failed": True})
@@ -2535,8 +2553,9 @@ def _run_loop(
                     iteration="final",
                     reason="review_failed",
                     error=str(exc),
+                    ctx=ctx,
                 )
-                write_summary(config, summary, clock=clock)
+                write_summary(config, summary, clock=clock, ctx=ctx)
                 raise RunLoopFailed(summary, str(exc)) from exc
             final_review_output = actionable_review_output(_combined_output(final_review))
             state.set_latest_review_excerpt(
@@ -2562,7 +2581,7 @@ def _run_loop(
             state.set_pending_check_failures(bool(pending_check_failures))
             state.set_stopped_reason("max_iterations_reached")
 
-        write_summary(config, summary, clock=clock)
+        write_summary(config, summary, clock=clock, ctx=ctx)
         return summary
     except KeyboardInterrupt as exc:
         state.set_final_status("error")
@@ -2583,8 +2602,8 @@ def _run_loop(
                 ]
             ),
         )
-        if config.event_sink is not None:
-            config.event_sink.emit(
+        if ctx is not None and ctx.event_sink is not None:
+            ctx.event_sink.emit(
                 "cancellation",
                 phase="run",
                 payload={
@@ -2592,33 +2611,32 @@ def _run_loop(
                     "message": "cancelled by operator",
                 },
             )
-        write_summary(config, summary, clock=clock)
+        write_summary(config, summary, clock=clock, ctx=ctx)
         raise RunLoopFailed(summary, "cancelled by operator") from exc
     except budgets.BudgetExceeded as exc:
         state.set_final_status("error")
         state.set_stopped_reason("budget_ceiling_hit")
         state.set_error(str(exc))
-        write_summary(config, summary, clock=clock)
+        write_summary(config, summary, clock=clock, ctx=ctx)
         raise RunLoopFailed(summary, str(exc)) from exc
     finally:
-        object.__setattr__(config, "event_sink", previous_event_sink)
-        object.__setattr__(config, "budget_state", previous_budget_state)
         if event_sink is not None:
             event_sink.close()
 
 
 def write_summary(
-    config: LoopConfig, summary: dict[str, object], *, clock: Clock = SYSTEM_CLOCK
+    config: LoopConfig, summary: dict[str, object], *, clock: Clock = SYSTEM_CLOCK, ctx: RunContext | None = None
 ) -> None:
     update_unexpected_behaviors(config, summary)
     add_summary_contract_fields(config, summary, clock=clock)
     add_artifact_paths(summary, config)
-    if config.budget_state is not None or "budgets" not in summary:
-        summary["budgets"] = summary_budget_payload(config)
-    if config.event_sink is not None:
-        emit_artifact_write_events(config, summary)
+    budget_state = ctx.budget_state if ctx is not None else None
+    if budget_state is not None or "budgets" not in summary:
+        summary["budgets"] = summary_budget_payload(config, ctx=ctx)
+    if ctx is not None and ctx.event_sink is not None:
+        emit_artifact_write_events(config, summary, ctx=ctx)
         summary_detail = summary.get("stopped_reason") or summary.get("final_status") or "summary"
-        config.event_sink.emit(
+        ctx.event_sink.emit(
             "summary",
             payload={
                 "summary": str(summary_detail),
@@ -2701,16 +2719,17 @@ def resume_config_payload(config: LoopConfig) -> dict[str, object]:
     }
 
 
-def summary_budget_payload(config: LoopConfig) -> dict[str, object]:
+def summary_budget_payload(config: LoopConfig, ctx: RunContext | None = None) -> dict[str, object]:
     tokens = None
     usd = None
     wall_elapsed_seconds = None
-    if config.budget_state is not None:
-        wall_elapsed_seconds = budgets.wall_elapsed_seconds(config.budget_state)
-        if config.budget_state.tokens_reported:
-            tokens = config.budget_state.tokens_used
-        if config.budget_state.usd_reported:
-            usd = str(config.budget_state.usd_used)
+    budget_state = ctx.budget_state if ctx is not None else None
+    if budget_state is not None:
+        wall_elapsed_seconds = budgets.wall_elapsed_seconds(budget_state)
+        if budget_state.tokens_reported:
+            tokens = budget_state.tokens_used
+        if budget_state.usd_reported:
+            usd = str(budget_state.usd_used)
     return {
         "max_wall_seconds": config.budget_config.max_wall_seconds,
         "max_tokens": config.budget_config.max_tokens,
@@ -2722,8 +2741,8 @@ def summary_budget_payload(config: LoopConfig) -> dict[str, object]:
     }
 
 
-def emit_artifact_write_events(config: LoopConfig, summary: dict[str, object]) -> None:
-    if config.event_sink is None:
+def emit_artifact_write_events(config: LoopConfig, summary: dict[str, object], ctx: RunContext | None = None) -> None:
+    if ctx is None or ctx.event_sink is None:
         return
     artifact_paths = summary.get("artifact_paths")
     if not isinstance(artifact_paths, dict):
@@ -2733,7 +2752,7 @@ def emit_artifact_write_events(config: LoopConfig, summary: dict[str, object]) -
         path_obj = Path(path)
         if path_obj.is_file():
             payload["bytes"] = path_obj.stat().st_size
-        config.event_sink.emit("artifact_write", phase="artifacts", payload=payload)
+        ctx.event_sink.emit("artifact_write", phase="artifacts", payload=payload)
 
 
 def iter_artifact_paths(artifact_paths: dict[object, object]) -> Iterator[tuple[str, str]]:
@@ -4444,11 +4463,11 @@ def resume_run(run_dir: Path) -> dict[str, object]:
     budget_issues = resume_budget_ceiling_issues(summary)
     if budget_issues:
         raise ValueError("; ".join(issue.message for issue in budget_issues))
-    config = resume_loop_config(summary, run_dir=run_dir)
-    return run_loop(config)
+    config, resumed_budget_state = resume_loop_config(summary, run_dir=run_dir)
+    return run_loop(config, budget_state=resumed_budget_state)
 
 
-def resume_loop_config(summary: dict[str, object], *, run_dir: Path) -> LoopConfig:
+def resume_loop_config(summary: dict[str, object], *, run_dir: Path) -> tuple[LoopConfig, budgets.BudgetState | None]:
     resume_config = summary.get("resume_config")
     if not isinstance(resume_config, dict):
         raise ValueError("summary.json is missing resume_config")
@@ -4505,9 +4524,8 @@ def resume_loop_config(summary: dict[str, object], *, run_dir: Path) -> LoopConf
         initial_review_file=review_path,
         profile_name=profile_name,
         budget_config=_resume_budget_config(resume_config, budgets_payload if isinstance(budgets_payload, dict) else None),
-        budget_state=budget_state,
         profile_v2=profile_v2,
-    )
+    ), budget_state
 
 
 def latest_resume_review_path(summary: dict[str, object], *, run_dir: Path) -> Path | None:

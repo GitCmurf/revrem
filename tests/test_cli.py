@@ -12,6 +12,8 @@ import pytest
 
 from code_review_loop import cli as MODULE
 from code_review_loop import events, profiles, suppressions
+from code_review_loop.core.ports import RunContext
+from tests.support.fakes import FakeClock, FakeRunIdentity
 
 
 def make_git_worktree(tmp_path: Path, cwd_rel: str | None = "work") -> tuple[Path, Path]:
@@ -280,10 +282,10 @@ def test_progress_warning_status_emits_warning_event(tmp_path):
         cwd=tmp_path,
         artifact_dir=tmp_path / "artifacts",
         progress=False,
-        event_sink=sink,
     )
+    ctx = RunContext(clock=FakeClock(), identity=FakeRunIdentity(), runner=None, event_sink=sink)
 
-    MODULE.progress_event(config, "triage", "1", "warning", "suppressions unavailable")
+    MODULE.progress_event(config, "triage", "1", "warning", "suppressions unavailable", ctx=ctx)
 
     assert sink.events[0].kind == "warning"
     assert sink.events[0].payload["message"] == "suppressions unavailable"
@@ -5357,11 +5359,10 @@ def test_loop_stops_before_model_call_when_wall_budget_exceeded(tmp_path):
         cwd=tmp_path,
         artifact_dir=tmp_path / "artifacts",
         budget_config=MODULE.budgets.BudgetConfig(max_wall_seconds=0),
-        budget_state=MODULE.budgets.BudgetState(started_at_monotonic=0),
     )
 
     with pytest.raises(MODULE.RunLoopFailed) as excinfo:
-        MODULE.run_loop(config, runner)
+        MODULE.run_loop(config, runner, budget_state=MODULE.budgets.BudgetState(started_at_monotonic=0))
 
     summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
     records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
@@ -5388,10 +5389,9 @@ def test_loop_emits_budget_soft_warning_before_model_call(tmp_path):
         cwd=tmp_path,
         artifact_dir=tmp_path / "artifacts",
         budget_config=MODULE.budgets.BudgetConfig(max_wall_seconds=100, soft_warn_fraction=0.5),
-        budget_state=MODULE.budgets.BudgetState(started_at_monotonic=time.monotonic() - 60),
     )
 
-    MODULE.run_loop(config, runner)
+    MODULE.run_loop(config, runner, budget_state=MODULE.budgets.BudgetState(started_at_monotonic=time.monotonic() - 60))
 
     records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
 
@@ -5891,7 +5891,7 @@ def test_resume_payload_preserves_full_auto_and_budget_limits(tmp_path, monkeypa
     )
 
     summary = MODULE.run_loop(config, runner)
-    resumed = MODULE.resume_loop_config(summary, run_dir=tmp_path / "artifacts")
+    resumed, _budget_state = MODULE.resume_loop_config(summary, run_dir=tmp_path / "artifacts")
 
     assert summary["resume_config"]["full_auto"] is False
     assert summary["resume_config"]["max_wall_seconds"] == 12.5
@@ -5925,13 +5925,13 @@ def test_resume_loop_config_seeds_budget_state_from_summary_totals(tmp_path):
         },
     }
 
-    resumed = MODULE.resume_loop_config(summary, run_dir=tmp_path)
+    _config, resumed_budget = MODULE.resume_loop_config(summary, run_dir=tmp_path)
 
-    assert resumed.budget_state is not None
-    assert resumed.budget_state.tokens_used == 73
-    assert resumed.budget_state.tokens_reported is True
-    assert resumed.budget_state.usd_used == Decimal("0.45")
-    assert resumed.budget_state.usd_reported is True
+    assert resumed_budget is not None
+    assert resumed_budget.tokens_used == 73
+    assert resumed_budget.tokens_reported is True
+    assert resumed_budget.usd_used == Decimal("0.45")
+    assert resumed_budget.usd_reported is True
 
 
 def test_resume_loop_config_defaults_legacy_missing_full_auto_to_true(tmp_path):
@@ -5946,7 +5946,7 @@ def test_resume_loop_config_defaults_legacy_missing_full_auto_to_true(tmp_path):
         "artifact_paths": {"reviews": [str(review_path)]},
     }
 
-    resumed = MODULE.resume_loop_config(summary, run_dir=tmp_path)
+    resumed, _budget_state = MODULE.resume_loop_config(summary, run_dir=tmp_path)
 
     assert resumed.full_auto is True
 

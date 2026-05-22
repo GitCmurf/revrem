@@ -278,18 +278,17 @@ def test_resume_loop_config_seeds_cumulative_wall_budget_state(tmp_path, monkeyp
         cwd=tmp_path,
         artifact_dir=tmp_path / "artifacts",
         budget_config=MODULE.budgets.BudgetConfig(max_wall_seconds=30),
-        budget_state=MODULE.budgets.BudgetState(started_at_monotonic=100.0),
     )
 
-    summary = MODULE.run_loop(config, runner)
+    summary = MODULE.run_loop(config, runner, budget_state=MODULE.budgets.BudgetState(started_at_monotonic=100.0))
 
     assert summary["budgets"]["wall_elapsed_seconds"] == 12.5
 
     monkeypatch.setattr(MODULE.budgets, "monotonic", lambda: 200.0)
-    resumed = MODULE.resume_loop_config(summary, run_dir=tmp_path / "artifacts")
+    config, budget_state = MODULE.resume_loop_config(summary, run_dir=tmp_path / "artifacts")
 
-    assert resumed.budget_state is not None
-    assert resumed.budget_state.started_at_monotonic == 187.5
+    assert budget_state is not None
+    assert budget_state.started_at_monotonic == 187.5
 
 
 def test_resume_loop_config_uses_legacy_budget_ceiling(tmp_path):
@@ -312,7 +311,7 @@ def test_resume_loop_config_uses_legacy_budget_ceiling(tmp_path):
         },
     }
 
-    resumed = MODULE.resume_loop_config(summary, run_dir=tmp_path)
+    resumed, _budget_state = MODULE.resume_loop_config(summary, run_dir=tmp_path)
 
     assert resumed.budget_config.max_wall_seconds == 10
     assert resumed.budget_config.max_tokens == 100
@@ -356,7 +355,7 @@ harness = "claude"
         },
     )
 
-    resumed = MODULE.resume_loop_config(json.loads((run_dir / "summary.json").read_text()), run_dir=run_dir)
+    resumed, _budget_state = MODULE.resume_loop_config(json.loads((run_dir / "summary.json").read_text()), run_dir=run_dir)
 
     assert resumed.profile_name == "test"
     assert resumed.triage_contract == "v2"
