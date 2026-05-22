@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from code_review_loop.core.routing_types import Profile, TriageRouteConfig, TriageRoutingRule
+from code_review_loop.core.routing_types import (
+    Profile,
+    ResolvedRoute as ResolvedRoute,
+    TriageRouteConfig,
+    TriageRoutingRule,
+)
 
 
 @dataclass(frozen=True)
@@ -15,21 +20,6 @@ class RoutingContext:
     module_count: int
     safety_signals: tuple[str, ...]
     failed_checks: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
-class ResolvedRoute:
-    route_tier: str
-    harness: str
-    model: str | None = None
-    reasoning_effort: str | None = None
-    timeout_seconds: float | None = None
-    sandbox: str = "workspace-write"
-    prompt_fragments: tuple[str, ...] = ()
-    allow_model_deescalation: bool = True
-    rule_id: str | None = None
-    fallbacks_considered: tuple[str, ...] = ()
-    fallback_applied: str | None = None
 
 
 def check_route_capabilities(route_cfg: TriageRouteConfig) -> list[str]:
