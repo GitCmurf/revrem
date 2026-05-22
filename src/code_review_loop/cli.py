@@ -40,6 +40,7 @@ from code_review_loop import (
     triage,
 )
 from code_review_loop.clock import SYSTEM_CLOCK, Clock, utc_iso
+from code_review_loop.core.state import RunState
 from code_review_loop.identity import SYSTEM_IDENTITY, RunIdentity
 
 STATUS_RE = re.compile(r"^\s*REVIEW_STATUS:\s*(clear|findings)\s*$", re.IGNORECASE | re.MULTILINE)
@@ -2028,26 +2029,22 @@ def _run_loop(
 
     config.artifact_dir.mkdir(parents=True, exist_ok=True)
     ensure_default_artifact_ignore(config)
-    iterations: list[dict[str, object]] = []
     run_id = identity.new_run_id()
-    summary: dict[str, object] = {
-        "base": config.base,
-        "git_state": git_state_for_resume(config),
-        "resume_config": resume_config_payload(config),
-        "run_id": run_id,
-        "started_at": utc_iso(clock.now()),
-        "profile": config.profile_name,
-        "max_iterations": config.max_iterations,
-        "artifact_dir": str(config.artifact_dir),
-        "iterations": iterations,
-        "commit_on_hook_failure": config.commit_on_hook_failure,
-        "commit_no_verify": config.commit_on_hook_failure == "no-verify",
-        "budgets": summary_budget_payload(config),
-        "final_status": "unknown",
-        "initial_review_file": str(config.initial_review_file) if config.initial_review_file else None,
-        "pending_check_failures": False,
-        "stopped_reason": None,
-    }
+    state = RunState.create(
+        base=config.base,
+        git_state=git_state_for_resume(config),
+        resume_config=resume_config_payload(config),
+        run_id=run_id,
+        started_at=utc_iso(clock.now()),
+        profile=config.profile_name,
+        max_iterations=config.max_iterations,
+        artifact_dir=str(config.artifact_dir),
+        commit_on_hook_failure=config.commit_on_hook_failure,
+        budgets=summary_budget_payload(config),
+        initial_review_file=str(config.initial_review_file) if config.initial_review_file else None,
+    )
+    iterations = state.iterations
+    summary = state.to_dict()
 
     event_sink: events.JsonlSink | None = None
     previous_event_sink = config.event_sink
@@ -2091,9 +2088,9 @@ def _run_loop(
                 )
             )
             if diagnostics.has_blocking_issue(issues):
-                summary["final_status"] = "error"
-                summary["stopped_reason"] = "setup_failed"
-                summary["error"] = "preflight diagnostics found blocking issue"
+                state.set_final_status("error")
+                state.set_stopped_reason("setup_failed")
+                state.set_error("preflight diagnostics found blocking issue")
                 artifacts.write_json_artifact(
                     config.artifact_dir,
                     "diagnostics.json",
@@ -2144,9 +2141,9 @@ def _run_loop(
                     )
                 except RuntimeError as exc:
                     iterations.append({"iteration": iteration, "review_failed": True})
-                    summary["final_status"] = "error"
-                    summary["stopped_reason"] = "review_failed"
-                    summary["error"] = str(exc)
+                    state.set_final_status("error")
+                    state.set_stopped_reason("review_failed")
+                    state.set_error(str(exc))
                     emit_loop_failure_event(
                         config,
                         phase="review",
@@ -2160,11 +2157,10 @@ def _run_loop(
                 iterations.append({"iteration": iteration, "review_status": status})
 
             if status == "clear" and not pending_check_failures:
-                summary["final_status"] = "clear"
-                summary["stopped_reason"] = "review_clear"
-                summary["latest_review_excerpt"] = excerpt_for_terminal(
-                    last_review_output,
-                    config.terminal_excerpt_chars,
+                state.set_final_status("clear")
+                state.set_stopped_reason("review_clear")
+                state.set_latest_review_excerpt(
+                    excerpt_for_terminal(last_review_output, config.terminal_excerpt_chars)
                 )
                 write_summary(config, summary, clock=clock)
                 return summary
@@ -2193,16 +2189,15 @@ def _run_loop(
                     if triage_no_actionable:
                         if suppressed_count:
                             iterations[-1]["suppressed_findings"] = True
-                            summary["suppressed_findings_count"] = suppressed_count
+                            state.set_suppressed_findings_count(suppressed_count)
                         if not pending_check_failures:
                             iterations[-1]["check_failures"] = 0
-                            summary["final_status"] = "clear"
-                            summary["stopped_reason"] = (
+                            state.set_final_status("clear")
+                            state.set_stopped_reason(
                                 "all_findings_suppressed" if suppressed_count else "triage_rejected_all_findings"
                             )
-                            summary["latest_review_excerpt"] = excerpt_for_terminal(
-                                last_review_output,
-                                config.terminal_excerpt_chars,
+                            state.set_latest_review_excerpt(
+                                excerpt_for_terminal(last_review_output, config.terminal_excerpt_chars)
                             )
                             write_summary(config, summary, clock=clock)
                             return summary
@@ -2401,9 +2396,9 @@ def _run_loop(
             except budgets.BudgetExceeded:
                 raise
             except Exception as exc:
-                summary["final_status"] = "error"
-                summary["stopped_reason"] = "triage_failed"
-                summary["error"] = str(exc)
+                state.set_final_status("error")
+                state.set_stopped_reason("triage_failed")
+                state.set_error(str(exc))
                 iterations[-1]["triage_failed"] = True
                 emit_loop_failure_event(
                     config,
@@ -2426,9 +2421,9 @@ def _run_loop(
             except budgets.BudgetExceeded:
                 raise
             except Exception as exc:
-                summary["final_status"] = "error"
-                summary["stopped_reason"] = "remediation_failed"
-                summary["error"] = str(exc)
+                state.set_final_status("error")
+                state.set_stopped_reason("remediation_failed")
+                state.set_error(str(exc))
                 iterations[-1]["remediation_failed"] = True
                 emit_loop_failure_event(
                     config,
@@ -2446,7 +2441,7 @@ def _run_loop(
 
             check_results, failed_check_names = run_checks(config, runner, iteration)
             pending_check_failures = _format_check_failures(check_results)
-            summary["pending_check_failures"] = bool(pending_check_failures)
+            state.set_pending_check_failures(bool(pending_check_failures))
             iterations[-1]["check_failures"] = len(failed_check_names)
             if resolved_route:
                 outcome_payload = {
@@ -2476,7 +2471,7 @@ def _run_loop(
                     if is_retryable_hook_failure:
                         _commit_retry = True
                         pending_check_failures = format_commit_hook_failure_for_remediation(exc)
-                        summary["pending_check_failures"] = True
+                        state.set_pending_check_failures(True)
                         progress_event(
                             config,
                             "commit",
@@ -2488,12 +2483,12 @@ def _run_loop(
                     stopped_reason = (
                         "commit_hook_failed" if exc.kind == "hook_failed" else "commit_failed"
                     )
-                    summary["final_status"] = "error"
-                    summary["stopped_reason"] = stopped_reason
-                    summary["error"] = str(exc)
+                    state.set_final_status("error")
+                    state.set_stopped_reason(stopped_reason)
+                    state.set_error(str(exc))
                     if exc.kind == "hook_failed":
-                        summary["staged_changes_left"] = True
-                        summary["pending_check_failures"] = True
+                        state.set_staged_changes_left(True)
+                        state.set_pending_check_failures(True)
                     emit_loop_failure_event(
                         config,
                         phase="commit",
@@ -2506,9 +2501,9 @@ def _run_loop(
                 except budgets.BudgetExceeded:
                     raise
                 except Exception as exc:
-                    summary["final_status"] = "error"
-                    summary["stopped_reason"] = "commit_failed"
-                    summary["error"] = str(exc)
+                    state.set_final_status("error")
+                    state.set_stopped_reason("commit_failed")
+                    state.set_error(str(exc))
                     iterations[-1]["commit_failed"] = True
                     emit_loop_failure_event(
                         config,
@@ -2520,11 +2515,10 @@ def _run_loop(
                     write_summary(config, summary, clock=clock)
                     raise RunLoopFailed(summary, f"git commit failed for iteration {iteration}") from exc
                 if iterations[-1]["commit_status"] == "skipped_no_changes":
-                    summary["final_status"] = status
-                    summary["stopped_reason"] = "no_changes_after_remediation"
-                    summary["latest_review_excerpt"] = excerpt_for_terminal(
-                        last_review_output,
-                        config.terminal_excerpt_chars,
+                    state.set_final_status(status)
+                    state.set_stopped_reason("no_changes_after_remediation")
+                    state.set_latest_review_excerpt(
+                        excerpt_for_terminal(last_review_output, config.terminal_excerpt_chars)
                     )
                     write_summary(config, summary, clock=clock)
                     return summary
@@ -2539,9 +2533,9 @@ def _run_loop(
                 )
             except RuntimeError as exc:
                 iterations.append({"iteration": "final", "review_failed": True})
-                summary["final_status"] = "error"
-                summary["stopped_reason"] = "review_failed"
-                summary["error"] = str(exc)
+                state.set_final_status("error")
+                state.set_stopped_reason("review_failed")
+                state.set_error(str(exc))
                 emit_loop_failure_event(
                     config,
                     phase="review",
@@ -2552,17 +2546,16 @@ def _run_loop(
                 write_summary(config, summary, clock=clock)
                 raise RunLoopFailed(summary, str(exc)) from exc
             final_review_output = actionable_review_output(_combined_output(final_review))
-            summary["latest_review_excerpt"] = excerpt_for_terminal(
-                final_review_output,
-                config.terminal_excerpt_chars,
+            state.set_latest_review_excerpt(
+                excerpt_for_terminal(final_review_output, config.terminal_excerpt_chars)
             )
             if pending_check_failures:
-                summary["final_status"] = "findings"
-                summary["pending_check_failures"] = True
-                summary["stopped_reason"] = "max_iterations_reached_with_check_failures"
+                state.set_final_status("findings")
+                state.set_pending_check_failures(True)
+                state.set_stopped_reason("max_iterations_reached_with_check_failures")
             else:
-                summary["final_status"] = status
-                summary["stopped_reason"] = "review_clear" if status == "clear" else "max_iterations_reached"
+                state.set_final_status(status)
+                state.set_stopped_reason("review_clear" if status == "clear" else "max_iterations_reached")
                 if status == "unknown":
                     iterations.append(
                         {
@@ -2572,16 +2565,16 @@ def _run_loop(
                     )
         else:
             # Status after the last remediation is not known without a review.
-            summary["final_status"] = "unknown"
-            summary["pending_check_failures"] = bool(pending_check_failures)
-            summary["stopped_reason"] = "max_iterations_reached"
+            state.set_final_status("unknown")
+            state.set_pending_check_failures(bool(pending_check_failures))
+            state.set_stopped_reason("max_iterations_reached")
 
         write_summary(config, summary, clock=clock)
         return summary
     except KeyboardInterrupt as exc:
-        summary["final_status"] = "error"
-        summary["stopped_reason"] = "cancelled"
-        summary["error"] = "cancelled by operator"
+        state.set_final_status("error")
+        state.set_stopped_reason("cancelled")
+        state.set_error("cancelled by operator")
         artifacts.write_json_artifact(
             config.artifact_dir,
             "diagnostics.json",
@@ -2609,9 +2602,9 @@ def _run_loop(
         write_summary(config, summary, clock=clock)
         raise RunLoopFailed(summary, "cancelled by operator") from exc
     except budgets.BudgetExceeded as exc:
-        summary["final_status"] = "error"
-        summary["stopped_reason"] = "budget_ceiling_hit"
-        summary["error"] = str(exc)
+        state.set_final_status("error")
+        state.set_stopped_reason("budget_ceiling_hit")
+        state.set_error(str(exc))
         write_summary(config, summary, clock=clock)
         raise RunLoopFailed(summary, str(exc)) from exc
     finally:

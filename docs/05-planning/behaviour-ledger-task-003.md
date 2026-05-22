@@ -56,6 +56,45 @@ There is no silent third option.
 
 ## Entries
 
+### 2026-05-22 — A3 RunState behind the summary dict (Wave A3)
+
+- **Contract:** machine (no behaviour change — shadow refactor)
+- **What changed:** nothing observable. Added `core/state.py` with the typed
+  `RunState` aggregate and wired it into `_run_loop`. The initial `summary`
+  literal is now `RunState.create(...)`; the 33 in-loop scalar terminal writes
+  (`final_status`, `stopped_reason`, `error`, `latest_review_excerpt`,
+  `suppressed_findings_count`, `pending_check_failures`, `staged_changes_left`)
+  go through low-level transition methods (`state.set_*`).
+- **Approach (as-built — "(b1)"):** `RunState` holds the **live** summary dict
+  and iterations list — the same objects the loop still reads — so the ~46
+  `summary[...]` reads and 17 `iterations` mutations are untouched. `to_dict()`
+  returns that live dict, which `write_summary` augments (contract / artifact
+  paths / budgets) at emit time exactly as before.
+- **What "byte-for-byte" maps to here:** because `to_dict()` returns the same
+  object the loop reads, an in-process `state.to_dict() == summary` assertion
+  would be vacuous, so it is **not** added. The real equivalence gate is the **A2
+  golden masters staying byte-identical** (clear / findings / budget / cancel),
+  backed by the existing `tests/test_cli.py` coverage of the branches A2 does not
+  snapshot (commit/hook-retry, no-changes, suppressed/triage-rejected,
+  setup/commit/review failures, max-iter-with-check-failures). Full suite green
+  (558 passed) with zero snapshot diffs.
+- **Scope held (intentional non-change):** the 4 `object.__setattr__(config, …)`
+  calls (`event_sink`, `budget_state`) are **left in place** — they are
+  collaborators, not run-state, and their removal is owned by B0/C7. The
+  write-time augmentation helpers (`add_summary_contract_fields`,
+  `add_artifact_paths`, `update_unexpected_behaviors`, `summary_budget_payload`)
+  are reporting layer and were not touched.
+- **Naming:** transitions are deliberately low-level (one setter per write site);
+  semantic transitions (`mark_clear`, `mark_failed(reason)`) and the `RunOutcome`
+  ADT are layered on in B3 once the branch→outcome survey exists.
+- **Dependency rule:** `core.state` added to the import-linter source list — it
+  imports stdlib only (C4).
+- **Tests:** `tests/test_run_state.py` pins `RunState`'s own API in isolation
+  (create shape, `commit_no_verify` derivation, live-dict / shared-list identity,
+  setters) — a *separate* concern from the A2 byte-for-byte gate, not a
+  substitute for it. (Note for B3a, which touches `RunState` next.)
+- **schema_version impact:** none.
+
 ### 2026-05-22 — A2b loop-path golden masters (Wave A2b)
 
 - **Contract:** machine (additional baseline captures, no behaviour change)

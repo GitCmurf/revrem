@@ -105,5 +105,6 @@ source_modules = [
   "code_review_loop.fingerprints",
   "code_review_loop.redaction",
   "code_review_loop.run_history",
+  "code_review_loop.core.state",
 ]
 forbidden_modules = ["code_review_loop.cli"]

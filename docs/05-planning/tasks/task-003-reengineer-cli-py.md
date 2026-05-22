@@ -731,6 +731,14 @@ them.
 - *Exit:* the summary dict is produced *from* `RunState`; the frozen-config
   mutation still exists and is explicitly carried into B0.
 - *Risk:* medium.
+- *As-built ("(b1)"):* `RunState` wraps the **live** summary dict + iterations
+  list (the same objects the loop reads), so the ~46 `summary[...]` reads and 17
+  iteration mutations are untouched; only the 33 in-loop scalar terminal writes
+  move behind low-level `set_*` transitions. `to_dict()` returns the live dict,
+  so an in-process `to_dict() == summary` check is vacuous — the real
+  byte-for-byte gate is the **A2 golden masters staying identical**, backed by
+  `tests/test_cli.py` for the un-snapshotted branches. Transitions are
+  deliberately low-level (one per write site); semantic methods land in B3.
 
   > **B0 follow-through (cross-reference, not duplicated work):** when
   > `RunContext` lands in B0, `event_sink` and `budget_state` move onto it and
