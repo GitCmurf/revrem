@@ -352,14 +352,14 @@ def render_compact(events: list[Event]) -> str:
     for event in events:
         phase = event.phase or event.kind
         label = "" if event.iteration is None else str(event.iteration)
-        detail = _compact_detail(event)
+        detail = compact_detail(event)
         label_part = f"|{label}" if label else ""
         detail_part = f": {detail}" if detail else ""
         lines.append(f"{event.seq:04d}|{phase}{label_part}|{event.kind}{detail_part}")
     return "\n".join(lines) + ("\n" if lines else "")
 
 
-def _compact_detail(event: Event) -> str:
+def compact_detail(event: Event) -> str:
     if event.kind == "routing_decision":
         effective_route = event.payload.get("effective_route")
         policy_decision = event.payload.get("policy_decision")

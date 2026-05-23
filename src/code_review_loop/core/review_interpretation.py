@@ -186,7 +186,10 @@ def structured_review_status(output: str) -> str | None:
 
 def detect_review_status(output: str) -> str:
     """Return clear/findings/unknown for Codex review output."""
-    actionable_output = actionable_review_output(output)
+    return _detect_review_status_from_actionable(actionable_review_output(output))
+
+
+def _detect_review_status_from_actionable(actionable_output: str) -> str:
     match = STATUS_RE.search(actionable_output)
     if match:
         return match.group(1).lower()
@@ -246,7 +249,7 @@ def review_status_diagnostics(output: str) -> dict[str, object]:
         or has_negated_clear_review_statement(normalized)
     )
     return {
-        "status": detect_review_status(output),
+        "status": _detect_review_status_from_actionable(actionable_output),
         "actionable_chars": len(actionable_output),
         "stderr_present": stderr_present,
         "explicit_status": explicit_status.group(1).lower() if explicit_status else None,

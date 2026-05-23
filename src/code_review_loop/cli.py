@@ -734,14 +734,7 @@ def print_progress_message(config: LoopConfig, phase: str, label: str, text: str
 
 
 def _resolve_executable(harness: str, config: LoopConfig) -> str:
-    if harness in config.harness_executables:
-        return config.harness_executables[harness]
-    if harness == "codex":
-        return config.codex_bin
-    registry = harnesses.harness_registry()
-    if harness in registry:
-        return registry[harness].executable
-    return harness
+    return harnesses.resolve_executable(harness, config.harness_executables, config.codex_bin)
 
 
 def build_review_command(config: LoopConfig) -> list[str]:
@@ -2599,9 +2592,10 @@ def emit_artifact_write_events(config: LoopConfig, summary: dict[str, object], c
         return
     for kind, path in iter_artifact_paths(artifact_paths):
         payload: dict[str, object] = {"kind": kind, "path": path}
-        path_obj = Path(path)
-        if path_obj.is_file():
-            payload["bytes"] = path_obj.stat().st_size
+        try:
+            payload["bytes"] = Path(path).stat().st_size
+        except OSError:
+            pass
         ctx.event_sink.emit("artifact_write", phase="artifacts", payload=payload)
 
 

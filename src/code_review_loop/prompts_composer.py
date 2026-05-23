@@ -131,11 +131,10 @@ def load_fragment(cwd: Path, name: str, trusted_repo: bool = False) -> str | Non
         candidates.insert(0, cwd / "engineering-principles-v1.1.md")
 
     for cand in candidates:
-        if cand.is_file():
-            try:
-                return cand.read_text(encoding="utf-8")
-            except OSError:
-                pass
+        try:
+            return cand.read_text(encoding="utf-8")
+        except OSError:
+            pass
     return None
 
 

@@ -407,16 +407,9 @@ def _required_executables(config: DoctorConfig) -> list[tuple[str, str]]:
 
 
 def _resolve_harness_executable(config: DoctorConfig, harness: str) -> str:
-    if harness in config.harness_executables:
-        return config.harness_executables[harness]
-    if harness == "codex":
-        return config.codex_bin
     from code_review_loop import harnesses
 
-    registry = harnesses.harness_registry()
-    if harness in registry:
-        return registry[harness].executable
-    return harness
+    return harnesses.resolve_executable(harness, config.harness_executables, config.codex_bin)
 
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:

@@ -1024,6 +1024,50 @@ def minimal_profile(name: str, *, description: str = "") -> Profile:
     return Profile(name=name, description=description)
 
 
+def _walk_route_fallback_chain(
+    routes: dict[str, RouteConfig], route_name: str
+) -> list[str]:
+    """Return a list of issues for a single route's fallback chain."""
+    from code_review_loop import policy
+
+    chain = [route_name]
+    current_route_name = route_name
+    resolved = False
+    issues: list[str] = []
+
+    while True:
+        current_cfg = routes.get(current_route_name)
+        if not current_cfg:
+            break
+        if not policy.check_route_capabilities(current_cfg):
+            resolved = True
+        if not current_cfg.fallback:
+            break
+        if current_cfg.fallback in chain:
+            issues.append(
+                f"route {route_name!r} has circular fallback chain: "
+                f"{' -> '.join(chain)} -> {current_cfg.fallback}"
+            )
+            return issues
+        if current_cfg.fallback not in routes:
+            issues.append(f"route {route_name!r} has unknown fallback: {current_cfg.fallback!r}")
+            return issues
+        chain.append(current_cfg.fallback)
+        current_route_name = current_cfg.fallback
+
+    if not resolved:
+        if current_route_name not in routes:
+            issues.append(f"route {route_name!r} has unknown fallback: {current_route_name!r}")
+        else:
+            cap_issues = policy.check_route_capabilities(routes[current_route_name])
+            issues.append(
+                f"route {route_name!r} lacks an implemented and compatible fallback chain. "
+                f"Issues for {current_route_name!r}: {'; '.join(cap_issues)}"
+            )
+
+    return issues
+
+
 
 def validate_policy(profile: Profile) -> list[str]:
     issues = []
@@ -1031,48 +1075,9 @@ def validate_policy(profile: Profile) -> list[str]:
     if not triage.routing.enabled:
         return []
 
-    from code_review_loop import policy
-
     # Check routes and their fallback chains
-    for name, _route in triage.routes.items():
-        # Check implementation status through fallback chain
-        chain = [name]
-        current_route_name = name
-        resolved = False
-
-        while True:
-            current_cfg = triage.routes.get(current_route_name)
-            if not current_cfg:
-                break
-
-            issues_for_route = policy.check_route_capabilities(current_cfg)
-            if not issues_for_route:
-                # Found implemented and compatible route
-                resolved = True
-
-            if not current_cfg.fallback:
-                break
-
-            if current_cfg.fallback in chain:
-                issues.append(
-                    f"route {name!r} has circular fallback chain: {' -> '.join(chain)} -> {current_cfg.fallback}"
-                )
-                break
-
-            if current_cfg.fallback not in triage.routes:
-                issues.append(f"route {name!r} has unknown fallback: {current_cfg.fallback!r}")
-                break
-            chain.append(current_cfg.fallback)
-            current_route_name = current_cfg.fallback
-
-        if not resolved:
-            if current_route_name not in triage.routes:
-                issues.append(f"route {name!r} has unknown fallback: {current_route_name!r}")
-            else:
-                issues.append(
-                    f"route {name!r} lacks an implemented and compatible fallback chain. "
-                    f"Issues for {current_route_name!r}: {'; '.join(policy.check_route_capabilities(triage.routes[current_route_name]))}"
-                )
+    for name in triage.routes:
+        issues.extend(_walk_route_fallback_chain(triage.routes, name))
 
 
 
@@ -1140,40 +1145,11 @@ def validate_profile(profile: Profile, *, require_implemented: bool) -> None:
         if profile.commit.enabled:
             require_implemented_harness(profile.commit.harness, field="commit.harness")
 
-        from code_review_loop import policy
-
         # Item 3: Validate that every route eventually resolves to an implemented harness
-        for route_name, _route in profile.triage.routes.items():
-            chain = [route_name]
-            curr_name = route_name
-            resolved = False
-            while True:
-                curr_cfg = profile.triage.routes.get(curr_name)
-                if not curr_cfg:
-                    break
-
-                issues_for_route = policy.check_route_capabilities(curr_cfg)
-                if not issues_for_route:
-                    resolved = True
-
-                if not curr_cfg.fallback:
-                    break
-                if curr_cfg.fallback in chain:
-                    raise ValueError(
-                        f"triage.routes.{route_name} has circular fallback chain: "
-                        f"{' -> '.join(chain)} -> {curr_cfg.fallback}"
-                    )
-                chain.append(curr_cfg.fallback)
-                curr_name = curr_cfg.fallback
-
-            if not resolved:
-                if curr_name not in profile.triage.routes:
-                    raise ValueError(f"triage.routes.{route_name} has unknown fallback: {curr_name!r}")
-                issues = policy.check_route_capabilities(profile.triage.routes[curr_name])
-                raise ValueError(
-                    f"triage.routes.{route_name} lacks an implemented and compatible fallback chain. "
-                    f"Issues for {curr_name!r}: {'; '.join(issues)}"
-                )
+        for route_name in profile.triage.routes:
+            route_issues = _walk_route_fallback_chain(profile.triage.routes, route_name)
+            if route_issues:
+                raise ValueError(route_issues[0])
 
 
 def _write_profile_file(

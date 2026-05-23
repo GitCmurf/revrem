@@ -13,12 +13,18 @@ def dumps(data: Mapping[str, object]) -> str:
     return "\n".join(lines)
 
 
-def _write_table(lines: list[str], prefix: tuple[str, ...], table: Mapping[str, object]) -> None:
+def _classify_table_entries(
+    table: Mapping[str, object],
+) -> tuple[
+    list[tuple[str, object]],
+    list[tuple[str, Mapping[str, object]]],
+    list[tuple[str, Sequence[object]]],
+    list[tuple[str, Sequence[Mapping[str, object]]]],
+]:
     scalars: list[tuple[str, object]] = []
     nested: list[tuple[str, Mapping[str, object]]] = []
     arrays: list[tuple[str, Sequence[object]]] = []
     array_of_tables: list[tuple[str, Sequence[Mapping[str, object]]]] = []
-
     for key, value in table.items():
         if isinstance(value, Mapping):
             nested.append((key, value))
@@ -29,6 +35,11 @@ def _write_table(lines: list[str], prefix: tuple[str, ...], table: Mapping[str, 
                 arrays.append((key, value))
         else:
             scalars.append((key, value))
+    return scalars, nested, arrays, array_of_tables
+
+
+def _write_table(lines: list[str], prefix: tuple[str, ...], table: Mapping[str, object]) -> None:
+    scalars, nested, arrays, array_of_tables = _classify_table_entries(table)
 
     # Implicit table: a node with only nested sub-tables needs no [header] line;
     # its children emit their own fully-qualified [a.b.c] paths.
@@ -59,21 +70,7 @@ def _write_table(lines: list[str], prefix: tuple[str, ...], table: Mapping[str, 
 def _write_table_content(
     lines: list[str], prefix: tuple[str, ...], table: Mapping[str, object]
 ) -> None:
-    scalars: list[tuple[str, object]] = []
-    nested: list[tuple[str, Mapping[str, object]]] = []
-    arrays: list[tuple[str, Sequence[object]]] = []
-    array_of_tables: list[tuple[str, Sequence[Mapping[str, object]]]] = []
-
-    for key, value in table.items():
-        if isinstance(value, Mapping):
-            nested.append((key, value))
-        elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
-            if value and all(isinstance(item, Mapping) for item in value):
-                array_of_tables.append((key, cast(Sequence[Mapping[str, Any]], value)))
-            else:
-                arrays.append((key, value))
-        else:
-            scalars.append((key, value))
+    scalars, nested, arrays, array_of_tables = _classify_table_entries(table)
 
     for key, value in scalars:
         lines.append(f"{_format_key(key)} = {_format_value(value)}")

@@ -294,7 +294,6 @@ FAKE_HARNESS_FIXTURE_ENV = "REVREM_FAKE_HARNESS_FIXTURE_DIR"
 FAKE_HARNESS_COMMAND = "revrem-fake-harness"
 
 ROOT = Path(__file__).resolve().parents[2]
-TRIAGE_SCHEMA_RESOURCE = "schemas/triage-v1.schema.json"
 HARNESS_FIXTURES_DIR = ROOT / "tests" / "fixtures" / "harnesses"
 
 
@@ -353,6 +352,20 @@ def require_implemented_harness(name: str, *, field: str = "harness") -> None:
             f"{field}={name!r} is valid profile syntax, but command execution is not implemented"
         )
 
+
+def resolve_executable(
+    harness: str,
+    harness_executables: dict[str, str],
+    codex_bin: str,
+) -> str:
+    if harness in harness_executables:
+        return harness_executables[harness]
+    if harness == "codex":
+        return codex_bin
+    registry = harness_registry()
+    if harness in registry:
+        return registry[harness].executable
+    return harness
 
 
 def build_phase_command(request: PhaseCommandRequest) -> list[str]:
