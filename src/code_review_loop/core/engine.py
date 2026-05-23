@@ -17,11 +17,8 @@ committed to docs/05-planning/behaviour-ledger-task-003.md (B3a gate).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal
-
-if TYPE_CHECKING:
-    from code_review_loop.core.ports import CommitFailed  # type: ignore[attr-defined]
+from dataclasses import dataclass
+from typing import Literal, assert_never
 
 # ---------------------------------------------------------------------------
 # Config snapshot (read-only slice the engine needs from LoopConfig)
@@ -161,9 +158,6 @@ Action = (
     | ExitFindings
     | ExitUnknown
 )
-# Note: ExitWithLastStatus was considered but not needed — decide() receives
-# acc.last_review_status and can return a concrete ExitClear/Findings/Unknown
-# for CM2 directly (no shell-side lookup required).
 
 
 # ---------------------------------------------------------------------------
@@ -240,7 +234,10 @@ def decide(cfg: ConfigSnapshot, acc: LoopAccumulator, event: PhaseEvent) -> Acti
             return ExitUnknown(reason="no_changes_after_remediation")
         return Continue()
 
-    return ExitUnknown(
-        reason="max_iterations_reached",
-        check_failures=bool(acc.pending_check_failures),
-    )
+    if isinstance(event, NoFinalReview):  # NF1
+        return ExitUnknown(
+            reason="max_iterations_reached",
+            check_failures=bool(acc.pending_check_failures),
+        )
+
+    assert_never(event)

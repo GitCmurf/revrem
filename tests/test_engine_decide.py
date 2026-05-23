@@ -287,3 +287,41 @@ def test_decide_nf1_no_final_review_exits_unknown_with_check_failure_flag() -> N
     action = decide(cfg, acc, event)
 
     assert action == ExitUnknown(reason="max_iterations_reached", check_failures=True)
+
+
+def test_decide_t4_triage_clear_with_pending_check_failures_continues() -> None:
+    """Triage cleared review findings but check failures remain — loop must continue (T4)."""
+    cfg = ConfigSnapshot(3, True, True, "fail", True)
+    acc = LoopAccumulator(iteration=1, pending_check_failures="mypy failed")
+    event = TriageDone(is_clear=True, suppressed_count=2)
+
+    action = decide(cfg, acc, event)
+
+    assert action == Continue()
+
+
+def test_decide_cm3_hook_failure_at_max_iterations_does_not_retry() -> None:
+    """Retryable hook failure on the last iteration must not retry (CM4, not CM3)."""
+    cfg = ConfigSnapshot(max_iterations=3, triage_enabled=True, commit_after_remediation=True, commit_on_hook_failure="remediate", final_review=True)
+    acc = LoopAccumulator(iteration=3, pending_check_failures="")
+    event = CommitDone(status=None, commit_failed=_FakeCommitFailed("hook_failed"))
+
+    action = decide(cfg, acc, event)
+
+    assert action == ExitFailed(
+        reason="commit_hook_failed",
+        error="commit hook_failed",
+        staged_changes_left=True,
+        check_failures=True,
+    )
+
+
+def test_decide_cm3_no_verify_hook_failure_retries() -> None:
+    """commit_on_hook_failure='no-verify' also triggers the retry path (CM3)."""
+    cfg = ConfigSnapshot(max_iterations=3, triage_enabled=True, commit_after_remediation=True, commit_on_hook_failure="no-verify", final_review=True)
+    acc = LoopAccumulator(iteration=1, pending_check_failures="")
+    event = CommitDone(status=None, commit_failed=_FakeCommitFailed("hook_failed"))
+
+    action = decide(cfg, acc, event)
+
+    assert action == RetryViaCommitHook(hook_output="commit hook_failed")
