@@ -5476,7 +5476,11 @@ def test_main_returns_exit_code_3_for_budget_ceiling(tmp_path, monkeypatch, caps
     }
 
     def fake_run_loop(_config):
-        raise MODULE.RunLoopFailed(summary, "wall budget exceeded")
+        raise MODULE.RunLoopFailed(
+            summary,
+            "wall budget exceeded",
+            outcome=MODULE.OutcomeFailed(reason="budget_ceiling_hit", error="wall budget exceeded"),
+        )
 
     monkeypatch.setattr(MODULE, "run_loop", fake_run_loop)
 
@@ -6016,7 +6020,11 @@ def test_main_returns_exit_code_5_for_controlled_cancellation(tmp_path, monkeypa
     }
 
     def fake_run_loop(_config):
-        raise MODULE.RunLoopFailed(summary, "cancelled by operator")
+        raise MODULE.RunLoopFailed(
+            summary,
+            "cancelled by operator",
+            outcome=MODULE.OutcomeFailed(reason="cancelled", error="cancelled by operator"),
+        )
 
     monkeypatch.setattr(MODULE, "run_loop", fake_run_loop)
 

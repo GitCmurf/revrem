@@ -56,6 +56,45 @@ There is no silent third option.
 
 ## Entries
 
+### 2026-05-23 — B3c-iii: `_run_loop` wired through `decide()` + `_execute_stop()` (Wave B3c)
+
+- **Contract:** human (stderr error messages only)
+- **What changed:** all 11 `_run_loop` decision points now route through
+  `decide(snap, acc, event)` and `_execute_stop(outcome, ...)`. State mutations
+  (`state.set_final_status`, `state.set_stopped_reason`, `state.set_error`, etc.)
+  are now executed exclusively inside `_execute_stop`. `main()` and
+  `resume_main()` now call `outcome_to_exit_code(exc.outcome)` instead of
+  pattern-matching on `exc.summary["stopped_reason"]`.
+
+  **Human-presentation only change:** several failure cases that previously
+  raised `RunLoopFailed` with a wrapped message (e.g.
+  `"codex exec triage failed for iteration 1; see .revrem/triage-1.txt"`) now
+  use the original exception string as the message. The `summary["error"]` field
+  is unchanged (it was always `str(original_exc)`). Exit codes are unchanged.
+
+- **Why:** extract the decision logic from the execution shell so that
+  `decide()` is the sole authority over which outcome a branch produces, and
+  `outcome_to_exit_code()` is the sole authority over exit codes. Eliminates
+  the risk of `stopped_reason` string comparisons drifting out of sync with
+  the outcome ADT.
+- **Before / After:** machine contract (JSON summary, events.jsonl, exit codes)
+  unchanged — golden masters still pass byte-for-byte.
+- **schema_version impact:** none.
+
+### 2026-05-23 — B3c-iv: `_run_loop` deletion deferred to C3 (Wave B3c)
+
+- **Contract:** none (note only — no behaviour change)
+- **What changed:** nothing. This entry records an intentional deferral.
+  The B3c exit criterion in the task doc ("*Exit:* `_run_loop` deleted") is
+  **not satisfied here** and is deferred to the C3 wave.
+- **Why:** `_run_loop` cannot be deleted while `LoopConfig` still lives in
+  `cli.py`. The `_config_snapshot()` helper that converts `LoopConfig` into a
+  `ConfigSnapshot` is only possible as an inline shim. The full deletion
+  requires C1 (command registry) to move `LoopConfig` out of `cli.py` first,
+  at which point `_run_loop` collapses into a thin adapter wrapper and C3
+  completes the facade deletion.
+- **schema_version impact:** none.
+
 ### 2026-05-23 — B3a-prep: `_run_loop` branch → transition → outcome table (Wave B3a gate)
 
 - **Contract:** none (documentation only — no production code changed)
