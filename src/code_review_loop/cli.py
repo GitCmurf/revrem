@@ -41,9 +41,11 @@ from code_review_loop import (
 )
 from code_review_loop.clock import SYSTEM_CLOCK, Clock, utc_iso
 from code_review_loop.core.engine import (
+    CommitDone,
     ConfigSnapshot,
     LoopAccumulator,
     RemediationDone,
+    RetryViaCommitHook,
     ReviewDone,
     Stop,
     TriageDone,
@@ -2345,14 +2347,11 @@ def _run_loop(
                     iterations[-1]["commit_status"] = exc.kind
                     iterations[-1]["commit_failed"] = True
                     iterations[-1]["commit_artifact"] = str(exc.artifact_path)
-                    is_retryable_hook_failure = (
-                        exc.kind == "hook_failed"
-                        and config.commit_on_hook_failure in {"remediate", "no-verify"}
-                        and iteration < config.max_iterations
-                    )
-                    if is_retryable_hook_failure:
+                    _commit_action = decide(snap, acc, CommitDone(status=exc.kind, commit_failed=exc))
+                    if isinstance(_commit_action, RetryViaCommitHook):
                         _commit_retry = True
                         pending_check_failures = format_commit_hook_failure_for_remediation(exc)
+                        acc = replace(acc, commit_retry=True, pending_check_failures=pending_check_failures)
                         state.set_pending_check_failures(True)
                         progress_event(
                             config,
@@ -2363,31 +2362,19 @@ def _run_loop(
                             ctx=ctx,
                         )
                         continue
-                    stopped_reason = (
-                        "commit_hook_failed" if exc.kind == "hook_failed" else "commit_failed"
-                    )
-                    state.set_final_status("error")
-                    state.set_stopped_reason(stopped_reason)
-                    state.set_error(str(exc))
-                    if exc.kind == "hook_failed":
-                        state.set_staged_changes_left(True)
-                        state.set_pending_check_failures(True)
+                    assert isinstance(_commit_action, Stop)
                     emit_loop_failure_event(
                         config,
                         phase="commit",
                         iteration=iteration,
-                        reason=stopped_reason,
+                        reason=_commit_action.outcome.reason,
                         error=str(exc),
                         ctx=ctx,
                     )
-                    write_summary(config, summary, clock=clock, ctx=ctx)
-                    raise RunLoopFailed(summary, str(exc)) from exc
+                    return _execute_stop(_commit_action.outcome, state, summary, config, clock, ctx, cause=exc)
                 except budgets.BudgetExceeded:
                     raise
                 except Exception as exc:
-                    state.set_final_status("error")
-                    state.set_stopped_reason("commit_failed")
-                    state.set_error(str(exc))
                     iterations[-1]["commit_failed"] = True
                     emit_loop_failure_event(
                         config,
@@ -2397,16 +2384,12 @@ def _run_loop(
                         error=str(exc),
                         ctx=ctx,
                     )
-                    write_summary(config, summary, clock=clock, ctx=ctx)
-                    raise RunLoopFailed(summary, f"git commit failed for iteration {iteration}") from exc
-                if iterations[-1]["commit_status"] == "skipped_no_changes":
-                    state.set_final_status(status)
-                    state.set_stopped_reason("no_changes_after_remediation")
-                    state.set_latest_review_excerpt(
-                        excerpt_for_terminal(last_review_output, config.terminal_excerpt_chars)
-                    )
-                    write_summary(config, summary, clock=clock, ctx=ctx)
-                    return summary
+                    _action = decide(snap, acc, CommitDone(status=None, other_exc=exc))
+                    assert isinstance(_action, Stop)
+                    return _execute_stop(_action.outcome, state, summary, config, clock, ctx, cause=exc)
+                _commit_action = decide(snap, acc, CommitDone(status=cast("str | None", iterations[-1].get("commit_status"))))
+                if isinstance(_commit_action, Stop):
+                    return _execute_stop(_commit_action.outcome, state, summary, config, clock, ctx, last_review_output=last_review_output)
 
         if config.final_review:
             try:
