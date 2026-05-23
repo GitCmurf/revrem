@@ -43,6 +43,7 @@ from code_review_loop.clock import SYSTEM_CLOCK, Clock, utc_iso
 from code_review_loop.core.engine import (
     ConfigSnapshot,
     LoopAccumulator,
+    RemediationDone,
     ReviewDone,
     Stop,
     TriageDone,
@@ -2298,9 +2299,6 @@ def _run_loop(
             except budgets.BudgetExceeded:
                 raise
             except Exception as exc:
-                state.set_final_status("error")
-                state.set_stopped_reason("remediation_failed")
-                state.set_error(str(exc))
                 iterations[-1]["remediation_failed"] = True
                 emit_loop_failure_event(
                     config,
@@ -2310,12 +2308,9 @@ def _run_loop(
                     error=str(exc),
                     ctx=ctx,
                 )
-                write_summary(config, summary, clock=clock, ctx=ctx)
-                raise RunLoopFailed(
-                    summary,
-                    f"codex exec remediation failed for iteration {iteration}; "
-                    f"see {config.artifact_dir / f'remediation-{iteration}.txt'}",
-                ) from exc
+                _action = decide(snap, acc, RemediationDone(exc=exc))
+                assert isinstance(_action, Stop)
+                return _execute_stop(_action.outcome, state, summary, config, clock, ctx, cause=exc)
 
             if ctx.phase_checks is not None:
                 _checks_outcome = ctx.phase_checks.execute(ChecksRequest(iteration=iteration), ctx)
