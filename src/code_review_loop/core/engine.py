@@ -182,6 +182,70 @@ def decide(cfg: ConfigSnapshot, acc: LoopAccumulator, event: PhaseEvent) -> Acti
     This function is pure: no I/O, no side effects, deterministic.  The shell
     (``cli._run_loop``) is responsible for executing each returned Action.
     """
-    raise NotImplementedError(
-        "decide() body not yet implemented — B3b fill-in pending"
+    if isinstance(event, ReviewDone):
+        if event.exc is not None:
+            return ExitFailed(reason="review_failed", error=str(event.exc))
+        if not event.is_final:
+            if event.status == "clear" and not acc.pending_check_failures:
+                return ExitClear(reason="review_clear", excerpt="")
+            return Continue()
+        if acc.pending_check_failures:
+            return ExitFindings(
+                reason="max_iterations_reached_with_check_failures",
+                check_failures=True,
+            )
+        if event.status == "clear":
+            return ExitClear(reason="review_clear")
+        if event.status == "findings":
+            return ExitFindings(reason="max_iterations_reached")
+        return ExitUnknown(reason="max_iterations_reached")
+
+    if isinstance(event, TriageDone):
+        if event.exc is not None:
+            return ExitFailed(reason="triage_failed", error=str(event.exc))
+        if event.is_clear and not acc.pending_check_failures:
+            if event.suppressed_count:
+                return ExitClear(
+                    reason="all_findings_suppressed",
+                    suppressed_findings_count=event.suppressed_count,
+                )
+            return ExitClear(reason="triage_rejected_all_findings")
+        return Continue()
+
+    if isinstance(event, RemediationDone):
+        if event.exc is not None:
+            return ExitFailed(reason="remediation_failed", error=str(event.exc))
+        return Continue()
+
+    if isinstance(event, CommitDone):
+        if event.other_exc is not None:
+            return ExitFailed(reason="commit_failed", error=str(event.other_exc))
+        if event.commit_failed is not None:
+            kind = getattr(event.commit_failed, "kind", "")
+            retryable = (
+                kind == "hook_failed"
+                and cfg.commit_on_hook_failure in ("remediate", "no-verify")
+                and acc.iteration < cfg.max_iterations
+            )
+            if retryable:
+                return RetryViaCommitHook(hook_output=str(event.commit_failed))
+            if kind == "hook_failed":
+                return ExitFailed(
+                    reason="commit_hook_failed",
+                    error=str(event.commit_failed),
+                    staged_changes_left=True,
+                    check_failures=True,
+                )
+            return ExitFailed(reason="commit_failed", error=str(event.commit_failed))
+        if event.status == "skipped_no_changes":
+            if acc.last_review_status == "clear":
+                return ExitClear(reason="no_changes_after_remediation")
+            if acc.last_review_status == "findings":
+                return ExitFindings(reason="no_changes_after_remediation")
+            return ExitUnknown(reason="no_changes_after_remediation")
+        return Continue()
+
+    return ExitUnknown(
+        reason="max_iterations_reached",
+        check_failures=bool(acc.pending_check_failures),
     )
