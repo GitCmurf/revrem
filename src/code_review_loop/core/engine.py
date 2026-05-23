@@ -20,6 +20,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, assert_never
 
+from code_review_loop.core.outcome import (
+    OutcomeClear,
+    OutcomeFailed,
+    OutcomeFindings,
+    OutcomeUnknown,
+    RunOutcome,
+)
+
 # ---------------------------------------------------------------------------
 # Config snapshot (read-only slice the engine needs from LoopConfig)
 # ---------------------------------------------------------------------------
@@ -116,48 +124,13 @@ class RetryViaCommitHook:
 
 
 @dataclass(frozen=True)
-class ExitClear:
-    """Loop exits with final_status=clear (E1, T2, T3, F4)."""
+class Stop:
+    """Loop exits; outcome carries the terminal state (E1, T2, T3, F2-F6, NF1, …)."""
 
-    reason: str  # stopped_reason value
-    excerpt: str = ""
-    suppressed_findings_count: int = 0
+    outcome: RunOutcome
 
 
-@dataclass(frozen=True)
-class ExitFailed:
-    """Loop exits with final_status=error (R3, T6, M3, CM4, CM5, CM7, F2, X1, X2)."""
-
-    reason: str  # stopped_reason value
-    error: str
-    staged_changes_left: bool = False
-    check_failures: bool = False
-
-
-@dataclass(frozen=True)
-class ExitFindings:
-    """Loop exits with final_status=findings (F3, F5)."""
-
-    reason: str  # stopped_reason value
-    check_failures: bool = False
-
-
-@dataclass(frozen=True)
-class ExitUnknown:
-    """Loop exits with final_status=unknown (F6, NF1)."""
-
-    reason: str  # stopped_reason value
-    check_failures: bool = False
-
-
-Action = (
-    Continue
-    | RetryViaCommitHook
-    | ExitClear
-    | ExitFailed
-    | ExitFindings
-    | ExitUnknown
-)
+Action = Continue | RetryViaCommitHook | Stop
 
 
 # ---------------------------------------------------------------------------
@@ -173,42 +146,46 @@ def decide(cfg: ConfigSnapshot, acc: LoopAccumulator, event: PhaseEvent) -> Acti
     """
     if isinstance(event, ReviewDone):
         if event.exc is not None:
-            return ExitFailed(reason="review_failed", error=str(event.exc))
+            return Stop(OutcomeFailed(reason="review_failed", error=str(event.exc)))
         if not event.is_final:
             if event.status == "clear" and not acc.pending_check_failures:
-                return ExitClear(reason="review_clear", excerpt="")
+                return Stop(OutcomeClear(reason="review_clear", excerpt=""))
             return Continue()
         if acc.pending_check_failures:
-            return ExitFindings(
-                reason="max_iterations_reached_with_check_failures",
-                check_failures=True,
+            return Stop(
+                OutcomeFindings(
+                    reason="max_iterations_reached_with_check_failures",
+                    check_failures=True,
+                )
             )
         if event.status == "clear":
-            return ExitClear(reason="review_clear")
+            return Stop(OutcomeClear(reason="review_clear"))
         if event.status == "findings":
-            return ExitFindings(reason="max_iterations_reached")
-        return ExitUnknown(reason="max_iterations_reached")
+            return Stop(OutcomeFindings(reason="max_iterations_reached"))
+        return Stop(OutcomeUnknown(reason="max_iterations_reached"))
 
     if isinstance(event, TriageDone):
         if event.exc is not None:
-            return ExitFailed(reason="triage_failed", error=str(event.exc))
+            return Stop(OutcomeFailed(reason="triage_failed", error=str(event.exc)))
         if event.is_clear and not acc.pending_check_failures:
             if event.suppressed_count:
-                return ExitClear(
-                    reason="all_findings_suppressed",
-                    suppressed_findings_count=event.suppressed_count,
+                return Stop(
+                    OutcomeClear(
+                        reason="all_findings_suppressed",
+                        suppressed_findings_count=event.suppressed_count,
+                    )
                 )
-            return ExitClear(reason="triage_rejected_all_findings")
+            return Stop(OutcomeClear(reason="triage_rejected_all_findings"))
         return Continue()
 
     if isinstance(event, RemediationDone):
         if event.exc is not None:
-            return ExitFailed(reason="remediation_failed", error=str(event.exc))
+            return Stop(OutcomeFailed(reason="remediation_failed", error=str(event.exc)))
         return Continue()
 
     if isinstance(event, CommitDone):
         if event.other_exc is not None:
-            return ExitFailed(reason="commit_failed", error=str(event.other_exc))
+            return Stop(OutcomeFailed(reason="commit_failed", error=str(event.other_exc)))
         if event.commit_failed is not None:
             kind = getattr(event.commit_failed, "kind", "")
             retryable = (
@@ -219,25 +196,29 @@ def decide(cfg: ConfigSnapshot, acc: LoopAccumulator, event: PhaseEvent) -> Acti
             if retryable:
                 return RetryViaCommitHook(hook_output=str(event.commit_failed))
             if kind == "hook_failed":
-                return ExitFailed(
-                    reason="commit_hook_failed",
-                    error=str(event.commit_failed),
-                    staged_changes_left=True,
-                    check_failures=True,
+                return Stop(
+                    OutcomeFailed(
+                        reason="commit_hook_failed",
+                        error=str(event.commit_failed),
+                        staged_changes_left=True,
+                        check_failures=True,
+                    )
                 )
-            return ExitFailed(reason="commit_failed", error=str(event.commit_failed))
+            return Stop(OutcomeFailed(reason="commit_failed", error=str(event.commit_failed)))
         if event.status == "skipped_no_changes":
             if acc.last_review_status == "clear":
-                return ExitClear(reason="no_changes_after_remediation")
+                return Stop(OutcomeClear(reason="no_changes_after_remediation"))
             if acc.last_review_status == "findings":
-                return ExitFindings(reason="no_changes_after_remediation")
-            return ExitUnknown(reason="no_changes_after_remediation")
+                return Stop(OutcomeFindings(reason="no_changes_after_remediation"))
+            return Stop(OutcomeUnknown(reason="no_changes_after_remediation"))
         return Continue()
 
     if isinstance(event, NoFinalReview):  # NF1
-        return ExitUnknown(
-            reason="max_iterations_reached",
-            check_failures=bool(acc.pending_check_failures),
+        return Stop(
+            OutcomeUnknown(
+                reason="max_iterations_reached",
+                check_failures=bool(acc.pending_check_failures),
+            )
         )
 
     assert_never(event)

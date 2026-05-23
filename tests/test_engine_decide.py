@@ -6,17 +6,20 @@ from code_review_loop.core.engine import (
     CommitDone,
     ConfigSnapshot,
     Continue,
-    ExitClear,
-    ExitFailed,
-    ExitFindings,
-    ExitUnknown,
     LoopAccumulator,
     NoFinalReview,
     RemediationDone,
     RetryViaCommitHook,
     ReviewDone,
+    Stop,
     TriageDone,
     decide,
+)
+from code_review_loop.core.outcome import (
+    OutcomeClear,
+    OutcomeFailed,
+    OutcomeFindings,
+    OutcomeUnknown,
 )
 
 
@@ -33,7 +36,7 @@ def test_decide_r3_review_exception_fails() -> None:
 
     action = decide(cfg, acc, event)
 
-    assert action == ExitFailed(reason="review_failed", error="boom")
+    assert action == Stop(OutcomeFailed(reason="review_failed", error="boom"))
 
 
 def test_decide_e1_non_final_clear_without_check_failures_exits_clear() -> None:
@@ -43,7 +46,7 @@ def test_decide_e1_non_final_clear_without_check_failures_exits_clear() -> None:
 
     action = decide(cfg, acc, event)
 
-    assert action == ExitClear(reason="review_clear", excerpt="")
+    assert action == Stop(OutcomeClear(reason="review_clear", excerpt=""))
 
 
 def test_decide_review_non_final_findings_continues() -> None:
@@ -73,7 +76,7 @@ def test_decide_f2_final_review_exception_fails() -> None:
 
     action = decide(cfg, acc, event)
 
-    assert action == ExitFailed(reason="review_failed", error="boom")
+    assert action == Stop(OutcomeFailed(reason="review_failed", error="boom"))
 
 
 def test_decide_f3_final_review_pending_check_failures_exits_findings() -> None:
@@ -83,9 +86,11 @@ def test_decide_f3_final_review_pending_check_failures_exits_findings() -> None:
 
     action = decide(cfg, acc, event)
 
-    assert action == ExitFindings(
-        reason="max_iterations_reached_with_check_failures",
-        check_failures=True,
+    assert action == Stop(
+        OutcomeFindings(
+            reason="max_iterations_reached_with_check_failures",
+            check_failures=True,
+        )
     )
 
 
@@ -96,7 +101,7 @@ def test_decide_f4_final_review_clear_exits_clear() -> None:
 
     action = decide(cfg, acc, event)
 
-    assert action == ExitClear(reason="review_clear")
+    assert action == Stop(OutcomeClear(reason="review_clear"))
 
 
 def test_decide_f5_final_review_findings_exits_findings() -> None:
@@ -106,7 +111,7 @@ def test_decide_f5_final_review_findings_exits_findings() -> None:
 
     action = decide(cfg, acc, event)
 
-    assert action == ExitFindings(reason="max_iterations_reached")
+    assert action == Stop(OutcomeFindings(reason="max_iterations_reached"))
 
 
 def test_decide_f6_final_review_unknown_exits_unknown() -> None:
@@ -116,7 +121,7 @@ def test_decide_f6_final_review_unknown_exits_unknown() -> None:
 
     action = decide(cfg, acc, event)
 
-    assert action == ExitUnknown(reason="max_iterations_reached")
+    assert action == Stop(OutcomeUnknown(reason="max_iterations_reached"))
 
 
 def test_decide_t6_triage_exception_fails() -> None:
@@ -126,7 +131,7 @@ def test_decide_t6_triage_exception_fails() -> None:
 
     action = decide(cfg, acc, event)
 
-    assert action == ExitFailed(reason="triage_failed", error="triage boom")
+    assert action == Stop(OutcomeFailed(reason="triage_failed", error="triage boom"))
 
 
 def test_decide_t2_all_findings_suppressed_exits_clear() -> None:
@@ -136,9 +141,11 @@ def test_decide_t2_all_findings_suppressed_exits_clear() -> None:
 
     action = decide(cfg, acc, event)
 
-    assert action == ExitClear(
-        reason="all_findings_suppressed",
-        suppressed_findings_count=2,
+    assert action == Stop(
+        OutcomeClear(
+            reason="all_findings_suppressed",
+            suppressed_findings_count=2,
+        )
     )
 
 
@@ -149,7 +156,7 @@ def test_decide_t3_triage_rejected_all_findings_exits_clear() -> None:
 
     action = decide(cfg, acc, event)
 
-    assert action == ExitClear(reason="triage_rejected_all_findings")
+    assert action == Stop(OutcomeClear(reason="triage_rejected_all_findings"))
 
 
 def test_decide_t1_actionable_triage_continues() -> None:
@@ -169,7 +176,7 @@ def test_decide_m3_remediation_exception_fails() -> None:
 
     action = decide(cfg, acc, event)
 
-    assert action == ExitFailed(reason="remediation_failed", error="remediation boom")
+    assert action == Stop(OutcomeFailed(reason="remediation_failed", error="remediation boom"))
 
 
 def test_decide_m1_successful_remediation_continues() -> None:
@@ -189,7 +196,7 @@ def test_decide_cm7_commit_other_exception_fails() -> None:
 
     action = decide(cfg, acc, event)
 
-    assert action == ExitFailed(reason="commit_failed", error="git boom")
+    assert action == Stop(OutcomeFailed(reason="commit_failed", error="git boom"))
 
 
 def test_decide_cm3_retryable_hook_failure_retries_via_commit_hook() -> None:
@@ -209,11 +216,13 @@ def test_decide_cm4_non_retryable_hook_failure_fails_with_staged_changes() -> No
 
     action = decide(cfg, acc, event)
 
-    assert action == ExitFailed(
-        reason="commit_hook_failed",
-        error="commit hook_failed",
-        staged_changes_left=True,
-        check_failures=True,
+    assert action == Stop(
+        OutcomeFailed(
+            reason="commit_hook_failed",
+            error="commit hook_failed",
+            staged_changes_left=True,
+            check_failures=True,
+        )
     )
 
 
@@ -224,7 +233,7 @@ def test_decide_cm5_non_hook_commit_failure_fails() -> None:
 
     action = decide(cfg, acc, event)
 
-    assert action == ExitFailed(reason="commit_failed", error="commit nothing_to_commit")
+    assert action == Stop(OutcomeFailed(reason="commit_failed", error="commit nothing_to_commit"))
 
 
 def test_decide_cm2_clear_skipped_no_changes_exits_clear() -> None:
@@ -238,7 +247,7 @@ def test_decide_cm2_clear_skipped_no_changes_exits_clear() -> None:
 
     action = decide(cfg, acc, event)
 
-    assert action == ExitClear(reason="no_changes_after_remediation")
+    assert action == Stop(OutcomeClear(reason="no_changes_after_remediation"))
 
 
 def test_decide_cm2_findings_skipped_no_changes_exits_findings() -> None:
@@ -252,7 +261,7 @@ def test_decide_cm2_findings_skipped_no_changes_exits_findings() -> None:
 
     action = decide(cfg, acc, event)
 
-    assert action == ExitFindings(reason="no_changes_after_remediation")
+    assert action == Stop(OutcomeFindings(reason="no_changes_after_remediation"))
 
 
 def test_decide_cm2_unknown_skipped_no_changes_exits_unknown() -> None:
@@ -266,7 +275,7 @@ def test_decide_cm2_unknown_skipped_no_changes_exits_unknown() -> None:
 
     action = decide(cfg, acc, event)
 
-    assert action == ExitUnknown(reason="no_changes_after_remediation")
+    assert action == Stop(OutcomeUnknown(reason="no_changes_after_remediation"))
 
 
 def test_decide_cm1_successful_commit_continues() -> None:
@@ -286,7 +295,7 @@ def test_decide_nf1_no_final_review_exits_unknown_with_check_failure_flag() -> N
 
     action = decide(cfg, acc, event)
 
-    assert action == ExitUnknown(reason="max_iterations_reached", check_failures=True)
+    assert action == Stop(OutcomeUnknown(reason="max_iterations_reached", check_failures=True))
 
 
 def test_decide_t4_triage_clear_with_pending_check_failures_continues() -> None:
@@ -308,11 +317,13 @@ def test_decide_cm3_hook_failure_at_max_iterations_does_not_retry() -> None:
 
     action = decide(cfg, acc, event)
 
-    assert action == ExitFailed(
-        reason="commit_hook_failed",
-        error="commit hook_failed",
-        staged_changes_left=True,
-        check_failures=True,
+    assert action == Stop(
+        OutcomeFailed(
+            reason="commit_hook_failed",
+            error="commit hook_failed",
+            staged_changes_left=True,
+            check_failures=True,
+        )
     )
 
 
