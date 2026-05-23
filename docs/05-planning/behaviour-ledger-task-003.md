@@ -56,6 +56,140 @@ There is no silent third option.
 
 ## Entries
 
+### 2026-05-23 — B3a-prep: `_run_loop` branch → transition → outcome table (Wave B3a gate)
+
+- **Contract:** none (documentation only — no production code changed)
+- **What changed:** the complete enumeration of every decision branch, state
+  mutation, and exit/raise in `_run_loop` (cli.py lines 1736–2424). This table
+  is the mandatory B3a gate that must be committed before any engine-extraction
+  code is written (plan note: "Branch→transition→outcome table committed to
+  behaviour ledger BEFORE any engine code").
+- **Why:** the state-machine extracted in B3b must be total over exactly these
+  rows. Any branch not catalogued here will not be reachable from the pure
+  `decide()` function, creating silent regressions invisible to golden-master tests.
+- **schema_version impact:** none.
+
+#### `_run_loop` pre-loop guards (before state is initialised)
+
+| # | Branch condition | State mutation | Outcome |
+|---|---|---|---|
+| G1 | `config.max_iterations < 1` | — | `raise ValueError` (no summary written) |
+| G2 | `commit_after_remediation and not dry_run` and `git worktree status` returncode ≠ 0 | — | `raise RuntimeError` (no summary written) |
+| G3 | `commit_after_remediation and not dry_run` and worktree has dirty lines | — | `raise RuntimeError` (no summary written) |
+
+#### Pre-loop after state initialised (preflight block)
+
+| # | Branch condition | State mutation | Outcome |
+|---|---|---|---|
+| P1 | `preflight_enabled and not dry_run` and `diagnostics.has_blocking_issue(issues)` | `final_status=error`, `stopped_reason=setup_failed`, `error="preflight diagnostics found blocking issue"` | `raise RunLoopFailed` (summary written, `diagnostics.json` written) |
+
+#### Initial-review bootstrap (before iteration 1)
+
+| # | Branch condition | State mutation | Outcome |
+|---|---|---|---|
+| I1 | `config.initial_review_file` is set | (no state mutation; writes `review-initial.txt`, emits `progress` event) | loop continues with `initial_review_output` pre-loaded |
+
+#### Per-iteration — review phase
+
+| # | Branch condition | State mutation | Outcome |
+|---|---|---|---|
+| R1 | `iteration == 1 and initial_review_output` | appends `{iteration, review_status, review_source}` to `iterations` | skips review subprocess; uses loaded output |
+| R2 | otherwise (normal review run) | appends `{iteration, review_status}` to `iterations` | review subprocess (via harness or legacy shim) |
+| R3 | `RuntimeError` raised during review | `final_status=error`, `stopped_reason=review_failed`, `error=str(exc)` | `raise RunLoopFailed` (summary written) |
+
+#### Per-iteration — early-exit after review
+
+| # | Branch condition | State mutation | Outcome |
+|---|---|---|---|
+| E1 | `status == "clear" and not pending_check_failures` | `final_status=clear`, `stopped_reason=review_clear`, `latest_review_excerpt=…` | `return summary` |
+
+#### Per-iteration — triage phase (only when `config.triage_enabled`)
+
+| # | Branch condition | State mutation | Outcome |
+|---|---|---|---|
+| T1 | `triage_enabled` — triage runs (harness or legacy shim) | appends `suppressed_findings_count` to `iterations[-1]` when > 0 | sets `remediation_input` / `suppressed_count` / `triage_no_actionable` / `triage_payload` |
+| T2 | `triage_no_actionable and suppressed_count and not pending_check_failures` | `final_status=clear`, `stopped_reason=all_findings_suppressed`, `suppressed_findings_count=suppressed_count`, `latest_review_excerpt=…` | `return summary` |
+| T3 | `triage_no_actionable and not suppressed_count and not pending_check_failures` | `final_status=clear`, `stopped_reason=triage_rejected_all_findings`, `latest_review_excerpt=…` | `return summary` |
+| T4 | `triage_no_actionable and pending_check_failures` | — (no state change; `remediation_input` set to `pending_check_failures`) | loop continues into remediation |
+| T5 | `BudgetExceeded` during triage | — | re-raised (caught by outer `BudgetExceeded` handler) |
+| T6 | any other exception during triage | `final_status=error`, `stopped_reason=triage_failed`, `error=str(exc)`, `iterations[-1]["triage_failed"]=True` | `raise RunLoopFailed` (summary written) |
+
+#### Per-iteration — routing (inside triage block, only when `triage_payload and triage_contract=="v2" and profile_v2 and routing.enabled`)
+
+| # | Branch condition | State mutation | Outcome |
+|---|---|---|---|
+| RT1 | routing enabled — `resolve_routing` succeeds | emits `routing_decision` event, writes `routing-N.json` + `remediation-N-prompt.txt` | `resolved_route` set; loop continues |
+| RT2 | `TriageValidationError` from `validate_routing_payload` | (none on `state`; writes `diagnostics-N.json`; emits `triage.invalid` progress event) | `raise RuntimeError` → caught by T6 handler → `raise RunLoopFailed` |
+
+#### Per-iteration — remediation phase
+
+| # | Branch condition | State mutation | Outcome |
+|---|---|---|---|
+| M1 | remediation runs successfully (harness or legacy shim) | `rem_result`, `rem_duration` captured; `routing_outcome` event emitted when `resolved_route` set | loop continues |
+| M2 | `BudgetExceeded` during remediation | — | re-raised |
+| M3 | any other exception during remediation | `final_status=error`, `stopped_reason=remediation_failed`, `error=str(exc)`, `iterations[-1]["remediation_failed"]=True` | `raise RunLoopFailed` (summary written) |
+
+#### Per-iteration — checks (always runs after remediation)
+
+| # | Branch condition | State mutation | Outcome |
+|---|---|---|---|
+| CK1 | checks run (harness or legacy shim) | `state.set_pending_check_failures(bool(pending_check_failures))`, `iterations[-1]["check_failures"]=len(failed_check_names)` | `pending_check_failures` and `failed_check_names` updated |
+
+#### Per-iteration — commit phase (only when `commit_after_remediation and not pending_check_failures`)
+
+| # | Branch condition | State mutation | Outcome |
+|---|---|---|---|
+| CM1 | commit succeeds | `iterations[-1]["commit_status"]=status` | loop continues (or returns on `skipped_no_changes`) |
+| CM2 | `commit_status == "skipped_no_changes"` | `final_status=status` (last review status), `stopped_reason=no_changes_after_remediation`, `latest_review_excerpt=…` | `return summary` |
+| CM3 | `CommitFailed(kind="hook_failed")` and `commit_on_hook_failure in {remediate, no-verify}` and `iteration < max_iterations` | `iterations[-1]["commit_status"]=hook_failed`, `_commit_retry=True`, `pending_check_failures=hook output`, `state.set_pending_check_failures(True)` | `continue` (next iteration, retrying with hook output as remediation input) |
+| CM4 | `CommitFailed(kind="hook_failed")` (non-retryable) | `final_status=error`, `stopped_reason=commit_hook_failed`, `error=str(exc)`, `staged_changes_left=True`, `pending_check_failures=True` | `raise RunLoopFailed` (summary written) |
+| CM5 | `CommitFailed` other kind | `final_status=error`, `stopped_reason=commit_failed`, `error=str(exc)` | `raise RunLoopFailed` (summary written) |
+| CM6 | `BudgetExceeded` during commit | — | re-raised |
+| CM7 | any other exception during commit | `final_status=error`, `stopped_reason=commit_failed`, `error=str(exc)`, `iterations[-1]["commit_failed"]=True` | `raise RunLoopFailed` (summary written) |
+
+#### Post-loop — final review (when `config.final_review`, entered after all iterations exhausted)
+
+| # | Branch condition | State mutation | Outcome |
+|---|---|---|---|
+| F1 | final review runs successfully | `latest_review_excerpt=…` | sets `status` and `final_review` for subsequent branches |
+| F2 | `RuntimeError` from final review | `final_status=error`, `stopped_reason=review_failed`, `error=str(exc)`, `iterations.append({iteration:"final", review_failed:True})` | `raise RunLoopFailed` (summary written) |
+| F3 | `pending_check_failures` after final review | `final_status=findings`, `pending_check_failures=True`, `stopped_reason=max_iterations_reached_with_check_failures` | `return summary` |
+| F4 | `status == "clear"` after final review (no pending check failures) | `final_status=clear`, `stopped_reason=review_clear` | `return summary` |
+| F5 | `status == "findings"` after final review | `final_status=findings`, `stopped_reason=max_iterations_reached` | `return summary` |
+| F6 | `status == "unknown"` after final review | `final_status=unknown`, `stopped_reason=max_iterations_reached`, appends `{iteration:"final", review_status:"unknown"}` | `return summary` |
+
+#### Post-loop — no final review (`not config.final_review`)
+
+| # | Branch condition | State mutation | Outcome |
+|---|---|---|---|
+| NF1 | all iterations exhausted, no final review | `final_status=unknown`, `pending_check_failures=bool(pending_check_failures)`, `stopped_reason=max_iterations_reached` | `return summary` |
+
+#### Outer exception handlers (wrap entire try block)
+
+| # | Branch condition | State mutation | Outcome |
+|---|---|---|---|
+| X1 | `KeyboardInterrupt` | `final_status=error`, `stopped_reason=cancelled`, `error="cancelled by operator"` | `raise RunLoopFailed` (writes `diagnostics.json`, emits `cancellation` event, summary written) |
+| X2 | `budgets.BudgetExceeded` | `final_status=error`, `stopped_reason=budget_ceiling_hit`, `error=str(exc)` | `raise RunLoopFailed` (summary written) |
+
+#### `stopped_reason` × `final_status` cross-reference
+
+| `stopped_reason` | `final_status` | Row(s) |
+|---|---|---|
+| `setup_failed` | `error` | P1 |
+| `review_failed` | `error` | R3, F2 |
+| `review_clear` | `clear` | E1, F4 |
+| `triage_rejected_all_findings` | `clear` | T3 |
+| `all_findings_suppressed` | `clear` | T2 |
+| `triage_failed` | `error` | T6 |
+| `remediation_failed` | `error` | M3 |
+| `no_changes_after_remediation` | *(last review status)* | CM2 |
+| `commit_hook_failed` | `error` | CM4 |
+| `commit_failed` | `error` | CM5, CM7 |
+| `max_iterations_reached_with_check_failures` | `findings` | F3 |
+| `max_iterations_reached` | `clear` \| `findings` \| `unknown` | F4–F6, NF1 |
+| `cancelled` | `error` | X1 |
+| `budget_ceiling_hit` | `error` | X2 |
+
 ### 2026-05-22 — B0a structural spine: ports.py + RunContext (Wave B0a)
 
 - **Contract:** machine (no behaviour change — structural)
