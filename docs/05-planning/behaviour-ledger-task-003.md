@@ -69,6 +69,72 @@ There is no silent third option.
   `decide()` function, creating silent regressions invisible to golden-master tests.
 - **schema_version impact:** none.
 
+#### Reading guide
+
+**"Outcome" column conventions:**
+- `return summary` — function exits successfully, callers get the summary dict.
+- `raise RunLoopFailed` — function exits with an error; callers distinguish via the raised exception.
+- `raise` (bare) — exception propagates unchanged to an outer handler listed here.
+- `continue` — current for-iteration body ends; loop advances to next iteration.
+- *(implicit: loop continues)* — iteration body falls through to the next phase
+  within the same iteration. Any row without one of the above exits falls into
+  this category. See L-family rows below.
+
+**"State mutation" column** lists only `state.set_*` calls (those that mutate
+the `RunState`/summary dict). Writes to `iterations[-1]` fields are noted inline
+where they differ from what `state.set_*` captures.
+
+#### Inputs to `decide()` (B3b pre-requisite)
+
+A pure `decide()` function must receive every value that gates a branch. The
+complete set, drawn from the left-column conditions above, is:
+
+| Input | Type | Source |
+|---|---|---|
+| `iteration` | `int` | loop counter |
+| `status` | `Literal["clear","findings","unknown"]` | last review result |
+| `pending_check_failures` | `str` (empty = none) | accumulated check output |
+| `_commit_retry` | `bool` | set True on CM3 |
+| `triage_no_actionable` | `bool` | triage outcome |
+| `suppressed_count` | `int` | triage outcome |
+| `triage_payload` | `dict \| None` | triage outcome |
+| `resolved_route` | `ResolvedRoute \| None` | routing outcome |
+| `commit_status` | `str \| None` | commit outcome (`skipped_no_changes`, etc.) |
+| `commit_exc` | `CommitFailed \| None` | commit failure details |
+| `review_exc` | `RuntimeError \| None` | review failure |
+| `triage_exc` | `Exception \| None` | triage failure |
+| `remediation_exc` | `Exception \| None` | remediation failure |
+| `commit_other_exc` | `Exception \| None` | commit non-CommitFailed failure |
+| `config.max_iterations` | `int` | config |
+| `config.commit_after_remediation` | `bool` | config |
+| `config.commit_on_hook_failure` | `str` | config |
+| `config.triage_enabled` | `bool` | config |
+| `config.final_review` | `bool` | config |
+
+Config fields are read-only and can be passed as a bundle. The phase-result
+fields (`review_exc`, `triage_exc`, etc.) represent "what happened this phase"
+and are None when the phase succeeded. B3b should wrap these into a typed
+`PhaseResult` value object per phase so `decide()` pattern-matches on an ADT
+rather than an open dict.
+
+#### Action ADT (B3b design note)
+
+`decide()` returns one of these Actions (compound mutations — never three
+separate setter calls):
+
+| Action | State fields set | Side-effect (shell, not decide) |
+|---|---|---|
+| `Continue` | — | loop advances |
+| `RetryViaCommitHook(hook_output)` | `pending_check_failures=True` | `continue` next iteration |
+| `ExitClear(reason, excerpt)` | `final_status=clear`, `stopped_reason=reason`, `latest_review_excerpt=excerpt` | `return summary` |
+| `ExitFailed(reason, error, *, staged=False, checks=False)` | `final_status=error`, `stopped_reason=reason`, `error=error`, optionally `staged_changes_left`, `pending_check_failures` | `raise RunLoopFailed` |
+| `ExitFindings(reason)` | `final_status=findings`, `stopped_reason=reason`, optionally `pending_check_failures=True` | `return summary` |
+| `ExitUnknown(reason)` | `final_status=unknown`, `stopped_reason=reason`, `pending_check_failures=bool(pending)` | `return summary` |
+| `ExitLastStatus(reason)` | `final_status=<last review status>`, `stopped_reason=reason` | `return summary` (CM2 only) |
+
+The A2/A2b golden-master snapshots (not this table) are the verification
+contract: B3b must leave those byte-identical.
+
 #### `_run_loop` pre-loop guards (before state is initialised)
 
 | # | Branch condition | State mutation | Outcome |
@@ -146,6 +212,15 @@ There is no silent third option.
 | CM5 | `CommitFailed` other kind | `final_status=error`, `stopped_reason=commit_failed`, `error=str(exc)` | `raise RunLoopFailed` (summary written) |
 | CM6 | `BudgetExceeded` during commit | — | re-raised |
 | CM7 | any other exception during commit | `final_status=error`, `stopped_reason=commit_failed`, `error=str(exc)`, `iterations[-1]["commit_failed"]=True` | `raise RunLoopFailed` (summary written) |
+
+#### Per-iteration — normal continuation (loop continues to next iteration)
+
+| # | Branch condition | State mutation | Outcome |
+|---|---|---|---|
+| L1 | `status != "clear"` and triage not short-circuiting and remediation + checks succeed and `not commit_after_remediation` | `pending_check_failures` updated from check results | *(implicit: loop continues)* |
+| L2 | `status != "clear"` and triage not short-circuiting and remediation + checks succeed and `commit_after_remediation and pending_check_failures` (commit skipped due to failures) | `pending_check_failures` updated | *(implicit: loop continues)* |
+| L3 | commit succeeds (CM1) and `commit_status != "skipped_no_changes"` | `iterations[-1]["commit_status"]=status` | *(implicit: loop continues)* |
+| L4 | CM3 hook-failure retry — `_commit_retry=True` set | `pending_check_failures=True` set | `continue` (begins next iteration with hook output as remediation input) |
 
 #### Post-loop — final review (when `config.final_review`, entered after all iterations exhausted)
 
