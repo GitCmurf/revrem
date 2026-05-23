@@ -45,6 +45,7 @@ from code_review_loop.core.engine import (
     LoopAccumulator,
     ReviewDone,
     Stop,
+    TriageDone,
     decide,
 )
 from code_review_loop.core.outcome import (
@@ -2069,17 +2070,11 @@ def _run_loop(
                         if suppressed_count:
                             iterations[-1]["suppressed_findings"] = True
                             state.set_suppressed_findings_count(suppressed_count)
-                        if not pending_check_failures:
+                        _triage_action = decide(snap, acc, TriageDone(is_clear=True, suppressed_count=suppressed_count))
+                        if isinstance(_triage_action, Stop):
                             iterations[-1]["check_failures"] = 0
-                            state.set_final_status("clear")
-                            state.set_stopped_reason(
-                                "all_findings_suppressed" if suppressed_count else "triage_rejected_all_findings"
-                            )
-                            state.set_latest_review_excerpt(
-                                excerpt_for_terminal(last_review_output, config.terminal_excerpt_chars)
-                            )
-                            write_summary(config, summary, clock=clock, ctx=ctx)
-                            return summary
+                            return _execute_stop(_triage_action.outcome, state, summary, config, clock, ctx, last_review_output=last_review_output)
+                        # Continue — pending_check_failures carries the remediation input
                         remediation_input = pending_check_failures
 
                     if triage_payload and config.triage_contract == "v2" and config.profile_v2:
@@ -2276,9 +2271,6 @@ def _run_loop(
             except budgets.BudgetExceeded:
                 raise
             except Exception as exc:
-                state.set_final_status("error")
-                state.set_stopped_reason("triage_failed")
-                state.set_error(str(exc))
                 iterations[-1]["triage_failed"] = True
                 emit_loop_failure_event(
                     config,
@@ -2288,12 +2280,9 @@ def _run_loop(
                     error=str(exc),
                     ctx=ctx,
                 )
-                write_summary(config, summary, clock=clock, ctx=ctx)
-                raise RunLoopFailed(
-                    summary,
-                    f"codex exec triage failed for iteration {iteration}; "
-                    f"see {config.artifact_dir / f'triage-{iteration}.txt'}",
-                ) from exc
+                _action = decide(snap, acc, TriageDone(is_clear=False, exc=exc))
+                assert isinstance(_action, Stop)
+                return _execute_stop(_action.outcome, state, summary, config, clock, ctx, cause=exc)
 
             try:
                 rem_start_time = clock.monotonic()
