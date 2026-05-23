@@ -153,13 +153,6 @@ class ExitUnknown:
     check_failures: bool = False
 
 
-@dataclass(frozen=True)
-class ExitWithLastStatus:
-    """Loop exits with the last review status (CM2 — no_changes_after_remediation)."""
-
-    reason: str = "no_changes_after_remediation"
-
-
 Action = (
     Continue
     | RetryViaCommitHook
@@ -167,8 +160,10 @@ Action = (
     | ExitFailed
     | ExitFindings
     | ExitUnknown
-    | ExitWithLastStatus
 )
+# Note: ExitWithLastStatus was considered but not needed — decide() receives
+# acc.last_review_status and can return a concrete ExitClear/Findings/Unknown
+# for CM2 directly (no shell-side lookup required).
 
 
 # ---------------------------------------------------------------------------

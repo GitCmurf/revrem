@@ -130,7 +130,7 @@ separate setter calls):
 | `ExitFailed(reason, error, *, staged=False, checks=False)` | `final_status=error`, `stopped_reason=reason`, `error=error`, optionally `staged_changes_left`, `pending_check_failures` | `raise RunLoopFailed` |
 | `ExitFindings(reason)` | `final_status=findings`, `stopped_reason=reason`, optionally `pending_check_failures=True` | `return summary` |
 | `ExitUnknown(reason)` | `final_status=unknown`, `stopped_reason=reason`, `pending_check_failures=bool(pending)` | `return summary` |
-| `ExitLastStatus(reason)` | `final_status=<last review status>`, `stopped_reason=reason` | `return summary` (CM2 only) |
+| ~~`ExitLastStatus(reason)`~~ | ~~removed~~ | CM2 passes `last_review_status` in `LoopAccumulator` so `decide()` returns `ExitClear`/`ExitFindings`/`ExitUnknown` concretely — no shell-side lookup. `ExitWithLastStatus` was removed as dead code after B3b. |
 
 The A2/A2b golden-master snapshots (not this table) are the verification
 contract: B3b must leave those byte-identical.
