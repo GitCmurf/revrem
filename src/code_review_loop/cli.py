@@ -44,6 +44,7 @@ from code_review_loop.core.engine import (
     CommitDone,
     ConfigSnapshot,
     LoopAccumulator,
+    NoFinalReview,
     RemediationDone,
     RetryViaCommitHook,
     ReviewDone,
@@ -57,6 +58,7 @@ from code_review_loop.core.outcome import (
     OutcomeFindings,
     OutcomeUnknown,
     RunOutcome,
+    outcome_to_exit_code,
 )
 from code_review_loop.core.ports import (
     ChecksRequest,
@@ -1946,9 +1948,6 @@ def _run_loop(
                 )
             )
             if diagnostics.has_blocking_issue(issues):
-                state.set_final_status("error")
-                state.set_stopped_reason("setup_failed")
-                state.set_error("preflight diagnostics found blocking issue")
                 artifacts.write_json_artifact(
                     config.artifact_dir,
                     "diagnostics.json",
@@ -1959,11 +1958,13 @@ def _run_loop(
                     phase="preflight",
                     iteration=None,
                     reason="setup_failed",
-                    error=str(summary["error"]),
+                    error="preflight diagnostics found blocking issue",
                     ctx=ctx,
                 )
-                write_summary(config, summary, clock=clock, ctx=ctx)
-                raise RunLoopFailed(summary, str(summary["error"]))
+                return _execute_stop(
+                    OutcomeFailed(reason="setup_failed", error="preflight diagnostics found blocking issue"),
+                    state, summary, config, clock, ctx,
+                )
 
         pending_check_failures = ""
         failed_check_names: list[str] = []
@@ -2391,6 +2392,7 @@ def _run_loop(
                 if isinstance(_commit_action, Stop):
                     return _execute_stop(_commit_action.outcome, state, summary, config, clock, ctx, last_review_output=last_review_output)
 
+        acc = replace(acc, pending_check_failures=pending_check_failures)
         if config.final_review:
             try:
                 if ctx.phase_review is not None:
@@ -2409,9 +2411,6 @@ def _run_loop(
                     )
             except RuntimeError as exc:
                 iterations.append({"iteration": "final", "review_failed": True})
-                state.set_final_status("error")
-                state.set_stopped_reason("review_failed")
-                state.set_error(str(exc))
                 emit_loop_failure_event(
                     config,
                     phase="review",
@@ -2420,38 +2419,21 @@ def _run_loop(
                     error=str(exc),
                     ctx=ctx,
                 )
-                write_summary(config, summary, clock=clock, ctx=ctx)
-                raise RunLoopFailed(summary, str(exc)) from exc
+                _action = decide(snap, acc, ReviewDone(is_final=True, status="unknown", exc=exc))
+                assert isinstance(_action, Stop)
+                return _execute_stop(_action.outcome, state, summary, config, clock, ctx, cause=exc)
             final_review_output = actionable_review_output(_combined_output(final_review))
-            state.set_latest_review_excerpt(
-                excerpt_for_terminal(final_review_output, config.terminal_excerpt_chars)
-            )
-            if pending_check_failures:
-                state.set_final_status("findings")
-                state.set_pending_check_failures(True)
-                state.set_stopped_reason("max_iterations_reached_with_check_failures")
-            else:
-                state.set_final_status(status)
-                state.set_stopped_reason("review_clear" if status == "clear" else "max_iterations_reached")
-                if status == "unknown":
-                    iterations.append(
-                        {
-                            "iteration": "final",
-                            "review_status": status,
-                        }
-                    )
+            acc = replace(acc, last_review_status=cast("Literal['clear', 'findings', 'unknown']", status))
+            _final_action = decide(snap, acc, ReviewDone(is_final=True, status=cast("Literal['clear', 'findings', 'unknown']", status)))
+            assert isinstance(_final_action, Stop)
+            if status == "unknown" and not acc.pending_check_failures:
+                iterations.append({"iteration": "final", "review_status": status})
+            return _execute_stop(_final_action.outcome, state, summary, config, clock, ctx, last_review_output=final_review_output)
         else:
-            # Status after the last remediation is not known without a review.
-            state.set_final_status("unknown")
-            state.set_pending_check_failures(bool(pending_check_failures))
-            state.set_stopped_reason("max_iterations_reached")
-
-        write_summary(config, summary, clock=clock, ctx=ctx)
-        return summary
+            _nf_action = decide(snap, acc, NoFinalReview())
+            assert isinstance(_nf_action, Stop)
+            return _execute_stop(_nf_action.outcome, state, summary, config, clock, ctx)
     except KeyboardInterrupt as exc:
-        state.set_final_status("error")
-        state.set_stopped_reason("cancelled")
-        state.set_error("cancelled by operator")
         artifacts.write_json_artifact(
             config.artifact_dir,
             "diagnostics.json",
@@ -2476,14 +2458,17 @@ def _run_loop(
                     "message": "cancelled by operator",
                 },
             )
-        write_summary(config, summary, clock=clock, ctx=ctx)
-        raise RunLoopFailed(summary, "cancelled by operator") from exc
+        return _execute_stop(
+            OutcomeFailed(reason="cancelled", error="cancelled by operator"),
+            state, summary, config, clock, ctx,
+            cause=exc,
+        )
     except budgets.BudgetExceeded as exc:
-        state.set_final_status("error")
-        state.set_stopped_reason("budget_ceiling_hit")
-        state.set_error(str(exc))
-        write_summary(config, summary, clock=clock, ctx=ctx)
-        raise RunLoopFailed(summary, str(exc)) from exc
+        return _execute_stop(
+            OutcomeFailed(reason="budget_ceiling_hit", error=str(exc)),
+            state, summary, config, clock, ctx,
+            cause=exc,
+        )
     finally:
         if event_sink is not None:
             event_sink.close()
@@ -3726,13 +3711,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             except OSError as history_exc:
                 print(f"WARNING: could not write run history: {history_exc}", file=sys.stderr)
         print(f"ERROR: {exc}", file=sys.stderr)
-        if summary.get("stopped_reason") == "budget_ceiling_hit":
-            return 3
-        if summary.get("stopped_reason") == "setup_failed":
-            return 4
-        if summary.get("stopped_reason") == "cancelled":
-            return 5
-        return 1
+        return outcome_to_exit_code(exc.outcome) if exc.outcome is not None else 1
     except KeyboardInterrupt:  # pragma: no cover - signal path
         print("Cancelled by user.", file=sys.stderr)
         return 5
@@ -4147,13 +4126,7 @@ def resume_main(argv: Sequence[str]) -> int:
         summary = resume_run(run_dir)
     except RunLoopFailed as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
-        if exc.summary.get("stopped_reason") == "budget_ceiling_hit":
-            return 3
-        if exc.summary.get("stopped_reason") == "cancelled":
-            return 5
-        if exc.summary.get("stopped_reason") == "setup_failed":
-            return 4
-        return 1
+        return outcome_to_exit_code(exc.outcome) if exc.outcome is not None else 1
     except KeyboardInterrupt:
         print("Cancelled by user.", file=sys.stderr)
         return 5
