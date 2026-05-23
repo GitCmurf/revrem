@@ -123,6 +123,7 @@ type = "forbidden"
 source_modules = [
   "code_review_loop.core.state",
   "code_review_loop.core.ports",
+  "code_review_loop.core.engine",
 ]
 forbidden_modules = [
   "code_review_loop.cli",
