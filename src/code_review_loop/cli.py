@@ -17,11 +17,11 @@ import textwrap
 import time
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager, suppress
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar, assert_never, cast
 
 from code_review_loop import (
     __version__,
@@ -40,7 +40,30 @@ from code_review_loop import (
     triage,
 )
 from code_review_loop.clock import SYSTEM_CLOCK, Clock, utc_iso
-from code_review_loop.core.ports import ChecksRequest, CommitRequest, CommandResult, ProgressReporter, RemediationRequest, ReviewRequest, RunContext, TriageRequest
+from code_review_loop.core.engine import (
+    ConfigSnapshot,
+    LoopAccumulator,
+    ReviewDone,
+    Stop,
+    decide,
+)
+from code_review_loop.core.outcome import (
+    OutcomeClear,
+    OutcomeFailed,
+    OutcomeFindings,
+    OutcomeUnknown,
+    RunOutcome,
+)
+from code_review_loop.core.ports import (
+    ChecksRequest,
+    CommandResult,
+    CommitRequest,
+    ProgressReporter,
+    RemediationRequest,
+    ReviewRequest,
+    RunContext,
+    TriageRequest,
+)
 from code_review_loop.core.review_interpretation import (
     actionable_review_output,
     detect_review_status,
@@ -192,9 +215,10 @@ Runner = Callable[[Sequence[str], Path, str | None, float | None], CommandResult
 class RunLoopFailed(RuntimeError):
     """Raised when a bounded loop finishes with an expected step failure."""
 
-    def __init__(self, summary: dict[str, object], message: str):
+    def __init__(self, summary: dict[str, object], message: str, *, outcome: RunOutcome | None = None):
         super().__init__(message)
         self.summary = summary
+        self.outcome = outcome
 
 
 class CommitFailed(RuntimeError):
@@ -1716,6 +1740,79 @@ def format_commit_hook_failure_for_remediation(exc: CommitFailed) -> str:
     ).strip()
 
 
+def _config_snapshot(config: LoopConfig) -> ConfigSnapshot:
+    return ConfigSnapshot(
+        max_iterations=config.max_iterations,
+        triage_enabled=config.triage_enabled,
+        commit_after_remediation=config.commit_after_remediation,
+        commit_on_hook_failure=config.commit_on_hook_failure,
+        final_review=config.final_review,
+    )
+
+
+def _execute_stop(
+    outcome: RunOutcome,
+    state: RunState,
+    summary: dict[str, object],
+    config: LoopConfig,
+    clock: Clock,
+    ctx: RunContext | None,
+    *,
+    last_review_output: str = "",
+    cause: BaseException | None = None,
+) -> dict[str, object]:
+    """Apply a Stop outcome to RunState, write summary, return or raise."""
+    excerpt = (
+        excerpt_for_terminal(last_review_output, config.terminal_excerpt_chars)
+        if last_review_output
+        else ""
+    )
+
+    if isinstance(outcome, OutcomeClear):
+        state.set_final_status("clear")
+        state.set_stopped_reason(outcome.reason)
+        if outcome.suppressed_findings_count:
+            state.set_suppressed_findings_count(outcome.suppressed_findings_count)
+        if excerpt:
+            state.set_latest_review_excerpt(excerpt)
+        write_summary(config, summary, clock=clock, ctx=ctx)
+        return summary
+
+    if isinstance(outcome, OutcomeFailed):
+        state.set_final_status("error")
+        state.set_stopped_reason(outcome.reason)
+        state.set_error(outcome.error)
+        if outcome.staged_changes_left:
+            state.set_staged_changes_left(True)
+            state.set_pending_check_failures(True)
+        if excerpt:
+            state.set_latest_review_excerpt(excerpt)
+        write_summary(config, summary, clock=clock, ctx=ctx)
+        raise RunLoopFailed(summary, outcome.error, outcome=outcome) from cause
+
+    if isinstance(outcome, OutcomeFindings):
+        state.set_final_status("findings")
+        state.set_stopped_reason(outcome.reason)
+        if outcome.check_failures:
+            state.set_pending_check_failures(True)
+        if excerpt:
+            state.set_latest_review_excerpt(excerpt)
+        write_summary(config, summary, clock=clock, ctx=ctx)
+        return summary
+
+    if isinstance(outcome, OutcomeUnknown):
+        state.set_final_status("unknown")
+        state.set_stopped_reason(outcome.reason)
+        if outcome.check_failures:
+            state.set_pending_check_failures(True)
+        if excerpt:
+            state.set_latest_review_excerpt(excerpt)
+        write_summary(config, summary, clock=clock, ctx=ctx)
+        return summary
+
+    assert_never(outcome)
+
+
 def run_loop(
     config: LoopConfig,
     runner: Runner = default_runner,
@@ -1791,12 +1888,14 @@ def _run_loop(
                 events_path.rename(events_path.with_name(f"events-{existing_run_id}.jsonl"))
         event_sink = events.JsonlSink(config.artifact_dir, run_id, clock=clock)
         active_budget_state = budget_state if budget_state is not None else budgets.started_now()
-        from code_review_loop.adapters.checks import ChecksAdapter  # lazy — avoids cli→adapters.*→cli cycle
+        from code_review_loop.adapters.checks import (
+            ChecksAdapter,  # lazy — avoids cli→adapters.*→cli cycle
+        )
         from code_review_loop.adapters.commit import CommitAdapter  # lazy — same reason
         from code_review_loop.adapters.remediation import RemediationAdapter  # lazy — same reason
         from code_review_loop.adapters.review import ReviewAdapter  # lazy — same reason
-        from code_review_loop.adapters.triage import TriageAdapter  # lazy — same reason
         from code_review_loop.adapters.terminal import TerminalProgressReporter
+        from code_review_loop.adapters.triage import TriageAdapter  # lazy — same reason
         if config.progress and config.progress_style in ("rich", "compact"):
             progress_reporter: ProgressReporter | None = TerminalProgressReporter(config.progress_style)
         else:
@@ -1874,7 +1973,11 @@ def _run_loop(
             progress_event(config, "review", "initial", "loaded", str(config.initial_review_file), ctx=ctx)
             log_review_findings(config, "initial", initial_review_output, ctx=ctx)
 
+        snap = _config_snapshot(config)
+        acc = LoopAccumulator(iteration=0, pending_check_failures="")
+
         for iteration in range(1, config.max_iterations + 1):
+            acc = replace(acc, iteration=iteration, pending_check_failures=pending_check_failures)
             if iteration == 1 and initial_review_output:
                 status = detect_review_status(initial_review_output)
                 if status == "unknown":
@@ -1887,6 +1990,7 @@ def _run_loop(
                         "review_source": str(config.initial_review_file),
                     }
                 )
+                acc = replace(acc, last_review_status=cast("Literal['clear', 'findings', 'unknown']", status))
             else:
                 try:
                     if ctx.phase_review is not None:
@@ -1905,9 +2009,6 @@ def _run_loop(
                         )
                 except RuntimeError as exc:
                     iterations.append({"iteration": iteration, "review_failed": True})
-                    state.set_final_status("error")
-                    state.set_stopped_reason("review_failed")
-                    state.set_error(str(exc))
                     emit_loop_failure_event(
                         config,
                         phase="review",
@@ -1916,19 +2017,16 @@ def _run_loop(
                         error=str(exc),
                         ctx=ctx,
                     )
-                    write_summary(config, summary, clock=clock, ctx=ctx)
-                    raise RunLoopFailed(summary, str(exc)) from exc
+                    _action = decide(snap, acc, ReviewDone(is_final=False, status="unknown", exc=exc))
+                    assert isinstance(_action, Stop)
+                    return _execute_stop(_action.outcome, state, summary, config, clock, ctx, cause=exc)
                 last_review_output = actionable_review_output(_combined_output(review))
                 iterations.append({"iteration": iteration, "review_status": status})
+                acc = replace(acc, last_review_status=cast("Literal['clear', 'findings', 'unknown']", status))
 
-            if status == "clear" and not pending_check_failures:
-                state.set_final_status("clear")
-                state.set_stopped_reason("review_clear")
-                state.set_latest_review_excerpt(
-                    excerpt_for_terminal(last_review_output, config.terminal_excerpt_chars)
-                )
-                write_summary(config, summary, clock=clock, ctx=ctx)
-                return summary
+            _rev_action = decide(snap, acc, ReviewDone(is_final=False, status=cast("Literal['clear', 'findings', 'unknown']", status)))
+            if isinstance(_rev_action, Stop):
+                return _execute_stop(_rev_action.outcome, state, summary, config, clock, ctx, last_review_output=last_review_output)
 
             remediation_input = last_review_output
             if pending_check_failures:
