@@ -4,7 +4,7 @@ type: TASK
 title: Re-engineer cli.py from God object into a hexagonal review-loop core
 status: Draft
 version: '0.2'
-last_updated: '2026-05-22'
+last_updated: '2026-05-23'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -865,71 +865,375 @@ them.
 - *Exit:* `core/` has no terminal import (C4 check passes).
 - *Risk:* medium.
 
+### As-Built State at Wave C Start
+
+*Re-read this before implementing any C wave. The numbers below are live measurements, not targets.*
+
+```bash
+wc -l src/code_review_loop/cli.py                             # 4,801 lines
+awk '/^def _run_loop/{s=NR} s&&NR>s&&/^(def |class )/{print NR-s" lines";exit}' \
+  src/code_review_loop/cli.py                                 # _run_loop: 638 lines (1832–2469)
+grep -rnc 'monkeypatch\.setattr(MODULE,' tests/              # 58 monkeypatch sites
+grep -c 'monkeypatch\.setattr(MODULE,' tests/test_cli.py     # 47 in test_cli.py alone
+```
+
+**What was and was not done in Waves A and B:**
+
+Waves A and B are complete. The following now exist: `core/ports.py`,
+`core/state.py`, `core/outcome.py`, `core/engine.py` (with `decide()` and all
+`Action` types), `core/review_interpretation.py`, `core/routing_types.py`,
+`adapters/checks.py`, `adapters/commit.py`, `adapters/remediation.py`,
+`adapters/review.py`, `adapters/terminal.py`, `adapters/triage.py`.
+
+**Critical as-built fact:** The six adapter files are **thin shims**, not real
+implementations. Each lazily imports its implementation from `cli.py`:
+```python
+# adapters/review.py — pattern repeated in all five phase adapters
+def execute(self, request, ctx):
+    from code_review_loop.cli import run_codex_review  # lazy — avoids circular import
+    ...
+```
+The real phase code (`run_codex_review` at line 917, `run_remediation` at 1079,
+`run_triage` at 1128, `run_checks` at 1229, `run_commit` at 1443) is still in
+`cli.py`. The adapter docstrings say "until C3". **C3's primary job is to
+complete this migration**, moving the implementations into the adapters so the
+lazy back-imports can be deleted.
+
+**`_run_loop` is still 638 lines** (line 1832). It calls `decide()` from
+`core/engine.py` but the shell — terminal contexts, summary writes, phase
+dispatch — is still inlined. `run_loop` (line 1815) is the public wrapper.
+
+**`main()` (line 3639) still has the `if/elif` dispatch ladder.** Nine
+`*_main` functions live in `cli.py`: `suppress_main` (3762), `config_main`
+(3828), `bundle_bug_report_main` (3940), `replay_main` (3971), `doctor_main`
+(3983), `resume_main` (4103), `history_main` (4582), `policy_main` (4628),
+`triage_main` (4731). All return bare `int` literals — `CommandOutcome` has
+not yet been introduced.
+
+**Tech-debt items to address in Wave C** (see `docs/05-planning/tech-debt.md`):
+- TD-001 — 16 functions with `ctx: RunContext | None = None` (eliminated in C3
+  once phases move into adapters and ctx becomes required at all call sites).
+- TD-002 — `acc.iteration` redundant in `LoopAccumulator`; derivable from the
+  loop counter (clean up in C2 alongside `_run_loop` refactor).
+- TD-003 — `_execute_stop` 4-branch copy-paste (lines 1770–1815); extract
+  shared tail in C3.
+- TD-004 — ~130-line routing-payload assembly block in `_run_loop` (lines
+  2129–2265); extract as `_build_routing_payload(...)` in C2.
+- TD-005 — `OutcomeFailed.reason` dispatched as raw strings in
+  `outcome_to_exit_code` (core/outcome.py:69–74); type as
+  `Literal[...]` in C3.
+
 ### Wave C — Collapse the Front-End & Retire Scaffolding
 
-**C1. Command registry + slim `main()`**
-- *Intent:* replace the `if/elif` ladder with a registry.
-- *Changes:* `cli/__init__.py` registry; per-subcommand modules under
-  `cli/commands/` (config, suppress, doctor, replay, resume, history, policy,
-  triage, bundle); `main()` becomes table dispatch (~10 lines). Each command
-  returns a `CommandOutcome` whose own total `exit_code()` produces its code
-  (C5) — no command holds a literal `return <int>` (including doctor's code 6).
-- *Tests:* per-subcommand tests relocated; dispatch test; snapshots hold; a
-  grep-gate asserts no bare `return <int>` exit literals survive in `cli/`.
-- *Exit:* adding a subcommand touches only its module + the registry table.
-- *Risk:* medium — `resume` carries the ~15 `_resume_*` deserialisers; folds
-  into `RunState.from_dict` (symmetry with A3).
+**C1. Command registry + slim `main()`** — **two PRs**
 
-**C2. Config-assembly + arg-parsing units**
-- *Intent:* isolate the remaining front-end logic.
-- *Changes:* `cli/config_builder.py` (`build_loop_config`, profile
-  resolution, coercion) and `cli/args.py` (all `parse_*_args`).
-- *Tests:* config-assembly tests extracted from `test_cli.py`.
-- *Exit:* `cli.py` holds only the temporary facade.
-- *Risk:* low-medium.
+*Intent:* replace the if/elif ladder with a lookup table; extract each
+subcommand to its own module; introduce `CommandOutcome`.
 
-**C3. Delete the facade + split the test monolith** (C1 sunset, C2 zero)
-- *Intent:* remove scaffolding; finish the co-symptom.
-- *Changes (largest line item first):*
-  - **Migrate the 26 `monkeypatch.setattr(MODULE, "run_loop", …)` sites.**
-    These keep working through Waves A–C only because `main()` and the facade
-    co-locate `run_loop`; deleting the facade removes the patch target. This
-    is the biggest single item in the wave and is **not purely mechanical** —
-    each site is rewritten to either patch the engine at its final home
-    (`core.engine.run`, where `main()` looks it up) or, preferably, to drive
-    `main()` with a `RunContext`/fakes so the engine runs for real. Done in
-    its own PR before the facade is removed.
-  - Delete `cli.py` re-exports (keep only the thin entry-point shim so
-    `code_review_loop.cli:main` resolves); migrate residual read-only
-    `MODULE.X` references.
-  - Split `tests/test_cli.py` per the Decomposition section.
-  - Promote import-linter + ratchet + grep gates from advisory to required.
-- *Tests:* full suite green from the new layout; ratchet at 0.
-- *Exit:* no facade; monkeypatch count 0; `test_cli.py` decomposed.
-- *Risk:* medium-high — the `run_loop` site migration is real work; do last,
-  when the engine seam (B3) exists to migrate onto.
+- **C1a — `CommandOutcome` ADT and subcommand extraction.**
+  1. Create `code_review_loop/cli/` subpackage with `__init__.py` (empty for
+     now).
+  2. Add `code_review_loop/cli/outcome.py` with `CommandOutcome` as a sum type:
+     ```python
+     @dataclass(frozen=True)
+     class CommandOk:
+         exit_code: int = 0
+     @dataclass(frozen=True)
+     class CommandFailed:
+         exit_code: int = 1
+         message: str = ""
+     CommandOutcome = CommandOk | CommandFailed
+     ```
+     Each variant has its own total `exit_code: int` field (no method needed).
+     This keeps the pattern consistent with `RunOutcome` (C5) while remaining
+     simple for Haiku to implement correctly.
+  3. Create one module per subcommand under `cli/commands/`: `suppress.py`,
+     `config.py`, `bundle.py`, `replay.py`, `doctor.py`, `resume.py`,
+     `history.py`, `policy.py`, `triage.py`. Each receives the body of its
+     `*_main` function from `cli.py`, with its `parse_*_args` helper included
+     or imported from `cli/args.py` (created in C2; if C2 hasn't run yet,
+     include the parser inline and note the todo).
+  4. Each `*_main` function body moves to its module. Bare `return <int>`
+     literals become `return CommandOk().exit_code` or
+     `return CommandFailed(exit_code=N).exit_code`. (Doctor's code 6:
+     `return CommandFailed(exit_code=6).exit_code`.) The old function in
+     `cli.py` becomes a one-line re-export calling the new location.
+  5. `resume_main` (lines 4103–4136) is the **special case**: it calls
+     `run_loop` and reads the result, so it is also the consumer of the 11
+     `_resume_*` deserialisers (lines 4382–4524). Move these into
+     `cli/commands/resume.py` alongside `resume_main`. Do **not** fold them
+     into `RunState.from_dict()` yet — that requires core changes and belongs
+     in Wave E. Move them as-is; C1a's job is only relocation.
+  - *Tests:* each command's existing tests stay green; a new
+    `tests/test_cli_dispatch.py` drives `main()` with a fake first argv element
+    and asserts the correct submodule is reached (monkeypatching its entry
+    point, not `run_loop`).
+  - *Burn-down line in PR body:* symbols retired / 18 remaining; call-sites
+    remaining / 58.
+
+- **C1b — Registry dispatch in `main()`.**
+  1. Replace the if/elif ladder (lines 3641–3662) with a registry dict:
+     ```python
+     _SUBCOMMANDS: dict[str, Callable[[list[str]], int]] = {
+         "suppress":          lambda a: commands.suppress.main(a),
+         "bundle-bug-report": lambda a: commands.bundle.main(a),
+         "replay":            lambda a: commands.replay.main(a),
+         "resume":            lambda a: commands.resume.main(a),
+         "doctor":            lambda a: commands.doctor.main(a),
+         "preflight":         lambda a: commands.doctor.main(a),
+         "config":            lambda a: commands.config.main(a),
+         "history":           lambda a: commands.history.main(a),
+         "policy":            lambda a: commands.policy.main(a),
+         "triage":            lambda a: commands.triage.main(a),
+         "ui":                lambda a: tui.main(a),
+     }
+     ```
+     `main()` becomes: look up `raw_argv[0]` in the registry; if found, call
+     and return; otherwise fall through to the loop path.
+  2. Add a grep-gate CI check that asserts no bare `return <int>` integer
+     literals survive in `cli/commands/*.py` (use `grep -rn 'return [0-9]\b'
+     cli/commands/` and fail if non-empty).
+  - *Tests:* `test_cli_dispatch.py` from C1a exercises the registry table.
+  - *Exit:* adding a subcommand requires only: new `cli/commands/X.py` + one
+    entry in `_SUBCOMMANDS`.
+  - *Risk:* low — purely mechanical if C1a ran first.
+
+**C2. Config-assembly + arg-parsing + `_run_loop` cleanup** — **two PRs**
+
+*Intent:* isolate the remaining front-end logic; clean up `_run_loop` using
+the tech-debt items identified during the simplify pass.
+
+- **C2a — Extract config-assembly and arg-parsing.**
+  1. Create `cli/args.py`. Move these functions from `cli.py` verbatim:
+     `parse_args` (line 2795), `parse_suppress_args` (3733),
+     `parse_config_args` (3123), `parse_history_args` (3192),
+     `parse_doctor_args` (3206), `parse_bundle_bug_report_args` (3226),
+     `parse_resume_args` (3239), `parse_policy_args` (4611),
+     `parse_replay_args` (3961), `parse_triage_args` (4716). Leave
+     one-line re-exports in `cli.py` so existing imports don't break.
+  2. Create `cli/config_builder.py`. Move from `cli.py` verbatim:
+     `build_loop_config` (3417), `profile_from_loop_config` (3555),
+     `should_prompt_for_new_profile` (3287), `new_profile_from_args` (3293),
+     `default_artifact_dir` (3299), `ensure_default_artifact_ignore` (3306),
+     `resolve_timeout_seconds` (3363), `resolve_max_iterations` (3371),
+     `parse_harness_bin_overrides` (3377), `resolve_profile_timeout_seconds`
+     (3392), `profile_or_default` (3398), `pick` (3409). Leave re-exports.
+  3. Move helper functions used exclusively by subcommands into their
+     respective `cli/commands/` modules:
+     - `_profile_config_owner_path`, `_editor_command`,
+       `edit_profile_config` → `cli/commands/config.py`
+     - `git_info_exclude_path`, `lexical_git_repo_root`,
+       `_suppression_path_for_scope`, `_suppression_audit_path_for_scope`
+       → `cli/commands/suppress.py` (or a shared `cli/git.py` if two commands
+       share them)
+     - `format_terminal_summary` (2717) → `cli/commands/` or a shared
+       `cli/formatting.py`
+  - *Tests:* config-assembly tests pass from new import paths; one explicit
+    `from cli.config_builder import build_loop_config` import test.
+  - *Exit:* `cli.py` contains only re-exports and the loop/phase code.
+
+- **C2b — Clean up `_run_loop` (tech-debt TD-002 and TD-004).**
+  1. **TD-004:** Extract the routing-payload assembly block at lines 2129–2265.
+     Create a private function in `cli.py`:
+     ```python
+     def _build_routing_payload(
+         resolved_route,
+         triage_payload: dict[str, Any],
+         run_id: str,
+         iteration: int,
+         remediation_input: str,
+         config: LoopConfig,
+     ) -> dict[str, Any]:
+         ...
+     ```
+     Move the ~130-line inline block into it. The call site in `_run_loop`
+     becomes: `routing_payload = _build_routing_payload(...)`.
+  2. **TD-002:** Remove `iteration` from `LoopAccumulator` (defined in
+     `core/engine.py:53`). Everywhere `acc.iteration` is read in `_run_loop`,
+     replace with the loop variable `iteration`. Update the `replace(acc, …)`
+     calls to remove `iteration=iteration`. Run `tests/test_engine_decide.py`
+     to confirm no regressions.
+  - *Tests:* A2 golden snapshots unchanged; `test_engine_decide.py` green.
+  - *Exit:* `_run_loop` is shorter; `acc.iteration` no longer exists.
+  - *Risk:* low — purely local changes with snapshot coverage.
+
+**C3. Complete phase migrations + delete façade + split test monolith**
+(C1 sunset, C2 zero) — **three PRs**
+
+This is the highest-risk wave. The adapters currently delegate back to cli.py
+via lazy imports ("until C3"). The primary job is completing that migration.
+Run all PRs with the golden-master suite after each.
+
+- **C3a — Move phase implementations into adapters.**
+  The pattern is: copy the implementation from cli.py into the adapter class;
+  delete the lazy `from code_review_loop.cli import run_X` line; the adapter
+  now owns the code directly.
+
+  Do one phase per commit. Suggested order (easiest → hardest):
+
+  1. **`run_checks` → `adapters/checks.py`** (line 1229, ~46 lines). The
+     `ChecksAdapter.execute` method currently calls `cli.run_checks`. Replace
+     its body with the content of `run_checks`, adapting `(config, runner,
+     iteration, ctx)` signature to `(self, request: ChecksRequest, ctx:
+     RunContext)` using `self._config`, `ctx.runner`, `request.iteration`. Move
+     helpers used only by `run_checks` (`adaptive_check_skip_reason`,
+     `normalize_adaptive_check_result`, `is_pytest_command`,
+     `has_non_python_project_surface`, `has_python_test_surface`,
+     `iter_project_files`, `_format_check_failures`) into `adapters/checks.py`.
+     Delete `cli.run_checks`; add re-export for any test that patches it.
+
+  2. **`run_commit` → `adapters/commit.py`** (line 1443). Same pattern. Move
+     `git_add_command_for_commit`, `git_worktree_status_command_for_commit`,
+     `format_commit_hook_failure_for_remediation` alongside it.
+
+  3. **`run_remediation` → `adapters/remediation.py`** (line 1079, ~48 lines).
+     Move `build_remediation_command` (line 753) in.
+
+  4. **`run_triage` → `adapters/triage.py`** (line 1128, ~100 lines). Move
+     `build_triage_command` (line 787) in.
+
+  5. **`run_codex_review` → `adapters/review.py`** (line 917, ~63 lines). Move
+     `build_review_command` (line 740), `review_base_preflight_error` (981),
+     `review_base_hint` (1015), `review_failed_to_run` (1059) alongside it.
+     Move `run_git_preflight` (1033) to `adapters/git.py` (new file) since it
+     is used by both review and resume.
+
+  After all five: delete all lazy back-import lines from adapters. The circular
+  import problem that required lazy imports is now gone — adapters no longer
+  reach into cli.py.
+
+  **TD-001 cleanup** (from tech-debt register): once phase implementations have
+  moved, all 16 functions that carry `ctx: RunContext | None = None` can be
+  updated to `ctx: RunContext` (required). Start with the adapters, then
+  propagate inward. The `| None` defaults were transitional scaffolding; their
+  removal is the signal that the migration is complete.
+
+  - *Burn-down:* all five phase symbols (`run_codex_review`, `run_remediation`,
+    `run_triage`, `run_checks`, `run_commit`) retired from the C2 symbol table.
+  - *Tests:* `tests/test_harness_adapters.py` (exists) must pass; A2 golden
+    masters must be byte-identical before and after each commit.
+
+- **C3b — Migrate monkeypatch sites and delete run_loop facade.**
+  This PR is the most work-intensive item in the entire programme.
+
+  **Current counts (verify before starting):**
+  - 47 `monkeypatch.setattr(MODULE, …)` sites in `tests/test_cli.py`
+  - 6 in `tests/test_resume.py`
+  - 5 in other test files
+  - Total: 58 sites
+
+  **Strategy per symbol class (from C2 table):**
+  - `run_loop` (26 sites): these patch `MODULE.run_loop`. After this wave
+    `run_loop` still lives in `cli.py` as the public entry point (the facade).
+    Migrate each site to one of two patterns:
+    a. **Preferred**: Build a `RunContext` with `FakeRunner` from
+       `tests/support/fakes.py` and call `run_loop(config, runner=fake)` for
+       real — no patch at all.
+    b. **Fallback** (for complex integration tests where full execution is
+       impractical): patch `core.engine.decide` or inject a fake adapter via
+       `RunContext`. Do **not** patch `cli.run_loop` (the facade you are about
+       to delete).
+  - `write_summary`, `default_artifact_dir` (patched at the driver boundary):
+    move tests to use real outputs or inject fakes via `RunContext`.
+  - Terminal symbols (`refresh_terminal_title`, `terminal_columns`,
+    `write_terminal_control_to_tty`): now in `adapters/terminal.py`; patch
+    there or build tests that assert semantic progress events instead.
+  - `run_git_preflight`, `lexical_git_repo_root`: now in `adapters/git.py`
+    (C3a); patch there or replace with a fake `GitGateway`.
+  - `TERMINAL_TITLE_REFRESH_SECONDS`, `_LAST_CANCELLATION_SIGNAL_AT`,
+    `_RICH_UNAVAILABLE_WARNED`: become config fields on their adapter or are
+    eliminated; tests that set them become adapter-construction tests.
+
+  Once all 58 sites are migrated, delete `run_loop` and `_run_loop` from
+  `cli.py`. `main()` calls `_run_loop` body inline (or extracts it as a private
+  `_main_loop()`). The terminal context management (`terminal_recovery_context`,
+  `terminal_title_context`, `progress_warning_context`, `rich_live_progress`)
+  stays in the CLI driver — it is edge code, not core.
+
+  - *Tests:* ratchet (`tests/test_monkeypatch_ratchet.py`) at 0. A2 golden
+    masters unchanged.
+  - *Risk:* **high** — this is the largest single commit in the programme.
+    Do in its own dedicated PR. Use the approach: migrate 5–10 sites at a time,
+    run the full suite after each batch, commit when green.
+
+- **C3c — Tech-debt cleanup + split `tests/test_cli.py`.**
+  1. **TD-003** (`_execute_stop` copy-paste, lines 1770–1815): extract the
+     shared tail. Three returning branches (`OutcomeClear`, `OutcomeFindings`,
+     `OutcomeUnknown`) share: `state.set_stopped_reason`, optional
+     `set_pending_check_failures`, optional `set_latest_review_excerpt`,
+     `write_summary`, `return summary`. Extract:
+     ```python
+     def _apply_stop_tail(state, outcome, excerpt, summary, config, clock, ctx):
+         state.set_stopped_reason(outcome.reason)
+         if getattr(outcome, 'check_failures', False):
+             state.set_pending_check_failures(True)
+         if excerpt:
+             state.set_latest_review_excerpt(excerpt)
+         write_summary(config, summary, clock=clock, ctx=ctx)
+     ```
+     Each returning branch calls `_apply_stop_tail` then returns. `OutcomeFailed`
+     calls it then raises.
+  2. **TD-005** (`OutcomeFailed.reason` stringly-typed, `core/outcome.py:69`):
+     change `reason: str` to
+     `reason: Literal["budget_ceiling_hit", "setup_failed", "cancelled", "loop_error"]`
+     (add all values that appear at construction sites — grep
+     `OutcomeFailed(reason=` to enumerate them). `outcome_to_exit_code` then
+     gets static exhaustiveness from mypy if you add an
+     `assert_never(outcome.reason)` fallthrough.
+  3. **Split `tests/test_cli.py`** into modules mirroring the new layout:
+     - `tests/test_cli_integration.py` — the golden-`main()` paths that must
+       keep working end-to-end.
+     - `tests/test_engine_loop.py` — loop-level tests that were previously
+       reaching into `_run_loop` internals; rewrite to use `core.engine.decide`
+       + fakes.
+     - `tests/test_phase_review.py`, `test_phase_remediation.py`, etc. — phase
+       adapter tests (move from `test_harness_adapters.py` or rewrite without
+       monkeypatching).
+     - `tests/test_<subcommand>.py` — one per subcommand, covering its
+       `cli/commands/` module.
+     Delete `tests/test_cli.py` once all its tests have been relocated and
+     confirmed green.
+  4. Promote import-linter + ratchet + grep-gate from advisory to required CI
+     checks (add to `.github/workflows/ci.yml` if not already enforced).
+  - *Exit:* no facade re-exports; ratchet at 0; `test_cli.py` deleted;
+    `cli.py` contains only the thin driver (`main()`, entry-point shim, and
+    any truly shared terminal utilities that adapters haven't absorbed yet).
+  - *Risk:* medium — mostly additive; the C3b migration is the hard part.
 
 ### Wave D — Prove Leverage
 
 **D1. Demonstrate the library/driver split**
-- *Intent:* prove the thesis, not just assert it.
-- *Constraint:* `REVREM-TASK-002` mandates the TUI remain "a control panel
-  and artifact viewer, not a second execution engine" and that "no second
-  execution engine has been introduced." This task **honours that**: we prove
-  the engine is *drivable by a non-CLI caller*, **without** turning the TUI
-  into an execution engine at runtime.
-- *Changes:* add a headless SDK-style driver in tests/support that builds a
-  `RunContext` and calls `core.engine.run`; add acceptance tests for the
-  leverage claims. No runtime change wires the TUI into execution — that is
-  gated by the milestone that lifts the task-002 constraint.
-- *Tests:* (a) import-linter proves `core` has zero CLI/terminal/argparse
-  deps; (b) a **headless integration test** drives a full loop through a
-  `RunContext` with no `argparse` and no real subprocess (proving the engine
-  is driver-agnostic and *available* to the TUI/SDK); (c) "add a no-op
-  subcommand in one module" test; (d) "swap a review heuristic via a fake
-  `Harness`" test.
-- *Exit:* all Exit Criteria below demonstrably met.
-- *Risk:* low — mostly verification.
+
+*Intent:* prove the thesis with executable tests, not assertions. The engine
+must demonstrably be drivable by a non-CLI caller.
+
+*As-built state entering D1:* `core/` has no `argparse`, no terminal, no CLI
+import (import-linter enforces this). `adapters/` are real implementations.
+`cli.py` is the thin driver. Monkeypatch count is 0.
+
+- **Changes:**
+  1. Add `tests/support/headless.py`: a helper that builds a `RunContext` with
+     `FakeClock`, `FakeRunIdentity`, `FakeRunner` (from `tests/support/fakes.py`),
+     and fake adapters for all five phases, then calls
+     `core.engine.run(state, ctx)` directly without `argparse`. This is the
+     SDK-style driver that proves the engine is available to non-CLI callers.
+  2. Add `tests/test_integration_headless.py`: uses `headless.py` to drive a
+     full loop (review → triage → remediation → checks → commit) end-to-end
+     with fakes, asserting the correct `RunOutcome` is returned. No `argparse`,
+     no real subprocess, no terminal.
+  3. Add `tests/test_leverage_subcommand.py`: add a no-op subcommand
+     (`revrem noop`) by creating `cli/commands/noop.py` and one entry in
+     `_SUBCOMMANDS`; test that `main(["noop"])` returns 0 and that the only
+     files touched were `noop.py` + the registry.
+  4. Add `tests/test_leverage_heuristic.py`: construct a `RunContext` with a
+     fake `ReviewHarness` that returns `ReviewOutcome(status="findings", …)`;
+     run the engine; assert the loop terminates with `OutcomeFindings`. This
+     proves swapping a heuristic/harness requires no change to the core.
+
+- *Tests:* (a)–(d) above; import-linter contract passes on `core/`;
+  all A2 golden masters still hold.
+- *Exit:* all ten Phase Exit Criteria demonstrably met (see below).
+- *Risk:* low — mostly verification of work done in Waves A–C.
 
 ### Wave E — Sequel (named, not in this task's exit criteria)
 
@@ -938,6 +1242,12 @@ payload, and run-history **projections (folds)** over `events.jsonl`,
 deleting the parallel bookkeeping. Designed-for by A3/B3 (typed state, event
 emission already on the stream) but staged so the core refactor is not
 blocked. Carries its own spec when scheduled.
+
+The 11 `_resume_*` helpers moved to `cli/commands/resume.py` in C1a are the
+primary target: once `RunState.from_dict(summary)` can reconstruct all loop
+state from the summary artifact, the bespoke deserialisers are deleted. The
+symmetry between `RunState.to_dict()` (A3) and `RunState.from_dict()`
+(E1) is the design goal.
 
 ## Test Monolith Decomposition (`tests/test_cli.py`, 6,121 lines)
 
