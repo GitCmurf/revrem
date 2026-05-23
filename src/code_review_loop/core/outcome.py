@@ -11,6 +11,7 @@ it is used only for artifact serialisation, never for control flow.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import assert_never
 
 
 @dataclass(frozen=True)
@@ -49,3 +50,31 @@ class OutcomeUnknown:
 
 
 RunOutcome = OutcomeClear | OutcomeFailed | OutcomeFindings | OutcomeUnknown
+
+
+def outcome_to_exit_code(outcome: RunOutcome) -> int:
+    """Map a terminal RunOutcome to a process exit code (B3c-ii).
+
+    Codes:
+      0 — clear (no actionable findings)
+      1 — error (default failure)
+      2 — findings or unknown remain
+      3 — budget ceiling hit
+      4 — setup failed
+      5 — cancelled by operator / user
+    """
+    if isinstance(outcome, OutcomeClear):
+        return 0
+    if isinstance(outcome, OutcomeFailed):
+        if outcome.reason == "budget_ceiling_hit":
+            return 3
+        if outcome.reason == "setup_failed":
+            return 4
+        if outcome.reason == "cancelled":
+            return 5
+        return 1
+    if isinstance(outcome, OutcomeFindings):
+        return 2
+    if isinstance(outcome, OutcomeUnknown):
+        return 2
+    assert_never(outcome)
