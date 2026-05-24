@@ -1,15 +1,18 @@
-"""ChecksHarness adapter — wraps cli.run_checks behind the port (REVREM-TASK-003 B2b).
+"""ChecksHarness adapter (REVREM-TASK-003 Wave C3a step 1).
 
-The adapter closes over LoopConfig at construction; the core passes only the
-per-call variance (iteration) via ChecksRequest.  cli.run_checks retains its
-full implementation as a legacy shim until C3; this adapter delegates to it via
-a lazy import to keep the module-load import graph acyclic.
+The adapter owns the run-loop body for the check phase. The implementation
+(plus its phase-specific helpers and project-surface markers) lives in
+``adapters/_checks_impl.py`` so ``code_review_loop.cli.run_checks`` can stay
+as a thin shim re-exporting the same callable, preserving the public
+signature ``run_checks(config, runner, iteration, ctx=None) -> (results, failed)``
+and the ``MODULE.run_checks`` monkeypatch surface that existing tests rely on.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from code_review_loop.adapters._checks_impl import run_checks
 from code_review_loop.core.ports import ChecksOutcome, ChecksRequest, RunContext
 
 if TYPE_CHECKING:
@@ -17,14 +20,12 @@ if TYPE_CHECKING:
 
 
 class ChecksAdapter:
-    """Implements ChecksHarness by delegating to the cli.run_checks shim."""
+    """Implements ChecksHarness via the in-module ``run_checks`` body."""
 
     def __init__(self, config: LoopConfig) -> None:
         self._config = config
 
     def execute(self, request: ChecksRequest, ctx: RunContext) -> ChecksOutcome:
-        from code_review_loop.cli import run_checks  # lazy — avoids circular import
-
         results, failed = run_checks(
             self._config,
             ctx.runner,
