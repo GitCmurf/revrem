@@ -1,14 +1,15 @@
-"""CommitHarness adapter — wraps cli.run_commit behind the port (REVREM-TASK-003 B2c).
+"""CommitHarness adapter (REVREM-TASK-003 Wave C3a step 5).
 
-The adapter closes over LoopConfig at construction; the core passes only the
-per-call variance (iteration, retrying) via CommitRequest.  CommitFailed and
-RuntimeError propagate unchanged — the harness contract matches the shim's.
+The adapter owns the commit-phase body via ``adapters/_commit_impl``; the
+lazy ``from code_review_loop.cli import run_commit`` back-import is gone.
+``CommitFailed`` and ``RuntimeError`` propagate unchanged.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from code_review_loop.adapters._commit_impl import run_commit
 from code_review_loop.core.ports import CommitOutcome, CommitRequest, RunContext
 
 if TYPE_CHECKING:
@@ -16,14 +17,12 @@ if TYPE_CHECKING:
 
 
 class CommitAdapter:
-    """Implements CommitHarness by delegating to the cli.run_commit shim."""
+    """Implements CommitHarness via the in-module ``run_commit`` body."""
 
     def __init__(self, config: LoopConfig) -> None:
         self._config = config
 
     def execute(self, request: CommitRequest, ctx: RunContext) -> CommitOutcome:
-        from code_review_loop.cli import run_commit  # lazy — avoids circular import
-
         status = run_commit(
             self._config,
             ctx.runner,

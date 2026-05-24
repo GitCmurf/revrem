@@ -933,188 +933,22 @@ from code_review_loop.adapters._triage_impl import (
     run_triage as run_triage,
 )
 
-
-def git_add_command_for_commit(_config: LoopConfig) -> list[str]:
-    return ["git", "add", "-A"]
-
-
-def git_worktree_status_command_for_commit(_config: LoopConfig) -> list[str]:
-    return ["git", "status", "--porcelain=v1", "--untracked-files=all"]
-
-
-def git_repo_root(start: Path) -> Path:
-    resolved_start = start.resolve()
-    for candidate in (resolved_start, *resolved_start.parents):
-        if (candidate / ".git").exists():
-            return candidate
-    raise RuntimeError(f"unable to determine git repository root from {start}")
-
-
-def commit_artifact_relative_path(config: LoopConfig) -> Path | None:
-    repo_root = git_repo_root(config.cwd)
-    artifact_root = (
-        config.artifact_dir
-        if config.artifact_dir.is_absolute()
-        else config.cwd / config.artifact_dir
-    )
-    resolved_root = artifact_root.resolve()
-    try:
-        artifact_rel = resolved_root.relative_to(repo_root)
-    except ValueError:
-        return None
-    if artifact_rel == Path("."):
-        raise RuntimeError(
-            "refusing to auto-commit when --artifact-dir resolves to the repository root; "
-            "choose a subdirectory for generated artifacts."
-        )
-    return artifact_rel
-
-
-def git_reset_artifact_command_for_commit(config: LoopConfig) -> list[str] | None:
-    artifact_rel = commit_artifact_relative_path(config)
-    if artifact_rel is None:
-        return None
-    repo_root = git_repo_root(config.cwd)
-    # Keep generated loop artifacts out of the staged commit. Resolve artifact
-    # paths from the git root so subdirectory invocations can still reset files
-    # that live elsewhere inside the same repository.
-    return ["git", "-C", str(repo_root), "reset", "--", artifact_rel.as_posix()]
-
-
-def commit_command_for_message(message: str, *, allow_no_verify: bool = False) -> list[str]:
-    command = ["git", "commit"]
-    if allow_no_verify:
-        command.append("--no-verify")
-    command.extend(["-m", message])
-    return command
-
-
-def classify_commit_failure(result: CommandResult) -> str:
-    output = _combined_output(result)
-    return "hook_failed" if COMMIT_HOOK_FAILURE_RE.search(output) else "commit_failed"
-
-
-def run_commit(config: LoopConfig, runner: Runner, iteration: int, *, retrying: bool = False, ctx: RunContext | None = None) -> str:
-    progress_event(config, "commit", str(iteration), "start", "stage and commit verified remediation", ctx=ctx)
-    if config.dry_run:
-        write_artifact(config.artifact_dir / f"commit-{iteration}.txt", "DRY_RUN commit skipped\n")
-        progress_event(config, "commit", str(iteration), "skipped", "dry-run", ctx=ctx)
-        return "skipped"
-
-    commit_artifact_relative_path(config)
-    add_result = runner(
-        git_add_command_for_commit(config),
-        config.cwd,
-        None,
-        phase_timeout_seconds(config, config.timeout_seconds),
-    )
-    write_artifact(config.artifact_dir / f"commit-{iteration}-add.txt", _combined_output(add_result))
-    if add_result.returncode != 0:
-        progress_event(config, "commit", str(iteration), "failed", "git add failed", ctx=ctx)
-        raise RuntimeError(
-            f"git add failed for iteration {iteration}; "
-            f"see {config.artifact_dir / f'commit-{iteration}-add.txt'}"
-        )
-
-    reset_command = git_reset_artifact_command_for_commit(config)
-    if reset_command is not None:
-        reset_result = runner(
-            reset_command,
-            config.cwd,
-            None,
-            phase_timeout_seconds(config, config.timeout_seconds),
-        )
-        write_artifact(config.artifact_dir / f"commit-{iteration}-reset-artifacts.txt", _combined_output(reset_result))
-        if reset_result.returncode != 0:
-            progress_event(config, "commit", str(iteration), "failed", "git reset artifacts failed", ctx=ctx)
-            raise RuntimeError(
-                f"git reset artifacts failed for iteration {iteration}; "
-                f"see {config.artifact_dir / f'commit-{iteration}-reset-artifacts.txt'}"
-            )
-
-    diff_quiet = runner(
-        ["git", "diff", "--cached", "--quiet"],
-        config.cwd,
-        None,
-        phase_timeout_seconds(config, config.timeout_seconds),
-    )
-    if diff_quiet.returncode == 0:
-        write_artifact(config.artifact_dir / f"commit-{iteration}.txt", "No staged changes to commit.\n")
-        progress_event(config, "commit", str(iteration), "skipped", "no staged changes", ctx=ctx)
-        return "skipped_no_changes"
-    if diff_quiet.returncode != 1:
-        write_artifact(config.artifact_dir / f"commit-{iteration}.txt", _combined_output(diff_quiet))
-        progress_event(config, "commit", str(iteration), "failed", "git diff --cached --quiet failed", ctx=ctx)
-        raise RuntimeError(f"git staged-diff check failed for iteration {iteration}")
-
-    message = commit_message_for_staged_changes(config, runner, iteration, ctx=ctx)
-    commit_result = runner(
-        commit_command_for_message(
-            message,
-            allow_no_verify=retrying and config.commit_on_hook_failure == "no-verify",
-        ),
-        config.cwd,
-        None,
-        phase_timeout_seconds(config, config.timeout_seconds),
-    )
-    commit_artifact_path = config.artifact_dir / f"commit-{iteration}.txt"
-    commit_output = _combined_output(commit_result)
-    write_artifact(commit_artifact_path, commit_output)
-    if commit_result.returncode != 0:
-        kind = classify_commit_failure(commit_result)
-        detail = "git commit hook failed" if kind == "hook_failed" else "git commit failed"
-        progress_event(config, "commit", str(iteration), "failed", detail, ctx=ctx)
-        raise CommitFailed(
-            iteration=iteration,
-            kind=kind,
-            artifact_path=commit_artifact_path,
-            output=commit_output,
-        )
-    write_artifact(config.artifact_dir / f"commit-{iteration}-message.txt", message + "\n")
-    progress_event(config, "commit", str(iteration), "committed", message, ctx=ctx)
-    return "committed"
-
-
-def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iteration: int, ctx: RunContext | None = None) -> str:
-    fallback = deterministic_commit_message(iteration)
-    stat = runner(["git", "diff", "--cached", "--stat"], config.cwd, None, phase_timeout_seconds(config, config.timeout_seconds))
-    names = runner(["git", "diff", "--cached", "--name-only"], config.cwd, None, phase_timeout_seconds(config, config.timeout_seconds))
-    context = "\n".join(
-        part
-        for part in (
-            "Files:",
-            names.stdout.strip(),
-            "",
-            "Stat:",
-            stat.stdout.strip(),
-        )
-        if part is not None
-    )
-    if not config.commit_message_model:
-        return fallback
-    command = build_commit_message_command(config)
-    prompt_root = config.commit_message_prompt or DEFAULT_COMMIT_MESSAGE_PROMPT
-    prompt = f"{prompt_root}\n{prompts_composer.trim_for_prompt(context, config.max_remediation_input_chars)}"
-    command, prompt_input = harnesses.prepare_prompt_invocation(
-        config.commit_message_harness,
-        command,
-        prompt,
-    )
-    ensure_model_budget(config, phase="commit-message", iteration=iteration, ctx=ctx)
-    result = runner(command, config.cwd, prompt_input, phase_timeout_seconds(config, config.timeout_seconds))
-    write_artifact(config.artifact_dir / f"commit-{iteration}-message-draft.txt", _combined_output(result))
-    record_model_charge(config, result, phase="commit-message", iteration=iteration, ctx=ctx)
-    if result.returncode != 0:
-        return fallback
-    return sanitize_commit_message(
-        actionable_review_output(_combined_output(result)),
-        fallback=fallback,
-        enforce_revrem_conventional=not config.commit_message_prompt_overridden,
-    )
-
-
-def deterministic_commit_message(iteration: int) -> str:
-    return f"chore: remediate review iteration {iteration} (RevRem)"
+# REVREM-TASK-003 Wave C3a step 5: commit-phase implementation + its git/commit
+# helpers now live in ``adapters._commit_impl``. Re-exported here for
+# back-compat with existing call-sites and ``MODULE.X`` monkeypatch tests.
+from code_review_loop.adapters._commit_impl import (
+    classify_commit_failure as classify_commit_failure,
+    commit_artifact_relative_path as commit_artifact_relative_path,
+    commit_command_for_message as commit_command_for_message,
+    commit_message_for_staged_changes as commit_message_for_staged_changes,
+    deterministic_commit_message as deterministic_commit_message,
+    format_commit_hook_failure_for_remediation as format_commit_hook_failure_for_remediation,
+    git_add_command_for_commit as git_add_command_for_commit,
+    git_repo_root as git_repo_root,
+    git_reset_artifact_command_for_commit as git_reset_artifact_command_for_commit,
+    git_worktree_status_command_for_commit as git_worktree_status_command_for_commit,
+    run_commit as run_commit,
+)
 
 
 CONVENTIONAL_COMMIT_RE = re.compile(
@@ -1271,23 +1105,6 @@ def review_final_is_usable(review_path: Path) -> bool:
     if not review_text:
         return False
     return not review_text.startswith("DRY_RUN")
-
-
-def format_commit_hook_failure_for_remediation(exc: CommitFailed) -> str:
-    return "\n".join(
-        [
-            "Commit hook failure from the previous RevRem iteration.",
-            "",
-            "Treat this as a verification failure. Remediate the underlying cause,",
-            "preserve staged work, and do not bypass hooks unless the operator explicitly",
-            "configured that policy.",
-            "",
-            f"Commit artifact: {exc.artifact_path}",
-            "",
-            "git commit output:",
-            prompts_composer.trim_for_prompt(exc.output, 20_000),
-        ]
-    ).strip()
 
 
 def _config_snapshot(config: LoopConfig) -> ConfigSnapshot:
