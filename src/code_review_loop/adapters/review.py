@@ -1,13 +1,16 @@
-"""ReviewHarness adapter — wraps cli.run_codex_review (REVREM-TASK-003 B2f).
+"""ReviewHarness adapter (REVREM-TASK-003 Wave C3a step 2).
 
-The adapter closes over LoopConfig at construction; the core passes
-artifact_label and optional display_label via ReviewRequest.
+The adapter owns the review-phase loop body. The implementation
+(``run_codex_review`` + helpers) lives in ``adapters/_review_impl.py``;
+the lazy ``from code_review_loop.cli import run_codex_review`` back-import
+is gone.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from code_review_loop.adapters._review_impl import run_codex_review
 from code_review_loop.core.ports import ReviewOutcome, ReviewRequest, RunContext
 
 if TYPE_CHECKING:
@@ -15,14 +18,12 @@ if TYPE_CHECKING:
 
 
 class ReviewAdapter:
-    """Implements ReviewHarness by delegating to the cli.run_codex_review shim."""
+    """Implements ReviewHarness via the in-module ``run_codex_review`` body."""
 
     def __init__(self, config: LoopConfig) -> None:
         self._config = config
 
     def execute(self, request: ReviewRequest, ctx: RunContext) -> ReviewOutcome:
-        from code_review_loop.cli import run_codex_review  # lazy — avoids circular import
-
         status, result = run_codex_review(
             self._config,
             ctx.runner,
