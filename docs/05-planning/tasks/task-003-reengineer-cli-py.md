@@ -903,6 +903,52 @@ lazy back-imports can be deleted.
 `core/engine.py` but the shell — terminal contexts, summary writes, phase
 dispatch — is still inlined. `run_loop` (line 1815) is the public wrapper.
 
+**Wave C1 + C2 + C3a status (2026-05-24).** C1a, C1b, C2a (both parts), the
+TD-004 half of C2b, and all five C3a phase migrations have landed. C3b/c and
+Wave D remain.
+
+* **C3a is complete.** Every phase implementation now lives in its adapter
+  module; no adapter still uses a lazy ``from code_review_loop.cli import
+  run_X`` back-import.
+
+  | Phase       | Canonical home                                      |
+  |-------------|-----------------------------------------------------|
+  | checks      | ``adapters/_checks_impl.py``                        |
+  | review      | ``adapters/_review_impl.py``                        |
+  | git preflight | ``adapters/git.py`` (new)                          |
+  | remediation | ``adapters/_remediation_impl.py``                   |
+  | triage      | ``adapters/_triage_impl.py``                        |
+  | commit      | ``adapters/_commit_impl.py``                        |
+
+  ``cli/__init__.py`` keeps ``name as name`` re-exports for every moved
+  symbol so existing call sites and tests using ``MODULE.run_X`` /
+  ``MODULE.is_pytest_command`` / etc. keep working unchanged.
+
+  Loop-shell helpers used by the moved phases (``progress_event``,
+  ``write_artifact``, ``_combined_output``, ``phase_timeout_seconds``,
+  ``ensure_model_budget``, ``record_model_charge``,
+  ``set_phase_terminal_title``, ``log_review_findings``,
+  ``review_status_diagnostics``, ``DEFAULT_REMEDIATION_PROMPT``,
+  ``DEFAULT_TRIAGE_PROMPT``, ``DEFAULT_REVIEW_PROMPT``, the various
+  ``build_*_command`` builders, ``CommitFailed``, ``REVREM_COMMIT_SUFFIX``
+  and friends) still live in ``cli/__init__.py`` and are reached through a
+  module-level ``_cli`` alias in each impl module. The plan calls for moving
+  these to a shared ``cli/loop_support.py`` (or equivalent) in the C3
+  cleanup wave after C3b; that is what finally lets the ``_cli`` alias be
+  retired and ``adapters/`` become genuinely free of any back-reference into
+  the parent.
+
+  Surgical C3b-style test patches were applied to the five sites that
+  ``patch("code_review_loop.cli.run_X")`` in
+  ``tests/test_review_harness.py``, ``tests/test_remediation_harness.py``,
+  ``tests/test_triage_harness.py``, ``tests/test_commit_harness.py``. Each
+  now patches the canonical binding the adapter actually calls
+  (``code_review_loop.adapters.X.run_X``). The remaining ~53 monkeypatch
+  sites stay in C3b proper.
+
+  ``cli/__init__.py`` is now 3059 lines, down from 4946 at the start of
+  Wave C (-38%).
+
 **Wave C1 + C2 status (2026-05-24).** C1a, C1b, C2a (both parts) and the
 TD-004 half of C2b have landed.
 * `cli/args.py` is the canonical home for every `parse_*_args` parser and the
