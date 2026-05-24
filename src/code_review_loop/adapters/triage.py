@@ -1,28 +1,27 @@
-"""TriageHarness adapter — wraps cli.run_triage (REVREM-TASK-003 B2e).
+"""TriageHarness adapter (REVREM-TASK-003 Wave C3a step 4).
 
-The adapter closes over LoopConfig at construction; the core passes
-iteration, run_id, source_review_artifact, and review_output via TriageRequest.
+The adapter owns the triage-phase body via ``adapters/_triage_impl``; the lazy
+``from code_review_loop.cli import run_triage`` back-import is gone.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from code_review_loop.core.ports import TriageOutcome, TriageRequest, RunContext
+from code_review_loop.adapters._triage_impl import run_triage
+from code_review_loop.core.ports import RunContext, TriageOutcome, TriageRequest
 
 if TYPE_CHECKING:
     from code_review_loop.cli import LoopConfig
 
 
 class TriageAdapter:
-    """Implements TriageHarness by delegating to the cli.run_triage shim."""
+    """Implements TriageHarness via the in-module ``run_triage`` body."""
 
     def __init__(self, config: LoopConfig) -> None:
         self._config = config
 
     def execute(self, request: TriageRequest, ctx: RunContext) -> TriageOutcome:
-        from code_review_loop.cli import run_triage  # lazy — avoids circular import
-
         handoff, suppressed_count, is_clear, payload = run_triage(
             self._config,
             ctx.runner,

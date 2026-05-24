@@ -67,7 +67,11 @@ class TestRemediationAdapter:
         ctx = _ctx(runner=MagicMock())
         adapter = RemediationAdapter(config)
 
-        with patch("code_review_loop.cli.run_remediation") as mock_rem:
+        # REVREM-TASK-003 Wave C3a step 3: run_remediation now lives in
+        # ``adapters._remediation_impl`` and is imported by
+        # ``adapters.remediation`` directly. Patch the binding the adapter
+        # actually calls.
+        with patch("code_review_loop.adapters.remediation.run_remediation") as mock_rem:
             mock_rem.return_value = CommandResult(["codex"], 0)
             outcome = adapter.execute(
                 RemediationRequest(iteration=2, remediation_input="prompt", resolved_route=route),

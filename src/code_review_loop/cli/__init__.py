@@ -774,55 +774,6 @@ def _resolve_executable(harness: str, config: LoopConfig) -> str:
     return harnesses.resolve_executable(harness, config.harness_executables, config.codex_bin)
 
 
-def build_remediation_command(
-    config: LoopConfig,
-    output_last_message: Path | None = None,
-    resolved_route: policy.ResolvedRoute | None = None,
-) -> list[str]:
-    harness = resolved_route.harness if resolved_route else config.remediation_harness
-    model = (
-        (resolved_route.model if resolved_route else None)
-        or config.remediation_model
-        or config.model
-    )
-    reasoning_effort = (
-        (resolved_route.reasoning_effort if resolved_route else None)
-        or config.remediation_reasoning_effort
-        or config.reasoning_effort
-    )
-    sandbox = resolved_route.sandbox if resolved_route else config.exec_sandbox
-
-    return harnesses.build_phase_command(
-        harnesses.PhaseCommandRequest(
-            harness=harness,
-            role="remediation",
-            executable=_resolve_executable(harness, config),
-            model=model,
-            reasoning_effort=reasoning_effort,
-            sandbox=sandbox,
-            color=config.exec_color,
-            full_auto=config.full_auto,
-            json_output=config.exec_json,
-            output_last_message_path=output_last_message,
-        )
-    )
-
-
-def build_triage_command(config: LoopConfig) -> list[str]:
-    return harnesses.build_phase_command(
-        harnesses.PhaseCommandRequest(
-            harness=config.triage_harness,
-            role="triage",
-            executable=_resolve_executable(config.triage_harness, config),
-            model=config.triage_model,
-            reasoning_effort=config.triage_reasoning_effort,
-            sandbox="read-only",
-            color=config.exec_color,
-            full_auto=False,
-        )
-    )
-
-
 def build_commit_message_command(config: LoopConfig) -> list[str]:
     return harnesses.build_phase_command(
         harnesses.PhaseCommandRequest(
@@ -938,156 +889,6 @@ def write_artifact(path: Path, content: str) -> None:
     artifacts.write_text_artifact(path, content)
 
 
-def run_remediation(
-    config: LoopConfig,
-    runner: Runner,
-    iteration: int,
-    remediation_input: str,
-    resolved_route: policy.ResolvedRoute | None = None,
-    ctx: RunContext | None = None,
-) -> CommandResult:
-    last_message_path = (
-        config.artifact_dir / f"remediation-{iteration}-last-message.txt"
-        if config.output_last_message
-        else None
-    )
-    command = build_remediation_command(config, last_message_path, resolved_route=resolved_route)
-    remediation_harness = (
-        resolved_route.harness if resolved_route else config.remediation_harness
-    )
-
-    if resolved_route:
-        prompt = remediation_input
-        timeout = resolved_route.timeout_seconds
-    else:
-        prompt = f"{DEFAULT_REMEDIATION_PROMPT}\n{prompts_composer.trim_for_prompt(remediation_input, config.max_remediation_input_chars)}"
-        timeout = config.remediation_timeout_seconds
-    command, prompt_input = harnesses.prepare_prompt_invocation(
-        remediation_harness,
-        command,
-        prompt,
-    )
-
-    set_phase_terminal_title(config, "remediate", str(iteration))
-    ensure_model_budget(config, phase="remediate", iteration=iteration, ctx=ctx)
-    progress_event(config, "remediate", str(iteration), "start", shlex.join(command), ctx=ctx)
-    if config.dry_run:
-        result = CommandResult(command, 0, stdout="DRY_RUN remediation skipped\n")
-    else:
-        result = runner(command, config.cwd, prompt_input, phase_timeout_seconds(config, timeout))
-    write_artifact(config.artifact_dir / f"remediation-{iteration}.txt", _combined_output(result))
-    record_model_charge(config, result, phase="remediate", iteration=iteration, ctx=ctx)
-    if result.returncode != 0:
-        progress_event(config, "remediate", str(iteration), "failed", f"exit {result.returncode}", ctx=ctx)
-        raise RuntimeError(
-            f"codex exec remediation failed for iteration {iteration}; "
-            f"see {config.artifact_dir / f'remediation-{iteration}.txt'}"
-        )
-    progress_event(config, "remediate", str(iteration), "done", ctx=ctx)
-    return result
-
-
-def run_triage(
-    config: LoopConfig,
-    runner: Runner,
-    iteration: int,
-    run_id: str,
-    source_review_artifact: str,
-    review_output: str,
-    ctx: RunContext | None = None,
-) -> tuple[str, int, bool, dict[str, Any] | None]:
-    command = build_triage_command(config)
-    prompt_root = config.triage_prompt or triage.load_prompt(contract=config.triage_contract)
-    prompt = f"{prompt_root}\n{prompts_composer.trim_for_prompt(review_output, config.max_remediation_input_chars)}"
-    command, prompt_input = harnesses.prepare_prompt_invocation(
-        config.triage_harness,
-        command,
-        prompt,
-    )
-    ensure_model_budget(config, phase="triage", iteration=iteration, ctx=ctx)
-    progress_event(config, "triage", str(iteration), "start", shlex.join(command), ctx=ctx)
-    if config.dry_run:
-        result = CommandResult(command, 0, stdout="DRY_RUN triage skipped\n")
-    else:
-        result = runner(command, config.cwd, prompt_input, phase_timeout_seconds(config, config.triage_timeout_seconds))
-    triage_artifact = config.artifact_dir / f"triage-{iteration}.txt"
-    write_artifact(triage_artifact, _combined_output(result))
-    record_model_charge(config, result, phase="triage", iteration=iteration, ctx=ctx)
-    if result.returncode != 0:
-        issue = triage.command_failed_issue(
-            iteration=iteration,
-            returncode=result.returncode,
-            artifact=str(triage_artifact),
-        )
-        artifacts.write_json_artifact(
-            config.artifact_dir,
-            f"diagnostics-{iteration}.json",
-            diagnostics.doctor_payload([issue]),
-        )
-        progress_event(config, "triage", str(iteration), "failed", f"exit {result.returncode}", ctx=ctx)
-        raise RuntimeError(
-            f"codex exec triage failed for iteration {iteration}; "
-            f"see {triage_artifact}"
-        )
-    progress_event(config, "triage", str(iteration), "done", ctx=ctx)
-    triage_output = actionable_review_output(_combined_output(result))
-    if triage.looks_structured_output(triage_output):
-        try:
-            payload = triage.parse_triage_payload(
-                triage_output,
-                run_id=run_id,
-                source_review_artifact=source_review_artifact,
-                contract=config.triage_contract,
-            )
-        except triage.TriageValidationError as exc:
-            issue = triage.invalid_triage_issue(exc, iteration=iteration)
-            artifacts.write_json_artifact(
-                config.artifact_dir,
-                f"diagnostics-{iteration}.json",
-                diagnostics.doctor_payload([issue]),
-            )
-            progress_event(config, "triage", str(iteration), "invalid", str(exc), ctx=ctx)
-            if config.triage_on_invalid == "stop":
-                raise RuntimeError(f"invalid structured triage output for iteration {iteration}: {exc}") from exc
-            return review_output, 0, False, None
-        suppressed_count = 0
-        if config.suppressions_enabled:
-            try:
-                matches = suppressions.load_effective_suppressions(config.cwd)
-            except (OSError, ValueError) as exc:
-                progress_event(
-                    config,
-                    "triage",
-                    str(iteration),
-                    "warning",
-                    f"suppressions unavailable; continuing without them: {exc}",
-                    ctx=ctx,
-                )
-            else:
-                payload, suppressed_findings = suppressions.apply_to_triage_payload(payload, matches)
-                suppressed_count = len(suppressed_findings)
-                if suppressed_findings:
-                    progress_event(
-                        config,
-                        "triage",
-                        str(iteration),
-                        "suppressed",
-                        f"{len(suppressed_findings)} finding(s)",
-                        ctx=ctx,
-                    )
-        triage.write_triage_artifact(config.artifact_dir, iteration, payload)
-        has_actionable_findings = bool(payload.get("confirmed_findings") or payload.get("needs_more_info"))
-        if not has_actionable_findings:
-            return "", suppressed_count, True, payload
-        return triage.format_structured_handoff(payload, review_output), suppressed_count, False, payload
-    return (
-        "Triage handoff from the previous review:\n"
-        f"{triage_output}\n\n"
-        "Original review/check context:\n"
-        f"{review_output}"
-    ), 0, False, None
-
-
 # REVREM-TASK-003 Wave C3a step 1: run_checks + its helpers + project-surface
 # markers now live in ``code_review_loop.adapters._checks_impl``. The
 # ChecksAdapter owns the loop body; the names below are re-exported here so
@@ -1119,6 +920,18 @@ from code_review_loop.adapters._review_impl import (
     run_codex_review as run_codex_review,
 )
 from code_review_loop.adapters.git import run_git_preflight as run_git_preflight
+
+# REVREM-TASK-003 Wave C3a step 3: remediation + triage phase implementations
+# now live in adapters._remediation_impl and adapters._triage_impl. Re-exported
+# here for back-compat.
+from code_review_loop.adapters._remediation_impl import (
+    build_remediation_command as build_remediation_command,
+    run_remediation as run_remediation,
+)
+from code_review_loop.adapters._triage_impl import (
+    build_triage_command as build_triage_command,
+    run_triage as run_triage,
+)
 
 
 def git_add_command_for_commit(_config: LoopConfig) -> list[str]:

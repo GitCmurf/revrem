@@ -65,7 +65,10 @@ class TestTriageAdapter:
         ctx = _ctx(runner=MagicMock())
         adapter = TriageAdapter(config)
 
-        with patch("code_review_loop.cli.run_triage") as mock_triage:
+        # REVREM-TASK-003 Wave C3a step 4: run_triage now lives in
+        # ``adapters._triage_impl`` and is imported by ``adapters.triage``
+        # directly. Patch the binding the adapter actually calls.
+        with patch("code_review_loop.adapters.triage.run_triage") as mock_triage:
             mock_triage.return_value = ("handoff text", 0, False, None)
             outcome = adapter.execute(
                 TriageRequest(
@@ -99,7 +102,7 @@ class TestTriageAdapter:
         ctx = _ctx(runner=MagicMock())
         adapter = TriageAdapter(config)
 
-        with patch("code_review_loop.cli.run_triage") as mock_triage:
+        with patch("code_review_loop.adapters.triage.run_triage") as mock_triage:
             mock_triage.return_value = ("", 3, True, {"confirmed_findings": []})
             outcome = adapter.execute(
                 TriageRequest(iteration=1, run_id="r", source_review_artifact="a.txt", review_output="ok"),
