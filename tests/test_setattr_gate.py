@@ -1,8 +1,15 @@
-"""Grep-gate: no object.__setattr__(config, ...) calls in cli.py (REVREM-TASK-003 B0b)."""
+"""Grep-gate: no object.__setattr__(config, ...) calls in cli (REVREM-TASK-003 B0b).
+
+The ``cli`` module became a package in Wave C1a; the legacy body lives in
+``cli/__init__.py`` until Wave C lifts it out, so the gate scans the package
+init.
+"""
 import re
 import pathlib
 
-CLI_PATH = pathlib.Path(__file__).parent.parent / "src" / "code_review_loop" / "cli.py"
+CLI_PATH = (
+    pathlib.Path(__file__).parent.parent / "src" / "code_review_loop" / "cli" / "__init__.py"
+)
 
 
 def test_no_config_setattr_in_cli():
@@ -13,7 +20,7 @@ def test_no_config_setattr_in_cli():
         if re.search(r'object\.__setattr__\(config', line)
     ]
     assert matches == [], (
-        f"Found {len(matches)} object.__setattr__(config, ...) call(s) in cli.py. "
+        f"Found {len(matches)} object.__setattr__(config, ...) call(s) in cli/__init__.py. "
         "Offending lines:\n"
         + "\n".join(f"  {lineno}: {line}" for lineno, line in matches)
     )

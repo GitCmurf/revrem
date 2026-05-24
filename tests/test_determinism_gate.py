@@ -28,7 +28,9 @@ import pytest
 _SRC = Path(__file__).resolve().parents[1] / "src" / "code_review_loop"
 
 # Engine-path files whose nondeterminism feeds the machine contract.
-SCANNED_FILES = ("cli.py", "events.py")
+# ``cli`` became a package in Wave C1a; its ``__init__.py`` carries the
+# legacy God-object body until the rest of Wave C lifts it out.
+SCANNED_FILES = ("cli/__init__.py", "events.py")
 
 _RAW_READ = re.compile(r"datetime\.now|datetime\.utcnow|time\.monotonic|uuid\.uuid4")
 _EXEMPT = "det-exempt:"
