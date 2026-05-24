@@ -84,6 +84,25 @@ from code_review_loop.core.review_interpretation import (
 from code_review_loop.core.state import RunState
 from code_review_loop.identity import SYSTEM_IDENTITY, RunIdentity
 
+# REVREM-TASK-003 Wave C2a: parsers and their shared choice tuples are now
+# canonical in ``cli/args.py``. Re-exported here so existing imports and
+# ``monkeypatch.setattr(MODULE, "parse_*_args", …)`` test patches keep working.
+from .args import (
+    COMMIT_ON_HOOK_FAILURE_CHOICES as COMMIT_ON_HOOK_FAILURE_CHOICES,
+    PROGRESS_STYLE_CHOICES as PROGRESS_STYLE_CHOICES,
+    REASONING_EFFORT_CHOICES as REASONING_EFFORT_CHOICES,
+    parse_args as parse_args,
+    parse_bundle_bug_report_args as parse_bundle_bug_report_args,
+    parse_config_args as parse_config_args,
+    parse_doctor_args as parse_doctor_args,
+    parse_history_args as parse_history_args,
+    parse_policy_args as parse_policy_args,
+    parse_replay_args as parse_replay_args,
+    parse_resume_args as parse_resume_args,
+    parse_suppress_args as parse_suppress_args,
+    parse_triage_args as parse_triage_args,
+)
+
 PROGRESS_PHASE_CODES = {
     "check": "chk",
     "commit": "com",
@@ -95,9 +114,6 @@ COMPACT_PROGRESS_DETAIL_INDENT = 7
 DEFAULT_TERMINAL_COLUMNS = 120
 DEFAULT_TIMEOUT_SECONDS = 300
 CANCELLATION_FORCE_WINDOW_SECONDS = 5.0
-REASONING_EFFORT_CHOICES = ("minimal", "low", "medium", "high")
-PROGRESS_STYLE_CHOICES = ("compact", "verbose", "rich")
-COMMIT_ON_HOOK_FAILURE_CHOICES = profiles.COMMIT_ON_HOOK_FAILURE_CHOICES
 COMMIT_HOOK_FAILURE_RE = re.compile(
     r"\b("
     r"pre-commit|pre-push|commit hook|hook failed|"
@@ -2792,460 +2808,6 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
     return "\n".join(lines)
 
 
-def parse_args(argv: Sequence[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        prog="revrem",
-        description="Run a bounded Codex review/remediation loop against a base branch.",
-    )
-    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    parser.add_argument("--profile", default=None, help="Named profile from RevRem TOML config.")
-    parser.add_argument("--base", default=None, help="Base branch passed to codex review.")
-    parser.add_argument(
-        "--max-iterations",
-        type=int,
-        default=None,
-        help="Maximum remediation passes before stopping. Default: 2.",
-    )
-    parser.add_argument("--codex-bin", default=None, help="Codex executable path/name.")
-    parser.add_argument(
-        "--harness-bin",
-        action="append",
-        default=[],
-        metavar="HARNESS=EXECUTABLE",
-        help="Override an executable for a named harness, for example claude=/opt/bin/claude.",
-    )
-    parser.add_argument("--model", default=None, help="Optional model passed to both Codex review and remediation.")
-    parser.add_argument("--review-model", default=None, help="Optional model override for codex review only.")
-    parser.add_argument(
-        "--remediation-model",
-        default=None,
-        help="Optional model override for codex exec remediation only.",
-    )
-    parser.add_argument(
-        "--reasoning-effort",
-        choices=REASONING_EFFORT_CHOICES,
-        default=None,
-        help=(
-            "Optional Codex model_reasoning_effort override for review and remediation; "
-            "profiles may still set phase-specific values."
-        ),
-    )
-    parser.add_argument(
-        "--review-reasoning-effort",
-        choices=REASONING_EFFORT_CHOICES,
-        default=None,
-        help="Optional Codex model_reasoning_effort override for review only.",
-    )
-    parser.add_argument(
-        "--triage-reasoning-effort",
-        choices=REASONING_EFFORT_CHOICES,
-        default=None,
-        help="Optional Codex model_reasoning_effort override for triage only.",
-    )
-    parser.add_argument(
-        "--remediation-reasoning-effort",
-        "--remediate-reasoning-effort",
-        choices=REASONING_EFFORT_CHOICES,
-        default=None,
-        help="Optional Codex model_reasoning_effort override for remediation only.",
-    )
-    parser.add_argument(
-        "--commit-reasoning-effort",
-        choices=REASONING_EFFORT_CHOICES,
-        default=None,
-        help="Optional Codex model_reasoning_effort override for commit-message drafting only.",
-    )
-    parser.add_argument(
-        "--exec-sandbox",
-        default=None,
-        choices=("read-only", "workspace-write", "danger-full-access"),
-        help="Sandbox mode for codex exec remediation passes.",
-    )
-    parser.add_argument(
-        "--exec-color",
-        default=None,
-        choices=("always", "never", "auto"),
-        help="Color mode for codex exec remediation output. Default: never.",
-    )
-    exec_json_group = parser.add_mutually_exclusive_group()
-    exec_json_group.add_argument(
-        "--exec-json",
-        dest="exec_json",
-        action="store_true",
-        default=None,
-        help="Pass --json to codex exec and capture JSONL event output.",
-    )
-    exec_json_group.add_argument(
-        "--no-exec-json",
-        dest="exec_json",
-        action="store_false",
-        help="Do not pass --json to codex exec even when a profile enables it.",
-    )
-    output_last_message_group = parser.add_mutually_exclusive_group()
-    output_last_message_group.add_argument(
-        "--output-last-message",
-        dest="output_last_message",
-        action="store_true",
-        default=None,
-        help="Pass --output-last-message to codex exec remediation passes.",
-    )
-    output_last_message_group.add_argument(
-        "--no-output-last-message",
-        dest="output_last_message",
-        action="store_false",
-        default=None,
-        help="Do not pass --output-last-message to codex exec remediation passes.",
-    )
-    full_auto_group = parser.add_mutually_exclusive_group()
-    full_auto_group.add_argument(
-        "--full-auto",
-        dest="full_auto",
-        action="store_true",
-        default=None,
-        help="Pass --full-auto to codex exec.",
-    )
-    full_auto_group.add_argument(
-        "--no-full-auto",
-        dest="full_auto",
-        action="store_false",
-        default=None,
-        help="Do not pass --full-auto to codex exec.",
-    )
-    parser.add_argument(
-        "--check",
-        action="append",
-        default=None,
-        help="Verification command to run after each remediation pass. Repeatable.",
-    )
-    commit_group = parser.add_mutually_exclusive_group()
-    commit_group.add_argument(
-        "--commit-after-remediation",
-        dest="commit_after_remediation",
-        action="store_true",
-        default=None,
-        help=(
-            "Stage and commit after each remediation pass whose verification checks pass. "
-            "Requires a clean worktree before the loop starts and rejects artifact "
-            "directories that resolve to the repository root; artifact paths are reset "
-            "from the git root so subdirectory runs can still exclude generated files."
-        ),
-    )
-    commit_group.add_argument(
-        "--no-commit-after-remediation",
-        dest="commit_after_remediation",
-        action="store_false",
-        help="Disable automatic commits even when the selected profile enables them.",
-    )
-    parser.add_argument(
-        "--commit-message-model",
-        default=None,
-        help=(
-            "Optional model for drafting commit subjects. Defaults to profile commit.message_model, "
-            "then remediation/review model fallbacks."
-        ),
-    )
-    parser.add_argument(
-        "--commit-message-prompt",
-        default=None,
-        help=(
-            "Override the commit-message drafting prompt. When set, RevRem does not enforce "
-            "its default Conventional Commit + '(RevRem)' subject policy."
-        ),
-    )
-    parser.add_argument(
-        "--commit-on-hook-failure",
-        choices=COMMIT_ON_HOOK_FAILURE_CHOICES,
-        default=None,
-        help=(
-            "Policy when git commit appears to fail inside hooks: remediate feeds hook output "
-            "into the next bounded pass, stop fails gracefully, no-verify commits with "
-            "--no-verify. Default: profile commit.on_hook_failure or remediate."
-        ),
-    )
-    parser.add_argument(
-        "--artifact-dir",
-        default=None,
-        help="Directory for review/remediation/check transcripts.",
-    )
-    parser.add_argument(
-        "--trusted-repo",
-        action="store_true",
-        default=None,
-        help="Explicitly trust repo-local prompt fragments.",
-    )
-    parser.add_argument("--dry-run", action="store_true", help="Print the loop shape without running Codex.")
-    final_review_group = parser.add_mutually_exclusive_group()
-    final_review_group.add_argument(
-        "--final-review",
-        dest="final_review",
-        action="store_true",
-        default=None,
-        help="Run the final review after the last remediation pass.",
-    )
-    final_review_group.add_argument(
-        "--skip-final-review",
-        dest="final_review",
-        action="store_false",
-        default=None,
-        help="Do not run the final review after the last remediation pass.",
-    )
-    parser.add_argument(
-        "--max-remediation-input-chars",
-        type=int,
-        default=None,
-        help="Maximum review/check text characters passed into each remediation prompt.",
-    )
-    parser.add_argument(
-        "--terminal-excerpt-chars",
-        type=int,
-        default=None,
-        help="Maximum latest-review characters shown in terminal text summaries.",
-    )
-    parser.add_argument(
-        "--timeout-seconds",
-        type=float,
-        default=None,
-        help=(
-            "Maximum seconds for each review, remediation, or check command. "
-            "Use 0 to disable subprocess timeouts. Default: 300."
-        ),
-    )
-    parser.add_argument(
-        "--max-wall-seconds",
-        type=float,
-        default=None,
-        help="Maximum total run wall-clock seconds before RevRem stops before the next model call.",
-    )
-    parser.add_argument(
-        "--max-tokens",
-        type=int,
-        default=None,
-        help="Maximum reported tokens for future cost-aware harnesses. Missing token data is recorded as null.",
-    )
-    parser.add_argument(
-        "--max-usd",
-        default=None,
-        help="Maximum reported USD cost for future cost-aware harnesses. Missing cost data is recorded as null.",
-    )
-    parser.add_argument(
-        "--soft-warn-fraction",
-        type=float,
-        default=None,
-        help="Fraction of a configured ceiling that emits a warning event before stopping. Default: 0.8.",
-    )
-    parser.add_argument(
-        "--summary-format",
-        choices=("text", "json", "both"),
-        default=None,
-        help="Summary format printed to stdout. Full JSON is always written to summary.json.",
-    )
-    debug_status_group = parser.add_mutually_exclusive_group()
-    debug_status_group.add_argument(
-        "--debug-status-detection",
-        dest="debug_status_detection",
-        action="store_true",
-        default=None,
-        help="Write per-review status-classification diagnostics next to review artifacts.",
-    )
-    debug_status_group.add_argument(
-        "--no-debug-status-detection",
-        dest="debug_status_detection",
-        action="store_false",
-        help="Disable status-classification diagnostics even when a profile enables them.",
-    )
-    quiet_progress_group = parser.add_mutually_exclusive_group()
-    quiet_progress_group.add_argument(
-        "--quiet-progress",
-        dest="quiet_progress",
-        action="store_true",
-        default=None,
-        help="Suppress timestamped progress logs on stderr.",
-    )
-    quiet_progress_group.add_argument(
-        "--no-quiet-progress",
-        dest="quiet_progress",
-        action="store_false",
-        help="Show progress logs even when a profile suppresses them.",
-    )
-    parser.add_argument(
-        "--progress-style",
-        choices=PROGRESS_STYLE_CHOICES,
-        default=None,
-        help="Progress log style. Compact is easiest to scan in logs; rich is used only when Rich is installed.",
-    )
-    terminal_title_group = parser.add_mutually_exclusive_group()
-    terminal_title_group.add_argument(
-        "--terminal-title",
-        dest="terminal_title",
-        action="store_true",
-        default=None,
-        help=(
-            "Update the terminal window/tab title with the active review or remediation phase. "
-            "Restores the previous title on exit in terminals with xterm-style title-stack support."
-        ),
-    )
-    terminal_title_group.add_argument(
-        "--no-terminal-title",
-        dest="terminal_title",
-        action="store_false",
-        help="Do not update the terminal title even when a profile enables it.",
-    )
-    parser.add_argument(
-        "--initial-review-file",
-        type=str,
-        default=None,
-        help=(
-            "Start by remediating a previous review artifact. Use 'latest' for the newest "
-            "usable non-clear review-final.txt; if none exists, start with a fresh review."
-        ),
-    )
-    parser.add_argument(
-        "--no-run-history",
-        action="store_true",
-        help="Do not append metadata for this non-dry-run invocation to the local RevRem history.",
-    )
-    parser.add_argument(
-        "--save-profile",
-        metavar="NAME",
-        help=(
-            "Save the effective CLI/profile configuration as NAME in the project-local "
-            ".revrem.toml and exit without running the loop."
-        ),
-    )
-    parser.add_argument(
-        "--save-profile-force",
-        action="store_true",
-        help="Replace an existing project-local profile when used with --save-profile.",
-    )
-    return parser.parse_args(argv)
-
-
-def parse_config_args(argv: Sequence[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        prog="revrem config",
-        description="Manage RevRem TOML profiles.",
-    )
-    parser.add_argument("--format", choices=("text", "json"), default=None)
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    list_parser = subparsers.add_parser("list", help="List available profiles.")
-    list_parser.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)
-    show = subparsers.add_parser("show", help="Show a resolved profile.")
-    show.add_argument("name")
-    show.add_argument("--format", choices=("toml", "json"), default=argparse.SUPPRESS)
-
-    new = subparsers.add_parser(
-        "new",
-        help="Create a user profile, prompting for common fields in interactive terminals.",
-    )
-    new.add_argument("name")
-    new.add_argument("--description", default="")
-    new_interactive = new.add_mutually_exclusive_group()
-    new_interactive.add_argument(
-        "--interactive",
-        dest="interactive",
-        action="store_true",
-        default=None,
-        help="Prompt for common profile fields before writing the profile.",
-    )
-    new_interactive.add_argument(
-        "--no-interactive",
-        dest="interactive",
-        action="store_false",
-        help="Create the minimal profile without prompting.",
-    )
-    new.add_argument("--force", action="store_true")
-
-    edit = subparsers.add_parser("edit", help="Open the owning config file in $EDITOR.")
-    edit.add_argument("name")
-
-    clone = subparsers.add_parser("clone", help="Clone a resolved profile into the user config.")
-    clone.add_argument("source")
-    clone.add_argument("target")
-    clone.add_argument("--force", action="store_true")
-
-    delete = subparsers.add_parser("delete", help="Delete a user profile.")
-    delete.add_argument("name")
-    delete.add_argument("--yes", action="store_true")
-
-    export = subparsers.add_parser("export", help="Export a resolved profile as TOML.")
-    export.add_argument("name")
-
-    import_parser = subparsers.add_parser(
-        "import",
-        help="Import profiles from a TOML file.",
-        description=(
-            "Import profiles from a TOML file. If the source file contains [defaults], "
-            "RevRem folds those defaults into each imported profile before writing the "
-            "destination config, preserving the source profile behavior."
-        ),
-    )
-    import_parser.add_argument("path")
-    import_parser.add_argument("--force", action="store_true")
-
-    doctor = subparsers.add_parser("doctor", help="Show config paths and merge diagnostics.")
-    doctor.add_argument("--profile", default=None)
-    doctor.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)
-    return parser.parse_args(argv)
-
-
-def parse_history_args(argv: Sequence[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        prog="revrem history",
-        description="Inspect local RevRem run history.",
-    )
-    parser.add_argument("--format", choices=("text", "json"), default=None)
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    list_parser = subparsers.add_parser("list", help="List recent runs.")
-    list_parser.add_argument("--limit", type=int, default=10)
-    list_parser.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)
-    return parser.parse_args(argv)
-
-
-def parse_doctor_args(argv: Sequence[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        prog="revrem doctor",
-        description="Run local RevRem setup diagnostics without invoking a model.",
-    )
-    parser.add_argument("--format", choices=("text", "json"), default=None)
-    parser.add_argument("--strict", action="store_true", help="Exit non-zero when warnings are present.")
-    parser.add_argument("--profile", default=None, help="Resolve defaults from a named profile.")
-    parser.add_argument("--base", default=None, help="Base ref to validate. Defaults to profile/main.")
-    parser.add_argument("--codex-bin", default=None, help="Codex executable path/name to validate.")
-    parser.add_argument("--artifact-dir", default=None, help="Artifact directory to validate.")
-    parser.add_argument("--check", action="append", default=None, help="Check command to validate. Repeatable.")
-    parser.add_argument(
-        "--commit-after-remediation",
-        action="store_true",
-        help="Validate commit-mode preconditions such as a clean worktree and a non-root artifact directory.",
-    )
-    return parser.parse_args(argv)
-
-
-def parse_bundle_bug_report_args(argv: Sequence[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        prog="revrem bundle-bug-report",
-        description="Create a redacted, deterministic bug-report bundle from a RevRem run directory.",
-    )
-    parser.add_argument("run_dir")
-    parser.add_argument("--output", default=None)
-    parser.add_argument("--include-raw-transcripts", action="store_true")
-    parser.add_argument("--no-redact", action="store_true")
-    parser.add_argument("--i-understand-the-risks", action="store_true")
-    return parser.parse_args(argv)
-
-
-def parse_resume_args(argv: Sequence[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        prog="revrem resume",
-        description="Validate whether a previous RevRem run is safe to resume.",
-    )
-    parser.add_argument("run_dir", help="Run directory containing summary.json and events.jsonl.")
-    parser.add_argument("--format", choices=("text", "json"), default="text")
-    return parser.parse_args(argv)
-
-
 def _profile_config_owner_path(name: str, cwd: Path, home: Path | None = None) -> Path:
     project_path = profiles.project_config_path(cwd)
     project_file = profiles.load_profile_file(project_path)
@@ -3743,35 +3305,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0 if summary.get("final_status") == "clear" else 2
 
 
-def parse_suppress_args(argv: Sequence[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        prog="revrem suppress",
-        description="Manage explicit finding suppressions.",
-    )
-    parser.add_argument("--scope", choices=suppressions.SCOPES, default="repo")
-    parser.add_argument("--format", choices=("text", "json"), default="text")
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    add = subparsers.add_parser("add", help="Add or replace a suppression.")
-    add.add_argument("fingerprint")
-    add.add_argument("--summary", required=True)
-    add.add_argument("--rationale", required=True)
-    add.add_argument("--severity", choices=suppressions.SEVERITIES, default="medium")
-    add.add_argument("--expires", default=None)
-    add.add_argument("--critical-override", action="store_true")
-    add.add_argument("--created-by", default=None)
-
-    remove = subparsers.add_parser("remove", help="Remove a suppression.")
-    remove.add_argument("fingerprint")
-
-    check = subparsers.add_parser("check", help="Exit 0 when a fingerprint is suppressed.")
-    check.add_argument("fingerprint")
-
-    subparsers.add_parser("list", help="List suppressions.")
-    subparsers.add_parser("expire", help="Remove expired suppressions.")
-    return parser.parse_args(argv)
-
-
 def suppress_main(argv: Sequence[str]) -> int:
     # REVREM-TASK-003 Wave C1a: thin delegator over commands.suppress.main.
     from .commands import suppress as _cmd
@@ -3810,16 +3343,6 @@ def bundle_bug_report_main(argv: Sequence[str]) -> int:
     # REVREM-TASK-003 Wave C1a: thin delegator over commands.bundle.main.
     from .commands import bundle as _cmd
     return _cmd.main(argv)
-
-
-def parse_replay_args(argv: Sequence[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        prog="revrem replay",
-        description="Replay a RevRem run from events.jsonl without invoking a model.",
-    )
-    parser.add_argument("run_dir", help="Run directory containing events.jsonl.")
-    parser.add_argument("--renderer", choices=("compact",), default="compact")
-    return parser.parse_args(argv)
 
 
 def replay_main(argv: Sequence[str]) -> int:
@@ -4360,23 +3883,6 @@ def history_main(argv: Sequence[str]) -> int:
 
 
 
-def parse_policy_args(argv: Sequence[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        prog="revrem policy",
-        description="Inspect and lint routing policy.",
-    )
-    parser.add_argument("--format", choices=("text", "json"), default=None)
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    lint = subparsers.add_parser("lint", help="Lint routing rules and routes in a profile.")
-    lint.add_argument("--profile", required=True)
-    lint.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)
-    review = subparsers.add_parser("review", help="Summarize routing outcomes from run artifacts.")
-    review.add_argument("--artifact-dir", required=True)
-    review.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)
-    return parser.parse_args(argv)
-
-
 def policy_main(argv: Sequence[str]) -> int:
     # REVREM-TASK-003 Wave C1a: thin delegator over commands.policy.main.
     from .commands import policy as _cmd
@@ -4456,21 +3962,6 @@ def policy_review(artifact_dir: Path, output_format: str | None = None) -> int:
             )
         )
     return 0
-
-
-def parse_triage_args(argv: Sequence[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        prog="revrem triage",
-        description="Inspect triage and routing artifacts.",
-    )
-    parser.add_argument("--format", choices=("text", "json"), default=None)
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    explain = subparsers.add_parser("explain", help="Explain the routing decision for a run iteration.")
-    explain.add_argument("run_dir")
-    explain.add_argument("--iteration", type=int, default=1)
-    explain.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)
-    return parser.parse_args(argv)
 
 
 def triage_main(argv: Sequence[str]) -> int:
