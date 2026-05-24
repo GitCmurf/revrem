@@ -26,6 +26,8 @@ Issues identified during code review and simplification passes that were deferre
 
 **Best practice:** Derived values should not be stored in state. If a value can be computed from other state (here: the loop index), it should be computed at the use site, not carried in a data structure.
 
+**Status (2026-05-24):** Deferred past Wave C2b. The one remaining `acc.iteration` reference is in `core/engine.py:194` inside `decide()` (the `RetryViaCommitHook` retry budget check). Removing the field requires changing `decide()`'s signature to take `iteration: int` explicitly, which touches ~10 call sites in `cli/__init__.py` and 54 sites in `tests/test_engine_decide.py`. This is bounded mechanical work but not a 1:1 fit for the "purely local C2b" charter; revisit in C3a alongside the phase-implementation migration where `decide()` callers move into adapters.
+
 ---
 
 ## TD-003 — `_execute_stop` repeats the same tail pattern across four outcome branches
@@ -48,13 +50,11 @@ Each branch sets its `final_status` and any unique fields, then calls the helper
 
 ---
 
-## TD-004 — Routing-payload assembly is inlined in `_run_loop`
+## TD-004 — Routing-payload assembly is inlined in `_run_loop` (RESOLVED 2026-05-24)
 
-**Location:** `src/code_review_loop/cli.py:2129–2265` (triage resolution block inside `_run_loop`)
+**Location (historical):** `src/code_review_loop/cli.py:2129–2265` (triage resolution block inside `_run_loop`)
 
-**Problem:** Approximately 130 lines of `eff_harness`, `eff_model`, `eff_reasoning`, `eff_sandbox`, `eff_timeout` extraction, `proposal_present` / `proposal_matches_effective` / `proposal_overrides` computation, `decision` / `rationale` branching, and `effective_route` / `routing_payload` dict construction are inlined inside `_run_loop`. This makes the loop body hard to read and the routing logic impossible to test in isolation.
-
-**Fix:** Extract `_build_routing_payload(resolved_route, triage_payload, run_id, iteration, remediation_input, config) -> dict[str, Any]`. The call site in `_run_loop` becomes a single call. The function is independently unit-testable.
+**Resolution:** Extracted to `_build_routing_payload(resolved_route, triage_payload, run_id, iteration, remediation_input, config)` in `src/code_review_loop/cli/__init__.py` during REVREM-TASK-003 Wave C2b. The `_run_loop` call site is now a single ~8-line call; the function is independently unit-testable and pure with respect to loop state. Golden-master and artifact-schema suites unchanged.
 
 **Best practice:** Loop bodies should describe control flow, not compute artifacts. Any block of code that builds a data structure from inputs should be a named function.
 

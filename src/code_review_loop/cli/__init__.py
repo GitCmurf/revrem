@@ -1849,6 +1849,137 @@ def _execute_stop(
     assert_never(outcome)
 
 
+def _build_routing_payload(
+    *,
+    resolved_route: policy.ResolvedRoute,
+    triage_payload: dict[str, Any],
+    run_id: str,
+    iteration: int,
+    remediation_input: str,
+    config: LoopConfig,
+) -> dict[str, Any]:
+    """Assemble the per-iteration routing decision artifact.
+
+    Extracted from the inline ``_run_loop`` body in Wave C2b (TD-004). Pure with
+    respect to the loop state: every input is passed explicitly so future
+    callers (e.g. snapshot replay) can reconstruct the same artifact without
+    re-running the policy resolver.
+    """
+    eff_harness = resolved_route.harness
+    eff_model = resolved_route.model or config.remediation_model or config.model
+    eff_reasoning = (
+        resolved_route.reasoning_effort
+        or config.remediation_reasoning_effort
+        or config.reasoning_effort
+    )
+    eff_sandbox = resolved_route.sandbox
+    eff_timeout = (
+        int(resolved_route.timeout_seconds)
+        if resolved_route.timeout_seconds is not None
+        else 300
+    )
+
+    effective_route: dict[str, Any] = {
+        "route_tier": resolved_route.route_tier,
+        "harness": eff_harness,
+        "sandbox": eff_sandbox,
+        "timeout_seconds": eff_timeout,
+    }
+    if eff_model:
+        effective_route["model"] = eff_model
+    if eff_reasoning:
+        effective_route["reasoning_effort"] = eff_reasoning
+
+    proposal_present = bool(triage_payload.get("route_proposal"))
+    proposal_matches_effective = False
+    proposal_overrides: list[str] = []
+    proposed_fields: dict[str, Any] = {}
+    if proposal_present:
+        p = triage_payload["route_proposal"]
+        proposed_fields = {
+            k: p[k]
+            for k in (
+                "route_tier",
+                "harness",
+                "model",
+                "reasoning_effort",
+                "sandbox",
+                "timeout_seconds",
+                "rationale",
+            )
+            if k in p
+        }
+        comparable_keys = (
+            "route_tier",
+            "harness",
+            "model",
+            "reasoning_effort",
+            "sandbox",
+            "timeout_seconds",
+        )
+        proposal_overrides = [
+            key
+            for key in comparable_keys
+            if key in proposed_fields and effective_route.get(key) != proposed_fields[key]
+        ]
+        proposal_matches_effective = not proposal_overrides
+
+    if resolved_route.fallback_applied:
+        decision = "fallback_applied"
+        original = (
+            resolved_route.fallbacks_considered[0]
+            if resolved_route.fallbacks_considered
+            else "unknown"
+        )
+        rationale = f"Original route {original!r} fell back to {resolved_route.fallback_applied!r}."
+    elif proposal_present and proposal_matches_effective:
+        decision = "proposal_accepted"
+        rationale = "Model route proposal accepted by policy."
+    elif proposal_present:
+        decision = "policy_override"
+        if proposal_overrides:
+            fields = ", ".join(proposal_overrides)
+            rationale = (
+                "Policy selected the proposed tier but overrode "
+                f"proposal field(s): {fields}."
+            )
+        else:
+            rationale = "Policy overrode the model route proposal."
+    elif resolved_route.rule_id == "default":
+        decision = "default_route_applied"
+        rationale = "No model route proposal or rule match; applied default route."
+    else:
+        decision = "policy_override"
+        rationale = "Applied policy based on classification."
+
+    routing_payload: dict[str, Any] = {
+        "schema_version": "1.0",
+        "run_id": run_id,
+        "iteration": iteration,
+        "source_triage_artifact": f"triage-{iteration}.json",
+        "policy_decision": {
+            "decision": decision,
+            "matched_rule_ids": (
+                [resolved_route.rule_id]
+                if resolved_route.rule_id and resolved_route.rule_id != "default"
+                else []
+            ),
+            "rationale": rationale,
+        },
+        "effective_route": effective_route,
+        "fallbacks_considered": list(resolved_route.fallbacks_considered),
+        "prompt": {
+            "path": f"remediation-{iteration}-prompt.txt",
+            "sha256": prompts_composer.compute_prompt_hash(remediation_input),
+            "bytes": len(remediation_input),
+            "fragments": list(resolved_route.prompt_fragments),
+        },
+    }
+    if proposal_present:
+        routing_payload["model_proposal"] = proposed_fields
+    return routing_payload
+
+
 def run_loop(
     config: LoopConfig,
     runner: Runner = default_runner,
@@ -2163,127 +2294,15 @@ def _run_loop(
                         )
 
                         # Record routing artifact
-                        eff_harness = resolved_route.harness
-                        eff_model = (
-                            resolved_route.model or config.remediation_model or config.model
+                        # TD-004 (Wave C2b): extracted to _build_routing_payload.
+                        routing_payload = _build_routing_payload(
+                            resolved_route=resolved_route,
+                            triage_payload=triage_payload,
+                            run_id=run_id,
+                            iteration=iteration,
+                            remediation_input=remediation_input,
+                            config=config,
                         )
-                        eff_reasoning = (
-                            resolved_route.reasoning_effort
-                            or config.remediation_reasoning_effort
-                            or config.reasoning_effort
-                        )
-                        eff_sandbox = resolved_route.sandbox
-                        eff_timeout = (
-                            int(resolved_route.timeout_seconds)
-                            if resolved_route.timeout_seconds is not None
-                            else 300
-                        )
-
-                        effective_route: dict[str, Any] = {
-                            "route_tier": resolved_route.route_tier,
-                            "harness": eff_harness,
-                            "sandbox": eff_sandbox,
-                            "timeout_seconds": eff_timeout,
-                        }
-                        if eff_model:
-                            effective_route["model"] = eff_model
-                        if eff_reasoning:
-                            effective_route["reasoning_effort"] = eff_reasoning
-
-                        proposal_present = bool(triage_payload.get("route_proposal"))
-                        proposal_matches_effective = False
-                        proposal_overrides: list[str] = []
-                        if proposal_present:
-                            p = triage_payload["route_proposal"]
-                            proposed_fields = {
-                                k: p[k]
-                                for k in (
-                                    "route_tier",
-                                    "harness",
-                                    "model",
-                                    "reasoning_effort",
-                                    "sandbox",
-                                    "timeout_seconds",
-                                    "rationale",
-                                )
-                                if k in p
-                            }
-                            routing_payload_model_proposal = proposed_fields
-                            comparable_keys = (
-                                "route_tier",
-                                "harness",
-                                "model",
-                                "reasoning_effort",
-                                "sandbox",
-                                "timeout_seconds",
-                            )
-                            proposal_overrides = [
-                                key
-                                for key in comparable_keys
-                                if key in proposed_fields
-                                and effective_route.get(key) != proposed_fields[key]
-                            ]
-                            proposal_matches_effective = not proposal_overrides
-
-                        # Determine policy decision and rationale
-                        if resolved_route.fallback_applied:
-                            decision = "fallback_applied"
-                            original = (
-                                resolved_route.fallbacks_considered[0]
-                                if resolved_route.fallbacks_considered
-                                else "unknown"
-                            )
-                            rationale = f"Original route {original!r} fell back to {resolved_route.fallback_applied!r}."
-                        elif proposal_present and proposal_matches_effective:
-                            decision = "proposal_accepted"
-                            rationale = "Model route proposal accepted by policy."
-                        elif proposal_present:
-                            decision = "policy_override"
-                            if proposal_overrides:
-                                fields = ", ".join(proposal_overrides)
-                                rationale = (
-                                    "Policy selected the proposed tier but overrode "
-                                    f"proposal field(s): {fields}."
-                                )
-                            else:
-                                rationale = "Policy overrode the model route proposal."
-                        elif resolved_route.rule_id == "default":
-                            decision = "default_route_applied"
-                            rationale = "No model route proposal or rule match; applied default route."
-                        else:
-                            decision = "policy_override"
-                            rationale = "Applied policy based on classification."
-
-                        routing_payload: dict[str, Any] = {
-                            "schema_version": "1.0",
-                            "run_id": run_id,
-                            "iteration": iteration,
-                            "source_triage_artifact": f"triage-{iteration}.json",
-                            "policy_decision": {
-                                "decision": decision,
-                                "matched_rule_ids": (
-                                    [resolved_route.rule_id]
-                                    if resolved_route.rule_id
-                                    and resolved_route.rule_id != "default"
-                                    else []
-                                ),
-                                "rationale": rationale,
-                            },
-                            "effective_route": effective_route,
-                            "fallbacks_considered": list(
-                                resolved_route.fallbacks_considered
-                            ),
-                            "prompt": {
-                                "path": f"remediation-{iteration}-prompt.txt",
-                                "sha256": prompts_composer.compute_prompt_hash(
-                                    remediation_input
-                                ),
-                                "bytes": len(remediation_input),
-                                "fragments": list(resolved_route.prompt_fragments),
-                            },
-                        }
-                        if triage_payload.get("route_proposal"):
-                            routing_payload["model_proposal"] = routing_payload_model_proposal
 
                         # Validate routing artifact against schema
                         try:

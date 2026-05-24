@@ -903,7 +903,40 @@ lazy back-imports can be deleted.
 `core/engine.py` but the shell — terminal contexts, summary writes, phase
 dispatch — is still inlined. `run_loop` (line 1815) is the public wrapper.
 
-**Wave C1a + C1b status (2026-05-24).** Both have landed.
+**Wave C1 + C2 status (2026-05-24).** C1a, C1b, C2a (both parts) and the
+TD-004 half of C2b have landed.
+* `cli/args.py` is the canonical home for every `parse_*_args` parser and the
+  three argparse choice tuples (`REASONING_EFFORT_CHOICES`,
+  `PROGRESS_STYLE_CHOICES`, `COMMIT_ON_HOOK_FAILURE_CHOICES`). `cli/__init__.py`
+  re-exports each.
+* `cli/config_builder.py` is the canonical home for `LoopConfig` assembly +
+  argument-resolution helpers (`build_loop_config`, `profile_from_loop_config`,
+  `should_prompt_for_new_profile`, `new_profile_from_args`,
+  `default_artifact_dir`, `ensure_default_artifact_ignore`,
+  `resolve_timeout_seconds`, `resolve_max_iterations`,
+  `parse_harness_bin_overrides`, `resolve_profile_timeout_seconds`,
+  `profile_or_default`, `pick`) + `DEFAULT_TIMEOUT_SECONDS`. The names
+  `LoopConfig`, `lexical_git_repo_root`, `git_info_exclude_path`,
+  `resolve_initial_review_file` still live in the parent package and are
+  reached through a `_cli_module()` accessor inside `config_builder` to break
+  the import cycle (`LoopConfig` is defined later in `cli/__init__.py` than
+  the import of `config_builder`); the same accessor is used for
+  `profile_or_default` and `default_artifact_dir` so existing
+  `monkeypatch.setattr(MODULE, …)` test sites keep taking effect until C3b
+  retires them.
+* `_run_loop` no longer inlines the routing-payload assembly: TD-004 is now
+  the standalone, unit-testable `_build_routing_payload(...)` in
+  `cli/__init__.py`. TD-002 (`acc.iteration` → loop variable) is deferred
+  past C2b because it would change the signature of `decide()` and touch ~54
+  sites in `tests/test_engine_decide.py`; the deferral is recorded in
+  `docs/05-planning/tech-debt.md`.
+
+`main()` dispatches through `_build_subcommand_registry()` — the `if/elif`
+ladder is gone. Tests: `tests/test_cli_dispatch.py` pins the registry
+mapping; `tests/test_cli_commands_outcome_gate.py` is a grep-gate that fails
+any bare `return <int>` literal reintroduced under `cli/commands/`.
+
+**Status of the original C1a status block below.** Both have landed.
 `src/code_review_loop/cli.py` is now the package `src/code_review_loop/cli/`,
 with the legacy God-object body living in `cli/__init__.py` (≈4,528 lines after
 extraction, down from 4,801) and per-subcommand entry points in
@@ -928,11 +961,15 @@ test patches.
 - TD-001 — 16 functions with `ctx: RunContext | None = None` (eliminated in C3
   once phases move into adapters and ctx becomes required at all call sites).
 - TD-002 — `acc.iteration` redundant in `LoopAccumulator`; derivable from the
-  loop counter (clean up in C2 alongside `_run_loop` refactor).
+  loop counter. **Deferred past C2b** because the one remaining read is in
+  `core/engine.py:194` inside `decide()`, and removing it requires changing
+  `decide()`'s signature (touching ~10 cli call sites + 54 test sites);
+  revisit in C3a.
 - TD-003 — `_execute_stop` 4-branch copy-paste (lines 1770–1815); extract
   shared tail in C3.
 - TD-004 — ~130-line routing-payload assembly block in `_run_loop` (lines
   2129–2265); extract as `_build_routing_payload(...)` in C2.
+  **RESOLVED (2026-05-24).**
 - TD-005 — `OutcomeFailed.reason` dispatched as raw strings in
   `outcome_to_exit_code` (core/outcome.py:69–74); type as
   `Literal[...]` in C3.
