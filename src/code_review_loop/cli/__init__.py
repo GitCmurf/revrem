@@ -3760,57 +3760,9 @@ def parse_suppress_args(argv: Sequence[str]) -> argparse.Namespace:
 
 
 def suppress_main(argv: Sequence[str]) -> int:
-    args = parse_suppress_args(argv)
-    path = _suppression_path_for_scope(args.scope, Path.cwd())
-    audit_path = _suppression_audit_path_for_scope(args.scope, Path.cwd())
-    try:
-        if args.command == "add":
-            entry = suppressions.make_entry(
-                fingerprint=args.fingerprint,
-                summary=args.summary,
-                rationale=args.rationale,
-                severity=args.severity,
-                scope=args.scope,
-                expires_at=args.expires,
-                critical_override=args.critical_override,
-                created_by=args.created_by,
-            )
-            suppressions.add_entry(path, entry, audit_path=audit_path)
-            print(f"added {entry.fingerprint} to {path}")
-            return 0
-        if args.command == "remove":
-            if not suppressions.remove_entry(path, args.fingerprint, audit_path=audit_path):
-                print(f"ERROR: suppression not found: {args.fingerprint}", file=sys.stderr)
-                return 2
-            print(f"removed {args.fingerprint} from {path}")
-            return 0
-        if args.command == "expire":
-            count = suppressions.expire_entries(path, audit_path=audit_path)
-            print(f"expired {count} suppression(s) from {path}")
-            return 0
-        if args.command == "check":
-            matches = suppressions.load_effective_suppressions(Path.cwd())
-            match = matches.get(args.fingerprint)
-            if match is None:
-                return 2
-            if args.format == "json":
-                print(json.dumps(asdict(match.entry), indent=2, sort_keys=True))
-            else:
-                print(f"suppressed {args.fingerprint} via {match.source_path}")
-            return 0
-        if args.command == "list":
-            entries = suppressions.load_entries(path)
-            if args.format == "json":
-                print(json.dumps([asdict(entry) for entry in entries], indent=2, sort_keys=True))
-            else:
-                for entry in entries:
-                    expires = f" expires={entry.expires_at}" if entry.expires_at else ""
-                    print(f"{entry.fingerprint} {entry.severity_at_suppression} {entry.summary}{expires}")
-            return 0
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 1
-    raise AssertionError(f"unhandled suppress command: {args.command}")
+    # REVREM-TASK-003 Wave C1a: thin delegator over commands.suppress.main.
+    from .commands import suppress as _cmd
+    return _cmd.main(argv)
 
 
 def _suppression_path_for_scope(scope: str, cwd: Path) -> Path:
@@ -3826,105 +3778,9 @@ def _suppression_audit_path_for_scope(scope: str, cwd: Path) -> Path:
 
 
 def config_main(argv: Sequence[str]) -> int:
-    args = parse_config_args(argv)
-    try:
-        output_format = getattr(args, "format", None)
-        if args.command == "list":
-            items = profiles.profile_list_items(cwd=Path.cwd())
-            if (output_format or "text") == "json":
-                print(
-                    json.dumps(
-                        [profiles.profile_list_item_to_dict(item) for item in items],
-                        indent=2,
-                        sort_keys=True,
-                    )
-                )
-            else:
-                for item in items:
-                    print(_format_profile_list_item(item))
-            return 0
-        if args.command == "show":
-            if output_format == "text":
-                print(
-                    "ERROR: 'text' format is not supported for 'show'. Use 'toml' or 'json'.",
-                    file=sys.stderr,
-                )
-                return 1
-            profile = profiles.resolve_profile(
-                args.name,
-                cwd=Path.cwd(),
-                require_implemented=False,
-            )
-            if (output_format or "toml") == "json":
-                print(profiles.profile_to_json(profile), end="")
-            else:
-                print(profiles.profile_to_toml(profile), end="")
-            return 0
-        if args.command == "new":
-            profile = new_profile_from_args(args)
-            path = profiles.write_user_profile(profile, force=args.force)
-            print(f"created {args.name} in {path}")
-            return 0
-        if args.command == "edit":
-            path = edit_profile_config(args.name, cwd=Path.cwd())
-            print(f"edited {args.name} in {path}")
-            return 0
-        if args.command == "clone":
-            path = profiles.clone_user_profile(
-                args.source,
-                args.target,
-                cwd=Path.cwd(),
-                force=args.force,
-            )
-            print(f"cloned {args.source} to {args.target} in {path}")
-            return 0
-        if args.command == "delete":
-            if not args.yes:
-                print("ERROR: pass --yes to delete a profile non-interactively", file=sys.stderr)
-                return 1
-            path = profiles.delete_user_profile(args.name)
-            print(f"deleted {args.name} from {path}")
-            return 0
-        if args.command == "export":
-            profile = profiles.resolve_profile(
-                args.name,
-                cwd=Path.cwd(),
-                require_implemented=False,
-            )
-            print(profiles.profile_to_toml(profile, include_wrapper=True), end="")
-            return 0
-        if args.command == "import":
-            path = profiles.import_user_profiles(Path(args.path), force=args.force)
-            print(f"imported profiles into {path}")
-            return 0
-        if args.command == "doctor":
-            profile_names = [item.name for item in profiles.list_profiles(cwd=Path.cwd())]
-            info: dict[str, object] = {
-                "user_config": str(profiles.user_config_path()),
-                "project_config": str(profiles.project_config_path(Path.cwd())),
-                "profiles": profile_names,
-            }
-            if args.profile:
-                info["resolved_profile"] = profiles.profile_to_dict(
-                    profiles.resolve_profile(
-                        args.profile,
-                        cwd=Path.cwd(),
-                        require_implemented=False,
-                    )
-                )
-            if (output_format or "text") == "json":
-                print(json.dumps(info, indent=2, sort_keys=True))
-            else:
-                print(f"user_config: {info['user_config']}")
-                print(f"project_config: {info['project_config']}")
-                print("profiles: " + ", ".join(profile_names))
-                if "resolved_profile" in info:
-                    print(f"resolved_profile: {json.dumps(info['resolved_profile'], indent=2)}")
-            return 0
-    except (OSError, RuntimeError, ValueError) as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 1
-    raise AssertionError(f"unhandled config command: {args.command}")
+    # REVREM-TASK-003 Wave C1a: thin delegator over commands.config.main.
+    from .commands import config as _cmd
+    return _cmd.main(argv)
 
 
 def _format_profile_list_item(item: profiles.ProfileListItem) -> str:
@@ -3938,24 +3794,9 @@ def _format_profile_list_item(item: profiles.ProfileListItem) -> str:
 
 
 def bundle_bug_report_main(argv: Sequence[str]) -> int:
-    args = parse_bundle_bug_report_args(argv)
-    if args.no_redact and not args.i_understand_the_risks:
-        print("ERROR: --no-redact requires --i-understand-the-risks", file=sys.stderr)
-        return 4
-    try:
-        result = bug_bundle.create_bug_bundle(
-            bug_bundle.BundleOptions(
-                run_dir=Path(args.run_dir),
-                output_path=Path(args.output) if args.output else None,
-                include_raw_transcripts=args.include_raw_transcripts,
-                redact=not args.no_redact,
-            )
-        )
-    except OSError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 1
-    print(str(result.output_path))
-    return 0
+    # REVREM-TASK-003 Wave C1a: thin delegator over commands.bundle.main.
+    from .commands import bundle as _cmd
+    return _cmd.main(argv)
 
 
 def parse_replay_args(argv: Sequence[str]) -> argparse.Namespace:
@@ -3969,67 +3810,15 @@ def parse_replay_args(argv: Sequence[str]) -> argparse.Namespace:
 
 
 def replay_main(argv: Sequence[str]) -> int:
-    args = parse_replay_args(argv)
-    path = Path(args.run_dir) / events.EVENTS_FILENAME
-    try:
-        records, truncated = events.read_events(path)
-    except (OSError, ValueError) as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 1
-    print(events.render_compact(records), end="")
-    return 1 if truncated else 0
+    # REVREM-TASK-003 Wave C1a: thin delegator over commands.replay.main.
+    from .commands import replay as _cmd
+    return _cmd.main(argv)
 
 
 def doctor_main(argv: Sequence[str]) -> int:
-    args = parse_doctor_args(argv)
-    try:
-        profile = profile_or_default(args.profile, Path.cwd(), require_implemented=False)
-    except (FileNotFoundError, ValueError) as exc:
-        issues = [
-            diagnostics.DiagnosticIssue(
-                code="revrem.preflight.profile_error",
-                severity="blocking",
-                message="RevRem profile configuration could not be resolved.",
-                hint=str(exc),
-                evidence={"profile": args.profile},
-            )
-        ]
-    else:
-        artifact_dir = _doctor_artifact_dir(args, profile)
-        issues = diagnostics.run_doctor(
-            diagnostics.DoctorConfig(
-                cwd=Path.cwd(),
-                base=args.base if args.base is not None else profile.pipeline.base,
-                artifact_dir=artifact_dir,
-                artifact_dir_is_default=args.artifact_dir is None and profile.output.artifact_dir is None,
-                codex_bin=args.codex_bin if args.codex_bin is not None else profile.runtime.codex_bin,
-                review_harness=profile.review.harness,
-                remediation_harness=profile.remediation.harness,
-                triage_enabled=profile.triage.enabled,
-                triage_harness=profile.triage.harness,
-                commit_message_harness=profile.commit.harness,
-                routed_harnesses=profile_routed_harnesses(profile),
-                harness_executables=profile.runtime.harness_executables,
-                check_commands=tuple(args.check) if args.check is not None else profile.pipeline.checks,
-                commit_after_remediation=args.commit_after_remediation or profile.commit.enabled,
-                review_timeout_seconds=profile.review.timeout_seconds,
-                remediation_timeout_seconds=profile.remediation.timeout_seconds,
-                triage_timeout_seconds=(
-                    profile.triage.timeout_seconds if profile.triage.enabled else None
-                ),
-            )
-        )
-        issues.extend(_suppression_doctor_issues(Path.cwd()))
-    output_format = args.format or ("text" if sys.stdout.isatty() else "json")
-    if output_format == "json":
-        print(diagnostics.doctor_json(issues), end="")
-    else:
-        print(diagnostics.doctor_text(issues), end="")
-    if diagnostics.has_blocking_issue(issues):
-        return 4
-    if args.strict and diagnostics.has_warning_issue(issues):
-        return 6
-    return 0
+    # REVREM-TASK-003 Wave C1a: thin delegator over commands.doctor.main.
+    from .commands import doctor as _cmd
+    return _cmd.main(argv)
 
 
 def profile_routed_harnesses(profile: profiles.Profile) -> tuple[str, ...]:
@@ -4101,37 +3890,9 @@ RESUMABLE_STOPPED_REASONS = frozenset(
 
 
 def resume_main(argv: Sequence[str]) -> int:
-    args = parse_resume_args(argv)
-    run_dir = Path(args.run_dir)
-    try:
-        issues = resume_precondition_issues(run_dir, cwd=Path.cwd())
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 4
-    if args.format == "json":
-        print(diagnostics.doctor_json(issues), end="")
-        if diagnostics.has_blocking_issue(issues):
-            return 4
-    else:
-        print(diagnostics.doctor_text(issues), end="")
-        if diagnostics.has_blocking_issue(issues):
-            return 4
-    try:
-        summary = resume_run(run_dir)
-    except RunLoopFailed as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return outcome_to_exit_code(exc.outcome) if exc.outcome is not None else 1
-    except KeyboardInterrupt:
-        print("Cancelled by user.", file=sys.stderr)
-        return 5
-    except (OSError, ValueError) as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 4
-    if args.format == "json":
-        print(json.dumps(summary, indent=2, sort_keys=True))
-    else:
-        print(format_terminal_summary(summary))
-    return 0 if summary.get("final_status") == "clear" else 2
+    # REVREM-TASK-003 Wave C1a: thin delegator over commands.resume.main.
+    from .commands import resume as _cmd
+    return _cmd.main(argv)
 
 
 def resume_precondition_issues(run_dir: Path, *, cwd: Path) -> list[diagnostics.DiagnosticIssue]:
@@ -4580,31 +4341,9 @@ def resume_git_state_issues(summary: dict[str, object], *, cwd: Path) -> list[di
 
 
 def history_main(argv: Sequence[str]) -> int:
-    args = parse_history_args(argv)
-    try:
-        output_format = getattr(args, "format", None) or "text"
-        if args.command == "list":
-            if args.limit < 1:
-                raise ValueError("--limit must be at least 1")
-            records = run_history.read_history(limit=args.limit)
-            if output_format == "json":
-                print(json.dumps(records, indent=2, sort_keys=True))
-            else:
-                if not records:
-                    print("No RevRem run history found.")
-                    return 0
-                for record in records:
-                    run_id = record.get("run_id") or "<unknown>"
-                    status = record.get("final_status") or "unknown"
-                    reason = record.get("stopped_reason") or "unknown"
-                    base = record.get("base") or "unknown"
-                    artifact_dir = record.get("artifact_dir") or ""
-                    print(f"{run_id} {status} ({reason}) base={base} artifacts={artifact_dir}")
-            return 0
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 1
-    raise AssertionError(f"unhandled history command: {args.command}")
+    # REVREM-TASK-003 Wave C1a: thin delegator over commands.history.main.
+    from .commands import history as _cmd
+    return _cmd.main(argv)
 
 
 
@@ -4626,16 +4365,9 @@ def parse_policy_args(argv: Sequence[str]) -> argparse.Namespace:
 
 
 def policy_main(argv: Sequence[str]) -> int:
-    args = parse_policy_args(argv)
-    try:
-        if args.command == "lint":
-            return policy_lint(args.profile, output_format=getattr(args, "format", None))
-        if args.command == "review":
-            return policy_review(Path(args.artifact_dir), output_format=getattr(args, "format", None))
-    except (OSError, ValueError) as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 1
-    return 0
+    # REVREM-TASK-003 Wave C1a: thin delegator over commands.policy.main.
+    from .commands import policy as _cmd
+    return _cmd.main(argv)
 
 
 def policy_lint(profile_name: str, output_format: str | None = None) -> int:
@@ -4729,14 +4461,9 @@ def parse_triage_args(argv: Sequence[str]) -> argparse.Namespace:
 
 
 def triage_main(argv: Sequence[str]) -> int:
-    args = parse_triage_args(argv)
-    try:
-        if args.command == "explain":
-            return triage_explain(Path(args.run_dir), args.iteration, output_format=getattr(args, "format", None))
-    except (OSError, ValueError) as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 1
-    return 0
+    # REVREM-TASK-003 Wave C1a: thin delegator over commands.triage.main.
+    from .commands import triage as _cmd
+    return _cmd.main(argv)
 
 
 def triage_explain(run_dir: Path, iteration: int, output_format: str | None = None) -> int:
