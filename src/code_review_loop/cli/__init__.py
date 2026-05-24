@@ -3636,30 +3636,43 @@ def profile_from_loop_config(
     )
 
 
+def _build_subcommand_registry() -> dict[str, Callable[[Sequence[str]], int]]:
+    # REVREM-TASK-003 Wave C1b: registry dispatch replaces the if/elif ladder.
+    # Adding a subcommand requires only a new cli/commands/X.py + one entry here.
+    from .commands import (
+        bundle as _bundle,
+        config as _config,
+        doctor as _doctor,
+        history as _history,
+        policy as _policy,
+        replay as _replay,
+        resume as _resume,
+        suppress as _suppress,
+        triage as _triage,
+    )
+    from code_review_loop import tui as _tui
+
+    return {
+        "bundle-bug-report": _bundle.main,
+        "config": _config.main,
+        "doctor": _doctor.main,
+        "history": _history.main,
+        "policy": _policy.main,
+        "preflight": _doctor.main,
+        "replay": _replay.main,
+        "resume": _resume.main,
+        "suppress": _suppress.main,
+        "triage": _triage.main,
+        "ui": _tui.main,
+    }
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     raw_argv = list(sys.argv[1:] if argv is None else argv)
-    if raw_argv and raw_argv[0] == "bundle-bug-report":
-        return bundle_bug_report_main(raw_argv[1:])
-    if raw_argv and raw_argv[0] == "suppress":
-        return suppress_main(raw_argv[1:])
-    if raw_argv and raw_argv[0] == "replay":
-        return replay_main(raw_argv[1:])
-    if raw_argv and raw_argv[0] == "resume":
-        return resume_main(raw_argv[1:])
-    if raw_argv and raw_argv[0] in {"doctor", "preflight"}:
-        return doctor_main(raw_argv[1:])
-    if raw_argv and raw_argv[0] == "config":
-        return config_main(raw_argv[1:])
-    if raw_argv and raw_argv[0] == "history":
-        return history_main(raw_argv[1:])
-    if raw_argv and raw_argv[0] == "policy":
-        return policy_main(raw_argv[1:])
-    if raw_argv and raw_argv[0] == "triage":
-        return triage_main(raw_argv[1:])
-    if raw_argv and raw_argv[0] == "ui":
-        from code_review_loop import tui
-
-        return tui.main(raw_argv[1:])
+    if raw_argv:
+        handler = _build_subcommand_registry().get(raw_argv[0])
+        if handler is not None:
+            return handler(raw_argv[1:])
 
     args = parse_args(raw_argv)
     try:

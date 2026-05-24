@@ -4,7 +4,7 @@ type: TASK
 title: Re-engineer cli.py from God object into a hexagonal review-loop core
 status: Draft
 version: '0.2'
-last_updated: '2026-05-23'
+last_updated: '2026-05-24'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -903,12 +903,26 @@ lazy back-imports can be deleted.
 `core/engine.py` but the shell — terminal contexts, summary writes, phase
 dispatch — is still inlined. `run_loop` (line 1815) is the public wrapper.
 
-**`main()` (line 3639) still has the `if/elif` dispatch ladder.** Nine
-`*_main` functions live in `cli.py`: `suppress_main` (3762), `config_main`
-(3828), `bundle_bug_report_main` (3940), `replay_main` (3971), `doctor_main`
-(3983), `resume_main` (4103), `history_main` (4582), `policy_main` (4628),
-`triage_main` (4731). All return bare `int` literals — `CommandOutcome` has
-not yet been introduced.
+**Wave C1a + C1b status (2026-05-24).** Both have landed.
+`src/code_review_loop/cli.py` is now the package `src/code_review_loop/cli/`,
+with the legacy God-object body living in `cli/__init__.py` (≈4,528 lines after
+extraction, down from 4,801) and per-subcommand entry points in
+`cli/commands/{bundle,config,doctor,history,policy,replay,resume,suppress,triage}.py`.
+Each command module returns through the `CommandOutcome` ADT in
+`cli/outcome.py` (`CommandOk` / `CommandFailed`); the legacy `*_main` symbols
+in `cli/__init__.py` are now two-line delegators preserved for back-compat.
+`main()` dispatches through `_build_subcommand_registry()` — the `if/elif`
+ladder is gone. Tests: `tests/test_cli_dispatch.py` pins the registry
+mapping; `tests/test_cli_commands_outcome_gate.py` is a grep-gate that fails
+any bare `return <int>` literal reintroduced under `cli/commands/`. Helpers
+listed for C2 relocation (`_suppression_*_for_scope`,
+`resume_precondition_issues`, `resume_run`, `latest_resume_review_path`,
+`policy_lint`, `policy_review`, `triage_explain`, `profile_or_default`,
+`profile_routed_harnesses`, `_suppression_doctor_issues`,
+`_format_profile_list_item`, `edit_profile_config`, `new_profile_from_args`,
+`_doctor_artifact_dir`) are still in `cli/__init__.py` and looked up lazily
+from the command modules to preserve existing `monkeypatch.setattr(MODULE, …)`
+test patches.
 
 **Tech-debt items to address in Wave C** (see `docs/05-planning/tech-debt.md`):
 - TD-001 — 16 functions with `ctx: RunContext | None = None` (eliminated in C3
