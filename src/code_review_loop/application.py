@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from code_review_loop import budgets, resume, runner
+from code_review_loop import budgets, reporting, resume, runner
 from code_review_loop.clock import SYSTEM_CLOCK, Clock
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.ports import CommandResult
@@ -62,7 +62,7 @@ def resume_review_loop(run_dir: Path, *, cwd: Path | None = None) -> dict[str, o
 
 def append_run_history(summary: dict[str, object], config: LoopConfig) -> Path:
     """Append the run summary to the operator's local run history."""
-    return runner.append_run_history(summary, config)
+    return reporting.append_run_history(summary, config)
 
 
 __all__ = [
