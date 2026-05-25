@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from code_review_loop import loop as cli
+from code_review_loop.cli.commands.triage import triage_explain
 from code_review_loop.cli.main import main as cli_main
 
 
@@ -87,13 +87,13 @@ def test_triage_explain_json(tmp_path):
 
     # We can't easily capture stdout from cli.main if it uses print()
     # But we can test the underlying function
-    assert cli.triage_explain(tmp_path, 1, output_format="json") == 0
+    assert triage_explain(tmp_path, 1, output_format="json") == 0
 
 
 def test_triage_explain_rejects_non_object_routing_artifact(tmp_path, capsys):
     (tmp_path / "routing-1.json").write_text("[]", encoding="utf-8")
 
-    assert cli.triage_explain(tmp_path, 1) == 1
+    assert triage_explain(tmp_path, 1) == 1
 
     assert "routing artifact must be a JSON object" in capsys.readouterr().err
 
@@ -101,7 +101,7 @@ def test_triage_explain_rejects_non_object_routing_artifact(tmp_path, capsys):
 def test_triage_explain_rejects_invalid_json(tmp_path, capsys):
     (tmp_path / "routing-1.json").write_text("{", encoding="utf-8")
 
-    assert cli.triage_explain(tmp_path, 1) == 1
+    assert triage_explain(tmp_path, 1) == 1
 
     assert "invalid routing artifact JSON" in capsys.readouterr().err
 
@@ -122,6 +122,6 @@ def test_triage_explain_rejects_non_string_matched_rules(tmp_path, capsys):
     }
     (tmp_path / "routing-1.json").write_text(json.dumps(routing), encoding="utf-8")
 
-    assert cli.triage_explain(tmp_path, 1) == 1
+    assert triage_explain(tmp_path, 1) == 1
 
     assert "matched_rule_ids must be a string array" in capsys.readouterr().err
