@@ -173,14 +173,16 @@ def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iterat
     fallback = deterministic_commit_message(iteration)
     stat = runner(["git", "diff", "--cached", "--stat"], config.cwd, None, _cli.phase_timeout_seconds(config, config.timeout_seconds))
     names = runner(["git", "diff", "--cached", "--name-only"], config.cwd, None, _cli.phase_timeout_seconds(config, config.timeout_seconds))
+    stat_stdout = stat.stdout or ""
+    names_stdout = names.stdout or ""
     context = "\n".join(
         part
         for part in (
             "Files:",
-            names.stdout.strip(),
+            names_stdout.strip(),
             "",
             "Stat:",
-            stat.stdout.strip(),
+            stat_stdout.strip(),
         )
         if part is not None
     )
