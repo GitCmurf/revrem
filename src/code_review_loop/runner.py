@@ -1312,7 +1312,7 @@ def run_loop(
         progress_warning_context(),
         progress.rich_live_progress(config.progress and config.progress_style == "rich"),
     ):
-        return _run_loop(config, runner, clock=clock, identity=identity, budget_state=budget_state)
+        return _run_session(config, runner, clock=clock, identity=identity, budget_state=budget_state)
 
 
 def resume_run(run_dir: Path) -> dict[str, object]:
@@ -1887,7 +1887,7 @@ def _run_iteration(
     return _IterationStep(acc, pending_check_failures, failed_check_names, commit_retry)
 
 
-def _run_loop(
+def _run_session(
     config: LoopConfig,
     runner: Runner = default_runner,
     *,
