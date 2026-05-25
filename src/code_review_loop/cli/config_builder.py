@@ -1,16 +1,12 @@
 """LoopConfig assembly + small CLI-argument resolution helpers (Wave C2a).
 
 These functions translate ``argparse.Namespace`` + profile defaults into a
-``LoopConfig`` (still defined in ``code_review_loop.cli``). They are the
-front-end half of the original God-object module; the back-end half (``main``,
-``run_loop``, terminal contexts) stays in ``cli/__init__.py`` and is the
-target of Wave C3.
+``LoopConfig``. They are the front-end half of the original God-object module;
+the back-end half is now in ``code_review_loop.loop`` pending the core-engine
+remediation.
 
-``LoopConfig`` itself and the two git-info helpers
-(``lexical_git_repo_root`` / ``git_info_exclude_path``) remain in the parent
-package and are looked up lazily through ``_cli`` so the file does not create
-an import cycle and so existing ``monkeypatch.setattr(MODULE, …)`` test sites
-keep working.
+Only the two git-info helpers (``lexical_git_repo_root`` /
+``git_info_exclude_path``) are still looked up lazily from the loop module.
 """
 
 from __future__ import annotations
@@ -20,17 +16,11 @@ import sys
 import tempfile
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from code_review_loop import budgets, harnesses, profiles
 from code_review_loop.clock import SYSTEM_CLOCK, Clock
+from code_review_loop.config import DEFAULT_TIMEOUT_SECONDS, LoopConfig
 from code_review_loop.identity import SYSTEM_IDENTITY, RunIdentity
-
-if TYPE_CHECKING:
-    from code_review_loop.config import LoopConfig
-
-# Canonical here (was duplicated in cli/__init__.py at C2a-step-1).
-DEFAULT_TIMEOUT_SECONDS = 300
 
 
 def _cli_module():
@@ -44,11 +34,11 @@ def _cli_module():
     return _cli
 
 
-# These names still live in ``code_review_loop.cli`` (the parent package);
+# These names still live in ``code_review_loop.loop``;
 # the helpers below reach them through ``_cli_module()``. Listed here so
 # readers and the C2/C3 burn-down audits can find every cross-package
 # dependency in one place.
-_FORWARDED_TO_PARENT = ("LoopConfig", "lexical_git_repo_root", "git_info_exclude_path")
+_FORWARDED_TO_PARENT = ("lexical_git_repo_root", "git_info_exclude_path")
 
 def should_prompt_for_new_profile(args: argparse.Namespace) -> bool:
     if args.interactive is not None:
@@ -227,7 +217,7 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
     max_iterations = pick(args.max_iterations, profile.pipeline.max_iterations, 2)
     if args.max_iterations is not None:
         max_iterations = resolve_max_iterations(max_iterations)
-    config = _cli.LoopConfig(
+    config = LoopConfig(
         base=pick(args.base, profile.pipeline.base, "main"),
         max_iterations=max_iterations,
         codex_bin=pick(args.codex_bin, profile.runtime.codex_bin, "codex"),

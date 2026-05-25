@@ -2,5 +2,67 @@
 
 from __future__ import annotations
 
-from code_review_loop.loop import DEFAULT_TIMEOUT_SECONDS as DEFAULT_TIMEOUT_SECONDS
-from code_review_loop.loop import LoopConfig as LoopConfig
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from code_review_loop import budgets, profiles
+
+DEFAULT_TIMEOUT_SECONDS = 300
+
+
+@dataclass(frozen=True)
+class LoopConfig:
+    base: str = "main"
+    max_iterations: int = 1
+    codex_bin: str = "codex"
+    harness_executables: dict[str, str] = field(default_factory=dict)
+    cwd: Path = field(default_factory=Path.cwd)
+    artifact_dir: Path = field(default_factory=Path.cwd)
+    preflight_enabled: bool = False
+    artifact_dir_is_default: bool = False
+    model: str | None = None
+    review_harness: str = "codex"
+    remediation_harness: str = "codex"
+    triage_harness: str = "codex"
+    commit_message_harness: str = "codex"
+    review_model: str | None = None
+    remediation_model: str | None = None
+    reasoning_effort: str | None = None
+    review_reasoning_effort: str | None = None
+    remediation_reasoning_effort: str | None = None
+    commit_after_remediation: bool = False
+    commit_message_model: str | None = None
+    commit_message_prompt: str | None = None
+    commit_message_prompt_overridden: bool = False
+    commit_on_hook_failure: str = "remediate"
+    commit_reasoning_effort: str | None = None
+    triage_enabled: bool = False
+    triage_model: str | None = None
+    triage_reasoning_effort: str | None = None
+    triage_timeout_seconds: float | None = None
+    triage_prompt: str | None = None
+    triage_on_invalid: str = "continue"
+    suppressions_enabled: bool = True
+    exec_sandbox: str = "workspace-write"
+    exec_color: str = "never"
+    full_auto: bool = True
+    exec_json: bool = False
+    output_last_message: bool = True
+    dry_run: bool = False
+    final_review: bool = True
+    max_remediation_input_chars: int = 200_000
+    terminal_excerpt_chars: int = 4_000
+    timeout_seconds: float | None = DEFAULT_TIMEOUT_SECONDS
+    review_timeout_seconds: float | None = None
+    remediation_timeout_seconds: float | None = None
+    debug_status_detection: bool = False
+    progress: bool = True
+    progress_style: str = "compact"
+    terminal_title: bool = False
+    initial_review_file: Path | None = None
+    check_commands: tuple[str, ...] = field(default_factory=tuple)
+    profile_name: str | None = None
+    budget_config: budgets.BudgetConfig = field(default_factory=budgets.BudgetConfig)
+    profile_v2: profiles.Profile | None = None
+    trusted_repo: bool = False
+    triage_contract: str = "v1"
