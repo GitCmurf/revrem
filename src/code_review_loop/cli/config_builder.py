@@ -7,10 +7,12 @@ These functions translate ``argparse.Namespace`` + profile defaults into a
 from __future__ import annotations
 
 import argparse
-import fcntl
+import os
 import sys
 import tempfile
-from collections.abc import Sequence
+import time
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 
 from code_review_loop import budgets, harnesses, profiles
@@ -43,6 +45,24 @@ def default_artifact_dir(
     return Path(".revrem") / "runs" / f"{timestamp}-{identity.new_run_id()}"
 
 
+@contextmanager
+def _exclusive_lock_file(path: Path, *, timeout_seconds: float = 5.0) -> Iterator[None]:
+    lock_dir = path.with_name(f"{path.name}.lock")
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        try:
+            lock_dir.mkdir()
+            break
+        except FileExistsError:
+            if time.monotonic() >= deadline:
+                raise TimeoutError(f"timed out waiting for lock: {lock_dir}") from None
+            time.sleep(0.05)
+    try:
+        yield
+    finally:
+        os.rmdir(lock_dir)
+
+
 def ensure_default_artifact_ignore(config: LoopConfig) -> None:
     artifact_dir = config.artifact_dir if config.artifact_dir.is_absolute() else config.cwd / config.artifact_dir
     default_runs_dir = config.cwd / ".revrem" / "runs"
@@ -63,8 +83,7 @@ def ensure_default_artifact_ignore(config: LoopConfig) -> None:
         ignore_entry = "runs/"
     ignore_path = ignore_path or (config.cwd / ".revrem" / ".gitignore")
     ignore_path.parent.mkdir(parents=True, exist_ok=True)
-    with ignore_path.open("a+", encoding="utf-8") as handle:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+    with _exclusive_lock_file(ignore_path), ignore_path.open("a+", encoding="utf-8") as handle:
         handle.seek(0)
         existing = handle.read()
         existing_entries = set(existing.splitlines())
