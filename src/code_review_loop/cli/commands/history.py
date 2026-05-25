@@ -7,14 +7,13 @@ import sys
 from collections.abc import Sequence
 
 from code_review_loop import run_history
+from code_review_loop.cli.args import parse_history_args
 
 from ..outcome import CommandFailed, CommandOk
 
 
 def main(argv: Sequence[str]) -> int:
-    from code_review_loop import loop as _cli  # late import; preserves monkeypatching
-
-    args = _cli.parse_history_args(argv)
+    args = parse_history_args(argv)
     try:
         output_format = getattr(args, "format", None) or "text"
         if args.command == "list":

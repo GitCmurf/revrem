@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 from code_review_loop import loop as cli
+from code_review_loop.cli.main import main as cli_main
 
 
 def test_policy_lint_success(tmp_path, monkeypatch):
@@ -20,7 +21,7 @@ harness = "codex"
     monkeypatch.chdir(tmp_path)
 
     # Run cli.main with policy lint
-    assert cli.main(["policy", "lint", "--profile", "test"]) == 0
+    assert cli_main(["policy", "lint", "--profile", "test"]) == 0
 
 
 def test_policy_lint_failure(tmp_path, monkeypatch):
@@ -36,7 +37,7 @@ routing.default_route = "missing"
     path.write_text(toml, encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
-    assert cli.main(["policy", "lint", "--profile", "test"]) == 1
+    assert cli_main(["policy", "lint", "--profile", "test"]) == 1
 
 
 def test_policy_review_summarizes_routing_outcomes(tmp_path, capsys):
@@ -66,7 +67,7 @@ def test_policy_review_summarizes_routing_outcomes(tmp_path, capsys):
     (tmp_path / "routing-1.json").write_text(json.dumps(routing), encoding="utf-8")
     (tmp_path / "routing-outcome-1.json").write_text(json.dumps(outcome), encoding="utf-8")
 
-    assert cli.main(["policy", "review", "--artifact-dir", str(tmp_path)]) == 0
+    assert cli_main(["policy", "review", "--artifact-dir", str(tmp_path)]) == 0
 
     output = capsys.readouterr().out
     assert "decision=policy_override" in output

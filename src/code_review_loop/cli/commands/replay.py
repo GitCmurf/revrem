@@ -10,14 +10,13 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from code_review_loop import events
+from code_review_loop.cli.args import parse_replay_args
 
 from ..outcome import CommandFailed, CommandOk
 
 
 def main(argv: Sequence[str]) -> int:
-    from code_review_loop import loop as _cli  # late import; preserves monkeypatching
-
-    args = _cli.parse_replay_args(argv)
+    args = parse_replay_args(argv)
     path = Path(args.run_dir) / events.EVENTS_FILENAME
     try:
         records, truncated = events.read_events(path)

@@ -5,7 +5,7 @@ import json
 import pytest
 
 from code_review_loop import harnesses
-from code_review_loop import loop as cli
+from code_review_loop.cli.main import main as cli_main
 
 
 @pytest.fixture
@@ -120,7 +120,7 @@ timeout_seconds = 0
         "Remediation: proposed model\n", encoding="utf-8"
     )
 
-    exit_code = cli.main([
+    exit_code = cli_main([
         "--profile", "test",
         "--review-model", "fake-findings",
         "--artifact-dir", "run1",

@@ -3,9 +3,7 @@
 Creates a redacted, deterministic bug-report bundle from a RevRem run
 directory.
 
-Helpers retained in ``code_review_loop.cli`` (parent package) are looked up
-lazily so existing ``monkeypatch.setattr(MODULE, …)`` test patches against
-the legacy God-object module remain in effect until C2/C3 retire them.
+Owns parsing and execution directly; no legacy loop back-reference.
 """
 
 from __future__ import annotations
@@ -15,14 +13,13 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from code_review_loop import bug_bundle
+from code_review_loop.cli.args import parse_bundle_bug_report_args
 
 from ..outcome import CommandFailed, CommandOk
 
 
 def main(argv: Sequence[str]) -> int:
-    from code_review_loop import loop as _cli  # late import; preserves monkeypatching
-
-    args = _cli.parse_bundle_bug_report_args(argv)
+    args = parse_bundle_bug_report_args(argv)
     if args.no_redact and not args.i_understand_the_risks:
         print("ERROR: --no-redact requires --i-understand-the-risks", file=sys.stderr)
         return CommandFailed(exit_code=4).exit_code

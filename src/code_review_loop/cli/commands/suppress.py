@@ -1,9 +1,6 @@
 """``revrem suppress`` subcommand (REVREM-TASK-003 Wave C1a).
 
-Manages explicit finding suppressions. Scope helpers
-(``_suppression_path_for_scope`` / ``_suppression_audit_path_for_scope``) are
-left in ``code_review_loop.cli`` for C1a and looked up lazily; C2a relocates
-them here per the plan's helper-co-location rule.
+Manages explicit finding suppressions.
 """
 
 from __future__ import annotations
@@ -15,16 +12,15 @@ from dataclasses import asdict
 from pathlib import Path
 
 from code_review_loop import suppressions
+from code_review_loop.cli.args import parse_suppress_args
 
 from ..outcome import CommandFailed, CommandOk
 
 
 def main(argv: Sequence[str]) -> int:
-    from code_review_loop import loop as _cli  # late import; preserves monkeypatching
-
-    args = _cli.parse_suppress_args(argv)
-    path = _cli._suppression_path_for_scope(args.scope, Path.cwd())
-    audit_path = _cli._suppression_audit_path_for_scope(args.scope, Path.cwd())
+    args = parse_suppress_args(argv)
+    path = _suppression_path_for_scope(args.scope, Path.cwd())
+    audit_path = _suppression_audit_path_for_scope(args.scope, Path.cwd())
     try:
         if args.command == "add":
             entry = suppressions.make_entry(
@@ -73,3 +69,15 @@ def main(argv: Sequence[str]) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return CommandFailed(exit_code=1).exit_code
     raise AssertionError(f"unhandled suppress command: {args.command}")
+
+
+def _suppression_path_for_scope(scope: str, cwd: Path) -> Path:
+    if scope == "repo":
+        return suppressions.repo_suppressions_path(cwd)
+    return suppressions.user_suppressions_path()
+
+
+def _suppression_audit_path_for_scope(scope: str, cwd: Path) -> Path:
+    if scope == "repo":
+        return suppressions.repo_audit_path(cwd)
+    return suppressions.user_audit_path()

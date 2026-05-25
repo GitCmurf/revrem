@@ -6,7 +6,7 @@ import subprocess
 import pytest
 
 from code_review_loop import harnesses
-from code_review_loop import loop as cli
+from code_review_loop.cli.main import main as cli_main
 
 
 @pytest.fixture
@@ -101,7 +101,7 @@ timeout_seconds = 300
     )
     monkeypatch.chdir(tmp_path)
 
-    exit_code = cli.main(
+    exit_code = cli_main(
         [
             "--profile",
             "test",

@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from code_review_loop import events
-from code_review_loop import loop as cli
+from code_review_loop.cli.main import main as cli_main
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -14,7 +14,7 @@ def test_replay_renders_events_without_runner_or_harness(tmp_path, capsys):
     sink.emit("phase_result", phase="review", iteration=1, payload={"status": "clear"})
     sink.close()
 
-    code = cli.main(["replay", str(tmp_path)])
+    code = cli_main(["replay", str(tmp_path)])
 
     assert code == 0
     assert capsys.readouterr().out == (
@@ -42,7 +42,7 @@ def test_replay_renders_routing_decision_details(tmp_path, capsys):
     )
     sink.close()
 
-    code = cli.main(["replay", str(tmp_path)])
+    code = cli_main(["replay", str(tmp_path)])
 
     assert code == 0
     assert capsys.readouterr().out == (
@@ -58,7 +58,7 @@ def test_replay_returns_nonzero_for_truncated_events(tmp_path, capsys):
         encoding="utf-8",
     )
 
-    code = cli.main(["replay", str(tmp_path)])
+    code = cli_main(["replay", str(tmp_path)])
 
     assert code == 1
     assert "truncated_events_jsonl" in capsys.readouterr().out

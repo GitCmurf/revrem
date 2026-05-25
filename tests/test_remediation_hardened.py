@@ -9,6 +9,7 @@ import pytest
 from code_review_loop import harnesses, policy, prompts_composer
 from code_review_loop import loop as cli
 from code_review_loop._compat_jsonschema import validate
+from code_review_loop.cli.main import main as cli_main
 
 
 @pytest.fixture
@@ -94,7 +95,7 @@ model = "fake-clear"
     (tmp_path / ".revrem.toml").write_text(toml, encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
-    exit_code = cli.main(["--profile", "test", "--review-model", "fake-findings", "--max-iterations", "1", "--skip-final-review", "--trusted-repo"])
+    exit_code = cli_main(["--profile", "test", "--review-model", "fake-findings", "--max-iterations", "1", "--skip-final-review", "--trusted-repo"])
     assert exit_code == 2
 
     routing_path = tmp_path / ".revrem/runs"

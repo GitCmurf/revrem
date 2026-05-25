@@ -9,6 +9,7 @@ import pytest
 from code_review_loop import harnesses, policy, profiles, prompts_composer, triage
 from code_review_loop import loop as cli
 from code_review_loop._compat_jsonschema import validate
+from code_review_loop.cli.main import main as cli_main
 
 
 @pytest.fixture
@@ -183,7 +184,7 @@ reasoning_effort = "high"
     monkeypatch.chdir(tmp_path)
 
     # Run loop
-    exit_code = cli.main(["--profile", "test", "--review-model", "fake-findings", "--max-iterations", "1", "--skip-final-review", "--trusted-repo"])
+    exit_code = cli_main(["--profile", "test", "--review-model", "fake-findings", "--max-iterations", "1", "--skip-final-review", "--trusted-repo"])
     assert exit_code == 2
 
     # 1. Validate routing artifact
