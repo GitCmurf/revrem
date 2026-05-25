@@ -2,7 +2,7 @@
 document_id: REVREM-LEDGER-003
 type: LEDGER
 title: Behaviour ledger for the cli.py re-engineering (REVREM-TASK-003)
-status: Active
+status: Draft
 version: '0.1'
 last_updated: '2026-05-22'
 owner: GitCmurf

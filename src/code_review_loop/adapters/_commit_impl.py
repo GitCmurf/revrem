@@ -22,8 +22,6 @@ alias; full elimination is the C3 cleanup wave.
 
 from __future__ import annotations
 
-import json
-import shlex
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING

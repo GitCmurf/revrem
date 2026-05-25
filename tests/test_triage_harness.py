@@ -5,13 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 import code_review_loop.cli as MODULE
 from code_review_loop.adapters.triage import TriageAdapter
 from code_review_loop.clock import Clock
 from code_review_loop.core.ports import (
-    CommandResult,
     RunContext,
     TriageOutcome,
     TriageRequest,

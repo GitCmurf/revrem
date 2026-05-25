@@ -483,8 +483,8 @@ Additional, area-scoped gates:
 | Touches | Gate |
 |---|---|
 | Packaging | `python -m build --sdist --wheel`; `python -m twine check dist/*`; fresh-venv install smoke |
-| Profiles | `./.venv/bin/pytest -q tests/test_profiles.py tests/test_cli.py` |
-| Harnesses | `./.venv/bin/pytest -q tests/test_harnesses.py tests/test_cli.py` |
+| Profiles | `./.venv/bin/pytest -q tests/test_profiles.py tests/test_cli_integration.py` |
+| Harnesses | `./.venv/bin/pytest -q tests/test_harnesses.py tests/test_cli_integration.py` |
 | TUI / TUI state | `./.venv/bin/pytest -q tests/test_tui.py tests/test_tui_state.py` |
 | Schemas | `./.venv/bin/pytest -q tests/test_artifact_schema.py` (introduced in F4) |
 | Events / replay | `./.venv/bin/pytest -q tests/test_events.py tests/test_replay.py` (introduced in F8) |
@@ -764,7 +764,7 @@ stable, machine-readable diagnostics that downstream surfaces consume.
 
 - `src/code_review_loop/diagnostics.py` (new)
 - `src/code_review_loop/cli.py`
-- `tests/test_cli.py`
+- `tests/test_cli_integration.py`
 - `tests/test_diagnostics.py` (new)
 - `tests/fixtures/diagnostics/` (new)
 - `docs/52-api/schemas/diagnostics-v1.schema.json` (new)
@@ -1054,7 +1054,7 @@ context.
 - `src/code_review_loop/cli.py`
 - `src/code_review_loop/profiles.py`
 - `tests/test_triage.py` (new)
-- `tests/test_cli.py`
+- `tests/test_cli_integration.py`
 - `tests/test_profiles.py`
 - `tests/fixtures/triage/{valid,invalid_json,missing_fields,timeout,rejected_only}/`
 - `docs/52-api/schemas/triage-v1.schema.json` (finalize)
@@ -1147,7 +1147,7 @@ around critical issues.
 - `src/code_review_loop/cli.py`
 - `src/code_review_loop/profiles.py`
 - `tests/test_suppressions.py` (new)
-- `tests/test_cli.py`
+- `tests/test_cli_integration.py`
 - `tests/fixtures/suppressions/`
 - `docs/52-api/schemas/suppressions-v1.schema.json` (new)
 - `docs/45-adr/adr-NNN-suppressions.md`
@@ -1260,7 +1260,7 @@ transcripts.
 - `src/code_review_loop/tui_state.py`
 - `tests/test_events.py` (new)
 - `tests/test_replay.py` (new)
-- `tests/test_cli.py`
+- `tests/test_cli_integration.py`
 - `tests/test_progress.py`
 - `tests/test_tui_state.py`
 - `tests/fixtures/events/{clear,findings_fixed,rejected_fp,timeout,check_failure,cancellation,cost_ceiling,suppressed}/`
@@ -1348,7 +1348,7 @@ work to start later.
 - `src/code_review_loop/run_history.py`
 - `tests/test_budgets.py` (new)
 - `tests/test_resume.py` (new)
-- `tests/test_cli.py`
+- `tests/test_cli_integration.py`
 - `docs/45-adr/adr-NNN-budgets-cancellation.md`
 - `docs/70-devex/devex-001-using-code-review-loop.md`
 - `docs/55-testing/test-001-utility-verification-strategy.md`
@@ -1442,7 +1442,7 @@ fixtures for replay).
 - `src/code_review_loop/cli.py`
 - `src/code_review_loop/profiles.py`
 - `tests/test_harnesses.py`
-- `tests/test_cli.py`
+- `tests/test_cli_integration.py`
 - `tests/fixtures/harnesses/{review_clear,review_findings,remediation,triage_valid,triage_invalid,timeout,cancellation,unsupported}/`
 - `docs/52-api/schemas/harness-capabilities-v1.schema.json` (new)
 - `docs/45-adr/adr-NNN-harness-contract.md`

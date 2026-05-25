@@ -53,7 +53,6 @@ class ConfigSnapshot:
 class LoopAccumulator:
     """Loop state accumulated across iterations."""
 
-    iteration: int
     pending_check_failures: str  # empty string means none
     commit_retry: bool = False
     last_review_status: Literal["clear", "findings", "unknown"] = "unknown"
@@ -138,7 +137,7 @@ Action = Continue | RetryViaCommitHook | Stop
 # ---------------------------------------------------------------------------
 
 
-def decide(cfg: ConfigSnapshot, acc: LoopAccumulator, event: PhaseEvent) -> Action:
+def decide(cfg: ConfigSnapshot, acc: LoopAccumulator, event: PhaseEvent, *, iteration: int = 1) -> Action:
     """Return the Action the shell should apply for the given phase event.
 
     This function is pure: no I/O, no side effects, deterministic.  The shell
@@ -191,7 +190,7 @@ def decide(cfg: ConfigSnapshot, acc: LoopAccumulator, event: PhaseEvent) -> Acti
             retryable = (
                 kind == "hook_failed"
                 and cfg.commit_on_hook_failure in ("remediate", "no-verify")
-                and acc.iteration < cfg.max_iterations
+                and iteration < cfg.max_iterations
             )
             if retryable:
                 return RetryViaCommitHook(hook_output=str(event.commit_failed))

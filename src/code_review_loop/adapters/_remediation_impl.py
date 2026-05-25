@@ -7,24 +7,18 @@ reached through the module-level ``_cli`` alias; C3 cleanup retires it.
 
 from __future__ import annotations
 
-import json
 import shlex
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
+from code_review_loop import cli as _cli  # noqa: E402  -- loop-shell helpers
 from code_review_loop import (
-    artifacts,
-    diagnostics,
     harnesses,
     policy,
     prompts_composer,
-    suppressions,
-    triage,
 )
-from code_review_loop import cli as _cli  # noqa: E402  -- loop-shell helpers
 from code_review_loop.core.ports import CommandResult, RunContext
-from code_review_loop.core.review_interpretation import actionable_review_output
 
 if TYPE_CHECKING:
     from code_review_loop.cli import LoopConfig

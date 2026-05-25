@@ -20,10 +20,14 @@ import sys
 import tempfile
 from collections.abc import Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from code_review_loop import budgets, harnesses, profiles
 from code_review_loop.clock import SYSTEM_CLOCK, Clock
 from code_review_loop.identity import SYSTEM_IDENTITY, RunIdentity
+
+if TYPE_CHECKING:
+    from code_review_loop.cli import LoopConfig
 
 # Canonical here (was duplicated in cli/__init__.py at C2a-step-1).
 DEFAULT_TIMEOUT_SECONDS = 300

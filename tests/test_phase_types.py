@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
+from dataclasses import FrozenInstanceError
 from unittest.mock import MagicMock
 
 import pytest
@@ -29,7 +29,6 @@ from code_review_loop.core.ports import (
 )
 from code_review_loop.core.routing_types import ResolvedRoute
 from code_review_loop.identity import RunIdentity
-
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -59,7 +58,7 @@ class TestChecksRequest:
 
     def test_frozen(self) -> None:
         r = ChecksRequest(iteration=1)
-        with pytest.raises(Exception):
+        with pytest.raises(FrozenInstanceError):
             r.iteration = 2  # type: ignore[misc]
 
 

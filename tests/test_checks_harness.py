@@ -11,22 +11,18 @@ the legacy tuple return into a ChecksOutcome.  These tests verify:
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 import code_review_loop.cli as MODULE
 from code_review_loop.adapters.checks import ChecksAdapter
 from code_review_loop.clock import Clock
 from code_review_loop.core.ports import (
-    ChecksHarness,
     ChecksOutcome,
     ChecksRequest,
     CommandResult,
     RunContext,
 )
 from code_review_loop.identity import RunIdentity
-
 
 # ---------------------------------------------------------------------------
 # helpers

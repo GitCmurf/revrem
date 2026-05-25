@@ -37,7 +37,7 @@ handling, and loop stop conditions without invoking real Codex sessions.
 
 ### Unit and behavior tests
 
-The main test module is `tests/test_cli.py`. It covers:
+The main CLI integration module is `tests/test_cli_integration.py`. It covers:
 
 - Codex review status detection for explicit statuses, finding markers, common
   clear-review prose, and ambiguous output.
@@ -80,7 +80,7 @@ The main test module is `tests/test_cli.py`. It covers:
   reader and cover valid, truncated, and invalid event streams. CLI loop tests
   assert summary-time `artifact_write` events for public run artifacts.
 - Budget accounting in `tests/test_budgets.py` and loop-level budget tests in
-  `tests/test_cli.py`, including wall-clock soft warnings, pre-model-call
+  `tests/test_cli_integration.py`, including wall-clock soft warnings, pre-model-call
   ceiling stops, token/USD `cost_charge` accumulation, null token/USD usage for
   unsupported cost reporting, and exit code `3` for budget ceiling hits.
   Cancellation tests assert interrupted runs write `summary.json`,

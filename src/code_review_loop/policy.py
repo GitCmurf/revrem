@@ -6,9 +6,11 @@ from dataclasses import dataclass
 
 from code_review_loop.core.routing_types import (
     Profile,
-    ResolvedRoute as ResolvedRoute,
     TriageRouteConfig,
     TriageRoutingRule,
+)
+from code_review_loop.core.routing_types import (
+    ResolvedRoute as ResolvedRoute,
 )
 
 

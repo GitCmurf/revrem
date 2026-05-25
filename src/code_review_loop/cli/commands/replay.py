@@ -6,8 +6,8 @@ Replays a RevRem run from ``events.jsonl`` without invoking a model.
 from __future__ import annotations
 
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from code_review_loop import events
 

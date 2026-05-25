@@ -15,14 +15,12 @@ import code_review_loop.cli as MODULE
 from code_review_loop.adapters.commit import CommitAdapter
 from code_review_loop.clock import Clock
 from code_review_loop.core.ports import (
-    CommitHarness,
+    CommandResult,
     CommitOutcome,
     CommitRequest,
-    CommandResult,
     RunContext,
 )
 from code_review_loop.identity import RunIdentity
-
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -168,8 +166,8 @@ class TestEngineDispatch:
 
     def test_budget_exceeded_propagates_through_adapter(self, tmp_path: Path, monkeypatch) -> None:
         """BudgetExceeded raised inside CommitAdapter.execute propagates to run_loop."""
-        from code_review_loop.budgets import BudgetExceeded
         import code_review_loop.adapters.commit as commit_mod
+        from code_review_loop.budgets import BudgetExceeded
 
         exc = BudgetExceeded(ceiling="tokens", limit=100, actual=150)
         monkeypatch.setattr(commit_mod.CommitAdapter, "execute", lambda *a, **kw: (_ for _ in ()).throw(exc))

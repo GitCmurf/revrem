@@ -1025,7 +1025,7 @@ def minimal_profile(name: str, *, description: str = "") -> Profile:
 
 
 def _walk_route_fallback_chain(
-    routes: dict[str, RouteConfig], route_name: str
+    routes: dict[str, TriageRouteConfig], route_name: str
 ) -> list[str]:
     """Return a list of issues for a single route's fallback chain."""
     from code_review_loop import policy

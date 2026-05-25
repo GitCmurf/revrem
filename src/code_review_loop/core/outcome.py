@@ -11,7 +11,18 @@ it is used only for artifact serialisation, never for control flow.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import assert_never
+from typing import Literal, assert_never
+
+OutcomeFailedReason = Literal[
+    "budget_ceiling_hit",
+    "cancelled",
+    "commit_failed",
+    "commit_hook_failed",
+    "remediation_failed",
+    "review_failed",
+    "setup_failed",
+    "triage_failed",
+]
 
 
 @dataclass(frozen=True)
@@ -27,7 +38,7 @@ class OutcomeClear:
 class OutcomeFailed:
     """Run terminated with an error (final_status=error)."""
 
-    reason: str  # stopped_reason value
+    reason: OutcomeFailedReason  # stopped_reason value
     error: str
     staged_changes_left: bool = False
     check_failures: bool = False

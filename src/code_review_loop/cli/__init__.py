@@ -12,12 +12,11 @@ import shlex
 import signal
 import subprocess
 import sys
-import tempfile
 import textwrap
 import time
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager, suppress
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -27,7 +26,7 @@ from code_review_loop import (
     __version__,
     artifacts,
     budgets,
-    bug_bundle,
+    bug_bundle as bug_bundle,
     diagnostics,
     events,
     harnesses,
@@ -64,6 +63,7 @@ from code_review_loop.core.ports import (
     ChecksRequest,
     CommandResult,
     CommitRequest,
+    ProcessRunner,
     ProgressReporter,
     RemediationRequest,
     ReviewRequest,
@@ -75,7 +75,7 @@ from code_review_loop.core.review_interpretation import (
     detect_review_status,
     extract_finding_blocks,
     extract_review_summary,
-    review_status_diagnostics,
+    review_status_diagnostics as review_status_diagnostics,
     strip_finding_priority,
 )
 from code_review_loop.core.review_interpretation import (
@@ -89,17 +89,41 @@ from code_review_loop.identity import SYSTEM_IDENTITY, RunIdentity
 # ``monkeypatch.setattr(MODULE, "parse_*_args", …)`` test patches keep working.
 from .args import (
     COMMIT_ON_HOOK_FAILURE_CHOICES as COMMIT_ON_HOOK_FAILURE_CHOICES,
+)
+from .args import (
     PROGRESS_STYLE_CHOICES as PROGRESS_STYLE_CHOICES,
+)
+from .args import (
     REASONING_EFFORT_CHOICES as REASONING_EFFORT_CHOICES,
+)
+from .args import (
     parse_args as parse_args,
+)
+from .args import (
     parse_bundle_bug_report_args as parse_bundle_bug_report_args,
+)
+from .args import (
     parse_config_args as parse_config_args,
+)
+from .args import (
     parse_doctor_args as parse_doctor_args,
+)
+from .args import (
     parse_history_args as parse_history_args,
+)
+from .args import (
     parse_policy_args as parse_policy_args,
+)
+from .args import (
     parse_replay_args as parse_replay_args,
+)
+from .args import (
     parse_resume_args as parse_resume_args,
+)
+from .args import (
     parse_suppress_args as parse_suppress_args,
+)
+from .args import (
     parse_triage_args as parse_triage_args,
 )
 
@@ -111,16 +135,38 @@ from .args import (
 # and config_builder reaches it lazily via PEP 562 ``__getattr__``.
 from .config_builder import (
     build_loop_config as build_loop_config,
+)
+from .config_builder import (
     default_artifact_dir as default_artifact_dir,
+)
+from .config_builder import (
     ensure_default_artifact_ignore as ensure_default_artifact_ignore,
+)
+from .config_builder import (
     new_profile_from_args as new_profile_from_args,
+)
+from .config_builder import (
     parse_harness_bin_overrides as parse_harness_bin_overrides,
+)
+from .config_builder import (
     pick as pick,
+)
+from .config_builder import (
     profile_from_loop_config as profile_from_loop_config,
+)
+from .config_builder import (
     profile_or_default as profile_or_default,
+)
+from .config_builder import (
     resolve_max_iterations as resolve_max_iterations,
+)
+from .config_builder import (
     resolve_profile_timeout_seconds as resolve_profile_timeout_seconds,
+)
+from .config_builder import (
     resolve_timeout_seconds as resolve_timeout_seconds,
+)
+from .config_builder import (
     should_prompt_for_new_profile as should_prompt_for_new_profile,
 )
 
@@ -897,15 +943,80 @@ def write_artifact(path: Path, content: str) -> None:
 # retires them.
 from code_review_loop.adapters._checks_impl import (
     NON_PYTHON_PROJECT_MARKERS as NON_PYTHON_PROJECT_MARKERS,
+)
+from code_review_loop.adapters._checks_impl import (
     PYTHON_PROJECT_MARKERS as PYTHON_PROJECT_MARKERS,
+)
+from code_review_loop.adapters._checks_impl import (
     PYTHON_SCAN_SKIP_DIRS as PYTHON_SCAN_SKIP_DIRS,
+)
+from code_review_loop.adapters._checks_impl import (
     adaptive_check_skip_reason as adaptive_check_skip_reason,
+)
+from code_review_loop.adapters._checks_impl import (
     has_non_python_project_surface as has_non_python_project_surface,
+)
+from code_review_loop.adapters._checks_impl import (
     has_python_test_surface as has_python_test_surface,
+)
+from code_review_loop.adapters._checks_impl import (
     is_pytest_command as is_pytest_command,
+)
+from code_review_loop.adapters._checks_impl import (
     iter_project_files as iter_project_files,
+)
+from code_review_loop.adapters._checks_impl import (
     normalize_adaptive_check_result as normalize_adaptive_check_result,
+)
+from code_review_loop.adapters._checks_impl import (
     run_checks as run_checks,
+)
+
+# REVREM-TASK-003 Wave C3a step 5: commit-phase implementation + its git/commit
+# helpers now live in ``adapters._commit_impl``. Re-exported here for
+# back-compat with existing call-sites and ``MODULE.X`` monkeypatch tests.
+from code_review_loop.adapters._commit_impl import (
+    classify_commit_failure as classify_commit_failure,
+)
+from code_review_loop.adapters._commit_impl import (
+    commit_artifact_relative_path as commit_artifact_relative_path,
+)
+from code_review_loop.adapters._commit_impl import (
+    commit_command_for_message as commit_command_for_message,
+)
+from code_review_loop.adapters._commit_impl import (
+    commit_message_for_staged_changes as commit_message_for_staged_changes,
+)
+from code_review_loop.adapters._commit_impl import (
+    deterministic_commit_message as deterministic_commit_message,
+)
+from code_review_loop.adapters._commit_impl import (
+    format_commit_hook_failure_for_remediation as format_commit_hook_failure_for_remediation,
+)
+from code_review_loop.adapters._commit_impl import (
+    git_add_command_for_commit as git_add_command_for_commit,
+)
+from code_review_loop.adapters._commit_impl import (
+    git_repo_root as git_repo_root,
+)
+from code_review_loop.adapters._commit_impl import (
+    git_reset_artifact_command_for_commit as git_reset_artifact_command_for_commit,
+)
+from code_review_loop.adapters._commit_impl import (
+    git_worktree_status_command_for_commit as git_worktree_status_command_for_commit,
+)
+from code_review_loop.adapters._commit_impl import (
+    run_commit as run_commit,
+)
+
+# REVREM-TASK-003 Wave C3a step 3: remediation + triage phase implementations
+# now live in adapters._remediation_impl and adapters._triage_impl. Re-exported
+# here for back-compat.
+from code_review_loop.adapters._remediation_impl import (
+    build_remediation_command as build_remediation_command,
+)
+from code_review_loop.adapters._remediation_impl import (
+    run_remediation as run_remediation,
 )
 
 # REVREM-TASK-003 Wave C3a step 2: ``run_codex_review`` + its helpers now live
@@ -914,42 +1025,26 @@ from code_review_loop.adapters._checks_impl import (
 # with existing call-sites and ``MODULE.X`` monkeypatch tests.
 from code_review_loop.adapters._review_impl import (
     build_review_command as build_review_command,
-    review_base_hint as review_base_hint,
-    review_base_preflight_error as review_base_preflight_error,
-    review_failed_to_run as review_failed_to_run,
-    run_codex_review as run_codex_review,
 )
-from code_review_loop.adapters.git import run_git_preflight as run_git_preflight
-
-# REVREM-TASK-003 Wave C3a step 3: remediation + triage phase implementations
-# now live in adapters._remediation_impl and adapters._triage_impl. Re-exported
-# here for back-compat.
-from code_review_loop.adapters._remediation_impl import (
-    build_remediation_command as build_remediation_command,
-    run_remediation as run_remediation,
+from code_review_loop.adapters._review_impl import (
+    review_base_hint as review_base_hint,
+)
+from code_review_loop.adapters._review_impl import (
+    review_base_preflight_error as review_base_preflight_error,
+)
+from code_review_loop.adapters._review_impl import (
+    review_failed_to_run as review_failed_to_run,
+)
+from code_review_loop.adapters._review_impl import (
+    run_codex_review as run_codex_review,
 )
 from code_review_loop.adapters._triage_impl import (
     build_triage_command as build_triage_command,
+)
+from code_review_loop.adapters._triage_impl import (
     run_triage as run_triage,
 )
-
-# REVREM-TASK-003 Wave C3a step 5: commit-phase implementation + its git/commit
-# helpers now live in ``adapters._commit_impl``. Re-exported here for
-# back-compat with existing call-sites and ``MODULE.X`` monkeypatch tests.
-from code_review_loop.adapters._commit_impl import (
-    classify_commit_failure as classify_commit_failure,
-    commit_artifact_relative_path as commit_artifact_relative_path,
-    commit_command_for_message as commit_command_for_message,
-    commit_message_for_staged_changes as commit_message_for_staged_changes,
-    deterministic_commit_message as deterministic_commit_message,
-    format_commit_hook_failure_for_remediation as format_commit_hook_failure_for_remediation,
-    git_add_command_for_commit as git_add_command_for_commit,
-    git_repo_root as git_repo_root,
-    git_reset_artifact_command_for_commit as git_reset_artifact_command_for_commit,
-    git_worktree_status_command_for_commit as git_worktree_status_command_for_commit,
-    run_commit as run_commit,
-)
-
+from code_review_loop.adapters.git import run_git_preflight as run_git_preflight
 
 CONVENTIONAL_COMMIT_RE = re.compile(
     r"^(?:build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)"
@@ -1135,46 +1230,37 @@ def _execute_stop(
         else ""
     )
 
-    if isinstance(outcome, OutcomeClear):
-        state.set_final_status("clear")
+    def apply_common_tail(*, check_failures: bool = False) -> None:
         state.set_stopped_reason(outcome.reason)
-        if outcome.suppressed_findings_count:
-            state.set_suppressed_findings_count(outcome.suppressed_findings_count)
+        if check_failures:
+            state.set_pending_check_failures(True)
         if excerpt:
             state.set_latest_review_excerpt(excerpt)
         write_summary(config, summary, clock=clock, ctx=ctx)
+
+    if isinstance(outcome, OutcomeClear):
+        state.set_final_status("clear")
+        if outcome.suppressed_findings_count:
+            state.set_suppressed_findings_count(outcome.suppressed_findings_count)
+        apply_common_tail()
         return summary
 
     if isinstance(outcome, OutcomeFailed):
         state.set_final_status("error")
-        state.set_stopped_reason(outcome.reason)
         state.set_error(outcome.error)
         if outcome.staged_changes_left:
             state.set_staged_changes_left(True)
-            state.set_pending_check_failures(True)
-        if excerpt:
-            state.set_latest_review_excerpt(excerpt)
-        write_summary(config, summary, clock=clock, ctx=ctx)
+        apply_common_tail(check_failures=outcome.check_failures)
         raise RunLoopFailed(summary, outcome.error, outcome=outcome) from cause
 
     if isinstance(outcome, OutcomeFindings):
         state.set_final_status("findings")
-        state.set_stopped_reason(outcome.reason)
-        if outcome.check_failures:
-            state.set_pending_check_failures(True)
-        if excerpt:
-            state.set_latest_review_excerpt(excerpt)
-        write_summary(config, summary, clock=clock, ctx=ctx)
+        apply_common_tail(check_failures=outcome.check_failures)
         return summary
 
     if isinstance(outcome, OutcomeUnknown):
         state.set_final_status("unknown")
-        state.set_stopped_reason(outcome.reason)
-        if outcome.check_failures:
-            state.set_pending_check_failures(True)
-        if excerpt:
-            state.set_latest_review_excerpt(excerpt)
-        write_summary(config, summary, clock=clock, ctx=ctx)
+        apply_common_tail(check_failures=outcome.check_failures)
         return summary
 
     assert_never(outcome)
@@ -1401,7 +1487,7 @@ def _run_loop(
         ctx = RunContext(
             clock=clock,
             identity=identity,
-            runner=runner,
+            runner=cast(ProcessRunner, runner),
             event_sink=event_sink,
             budget_state=active_budget_state,
             progress_reporter=progress_reporter,
@@ -1471,10 +1557,10 @@ def _run_loop(
             log_review_findings(config, "initial", initial_review_output, ctx=ctx)
 
         snap = _config_snapshot(config)
-        acc = LoopAccumulator(iteration=0, pending_check_failures="")
+        acc = LoopAccumulator(pending_check_failures="")
 
         for iteration in range(1, config.max_iterations + 1):
-            acc = replace(acc, iteration=iteration, pending_check_failures=pending_check_failures)
+            acc = replace(acc, pending_check_failures=pending_check_failures)
             if iteration == 1 and initial_review_output:
                 status = detect_review_status(initial_review_output)
                 if status == "unknown":
@@ -1728,7 +1814,12 @@ def _run_loop(
                     iterations[-1]["commit_status"] = exc.kind
                     iterations[-1]["commit_failed"] = True
                     iterations[-1]["commit_artifact"] = str(exc.artifact_path)
-                    _commit_action = decide(snap, acc, CommitDone(status=exc.kind, commit_failed=exc))
+                    _commit_action = decide(
+                        snap,
+                        acc,
+                        CommitDone(status=exc.kind, commit_failed=exc),
+                        iteration=iteration,
+                    )
                     if isinstance(_commit_action, RetryViaCommitHook):
                         _commit_retry = True
                         pending_check_failures = format_commit_hook_failure_for_remediation(exc)
@@ -1765,10 +1856,20 @@ def _run_loop(
                         error=str(exc),
                         ctx=ctx,
                     )
-                    _action = decide(snap, acc, CommitDone(status=None, other_exc=exc))
+                    _action = decide(
+                        snap,
+                        acc,
+                        CommitDone(status=None, other_exc=exc),
+                        iteration=iteration,
+                    )
                     assert isinstance(_action, Stop)
                     return _execute_stop(_action.outcome, state, summary, config, clock, ctx, cause=exc)
-                _commit_action = decide(snap, acc, CommitDone(status=cast("str | None", iterations[-1].get("commit_status"))))
+                _commit_action = decide(
+                    snap,
+                    acc,
+                    CommitDone(status=cast("str | None", iterations[-1].get("commit_status"))),
+                    iteration=iteration,
+                )
                 if isinstance(_commit_action, Stop):
                     return _execute_stop(_commit_action.outcome, state, summary, config, clock, ctx, last_review_output=last_review_output)
 
@@ -1979,10 +2080,8 @@ def emit_artifact_write_events(config: LoopConfig, summary: dict[str, object], c
         return
     for kind, path in iter_artifact_paths(artifact_paths):
         payload: dict[str, object] = {"kind": kind, "path": path}
-        try:
+        with suppress(OSError):
             payload["bytes"] = Path(path).stat().st_size
-        except OSError:
-            pass
         ctx.event_sink.emit("artifact_write", phase="artifacts", payload=payload)
 
 
@@ -2245,18 +2344,35 @@ def lexical_git_repo_root(start: Path) -> Path | None:
 def _build_subcommand_registry() -> dict[str, Callable[[Sequence[str]], int]]:
     # REVREM-TASK-003 Wave C1b: registry dispatch replaces the if/elif ladder.
     # Adding a subcommand requires only a new cli/commands/X.py + one entry here.
+    from code_review_loop import tui as _tui
+
     from .commands import (
         bundle as _bundle,
+    )
+    from .commands import (
         config as _config,
+    )
+    from .commands import (
         doctor as _doctor,
+    )
+    from .commands import (
         history as _history,
+    )
+    from .commands import (
         policy as _policy,
+    )
+    from .commands import (
         replay as _replay,
+    )
+    from .commands import (
         resume as _resume,
+    )
+    from .commands import (
         suppress as _suppress,
+    )
+    from .commands import (
         triage as _triage,
     )
-    from code_review_loop import tui as _tui
 
     return {
         "bundle-bug-report": _bundle.main,

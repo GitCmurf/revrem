@@ -4,8 +4,8 @@ The ``cli`` module became a package in Wave C1a; the legacy body lives in
 ``cli/__init__.py`` until Wave C lifts it out, so the gate scans the package
 init.
 """
-import re
 import pathlib
+import re
 
 CLI_PATH = (
     pathlib.Path(__file__).parent.parent / "src" / "code_review_loop" / "cli" / "__init__.py"

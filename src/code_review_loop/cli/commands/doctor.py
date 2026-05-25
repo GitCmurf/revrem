@@ -10,10 +10,10 @@ effect.
 from __future__ import annotations
 
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
-from code_review_loop import diagnostics, profiles
+from code_review_loop import diagnostics
 
 from ..outcome import CommandFailed, CommandOk
 

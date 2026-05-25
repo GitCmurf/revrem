@@ -7,7 +7,6 @@ fallbacks are preserved; only the home module changes.
 
 from __future__ import annotations
 
-import json
 import shlex
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -17,7 +16,6 @@ from code_review_loop import (
     artifacts,
     diagnostics,
     harnesses,
-    policy,
     prompts_composer,
     suppressions,
     triage,

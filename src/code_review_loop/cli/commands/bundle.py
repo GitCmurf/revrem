@@ -11,8 +11,8 @@ the legacy God-object module remain in effect until C2/C3 retire them.
 from __future__ import annotations
 
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from code_review_loop import bug_bundle
 

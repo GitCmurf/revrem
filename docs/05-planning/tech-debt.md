@@ -1,3 +1,24 @@
+---
+document_id: REVREM-LEDGER-004
+type: LEDGER
+title: Tech Debt Register
+status: Draft
+version: '0.1'
+last_updated: '2026-05-25'
+owner: GitCmurf
+docops_version: '2.0'
+area: planning
+description: Register of code review and simplification findings that are intentionally deferred to larger refactors or planned phase transitions.
+keywords:
+- revrem
+- tech-debt
+- refactoring
+- planning
+- task-003
+related_ids:
+- REVREM-TASK-003
+---
+
 # Tech Debt
 
 Issues identified during code review and simplification passes that were deferred because they require larger refactors, are tied to a planned phase transition, or are acceptable at current scale.
@@ -26,7 +47,7 @@ Issues identified during code review and simplification passes that were deferre
 
 **Best practice:** Derived values should not be stored in state. If a value can be computed from other state (here: the loop index), it should be computed at the use site, not carried in a data structure.
 
-**Status (2026-05-24):** Deferred past Wave C2b. The one remaining `acc.iteration` reference is in `core/engine.py:194` inside `decide()` (the `RetryViaCommitHook` retry budget check). Removing the field requires changing `decide()`'s signature to take `iteration: int` explicitly, which touches ~10 call sites in `cli/__init__.py` and 54 sites in `tests/test_engine_decide.py`. This is bounded mechanical work but not a 1:1 fit for the "purely local C2b" charter; revisit in C3a alongside the phase-implementation migration where `decide()` callers move into adapters.
+**Status (2026-05-25):** RESOLVED in Wave C3c cleanup. `LoopAccumulator` no longer stores `iteration`; `decide()` accepts the loop iteration explicitly for the commit-hook retry-budget branch, and `_run_loop` passes the loop variable at commit decision sites.
 
 ---
 
@@ -47,6 +68,8 @@ def _apply_stop_common(state, outcome, excerpt, summary, config, clock, ctx):
 Each branch sets its `final_status` and any unique fields, then calls the helper. `OutcomeFailed` calls the helper then raises.
 
 **Best practice:** When a sequence of steps is repeated with minor variation, extract the shared tail and call it from each branch. Copy-paste with minor variation is the dominant source of bugs where one branch gets fixed but the others don't.
+
+**Status (2026-05-25):** RESOLVED in Wave C3c cleanup. `_execute_stop()` now applies the repeated `stopped_reason`, optional check-failure flag, optional excerpt, and `write_summary()` steps through one shared tail helper.
 
 ---
 
@@ -69,6 +92,8 @@ Each branch sets its `final_status` and any unique fields, then calls the helper
 **Fix:** Type `OutcomeFailed.reason` as `Literal["budget_ceiling_hit", "setup_failed", "cancelled", "loop_exhausted", ...]` (enumerate all valid values). Alternatively, use a `StrEnum`. `outcome_to_exit_code` then benefits from exhaustiveness checking if the match is structured appropriately.
 
 **Best practice:** String fields used for control flow dispatch should be `Literal` types or enums. `str` typed fields are not checked at call sites — a rename or new value silently breaks dispatch.
+
+**Status (2026-05-25):** RESOLVED in Wave C3c cleanup. `OutcomeFailed.reason` is now typed as an `OutcomeFailedReason` `Literal[...]` union covering all current failed stopped reasons.
 
 ---
 

@@ -80,6 +80,9 @@ target-version = "py311"
 select = ["E", "F", "I", "UP", "B", "SIM"]
 ignore = ["E501"]
 
+[tool.ruff.lint.per-file-ignores]
+"src/code_review_loop/cli/__init__.py" = ["E402", "I001"]
+
 [tool.mypy]
 python_version = "3.11"
 check_untyped_defs = true

@@ -72,7 +72,7 @@ Read in this order:
 `src/code_review_loop/cli.py` is **4,946 lines** and is the package's
 single largest module by a factor of 3.4 (next is `profiles.py` at 1,467).
 It is the entry point for both console scripts (`code-review-loop` and
-`revrem` both resolve to `code_review_loop.cli:main`). It is criticised — 
+`revrem` both resolve to `code_review_loop.cli:main`). It is criticised —
 correctly — as a God object. This task fixes the cause, not the symptom.
 
 The criticism is not stylistic. The following are measured properties of the
@@ -903,9 +903,12 @@ lazy back-imports can be deleted.
 `core/engine.py` but the shell — terminal contexts, summary writes, phase
 dispatch — is still inlined. `run_loop` (line 1815) is the public wrapper.
 
-**Wave C1 + C2 + C3a status (2026-05-24).** C1a, C1b, C2a (both parts), the
-TD-004 half of C2b, and all five C3a phase migrations have landed. C3b/c and
-Wave D remain.
+**Wave C1 + C2 + C3a + partial C3c status (2026-05-25).** C1a, C1b,
+C2a (both parts), the TD-004 half of C2b, all five C3a phase migrations, and
+the low-risk C3c tech-debt cleanup items have landed. C3b remains open, and the
+adapter implementation modules still reach loop-shell helpers through
+``code_review_loop.cli``; do not declare Wave C done until that back-reference
+and the remaining ``MODULE`` monkeypatch reach-ins are retired.
 
 * **C3a is complete.** Every phase implementation now lives in its adapter
   module; no adapter still uses a lazy ``from code_review_loop.cli import
@@ -946,8 +949,20 @@ Wave D remain.
   (``code_review_loop.adapters.X.run_X``). The remaining ~53 monkeypatch
   sites stay in C3b proper.
 
-  ``cli/__init__.py`` is now 3059 lines, down from 4946 at the start of
-  Wave C (-38%).
+  ``cli/__init__.py`` is now roughly 3.1k lines, down from 4946 at the start
+  of Wave C. Re-run the measurement commands before quoting exact figures in a
+  PR body.
+
+* **C3c tech-debt cleanup is partially complete.** TD-002, TD-003, and TD-005
+  are resolved: `LoopAccumulator` no longer stores `iteration`, `_execute_stop`
+  has a shared stop-tail helper, and `OutcomeFailed.reason` is now a
+  `Literal[...]` union. `tests/test_cli.py` has been renamed to
+  `tests/test_cli_integration.py` as the first test-monolith split; deeper
+  relocation by behavior/module remains part of C3b/C3c follow-up.
+
+* **Gate status at this checkpoint:** `./.venv/bin/pytest -q`,
+  `./.venv/bin/ruff check .`, `./.venv/bin/mypy src`, `lint-imports`, and
+  `uv run --locked meminit check --format json` pass locally.
 
 **Wave C1 + C2 status (2026-05-24).** C1a, C1b, C2a (both parts) and the
 TD-004 half of C2b have landed.
@@ -1007,18 +1022,15 @@ test patches.
 - TD-001 — 16 functions with `ctx: RunContext | None = None` (eliminated in C3
   once phases move into adapters and ctx becomes required at all call sites).
 - TD-002 — `acc.iteration` redundant in `LoopAccumulator`; derivable from the
-  loop counter. **Deferred past C2b** because the one remaining read is in
-  `core/engine.py:194` inside `decide()`, and removing it requires changing
-  `decide()`'s signature (touching ~10 cli call sites + 54 test sites);
-  revisit in C3a.
+  loop counter. **RESOLVED (2026-05-25).**
 - TD-003 — `_execute_stop` 4-branch copy-paste (lines 1770–1815); extract
-  shared tail in C3.
+  shared tail in C3. **RESOLVED (2026-05-25).**
 - TD-004 — ~130-line routing-payload assembly block in `_run_loop` (lines
   2129–2265); extract as `_build_routing_payload(...)` in C2.
   **RESOLVED (2026-05-24).**
 - TD-005 — `OutcomeFailed.reason` dispatched as raw strings in
   `outcome_to_exit_code` (core/outcome.py:69–74); type as
-  `Literal[...]` in C3.
+  `Literal[...]` in C3. **RESOLVED (2026-05-25).**
 
 ### Wave C — Collapse the Front-End & Retire Scaffolding
 

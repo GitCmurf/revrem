@@ -228,10 +228,10 @@ def extract_routing_context(
 
 
 SENSITIVE_SIGNALS = {
-    "password": "sensitive-domain:secrets",
-    "secret": "sensitive-domain:secrets",
-    "api_key": "sensitive-domain:secrets",
-    "private_key": "sensitive-domain:secrets",
+    "password": "sensitive-domain:secrets",  # pragma: allowlist secret
+    "secret": "sensitive-domain:secrets",  # pragma: allowlist secret
+    "api_key": "sensitive-domain:secrets",  # pragma: allowlist secret
+    "private_key": "sensitive-domain:secrets",  # pragma: allowlist secret
     "auth": "sensitive-domain:auth",
     "login": "sensitive-domain:auth",
     "token": "sensitive-domain:auth",
