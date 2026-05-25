@@ -128,6 +128,8 @@ def parse_harness_bin_overrides(values: Sequence[str]) -> dict[str, str]:
 def resolve_profile_timeout_seconds(value: float | None) -> float | None:
     if value is None:
         return DEFAULT_TIMEOUT_SECONDS
+    if value < 0:
+        raise ValueError("profile phase timeout must be non-negative")
     return value
 
 

@@ -12,8 +12,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from support.phase_harnesses import phase_harness_kwargs
-
 import code_review_loop.runner as runner_mod
 from code_review_loop.adapters.checks import ChecksAdapter
 from code_review_loop.clock import Clock
@@ -24,6 +22,7 @@ from code_review_loop.core.ports import (
     RunContext,
 )
 from code_review_loop.identity import RunIdentity
+from tests.support.phase_harnesses import phase_harness_kwargs
 
 # ---------------------------------------------------------------------------
 # helpers

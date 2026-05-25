@@ -302,6 +302,11 @@ def test_default_artifact_dir_uses_revrem_namespace():
     assert re.fullmatch(r"\d{8}T\d{6}Z-[0-9a-f]{32}", artifact_dir.name)
 
 
+def test_profile_timeout_rejects_negative_values():
+    with pytest.raises(ValueError, match="profile phase timeout must be non-negative"):
+        runner_mod.resolve_profile_timeout_seconds(-1)
+
+
 def test_run_loop_creates_repo_local_revrem_gitignore_for_default_artifacts(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":

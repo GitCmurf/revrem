@@ -40,7 +40,7 @@ def policy_lint(profile_name: str, output_format: str | None = None) -> int:
         else:
             print(f"Policy lint passed for profile: {profile_name}")
         return CommandOk().exit_code
-    except Exception as exc:
+    except (FileNotFoundError, ValueError) as exc:
         if output_format == "json":
             print(json.dumps({"status": "error", "message": str(exc)}))
         else:
