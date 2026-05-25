@@ -18,7 +18,7 @@ committed to docs/05-planning/behaviour-ledger-task-003.md (B3a gate).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, assert_never
+from typing import Literal, Protocol, assert_never
 
 from code_review_loop.core.outcome import (
     OutcomeClear,
@@ -133,7 +133,58 @@ Action = Continue | RetryViaCommitHook | Stop
 
 
 # ---------------------------------------------------------------------------
-# Pure decision function (body filled in B3b)
+# Core runner
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class EngineState:
+    """Dependency-free engine state consumed by :func:`run`.
+
+    The shell owns all I/O. The core only decides the next ``Action`` for the
+    latest ``event`` and asks the injected executor to produce the next state
+    after non-terminal actions.
+    """
+
+    cfg: ConfigSnapshot
+    acc: LoopAccumulator
+    event: PhaseEvent
+    iteration: int = 1
+
+
+class EngineExecutor(Protocol):
+    """Imperative shell callback used by :func:`run` for non-terminal actions."""
+
+    def execute(self, action: Continue | RetryViaCommitHook, state: EngineState) -> EngineState:
+        """Apply one non-terminal action and return the next engine state."""
+        ...
+
+
+def run(state: EngineState, ctx: EngineExecutor, *, max_steps: int | None = None) -> RunOutcome:
+    """Drive the dependency-free engine until it reaches a terminal outcome.
+
+    ``run`` is intentionally small: every pure branch decision remains in
+    ``decide``; every side effect stays behind ``ctx.execute``. A non-CLI caller
+    can therefore drive the same core by providing an executor that translates
+    actions into the next phase event.
+    """
+
+    steps = 0
+    while True:
+        action = decide(state.cfg, state.acc, state.event, iteration=state.iteration)
+        if isinstance(action, Stop):
+            return action.outcome
+        if max_steps is not None and steps >= max_steps:
+            return OutcomeFailed(reason="engine_step_limit_exceeded", error="engine step limit exceeded")
+        if isinstance(action, (Continue, RetryViaCommitHook)):
+            state = ctx.execute(action, state)
+            steps += 1
+            continue
+        assert_never(action)
+
+
+# ---------------------------------------------------------------------------
+# Pure decision function
 # ---------------------------------------------------------------------------
 
 

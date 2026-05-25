@@ -18,6 +18,7 @@ OutcomeFailedReason = Literal[
     "cancelled",
     "commit_failed",
     "commit_hook_failed",
+    "engine_step_limit_exceeded",
     "remediation_failed",
     "review_failed",
     "setup_failed",

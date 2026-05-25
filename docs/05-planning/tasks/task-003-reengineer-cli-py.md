@@ -968,8 +968,10 @@ that commit as a green checkpoint, not the Wave C finish line.
 
 **Required remediation before declaring Wave C done.**
 
-1. Build a real ``core.engine.run(state, ctx)`` orchestration path and shrink
-   the driver loop to wiring only.
+1. IN PROGRESS: ``core.engine.run(state, ctx)`` now exists as a
+   dependency-free orchestration path over ``decide`` plus an injected
+   executor. The remaining work is to make the CLI driver consume it for the
+   full loop and shrink the driver loop to wiring only.
 2. DONE in remediation: replace the partial import rules with contracts that
    prove core does not import drivers/adapters and adapters do not import
    ``cli`` or ``loop``.
