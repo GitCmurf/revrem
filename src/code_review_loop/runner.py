@@ -1349,6 +1349,12 @@ class _IterationStep(NamedTuple):
     commit_retry: bool
 
 
+class _IterationRun(NamedTuple):
+    acc: LoopAccumulator
+    pending_check_failures: str
+    result: dict[str, object] | None
+
+
 def _check_commit_cleanliness(config: LoopConfig, runner: Runner) -> None:
     if not config.commit_after_remediation or config.dry_run:
         return
@@ -1967,6 +1973,87 @@ def _finish_budget_exceeded(
     )
 
 
+def _run_iterations(
+    *,
+    config: LoopConfig,
+    state: RunState,
+    summary: dict[str, object],
+    clock: Clock,
+    ctx: RunContext,
+    snap: ConfigSnapshot,
+    initial_review_output: str,
+    run_id: str,
+) -> _IterationRun:
+    acc = LoopAccumulator(pending_check_failures="")
+    pending_check_failures = ""
+    failed_check_names: list[str] = []
+    commit_retry = False
+
+    for iteration in range(1, config.max_iterations + 1):
+        step = _run_iteration(
+            config=config,
+            state=state,
+            summary=summary,
+            clock=clock,
+            ctx=ctx,
+            snap=snap,
+            acc=acc,
+            iteration=iteration,
+            pending_check_failures=pending_check_failures,
+            failed_check_names=failed_check_names,
+            commit_retry=commit_retry,
+            initial_review_output=initial_review_output,
+            run_id=run_id,
+        )
+        if isinstance(step, dict):
+            return _IterationRun(acc, pending_check_failures, step)
+        acc = step.acc
+        pending_check_failures = step.pending_check_failures
+        failed_check_names = step.failed_check_names
+        commit_retry = step.commit_retry
+
+    return _IterationRun(acc, pending_check_failures, None)
+
+
+def _run_session_body(
+    *,
+    config: LoopConfig,
+    state: RunState,
+    summary: dict[str, object],
+    clock: Clock,
+    ctx: RunContext,
+    run_id: str,
+) -> dict[str, object]:
+    preflight_result = _run_preflight(config, state, summary, clock=clock, ctx=ctx)
+    if preflight_result is not None:
+        return preflight_result
+
+    initial_review_output = _load_initial_review(config, ctx)
+    snap = _config_snapshot(config)
+    iterations = _run_iterations(
+        config=config,
+        state=state,
+        summary=summary,
+        clock=clock,
+        ctx=ctx,
+        snap=snap,
+        initial_review_output=initial_review_output,
+        run_id=run_id,
+    )
+    if iterations.result is not None:
+        return iterations.result
+    acc = replace(iterations.acc, pending_check_failures=iterations.pending_check_failures)
+    return _run_final_review(
+        config=config,
+        state=state,
+        summary=summary,
+        clock=clock,
+        ctx=ctx,
+        snap=snap,
+        acc=acc,
+    )
+
+
 def _run_session(
     config: LoopConfig,
     runner: Runner = default_runner,
@@ -1986,49 +2073,13 @@ def _run_session(
     ctx = setup.ctx
     run_id = setup.run_id
     try:
-        preflight_result = _run_preflight(config, state, summary, clock=clock, ctx=ctx)
-        if preflight_result is not None:
-            return preflight_result
-
-        pending_check_failures = ""
-        failed_check_names: list[str] = []
-        _commit_retry = False
-        initial_review_output = _load_initial_review(config, ctx)
-        snap = _config_snapshot(config)
-        acc = LoopAccumulator(pending_check_failures="")
-
-        for iteration in range(1, config.max_iterations + 1):
-            step = _run_iteration(
-                config=config,
-                state=state,
-                summary=summary,
-                clock=clock,
-                ctx=ctx,
-                snap=snap,
-                acc=acc,
-                iteration=iteration,
-                pending_check_failures=pending_check_failures,
-                failed_check_names=failed_check_names,
-                commit_retry=_commit_retry,
-                initial_review_output=initial_review_output,
-                run_id=run_id,
-            )
-            if isinstance(step, dict):
-                return step
-            acc = step.acc
-            pending_check_failures = step.pending_check_failures
-            failed_check_names = step.failed_check_names
-            _commit_retry = step.commit_retry
-
-        acc = replace(acc, pending_check_failures=pending_check_failures)
-        return _run_final_review(
+        return _run_session_body(
             config=config,
             state=state,
             summary=summary,
             clock=clock,
             ctx=ctx,
-            snap=snap,
-            acc=acc,
+            run_id=run_id,
         )
     except KeyboardInterrupt as exc:
         return _finish_cancelled(exc, config=config, state=state, summary=summary, clock=clock, ctx=ctx)
