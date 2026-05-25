@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from code_review_loop import cli, events
+from code_review_loop import events
+from code_review_loop import loop as cli
 
 ROOT = Path(__file__).resolve().parents[1]
 

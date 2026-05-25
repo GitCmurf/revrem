@@ -13,7 +13,7 @@ from collections.abc import Sequence
 
 import pytest
 
-from code_review_loop import cli
+from code_review_loop import loop as cli
 from code_review_loop import loop as loop_mod
 from code_review_loop.cli import commands as cli_commands
 

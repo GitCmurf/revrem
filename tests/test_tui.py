@@ -4,7 +4,8 @@ import importlib.util
 import sys
 import types
 
-from code_review_loop import cli, tui
+from code_review_loop import loop as cli
+from code_review_loop import tui
 
 
 def test_tui_dry_run_does_not_require_textual(capsys):

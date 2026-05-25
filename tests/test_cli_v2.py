@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from code_review_loop import cli
+from code_review_loop import loop as cli
 
 
 def test_policy_lint_success(tmp_path, monkeypatch):

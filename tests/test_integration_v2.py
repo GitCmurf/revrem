@@ -4,7 +4,8 @@ import json
 
 import pytest
 
-from code_review_loop import cli, harnesses
+from code_review_loop import harnesses
+from code_review_loop import loop as cli
 
 
 @pytest.fixture

@@ -6,7 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from code_review_loop import cli, harnesses, policy, prompts_composer
+from code_review_loop import harnesses, policy, prompts_composer
+from code_review_loop import loop as cli
 from code_review_loop._compat_jsonschema import validate
 
 

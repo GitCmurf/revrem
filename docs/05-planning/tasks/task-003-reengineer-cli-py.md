@@ -973,7 +973,7 @@ that commit as a green checkpoint, not the Wave C finish line.
 2. DONE in remediation: replace the partial import rules with contracts that
    prove core does not import drivers/adapters and adapters do not import
    ``cli`` or ``loop``.
-3. Delete the ``cli.__getattr__`` compatibility facade.
+3. DONE in remediation: delete the ``cli.__getattr__`` compatibility facade.
 4. IN PROGRESS: legacy phase fallback branches are removed and ``RunContext``
    phase harnesses are required. Remaining TD-001 work is to remove nullable
    ``ctx`` from phase/support functions that no longer support legacy callers.
