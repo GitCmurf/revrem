@@ -444,6 +444,7 @@ def parse_doctor_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument(
         "--commit-after-remediation",
         action="store_true",
+        default=None,
         help="Validate commit-mode preconditions such as a clean worktree and a non-root artifact directory.",
     )
     return parser.parse_args(argv)
