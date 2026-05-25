@@ -11,7 +11,7 @@ import code_review_loop.runner as runner_mod
 from code_review_loop import application as application_mod
 from code_review_loop import profiles
 from code_review_loop.cli import args as cli_args
-from code_review_loop.cli import config_builder
+from code_review_loop.cli import config_builder, config_support
 
 cli_main = import_module("code_review_loop.cli.main")
 
@@ -419,6 +419,12 @@ def test_run_loop_uses_common_exclude_for_default_artifacts_in_linked_worktree(t
         "# local excludes\n.revrem/runs/\n"
     )
     assert not (linked_worktree / ".revrem" / ".gitignore").exists()
+
+
+def test_git_info_exclude_path_ignores_empty_gitdir_file(tmp_path):
+    (tmp_path / ".git").write_text("gitdir:\n", encoding="utf-8")
+
+    assert config_support.git_info_exclude_path(tmp_path) is None
 
 
 def test_run_loop_appends_repo_root_exclude_when_existing_longer_entry_contains_substring(tmp_path):

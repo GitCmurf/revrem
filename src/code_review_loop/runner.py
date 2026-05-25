@@ -1607,20 +1607,3 @@ def resume_config_payload(config: LoopConfig) -> dict[str, object]:
         "profile_name": config.profile_name,
     }
 
-
-def git_info_exclude_path(cwd: Path) -> Path | None:
-    git_path = cwd / ".git"
-    if git_path.is_dir():
-        return git_path / "info" / "exclude"
-    if not git_path.is_file():
-        return None
-    content = git_path.read_text(encoding="utf-8", errors="replace").strip()
-    if not content.startswith("gitdir:"):
-        return None
-    git_dir = Path(content.split(":", 1)[1].strip())
-    if not git_dir.is_absolute():
-        git_dir = git_path.parent / git_dir
-    # Linked worktrees share the common repository's info/exclude file.
-    if git_dir.parent.name == "worktrees":
-        return git_dir.parent.parent / "info" / "exclude"
-    return git_dir / "info" / "exclude"

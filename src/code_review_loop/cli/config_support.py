@@ -17,7 +17,10 @@ def git_info_exclude_path(cwd: Path) -> Path | None:
     content = git_path.read_text(encoding="utf-8", errors="replace").strip()
     if not content.startswith("gitdir:"):
         return None
-    git_dir = Path(content.split(":", 1)[1].strip())
+    path_str = content.split(":", 1)[1].strip()
+    if not path_str:
+        return None
+    git_dir = Path(path_str)
     if not git_dir.is_absolute():
         git_dir = git_path.parent / git_dir
     if git_dir.parent.name == "worktrees":
