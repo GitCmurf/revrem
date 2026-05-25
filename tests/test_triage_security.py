@@ -75,3 +75,41 @@ def test_triage_safety_scan_symlink_escape(tmp_path):
     context = triage.extract_routing_context(payload, repo)
     # is_relative_to(cwd_resolved) should block it because full_path.resolve() evaluates the symlink
     assert "sensitive-domain:secrets" not in context.safety_signals
+
+
+def test_triage_safety_scan_reuses_cache_for_unchanged_file(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    target = repo / "auth.py"
+    target.write_text("login token", encoding="utf-8")
+    payload = {
+        "confirmed_findings": [{"affected_paths": ["auth.py"]}],
+        "classification": {},
+    }
+    cache: triage.RoutingContextCache = {}
+
+    first = triage.extract_routing_context(payload, repo, cache=cache)
+    with patch("builtins.open", side_effect=AssertionError("cache miss")):
+        second = triage.extract_routing_context(payload, repo, cache=cache)
+
+    assert first == second
+    assert "sensitive-domain:auth" in second.safety_signals
+
+
+def test_triage_safety_scan_invalidates_cache_when_file_changes(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    target = repo / "auth.py"
+    target.write_text("login", encoding="utf-8")
+    payload = {
+        "confirmed_findings": [{"affected_paths": ["auth.py"]}],
+        "classification": {},
+    }
+    cache: triage.RoutingContextCache = {}
+
+    first = triage.extract_routing_context(payload, repo, cache=cache)
+    target.write_text("plain module content", encoding="utf-8")
+    second = triage.extract_routing_context(payload, repo, cache=cache)
+
+    assert "sensitive-domain:auth" in first.safety_signals
+    assert "sensitive-domain:auth" not in second.safety_signals

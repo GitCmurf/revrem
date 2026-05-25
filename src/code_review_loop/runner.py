@@ -1095,6 +1095,7 @@ class _RunnerEngineExecutor:
         self.cause: BaseException | None = None
         self.remediation_result: CommandResult | None = None
         self.remediation_duration = 0.0
+        self.routing_context_cache: triage.RoutingContextCache = {}
 
     def execute(self, action: Action, engine_state: EngineState) -> EngineState:
         if isinstance(action, Continue):
@@ -1240,6 +1241,7 @@ class _RunnerEngineExecutor:
                 triage_payload,
                 self.config.cwd,
                 failed_checks=tuple(self.failed_check_names),
+                cache=self.routing_context_cache,
             )
             model_proposal = triage_payload.get("route_proposal", {})
             self.resolved_route = policy.resolve_routing(

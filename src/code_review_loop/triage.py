@@ -6,7 +6,7 @@ import functools
 import json
 from importlib.resources import files
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeAlias
 
 from code_review_loop import artifacts, diagnostics, policy
 from code_review_loop._compat_jsonschema import Draft202012Validator
@@ -21,6 +21,8 @@ TRIAGE_V2_SCHEMA_RESOURCE = "schemas/triage-v2.schema.json"
 ROUTING_V1_SCHEMA_RESOURCE = "schemas/routing-v1.schema.json"
 
 MAX_SAFETY_SCAN_BYTES = 1024 * 1024
+
+RoutingContextCache: TypeAlias = dict[tuple[Path, int, int], tuple[tuple[str, ...], tuple[str, ...]]]
 
 
 class TriageValidationError(ValueError):
@@ -174,6 +176,8 @@ def extract_routing_context(
     payload: dict[str, Any],
     cwd: Path,
     failed_checks: tuple[str, ...] = (),
+    *,
+    cache: RoutingContextCache | None = None,
 ) -> policy.RoutingContext:
     classification = payload.get("classification", {})
 
@@ -192,27 +196,24 @@ def extract_routing_context(
         affected_paths.update(finding.get("affected_paths", []))
 
     cwd_resolved = cwd.resolve()
-    for rel_path in affected_paths:
+    for rel_path in sorted(affected_paths):
         try:
             full_path = (cwd / rel_path).resolve()
             if not full_path.is_relative_to(cwd_resolved):
                 continue
-            if full_path.is_file():
-                # Cap file read at 1MB to prevent memory exhaustion.
-                # If file is larger, we only scan the first MAX_SAFETY_SCAN_BYTES.
-                # This could result in missing signals at the end of huge files, which is a known trade-off.
-                with open(full_path, encoding="utf-8", errors="replace") as f:
-                    content = f.read(MAX_SAFETY_SCAN_BYTES).lower()
-                for signal, tag in SENSITIVE_SIGNALS.items():
-                    if signal in content:
-                        safety_signals.add(tag)
-                        # Surface the detected domain (e.g. "sensitive-domain:auth"
-                        # -> "auth") as a plain domain tag so that natural
-                        # domain_tags_any rules escalate even when the model
-                        # omitted the tag. safety_signals retains the provenance.
-                        _, _, domain = tag.partition(":")
-                        if domain:
-                            domain_tags.add(domain)
+            if not full_path.is_file():
+                continue
+            stat = full_path.stat()
+            cache_key = (full_path, stat.st_mtime_ns, stat.st_size)
+            cached = cache.get(cache_key) if cache is not None else None
+            if cached is None:
+                detected_signals, detected_domains = _scan_sensitive_signals(full_path)
+                if cache is not None:
+                    cache[cache_key] = (detected_signals, detected_domains)
+            else:
+                detected_signals, detected_domains = cached
+            safety_signals.update(detected_signals)
+            domain_tags.update(detected_domains)
         except OSError:
             # Ignore files that cannot be read or resolved
             pass
@@ -225,6 +226,23 @@ def extract_routing_context(
         safety_signals=tuple(sorted(safety_signals)),
         failed_checks=failed_checks,
     )
+
+
+def _scan_sensitive_signals(full_path: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    # Cap file read at 1MB to prevent memory exhaustion. If file is larger, we
+    # only scan the first MAX_SAFETY_SCAN_BYTES; signals beyond the cap are a
+    # deliberate safety/performance trade-off.
+    with open(full_path, encoding="utf-8", errors="replace") as f:
+        content = f.read(MAX_SAFETY_SCAN_BYTES).lower()
+    safety_signals = set()
+    domain_tags = set()
+    for signal, tag in SENSITIVE_SIGNALS.items():
+        if signal in content:
+            safety_signals.add(tag)
+            _, _, domain = tag.partition(":")
+            if domain:
+                domain_tags.add(domain)
+    return tuple(sorted(safety_signals)), tuple(sorted(domain_tags))
 
 
 SENSITIVE_SIGNALS = {

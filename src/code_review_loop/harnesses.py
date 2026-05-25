@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Protocol
 
 
@@ -331,11 +333,14 @@ def _kilo_permission_args(request: PhaseCommandRequest) -> list[str]:
     return []
 
 
-def harness_registry() -> dict[str, HarnessSpec]:
-    registry = dict(HARNESS_REGISTRY)
+PRODUCTION_HARNESS_REGISTRY = MappingProxyType(HARNESS_REGISTRY)
+TEST_HARNESS_REGISTRY = MappingProxyType({**HARNESS_REGISTRY, "fake": FAKE_HARNESS_SPEC})
+
+
+def harness_registry() -> Mapping[str, HarnessSpec]:
     if fake_harness_enabled():
-        registry["fake"] = FAKE_HARNESS_SPEC
-    return registry
+        return TEST_HARNESS_REGISTRY
+    return PRODUCTION_HARNESS_REGISTRY
 
 
 def validate_harness_name(name: str, *, field: str = "harness") -> None:

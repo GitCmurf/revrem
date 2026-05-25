@@ -105,6 +105,25 @@ def test_fake_harness_is_hidden_unless_explicitly_enabled(monkeypatch):
     assert payload["cost_reporting"] == "tokens"
 
 
+def test_harness_registry_is_cached_and_immutable(monkeypatch):
+    monkeypatch.delenv(harnesses.FAKE_HARNESS_ENV, raising=False)
+
+    registry = harnesses.harness_registry()
+
+    assert registry is harnesses.harness_registry()
+    with pytest.raises(TypeError):
+        registry["fake"] = harnesses.FAKE_HARNESS_SPEC  # type: ignore[index]
+
+
+def test_fake_harness_registry_is_cached_when_enabled(monkeypatch):
+    monkeypatch.setenv(harnesses.FAKE_HARNESS_ENV, "1")
+
+    registry = harnesses.harness_registry()
+
+    assert registry is harnesses.harness_registry()
+    assert "fake" in registry
+
+
 def test_fake_harness_builds_internal_command_when_enabled(monkeypatch):
     monkeypatch.setenv(harnesses.FAKE_HARNESS_ENV, "1")
 
