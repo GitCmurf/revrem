@@ -7,6 +7,7 @@ These functions translate ``argparse.Namespace`` + profile defaults into a
 from __future__ import annotations
 
 import argparse
+import fcntl
 import sys
 import tempfile
 from collections.abc import Sequence
@@ -61,17 +62,19 @@ def ensure_default_artifact_ignore(config: LoopConfig) -> None:
     else:
         ignore_entry = "runs/"
     ignore_path = ignore_path or (config.cwd / ".revrem" / ".gitignore")
-    if ignore_path.exists():
-        existing = ignore_path.read_text(encoding="utf-8")
+    ignore_path.parent.mkdir(parents=True, exist_ok=True)
+    with ignore_path.open("a+", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        handle.seek(0)
+        existing = handle.read()
         existing_entries = set(existing.splitlines())
         if ignore_entry in existing_entries:
             return
         if existing and not existing.endswith("\n"):
             existing += "\n"
-        ignore_path.write_text(f"{existing}{ignore_entry}\n", encoding="utf-8")
-        return
-    ignore_path.parent.mkdir(parents=True, exist_ok=True)
-    ignore_path.write_text(f"{ignore_entry}\n", encoding="utf-8")
+        handle.seek(0)
+        handle.truncate()
+        handle.write(f"{existing}{ignore_entry}\n")
 
 
 def resolve_timeout_seconds(value: float) -> float | None:

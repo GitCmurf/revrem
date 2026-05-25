@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import PurePath, PureWindowsPath
 
 from code_review_loop.core.outcome import RunOutcome
 
@@ -14,6 +15,13 @@ class RunLoopFailed(RuntimeError):
         super().__init__(message)
         self.summary = summary
         self.outcome = outcome
+
+
+def _artifact_filename(path: object) -> str:
+    text = str(path)
+    if "\\" in text:
+        return PureWindowsPath(text).name
+    return PurePath(text).name
 
 
 def format_terminal_summary(summary: dict[str, object]) -> str:
@@ -65,7 +73,7 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
             commit_outputs = [
                 str(path)
                 for path in commits
-                if re.fullmatch(r"commit-\d+\.txt", str(path).replace("\\", "/").rsplit("/", 1)[-1])
+                if re.fullmatch(r"commit-\d+\.txt", _artifact_filename(path))
             ]
             lines.append(f"Latest commit artifact: {(commit_outputs or commits)[-1]}")
         summary_path = artifact_paths.get("summary")

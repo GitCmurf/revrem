@@ -21,7 +21,7 @@ def main(argv: Sequence[str]) -> int:
                 args.iteration,
                 output_format=getattr(args, "format", None),
             )
-            return CommandOk(exit_code=code).exit_code if code == 0 else CommandFailed(exit_code=code).exit_code
+            return code
     except (OSError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return CommandFailed(exit_code=1).exit_code

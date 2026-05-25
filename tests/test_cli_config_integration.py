@@ -318,6 +318,7 @@ def test_run_loop_creates_repo_local_revrem_gitignore_for_default_artifacts(tmp_
     )
 
     runner_mod.run_loop(config, runner)
+    runner_mod.ensure_default_artifact_ignore(config)
 
     assert (tmp_path / ".revrem" / ".gitignore").read_text(encoding="utf-8") == "runs/\n"
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import shutil
 import time
 from importlib import import_module
 
@@ -459,6 +460,9 @@ def test_default_runner_timeout_records_command_cwd_and_partial_output(tmp_path,
 
 
 def test_default_runner_timeout_kills_process_group_with_pipe_holding_child(tmp_path):
+    if shutil.which("bash") is None:
+        pytest.skip("bash is required for the pipe-holding child process fixture")
+
     start = time.monotonic()
 
     result = runner_mod.default_runner(
