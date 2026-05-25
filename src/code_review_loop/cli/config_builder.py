@@ -1,12 +1,7 @@
 """LoopConfig assembly + small CLI-argument resolution helpers (Wave C2a).
 
 These functions translate ``argparse.Namespace`` + profile defaults into a
-``LoopConfig``. They are the front-end half of the original God-object module;
-the back-end half is now in ``code_review_loop.loop`` pending the core-engine
-remediation.
-
-Only the two git-info helpers (``lexical_git_repo_root`` /
-``git_info_exclude_path``) are still looked up lazily from the loop module.
+``LoopConfig``. They are the front-end half of the original God-object module.
 """
 
 from __future__ import annotations
@@ -18,27 +13,15 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from code_review_loop import budgets, harnesses, profiles
+from code_review_loop.cli.config_support import (
+    git_info_exclude_path,
+    lexical_git_repo_root,
+    resolve_initial_review_file,
+)
 from code_review_loop.clock import SYSTEM_CLOCK, Clock
 from code_review_loop.config import DEFAULT_TIMEOUT_SECONDS, LoopConfig
 from code_review_loop.identity import SYSTEM_IDENTITY, RunIdentity
 
-
-def _cli_module():
-    # Resolved on first call so importing this module does not require the
-    # parent ``cli/__init__.py`` to have finished initialising (``LoopConfig``
-    # is defined later in that file). Cached on the module object after the
-    # first lookup; we go through a function rather than a top-level import
-    # to avoid the cycle.
-    from code_review_loop import loop as _cli
-
-    return _cli
-
-
-# These names still live in ``code_review_loop.loop``;
-# the helpers below reach them through ``_cli_module()``. Listed here so
-# readers and the C2/C3 burn-down audits can find every cross-package
-# dependency in one place.
-_FORWARDED_TO_PARENT = ("lexical_git_repo_root", "git_info_exclude_path")
 
 def should_prompt_for_new_profile(args: argparse.Namespace) -> bool:
     if args.interactive is not None:
@@ -69,11 +52,10 @@ def ensure_default_artifact_ignore(config: LoopConfig) -> None:
     # Keep the ignore file scoped to the workspace path the operator invoked,
     # rather than resolving through symlinked ancestry and mutating an
     # unrelated checkout's metadata.
-    _cli = _cli_module()
-    repo_root = _cli.lexical_git_repo_root(config.cwd)
+    repo_root = lexical_git_repo_root(config.cwd)
     if repo_root == Path(tempfile.gettempdir()).resolve():
         repo_root = None
-    ignore_path = _cli.git_info_exclude_path(repo_root) if repo_root is not None else None
+    ignore_path = git_info_exclude_path(repo_root) if repo_root is not None else None
     if ignore_path is not None and repo_root is not None:
         ignore_entry = f"{default_runs_dir.relative_to(repo_root).as_posix()}/"
     else:
@@ -147,12 +129,7 @@ def pick(cli_value, profile_value, fallback):
 
 
 def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, str]:
-    # Routed through the parent package so existing
-    # ``monkeypatch.setattr(MODULE, "profile_or_default", …)`` and
-    # ``monkeypatch.setattr(MODULE, "default_artifact_dir", …)`` test sites
-    # keep taking effect after the C2a relocation. C3b retires these patches.
-    _cli = _cli_module()
-    profile = _cli.profile_or_default(args.profile, cwd)
+    profile = profile_or_default(args.profile, cwd)
     if args.timeout_seconds is not None:
         timeout_seconds = resolve_timeout_seconds(args.timeout_seconds)
         review_timeout_seconds = timeout_seconds
@@ -175,9 +152,9 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
     if commit_after_remediation and not args.dry_run:
         harnesses.require_implemented_harness(profile.commit.harness, field="commit.harness")
     artifact_dir_value = args.artifact_dir or profile.output.artifact_dir
-    artifact_dir = Path(artifact_dir_value) if artifact_dir_value else _cli.default_artifact_dir()
+    artifact_dir = Path(artifact_dir_value) if artifact_dir_value else default_artifact_dir()
     search_root = artifact_dir if artifact_dir_value else artifact_dir.parent
-    initial_review_file = _cli.resolve_initial_review_file(args.initial_review_file, search_root)
+    initial_review_file = resolve_initial_review_file(args.initial_review_file, search_root)
     if initial_review_file is not None and not initial_review_file.is_file():
         raise FileNotFoundError(f"initial review file not found: {initial_review_file}")
     checks = tuple(args.check) if args.check is not None else profile.pipeline.checks

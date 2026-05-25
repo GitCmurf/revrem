@@ -2962,7 +2962,7 @@ terminal_title = true
 
 def test_main_uses_profile_commit_message_harness(tmp_path, monkeypatch):
     monkeypatch.setattr(
-        loop_mod,
+        config_builder,
         "profile_or_default",
         lambda name, cwd: profiles.Profile(
             name="final-pr",
