@@ -3,8 +3,7 @@
 The adapter closes over LoopConfig and delegates to cli.run_checks, converting
 the legacy tuple return into a ChecksOutcome.  These tests verify:
   1. The adapter wraps run_checks output into ChecksOutcome correctly.
-  2. The engine dispatch at _run_loop's checks call-site uses ctx.phase_checks
-     when present, and falls back to the legacy shim when absent.
+  2. The engine dispatch at _run_loop's checks call-site uses ctx.phase_checks.
   3. A fully fake harness can replace the adapter without touching cli.py.
 """
 
@@ -12,6 +11,8 @@ from __future__ import annotations
 
 from pathlib import Path
 from unittest.mock import MagicMock
+
+from support.phase_harnesses import phase_harness_kwargs
 
 import code_review_loop.loop as loop_mod
 from code_review_loop.adapters.checks import ChecksAdapter
@@ -33,7 +34,7 @@ def _ctx(runner=None, **kwargs: object) -> RunContext:
         clock=MagicMock(spec=Clock),
         identity=MagicMock(spec=RunIdentity),
         runner=runner if runner is not None else MagicMock(),
-        **kwargs,  # type: ignore[arg-type]
+        **phase_harness_kwargs(**kwargs),  # type: ignore[arg-type]
     )
 
 
@@ -161,34 +162,15 @@ class TestEngineDispatch:
         ctx = _ctx(phase_checks=fake)
 
         request = ChecksRequest(iteration=3)
-        outcome = ctx.phase_checks.execute(request, ctx)  # type: ignore[union-attr]
+        outcome = ctx.phase_checks.execute(request, ctx)
 
         assert outcome is fake_outcome
         assert fake.calls == [request]
         assert fake.calls[0].iteration == 3
 
-    def test_harness_absent_falls_back_to_legacy(self, tmp_path: Path) -> None:
-        """When ctx.phase_checks is None, the engine should call run_checks."""
-        ctx = _ctx(phase_checks=None)
-        assert ctx.phase_checks is None
-
-        (tmp_path / "artifacts").mkdir()
-        config = loop_mod.LoopConfig(
-            base="main",
-            max_iterations=1,
-            codex_bin="codex",
-            cwd=tmp_path,
-            artifact_dir=tmp_path / "artifacts",
-            check_commands=("true",),
-        )
-        success = CommandResult(["true"], 0)
-        results, failed = loop_mod.run_checks(config, _runner_returning(success), 1)
-        assert results[0].returncode == 0
-        assert failed == []
-
     def test_engine_dispatch_branch_uses_harness_not_run_checks(self, tmp_path: Path) -> None:
         """When phase_checks is set, the dispatch branch calls the harness and
-        does NOT call the legacy run_checks shim — verifying the if/else in cli.py."""
+        does not call the legacy run_checks shim."""
         fake_outcome = ChecksOutcome(
             results=(CommandResult(["echo", "harness"], 0),),
             failed_commands=(),
@@ -207,12 +189,9 @@ class TestEngineDispatch:
         ctx = _ctx(phase_checks=harness)
         iteration = 5
 
-        if ctx.phase_checks is not None:
-            _checks_outcome = ctx.phase_checks.execute(ChecksRequest(iteration=iteration), ctx)
-            check_results = list(_checks_outcome.results)
-            failed_check_names = list(_checks_outcome.failed_commands)
-        else:
-            raise AssertionError("should have taken the harness branch")
+        _checks_outcome = ctx.phase_checks.execute(ChecksRequest(iteration=iteration), ctx)
+        check_results = list(_checks_outcome.results)
+        failed_check_names = list(_checks_outcome.failed_commands)
 
         assert SentinelHarness.called
         assert check_results == list(fake_outcome.results)

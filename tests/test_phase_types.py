@@ -6,6 +6,14 @@ from dataclasses import FrozenInstanceError
 from unittest.mock import MagicMock
 
 import pytest
+from support.phase_harnesses import (
+    FakeChecksHarness,
+    FakeCommitHarness,
+    FakeRemediationHarness,
+    FakeReviewHarness,
+    FakeTriageHarness,
+    phase_harness_kwargs,
+)
 
 from code_review_loop.clock import Clock
 from code_review_loop.core.ports import (
@@ -39,7 +47,7 @@ def _ctx(**kwargs: object) -> RunContext:
         clock=MagicMock(spec=Clock),
         identity=MagicMock(spec=RunIdentity),
         runner=MagicMock(),
-        **kwargs,  # type: ignore[arg-type]
+        **phase_harness_kwargs(**kwargs),  # type: ignore[arg-type]
     )
 
 
@@ -168,13 +176,13 @@ class TestReviewOutcome:
 # ---------------------------------------------------------------------------
 
 class TestRunContextHarnessFields:
-    def test_all_default_to_none(self) -> None:
+    def test_all_phase_harnesses_are_required(self) -> None:
         ctx = _ctx()
-        assert ctx.phase_checks is None
-        assert ctx.phase_commit is None
-        assert ctx.phase_remediation is None
-        assert ctx.phase_triage is None
-        assert ctx.phase_review is None
+        assert isinstance(ctx.phase_checks, FakeChecksHarness)
+        assert isinstance(ctx.phase_commit, FakeCommitHarness)
+        assert isinstance(ctx.phase_remediation, FakeRemediationHarness)
+        assert isinstance(ctx.phase_triage, FakeTriageHarness)
+        assert isinstance(ctx.phase_review, FakeReviewHarness)
 
     def test_harness_fields_injected(self) -> None:
         fake_checks = MagicMock(spec=ChecksHarness)
@@ -200,57 +208,32 @@ class TestRunContextHarnessFields:
 # Protocol duck-type compliance
 # ---------------------------------------------------------------------------
 
-class FakeChecksHarness:
-    def execute(self, request: ChecksRequest, ctx: RunContext) -> ChecksOutcome:
-        return ChecksOutcome(results=(), failed_commands=())
-
-
-class FakeCommitHarness:
-    def execute(self, request: CommitRequest, ctx: RunContext) -> CommitOutcome:
-        return CommitOutcome(status="skipped")
-
-
-class FakeRemediationHarness:
-    def execute(self, request: RemediationRequest, ctx: RunContext) -> RemediationOutcome:
-        return RemediationOutcome(result=_cr())
-
-
-class FakeTriageHarness:
-    def execute(self, request: TriageRequest, ctx: RunContext) -> TriageOutcome:
-        return TriageOutcome(handoff="", suppressed_count=0, is_clear=True, payload=None)
-
-
-class FakeReviewHarness:
-    def execute(self, request: ReviewRequest, ctx: RunContext) -> ReviewOutcome:
-        return ReviewOutcome(status="clear", result=_cr())
-
-
 class TestProtocolCompliance:
     """Concrete fakes can be injected and called through the RunContext."""
 
     def test_checks_harness_callable(self) -> None:
         ctx = _ctx(phase_checks=FakeChecksHarness())
-        outcome = ctx.phase_checks.execute(ChecksRequest(iteration=1), ctx)  # type: ignore[union-attr]
+        outcome = ctx.phase_checks.execute(ChecksRequest(iteration=1), ctx)
         assert isinstance(outcome, ChecksOutcome)
 
     def test_commit_harness_callable(self) -> None:
         ctx = _ctx(phase_commit=FakeCommitHarness())
-        outcome = ctx.phase_commit.execute(CommitRequest(iteration=1), ctx)  # type: ignore[union-attr]
+        outcome = ctx.phase_commit.execute(CommitRequest(iteration=1), ctx)
         assert outcome.status == "skipped"
 
     def test_remediation_harness_callable(self) -> None:
         ctx = _ctx(phase_remediation=FakeRemediationHarness())
         req = RemediationRequest(iteration=1, remediation_input="fix")
-        outcome = ctx.phase_remediation.execute(req, ctx)  # type: ignore[union-attr]
+        outcome = ctx.phase_remediation.execute(req, ctx)
         assert isinstance(outcome, RemediationOutcome)
 
     def test_triage_harness_callable(self) -> None:
         ctx = _ctx(phase_triage=FakeTriageHarness())
         req = TriageRequest(iteration=1, run_id="r", source_review_artifact="a.txt", review_output="out")
-        outcome = ctx.phase_triage.execute(req, ctx)  # type: ignore[union-attr]
+        outcome = ctx.phase_triage.execute(req, ctx)
         assert outcome.is_clear is True
 
     def test_review_harness_callable(self) -> None:
         ctx = _ctx(phase_review=FakeReviewHarness())
-        outcome = ctx.phase_review.execute(ReviewRequest(artifact_label="review-1"), ctx)  # type: ignore[union-attr]
+        outcome = ctx.phase_review.execute(ReviewRequest(artifact_label="review-1"), ctx)
         assert outcome.status == "clear"

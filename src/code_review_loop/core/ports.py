@@ -19,13 +19,11 @@ B2a adds per-phase request/outcome value types and per-phase `*Harness` Protocol
 
 - **Per-phase protocols** (`ChecksHarness`, `CommitHarness`, `RemediationHarness`,
   `TriageHarness`, `ReviewHarness`) over a single `Harness` Protocol: each adapter
-  carries one typed `execute()` with no sum-type dispatch; each `RunContext` field
-  is individually optional, enabling incremental phase migration (B2b–f).
+  carries one typed `execute()` with no sum-type dispatch. Wave C completion makes
+  these ports required, so there is no hidden legacy dispatch path.
 - **Adapters close over `LoopConfig`** in `__init__`; request types carry only
   the per-call variance (iteration, runtime inputs). `LoopConfig` never appears
   in core types.
-- **Legacy fallback**: while a harness field is `None`, the engine calls the
-  legacy `run_<phase>` shim in `cli.py`. Shims are deleted in C3.
 - **Errors still raise**: harness.execute() raises on failure (same contract as
   the current phase functions); outcome types cover success paths only.
 - **"Decide" is read-only-IO-allowed**: `ChecksRequest` etc. carry pre-call data;
@@ -228,12 +226,11 @@ class RunContext:
     clock: Clock
     identity: RunIdentity
     runner: ProcessRunner
+    phase_checks: ChecksHarness
+    phase_commit: CommitHarness
+    phase_remediation: RemediationHarness
+    phase_triage: TriageHarness
+    phase_review: ReviewHarness
     event_sink: EventSink | None = None
     budget_state: BudgetState | None = None
     progress_reporter: ProgressReporter | None = None
-    # B2a phase harnesses — None while the legacy cli.py shim is still active.
-    phase_checks: ChecksHarness | None = None
-    phase_commit: CommitHarness | None = None
-    phase_remediation: RemediationHarness | None = None
-    phase_triage: TriageHarness | None = None
-    phase_review: ReviewHarness | None = None

@@ -283,7 +283,15 @@ def test_progress_warning_status_emits_warning_event(tmp_path):
         artifact_dir=tmp_path / "artifacts",
         progress=False,
     )
-    ctx = RunContext(clock=FakeClock(), identity=FakeRunIdentity(), runner=None, event_sink=sink)
+    from support.phase_harnesses import phase_harness_kwargs
+
+    ctx = RunContext(
+        clock=FakeClock(),
+        identity=FakeRunIdentity(),
+        runner=None,
+        **phase_harness_kwargs(),
+        event_sink=sink,
+    )
 
     loop_mod.progress_event(config, "triage", "1", "warning", "suppressions unavailable", ctx=ctx)
 
@@ -4910,7 +4918,9 @@ def test_rich_progress_renderer_is_used_when_available(tmp_path, capsys, monkeyp
 
 
 def test_compact_progress_wraps_to_terminal_width(tmp_path, capsys, monkeypatch):
-    monkeypatch.setattr(loop_mod, "terminal_columns", lambda default=120: 70)
+    from code_review_loop.adapters import phase_support
+
+    monkeypatch.setattr(phase_support, "terminal_columns", lambda default=120: 70)
     review_outputs = iter(
         [
             "This review summary is long enough to wrap onto another aligned line.\n\n"

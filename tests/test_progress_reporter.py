@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from support.fakes import FakeClock, FakeRunIdentity  # noqa: E402
+from support.phase_harnesses import phase_harness_kwargs  # noqa: E402
 
 import code_review_loop.loop as loop_mod
 from code_review_loop.adapters.terminal import TerminalProgressReporter  # noqa: E402
@@ -21,6 +22,7 @@ def _make_ctx(reporter: ProgressReporter | None = None) -> RunContext:
         clock=FakeClock(),
         identity=FakeRunIdentity(),
         runner=None,
+        **phase_harness_kwargs(),
         event_sink=None,
         budget_state=None,
         progress_reporter=reporter,

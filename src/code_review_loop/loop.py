@@ -1497,20 +1497,11 @@ def _run_loop(
                 acc = replace(acc, last_review_status=cast("Literal['clear', 'findings', 'unknown']", status))
             else:
                 try:
-                    if ctx.phase_review is not None:
-                        _review_outcome = ctx.phase_review.execute(
-                            ReviewRequest(artifact_label=f"review-{iteration}", display_label=str(iteration)),
-                            ctx,
-                        )
-                        status, review = _review_outcome.status, _review_outcome.result
-                    else:  # legacy shim path; dead once phase_review is always wired (C3)
-                        status, review = run_codex_review(
-                            config,
-                            runner,
-                            f"review-{iteration}",
-                            display_label=str(iteration),
-                            ctx=ctx,
-                        )
+                    _review_outcome = ctx.phase_review.execute(
+                        ReviewRequest(artifact_label=f"review-{iteration}", display_label=str(iteration)),
+                        ctx,
+                    )
+                    status, review = _review_outcome.status, _review_outcome.result
                 except RuntimeError as exc:
                     iterations.append({"iteration": iteration, "review_failed": True})
                     emit_loop_failure_event(
@@ -1543,30 +1534,19 @@ def _run_loop(
                     source_review_artifact = (
                         "review-initial.txt" if iteration == 1 and initial_review_output else f"review-{iteration}.txt"
                     )
-                    if ctx.phase_triage is not None:
-                        _triage_outcome = ctx.phase_triage.execute(
-                            TriageRequest(
-                                iteration=iteration,
-                                run_id=run_id,
-                                source_review_artifact=source_review_artifact,
-                                review_output=remediation_input,
-                            ),
-                            ctx,
-                        )
-                        remediation_input = _triage_outcome.handoff
-                        suppressed_count = _triage_outcome.suppressed_count
-                        triage_no_actionable = _triage_outcome.is_clear
-                        triage_payload = _triage_outcome.payload
-                    else:  # legacy shim path; dead once phase_triage is always wired (C3)
-                        remediation_input, suppressed_count, triage_no_actionable, triage_payload = run_triage(
-                            config,
-                            runner,
-                            iteration,
-                            run_id,
-                            source_review_artifact,
-                            remediation_input,
-                            ctx=ctx,
-                        )
+                    _triage_outcome = ctx.phase_triage.execute(
+                        TriageRequest(
+                            iteration=iteration,
+                            run_id=run_id,
+                            source_review_artifact=source_review_artifact,
+                            review_output=remediation_input,
+                        ),
+                        ctx,
+                    )
+                    remediation_input = _triage_outcome.handoff
+                    suppressed_count = _triage_outcome.suppressed_count
+                    triage_no_actionable = _triage_outcome.is_clear
+                    triage_payload = _triage_outcome.payload
                     if suppressed_count:
                         iterations[-1]["suppressed_findings_count"] = suppressed_count
                     if triage_no_actionable:
@@ -1677,14 +1657,11 @@ def _run_loop(
 
             try:
                 rem_start_time = clock.monotonic()
-                if ctx.phase_remediation is not None:
-                    _rem_outcome = ctx.phase_remediation.execute(
-                        RemediationRequest(iteration=iteration, remediation_input=remediation_input, resolved_route=resolved_route),
-                        ctx,
-                    )
-                    rem_result = _rem_outcome.result
-                else:  # legacy shim path; dead once phase_remediation is always wired (C3)
-                    rem_result = run_remediation(config, runner, iteration, remediation_input, resolved_route=resolved_route, ctx=ctx)
+                _rem_outcome = ctx.phase_remediation.execute(
+                    RemediationRequest(iteration=iteration, remediation_input=remediation_input, resolved_route=resolved_route),
+                    ctx,
+                )
+                rem_result = _rem_outcome.result
                 rem_duration = clock.monotonic() - rem_start_time
             except budgets.BudgetExceeded:
                 raise
@@ -1702,12 +1679,9 @@ def _run_loop(
                 assert isinstance(_action, Stop)
                 return _execute_stop(_action.outcome, state, summary, config, clock, ctx, cause=exc)
 
-            if ctx.phase_checks is not None:
-                _checks_outcome = ctx.phase_checks.execute(ChecksRequest(iteration=iteration), ctx)
-                check_results = list(_checks_outcome.results)
-                failed_check_names = list(_checks_outcome.failed_commands)
-            else:  # legacy shim path; dead once phase_checks is always wired (C3)
-                check_results, failed_check_names = run_checks(config, runner, iteration, ctx=ctx)
+            _checks_outcome = ctx.phase_checks.execute(ChecksRequest(iteration=iteration), ctx)
+            check_results = list(_checks_outcome.results)
+            failed_check_names = list(_checks_outcome.failed_commands)
             pending_check_failures = _format_check_failures(check_results)
             state.set_pending_check_failures(bool(pending_check_failures))
             iterations[-1]["check_failures"] = len(failed_check_names)
@@ -1726,11 +1700,8 @@ def _run_loop(
                     ctx.event_sink.emit("routing_outcome", phase="remediate", iteration=iteration, payload=outcome_payload)
             if config.commit_after_remediation and not pending_check_failures:
                 try:
-                    if ctx.phase_commit is not None:
-                        _commit_outcome = ctx.phase_commit.execute(CommitRequest(iteration=iteration, retrying=_commit_retry), ctx)
-                        iterations[-1]["commit_status"] = _commit_outcome.status
-                    else:  # legacy shim path; dead once phase_commit is always wired (C3)
-                        iterations[-1]["commit_status"] = run_commit(config, runner, iteration, retrying=_commit_retry, ctx=ctx)
+                    _commit_outcome = ctx.phase_commit.execute(CommitRequest(iteration=iteration, retrying=_commit_retry), ctx)
+                    iterations[-1]["commit_status"] = _commit_outcome.status
                 except CommitFailed as exc:
                     iterations[-1]["commit_status"] = exc.kind
                     iterations[-1]["commit_failed"] = True
@@ -1797,20 +1768,11 @@ def _run_loop(
         acc = replace(acc, pending_check_failures=pending_check_failures)
         if config.final_review:
             try:
-                if ctx.phase_review is not None:
-                    _final_outcome = ctx.phase_review.execute(
-                        ReviewRequest(artifact_label="review-final", display_label="final"),
-                        ctx,
-                    )
-                    status, final_review = _final_outcome.status, _final_outcome.result
-                else:  # legacy shim path; dead once phase_review is always wired (C3)
-                    status, final_review = run_codex_review(
-                        config,
-                        runner,
-                        "review-final",
-                        display_label="final",
-                        ctx=ctx,
-                    )
+                _final_outcome = ctx.phase_review.execute(
+                    ReviewRequest(artifact_label="review-final", display_label="final"),
+                    ctx,
+                )
+                status, final_review = _final_outcome.status, _final_outcome.result
             except RuntimeError as exc:
                 iterations.append({"iteration": "final", "review_failed": True})
                 emit_loop_failure_event(

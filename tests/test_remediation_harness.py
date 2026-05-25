@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from support.phase_harnesses import phase_harness_kwargs
 
 import code_review_loop.loop as loop_mod
 from code_review_loop.adapters.remediation import RemediationAdapter
@@ -25,7 +26,7 @@ def _ctx(runner=None, **kwargs: object) -> RunContext:
         clock=MagicMock(spec=Clock),
         identity=MagicMock(spec=RunIdentity),
         runner=runner if runner is not None else MagicMock(),
-        **kwargs,  # type: ignore[arg-type]
+        **phase_harness_kwargs(**kwargs),  # type: ignore[arg-type]
     )
 
 
@@ -118,10 +119,7 @@ class TestEngineDispatch:
         ctx = _ctx(phase_remediation=sentinel)
         request = RemediationRequest(iteration=1, remediation_input="the review output")
 
-        if ctx.phase_remediation is not None:
-            outcome = ctx.phase_remediation.execute(request, ctx)
-        else:
-            raise AssertionError("harness branch not taken")
+        outcome = ctx.phase_remediation.execute(request, ctx)
 
         assert outcome is fake_outcome
         assert SentinelHarness.calls[0].remediation_input == "the review output"

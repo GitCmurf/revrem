@@ -970,11 +970,13 @@ that commit as a green checkpoint, not the Wave C finish line.
 
 1. Build a real ``core.engine.run(state, ctx)`` orchestration path and shrink
    the driver loop to wiring only.
-2. Replace the partial import rules with contracts that prove core does not
-   import drivers/adapters and adapters do not import ``cli`` or ``loop``.
+2. DONE in remediation: replace the partial import rules with contracts that
+   prove core does not import drivers/adapters and adapters do not import
+   ``cli`` or ``loop``.
 3. Delete the ``cli.__getattr__`` compatibility facade.
-4. Remove legacy phase fallback branches and finish TD-001 by making
-   ``RunContext``/``ctx`` required where phase/support functions need it.
+4. IN PROGRESS: legacy phase fallback branches are removed and ``RunContext``
+   phase harnesses are required. Remaining TD-001 work is to remove nullable
+   ``ctx`` from phase/support functions that no longer support legacy callers.
 5. Decompose ``tests/test_cli_integration.py`` into behavior-level modules.
 6. Promote ``RunState`` beyond a live-dict setter bag where it materially
    reduces primitive summary mutation.

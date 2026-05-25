@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from support.phase_harnesses import phase_harness_kwargs
 
 import code_review_loop.loop as loop_mod
 from code_review_loop.adapters.review import ReviewAdapter
@@ -24,7 +25,7 @@ def _ctx(runner=None, **kwargs: object) -> RunContext:
         clock=MagicMock(spec=Clock),
         identity=MagicMock(spec=RunIdentity),
         runner=runner if runner is not None else MagicMock(),
-        **kwargs,  # type: ignore[arg-type]
+        **phase_harness_kwargs(**kwargs),  # type: ignore[arg-type]
     )
 
 
@@ -110,10 +111,7 @@ class TestEngineDispatch:
         ctx = _ctx(phase_review=sentinel)
         request = ReviewRequest(artifact_label="review-1", display_label="1")
 
-        if ctx.phase_review is not None:
-            outcome = ctx.phase_review.execute(request, ctx)
-        else:
-            raise AssertionError("harness branch not taken")
+        outcome = ctx.phase_review.execute(request, ctx)
 
         assert outcome is fake_outcome
         assert SentinelHarness.calls[0].artifact_label == "review-1"

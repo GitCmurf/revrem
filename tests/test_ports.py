@@ -8,6 +8,8 @@ request/outcome types and five Harness Protocols.
 
 from __future__ import annotations
 
+from support.phase_harnesses import phase_harness_kwargs
+
 from code_review_loop.core import ports
 from code_review_loop.core.ports import (
     Clock,
@@ -63,6 +65,7 @@ def test_run_context_bundles_collaborators_only():
         clock=_Clock(),
         identity=_Identity(),
         runner=_runner,
+        **phase_harness_kwargs(),
         event_sink=None,
         budget_state=None,
     )
@@ -109,6 +112,6 @@ def test_b2a_run_context_has_harness_fields():
     def _runner(args, cwd, input_text=None, timeout_seconds=None):
         return CommandResult(list(args), 0)
 
-    ctx = RunContext(clock=_Clock(), identity=_Identity(), runner=_runner)
+    ctx = RunContext(clock=_Clock(), identity=_Identity(), runner=_runner, **phase_harness_kwargs())
     for field in ("phase_checks", "phase_commit", "phase_remediation", "phase_triage", "phase_review"):
-        assert getattr(ctx, field) is None, f"RunContext.{field} should default to None"
+        assert getattr(ctx, field) is not None, f"RunContext.{field} should be required"

@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from support.phase_harnesses import phase_harness_kwargs
+
 import code_review_loop.loop as loop_mod
 from code_review_loop.adapters.triage import TriageAdapter
 from code_review_loop.clock import Clock
@@ -21,7 +23,7 @@ def _ctx(runner=None, **kwargs: object) -> RunContext:
         clock=MagicMock(spec=Clock),
         identity=MagicMock(spec=RunIdentity),
         runner=runner if runner is not None else MagicMock(),
-        **kwargs,  # type: ignore[arg-type]
+        **phase_harness_kwargs(**kwargs),  # type: ignore[arg-type]
     )
 
 
@@ -126,10 +128,7 @@ class TestEngineDispatch:
         ctx = _ctx(phase_triage=sentinel)
         request = TriageRequest(iteration=1, run_id="r", source_review_artifact="a.txt", review_output="x")
 
-        if ctx.phase_triage is not None:
-            outcome = ctx.phase_triage.execute(request, ctx)
-        else:
-            raise AssertionError("harness branch not taken")
+        outcome = ctx.phase_triage.execute(request, ctx)
 
         assert outcome is fake_outcome
         assert SentinelHarness.calls[0].run_id == "r"
