@@ -1336,6 +1336,13 @@ class _RunSetup(NamedTuple):
     run_id: str
 
 
+class _IterationStep(NamedTuple):
+    acc: LoopAccumulator
+    pending_check_failures: str
+    failed_check_names: list[str]
+    commit_retry: bool
+
+
 def _check_commit_cleanliness(config: LoopConfig, runner: Runner) -> None:
     if not config.commit_after_remediation or config.dry_run:
         return
@@ -1555,6 +1562,331 @@ def _run_final_review(
     return _execute_stop(no_final_action.outcome, state, summary, config, clock, ctx)
 
 
+def _run_iteration(
+    *,
+    config: LoopConfig,
+    state: RunState,
+    summary: dict[str, object],
+    clock: Clock,
+    ctx: RunContext,
+    snap: ConfigSnapshot,
+    acc: LoopAccumulator,
+    iteration: int,
+    pending_check_failures: str,
+    failed_check_names: list[str],
+    commit_retry: bool,
+    initial_review_output: str,
+    run_id: str,
+) -> dict[str, object] | _IterationStep:
+    iterations = state.iterations
+    acc = replace(acc, pending_check_failures=pending_check_failures)
+    if iteration == 1 and initial_review_output:
+        status = detect_review_status(initial_review_output)
+        if status == "unknown":
+            status = "findings"
+        last_review_output = initial_review_output
+        iterations.append(
+            {
+                "iteration": iteration,
+                "review_status": status,
+                "review_source": str(config.initial_review_file),
+            }
+        )
+        acc = replace(acc, last_review_status=cast("Literal['clear', 'findings', 'unknown']", status))
+    else:
+        try:
+            review_outcome = ctx.phase_review.execute(
+                ReviewRequest(artifact_label=f"review-{iteration}", display_label=str(iteration)),
+                ctx,
+            )
+            status, review = review_outcome.status, review_outcome.result
+        except RuntimeError as exc:
+            iterations.append({"iteration": iteration, "review_failed": True})
+            emit_loop_failure_event(
+                config,
+                phase="review",
+                iteration=iteration,
+                reason="review_failed",
+                error=str(exc),
+                ctx=ctx,
+            )
+            action = decide(snap, acc, ReviewDone(is_final=False, status="unknown", exc=exc))
+            assert isinstance(action, Stop)
+            return _execute_stop(action.outcome, state, summary, config, clock, ctx, cause=exc)
+        last_review_output = actionable_review_output(_combined_output(review))
+        iterations.append({"iteration": iteration, "review_status": status})
+        acc = replace(acc, last_review_status=cast("Literal['clear', 'findings', 'unknown']", status))
+
+    review_action = decide(
+        snap,
+        acc,
+        ReviewDone(is_final=False, status=cast("Literal['clear', 'findings', 'unknown']", status)),
+    )
+    if isinstance(review_action, Stop):
+        return _execute_stop(
+            review_action.outcome,
+            state,
+            summary,
+            config,
+            clock,
+            ctx,
+            last_review_output=last_review_output,
+        )
+
+    remediation_input = last_review_output
+    if pending_check_failures:
+        remediation_input = pending_check_failures + "\n\n" + remediation_input
+    try:
+        resolved_route = None
+        if config.triage_enabled:
+            source_review_artifact = (
+                "review-initial.txt" if iteration == 1 and initial_review_output else f"review-{iteration}.txt"
+            )
+            triage_outcome = ctx.phase_triage.execute(
+                TriageRequest(
+                    iteration=iteration,
+                    run_id=run_id,
+                    source_review_artifact=source_review_artifact,
+                    review_output=remediation_input,
+                ),
+                ctx,
+            )
+            remediation_input = triage_outcome.handoff
+            suppressed_count = triage_outcome.suppressed_count
+            triage_no_actionable = triage_outcome.is_clear
+            triage_payload = triage_outcome.payload
+            if suppressed_count:
+                iterations[-1]["suppressed_findings_count"] = suppressed_count
+            if triage_no_actionable:
+                if suppressed_count:
+                    iterations[-1]["suppressed_findings"] = True
+                    state.set_suppressed_findings_count(suppressed_count)
+                triage_action = decide(snap, acc, TriageDone(is_clear=True, suppressed_count=suppressed_count))
+                if isinstance(triage_action, Stop):
+                    iterations[-1]["check_failures"] = 0
+                    return _execute_stop(
+                        triage_action.outcome,
+                        state,
+                        summary,
+                        config,
+                        clock,
+                        ctx,
+                        last_review_output=last_review_output,
+                    )
+                remediation_input = pending_check_failures
+
+            if triage_payload and config.triage_contract == "v2" and config.profile_v2:
+                routing_config = config.profile_v2.triage.routing
+                if routing_config.enabled:
+                    routing_context = triage.extract_routing_context(
+                        triage_payload,
+                        config.cwd,
+                        failed_checks=tuple(failed_check_names),
+                    )
+                    model_proposal = triage_payload.get("route_proposal", {})
+                    resolved_route = policy.resolve_routing(
+                        config.profile_v2,
+                        routing_context,
+                        model_proposal_tier=model_proposal.get("route_tier"),
+                        max_timeout_seconds=remaining_wall_budget_seconds(config, ctx),
+                    )
+                    progress_event(
+                        config,
+                        "triage",
+                        str(iteration),
+                        "routing",
+                        f"routed to {resolved_route.route_tier} ({resolved_route.harness})",
+                        ctx=ctx,
+                    )
+                else:
+                    resolved_route = policy.ResolvedRoute(
+                        route_tier="default",
+                        harness=config.remediation_harness,
+                        model=config.remediation_model or config.model,
+                        reasoning_effort=config.remediation_reasoning_effort
+                        or config.reasoning_effort,
+                        timeout_seconds=config.remediation_timeout_seconds,
+                        sandbox=config.exec_sandbox,
+                        prompt_fragments=(),
+                        allow_model_deescalation=True,
+                        rule_id="default",
+                    )
+
+                remediation_input = prompts_composer.compose_remediation_prompt(
+                    config.cwd,
+                    triage_payload,
+                    resolved_route,
+                    remediation_input,
+                    max_chars=config.max_remediation_input_chars,
+                    trusted_repo=config.trusted_repo,
+                )
+                routing_payload = _build_routing_payload(
+                    resolved_route=resolved_route,
+                    triage_payload=triage_payload,
+                    run_id=run_id,
+                    iteration=iteration,
+                    remediation_input=remediation_input,
+                    config=config,
+                )
+                try:
+                    triage.validate_routing_payload(routing_payload)
+                except triage.TriageValidationError as exc:
+                    issue = triage.invalid_triage_issue(exc, iteration=iteration)
+                    artifacts.write_json_artifact(
+                        config.artifact_dir,
+                        f"diagnostics-{iteration}.json",
+                        diagnostics.doctor_payload([issue]),
+                    )
+                    progress_event(
+                        config,
+                        "triage",
+                        str(iteration),
+                        "invalid",
+                        f"routing payload schema validation failed: {exc}",
+                        ctx=ctx,
+                    )
+                    raise RuntimeError(f"invalid routing decision artifact for iteration {iteration}: {exc}") from exc
+
+                triage.write_routing_artifact(config.artifact_dir, iteration, routing_payload)
+                if ctx.event_sink:
+                    ctx.event_sink.emit("routing_decision", phase="triage", iteration=iteration, payload=routing_payload)
+                write_artifact(config.artifact_dir / f"remediation-{iteration}-prompt.txt", remediation_input)
+    except budgets.BudgetExceeded:
+        raise
+    except Exception as exc:
+        iterations[-1]["triage_failed"] = True
+        emit_loop_failure_event(
+            config,
+            phase="triage",
+            iteration=iteration,
+            reason="triage_failed",
+            error=str(exc),
+            ctx=ctx,
+        )
+        action = decide(snap, acc, TriageDone(is_clear=False, exc=exc))
+        assert isinstance(action, Stop)
+        return _execute_stop(action.outcome, state, summary, config, clock, ctx, cause=exc)
+
+    try:
+        rem_start_time = clock.monotonic()
+        rem_outcome = ctx.phase_remediation.execute(
+            RemediationRequest(iteration=iteration, remediation_input=remediation_input, resolved_route=resolved_route),
+            ctx,
+        )
+        rem_result = rem_outcome.result
+        rem_duration = clock.monotonic() - rem_start_time
+    except budgets.BudgetExceeded:
+        raise
+    except Exception as exc:
+        iterations[-1]["remediation_failed"] = True
+        emit_loop_failure_event(
+            config,
+            phase="remediate",
+            iteration=iteration,
+            reason="remediation_failed",
+            error=str(exc),
+            ctx=ctx,
+        )
+        action = decide(snap, acc, RemediationDone(exc=exc))
+        assert isinstance(action, Stop)
+        return _execute_stop(action.outcome, state, summary, config, clock, ctx, cause=exc)
+
+    checks_outcome = ctx.phase_checks.execute(ChecksRequest(iteration=iteration), ctx)
+    check_results = list(checks_outcome.results)
+    failed_check_names = list(checks_outcome.failed_commands)
+    pending_check_failures = _format_check_failures(check_results)
+    state.set_pending_check_failures(bool(pending_check_failures))
+    iterations[-1]["check_failures"] = len(failed_check_names)
+    if resolved_route:
+        outcome_payload = {
+            "schema_version": "1.0",
+            "run_id": run_id,
+            "iteration": iteration,
+            "source_routing_artifact": f"routing-{iteration}.json",
+            "exit_code": rem_result.returncode,
+            "wall_time_seconds": round(rem_duration, 3),
+            "checks_passed": all(r.returncode == 0 for r in check_results),
+        }
+        triage.write_routing_outcome_artifact(config.artifact_dir, iteration, outcome_payload)
+        if ctx.event_sink:
+            ctx.event_sink.emit("routing_outcome", phase="remediate", iteration=iteration, payload=outcome_payload)
+    if config.commit_after_remediation and not pending_check_failures:
+        try:
+            commit_outcome = ctx.phase_commit.execute(CommitRequest(iteration=iteration, retrying=commit_retry), ctx)
+            iterations[-1]["commit_status"] = commit_outcome.status
+        except CommitFailed as exc:
+            iterations[-1]["commit_status"] = exc.kind
+            iterations[-1]["commit_failed"] = True
+            iterations[-1]["commit_artifact"] = str(exc.artifact_path)
+            commit_action = decide(
+                snap,
+                acc,
+                CommitDone(status=exc.kind, commit_failed=exc),
+                iteration=iteration,
+            )
+            if isinstance(commit_action, RetryViaCommitHook):
+                pending_check_failures = format_commit_hook_failure_for_remediation(exc)
+                acc = replace(acc, commit_retry=True, pending_check_failures=pending_check_failures)
+                state.set_pending_check_failures(True)
+                progress_event(
+                    config,
+                    "commit",
+                    str(iteration),
+                    "retry",
+                    "hook output will feed next remediation",
+                    ctx=ctx,
+                )
+                return _IterationStep(acc, pending_check_failures, failed_check_names, True)
+            assert isinstance(commit_action, Stop)
+            emit_loop_failure_event(
+                config,
+                phase="commit",
+                iteration=iteration,
+                reason=commit_action.outcome.reason,
+                error=str(exc),
+                ctx=ctx,
+            )
+            return _execute_stop(commit_action.outcome, state, summary, config, clock, ctx, cause=exc)
+        except budgets.BudgetExceeded:
+            raise
+        except Exception as exc:
+            iterations[-1]["commit_failed"] = True
+            emit_loop_failure_event(
+                config,
+                phase="commit",
+                iteration=iteration,
+                reason="commit_failed",
+                error=str(exc),
+                ctx=ctx,
+            )
+            action = decide(
+                snap,
+                acc,
+                CommitDone(status=None, other_exc=exc),
+                iteration=iteration,
+            )
+            assert isinstance(action, Stop)
+            return _execute_stop(action.outcome, state, summary, config, clock, ctx, cause=exc)
+        commit_action = decide(
+            snap,
+            acc,
+            CommitDone(status=cast("str | None", iterations[-1].get("commit_status"))),
+            iteration=iteration,
+        )
+        if isinstance(commit_action, Stop):
+            return _execute_stop(
+                commit_action.outcome,
+                state,
+                summary,
+                config,
+                clock,
+                ctx,
+                last_review_output=last_review_output,
+            )
+
+    return _IterationStep(acc, pending_check_failures, failed_check_names, commit_retry)
+
+
 def _run_loop(
     config: LoopConfig,
     runner: Runner = default_runner,
@@ -1568,7 +1900,6 @@ def _run_loop(
 
     setup = _prepare_run(config, runner, clock=clock, identity=identity, budget_state=budget_state)
     state = setup.state
-    iterations = state.iterations
     summary = setup.summary
 
     event_sink = setup.event_sink
@@ -1595,289 +1926,27 @@ def _run_loop(
         acc = LoopAccumulator(pending_check_failures="")
 
         for iteration in range(1, config.max_iterations + 1):
-            acc = replace(acc, pending_check_failures=pending_check_failures)
-            if iteration == 1 and initial_review_output:
-                status = detect_review_status(initial_review_output)
-                if status == "unknown":
-                    status = "findings"
-                last_review_output = initial_review_output
-                iterations.append(
-                    {
-                        "iteration": iteration,
-                        "review_status": status,
-                        "review_source": str(config.initial_review_file),
-                    }
-                )
-                acc = replace(acc, last_review_status=cast("Literal['clear', 'findings', 'unknown']", status))
-            else:
-                try:
-                    _review_outcome = ctx.phase_review.execute(
-                        ReviewRequest(artifact_label=f"review-{iteration}", display_label=str(iteration)),
-                        ctx,
-                    )
-                    status, review = _review_outcome.status, _review_outcome.result
-                except RuntimeError as exc:
-                    iterations.append({"iteration": iteration, "review_failed": True})
-                    emit_loop_failure_event(
-                        config,
-                        phase="review",
-                        iteration=iteration,
-                        reason="review_failed",
-                        error=str(exc),
-                        ctx=ctx,
-                    )
-                    _action = decide(snap, acc, ReviewDone(is_final=False, status="unknown", exc=exc))
-                    assert isinstance(_action, Stop)
-                    return _execute_stop(_action.outcome, state, summary, config, clock, ctx, cause=exc)
-                last_review_output = actionable_review_output(_combined_output(review))
-                iterations.append({"iteration": iteration, "review_status": status})
-                acc = replace(acc, last_review_status=cast("Literal['clear', 'findings', 'unknown']", status))
-
-            _rev_action = decide(snap, acc, ReviewDone(is_final=False, status=cast("Literal['clear', 'findings', 'unknown']", status)))
-            if isinstance(_rev_action, Stop):
-                return _execute_stop(_rev_action.outcome, state, summary, config, clock, ctx, last_review_output=last_review_output)
-
-            remediation_input = last_review_output
-            if pending_check_failures:
-                remediation_input = pending_check_failures + "\n\n" + remediation_input
-            try:
-                resolved_route = None
-                if config.triage_enabled:
-                    # Resumed runs keep the loaded review in review-initial.txt, so triage must
-                    # point at that artifact instead of assuming review-1.txt.
-                    source_review_artifact = (
-                        "review-initial.txt" if iteration == 1 and initial_review_output else f"review-{iteration}.txt"
-                    )
-                    _triage_outcome = ctx.phase_triage.execute(
-                        TriageRequest(
-                            iteration=iteration,
-                            run_id=run_id,
-                            source_review_artifact=source_review_artifact,
-                            review_output=remediation_input,
-                        ),
-                        ctx,
-                    )
-                    remediation_input = _triage_outcome.handoff
-                    suppressed_count = _triage_outcome.suppressed_count
-                    triage_no_actionable = _triage_outcome.is_clear
-                    triage_payload = _triage_outcome.payload
-                    if suppressed_count:
-                        iterations[-1]["suppressed_findings_count"] = suppressed_count
-                    if triage_no_actionable:
-                        if suppressed_count:
-                            iterations[-1]["suppressed_findings"] = True
-                            state.set_suppressed_findings_count(suppressed_count)
-                        _triage_action = decide(snap, acc, TriageDone(is_clear=True, suppressed_count=suppressed_count))
-                        if isinstance(_triage_action, Stop):
-                            iterations[-1]["check_failures"] = 0
-                            return _execute_stop(_triage_action.outcome, state, summary, config, clock, ctx, last_review_output=last_review_output)
-                        # Continue — pending_check_failures carries the remediation input
-                        remediation_input = pending_check_failures
-
-                    if triage_payload and config.triage_contract == "v2" and config.profile_v2:
-                        routing_config = config.profile_v2.triage.routing
-                        if routing_config.enabled:
-                            # Resolve policy routing only when the profile has opted into it.
-                            routing_context = triage.extract_routing_context(
-                                triage_payload,
-                                config.cwd,
-                                failed_checks=tuple(failed_check_names),
-                            )
-                            model_proposal = triage_payload.get("route_proposal", {})
-                            resolved_route = policy.resolve_routing(
-                                config.profile_v2,
-                                routing_context,
-                                model_proposal_tier=model_proposal.get("route_tier"),
-                                max_timeout_seconds=remaining_wall_budget_seconds(config, ctx),
-                            )
-                            progress_event(
-                                config,
-                                "triage",
-                                str(iteration),
-                                "routing",
-                                f"routed to {resolved_route.route_tier} ({resolved_route.harness})",
-                                ctx=ctx,
-                            )
-                        else:
-                            # Non-routing v2 profiles still need a concrete remediation target.
-                            # Fall back to the configured remediation phase so the structured
-                            # handoff can proceed without a route table.
-                            resolved_route = policy.ResolvedRoute(
-                                route_tier="default",
-                                harness=config.remediation_harness,
-                                model=config.remediation_model or config.model,
-                                reasoning_effort=config.remediation_reasoning_effort
-                                or config.reasoning_effort,
-                                timeout_seconds=config.remediation_timeout_seconds,
-                                sandbox=config.exec_sandbox,
-                                prompt_fragments=(),
-                                allow_model_deescalation=True,
-                                rule_id="default",
-                            )
-
-                        # Compose prompt
-                        remediation_input = prompts_composer.compose_remediation_prompt(
-                            config.cwd,
-                            triage_payload,
-                            resolved_route,
-                            remediation_input,
-                            max_chars=config.max_remediation_input_chars,
-                            trusted_repo=config.trusted_repo,
-                        )
-
-                        # Record routing artifact
-                        # TD-004 (Wave C2b): extracted to _build_routing_payload.
-                        routing_payload = _build_routing_payload(
-                            resolved_route=resolved_route,
-                            triage_payload=triage_payload,
-                            run_id=run_id,
-                            iteration=iteration,
-                            remediation_input=remediation_input,
-                            config=config,
-                        )
-
-                        # Validate routing artifact against schema
-                        try:
-                            triage.validate_routing_payload(routing_payload)
-                        except triage.TriageValidationError as exc:
-                            issue = triage.invalid_triage_issue(exc, iteration=iteration)
-                            artifacts.write_json_artifact(
-                                config.artifact_dir,
-                                f"diagnostics-{iteration}.json",
-                                diagnostics.doctor_payload([issue]),
-                            )
-                            progress_event(config, "triage", str(iteration), "invalid", f"routing payload schema validation failed: {exc}", ctx=ctx)
-                            raise RuntimeError(f"invalid routing decision artifact for iteration {iteration}: {exc}") from exc
-
-                        triage.write_routing_artifact(config.artifact_dir, iteration, routing_payload)
-                        if ctx is not None and ctx.event_sink:
-                            ctx.event_sink.emit("routing_decision", phase="triage", iteration=iteration, payload=routing_payload)
-                        write_artifact(config.artifact_dir / f"remediation-{iteration}-prompt.txt", remediation_input)
-            except budgets.BudgetExceeded:
-                raise
-            except Exception as exc:
-                iterations[-1]["triage_failed"] = True
-                emit_loop_failure_event(
-                    config,
-                    phase="triage",
-                    iteration=iteration,
-                    reason="triage_failed",
-                    error=str(exc),
-                    ctx=ctx,
-                )
-                _action = decide(snap, acc, TriageDone(is_clear=False, exc=exc))
-                assert isinstance(_action, Stop)
-                return _execute_stop(_action.outcome, state, summary, config, clock, ctx, cause=exc)
-
-            try:
-                rem_start_time = clock.monotonic()
-                _rem_outcome = ctx.phase_remediation.execute(
-                    RemediationRequest(iteration=iteration, remediation_input=remediation_input, resolved_route=resolved_route),
-                    ctx,
-                )
-                rem_result = _rem_outcome.result
-                rem_duration = clock.monotonic() - rem_start_time
-            except budgets.BudgetExceeded:
-                raise
-            except Exception as exc:
-                iterations[-1]["remediation_failed"] = True
-                emit_loop_failure_event(
-                    config,
-                    phase="remediate",
-                    iteration=iteration,
-                    reason="remediation_failed",
-                    error=str(exc),
-                    ctx=ctx,
-                )
-                _action = decide(snap, acc, RemediationDone(exc=exc))
-                assert isinstance(_action, Stop)
-                return _execute_stop(_action.outcome, state, summary, config, clock, ctx, cause=exc)
-
-            _checks_outcome = ctx.phase_checks.execute(ChecksRequest(iteration=iteration), ctx)
-            check_results = list(_checks_outcome.results)
-            failed_check_names = list(_checks_outcome.failed_commands)
-            pending_check_failures = _format_check_failures(check_results)
-            state.set_pending_check_failures(bool(pending_check_failures))
-            iterations[-1]["check_failures"] = len(failed_check_names)
-            if resolved_route:
-                outcome_payload = {
-                    "schema_version": "1.0",
-                    "run_id": run_id,
-                    "iteration": iteration,
-                    "source_routing_artifact": f"routing-{iteration}.json",
-                    "exit_code": rem_result.returncode,
-                    "wall_time_seconds": round(rem_duration, 3),
-                    "checks_passed": all(r.returncode == 0 for r in check_results),
-                }
-                triage.write_routing_outcome_artifact(config.artifact_dir, iteration, outcome_payload)
-                if ctx is not None and ctx.event_sink:
-                    ctx.event_sink.emit("routing_outcome", phase="remediate", iteration=iteration, payload=outcome_payload)
-            if config.commit_after_remediation and not pending_check_failures:
-                try:
-                    _commit_outcome = ctx.phase_commit.execute(CommitRequest(iteration=iteration, retrying=_commit_retry), ctx)
-                    iterations[-1]["commit_status"] = _commit_outcome.status
-                except CommitFailed as exc:
-                    iterations[-1]["commit_status"] = exc.kind
-                    iterations[-1]["commit_failed"] = True
-                    iterations[-1]["commit_artifact"] = str(exc.artifact_path)
-                    _commit_action = decide(
-                        snap,
-                        acc,
-                        CommitDone(status=exc.kind, commit_failed=exc),
-                        iteration=iteration,
-                    )
-                    if isinstance(_commit_action, RetryViaCommitHook):
-                        _commit_retry = True
-                        pending_check_failures = format_commit_hook_failure_for_remediation(exc)
-                        acc = replace(acc, commit_retry=True, pending_check_failures=pending_check_failures)
-                        state.set_pending_check_failures(True)
-                        progress_event(
-                            config,
-                            "commit",
-                            str(iteration),
-                            "retry",
-                            "hook output will feed next remediation",
-                            ctx=ctx,
-                        )
-                        continue
-                    assert isinstance(_commit_action, Stop)
-                    emit_loop_failure_event(
-                        config,
-                        phase="commit",
-                        iteration=iteration,
-                        reason=_commit_action.outcome.reason,
-                        error=str(exc),
-                        ctx=ctx,
-                    )
-                    return _execute_stop(_commit_action.outcome, state, summary, config, clock, ctx, cause=exc)
-                except budgets.BudgetExceeded:
-                    raise
-                except Exception as exc:
-                    iterations[-1]["commit_failed"] = True
-                    emit_loop_failure_event(
-                        config,
-                        phase="commit",
-                        iteration=iteration,
-                        reason="commit_failed",
-                        error=str(exc),
-                        ctx=ctx,
-                    )
-                    _action = decide(
-                        snap,
-                        acc,
-                        CommitDone(status=None, other_exc=exc),
-                        iteration=iteration,
-                    )
-                    assert isinstance(_action, Stop)
-                    return _execute_stop(_action.outcome, state, summary, config, clock, ctx, cause=exc)
-                _commit_action = decide(
-                    snap,
-                    acc,
-                    CommitDone(status=cast("str | None", iterations[-1].get("commit_status"))),
-                    iteration=iteration,
-                )
-                if isinstance(_commit_action, Stop):
-                    return _execute_stop(_commit_action.outcome, state, summary, config, clock, ctx, last_review_output=last_review_output)
+            step = _run_iteration(
+                config=config,
+                state=state,
+                summary=summary,
+                clock=clock,
+                ctx=ctx,
+                snap=snap,
+                acc=acc,
+                iteration=iteration,
+                pending_check_failures=pending_check_failures,
+                failed_check_names=failed_check_names,
+                commit_retry=_commit_retry,
+                initial_review_output=initial_review_output,
+                run_id=run_id,
+            )
+            if isinstance(step, dict):
+                return step
+            acc = step.acc
+            pending_check_failures = step.pending_check_failures
+            failed_check_names = step.failed_check_names
+            _commit_retry = step.commit_retry
 
         acc = replace(acc, pending_check_failures=pending_check_failures)
         return _run_final_review(
