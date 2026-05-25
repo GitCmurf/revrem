@@ -1500,6 +1500,61 @@ def _run_preflight(
     )
 
 
+def _run_final_review(
+    *,
+    config: LoopConfig,
+    state: RunState,
+    summary: dict[str, object],
+    clock: Clock,
+    ctx: RunContext,
+    snap: ConfigSnapshot,
+    acc: LoopAccumulator,
+) -> dict[str, object]:
+    if config.final_review:
+        try:
+            final_outcome = ctx.phase_review.execute(
+                ReviewRequest(artifact_label="review-final", display_label="final"),
+                ctx,
+            )
+            status, final_review = final_outcome.status, final_outcome.result
+        except RuntimeError as exc:
+            state.iterations.append({"iteration": "final", "review_failed": True})
+            emit_loop_failure_event(
+                config,
+                phase="review",
+                iteration="final",
+                reason="review_failed",
+                error=str(exc),
+                ctx=ctx,
+            )
+            action = decide(snap, acc, ReviewDone(is_final=True, status="unknown", exc=exc))
+            assert isinstance(action, Stop)
+            return _execute_stop(action.outcome, state, summary, config, clock, ctx, cause=exc)
+        final_review_output = actionable_review_output(_combined_output(final_review))
+        acc = replace(acc, last_review_status=cast("Literal['clear', 'findings', 'unknown']", status))
+        final_action = decide(
+            snap,
+            acc,
+            ReviewDone(is_final=True, status=cast("Literal['clear', 'findings', 'unknown']", status)),
+        )
+        assert isinstance(final_action, Stop)
+        if status == "unknown" and not acc.pending_check_failures:
+            state.iterations.append({"iteration": "final", "review_status": status})
+        return _execute_stop(
+            final_action.outcome,
+            state,
+            summary,
+            config,
+            clock,
+            ctx,
+            last_review_output=final_review_output,
+        )
+
+    no_final_action = decide(snap, acc, NoFinalReview())
+    assert isinstance(no_final_action, Stop)
+    return _execute_stop(no_final_action.outcome, state, summary, config, clock, ctx)
+
+
 def _run_loop(
     config: LoopConfig,
     runner: Runner = default_runner,
@@ -1825,37 +1880,15 @@ def _run_loop(
                     return _execute_stop(_commit_action.outcome, state, summary, config, clock, ctx, last_review_output=last_review_output)
 
         acc = replace(acc, pending_check_failures=pending_check_failures)
-        if config.final_review:
-            try:
-                _final_outcome = ctx.phase_review.execute(
-                    ReviewRequest(artifact_label="review-final", display_label="final"),
-                    ctx,
-                )
-                status, final_review = _final_outcome.status, _final_outcome.result
-            except RuntimeError as exc:
-                iterations.append({"iteration": "final", "review_failed": True})
-                emit_loop_failure_event(
-                    config,
-                    phase="review",
-                    iteration="final",
-                    reason="review_failed",
-                    error=str(exc),
-                    ctx=ctx,
-                )
-                _action = decide(snap, acc, ReviewDone(is_final=True, status="unknown", exc=exc))
-                assert isinstance(_action, Stop)
-                return _execute_stop(_action.outcome, state, summary, config, clock, ctx, cause=exc)
-            final_review_output = actionable_review_output(_combined_output(final_review))
-            acc = replace(acc, last_review_status=cast("Literal['clear', 'findings', 'unknown']", status))
-            _final_action = decide(snap, acc, ReviewDone(is_final=True, status=cast("Literal['clear', 'findings', 'unknown']", status)))
-            assert isinstance(_final_action, Stop)
-            if status == "unknown" and not acc.pending_check_failures:
-                iterations.append({"iteration": "final", "review_status": status})
-            return _execute_stop(_final_action.outcome, state, summary, config, clock, ctx, last_review_output=final_review_output)
-        else:
-            _nf_action = decide(snap, acc, NoFinalReview())
-            assert isinstance(_nf_action, Stop)
-            return _execute_stop(_nf_action.outcome, state, summary, config, clock, ctx)
+        return _run_final_review(
+            config=config,
+            state=state,
+            summary=summary,
+            clock=clock,
+            ctx=ctx,
+            snap=snap,
+            acc=acc,
+        )
     except KeyboardInterrupt as exc:
         artifacts.write_json_artifact(
             config.artifact_dir,
