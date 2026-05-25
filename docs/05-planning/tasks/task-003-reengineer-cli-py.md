@@ -967,11 +967,12 @@ that commit as a green checkpoint, not the Wave C finish line.
   source of truth.
 
   Test decomposition is in progress, not complete. The original CLI monolith
-  has been reduced to 5078 lines and progress/terminal-title, commit/check, and
-  triage-loop integration coverage now live in
+  has been reduced to 3636 lines and progress/terminal-title, commit/check,
+  triage-loop, and config/profile/history integration coverage now live in
   `tests/test_cli_progress_integration.py`,
   `tests/test_cli_commit_integration.py`, and
-  `tests/test_cli_triage_integration.py`. The remaining
+  `tests/test_cli_triage_integration.py`, and
+  `tests/test_cli_config_integration.py`. The remaining
   `tests/test_cli_integration.py` file still needs further behavior-level
   subdivision before Wave C can be called complete.
 
@@ -1001,8 +1002,9 @@ that commit as a green checkpoint, not the Wave C finish line.
    consume ``core.engine.run`` for the full loop instead of calling ``decide()``
    directly.
 6. IN PROGRESS: decompose ``tests/test_cli_integration.py`` into behavior-level
-   modules. Progress/terminal-title, commit/check, and triage-loop integration
-   clusters are split; the remaining monolith is 5078 lines.
+   modules. Progress/terminal-title, commit/check, triage-loop, and
+   config/profile/history integration clusters are split; the remaining
+   monolith is 3636 lines.
 7. DONE in remediation: ``RunState`` now has semantic terminal transitions
    (``mark_outcome``/``mark_clear``/``mark_failed``/``mark_findings``/
    ``mark_unknown``), ``_execute_stop`` uses them, and ``to_dict()`` now returns
