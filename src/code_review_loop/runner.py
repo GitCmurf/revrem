@@ -19,7 +19,7 @@ from contextlib import contextmanager, suppress
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal, assert_never, cast
+from typing import Any, Literal, NamedTuple, assert_never, cast
 
 from code_review_loop import (
     __version__,
@@ -1328,35 +1328,92 @@ def resume_run(run_dir: Path) -> dict[str, object]:
     return run_loop(config, budget_state=resumed_budget_state)
 
 
-def _run_loop(
-    config: LoopConfig,
-    runner: Runner = default_runner,
-    *,
-    clock: Clock = SYSTEM_CLOCK,
-    identity: RunIdentity = SYSTEM_IDENTITY,
-    budget_state: budgets.BudgetState | None = None,
-) -> dict[str, object]:
-    if config.max_iterations < 1:
-        raise ValueError("--max-iterations must be at least 1")
+class _RunSetup(NamedTuple):
+    state: RunState
+    summary: dict[str, object]
+    event_sink: events.JsonlSink
+    ctx: RunContext
+    run_id: str
 
-    if config.commit_after_remediation and not config.dry_run:
-        status_result = runner(
-            git_worktree_status_command_for_commit(config),
-            config.cwd,
-            None,
-            phase_timeout_seconds(config, config.timeout_seconds),
+
+def _check_commit_cleanliness(config: LoopConfig, runner: Runner) -> None:
+    if not config.commit_after_remediation or config.dry_run:
+        return
+    status_result = runner(
+        git_worktree_status_command_for_commit(config),
+        config.cwd,
+        None,
+        phase_timeout_seconds(config, config.timeout_seconds),
+    )
+    if status_result.returncode != 0:
+        raise RuntimeError("git worktree status check failed before auto-commit could start")
+    dirty_lines = [line for line in status_result.stdout.splitlines() if line.strip()]
+    if dirty_lines:
+        dirty_worktree = "\n".join(dirty_lines)
+        raise RuntimeError(
+            "refusing to enable --commit-after-remediation in a dirty worktree; "
+            "clean the checkout or pass --no-commit-after-remediation.\n"
+            f"Dirty paths:\n{dirty_worktree}"
         )
-        if status_result.returncode != 0:
-            raise RuntimeError("git worktree status check failed before auto-commit could start")
-        dirty_lines = [line for line in status_result.stdout.splitlines() if line.strip()]
-        if dirty_lines:
-            dirty_worktree = "\n".join(dirty_lines)
-            raise RuntimeError(
-                "refusing to enable --commit-after-remediation in a dirty worktree; "
-                "clean the checkout or pass --no-commit-after-remediation.\n"
-                f"Dirty paths:\n{dirty_worktree}"
-            )
 
+
+def _archive_existing_events(config: LoopConfig) -> None:
+    events_path = config.artifact_dir / events.EVENTS_FILENAME
+    if not events_path.is_file():
+        return
+    existing_run_id = events.first_run_id(events_path)
+    if existing_run_id is not None:
+        events_path.rename(events_path.with_name(f"events-{existing_run_id}.jsonl"))
+
+
+def _create_progress_reporter(config: LoopConfig) -> ProgressReporter | None:
+    from code_review_loop.adapters.terminal import TerminalProgressReporter
+
+    if config.progress and config.progress_style in ("rich", "compact"):
+        return TerminalProgressReporter(config.progress_style)
+    return None
+
+
+def _create_run_context(
+    config: LoopConfig,
+    runner: Runner,
+    *,
+    clock: Clock,
+    identity: RunIdentity,
+    event_sink: events.JsonlSink,
+    budget_state: budgets.BudgetState | None,
+) -> RunContext:
+    from code_review_loop.adapters.checks import ChecksAdapter
+    from code_review_loop.adapters.commit import CommitAdapter
+    from code_review_loop.adapters.remediation import RemediationAdapter
+    from code_review_loop.adapters.review import ReviewAdapter
+    from code_review_loop.adapters.triage import TriageAdapter
+
+    active_budget_state = budget_state if budget_state is not None else budgets.started_now()
+    return RunContext(
+        clock=clock,
+        identity=identity,
+        runner=cast(ProcessRunner, runner),
+        event_sink=event_sink,
+        budget_state=active_budget_state,
+        progress_reporter=_create_progress_reporter(config),
+        phase_checks=ChecksAdapter(config),
+        phase_commit=CommitAdapter(config),
+        phase_remediation=RemediationAdapter(config),
+        phase_review=ReviewAdapter(config),
+        phase_triage=TriageAdapter(config),
+    )
+
+
+def _prepare_run(
+    config: LoopConfig,
+    runner: Runner,
+    *,
+    clock: Clock,
+    identity: RunIdentity,
+    budget_state: budgets.BudgetState | None,
+) -> _RunSetup:
+    _check_commit_cleanliness(config, runner)
     config.artifact_dir.mkdir(parents=True, exist_ok=True)
     ensure_default_artifact_ignore(config)
     run_id = identity.new_run_id()
@@ -1373,90 +1430,99 @@ def _run_loop(
         budgets=summary_budget_payload(config),
         initial_review_file=str(config.initial_review_file) if config.initial_review_file else None,
     )
+    _archive_existing_events(config)
+    event_sink = events.JsonlSink(config.artifact_dir, run_id, clock=clock)
+    ctx = _create_run_context(
+        config,
+        runner,
+        clock=clock,
+        identity=identity,
+        event_sink=event_sink,
+        budget_state=budget_state,
+    )
+    return _RunSetup(state, state.to_dict(), event_sink, ctx, run_id)
+
+
+def _run_preflight(
+    config: LoopConfig,
+    state: RunState,
+    summary: dict[str, object],
+    *,
+    clock: Clock,
+    ctx: RunContext,
+) -> dict[str, object] | None:
+    if not config.preflight_enabled or config.dry_run:
+        return None
+    issues = diagnostics.run_doctor(
+        diagnostics.DoctorConfig(
+            cwd=config.cwd,
+            base=config.base,
+            artifact_dir=config.artifact_dir,
+            artifact_dir_is_default=config.artifact_dir_is_default,
+            codex_bin=config.codex_bin,
+            review_harness=config.review_harness,
+            remediation_harness=config.remediation_harness,
+            triage_enabled=config.triage_enabled,
+            triage_harness=config.triage_harness,
+            commit_message_harness=config.commit_message_harness,
+            routed_harnesses=(
+                profile_routed_harnesses(config.profile_v2)
+                if config.profile_v2 is not None
+                else ()
+            ),
+            harness_executables=config.harness_executables,
+            check_commands=config.check_commands,
+            commit_after_remediation=config.commit_after_remediation,
+            timeout_seconds=config.timeout_seconds,
+            review_timeout_seconds=config.review_timeout_seconds,
+            remediation_timeout_seconds=config.remediation_timeout_seconds,
+            triage_timeout_seconds=config.triage_timeout_seconds,
+        )
+    )
+    if not diagnostics.has_blocking_issue(issues):
+        return None
+    artifacts.write_json_artifact(
+        config.artifact_dir,
+        "diagnostics.json",
+        diagnostics.doctor_payload(issues),
+    )
+    emit_loop_failure_event(
+        config,
+        phase="preflight",
+        iteration=None,
+        reason="setup_failed",
+        error="preflight diagnostics found blocking issue",
+        ctx=ctx,
+    )
+    return _execute_stop(
+        OutcomeFailed(reason="setup_failed", error="preflight diagnostics found blocking issue"),
+        state, summary, config, clock, ctx,
+    )
+
+
+def _run_loop(
+    config: LoopConfig,
+    runner: Runner = default_runner,
+    *,
+    clock: Clock = SYSTEM_CLOCK,
+    identity: RunIdentity = SYSTEM_IDENTITY,
+    budget_state: budgets.BudgetState | None = None,
+) -> dict[str, object]:
+    if config.max_iterations < 1:
+        raise ValueError("--max-iterations must be at least 1")
+
+    setup = _prepare_run(config, runner, clock=clock, identity=identity, budget_state=budget_state)
+    state = setup.state
     iterations = state.iterations
-    summary = state.to_dict()
+    summary = setup.summary
 
-    event_sink: events.JsonlSink | None = None
-    ctx: RunContext | None = None
+    event_sink = setup.event_sink
+    ctx = setup.ctx
+    run_id = setup.run_id
     try:
-        events_path = config.artifact_dir / events.EVENTS_FILENAME
-        if events_path.is_file():
-            existing_run_id = events.first_run_id(events_path)
-            if existing_run_id is not None:
-                events_path.rename(events_path.with_name(f"events-{existing_run_id}.jsonl"))
-        event_sink = events.JsonlSink(config.artifact_dir, run_id, clock=clock)
-        active_budget_state = budget_state if budget_state is not None else budgets.started_now()
-        from code_review_loop.adapters.checks import (
-            ChecksAdapter,  # lazy — avoids cli→adapters.*→cli cycle
-        )
-        from code_review_loop.adapters.commit import CommitAdapter  # lazy — same reason
-        from code_review_loop.adapters.remediation import RemediationAdapter  # lazy — same reason
-        from code_review_loop.adapters.review import ReviewAdapter  # lazy — same reason
-        from code_review_loop.adapters.terminal import TerminalProgressReporter
-        from code_review_loop.adapters.triage import TriageAdapter  # lazy — same reason
-        if config.progress and config.progress_style in ("rich", "compact"):
-            progress_reporter: ProgressReporter | None = TerminalProgressReporter(config.progress_style)
-        else:
-            progress_reporter = None
-        ctx = RunContext(
-            clock=clock,
-            identity=identity,
-            runner=cast(ProcessRunner, runner),
-            event_sink=event_sink,
-            budget_state=active_budget_state,
-            progress_reporter=progress_reporter,
-            phase_checks=ChecksAdapter(config),
-            phase_commit=CommitAdapter(config),
-            phase_remediation=RemediationAdapter(config),
-            phase_review=ReviewAdapter(config),
-            phase_triage=TriageAdapter(config),
-        )
-
-        if config.preflight_enabled and not config.dry_run:
-            issues = diagnostics.run_doctor(
-                diagnostics.DoctorConfig(
-                    cwd=config.cwd,
-                    base=config.base,
-                    artifact_dir=config.artifact_dir,
-                    artifact_dir_is_default=config.artifact_dir_is_default,
-                    codex_bin=config.codex_bin,
-                    review_harness=config.review_harness,
-                    remediation_harness=config.remediation_harness,
-                    triage_enabled=config.triage_enabled,
-                    triage_harness=config.triage_harness,
-                    commit_message_harness=config.commit_message_harness,
-                    routed_harnesses=(
-                        profile_routed_harnesses(config.profile_v2)
-                        if config.profile_v2 is not None
-                        else ()
-                    ),
-                    harness_executables=config.harness_executables,
-                    check_commands=config.check_commands,
-                    commit_after_remediation=config.commit_after_remediation,
-                    timeout_seconds=config.timeout_seconds,
-                    review_timeout_seconds=config.review_timeout_seconds,
-                    remediation_timeout_seconds=config.remediation_timeout_seconds,
-                    triage_timeout_seconds=config.triage_timeout_seconds,
-                )
-            )
-            if diagnostics.has_blocking_issue(issues):
-                artifacts.write_json_artifact(
-                    config.artifact_dir,
-                    "diagnostics.json",
-                    diagnostics.doctor_payload(issues),
-                )
-                emit_loop_failure_event(
-                    config,
-                    phase="preflight",
-                    iteration=None,
-                    reason="setup_failed",
-                    error="preflight diagnostics found blocking issue",
-                    ctx=ctx,
-                )
-                return _execute_stop(
-                    OutcomeFailed(reason="setup_failed", error="preflight diagnostics found blocking issue"),
-                    state, summary, config, clock, ctx,
-                )
+        preflight_result = _run_preflight(config, state, summary, clock=clock, ctx=ctx)
+        if preflight_result is not None:
+            return preflight_result
 
         pending_check_failures = ""
         failed_check_names: list[str] = []
