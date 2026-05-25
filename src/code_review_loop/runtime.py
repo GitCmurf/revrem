@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import ntpath
+import posixpath
 import re
-from pathlib import PurePath, PureWindowsPath
+from pathlib import PurePath
 
 from code_review_loop.core.outcome import RunOutcome
 
@@ -18,10 +20,10 @@ class RunLoopFailed(RuntimeError):
 
 
 def _artifact_filename(path: object) -> str:
+    if isinstance(path, PurePath):
+        return path.name
     text = str(path)
-    if "\\" in text:
-        return PureWindowsPath(text).name
-    return PurePath(text).name
+    return ntpath.basename(posixpath.basename(text))
 
 
 def format_terminal_summary(summary: dict[str, object]) -> str:
