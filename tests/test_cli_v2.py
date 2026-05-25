@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from argparse import Namespace
 
+from code_review_loop.cli.commands import policy as policy_command
 from code_review_loop.cli.commands import triage as triage_command
 from code_review_loop.cli.commands.triage import triage_explain
 from code_review_loop.cli.main import main as cli_main
@@ -76,6 +77,21 @@ def test_policy_review_summarizes_routing_outcomes(tmp_path, capsys):
     assert "route=frontier" in output
     assert "harness=claude" in output
     assert "checks_passed=True" in output
+
+
+def test_policy_main_rejects_unhandled_internal_command(monkeypatch):
+    monkeypatch.setattr(
+        policy_command,
+        "parse_policy_args",
+        lambda _argv: Namespace(command="unexpected"),
+    )
+
+    try:
+        policy_command.main([])
+    except AssertionError as exc:
+        assert str(exc) == "unhandled policy command: unexpected"
+    else:
+        raise AssertionError("expected unhandled policy command to fail")
 
 
 def test_triage_explain_json(tmp_path):

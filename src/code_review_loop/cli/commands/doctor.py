@@ -44,7 +44,11 @@ def main(argv: Sequence[str]) -> int:
                 routed_harnesses=profile_routed_harnesses(profile),
                 harness_executables=profile.runtime.harness_executables,
                 check_commands=tuple(args.check) if args.check is not None else profile.pipeline.checks,
-                commit_after_remediation=args.commit_after_remediation or profile.commit.enabled,
+                commit_after_remediation=(
+                    args.commit_after_remediation
+                    if args.commit_after_remediation is not None
+                    else profile.commit.enabled
+                ),
                 review_timeout_seconds=profile.review.timeout_seconds,
                 remediation_timeout_seconds=profile.remediation.timeout_seconds,
                 triage_timeout_seconds=(

@@ -88,6 +88,7 @@ from code_review_loop.identity import SYSTEM_IDENTITY, RunIdentity
 from code_review_loop.runtime import RunLoopFailed as RunLoopFailed
 from code_review_loop.runtime import format_terminal_summary as format_terminal_summary
 from code_review_loop.adapters.phase_support import CommitFailed as CommitFailed
+from code_review_loop.adapters.phase_support import lexical_git_repo_root as lexical_git_repo_root
 
 # REVREM-TASK-003 Wave C2a: parsers and their shared choice tuples are
 # canonical in ``cli/args.py``. Runner imports them from that canonical module
@@ -2427,13 +2428,6 @@ def git_info_exclude_path(cwd: Path) -> Path | None:
     if git_dir.parent.name == "worktrees":
         return git_dir.parent.parent / "info" / "exclude"
     return git_dir / "info" / "exclude"
-
-
-def lexical_git_repo_root(start: Path) -> Path | None:
-    for candidate in (start, *start.parents):
-        if (candidate / ".git").exists():
-            return candidate
-    return None
 
 
 def suppress_main(argv: Sequence[str]) -> int:

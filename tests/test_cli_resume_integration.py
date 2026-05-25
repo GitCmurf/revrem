@@ -127,6 +127,25 @@ def test_resume_loop_config_seeds_budget_state_from_summary_totals(tmp_path):
     assert resumed_budget.usd_reported is True
 
 
+def test_resume_loop_config_uses_supplied_cwd(tmp_path):
+    review_path = tmp_path / "review-1.txt"
+    review_path.write_text("REVIEW_STATUS: findings\n", encoding="utf-8")
+    cwd = tmp_path / "work"
+    cwd.mkdir()
+    summary = {
+        "resume_config": {
+            "base": "main",
+            "max_iterations": 1,
+            "codex_bin": "codex",
+        },
+        "artifact_paths": {"reviews": [str(review_path)]},
+    }
+
+    resumed, _budget_state = resume_mod.resume_loop_config(summary, run_dir=tmp_path, cwd=cwd)
+
+    assert resumed.cwd == cwd
+
+
 def test_resume_loop_config_defaults_legacy_missing_full_auto_to_true(tmp_path):
     review_path = tmp_path / "review-1.txt"
     review_path.write_text("REVIEW_STATUS: findings\n", encoding="utf-8")

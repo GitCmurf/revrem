@@ -4,7 +4,7 @@ type: TASK
 title: Re-engineer cli.py from God object into a hexagonal review-loop core
 status: Draft
 version: '0.2'
-last_updated: '2026-05-24'
+last_updated: '2026-05-25'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning

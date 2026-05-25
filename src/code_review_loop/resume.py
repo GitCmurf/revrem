@@ -181,7 +181,10 @@ def resume_budget_ceiling_issues(summary: dict[str, object]) -> list[diagnostics
     return issues
 
 
-def resume_loop_config(summary: dict[str, object], *, run_dir: Path) -> tuple[LoopConfig, budgets.BudgetState | None]:
+def resume_loop_config(
+    summary: dict[str, object], *, run_dir: Path, cwd: Path | None = None
+) -> tuple[LoopConfig, budgets.BudgetState | None]:
+    cwd = cwd or Path.cwd()
     resume_config = summary.get("resume_config")
     if not isinstance(resume_config, dict):
         raise ValueError("summary.json is missing resume_config")
@@ -199,14 +202,14 @@ def resume_loop_config(summary: dict[str, object], *, run_dir: Path) -> tuple[Lo
     profile_v2 = None
     triage_contract = _resume_str(resume_config, "triage_contract", "v1")
     if profile_name is not None:
-        profile_v2 = profiles.resolve_profile(profile_name, cwd=Path.cwd(), require_implemented=False)
+        profile_v2 = profiles.resolve_profile(profile_name, cwd=cwd, require_implemented=False)
         triage_contract = profile_v2.triage.contract
     return LoopConfig(
         base=_resume_str(resume_config, "base", "main"),
         max_iterations=_resume_int(resume_config, "max_iterations", 1),
         codex_bin=_resume_str(resume_config, "codex_bin", "codex"),
         harness_executables=_resume_str_dict(resume_config, "harness_executables"),
-        cwd=Path.cwd(),
+        cwd=cwd,
         artifact_dir=run_dir,
         review_harness=_resume_str(resume_config, "review_harness", "codex"),
         remediation_harness=_resume_str(resume_config, "remediation_harness", "codex"),
