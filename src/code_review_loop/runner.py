@@ -42,14 +42,16 @@ from code_review_loop.config import LoopConfig
 from code_review_loop.core.engine import (
     CommitDone,
     ConfigSnapshot,
+    Continue,
+    EngineState,
     LoopAccumulator,
     NoFinalReview,
     RemediationDone,
     RetryViaCommitHook,
     ReviewDone,
-    Stop,
     TriageDone,
-    decide,
+    PhaseEvent,
+    run as run_engine,
 )
 from code_review_loop.core.outcome import (
     OutcomeClear,
@@ -1355,6 +1357,40 @@ class _IterationRun(NamedTuple):
     result: dict[str, object] | None
 
 
+class _EngineDecision(NamedTuple):
+    outcome: RunOutcome | None
+    action: Continue | RetryViaCommitHook | None
+
+
+class _CaptureEngineAction:
+    """Engine executor that exposes the next non-terminal action to the runner."""
+
+    def __init__(self) -> None:
+        self.action: Continue | RetryViaCommitHook | None = None
+
+    def execute(self, action: Continue | RetryViaCommitHook, state: EngineState) -> EngineState:
+        self.action = action
+        return state
+
+
+def _engine_decision(
+    snap: ConfigSnapshot,
+    acc: LoopAccumulator,
+    event: PhaseEvent,
+    *,
+    iteration: int = 1,
+) -> _EngineDecision:
+    executor = _CaptureEngineAction()
+    outcome = run_engine(
+        EngineState(cfg=snap, acc=acc, event=event, iteration=iteration),
+        executor,
+        max_steps=1,
+    )
+    if outcome.reason == "engine_step_limit_exceeded" and executor.action is not None:
+        return _EngineDecision(None, executor.action)
+    return _EngineDecision(outcome, None)
+
+
 def _check_commit_cleanliness(config: LoopConfig, runner: Runner) -> None:
     if not config.commit_after_remediation or config.dry_run:
         return
@@ -1546,21 +1582,21 @@ def _run_final_review(
                 error=str(exc),
                 ctx=ctx,
             )
-            action = decide(snap, acc, ReviewDone(is_final=True, status="unknown", exc=exc))
-            assert isinstance(action, Stop)
-            return _execute_stop(action.outcome, state, summary, config, clock, ctx, cause=exc)
+            decision = _engine_decision(snap, acc, ReviewDone(is_final=True, status="unknown", exc=exc))
+            assert decision.outcome is not None
+            return _execute_stop(decision.outcome, state, summary, config, clock, ctx, cause=exc)
         final_review_output = actionable_review_output(_combined_output(final_review))
         acc = replace(acc, last_review_status=cast("Literal['clear', 'findings', 'unknown']", status))
-        final_action = decide(
+        final_decision = _engine_decision(
             snap,
             acc,
             ReviewDone(is_final=True, status=cast("Literal['clear', 'findings', 'unknown']", status)),
         )
-        assert isinstance(final_action, Stop)
+        assert final_decision.outcome is not None
         if status == "unknown" and not acc.pending_check_failures:
             state.iterations.append({"iteration": "final", "review_status": status})
         return _execute_stop(
-            final_action.outcome,
+            final_decision.outcome,
             state,
             summary,
             config,
@@ -1569,9 +1605,9 @@ def _run_final_review(
             last_review_output=final_review_output,
         )
 
-    no_final_action = decide(snap, acc, NoFinalReview())
-    assert isinstance(no_final_action, Stop)
-    return _execute_stop(no_final_action.outcome, state, summary, config, clock, ctx)
+    no_final_decision = _engine_decision(snap, acc, NoFinalReview())
+    assert no_final_decision.outcome is not None
+    return _execute_stop(no_final_decision.outcome, state, summary, config, clock, ctx)
 
 
 def _run_iteration(
@@ -1622,21 +1658,21 @@ def _run_iteration(
                 error=str(exc),
                 ctx=ctx,
             )
-            action = decide(snap, acc, ReviewDone(is_final=False, status="unknown", exc=exc))
-            assert isinstance(action, Stop)
-            return _execute_stop(action.outcome, state, summary, config, clock, ctx, cause=exc)
+            decision = _engine_decision(snap, acc, ReviewDone(is_final=False, status="unknown", exc=exc))
+            assert decision.outcome is not None
+            return _execute_stop(decision.outcome, state, summary, config, clock, ctx, cause=exc)
         last_review_output = actionable_review_output(_combined_output(review))
         iterations.append({"iteration": iteration, "review_status": status})
         acc = replace(acc, last_review_status=cast("Literal['clear', 'findings', 'unknown']", status))
 
-    review_action = decide(
+    review_decision = _engine_decision(
         snap,
         acc,
         ReviewDone(is_final=False, status=cast("Literal['clear', 'findings', 'unknown']", status)),
     )
-    if isinstance(review_action, Stop):
+    if review_decision.outcome is not None:
         return _execute_stop(
-            review_action.outcome,
+            review_decision.outcome,
             state,
             summary,
             config,
@@ -1673,11 +1709,11 @@ def _run_iteration(
                 if suppressed_count:
                     iterations[-1]["suppressed_findings"] = True
                     state.set_suppressed_findings_count(suppressed_count)
-                triage_action = decide(snap, acc, TriageDone(is_clear=True, suppressed_count=suppressed_count))
-                if isinstance(triage_action, Stop):
+                triage_decision = _engine_decision(snap, acc, TriageDone(is_clear=True, suppressed_count=suppressed_count))
+                if triage_decision.outcome is not None:
                     iterations[-1]["check_failures"] = 0
                     return _execute_stop(
-                        triage_action.outcome,
+                        triage_decision.outcome,
                         state,
                         summary,
                         config,
@@ -1775,9 +1811,9 @@ def _run_iteration(
             error=str(exc),
             ctx=ctx,
         )
-        action = decide(snap, acc, TriageDone(is_clear=False, exc=exc))
-        assert isinstance(action, Stop)
-        return _execute_stop(action.outcome, state, summary, config, clock, ctx, cause=exc)
+        decision = _engine_decision(snap, acc, TriageDone(is_clear=False, exc=exc))
+        assert decision.outcome is not None
+        return _execute_stop(decision.outcome, state, summary, config, clock, ctx, cause=exc)
 
     try:
         rem_start_time = clock.monotonic()
@@ -1799,9 +1835,9 @@ def _run_iteration(
             error=str(exc),
             ctx=ctx,
         )
-        action = decide(snap, acc, RemediationDone(exc=exc))
-        assert isinstance(action, Stop)
-        return _execute_stop(action.outcome, state, summary, config, clock, ctx, cause=exc)
+        decision = _engine_decision(snap, acc, RemediationDone(exc=exc))
+        assert decision.outcome is not None
+        return _execute_stop(decision.outcome, state, summary, config, clock, ctx, cause=exc)
 
     checks_outcome = ctx.phase_checks.execute(ChecksRequest(iteration=iteration), ctx)
     check_results = list(checks_outcome.results)
@@ -1830,13 +1866,13 @@ def _run_iteration(
             iterations[-1]["commit_status"] = exc.kind
             iterations[-1]["commit_failed"] = True
             iterations[-1]["commit_artifact"] = str(exc.artifact_path)
-            commit_action = decide(
+            commit_decision = _engine_decision(
                 snap,
                 acc,
                 CommitDone(status=exc.kind, commit_failed=exc),
                 iteration=iteration,
             )
-            if isinstance(commit_action, RetryViaCommitHook):
+            if isinstance(commit_decision.action, RetryViaCommitHook):
                 pending_check_failures = format_commit_hook_failure_for_remediation(exc)
                 acc = replace(acc, commit_retry=True, pending_check_failures=pending_check_failures)
                 state.set_pending_check_failures(True)
@@ -1849,16 +1885,16 @@ def _run_iteration(
                     ctx=ctx,
                 )
                 return _IterationStep(acc, pending_check_failures, failed_check_names, True)
-            assert isinstance(commit_action, Stop)
+            assert commit_decision.outcome is not None
             emit_loop_failure_event(
                 config,
                 phase="commit",
                 iteration=iteration,
-                reason=commit_action.outcome.reason,
+                reason=commit_decision.outcome.reason,
                 error=str(exc),
                 ctx=ctx,
             )
-            return _execute_stop(commit_action.outcome, state, summary, config, clock, ctx, cause=exc)
+            return _execute_stop(commit_decision.outcome, state, summary, config, clock, ctx, cause=exc)
         except budgets.BudgetExceeded:
             raise
         except Exception as exc:
@@ -1871,23 +1907,23 @@ def _run_iteration(
                 error=str(exc),
                 ctx=ctx,
             )
-            action = decide(
+            decision = _engine_decision(
                 snap,
                 acc,
                 CommitDone(status=None, other_exc=exc),
                 iteration=iteration,
             )
-            assert isinstance(action, Stop)
-            return _execute_stop(action.outcome, state, summary, config, clock, ctx, cause=exc)
-        commit_action = decide(
+            assert decision.outcome is not None
+            return _execute_stop(decision.outcome, state, summary, config, clock, ctx, cause=exc)
+        commit_decision = _engine_decision(
             snap,
             acc,
             CommitDone(status=cast("str | None", iterations[-1].get("commit_status"))),
             iteration=iteration,
         )
-        if isinstance(commit_action, Stop):
+        if commit_decision.outcome is not None:
             return _execute_stop(
-                commit_action.outcome,
+                commit_decision.outcome,
                 state,
                 summary,
                 config,

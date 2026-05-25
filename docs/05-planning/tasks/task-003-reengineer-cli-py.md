@@ -955,9 +955,10 @@ that commit as a green checkpoint, not the Wave C finish line.
   ``runner.resume_run`` after preconditions pass. Follow-up remediation renamed
   the relocated loop driver from ``loop`` to ``runner`` and deleted the legacy
   ``_run_loop`` symbol. The current runner session shell is 35 lines, with the
-  happy path delegated to named helpers. This is a measurable reduction in
-  driver weight, but the executable driver still calls ``decide()`` directly
-  rather than consuming ``core.engine.run`` for the full production loop.
+  happy path delegated to named helpers. Production phase decisions now pass
+  through ``core.engine.run`` via a runner-local executor bridge, and
+  `tests/test_runner_engine_gate.py` fails if `runner.py` reintroduces direct
+  ``decide()`` calls.
 
 * **C3c tech-debt cleanup is mostly complete.** TD-001, TD-002, TD-003, and
   TD-005 are resolved: `RunContext` is required in the runner/adapter execution
@@ -985,10 +986,10 @@ that commit as a green checkpoint, not the Wave C finish line.
 
 **Required remediation before declaring Wave C done.**
 
-1. IN PROGRESS: ``core.engine.run(state, ctx)`` now exists as a
+1. DONE in remediation: ``core.engine.run(state, ctx)`` exists as a
    dependency-free orchestration path over ``decide`` plus an injected
-   executor. The remaining work is to make the CLI driver consume it for the
-   full loop and shrink the driver loop to wiring only.
+   executor, and the production runner consumes it for phase decisions instead
+   of calling ``decide()`` directly.
 2. DONE in remediation: replace the partial import rules with contracts that
    prove core does not import drivers/adapters, adapters do not import
    ``cli`` or ``runner``, and resume planning does not import ``runner``.
@@ -996,11 +997,10 @@ that commit as a green checkpoint, not the Wave C finish line.
 4. DONE in remediation: legacy phase fallback branches are removed and
    ``RunContext`` phase harnesses are required. TD-001 nullable execution
    contexts are gone from runner and adapter execution helpers.
-5. PARTIAL: the driver module has been renamed to ``runner``, resume execution
-   is owned by ``runner.resume_run``, ``_run_loop`` is gone, and
-   ``_run_session`` is 35 lines. Remaining work is to make the production driver
-   consume ``core.engine.run`` for the full loop instead of calling ``decide()``
-   directly.
+5. DONE in remediation: the driver module has been renamed to ``runner``,
+   resume execution is owned by ``runner.resume_run``, ``_run_loop`` is gone,
+   ``_run_session`` is 35 lines, and production phase decisions are mediated by
+   ``core.engine.run``.
 6. IN PROGRESS: decompose ``tests/test_cli_integration.py`` into behavior-level
    modules. Progress/terminal-title, commit/check, triage-loop, and
    config/profile/history integration clusters are split; the remaining
