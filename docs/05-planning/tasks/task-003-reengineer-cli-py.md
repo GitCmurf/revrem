@@ -953,13 +953,17 @@ Treat that commit as a green checkpoint, not the Wave C finish line.
 
   ``cli/__init__.py`` is now 6 lines, down from 4946 at the start of Wave C.
   ``resume`` no longer imports the executable driver; the resume command calls
-  ``runner.resume_run`` after preconditions pass. Follow-up remediation renamed
-  the relocated loop driver from ``loop`` to ``runner`` and deleted the legacy
-  ``_run_loop`` symbol. The current runner session shell is 35 lines, with the
-  happy path delegated to named helpers. Production phase decisions now pass
-  through ``core.engine.run`` via a runner-local executor bridge, and
-  `tests/test_runner_engine_gate.py` fails if `runner.py` reintroduces direct
-  ``decide()`` calls.
+  ``code_review_loop.application.resume_review_loop`` after preconditions pass.
+  Follow-up remediation renamed the relocated loop driver from ``loop`` to
+  ``runner`` and deleted the legacy ``_run_loop`` symbol. The current runner
+  session shell is 35 lines, with the happy path delegated to named helpers.
+  Production phase decisions now pass through ``core.engine.run`` via a
+  runner-local executor bridge, and `tests/test_runner_engine_gate.py` fails if
+  `runner.py` reintroduces direct ``decide()`` calls.
+
+  Reputation-polish follow-up introduced ``code_review_loop.application`` as the
+  supported non-CLI execution boundary and recorded the ownership direction in
+  `REVREM-ADR-012`.
 
 * **C3c tech-debt cleanup is mostly complete.** TD-001, TD-002, TD-003, and
   TD-005 are resolved: `RunContext` is required in the runner/adapter execution
@@ -1010,9 +1014,9 @@ Treat that commit as a green checkpoint, not the Wave C finish line.
    ``RunContext`` phase harnesses are required. TD-001 nullable execution
    contexts are gone from runner and adapter execution helpers.
 5. DONE in remediation: the driver module has been renamed to ``runner``,
-   resume execution is owned by ``runner.resume_run``, ``_run_loop`` is gone,
-   ``_run_session`` is 35 lines, and production phase decisions are mediated by
-   ``core.engine.run``.
+   CLI execution is routed through ``code_review_loop.application``,
+   ``_run_loop`` is gone, ``_run_session`` is 35 lines, and production phase
+   decisions are mediated by ``core.engine.run``.
 6. DONE in remediation: decompose ``tests/test_cli_integration.py`` into
    behavior-level modules. The remaining file is an 87-line smoke/e2e surface;
    focused modules now cover progress/terminal-title, commit/check,
