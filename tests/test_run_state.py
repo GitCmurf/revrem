@@ -68,3 +68,17 @@ def test_mark_outcome_findings_and_unknown_preserve_terminal_status() -> None:
     unknown.mark_outcome(OutcomeUnknown(reason="max_iterations_reached"))
     assert unknown.to_dict()["final_status"] == "unknown"
     assert unknown.to_dict()["stopped_reason"] == "max_iterations_reached"
+
+
+def test_to_dict_is_a_projection_not_the_state_source() -> None:
+    state = _state()
+    summary = state.to_dict()
+
+    summary["final_status"] = "clear"
+    summary["unexpected"] = True
+    summary["resume_config"]["base"] = "changed"  # type: ignore[index]
+
+    projected = state.to_dict()
+    assert projected["final_status"] == "unknown"
+    assert "unexpected" not in projected
+    assert projected["resume_config"] == {}

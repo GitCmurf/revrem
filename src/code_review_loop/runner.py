@@ -1144,6 +1144,8 @@ def _execute_stop(
 
     def apply_common_tail(*, check_failures: bool = False) -> None:
         state.mark_outcome(outcome, excerpt=excerpt, check_failures=check_failures)
+        summary.clear()
+        summary.update(state.to_dict())
         write_summary(config, summary, clock=clock, ctx=ctx)
 
     if isinstance(outcome, OutcomeClear):
