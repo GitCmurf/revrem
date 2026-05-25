@@ -993,7 +993,6 @@ def test_history_list_command_outputs_recent_runs(tmp_path, monkeypatch, capsys)
     history_path.parent.mkdir(parents=True)
     history_path.write_text(
         '{"run_id":"old","final_status":"findings","stopped_reason":"max_iterations_reached","base":"main","artifact_dir":"tmp/old"}\n'
-        '{"run_id":\n'
         '{"run_id":"new","final_status":"clear","stopped_reason":"review_clear","base":"main","artifact_dir":"tmp/new"}\n',
         encoding="utf-8",
     )

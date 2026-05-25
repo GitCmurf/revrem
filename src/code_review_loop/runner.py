@@ -463,6 +463,9 @@ def kill_process_tree(process: subprocess.Popen[str]) -> None:
     if pid is None:
         process.kill()
         return
+    if not hasattr(os, "killpg"):
+        process.kill()
+        return
     try:
         os.killpg(pid, signal.SIGKILL)
     except ProcessLookupError:

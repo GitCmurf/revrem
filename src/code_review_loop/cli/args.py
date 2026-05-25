@@ -30,7 +30,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         "--max-iterations",
         type=int,
         default=None,
-        help="Maximum remediation passes before stopping. Default: 2.",
+        help="Maximum remediation passes before stopping. Defaults to profile value or 2.",
     )
     parser.add_argument("--codex-bin", default=None, help="Codex executable path/name.")
     parser.add_argument(
@@ -91,7 +91,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         "--exec-color",
         default=None,
         choices=("always", "never", "auto"),
-        help="Color mode for codex exec remediation output. Default: never.",
+        help="Color mode for codex exec remediation output. Defaults to profile value or never.",
     )
     exec_json_group = parser.add_mutually_exclusive_group()
     exec_json_group.add_argument(
@@ -233,7 +233,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         default=None,
         help=(
             "Maximum seconds for each review, remediation, or check command. "
-            "Use 0 to disable subprocess timeouts. Default: 300."
+            "Use 0 to disable subprocess timeouts. Defaults to profile value or 300."
         ),
     )
     parser.add_argument(
