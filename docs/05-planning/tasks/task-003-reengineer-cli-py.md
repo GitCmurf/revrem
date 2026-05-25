@@ -903,12 +903,13 @@ lazy back-imports can be deleted.
 `core/engine.py` but the shell — terminal contexts, summary writes, phase
 dispatch — is still inlined. `run_loop` (line 1815) is the public wrapper.
 
-**Wave C completion checkpoint (2026-05-25).** C1, C2, C3a, the C3b import
-boundary, and the low-risk C3c cleanup items have landed. The console-script
-target ``code_review_loop.cli:main`` is now a 27-line entry shim; the loop body
-has moved to ``code_review_loop.loop`` and ``LoopConfig`` is exposed through
-``code_review_loop.config``. The old ``monkeypatch.setattr(MODULE, ...)``
-reach-in pattern is ratcheted to zero.
+**Wave C remediation baseline (2026-05-25).** C1, C2, C3a, the first C3b
+import-boundary pass, and the low-risk C3c cleanup items have landed, but Wave
+C is **not complete**. The console-script target ``code_review_loop.cli:main``
+is now a 27-line entry shim and the old ``monkeypatch.setattr(MODULE, ...)``
+reach-in pattern is ratcheted to zero; however, the loop body was moved to
+``code_review_loop.loop`` rather than dissolved into ``core.engine.run``. Treat
+that commit as a green checkpoint, not the Wave C finish line.
 
 * **C3a is complete.** Every phase implementation now lives in its adapter
   module; no adapter still uses a lazy ``from code_review_loop.cli import
@@ -923,9 +924,10 @@ reach-in pattern is ratcheted to zero.
   | triage      | ``adapters/_triage_impl.py``                        |
   | commit      | ``adapters/_commit_impl.py``                        |
 
-  ``cli/__init__.py`` no longer owns the loop body. Adapter phase tests and
-  loop integration tests import final homes directly instead of using the old
-  ``MODULE`` alias against ``code_review_loop.cli``.
+  ``cli/__init__.py`` no longer owns the loop body, but this is only a driver
+  relocation. Adapter phase tests and loop integration tests import final homes
+  directly instead of using the old ``MODULE`` alias against
+  ``code_review_loop.cli``.
 
   Loop-shell helpers used by the moved phases (``progress_event``,
   ``write_artifact``, ``_combined_output``, ``phase_timeout_seconds``,
@@ -934,29 +936,46 @@ reach-in pattern is ratcheted to zero.
   ``review_status_diagnostics``, ``DEFAULT_REMEDIATION_PROMPT``,
   ``DEFAULT_TRIAGE_PROMPT``, ``DEFAULT_REVIEW_PROMPT``, the various
   ``build_*_command`` builders, ``CommitFailed``, ``REVREM_COMMIT_SUFFIX``
-  and friends) now live on ``code_review_loop.loop``. Adapter implementation
-  modules import that loop support directly; import-linter enforces that
-  ``code_review_loop.adapters`` has no direct import of ``code_review_loop.cli``.
+  and friends) currently live on ``code_review_loop.loop``. Adapter
+  implementation modules import that loop support directly, which is still a
+  God-object back-reference under a new module name. The remediation wave must
+  move those helpers to adapter/core-neutral homes and forbid adapter imports of
+  ``code_review_loop.loop`` as well as ``code_review_loop.cli``.
 
   Surgical C3b-style test patches were applied to the legacy phase patches and
   the remaining old ``MODULE`` monkeypatch sites. The ratchet baseline is now
   ``0`` for ``monkeypatch.setattr(MODULE, ...)``.
 
   ``cli/__init__.py`` is now 27 lines, down from 4946 at the start of Wave C.
-  The moved loop implementation is 3192 lines in ``code_review_loop.loop``.
+  The moved loop implementation is 3192 lines in ``code_review_loop.loop``;
+  this is a measurable reduction in CLI entrypoint weight, not proof that the
+  core engine split is complete.
 
 * **C3c tech-debt cleanup is partially complete.** TD-002, TD-003, and TD-005
   are resolved: `LoopAccumulator` no longer stores `iteration`, `_execute_stop`
   has a shared stop-tail helper, and `OutcomeFailed.reason` is now a
   `Literal[...]` union. `tests/test_cli.py` has been renamed to
-  `tests/test_cli_integration.py` as the first test-monolith split; follow-up
-  behavioral subdivision remains useful but is no longer blocking the Wave C
-  import and public-surface goals.
+  `tests/test_cli_integration.py` as the first test-monolith split. The 6261
+  line integration monolith still needs real behavioral decomposition before
+  Wave C can be called complete.
 
 * **Gate status at this checkpoint:** `./.venv/bin/pytest -q`,
   `./.venv/bin/ruff check .`, `./.venv/bin/mypy src`, `lint-imports`, and
   `uv run --locked meminit check --format json` pass locally. Full pytest count
   at this checkpoint is 725 passing tests.
+
+**Required remediation before declaring Wave C done.**
+
+1. Build a real ``core.engine.run(state, ctx)`` orchestration path and shrink
+   the driver loop to wiring only.
+2. Replace the partial import rules with contracts that prove core does not
+   import drivers/adapters and adapters do not import ``cli`` or ``loop``.
+3. Delete the ``cli.__getattr__`` compatibility facade.
+4. Remove legacy phase fallback branches and finish TD-001 by making
+   ``RunContext``/``ctx`` required where phase/support functions need it.
+5. Decompose ``tests/test_cli_integration.py`` into behavior-level modules.
+6. Promote ``RunState`` beyond a live-dict setter bag where it materially
+   reduces primitive summary mutation.
 
 **Wave C1 + C2 status (2026-05-24).** C1a, C1b, C2a (both parts) and the
 TD-004 half of C2b have landed.
