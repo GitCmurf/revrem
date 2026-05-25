@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from argparse import Namespace
 
+import pytest
+
 from code_review_loop.cli.commands import policy as policy_command
 from code_review_loop.cli.commands import triage as triage_command
 from code_review_loop.cli.commands.triage import triage_explain
@@ -86,12 +88,8 @@ def test_policy_main_rejects_unhandled_internal_command(monkeypatch):
         lambda _argv: Namespace(command="unexpected"),
     )
 
-    try:
+    with pytest.raises(ValueError, match="unhandled policy command: unexpected"):
         policy_command.main([])
-    except AssertionError as exc:
-        assert str(exc) == "unhandled policy command: unexpected"
-    else:
-        raise AssertionError("expected unhandled policy command to fail")
 
 
 def test_triage_explain_json(tmp_path):
@@ -115,12 +113,8 @@ def test_triage_main_rejects_unhandled_internal_command(monkeypatch):
         lambda _argv: Namespace(command="unexpected"),
     )
 
-    try:
+    with pytest.raises(ValueError, match="unhandled triage command: unexpected"):
         triage_command.main([])
-    except AssertionError as exc:
-        assert str(exc) == "unhandled triage command: unexpected"
-    else:
-        raise AssertionError("expected unhandled triage command to fail")
 
 
 def test_triage_explain_rejects_non_object_routing_artifact(tmp_path, capsys):

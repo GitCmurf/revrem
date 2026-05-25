@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from code_review_loop import application
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.ports import CommandResult
@@ -31,3 +33,8 @@ def test_run_review_loop_is_non_cli_application_entrypoint(tmp_path: Path) -> No
     assert summary["final_status"] == "clear"
     assert summary["stopped_reason"] == "review_clear"
     assert [call[1] for call in calls] == ["review"]
+
+
+def test_resume_review_loop_reports_missing_summary(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="summary.json not found in run directory"):
+        application.resume_review_loop(tmp_path / "missing-run")

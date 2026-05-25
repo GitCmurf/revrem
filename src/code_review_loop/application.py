@@ -41,7 +41,12 @@ def run_review_loop(
 
 def resume_review_loop(run_dir: Path, *, cwd: Path | None = None) -> dict[str, object]:
     """Resume a previous review loop run from ``run_dir``."""
-    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    summary_path = run_dir / "summary.json"
+    try:
+        summary_text = summary_path.read_text(encoding="utf-8")
+    except FileNotFoundError as exc:
+        raise ValueError(f"summary.json not found in run directory: {run_dir}") from exc
+    summary = json.loads(summary_text)
     if not isinstance(summary, dict):
         raise ValueError("summary.json must contain a JSON object")
     budget_issues = resume.resume_budget_ceiling_issues(summary)

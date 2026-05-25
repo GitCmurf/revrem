@@ -26,7 +26,7 @@ def main(argv: Sequence[str]) -> int:
     except (OSError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return CommandFailed(exit_code=1).exit_code
-    raise AssertionError(f"unhandled policy command: {args.command}")
+    raise ValueError(f"unhandled policy command: {args.command}")
 
 
 def policy_lint(profile_name: str, output_format: str | None = None) -> int:
