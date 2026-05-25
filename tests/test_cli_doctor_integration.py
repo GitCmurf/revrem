@@ -8,6 +8,7 @@ import pytest
 
 import code_review_loop.runner as runner_mod
 from code_review_loop import profiles
+from code_review_loop.adapters import _review_impl as review_impl
 from code_review_loop.core.ports import RunContext
 from tests.support.fakes import FakeClock, FakeRunIdentity
 from tests.support.phase_harnesses import phase_harness_kwargs
@@ -94,7 +95,7 @@ def test_run_codex_review_fails_fast_when_base_has_no_merge_base(tmp_path):
     )
 
     with pytest.raises(RuntimeError, match="codex review failed for review-1"):
-        runner_mod.run_codex_review(config, runner, "review-1", display_label="1", ctx=make_run_context(runner))
+        review_impl.run_codex_review(config, runner, "review-1", display_label="1", ctx=make_run_context(runner))
 
     artifact_text = (repo / "artifacts" / "review-1.txt").read_text(encoding="utf-8")
     assert "Review base preflight failed" in artifact_text

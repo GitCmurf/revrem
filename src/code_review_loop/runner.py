@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import argparse
 import atexit
 import json
 import os
@@ -34,7 +33,6 @@ from code_review_loop import (
     progress,
     prompts_composer,
     run_history,
-    suppressions,
     triage,
 )
 from code_review_loop.clock import SYSTEM_CLOCK, Clock, utc_iso
@@ -861,9 +859,6 @@ from code_review_loop.adapters._checks_impl import (
     PYTHON_SCAN_SKIP_DIRS as PYTHON_SCAN_SKIP_DIRS,
 )
 from code_review_loop.adapters._checks_impl import (
-    adaptive_check_skip_reason as adaptive_check_skip_reason,
-)
-from code_review_loop.adapters._checks_impl import (
     has_non_python_project_surface as has_non_python_project_surface,
 )
 from code_review_loop.adapters._checks_impl import (
@@ -874,12 +869,6 @@ from code_review_loop.adapters._checks_impl import (
 )
 from code_review_loop.adapters._checks_impl import (
     iter_project_files as iter_project_files,
-)
-from code_review_loop.adapters._checks_impl import (
-    normalize_adaptive_check_result as normalize_adaptive_check_result,
-)
-from code_review_loop.adapters._checks_impl import (
-    run_checks as run_checks,
 )
 
 # Commit-phase helpers used by the application runner while commit ownership
@@ -903,33 +892,12 @@ from code_review_loop.adapters._commit_impl import (
     format_commit_hook_failure_for_remediation as format_commit_hook_failure_for_remediation,
 )
 from code_review_loop.adapters._commit_impl import (
-    git_add_command_for_commit as git_add_command_for_commit,
-)
-from code_review_loop.adapters._commit_impl import (
     git_repo_root as git_repo_root,
-)
-from code_review_loop.adapters._commit_impl import (
-    git_reset_artifact_command_for_commit as git_reset_artifact_command_for_commit,
 )
 from code_review_loop.adapters._commit_impl import (
     git_worktree_status_command_for_commit as git_worktree_status_command_for_commit,
 )
-from code_review_loop.adapters._commit_impl import (
-    run_commit as run_commit,
-)
 
-# Remediation and triage command builders used by tests and adapter wiring.
-from code_review_loop.adapters._remediation_impl import (
-    build_remediation_command as build_remediation_command,
-)
-from code_review_loop.adapters._remediation_impl import (
-    run_remediation as run_remediation,
-)
-
-# Review helpers used by the runner and review-adapter tests.
-from code_review_loop.adapters._review_impl import (
-    build_review_command as build_review_command,
-)
 from code_review_loop.adapters._review_impl import (
     review_base_hint as review_base_hint,
 )
@@ -938,15 +906,6 @@ from code_review_loop.adapters._review_impl import (
 )
 from code_review_loop.adapters._review_impl import (
     review_failed_to_run as review_failed_to_run,
-)
-from code_review_loop.adapters._review_impl import (
-    run_codex_review as run_codex_review,
-)
-from code_review_loop.adapters._triage_impl import (
-    build_triage_command as build_triage_command,
-)
-from code_review_loop.adapters._triage_impl import (
-    run_triage as run_triage,
 )
 from code_review_loop.adapters.git import run_git_preflight as run_git_preflight
 
@@ -1485,6 +1444,12 @@ def _prepare_run(
     return _RunSetup(state, state.to_dict(), event_sink, ctx, run_id)
 
 
+def _profile_routed_harnesses(profile: profiles.Profile) -> tuple[str, ...]:
+    if not profile.triage.enabled or not profile.triage.routing.enabled:
+        return ()
+    return tuple(route.harness for route in profile.triage.routes.values())
+
+
 def _run_preflight(
     config: LoopConfig,
     state: RunState,
@@ -1508,7 +1473,7 @@ def _run_preflight(
             triage_harness=config.triage_harness,
             commit_message_harness=config.commit_message_harness,
             routed_harnesses=(
-                profile_routed_harnesses(config.profile_v2)
+                _profile_routed_harnesses(config.profile_v2)
                 if config.profile_v2 is not None
                 else ()
             ),
@@ -2362,44 +2327,6 @@ def _combined_output(result: CommandResult) -> str:
     return "\n".join(parts).strip() + "\n"
 
 
-def _profile_config_owner_path(name: str, cwd: Path, home: Path | None = None) -> Path:
-    project_path = profiles.project_config_path(cwd)
-    project_file = profiles.load_profile_file(project_path)
-    if name in project_file.profiles:
-        return project_path
-
-    user_path = profiles.user_config_path(home)
-    user_file = profiles.load_profile_file(user_path)
-    if name in user_file.profiles:
-        return user_path
-
-    raise FileNotFoundError(f"profile not found: {name}")
-
-
-def _editor_command() -> list[str]:
-    editor = os.environ.get("EDITOR", "").strip()
-    if not editor:
-        raise RuntimeError("EDITOR is not set; cannot open a config editor")
-    command = shlex.split(editor)
-    if not command:
-        raise RuntimeError("EDITOR is empty; cannot open a config editor")
-    return command
-
-
-def edit_profile_config(name: str, *, cwd: Path, home: Path | None = None) -> Path:
-    path = _profile_config_owner_path(name, cwd, home)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.touch(exist_ok=True)
-    command = _editor_command() + [str(path)]
-    try:
-        subprocess.run(command, cwd=path.parent, check=True)
-    except FileNotFoundError as exc:
-        raise FileNotFoundError(f"editor not found: {command[0]}") from exc
-    except subprocess.CalledProcessError as exc:
-        raise RuntimeError(f"editor exited with status {exc.returncode}") from exc
-    return path
-
-
 def git_info_exclude_path(cwd: Path) -> Path | None:
     git_path = cwd / ".git"
     if git_path.is_dir():
@@ -2416,265 +2343,3 @@ def git_info_exclude_path(cwd: Path) -> Path | None:
     if git_dir.parent.name == "worktrees":
         return git_dir.parent.parent / "info" / "exclude"
     return git_dir / "info" / "exclude"
-
-
-def suppress_main(argv: Sequence[str]) -> int:
-    # REVREM-TASK-003 Wave C1a: thin delegator over commands.suppress.main.
-    from code_review_loop.cli.commands import suppress as _cmd
-    return _cmd.main(argv)
-
-
-def _suppression_path_for_scope(scope: str, cwd: Path) -> Path:
-    if scope == "repo":
-        return suppressions.repo_suppressions_path(cwd)
-    return suppressions.user_suppressions_path()
-
-
-def _suppression_audit_path_for_scope(scope: str, cwd: Path) -> Path:
-    if scope == "repo":
-        return suppressions.repo_audit_path(cwd)
-    return suppressions.user_audit_path()
-
-
-def config_main(argv: Sequence[str]) -> int:
-    # REVREM-TASK-003 Wave C1a: thin delegator over commands.config.main.
-    from code_review_loop.cli.commands import config as _cmd
-    return _cmd.main(argv)
-
-
-def _format_profile_list_item(item: profiles.ProfileListItem) -> str:
-    desc = f" - {item.description}" if item.description else ""
-    details: list[str] = []
-    if item.source:
-        details.append(item.source)
-    details.append(f"last used {item.last_used_at or 'never'}")
-    suffix = f" ({', '.join(details)})" if details else ""
-    return f"{item.name}{desc}{suffix}"
-
-
-def bundle_bug_report_main(argv: Sequence[str]) -> int:
-    # REVREM-TASK-003 Wave C1a: thin delegator over commands.bundle.main.
-    from code_review_loop.cli.commands import bundle as _cmd
-    return _cmd.main(argv)
-
-
-def replay_main(argv: Sequence[str]) -> int:
-    # REVREM-TASK-003 Wave C1a: thin delegator over commands.replay.main.
-    from code_review_loop.cli.commands import replay as _cmd
-    return _cmd.main(argv)
-
-
-def doctor_main(argv: Sequence[str]) -> int:
-    # REVREM-TASK-003 Wave C1a: thin delegator over commands.doctor.main.
-    from code_review_loop.cli.commands import doctor as _cmd
-    return _cmd.main(argv)
-
-
-def profile_routed_harnesses(profile: profiles.Profile) -> tuple[str, ...]:
-    if not profile.triage.enabled or not profile.triage.routing.enabled:
-        return ()
-    return tuple(route.harness for route in profile.triage.routes.values())
-
-
-def _suppression_doctor_issues(cwd: Path) -> list[diagnostics.DiagnosticIssue]:
-    issues: list[diagnostics.DiagnosticIssue] = []
-    for path in (suppressions.user_suppressions_path(), suppressions.repo_suppressions_path(cwd)):
-        try:
-            expired, unsupported = suppressions.stale_entries(path)
-        except (OSError, ValueError) as exc:
-            issues.append(
-                diagnostics.DiagnosticIssue(
-                    code="revrem.suppressions.invalid_file",
-                    severity="warn",
-                    message="A suppression file could not be parsed or read.",
-                    hint=str(exc),
-                    evidence={"path": str(path)},
-                )
-            )
-            continue
-        if expired:
-            issues.append(
-                diagnostics.DiagnosticIssue(
-                    code="revrem.suppressions.expired",
-                    severity="warn",
-                    message="A suppression file contains expired entries.",
-                    hint="Run revrem suppress expire for the affected scope.",
-                    evidence={
-                        "path": str(path),
-                        "fingerprints": [entry.fingerprint for entry in expired],
-                    },
-                )
-            )
-        if unsupported:
-            issues.append(
-                diagnostics.DiagnosticIssue(
-                    code="revrem.suppressions.unsupported_fingerprint_version",
-                    severity="warn",
-                    message="A suppression file contains fingerprints RevRem cannot match.",
-                    hint="Recreate these suppressions after the fingerprint migration tool exists.",
-                    evidence={
-                        "path": str(path),
-                        "fingerprints": [entry.fingerprint for entry in unsupported],
-                    },
-                )
-            )
-    return issues
-
-
-def _doctor_artifact_dir(args: argparse.Namespace, profile: profiles.Profile) -> Path:
-    artifact_dir = args.artifact_dir if args.artifact_dir is not None else profile.output.artifact_dir
-    if artifact_dir is not None:
-        return Path(artifact_dir)
-    return default_artifact_dir()
-
-
-def history_main(argv: Sequence[str]) -> int:
-    # REVREM-TASK-003 Wave C1a: thin delegator over commands.history.main.
-    from code_review_loop.cli.commands import history as _cmd
-    return _cmd.main(argv)
-
-
-
-def policy_main(argv: Sequence[str]) -> int:
-    # REVREM-TASK-003 Wave C1a: thin delegator over commands.policy.main.
-    from code_review_loop.cli.commands import policy as _cmd
-    return _cmd.main(argv)
-
-
-def policy_lint(profile_name: str, output_format: str | None = None) -> int:
-    try:
-        profile = profiles.resolve_profile(profile_name, cwd=Path.cwd(), require_implemented=False)
-        policy_issues = profiles.validate_policy(profile)
-        if policy_issues:
-            raise ValueError("\n".join(policy_issues))
-        if output_format == "json":
-            print(json.dumps({"status": "ok", "profile": profile_name}))
-        else:
-            print(f"Policy lint passed for profile: {profile_name}")
-        return 0
-    except Exception as exc:
-        if output_format == "json":
-            print(json.dumps({"status": "error", "message": str(exc)}))
-        else:
-            print(f"Policy lint FAILED for profile {profile_name}: {exc}", file=sys.stderr)
-        return 1
-
-
-def policy_review(artifact_dir: Path, output_format: str | None = None) -> int:
-    if not artifact_dir.is_dir():
-        raise ValueError(f"artifact directory not found: {artifact_dir}")
-
-    decisions: list[dict[str, Any]] = []
-    for routing_path in sorted(artifact_dir.glob("routing-*.json")):
-        payload = json.loads(routing_path.read_text(encoding="utf-8"))
-        if not isinstance(payload, dict):
-            continue
-        outcome_path = artifact_dir / routing_path.name.replace("routing-", "routing-outcome-", 1)
-        outcome: dict[str, Any] = {}
-        if outcome_path.is_file():
-            outcome_payload = json.loads(outcome_path.read_text(encoding="utf-8"))
-            if isinstance(outcome_payload, dict):
-                outcome = outcome_payload
-        effective_route = payload.get("effective_route")
-        policy_decision = payload.get("policy_decision")
-        prompt = payload.get("prompt")
-        if not isinstance(effective_route, dict) or not isinstance(policy_decision, dict):
-            continue
-        decisions.append(
-            {
-                "iteration": payload.get("iteration"),
-                "decision": policy_decision.get("decision"),
-                "route_tier": effective_route.get("route_tier"),
-                "harness": effective_route.get("harness"),
-                "model": effective_route.get("model"),
-                "fallbacks_considered": payload.get("fallbacks_considered", []),
-                "prompt_sha256": prompt.get("sha256") if isinstance(prompt, dict) else None,
-                "checks_passed": outcome.get("checks_passed"),
-                "exit_code": outcome.get("exit_code"),
-            }
-        )
-
-    summary = {
-        "artifact_dir": str(artifact_dir),
-        "routing_decisions": decisions,
-        "decision_count": len(decisions),
-    }
-    if output_format == "json":
-        print(json.dumps(summary, indent=2, sort_keys=True))
-        return 0
-    if not decisions:
-        print(f"No routing decisions found in {artifact_dir}.")
-        return 0
-    print(f"Routing policy review for {artifact_dir}:")
-    for decision in decisions:
-        print(
-            "iteration={iteration} decision={decision} route={route_tier} "
-            "harness={harness} model={model} checks_passed={checks_passed}".format(
-                **decision
-            )
-        )
-    return 0
-
-
-def triage_main(argv: Sequence[str]) -> int:
-    # REVREM-TASK-003 Wave C1a: thin delegator over commands.triage.main.
-    from code_review_loop.cli.commands import triage as _cmd
-    return _cmd.main(argv)
-
-
-def triage_explain(run_dir: Path, iteration: int, output_format: str | None = None) -> int:
-    routing_path = run_dir / f"routing-{iteration}.json"
-    if not routing_path.is_file():
-        print(f"ERROR: routing artifact not found: {routing_path}", file=sys.stderr)
-        return 1
-
-    try:
-        routing = json.loads(routing_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        print(f"ERROR: invalid routing artifact JSON at {routing_path}: {exc}", file=sys.stderr)
-        return 1
-    if not isinstance(routing, dict):
-        print(f"ERROR: routing artifact must be a JSON object: {routing_path}", file=sys.stderr)
-        return 1
-    if output_format == "json":
-        print(json.dumps(routing, indent=2, sort_keys=True))
-    else:
-        print(f"Routing Explanation for {run_dir.name} iteration {iteration}:")
-        decision = routing.get("policy_decision", {})
-        if not isinstance(decision, dict):
-            print(f"ERROR: routing artifact policy_decision must be an object: {routing_path}", file=sys.stderr)
-            return 1
-        print(f"  Decision: {decision.get('decision')}")
-        print(f"  Rationale: {decision.get('rationale')}")
-        matched_rules = decision.get("matched_rule_ids", [])
-        if not isinstance(matched_rules, list) or not all(isinstance(rule, str) for rule in matched_rules):
-            print(
-                f"ERROR: routing artifact policy_decision.matched_rule_ids must be a string array: {routing_path}",
-                file=sys.stderr,
-            )
-            return 1
-        print(f"  Matched Rules: {', '.join(matched_rules)}")
-
-        effective = routing.get("effective_route", {})
-        if not isinstance(effective, dict):
-            print(f"ERROR: routing artifact effective_route must be an object: {routing_path}", file=sys.stderr)
-            return 1
-        print(f"  Effective Route: {effective.get('route_tier')}")
-        print(f"    Harness: {effective.get('harness')}")
-        print(f"    Model: {effective.get('model')}")
-
-        proposal = routing.get("model_proposal", {})
-        if not isinstance(proposal, dict):
-            print(f"ERROR: routing artifact model_proposal must be an object: {routing_path}", file=sys.stderr)
-            return 1
-        print(f"  Model Proposal: {proposal.get('route_tier')}")
-        print(f"    Rationale: {proposal.get('rationale')}")
-
-        prompt = routing.get("prompt", {})
-        if not isinstance(prompt, dict):
-            print(f"ERROR: routing artifact prompt must be an object: {routing_path}", file=sys.stderr)
-            return 1
-        print(f"  Prompt Artifact: {prompt.get('path')}")
-        print(f"  Prompt Hash: {prompt.get('sha256')}")
-
-    return 0

@@ -4,7 +4,10 @@ from importlib import import_module
 from pathlib import Path
 
 import code_review_loop.runner as runner_mod
-from code_review_loop import events
+from code_review_loop import application, events
+from code_review_loop.adapters import _remediation_impl as remediation_impl
+from code_review_loop.adapters import _review_impl as review_impl
+from code_review_loop.adapters import _triage_impl as triage_impl
 from code_review_loop.core.ports import RunContext
 from tests.support.fakes import FakeClock, FakeRunIdentity
 from tests.support.phase_harnesses import phase_harness_kwargs
@@ -448,7 +451,7 @@ def test_review_model_is_top_level_codex_option(tmp_path):
         model="gpt-test",
     )
 
-    command = runner_mod.build_review_command(config)
+    command = review_impl.build_review_command(config)
 
     assert command[:5] == ["codex", "--model", "gpt-test", "review", "--base"]
     assert command == ["codex", "--model", "gpt-test", "review", "--base", "main"]
@@ -526,11 +529,11 @@ model = "sonnet"
     )
     captured: list[runner_mod.LoopConfig] = []
 
-    def fake_run_loop(config):
+    def fake_run_loop(config, **_kwargs):
         captured.append(config)
         return {"final_status": "clear", "stopped_reason": "review_clear"}
 
-    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(application, "run_review_loop", fake_run_loop)
 
     exit_code = cli_main.main(
         [
@@ -544,7 +547,7 @@ model = "sonnet"
 
     assert exit_code == 0
     assert captured[0].harness_executables == {"claude": "/tmp/claude-dev"}
-    assert runner_mod.build_review_command(captured[0])[0] == "/tmp/claude-dev"
+    assert review_impl.build_review_command(captured[0])[0] == "/tmp/claude-dev"
 
 
 def test_model_overrides_and_reasoning_effort_are_passed_to_codex(tmp_path):
@@ -561,8 +564,8 @@ def test_model_overrides_and_reasoning_effort_are_passed_to_codex(tmp_path):
         remediation_reasoning_effort="low",
     )
 
-    review_command = runner_mod.build_review_command(config)
-    remediation_command = runner_mod.build_remediation_command(config)
+    review_command = review_impl.build_review_command(config)
+    remediation_command = remediation_impl.build_remediation_command(config)
 
     assert review_command[:5] == [
         "codex",
@@ -591,7 +594,7 @@ def test_remediation_command_uses_deterministic_output_options(tmp_path):
         exec_json=True,
     )
 
-    command = runner_mod.build_remediation_command(config, tmp_path / "last-message.txt")
+    command = remediation_impl.build_remediation_command(config, tmp_path / "last-message.txt")
 
     assert "--color" in command
     assert command[command.index("--color") + 1] == "never"
@@ -611,7 +614,7 @@ def test_triage_command_uses_read_only_exec_with_phase_model(tmp_path):
         triage_reasoning_effort="low",
     )
 
-    command = runner_mod.build_triage_command(config)
+    command = triage_impl.build_triage_command(config)
 
     assert command[:4] == ["codex", "exec", "-c", 'model_reasoning_effort="low"']
     assert command[command.index("--sandbox") + 1] == "read-only"

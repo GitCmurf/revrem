@@ -6,6 +6,8 @@ from pathlib import Path
 import pytest
 
 import code_review_loop.runner as runner_mod
+from code_review_loop.adapters import _checks_impl as checks_impl
+from code_review_loop.adapters import _commit_impl as commit_impl
 from code_review_loop.core.ports import RunContext
 from tests.support.fakes import FakeClock, FakeRunIdentity
 from tests.support.phase_harnesses import phase_harness_kwargs
@@ -107,8 +109,8 @@ def test_git_staging_commands_for_commit_reset_relative_artifact_dir(tmp_path):
         artifact_dir=Path("../artifacts/revrem"),
     )
 
-    assert runner_mod.git_add_command_for_commit(config) == ["git", "add", "-A"]
-    assert runner_mod.git_reset_artifact_command_for_commit(config) == [
+    assert commit_impl.git_add_command_for_commit(config) == ["git", "add", "-A"]
+    assert commit_impl.git_reset_artifact_command_for_commit(config) == [
         "git",
         "-C",
         str(repo_root),
@@ -128,8 +130,8 @@ def test_git_staging_commands_skip_relative_artifact_dir_outside_cwd(tmp_path):
         artifact_dir=Path("../../revrem-artifacts"),
     )
 
-    assert runner_mod.git_add_command_for_commit(config) == ["git", "add", "-A"]
-    assert runner_mod.git_reset_artifact_command_for_commit(config) is None
+    assert commit_impl.git_add_command_for_commit(config) == ["git", "add", "-A"]
+    assert commit_impl.git_reset_artifact_command_for_commit(config) is None
 
 
 def test_run_commit_refuses_repo_root_artifact_dir_before_staging(tmp_path):
@@ -150,7 +152,7 @@ def test_run_commit_refuses_repo_root_artifact_dir_before_staging(tmp_path):
     )
 
     with pytest.raises(RuntimeError, match="artifact-dir resolves to the repository root"):
-        runner_mod.run_commit(config, runner, 1, ctx=make_run_context(runner))
+        commit_impl.run_commit(config, runner, 1, ctx=make_run_context(runner))
 
     assert calls == []
 
@@ -211,7 +213,7 @@ def test_pytest_check_is_skipped_for_typescript_repo_without_python_surface(tmp_
         check_commands=("pytest -q",),
     )
 
-    results, _failed = runner_mod.run_checks(config, runner, 1, make_run_context(runner))
+    results, _failed = checks_impl.run_checks(config, runner, 1, make_run_context(runner))
 
     assert calls == []
     assert results[0].returncode == 0
@@ -240,7 +242,7 @@ def test_pytest_check_is_skipped_for_typescript_repo_with_incidental_python_file
         check_commands=("pytest -q",),
     )
 
-    results, _failed = runner_mod.run_checks(config, runner, 1, make_run_context(runner))
+    results, _failed = checks_impl.run_checks(config, runner, 1, make_run_context(runner))
 
     assert calls == []
     assert results[0].returncode == 0
@@ -257,7 +259,7 @@ def test_pytest_in_typescript_repo_is_normalized_when_subprocess_returns_non_pyt
     command = ["pytest", "-q"]
     result = runner_mod.CommandResult(command, returncode, stdout="pytest output\n", stderr="pytest error\n")
 
-    normalized = runner_mod.normalize_adaptive_check_result(command, tmp_path, result)
+    normalized = checks_impl.normalize_adaptive_check_result(command, tmp_path, result)
 
     assert normalized.returncode == 0
     assert f"pytest exited {returncode}" in normalized.stdout
@@ -270,8 +272,8 @@ def test_pytest_failure_is_preserved_for_python_repo(tmp_path):
     command = ["pytest", "-q"]
     result = runner_mod.CommandResult(command, 5, stdout="no tests ran\n")
 
-    assert runner_mod.adaptive_check_skip_reason(command, tmp_path) is None
-    assert runner_mod.normalize_adaptive_check_result(command, tmp_path, result) is result
+    assert checks_impl.adaptive_check_skip_reason(command, tmp_path) is None
+    assert checks_impl.normalize_adaptive_check_result(command, tmp_path, result) is result
 
 
 def test_loop_refuses_to_auto_commit_from_dirty_worktree(tmp_path):
@@ -532,10 +534,10 @@ def test_run_commit_uses_no_verify_only_on_retry(tmp_path):
         commit_on_hook_failure="no-verify",
     )
 
-    assert runner_mod.run_commit(config, runner, 1, ctx=make_run_context(runner)) == "committed"
+    assert commit_impl.run_commit(config, runner, 1, ctx=make_run_context(runner)) == "committed"
     assert ["git", "commit", "-m", "chore: remediate review iteration 1 (RevRem)"] in calls
     assert ["git", "commit", "--no-verify", "-m", "chore: remediate review iteration 1 (RevRem)"] not in calls
 
     calls.clear()
-    assert runner_mod.run_commit(config, runner, 1, ctx=make_run_context(runner), retrying=True) == "committed"
+    assert commit_impl.run_commit(config, runner, 1, ctx=make_run_context(runner), retrying=True) == "committed"
     assert ["git", "commit", "--no-verify", "-m", "chore: remediate review iteration 1 (RevRem)"] in calls
