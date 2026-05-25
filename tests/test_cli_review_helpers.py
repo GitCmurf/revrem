@@ -270,8 +270,6 @@ def test_progress_warning_status_emits_warning_event(tmp_path):
         artifact_dir=tmp_path / "artifacts",
         progress=False,
     )
-    from support.phase_harnesses import phase_harness_kwargs
-
     ctx = RunContext(
         clock=FakeClock(),
         identity=FakeRunIdentity(),
