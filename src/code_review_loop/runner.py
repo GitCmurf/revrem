@@ -1887,6 +1887,80 @@ def _run_iteration(
     return _IterationStep(acc, pending_check_failures, failed_check_names, commit_retry)
 
 
+def _load_initial_review(config: LoopConfig, ctx: RunContext) -> str:
+    if config.initial_review_file is None:
+        return ""
+    initial_review_output = actionable_review_output(config.initial_review_file.read_text(encoding="utf-8"))
+    write_artifact(config.artifact_dir / "review-initial.txt", initial_review_output + "\n")
+    progress_event(config, "review", "initial", "loaded", str(config.initial_review_file), ctx=ctx)
+    log_review_findings(config, "initial", initial_review_output, ctx=ctx)
+    return initial_review_output
+
+
+def _finish_cancelled(
+    exc: KeyboardInterrupt,
+    *,
+    config: LoopConfig,
+    state: RunState,
+    summary: dict[str, object],
+    clock: Clock,
+    ctx: RunContext,
+) -> dict[str, object]:
+    artifacts.write_json_artifact(
+        config.artifact_dir,
+        "diagnostics.json",
+        diagnostics.doctor_payload(
+            [
+                diagnostics.DiagnosticIssue(
+                    code="revrem.run.cancelled",
+                    severity="blocking",
+                    message="RevRem run was cancelled by the operator.",
+                    hint="Inspect summary.json and events.jsonl to determine the last completed phase before resuming or rerunning.",
+                    evidence={"reason": "operator_interrupt"},
+                )
+            ]
+        ),
+    )
+    if ctx.event_sink is not None:
+        ctx.event_sink.emit(
+            "cancellation",
+            phase="run",
+            payload={
+                "reason": "operator_interrupt",
+                "message": "cancelled by operator",
+            },
+        )
+    return _execute_stop(
+        OutcomeFailed(reason="cancelled", error="cancelled by operator"),
+        state,
+        summary,
+        config,
+        clock,
+        ctx,
+        cause=exc,
+    )
+
+
+def _finish_budget_exceeded(
+    exc: budgets.BudgetExceeded,
+    *,
+    config: LoopConfig,
+    state: RunState,
+    summary: dict[str, object],
+    clock: Clock,
+    ctx: RunContext,
+) -> dict[str, object]:
+    return _execute_stop(
+        OutcomeFailed(reason="budget_ceiling_hit", error=str(exc)),
+        state,
+        summary,
+        config,
+        clock,
+        ctx,
+        cause=exc,
+    )
+
+
 def _run_session(
     config: LoopConfig,
     runner: Runner = default_runner,
@@ -1913,15 +1987,7 @@ def _run_session(
         pending_check_failures = ""
         failed_check_names: list[str] = []
         _commit_retry = False
-        initial_review_output = ""
-        if config.initial_review_file:
-            initial_review_output = actionable_review_output(
-                config.initial_review_file.read_text(encoding="utf-8")
-            )
-            write_artifact(config.artifact_dir / "review-initial.txt", initial_review_output + "\n")
-            progress_event(config, "review", "initial", "loaded", str(config.initial_review_file), ctx=ctx)
-            log_review_findings(config, "initial", initial_review_output, ctx=ctx)
-
+        initial_review_output = _load_initial_review(config, ctx)
         snap = _config_snapshot(config)
         acc = LoopAccumulator(pending_check_failures="")
 
@@ -1959,44 +2025,11 @@ def _run_session(
             acc=acc,
         )
     except KeyboardInterrupt as exc:
-        artifacts.write_json_artifact(
-            config.artifact_dir,
-            "diagnostics.json",
-            diagnostics.doctor_payload(
-                [
-                    diagnostics.DiagnosticIssue(
-                        code="revrem.run.cancelled",
-                        severity="blocking",
-                        message="RevRem run was cancelled by the operator.",
-                        hint="Inspect summary.json and events.jsonl to determine the last completed phase before resuming or rerunning.",
-                        evidence={"reason": "operator_interrupt"},
-                    )
-                ]
-            ),
-        )
-        if ctx is not None and ctx.event_sink is not None:
-            ctx.event_sink.emit(
-                "cancellation",
-                phase="run",
-                payload={
-                    "reason": "operator_interrupt",
-                    "message": "cancelled by operator",
-                },
-            )
-        return _execute_stop(
-            OutcomeFailed(reason="cancelled", error="cancelled by operator"),
-            state, summary, config, clock, ctx,
-            cause=exc,
-        )
+        return _finish_cancelled(exc, config=config, state=state, summary=summary, clock=clock, ctx=ctx)
     except budgets.BudgetExceeded as exc:
-        return _execute_stop(
-            OutcomeFailed(reason="budget_ceiling_hit", error=str(exc)),
-            state, summary, config, clock, ctx,
-            cause=exc,
-        )
+        return _finish_budget_exceeded(exc, config=config, state=state, summary=summary, clock=clock, ctx=ctx)
     finally:
-        if event_sink is not None:
-            event_sink.close()
+        event_sink.close()
 
 
 def write_summary(
