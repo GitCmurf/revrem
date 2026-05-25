@@ -39,13 +39,13 @@ def policy_lint(profile_name: str, output_format: str | None = None) -> int:
             print(json.dumps({"status": "ok", "profile": profile_name}))
         else:
             print(f"Policy lint passed for profile: {profile_name}")
-        return 0
+        return CommandOk().exit_code
     except Exception as exc:
         if output_format == "json":
             print(json.dumps({"status": "error", "message": str(exc)}))
         else:
             print(f"Policy lint FAILED for profile {profile_name}: {exc}", file=sys.stderr)
-        return 1
+        return CommandFailed(exit_code=1).exit_code
 
 
 def policy_review(artifact_dir: Path, output_format: str | None = None) -> int:
@@ -89,10 +89,10 @@ def policy_review(artifact_dir: Path, output_format: str | None = None) -> int:
     }
     if output_format == "json":
         print(json.dumps(summary, indent=2, sort_keys=True))
-        return 0
+        return CommandOk().exit_code
     if not decisions:
         print(f"No routing decisions found in {artifact_dir}.")
-        return 0
+        return CommandOk().exit_code
     print(f"Routing policy review for {artifact_dir}:")
     for decision in decisions:
         print(
@@ -101,4 +101,4 @@ def policy_review(artifact_dir: Path, output_format: str | None = None) -> int:
                 **decision
             )
         )
-    return 0
+    return CommandOk().exit_code

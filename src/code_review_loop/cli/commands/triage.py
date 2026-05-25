@@ -32,16 +32,16 @@ def triage_explain(run_dir: Path, iteration: int, output_format: str | None = No
     routing_path = run_dir / f"routing-{iteration}.json"
     if not routing_path.is_file():
         print(f"ERROR: routing artifact not found: {routing_path}", file=sys.stderr)
-        return 1
+        return CommandFailed(exit_code=1).exit_code
 
     try:
         routing = json.loads(routing_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         print(f"ERROR: invalid routing artifact JSON at {routing_path}: {exc}", file=sys.stderr)
-        return 1
+        return CommandFailed(exit_code=1).exit_code
     if not isinstance(routing, dict):
         print(f"ERROR: routing artifact must be a JSON object: {routing_path}", file=sys.stderr)
-        return 1
+        return CommandFailed(exit_code=1).exit_code
     if output_format == "json":
         print(json.dumps(routing, indent=2, sort_keys=True))
     else:
@@ -49,7 +49,7 @@ def triage_explain(run_dir: Path, iteration: int, output_format: str | None = No
         decision = routing.get("policy_decision", {})
         if not isinstance(decision, dict):
             print(f"ERROR: routing artifact policy_decision must be an object: {routing_path}", file=sys.stderr)
-            return 1
+            return CommandFailed(exit_code=1).exit_code
         print(f"  Decision: {decision.get('decision')}")
         print(f"  Rationale: {decision.get('rationale')}")
         matched_rules = decision.get("matched_rule_ids", [])
@@ -58,13 +58,13 @@ def triage_explain(run_dir: Path, iteration: int, output_format: str | None = No
                 f"ERROR: routing artifact policy_decision.matched_rule_ids must be a string array: {routing_path}",
                 file=sys.stderr,
             )
-            return 1
+            return CommandFailed(exit_code=1).exit_code
         print(f"  Matched Rules: {', '.join(matched_rules)}")
 
         effective = routing.get("effective_route", {})
         if not isinstance(effective, dict):
             print(f"ERROR: routing artifact effective_route must be an object: {routing_path}", file=sys.stderr)
-            return 1
+            return CommandFailed(exit_code=1).exit_code
         print(f"  Effective Route: {effective.get('route_tier')}")
         print(f"    Harness: {effective.get('harness')}")
         print(f"    Model: {effective.get('model')}")
@@ -72,15 +72,15 @@ def triage_explain(run_dir: Path, iteration: int, output_format: str | None = No
         proposal = routing.get("model_proposal", {})
         if not isinstance(proposal, dict):
             print(f"ERROR: routing artifact model_proposal must be an object: {routing_path}", file=sys.stderr)
-            return 1
+            return CommandFailed(exit_code=1).exit_code
         print(f"  Model Proposal: {proposal.get('route_tier')}")
         print(f"    Rationale: {proposal.get('rationale')}")
 
         prompt = routing.get("prompt", {})
         if not isinstance(prompt, dict):
             print(f"ERROR: routing artifact prompt must be an object: {routing_path}", file=sys.stderr)
-            return 1
+            return CommandFailed(exit_code=1).exit_code
         print(f"  Prompt Artifact: {prompt.get('path')}")
         print(f"  Prompt Hash: {prompt.get('sha256')}")
 
-    return 0
+    return CommandOk().exit_code
