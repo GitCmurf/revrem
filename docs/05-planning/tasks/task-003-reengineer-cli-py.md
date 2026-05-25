@@ -908,7 +908,7 @@ import-boundary pass, and the low-risk C3c cleanup items have landed, but Wave
 C is **not complete**. The console-script target ``code_review_loop.cli:main``
 is now a 27-line entry shim and the old ``monkeypatch.setattr(MODULE, ...)``
 reach-in pattern is ratcheted to zero; however, the loop body was moved to
-``code_review_loop.loop`` rather than dissolved into ``core.engine.run``. Treat
+``code_review_loop.runner`` rather than dissolved into ``core.engine.run``. Treat
 that commit as a green checkpoint, not the Wave C finish line.
 
 * **C3a is complete.** Every phase implementation now lives in its adapter
@@ -938,8 +938,8 @@ that commit as a green checkpoint, not the Wave C finish line.
   ``DEFAULT_REVIEW_PROMPT``, ``CommitFailed``, ``REVREM_COMMIT_SUFFIX``
   and friends) now have an adapter-neutral home in
   ``code_review_loop.adapters.phase_support``. Adapter implementation modules
-  no longer import ``code_review_loop.loop``; the import-linter contract now
-  forbids adapters from importing either ``code_review_loop.loop`` or
+  no longer import ``code_review_loop.runner``; the import-linter contract now
+  forbids adapters from importing either ``code_review_loop.runner`` or
   ``code_review_loop.cli`` directly or indirectly. Follow-up remediation moved
   the command entrypoint to ``cli/main.py``, moved command helpers into
   command modules, and moved resume preconditions/config reconstruction to
@@ -951,9 +951,9 @@ that commit as a green checkpoint, not the Wave C finish line.
   ``0`` for ``monkeypatch.setattr(MODULE, ...)``.
 
   ``cli/__init__.py`` is now 3 lines, down from 4946 at the start of Wave C.
-  No ``cli/commands/*`` module directly imports ``code_review_loop.loop``.
-  The moved loop implementation remains the executable driver in
-  ``code_review_loop.loop``; this is a measurable reduction in CLI entrypoint
+  ``resume`` no longer imports the executable driver; the resume command calls
+  ``runner.resume_run`` after preconditions pass. The moved loop implementation remains the executable driver in
+  ``code_review_loop.runner``; this is a measurable reduction in CLI entrypoint
   weight, not proof that the core engine split is complete.
 
 * **C3c tech-debt cleanup is partially complete.** TD-002, TD-003, and TD-005
@@ -976,17 +976,16 @@ that commit as a green checkpoint, not the Wave C finish line.
    executor. The remaining work is to make the CLI driver consume it for the
    full loop and shrink the driver loop to wiring only.
 2. DONE in remediation: replace the partial import rules with contracts that
-   prove core does not import drivers/adapters and adapters do not import
-   ``cli`` or ``loop``.
+   prove core does not import drivers/adapters, adapters do not import
+   ``cli`` or ``runner``, and resume planning does not import ``runner``.
 3. DONE in remediation: delete the ``cli.__getattr__`` compatibility facade.
 4. IN PROGRESS: legacy phase fallback branches are removed and ``RunContext``
    phase harnesses are required. Remaining TD-001 work is to remove nullable
    ``ctx`` from phase/support functions that no longer support legacy callers.
-5. IN PROGRESS: command modules no longer directly import the loop driver, and
-   resume runtime is outside ``loop``. A strict import-linter contract for
-   ``cli.commands -> loop`` is intentionally not enabled yet because
-   ``resume.resume_run`` still reaches ``loop.run_loop`` until the executable
-   driver moves to the core/runner path.
+5. IN PROGRESS: the driver module has been renamed to ``runner`` and resume
+   execution is owned by ``runner.resume_run``. Remaining work is to shrink the
+   runner to a thin imperative shell over ``core.engine.run`` and then remove
+   ``_run_loop``.
 6. Decompose ``tests/test_cli_integration.py`` into behavior-level modules.
 7. IN PROGRESS: ``RunState`` now has semantic terminal transitions
    (``mark_outcome``/``mark_clear``/``mark_failed``/``mark_findings``/

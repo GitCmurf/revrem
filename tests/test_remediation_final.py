@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from code_review_loop import harnesses, policy, profiles, prompts_composer, triage
-from code_review_loop import loop as cli
+from code_review_loop import runner as cli
 from code_review_loop._compat_jsonschema import validate
 from code_review_loop.cli.main import main as cli_main
 

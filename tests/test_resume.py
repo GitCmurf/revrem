@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-import code_review_loop.loop as loop_mod
+import code_review_loop.runner as runner_mod
 from code_review_loop import events
 from code_review_loop import resume as resume_mod
 
@@ -78,10 +78,10 @@ def write_resume_run(
 def install_matching_git(monkeypatch, *, head: str = "head-sha", base: str = "base-sha") -> None:
     def fake_git(cwd, args):
         if list(args) == ["rev-parse", "HEAD"]:
-            return loop_mod.CommandResult(["git", *args], 0, stdout=f"{head}\n")
+            return runner_mod.CommandResult(["git", *args], 0, stdout=f"{head}\n")
         if list(args) == ["rev-parse", "--verify", "main^{commit}"]:
-            return loop_mod.CommandResult(["git", *args], 0, stdout=f"{base}\n")
-        return loop_mod.CommandResult(["git", *args], 1, stderr="unexpected")
+            return runner_mod.CommandResult(["git", *args], 0, stdout=f"{base}\n")
+        return runner_mod.CommandResult(["git", *args], 1, stderr="unexpected")
 
     monkeypatch.setattr(resume_mod, "run_git_preflight", fake_git)
 
@@ -190,10 +190,10 @@ def test_resume_run_rejects_persisted_budget_ceiling(tmp_path, monkeypatch):
         called = True
         raise AssertionError("run_loop should not be invoked when the budget ceiling is already exhausted")
 
-    monkeypatch.setattr(resume_mod, "run_loop", fail_if_called)
+    monkeypatch.setattr(runner_mod, "run_loop", fail_if_called)
 
     with pytest.raises(ValueError, match="remaining token budget headroom"):
-        resume_mod.resume_run(run_dir)
+        runner_mod.resume_run(run_dir)
 
     assert called is False
 
@@ -217,10 +217,10 @@ def test_resume_run_rejects_persisted_wall_budget_ceiling(tmp_path, monkeypatch)
         called = True
         raise AssertionError("run_loop should not be invoked when the wall budget is already exhausted")
 
-    monkeypatch.setattr(resume_mod, "run_loop", fail_if_called)
+    monkeypatch.setattr(runner_mod, "run_loop", fail_if_called)
 
     with pytest.raises(ValueError, match="remaining wall budget headroom"):
-        resume_mod.resume_run(run_dir)
+        runner_mod.resume_run(run_dir)
 
     assert called is False
 
@@ -249,46 +249,46 @@ def test_resume_run_rejects_legacy_persisted_budget_ceiling(tmp_path, monkeypatc
         called = True
         raise AssertionError("run_loop should not be invoked when the budget ceiling is already exhausted")
 
-    monkeypatch.setattr(resume_mod, "run_loop", fail_if_called)
+    monkeypatch.setattr(runner_mod, "run_loop", fail_if_called)
 
     with pytest.raises(ValueError, match="remaining token budget headroom"):
-        resume_mod.resume_run(run_dir)
+        runner_mod.resume_run(run_dir)
 
     assert called is False
 
 
 def test_resume_loop_config_seeds_cumulative_wall_budget_state(tmp_path, monkeypatch):
-    monkeypatch.setattr(loop_mod, "lexical_git_repo_root", lambda _cwd: tmp_path)
-    monkeypatch.setattr(loop_mod.budgets, "monotonic", lambda: 112.5)
+    monkeypatch.setattr(runner_mod, "lexical_git_repo_root", lambda _cwd: tmp_path)
+    monkeypatch.setattr(runner_mod.budgets, "monotonic", lambda: 112.5)
 
     def fake_run_git_preflight(cwd, args):
         if list(args) == ["rev-parse", "HEAD"]:
-            return loop_mod.CommandResult(["git", *args], 0, stdout="head-sha\n")
+            return runner_mod.CommandResult(["git", *args], 0, stdout="head-sha\n")
         if list(args) == ["rev-parse", "--verify", "main^{commit}"]:
-            return loop_mod.CommandResult(["git", *args], 0, stdout="base-sha\n")
+            return runner_mod.CommandResult(["git", *args], 0, stdout="base-sha\n")
         if list(args) == ["merge-base", "HEAD", "main"]:
-            return loop_mod.CommandResult(["git", *args], 0, stdout="merge-sha\n")
-        return loop_mod.CommandResult(["git", *args], 1, stderr="unexpected")
+            return runner_mod.CommandResult(["git", *args], 0, stdout="merge-sha\n")
+        return runner_mod.CommandResult(["git", *args], 1, stderr="unexpected")
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
-        return loop_mod.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
 
-    monkeypatch.setattr(loop_mod, "run_git_preflight", fake_run_git_preflight)
+    monkeypatch.setattr(runner_mod, "run_git_preflight", fake_run_git_preflight)
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
         cwd=tmp_path,
         artifact_dir=tmp_path / "artifacts",
-        budget_config=loop_mod.budgets.BudgetConfig(max_wall_seconds=30),
+        budget_config=runner_mod.budgets.BudgetConfig(max_wall_seconds=30),
     )
 
-    summary = loop_mod.run_loop(config, runner, budget_state=loop_mod.budgets.BudgetState(started_at_monotonic=100.0))
+    summary = runner_mod.run_loop(config, runner, budget_state=runner_mod.budgets.BudgetState(started_at_monotonic=100.0))
 
     assert summary["budgets"]["wall_elapsed_seconds"] == 12.5
 
-    monkeypatch.setattr(loop_mod.budgets, "monotonic", lambda: 200.0)
+    monkeypatch.setattr(runner_mod.budgets, "monotonic", lambda: 200.0)
     config, budget_state = resume_mod.resume_loop_config(summary, run_dir=tmp_path / "artifacts")
 
     assert budget_state is not None
@@ -408,7 +408,7 @@ def test_resume_main_returns_code_4_for_missing_summary(tmp_path, monkeypatch, c
 
 
 def test_resume_continues_from_existing_review_artifact(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv(loop_mod.harnesses.FAKE_HARNESS_ENV, "1")
+    monkeypatch.setenv(runner_mod.harnesses.FAKE_HARNESS_ENV, "1")
     monkeypatch.chdir(tmp_path)
     run_dir = tmp_path / "run"
     write_resume_run(run_dir)
@@ -427,16 +427,16 @@ def test_resume_continues_from_existing_review_artifact(tmp_path, monkeypatch, c
 
 
 def test_resume_and_uninterrupted_fake_run_have_same_final_status(tmp_path, monkeypatch):
-    monkeypatch.setenv(loop_mod.harnesses.FAKE_HARNESS_ENV, "1")
+    monkeypatch.setenv(runner_mod.harnesses.FAKE_HARNESS_ENV, "1")
     monkeypatch.chdir(tmp_path)
     run_dir = tmp_path / "run"
     uninterrupted_dir = tmp_path / "uninterrupted"
     write_resume_run(run_dir)
     install_matching_git(monkeypatch)
 
-    resumed = resume_mod.resume_run(run_dir)
-    uninterrupted = loop_mod.run_loop(
-        loop_mod.LoopConfig(
+    resumed = runner_mod.resume_run(run_dir)
+    uninterrupted = runner_mod.run_loop(
+        runner_mod.LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",

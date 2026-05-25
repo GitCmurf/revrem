@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import TypeVar
 
 from code_review_loop import budgets, diagnostics, events, profiles
+from code_review_loop.adapters.git import run_git_preflight
 from code_review_loop.config import LoopConfig
-from code_review_loop.core.ports import CommandResult
 
 RESUMABLE_STOPPED_REASONS = frozenset(
     {
@@ -181,23 +181,6 @@ def resume_budget_ceiling_issues(summary: dict[str, object]) -> list[diagnostics
     return issues
 
 
-def resume_run(run_dir: Path) -> dict[str, object]:
-    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
-    if not isinstance(summary, dict):
-        raise ValueError("summary.json must contain a JSON object")
-    budget_issues = resume_budget_ceiling_issues(summary)
-    if budget_issues:
-        raise ValueError("; ".join(issue.message for issue in budget_issues))
-    config, resumed_budget_state = resume_loop_config(summary, run_dir=run_dir)
-    return run_loop(config, budget_state=resumed_budget_state)
-
-
-def run_loop(config: LoopConfig, *, budget_state: budgets.BudgetState | None = None) -> dict[str, object]:
-    from code_review_loop.loop import run_loop as loop_run_loop
-
-    return loop_run_loop(config, budget_state=budget_state)
-
-
 def resume_loop_config(summary: dict[str, object], *, run_dir: Path) -> tuple[LoopConfig, budgets.BudgetState | None]:
     resume_config = summary.get("resume_config")
     if not isinstance(resume_config, dict):
@@ -328,12 +311,6 @@ def git_preflight_stdout(cwd: Path, args: Sequence[str]) -> str | None:
         return None
     value = result.stdout.strip()
     return value or None
-
-
-def run_git_preflight(cwd: Path, args: Sequence[str]) -> CommandResult:
-    from code_review_loop.loop import run_git_preflight as loop_run_git_preflight
-
-    return loop_run_git_preflight(cwd, args)
 
 
 def _resume_str(payload: dict[object, object], key: str, fallback: str) -> str:

@@ -1313,6 +1313,19 @@ def run_loop(
         return _run_loop(config, runner, clock=clock, identity=identity, budget_state=budget_state)
 
 
+def resume_run(run_dir: Path) -> dict[str, object]:
+    from code_review_loop import resume
+
+    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    if not isinstance(summary, dict):
+        raise ValueError("summary.json must contain a JSON object")
+    budget_issues = resume.resume_budget_ceiling_issues(summary)
+    if budget_issues:
+        raise ValueError("; ".join(issue.message for issue in budget_issues))
+    config, resumed_budget_state = resume.resume_loop_config(summary, run_dir=run_dir)
+    return run_loop(config, budget_state=resumed_budget_state)
+
+
 def _run_loop(
     config: LoopConfig,
     runner: Runner = default_runner,

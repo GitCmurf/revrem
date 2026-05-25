@@ -30,7 +30,7 @@ def test_entry_point_target_resolves() -> None:
     ("module_name", "name"),
     (
         ("code_review_loop.cli.main", "main"),
-        ("code_review_loop.loop", "run_loop"),
+        ("code_review_loop.runner", "run_loop"),
         ("code_review_loop.config", "LoopConfig"),
         ("code_review_loop.core.ports", "CommandResult"),
     ),

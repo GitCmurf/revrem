@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-import code_review_loop.loop as loop_mod
+import code_review_loop.runner as runner_mod
 from code_review_loop import events, profiles, suppressions
 from code_review_loop import resume as resume_mod
 from code_review_loop.cli import args as cli_args
@@ -36,60 +36,60 @@ def test_main_reports_package_version(capsys):
     captured = capsys.readouterr()
 
     assert excinfo.value.code == 0
-    assert captured.out.strip() == f"revrem {loop_mod.__version__}"
+    assert captured.out.strip() == f"revrem {runner_mod.__version__}"
     assert captured.err == ""
 
 
 def test_detect_review_status_prefers_explicit_status_line():
-    assert loop_mod.detect_review_status("Looks good\nREVIEW_STATUS: clear\n") == "clear"
-    assert loop_mod.detect_review_status("One blocker\nREVIEW_STATUS: findings\n") == "findings"
+    assert runner_mod.detect_review_status("Looks good\nREVIEW_STATUS: clear\n") == "clear"
+    assert runner_mod.detect_review_status("One blocker\nREVIEW_STATUS: findings\n") == "findings"
 
 
 def test_detect_review_status_treats_ambiguous_output_as_unknown():
-    assert loop_mod.detect_review_status("This review has a detailed discussion.") == "unknown"
+    assert runner_mod.detect_review_status("This review has a detailed discussion.") == "unknown"
 
 
 def test_detect_review_status_accepts_exact_clear_review_lines():
-    assert loop_mod.detect_review_status("No findings.\n") == "clear"
-    assert loop_mod.detect_review_status("summary\nNo actionable findings\n") == "clear"
+    assert runner_mod.detect_review_status("No findings.\n") == "clear"
+    assert runner_mod.detect_review_status("summary\nNo actionable findings\n") == "clear"
     assert (
-        loop_mod.detect_review_status("I did not find any discrete, actionable bugs in the diff.")
+        runner_mod.detect_review_status("I did not find any discrete, actionable bugs in the diff.")
         == "clear"
     )
     assert (
-        loop_mod.detect_review_status(
+        runner_mod.detect_review_status(
             "I did not find any discrete, actionable correctness issues in the changes."
         )
         == "clear"
     )
     assert (
-        loop_mod.detect_review_status(
+        runner_mod.detect_review_status(
             "I did not find any discrete introduced bug that would break existing behavior."
         )
         == "clear"
     )
     assert (
-        loop_mod.detect_review_status(
+        runner_mod.detect_review_status(
             "I did not find a discrete introduced bug that should block the patch."
         )
         == "clear"
     )
     assert (
-        loop_mod.detect_review_status(
+        runner_mod.detect_review_status(
             "I did not identify any discrete introduced bugs that would block the patch. "
             "The changed code compiles and the repository's dev-check suite passes."
         )
         == "clear"
     )
     assert (
-        loop_mod.detect_review_status(
+        runner_mod.detect_review_status(
             "I did not identify any discrete introduced bugs that should block the patch. "
             "The repository's dev-check suite passes locally."
         )
         == "clear"
     )
     assert (
-        loop_mod.detect_review_status(
+        runner_mod.detect_review_status(
             "The diff was reviewed against the merge base and the changed implementation "
             "has corresponding tests and documentation. I did not identify a discrete "
             "introduced correctness, security, or maintainability issue that should block "
@@ -98,7 +98,7 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
         == "clear"
     )
     assert (
-        loop_mod.detect_review_status(
+        runner_mod.detect_review_status(
             "The changed code and accompanying tests pass the repository's dev-check suite, "
             "and I did not identify any discrete introduced correctness, security, or "
             "maintainability issue that should block the patch."
@@ -106,7 +106,7 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
         == "clear"
     )
     assert (
-        loop_mod.detect_review_status(
+        runner_mod.detect_review_status(
             "The diff was reviewed and the repository verification suite passes. "
             "I did not identify any discrete introduced correctness, security, or "
             "maintainability issues that should block the patch."
@@ -114,25 +114,25 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
         == "clear"
     )
     assert (
-        loop_mod.detect_review_status(
+        runner_mod.detect_review_status(
             "The changes pass locally without revealing any discrete correctness issue."
         )
         == "clear"
     )
     assert (
-        loop_mod.detect_review_status(
+        runner_mod.detect_review_status(
             "I did not identify any actionable correctness, security, or maintainability issues introduced by the diff."
         )
         == "clear"
     )
     assert (
-        loop_mod.detect_review_status(
+        runner_mod.detect_review_status(
             "I did not identify any introduced correctness, security, or maintainability issues that warrant an inline finding."
         )
         == "clear"
     )
     assert (
-        loop_mod.detect_review_status(
+        runner_mod.detect_review_status(
             "I reviewed the diff against the specified merge base and did not identify "
             "any discrete introduced correctness, security, or maintainability issues "
             "that warrant inline findings. The test suite also passes locally."
@@ -140,28 +140,28 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
         == "clear"
     )
     assert (
-        loop_mod.detect_review_status(
+        runner_mod.detect_review_status(
             "I did not identify any blocking defects in this patch. The tests pass."
         )
         == "clear"
     )
     assert (
-        loop_mod.detect_review_status(
+        runner_mod.detect_review_status(
             "I did not find any new regressions in the changed paths."
         )
         == "clear"
     )
     assert (
-        loop_mod.detect_review_status("This would warrant an inline finding.") == "unknown"
+        runner_mod.detect_review_status("This would warrant an inline finding.") == "unknown"
     )
     assert (
-        loop_mod.detect_review_status(
+        runner_mod.detect_review_status(
             "The changes add the alias and tests without any clear regressions or actionable bugs."
         )
         == "clear"
     )
     assert (
-        loop_mod.detect_review_status(
+        runner_mod.detect_review_status(
             '{\n'
             '  "findings": [],\n'
             '  "explanation": "I did not identify any discrete introduced bugs that should '
@@ -171,7 +171,7 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
         == "clear"
     )
     assert (
-        loop_mod.detect_review_status(
+        runner_mod.detect_review_status(
             '{"findings": [], "overall_correctness": "patch is correct"}\n'
         )
         == "clear"
@@ -180,7 +180,7 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
 
 def test_detect_review_status_does_not_generalize_negated_clear_with_findings():
     assert (
-        loop_mod.detect_review_status(
+        runner_mod.detect_review_status(
             "I did not identify any broad design problem.\n\n"
             "Full review comments:\n\n"
             "- [P2] Fix the actual bug — src/example.py:10\n"
@@ -188,14 +188,14 @@ def test_detect_review_status_does_not_generalize_negated_clear_with_findings():
         == "findings"
     )
     assert (
-        loop_mod.detect_review_status(
+        runner_mod.detect_review_status(
             "The patch has a concrete issue. I did not identify any alternative approach.\n"
             "Please fix the failure described above."
         )
         == "unknown"
     )
     assert (
-        loop_mod.detect_review_status(
+        runner_mod.detect_review_status(
             "I did not identify any broad design problem.\n\n"
             "- [P3] Tighten docs — docs/example.md:1\n"
         )
@@ -209,14 +209,14 @@ def test_run_loop_treats_structured_empty_findings_review_as_clear(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text))
         if args[1] == "review":
-            return loop_mod.CommandResult(
+            return runner_mod.CommandResult(
                 list(args),
                 0,
                 stdout='{"findings": [], "overall_correctness": "patch is correct"}\n',
             )
         raise AssertionError(f"unexpected command: {args}")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -224,7 +224,7 @@ def test_run_loop_treats_structured_empty_findings_review_as_clear(tmp_path):
         artifact_dir=tmp_path / "artifacts",
     )
 
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
 
     assert summary["final_status"] == "clear"
     assert summary["stopped_reason"] == "review_clear"
@@ -235,14 +235,14 @@ def test_run_loop_treats_structured_empty_findings_review_as_clear(tmp_path):
 def test_run_loop_writes_replayable_events_jsonl(tmp_path, capsys):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return loop_mod.CommandResult(
+            return runner_mod.CommandResult(
                 list(args),
                 0,
                 stdout='{"findings": [], "overall_correctness": "patch is correct"}\n',
             )
         raise AssertionError(f"unexpected command: {args}")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -252,7 +252,7 @@ def test_run_loop_writes_replayable_events_jsonl(tmp_path, capsys):
         final_review=False,
     )
 
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
     replay_code = cli_main.main(["replay", str(tmp_path / "artifacts")])
     records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
 
@@ -281,7 +281,7 @@ def test_run_loop_writes_replayable_events_jsonl(tmp_path, capsys):
 
 def test_progress_warning_status_emits_warning_event(tmp_path):
     sink = events.InMemorySink("run-1")
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -299,7 +299,7 @@ def test_progress_warning_status_emits_warning_event(tmp_path):
         event_sink=sink,
     )
 
-    loop_mod.progress_event(config, "triage", "1", "warning", "suppressions unavailable", ctx=ctx)
+    runner_mod.progress_event(config, "triage", "1", "warning", "suppressions unavailable", ctx=ctx)
 
     assert sink.events[0].kind == "warning"
     assert sink.events[0].payload["message"] == "suppressions unavailable"
@@ -307,33 +307,33 @@ def test_progress_warning_status_emits_warning_event(tmp_path):
 
 def test_detect_review_status_does_not_treat_scoped_clear_prose_as_clear_when_issue_follows():
     assert (
-        loop_mod.detect_review_status(
+        runner_mod.detect_review_status(
             "I did not find any issue in the docs, but there is a bug in the CLI."
         )
         == "unknown"
     )
     assert (
-        loop_mod.detect_review_status(
+        runner_mod.detect_review_status(
             "I did not find any issue in the docs; however, there is a bug in the CLI."
         )
         == "unknown"
     )
     assert (
-        loop_mod.detect_review_status(
+        runner_mod.detect_review_status(
             "I did not find any discrete issue in the docs.\n\n"
             "However, there is a bug in the parser."
         )
         == "unknown"
     )
     assert (
-        loop_mod.detect_review_status(
+        runner_mod.detect_review_status(
             "I did not find any actionable bugs.\n\n"
             "No validation prevents this regression."
         )
         == "unknown"
     )
     assert (
-        loop_mod.detect_review_status(
+        runner_mod.detect_review_status(
             "I did not identify any introduced correctness, security, or maintainability "
             "issues that warrant an inline finding\n"
             "There is a regression in the parser."
@@ -349,7 +349,7 @@ def test_detect_review_status_ignores_stderr_transcript_noise():
         "tool output mentions review comments and examples like - [P2] historical note\n"
     )
 
-    assert loop_mod.detect_review_status(output) == "clear"
+    assert runner_mod.detect_review_status(output) == "clear"
 
 
 def test_detect_review_status_recognizes_codex_review_findings():
@@ -360,7 +360,7 @@ Full review comments:
 - [P2] Count filtered summaries after filtering — src/example.py:10-12
   This reports misleading data.
 """
-    assert loop_mod.detect_review_status(output) == "findings"
+    assert runner_mod.detect_review_status(output) == "findings"
 
 
 def test_review_status_diagnostics_explain_clear_with_stderr_noise():
@@ -370,7 +370,7 @@ def test_review_status_diagnostics_explain_clear_with_stderr_noise():
         "review comments:\n- [P2] stale transcript example\n"
     )
 
-    diagnostics = loop_mod.review_status_diagnostics(output)
+    diagnostics = runner_mod.review_status_diagnostics(output)
 
     assert diagnostics["status"] == "clear"
     assert diagnostics["clear_phrase_present"] is True
@@ -418,7 +418,7 @@ def test_extract_finding_summaries_limits_codex_findings():
 - [P2] Second bug — src/b.py:2
 - [P3] Third bug — src/c.py:3
 """
-    assert loop_mod.extract_finding_summaries(output, limit=2) == [
+    assert runner_mod.extract_finding_summaries(output, limit=2) == [
         "[P1] First bug — src/a.py:1",
         "[P2] Second bug — src/b.py:2",
     ]
@@ -434,7 +434,7 @@ def test_extract_finding_blocks_includes_short_detail():
 - [P2] Second bug — src/b.py:2
   Another detail.
 """
-    assert loop_mod.extract_finding_blocks(output, limit=2, detail_lines=2) == [
+    assert runner_mod.extract_finding_blocks(output, limit=2, detail_lines=2) == [
         [
             "[P1] First bug — src/a.py:1",
             "The first detail line.",
@@ -454,13 +454,13 @@ Full review comments:
 """
 
     assert (
-        loop_mod.extract_review_summary(output)
+        runner_mod.extract_review_summary(output)
         == "The loop can omit the only review transcript path in a failure summary."
     )
 
 
 def test_review_model_is_top_level_codex_option(tmp_path):
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -469,7 +469,7 @@ def test_review_model_is_top_level_codex_option(tmp_path):
         model="gpt-test",
     )
 
-    command = loop_mod.build_review_command(config)
+    command = runner_mod.build_review_command(config)
 
     assert command[:5] == ["codex", "--model", "gpt-test", "review", "--base"]
     assert command == ["codex", "--model", "gpt-test", "review", "--base", "main"]
@@ -480,9 +480,9 @@ def test_non_codex_review_receives_explicit_review_prompt(tmp_path):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text))
-        return loop_mod.CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         cwd=tmp_path,
@@ -491,7 +491,7 @@ def test_non_codex_review_receives_explicit_review_prompt(tmp_path):
         review_model="sonnet",
     )
 
-    loop_mod.run_loop(config, runner)
+    runner_mod.run_loop(config, runner)
 
     assert calls[0][0] == [
         "claude",
@@ -511,9 +511,9 @@ def test_opencode_review_prompt_is_passed_as_message_argument(tmp_path):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text))
-        return loop_mod.CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         cwd=tmp_path,
@@ -522,7 +522,7 @@ def test_opencode_review_prompt_is_passed_as_message_argument(tmp_path):
         review_model="provider/model",
     )
 
-    loop_mod.run_loop(config, runner)
+    runner_mod.run_loop(config, runner)
 
     assert calls[0][0][:5] == [
         "opencode",
@@ -545,13 +545,13 @@ model = "sonnet"
 """,
         encoding="utf-8",
     )
-    captured: list[loop_mod.LoopConfig] = []
+    captured: list[runner_mod.LoopConfig] = []
 
     def fake_run_loop(config):
         captured.append(config)
         return {"final_status": "clear", "stopped_reason": "review_clear"}
 
-    monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
 
     exit_code = cli_main.main(
         [
@@ -565,11 +565,11 @@ model = "sonnet"
 
     assert exit_code == 0
     assert captured[0].harness_executables == {"claude": "/tmp/claude-dev"}
-    assert loop_mod.build_review_command(captured[0])[0] == "/tmp/claude-dev"
+    assert runner_mod.build_review_command(captured[0])[0] == "/tmp/claude-dev"
 
 
 def test_model_overrides_and_reasoning_effort_are_passed_to_codex(tmp_path):
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -582,8 +582,8 @@ def test_model_overrides_and_reasoning_effort_are_passed_to_codex(tmp_path):
         remediation_reasoning_effort="low",
     )
 
-    review_command = loop_mod.build_review_command(config)
-    remediation_command = loop_mod.build_remediation_command(config)
+    review_command = runner_mod.build_review_command(config)
+    remediation_command = runner_mod.build_remediation_command(config)
 
     assert review_command[:5] == [
         "codex",
@@ -603,7 +603,7 @@ def test_model_overrides_and_reasoning_effort_are_passed_to_codex(tmp_path):
 
 
 def test_remediation_command_uses_deterministic_output_options(tmp_path):
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -612,7 +612,7 @@ def test_remediation_command_uses_deterministic_output_options(tmp_path):
         exec_json=True,
     )
 
-    command = loop_mod.build_remediation_command(config, tmp_path / "last-message.txt")
+    command = runner_mod.build_remediation_command(config, tmp_path / "last-message.txt")
 
     assert "--color" in command
     assert command[command.index("--color") + 1] == "never"
@@ -622,7 +622,7 @@ def test_remediation_command_uses_deterministic_output_options(tmp_path):
 
 
 def test_triage_command_uses_read_only_exec_with_phase_model(tmp_path):
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -632,7 +632,7 @@ def test_triage_command_uses_read_only_exec_with_phase_model(tmp_path):
         triage_reasoning_effort="low",
     )
 
-    command = loop_mod.build_triage_command(config)
+    command = runner_mod.build_triage_command(config)
 
     assert command[:4] == ["codex", "exec", "-c", 'model_reasoning_effort="low"']
     assert command[command.index("--sandbox") + 1] == "read-only"
@@ -642,7 +642,7 @@ def test_triage_command_uses_read_only_exec_with_phase_model(tmp_path):
 
 
 def test_commit_message_command_uses_read_only_exec_with_configured_model(tmp_path):
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -652,7 +652,7 @@ def test_commit_message_command_uses_read_only_exec_with_configured_model(tmp_pa
         commit_reasoning_effort="minimal",
     )
 
-    command = loop_mod.build_commit_message_command(config)
+    command = runner_mod.build_commit_message_command(config)
 
     assert command == [
         "codex",
@@ -671,19 +671,19 @@ def test_commit_message_command_uses_read_only_exec_with_configured_model(tmp_pa
 
 def test_sanitize_commit_message_uses_first_plain_subject():
     assert (
-        loop_mod.sanitize_commit_message(
+        runner_mod.sanitize_commit_message(
             'Commit message: "Harden RevRem commit flow"\n\nExplanation...',
             fallback="fallback",
         )
         == "chore: Harden RevRem commit flow (RevRem)"
     )
     assert (
-        loop_mod.sanitize_commit_message("fix(cli): stop on no-op remediation", fallback="fallback")
+        runner_mod.sanitize_commit_message("fix(cli): stop on no-op remediation", fallback="fallback")
         == "fix(cli): stop on no-op remediation (RevRem)"
     )
-    assert loop_mod.sanitize_commit_message("", fallback="fallback") == "chore: fallback (RevRem)"
+    assert runner_mod.sanitize_commit_message("", fallback="fallback") == "chore: fallback (RevRem)"
     assert (
-        loop_mod.sanitize_commit_message(
+        runner_mod.sanitize_commit_message(
             "Use custom format",
             fallback="fallback",
             enforce_revrem_conventional=False,
@@ -693,7 +693,7 @@ def test_sanitize_commit_message_uses_first_plain_subject():
 
 
 def test_commit_message_for_staged_changes_respects_profile_prompt_override(tmp_path):
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -709,14 +709,14 @@ def test_commit_message_for_staged_changes_respects_profile_prompt_override(tmp_
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text))
         if args[:4] == ["git", "diff", "--cached", "--stat"]:
-            return loop_mod.CommandResult(list(args), 0, stdout=" file.py | 2 +-\n")
+            return runner_mod.CommandResult(list(args), 0, stdout=" file.py | 2 +-\n")
         if args[:4] == ["git", "diff", "--cached", "--name-only"]:
-            return loop_mod.CommandResult(list(args), 0, stdout="file.py\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="file.py\n")
         if args[:2] == ["codex", "exec"]:
-            return loop_mod.CommandResult(list(args), 0, stdout="Use custom format\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="Use custom format\n")
         raise AssertionError(f"unexpected command: {args!r}")
 
-    message = loop_mod.commit_message_for_staged_changes(config, runner, 1)
+    message = runner_mod.commit_message_for_staged_changes(config, runner, 1)
 
     assert message == "Use custom format"
     assert "Write a custom subject." in next(
@@ -727,7 +727,7 @@ def test_commit_message_for_staged_changes_respects_profile_prompt_override(tmp_
 def test_normalize_revrem_conventional_subject_preserves_suffix_when_truncated():
     subject = "fix(cli): " + "x" * 200
 
-    normalized = loop_mod.normalize_revrem_conventional_subject(subject)
+    normalized = runner_mod.normalize_revrem_conventional_subject(subject)
 
     assert normalized.endswith(" (RevRem)")
     assert len(normalized) == 120
@@ -746,10 +746,10 @@ def test_loop_stops_after_review_reports_clear(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text))
         if args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
-        return loop_mod.CommandResult(list(args), 0, stdout="remediated\n")
+            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+        return runner_mod.CommandResult(list(args), 0, stdout="remediated\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=2,
         codex_bin="codex",
@@ -758,7 +758,7 @@ def test_loop_stops_after_review_reports_clear(tmp_path):
         check_commands=("python -m pytest tests/unit",),
     )
 
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
 
     assert summary["final_status"] == "clear"
     assert summary["stopped_reason"] == "review_clear"
@@ -783,10 +783,10 @@ def test_loop_stops_when_clear_review_has_noisy_stderr(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text))
         if args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
-        return loop_mod.CommandResult(list(args), 0, stdout="remediated\n")
+            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+        return runner_mod.CommandResult(list(args), 0, stdout="remediated\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=2,
         codex_bin="codex",
@@ -794,7 +794,7 @@ def test_loop_stops_when_clear_review_has_noisy_stderr(tmp_path):
         artifact_dir=tmp_path / "artifacts",
     )
 
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
 
     assert summary["final_status"] == "clear"
     assert [call[0][1] for call in calls] == ["review", "exec", "review"]
@@ -812,12 +812,12 @@ def test_loop_runs_optional_triage_between_review_and_remediation(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
         if args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
         if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
-            return loop_mod.CommandResult(list(args), 0, stdout="Confirmed: fix profile merge first.\n")
-        return loop_mod.CommandResult(list(args), 0, stdout="remediated\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="Confirmed: fix profile merge first.\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="remediated\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -829,7 +829,7 @@ def test_loop_runs_optional_triage_between_review_and_remediation(tmp_path):
         triage_timeout_seconds=60,
     )
 
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
 
     assert summary["final_status"] == "clear"
     assert [call[0][1] for call in calls] == ["review", "exec", "exec", "review"]
@@ -863,16 +863,16 @@ def test_loop_writes_structured_triage_artifact_and_handoff(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
         if args[1] == "review":
-            return loop_mod.CommandResult(
+            return runner_mod.CommandResult(
                 list(args),
                 0,
                 stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
             )
         if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
-            return loop_mod.CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
-        return loop_mod.CommandResult(list(args), 0, stdout="remediated\n")
+            return runner_mod.CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
+        return runner_mod.CommandResult(list(args), 0, stdout="remediated\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -882,7 +882,7 @@ def test_loop_writes_structured_triage_artifact_and_handoff(tmp_path):
         final_review=False,
     )
 
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
 
     triage_json = json.loads((tmp_path / "artifacts" / "triage-1.json").read_text(encoding="utf-8"))
     assert triage_json["run_id"] == summary["run_id"]
@@ -927,16 +927,16 @@ def test_loop_skips_remediation_when_structured_triage_finding_is_suppressed(tmp
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
         if args[1] == "review":
-            return loop_mod.CommandResult(
+            return runner_mod.CommandResult(
                 list(args),
                 0,
                 stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
             )
         if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
-            return loop_mod.CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
+            return runner_mod.CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
         raise AssertionError(f"remediation/check should not run after suppression: {args!r}")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -946,7 +946,7 @@ def test_loop_skips_remediation_when_structured_triage_finding_is_suppressed(tmp
         final_review=False,
     )
 
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
 
     triage_json = json.loads((tmp_path / "artifacts" / "triage-1.json").read_text(encoding="utf-8"))
     assert triage_json["confirmed_findings"] == []
@@ -1002,16 +1002,16 @@ def test_loop_does_not_clear_when_structured_triage_still_needs_more_info(tmp_pa
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
         if args[1] == "review":
-            return loop_mod.CommandResult(
+            return runner_mod.CommandResult(
                 list(args),
                 0,
                 stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
             )
         if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
-            return loop_mod.CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
-        return loop_mod.CommandResult(list(args), 0, stdout="remediated\n")
+            return runner_mod.CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
+        return runner_mod.CommandResult(list(args), 0, stdout="remediated\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -1021,7 +1021,7 @@ def test_loop_does_not_clear_when_structured_triage_still_needs_more_info(tmp_pa
         final_review=False,
     )
 
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
 
     triage_json = json.loads((tmp_path / "artifacts" / "triage-1.json").read_text(encoding="utf-8"))
     assert triage_json["confirmed_findings"] == []
@@ -1057,16 +1057,16 @@ def test_loop_skips_remediation_when_structured_triage_only_rejects_findings(tmp
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
         if args[1] == "review":
-            return loop_mod.CommandResult(
+            return runner_mod.CommandResult(
                 list(args),
                 0,
                 stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
             )
         if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
-            return loop_mod.CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
+            return runner_mod.CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
         raise AssertionError(f"remediation/check should not run after rejected-only triage: {args!r}")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -1076,7 +1076,7 @@ def test_loop_skips_remediation_when_structured_triage_only_rejects_findings(tmp
         final_review=False,
     )
 
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
 
     triage_json = json.loads((tmp_path / "artifacts" / "triage-1.json").read_text(encoding="utf-8"))
     assert triage_json["rejected_findings"][0]["fingerprint"] == "f1:abc123"
@@ -1140,17 +1140,17 @@ def test_loop_keeps_check_failure_gate_when_structured_triage_rejects_findings(t
         nonlocal check_attempts
         calls.append((list(args), input_text, timeout_seconds))
         if args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
         if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
-            return loop_mod.CommandResult(list(args), 0, stdout=json.dumps(next(triage_outputs)))
+            return runner_mod.CommandResult(list(args), 0, stdout=json.dumps(next(triage_outputs)))
         if args[0] == "pytest":
             check_attempts += 1
             if check_attempts == 1:
-                return loop_mod.CommandResult(list(args), 1, stdout="FAILED\n")
-            return loop_mod.CommandResult(list(args), 0, stdout="passed\n")
-        return loop_mod.CommandResult(list(args), 0, stdout="remediated\n")
+                return runner_mod.CommandResult(list(args), 1, stdout="FAILED\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="passed\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="remediated\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=2,
         codex_bin="codex",
@@ -1161,7 +1161,7 @@ def test_loop_keeps_check_failure_gate_when_structured_triage_rejects_findings(t
         check_commands=("pytest -q",),
     )
 
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
 
     assert summary["final_status"] == "unknown"
     assert summary["stopped_reason"] == "max_iterations_reached"
@@ -1273,17 +1273,17 @@ def test_loop_invalid_structured_triage_continues_with_original_review(tmp_path)
         nonlocal triage_attempts
         calls.append((list(args), input_text, timeout_seconds))
         if args[1] == "review":
-            return loop_mod.CommandResult(
+            return runner_mod.CommandResult(
                 list(args),
                 0,
                 stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
             )
         if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
             triage_attempts += 1
-            return loop_mod.CommandResult(list(args), 0, stdout='{"confirmed_findings": []')
-        return loop_mod.CommandResult(list(args), 0, stdout="remediated\n")
+            return runner_mod.CommandResult(list(args), 0, stdout='{"confirmed_findings": []')
+        return runner_mod.CommandResult(list(args), 0, stdout="remediated\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=2,
         codex_bin="codex",
@@ -1293,7 +1293,7 @@ def test_loop_invalid_structured_triage_continues_with_original_review(tmp_path)
         final_review=False,
     )
 
-    loop_mod.run_loop(config, runner)
+    runner_mod.run_loop(config, runner)
 
     diagnostics_one = json.loads((tmp_path / "artifacts" / "diagnostics-1.json").read_text(encoding="utf-8"))
     diagnostics_two = json.loads((tmp_path / "artifacts" / "diagnostics-2.json").read_text(encoding="utf-8"))
@@ -1315,20 +1315,20 @@ def test_loop_failed_triage_command_writes_diagnostics(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
         if args[1] == "review":
-            return loop_mod.CommandResult(
+            return runner_mod.CommandResult(
                 list(args),
                 0,
                 stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
             )
         if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
-            return loop_mod.CommandResult(
+            return runner_mod.CommandResult(
                 list(args),
                 -1,
                 stderr="Command timed out after 1 second\n",
             )
-        return loop_mod.CommandResult(list(args), 0, stdout="remediated\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="remediated\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -1339,8 +1339,8 @@ def test_loop_failed_triage_command_writes_diagnostics(tmp_path):
         final_review=False,
     )
 
-    with pytest.raises(loop_mod.RunLoopFailed):
-        loop_mod.run_loop(config, runner)
+    with pytest.raises(runner_mod.RunLoopFailed):
+        runner_mod.run_loop(config, runner)
 
     diagnostics_payload = json.loads(
         (tmp_path / "artifacts" / "diagnostics-1.json").read_text(encoding="utf-8")
@@ -1367,13 +1367,13 @@ def test_loop_malformed_suppressions_fail_open_for_structured_triage(tmp_path):
         nonlocal run_count
         calls.append((list(args), input_text, timeout_seconds))
         if args[1] == "review":
-            return loop_mod.CommandResult(
+            return runner_mod.CommandResult(
                 list(args),
                 0,
                 stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
             )
         if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
-            return loop_mod.CommandResult(
+            return runner_mod.CommandResult(
                 list(args),
                 0,
                 stdout=json.dumps(
@@ -1398,20 +1398,20 @@ def test_loop_malformed_suppressions_fail_open_for_structured_triage(tmp_path):
         if args[0] == "codex" and "exec" in args:
             run_count += 1
             remediation_inputs.append(input_text or "")
-            return loop_mod.CommandResult(list(args), 0, stdout="remediated\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="remediated\n")
         if args[:3] == ["git", "add", "-A"]:
-            return loop_mod.CommandResult(list(args), 0)
+            return runner_mod.CommandResult(list(args), 0)
         if args[:3] == ["git", "diff", "--cached"] and "--quiet" in args:
-            return loop_mod.CommandResult(list(args), 1)
+            return runner_mod.CommandResult(list(args), 1)
         if args[:3] == ["git", "diff", "--cached"] and "--stat" in args:
-            return loop_mod.CommandResult(list(args), 0, stdout=" src/code.py | 1 +\n")
+            return runner_mod.CommandResult(list(args), 0, stdout=" src/code.py | 1 +\n")
         if args[:3] == ["git", "diff", "--cached"] and "--name-only" in args:
-            return loop_mod.CommandResult(list(args), 0, stdout="src/code.py\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="src/code.py\n")
         if args[:3] == ["git", "commit", "-m"]:
-            return loop_mod.CommandResult(list(args), 0, stdout="[branch abc] fix(cli): harden RevRem commit flow\n")
-        return loop_mod.CommandResult(list(args), 0, stdout="passed\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="[branch abc] fix(cli): harden RevRem commit flow\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="passed\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -1422,7 +1422,7 @@ def test_loop_malformed_suppressions_fail_open_for_structured_triage(tmp_path):
         check_commands=(),
     )
 
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
 
     assert summary["final_status"] == "unknown"
     assert summary["stopped_reason"] == "max_iterations_reached"
@@ -1435,10 +1435,10 @@ def test_loop_malformed_suppressions_fail_open_for_structured_triage(tmp_path):
 def test_loop_writes_failure_summary_when_triage_fails(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout="Full review comments:\n\n- [P2] Fix profile merge\n")
-        return loop_mod.CommandResult(list(args), 1, stderr="Error: triage failed\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="Full review comments:\n\n- [P2] Fix profile merge\n")
+        return runner_mod.CommandResult(list(args), 1, stderr="Error: triage failed\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -1449,7 +1449,7 @@ def test_loop_writes_failure_summary_when_triage_fails(tmp_path):
     )
 
     try:
-        loop_mod.run_loop(config, runner)
+        runner_mod.run_loop(config, runner)
     except RuntimeError:
         pass
     else:
@@ -1476,28 +1476,28 @@ def test_loop_commits_after_passing_checks(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
         if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
-            return loop_mod.CommandResult(list(args), 0, stdout="")
+            return runner_mod.CommandResult(list(args), 0, stdout="")
         if args[0] == "codex" and "review" in args:
-            return loop_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
         if args[0] == "pytest":
-            return loop_mod.CommandResult(list(args), 0, stdout="1 passed\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="1 passed\n")
         if args[:3] == ["git", "add", "-A"]:
-            return loop_mod.CommandResult(list(args), 0)
+            return runner_mod.CommandResult(list(args), 0)
         if args[:4] == ["git", "-C", str(repo_root), "reset"]:
-            return loop_mod.CommandResult(list(args), 0)
+            return runner_mod.CommandResult(list(args), 0)
         if args[:3] == ["git", "diff", "--cached"] and "--quiet" in args:
-            return loop_mod.CommandResult(list(args), 1)
+            return runner_mod.CommandResult(list(args), 1)
         if args[:3] == ["git", "diff", "--cached"] and "--stat" in args:
-            return loop_mod.CommandResult(list(args), 0, stdout=" src/code.py | 2 +-\n")
+            return runner_mod.CommandResult(list(args), 0, stdout=" src/code.py | 2 +-\n")
         if args[:3] == ["git", "diff", "--cached"] and "--name-only" in args:
-            return loop_mod.CommandResult(list(args), 0, stdout="src/code.py\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="src/code.py\n")
         if args[0:2] == ["codex", "exec"] and "--sandbox" in args:
-            return loop_mod.CommandResult(list(args), 0, stdout="fix(cli): harden RevRem commit flow\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="fix(cli): harden RevRem commit flow\n")
         if args[:3] == ["git", "commit", "-m"]:
-            return loop_mod.CommandResult(list(args), 0, stdout="[branch abc] fix(cli): harden RevRem commit flow\n")
-        return loop_mod.CommandResult(list(args), 0, stdout="remediated\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="[branch abc] fix(cli): harden RevRem commit flow\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="remediated\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -1508,7 +1508,7 @@ def test_loop_commits_after_passing_checks(tmp_path):
         commit_message_model="gpt-5.3-codex-spark",
     )
 
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
 
     commands = [call[0] for call in calls]
     assert ["git", "add", "-A"] in commands
@@ -1535,7 +1535,7 @@ def test_loop_commits_after_passing_checks(tmp_path):
 
 def test_git_staging_commands_for_commit_reset_relative_artifact_dir(tmp_path):
     repo_root, cwd = make_git_worktree(tmp_path)
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -1543,8 +1543,8 @@ def test_git_staging_commands_for_commit_reset_relative_artifact_dir(tmp_path):
         artifact_dir=Path("../artifacts/revrem"),
     )
 
-    assert loop_mod.git_add_command_for_commit(config) == ["git", "add", "-A"]
-    assert loop_mod.git_reset_artifact_command_for_commit(config) == [
+    assert runner_mod.git_add_command_for_commit(config) == ["git", "add", "-A"]
+    assert runner_mod.git_reset_artifact_command_for_commit(config) == [
         "git",
         "-C",
         str(repo_root),
@@ -1556,7 +1556,7 @@ def test_git_staging_commands_for_commit_reset_relative_artifact_dir(tmp_path):
 
 def test_git_staging_commands_skip_relative_artifact_dir_outside_cwd(tmp_path):
     _repo_root, cwd = make_git_worktree(tmp_path)
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -1564,8 +1564,8 @@ def test_git_staging_commands_skip_relative_artifact_dir_outside_cwd(tmp_path):
         artifact_dir=Path("../../revrem-artifacts"),
     )
 
-    assert loop_mod.git_add_command_for_commit(config) == ["git", "add", "-A"]
-    assert loop_mod.git_reset_artifact_command_for_commit(config) is None
+    assert runner_mod.git_add_command_for_commit(config) == ["git", "add", "-A"]
+    assert runner_mod.git_reset_artifact_command_for_commit(config) is None
 
 
 def test_run_commit_refuses_repo_root_artifact_dir_before_staging(tmp_path):
@@ -1574,9 +1574,9 @@ def test_run_commit_refuses_repo_root_artifact_dir_before_staging(tmp_path):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
-        return loop_mod.CommandResult(list(args), 0, stdout="unexpected\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="unexpected\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -1586,7 +1586,7 @@ def test_run_commit_refuses_repo_root_artifact_dir_before_staging(tmp_path):
     )
 
     with pytest.raises(RuntimeError, match="artifact-dir resolves to the repository root"):
-        loop_mod.run_commit(config, runner, 1)
+        runner_mod.run_commit(config, runner, 1)
 
     assert calls == []
 
@@ -1603,14 +1603,14 @@ def test_loop_skips_commit_when_checks_fail(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
         if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
-            return loop_mod.CommandResult(list(args), 0, stdout="")
+            return runner_mod.CommandResult(list(args), 0, stdout="")
         if args[0] == "codex" and "review" in args:
-            return loop_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
         if args[0] == "pytest":
-            return loop_mod.CommandResult(list(args), 1, stdout="1 failed\n")
-        return loop_mod.CommandResult(list(args), 0, stdout="remediated\n")
+            return runner_mod.CommandResult(list(args), 1, stdout="1 failed\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="remediated\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -1621,7 +1621,7 @@ def test_loop_skips_commit_when_checks_fail(tmp_path):
         commit_message_model="gpt-5.3-codex-spark",
     )
 
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
 
     assert summary["iterations"][0]["check_failures"] == 1
     assert "commit_status" not in summary["iterations"][0]
@@ -1638,7 +1638,7 @@ def test_pytest_check_is_skipped_for_typescript_repo_without_python_surface(tmp_
         calls.append(list(args))
         raise AssertionError("pytest should be skipped before subprocess execution")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -1647,7 +1647,7 @@ def test_pytest_check_is_skipped_for_typescript_repo_without_python_surface(tmp_
         check_commands=("pytest -q",),
     )
 
-    results, _failed = loop_mod.run_checks(config, runner, 1)
+    results, _failed = runner_mod.run_checks(config, runner, 1)
 
     assert calls == []
     assert results[0].returncode == 0
@@ -1667,7 +1667,7 @@ def test_pytest_check_is_skipped_for_typescript_repo_with_incidental_python_file
         calls.append(list(args))
         raise AssertionError("pytest should be skipped before subprocess execution")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -1676,7 +1676,7 @@ def test_pytest_check_is_skipped_for_typescript_repo_with_incidental_python_file
         check_commands=("pytest -q",),
     )
 
-    results, _failed = loop_mod.run_checks(config, runner, 1)
+    results, _failed = runner_mod.run_checks(config, runner, 1)
 
     assert calls == []
     assert results[0].returncode == 0
@@ -1691,9 +1691,9 @@ def test_pytest_in_typescript_repo_is_normalized_when_subprocess_returns_non_pyt
 ):
     (tmp_path / "package.json").write_text('{"scripts":{"test":"vitest"}}\n', encoding="utf-8")
     command = ["pytest", "-q"]
-    result = loop_mod.CommandResult(command, returncode, stdout="pytest output\n", stderr="pytest error\n")
+    result = runner_mod.CommandResult(command, returncode, stdout="pytest output\n", stderr="pytest error\n")
 
-    normalized = loop_mod.normalize_adaptive_check_result(command, tmp_path, result)
+    normalized = runner_mod.normalize_adaptive_check_result(command, tmp_path, result)
 
     assert normalized.returncode == 0
     assert f"pytest exited {returncode}" in normalized.stdout
@@ -1704,10 +1704,10 @@ def test_pytest_in_typescript_repo_is_normalized_when_subprocess_returns_non_pyt
 def test_pytest_failure_is_preserved_for_python_repo(tmp_path):
     (tmp_path / "pyproject.toml").write_text("[project]\nname='demo'\n", encoding="utf-8")
     command = ["pytest", "-q"]
-    result = loop_mod.CommandResult(command, 5, stdout="no tests ran\n")
+    result = runner_mod.CommandResult(command, 5, stdout="no tests ran\n")
 
-    assert loop_mod.adaptive_check_skip_reason(command, tmp_path) is None
-    assert loop_mod.normalize_adaptive_check_result(command, tmp_path, result) is result
+    assert runner_mod.adaptive_check_skip_reason(command, tmp_path) is None
+    assert runner_mod.normalize_adaptive_check_result(command, tmp_path, result) is result
 
 
 def test_loop_refuses_to_auto_commit_from_dirty_worktree(tmp_path):
@@ -1716,14 +1716,14 @@ def test_loop_refuses_to_auto_commit_from_dirty_worktree(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
         if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
-            return loop_mod.CommandResult(
+            return runner_mod.CommandResult(
                 list(args),
                 0,
                 stdout=" M src/other.py\n?? notes.txt\n",
             )
         raise AssertionError(f"unexpected command: {args!r}")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -1733,7 +1733,7 @@ def test_loop_refuses_to_auto_commit_from_dirty_worktree(tmp_path):
     )
 
     with pytest.raises(RuntimeError) as excinfo:
-        loop_mod.run_loop(config, runner)
+        runner_mod.run_loop(config, runner)
 
     assert "--commit-after-remediation" in str(excinfo.value)
     assert "src/other.py" in str(excinfo.value)
@@ -1750,20 +1750,20 @@ def test_loop_stops_after_unknown_review_when_remediation_has_no_staged_changes(
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
         if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
-            return loop_mod.CommandResult(list(args), 0, stdout="")
+            return runner_mod.CommandResult(list(args), 0, stdout="")
         if args[0] == "codex" and "review" in args:
-            return loop_mod.CommandResult(list(args), 0, stdout="The implementation appears sound.\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="The implementation appears sound.\n")
         if args[0] == "pytest":
-            return loop_mod.CommandResult(list(args), 0, stdout="1 passed\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="1 passed\n")
         if args[:3] == ["git", "add", "-A"]:
-            return loop_mod.CommandResult(list(args), 0)
+            return runner_mod.CommandResult(list(args), 0)
         if args[:4] == ["git", "-C", str(repo_root), "reset"]:
-            return loop_mod.CommandResult(list(args), 0)
+            return runner_mod.CommandResult(list(args), 0)
         if args[:3] == ["git", "diff", "--cached"] and "--quiet" in args:
-            return loop_mod.CommandResult(list(args), 0)
-        return loop_mod.CommandResult(list(args), 0, stdout="No edits were needed.\n")
+            return runner_mod.CommandResult(list(args), 0)
+        return runner_mod.CommandResult(list(args), 0, stdout="No edits were needed.\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=3,
         codex_bin="codex",
@@ -1773,7 +1773,7 @@ def test_loop_stops_after_unknown_review_when_remediation_has_no_staged_changes(
         commit_after_remediation=True,
     )
 
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
 
     review_calls = [command for command, _input_text, _timeout in calls if command[0] == "codex" and "review" in command]
     assert len(review_calls) == 1
@@ -1789,22 +1789,22 @@ def test_loop_writes_failure_summary_when_commit_fails(tmp_path):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
-            return loop_mod.CommandResult(list(args), 0, stdout="")
+            return runner_mod.CommandResult(list(args), 0, stdout="")
         if args[0] == "codex" and "review" in args:
-            return loop_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
         if args[:3] == ["git", "add", "-A"]:
-            return loop_mod.CommandResult(list(args), 0)
+            return runner_mod.CommandResult(list(args), 0)
         if args[:4] == ["git", "-C", str(repo_root), "reset"]:
-            return loop_mod.CommandResult(list(args), 0)
+            return runner_mod.CommandResult(list(args), 0)
         if args[:3] == ["git", "diff", "--cached"] and "--quiet" in args:
-            return loop_mod.CommandResult(list(args), 1)
+            return runner_mod.CommandResult(list(args), 1)
         if args[:3] == ["git", "diff", "--cached"]:
-            return loop_mod.CommandResult(list(args), 0, stdout="src/code.py\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="src/code.py\n")
         if args[:3] == ["git", "commit", "-m"]:
-            return loop_mod.CommandResult(list(args), 1, stderr="nothing to commit\n")
-        return loop_mod.CommandResult(list(args), 0, stdout="ok\n")
+            return runner_mod.CommandResult(list(args), 1, stderr="nothing to commit\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="ok\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -1814,8 +1814,8 @@ def test_loop_writes_failure_summary_when_commit_fails(tmp_path):
         commit_message_model=None,
     )
 
-    with pytest.raises(loop_mod.RunLoopFailed):
-        loop_mod.run_loop(config, runner)
+    with pytest.raises(runner_mod.RunLoopFailed):
+        runner_mod.run_loop(config, runner)
 
     summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
     assert summary["final_status"] == "error"
@@ -1840,24 +1840,24 @@ def test_loop_remediates_commit_hook_failure_by_default(tmp_path):
         nonlocal commit_attempts
         calls.append((list(args), input_text, timeout_seconds))
         if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
-            return loop_mod.CommandResult(list(args), 0, stdout="")
+            return runner_mod.CommandResult(list(args), 0, stdout="")
         if args[0] == "codex" and "review" in args:
-            return loop_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
         if args[0:2] == ["codex", "exec"]:
             remediation_prompts.append(input_text or "")
-            return loop_mod.CommandResult(list(args), 0, stdout="remediated\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="remediated\n")
         if args[:3] == ["git", "add", "-A"]:
-            return loop_mod.CommandResult(list(args), 0)
+            return runner_mod.CommandResult(list(args), 0)
         if args[:4] == ["git", "-C", str(repo_root), "reset"]:
-            return loop_mod.CommandResult(list(args), 0)
+            return runner_mod.CommandResult(list(args), 0)
         if args[:3] == ["git", "diff", "--cached"] and "--quiet" in args:
-            return loop_mod.CommandResult(list(args), 1)
+            return runner_mod.CommandResult(list(args), 1)
         if args[:3] == ["git", "diff", "--cached"]:
-            return loop_mod.CommandResult(list(args), 0, stdout="src/code.py\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="src/code.py\n")
         if args[:3] == ["git", "commit", "-m"]:
             commit_attempts += 1
             if commit_attempts == 1:
-                return loop_mod.CommandResult(
+                return runner_mod.CommandResult(
                     list(args),
                     1,
                     stdout=(
@@ -1866,10 +1866,10 @@ def test_loop_remediates_commit_hook_failure_by_default(tmp_path):
                         "Found 1 error in 1 file\n"
                     ),
                 )
-            return loop_mod.CommandResult(list(args), 0, stdout="[branch abc] fix\n")
-        return loop_mod.CommandResult(list(args), 0, stdout="ok\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="[branch abc] fix\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="ok\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=2,
         codex_bin="codex",
@@ -1880,7 +1880,7 @@ def test_loop_remediates_commit_hook_failure_by_default(tmp_path):
         final_review=False,
     )
 
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
 
     assert summary["iterations"][0]["commit_status"] == "hook_failed"
     assert summary["iterations"][0]["commit_failed"] is True
@@ -1899,26 +1899,26 @@ def test_loop_stops_on_commit_hook_failure_when_policy_is_stop(tmp_path):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
-            return loop_mod.CommandResult(list(args), 0, stdout="")
+            return runner_mod.CommandResult(list(args), 0, stdout="")
         if args[0] == "codex" and "review" in args:
-            return loop_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
         if args[:3] == ["git", "add", "-A"]:
-            return loop_mod.CommandResult(list(args), 0)
+            return runner_mod.CommandResult(list(args), 0)
         if args[:4] == ["git", "-C", str(repo_root), "reset"]:
-            return loop_mod.CommandResult(list(args), 0)
+            return runner_mod.CommandResult(list(args), 0)
         if args[:3] == ["git", "diff", "--cached"] and "--quiet" in args:
-            return loop_mod.CommandResult(list(args), 1)
+            return runner_mod.CommandResult(list(args), 1)
         if args[:3] == ["git", "diff", "--cached"]:
-            return loop_mod.CommandResult(list(args), 0, stdout="src/code.py\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="src/code.py\n")
         if args[:3] == ["git", "commit", "-m"]:
-            return loop_mod.CommandResult(
+            return runner_mod.CommandResult(
                 list(args),
                 1,
                 stderr="pre-commit hook failed: mypy found 1 error\n",
             )
-        return loop_mod.CommandResult(list(args), 0, stdout="ok\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="ok\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=2,
         codex_bin="codex",
@@ -1929,8 +1929,8 @@ def test_loop_stops_on_commit_hook_failure_when_policy_is_stop(tmp_path):
         commit_on_hook_failure="stop",
     )
 
-    with pytest.raises(loop_mod.RunLoopFailed):
-        loop_mod.run_loop(config, runner)
+    with pytest.raises(runner_mod.RunLoopFailed):
+        runner_mod.run_loop(config, runner)
 
     summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
     assert summary["stopped_reason"] == "commit_hook_failed"
@@ -1946,18 +1946,18 @@ def test_run_commit_uses_no_verify_only_on_retry(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append(list(args))
         if args[:3] == ["git", "add", "-A"]:
-            return loop_mod.CommandResult(list(args), 0)
+            return runner_mod.CommandResult(list(args), 0)
         if args[:4] == ["git", "-C", str(repo_root), "reset"]:
-            return loop_mod.CommandResult(list(args), 0)
+            return runner_mod.CommandResult(list(args), 0)
         if args[:3] == ["git", "diff", "--cached"] and "--quiet" in args:
-            return loop_mod.CommandResult(list(args), 1)
+            return runner_mod.CommandResult(list(args), 1)
         if args[:3] == ["git", "diff", "--cached"]:
-            return loop_mod.CommandResult(list(args), 0, stdout="src/code.py\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="src/code.py\n")
         if args[:3] == ["git", "commit", "--no-verify"]:
-            return loop_mod.CommandResult(list(args), 0, stdout="[branch abc] fix\n")
-        return loop_mod.CommandResult(list(args), 0, stdout="ok\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="[branch abc] fix\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="ok\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -1968,22 +1968,22 @@ def test_run_commit_uses_no_verify_only_on_retry(tmp_path):
         commit_on_hook_failure="no-verify",
     )
 
-    assert loop_mod.run_commit(config, runner, 1) == "committed"
+    assert runner_mod.run_commit(config, runner, 1) == "committed"
     assert ["git", "commit", "-m", "chore: remediate review iteration 1 (RevRem)"] in calls
     assert ["git", "commit", "--no-verify", "-m", "chore: remediate review iteration 1 (RevRem)"] not in calls
 
     calls.clear()
-    assert loop_mod.run_commit(config, runner, 1, retrying=True) == "committed"
+    assert runner_mod.run_commit(config, runner, 1, retrying=True) == "committed"
     assert ["git", "commit", "--no-verify", "-m", "chore: remediate review iteration 1 (RevRem)"] in calls
 
 
 def test_debug_status_detection_writes_diagnostic_artifact(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout="No findings.\n")
-        return loop_mod.CommandResult(list(args), 0, stdout="remediated\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="No findings.\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="remediated\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -1992,7 +1992,7 @@ def test_debug_status_detection_writes_diagnostic_artifact(tmp_path):
         debug_status_detection=True,
     )
 
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
 
     diagnostic_path = tmp_path / "artifacts" / "review-1-status.json"
     assert diagnostic_path.exists()
@@ -2012,10 +2012,10 @@ def test_loop_uses_phase_specific_timeouts_for_review_remediation_and_checks(tmp
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
         if args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
-        return loop_mod.CommandResult(list(args), 0, stdout="ok\n")
+            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+        return runner_mod.CommandResult(list(args), 0, stdout="ok\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -2027,7 +2027,7 @@ def test_loop_uses_phase_specific_timeouts_for_review_remediation_and_checks(tmp
         remediation_timeout_seconds=1800,
     )
 
-    loop_mod.run_loop(config, runner)
+    runner_mod.run_loop(config, runner)
 
     assert [call[2] for call in calls] == [300, 1800, 300, 300]
 
@@ -2044,10 +2044,10 @@ def test_loop_keeps_checks_on_global_timeout_when_remediation_is_disabled(tmp_pa
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
         if args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
-        return loop_mod.CommandResult(list(args), 0, stdout="ok\n")
+            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+        return runner_mod.CommandResult(list(args), 0, stdout="ok\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -2059,7 +2059,7 @@ def test_loop_keeps_checks_on_global_timeout_when_remediation_is_disabled(tmp_pa
         remediation_timeout_seconds=0,
     )
 
-    loop_mod.run_loop(config, runner)
+    runner_mod.run_loop(config, runner)
 
     assert [call[2] for call in calls] == [300, None, 300, 300]
 
@@ -2076,10 +2076,10 @@ def test_loop_preserves_disabled_global_timeout_for_remediation_and_checks(tmp_p
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
         if args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
-        return loop_mod.CommandResult(list(args), 0, stdout="ok\n")
+            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+        return runner_mod.CommandResult(list(args), 0, stdout="ok\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -2091,7 +2091,7 @@ def test_loop_preserves_disabled_global_timeout_for_remediation_and_checks(tmp_p
         remediation_timeout_seconds=None,
     )
 
-    loop_mod.run_loop(config, runner)
+    runner_mod.run_loop(config, runner)
 
     assert [call[2] for call in calls] == [300, None, None, 300]
 
@@ -2108,10 +2108,10 @@ def test_loop_uses_default_timeout_when_phase_timeouts_are_unset(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
         if args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
-        return loop_mod.CommandResult(list(args), 0, stdout="ok\n")
+            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+        return runner_mod.CommandResult(list(args), 0, stdout="ok\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -2120,7 +2120,7 @@ def test_loop_uses_default_timeout_when_phase_timeouts_are_unset(tmp_path):
         check_commands=("python -m pytest tests/unit",),
     )
 
-    loop_mod.run_loop(config, runner)
+    runner_mod.run_loop(config, runner)
 
     assert [call[2] for call in calls] == [300, 300, 300, 300]
 
@@ -2155,12 +2155,12 @@ def test_subprocess_refresh_loop_kills_child_on_interrupt(tmp_path, monkeypatch)
     def fake_refresh():
         refresh_calls.append("refresh")
 
-    monkeypatch.setattr(loop_mod.subprocess, "Popen", fake_popen)
-    monkeypatch.setattr(loop_mod, "refresh_terminal_title", fake_refresh)
-    monkeypatch.setattr(loop_mod, "TERMINAL_TITLE_REFRESH_SECONDS", 0.01)
+    monkeypatch.setattr(runner_mod.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(runner_mod, "refresh_terminal_title", fake_refresh)
+    monkeypatch.setattr(runner_mod, "TERMINAL_TITLE_REFRESH_SECONDS", 0.01)
 
     with pytest.raises(KeyboardInterrupt):
-        loop_mod.run_subprocess_with_terminal_title_refresh(
+        runner_mod.run_subprocess_with_terminal_title_refresh(
             ["codex", "exec"],
             cwd=tmp_path,
             input="prompt",
@@ -2173,20 +2173,20 @@ def test_subprocess_refresh_loop_kills_child_on_interrupt(tmp_path, monkeypatch)
 
 
 def test_repeated_cancellation_signal_within_window_is_marked_forced(monkeypatch):
-    monkeypatch.setattr(loop_mod, "_LAST_CANCELLATION_SIGNAL_AT", None)
+    monkeypatch.setattr(runner_mod, "_LAST_CANCELLATION_SIGNAL_AT", None)
 
-    first = loop_mod.cancellation_interrupt_for_signal(loop_mod.signal.SIGINT, now=100.0)
-    second = loop_mod.cancellation_interrupt_for_signal(loop_mod.signal.SIGINT, now=103.0)
+    first = runner_mod.cancellation_interrupt_for_signal(runner_mod.signal.SIGINT, now=100.0)
+    second = runner_mod.cancellation_interrupt_for_signal(runner_mod.signal.SIGINT, now=103.0)
 
     assert "controlled cancellation" in str(first)
     assert "forced cancellation" in str(second)
 
 
 def test_cancellation_signal_after_window_starts_new_controlled_stop(monkeypatch):
-    monkeypatch.setattr(loop_mod, "_LAST_CANCELLATION_SIGNAL_AT", None)
+    monkeypatch.setattr(runner_mod, "_LAST_CANCELLATION_SIGNAL_AT", None)
 
-    loop_mod.cancellation_interrupt_for_signal(loop_mod.signal.SIGTERM, now=100.0)
-    later = loop_mod.cancellation_interrupt_for_signal(loop_mod.signal.SIGTERM, now=106.0)
+    runner_mod.cancellation_interrupt_for_signal(runner_mod.signal.SIGTERM, now=100.0)
+    later = runner_mod.cancellation_interrupt_for_signal(runner_mod.signal.SIGTERM, now=106.0)
 
     assert "controlled cancellation" in str(later)
 
@@ -2203,11 +2203,11 @@ def test_kill_process_tree_targets_child_process_group(monkeypatch):
     def fake_killpg(pid, sig):
         calls.append(("killpg", pid, sig))
 
-    monkeypatch.setattr(loop_mod.os, "killpg", fake_killpg)
+    monkeypatch.setattr(runner_mod.os, "killpg", fake_killpg)
 
-    loop_mod.kill_process_tree(FakeProcess())
+    runner_mod.kill_process_tree(FakeProcess())
 
-    assert calls == [("killpg", 12345, loop_mod.signal.SIGKILL)]
+    assert calls == [("killpg", 12345, runner_mod.signal.SIGKILL)]
 
 
 def test_subprocess_refresh_loop_does_not_resend_input_after_timeout(tmp_path, monkeypatch):
@@ -2222,7 +2222,7 @@ def test_subprocess_refresh_loop_does_not_resend_input_after_timeout(tmp_path, m
             self.communicate_calls += 1
             if self.communicate_calls == 1:
                 assert input == "prompt"
-                raise loop_mod.subprocess.TimeoutExpired(["codex", "exec"], timeout)
+                raise runner_mod.subprocess.TimeoutExpired(["codex", "exec"], timeout)
             assert input is None
             return ("stdout", "stderr")
 
@@ -2240,11 +2240,11 @@ def test_subprocess_refresh_loop_does_not_resend_input_after_timeout(tmp_path, m
     def fake_refresh():
         refresh_calls.append("refresh")
 
-    monkeypatch.setattr(loop_mod.subprocess, "Popen", fake_popen)
-    monkeypatch.setattr(loop_mod, "refresh_terminal_title", fake_refresh)
-    monkeypatch.setattr(loop_mod, "TERMINAL_TITLE_REFRESH_SECONDS", 0.01)
+    monkeypatch.setattr(runner_mod.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(runner_mod, "refresh_terminal_title", fake_refresh)
+    monkeypatch.setattr(runner_mod, "TERMINAL_TITLE_REFRESH_SECONDS", 0.01)
 
-    completed = loop_mod.run_subprocess_with_terminal_title_refresh(
+    completed = runner_mod.run_subprocess_with_terminal_title_refresh(
         ["codex", "exec"],
         cwd=tmp_path,
         input="prompt",
@@ -2258,8 +2258,8 @@ def test_subprocess_refresh_loop_does_not_resend_input_after_timeout(tmp_path, m
 
 
 def test_resolve_timeout_seconds_allows_disabling_timeout():
-    assert loop_mod.resolve_timeout_seconds(0) is None
-    assert loop_mod.resolve_timeout_seconds(900) == 900
+    assert runner_mod.resolve_timeout_seconds(0) is None
+    assert runner_mod.resolve_timeout_seconds(900) == 900
 
 
 def test_main_rejects_negative_timeout(tmp_path, monkeypatch, capsys):
@@ -2287,7 +2287,7 @@ def test_main_handles_keyboard_interrupt_without_traceback(tmp_path, monkeypatch
         raise KeyboardInterrupt
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(loop_mod, "run_loop", interrupted_run_loop)
+    monkeypatch.setattr(runner_mod, "run_loop", interrupted_run_loop)
 
     exit_code = cli_main.main([])
 
@@ -2307,10 +2307,10 @@ def test_loop_can_start_from_initial_review_file(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text))
         if args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
-        return loop_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -2319,7 +2319,7 @@ def test_loop_can_start_from_initial_review_file(tmp_path):
         initial_review_file=initial_review,
     )
 
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
 
     assert [call[0][1] for call in calls] == ["exec", "review"]
     assert calls[0][1] is not None and "Carry this forward" in calls[0][1]
@@ -2354,12 +2354,12 @@ def test_loop_writes_structured_triage_source_for_initial_review_file(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text))
         if args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout="REVIEW_STATUS: findings\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="REVIEW_STATUS: findings\n")
         if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
-            return loop_mod.CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
-        return loop_mod.CommandResult(list(args), 0, stdout="remediated\n")
+            return runner_mod.CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
+        return runner_mod.CommandResult(list(args), 0, stdout="remediated\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -2370,7 +2370,7 @@ def test_loop_writes_structured_triage_source_for_initial_review_file(tmp_path):
         final_review=False,
     )
 
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
 
     triage_json = json.loads((tmp_path / "artifacts" / "triage-1.json").read_text(encoding="utf-8"))
     assert triage_json["source_review_artifact"] == "review-initial.txt"
@@ -2389,7 +2389,7 @@ def test_resolve_initial_review_file_latest(tmp_path):
     older_review.write_text("old", encoding="utf-8")
     newer_review.write_text("new", encoding="utf-8")
 
-    assert loop_mod.resolve_initial_review_file("latest", tmp_path) == newer_review
+    assert runner_mod.resolve_initial_review_file("latest", tmp_path) == newer_review
 
 
 def test_resolve_initial_review_file_latest_returns_none_when_newest_run_is_clean(tmp_path):
@@ -2412,7 +2412,7 @@ def test_resolve_initial_review_file_latest_returns_none_when_newest_run_is_clea
     os.utime(unresolved_review, (1, 1))
     os.utime(clean_review, (2, 2))
 
-    assert loop_mod.resolve_initial_review_file("latest", tmp_path) is None
+    assert runner_mod.resolve_initial_review_file("latest", tmp_path) is None
 
 
 def test_resolve_initial_review_file_latest_returns_none_for_only_clean_runs(tmp_path):
@@ -2424,11 +2424,11 @@ def test_resolve_initial_review_file_latest_returns_none_for_only_clean_runs(tmp
         encoding="utf-8",
     )
 
-    assert loop_mod.resolve_initial_review_file("latest", tmp_path) is None
+    assert runner_mod.resolve_initial_review_file("latest", tmp_path) is None
 
 
 def test_resolve_initial_review_file_latest_returns_none_without_previous_runs(tmp_path):
-    assert loop_mod.resolve_initial_review_file("latest", tmp_path) is None
+    assert runner_mod.resolve_initial_review_file("latest", tmp_path) is None
 
 
 def test_resolve_initial_review_file_latest_skips_dry_run_review_stubs(tmp_path):
@@ -2454,7 +2454,7 @@ def test_resolve_initial_review_file_latest_skips_dry_run_review_stubs(tmp_path)
     os.utime(unresolved_review, (1, 1))
     os.utime(dry_review, (2, 2))
 
-    assert loop_mod.resolve_initial_review_file("latest", tmp_path) == unresolved_review
+    assert runner_mod.resolve_initial_review_file("latest", tmp_path) == unresolved_review
 
 
 def test_main_resolves_latest_initial_review_from_custom_artifact_dir(tmp_path, monkeypatch):
@@ -2480,7 +2480,7 @@ def test_main_resolves_latest_initial_review_from_custom_artifact_dir(tmp_path, 
 
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
-    monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
 
     exit_code = cli_main.main(
         [
@@ -2507,7 +2507,7 @@ def test_main_save_profile_writes_project_config_and_exits(tmp_path, monkeypatch
     def fail_run_loop(config):
         raise AssertionError("--save-profile should exit before running the loop")
 
-    monkeypatch.setattr(loop_mod, "run_loop", fail_run_loop)
+    monkeypatch.setattr(runner_mod, "run_loop", fail_run_loop)
 
     exit_code = cli_main.main(
         [
@@ -2566,7 +2566,7 @@ def test_main_save_profile_preserves_disabled_timeout(tmp_path, monkeypatch, cap
     def fail_run_loop(config):
         raise AssertionError("--save-profile should exit before running the loop")
 
-    monkeypatch.setattr(loop_mod, "run_loop", fail_run_loop)
+    monkeypatch.setattr(runner_mod, "run_loop", fail_run_loop)
 
     exit_code = cli_main.main(
         [
@@ -2641,7 +2641,7 @@ artifact_dir = "{custom_root}"
             "iterations": [],
         }
 
-    monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
 
     exit_code = cli_main.main(
         [
@@ -2712,7 +2712,7 @@ soft_warn_fraction = 0.5
             "iterations": [],
         }
 
-    monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
 
     exit_code = cli_main.main(["--profile", "final-pr", "--base", "main", "--dry-run"])
 
@@ -2738,7 +2738,7 @@ soft_warn_fraction = 0.5
 
 
 def test_default_artifact_dir_uses_revrem_namespace():
-    artifact_dir = loop_mod.default_artifact_dir()
+    artifact_dir = runner_mod.default_artifact_dir()
 
     assert artifact_dir.parts[:2] == (".revrem", "runs")
     assert re.fullmatch(r"\d{8}T\d{6}Z-[0-9a-f]{32}", artifact_dir.name)
@@ -2747,10 +2747,10 @@ def test_default_artifact_dir_uses_revrem_namespace():
 def test_run_loop_creates_repo_local_revrem_gitignore_for_default_artifacts(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout="No findings.\n")
-        return loop_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="No findings.\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -2759,7 +2759,7 @@ def test_run_loop_creates_repo_local_revrem_gitignore_for_default_artifacts(tmp_
         progress=False,
     )
 
-    loop_mod.run_loop(config, runner)
+    runner_mod.run_loop(config, runner)
 
     assert (tmp_path / ".revrem" / ".gitignore").read_text(encoding="utf-8") == "runs/\n"
 
@@ -2767,13 +2767,13 @@ def test_run_loop_creates_repo_local_revrem_gitignore_for_default_artifacts(tmp_
 def test_run_loop_uses_git_info_exclude_for_default_artifacts_in_git_repo(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout="No findings.\n")
-        return loop_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="No findings.\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
 
     git_info = tmp_path / ".git" / "info"
     git_info.mkdir(parents=True)
     (git_info / "exclude").write_text("# local excludes\n", encoding="utf-8")
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -2782,7 +2782,7 @@ def test_run_loop_uses_git_info_exclude_for_default_artifacts_in_git_repo(tmp_pa
         progress=False,
     )
 
-    loop_mod.run_loop(config, runner)
+    runner_mod.run_loop(config, runner)
 
     assert (git_info / "exclude").read_text(encoding="utf-8") == "# local excludes\n.revrem/runs/\n"
     assert not (tmp_path / ".revrem" / ".gitignore").exists()
@@ -2791,8 +2791,8 @@ def test_run_loop_uses_git_info_exclude_for_default_artifacts_in_git_repo(tmp_pa
 def test_run_loop_uses_repo_root_exclude_for_default_artifacts_from_subdirectory(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout="No findings.\n")
-        return loop_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="No findings.\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
 
     repo_root = tmp_path / "repo"
     worktree = repo_root / "work"
@@ -2800,7 +2800,7 @@ def test_run_loop_uses_repo_root_exclude_for_default_artifacts_from_subdirectory
     git_info.mkdir(parents=True)
     (git_info / "exclude").write_text("# local excludes\n", encoding="utf-8")
     worktree.mkdir(parents=True)
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -2809,7 +2809,7 @@ def test_run_loop_uses_repo_root_exclude_for_default_artifacts_from_subdirectory
         progress=False,
     )
 
-    loop_mod.run_loop(config, runner)
+    runner_mod.run_loop(config, runner)
 
     assert (git_info / "exclude").read_text(encoding="utf-8") == (
         "# local excludes\nwork/.revrem/runs/\n"
@@ -2820,8 +2820,8 @@ def test_run_loop_uses_repo_root_exclude_for_default_artifacts_from_subdirectory
 def test_run_loop_uses_common_exclude_for_default_artifacts_in_linked_worktree(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout="No findings.\n")
-        return loop_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="No findings.\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
 
     repo_root = tmp_path / "repo"
     common_git_dir = repo_root / ".git"
@@ -2836,7 +2836,7 @@ def test_run_loop_uses_common_exclude_for_default_artifacts_in_linked_worktree(t
     linked_worktree.mkdir()
     (linked_worktree / ".git").write_text(f"gitdir: {linked_git_dir}\n", encoding="utf-8")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -2845,7 +2845,7 @@ def test_run_loop_uses_common_exclude_for_default_artifacts_in_linked_worktree(t
         progress=False,
     )
 
-    loop_mod.run_loop(config, runner)
+    runner_mod.run_loop(config, runner)
 
     assert (common_git_dir / "info" / "exclude").read_text(encoding="utf-8") == (
         "# local excludes\n.revrem/runs/\n"
@@ -2856,14 +2856,14 @@ def test_run_loop_uses_common_exclude_for_default_artifacts_in_linked_worktree(t
 def test_run_loop_appends_repo_root_exclude_when_existing_longer_entry_contains_substring(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout="No findings.\n")
-        return loop_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="No findings.\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
 
     repo_root = tmp_path
     git_info = repo_root / ".git" / "info"
     git_info.mkdir(parents=True)
     (git_info / "exclude").write_text("work/.revrem/runs/\n", encoding="utf-8")
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -2872,7 +2872,7 @@ def test_run_loop_appends_repo_root_exclude_when_existing_longer_entry_contains_
         progress=False,
     )
 
-    loop_mod.run_loop(config, runner)
+    runner_mod.run_loop(config, runner)
 
     assert (git_info / "exclude").read_text(encoding="utf-8") == (
         "work/.revrem/runs/\n.revrem/runs/\n"
@@ -2882,8 +2882,8 @@ def test_run_loop_appends_repo_root_exclude_when_existing_longer_entry_contains_
 def test_run_loop_falls_back_to_workspace_gitignore_for_symlinked_default_artifacts(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout="No findings.\n")
-        return loop_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="No findings.\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
 
     repo_root = tmp_path / "repo"
     repo_git_info = repo_root / ".git" / "info"
@@ -2896,7 +2896,7 @@ def test_run_loop_falls_back_to_workspace_gitignore_for_symlinked_default_artifa
     linked_cwd = workspace / "linked"
     linked_cwd.symlink_to(repo_root / "nested", target_is_directory=True)
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -2905,7 +2905,7 @@ def test_run_loop_falls_back_to_workspace_gitignore_for_symlinked_default_artifa
         progress=False,
     )
 
-    loop_mod.run_loop(config, runner)
+    runner_mod.run_loop(config, runner)
 
     assert (workspace / "linked" / ".revrem" / ".gitignore").read_text(encoding="utf-8") == "runs/\n"
     assert (repo_git_info / "exclude").read_text(encoding="utf-8") == "# local excludes\n"
@@ -2941,7 +2941,7 @@ terminal_title = true
             "iterations": [],
         }
 
-    monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
 
     exit_code = cli_main.main(
         [
@@ -2992,9 +2992,9 @@ def test_run_loop_skips_commit_cleanliness_check_during_dry_run(tmp_path):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
-        return loop_mod.CommandResult(list(args), 0, stdout="should not be used\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="should not be used\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -3006,7 +3006,7 @@ def test_run_loop_skips_commit_cleanliness_check_during_dry_run(tmp_path):
         check_commands=("pytest -q",),
     )
 
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
 
     assert calls == []
     assert summary["final_status"] == "unknown"
@@ -3042,7 +3042,7 @@ output_last_message = false
             "iterations": [],
         }
 
-    monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
 
     exit_code = cli_main.main(
         [
@@ -3087,7 +3087,7 @@ enabled = true
             "iterations": [],
         }
 
-    monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
 
     exit_code = cli_main.main(
         ["--profile", "final-pr", "--no-commit-after-remediation", "--dry-run"]
@@ -3129,7 +3129,7 @@ message_model = "gpt-5.3-codex-spark"
             "iterations": [],
         }
 
-    monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
 
     exit_code = cli_main.main(
         [
@@ -3180,7 +3180,7 @@ message_prompt = "Write a custom subject."
             "iterations": [],
         }
 
-    monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
 
     exit_code = cli_main.main(["--profile", "final-pr", "--commit-message-model", "gpt-test-commit", "--dry-run"])
 
@@ -3228,7 +3228,7 @@ timeout_seconds = 30
             "iterations": [],
         }
 
-    monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
 
     exit_code = cli_main.main(
         ["--profile", "final-pr", "--reasoning-effort", "high", "--dry-run"]
@@ -3273,7 +3273,7 @@ reasoning_effort = "low"
             "iterations": [],
         }
 
-    monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
 
     exit_code = cli_main.main(
         [
@@ -3322,8 +3322,8 @@ def test_main_records_non_dry_run_history(tmp_path, monkeypatch, capsys):
             "artifact_paths": {"summary": str(config.artifact_dir / "summary.json")},
         }
 
-    monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
-    monkeypatch.setattr(loop_mod, "write_summary", lambda config, summary: None)
+    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(runner_mod, "write_summary", lambda config, summary: None)
 
     assert cli_main.main(["--base", "main"]) == 0
     output = capsys.readouterr().out
@@ -3355,9 +3355,9 @@ def test_main_records_failed_runs_in_history(tmp_path, monkeypatch, capsys):
     }
 
     def fake_run_loop(config):
-        raise loop_mod.RunLoopFailed(summary, "codex exec triage failed for iteration 1")
+        raise runner_mod.RunLoopFailed(summary, "codex exec triage failed for iteration 1")
 
-    monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
 
     assert cli_main.main(["--base", "main", "--artifact-dir", str(tmp_path / "artifacts")]) == 1
     capsys.readouterr()
@@ -3391,7 +3391,7 @@ def test_main_skips_history_for_dry_run_and_explicit_opt_out(tmp_path, monkeypat
             "stopped_reason": "review_clear",
         }
 
-    monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
 
     assert cli_main.main(["--dry-run"]) == 0
     assert cli_main.main(["--no-run-history"]) == 0
@@ -3412,7 +3412,7 @@ def test_main_skips_history_when_summary_has_no_run_id(tmp_path, monkeypatch):
             "stopped_reason": "review_clear",
         }
 
-    monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
 
     assert cli_main.main([]) == 0
     assert not (home / ".local" / "share" / "revrem" / "runs.jsonl").exists()
@@ -3477,7 +3477,7 @@ reasoning_effort = "minimal"
             "iterations": [],
         }
 
-    monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
 
     exit_code = cli_main.main(["--profile", "final-pr", "--model", "gpt-test", "--dry-run"])
 
@@ -3530,7 +3530,7 @@ quiet_progress = true
             "iterations": [],
         }
 
-    monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
 
     exit_code = cli_main.main(["--dry-run"])
 
@@ -3574,7 +3574,7 @@ timeout_seconds = 1800
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
-        return loop_mod.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
 
     assert summary_format == "text"
     assert config.timeout_seconds == 300
@@ -3582,7 +3582,7 @@ timeout_seconds = 1800
     assert config.remediation_timeout_seconds == 1800
 
     object.__setattr__(config, "preflight_enabled", False)
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
 
     assert summary["final_status"] == "clear"
     assert len(calls) == 1
@@ -3644,7 +3644,7 @@ timeout_seconds = 1800
             "iterations": [],
         }
 
-    monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
 
     exit_code = cli_main.main(["--profile", "final-pr", "--base", "main", "--dry-run"])
 
@@ -3739,8 +3739,8 @@ def test_config_new_auto_prompts_when_default_invocation_is_tty(tmp_path, monkey
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
-    monkeypatch.setattr(loop_mod.sys.stdin, "isatty", lambda: True)
-    monkeypatch.setattr(loop_mod.sys.stdout, "isatty", lambda: True)
+    monkeypatch.setattr(runner_mod.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(runner_mod.sys.stdout, "isatty", lambda: True)
     answers = iter(
         [
             "TTY profile",
@@ -3769,8 +3769,8 @@ def test_config_new_auto_skips_prompt_when_default_invocation_is_not_tty(tmp_pat
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
-    monkeypatch.setattr(loop_mod.sys.stdin, "isatty", lambda: False)
-    monkeypatch.setattr(loop_mod.sys.stdout, "isatty", lambda: False)
+    monkeypatch.setattr(runner_mod.sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr(runner_mod.sys.stdout, "isatty", lambda: False)
 
     def fail_input(_prompt):
         raise AssertionError("non-TTY default config new must not prompt")
@@ -3866,7 +3866,7 @@ def test_config_new_reports_profile_write_oserror(tmp_path, monkeypatch, capsys)
     def fail_write_user_profile(*_args, **_kwargs):
         raise OSError("permission denied")
 
-    monkeypatch.setattr(loop_mod.profiles, "write_user_profile", fail_write_user_profile)
+    monkeypatch.setattr(runner_mod.profiles, "write_user_profile", fail_write_user_profile)
 
     assert cli_main.main(["config", "new", "smoke"]) == 1
     assert "ERROR: permission denied" in capsys.readouterr().err
@@ -3905,10 +3905,10 @@ def test_loop_caps_remediation_passes_and_runs_final_review(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text))
         if args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout="Still failing.\nREVIEW_STATUS: findings\n")
-        return loop_mod.CommandResult(list(args), 0, stdout="attempted remediation\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="Still failing.\nREVIEW_STATUS: findings\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="attempted remediation\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=2,
         codex_bin="codex",
@@ -3916,7 +3916,7 @@ def test_loop_caps_remediation_passes_and_runs_final_review(tmp_path):
         artifact_dir=tmp_path / "artifacts",
     )
 
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
 
     assert summary["final_status"] == "findings"
     assert summary["stopped_reason"] == "max_iterations_reached"
@@ -3939,11 +3939,11 @@ def test_loop_finishes_clear_when_final_review_goes_green(tmp_path):
         calls.append((list(args), input_text))
         if args[1] == "review":
             if len([call for call in calls if call[0][1] == "review"]) == 1:
-                return loop_mod.CommandResult(list(args), 0, stdout="Still failing.\nREVIEW_STATUS: findings\n")
-            return loop_mod.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
-        return loop_mod.CommandResult(list(args), 0, stdout="attempted remediation\n")
+                return runner_mod.CommandResult(list(args), 0, stdout="Still failing.\nREVIEW_STATUS: findings\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="attempted remediation\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -3951,7 +3951,7 @@ def test_loop_finishes_clear_when_final_review_goes_green(tmp_path):
         artifact_dir=tmp_path / "artifacts",
     )
 
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
 
     assert summary["final_status"] == "clear"
     assert summary["stopped_reason"] == "review_clear"
@@ -3973,13 +3973,13 @@ def test_loop_continues_after_check_failure_and_feeds_output_into_next_pass(tmp_
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text))
         if args[0] == "codex" and args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
         if args[0] == "pytest":
             rc, out = next(check_outputs)
-            return loop_mod.CommandResult(list(args), rc, stdout=out)
-        return loop_mod.CommandResult(list(args), 0, stdout="remediated\n")
+            return runner_mod.CommandResult(list(args), rc, stdout=out)
+        return runner_mod.CommandResult(list(args), 0, stdout="remediated\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=2,
         codex_bin="codex",
@@ -3988,7 +3988,7 @@ def test_loop_continues_after_check_failure_and_feeds_output_into_next_pass(tmp_
         check_commands=("pytest tests/",),
     )
 
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
 
     assert summary["final_status"] == "clear"
 
@@ -4020,13 +4020,13 @@ def test_pending_check_failure_blocks_early_clear_status(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text))
         if args[0] == "codex" and args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
         if args[0] == "pytest":
             rc, out = next(check_outputs)
-            return loop_mod.CommandResult(list(args), rc, stdout=out)
-        return loop_mod.CommandResult(list(args), 0, stdout="remediated\n")
+            return runner_mod.CommandResult(list(args), rc, stdout=out)
+        return runner_mod.CommandResult(list(args), 0, stdout="remediated\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=2,
         codex_bin="codex",
@@ -4035,7 +4035,7 @@ def test_pending_check_failure_blocks_early_clear_status(tmp_path):
         check_commands=("pytest tests/",),
     )
 
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
 
     assert summary["final_status"] == "findings"
     assert summary["pending_check_failures"] is True
@@ -4050,10 +4050,10 @@ def test_skip_final_review_reports_unknown_status(tmp_path):
     """With --skip-final-review the loop must not report a stale pre-remediation status."""
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout="Issues found.\nREVIEW_STATUS: findings\n")
-        return loop_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="Issues found.\nREVIEW_STATUS: findings\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -4062,7 +4062,7 @@ def test_skip_final_review_reports_unknown_status(tmp_path):
         final_review=False,
     )
 
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
 
     assert summary["final_status"] == "unknown", (
         "status after last remediation is unknowable without a follow-up review"
@@ -4071,7 +4071,7 @@ def test_skip_final_review_reports_unknown_status(tmp_path):
 
 
 def test_final_check_failure_prevents_clear_status(tmp_path):
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -4089,12 +4089,12 @@ def test_final_check_failure_prevents_clear_status(tmp_path):
 
     def sequenced_runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[0] == "codex" and args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
         if args[0] == "pytest":
-            return loop_mod.CommandResult(list(args), 1, stdout="1 FAILED\n")
-        return loop_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return runner_mod.CommandResult(list(args), 1, stdout="1 FAILED\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
 
-    summary = loop_mod.run_loop(config, sequenced_runner)
+    summary = runner_mod.run_loop(config, sequenced_runner)
 
     assert summary["final_status"] == "findings"
     assert summary["pending_check_failures"] is True
@@ -4103,33 +4103,33 @@ def test_final_check_failure_prevents_clear_status(tmp_path):
 
 def test_detect_review_status_requires_explicit_status_line():
     """Fuzzy patterns must not flip ambiguous output to clear."""
-    assert loop_mod.detect_review_status("no findings about style, but several about logic") == "unknown"
-    assert loop_mod.detect_review_status("review is clear of syntax errors but not semantic") == "unknown"
-    assert loop_mod.detect_review_status("") == "unknown"
+    assert runner_mod.detect_review_status("no findings about style, but several about logic") == "unknown"
+    assert runner_mod.detect_review_status("review is clear of syntax errors but not semantic") == "unknown"
+    assert runner_mod.detect_review_status("") == "unknown"
 
 
 def test_review_failure_detection_allows_nonzero_findings_without_stderr():
     assert (
-        loop_mod.review_failed_to_run(
-            loop_mod.CommandResult(["codex", "review"], -9, stdout="", stderr="")
+        runner_mod.review_failed_to_run(
+            runner_mod.CommandResult(["codex", "review"], -9, stdout="", stderr="")
         )
         is True
     )
     assert (
-        loop_mod.review_failed_to_run(
-            loop_mod.CommandResult(["codex", "review"], 1, stdout="Finding\n", stderr="")
+        runner_mod.review_failed_to_run(
+            runner_mod.CommandResult(["codex", "review"], 1, stdout="Finding\n", stderr="")
         )
         is False
     )
     assert (
-        loop_mod.review_failed_to_run(
-            loop_mod.CommandResult(["codex", "review"], 1, stdout="", stderr="Error: thread/start failed")
+        runner_mod.review_failed_to_run(
+            runner_mod.CommandResult(["codex", "review"], 1, stdout="", stderr="Error: thread/start failed")
         )
         is True
     )
     assert (
-        loop_mod.review_failed_to_run(
-            loop_mod.CommandResult(["codex", "review"], 2, stdout="", stderr="error: bad args")
+        runner_mod.review_failed_to_run(
+            runner_mod.CommandResult(["codex", "review"], 2, stdout="", stderr="error: bad args")
         )
         is True
     )
@@ -4151,7 +4151,7 @@ def test_review_base_preflight_reports_unrelated_local_base_and_origin_hint(tmp_
     run_git(repo, "commit", "-m", "public launch")
     run_git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -4159,7 +4159,7 @@ def test_review_base_preflight_reports_unrelated_local_base_and_origin_hint(tmp_
         artifact_dir=repo / "artifacts",
     )
 
-    error = loop_mod.review_base_preflight_error(config)
+    error = runner_mod.review_base_preflight_error(config)
 
     assert error is not None
     assert "HEAD and base 'main' do not share a merge base" in error
@@ -4184,7 +4184,7 @@ def test_run_codex_review_fails_fast_when_base_has_no_merge_base(tmp_path):
     def runner(*_args, **_kwargs):
         raise AssertionError("codex review should not run when base preflight fails")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -4193,7 +4193,7 @@ def test_run_codex_review_fails_fast_when_base_has_no_merge_base(tmp_path):
     )
 
     with pytest.raises(RuntimeError, match="codex review failed for review-1"):
-        loop_mod.run_codex_review(config, runner, "review-1", display_label="1")
+        runner_mod.run_codex_review(config, runner, "review-1", display_label="1")
 
     artifact_text = (repo / "artifacts" / "review-1.txt").read_text(encoding="utf-8")
     assert "Review base preflight failed" in artifact_text
@@ -4214,7 +4214,7 @@ def test_doctor_json_reports_invalid_base_without_invoking_runner(tmp_path, monk
     def runner(*_args, **_kwargs):
         raise AssertionError("revrem doctor must not invoke the Codex runner")
 
-    monkeypatch.setattr(loop_mod, "default_runner", runner)
+    monkeypatch.setattr(runner_mod, "default_runner", runner)
 
     exit_code = cli_main.main(
         ["doctor", "--base", "missing", "--codex-bin", "git", "--format", "json"]
@@ -4277,7 +4277,7 @@ def test_doctor_json_reports_missing_git_as_blocking_issue(tmp_path, monkeypatch
     def fake_run(*_args, **_kwargs):
         raise FileNotFoundError("git")
 
-    monkeypatch.setattr(loop_mod.diagnostics.subprocess, "run", fake_run)
+    monkeypatch.setattr(runner_mod.diagnostics.subprocess, "run", fake_run)
 
     exit_code = cli_main.main(["doctor", "--base", "main", "--codex-bin", "git", "--format", "json"])
 
@@ -4542,7 +4542,7 @@ harness = "gemini"
             return "/usr/bin/claude"
         return None
 
-    monkeypatch.setattr(loop_mod.diagnostics.shutil, "which", fake_which)
+    monkeypatch.setattr(runner_mod.diagnostics.shutil, "which", fake_which)
     monkeypatch.chdir(repo)
 
     exit_code = cli_main.main(
@@ -4587,12 +4587,12 @@ def test_bundle_bug_report_cli_writes_output_path(tmp_path, capsys):
 
 
 def run_git(cwd: Path, *args: str) -> None:
-    result = loop_mod.subprocess.run(
+    result = runner_mod.subprocess.run(
         ["git", *args],
         cwd=cwd,
         text=True,
-        stdout=loop_mod.subprocess.PIPE,
-        stderr=loop_mod.subprocess.PIPE,
+        stdout=runner_mod.subprocess.PIPE,
+        stderr=runner_mod.subprocess.PIPE,
         check=False,
     )
     assert result.returncode == 0, result.stderr
@@ -4601,7 +4601,7 @@ def run_git(cwd: Path, *args: str) -> None:
 def test_actionable_review_output_drops_verbose_stderr_transcript():
     output = "Full review comments:\n\n- [P1] Fix the bug\n\n[stderr]\n" + ("diff --git a/x b/x\n" * 100)
 
-    assert loop_mod.actionable_review_output(output) == "Full review comments:\n\n- [P1] Fix the bug"
+    assert runner_mod.actionable_review_output(output) == "Full review comments:\n\n- [P1] Fix the bug"
 
 
 def test_trim_for_prompt_caps_large_review_text():
@@ -4630,10 +4630,10 @@ def test_remediation_prompt_uses_actionable_output_and_cap(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text))
         if args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
-        return loop_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -4642,7 +4642,7 @@ def test_remediation_prompt_uses_actionable_output_and_cap(tmp_path):
         max_remediation_input_chars=200,
     )
 
-    loop_mod.run_loop(config, runner)
+    runner_mod.run_loop(config, runner)
 
     exec_prompts = [prompt for args, prompt in calls if args[1] == "exec"]
     assert len(exec_prompts) == 1
@@ -4661,10 +4661,10 @@ def test_summary_includes_latest_review_excerpt_and_artifact_paths(tmp_path):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
-        return loop_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -4672,7 +4672,7 @@ def test_summary_includes_latest_review_excerpt_and_artifact_paths(tmp_path):
         artifact_dir=tmp_path / "artifacts",
     )
 
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
 
     assert summary["latest_review_excerpt"] == "No findings."
     assert "artifact_paths" in summary
@@ -4697,7 +4697,7 @@ def test_terminal_summary_surfaces_latest_findings_and_paths():
         "latest_review_excerpt": "Full review comments:\n\n- [P2] Fix summary counts",
     }
 
-    text = loop_mod.format_terminal_summary(summary)
+    text = runner_mod.format_terminal_summary(summary)
 
     assert "Review-remediation loop: findings (max_iterations_reached)" in text
     assert "Latest review: tmp/run/review-final.txt" in text
@@ -4721,7 +4721,7 @@ def test_terminal_summary_omits_latest_review_excerpt_when_clear():
         "latest_review_excerpt": "I did not find any discrete, actionable bugs.",
     }
 
-    text = loop_mod.format_terminal_summary(summary)
+    text = runner_mod.format_terminal_summary(summary)
 
     assert "Review-remediation loop: clear (review_clear)" in text
     assert "Latest review: tmp/run/review-1.txt" in text
@@ -4749,7 +4749,7 @@ def test_terminal_summary_prefers_commit_output_artifact():
         },
     }
 
-    text = loop_mod.format_terminal_summary(summary)
+    text = runner_mod.format_terminal_summary(summary)
 
     assert "1: review=findings, check failures: 0, commit=committed" in text
     assert "Latest commit artifact: tmp/run/commit-1.txt" in text
@@ -4765,10 +4765,10 @@ def test_summary_records_unknown_review_warning_and_bug_report(tmp_path):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
-        return loop_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -4777,8 +4777,8 @@ def test_summary_records_unknown_review_warning_and_bug_report(tmp_path):
         debug_status_detection=True,
     )
 
-    summary = loop_mod.run_loop(config, runner)
-    text = loop_mod.format_terminal_summary(summary)
+    summary = runner_mod.run_loop(config, runner)
+    text = runner_mod.format_terminal_summary(summary)
     report_path = tmp_path / "artifacts" / "unexpected-behavior-report.txt"
 
     assert summary["final_status"] == "clear"
@@ -4807,10 +4807,10 @@ def test_unknown_final_review_is_recorded_in_diagnostics(tmp_path):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
-        return loop_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -4819,7 +4819,7 @@ def test_unknown_final_review_is_recorded_in_diagnostics(tmp_path):
         debug_status_detection=True,
     )
 
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
     report_path = tmp_path / "artifacts" / "unexpected-behavior-report.txt"
     final_status_path = tmp_path / "artifacts" / "review-final-status.json"
 
@@ -4849,10 +4849,10 @@ def test_progress_logs_review_and_finding_summaries(tmp_path, capsys):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
-        return loop_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -4860,7 +4860,7 @@ def test_progress_logs_review_and_finding_summaries(tmp_path, capsys):
         artifact_dir=tmp_path / "artifacts",
     )
 
-    loop_mod.run_loop(config, runner)
+    runner_mod.run_loop(config, runner)
     captured = capsys.readouterr()
 
     assert re.search(r"\d{2}:\d{2}:\d{2}\|rev\|1\s{3}\|start: codex review --base main", captured.err)
@@ -4881,15 +4881,15 @@ def test_compact_progress_uses_local_wall_time(monkeypatch):
         def now(cls):
             return FakeNow()
 
-    monkeypatch.setattr(loop_mod, "datetime", FakeDateTime)
+    monkeypatch.setattr(runner_mod, "datetime", FakeDateTime)
 
-    assert loop_mod.compact_progress_prefix("review", "1") == "12:34:56|rev|1   |"
+    assert runner_mod.compact_progress_prefix("review", "1") == "12:34:56|rev|1   |"
 
 
 def test_rich_progress_falls_back_to_compact_once(tmp_path, capsys, monkeypatch):
-    monkeypatch.setattr(loop_mod.progress, "print_rich_event", lambda *args, **kwargs: False)
-    monkeypatch.setattr(loop_mod, "_RICH_UNAVAILABLE_WARNED", False)
-    config = loop_mod.LoopConfig(
+    monkeypatch.setattr(runner_mod.progress, "print_rich_event", lambda *args, **kwargs: False)
+    monkeypatch.setattr(runner_mod, "_RICH_UNAVAILABLE_WARNED", False)
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -4898,8 +4898,8 @@ def test_rich_progress_falls_back_to_compact_once(tmp_path, capsys, monkeypatch)
         progress_style="rich",
     )
 
-    loop_mod.progress_event(config, "review", "1", "start", "codex review --base main")
-    loop_mod.progress_event(config, "review", "1", "clear")
+    runner_mod.progress_event(config, "review", "1", "start", "codex review --base main")
+    runner_mod.progress_event(config, "review", "1", "clear")
     captured = capsys.readouterr()
 
     assert captured.err.count("rich progress unavailable; using compact output") == 1
@@ -4910,11 +4910,11 @@ def test_rich_progress_falls_back_to_compact_once(tmp_path, capsys, monkeypatch)
 def test_rich_progress_renderer_is_used_when_available(tmp_path, capsys, monkeypatch):
     calls = []
     monkeypatch.setattr(
-        loop_mod.progress,
+        runner_mod.progress,
         "print_rich_event",
         lambda phase, label, status, detail="": calls.append((phase, label, status, detail)) or True,
     )
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -4923,7 +4923,7 @@ def test_rich_progress_renderer_is_used_when_available(tmp_path, capsys, monkeyp
         progress_style="rich",
     )
 
-    loop_mod.progress_event(config, "review", "1", "start", "codex review --base main")
+    runner_mod.progress_event(config, "review", "1", "start", "codex review --base main")
 
     assert calls == [("review", "1", "start", "codex review --base main")]
     assert capsys.readouterr().err == ""
@@ -4945,10 +4945,10 @@ def test_compact_progress_wraps_to_terminal_width(tmp_path, capsys, monkeypatch)
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
-        return loop_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -4956,7 +4956,7 @@ def test_compact_progress_wraps_to_terminal_width(tmp_path, capsys, monkeypatch)
         artifact_dir=tmp_path / "artifacts",
     )
 
-    loop_mod.run_loop(config, runner)
+    runner_mod.run_loop(config, runner)
     captured = capsys.readouterr()
 
     assert re.search(r"\n\s{25}onto another aligned line\.", captured.err)
@@ -4975,10 +4975,10 @@ def test_progress_logs_finding_detail_lines(tmp_path, capsys):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
-        return loop_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -4986,7 +4986,7 @@ def test_progress_logs_finding_detail_lines(tmp_path, capsys):
         artifact_dir=tmp_path / "artifacts",
     )
 
-    loop_mod.run_loop(config, runner)
+    runner_mod.run_loop(config, runner)
     captured = capsys.readouterr()
 
     assert "This is the important detail." in captured.err
@@ -4996,10 +4996,10 @@ def test_progress_logs_finding_detail_lines(tmp_path, capsys):
 def test_quiet_progress_suppresses_progress_logs(tmp_path, capsys):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout="No findings.\n")
-        return loop_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="No findings.\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -5008,7 +5008,7 @@ def test_quiet_progress_suppresses_progress_logs(tmp_path, capsys):
         progress=False,
     )
 
-    loop_mod.run_loop(config, runner)
+    runner_mod.run_loop(config, runner)
     captured = capsys.readouterr()
 
     assert captured.err == ""
@@ -5021,7 +5021,7 @@ class TtyBuffer(io.StringIO):
 
 def test_terminal_title_tracks_review_and_remediation_phases(tmp_path, monkeypatch):
     stderr = TtyBuffer()
-    monkeypatch.setattr(loop_mod.sys, "stderr", stderr)
+    monkeypatch.setattr(runner_mod.sys, "stderr", stderr)
     review_outputs = iter(
         [
             "Needs work.\nREVIEW_STATUS: findings\n",
@@ -5031,10 +5031,10 @@ def test_terminal_title_tracks_review_and_remediation_phases(tmp_path, monkeypat
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
-        return loop_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=2,
         codex_bin="codex",
@@ -5044,27 +5044,27 @@ def test_terminal_title_tracks_review_and_remediation_phases(tmp_path, monkeypat
         terminal_title=True,
     )
 
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
     output = stderr.getvalue()
 
     assert summary["final_status"] == "clear"
-    assert output.startswith(loop_mod.TERMINAL_TITLE_SAVE)
+    assert output.startswith(runner_mod.TERMINAL_TITLE_SAVE)
     assert "\033]0;rev 1/2 RevRem\007\033]2;rev 1/2 RevRem\007" in output
     assert "\033]0;rem 1/2 RevRem\007\033]2;rem 1/2 RevRem\007" in output
     assert "\033]0;rev 2/2 RevRem\007\033]2;rev 2/2 RevRem\007" in output
-    assert output.endswith(loop_mod.TERMINAL_TITLE_RESTORE + loop_mod.CURSOR_SHOW)
+    assert output.endswith(runner_mod.TERMINAL_TITLE_RESTORE + runner_mod.CURSOR_SHOW)
 
 
 def test_terminal_title_restores_after_remediation_failure(tmp_path, monkeypatch):
     stderr = TtyBuffer()
-    monkeypatch.setattr(loop_mod.sys, "stderr", stderr)
+    monkeypatch.setattr(runner_mod.sys, "stderr", stderr)
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout="Needs work.\nREVIEW_STATUS: findings\n")
-        return loop_mod.CommandResult(list(args), 1, stderr="failed\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="Needs work.\nREVIEW_STATUS: findings\n")
+        return runner_mod.CommandResult(list(args), 1, stderr="failed\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -5075,7 +5075,7 @@ def test_terminal_title_restores_after_remediation_failure(tmp_path, monkeypatch
     )
 
     try:
-        loop_mod.run_loop(config, runner)
+        runner_mod.run_loop(config, runner)
     except RuntimeError:
         pass
     else:
@@ -5084,17 +5084,17 @@ def test_terminal_title_restores_after_remediation_failure(tmp_path, monkeypatch
     output = stderr.getvalue()
     assert "\033]0;rev 1/1 RevRem\007\033]2;rev 1/1 RevRem\007" in output
     assert "\033]0;rem 1/1 RevRem\007\033]2;rem 1/1 RevRem\007" in output
-    assert output.endswith(loop_mod.TERMINAL_TITLE_RESTORE + loop_mod.CURSOR_SHOW)
+    assert output.endswith(runner_mod.TERMINAL_TITLE_RESTORE + runner_mod.CURSOR_SHOW)
 
 
 def test_terminal_title_never_writes_to_stdout(tmp_path, monkeypatch):
     stderr = io.StringIO()
     stdout = TtyBuffer()
-    monkeypatch.setattr(loop_mod.sys, "stderr", stderr)
-    monkeypatch.setattr(loop_mod.sys, "stdout", stdout)
-    monkeypatch.setattr(loop_mod.Path, "exists", lambda self: False)
+    monkeypatch.setattr(runner_mod.sys, "stderr", stderr)
+    monkeypatch.setattr(runner_mod.sys, "stdout", stdout)
+    monkeypatch.setattr(runner_mod.Path, "exists", lambda self: False)
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -5104,7 +5104,7 @@ def test_terminal_title_never_writes_to_stdout(tmp_path, monkeypatch):
         terminal_title=True,
     )
 
-    loop_mod.set_terminal_title(config, "rev 1/1 RevRem")
+    runner_mod.set_terminal_title(config, "rev 1/1 RevRem")
 
     assert stderr.getvalue() == ""
     assert stdout.getvalue() == ""
@@ -5113,9 +5113,9 @@ def test_terminal_title_never_writes_to_stdout(tmp_path, monkeypatch):
 def test_terminal_title_is_suppressed_in_rich_mode_to_avoid_escape_leaks(tmp_path, monkeypatch):
     stderr = TtyBuffer()
     tty_sequences = []
-    monkeypatch.setattr(loop_mod.sys, "stderr", stderr)
-    monkeypatch.setattr(loop_mod, "write_terminal_control_to_tty", lambda sequence: tty_sequences.append(sequence) or True)
-    config = loop_mod.LoopConfig(
+    monkeypatch.setattr(runner_mod.sys, "stderr", stderr)
+    monkeypatch.setattr(runner_mod, "write_terminal_control_to_tty", lambda sequence: tty_sequences.append(sequence) or True)
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -5125,15 +5125,15 @@ def test_terminal_title_is_suppressed_in_rich_mode_to_avoid_escape_leaks(tmp_pat
         terminal_title=True,
     )
 
-    with loop_mod.terminal_title_context(config):
-        loop_mod.set_terminal_title(config, "rev 1/1 RevRem")
-        loop_mod.refresh_terminal_title()
+    with runner_mod.terminal_title_context(config):
+        runner_mod.set_terminal_title(config, "rev 1/1 RevRem")
+        runner_mod.refresh_terminal_title()
 
     assert stderr.getvalue() == "".join(
         (
-        loop_mod.TERMINAL_TITLE_SAVE,
-        loop_mod.CURSOR_SHOW,
-        loop_mod.TERMINAL_TITLE_RESTORE,
+        runner_mod.TERMINAL_TITLE_SAVE,
+        runner_mod.CURSOR_SHOW,
+        runner_mod.TERMINAL_TITLE_RESTORE,
         )
     )
     assert tty_sequences == []
@@ -5141,8 +5141,8 @@ def test_terminal_title_is_suppressed_in_rich_mode_to_avoid_escape_leaks(tmp_pat
 
 def test_terminal_title_context_restores_cursor_on_exit(tmp_path, monkeypatch):
     stderr = TtyBuffer()
-    monkeypatch.setattr(loop_mod.sys, "stderr", stderr)
-    config = loop_mod.LoopConfig(
+    monkeypatch.setattr(runner_mod.sys, "stderr", stderr)
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -5152,31 +5152,31 @@ def test_terminal_title_context_restores_cursor_on_exit(tmp_path, monkeypatch):
         terminal_title=True,
     )
 
-    with loop_mod.terminal_title_context(config):
-        loop_mod.set_terminal_title(config, "rev 1/1 RevRem")
+    with runner_mod.terminal_title_context(config):
+        runner_mod.set_terminal_title(config, "rev 1/1 RevRem")
 
     output = stderr.getvalue()
-    assert loop_mod.CURSOR_SHOW in output
-    assert output.endswith(loop_mod.TERMINAL_TITLE_RESTORE)
+    assert runner_mod.CURSOR_SHOW in output
+    assert output.endswith(runner_mod.TERMINAL_TITLE_RESTORE)
 
 
 def test_progress_warning_context_resets_rich_unavailable_latch(tmp_path, capsys):
-    loop_mod._RICH_UNAVAILABLE_WARNED = True
+    runner_mod._RICH_UNAVAILABLE_WARNED = True
 
-    with loop_mod.progress_warning_context():
-        loop_mod.warn_rich_unavailable("review", "1")
-        loop_mod.warn_rich_unavailable("review", "1")
+    with runner_mod.progress_warning_context():
+        runner_mod.warn_rich_unavailable("review", "1")
+        runner_mod.warn_rich_unavailable("review", "1")
 
     captured = capsys.readouterr()
     assert captured.err.count("rich progress unavailable") == 1
-    assert loop_mod._RICH_UNAVAILABLE_WARNED is True
+    assert runner_mod._RICH_UNAVAILABLE_WARNED is True
 
 
 def test_default_runner_refreshes_active_terminal_title_during_child_process(tmp_path, monkeypatch):
     stderr = TtyBuffer()
-    monkeypatch.setattr(loop_mod.sys, "stderr", stderr)
-    monkeypatch.setattr(loop_mod, "TERMINAL_TITLE_REFRESH_SECONDS", 0.01)
-    config = loop_mod.LoopConfig(
+    monkeypatch.setattr(runner_mod.sys, "stderr", stderr)
+    monkeypatch.setattr(runner_mod, "TERMINAL_TITLE_REFRESH_SECONDS", 0.01)
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -5186,11 +5186,11 @@ def test_default_runner_refreshes_active_terminal_title_during_child_process(tmp
         terminal_title=True,
     )
 
-    with loop_mod.terminal_title_context(config):
-        loop_mod.set_terminal_title(config, "rev 1/1 RevRem")
-        result = loop_mod.default_runner(
+    with runner_mod.terminal_title_context(config):
+        runner_mod.set_terminal_title(config, "rev 1/1 RevRem")
+        result = runner_mod.default_runner(
             [
-                loop_mod.sys.executable,
+                runner_mod.sys.executable,
                 "-c",
                 "import time; time.sleep(0.05); print('done')",
             ],
@@ -5204,14 +5204,14 @@ def test_default_runner_refreshes_active_terminal_title_during_child_process(tmp
     assert result.returncode == 0
     assert result.stdout == "done\n"
     assert output.count(title_sequence) >= 2
-    assert output.endswith(loop_mod.TERMINAL_TITLE_RESTORE)
+    assert output.endswith(runner_mod.TERMINAL_TITLE_RESTORE)
 
 
 def test_default_runner_does_not_refresh_terminal_title_during_rich_progress(tmp_path, monkeypatch):
     stderr = TtyBuffer()
-    monkeypatch.setattr(loop_mod.sys, "stderr", stderr)
-    monkeypatch.setattr(loop_mod, "TERMINAL_TITLE_REFRESH_SECONDS", 0.01)
-    config = loop_mod.LoopConfig(
+    monkeypatch.setattr(runner_mod.sys, "stderr", stderr)
+    monkeypatch.setattr(runner_mod, "TERMINAL_TITLE_REFRESH_SECONDS", 0.01)
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -5221,11 +5221,11 @@ def test_default_runner_does_not_refresh_terminal_title_during_rich_progress(tmp
         terminal_title=True,
     )
 
-    with loop_mod.terminal_title_context(config):
-        loop_mod.set_terminal_title(config, "rev 1/1 RevRem")
-        result = loop_mod.default_runner(
+    with runner_mod.terminal_title_context(config):
+        runner_mod.set_terminal_title(config, "rev 1/1 RevRem")
+        result = runner_mod.default_runner(
             [
-                loop_mod.sys.executable,
+                runner_mod.sys.executable,
                 "-c",
                 "import time; time.sleep(0.05); print('done')",
             ],
@@ -5239,7 +5239,7 @@ def test_default_runner_does_not_refresh_terminal_title_during_rich_progress(tmp
     assert result.returncode == 0
     assert result.stdout == "done\n"
     assert title_sequence not in output
-    assert output.endswith(loop_mod.TERMINAL_TITLE_RESTORE)
+    assert output.endswith(runner_mod.TERMINAL_TITLE_RESTORE)
 
 
 def test_subprocess_refresh_loop_stops_resending_stdin_after_timeout(tmp_path, monkeypatch):
@@ -5264,7 +5264,7 @@ def test_subprocess_refresh_loop_stops_resending_stdin_after_timeout(tmp_path, m
             self.inputs.append(input)
             if self.communicate_calls == 1:
                 assert input == "prompt"
-                raise loop_mod.subprocess.TimeoutExpired(["codex", "exec"], timeout)
+                raise runner_mod.subprocess.TimeoutExpired(["codex", "exec"], timeout)
             assert input is None
             assert not self.stdin.closed, "stdin should stay open while waiting on the same child"
             return ("stdout", "stderr")
@@ -5280,11 +5280,11 @@ def test_subprocess_refresh_loop_stops_resending_stdin_after_timeout(tmp_path, m
     def fake_refresh():
         refresh_calls.append("refresh")
 
-    monkeypatch.setattr(loop_mod.subprocess, "Popen", fake_popen)
-    monkeypatch.setattr(loop_mod, "refresh_terminal_title", fake_refresh)
-    monkeypatch.setattr(loop_mod, "TERMINAL_TITLE_REFRESH_SECONDS", 0.01)
+    monkeypatch.setattr(runner_mod.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(runner_mod, "refresh_terminal_title", fake_refresh)
+    monkeypatch.setattr(runner_mod, "TERMINAL_TITLE_REFRESH_SECONDS", 0.01)
 
-    result = loop_mod.run_subprocess_with_terminal_title_refresh(
+    result = runner_mod.run_subprocess_with_terminal_title_refresh(
         ["codex", "exec"],
         cwd=tmp_path,
         input="prompt",
@@ -5301,16 +5301,16 @@ def test_subprocess_refresh_loop_stops_resending_stdin_after_timeout(tmp_path, m
 
 def test_default_runner_timeout_records_command_cwd_and_partial_output(tmp_path, monkeypatch):
     def fake_run_subprocess(*args, **kwargs):
-        raise loop_mod.subprocess.TimeoutExpired(
+        raise runner_mod.subprocess.TimeoutExpired(
             ["codex", "exec"],
             12,
             output="partial stdout\n",
             stderr="partial stderr\n",
         )
 
-    monkeypatch.setattr(loop_mod, "run_subprocess_with_terminal_title_refresh", fake_run_subprocess)
+    monkeypatch.setattr(runner_mod, "run_subprocess_with_terminal_title_refresh", fake_run_subprocess)
 
-    result = loop_mod.default_runner(["codex", "exec"], tmp_path, "prompt", 12)
+    result = runner_mod.default_runner(["codex", "exec"], tmp_path, "prompt", 12)
 
     assert result.returncode == -1
     assert result.stdout == "partial stdout\n"
@@ -5323,7 +5323,7 @@ def test_default_runner_timeout_records_command_cwd_and_partial_output(tmp_path,
 def test_default_runner_timeout_kills_process_group_with_pipe_holding_child(tmp_path):
     start = time.monotonic()
 
-    result = loop_mod.default_runner(
+    result = runner_mod.default_runner(
         ["bash", "-lc", "sleep 30 & wait"],
         tmp_path,
         None,
@@ -5338,10 +5338,10 @@ def test_default_runner_timeout_kills_process_group_with_pipe_holding_child(tmp_
 def test_loop_writes_failure_summary_when_remediation_fails(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return loop_mod.CommandResult(list(args), 0, stdout="Full review comments:\n\n- [P1] Fix\n")
-        return loop_mod.CommandResult(list(args), 1, stderr="Error: turn/start failed\n")
+            return runner_mod.CommandResult(list(args), 0, stdout="Full review comments:\n\n- [P1] Fix\n")
+        return runner_mod.CommandResult(list(args), 1, stderr="Error: turn/start failed\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -5350,7 +5350,7 @@ def test_loop_writes_failure_summary_when_remediation_fails(tmp_path):
     )
 
     try:
-        loop_mod.run_loop(config, runner)
+        runner_mod.run_loop(config, runner)
     except RuntimeError:
         pass
     else:
@@ -5374,19 +5374,19 @@ def test_loop_stops_before_model_call_when_wall_budget_exceeded(tmp_path):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append(args)
-        return loop_mod.CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
         cwd=tmp_path,
         artifact_dir=tmp_path / "artifacts",
-        budget_config=loop_mod.budgets.BudgetConfig(max_wall_seconds=0),
+        budget_config=runner_mod.budgets.BudgetConfig(max_wall_seconds=0),
     )
 
-    with pytest.raises(loop_mod.RunLoopFailed) as excinfo:
-        loop_mod.run_loop(config, runner, budget_state=loop_mod.budgets.BudgetState(started_at_monotonic=0))
+    with pytest.raises(runner_mod.RunLoopFailed) as excinfo:
+        runner_mod.run_loop(config, runner, budget_state=runner_mod.budgets.BudgetState(started_at_monotonic=0))
 
     summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
     records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
@@ -5404,18 +5404,18 @@ def test_loop_stops_before_model_call_when_wall_budget_exceeded(tmp_path):
 
 def test_loop_emits_budget_soft_warning_before_model_call(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
-        return loop_mod.CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
         cwd=tmp_path,
         artifact_dir=tmp_path / "artifacts",
-        budget_config=loop_mod.budgets.BudgetConfig(max_wall_seconds=100, soft_warn_fraction=0.5),
+        budget_config=runner_mod.budgets.BudgetConfig(max_wall_seconds=100, soft_warn_fraction=0.5),
     )
 
-    loop_mod.run_loop(config, runner, budget_state=loop_mod.budgets.BudgetState(started_at_monotonic=time.monotonic() - 60))
+    runner_mod.run_loop(config, runner, budget_state=runner_mod.budgets.BudgetState(started_at_monotonic=time.monotonic() - 60))
 
     records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
 
@@ -5431,19 +5431,19 @@ def test_loop_records_token_charge_and_stops_before_next_model_call(tmp_path):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append(list(args))
-        return loop_mod.CommandResult(list(args), 0, stdout="REVIEW_STATUS: findings\n", tokens=10)
+        return runner_mod.CommandResult(list(args), 0, stdout="REVIEW_STATUS: findings\n", tokens=10)
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
         cwd=tmp_path,
         artifact_dir=tmp_path / "artifacts",
-        budget_config=loop_mod.budgets.BudgetConfig(max_tokens=10),
+        budget_config=runner_mod.budgets.BudgetConfig(max_tokens=10),
     )
 
-    with pytest.raises(loop_mod.RunLoopFailed) as excinfo:
-        loop_mod.run_loop(config, runner)
+    with pytest.raises(runner_mod.RunLoopFailed) as excinfo:
+        runner_mod.run_loop(config, runner)
 
     summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
     records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
@@ -5460,24 +5460,24 @@ def test_loop_records_token_charge_and_stops_before_next_model_call(tmp_path):
 
 def test_loop_records_usd_charge_and_stops_before_next_model_call(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
-        return loop_mod.CommandResult(
+        return runner_mod.CommandResult(
             list(args),
             0,
             stdout="REVIEW_STATUS: findings\n",
             usd=Decimal("1.25"),
         )
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
         cwd=tmp_path,
         artifact_dir=tmp_path / "artifacts",
-        budget_config=loop_mod.budgets.BudgetConfig(max_usd=Decimal("1.25")),
+        budget_config=runner_mod.budgets.BudgetConfig(max_usd=Decimal("1.25")),
     )
 
-    with pytest.raises(loop_mod.RunLoopFailed):
-        loop_mod.run_loop(config, runner)
+    with pytest.raises(runner_mod.RunLoopFailed):
+        runner_mod.run_loop(config, runner)
 
     summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
     records, _truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
@@ -5498,13 +5498,13 @@ def test_main_returns_exit_code_3_for_budget_ceiling(tmp_path, monkeypatch, caps
     }
 
     def fake_run_loop(_config):
-        raise loop_mod.RunLoopFailed(
+        raise runner_mod.RunLoopFailed(
             summary,
             "wall budget exceeded",
-            outcome=loop_mod.OutcomeFailed(reason="budget_ceiling_hit", error="wall budget exceeded"),
+            outcome=runner_mod.OutcomeFailed(reason="budget_ceiling_hit", error="wall budget exceeded"),
         )
 
-    monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
 
     exit_code = cli_main.main(["--max-wall-seconds", "0", "--no-run-history"])
 
@@ -5516,7 +5516,7 @@ def test_loop_writes_cancellation_summary_when_interrupted(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         raise KeyboardInterrupt
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -5524,8 +5524,8 @@ def test_loop_writes_cancellation_summary_when_interrupted(tmp_path):
         artifact_dir=tmp_path / "artifacts",
     )
 
-    with pytest.raises(loop_mod.RunLoopFailed) as excinfo:
-        loop_mod.run_loop(config, runner)
+    with pytest.raises(runner_mod.RunLoopFailed) as excinfo:
+        runner_mod.run_loop(config, runner)
 
     summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
     diagnostics_payload = json.loads(
@@ -5549,14 +5549,14 @@ def test_loop_writes_cancellation_summary_when_interrupted(tmp_path):
 
 
 def test_fake_harness_can_drive_clear_review_without_shelling_out(tmp_path, monkeypatch):
-    monkeypatch.setenv(loop_mod.harnesses.FAKE_HARNESS_ENV, "1")
+    monkeypatch.setenv(runner_mod.harnesses.FAKE_HARNESS_ENV, "1")
     calls = []
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append(list(args))
-        return loop_mod.default_runner(args, cwd, input_text, timeout_seconds)
+        return runner_mod.default_runner(args, cwd, input_text, timeout_seconds)
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -5566,7 +5566,7 @@ def test_fake_harness_can_drive_clear_review_without_shelling_out(tmp_path, monk
         review_model="review_clear",
     )
 
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
 
     assert summary["final_status"] == "clear"
     assert summary["harness"] == "fake"
@@ -5577,14 +5577,14 @@ def test_fake_harness_can_drive_clear_review_without_shelling_out(tmp_path, monk
 
 
 def test_fake_harness_can_drive_remediation_cycle(tmp_path, monkeypatch):
-    monkeypatch.setenv(loop_mod.harnesses.FAKE_HARNESS_ENV, "1")
+    monkeypatch.setenv(runner_mod.harnesses.FAKE_HARNESS_ENV, "1")
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if list(args) == ["revrem-fake-harness", "review", "--scenario", "review_findings"]:
             object.__setattr__(config, "review_model", "review_clear")
-        return loop_mod.default_runner(args, cwd, input_text, timeout_seconds)
+        return runner_mod.default_runner(args, cwd, input_text, timeout_seconds)
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -5596,7 +5596,7 @@ def test_fake_harness_can_drive_remediation_cycle(tmp_path, monkeypatch):
         remediation_model="remediation",
     )
 
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
 
     assert summary["final_status"] == "clear"
     assert summary["iterations"][0]["review_status"] == "findings"
@@ -5606,9 +5606,9 @@ def test_fake_harness_can_drive_remediation_cycle(tmp_path, monkeypatch):
 
 
 def test_fake_harness_partial_remediation_surfaces_artifact(tmp_path, monkeypatch):
-    monkeypatch.setenv(loop_mod.harnesses.FAKE_HARNESS_ENV, "1")
+    monkeypatch.setenv(runner_mod.harnesses.FAKE_HARNESS_ENV, "1")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -5620,8 +5620,8 @@ def test_fake_harness_partial_remediation_surfaces_artifact(tmp_path, monkeypatc
         remediation_model="remediation_partial",
     )
 
-    with pytest.raises(loop_mod.RunLoopFailed) as excinfo:
-        loop_mod.run_loop(config, loop_mod.default_runner)
+    with pytest.raises(runner_mod.RunLoopFailed) as excinfo:
+        runner_mod.run_loop(config, runner_mod.default_runner)
 
     assert excinfo.value.summary["stopped_reason"] == "remediation_failed"
     assert "partial progress" in (
@@ -5630,14 +5630,14 @@ def test_fake_harness_partial_remediation_surfaces_artifact(tmp_path, monkeypatc
 
 
 def test_fake_harness_can_drive_structured_triage(tmp_path, monkeypatch):
-    monkeypatch.setenv(loop_mod.harnesses.FAKE_HARNESS_ENV, "1")
+    monkeypatch.setenv(runner_mod.harnesses.FAKE_HARNESS_ENV, "1")
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if list(args) == ["revrem-fake-harness", "review", "--scenario", "review_findings"]:
             object.__setattr__(config, "review_model", "review_clear")
-        return loop_mod.default_runner(args, cwd, input_text, timeout_seconds)
+        return runner_mod.default_runner(args, cwd, input_text, timeout_seconds)
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -5652,7 +5652,7 @@ def test_fake_harness_can_drive_structured_triage(tmp_path, monkeypatch):
         triage_enabled=True,
     )
 
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
     triage_json = json.loads((tmp_path / "artifacts" / "triage-1.json").read_text(encoding="utf-8"))
 
     assert summary["final_status"] == "clear"
@@ -5660,7 +5660,7 @@ def test_fake_harness_can_drive_structured_triage(tmp_path, monkeypatch):
 
 
 def test_fake_harness_v2_triage_without_routing_uses_direct_remediation(tmp_path, monkeypatch):
-    monkeypatch.setenv(loop_mod.harnesses.FAKE_HARNESS_ENV, "1")
+    monkeypatch.setenv(runner_mod.harnesses.FAKE_HARNESS_ENV, "1")
 
     triage_payload = {
         "confirmed_findings": [
@@ -5697,10 +5697,10 @@ def test_fake_harness_v2_triage_without_routing_uses_direct_remediation(tmp_path
         if list(args) == ["revrem-fake-harness", "review", "--scenario", "review_findings"]:
             object.__setattr__(config, "review_model", "review_clear")
         if list(args) == ["revrem-fake-harness", "triage", "--scenario", "triage_valid"]:
-            return loop_mod.CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
-        return loop_mod.default_runner(args, cwd, input_text, timeout_seconds)
+            return runner_mod.CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
+        return runner_mod.default_runner(args, cwd, input_text, timeout_seconds)
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -5716,7 +5716,7 @@ def test_fake_harness_v2_triage_without_routing_uses_direct_remediation(tmp_path
         triage_contract="v2",
     )
 
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
     run_dir = tmp_path / "artifacts"
 
     assert summary["final_status"] == "clear"
@@ -5725,13 +5725,13 @@ def test_fake_harness_v2_triage_without_routing_uses_direct_remediation(tmp_path
 
 
 def test_fake_and_codex_summary_shapes_are_structurally_equivalent(tmp_path, monkeypatch):
-    monkeypatch.setenv(loop_mod.harnesses.FAKE_HARNESS_ENV, "1")
+    monkeypatch.setenv(runner_mod.harnesses.FAKE_HARNESS_ENV, "1")
     fake_dir = tmp_path / "fake"
     codex_dir = tmp_path / "codex"
     fake_dir.mkdir()
     codex_dir.mkdir()
 
-    fake_config = loop_mod.LoopConfig(
+    fake_config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -5740,7 +5740,7 @@ def test_fake_and_codex_summary_shapes_are_structurally_equivalent(tmp_path, mon
         review_harness="fake",
         review_model="review_clear",
     )
-    codex_config = loop_mod.LoopConfig(
+    codex_config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -5750,10 +5750,10 @@ def test_fake_and_codex_summary_shapes_are_structurally_equivalent(tmp_path, mon
     )
 
     def codex_runner(args, cwd, input_text=None, timeout_seconds=None):
-        return loop_mod.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
 
-    fake_summary = loop_mod.run_loop(fake_config, loop_mod.default_runner)
-    codex_summary = loop_mod.run_loop(codex_config, codex_runner)
+    fake_summary = runner_mod.run_loop(fake_config, runner_mod.default_runner)
+    codex_summary = runner_mod.run_loop(codex_config, codex_runner)
 
     assert summary_shape(fake_summary) == summary_shape(codex_summary)
     assert fake_summary["harness"] == "fake"
@@ -5762,8 +5762,8 @@ def test_fake_and_codex_summary_shapes_are_structurally_equivalent(tmp_path, mon
 
 
 def test_fake_harness_timeout_surfaces_as_review_failure(tmp_path, monkeypatch):
-    monkeypatch.setenv(loop_mod.harnesses.FAKE_HARNESS_ENV, "1")
-    config = loop_mod.LoopConfig(
+    monkeypatch.setenv(runner_mod.harnesses.FAKE_HARNESS_ENV, "1")
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -5773,8 +5773,8 @@ def test_fake_harness_timeout_surfaces_as_review_failure(tmp_path, monkeypatch):
         review_model="timeout",
     )
 
-    with pytest.raises(loop_mod.RunLoopFailed) as excinfo:
-        loop_mod.run_loop(config, loop_mod.default_runner)
+    with pytest.raises(runner_mod.RunLoopFailed) as excinfo:
+        runner_mod.run_loop(config, runner_mod.default_runner)
 
     assert excinfo.value.summary["stopped_reason"] == "review_failed"
     assert "Fake harness timeout" in (
@@ -5783,8 +5783,8 @@ def test_fake_harness_timeout_surfaces_as_review_failure(tmp_path, monkeypatch):
 
 
 def test_fake_harness_cancellation_uses_controlled_cancellation_path(tmp_path, monkeypatch):
-    monkeypatch.setenv(loop_mod.harnesses.FAKE_HARNESS_ENV, "1")
-    config = loop_mod.LoopConfig(
+    monkeypatch.setenv(runner_mod.harnesses.FAKE_HARNESS_ENV, "1")
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -5794,8 +5794,8 @@ def test_fake_harness_cancellation_uses_controlled_cancellation_path(tmp_path, m
         review_model="cancellation",
     )
 
-    with pytest.raises(loop_mod.RunLoopFailed) as excinfo:
-        loop_mod.run_loop(config, loop_mod.default_runner)
+    with pytest.raises(runner_mod.RunLoopFailed) as excinfo:
+        runner_mod.run_loop(config, runner_mod.default_runner)
 
     assert excinfo.value.summary["stopped_reason"] == "cancelled"
     records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
@@ -5804,8 +5804,8 @@ def test_fake_harness_cancellation_uses_controlled_cancellation_path(tmp_path, m
 
 
 def test_fake_harness_unsupported_surfaces_as_review_failure(tmp_path, monkeypatch):
-    monkeypatch.setenv(loop_mod.harnesses.FAKE_HARNESS_ENV, "1")
-    config = loop_mod.LoopConfig(
+    monkeypatch.setenv(runner_mod.harnesses.FAKE_HARNESS_ENV, "1")
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -5815,16 +5815,16 @@ def test_fake_harness_unsupported_surfaces_as_review_failure(tmp_path, monkeypat
         review_model="unsupported",
     )
 
-    with pytest.raises(loop_mod.RunLoopFailed) as excinfo:
-        loop_mod.run_loop(config, loop_mod.default_runner)
+    with pytest.raises(runner_mod.RunLoopFailed) as excinfo:
+        runner_mod.run_loop(config, runner_mod.default_runner)
 
     assert excinfo.value.summary["stopped_reason"] == "review_failed"
     assert "unsupported" in (tmp_path / "artifacts" / "review-1.txt").read_text(encoding="utf-8")
 
 
 def test_fake_harness_token_charge_drives_budget_ceiling(tmp_path, monkeypatch):
-    monkeypatch.setenv(loop_mod.harnesses.FAKE_HARNESS_ENV, "1")
-    config = loop_mod.LoopConfig(
+    monkeypatch.setenv(runner_mod.harnesses.FAKE_HARNESS_ENV, "1")
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -5832,11 +5832,11 @@ def test_fake_harness_token_charge_drives_budget_ceiling(tmp_path, monkeypatch):
         artifact_dir=tmp_path / "artifacts",
         review_harness="fake",
         review_model="cost_ceiling",
-        budget_config=loop_mod.budgets.BudgetConfig(max_tokens=10),
+        budget_config=runner_mod.budgets.BudgetConfig(max_tokens=10),
     )
 
-    with pytest.raises(loop_mod.RunLoopFailed) as excinfo:
-        loop_mod.run_loop(config, loop_mod.default_runner)
+    with pytest.raises(runner_mod.RunLoopFailed) as excinfo:
+        runner_mod.run_loop(config, runner_mod.default_runner)
 
     summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
     records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
@@ -5850,24 +5850,24 @@ def test_fake_harness_token_charge_drives_budget_ceiling(tmp_path, monkeypatch):
 
 
 def test_summary_records_git_state_for_resume(tmp_path, monkeypatch):
-    monkeypatch.setattr(loop_mod, "lexical_git_repo_root", lambda _cwd: tmp_path)
+    monkeypatch.setattr(runner_mod, "lexical_git_repo_root", lambda _cwd: tmp_path)
 
     def fake_run_git_preflight(cwd, args):
         if list(args) == ["rev-parse", "HEAD"]:
-            return loop_mod.CommandResult(["git", *args], 0, stdout="head-sha\n")
+            return runner_mod.CommandResult(["git", *args], 0, stdout="head-sha\n")
         if list(args) == ["rev-parse", "--verify", "main^{commit}"]:
-            return loop_mod.CommandResult(["git", *args], 0, stdout="base-sha\n")
+            return runner_mod.CommandResult(["git", *args], 0, stdout="base-sha\n")
         if list(args) == ["merge-base", "HEAD", "main"]:
-            return loop_mod.CommandResult(["git", *args], 0, stdout="merge-sha\n")
-        return loop_mod.CommandResult(["git", *args], 1, stderr="unexpected")
+            return runner_mod.CommandResult(["git", *args], 0, stdout="merge-sha\n")
+        return runner_mod.CommandResult(["git", *args], 1, stderr="unexpected")
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
-        return loop_mod.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
 
-    monkeypatch.setattr(loop_mod, "run_git_preflight", fake_run_git_preflight)
+    monkeypatch.setattr(runner_mod, "run_git_preflight", fake_run_git_preflight)
 
-    summary = loop_mod.run_loop(
-        loop_mod.LoopConfig(
+    summary = runner_mod.run_loop(
+        runner_mod.LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",
@@ -5887,30 +5887,30 @@ def test_summary_records_git_state_for_resume(tmp_path, monkeypatch):
 
 
 def test_resume_payload_preserves_full_auto_and_budget_limits(tmp_path, monkeypatch):
-    monkeypatch.setattr(loop_mod, "lexical_git_repo_root", lambda _cwd: tmp_path)
+    monkeypatch.setattr(runner_mod, "lexical_git_repo_root", lambda _cwd: tmp_path)
 
     def fake_run_git_preflight(cwd, args):
         if list(args) == ["rev-parse", "HEAD"]:
-            return loop_mod.CommandResult(["git", *args], 0, stdout="head-sha\n")
+            return runner_mod.CommandResult(["git", *args], 0, stdout="head-sha\n")
         if list(args) == ["rev-parse", "--verify", "main^{commit}"]:
-            return loop_mod.CommandResult(["git", *args], 0, stdout="base-sha\n")
+            return runner_mod.CommandResult(["git", *args], 0, stdout="base-sha\n")
         if list(args) == ["merge-base", "HEAD", "main"]:
-            return loop_mod.CommandResult(["git", *args], 0, stdout="merge-sha\n")
-        return loop_mod.CommandResult(["git", *args], 1, stderr="unexpected")
+            return runner_mod.CommandResult(["git", *args], 0, stdout="merge-sha\n")
+        return runner_mod.CommandResult(["git", *args], 1, stderr="unexpected")
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
-        return loop_mod.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
 
-    monkeypatch.setattr(loop_mod, "run_git_preflight", fake_run_git_preflight)
+    monkeypatch.setattr(runner_mod, "run_git_preflight", fake_run_git_preflight)
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
         cwd=tmp_path,
         artifact_dir=tmp_path / "artifacts",
         full_auto=False,
-        budget_config=loop_mod.budgets.BudgetConfig(
+        budget_config=runner_mod.budgets.BudgetConfig(
             max_wall_seconds=12.5,
             max_tokens=100,
             max_usd=Decimal("1.25"),
@@ -5918,7 +5918,7 @@ def test_resume_payload_preserves_full_auto_and_budget_limits(tmp_path, monkeypa
         ),
     )
 
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
     resumed, _budget_state = resume_mod.resume_loop_config(summary, run_dir=tmp_path / "artifacts")
 
     assert summary["resume_config"]["full_auto"] is False
@@ -5997,13 +5997,13 @@ def test_resume_loop_config_rejects_float_max_usd(tmp_path):
 
 
 def test_summary_records_unavailable_git_state_outside_git(tmp_path, monkeypatch):
-    monkeypatch.setattr(loop_mod, "lexical_git_repo_root", lambda _cwd: None)
+    monkeypatch.setattr(runner_mod, "lexical_git_repo_root", lambda _cwd: None)
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
-        return loop_mod.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
 
-    summary = loop_mod.run_loop(
-        loop_mod.LoopConfig(
+    summary = runner_mod.run_loop(
+        runner_mod.LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",
@@ -6042,13 +6042,13 @@ def test_main_returns_exit_code_5_for_controlled_cancellation(tmp_path, monkeypa
     }
 
     def fake_run_loop(_config):
-        raise loop_mod.RunLoopFailed(
+        raise runner_mod.RunLoopFailed(
             summary,
             "cancelled by operator",
-            outcome=loop_mod.OutcomeFailed(reason="cancelled", error="cancelled by operator"),
+            outcome=runner_mod.OutcomeFailed(reason="cancelled", error="cancelled by operator"),
         )
 
-    monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
 
     exit_code = cli_main.main(["--no-run-history"])
 
@@ -6058,9 +6058,9 @@ def test_main_returns_exit_code_5_for_controlled_cancellation(tmp_path, monkeypa
 
 def test_loop_writes_failure_summary_when_initial_review_invocation_fails(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
-        return loop_mod.CommandResult(list(args), 1, stderr="Error: failed to create session\n")
+        return runner_mod.CommandResult(list(args), 1, stderr="Error: failed to create session\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -6068,8 +6068,8 @@ def test_loop_writes_failure_summary_when_initial_review_invocation_fails(tmp_pa
         artifact_dir=tmp_path / "artifacts",
     )
 
-    with pytest.raises(loop_mod.RunLoopFailed) as excinfo:
-        loop_mod.run_loop(config, runner)
+    with pytest.raises(runner_mod.RunLoopFailed) as excinfo:
+        runner_mod.run_loop(config, runner)
 
     summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
     review_path = tmp_path / "artifacts" / "review-1.txt"
@@ -6098,11 +6098,11 @@ def test_loop_writes_failure_summary_when_final_review_invocation_fails(tmp_path
         if args[1] == "review":
             review_calls += 1
             if review_calls == 1:
-                return loop_mod.CommandResult(list(args), 0, stdout="Still failing.\nREVIEW_STATUS: findings\n")
-            return loop_mod.CommandResult(list(args), 1, stderr="Error: failed to create session\n")
-        return loop_mod.CommandResult(list(args), 0, stdout="attempted remediation\n")
+                return runner_mod.CommandResult(list(args), 0, stdout="Still failing.\nREVIEW_STATUS: findings\n")
+            return runner_mod.CommandResult(list(args), 1, stderr="Error: failed to create session\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="attempted remediation\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -6110,8 +6110,8 @@ def test_loop_writes_failure_summary_when_final_review_invocation_fails(tmp_path
         artifact_dir=tmp_path / "artifacts",
     )
 
-    with pytest.raises(loop_mod.RunLoopFailed) as excinfo:
-        loop_mod.run_loop(config, runner)
+    with pytest.raises(runner_mod.RunLoopFailed) as excinfo:
+        runner_mod.run_loop(config, runner)
 
     summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
     review_path = tmp_path / "artifacts" / "review-final.txt"
@@ -6140,12 +6140,12 @@ def test_append_run_history_preserves_budget_totals(tmp_path, monkeypatch):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return loop_mod.CommandResult(
+            return runner_mod.CommandResult(
                 list(args), 0, stdout="No findings.\nREVIEW_STATUS: clear\n", tokens=500, usd=Decimal("0.03")
             )
-        return loop_mod.CommandResult(list(args), 0, stdout="ok\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="ok\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -6153,13 +6153,13 @@ def test_append_run_history_preserves_budget_totals(tmp_path, monkeypatch):
         artifact_dir=tmp_path / "artifacts",
     )
 
-    summary = loop_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner)
     budgets_before = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))["budgets"]
 
     assert budgets_before["tokens"] == 500
     assert budgets_before["usd"] == "0.03"
 
-    history_path = loop_mod.append_run_history(summary, config)
+    history_path = runner_mod.append_run_history(summary, config)
     budgets_after = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))["budgets"]
 
     assert history_path == home / ".local" / "share" / "revrem" / "runs.jsonl"
@@ -6168,10 +6168,10 @@ def test_append_run_history_preserves_budget_totals(tmp_path, monkeypatch):
 
 
 def test_budget_exceeded_propagates_through_triage(tmp_path, monkeypatch):
-    exc = loop_mod.budgets.BudgetExceeded(ceiling="tokens", limit=100, actual=150)
+    exc = runner_mod.budgets.BudgetExceeded(ceiling="tokens", limit=100, actual=150)
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
-        return loop_mod.CommandResult(
+        return runner_mod.CommandResult(
             list(args), 0, stdout="## Finding\nbad code\nREVIEW_STATUS: findings\n"
         )
 
@@ -6179,7 +6179,7 @@ def test_budget_exceeded_propagates_through_triage(tmp_path, monkeypatch):
     import code_review_loop.adapters.triage as _triage_mod
     monkeypatch.setattr(_triage_mod.TriageAdapter, "execute", lambda *a, **kw: (_ for _ in ()).throw(exc))
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=2,
         codex_bin="codex",
@@ -6188,17 +6188,17 @@ def test_budget_exceeded_propagates_through_triage(tmp_path, monkeypatch):
         triage_enabled=True,
     )
 
-    with pytest.raises(loop_mod.RunLoopFailed) as excinfo:
-        loop_mod.run_loop(config, runner)
+    with pytest.raises(runner_mod.RunLoopFailed) as excinfo:
+        runner_mod.run_loop(config, runner)
 
     assert excinfo.value.summary["stopped_reason"] == "budget_ceiling_hit"
 
 
 def test_budget_exceeded_propagates_through_remediation(tmp_path, monkeypatch):
-    exc = loop_mod.budgets.BudgetExceeded(ceiling="tokens", limit=100, actual=150)
+    exc = runner_mod.budgets.BudgetExceeded(ceiling="tokens", limit=100, actual=150)
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
-        return loop_mod.CommandResult(
+        return runner_mod.CommandResult(
             list(args), 0, stdout="## Finding\nbad code\nREVIEW_STATUS: findings\n"
         )
 
@@ -6206,7 +6206,7 @@ def test_budget_exceeded_propagates_through_remediation(tmp_path, monkeypatch):
     import code_review_loop.adapters.remediation as _rem_mod
     monkeypatch.setattr(_rem_mod.RemediationAdapter, "execute", lambda *a, **kw: (_ for _ in ()).throw(exc))
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=2,
         codex_bin="codex",
@@ -6214,19 +6214,19 @@ def test_budget_exceeded_propagates_through_remediation(tmp_path, monkeypatch):
         artifact_dir=tmp_path / "artifacts",
     )
 
-    with pytest.raises(loop_mod.RunLoopFailed) as excinfo:
-        loop_mod.run_loop(config, runner)
+    with pytest.raises(runner_mod.RunLoopFailed) as excinfo:
+        runner_mod.run_loop(config, runner)
 
     assert excinfo.value.summary["stopped_reason"] == "budget_ceiling_hit"
 
 
 def test_budget_exceeded_propagates_through_commit(tmp_path, monkeypatch):
-    exc = loop_mod.budgets.BudgetExceeded(ceiling="tokens", limit=100, actual=150)
+    exc = runner_mod.budgets.BudgetExceeded(ceiling="tokens", limit=100, actual=150)
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if "status" in args:
-            return loop_mod.CommandResult(list(args), 0, stdout="")
-        return loop_mod.CommandResult(
+            return runner_mod.CommandResult(list(args), 0, stdout="")
+        return runner_mod.CommandResult(
             list(args), 0, stdout="## Finding\nbad code\nREVIEW_STATUS: findings\n"
         )
 
@@ -6234,7 +6234,7 @@ def test_budget_exceeded_propagates_through_commit(tmp_path, monkeypatch):
     import code_review_loop.adapters.commit as _commit_mod
     monkeypatch.setattr(_commit_mod.CommitAdapter, "execute", lambda *a, **kw: (_ for _ in ()).throw(exc))
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=2,
         codex_bin="codex",
@@ -6243,8 +6243,8 @@ def test_budget_exceeded_propagates_through_commit(tmp_path, monkeypatch):
         commit_after_remediation=True,
     )
 
-    with pytest.raises(loop_mod.RunLoopFailed) as excinfo:
-        loop_mod.run_loop(config, runner)
+    with pytest.raises(runner_mod.RunLoopFailed) as excinfo:
+        runner_mod.run_loop(config, runner)
 
     assert excinfo.value.summary["stopped_reason"] == "budget_ceiling_hit"
 
@@ -6260,9 +6260,9 @@ def test_run_loop_preserves_existing_events_on_resume(tmp_path):
             f.write(json.dumps(event.to_dict()) + "\n")
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
-        return loop_mod.CommandResult(list(args), 0, stdout="No findings.\nREVIEW_STATUS: clear\n")
+        return runner_mod.CommandResult(list(args), 0, stdout="No findings.\nREVIEW_STATUS: clear\n")
 
-    config = loop_mod.LoopConfig(
+    config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -6270,7 +6270,7 @@ def test_run_loop_preserves_existing_events_on_resume(tmp_path):
         artifact_dir=artifact_dir,
     )
 
-    loop_mod.run_loop(config, runner)
+    runner_mod.run_loop(config, runner)
 
     preserved = artifact_dir / "events-original-run.jsonl"
     assert preserved.is_file()

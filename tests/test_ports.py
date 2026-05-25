@@ -29,10 +29,10 @@ def test_command_result_is_homed_in_core_ports():
     assert result.stdout == "ok"
 
 
-def test_loop_reexports_the_same_command_result_object_during_driver_migration():
-    from code_review_loop import loop
+def test_runner_reexports_the_same_command_result_object_during_driver_migration():
+    from code_review_loop import runner
 
-    assert loop.CommandResult is CommandResult
+    assert runner.CommandResult is CommandResult
 
 
 def test_ports_surface_exposes_the_declared_protocols():

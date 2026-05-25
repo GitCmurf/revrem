@@ -47,7 +47,7 @@ def _build_subcommand_registry() -> dict[str, Callable[[Sequence[str]], int]]:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    from code_review_loop import loop
+    from code_review_loop import runner
 
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     if raw_argv:
@@ -90,12 +90,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     try:
-        summary = loop.run_loop(config)
-    except loop.RunLoopFailed as exc:
+        summary = runner.run_loop(config)
+    except runner.RunLoopFailed as exc:
         summary = exc.summary
         if not args.dry_run and not args.no_run_history and summary.get("run_id"):
             try:
-                loop.append_run_history(summary, config)
+                runner.append_run_history(summary, config)
             except OSError as history_exc:
                 print(f"WARNING: could not write run history: {history_exc}", file=sys.stderr)
         print(f"ERROR: {exc}", file=sys.stderr)
@@ -109,12 +109,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if not args.dry_run and not args.no_run_history and summary.get("run_id"):
         try:
-            loop.append_run_history(summary, config)
+            runner.append_run_history(summary, config)
         except OSError as exc:
             print(f"WARNING: could not write run history: {exc}", file=sys.stderr)
 
     if summary_format in {"text", "both"}:
-        print(loop.format_terminal_summary(summary))
+        print(runner.format_terminal_summary(summary))
     if summary_format in {"json", "both"}:
         if summary_format == "both":
             print()

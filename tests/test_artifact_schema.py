@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from code_review_loop import diagnostics
-from code_review_loop import loop as cli_module
+from code_review_loop import runner as cli_module
 from code_review_loop._compat_jsonschema import Draft202012Validator, validate
 
 ROOT = Path(__file__).resolve().parents[1]

@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from support.phase_harnesses import phase_harness_kwargs
 
-import code_review_loop.loop as loop_mod
+import code_review_loop.runner as runner_mod
 from code_review_loop.adapters.remediation import RemediationAdapter
 from code_review_loop.clock import Clock
 from code_review_loop.core.ports import (
@@ -33,7 +33,7 @@ def _ctx(runner=None, **kwargs: object) -> RunContext:
 class TestRemediationAdapter:
     def test_dry_run_returns_outcome(self, tmp_path: Path) -> None:
         (tmp_path / "artifacts").mkdir()
-        config = loop_mod.LoopConfig(
+        config = runner_mod.LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",
@@ -57,7 +57,7 @@ class TestRemediationAdapter:
 
     def test_resolved_route_threaded_through(self, tmp_path: Path) -> None:
         (tmp_path / "artifacts").mkdir()
-        config = loop_mod.LoopConfig(
+        config = runner_mod.LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",
@@ -86,7 +86,7 @@ class TestRemediationAdapter:
 
     def test_runtime_error_propagates(self, tmp_path: Path) -> None:
         (tmp_path / "artifacts").mkdir()
-        config = loop_mod.LoopConfig(
+        config = runner_mod.LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",

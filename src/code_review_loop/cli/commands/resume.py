@@ -7,7 +7,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from code_review_loop import diagnostics, resume
+from code_review_loop import diagnostics, resume, runner
 from code_review_loop.cli.args import parse_resume_args
 from code_review_loop.core.outcome import outcome_to_exit_code
 from code_review_loop.runtime import RunLoopFailed, format_terminal_summary
@@ -32,7 +32,7 @@ def main(argv: Sequence[str]) -> int:
         if diagnostics.has_blocking_issue(issues):
             return CommandFailed(exit_code=4).exit_code
     try:
-        summary = resume.resume_run(run_dir)
+        summary = runner.resume_run(run_dir)
     except RunLoopFailed as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         code = outcome_to_exit_code(exc.outcome) if exc.outcome is not None else 1

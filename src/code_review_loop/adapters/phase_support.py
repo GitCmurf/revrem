@@ -1,6 +1,6 @@
 """Shared phase-side-effect helpers for adapter implementations.
 
-This module is intentionally below ``code_review_loop.loop`` in the dependency
+This module is intentionally below ``code_review_loop.runner`` in the dependency
 graph. Phase adapters import it for progress, artifact, timeout, budget, and
 commit-message helpers without reaching back into the CLI loop driver.
 """
