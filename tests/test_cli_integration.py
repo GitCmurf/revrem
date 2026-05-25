@@ -4321,7 +4321,9 @@ def test_doctor_validates_default_artifact_dir_when_unset(tmp_path, monkeypatch,
     blocked_artifact_dir = repo / ".revrem" / "runs" / "blocked-default"
     blocked_artifact_dir.parent.mkdir(parents=True)
     blocked_artifact_dir.write_text("blocked\n", encoding="utf-8")
-    monkeypatch.setattr(loop_mod, "default_artifact_dir", lambda: blocked_artifact_dir)
+    from code_review_loop.cli.commands import doctor as doctor_command
+
+    monkeypatch.setattr(doctor_command, "default_artifact_dir", lambda: blocked_artifact_dir)
 
     exit_code = cli_main.main(["doctor", "--base", "main", "--codex-bin", "git", "--format", "json"])
 
@@ -4348,7 +4350,9 @@ def test_doctor_does_not_create_default_artifact_dir_on_clean_repo(tmp_path, mon
     monkeypatch.chdir(repo)
 
     default_artifact_dir = repo / ".revrem" / "runs" / "default-run"
-    monkeypatch.setattr(loop_mod, "default_artifact_dir", lambda: default_artifact_dir)
+    from code_review_loop.cli.commands import doctor as doctor_command
+
+    monkeypatch.setattr(doctor_command, "default_artifact_dir", lambda: default_artifact_dir)
 
     exit_code = cli_main.main(["doctor", "--base", "main", "--codex-bin", "git", "--format", "json"])
 
