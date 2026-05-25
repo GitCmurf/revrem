@@ -23,10 +23,10 @@ def main(argv: Sequence[str]) -> int:
         if args.command == "review":
             code = policy_review(Path(args.artifact_dir), output_format=getattr(args, "format", None))
             return CommandOk(exit_code=code).exit_code if code == 0 else CommandFailed(exit_code=code).exit_code
+        raise ValueError(f"unhandled policy command: {args.command}")
     except (OSError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return CommandFailed(exit_code=1).exit_code
-    raise ValueError(f"unhandled policy command: {args.command}")
 
 
 def policy_lint(profile_name: str, output_format: str | None = None) -> int:

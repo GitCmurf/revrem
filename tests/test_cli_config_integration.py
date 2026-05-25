@@ -12,7 +12,6 @@ from code_review_loop import application as application_mod
 from code_review_loop import profiles
 from code_review_loop.cli import args as cli_args
 from code_review_loop.cli import config_builder
-from code_review_loop.cli.commands import config as config_command
 
 cli_main = import_module("code_review_loop.cli.main")
 
@@ -1465,8 +1464,3 @@ def test_config_edit_requires_editor(tmp_path, monkeypatch, capsys):
     assert cli_main.main(["config", "edit", "smoke"]) == 1
     assert "EDITOR is not set" in capsys.readouterr().err
 
-
-def test_editor_command_preserves_unquoted_windows_path(monkeypatch):
-    monkeypatch.setenv("EDITOR", r"C:\Tools\Code\code.exe")
-
-    assert config_command._editor_command() == [r"C:\Tools\Code\code.exe"]

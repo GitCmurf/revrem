@@ -3,8 +3,6 @@ from __future__ import annotations
 import json
 from argparse import Namespace
 
-import pytest
-
 from code_review_loop.cli.commands import policy as policy_command
 from code_review_loop.cli.commands import triage as triage_command
 from code_review_loop.cli.commands.triage import triage_explain
@@ -81,15 +79,15 @@ def test_policy_review_summarizes_routing_outcomes(tmp_path, capsys):
     assert "checks_passed=True" in output
 
 
-def test_policy_main_rejects_unhandled_internal_command(monkeypatch):
+def test_policy_main_rejects_unhandled_internal_command(monkeypatch, capsys):
     monkeypatch.setattr(
         policy_command,
         "parse_policy_args",
         lambda _argv: Namespace(command="unexpected"),
     )
 
-    with pytest.raises(ValueError, match="unhandled policy command: unexpected"):
-        policy_command.main([])
+    assert policy_command.main([]) == 1
+    assert "unhandled policy command: unexpected" in capsys.readouterr().err
 
 
 def test_triage_explain_json(tmp_path):
@@ -106,15 +104,15 @@ def test_triage_explain_json(tmp_path):
     assert triage_explain(tmp_path, 1, output_format="json") == 0
 
 
-def test_triage_main_rejects_unhandled_internal_command(monkeypatch):
+def test_triage_main_rejects_unhandled_internal_command(monkeypatch, capsys):
     monkeypatch.setattr(
         triage_command,
         "parse_triage_args",
         lambda _argv: Namespace(command="unexpected"),
     )
 
-    with pytest.raises(ValueError, match="unhandled triage command: unexpected"):
-        triage_command.main([])
+    assert triage_command.main([]) == 1
+    assert "unhandled triage command: unexpected" in capsys.readouterr().err
 
 
 def test_triage_explain_rejects_non_object_routing_artifact(tmp_path, capsys):
