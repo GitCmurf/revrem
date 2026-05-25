@@ -950,7 +950,7 @@ that commit as a green checkpoint, not the Wave C finish line.
   the remaining old ``MODULE`` monkeypatch sites. The ratchet baseline is now
   ``0`` for ``monkeypatch.setattr(MODULE, ...)``.
 
-  ``cli/__init__.py`` is now 3 lines, down from 4946 at the start of Wave C.
+  ``cli/__init__.py`` is now 6 lines, down from 4946 at the start of Wave C.
   ``resume`` no longer imports the executable driver; the resume command calls
   ``runner.resume_run`` after preconditions pass. Follow-up remediation renamed
   the relocated loop driver from ``loop`` to ``runner`` and deleted the legacy
@@ -967,28 +967,33 @@ that commit as a green checkpoint, not the Wave C finish line.
   union. `RunState.to_dict()` now returns a fresh projection instead of the live
   source of truth.
 
-  Test decomposition is in progress, not complete. The original CLI monolith
-  has been reduced to 1753 lines and progress/terminal-title, commit/check,
-  triage-loop, config/profile/history, doctor/preflight/bug-bundle, and fake
-  harness, resume/budget/cancellation, plus review-helper/command-construction
-  coverage now live in
+  Test decomposition is complete for Wave C. The original CLI monolith has been
+  reduced to an 87-line smoke/e2e file, and progress/terminal-title,
+  commit/check, triage-loop, config/profile/history,
+  doctor/preflight/bug-bundle, fake harness, resume/initial-review,
+  review-helper/command-construction, suppressions, subprocess/terminal-title,
+  loop-outcome/budget/cancellation, and summary formatting coverage now live in
   `tests/test_cli_progress_integration.py`,
-  `tests/test_cli_commit_integration.py`, and
-  `tests/test_cli_triage_integration.py`, and
-  `tests/test_cli_config_integration.py`, and
+  `tests/test_cli_commit_integration.py`,
+  `tests/test_cli_triage_integration.py`,
+  `tests/test_cli_config_integration.py`,
   `tests/test_cli_doctor_integration.py`,
-  `tests/test_cli_fake_harness_integration.py`, and
-  `tests/test_cli_resume_integration.py`, and
-  `tests/test_cli_review_helpers.py`. The remaining
-  `tests/test_cli_integration.py` file still needs further behavior-level
-  subdivision before Wave C can be called complete.
+  `tests/test_cli_fake_harness_integration.py`,
+  `tests/test_cli_resume_integration.py`,
+  `tests/test_cli_review_helpers.py`,
+  `tests/test_cli_suppressions_integration.py`,
+  `tests/test_cli_subprocess_integration.py`,
+  `tests/test_cli_loop_outcomes_integration.py`, and
+  `tests/test_cli_summary_integration.py`.
 
 * **Gate status at this checkpoint:** targeted runner/adapter gates pass:
   `./.venv/bin/ruff check src/code_review_loop/runner.py`,
   `./.venv/bin/mypy src`, `./.venv/bin/lint-imports`, and focused pytest
   selections for loop, commit/check, progress, cancellation, budget, triage, and
-  routing paths. A fresh full gate run is still required before declaring Wave C
-  done.
+  routing paths. The full local gate passed after the final decomposition:
+  `./.venv/bin/ruff check .`, `./.venv/bin/mypy src`,
+  `./.venv/bin/lint-imports`, `uv run --locked meminit check --format json`,
+  and `./.venv/bin/pytest -q` (`727 passed`).
 
 **Required remediation before declaring Wave C done.**
 
@@ -1007,11 +1012,13 @@ that commit as a green checkpoint, not the Wave C finish line.
    resume execution is owned by ``runner.resume_run``, ``_run_loop`` is gone,
    ``_run_session`` is 35 lines, and production phase decisions are mediated by
    ``core.engine.run``.
-6. IN PROGRESS: decompose ``tests/test_cli_integration.py`` into behavior-level
-   modules. Progress/terminal-title, commit/check, triage-loop,
-   config/profile/history, doctor/preflight/bug-bundle, fake harness,
-   resume/budget/cancellation, and review-helper/command-construction clusters
-   are split; the remaining monolith is 1753 lines.
+6. DONE in remediation: decompose ``tests/test_cli_integration.py`` into
+   behavior-level modules. The remaining file is an 87-line smoke/e2e surface;
+   focused modules now cover progress/terminal-title, commit/check,
+   triage-loop, config/profile/history, doctor/preflight/bug-bundle, fake
+   harness, resume/initial-review, review-helper/command-construction,
+   suppressions, subprocess/terminal-title, loop-outcome/budget/cancellation,
+   and summary formatting clusters.
 7. DONE in remediation: ``RunState`` now has semantic terminal transitions
    (``mark_outcome``/``mark_clear``/``mark_failed``/``mark_findings``/
    ``mark_unknown``), ``_execute_stop`` uses them, and ``to_dict()`` now returns

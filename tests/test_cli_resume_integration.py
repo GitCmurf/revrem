@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from decimal import Decimal
 from importlib import import_module
 
@@ -435,3 +436,164 @@ def test_run_loop_preserves_existing_events_on_resume(tmp_path):
     assert new_events.is_file()
     new_first = json.loads(new_events.read_text(encoding="utf-8").splitlines()[0])
     assert new_first["run_id"] != "original-run"
+
+def test_loop_can_start_from_initial_review_file(tmp_path):
+    calls = []
+    initial_review = tmp_path / "previous-review-final.txt"
+    initial_review.write_text(
+        "Full review comments:\n\n- [P2] Carry this forward — src/state.py:1\n",
+        encoding="utf-8",
+    )
+    review_outputs = iter(["No findings.\n"])
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text))
+        if args[1] == "review":
+            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
+
+    config = runner_mod.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        initial_review_file=initial_review,
+    )
+
+    summary = runner_mod.run_loop(config, runner)
+
+    assert [call[0][1] for call in calls] == ["exec", "review"]
+    assert calls[0][1] is not None and "Carry this forward" in calls[0][1]
+    assert summary["iterations"][0]["review_source"] == str(initial_review)
+    assert (tmp_path / "artifacts" / "review-initial.txt").exists()
+
+
+def test_loop_writes_structured_triage_source_for_initial_review_file(tmp_path):
+    calls = []
+    initial_review = tmp_path / "previous-review-final.txt"
+    initial_review.write_text(
+        "Full review comments:\n\n- [P2] Carry this forward — src/state.py:1\n",
+        encoding="utf-8",
+    )
+    triage_payload = {
+        "confirmed_findings": [
+            {
+                "affected_paths": ["src/app.py"],
+                "fingerprint": "f1:abc123",
+                "rationale": "The review finding is actionable.",
+                "severity": "medium",
+                "summary": "Fix the bug.",
+            }
+        ],
+        "implementation_order": ["f1:abc123"],
+        "needs_more_info": [],
+        "parsing_warnings": [],
+        "rejected_findings": [],
+        "verification_commands": ["pytest -q"],
+    }
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text))
+        if args[1] == "review":
+            return runner_mod.CommandResult(list(args), 0, stdout="REVIEW_STATUS: findings\n")
+        if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
+            return runner_mod.CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
+        return runner_mod.CommandResult(list(args), 0, stdout="remediated\n")
+
+    config = runner_mod.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        initial_review_file=initial_review,
+        triage_enabled=True,
+        final_review=False,
+    )
+
+    summary = runner_mod.run_loop(config, runner)
+
+    triage_json = json.loads((tmp_path / "artifacts" / "triage-1.json").read_text(encoding="utf-8"))
+    assert triage_json["source_review_artifact"] == "review-initial.txt"
+    assert summary["artifact_paths"]["reviews"] == [str(tmp_path / "artifacts" / "review-initial.txt")]
+    assert (tmp_path / "artifacts" / "review-initial.txt").exists()
+    assert "Structured triage handoff" in (calls[1][1] or "")
+
+
+def test_resolve_initial_review_file_latest(tmp_path):
+    older = tmp_path / "20260428T000000Z"
+    newer = tmp_path / "20260428T010000Z"
+    older.mkdir()
+    newer.mkdir()
+    older_review = older / "review-final.txt"
+    newer_review = newer / "review-final.txt"
+    older_review.write_text("old", encoding="utf-8")
+    newer_review.write_text("new", encoding="utf-8")
+
+    assert runner_mod.resolve_initial_review_file("latest", tmp_path) == newer_review
+
+
+def test_resolve_initial_review_file_latest_returns_none_when_newest_run_is_clean(tmp_path):
+    clean_run = tmp_path / "20260428T020000Z"
+    unresolved_run = tmp_path / "20260428T010000Z"
+    clean_run.mkdir()
+    unresolved_run.mkdir()
+    clean_review = clean_run / "review-final.txt"
+    unresolved_review = unresolved_run / "review-final.txt"
+    clean_review.write_text("clean", encoding="utf-8")
+    unresolved_review.write_text("findings", encoding="utf-8")
+    (clean_run / "summary.json").write_text(
+        json.dumps({"final_status": "clear", "stopped_reason": "review_clear"}),
+        encoding="utf-8",
+    )
+    (unresolved_run / "summary.json").write_text(
+        json.dumps({"final_status": "findings", "stopped_reason": "max_iterations_reached"}),
+        encoding="utf-8",
+    )
+    os.utime(unresolved_review, (1, 1))
+    os.utime(clean_review, (2, 2))
+
+    assert runner_mod.resolve_initial_review_file("latest", tmp_path) is None
+
+
+def test_resolve_initial_review_file_latest_returns_none_for_only_clean_runs(tmp_path):
+    clean_run = tmp_path / "20260428T020000Z"
+    clean_run.mkdir()
+    (clean_run / "review-final.txt").write_text("clean", encoding="utf-8")
+    (clean_run / "summary.json").write_text(
+        json.dumps({"final_status": "clear", "stopped_reason": "review_clear"}),
+        encoding="utf-8",
+    )
+
+    assert runner_mod.resolve_initial_review_file("latest", tmp_path) is None
+
+
+def test_resolve_initial_review_file_latest_returns_none_without_previous_runs(tmp_path):
+    assert runner_mod.resolve_initial_review_file("latest", tmp_path) is None
+
+
+def test_resolve_initial_review_file_latest_skips_dry_run_review_stubs(tmp_path):
+    dry_run = tmp_path / "20260428T020000Z"
+    unresolved_run = tmp_path / "20260428T010000Z"
+    dry_run.mkdir()
+    unresolved_run.mkdir()
+    dry_review = dry_run / "review-final.txt"
+    unresolved_review = unresolved_run / "review-final.txt"
+    dry_review.write_text("DRY_RUN\nREVIEW_STATUS: findings\n", encoding="utf-8")
+    unresolved_review.write_text(
+        "Full review comments:\n\n- [P2] Fix the real issue\n",
+        encoding="utf-8",
+    )
+    (dry_run / "summary.json").write_text(
+        json.dumps({"final_status": "findings", "stopped_reason": "max_iterations_reached"}),
+        encoding="utf-8",
+    )
+    (unresolved_run / "summary.json").write_text(
+        json.dumps({"final_status": "findings", "stopped_reason": "max_iterations_reached"}),
+        encoding="utf-8",
+    )
+    os.utime(unresolved_review, (1, 1))
+    os.utime(dry_review, (2, 2))
+
+    assert runner_mod.resolve_initial_review_file("latest", tmp_path) == unresolved_review

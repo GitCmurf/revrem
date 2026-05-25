@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from importlib import import_module
+from pathlib import Path
 
 import code_review_loop.runner as runner_mod
 from code_review_loop import events
@@ -712,3 +713,101 @@ def test_normalize_revrem_conventional_subject_preserves_suffix_when_truncated()
     assert normalized.endswith(" (RevRem)")
     assert len(normalized) == 120
     assert normalized.startswith("fix(cli): ")
+
+def test_detect_review_status_requires_explicit_status_line():
+    """Fuzzy patterns must not flip ambiguous output to clear."""
+    assert runner_mod.detect_review_status("no findings about style, but several about logic") == "unknown"
+    assert runner_mod.detect_review_status("review is clear of syntax errors but not semantic") == "unknown"
+    assert runner_mod.detect_review_status("") == "unknown"
+
+
+def test_review_failure_detection_allows_nonzero_findings_without_stderr():
+    assert (
+        runner_mod.review_failed_to_run(
+            runner_mod.CommandResult(["codex", "review"], -9, stdout="", stderr="")
+        )
+        is True
+    )
+    assert (
+        runner_mod.review_failed_to_run(
+            runner_mod.CommandResult(["codex", "review"], 1, stdout="Finding\n", stderr="")
+        )
+        is False
+    )
+    assert (
+        runner_mod.review_failed_to_run(
+            runner_mod.CommandResult(["codex", "review"], 1, stdout="", stderr="Error: thread/start failed")
+        )
+        is True
+    )
+    assert (
+        runner_mod.review_failed_to_run(
+            runner_mod.CommandResult(["codex", "review"], 2, stdout="", stderr="error: bad args")
+        )
+        is True
+    )
+
+
+def run_git(cwd: Path, *args: str) -> None:
+    result = runner_mod.subprocess.run(
+        ["git", *args],
+        cwd=cwd,
+        text=True,
+        stdout=runner_mod.subprocess.PIPE,
+        stderr=runner_mod.subprocess.PIPE,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_actionable_review_output_drops_verbose_stderr_transcript():
+    output = "Full review comments:\n\n- [P1] Fix the bug\n\n[stderr]\n" + ("diff --git a/x b/x\n" * 100)
+
+    assert runner_mod.actionable_review_output(output) == "Full review comments:\n\n- [P1] Fix the bug"
+
+
+def test_trim_for_prompt_caps_large_review_text():
+    from code_review_loop import prompts_composer
+
+    text = "a" * 100 + "MIDDLE" + "z" * 100
+
+    trimmed = prompts_composer.trim_for_prompt(text, 80)
+
+    assert len(trimmed) <= 80
+    assert "omitted" in trimmed
+    assert trimmed.startswith("a")
+    assert trimmed.endswith("z")
+
+
+def test_remediation_prompt_uses_actionable_output_and_cap(tmp_path):
+    calls = []
+    huge_stderr = "tool transcript\n" * 20_000
+    review_outputs = iter(
+        [
+            f"Full review comments:\n\n- [P1] Fix state init\n\n[stderr]\n{huge_stderr}",
+            "No findings.\n",
+        ]
+    )
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text))
+        if args[1] == "review":
+            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
+
+    config = runner_mod.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        max_remediation_input_chars=200,
+    )
+
+    runner_mod.run_loop(config, runner)
+
+    exec_prompts = [prompt for args, prompt in calls if args[1] == "exec"]
+    assert len(exec_prompts) == 1
+    assert exec_prompts[0] is not None
+    assert "[P1] Fix state init" in exec_prompts[0]
+    assert "tool transcript" not in exec_prompts[0]
