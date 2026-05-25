@@ -4908,8 +4908,9 @@ def test_rich_progress_falls_back_to_compact_once(tmp_path, capsys, monkeypatch)
         progress_style="rich",
     )
 
-    runner_mod.progress_event(config, "review", "1", "start", "codex review --base main")
-    runner_mod.progress_event(config, "review", "1", "clear")
+    ctx = make_run_context(lambda *_args, **_kwargs: runner_mod.CommandResult([], 0))
+    runner_mod.progress_event(config, "review", "1", "start", "codex review --base main", ctx=ctx)
+    runner_mod.progress_event(config, "review", "1", "clear", ctx=ctx)
     captured = capsys.readouterr()
 
     assert captured.err.count("rich progress unavailable; using compact output") == 1
@@ -4933,7 +4934,8 @@ def test_rich_progress_renderer_is_used_when_available(tmp_path, capsys, monkeyp
         progress_style="rich",
     )
 
-    runner_mod.progress_event(config, "review", "1", "start", "codex review --base main")
+    ctx = make_run_context(lambda *_args, **_kwargs: runner_mod.CommandResult([], 0))
+    runner_mod.progress_event(config, "review", "1", "start", "codex review --base main", ctx=ctx)
 
     assert calls == [("review", "1", "start", "codex review --base main")]
     assert capsys.readouterr().err == ""

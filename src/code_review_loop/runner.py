@@ -62,6 +62,7 @@ from code_review_loop.core.ports import (
     ChecksRequest,
     CommandResult,
     CommitRequest,
+    EventSink,
     ProcessRunner,
     ProgressReporter,
     RemediationRequest,
@@ -462,8 +463,8 @@ def print_compact_progress(phase: str, label: str, text: str, *, head: str = "")
         print(line, file=sys.stderr, flush=True)
 
 
-def progress_event(config: LoopConfig, phase: str, label: str, status: str, detail: str = "", *, ctx: RunContext | None = None) -> None:
-    sink = ctx.event_sink if ctx is not None else None
+def progress_event(config: LoopConfig, phase: str, label: str, status: str, detail: str = "", *, ctx: RunContext) -> None:
+    sink = ctx.event_sink
     if sink is not None:
         payload: dict[str, Any] = {"summary": status}
         if detail:
@@ -475,7 +476,7 @@ def progress_event(config: LoopConfig, phase: str, label: str, status: str, deta
             payload=payload,
         )
     # delegate rendering to the injected ProgressReporter if available
-    if ctx is not None and ctx.progress_reporter is not None:
+    if ctx.progress_reporter is not None:
         ctx.progress_reporter.phase(phase, label, status, detail)
         return
     if not config.progress:
@@ -522,9 +523,9 @@ def emit_loop_failure_event(
     iteration: int | str | None,
     reason: str,
     error: str,
-    ctx: RunContext | None = None,
+    ctx: RunContext,
 ) -> None:
-    if ctx is None or ctx.event_sink is None:
+    if ctx.event_sink is None:
         return
     ctx.event_sink.emit(
         "failure",
@@ -690,7 +691,7 @@ def kill_process_tree(process: subprocess.Popen[str]) -> None:
 
 
 
-def log_review_findings(config: LoopConfig, label: str, output: str, ctx: RunContext | None = None) -> bool:
+def log_review_findings(config: LoopConfig, label: str, output: str, ctx: RunContext) -> bool:
     blocks = extract_finding_blocks(output)
     if not blocks:
         return False
@@ -755,8 +756,8 @@ def phase_timeout_seconds(config: LoopConfig, value: float | None) -> float | No
     return value
 
 
-def ensure_model_budget(config: LoopConfig, *, phase: str, iteration: int | str, ctx: RunContext | None = None) -> None:
-    if ctx is None or ctx.budget_state is None:
+def ensure_model_budget(config: LoopConfig, *, phase: str, iteration: int | str, ctx: RunContext) -> None:
+    if ctx.budget_state is None:
         return
     warning_due, elapsed = budgets.wall_warning_due(config.budget_config, ctx.budget_state)
     if warning_due:
@@ -791,10 +792,9 @@ def ensure_model_budget(config: LoopConfig, *, phase: str, iteration: int | str,
         raise
 
 
-def remaining_wall_budget_seconds(config: LoopConfig, ctx: RunContext | None = None) -> float | None:
+def remaining_wall_budget_seconds(config: LoopConfig, ctx: RunContext) -> float | None:
     if (
-        ctx is None
-        or ctx.budget_state is None
+        ctx.budget_state is None
         or config.budget_config.max_wall_seconds is None
     ):
         return None
@@ -808,9 +808,9 @@ def record_model_charge(
     *,
     phase: str,
     iteration: int | str,
-    ctx: RunContext | None = None,
+    ctx: RunContext,
 ) -> None:
-    if ctx is None or ctx.budget_state is None:
+    if ctx.budget_state is None:
         return
     if result.tokens is None and result.usd is None:
         return
@@ -1130,7 +1130,7 @@ def _execute_stop(
     summary: dict[str, object],
     config: LoopConfig,
     clock: Clock,
-    ctx: RunContext | None,
+    ctx: RunContext,
     *,
     last_review_output: str = "",
     cause: BaseException | None = None,
@@ -1146,7 +1146,13 @@ def _execute_stop(
         state.mark_outcome(outcome, excerpt=excerpt, check_failures=check_failures)
         summary.clear()
         summary.update(state.to_dict())
-        write_summary(config, summary, clock=clock, ctx=ctx)
+        write_summary(
+            config,
+            summary,
+            clock=clock,
+            budget_state=ctx.budget_state,
+            event_sink=ctx.event_sink,
+        )
 
     if isinstance(outcome, OutcomeClear):
         apply_common_tail()
@@ -2033,18 +2039,22 @@ def _run_session(
 
 
 def write_summary(
-    config: LoopConfig, summary: dict[str, object], *, clock: Clock = SYSTEM_CLOCK, ctx: RunContext | None = None
+    config: LoopConfig,
+    summary: dict[str, object],
+    *,
+    clock: Clock = SYSTEM_CLOCK,
+    budget_state: budgets.BudgetState | None = None,
+    event_sink: EventSink | None = None,
 ) -> None:
     update_unexpected_behaviors(config, summary)
     add_summary_contract_fields(config, summary, clock=clock)
     add_artifact_paths(summary, config)
-    budget_state = ctx.budget_state if ctx is not None else None
     if budget_state is not None or "budgets" not in summary:
-        summary["budgets"] = summary_budget_payload(config, ctx=ctx)
-    if ctx is not None and ctx.event_sink is not None:
-        emit_artifact_write_events(config, summary, ctx=ctx)
+        summary["budgets"] = summary_budget_payload(config, budget_state=budget_state)
+    if event_sink is not None:
+        emit_artifact_write_events(config, summary, event_sink=event_sink)
         summary_detail = summary.get("stopped_reason") or summary.get("final_status") or "summary"
-        ctx.event_sink.emit(
+        event_sink.emit(
             "summary",
             payload={
                 "summary": str(summary_detail),
@@ -2127,11 +2137,14 @@ def resume_config_payload(config: LoopConfig) -> dict[str, object]:
     }
 
 
-def summary_budget_payload(config: LoopConfig, ctx: RunContext | None = None) -> dict[str, object]:
+def summary_budget_payload(
+    config: LoopConfig,
+    *,
+    budget_state: budgets.BudgetState | None = None,
+) -> dict[str, object]:
     tokens = None
     usd = None
     wall_elapsed_seconds = None
-    budget_state = ctx.budget_state if ctx is not None else None
     if budget_state is not None:
         wall_elapsed_seconds = budgets.wall_elapsed_seconds(budget_state)
         if budget_state.tokens_reported:
@@ -2149,9 +2162,7 @@ def summary_budget_payload(config: LoopConfig, ctx: RunContext | None = None) ->
     }
 
 
-def emit_artifact_write_events(config: LoopConfig, summary: dict[str, object], ctx: RunContext | None = None) -> None:
-    if ctx is None or ctx.event_sink is None:
-        return
+def emit_artifact_write_events(config: LoopConfig, summary: dict[str, object], *, event_sink: EventSink) -> None:
     artifact_paths = summary.get("artifact_paths")
     if not isinstance(artifact_paths, dict):
         return
@@ -2159,7 +2170,7 @@ def emit_artifact_write_events(config: LoopConfig, summary: dict[str, object], c
         payload: dict[str, object] = {"kind": kind, "path": path}
         with suppress(OSError):
             payload["bytes"] = Path(path).stat().st_size
-        ctx.event_sink.emit("artifact_write", phase="artifacts", payload=payload)
+        event_sink.emit("artifact_write", phase="artifacts", payload=payload)
 
 
 def iter_artifact_paths(artifact_paths: dict[object, object]) -> Iterator[tuple[str, str]]:
