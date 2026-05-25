@@ -168,3 +168,14 @@ source_modules = [
 forbidden_modules = [
   "code_review_loop.runner",
 ]
+
+[[tool.importlinter.contracts]]
+name = "CLI commands must use the application boundary"
+type = "forbidden"
+allow_indirect_imports = true
+source_modules = [
+  "code_review_loop.cli",
+]
+forbidden_modules = [
+  "code_review_loop.runner",
+]
