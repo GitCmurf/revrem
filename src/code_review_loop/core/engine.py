@@ -1,12 +1,13 @@
-"""Pure decision function for the review-remediate engine (REVREM-TASK-003 B3b).
+"""Dependency-free review/remediation engine decisions (REVREM-TASK-003).
 
 Design
 ------
-``decide(cfg, acc, event)`` is a total, side-effect-free function.  It receives
+``decide(cfg, acc, event)`` is a total, side-effect-free function. It receives
 a read-only slice of config (``ConfigSnapshot``), accumulated loop state
 (``LoopAccumulator``), and the result of the most-recently-completed phase
-(``PhaseEvent``).  It returns one ``Action`` variant; the shell in ``cli._run_loop``
-applies that action.
+(``PhaseEvent``). It returns one ``Action`` variant. ``run(state, executor)``
+applies those actions through an injected imperative executor, so the core
+remains independent of CLI, terminal, subprocess, and artifact concerns.
 
 All types are frozen dataclasses so that value tests can construct them
 inline without mocking.
@@ -191,8 +192,9 @@ def run(state: EngineState, ctx: EngineExecutor, *, max_steps: int | None = None
 def decide(cfg: ConfigSnapshot, acc: LoopAccumulator, event: PhaseEvent, *, iteration: int = 1) -> Action:
     """Return the Action the shell should apply for the given phase event.
 
-    This function is pure: no I/O, no side effects, deterministic.  The shell
-    (``cli._run_loop``) is responsible for executing each returned Action.
+    This function is pure: no I/O, no side effects, deterministic. The
+    application executor is responsible for translating non-terminal actions
+    into the next phase event.
     """
     if isinstance(event, ReviewDone):
         if event.exc is not None:

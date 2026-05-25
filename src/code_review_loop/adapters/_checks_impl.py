@@ -1,13 +1,4 @@
-"""ChecksAdapter implementation body (REVREM-TASK-003 Wave C3a step 1).
-
-The phase implementation, helpers, and project-surface markers live here so
-``adapters/checks.py`` stays narrow (the adapter class only) and so this body
-can be re-exported from ``code_review_loop.cli.run_checks`` as a thin shim
-preserving the pre-C3a public signature and monkeypatch surface.
-
-Loop side effects are routed through ``adapters.phase_support`` so this adapter
-does not import the CLI loop driver.
-"""
+"""ChecksAdapter implementation body and verification-check helpers."""
 
 from __future__ import annotations
 

@@ -81,7 +81,7 @@ from code_review_loop.core.review_interpretation import (
     strip_finding_priority,
 )
 from code_review_loop.core.review_interpretation import (
-    extract_finding_summaries as extract_finding_summaries,  # re-export: test_cli.py uses MODULE.extract_finding_summaries
+    extract_finding_summaries as extract_finding_summaries,
 )
 from code_review_loop.core.state import RunState
 from code_review_loop.identity import SYSTEM_IDENTITY, RunIdentity
@@ -848,12 +848,9 @@ def write_artifact(path: Path, content: str) -> None:
     artifacts.write_text_artifact(path, content)
 
 
-# REVREM-TASK-003 Wave C3a step 1: run_checks + its helpers + project-surface
-# markers now live in ``code_review_loop.adapters._checks_impl``. The
-# ChecksAdapter owns the loop body; the names below are re-exported here so
-# the public CLI signature and existing ``MODULE.run_checks`` /
-# ``MODULE.is_pytest_command`` etc. monkeypatch sites keep working until C3b
-# retires them.
+# Checks implementation helpers. These remain imported here only where the
+# runner still has direct callers; new code should import their adapter module
+# homes directly.
 from code_review_loop.adapters._checks_impl import (
     NON_PYTHON_PROJECT_MARKERS as NON_PYTHON_PROJECT_MARKERS,
 )
@@ -885,9 +882,8 @@ from code_review_loop.adapters._checks_impl import (
     run_checks as run_checks,
 )
 
-# REVREM-TASK-003 Wave C3a step 5: commit-phase implementation + its git/commit
-# helpers now live in ``adapters._commit_impl``. Re-exported here for
-# back-compat with existing call-sites and ``MODULE.X`` monkeypatch tests.
+# Commit-phase helpers used by the application runner while commit ownership
+# continues moving behind CommitAdapter.
 from code_review_loop.adapters._commit_impl import (
     classify_commit_failure as classify_commit_failure,
 )
@@ -922,9 +918,7 @@ from code_review_loop.adapters._commit_impl import (
     run_commit as run_commit,
 )
 
-# REVREM-TASK-003 Wave C3a step 3: remediation + triage phase implementations
-# now live in adapters._remediation_impl and adapters._triage_impl. Re-exported
-# here for back-compat.
+# Remediation and triage command builders used by tests and adapter wiring.
 from code_review_loop.adapters._remediation_impl import (
     build_remediation_command as build_remediation_command,
 )
@@ -932,10 +926,7 @@ from code_review_loop.adapters._remediation_impl import (
     run_remediation as run_remediation,
 )
 
-# REVREM-TASK-003 Wave C3a step 2: ``run_codex_review`` + its helpers now live
-# in ``adapters._review_impl``; ``run_git_preflight`` (used by both review and
-# resume) is in ``adapters.git``. Both are re-exported here for back-compat
-# with existing call-sites and ``MODULE.X`` monkeypatch tests.
+# Review helpers used by the runner and review-adapter tests.
 from code_review_loop.adapters._review_impl import (
     build_review_command as build_review_command,
 )
@@ -998,10 +989,7 @@ def normalize_revrem_conventional_subject(subject: str) -> str:
     return f"{subject}{REVREM_COMMIT_SUFFIX}"
 
 
-# REVREM-TASK-003 Wave C3a step 1: ``format_check_failures`` lives in
-# ``adapters/_checks_impl``. Alias for the legacy private name used internally
-# in ``_run_loop``; an explicit re-export rather than a wrapper so it remains
-# trivially monkeypatchable from either module.
+# Check failure formatting used by the application runner.
 from code_review_loop.adapters._checks_impl import format_check_failures as _format_check_failures
 
 

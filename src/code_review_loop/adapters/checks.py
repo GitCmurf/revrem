@@ -1,12 +1,4 @@
-"""ChecksHarness adapter (REVREM-TASK-003 Wave C3a step 1).
-
-The adapter owns the run-loop body for the check phase. The implementation
-(plus its phase-specific helpers and project-surface markers) lives in
-``adapters/_checks_impl.py`` so ``code_review_loop.cli.run_checks`` can stay
-as a thin shim re-exporting the same callable, preserving the public
-signature ``run_checks(config, runner, iteration, ctx=None) -> (results, failed)``
-and the ``MODULE.run_checks`` monkeypatch surface that existing tests rely on.
-"""
+"""ChecksHarness adapter for the verification-check phase."""
 
 from __future__ import annotations
 

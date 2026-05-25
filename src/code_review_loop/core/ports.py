@@ -5,17 +5,16 @@ port-adjacent value types. The core depends on these interfaces; adapters at the
 edge implement them; drivers wire concrete adapters into a `RunContext` and call
 the core.
 
-Scope discipline (B0a):
+Scope discipline:
 
-- `CommandResult` is **homed here** (moved out of `cli.py`); `cli.py` re-exports
-  it so existing imports keep working.
-- `Clock`, `RunIdentity`, and `EventSink` Protocols are **re-exported** from
-  their current modules rather than physically moved; the inversion is deferred
-  to B2 when the adapter package is ready to receive them.
-- `ProcessRunner` formalises the `cli.Runner` callable.
-- `ProgressReporter` (B4) decouples the engine from the terminal.
+- `CommandResult` is the process-runner port result type.
+- `Clock`, `RunIdentity`, and `EventSink` are imported through this canonical
+  port surface so application code has one collaborator bundle to wire.
+- `ProcessRunner` formalises subprocess execution.
+- `ProgressReporter` decouples loop progress semantics from terminal rendering.
 
-B2a adds per-phase request/outcome value types and per-phase `*Harness` Protocols:
+The phase request/outcome value types and per-phase `*Harness` Protocols are
+the application-to-adapter seam:
 
 - **Per-phase protocols** (`ChecksHarness`, `CommitHarness`, `RemediationHarness`,
   `TriageHarness`, `ReviewHarness`) over a single `Harness` Protocol: each adapter
@@ -174,11 +173,8 @@ class ReviewOutcome:
 
 
 # ---------------------------------------------------------------------------
-# B2a — per-phase harness Protocols
-#
-# Each adapter closes over LoopConfig in __init__; request types carry only
-# the per-call variance. RunContext fields are all Optional so phases migrate
-# one at a time (B2b–f); None means "use the legacy cli.py shim".
+# Per-phase harness Protocols. Each adapter closes over LoopConfig in
+# __init__; request types carry only per-call variance.
 # ---------------------------------------------------------------------------
 
 class ChecksHarness(Protocol):
