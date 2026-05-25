@@ -8,6 +8,7 @@ import pytest
 
 import code_review_loop.loop as loop_mod
 from code_review_loop import events
+from code_review_loop import resume as resume_mod
 
 cli_main = import_module("code_review_loop.cli.main")
 
@@ -82,7 +83,7 @@ def install_matching_git(monkeypatch, *, head: str = "head-sha", base: str = "ba
             return loop_mod.CommandResult(["git", *args], 0, stdout=f"{base}\n")
         return loop_mod.CommandResult(["git", *args], 1, stderr="unexpected")
 
-    monkeypatch.setattr(loop_mod, "run_git_preflight", fake_git)
+    monkeypatch.setattr(resume_mod, "run_git_preflight", fake_git)
 
 
 def test_resume_preconditions_pass_for_matching_git_state(tmp_path, monkeypatch):
@@ -90,7 +91,7 @@ def test_resume_preconditions_pass_for_matching_git_state(tmp_path, monkeypatch)
     write_resume_run(run_dir)
     install_matching_git(monkeypatch)
 
-    issues = loop_mod.resume_precondition_issues(run_dir, cwd=tmp_path)
+    issues = resume_mod.resume_precondition_issues(run_dir, cwd=tmp_path)
 
     assert issues == []
 
@@ -101,7 +102,7 @@ def test_resume_preconditions_pass_for_relative_artifact_paths(tmp_path, monkeyp
     write_resume_run(run_dir)
     install_matching_git(monkeypatch)
 
-    issues = loop_mod.resume_precondition_issues(run_dir, cwd=tmp_path)
+    issues = resume_mod.resume_precondition_issues(run_dir, cwd=tmp_path)
 
     assert issues == []
 
@@ -122,7 +123,7 @@ def test_resume_preconditions_block_persisted_budget_ceiling(tmp_path, monkeypat
     )
     install_matching_git(monkeypatch)
 
-    issues = loop_mod.resume_precondition_issues(run_dir, cwd=tmp_path)
+    issues = resume_mod.resume_precondition_issues(run_dir, cwd=tmp_path)
 
     assert [issue.code for issue in issues][:1] == ["revrem.resume.token_budget_exhausted"]
     assert any(issue.code == "revrem.resume.token_budget_exhausted" for issue in issues)
@@ -144,7 +145,7 @@ def test_resume_preconditions_block_persisted_usd_ceiling(tmp_path, monkeypatch)
     )
     install_matching_git(monkeypatch)
 
-    issues = loop_mod.resume_precondition_issues(run_dir, cwd=tmp_path)
+    issues = resume_mod.resume_precondition_issues(run_dir, cwd=tmp_path)
 
     assert any(issue.code == "revrem.resume.usd_budget_exhausted" for issue in issues)
 
@@ -161,7 +162,7 @@ def test_resume_preconditions_block_persisted_wall_ceiling(tmp_path, monkeypatch
     )
     install_matching_git(monkeypatch)
 
-    issues = loop_mod.resume_precondition_issues(run_dir, cwd=tmp_path)
+    issues = resume_mod.resume_precondition_issues(run_dir, cwd=tmp_path)
 
     assert any(issue.code == "revrem.resume.wall_budget_exhausted" for issue in issues)
 
@@ -189,10 +190,10 @@ def test_resume_run_rejects_persisted_budget_ceiling(tmp_path, monkeypatch):
         called = True
         raise AssertionError("run_loop should not be invoked when the budget ceiling is already exhausted")
 
-    monkeypatch.setattr(loop_mod, "run_loop", fail_if_called)
+    monkeypatch.setattr(resume_mod, "run_loop", fail_if_called)
 
     with pytest.raises(ValueError, match="remaining token budget headroom"):
-        loop_mod.resume_run(run_dir)
+        resume_mod.resume_run(run_dir)
 
     assert called is False
 
@@ -216,10 +217,10 @@ def test_resume_run_rejects_persisted_wall_budget_ceiling(tmp_path, monkeypatch)
         called = True
         raise AssertionError("run_loop should not be invoked when the wall budget is already exhausted")
 
-    monkeypatch.setattr(loop_mod, "run_loop", fail_if_called)
+    monkeypatch.setattr(resume_mod, "run_loop", fail_if_called)
 
     with pytest.raises(ValueError, match="remaining wall budget headroom"):
-        loop_mod.resume_run(run_dir)
+        resume_mod.resume_run(run_dir)
 
     assert called is False
 
@@ -248,10 +249,10 @@ def test_resume_run_rejects_legacy_persisted_budget_ceiling(tmp_path, monkeypatc
         called = True
         raise AssertionError("run_loop should not be invoked when the budget ceiling is already exhausted")
 
-    monkeypatch.setattr(loop_mod, "run_loop", fail_if_called)
+    monkeypatch.setattr(resume_mod, "run_loop", fail_if_called)
 
     with pytest.raises(ValueError, match="remaining token budget headroom"):
-        loop_mod.resume_run(run_dir)
+        resume_mod.resume_run(run_dir)
 
     assert called is False
 
@@ -288,7 +289,7 @@ def test_resume_loop_config_seeds_cumulative_wall_budget_state(tmp_path, monkeyp
     assert summary["budgets"]["wall_elapsed_seconds"] == 12.5
 
     monkeypatch.setattr(loop_mod.budgets, "monotonic", lambda: 200.0)
-    config, budget_state = loop_mod.resume_loop_config(summary, run_dir=tmp_path / "artifacts")
+    config, budget_state = resume_mod.resume_loop_config(summary, run_dir=tmp_path / "artifacts")
 
     assert budget_state is not None
     assert budget_state.started_at_monotonic == 187.5
@@ -314,7 +315,7 @@ def test_resume_loop_config_uses_legacy_budget_ceiling(tmp_path):
         },
     }
 
-    resumed, _budget_state = loop_mod.resume_loop_config(summary, run_dir=tmp_path)
+    resumed, _budget_state = resume_mod.resume_loop_config(summary, run_dir=tmp_path)
 
     assert resumed.budget_config.max_wall_seconds == 10
     assert resumed.budget_config.max_tokens == 100
@@ -358,13 +359,13 @@ harness = "claude"
         },
     )
 
-    resumed, _budget_state = loop_mod.resume_loop_config(json.loads((run_dir / "summary.json").read_text()), run_dir=run_dir)
+    resumed, _budget_state = resume_mod.resume_loop_config(json.loads((run_dir / "summary.json").read_text()), run_dir=run_dir)
 
     assert resumed.profile_name == "test"
     assert resumed.triage_contract == "v2"
     assert resumed.profile_v2 is not None
     assert resumed.profile_v2.triage.contract == "v2"
-    assert loop_mod.profile_routed_harnesses(resumed.profile_v2) == ("codex", "claude")
+    assert tuple(route.harness for route in resumed.profile_v2.triage.routes.values()) == ("codex", "claude")
 
 
 def test_resume_preconditions_block_head_mismatch(tmp_path, monkeypatch):
@@ -372,7 +373,7 @@ def test_resume_preconditions_block_head_mismatch(tmp_path, monkeypatch):
     write_resume_run(run_dir)
     install_matching_git(monkeypatch, head="different-head")
 
-    issues = loop_mod.resume_precondition_issues(run_dir, cwd=tmp_path)
+    issues = resume_mod.resume_precondition_issues(run_dir, cwd=tmp_path)
 
     assert [issue.code for issue in issues] == ["revrem.resume.head_mismatch"]
 
@@ -382,7 +383,7 @@ def test_resume_preconditions_block_base_mismatch(tmp_path, monkeypatch):
     write_resume_run(run_dir)
     install_matching_git(monkeypatch, base="different-base")
 
-    issues = loop_mod.resume_precondition_issues(run_dir, cwd=tmp_path)
+    issues = resume_mod.resume_precondition_issues(run_dir, cwd=tmp_path)
 
     assert [issue.code for issue in issues] == ["revrem.resume.base_mismatch"]
 
@@ -392,7 +393,7 @@ def test_resume_preconditions_block_truncated_events(tmp_path, monkeypatch):
     write_resume_run(run_dir, truncated=True)
     install_matching_git(monkeypatch)
 
-    issues = loop_mod.resume_precondition_issues(run_dir, cwd=tmp_path)
+    issues = resume_mod.resume_precondition_issues(run_dir, cwd=tmp_path)
 
     assert [issue.code for issue in issues] == ["revrem.resume.truncated_events"]
 
@@ -433,7 +434,7 @@ def test_resume_and_uninterrupted_fake_run_have_same_final_status(tmp_path, monk
     write_resume_run(run_dir)
     install_matching_git(monkeypatch)
 
-    resumed = loop_mod.resume_run(run_dir)
+    resumed = resume_mod.resume_run(run_dir)
     uninterrupted = loop_mod.run_loop(
         loop_mod.LoopConfig(
             base="main",

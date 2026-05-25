@@ -13,6 +13,7 @@ import pytest
 
 import code_review_loop.loop as loop_mod
 from code_review_loop import events, profiles, suppressions
+from code_review_loop import resume as resume_mod
 from code_review_loop.cli import args as cli_args
 from code_review_loop.cli import config_builder
 from code_review_loop.core.ports import RunContext
@@ -5918,7 +5919,7 @@ def test_resume_payload_preserves_full_auto_and_budget_limits(tmp_path, monkeypa
     )
 
     summary = loop_mod.run_loop(config, runner)
-    resumed, _budget_state = loop_mod.resume_loop_config(summary, run_dir=tmp_path / "artifacts")
+    resumed, _budget_state = resume_mod.resume_loop_config(summary, run_dir=tmp_path / "artifacts")
 
     assert summary["resume_config"]["full_auto"] is False
     assert summary["resume_config"]["max_wall_seconds"] == 12.5
@@ -5952,7 +5953,7 @@ def test_resume_loop_config_seeds_budget_state_from_summary_totals(tmp_path):
         },
     }
 
-    _config, resumed_budget = loop_mod.resume_loop_config(summary, run_dir=tmp_path)
+    _config, resumed_budget = resume_mod.resume_loop_config(summary, run_dir=tmp_path)
 
     assert resumed_budget is not None
     assert resumed_budget.tokens_used == 73
@@ -5973,7 +5974,7 @@ def test_resume_loop_config_defaults_legacy_missing_full_auto_to_true(tmp_path):
         "artifact_paths": {"reviews": [str(review_path)]},
     }
 
-    resumed, _budget_state = loop_mod.resume_loop_config(summary, run_dir=tmp_path)
+    resumed, _budget_state = resume_mod.resume_loop_config(summary, run_dir=tmp_path)
 
     assert resumed.full_auto is True
 
@@ -5992,7 +5993,7 @@ def test_resume_loop_config_rejects_float_max_usd(tmp_path):
     }
 
     with pytest.raises(ValueError, match="resume_config.max_usd must be a decimal string, not float"):
-        loop_mod.resume_loop_config(summary, run_dir=tmp_path)
+        resume_mod.resume_loop_config(summary, run_dir=tmp_path)
 
 
 def test_summary_records_unavailable_git_state_outside_git(tmp_path, monkeypatch):
