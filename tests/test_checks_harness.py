@@ -13,7 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import code_review_loop.cli as MODULE
+import code_review_loop.loop as loop_mod
 from code_review_loop.adapters.checks import ChecksAdapter
 from code_review_loop.clock import Clock
 from code_review_loop.core.ports import (
@@ -54,7 +54,7 @@ def _runner_returning(*results: CommandResult):
 class TestChecksAdapter:
     def test_returns_checks_outcome_on_success(self, tmp_path: Path) -> None:
         (tmp_path / "artifacts").mkdir()
-        config = MODULE.LoopConfig(
+        config = loop_mod.LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",
@@ -75,7 +75,7 @@ class TestChecksAdapter:
 
     def test_failed_check_appears_in_failed_commands(self, tmp_path: Path) -> None:
         (tmp_path / "artifacts").mkdir()
-        config = MODULE.LoopConfig(
+        config = loop_mod.LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",
@@ -95,7 +95,7 @@ class TestChecksAdapter:
 
     def test_dry_run_skips_subprocess(self, tmp_path: Path) -> None:
         (tmp_path / "artifacts").mkdir()
-        config = MODULE.LoopConfig(
+        config = loop_mod.LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",
@@ -117,7 +117,7 @@ class TestChecksAdapter:
     def test_adaptive_pytest_skip_for_typescript_repo(self, tmp_path: Path) -> None:
         (tmp_path / "artifacts").mkdir()
         (tmp_path / "package.json").write_text('{"scripts":{"test":"vitest"}}\n', encoding="utf-8")
-        config = MODULE.LoopConfig(
+        config = loop_mod.LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",
@@ -173,7 +173,7 @@ class TestEngineDispatch:
         assert ctx.phase_checks is None
 
         (tmp_path / "artifacts").mkdir()
-        config = MODULE.LoopConfig(
+        config = loop_mod.LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",
@@ -182,7 +182,7 @@ class TestEngineDispatch:
             check_commands=("true",),
         )
         success = CommandResult(["true"], 0)
-        results, failed = MODULE.run_checks(config, _runner_returning(success), 1)
+        results, failed = loop_mod.run_checks(config, _runner_returning(success), 1)
         assert results[0].returncode == 0
         assert failed == []
 

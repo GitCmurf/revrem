@@ -29,7 +29,7 @@ from pathlib import Path
 
 # Committed baseline: measured call-site count of ``monkeypatch.setattr(MODULE, ...)``
 # across tests/ at the start of REVREM-TASK-003. Ratchets downward only.
-BASELINE = 53
+BASELINE = 0
 
 _TESTS_DIR = Path(__file__).parent
 _PATTERN = re.compile(r"monkeypatch\.setattr\(MODULE,")

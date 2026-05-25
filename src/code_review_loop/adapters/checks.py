@@ -16,7 +16,7 @@ from code_review_loop.adapters._checks_impl import run_checks
 from code_review_loop.core.ports import ChecksOutcome, ChecksRequest, RunContext
 
 if TYPE_CHECKING:
-    from code_review_loop.cli import LoopConfig
+    from code_review_loop.config import LoopConfig
 
 
 class ChecksAdapter:

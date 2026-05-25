@@ -10,13 +10,13 @@ from __future__ import annotations
 
 from support.fakes import FIXED_ISO, FIXED_RUN_ID, FakeClock, FakeRunIdentity
 
-from code_review_loop import cli as MODULE
+import code_review_loop.loop as loop_mod
 from code_review_loop import events
 
 
 def _clear_review_runner(args, cwd, input_text=None, timeout_seconds=None):
     if args[1] == "review":
-        return MODULE.CommandResult(
+        return loop_mod.CommandResult(
             list(args),
             0,
             stdout='{"findings": [], "overall_correctness": "patch is correct"}\n',
@@ -25,7 +25,7 @@ def _clear_review_runner(args, cwd, input_text=None, timeout_seconds=None):
 
 
 def test_run_loop_timestamps_and_run_id_are_deterministic(tmp_path):
-    config = MODULE.LoopConfig(
+    config = loop_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -35,7 +35,7 @@ def test_run_loop_timestamps_and_run_id_are_deterministic(tmp_path):
         final_review=False,
     )
 
-    summary = MODULE.run_loop(
+    summary = loop_mod.run_loop(
         config,
         _clear_review_runner,
         clock=FakeClock(),
@@ -53,7 +53,7 @@ def test_run_loop_timestamps_and_run_id_are_deterministic(tmp_path):
 
 
 def test_default_artifact_dir_is_deterministic_under_fakes():
-    path = MODULE.default_artifact_dir(clock=FakeClock(), identity=FakeRunIdentity())
+    path = loop_mod.default_artifact_dir(clock=FakeClock(), identity=FakeRunIdentity())
     assert path.as_posix() == f".revrem/runs/20260102T030405Z-{FIXED_RUN_ID}"
 
 

@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import code_review_loop.cli as MODULE
+import code_review_loop.loop as loop_mod
 from code_review_loop.adapters.review import ReviewAdapter
 from code_review_loop.clock import Clock
 from code_review_loop.core.ports import (
@@ -31,7 +31,7 @@ def _ctx(runner=None, **kwargs: object) -> RunContext:
 class TestReviewAdapter:
     def test_dry_run_returns_findings_status(self, tmp_path: Path) -> None:
         (tmp_path / "artifacts").mkdir()
-        config = MODULE.LoopConfig(
+        config = loop_mod.LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",
@@ -52,7 +52,7 @@ class TestReviewAdapter:
 
     def test_artifact_label_and_display_label_threaded(self, tmp_path: Path) -> None:
         (tmp_path / "artifacts").mkdir()
-        config = MODULE.LoopConfig(
+        config = loop_mod.LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",
@@ -80,7 +80,7 @@ class TestReviewAdapter:
 
     def test_runtime_error_propagates(self, tmp_path: Path) -> None:
         (tmp_path / "artifacts").mkdir()
-        config = MODULE.LoopConfig(
+        config = loop_mod.LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",
@@ -140,7 +140,7 @@ class TestEngineDispatch:
         subprocess.run(["git", "commit", "-m", "init"], cwd=repo, capture_output=True)
         monkeypatch.chdir(repo)
 
-        exit_code = MODULE.main(
+        exit_code = loop_mod.main(
             ["--base", "missing", "--codex-bin", "git", "--artifact-dir", "artifacts"]
         )
         assert exit_code == 4  # preflight blocked; adapter was never called

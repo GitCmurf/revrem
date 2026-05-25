@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import code_review_loop.cli as MODULE
+import code_review_loop.loop as loop_mod
 from code_review_loop.adapters.commit import CommitAdapter
 from code_review_loop.clock import Clock
 from code_review_loop.core.ports import (
@@ -61,7 +61,7 @@ def _git_runner(*, staged: bool = True, commit_ok: bool = True):
 class TestCommitAdapter:
     def test_dry_run_returns_skipped(self, tmp_path: Path) -> None:
         (tmp_path / "artifacts").mkdir()
-        config = MODULE.LoopConfig(
+        config = loop_mod.LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",
@@ -81,7 +81,7 @@ class TestCommitAdapter:
 
     def test_no_staged_changes_returns_skipped_no_changes(self, tmp_path: Path) -> None:
         (tmp_path / "artifacts").mkdir()
-        config = MODULE.LoopConfig(
+        config = loop_mod.LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",
@@ -97,7 +97,7 @@ class TestCommitAdapter:
 
     def test_commit_failed_propagates_unchanged(self, tmp_path: Path) -> None:
         (tmp_path / "artifacts").mkdir()
-        config = MODULE.LoopConfig(
+        config = loop_mod.LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",
@@ -107,13 +107,13 @@ class TestCommitAdapter:
         ctx = _ctx(runner=_git_runner(staged=True, commit_ok=False))
         adapter = CommitAdapter(config)
 
-        with pytest.raises(MODULE.CommitFailed):
+        with pytest.raises(loop_mod.CommitFailed):
             adapter.execute(CommitRequest(iteration=1), ctx)
 
     def test_retrying_flag_threaded_through(self, tmp_path: Path) -> None:
         """CommitRequest.retrying is forwarded to run_commit."""
         (tmp_path / "artifacts").mkdir()
-        config = MODULE.LoopConfig(
+        config = loop_mod.LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",
@@ -177,7 +177,7 @@ class TestEngineDispatch:
                 return CommandResult(list(args), 0, stdout="")
             return CommandResult(list(args), 0, stdout="## Finding\nbad code\nREVIEW_STATUS: findings\n")
 
-        config = MODULE.LoopConfig(
+        config = loop_mod.LoopConfig(
             base="main",
             max_iterations=2,
             codex_bin="codex",
@@ -186,7 +186,7 @@ class TestEngineDispatch:
             commit_after_remediation=True,
         )
 
-        with pytest.raises(MODULE.RunLoopFailed) as excinfo:
-            MODULE.run_loop(config, runner)
+        with pytest.raises(loop_mod.RunLoopFailed) as excinfo:
+            loop_mod.run_loop(config, runner)
 
         assert excinfo.value.summary["stopped_reason"] == "budget_ceiling_hit"

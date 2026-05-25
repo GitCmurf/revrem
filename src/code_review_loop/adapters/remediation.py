@@ -13,7 +13,7 @@ from code_review_loop.adapters._remediation_impl import run_remediation
 from code_review_loop.core.ports import RemediationOutcome, RemediationRequest, RunContext
 
 if TYPE_CHECKING:
-    from code_review_loop.cli import LoopConfig
+    from code_review_loop.config import LoopConfig
 
 
 class RemediationAdapter:

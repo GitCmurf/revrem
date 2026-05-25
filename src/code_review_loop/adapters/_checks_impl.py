@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 from code_review_loop.core.ports import CommandResult, RunContext
 
 if TYPE_CHECKING:
-    from code_review_loop.cli import LoopConfig
+    from code_review_loop.config import LoopConfig
 
 
 # Project-surface markers (moved from cli/__init__.py during C3a step 1).
@@ -65,7 +65,7 @@ def _cli_module():
     # the adapter has no module-load dependency on cli having finished
     # initialising. C3 cleanup migrates these helpers to a shared support
     # module so this accessor can be retired.
-    from code_review_loop import cli as _cli
+    from code_review_loop import loop as _cli
 
     return _cli
 

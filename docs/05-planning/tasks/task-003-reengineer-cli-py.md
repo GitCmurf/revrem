@@ -903,12 +903,12 @@ lazy back-imports can be deleted.
 `core/engine.py` but the shell — terminal contexts, summary writes, phase
 dispatch — is still inlined. `run_loop` (line 1815) is the public wrapper.
 
-**Wave C1 + C2 + C3a + partial C3c status (2026-05-25).** C1a, C1b,
-C2a (both parts), the TD-004 half of C2b, all five C3a phase migrations, and
-the low-risk C3c tech-debt cleanup items have landed. C3b remains open, and the
-adapter implementation modules still reach loop-shell helpers through
-``code_review_loop.cli``; do not declare Wave C done until that back-reference
-and the remaining ``MODULE`` monkeypatch reach-ins are retired.
+**Wave C completion checkpoint (2026-05-25).** C1, C2, C3a, the C3b import
+boundary, and the low-risk C3c cleanup items have landed. The console-script
+target ``code_review_loop.cli:main`` is now a 27-line entry shim; the loop body
+has moved to ``code_review_loop.loop`` and ``LoopConfig`` is exposed through
+``code_review_loop.config``. The old ``monkeypatch.setattr(MODULE, ...)``
+reach-in pattern is ratcheted to zero.
 
 * **C3a is complete.** Every phase implementation now lives in its adapter
   module; no adapter still uses a lazy ``from code_review_loop.cli import
@@ -923,9 +923,9 @@ and the remaining ``MODULE`` monkeypatch reach-ins are retired.
   | triage      | ``adapters/_triage_impl.py``                        |
   | commit      | ``adapters/_commit_impl.py``                        |
 
-  ``cli/__init__.py`` keeps ``name as name`` re-exports for every moved
-  symbol so existing call sites and tests using ``MODULE.run_X`` /
-  ``MODULE.is_pytest_command`` / etc. keep working unchanged.
+  ``cli/__init__.py`` no longer owns the loop body. Adapter phase tests and
+  loop integration tests import final homes directly instead of using the old
+  ``MODULE`` alias against ``code_review_loop.cli``.
 
   Loop-shell helpers used by the moved phases (``progress_event``,
   ``write_artifact``, ``_combined_output``, ``phase_timeout_seconds``,
@@ -934,35 +934,29 @@ and the remaining ``MODULE`` monkeypatch reach-ins are retired.
   ``review_status_diagnostics``, ``DEFAULT_REMEDIATION_PROMPT``,
   ``DEFAULT_TRIAGE_PROMPT``, ``DEFAULT_REVIEW_PROMPT``, the various
   ``build_*_command`` builders, ``CommitFailed``, ``REVREM_COMMIT_SUFFIX``
-  and friends) still live in ``cli/__init__.py`` and are reached through a
-  module-level ``_cli`` alias in each impl module. The plan calls for moving
-  these to a shared ``cli/loop_support.py`` (or equivalent) in the C3
-  cleanup wave after C3b; that is what finally lets the ``_cli`` alias be
-  retired and ``adapters/`` become genuinely free of any back-reference into
-  the parent.
+  and friends) now live on ``code_review_loop.loop``. Adapter implementation
+  modules import that loop support directly; import-linter enforces that
+  ``code_review_loop.adapters`` has no direct import of ``code_review_loop.cli``.
 
-  Surgical C3b-style test patches were applied to the five sites that
-  ``patch("code_review_loop.cli.run_X")`` in
-  ``tests/test_review_harness.py``, ``tests/test_remediation_harness.py``,
-  ``tests/test_triage_harness.py``, ``tests/test_commit_harness.py``. Each
-  now patches the canonical binding the adapter actually calls
-  (``code_review_loop.adapters.X.run_X``). The remaining ~53 monkeypatch
-  sites stay in C3b proper.
+  Surgical C3b-style test patches were applied to the legacy phase patches and
+  the remaining old ``MODULE`` monkeypatch sites. The ratchet baseline is now
+  ``0`` for ``monkeypatch.setattr(MODULE, ...)``.
 
-  ``cli/__init__.py`` is now roughly 3.1k lines, down from 4946 at the start
-  of Wave C. Re-run the measurement commands before quoting exact figures in a
-  PR body.
+  ``cli/__init__.py`` is now 27 lines, down from 4946 at the start of Wave C.
+  The moved loop implementation is 3192 lines in ``code_review_loop.loop``.
 
 * **C3c tech-debt cleanup is partially complete.** TD-002, TD-003, and TD-005
   are resolved: `LoopAccumulator` no longer stores `iteration`, `_execute_stop`
   has a shared stop-tail helper, and `OutcomeFailed.reason` is now a
   `Literal[...]` union. `tests/test_cli.py` has been renamed to
-  `tests/test_cli_integration.py` as the first test-monolith split; deeper
-  relocation by behavior/module remains part of C3b/C3c follow-up.
+  `tests/test_cli_integration.py` as the first test-monolith split; follow-up
+  behavioral subdivision remains useful but is no longer blocking the Wave C
+  import and public-surface goals.
 
 * **Gate status at this checkpoint:** `./.venv/bin/pytest -q`,
   `./.venv/bin/ruff check .`, `./.venv/bin/mypy src`, `lint-imports`, and
-  `uv run --locked meminit check --format json` pass locally.
+  `uv run --locked meminit check --format json` pass locally. Full pytest count
+  at this checkpoint is 725 passing tests.
 
 **Wave C1 + C2 status (2026-05-24).** C1a, C1b, C2a (both parts) and the
 TD-004 half of C2b have landed.

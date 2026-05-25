@@ -14,7 +14,7 @@ from code_review_loop.adapters._review_impl import run_codex_review
 from code_review_loop.core.ports import ReviewOutcome, ReviewRequest, RunContext
 
 if TYPE_CHECKING:
-    from code_review_loop.cli import LoopConfig
+    from code_review_loop.config import LoopConfig
 
 
 class ReviewAdapter:

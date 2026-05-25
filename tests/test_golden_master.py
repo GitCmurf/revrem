@@ -17,8 +17,8 @@ from support.fakes import FIXED_RUN_ID, FakeClock, FakeRunIdentity, FakeRunner
 from support.normalize import CWD_PLACEHOLDER, DURATION_PLACEHOLDER, normalize
 from support.snapshot import assert_snapshot
 
+import code_review_loop.loop as loop_mod
 from code_review_loop import budgets, events
-from code_review_loop import cli as MODULE
 
 CLEAR_REVIEW_STDOUT = '{"findings": [], "overall_correctness": "patch is correct"}\n'
 FINDINGS_REVIEW_STDOUT = "REVIEW_STATUS: findings\n"
@@ -35,7 +35,7 @@ def _loop_config(tmp_path, **overrides):
         "final_review": False,
     }
     base.update(overrides)
-    return MODULE.LoopConfig(**base)
+    return loop_mod.LoopConfig(**base)
 
 
 def _drive_loop(config, runner, tmp_path):
@@ -48,15 +48,15 @@ def _drive_loop(config, runner, tmp_path):
     the return-vs-raise distinction.
     """
     try:
-        summary = MODULE.run_loop(config, runner, clock=FakeClock(), identity=FakeRunIdentity())
-    except MODULE.RunLoopFailed as exc:
+        summary = loop_mod.run_loop(config, runner, clock=FakeClock(), identity=FakeRunIdentity())
+    except loop_mod.RunLoopFailed as exc:
         summary = exc.summary
     records, _ = events.read_events(tmp_path / "artifacts" / "events.jsonl")
     return summary, [event.to_dict() for event in records]
 
 
 def _run_clear_path(tmp_path):
-    runner = FakeRunner({"review": MODULE.CommandResult([], 0, stdout=CLEAR_REVIEW_STDOUT)})
+    runner = FakeRunner({"review": loop_mod.CommandResult([], 0, stdout=CLEAR_REVIEW_STDOUT)})
     return _drive_loop(_loop_config(tmp_path), runner, tmp_path)
 
 
@@ -76,8 +76,8 @@ def test_loop_clear_path_events_match_golden(tmp_path):
 def _run_findings_path(tmp_path):
     runner = FakeRunner(
         {
-            "review": MODULE.CommandResult([], 0, stdout=FINDINGS_REVIEW_STDOUT),
-            "exec": MODULE.CommandResult([], 0, stdout="remediated\n"),
+            "review": loop_mod.CommandResult([], 0, stdout=FINDINGS_REVIEW_STDOUT),
+            "exec": loop_mod.CommandResult([], 0, stdout="remediated\n"),
         }
     )
     return _drive_loop(_loop_config(tmp_path), runner, tmp_path)
@@ -99,7 +99,7 @@ def test_loop_findings_path_events_match_golden(tmp_path):
 
 def _run_budget_path(tmp_path):
     runner = FakeRunner(
-        {"review": MODULE.CommandResult([], 0, stdout=FINDINGS_REVIEW_STDOUT, tokens=100)}
+        {"review": loop_mod.CommandResult([], 0, stdout=FINDINGS_REVIEW_STDOUT, tokens=100)}
     )
     config = _loop_config(tmp_path, budget_config=budgets.BudgetConfig(max_tokens=10))
     return _drive_loop(config, runner, tmp_path)

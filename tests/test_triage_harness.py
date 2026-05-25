@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import code_review_loop.cli as MODULE
+import code_review_loop.loop as loop_mod
 from code_review_loop.adapters.triage import TriageAdapter
 from code_review_loop.clock import Clock
 from code_review_loop.core.ports import (
@@ -28,7 +28,7 @@ def _ctx(runner=None, **kwargs: object) -> RunContext:
 class TestTriageAdapter:
     def test_dry_run_returns_outcome(self, tmp_path: Path) -> None:
         (tmp_path / "artifacts").mkdir()
-        config = MODULE.LoopConfig(
+        config = loop_mod.LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",
@@ -51,7 +51,7 @@ class TestTriageAdapter:
 
     def test_all_fields_passed_through(self, tmp_path: Path) -> None:
         (tmp_path / "artifacts").mkdir()
-        config = MODULE.LoopConfig(
+        config = loop_mod.LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",
@@ -88,7 +88,7 @@ class TestTriageAdapter:
 
     def test_clear_triage_outcome(self, tmp_path: Path) -> None:
         (tmp_path / "artifacts").mkdir()
-        config = MODULE.LoopConfig(
+        config = loop_mod.LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",

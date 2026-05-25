@@ -13,7 +13,7 @@ from code_review_loop.adapters._commit_impl import run_commit
 from code_review_loop.core.ports import CommitOutcome, CommitRequest, RunContext
 
 if TYPE_CHECKING:
-    from code_review_loop.cli import LoopConfig
+    from code_review_loop.config import LoopConfig
 
 
 class CommitAdapter:

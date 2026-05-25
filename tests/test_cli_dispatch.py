@@ -14,6 +14,7 @@ from collections.abc import Sequence
 import pytest
 
 from code_review_loop import cli
+from code_review_loop import loop as loop_mod
 from code_review_loop.cli import commands as cli_commands
 
 _EXPECTED_SUBCOMMANDS = {
@@ -94,7 +95,7 @@ def test_main_falls_through_when_no_subcommand_matches(
         called["argv"] = list(argv)
         raise SystemExit(99)
 
-    monkeypatch.setattr(cli, "parse_args", fake_parse_args)
+    monkeypatch.setattr(loop_mod, "parse_args", fake_parse_args)
     with pytest.raises(SystemExit) as excinfo:
         cli.main(["definitely-not-a-subcommand", "--whatever"])
     assert excinfo.value.code == 99

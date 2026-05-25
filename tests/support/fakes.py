@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
-from code_review_loop.cli import CommandResult
+from code_review_loop.core.ports import CommandResult
 
 FIXED_MOMENT = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
 FIXED_ISO = "2026-01-02T03:04:05Z"

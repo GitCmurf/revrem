@@ -27,14 +27,14 @@ class TerminalProgressReporter:
                 return
             if not self._warned:
                 self._warned = True
-                from code_review_loop.cli import print_compact_progress
+                from code_review_loop.loop import print_compact_progress
                 print_compact_progress(phase, label, "rich progress unavailable; using compact output", head="warn: ")
             self._print_compact(phase, label, status, detail)
             return
         self._print_compact(phase, label, status, detail)
 
     def _print_compact(self, phase: str, label: str, status: str, detail: str) -> None:
-        from code_review_loop.cli import print_compact_progress
+        from code_review_loop.loop import print_compact_progress
         if detail:
             print_compact_progress(phase, label, detail, head=f"{status}: ")
         else:

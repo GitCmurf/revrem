@@ -10,7 +10,7 @@ from ..outcome import CommandFailed, CommandOk
 
 
 def main(argv: Sequence[str]) -> int:
-    from code_review_loop import cli as _cli  # late import; preserves monkeypatching
+    from code_review_loop import loop as _cli  # late import; preserves monkeypatching
 
     args = _cli.parse_policy_args(argv)
     try:

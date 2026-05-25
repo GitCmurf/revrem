@@ -1,11 +1,9 @@
 """Tests for ProgressReporter protocol and TerminalProgressReporter adapter (B4)."""
 from __future__ import annotations
 
-import importlib
-
-MODULE = importlib.import_module("code_review_loop.cli")
 from support.fakes import FakeClock, FakeRunIdentity  # noqa: E402
 
+import code_review_loop.loop as loop_mod
 from code_review_loop.adapters.terminal import TerminalProgressReporter  # noqa: E402
 from code_review_loop.core.ports import ProgressReporter, RunContext  # noqa: E402
 
@@ -30,7 +28,7 @@ def _make_ctx(reporter: ProgressReporter | None = None) -> RunContext:
 
 
 def _make_config(tmp_path, *, progress: bool = True, progress_style: str = "compact"):
-    return MODULE.LoopConfig(
+    return loop_mod.LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -64,7 +62,7 @@ def test_progress_event_delegates_to_reporter_when_injected(tmp_path, capsys):
     ctx = _make_ctx(reporter)
     config = _make_config(tmp_path, progress=True, progress_style="compact")
 
-    MODULE.progress_event(config, "review", "1", "start", "detail text", ctx=ctx)
+    loop_mod.progress_event(config, "review", "1", "start", "detail text", ctx=ctx)
 
     assert reporter.calls == [("review", "1", "start", "detail text")]
     # No output to stderr — the reporter was invoked instead of legacy path
@@ -79,7 +77,7 @@ def test_progress_event_skips_reporter_when_none(tmp_path, capsys):
     ctx = _make_ctx(None)
     config = _make_config(tmp_path, progress=True, progress_style="compact")
 
-    MODULE.progress_event(config, "review", "1", "start", "detail", ctx=ctx)
+    loop_mod.progress_event(config, "review", "1", "start", "detail", ctx=ctx)
 
     # Legacy compact path writes to stderr
     err = capsys.readouterr().err

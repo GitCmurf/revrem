@@ -27,7 +27,7 @@ from code_review_loop.clock import SYSTEM_CLOCK, Clock
 from code_review_loop.identity import SYSTEM_IDENTITY, RunIdentity
 
 if TYPE_CHECKING:
-    from code_review_loop.cli import LoopConfig
+    from code_review_loop.config import LoopConfig
 
 # Canonical here (was duplicated in cli/__init__.py at C2a-step-1).
 DEFAULT_TIMEOUT_SECONDS = 300
@@ -39,7 +39,7 @@ def _cli_module():
     # is defined later in that file). Cached on the module object after the
     # first lookup; we go through a function rather than a top-level import
     # to avoid the cycle.
-    from code_review_loop import cli as _cli
+    from code_review_loop import loop as _cli
 
     return _cli
 

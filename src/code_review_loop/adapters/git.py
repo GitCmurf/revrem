@@ -12,7 +12,7 @@ import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 
-from code_review_loop import cli as _cli  # noqa: E402  -- loop-shell helpers
+from code_review_loop import loop as _cli  # noqa: E402  -- loop-shell helpers
 from code_review_loop.core.ports import CommandResult
 
 
