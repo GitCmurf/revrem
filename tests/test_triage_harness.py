@@ -65,7 +65,7 @@ class TestTriageAdapter:
         adapter = TriageAdapter(config)
 
         # REVREM-TASK-003 Wave C3a step 4: run_triage now lives in
-        # ``adapters._triage_impl`` and is imported by ``adapters.triage``
+        # ``adapters.triage`` and is imported by ``adapters.triage``
         # directly. Patch the binding the adapter actually calls.
         with patch("code_review_loop.adapters.triage.run_triage") as mock_triage:
             mock_triage.return_value = ("handoff text", 0, False, None)

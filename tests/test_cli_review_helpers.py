@@ -5,9 +5,9 @@ from pathlib import Path
 
 import code_review_loop.runner as runner_mod
 from code_review_loop import application, events
-from code_review_loop.adapters import _remediation_impl as remediation_impl
-from code_review_loop.adapters import _review_impl as review_impl
-from code_review_loop.adapters import _triage_impl as triage_impl
+from code_review_loop.adapters import remediation as remediation_impl
+from code_review_loop.adapters import review as review_impl
+from code_review_loop.adapters import triage as triage_impl
 from code_review_loop.core.ports import RunContext
 from tests.support.fakes import FakeClock, FakeRunIdentity
 from tests.support.phase_harnesses import phase_harness_kwargs

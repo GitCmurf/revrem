@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 
 import code_review_loop.runner as runner_mod
-from code_review_loop.adapters import _checks_impl as checks_impl
-from code_review_loop.adapters import _commit_impl as commit_impl
+from code_review_loop.adapters import checks as checks_impl
+from code_review_loop.adapters import commit as commit_impl
 from code_review_loop.core.ports import RunContext
 from tests.support.fakes import FakeClock, FakeRunIdentity
 from tests.support.phase_harnesses import phase_harness_kwargs

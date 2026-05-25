@@ -464,68 +464,68 @@ def kill_process_tree(process: subprocess.Popen[str]) -> None:
 # Checks implementation helpers. These remain imported here only where the
 # runner still has direct callers; new code should import their adapter module
 # homes directly.
-from code_review_loop.adapters._checks_impl import (
+from code_review_loop.adapters.checks import (
     NON_PYTHON_PROJECT_MARKERS as NON_PYTHON_PROJECT_MARKERS,
 )
-from code_review_loop.adapters._checks_impl import (
+from code_review_loop.adapters.checks import (
     PYTHON_PROJECT_MARKERS as PYTHON_PROJECT_MARKERS,
 )
-from code_review_loop.adapters._checks_impl import (
+from code_review_loop.adapters.checks import (
     PYTHON_SCAN_SKIP_DIRS as PYTHON_SCAN_SKIP_DIRS,
 )
-from code_review_loop.adapters._checks_impl import (
+from code_review_loop.adapters.checks import (
     has_non_python_project_surface as has_non_python_project_surface,
 )
-from code_review_loop.adapters._checks_impl import (
+from code_review_loop.adapters.checks import (
     has_python_test_surface as has_python_test_surface,
 )
-from code_review_loop.adapters._checks_impl import (
+from code_review_loop.adapters.checks import (
     is_pytest_command as is_pytest_command,
 )
-from code_review_loop.adapters._checks_impl import (
+from code_review_loop.adapters.checks import (
     iter_project_files as iter_project_files,
 )
 
 # Commit-phase helpers used by the application runner while commit ownership
 # continues moving behind CommitAdapter.
-from code_review_loop.adapters._commit_impl import (
+from code_review_loop.adapters.commit import (
     classify_commit_failure as classify_commit_failure,
 )
-from code_review_loop.adapters._commit_impl import (
+from code_review_loop.adapters.commit import (
     commit_artifact_relative_path as commit_artifact_relative_path,
 )
-from code_review_loop.adapters._commit_impl import (
+from code_review_loop.adapters.commit import (
     commit_command_for_message as commit_command_for_message,
 )
-from code_review_loop.adapters._commit_impl import (
+from code_review_loop.adapters.commit import (
     commit_message_for_staged_changes as commit_message_for_staged_changes,
 )
-from code_review_loop.adapters._commit_impl import (
+from code_review_loop.adapters.commit import (
     deterministic_commit_message as deterministic_commit_message,
 )
-from code_review_loop.adapters._commit_impl import (
+from code_review_loop.adapters.commit import (
     format_commit_hook_failure_for_remediation as format_commit_hook_failure_for_remediation,
 )
-from code_review_loop.adapters._commit_impl import (
+from code_review_loop.adapters.commit import (
     git_repo_root as git_repo_root,
 )
-from code_review_loop.adapters._commit_impl import (
+from code_review_loop.adapters.commit import (
     git_worktree_status_command_for_commit as git_worktree_status_command_for_commit,
 )
 
-from code_review_loop.adapters._review_impl import (
+from code_review_loop.adapters.review import (
     review_base_hint as review_base_hint,
 )
-from code_review_loop.adapters._review_impl import (
+from code_review_loop.adapters.review import (
     review_base_preflight_error as review_base_preflight_error,
 )
-from code_review_loop.adapters._review_impl import (
+from code_review_loop.adapters.review import (
     review_failed_to_run as review_failed_to_run,
 )
 from code_review_loop.adapters.git import run_git_preflight as run_git_preflight
 
 # Check failure formatting used by the application runner.
-from code_review_loop.adapters._checks_impl import format_check_failures as _format_check_failures
+from code_review_loop.adapters.checks import format_check_failures as _format_check_failures
 
 
 def excerpt_for_terminal(text: str, max_chars: int) -> str:

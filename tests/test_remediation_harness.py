@@ -69,7 +69,7 @@ class TestRemediationAdapter:
         adapter = RemediationAdapter(config)
 
         # REVREM-TASK-003 Wave C3a step 3: run_remediation now lives in
-        # ``adapters._remediation_impl`` and is imported by
+        # ``adapters.remediation`` and is imported by
         # ``adapters.remediation`` directly. Patch the binding the adapter
         # actually calls.
         with patch("code_review_loop.adapters.remediation.run_remediation") as mock_rem:

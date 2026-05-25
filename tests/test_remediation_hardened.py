@@ -9,7 +9,7 @@ import pytest
 from code_review_loop import harnesses, policy, prompts_composer
 from code_review_loop import runner as cli
 from code_review_loop._compat_jsonschema import validate
-from code_review_loop.adapters import _remediation_impl as remediation_impl
+from code_review_loop.adapters import remediation as remediation_impl
 from code_review_loop.cli.main import main as cli_main
 
 

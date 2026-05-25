@@ -67,7 +67,7 @@ class TestReviewAdapter:
         adapter = ReviewAdapter(config)
 
         # REVREM-TASK-003 Wave C3a step 2: run_codex_review now lives in
-        # ``adapters._review_impl`` and is imported by ``adapters.review``
+        # ``adapters.review`` and is imported by ``adapters.review``
         # directly, not via the cli re-export. Patch the binding the adapter
         # actually calls.
         with patch("code_review_loop.adapters.review.run_codex_review") as mock_review:

@@ -125,7 +125,7 @@ class TestCommitAdapter:
         adapter = CommitAdapter(config)
 
         # REVREM-TASK-003 Wave C3a step 5: run_commit now lives in
-        # ``adapters._commit_impl`` and is imported by ``adapters.commit``
+        # ``adapters.commit`` and is imported by ``adapters.commit``
         # directly. Patch the binding the adapter actually calls.
         with patch("code_review_loop.adapters.commit.run_commit") as mock_commit:
             mock_commit.return_value = "committed"
