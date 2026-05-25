@@ -53,15 +53,17 @@ surface to the runner.
 The core engine remains dependency-free. It exposes state-machine events,
 actions, a pure `decide()` transition function, and a reusable `run()` loop for
 non-CLI executors. It must not import CLI, adapter, terminal, profile,
-subprocess, or filesystem orchestration modules. The runner may call the pure
-decision function while it still owns the current imperative session body, but
-it must not simulate engine execution with step-limit capture bridges.
+subprocess, or filesystem orchestration modules. The production runner drives
+the loop through `core.engine.run()` with a runner-local executor; it must not
+call `decide()` directly and must not simulate engine execution with one-step
+capture bridges.
 
 Architecture ratchets should enforce this story:
 
 - production source must not retain Wave C migration language such as legacy
   shim or old monkeypatch-surface comments;
 - CLI loop execution must route through `code_review_loop.application`;
+- production loop execution must route through `core.engine.run()`;
 - import-linter must continue proving core and adapter layer boundaries;
 - tests that need phase internals should import canonical adapter homes, not
   runner compatibility surfaces.

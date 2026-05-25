@@ -32,3 +32,23 @@ def test_cli_main_routes_loop_execution_through_application_api() -> None:
     assert "application.run_review_loop(config)" in text
     assert "runner.run_loop" not in text
     assert "from code_review_loop import runner" not in text
+
+
+def test_phase_adapters_have_no_impl_split() -> None:
+    impl_modules = sorted((SOURCE_ROOT / "adapters").glob("_*_impl.py"))
+
+    assert impl_modules == []
+
+
+def test_runner_imports_shared_phase_support_helpers() -> None:
+    text = (SOURCE_ROOT / "runner.py").read_text(encoding="utf-8")
+
+    assert "from code_review_loop.adapters.phase_support import" in text
+    for helper in (
+        "progress_event",
+        "write_artifact",
+        "ensure_model_budget",
+        "build_commit_message_command",
+        "sanitize_commit_message",
+    ):
+        assert f"def {helper}(" not in text

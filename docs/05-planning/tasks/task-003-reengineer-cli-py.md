@@ -961,6 +961,13 @@ Treat that commit as a green checkpoint, not the Wave C finish line.
   runner-local executor bridge, and `tests/test_runner_engine_gate.py` fails if
   `runner.py` reintroduces direct ``decide()`` calls.
 
+  Final remediation also removed the adapter ``_X_impl.py`` migration split:
+  each phase adapter now owns its implementation in its canonical module
+  (`adapters/review.py`, `triage.py`, `remediation.py`, `checks.py`, and
+  `commit.py`). Shared progress, budget, artifact, terminal, and commit-message
+  helpers have one implementation in ``adapters.phase_support``; the runner
+  imports that implementation instead of carrying local copies.
+
   Reputation-polish follow-up introduced ``code_review_loop.application`` as the
   supported non-CLI execution boundary and recorded the ownership direction in
   `REVREM-ADR-012`.
@@ -971,6 +978,10 @@ Treat that commit as a green checkpoint, not the Wave C finish line.
   shared stop-tail helper, and `OutcomeFailed.reason` is now a `Literal[...]`
   union. `RunState.to_dict()` now returns a fresh projection instead of the live
   source of truth.
+
+  TD-006 and TD-007 are also resolved: `harness_registry()` returns cached
+  immutable registry views, and routed triage context extraction uses a
+  per-run, stat-keyed file-scan cache.
 
   Test decomposition is complete for Wave C. The original CLI monolith has been
   reduced to an 87-line smoke/e2e file, and progress/terminal-title,
@@ -1028,6 +1039,10 @@ Treat that commit as a green checkpoint, not the Wave C finish line.
    (``mark_outcome``/``mark_clear``/``mark_failed``/``mark_findings``/
    ``mark_unknown``), ``_execute_stop`` uses them, and ``to_dict()`` now returns
    a fresh summary projection instead of the live source of truth.
+8. DONE in final remediation: adapter implementation bodies live in canonical
+   adapter modules, duplicate phase-support helpers were removed from
+   ``runner.py``, TD-006 registry copying is resolved with immutable cached
+   mappings, and TD-007 routing-context reads are cached per run.
 
 **Wave C1 + C2 status (2026-05-24).** C1a, C1b, C2a (both parts) and the
 TD-004 half of C2b have landed.
@@ -1466,8 +1481,10 @@ a coupling or cycle violation is not.
 **Wave C closeout note (2026-05-25):** the supported non-CLI execution surface
 is `code_review_loop.application.run_review_loop()` /
 `resume_review_loop()`. The core engine owns dependency-free transitions via
-`decide()` and exposes `run()` for injected non-CLI executors; the runner no
-longer uses a one-step `run(max_steps=1)` capture bridge to obtain actions.
+`decide()` and drives execution through `run()` with injected executors. The
+production runner uses `core.engine.run()` directly, does not call `decide()`
+directly, and does not use a one-step `run(max_steps=1)` capture bridge to
+obtain actions.
 
 ## Adversarial-Review Anticipation
 
