@@ -6,18 +6,9 @@ helpers it composes (``git_add_command_for_commit``,
 ``commit_artifact_relative_path``, ``git_reset_artifact_command_for_commit``,
 ``commit_command_for_message``, ``classify_commit_failure``,
 ``commit_message_for_staged_changes``, ``deterministic_commit_message``,
-``format_commit_hook_failure_for_remediation``). Each was moved verbatim from
-``code_review_loop.cli``.
-
-The ``CommitFailed`` exception class, ``REVREM_COMMIT_SUFFIX`` /
-``MAX_COMMIT_SUBJECT_LEN`` / ``CONVENTIONAL_COMMIT_RE`` constants,
-``DEFAULT_COMMIT_MESSAGE_PROMPT`` template, ``build_commit_message_command``,
-``sanitize_commit_message`` and ``normalize_revrem_conventional_subject``
-remain in ``cli/__init__.py`` for now -- the first because it crosses the
-loop/engine boundary (``LoopAccumulator.commit_failed`` is typed as
-``BaseException | None``), the others because they are referenced from
-multiple non-commit sites. They are reached through the module-level ``_cli``
-alias; full elimination is the C3 cleanup wave.
+``format_commit_hook_failure_for_remediation``). Shared support lives in
+``adapters.phase_support`` so the adapter layer does not import the runner or
+CLI edge.
 """
 
 from __future__ import annotations
@@ -97,7 +88,7 @@ def classify_commit_failure(result: CommandResult) -> str:
     return "hook_failed" if _cli.COMMIT_HOOK_FAILURE_RE.search(output) else "commit_failed"
 
 
-def run_commit(config: LoopConfig, runner: Runner, iteration: int, *, retrying: bool = False, ctx: RunContext | None = None) -> str:
+def run_commit(config: LoopConfig, runner: Runner, iteration: int, *, ctx: RunContext, retrying: bool = False) -> str:
     _cli.progress_event(config, "commit", str(iteration), "start", "stage and commit verified remediation", ctx=ctx)
     if config.dry_run:
         _cli.write_artifact(config.artifact_dir / f"commit-{iteration}.txt", "DRY_RUN commit skipped\n")
@@ -178,7 +169,7 @@ def run_commit(config: LoopConfig, runner: Runner, iteration: int, *, retrying: 
     return "committed"
 
 
-def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iteration: int, ctx: RunContext | None = None) -> str:
+def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iteration: int, ctx: RunContext) -> str:
     fallback = deterministic_commit_message(iteration)
     stat = runner(["git", "diff", "--cached", "--stat"], config.cwd, None, _cli.phase_timeout_seconds(config, config.timeout_seconds))
     names = runner(["git", "diff", "--cached", "--name-only"], config.cwd, None, _cli.phase_timeout_seconds(config, config.timeout_seconds))

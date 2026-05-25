@@ -136,7 +136,7 @@ def run_checks(
     config: LoopConfig,
     runner,
     iteration: int,
-    ctx: RunContext | None = None,
+    ctx: RunContext,
 ) -> tuple[list[CommandResult], list[str]]:
     """Execute the configured check commands for ``iteration`` and return
     ``(results, failed_commands)``. Loop-shell side effects (progress events,
@@ -168,7 +168,7 @@ def run_checks(
             config.artifact_dir / f"check-{iteration}-{index}.txt",
             _cli._combined_output(result),
         )
-        if ctx is not None and ctx.event_sink is not None:
+        if ctx.event_sink is not None:
             ctx.event_sink.emit(
                 "check_result",
                 phase="check",

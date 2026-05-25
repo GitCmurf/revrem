@@ -52,7 +52,7 @@ def run_triage(
     run_id: str,
     source_review_artifact: str,
     review_output: str,
-    ctx: RunContext | None = None,
+    ctx: RunContext,
 ) -> tuple[str, int, bool, dict[str, Any] | None]:
     command = build_triage_command(config)
     prompt_root = config.triage_prompt or triage.load_prompt(contract=config.triage_contract)

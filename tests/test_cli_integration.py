@@ -18,6 +18,7 @@ from code_review_loop.cli import args as cli_args
 from code_review_loop.cli import config_builder
 from code_review_loop.core.ports import RunContext
 from tests.support.fakes import FakeClock, FakeRunIdentity
+from tests.support.phase_harnesses import phase_harness_kwargs
 
 cli_main = import_module("code_review_loop.cli.main")
 
@@ -27,6 +28,15 @@ def make_git_worktree(tmp_path: Path, cwd_rel: str | None = "work") -> tuple[Pat
     cwd = tmp_path if cwd_rel is None else tmp_path / cwd_rel
     cwd.mkdir(parents=True, exist_ok=True)
     return tmp_path, cwd
+
+
+def make_run_context(runner) -> RunContext:
+    return RunContext(
+        clock=FakeClock(),
+        identity=FakeRunIdentity(),
+        runner=runner,
+        **phase_harness_kwargs(),
+    )
 
 
 def test_main_reports_package_version(capsys):
@@ -716,7 +726,7 @@ def test_commit_message_for_staged_changes_respects_profile_prompt_override(tmp_
             return runner_mod.CommandResult(list(args), 0, stdout="Use custom format\n")
         raise AssertionError(f"unexpected command: {args!r}")
 
-    message = runner_mod.commit_message_for_staged_changes(config, runner, 1)
+    message = runner_mod.commit_message_for_staged_changes(config, runner, 1, make_run_context(runner))
 
     assert message == "Use custom format"
     assert "Write a custom subject." in next(
@@ -1586,7 +1596,7 @@ def test_run_commit_refuses_repo_root_artifact_dir_before_staging(tmp_path):
     )
 
     with pytest.raises(RuntimeError, match="artifact-dir resolves to the repository root"):
-        runner_mod.run_commit(config, runner, 1)
+        runner_mod.run_commit(config, runner, 1, ctx=make_run_context(runner))
 
     assert calls == []
 
@@ -1647,7 +1657,7 @@ def test_pytest_check_is_skipped_for_typescript_repo_without_python_surface(tmp_
         check_commands=("pytest -q",),
     )
 
-    results, _failed = runner_mod.run_checks(config, runner, 1)
+    results, _failed = runner_mod.run_checks(config, runner, 1, make_run_context(runner))
 
     assert calls == []
     assert results[0].returncode == 0
@@ -1676,7 +1686,7 @@ def test_pytest_check_is_skipped_for_typescript_repo_with_incidental_python_file
         check_commands=("pytest -q",),
     )
 
-    results, _failed = runner_mod.run_checks(config, runner, 1)
+    results, _failed = runner_mod.run_checks(config, runner, 1, make_run_context(runner))
 
     assert calls == []
     assert results[0].returncode == 0
@@ -1968,12 +1978,12 @@ def test_run_commit_uses_no_verify_only_on_retry(tmp_path):
         commit_on_hook_failure="no-verify",
     )
 
-    assert runner_mod.run_commit(config, runner, 1) == "committed"
+    assert runner_mod.run_commit(config, runner, 1, ctx=make_run_context(runner)) == "committed"
     assert ["git", "commit", "-m", "chore: remediate review iteration 1 (RevRem)"] in calls
     assert ["git", "commit", "--no-verify", "-m", "chore: remediate review iteration 1 (RevRem)"] not in calls
 
     calls.clear()
-    assert runner_mod.run_commit(config, runner, 1, retrying=True) == "committed"
+    assert runner_mod.run_commit(config, runner, 1, ctx=make_run_context(runner), retrying=True) == "committed"
     assert ["git", "commit", "--no-verify", "-m", "chore: remediate review iteration 1 (RevRem)"] in calls
 
 
@@ -4193,7 +4203,7 @@ def test_run_codex_review_fails_fast_when_base_has_no_merge_base(tmp_path):
     )
 
     with pytest.raises(RuntimeError, match="codex review failed for review-1"):
-        runner_mod.run_codex_review(config, runner, "review-1", display_label="1")
+        runner_mod.run_codex_review(config, runner, "review-1", display_label="1", ctx=make_run_context(runner))
 
     artifact_text = (repo / "artifacts" / "review-1.txt").read_text(encoding="utf-8")
     assert "Review base preflight failed" in artifact_text

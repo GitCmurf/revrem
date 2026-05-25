@@ -65,8 +65,9 @@ def run_remediation(
     runner: Runner,
     iteration: int,
     remediation_input: str,
+    *,
     resolved_route: policy.ResolvedRoute | None = None,
-    ctx: RunContext | None = None,
+    ctx: RunContext,
 ) -> CommandResult:
     last_message_path = (
         config.artifact_dir / f"remediation-{iteration}-last-message.txt"

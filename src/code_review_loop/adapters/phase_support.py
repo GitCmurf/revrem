@@ -161,8 +161,8 @@ def phase_timeout_seconds(config: LoopConfig, value: float | None) -> float | No
     return value
 
 
-def ensure_model_budget(config: LoopConfig, *, phase: str, iteration: int | str, ctx: RunContext | None = None) -> None:
-    if ctx is None or ctx.budget_state is None:
+def ensure_model_budget(config: LoopConfig, *, phase: str, iteration: int | str, ctx: RunContext) -> None:
+    if ctx.budget_state is None:
         return
     warning_due, elapsed = budgets.wall_warning_due(config.budget_config, ctx.budget_state)
     if warning_due:
@@ -197,10 +197,9 @@ def ensure_model_budget(config: LoopConfig, *, phase: str, iteration: int | str,
         raise
 
 
-def remaining_wall_budget_seconds(config: LoopConfig, ctx: RunContext | None = None) -> float | None:
+def remaining_wall_budget_seconds(config: LoopConfig, ctx: RunContext) -> float | None:
     if (
-        ctx is None
-        or ctx.budget_state is None
+        ctx.budget_state is None
         or config.budget_config.max_wall_seconds is None
     ):
         return None
@@ -214,9 +213,9 @@ def record_model_charge(
     *,
     phase: str,
     iteration: int | str,
-    ctx: RunContext | None = None,
+    ctx: RunContext,
 ) -> None:
-    if ctx is None or ctx.budget_state is None:
+    if ctx.budget_state is None:
         return
     if result.tokens is None and result.usd is None:
         return
@@ -351,8 +350,8 @@ def _progress_event_kind(status: str) -> str:
     return "phase_result"
 
 
-def progress_event(config: LoopConfig, phase: str, label: str, status: str, detail: str = "", *, ctx: RunContext | None = None) -> None:
-    sink = ctx.event_sink if ctx is not None else None
+def progress_event(config: LoopConfig, phase: str, label: str, status: str, detail: str = "", *, ctx: RunContext) -> None:
+    sink = ctx.event_sink
     if sink is not None:
         payload: dict[str, Any] = {"summary": status}
         if detail:
@@ -363,7 +362,7 @@ def progress_event(config: LoopConfig, phase: str, label: str, status: str, deta
             iteration=label,
             payload=payload,
         )
-    if ctx is not None and ctx.progress_reporter is not None:
+    if ctx.progress_reporter is not None:
         ctx.progress_reporter.phase(phase, label, status, detail)
         return
     if not config.progress:
@@ -421,7 +420,7 @@ def print_progress_message(config: LoopConfig, phase: str, label: str, text: str
     print_compact_progress(phase, label, text, head=head)
 
 
-def log_review_findings(config: LoopConfig, label: str, output: str, ctx: RunContext | None = None) -> bool:
+def log_review_findings(config: LoopConfig, label: str, output: str, ctx: RunContext) -> bool:
     blocks = extract_finding_blocks(output)
     if not blocks:
         return False
@@ -511,4 +510,3 @@ def lexical_git_repo_root(start: Path) -> Path | None:
         if (candidate / ".git").exists():
             return candidate
     return None
-

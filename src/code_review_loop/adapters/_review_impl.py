@@ -2,9 +2,8 @@
 
 Hosts ``run_codex_review`` and its phase-specific helpers, moved verbatim from
 ``code_review_loop.cli``. Loop-shell helpers (``progress_event``,
-``write_artifact``, etc.) are still in ``cli/__init__.py`` and reached
-through the module-level ``_cli`` alias; the C3 cleanup wave migrates those
-helpers to a shared support module and retires the alias.
+``write_artifact``, etc.) live in ``adapters.phase_support`` so this module
+does not import the runner or CLI edge.
 """
 
 from __future__ import annotations
@@ -44,8 +43,9 @@ def run_codex_review(
     config: LoopConfig,
     runner: Runner,
     artifact_label: str,
+    *,
     display_label: str | None = None,
-    ctx: RunContext | None = None,
+    ctx: RunContext,
 ) -> tuple[str, CommandResult]:
     display_label = display_label or artifact_label
     command = build_review_command(config)
