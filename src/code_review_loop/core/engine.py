@@ -74,6 +74,11 @@ class ReviewDone:
 
 
 @dataclass(frozen=True)
+class LoopStarted:
+    """Emitted to request the first review of an iteration."""
+
+
+@dataclass(frozen=True)
 class TriageDone:
     """Emitted after the triage phase completes."""
 
@@ -90,6 +95,11 @@ class RemediationDone:
 
 
 @dataclass(frozen=True)
+class ChecksDone:
+    """Emitted after verification checks complete."""
+
+
+@dataclass(frozen=True)
 class CommitDone:
     """Emitted after the commit phase completes (or is skipped)."""
 
@@ -103,7 +113,7 @@ class NoFinalReview:
     """Emitted post-loop when config.final_review is False."""
 
 
-PhaseEvent = ReviewDone | TriageDone | RemediationDone | CommitDone | NoFinalReview
+PhaseEvent = LoopStarted | ReviewDone | TriageDone | RemediationDone | ChecksDone | CommitDone | NoFinalReview
 
 
 # ---------------------------------------------------------------------------
@@ -114,6 +124,33 @@ PhaseEvent = ReviewDone | TriageDone | RemediationDone | CommitDone | NoFinalRev
 @dataclass(frozen=True)
 class Continue:
     """Loop advances to the next phase / iteration (L1, L2, L3, M1, CK1)."""
+
+
+@dataclass(frozen=True)
+class RunReview:
+    """Run an iteration or final review."""
+
+    is_final: bool = False
+
+
+@dataclass(frozen=True)
+class RunTriage:
+    """Run the triage phase for current review findings."""
+
+
+@dataclass(frozen=True)
+class RunRemediation:
+    """Run the remediation phase."""
+
+
+@dataclass(frozen=True)
+class RunChecks:
+    """Run verification checks after remediation."""
+
+
+@dataclass(frozen=True)
+class RunCommit:
+    """Run the optional commit phase."""
 
 
 @dataclass(frozen=True)
@@ -130,7 +167,7 @@ class Stop:
     outcome: RunOutcome
 
 
-Action = Continue | RetryViaCommitHook | Stop
+Action = Continue | RunReview | RunTriage | RunRemediation | RunChecks | RunCommit | RetryViaCommitHook | Stop
 
 
 # ---------------------------------------------------------------------------
@@ -156,7 +193,7 @@ class EngineState:
 class EngineExecutor(Protocol):
     """Imperative shell callback used by :func:`run` for non-terminal actions."""
 
-    def execute(self, action: Continue | RetryViaCommitHook, state: EngineState) -> EngineState:
+    def execute(self, action: Action, state: EngineState) -> EngineState:
         """Apply one non-terminal action and return the next engine state."""
         ...
 
@@ -177,7 +214,7 @@ def run(state: EngineState, ctx: EngineExecutor, *, max_steps: int | None = None
             return action.outcome
         if max_steps is not None and steps >= max_steps:
             return OutcomeFailed(reason="engine_step_limit_exceeded", error="engine step limit exceeded")
-        if isinstance(action, (Continue, RetryViaCommitHook)):
+        if isinstance(action, (Continue, RunReview, RunTriage, RunRemediation, RunChecks, RunCommit, RetryViaCommitHook)):
             state = ctx.execute(action, state)
             steps += 1
             continue
@@ -196,13 +233,18 @@ def decide(cfg: ConfigSnapshot, acc: LoopAccumulator, event: PhaseEvent, *, iter
     application executor is responsible for translating non-terminal actions
     into the next phase event.
     """
+    if isinstance(event, LoopStarted):
+        return RunReview(is_final=False)
+
     if isinstance(event, ReviewDone):
         if event.exc is not None:
             return Stop(OutcomeFailed(reason="review_failed", error=str(event.exc)))
         if not event.is_final:
             if event.status == "clear" and not acc.pending_check_failures:
                 return Stop(OutcomeClear(reason="review_clear", excerpt=""))
-            return Continue()
+            if cfg.triage_enabled:
+                return RunTriage()
+            return RunRemediation()
         if acc.pending_check_failures:
             return Stop(
                 OutcomeFindings(
@@ -228,12 +270,17 @@ def decide(cfg: ConfigSnapshot, acc: LoopAccumulator, event: PhaseEvent, *, iter
                     )
                 )
             return Stop(OutcomeClear(reason="triage_rejected_all_findings"))
-        return Continue()
+        return RunRemediation()
 
     if isinstance(event, RemediationDone):
         if event.exc is not None:
             return Stop(OutcomeFailed(reason="remediation_failed", error=str(event.exc)))
-        return Continue()
+        return RunChecks()
+
+    if isinstance(event, ChecksDone):
+        if cfg.commit_after_remediation and not acc.pending_check_failures:
+            return RunCommit()
+        return _next_review_action(cfg, acc, iteration)
 
     if isinstance(event, CommitDone):
         if event.other_exc is not None:
@@ -263,7 +310,7 @@ def decide(cfg: ConfigSnapshot, acc: LoopAccumulator, event: PhaseEvent, *, iter
             if acc.last_review_status == "findings":
                 return Stop(OutcomeFindings(reason="no_changes_after_remediation"))
             return Stop(OutcomeUnknown(reason="no_changes_after_remediation"))
-        return Continue()
+        return _next_review_action(cfg, acc, iteration)
 
     if isinstance(event, NoFinalReview):  # NF1
         return Stop(
@@ -274,3 +321,11 @@ def decide(cfg: ConfigSnapshot, acc: LoopAccumulator, event: PhaseEvent, *, iter
         )
 
     assert_never(event)
+
+
+def _next_review_action(cfg: ConfigSnapshot, acc: LoopAccumulator, iteration: int) -> Action:
+    if iteration < cfg.max_iterations:
+        return Continue()
+    if cfg.final_review:
+        return RunReview(is_final=True)
+    return decide(cfg, acc, NoFinalReview(), iteration=iteration)

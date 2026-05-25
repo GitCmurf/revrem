@@ -11,6 +11,9 @@ from code_review_loop.core.engine import (
     RemediationDone,
     RetryViaCommitHook,
     ReviewDone,
+    RunChecks,
+    RunRemediation,
+    RunTriage,
     Stop,
     TriageDone,
     decide,
@@ -56,7 +59,7 @@ def test_decide_review_non_final_findings_continues() -> None:
 
     action = decide(cfg, acc, event)
 
-    assert action == Continue()
+    assert action == RunTriage()
 
 
 def test_decide_review_non_final_clear_with_check_failures_continues() -> None:
@@ -66,7 +69,7 @@ def test_decide_review_non_final_clear_with_check_failures_continues() -> None:
 
     action = decide(cfg, acc, event)
 
-    assert action == Continue()
+    assert action == RunTriage()
 
 
 def test_decide_f2_final_review_exception_fails() -> None:
@@ -166,7 +169,7 @@ def test_decide_t1_actionable_triage_continues() -> None:
 
     action = decide(cfg, acc, event)
 
-    assert action == Continue()
+    assert action == RunRemediation()
 
 
 def test_decide_m3_remediation_exception_fails() -> None:
@@ -186,7 +189,7 @@ def test_decide_m1_successful_remediation_continues() -> None:
 
     action = decide(cfg, acc, event)
 
-    assert action == Continue()
+    assert action == RunChecks()
 
 
 def test_decide_cm7_commit_other_exception_fails() -> None:
@@ -303,7 +306,7 @@ def test_decide_t4_triage_clear_with_pending_check_failures_continues() -> None:
 
     action = decide(cfg, acc, event)
 
-    assert action == Continue()
+    assert action == RunRemediation()
 
 
 def test_decide_cm3_hook_failure_at_max_iterations_does_not_retry() -> None:

@@ -5,13 +5,13 @@ from __future__ import annotations
 from dataclasses import replace
 
 from code_review_loop.core.engine import (
+    Action,
     ConfigSnapshot,
-    Continue,
     EngineState,
     LoopAccumulator,
     RemediationDone,
-    RetryViaCommitHook,
     ReviewDone,
+    RunChecks,
     run,
 )
 from code_review_loop.core.outcome import OutcomeClear, OutcomeFailed
@@ -30,9 +30,9 @@ def _cfg() -> ConfigSnapshot:
 class RecordingExecutor:
     def __init__(self, next_state: EngineState) -> None:
         self.next_state = next_state
-        self.actions: list[Continue | RetryViaCommitHook] = []
+        self.actions: list[Action] = []
 
-    def execute(self, action: Continue | RetryViaCommitHook, state: EngineState) -> EngineState:
+    def execute(self, action: Action, state: EngineState) -> EngineState:
         self.actions.append(action)
         return self.next_state
 
@@ -66,7 +66,7 @@ def test_run_delegates_continue_to_executor_until_terminal() -> None:
 
     assert isinstance(outcome, OutcomeClear)
     assert len(executor.actions) == 1
-    assert isinstance(executor.actions[0], Continue)
+    assert isinstance(executor.actions[0], RunChecks)
 
 
 def test_run_step_limit_fails_closed_when_executor_never_reaches_terminal() -> None:
