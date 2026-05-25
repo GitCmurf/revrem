@@ -905,11 +905,12 @@ dispatch — is still inlined. `run_loop` (line 1815) is the public wrapper.
 
 **Wave C remediation baseline (2026-05-25).** C1, C2, C3a, the first C3b
 import-boundary pass, and the low-risk C3c cleanup items have landed, but Wave
-C is **not complete**. The console-script target ``code_review_loop.cli:main``
-is now a 27-line entry shim and the old ``monkeypatch.setattr(MODULE, ...)``
-reach-in pattern is ratcheted to zero; however, the loop body was moved to
-``code_review_loop.runner`` rather than dissolved into ``core.engine.run``. Treat
-that commit as a green checkpoint, not the Wave C finish line.
+C is **not complete** at this checkpoint. The console-script target now points
+at ``code_review_loop.cli.main:main`` and ``code_review_loop.cli`` is a minimal
+package initializer; the old ``monkeypatch.setattr(MODULE, ...)`` reach-in
+pattern is ratcheted to zero. However, the loop body was moved to
+``code_review_loop.runner`` rather than dissolved into ``core.engine.run``.
+Treat that commit as a green checkpoint, not the Wave C finish line.
 
 * **C3a is complete.** Every phase implementation now lives in its adapter
   module; no adapter still uses a lazy ``from code_review_loop.cli import
@@ -1057,26 +1058,20 @@ ladder is gone. Tests: `tests/test_cli_dispatch.py` pins the registry
 mapping; `tests/test_cli_commands_outcome_gate.py` is a grep-gate that fails
 any bare `return <int>` literal reintroduced under `cli/commands/`.
 
-**Status of the original C1a status block below.** Both have landed.
-`src/code_review_loop/cli.py` is now the package `src/code_review_loop/cli/`,
-with the legacy God-object body living in `cli/__init__.py` (≈4,528 lines after
-extraction, down from 4,801) and per-subcommand entry points in
+**Status of the original C1a status block below.** The C1 extraction landed
+first as a package split and was then superseded by Wave C remediation. The
+current state is: `src/code_review_loop/cli.py` is gone,
+`src/code_review_loop/cli/__init__.py` is a minimal package initializer,
+`cli/main.py` owns the command entrypoint and registry dispatch,
+`cli/args.py` owns parser construction, `cli/config_builder.py` owns runner
+configuration assembly, and per-subcommand entry points live in
 `cli/commands/{bundle,config,doctor,history,policy,replay,resume,suppress,triage}.py`.
 Each command module returns through the `CommandOutcome` ADT in
-`cli/outcome.py` (`CommandOk` / `CommandFailed`); the legacy `*_main` symbols
-in `cli/__init__.py` are now two-line delegators preserved for back-compat.
-`main()` dispatches through `_build_subcommand_registry()` — the `if/elif`
-ladder is gone. Tests: `tests/test_cli_dispatch.py` pins the registry
-mapping; `tests/test_cli_commands_outcome_gate.py` is a grep-gate that fails
-any bare `return <int>` literal reintroduced under `cli/commands/`. Helpers
-listed for C2 relocation (`_suppression_*_for_scope`,
-`resume_precondition_issues`, `resume_run`, `latest_resume_review_path`,
-`policy_lint`, `policy_review`, `triage_explain`, `profile_or_default`,
-`profile_routed_harnesses`, `_suppression_doctor_issues`,
-`_format_profile_list_item`, `edit_profile_config`, `new_profile_from_args`,
-`_doctor_artifact_dir`) are still in `cli/__init__.py` and looked up lazily
-from the command modules to preserve existing `monkeypatch.setattr(MODULE, …)`
-test patches.
+`cli/outcome.py` (`CommandOk` / `CommandFailed`); no compatibility delegators
+or old `MODULE` monkeypatch reach-ins remain. Tests:
+`tests/test_cli_dispatch.py` pins the registry mapping;
+`tests/test_cli_commands_outcome_gate.py` is a grep-gate that fails any bare
+`return <int>` literal reintroduced under `cli/commands/`.
 
 **Tech-debt items to address in Wave C** (see `docs/05-planning/tech-debt.md`):
 - TD-001 — 16 functions with `ctx: RunContext | None = None` (eliminated in C3

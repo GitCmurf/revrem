@@ -90,16 +90,14 @@ check_untyped_defs = true
 warn_return_any = true
 warn_unused_configs = true
 
-# REVREM-TASK-003 Wave A0: import-linter scaffold. This placeholder contract
-# encodes a true-today slice of the dependency rule (domain leaf modules must
-# not import the cli God object). The full layered core/adapters/cli contract
-# (Contract C4) replaces it in Wave B0.
+# REVREM-TASK-003 Wave C: import-linter guards keep domain leaf modules below
+# the CLI package, with stricter core/adapter/runner boundaries below.
 [tool.importlinter]
 root_package = "code_review_loop"
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
-name = "Domain leaf modules must not import the cli God object (placeholder, superseded in B0)"
+name = "Domain leaf modules must not import the CLI package"
 type = "forbidden"
 source_modules = [
   "code_review_loop.events",
