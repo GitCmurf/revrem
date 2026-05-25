@@ -1463,6 +1463,12 @@ Line-count and function-length guardrails (modules < 600, functions ≤ 40)
 are *checked but advisory*: a justified exception in a PR body is acceptable;
 a coupling or cycle violation is not.
 
+**Wave C closeout note (2026-05-25):** the supported non-CLI execution surface
+is `code_review_loop.application.run_review_loop()` /
+`resume_review_loop()`. The core engine owns dependency-free transitions via
+`decide()` and exposes `run()` for injected non-CLI executors; the runner no
+longer uses a one-step `run(max_steps=1)` capture bridge to obtain actions.
+
 ## Adversarial-Review Anticipation
 
 Pre-empting the sharp questions a reviewer will (rightly) ask:

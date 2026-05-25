@@ -38,10 +38,10 @@ from code_review_loop import (
 from code_review_loop.clock import SYSTEM_CLOCK, Clock, utc_iso
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.engine import (
+    Action,
     CommitDone,
     ConfigSnapshot,
     Continue,
-    EngineState,
     LoopAccumulator,
     NoFinalReview,
     RemediationDone,
@@ -49,7 +49,7 @@ from code_review_loop.core.engine import (
     ReviewDone,
     TriageDone,
     PhaseEvent,
-    run as run_engine,
+    decide as decide_engine,
 )
 from code_review_loop.core.outcome import (
     OutcomeClear,
@@ -1308,17 +1308,6 @@ class _EngineDecision(NamedTuple):
     action: Continue | RetryViaCommitHook | None
 
 
-class _CaptureEngineAction:
-    """Engine executor that exposes the next non-terminal action to the runner."""
-
-    def __init__(self) -> None:
-        self.action: Continue | RetryViaCommitHook | None = None
-
-    def execute(self, action: Continue | RetryViaCommitHook, state: EngineState) -> EngineState:
-        self.action = action
-        return state
-
-
 def _engine_decision(
     snap: ConfigSnapshot,
     acc: LoopAccumulator,
@@ -1326,15 +1315,10 @@ def _engine_decision(
     *,
     iteration: int = 1,
 ) -> _EngineDecision:
-    executor = _CaptureEngineAction()
-    outcome = run_engine(
-        EngineState(cfg=snap, acc=acc, event=event, iteration=iteration),
-        executor,
-        max_steps=1,
-    )
-    if outcome.reason == "engine_step_limit_exceeded" and executor.action is not None:
-        return _EngineDecision(None, executor.action)
-    return _EngineDecision(outcome, None)
+    action: Action = decide_engine(snap, acc, event, iteration=iteration)
+    if isinstance(action, (Continue, RetryViaCommitHook)):
+        return _EngineDecision(None, action)
+    return _EngineDecision(action.outcome, None)
 
 
 def _check_commit_cleanliness(config: LoopConfig, runner: Runner) -> None:

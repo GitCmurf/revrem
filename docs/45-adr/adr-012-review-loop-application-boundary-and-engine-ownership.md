@@ -50,10 +50,12 @@ ownership moves behind the application boundary. New code should add behavior
 to the application, adapters, or core modules rather than adding new public
 surface to the runner.
 
-The core engine remains dependency-free. It may expose state-machine events and
-actions, but it must not import CLI, adapter, terminal, profile, subprocess, or
-filesystem orchestration modules. The application executor is responsible for
-turning non-terminal engine actions into the next phase event.
+The core engine remains dependency-free. It exposes state-machine events,
+actions, a pure `decide()` transition function, and a reusable `run()` loop for
+non-CLI executors. It must not import CLI, adapter, terminal, profile,
+subprocess, or filesystem orchestration modules. The runner may call the pure
+decision function while it still owns the current imperative session body, but
+it must not simulate engine execution with step-limit capture bridges.
 
 Architecture ratchets should enforce this story:
 
