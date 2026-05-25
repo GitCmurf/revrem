@@ -987,11 +987,10 @@ that commit as a green checkpoint, not the Wave C finish line.
    runner to a thin imperative shell over ``core.engine.run`` and then remove
    ``_run_loop``.
 6. Decompose ``tests/test_cli_integration.py`` into behavior-level modules.
-7. IN PROGRESS: ``RunState`` now has semantic terminal transitions
+7. DONE in remediation: ``RunState`` now has semantic terminal transitions
    (``mark_outcome``/``mark_clear``/``mark_failed``/``mark_findings``/
-   ``mark_unknown``) and ``_execute_stop`` uses them. Remaining work is to make
-   the loop state projection fully typed rather than backed by the live summary
-   dict.
+   ``mark_unknown``), ``_execute_stop`` uses them, and ``to_dict()`` now returns
+   a fresh summary projection instead of the live source of truth.
 
 **Wave C1 + C2 status (2026-05-24).** C1a, C1b, C2a (both parts) and the
 TD-004 half of C2b have landed.
