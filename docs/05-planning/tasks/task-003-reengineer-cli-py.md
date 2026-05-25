@@ -940,18 +940,21 @@ that commit as a green checkpoint, not the Wave C finish line.
   ``code_review_loop.adapters.phase_support``. Adapter implementation modules
   no longer import ``code_review_loop.loop``; the import-linter contract now
   forbids adapters from importing either ``code_review_loop.loop`` or
-  ``code_review_loop.cli`` directly or indirectly. Remaining CLI/profile
-  builder helpers still need their final homes before the loop driver can be
-  demoted fully.
+  ``code_review_loop.cli`` directly or indirectly. Follow-up remediation moved
+  the command entrypoint to ``cli/main.py``, moved command helpers into
+  command modules, and moved resume preconditions/config reconstruction to
+  ``code_review_loop.resume``. ``code_review_loop.runtime`` now owns
+  ``RunLoopFailed`` and terminal summary formatting.
 
   Surgical C3b-style test patches were applied to the legacy phase patches and
   the remaining old ``MODULE`` monkeypatch sites. The ratchet baseline is now
   ``0`` for ``monkeypatch.setattr(MODULE, ...)``.
 
-  ``cli/__init__.py`` is now 27 lines, down from 4946 at the start of Wave C.
-  The moved loop implementation is 3192 lines in ``code_review_loop.loop``;
-  this is a measurable reduction in CLI entrypoint weight, not proof that the
-  core engine split is complete.
+  ``cli/__init__.py`` is now 3 lines, down from 4946 at the start of Wave C.
+  No ``cli/commands/*`` module directly imports ``code_review_loop.loop``.
+  The moved loop implementation remains the executable driver in
+  ``code_review_loop.loop``; this is a measurable reduction in CLI entrypoint
+  weight, not proof that the core engine split is complete.
 
 * **C3c tech-debt cleanup is partially complete.** TD-002, TD-003, and TD-005
   are resolved: `LoopAccumulator` no longer stores `iteration`, `_execute_stop`
@@ -979,8 +982,13 @@ that commit as a green checkpoint, not the Wave C finish line.
 4. IN PROGRESS: legacy phase fallback branches are removed and ``RunContext``
    phase harnesses are required. Remaining TD-001 work is to remove nullable
    ``ctx`` from phase/support functions that no longer support legacy callers.
-5. Decompose ``tests/test_cli_integration.py`` into behavior-level modules.
-6. IN PROGRESS: ``RunState`` now has semantic terminal transitions
+5. IN PROGRESS: command modules no longer directly import the loop driver, and
+   resume runtime is outside ``loop``. A strict import-linter contract for
+   ``cli.commands -> loop`` is intentionally not enabled yet because
+   ``resume.resume_run`` still reaches ``loop.run_loop`` until the executable
+   driver moves to the core/runner path.
+6. Decompose ``tests/test_cli_integration.py`` into behavior-level modules.
+7. IN PROGRESS: ``RunState`` now has semantic terminal transitions
    (``mark_outcome``/``mark_clear``/``mark_failed``/``mark_findings``/
    ``mark_unknown``) and ``_execute_stop`` uses them. Remaining work is to make
    the loop state projection fully typed rather than backed by the live summary
