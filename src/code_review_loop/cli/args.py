@@ -1,10 +1,7 @@
 """Argparse parsers for the RevRem CLI (REVREM-TASK-003 Wave C2a).
 
-Each ``parse_*_args`` function below is moved verbatim from
-``code_review_loop.cli`` to retire the God-object module wave by wave. The
-parent ``cli`` package re-exports them so existing callers and
-``monkeypatch.setattr(MODULE, "parse_*_args", …)`` tests keep working without
-churn.
+This module is the canonical home for command-line parser construction and the
+shared choice tuples consumed by the CLI entrypoint.
 """
 
 from __future__ import annotations

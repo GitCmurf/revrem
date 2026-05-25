@@ -89,9 +89,9 @@ from code_review_loop.runtime import RunLoopFailed as RunLoopFailed
 from code_review_loop.runtime import format_terminal_summary as format_terminal_summary
 from code_review_loop.adapters.phase_support import CommitFailed as CommitFailed
 
-# REVREM-TASK-003 Wave C2a: parsers and their shared choice tuples are now
-# canonical in ``cli/args.py``. Re-exported here so existing imports and
-# ``monkeypatch.setattr(MODULE, "parse_*_args", …)`` test patches keep working.
+# REVREM-TASK-003 Wave C2a: parsers and their shared choice tuples are
+# canonical in ``cli/args.py``. Runner imports them from that canonical module
+# so command parsing has a single implementation.
 from code_review_loop.cli.args import (
     COMMIT_ON_HOOK_FAILURE_CHOICES as COMMIT_ON_HOOK_FAILURE_CHOICES,
 )
@@ -133,11 +133,9 @@ from code_review_loop.cli.args import (
 )
 
 # REVREM-TASK-003 Wave C2a: ``LoopConfig`` assembly + argument-resolution
-# helpers now live in ``cli/config_builder.py``. The names are re-exported
-# here so existing imports, ``monkeypatch.setattr(MODULE, "build_loop_config",
-# …)`` sites, and the loop path itself keep working unchanged. ``LoopConfig``
-# remains the canonical home for the dataclass (defined later in this file)
-# and config_builder reaches it lazily via PEP 562 ``__getattr__``.
+# helpers now live in ``cli/config_builder.py``. Runner imports the canonical
+# helpers directly so the executable loop and CLI config surface share one
+# implementation.
 from code_review_loop.cli.config_builder import (
     build_loop_config as build_loop_config,
 )

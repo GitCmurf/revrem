@@ -1,9 +1,7 @@
 """Git preflight gateway (REVREM-TASK-003 Wave C3a step 2).
 
 Hosts ``run_git_preflight``, used by both the review preflight and the resume
-precondition checks. Moved out of ``cli/__init__.py`` per the plan; the parent
-module re-exports it so existing ``monkeypatch.setattr(MODULE,
-"run_git_preflight", …)`` test sites keep working.
+precondition checks.
 """
 
 from __future__ import annotations
