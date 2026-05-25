@@ -980,8 +980,11 @@ that commit as a green checkpoint, not the Wave C finish line.
    phase harnesses are required. Remaining TD-001 work is to remove nullable
    ``ctx`` from phase/support functions that no longer support legacy callers.
 5. Decompose ``tests/test_cli_integration.py`` into behavior-level modules.
-6. Promote ``RunState`` beyond a live-dict setter bag where it materially
-   reduces primitive summary mutation.
+6. IN PROGRESS: ``RunState`` now has semantic terminal transitions
+   (``mark_outcome``/``mark_clear``/``mark_failed``/``mark_findings``/
+   ``mark_unknown``) and ``_execute_stop`` uses them. Remaining work is to make
+   the loop state projection fully typed rather than backed by the live summary
+   dict.
 
 **Wave C1 + C2 status (2026-05-24).** C1a, C1b, C2a (both parts) and the
 TD-004 half of C2b have landed.

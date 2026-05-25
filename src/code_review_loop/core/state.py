@@ -26,6 +26,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from code_review_loop.core.outcome import (
+    OutcomeClear,
+    OutcomeFailed,
+    OutcomeFindings,
+    OutcomeUnknown,
+    RunOutcome,
+)
+
 
 @dataclass
 class RunState:
@@ -76,7 +84,75 @@ class RunState:
         """Return the live summary dict (not a copy)."""
         return self._summary
 
-    # --- scalar terminal-state transitions (low-level; B3 layers semantics) ---
+    # --- semantic terminal-state transitions ---
+
+    def mark_outcome(
+        self,
+        outcome: RunOutcome,
+        *,
+        excerpt: str = "",
+        check_failures: bool = False,
+    ) -> None:
+        """Apply one terminal outcome to the summary projection."""
+        self.set_stopped_reason(outcome.reason)
+        if check_failures:
+            self.set_pending_check_failures(True)
+        if excerpt:
+            self.set_latest_review_excerpt(excerpt)
+
+        if isinstance(outcome, OutcomeClear):
+            self.mark_clear(outcome.reason, suppressed_findings_count=outcome.suppressed_findings_count)
+            return
+        if isinstance(outcome, OutcomeFailed):
+            self.mark_failed(
+                outcome.reason,
+                outcome.error,
+                staged_changes_left=outcome.staged_changes_left,
+                check_failures=outcome.check_failures,
+            )
+            return
+        if isinstance(outcome, OutcomeFindings):
+            self.mark_findings(outcome.reason, check_failures=outcome.check_failures)
+            return
+        if isinstance(outcome, OutcomeUnknown):
+            self.mark_unknown(outcome.reason, check_failures=outcome.check_failures)
+            return
+
+    def mark_clear(self, reason: str, *, suppressed_findings_count: int = 0) -> None:
+        self.set_final_status("clear")
+        self.set_stopped_reason(reason)
+        if suppressed_findings_count:
+            self.set_suppressed_findings_count(suppressed_findings_count)
+
+    def mark_failed(
+        self,
+        reason: str,
+        error: str,
+        *,
+        staged_changes_left: bool = False,
+        check_failures: bool = False,
+    ) -> None:
+        self.set_final_status("error")
+        self.set_stopped_reason(reason)
+        self.set_error(error)
+        if staged_changes_left:
+            self.set_staged_changes_left(True)
+        if check_failures:
+            self.set_pending_check_failures(True)
+
+    def mark_findings(self, reason: str, *, check_failures: bool = False) -> None:
+        self.set_final_status("findings")
+        self.set_stopped_reason(reason)
+        if check_failures:
+            self.set_pending_check_failures(True)
+
+    def mark_unknown(self, reason: str, *, check_failures: bool = False) -> None:
+        self.set_final_status("unknown")
+        self.set_stopped_reason(reason)
+        if check_failures:
+            self.set_pending_check_failures(True)
+
+    # --- scalar terminal-state transitions (low-level, retained for migration) ---
 
     def set_final_status(self, value: str) -> None:
         self._summary["final_status"] = value

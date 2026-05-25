@@ -1152,35 +1152,22 @@ def _execute_stop(
     )
 
     def apply_common_tail(*, check_failures: bool = False) -> None:
-        state.set_stopped_reason(outcome.reason)
-        if check_failures:
-            state.set_pending_check_failures(True)
-        if excerpt:
-            state.set_latest_review_excerpt(excerpt)
+        state.mark_outcome(outcome, excerpt=excerpt, check_failures=check_failures)
         write_summary(config, summary, clock=clock, ctx=ctx)
 
     if isinstance(outcome, OutcomeClear):
-        state.set_final_status("clear")
-        if outcome.suppressed_findings_count:
-            state.set_suppressed_findings_count(outcome.suppressed_findings_count)
         apply_common_tail()
         return summary
 
     if isinstance(outcome, OutcomeFailed):
-        state.set_final_status("error")
-        state.set_error(outcome.error)
-        if outcome.staged_changes_left:
-            state.set_staged_changes_left(True)
         apply_common_tail(check_failures=outcome.check_failures)
         raise RunLoopFailed(summary, outcome.error, outcome=outcome) from cause
 
     if isinstance(outcome, OutcomeFindings):
-        state.set_final_status("findings")
         apply_common_tail(check_failures=outcome.check_failures)
         return summary
 
     if isinstance(outcome, OutcomeUnknown):
-        state.set_final_status("unknown")
         apply_common_tail(check_failures=outcome.check_failures)
         return summary
 
