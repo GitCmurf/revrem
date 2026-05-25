@@ -9,6 +9,7 @@ import pytest
 from code_review_loop import harnesses, policy, prompts_composer
 from code_review_loop import runner as cli
 from code_review_loop._compat_jsonschema import validate
+from code_review_loop.adapters import _remediation_impl as remediation_impl
 from code_review_loop.cli.main import main as cli_main
 
 
@@ -118,7 +119,7 @@ def test_build_remediation_command_uses_harness_executable(monkeypatch):
         cwd=Path("/tmp")
     )
     # Default (Codex)
-    cmd = cli.build_remediation_command(config)
+    cmd = remediation_impl.build_remediation_command(config)
     assert cmd[0] == "custom-codex"
 
     # Routed to fake
@@ -126,7 +127,7 @@ def test_build_remediation_command_uses_harness_executable(monkeypatch):
         route_tier="f", harness="fake", model="m", reasoning_effort="l", timeout_seconds=1,
         sandbox="s", prompt_fragments=(), allow_model_deescalation=True
     )
-    cmd = cli.build_remediation_command(config, resolved_route=resolved)
+    cmd = remediation_impl.build_remediation_command(config, resolved_route=resolved)
     assert cmd[0] == harnesses.FAKE_HARNESS_COMMAND
 
 def test_deterministic_safety_signal_escalation():

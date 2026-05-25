@@ -8,7 +8,7 @@ from importlib import import_module
 import pytest
 
 import code_review_loop.runner as runner_mod
-from code_review_loop import events
+from code_review_loop import application, events
 
 cli_main = import_module("code_review_loop.cli.main")
 
@@ -376,14 +376,14 @@ def test_main_returns_exit_code_3_for_budget_ceiling(tmp_path, monkeypatch, caps
         "iterations": [],
     }
 
-    def fake_run_loop(_config):
+    def fake_run_loop(_config, **_kwargs):
         raise runner_mod.RunLoopFailed(
             summary,
             "wall budget exceeded",
             outcome=runner_mod.OutcomeFailed(reason="budget_ceiling_hit", error="wall budget exceeded"),
         )
 
-    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(application, "run_review_loop", fake_run_loop)
 
     exit_code = cli_main.main(["--max-wall-seconds", "0", "--no-run-history"])
 

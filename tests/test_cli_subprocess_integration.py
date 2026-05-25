@@ -8,6 +8,7 @@ from importlib import import_module
 import pytest
 
 import code_review_loop.runner as runner_mod
+from code_review_loop import application
 
 cli_main = import_module("code_review_loop.cli.main")
 
@@ -295,11 +296,11 @@ def test_main_rejects_nonpositive_max_iterations(tmp_path, monkeypatch, capsys):
 
 
 def test_main_handles_keyboard_interrupt_without_traceback(tmp_path, monkeypatch, capsys):
-    def interrupted_run_loop(config):
+    def interrupted_run_loop(config, **_kwargs):
         raise KeyboardInterrupt
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(runner_mod, "run_loop", interrupted_run_loop)
+    monkeypatch.setattr(application, "run_review_loop", interrupted_run_loop)
 
     exit_code = cli_main.main([])
 
