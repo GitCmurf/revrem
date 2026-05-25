@@ -929,18 +929,20 @@ that commit as a green checkpoint, not the Wave C finish line.
   directly instead of using the old ``MODULE`` alias against
   ``code_review_loop.cli``.
 
-  Loop-shell helpers used by the moved phases (``progress_event``,
+  Remediation update: loop-shell helpers used by the moved phases
+  (``progress_event``,
   ``write_artifact``, ``_combined_output``, ``phase_timeout_seconds``,
   ``ensure_model_budget``, ``record_model_charge``,
   ``set_phase_terminal_title``, ``log_review_findings``,
   ``review_status_diagnostics``, ``DEFAULT_REMEDIATION_PROMPT``,
-  ``DEFAULT_TRIAGE_PROMPT``, ``DEFAULT_REVIEW_PROMPT``, the various
-  ``build_*_command`` builders, ``CommitFailed``, ``REVREM_COMMIT_SUFFIX``
-  and friends) currently live on ``code_review_loop.loop``. Adapter
-  implementation modules import that loop support directly, which is still a
-  God-object back-reference under a new module name. The remediation wave must
-  move those helpers to adapter/core-neutral homes and forbid adapter imports of
-  ``code_review_loop.loop`` as well as ``code_review_loop.cli``.
+  ``DEFAULT_REVIEW_PROMPT``, ``CommitFailed``, ``REVREM_COMMIT_SUFFIX``
+  and friends) now have an adapter-neutral home in
+  ``code_review_loop.adapters.phase_support``. Adapter implementation modules
+  no longer import ``code_review_loop.loop``; the import-linter contract now
+  forbids adapters from importing either ``code_review_loop.loop`` or
+  ``code_review_loop.cli`` directly or indirectly. Remaining CLI/profile
+  builder helpers still need their final homes before the loop driver can be
+  demoted fully.
 
   Surgical C3b-style test patches were applied to the legacy phase patches and
   the remaining old ``MODULE`` monkeypatch sites. The ratchet baseline is now

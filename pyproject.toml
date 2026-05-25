@@ -114,24 +114,26 @@ source_modules = [
 ]
 forbidden_modules = ["code_review_loop.cli"]
 
-# REVREM-TASK-003 Wave B0a: the dependency rule (Contract C4), partial form. The
-# core may not import the CLI driver or argparse. This is intentionally an
-# expanded forbidden-list rather than a layered core->adapters->cli contract:
-# the adapters package does not exist yet (B2/B4), so a layered contract would be
-# near-empty theatre. It converts to the full layered contract in B2 when the
-# adapters land. core.ports re-exports Clock/RunIdentity/EventSink from their
-# current homes, so core->adapter is not yet forbidden here.
+# REVREM-TASK-003 Wave C remediation: make the dependency rule real. Core is a
+# dependency-free decision layer and must not reach edge drivers, adapters,
+# terminal/TUI integrations, profiles, or argparse.
 [[tool.importlinter.contracts]]
-name = "Core must not import the cli driver or argparse (C4, partial; layered in B2)"
+name = "Core must not import edge or adapter modules"
 type = "forbidden"
 source_modules = [
+  "code_review_loop.core",
   "code_review_loop.core.state",
   "code_review_loop.core.ports",
   "code_review_loop.core.engine",
   "code_review_loop.core.outcome",
 ]
 forbidden_modules = [
+  "code_review_loop.adapters",
   "code_review_loop.cli",
+  "code_review_loop.loop",
+  "code_review_loop.profiles",
+  "code_review_loop.terminal",
+  "code_review_loop.tui",
   "argparse",
 ]
 
@@ -149,12 +151,12 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
-name = "Adapters must not import the CLI driver (Wave C3b)"
+name = "Adapters must not import CLI loop drivers (Wave C3b)"
 type = "forbidden"
-allow_indirect_imports = true
 source_modules = [
   "code_review_loop.adapters",
 ]
 forbidden_modules = [
   "code_review_loop.cli",
+  "code_review_loop.loop",
 ]

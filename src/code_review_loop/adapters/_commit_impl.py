@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from code_review_loop import harnesses, prompts_composer
-from code_review_loop import loop as _cli  # noqa: E402  -- loop-shell helpers
+from code_review_loop.adapters import phase_support as _cli
 from code_review_loop.core.ports import CommandResult, RunContext
 from code_review_loop.core.review_interpretation import actionable_review_output
 

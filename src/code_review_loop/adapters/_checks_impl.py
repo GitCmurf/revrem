@@ -5,10 +5,8 @@ The phase implementation, helpers, and project-surface markers live here so
 can be re-exported from ``code_review_loop.cli.run_checks`` as a thin shim
 preserving the pre-C3a public signature and monkeypatch surface.
 
-Loop-shell helpers (``progress_event``, ``write_artifact``, ``_combined_output``,
-``phase_timeout_seconds``) still live in ``code_review_loop.cli`` and are looked
-up lazily through ``_cli_module()``; full elimination is the C3 cleanup step
-after every phase has moved.
+Loop side effects are routed through ``adapters.phase_support`` so this adapter
+does not import the CLI loop driver.
 """
 
 from __future__ import annotations
@@ -19,6 +17,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from code_review_loop.adapters import phase_support as _cli
 from code_review_loop.core.ports import CommandResult, RunContext
 
 if TYPE_CHECKING:
@@ -60,16 +59,6 @@ NON_PYTHON_PROJECT_MARKERS = (
 )
 
 
-def _cli_module():
-    # Loop-shell helpers still live in cli/__init__.py; reach them lazily so
-    # the adapter has no module-load dependency on cli having finished
-    # initialising. C3 cleanup migrates these helpers to a shared support
-    # module so this accessor can be retired.
-    from code_review_loop import loop as _cli
-
-    return _cli
-
-
 def adaptive_check_skip_reason(command: Sequence[str], cwd: Path) -> str | None:
     if (
         is_pytest_command(command)
@@ -97,7 +86,7 @@ def normalize_adaptive_check_result(
             stdout=(
                 "SKIPPED adaptive check: pytest exited "
                 f"{result.returncode}, but this repository appears to be non-Python\n"
-                + _cli_module()._combined_output(result)
+                + _cli._combined_output(result)
             ),
         )
     return result
@@ -151,10 +140,8 @@ def run_checks(
 ) -> tuple[list[CommandResult], list[str]]:
     """Execute the configured check commands for ``iteration`` and return
     ``(results, failed_commands)``. Loop-shell side effects (progress events,
-    artifact writes) are routed through ``_cli_module()`` so monkeypatches on
-    ``code_review_loop.cli`` keep taking effect.
+    artifact writes) are routed through ``adapters.phase_support``.
     """
-    _cli = _cli_module()
     results: list[CommandResult] = []
     for index, check in enumerate(config.check_commands, start=1):
         command = shlex.split(check)
@@ -214,5 +201,5 @@ def format_check_failures(check_results: list[CommandResult]) -> str:
         return ""
     parts = ["Check failures from the previous iteration:"]
     for r in failures:
-        parts.append(f"\n$ {shlex.join(r.args)}\n{_cli_module()._combined_output(r)}")
+        parts.append(f"\n$ {shlex.join(r.args)}\n{_cli._combined_output(r)}")
     return "\n".join(parts)

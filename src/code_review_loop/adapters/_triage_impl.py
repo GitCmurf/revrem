@@ -20,7 +20,7 @@ from code_review_loop import (
     suppressions,
     triage,
 )
-from code_review_loop import loop as _cli  # noqa: E402  -- loop-shell helpers
+from code_review_loop.adapters import phase_support as _cli
 from code_review_loop.core.ports import CommandResult, RunContext
 from code_review_loop.core.review_interpretation import actionable_review_output
 

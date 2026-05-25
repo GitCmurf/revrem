@@ -84,6 +84,7 @@ from code_review_loop.core.review_interpretation import (
 )
 from code_review_loop.core.state import RunState
 from code_review_loop.identity import SYSTEM_IDENTITY, RunIdentity
+from code_review_loop.adapters.phase_support import CommitFailed as CommitFailed
 
 # REVREM-TASK-003 Wave C2a: parsers and their shared choice tuples are now
 # canonical in ``cli/args.py``. Re-exported here so existing imports and
@@ -248,25 +249,6 @@ class RunLoopFailed(RuntimeError):
         self.summary = summary
         self.outcome = outcome
 
-
-class CommitFailed(RuntimeError):
-    """Raised when git commit fails after verified remediation staging."""
-
-    def __init__(
-        self,
-        *,
-        iteration: int,
-        kind: str,
-        artifact_path: Path,
-        output: str,
-    ):
-        super().__init__(
-            f"git commit failed for iteration {iteration}; see {artifact_path}"
-        )
-        self.iteration = iteration
-        self.kind = kind
-        self.artifact_path = artifact_path
-        self.output = output
 
 # xterm-compatible title-stack controls use CSI, not OSC.
 TERMINAL_TITLE_SAVE = "\033[22;0t"
