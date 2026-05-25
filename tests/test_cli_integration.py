@@ -398,7 +398,9 @@ enabled = true
     monkeypatch.chdir(repo)
     monkeypatch.setenv("HOME", str(home))
 
-    exit_code = loop_mod.config_main(["show", "future"])
+    from code_review_loop.cli.commands.config import main as config_main
+
+    exit_code = config_main(["show", "future"])
     captured = capsys.readouterr()
 
     assert exit_code == 0

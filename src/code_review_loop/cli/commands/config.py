@@ -1,27 +1,24 @@
-"""``revrem config`` subcommand (REVREM-TASK-003 Wave C1a).
-
-Manages user/project profile configuration. Profile helpers
-(``edit_profile_config``, ``new_profile_from_args``, ``_format_profile_list_item``)
-remain in ``code_review_loop.cli`` for C1a and are looked up lazily so existing
-``monkeypatch.setattr(MODULE, …)`` test patches stay in effect.
-"""
+"""``revrem config`` subcommand."""
 
 from __future__ import annotations
 
 import json
+import os
+import shlex
+import subprocess
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 
 from code_review_loop import profiles
+from code_review_loop.cli.args import parse_config_args
+from code_review_loop.cli.config_builder import new_profile_from_args
 
 from ..outcome import CommandFailed, CommandOk
 
 
 def main(argv: Sequence[str]) -> int:
-    from code_review_loop import loop as _cli  # late import; preserves monkeypatching
-
-    args = _cli.parse_config_args(argv)
+    args = parse_config_args(argv)
     try:
         output_format = getattr(args, "format", None)
         if args.command == "list":
@@ -36,7 +33,7 @@ def main(argv: Sequence[str]) -> int:
                 )
             else:
                 for item in items:
-                    print(_cli._format_profile_list_item(item))
+                    print(_format_profile_list_item(item))
             return CommandOk().exit_code
         if args.command == "show":
             if output_format == "text":
@@ -56,12 +53,12 @@ def main(argv: Sequence[str]) -> int:
                 print(profiles.profile_to_toml(profile), end="")
             return CommandOk().exit_code
         if args.command == "new":
-            profile = _cli.new_profile_from_args(args)
+            profile = new_profile_from_args(args)
             path = profiles.write_user_profile(profile, force=args.force)
             print(f"created {args.name} in {path}")
             return CommandOk().exit_code
         if args.command == "edit":
-            path = _cli.edit_profile_config(args.name, cwd=Path.cwd())
+            path = edit_profile_config(args.name, cwd=Path.cwd())
             print(f"edited {args.name} in {path}")
             return CommandOk().exit_code
         if args.command == "clone":
@@ -120,3 +117,51 @@ def main(argv: Sequence[str]) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return CommandFailed(exit_code=1).exit_code
     raise AssertionError(f"unhandled config command: {args.command}")
+
+
+def _format_profile_list_item(item: profiles.ProfileListItem) -> str:
+    desc = f" - {item.description}" if item.description else ""
+    details: list[str] = []
+    if item.source:
+        details.append(item.source)
+    details.append(f"last used {item.last_used_at or 'never'}")
+    suffix = f" ({', '.join(details)})" if details else ""
+    return f"{item.name}{desc}{suffix}"
+
+
+def edit_profile_config(name: str, *, cwd: Path, home: Path | None = None) -> Path:
+    path = _profile_config_owner_path(name, cwd, home)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.touch(exist_ok=True)
+    command = _editor_command() + [str(path)]
+    try:
+        subprocess.run(command, cwd=path.parent, check=True)
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(f"editor not found: {command[0]}") from exc
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(f"editor exited with status {exc.returncode}") from exc
+    return path
+
+
+def _profile_config_owner_path(name: str, cwd: Path, home: Path | None = None) -> Path:
+    project_path = profiles.project_config_path(cwd)
+    project_file = profiles.load_profile_file(project_path)
+    if name in project_file.profiles:
+        return project_path
+
+    user_path = profiles.user_config_path(home)
+    user_file = profiles.load_profile_file(user_path)
+    if name in user_file.profiles:
+        return user_path
+
+    raise FileNotFoundError(f"profile not found: {name}")
+
+
+def _editor_command() -> list[str]:
+    editor = os.environ.get("EDITOR", "").strip()
+    if not editor:
+        raise RuntimeError("EDITOR is not set; cannot open a config editor")
+    command = shlex.split(editor)
+    if not command:
+        raise RuntimeError("EDITOR is empty; cannot open a config editor")
+    return command
