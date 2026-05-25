@@ -952,22 +952,33 @@ that commit as a green checkpoint, not the Wave C finish line.
 
   ``cli/__init__.py`` is now 3 lines, down from 4946 at the start of Wave C.
   ``resume`` no longer imports the executable driver; the resume command calls
-  ``runner.resume_run`` after preconditions pass. The moved loop implementation remains the executable driver in
-  ``code_review_loop.runner``; this is a measurable reduction in CLI entrypoint
-  weight, not proof that the core engine split is complete.
+  ``runner.resume_run`` after preconditions pass. Follow-up remediation renamed
+  the relocated loop driver from ``loop`` to ``runner`` and deleted the legacy
+  ``_run_loop`` symbol. The current runner session shell is 35 lines, with the
+  happy path delegated to named helpers. This is a measurable reduction in
+  driver weight, but the executable driver still calls ``decide()`` directly
+  rather than consuming ``core.engine.run`` for the full production loop.
 
-* **C3c tech-debt cleanup is partially complete.** TD-002, TD-003, and TD-005
-  are resolved: `LoopAccumulator` no longer stores `iteration`, `_execute_stop`
-  has a shared stop-tail helper, and `OutcomeFailed.reason` is now a
-  `Literal[...]` union. `tests/test_cli.py` has been renamed to
-  `tests/test_cli_integration.py` as the first test-monolith split. The 6261
-  line integration monolith still needs real behavioral decomposition before
-  Wave C can be called complete.
+* **C3c tech-debt cleanup is mostly complete.** TD-001, TD-002, TD-003, and
+  TD-005 are resolved: `RunContext` is required in the runner/adapter execution
+  helpers, `LoopAccumulator` no longer stores `iteration`, `_execute_stop` has a
+  shared stop-tail helper, and `OutcomeFailed.reason` is now a `Literal[...]`
+  union. `RunState.to_dict()` now returns a fresh projection instead of the live
+  source of truth.
 
-* **Gate status at this checkpoint:** `./.venv/bin/pytest -q`,
-  `./.venv/bin/ruff check .`, `./.venv/bin/mypy src`, `lint-imports`, and
-  `uv run --locked meminit check --format json` pass locally. Full pytest count
-  at this checkpoint is 725 passing tests.
+  Test decomposition is in progress, not complete. The original CLI monolith
+  has been reduced to 5449 lines and progress/terminal-title plus commit/check
+  integration coverage now live in `tests/test_cli_progress_integration.py` and
+  `tests/test_cli_commit_integration.py`. The remaining
+  `tests/test_cli_integration.py` file still needs further behavior-level
+  subdivision before Wave C can be called complete.
+
+* **Gate status at this checkpoint:** targeted runner/adapter gates pass:
+  `./.venv/bin/ruff check src/code_review_loop/runner.py`,
+  `./.venv/bin/mypy src`, `./.venv/bin/lint-imports`, and focused pytest
+  selections for loop, commit/check, progress, cancellation, budget, triage, and
+  routing paths. A fresh full gate run is still required before declaring Wave C
+  done.
 
 **Required remediation before declaring Wave C done.**
 
@@ -979,14 +990,17 @@ that commit as a green checkpoint, not the Wave C finish line.
    prove core does not import drivers/adapters, adapters do not import
    ``cli`` or ``runner``, and resume planning does not import ``runner``.
 3. DONE in remediation: delete the ``cli.__getattr__`` compatibility facade.
-4. IN PROGRESS: legacy phase fallback branches are removed and ``RunContext``
-   phase harnesses are required. Remaining TD-001 work is to remove nullable
-   ``ctx`` from phase/support functions that no longer support legacy callers.
-5. IN PROGRESS: the driver module has been renamed to ``runner`` and resume
-   execution is owned by ``runner.resume_run``. Remaining work is to shrink the
-   runner to a thin imperative shell over ``core.engine.run`` and then remove
-   ``_run_loop``.
-6. Decompose ``tests/test_cli_integration.py`` into behavior-level modules.
+4. DONE in remediation: legacy phase fallback branches are removed and
+   ``RunContext`` phase harnesses are required. TD-001 nullable execution
+   contexts are gone from runner and adapter execution helpers.
+5. PARTIAL: the driver module has been renamed to ``runner``, resume execution
+   is owned by ``runner.resume_run``, ``_run_loop`` is gone, and
+   ``_run_session`` is 35 lines. Remaining work is to make the production driver
+   consume ``core.engine.run`` for the full loop instead of calling ``decide()``
+   directly.
+6. IN PROGRESS: decompose ``tests/test_cli_integration.py`` into behavior-level
+   modules. Progress/terminal-title and commit/check integration clusters are
+   split; the remaining monolith is 5449 lines.
 7. DONE in remediation: ``RunState`` now has semantic terminal transitions
    (``mark_outcome``/``mark_clear``/``mark_failed``/``mark_findings``/
    ``mark_unknown``), ``_execute_stop`` uses them, and ``to_dict()`` now returns
