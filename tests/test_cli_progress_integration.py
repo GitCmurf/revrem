@@ -4,6 +4,7 @@ import io
 import re
 
 import code_review_loop.runner as runner_mod
+from code_review_loop.adapters import phase_support
 from code_review_loop.core.ports import RunContext
 from tests.support.fakes import FakeClock, FakeRunIdentity
 from tests.support.phase_harnesses import phase_harness_kwargs
@@ -62,14 +63,14 @@ def test_compact_progress_uses_local_wall_time(monkeypatch):
         def now(cls):
             return FakeNow()
 
-    monkeypatch.setattr(runner_mod, "datetime", FakeDateTime)
+    monkeypatch.setattr(phase_support, "datetime", FakeDateTime)
 
-    assert runner_mod.compact_progress_prefix("review", "1") == "12:34:56|rev|1   |"
+    assert phase_support.compact_progress_prefix("review", "1") == "12:34:56|rev|1   |"
 
 
 def test_rich_progress_falls_back_to_compact_once(tmp_path, capsys, monkeypatch):
     monkeypatch.setattr(runner_mod.progress, "print_rich_event", lambda *args, **kwargs: False)
-    monkeypatch.setattr(runner_mod, "_RICH_UNAVAILABLE_WARNED", False)
+    monkeypatch.setattr(phase_support, "_RICH_UNAVAILABLE_WARNED", False)
     config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
@@ -344,12 +345,12 @@ def test_terminal_title_context_restores_cursor_on_exit(tmp_path, monkeypatch):
 
 
 def test_progress_warning_context_resets_rich_unavailable_latch(tmp_path, capsys):
-    runner_mod._RICH_UNAVAILABLE_WARNED = True
+    phase_support._RICH_UNAVAILABLE_WARNED = True
 
-    with runner_mod.progress_warning_context():
-        runner_mod.warn_rich_unavailable("review", "1")
-        runner_mod.warn_rich_unavailable("review", "1")
+    with phase_support.progress_warning_context():
+        phase_support.warn_rich_unavailable("review", "1")
+        phase_support.warn_rich_unavailable("review", "1")
 
     captured = capsys.readouterr()
     assert captured.err.count("rich progress unavailable") == 1
-    assert runner_mod._RICH_UNAVAILABLE_WARNED is True
+    assert phase_support._RICH_UNAVAILABLE_WARNED is True

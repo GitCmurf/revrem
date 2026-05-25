@@ -220,7 +220,6 @@ TERMINAL_TITLE_RESTORE = "\033[23;0t"
 TERMINAL_TITLE_REFRESH_SECONDS = 1.0
 _CURRENT_TERMINAL_TITLE_SEQUENCE: str | None = None
 _TERMINAL_TITLE_PREFER_TTY: bool | None = False
-_RICH_UNAVAILABLE_WARNED = False
 CURSOR_SHOW = "\033[?25h"
 
 
@@ -1135,6 +1134,8 @@ class _RunnerEngineExecutor:
             status, review = outcome.status, outcome.result
             self.last_review_output = actionable_review_output(_combined_output(review))
             acc = replace(engine_state.acc, last_review_status=status)
+            if status == "unknown" and not acc.pending_check_failures:
+                self.iterations.append({"iteration": "final", "review_status": status})
             return replace(engine_state, acc=acc, event=ReviewDone(is_final=True, status=status))
 
         iteration = engine_state.iteration
