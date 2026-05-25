@@ -399,7 +399,10 @@ def test_run_loop_uses_common_exclude_for_default_artifacts_in_linked_worktree(t
     (common_git_dir / "info" / "exclude").write_text("# local excludes\n", encoding="utf-8")
     linked_git_dir.mkdir(parents=True)
     linked_worktree.mkdir()
-    (linked_worktree / ".git").write_text(f"gitdir: {linked_git_dir}\n", encoding="utf-8")
+    (linked_worktree / ".git").write_text(
+        f"gitdir: {linked_git_dir.as_posix()}\n",
+        encoding="utf-8",
+    )
 
     config = runner_mod.LoopConfig(
         base="main",
@@ -1463,4 +1466,3 @@ def test_config_edit_requires_editor(tmp_path, monkeypatch, capsys):
 
     assert cli_main.main(["config", "edit", "smoke"]) == 1
     assert "EDITOR is not set" in capsys.readouterr().err
-

@@ -250,7 +250,7 @@ def test_pytest_check_is_skipped_for_typescript_repo_with_incidental_python_file
     assert "appears to be non-Python" in results[0].stdout
 
 
-@pytest.mark.parametrize("returncode", [2, 4, 5])
+@pytest.mark.parametrize("returncode", [4, 5])
 def test_pytest_in_typescript_repo_is_normalized_when_subprocess_returns_non_python_codes(
     tmp_path,
     returncode,
@@ -265,6 +265,14 @@ def test_pytest_in_typescript_repo_is_normalized_when_subprocess_returns_non_pyt
     assert f"pytest exited {returncode}" in normalized.stdout
     assert "pytest output" in normalized.stdout
     assert "pytest error" in normalized.stdout
+
+
+def test_pytest_interrupt_is_preserved_for_typescript_repo(tmp_path):
+    (tmp_path / "package.json").write_text('{"scripts":{"test":"vitest"}}\n', encoding="utf-8")
+    command = ["pytest", "-q"]
+    result = runner_mod.CommandResult(command, 2, stdout="interrupted\n")
+
+    assert checks_impl.normalize_adaptive_check_result(command, tmp_path, result) is result
 
 
 def test_pytest_failure_is_preserved_for_python_repo(tmp_path):

@@ -13,6 +13,15 @@ from code_review_loop import resume as resume_mod
 cli_main = import_module("code_review_loop.cli.main")
 
 
+def test_git_preflight_stdout_treats_missing_stdout_as_empty(tmp_path, monkeypatch):
+    def fake_run_git_preflight(cwd, args):
+        return runner_mod.CommandResult(list(args), 0, stdout=None)
+
+    monkeypatch.setattr(resume_mod, "run_git_preflight", fake_run_git_preflight)
+
+    assert resume_mod.git_preflight_stdout(tmp_path, ["rev-parse", "HEAD"]) is None
+
+
 def write_resume_run(
     run_dir: Path,
     *,

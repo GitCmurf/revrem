@@ -312,6 +312,8 @@ def git_preflight_stdout(cwd: Path, args: Sequence[str]) -> str | None:
     result = run_git_preflight(cwd, args)
     if result.returncode != 0:
         return None
+    if result.stdout is None:
+        return None
     value = result.stdout.strip()
     return value or None
 

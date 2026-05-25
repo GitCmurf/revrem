@@ -675,7 +675,7 @@ def run_subprocess_with_terminal_title_refresh(
 
 
 def kill_process_tree(process: subprocess.Popen[str]) -> None:
-    """Kill a subprocess and descendants started in its process group."""
+    """Kill a POSIX/Linux subprocess group started with ``start_new_session``."""
     pid = getattr(process, "pid", None)
     if pid is None:
         process.kill()

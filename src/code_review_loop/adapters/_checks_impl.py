@@ -67,7 +67,7 @@ def normalize_adaptive_check_result(
 ) -> CommandResult:
     if (
         is_pytest_command(command)
-        and result.returncode in {2, 4, 5}
+        and result.returncode in {4, 5}
         and has_non_python_project_surface(cwd)
         and not has_python_test_surface(cwd)
     ):
