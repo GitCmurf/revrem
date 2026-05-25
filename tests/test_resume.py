@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+from importlib import import_module
 from pathlib import Path
 
 import pytest
 
 import code_review_loop.loop as loop_mod
 from code_review_loop import events
+
+cli_main = import_module("code_review_loop.cli.main")
 
 
 def write_resume_run(
@@ -397,7 +400,7 @@ def test_resume_preconditions_block_truncated_events(tmp_path, monkeypatch):
 def test_resume_main_returns_code_4_for_missing_summary(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
 
-    exit_code = loop_mod.main(["resume", str(tmp_path / "missing")])
+    exit_code = cli_main.main(["resume", str(tmp_path / "missing")])
 
     assert exit_code == 4
     assert "revrem.resume.missing_summary" in capsys.readouterr().out
@@ -410,7 +413,7 @@ def test_resume_continues_from_existing_review_artifact(tmp_path, monkeypatch, c
     write_resume_run(run_dir)
     install_matching_git(monkeypatch)
 
-    exit_code = loop_mod.main(["resume", str(run_dir)])
+    exit_code = cli_main.main(["resume", str(run_dir)])
     resumed_summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
 
     assert exit_code == 0

@@ -6,14 +6,19 @@ import os
 import re
 import time
 from decimal import Decimal
+from importlib import import_module
 from pathlib import Path
 
 import pytest
 
 import code_review_loop.loop as loop_mod
 from code_review_loop import events, profiles, suppressions
+from code_review_loop.cli import args as cli_args
+from code_review_loop.cli import config_builder
 from code_review_loop.core.ports import RunContext
 from tests.support.fakes import FakeClock, FakeRunIdentity
+
+cli_main = import_module("code_review_loop.cli.main")
 
 
 def make_git_worktree(tmp_path: Path, cwd_rel: str | None = "work") -> tuple[Path, Path]:
@@ -25,7 +30,7 @@ def make_git_worktree(tmp_path: Path, cwd_rel: str | None = "work") -> tuple[Pat
 
 def test_main_reports_package_version(capsys):
     with pytest.raises(SystemExit) as excinfo:
-        loop_mod.main(["--version"])
+        cli_main.main(["--version"])
 
     captured = capsys.readouterr()
 
@@ -247,7 +252,7 @@ def test_run_loop_writes_replayable_events_jsonl(tmp_path, capsys):
     )
 
     summary = loop_mod.run_loop(config, runner)
-    replay_code = loop_mod.main(["replay", str(tmp_path / "artifacts")])
+    replay_code = cli_main.main(["replay", str(tmp_path / "artifacts")])
     records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
 
     assert summary["final_status"] == "clear"
@@ -545,7 +550,7 @@ model = "sonnet"
 
     monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
 
-    exit_code = loop_mod.main(
+    exit_code = cli_main.main(
         [
             "--profile",
             "multi",
@@ -1168,7 +1173,7 @@ def test_suppress_cli_add_check_remove_round_trip(tmp_path, monkeypatch, capsys)
     (tmp_path / ".git").mkdir()
     monkeypatch.setenv("REVREM_SUPPRESSION_ACTOR", "tester")
 
-    assert loop_mod.main(
+    assert cli_main.main(
         [
             "suppress",
             "add",
@@ -1181,9 +1186,9 @@ def test_suppress_cli_add_check_remove_round_trip(tmp_path, monkeypatch, capsys)
             "medium",
         ]
     ) == 0
-    assert loop_mod.main(["suppress", "check", "f1:abc123"]) == 0
-    assert loop_mod.main(["suppress", "remove", "f1:abc123"]) == 0
-    assert loop_mod.main(["suppress", "check", "f1:abc123"]) == 2
+    assert cli_main.main(["suppress", "check", "f1:abc123"]) == 0
+    assert cli_main.main(["suppress", "remove", "f1:abc123"]) == 0
+    assert cli_main.main(["suppress", "check", "f1:abc123"]) == 2
     assert "added f1:abc123" in capsys.readouterr().out
 
 
@@ -1216,7 +1221,7 @@ def test_doctor_warns_about_expired_and_unsupported_suppressions(tmp_path, monke
         ],
     )
 
-    code = loop_mod.main(["doctor", "--format", "json", "--base", "HEAD"])
+    code = cli_main.main(["doctor", "--format", "json", "--base", "HEAD"])
 
     assert code in {4, 6}
     output = capsys.readouterr().out
@@ -1248,7 +1253,7 @@ def test_doctor_warns_about_unreadable_optional_suppression_state(
 
     monkeypatch.setattr(suppressions, "stale_entries", fake_stale_entries)
 
-    exit_code = loop_mod.main(["doctor", "--base", "HEAD", "--codex-bin", "git", "--format", "json"])
+    exit_code = cli_main.main(["doctor", "--base", "HEAD", "--codex-bin", "git", "--format", "json"])
 
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
@@ -2257,7 +2262,7 @@ def test_resolve_timeout_seconds_allows_disabling_timeout():
 def test_main_rejects_negative_timeout(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
 
-    exit_code = loop_mod.main(["--timeout-seconds", "-1"])
+    exit_code = cli_main.main(["--timeout-seconds", "-1"])
 
     assert exit_code == 1
     assert "--timeout-seconds must be 0 or greater" in capsys.readouterr().err
@@ -2266,7 +2271,7 @@ def test_main_rejects_negative_timeout(tmp_path, monkeypatch, capsys):
 def test_main_rejects_nonpositive_max_iterations(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
 
-    exit_code = loop_mod.main(["--max-iterations", "0"])
+    exit_code = cli_main.main(["--max-iterations", "0"])
 
     captured = capsys.readouterr()
     assert exit_code == 1
@@ -2281,7 +2286,7 @@ def test_main_handles_keyboard_interrupt_without_traceback(tmp_path, monkeypatch
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(loop_mod, "run_loop", interrupted_run_loop)
 
-    exit_code = loop_mod.main([])
+    exit_code = cli_main.main([])
 
     assert exit_code == 5
     assert capsys.readouterr().err == "Cancelled by user.\n"
@@ -2474,7 +2479,7 @@ def test_main_resolves_latest_initial_review_from_custom_artifact_dir(tmp_path, 
     (tmp_path / ".git").mkdir()
     monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
 
-    exit_code = loop_mod.main(
+    exit_code = cli_main.main(
         [
             "--initial-review-file",
             "latest",
@@ -2501,7 +2506,7 @@ def test_main_save_profile_writes_project_config_and_exits(tmp_path, monkeypatch
 
     monkeypatch.setattr(loop_mod, "run_loop", fail_run_loop)
 
-    exit_code = loop_mod.main(
+    exit_code = cli_main.main(
         [
             "--base",
             "trunk",
@@ -2560,7 +2565,7 @@ def test_main_save_profile_preserves_disabled_timeout(tmp_path, monkeypatch, cap
 
     monkeypatch.setattr(loop_mod, "run_loop", fail_run_loop)
 
-    exit_code = loop_mod.main(
+    exit_code = cli_main.main(
         [
             "--timeout-seconds",
             "0",
@@ -2582,7 +2587,7 @@ def test_main_save_profile_is_non_destructive_by_default(tmp_path, monkeypatch, 
     project_config = profiles.project_config_path(tmp_path)
     project_config.write_text("[profiles.final-pr]\ndescription = \"Keep me\"\n", encoding="utf-8")
 
-    exit_code = loop_mod.main(["--save-profile", "final-pr"])
+    exit_code = cli_main.main(["--save-profile", "final-pr"])
 
     captured = capsys.readouterr()
     assert exit_code == 1
@@ -2635,7 +2640,7 @@ artifact_dir = "{custom_root}"
 
     monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
 
-    exit_code = loop_mod.main(
+    exit_code = cli_main.main(
         [
             "--profile",
             "final-pr",
@@ -2706,7 +2711,7 @@ soft_warn_fraction = 0.5
 
     monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
 
-    exit_code = loop_mod.main(["--profile", "final-pr", "--base", "main", "--dry-run"])
+    exit_code = cli_main.main(["--profile", "final-pr", "--base", "main", "--dry-run"])
 
     assert exit_code == 0
     config = captured_configs[0]
@@ -2935,7 +2940,7 @@ terminal_title = true
 
     monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
 
-    exit_code = loop_mod.main(
+    exit_code = cli_main.main(
         [
             "--profile",
             "final-pr",
@@ -2968,9 +2973,9 @@ def test_main_uses_profile_commit_message_harness(tmp_path, monkeypatch):
             ),
         ),
     )
-    args = loop_mod.parse_args(["--profile", "final-pr", "--dry-run"])
+    args = cli_args.parse_args(["--profile", "final-pr", "--dry-run"])
 
-    config, _summary_format = loop_mod.build_loop_config(args, tmp_path)
+    config, _summary_format = config_builder.build_loop_config(args, tmp_path)
 
     assert config.commit_message_harness == "claude"
     assert config.commit_message_model == "fast-commit"
@@ -3036,7 +3041,7 @@ output_last_message = false
 
     monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
 
-    exit_code = loop_mod.main(
+    exit_code = cli_main.main(
         [
             "--profile",
             "final-pr",
@@ -3081,7 +3086,7 @@ enabled = true
 
     monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
 
-    exit_code = loop_mod.main(
+    exit_code = cli_main.main(
         ["--profile", "final-pr", "--no-commit-after-remediation", "--dry-run"]
     )
 
@@ -3123,7 +3128,7 @@ message_model = "gpt-5.3-codex-spark"
 
     monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
 
-    exit_code = loop_mod.main(
+    exit_code = cli_main.main(
         [
             "--profile",
             "final-pr",
@@ -3174,7 +3179,7 @@ message_prompt = "Write a custom subject."
 
     monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
 
-    exit_code = loop_mod.main(["--profile", "final-pr", "--commit-message-model", "gpt-test-commit", "--dry-run"])
+    exit_code = cli_main.main(["--profile", "final-pr", "--commit-message-model", "gpt-test-commit", "--dry-run"])
 
     assert exit_code == 0
     assert captured_configs[0].commit_message_prompt == "Write a custom subject."
@@ -3222,7 +3227,7 @@ timeout_seconds = 30
 
     monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
 
-    exit_code = loop_mod.main(
+    exit_code = cli_main.main(
         ["--profile", "final-pr", "--reasoning-effort", "high", "--dry-run"]
     )
 
@@ -3267,7 +3272,7 @@ reasoning_effort = "low"
 
     monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
 
-    exit_code = loop_mod.main(
+    exit_code = cli_main.main(
         [
             "--profile",
             "final-pr",
@@ -3317,7 +3322,7 @@ def test_main_records_non_dry_run_history(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
     monkeypatch.setattr(loop_mod, "write_summary", lambda config, summary: None)
 
-    assert loop_mod.main(["--base", "main"]) == 0
+    assert cli_main.main(["--base", "main"]) == 0
     output = capsys.readouterr().out
     history_path = home / ".local" / "share" / "revrem" / "runs.jsonl"
 
@@ -3351,7 +3356,7 @@ def test_main_records_failed_runs_in_history(tmp_path, monkeypatch, capsys):
 
     monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
 
-    assert loop_mod.main(["--base", "main", "--artifact-dir", str(tmp_path / "artifacts")]) == 1
+    assert cli_main.main(["--base", "main", "--artifact-dir", str(tmp_path / "artifacts")]) == 1
     capsys.readouterr()
 
     history_path = home / ".local" / "share" / "revrem" / "runs.jsonl"
@@ -3385,8 +3390,8 @@ def test_main_skips_history_for_dry_run_and_explicit_opt_out(tmp_path, monkeypat
 
     monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
 
-    assert loop_mod.main(["--dry-run"]) == 0
-    assert loop_mod.main(["--no-run-history"]) == 0
+    assert cli_main.main(["--dry-run"]) == 0
+    assert cli_main.main(["--no-run-history"]) == 0
     assert not (home / ".local" / "share" / "revrem" / "runs.jsonl").exists()
 
 
@@ -3406,7 +3411,7 @@ def test_main_skips_history_when_summary_has_no_run_id(tmp_path, monkeypatch):
 
     monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
 
-    assert loop_mod.main([]) == 0
+    assert cli_main.main([]) == 0
     assert not (home / ".local" / "share" / "revrem" / "runs.jsonl").exists()
 
 
@@ -3422,12 +3427,12 @@ def test_history_list_command_outputs_recent_runs(tmp_path, monkeypatch, capsys)
         encoding="utf-8",
     )
 
-    assert loop_mod.main(["history", "list", "--limit", "1"]) == 0
+    assert cli_main.main(["history", "list", "--limit", "1"]) == 0
     text = capsys.readouterr().out
     assert "new clear (review_clear) base=main artifacts=tmp/new" in text
     assert "old" not in text
 
-    assert loop_mod.main(["history", "--format", "json", "list", "--limit", "1"]) == 0
+    assert cli_main.main(["history", "--format", "json", "list", "--limit", "1"]) == 0
     json_text = capsys.readouterr().out
     assert '"run_id": "new"' in json_text
     assert '"run_id": "old"' not in json_text
@@ -3471,7 +3476,7 @@ reasoning_effort = "minimal"
 
     monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
 
-    exit_code = loop_mod.main(["--profile", "final-pr", "--model", "gpt-test", "--dry-run"])
+    exit_code = cli_main.main(["--profile", "final-pr", "--model", "gpt-test", "--dry-run"])
 
     assert exit_code == 0
     config = captured_configs[0]
@@ -3524,7 +3529,7 @@ quiet_progress = true
 
     monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
 
-    exit_code = loop_mod.main(["--dry-run"])
+    exit_code = cli_main.main(["--dry-run"])
 
     assert exit_code == 0
     config = captured_configs[0]
@@ -3560,8 +3565,8 @@ timeout_seconds = 1800
 """,
         encoding="utf-8",
     )
-    args = loop_mod.parse_args(["--profile", "final-pr", "--base", "main"])
-    config, summary_format = loop_mod.build_loop_config(args, tmp_path)
+    args = cli_args.parse_args(["--profile", "final-pr", "--base", "main"])
+    config, summary_format = config_builder.build_loop_config(args, tmp_path)
     calls = []
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
@@ -3599,10 +3604,10 @@ timeout_seconds = -1
         encoding="utf-8",
     )
 
-    args = loop_mod.parse_args(["--profile", "final-pr", "--base", "main"])
+    args = cli_args.parse_args(["--profile", "final-pr", "--base", "main"])
 
     with pytest.raises(ValueError, match="review.timeout_seconds must be 0 or greater"):
-        loop_mod.build_loop_config(args, tmp_path)
+        config_builder.build_loop_config(args, tmp_path)
 
 
 
@@ -3638,7 +3643,7 @@ timeout_seconds = 1800
 
     monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
 
-    exit_code = loop_mod.main(["--profile", "final-pr", "--base", "main", "--dry-run"])
+    exit_code = cli_main.main(["--profile", "final-pr", "--base", "main", "--dry-run"])
 
     assert exit_code == 0
     assert captured_configs[0].timeout_seconds == 300
@@ -3652,7 +3657,7 @@ def test_config_commands_create_show_list_and_delete_profile(tmp_path, monkeypat
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
 
-    assert loop_mod.main(["config", "new", "smoke", "--description", "Smoke profile"]) == 0
+    assert cli_main.main(["config", "new", "smoke", "--description", "Smoke profile"]) == 0
 
     editor = tmp_path / "editor.sh"
     editor.write_text(
@@ -3667,31 +3672,31 @@ def test_config_commands_create_show_list_and_delete_profile(tmp_path, monkeypat
     monkeypatch.setenv("EDITOR", str(editor))
     monkeypatch.setenv("EDITOR_LOG", str(editor_log))
 
-    assert loop_mod.main(["config", "edit", "smoke"]) == 0
+    assert cli_main.main(["config", "edit", "smoke"]) == 0
     assert f"edited smoke in {home / '.config' / 'revrem' / 'profiles.toml'}" in capsys.readouterr().out
     assert editor_log.read_text(encoding="utf-8").strip() == str(home / ".config" / "revrem" / "profiles.toml")
     assert "Edited profile" in (home / ".config" / "revrem" / "profiles.toml").read_text(encoding="utf-8")
-    assert loop_mod.main(["config", "show", "smoke", "--format", "json"]) == 0
+    assert cli_main.main(["config", "show", "smoke", "--format", "json"]) == 0
     assert '"description": "Edited profile"' in capsys.readouterr().out
 
-    assert loop_mod.main(["config", "list"]) == 0
+    assert cli_main.main(["config", "list"]) == 0
     assert "smoke - Edited profile" in capsys.readouterr().out
-    assert loop_mod.main(["config", "list", "--format", "json"]) == 0
+    assert cli_main.main(["config", "list", "--format", "json"]) == 0
     assert '"name": "smoke"' in capsys.readouterr().out
 
-    assert loop_mod.main(["config", "show", "smoke", "--format", "json"]) == 0
+    assert cli_main.main(["config", "show", "smoke", "--format", "json"]) == 0
     assert '"name": "smoke"' in capsys.readouterr().out
 
-    assert loop_mod.main(["config", "clone", "smoke", "smoke-copy"]) == 0
+    assert cli_main.main(["config", "clone", "smoke", "smoke-copy"]) == 0
     assert "cloned smoke to smoke-copy" in capsys.readouterr().out
-    assert loop_mod.main(["config", "show", "smoke-copy", "--format", "json"]) == 0
+    assert cli_main.main(["config", "show", "smoke-copy", "--format", "json"]) == 0
     assert '"description": "Edited profile"' in capsys.readouterr().out
 
-    assert loop_mod.main(["config", "doctor", "--profile", "smoke", "--format", "json"]) == 0
+    assert cli_main.main(["config", "doctor", "--profile", "smoke", "--format", "json"]) == 0
     assert '"resolved_profile"' in capsys.readouterr().out
 
-    assert loop_mod.main(["config", "delete", "smoke", "--yes"]) == 0
-    assert loop_mod.main(["config", "show", "smoke"]) == 1
+    assert cli_main.main(["config", "delete", "smoke", "--yes"]) == 0
+    assert cli_main.main(["config", "show", "smoke"]) == 1
 
 
 def test_config_new_prompts_for_common_fields_when_interactive(tmp_path, monkeypatch, capsys):
@@ -3713,7 +3718,7 @@ def test_config_new_prompts_for_common_fields_when_interactive(tmp_path, monkeyp
 
     monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
 
-    assert loop_mod.main(["config", "new", "interactive", "--interactive"]) == 0
+    assert cli_main.main(["config", "new", "interactive", "--interactive"]) == 0
 
     assert "created interactive" in capsys.readouterr().out
     resolved = profiles.resolve_profile("interactive", cwd=tmp_path, home=home)
@@ -3746,7 +3751,7 @@ def test_config_new_auto_prompts_when_default_invocation_is_tty(tmp_path, monkey
     )
     monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
 
-    assert loop_mod.main(["config", "new", "tty-profile"]) == 0
+    assert cli_main.main(["config", "new", "tty-profile"]) == 0
 
     resolved = profiles.resolve_profile("tty-profile", cwd=tmp_path, home=home)
     assert resolved.description == "TTY profile"
@@ -3769,7 +3774,7 @@ def test_config_new_auto_skips_prompt_when_default_invocation_is_not_tty(tmp_pat
 
     monkeypatch.setattr("builtins.input", fail_input)
 
-    assert loop_mod.main(["config", "new", "non-tty-profile"]) == 0
+    assert cli_main.main(["config", "new", "non-tty-profile"]) == 0
 
     resolved = profiles.resolve_profile("non-tty-profile", cwd=tmp_path, home=home)
     assert resolved.description == ""
@@ -3788,7 +3793,7 @@ def test_config_new_no_interactive_preserves_scriptable_minimal_profile(tmp_path
 
     monkeypatch.setattr("builtins.input", fail_input)
 
-    assert loop_mod.main(["config", "new", "scripted", "--no-interactive"]) == 0
+    assert cli_main.main(["config", "new", "scripted", "--no-interactive"]) == 0
 
     resolved = profiles.resolve_profile("scripted", cwd=tmp_path, home=home)
     assert resolved.description == ""
@@ -3804,7 +3809,7 @@ def test_config_import_rejects_missing_source_file(tmp_path, monkeypatch, capsys
 
     missing = tmp_path / "missing.toml"
 
-    assert loop_mod.main(["config", "import", str(missing)]) == 1
+    assert cli_main.main(["config", "import", str(missing)]) == 1
     assert "profile import file not found" in capsys.readouterr().err
     assert not (home / ".config" / "revrem" / "profiles.toml").exists()
 
@@ -3815,7 +3820,7 @@ def test_config_list_includes_last_used_from_run_history(tmp_path, monkeypatch, 
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
 
-    assert loop_mod.main(["config", "new", "smoke", "--description", "Smoke profile"]) == 0
+    assert cli_main.main(["config", "new", "smoke", "--description", "Smoke profile"]) == 0
 
     history_path = home / ".local" / "share" / "revrem" / "runs.jsonl"
     history_path.parent.mkdir(parents=True)
@@ -3831,13 +3836,13 @@ def test_config_list_includes_last_used_from_run_history(tmp_path, monkeypatch, 
         encoding="utf-8",
     )
 
-    assert loop_mod.main(["config", "list"]) == 0
+    assert cli_main.main(["config", "list"]) == 0
     output = capsys.readouterr().out
     assert "smoke - Smoke profile" in output
     assert str(home / ".config" / "revrem" / "profiles.toml") in output
     assert "last used 2026-05-02T10:00:00Z" in output
 
-    assert loop_mod.main(["config", "list", "--format", "json"]) == 0
+    assert cli_main.main(["config", "list", "--format", "json"]) == 0
     data = json.loads(capsys.readouterr().out)
     assert data == [
         {
@@ -3860,7 +3865,7 @@ def test_config_new_reports_profile_write_oserror(tmp_path, monkeypatch, capsys)
 
     monkeypatch.setattr(loop_mod.profiles, "write_user_profile", fail_write_user_profile)
 
-    assert loop_mod.main(["config", "new", "smoke"]) == 1
+    assert cli_main.main(["config", "new", "smoke"]) == 1
     assert "ERROR: permission denied" in capsys.readouterr().err
 
 
@@ -3870,8 +3875,8 @@ def test_config_global_format_applies_before_subcommand_defaults(tmp_path, monke
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
 
-    assert loop_mod.main(["config", "new", "smoke", "--description", "Smoke profile"]) == 0
-    assert loop_mod.main(["config", "--format", "json", "doctor", "--profile", "smoke"]) == 0
+    assert cli_main.main(["config", "new", "smoke", "--description", "Smoke profile"]) == 0
+    assert cli_main.main(["config", "--format", "json", "doctor", "--profile", "smoke"]) == 0
 
     output = capsys.readouterr().out
     assert '"resolved_profile"' in output
@@ -3883,11 +3888,11 @@ def test_config_edit_requires_editor(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
-    assert loop_mod.main(["config", "new", "smoke"]) == 0
+    assert cli_main.main(["config", "new", "smoke"]) == 0
 
     monkeypatch.delenv("EDITOR", raising=False)
 
-    assert loop_mod.main(["config", "edit", "smoke"]) == 1
+    assert cli_main.main(["config", "edit", "smoke"]) == 1
     assert "EDITOR is not set" in capsys.readouterr().err
 
 
@@ -4208,7 +4213,7 @@ def test_doctor_json_reports_invalid_base_without_invoking_runner(tmp_path, monk
 
     monkeypatch.setattr(loop_mod, "default_runner", runner)
 
-    exit_code = loop_mod.main(
+    exit_code = cli_main.main(
         ["doctor", "--base", "missing", "--codex-bin", "git", "--format", "json"]
     )
 
@@ -4238,7 +4243,7 @@ def test_live_cli_preflight_blocks_before_review_invocation(tmp_path, monkeypatc
     import code_review_loop.adapters.review as _review_mod
     monkeypatch.setattr(_review_mod.ReviewAdapter, "execute", fail_review)
 
-    exit_code = loop_mod.main(
+    exit_code = cli_main.main(
         ["--base", "missing", "--codex-bin", "git", "--artifact-dir", "artifacts"]
     )
 
@@ -4271,7 +4276,7 @@ def test_doctor_json_reports_missing_git_as_blocking_issue(tmp_path, monkeypatch
 
     monkeypatch.setattr(loop_mod.diagnostics.subprocess, "run", fake_run)
 
-    exit_code = loop_mod.main(["doctor", "--base", "main", "--codex-bin", "git", "--format", "json"])
+    exit_code = cli_main.main(["doctor", "--base", "main", "--codex-bin", "git", "--format", "json"])
 
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
@@ -4292,7 +4297,7 @@ def test_doctor_text_reports_ok_for_valid_repo(tmp_path, monkeypatch, capsys):
     run_git(repo, "commit", "-m", "initial")
     monkeypatch.chdir(repo)
 
-    exit_code = loop_mod.main(["doctor", "--base", "main", "--codex-bin", "git", "--format", "text"])
+    exit_code = cli_main.main(["doctor", "--base", "main", "--codex-bin", "git", "--format", "text"])
 
     captured = capsys.readouterr()
     assert exit_code == 0
@@ -4316,7 +4321,7 @@ def test_doctor_validates_default_artifact_dir_when_unset(tmp_path, monkeypatch,
     blocked_artifact_dir.write_text("blocked\n", encoding="utf-8")
     monkeypatch.setattr(loop_mod, "default_artifact_dir", lambda: blocked_artifact_dir)
 
-    exit_code = loop_mod.main(["doctor", "--base", "main", "--codex-bin", "git", "--format", "json"])
+    exit_code = cli_main.main(["doctor", "--base", "main", "--codex-bin", "git", "--format", "json"])
 
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
@@ -4343,7 +4348,7 @@ def test_doctor_does_not_create_default_artifact_dir_on_clean_repo(tmp_path, mon
     default_artifact_dir = repo / ".revrem" / "runs" / "default-run"
     monkeypatch.setattr(loop_mod, "default_artifact_dir", lambda: default_artifact_dir)
 
-    exit_code = loop_mod.main(["doctor", "--base", "main", "--codex-bin", "git", "--format", "json"])
+    exit_code = cli_main.main(["doctor", "--base", "main", "--codex-bin", "git", "--format", "json"])
 
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
@@ -4378,7 +4383,7 @@ timeout_seconds = 0
     )
     monkeypatch.chdir(repo)
 
-    exit_code = loop_mod.main(
+    exit_code = cli_main.main(
         [
             "doctor",
             "--profile",
@@ -4431,7 +4436,7 @@ artifact_dir = "."
     )
     monkeypatch.chdir(repo)
 
-    exit_code = loop_mod.main(
+    exit_code = cli_main.main(
         ["doctor", "--profile", "commit-root", "--base", "main", "--codex-bin", "git", "--format", "json"]
     )
 
@@ -4474,7 +4479,7 @@ harness = "gemini"
     )
     monkeypatch.chdir(repo)
 
-    exit_code = loop_mod.main(
+    exit_code = cli_main.main(
         ["doctor", "--profile", "smoke", "--base", "main", "--codex-bin", "git", "--format", "json"]
     )
 
@@ -4533,7 +4538,7 @@ harness = "gemini"
     monkeypatch.setattr(loop_mod.diagnostics.shutil, "which", fake_which)
     monkeypatch.chdir(repo)
 
-    exit_code = loop_mod.main(
+    exit_code = cli_main.main(
         ["doctor", "--profile", "smoke", "--base", "main", "--codex-bin", "git", "--format", "json"]
     )
 
@@ -4549,7 +4554,7 @@ def test_bundle_bug_report_cli_blocks_no_redact_without_explicit_risk_ack(tmp_pa
     run_dir = tmp_path / "run"
     run_dir.mkdir()
 
-    exit_code = loop_mod.main(["bundle-bug-report", str(run_dir), "--no-redact"])
+    exit_code = cli_main.main(["bundle-bug-report", str(run_dir), "--no-redact"])
 
     captured = capsys.readouterr()
     assert exit_code == 4
@@ -4566,7 +4571,7 @@ def test_bundle_bug_report_cli_writes_output_path(tmp_path, capsys):
     (run_dir / "check-1.txt").write_text("Authorization: Bearer secret-token\n", encoding="utf-8")
     output = tmp_path / "bundle.tar.gz"
 
-    exit_code = loop_mod.main(["bundle-bug-report", str(run_dir), "--output", str(output)])
+    exit_code = cli_main.main(["bundle-bug-report", str(run_dir), "--output", str(output)])
 
     captured = capsys.readouterr()
     assert exit_code == 0
@@ -5494,7 +5499,7 @@ def test_main_returns_exit_code_3_for_budget_ceiling(tmp_path, monkeypatch, caps
 
     monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
 
-    exit_code = loop_mod.main(["--max-wall-seconds", "0", "--no-run-history"])
+    exit_code = cli_main.main(["--max-wall-seconds", "0", "--no-run-history"])
 
     assert exit_code == 3
     assert "wall budget exceeded" in capsys.readouterr().err
@@ -6038,7 +6043,7 @@ def test_main_returns_exit_code_5_for_controlled_cancellation(tmp_path, monkeypa
 
     monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
 
-    exit_code = loop_mod.main(["--no-run-history"])
+    exit_code = cli_main.main(["--no-run-history"])
 
     assert exit_code == 5
     assert "cancelled by operator" in capsys.readouterr().err

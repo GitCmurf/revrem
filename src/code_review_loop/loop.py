@@ -17,7 +17,7 @@ import time
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager, suppress
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal, TypeVar, assert_never, cast
@@ -58,7 +58,6 @@ from code_review_loop.core.outcome import (
     OutcomeFindings,
     OutcomeUnknown,
     RunOutcome,
-    outcome_to_exit_code,
 )
 from code_review_loop.core.ports import (
     ChecksRequest,
@@ -2211,130 +2210,6 @@ def lexical_git_repo_root(start: Path) -> Path | None:
     return None
 
 
-def _build_subcommand_registry() -> dict[str, Callable[[Sequence[str]], int]]:
-    # REVREM-TASK-003 Wave C1b: registry dispatch replaces the if/elif ladder.
-    # Adding a subcommand requires only a new cli/commands/X.py + one entry here.
-    from code_review_loop import tui as _tui
-
-    from code_review_loop.cli.commands import (
-        bundle as _bundle,
-    )
-    from code_review_loop.cli.commands import (
-        config as _config,
-    )
-    from code_review_loop.cli.commands import (
-        doctor as _doctor,
-    )
-    from code_review_loop.cli.commands import (
-        history as _history,
-    )
-    from code_review_loop.cli.commands import (
-        policy as _policy,
-    )
-    from code_review_loop.cli.commands import (
-        replay as _replay,
-    )
-    from code_review_loop.cli.commands import (
-        resume as _resume,
-    )
-    from code_review_loop.cli.commands import (
-        suppress as _suppress,
-    )
-    from code_review_loop.cli.commands import (
-        triage as _triage,
-    )
-
-    return {
-        "bundle-bug-report": _bundle.main,
-        "config": _config.main,
-        "doctor": _doctor.main,
-        "history": _history.main,
-        "policy": _policy.main,
-        "preflight": _doctor.main,
-        "replay": _replay.main,
-        "resume": _resume.main,
-        "suppress": _suppress.main,
-        "triage": _triage.main,
-        "ui": _tui.main,
-    }
-
-
-def main(argv: Sequence[str] | None = None) -> int:
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
-    if raw_argv:
-        handler = _build_subcommand_registry().get(raw_argv[0])
-        if handler is not None:
-            return handler(raw_argv[1:])
-
-    args = parse_args(raw_argv)
-    try:
-        config, summary_format = build_loop_config(args, Path.cwd())
-    except FileNotFoundError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 1
-    except ValueError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 1
-
-    if args.save_profile:
-        profile = profile_from_loop_config(
-            args.save_profile,
-            config,
-            summary_format=summary_format,
-            description=f"Saved from RevRem CLI on {datetime.now(UTC).date().isoformat()}",  # det-exempt: bundle subcommand human-facing description, not the loop machine contract
-            include_artifact_dir=args.artifact_dir is not None,
-            timeout_seconds=args.timeout_seconds,
-        )
-        try:
-            path = profiles.write_project_profile(
-                profile,
-                cwd=Path.cwd(),
-                force=args.save_profile_force,
-            )
-        except FileExistsError as exc:
-            print(f"ERROR: {exc}; pass --save-profile-force to replace it", file=sys.stderr)
-            return 1
-        except OSError as exc:
-            print(f"ERROR: could not save project profile: {exc}", file=sys.stderr)
-            return 1
-        print(f"saved {args.save_profile} in {path}")
-        return 0
-
-    try:
-        summary = run_loop(config)
-    except RunLoopFailed as exc:
-        summary = exc.summary
-        if not args.dry_run and not args.no_run_history and summary.get("run_id"):
-            try:
-                append_run_history(summary, config)
-            except OSError as history_exc:
-                print(f"WARNING: could not write run history: {history_exc}", file=sys.stderr)
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return outcome_to_exit_code(exc.outcome) if exc.outcome is not None else 1
-    except KeyboardInterrupt:  # pragma: no cover - signal path
-        print("Cancelled by user.", file=sys.stderr)
-        return 5
-    except Exception as exc:  # pragma: no cover - command-line reporting path
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 1
-
-    if not args.dry_run and not args.no_run_history and summary.get("run_id"):
-        try:
-            append_run_history(summary, config)
-        except OSError as exc:
-            print(f"WARNING: could not write run history: {exc}", file=sys.stderr)
-
-    if summary_format in {"text", "both"}:
-        print(format_terminal_summary(summary))
-    if summary_format in {"json", "both"}:
-        if summary_format == "both":
-            print()
-        print(json.dumps(summary, indent=2, sort_keys=True))
-    if args.dry_run:
-        return 0
-    return 0 if summary.get("final_status") == "clear" else 2
-
-
 def suppress_main(argv: Sequence[str]) -> int:
     # REVREM-TASK-003 Wave C1a: thin delegator over commands.suppress.main.
     from code_review_loop.cli.commands import suppress as _cmd
@@ -3057,6 +2932,3 @@ def triage_explain(run_dir: Path, iteration: int, output_format: str | None = No
 
     return 0
 
-
-if __name__ == "__main__":
-    raise SystemExit(main())

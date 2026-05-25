@@ -16,6 +16,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from code_review_loop import diagnostics
+from code_review_loop.core.outcome import outcome_to_exit_code
 
 from ..outcome import CommandFailed, CommandOk
 
@@ -42,7 +43,7 @@ def main(argv: Sequence[str]) -> int:
         summary = _cli.resume_run(run_dir)
     except _cli.RunLoopFailed as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
-        code = _cli.outcome_to_exit_code(exc.outcome) if exc.outcome is not None else 1
+        code = outcome_to_exit_code(exc.outcome) if exc.outcome is not None else 1
         return CommandFailed(exit_code=code).exit_code
     except KeyboardInterrupt:
         print("Cancelled by user.", file=sys.stderr)

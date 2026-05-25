@@ -1,6 +1,6 @@
 """Registry dispatch coverage (REVREM-TASK-003 Wave C1a/C1b).
 
-These tests pin the contract that ``code_review_loop.cli.main`` selects the
+These tests pin the contract that ``code_review_loop.cli.main.main`` selects the
 right subcommand module by name. We monkeypatch the per-subcommand entry point
 (not ``run_loop``) so we can observe routing without invoking the loop, then
 assert ``main`` returns whatever the handler returned and that the registry
@@ -10,12 +10,13 @@ keys cover every documented subcommand.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from importlib import import_module
 
 import pytest
 
-from code_review_loop import loop as cli
-from code_review_loop import loop as loop_mod
 from code_review_loop.cli import commands as cli_commands
+
+cli_main = import_module("code_review_loop.cli.main")
 
 _EXPECTED_SUBCOMMANDS = {
     "bundle-bug-report",
@@ -33,7 +34,7 @@ _EXPECTED_SUBCOMMANDS = {
 
 
 def test_registry_keys_match_documented_subcommands() -> None:
-    registry = cli._build_subcommand_registry()
+    registry = cli_main._build_subcommand_registry()
     assert set(registry) == _EXPECTED_SUBCOMMANDS
 
 
@@ -63,7 +64,7 @@ def test_main_dispatches_to_command_module(
         return 0
 
     monkeypatch.setattr(module, "main", fake_main)
-    rc = cli.main([name, "--flag", "value"])
+    rc = cli_main.main([name, "--flag", "value"])
     assert rc == 0
     assert seen["argv"] == ["--flag", "value"]
 
@@ -78,7 +79,7 @@ def test_main_dispatches_to_tui(monkeypatch: pytest.MonkeyPatch) -> None:
         return 0
 
     monkeypatch.setattr(tui, "main", fake_tui_main)
-    rc = cli.main(["ui", "--mode", "compact"])
+    rc = cli_main.main(["ui", "--mode", "compact"])
     assert rc == 0
     assert captured["argv"] == ["--mode", "compact"]
 
@@ -95,8 +96,8 @@ def test_main_falls_through_when_no_subcommand_matches(
         called["argv"] = list(argv)
         raise SystemExit(99)
 
-    monkeypatch.setattr(loop_mod, "parse_args", fake_parse_args)
+    monkeypatch.setattr(cli_main, "parse_args", fake_parse_args)
     with pytest.raises(SystemExit) as excinfo:
-        cli.main(["definitely-not-a-subcommand", "--whatever"])
+        cli_main.main(["definitely-not-a-subcommand", "--whatever"])
     assert excinfo.value.code == 99
     assert called["argv"] == ["definitely-not-a-subcommand", "--whatever"]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from importlib import import_module
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -18,6 +19,8 @@ from code_review_loop.core.ports import (
     RunContext,
 )
 from code_review_loop.identity import RunIdentity
+
+cli_main = import_module("code_review_loop.cli.main")
 
 
 def _ctx(runner=None, **kwargs: object) -> RunContext:
@@ -138,7 +141,7 @@ class TestEngineDispatch:
         subprocess.run(["git", "commit", "-m", "init"], cwd=repo, capture_output=True)
         monkeypatch.chdir(repo)
 
-        exit_code = loop_mod.main(
+        exit_code = cli_main.main(
             ["--base", "missing", "--codex-bin", "git", "--artifact-dir", "artifacts"]
         )
         assert exit_code == 4  # preflight blocked; adapter was never called
