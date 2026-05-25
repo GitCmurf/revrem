@@ -65,7 +65,7 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
             commit_outputs = [
                 str(path)
                 for path in commits
-                if re.search(r"(?:^|/)commit-\d+\.txt$", str(path))
+                if re.fullmatch(r"commit-\d+\.txt", str(path).replace("\\", "/").rsplit("/", 1)[-1])
             ]
             lines.append(f"Latest commit artifact: {(commit_outputs or commits)[-1]}")
         summary_path = artifact_paths.get("summary")

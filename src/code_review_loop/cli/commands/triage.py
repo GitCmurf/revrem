@@ -25,7 +25,7 @@ def main(argv: Sequence[str]) -> int:
     except (OSError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return CommandFailed(exit_code=1).exit_code
-    return CommandOk().exit_code
+    raise AssertionError(f"unhandled triage command: {args.command}")
 
 
 def triage_explain(run_dir: Path, iteration: int, output_format: str | None = None) -> int:

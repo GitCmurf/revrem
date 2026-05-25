@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+from argparse import Namespace
 
+from code_review_loop.cli.commands import triage as triage_command
 from code_review_loop.cli.commands.triage import triage_explain
 from code_review_loop.cli.main import main as cli_main
 
@@ -88,6 +90,21 @@ def test_triage_explain_json(tmp_path):
     # We can't easily capture stdout from cli.main if it uses print()
     # But we can test the underlying function
     assert triage_explain(tmp_path, 1, output_format="json") == 0
+
+
+def test_triage_main_rejects_unhandled_internal_command(monkeypatch):
+    monkeypatch.setattr(
+        triage_command,
+        "parse_triage_args",
+        lambda _argv: Namespace(command="unexpected"),
+    )
+
+    try:
+        triage_command.main([])
+    except AssertionError as exc:
+        assert str(exc) == "unhandled triage command: unexpected"
+    else:
+        raise AssertionError("expected unhandled triage command to fail")
 
 
 def test_triage_explain_rejects_non_object_routing_artifact(tmp_path, capsys):

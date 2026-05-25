@@ -107,6 +107,27 @@ def test_terminal_summary_prefers_commit_output_artifact():
     assert "Latest commit artifact: tmp/run/commit-1.txt" in text
 
 
+def test_terminal_summary_finds_commit_output_artifact_with_windows_separators():
+    summary = {
+        "artifact_dir": "tmp/run",
+        "final_status": "findings",
+        "stopped_reason": "max_iterations_reached",
+        "iterations": [],
+        "artifact_paths": {
+            "commits": [
+                r"C:\tmp\run\commit-1-add.txt",
+                r"C:\tmp\run\commit-1.txt",
+                r"C:\tmp\run\commit-1-message.txt",
+            ],
+            "summary": r"C:\tmp\run\summary.json",
+        },
+    }
+
+    text = runner_mod.format_terminal_summary(summary)
+
+    assert r"Latest commit artifact: C:\tmp\run\commit-1.txt" in text
+
+
 def test_summary_records_unknown_review_warning_and_bug_report(tmp_path):
     review_outputs = iter(
         [
