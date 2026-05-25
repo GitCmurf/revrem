@@ -8,6 +8,7 @@ from importlib import import_module
 import pytest
 
 import code_review_loop.runner as runner_mod
+from code_review_loop import application as application_mod
 from code_review_loop import events
 from code_review_loop import resume as resume_mod
 
@@ -222,7 +223,7 @@ def test_main_returns_exit_code_5_for_controlled_cancellation(tmp_path, monkeypa
             outcome=runner_mod.OutcomeFailed(reason="cancelled", error="cancelled by operator"),
         )
 
-    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
     exit_code = cli_main.main(["--no-run-history"])
 

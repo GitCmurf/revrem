@@ -8,6 +8,7 @@ from importlib import import_module
 import pytest
 
 import code_review_loop.runner as runner_mod
+from code_review_loop import application as application_mod
 from code_review_loop import profiles
 from code_review_loop.cli import args as cli_args
 from code_review_loop.cli import config_builder
@@ -38,7 +39,7 @@ def test_main_resolves_latest_initial_review_from_custom_artifact_dir(tmp_path, 
 
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
-    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
     exit_code = cli_main.main(
         [
@@ -65,7 +66,7 @@ def test_main_save_profile_writes_project_config_and_exits(tmp_path, monkeypatch
     def fail_run_loop(config):
         raise AssertionError("--save-profile should exit before running the loop")
 
-    monkeypatch.setattr(runner_mod, "run_loop", fail_run_loop)
+    monkeypatch.setattr(application_mod, "run_review_loop", fail_run_loop)
 
     exit_code = cli_main.main(
         [
@@ -124,7 +125,7 @@ def test_main_save_profile_preserves_disabled_timeout(tmp_path, monkeypatch, cap
     def fail_run_loop(config):
         raise AssertionError("--save-profile should exit before running the loop")
 
-    monkeypatch.setattr(runner_mod, "run_loop", fail_run_loop)
+    monkeypatch.setattr(application_mod, "run_review_loop", fail_run_loop)
 
     exit_code = cli_main.main(
         [
@@ -199,7 +200,7 @@ artifact_dir = "{custom_root}"
             "iterations": [],
         }
 
-    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
     exit_code = cli_main.main(
         [
@@ -270,7 +271,7 @@ soft_warn_fraction = 0.5
             "iterations": [],
         }
 
-    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
     exit_code = cli_main.main(["--profile", "final-pr", "--base", "main", "--dry-run"])
 
@@ -505,7 +506,7 @@ terminal_title = true
             "iterations": [],
         }
 
-    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
     exit_code = cli_main.main(
         [
@@ -606,7 +607,7 @@ output_last_message = false
             "iterations": [],
         }
 
-    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
     exit_code = cli_main.main(
         [
@@ -651,7 +652,7 @@ enabled = true
             "iterations": [],
         }
 
-    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
     exit_code = cli_main.main(
         ["--profile", "final-pr", "--no-commit-after-remediation", "--dry-run"]
@@ -693,7 +694,7 @@ message_model = "gpt-5.3-codex-spark"
             "iterations": [],
         }
 
-    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
     exit_code = cli_main.main(
         [
@@ -744,7 +745,7 @@ message_prompt = "Write a custom subject."
             "iterations": [],
         }
 
-    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
     exit_code = cli_main.main(["--profile", "final-pr", "--commit-message-model", "gpt-test-commit", "--dry-run"])
 
@@ -792,7 +793,7 @@ timeout_seconds = 30
             "iterations": [],
         }
 
-    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
     exit_code = cli_main.main(
         ["--profile", "final-pr", "--reasoning-effort", "high", "--dry-run"]
@@ -837,7 +838,7 @@ reasoning_effort = "low"
             "iterations": [],
         }
 
-    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
     exit_code = cli_main.main(
         [
@@ -886,7 +887,7 @@ def test_main_records_non_dry_run_history(tmp_path, monkeypatch, capsys):
             "artifact_paths": {"summary": str(config.artifact_dir / "summary.json")},
         }
 
-    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
     monkeypatch.setattr(runner_mod, "write_summary", lambda config, summary: None)
 
     assert cli_main.main(["--base", "main"]) == 0
@@ -921,7 +922,7 @@ def test_main_records_failed_runs_in_history(tmp_path, monkeypatch, capsys):
     def fake_run_loop(config):
         raise runner_mod.RunLoopFailed(summary, "codex exec triage failed for iteration 1")
 
-    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
     assert cli_main.main(["--base", "main", "--artifact-dir", str(tmp_path / "artifacts")]) == 1
     capsys.readouterr()
@@ -955,7 +956,7 @@ def test_main_skips_history_for_dry_run_and_explicit_opt_out(tmp_path, monkeypat
             "stopped_reason": "review_clear",
         }
 
-    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
     assert cli_main.main(["--dry-run"]) == 0
     assert cli_main.main(["--no-run-history"]) == 0
@@ -976,7 +977,7 @@ def test_main_skips_history_when_summary_has_no_run_id(tmp_path, monkeypatch):
             "stopped_reason": "review_clear",
         }
 
-    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
     assert cli_main.main([]) == 0
     assert not (home / ".local" / "share" / "revrem" / "runs.jsonl").exists()
@@ -1041,7 +1042,7 @@ reasoning_effort = "minimal"
             "iterations": [],
         }
 
-    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
     exit_code = cli_main.main(["--profile", "final-pr", "--model", "gpt-test", "--dry-run"])
 
@@ -1094,7 +1095,7 @@ quiet_progress = true
             "iterations": [],
         }
 
-    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
     exit_code = cli_main.main(["--dry-run"])
 
@@ -1208,7 +1209,7 @@ timeout_seconds = 1800
             "iterations": [],
         }
 
-    monkeypatch.setattr(runner_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
     exit_code = cli_main.main(["--profile", "final-pr", "--base", "main", "--dry-run"])
 
