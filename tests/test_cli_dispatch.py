@@ -14,9 +14,8 @@ from importlib import import_module
 
 import pytest
 
-from code_review_loop.cli import commands as cli_commands
-
 cli_main = import_module("code_review_loop.cli.main")
+cli_registry = import_module("code_review_loop.cli.commands.registry")
 
 _EXPECTED_SUBCOMMANDS = {
     "bundle-bug-report",
@@ -34,7 +33,7 @@ _EXPECTED_SUBCOMMANDS = {
 
 
 def test_registry_keys_match_documented_subcommands() -> None:
-    registry = cli_main._build_subcommand_registry()
+    registry = cli_registry.build_subcommand_registry()
     assert set(registry) == _EXPECTED_SUBCOMMANDS
 
 
@@ -57,7 +56,7 @@ def test_main_dispatches_to_command_module(
     name: str, module_attr: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     seen: dict[str, object] = {}
-    module = getattr(cli_commands, module_attr)
+    module = import_module(f"code_review_loop.cli.commands.{module_attr}")
 
     def fake_main(argv: Sequence[str]) -> int:
         seen["argv"] = list(argv)

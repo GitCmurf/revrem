@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -17,42 +17,13 @@ from code_review_loop.cli.config_builder import (
 from code_review_loop.cli.outcome import summary_from_result
 from code_review_loop.core.outcome import outcome_to_exit_code
 
-
-def _build_subcommand_registry() -> dict[str, Callable[[Sequence[str]], int]]:
-    from code_review_loop import tui as _tui
-    from code_review_loop.cli.commands import (
-        bundle,
-        config,
-        doctor,
-        history,
-        policy,
-        replay,
-        resume,
-        suppress,
-        triage,
-    )
-
-    return {
-        "bundle-bug-report": bundle.main,
-        "config": config.main,
-        "doctor": doctor.main,
-        "history": history.main,
-        "policy": policy.main,
-        "preflight": doctor.main,
-        "replay": replay.main,
-        "resume": resume.main,
-        "suppress": suppress.main,
-        "triage": triage.main,
-        "ui": _tui.main,
-    }
-
-
 def main(argv: Sequence[str] | None = None) -> int:
     from code_review_loop import application
+    from code_review_loop.cli.commands.registry import build_subcommand_registry
 
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     if raw_argv:
-        handler = _build_subcommand_registry().get(raw_argv[0])
+        handler = build_subcommand_registry().get(raw_argv[0])
         if handler is not None:
             return handler(raw_argv[1:])
 
@@ -91,7 +62,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     try:
-        result = application.run_review_loop(config)
+        result = application.run_review_loop(config, terminal_ui=True)
         summary = summary_from_result(result)
     except application.RunLoopFailed as exc:
         summary = exc.summary

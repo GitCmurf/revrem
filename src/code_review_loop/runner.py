@@ -39,6 +39,7 @@ from code_review_loop.core.outcome import (
 )
 from code_review_loop.core.ports import (
     CommandResult,
+    PhaseHarnessBundle,
     ProcessRunner,
     ProgressReporter,
     RunContext,
@@ -425,14 +426,34 @@ def run_loop(
     clock: Clock = SYSTEM_CLOCK,
     identity: RunIdentity = SYSTEM_IDENTITY,
     budget_state: budgets.BudgetState | None = None,
+    phase_harnesses: PhaseHarnessBundle | None = None,
+    terminal_ui: bool = True,
 ) -> dict[str, object]:
+    if not terminal_ui:
+        return _run_session(
+            config,
+            runner,
+            clock=clock,
+            identity=identity,
+            budget_state=budget_state,
+            phase_harnesses=phase_harnesses,
+            terminal_ui=False,
+        )
     with (
         terminal_recovery_context(),
         terminal_title_context(config),
         progress_warning_context(),
         progress.rich_live_progress(config.progress and config.progress_style == "rich"),
     ):
-        return _run_session(config, runner, clock=clock, identity=identity, budget_state=budget_state)
+        return _run_session(
+            config,
+            runner,
+            clock=clock,
+            identity=identity,
+            budget_state=budget_state,
+            phase_harnesses=phase_harnesses,
+            terminal_ui=True,
+        )
 
 
 def resume_run(run_dir: Path) -> dict[str, object]:
@@ -508,6 +529,8 @@ def _create_run_context(
     identity: RunIdentity,
     event_sink: events.JsonlSink,
     budget_state: budgets.BudgetState | None,
+    phase_harnesses: PhaseHarnessBundle | None,
+    terminal_ui: bool,
 ) -> RunContext:
     from code_review_loop.adapters.checks import ChecksAdapter
     from code_review_loop.adapters.commit import CommitAdapter
@@ -516,18 +539,25 @@ def _create_run_context(
     from code_review_loop.adapters.triage import TriageAdapter
 
     active_budget_state = budget_state if budget_state is not None else budgets.started_now()
+    harnesses = phase_harnesses or PhaseHarnessBundle(
+        checks=ChecksAdapter(config),
+        commit=CommitAdapter(config),
+        remediation=RemediationAdapter(config),
+        review=ReviewAdapter(config),
+        triage=TriageAdapter(config),
+    )
     return RunContext(
         clock=clock,
         identity=identity,
         runner=cast(ProcessRunner, runner),
         event_sink=event_sink,
         budget_state=active_budget_state,
-        progress_reporter=_create_progress_reporter(config),
-        phase_checks=ChecksAdapter(config),
-        phase_commit=CommitAdapter(config),
-        phase_remediation=RemediationAdapter(config),
-        phase_review=ReviewAdapter(config),
-        phase_triage=TriageAdapter(config),
+        progress_reporter=_create_progress_reporter(config) if terminal_ui else None,
+        phase_checks=harnesses.checks,
+        phase_commit=harnesses.commit,
+        phase_remediation=harnesses.remediation,
+        phase_review=harnesses.review,
+        phase_triage=harnesses.triage,
     )
 
 
@@ -538,6 +568,8 @@ def _prepare_run(
     clock: Clock,
     identity: RunIdentity,
     budget_state: budgets.BudgetState | None,
+    phase_harnesses: PhaseHarnessBundle | None,
+    terminal_ui: bool,
 ) -> _RunSetup:
     _check_commit_cleanliness(config, runner)
     config.artifact_dir.mkdir(parents=True, exist_ok=True)
@@ -565,6 +597,8 @@ def _prepare_run(
         identity=identity,
         event_sink=event_sink,
         budget_state=budget_state,
+        phase_harnesses=phase_harnesses,
+        terminal_ui=terminal_ui,
     )
     return _RunSetup(state, state.to_dict(), event_sink, ctx, run_id)
 
@@ -749,11 +783,21 @@ def _run_session(
     clock: Clock = SYSTEM_CLOCK,
     identity: RunIdentity = SYSTEM_IDENTITY,
     budget_state: budgets.BudgetState | None = None,
+    phase_harnesses: PhaseHarnessBundle | None = None,
+    terminal_ui: bool = True,
 ) -> dict[str, object]:
     if config.max_iterations < 1:
         raise ValueError("--max-iterations must be at least 1")
 
-    setup = _prepare_run(config, runner, clock=clock, identity=identity, budget_state=budget_state)
+    setup = _prepare_run(
+        config,
+        runner,
+        clock=clock,
+        identity=identity,
+        budget_state=budget_state,
+        phase_harnesses=phase_harnesses,
+        terminal_ui=terminal_ui,
+    )
     state = setup.state
     summary = setup.summary
 

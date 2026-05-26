@@ -16,7 +16,7 @@ from code_review_loop import budgets, reporting, resume, runner
 from code_review_loop.adapters.subprocess_runner import default_runner
 from code_review_loop.clock import SYSTEM_CLOCK, Clock
 from code_review_loop.config import LoopConfig
-from code_review_loop.core.ports import CommandResult, ProcessRunner
+from code_review_loop.core.ports import CommandResult, PhaseHarnessBundle, ProcessRunner
 from code_review_loop.identity import SYSTEM_IDENTITY, RunIdentity
 from code_review_loop.runtime import RunLoopFailed, format_terminal_summary
 
@@ -54,6 +54,8 @@ def run_review_loop(
     clock: Clock = SYSTEM_CLOCK,
     identity: RunIdentity = SYSTEM_IDENTITY,
     budget_state: budgets.BudgetState | None = None,
+    phase_harnesses: PhaseHarnessBundle | None = None,
+    terminal_ui: bool = False,
 ) -> ReviewLoopResult:
     """Run one bounded review/remediation loop and return the summary payload."""
     return ReviewLoopResult(
@@ -63,11 +65,22 @@ def run_review_loop(
             clock=clock,
             identity=identity,
             budget_state=budget_state,
+            phase_harnesses=phase_harnesses,
+            terminal_ui=terminal_ui,
         )
     )
 
 
-def resume_review_loop(run_dir: Path, *, cwd: Path | None = None) -> ReviewLoopResult:
+def resume_review_loop(
+    run_dir: Path,
+    *,
+    cwd: Path | None = None,
+    process_runner: ProcessRunner = default_runner,
+    clock: Clock = SYSTEM_CLOCK,
+    identity: RunIdentity = SYSTEM_IDENTITY,
+    phase_harnesses: PhaseHarnessBundle | None = None,
+    terminal_ui: bool = False,
+) -> ReviewLoopResult:
     """Resume a previous review loop run from ``run_dir``."""
     summary_path = run_dir / "summary.json"
     try:
@@ -85,7 +98,15 @@ def resume_review_loop(run_dir: Path, *, cwd: Path | None = None) -> ReviewLoopR
         run_dir=run_dir,
         cwd=cwd,
     )
-    return run_review_loop(config, budget_state=resumed_budget_state)
+    return run_review_loop(
+        config,
+        process_runner,
+        clock=clock,
+        identity=identity,
+        budget_state=resumed_budget_state,
+        phase_harnesses=phase_harnesses,
+        terminal_ui=terminal_ui,
+    )
 
 
 def append_run_history(summary: dict[str, object], config: LoopConfig) -> Path:

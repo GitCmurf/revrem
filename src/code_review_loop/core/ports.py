@@ -230,3 +230,14 @@ class RunContext:
     event_sink: EventSink | None = None
     budget_state: BudgetState | None = None
     progress_reporter: ProgressReporter | None = None
+
+
+@dataclass(frozen=True)
+class PhaseHarnessBundle:
+    """Injected phase harness set used by non-CLI application callers and tests."""
+
+    checks: ChecksHarness
+    commit: CommitHarness
+    remediation: RemediationHarness
+    review: ReviewHarness
+    triage: TriageHarness
