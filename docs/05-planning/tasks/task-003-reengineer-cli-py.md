@@ -1009,7 +1009,7 @@ Treat that commit as a green checkpoint, not the Wave C finish line.
   routing paths. The full local gate passed after the final decomposition:
   `./.venv/bin/ruff check .`, `./.venv/bin/mypy src`,
   `./.venv/bin/lint-imports`, `uv run --locked meminit check --format json`,
-  and `./.venv/bin/pytest -q` (`743 passed`).
+  and `./.venv/bin/pytest -q` (`744 passed`).
 
 **Required remediation before declaring Wave C done.**
 
