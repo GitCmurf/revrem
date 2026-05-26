@@ -17,6 +17,7 @@ from code_review_loop.cli.config_builder import (
 from code_review_loop.cli.outcome import summary_from_result
 from code_review_loop.core.outcome import outcome_to_exit_code
 
+
 def main(argv: Sequence[str] | None = None) -> int:
     from code_review_loop import application
     from code_review_loop.cli.commands.registry import build_subcommand_registry

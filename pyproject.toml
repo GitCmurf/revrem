@@ -93,7 +93,7 @@ warn_unused_configs = true
 # REVREM-TASK-003 Wave C: import-linter guards keep domain leaf modules below
 # the CLI package, with stricter core/adapter/runner boundaries below.
 [tool.importlinter]
-root_package = "code_review_loop"
+root_packages = ["code_review_loop", "tests"]
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
@@ -178,4 +178,44 @@ source_modules = [
 ]
 forbidden_modules = [
   "code_review_loop.runner",
+]
+
+[[tool.importlinter.contracts]]
+name = "Runner shell must not import CLI or private runner"
+type = "forbidden"
+source_modules = [
+  "code_review_loop.runner_shell",
+]
+forbidden_modules = [
+  "code_review_loop.cli",
+  "code_review_loop.runner",
+]
+
+[[tool.importlinter.contracts]]
+name = "Wave D engine acceptance tests stay core-only"
+type = "forbidden"
+source_modules = [
+  "tests.test_engine_run",
+]
+forbidden_modules = [
+  "code_review_loop.adapters",
+  "code_review_loop.application",
+  "code_review_loop.cli",
+  "code_review_loop.runner",
+  "code_review_loop.runner_shell",
+  "code_review_loop.tui",
+]
+
+[[tool.importlinter.contracts]]
+name = "Wave D headless application tests stay non-CLI"
+type = "forbidden"
+allow_indirect_imports = true
+source_modules = [
+  "tests.support.headless",
+  "tests.test_application_headless_integration",
+]
+forbidden_modules = [
+  "argparse",
+  "code_review_loop.cli",
+  "code_review_loop.adapters.subprocess_runner",
 ]

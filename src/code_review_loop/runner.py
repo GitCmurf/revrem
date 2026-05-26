@@ -98,86 +98,40 @@ from code_review_loop.adapters.terminal import (
 # REVREM-TASK-003 Wave C2a: parsers and their shared choice tuples are
 # canonical in ``cli/args.py``. Runner imports them from that canonical module
 # so command parsing has a single implementation.
-from code_review_loop.cli.args import (
-    COMMIT_ON_HOOK_FAILURE_CHOICES as COMMIT_ON_HOOK_FAILURE_CHOICES,
-)
-from code_review_loop.cli.args import (
-    PROGRESS_STYLE_CHOICES as PROGRESS_STYLE_CHOICES,
-)
-from code_review_loop.cli.args import (
-    REASONING_EFFORT_CHOICES as REASONING_EFFORT_CHOICES,
-)
-from code_review_loop.cli.args import (
-    parse_args as parse_args,
-)
-from code_review_loop.cli.args import (
-    parse_bundle_bug_report_args as parse_bundle_bug_report_args,
-)
-from code_review_loop.cli.args import (
-    parse_config_args as parse_config_args,
-)
-from code_review_loop.cli.args import (
-    parse_doctor_args as parse_doctor_args,
-)
-from code_review_loop.cli.args import (
-    parse_history_args as parse_history_args,
-)
-from code_review_loop.cli.args import (
-    parse_policy_args as parse_policy_args,
-)
-from code_review_loop.cli.args import (
-    parse_replay_args as parse_replay_args,
-)
-from code_review_loop.cli.args import (
-    parse_resume_args as parse_resume_args,
-)
-from code_review_loop.cli.args import (
-    parse_suppress_args as parse_suppress_args,
-)
-from code_review_loop.cli.args import (
-    parse_triage_args as parse_triage_args,
-)
+from code_review_loop.cli import args as _cli_args
+
+COMMIT_ON_HOOK_FAILURE_CHOICES = _cli_args.COMMIT_ON_HOOK_FAILURE_CHOICES
+PROGRESS_STYLE_CHOICES = _cli_args.PROGRESS_STYLE_CHOICES
+REASONING_EFFORT_CHOICES = _cli_args.REASONING_EFFORT_CHOICES
+parse_args = _cli_args.parse_args
+parse_bundle_bug_report_args = _cli_args.parse_bundle_bug_report_args
+parse_config_args = _cli_args.parse_config_args
+parse_doctor_args = _cli_args.parse_doctor_args
+parse_history_args = _cli_args.parse_history_args
+parse_policy_args = _cli_args.parse_policy_args
+parse_replay_args = _cli_args.parse_replay_args
+parse_resume_args = _cli_args.parse_resume_args
+parse_suppress_args = _cli_args.parse_suppress_args
+parse_triage_args = _cli_args.parse_triage_args
 
 # REVREM-TASK-003 Wave C2a: ``LoopConfig`` assembly + argument-resolution
 # helpers now live in ``cli/config_builder.py``. Runner imports the canonical
 # helpers directly so the executable loop and CLI config surface share one
 # implementation.
-from code_review_loop.cli.config_builder import (
-    build_loop_config as build_loop_config,
-)
-from code_review_loop.cli.config_builder import (
-    default_artifact_dir as default_artifact_dir,
-)
-from code_review_loop.cli.config_builder import (
-    ensure_default_artifact_ignore as ensure_default_artifact_ignore,
-)
-from code_review_loop.cli.config_builder import (
-    new_profile_from_args as new_profile_from_args,
-)
-from code_review_loop.cli.config_builder import (
-    parse_harness_bin_overrides as parse_harness_bin_overrides,
-)
-from code_review_loop.cli.config_builder import (
-    pick as pick,
-)
-from code_review_loop.cli.config_builder import (
-    profile_from_loop_config as profile_from_loop_config,
-)
-from code_review_loop.cli.config_builder import (
-    profile_or_default as profile_or_default,
-)
-from code_review_loop.cli.config_builder import (
-    resolve_max_iterations as resolve_max_iterations,
-)
-from code_review_loop.cli.config_builder import (
-    resolve_profile_timeout_seconds as resolve_profile_timeout_seconds,
-)
-from code_review_loop.cli.config_builder import (
-    resolve_timeout_seconds as resolve_timeout_seconds,
-)
-from code_review_loop.cli.config_builder import (
-    should_prompt_for_new_profile as should_prompt_for_new_profile,
-)
+from code_review_loop.cli import config_builder as _config_builder
+
+build_loop_config = _config_builder.build_loop_config
+default_artifact_dir = _config_builder.default_artifact_dir
+ensure_default_artifact_ignore = _config_builder.ensure_default_artifact_ignore
+new_profile_from_args = _config_builder.new_profile_from_args
+parse_harness_bin_overrides = _config_builder.parse_harness_bin_overrides
+pick = _config_builder.pick
+profile_from_loop_config = _config_builder.profile_from_loop_config
+profile_or_default = _config_builder.profile_or_default
+resolve_max_iterations = _config_builder.resolve_max_iterations
+resolve_profile_timeout_seconds = _config_builder.resolve_profile_timeout_seconds
+resolve_timeout_seconds = _config_builder.resolve_timeout_seconds
+should_prompt_for_new_profile = _config_builder.should_prompt_for_new_profile
 
 CANCELLATION_FORCE_WINDOW_SECONDS = 5.0
 _LAST_CANCELLATION_SIGNAL_AT: float | None = None
