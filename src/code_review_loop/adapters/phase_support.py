@@ -458,6 +458,8 @@ def set_phase_terminal_title(config: LoopConfig, phase: str, label: str) -> None
         sys.stderr.write(sequence)
         sys.stderr.flush()
         return
+    if os.name == "nt":
+        return
     try:
         with Path("/dev/tty").open("w", encoding="utf-8") as tty:
             tty.write(sequence)

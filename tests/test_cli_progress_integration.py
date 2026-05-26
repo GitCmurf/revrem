@@ -323,6 +323,30 @@ def test_terminal_title_is_suppressed_in_rich_mode_to_avoid_escape_leaks(tmp_pat
     assert tty_sequences == []
 
 
+def test_phase_terminal_title_skips_dev_tty_on_windows(tmp_path, monkeypatch):
+    stderr = io.StringIO()
+    monkeypatch.setattr(phase_support.sys, "stderr", stderr)
+    monkeypatch.setattr(phase_support.os, "name", "nt")
+    monkeypatch.setattr(
+        phase_support.Path,
+        "open",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("/dev/tty opened")),
+    )
+    config = runner_mod.LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        progress=False,
+        terminal_title=True,
+    )
+
+    phase_support.set_phase_terminal_title(config, "review", "1")
+
+    assert stderr.getvalue() == ""
+
+
 def test_terminal_title_context_restores_cursor_on_exit(tmp_path, monkeypatch):
     stderr = TtyBuffer()
     monkeypatch.setattr(runner_mod.sys, "stderr", stderr)
