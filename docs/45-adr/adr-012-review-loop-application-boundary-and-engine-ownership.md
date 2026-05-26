@@ -38,9 +38,9 @@ stable unless changed by a documented contract update.
 Adopt `code_review_loop.application` as the only supported programmatic entry
 point for executing and resuming review loops:
 
-- `run_review_loop(config, process_runner=..., clock=..., identity=..., budget_state=..., phase_harnesses=..., terminal_ui=False)`
+- `run_review_loop(config, process_runner=..., clock=..., identity=..., budget_state=..., phase_harnesses=..., terminal_ui=...)`
   executes one bounded loop and returns `ReviewLoopResult`.
-- `resume_review_loop(run_dir, cwd=..., process_runner=..., clock=..., identity=..., phase_harnesses=..., terminal_ui=False)`
+- `resume_review_loop(run_dir, cwd=..., process_runner=..., clock=..., identity=..., phase_harnesses=..., terminal_ui=...)`
   resumes from an existing run directory and returns `ReviewLoopResult`.
 - `ReviewLoopResult.to_dict()` is the explicit projection for command output,
   run history, and JSON serialization.

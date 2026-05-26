@@ -63,7 +63,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     try:
-        result = application.run_review_loop(config, terminal_ui=True)
+        result = application.run_review_loop(config)
         summary = summary_from_result(result)
     except application.RunLoopFailed as exc:
         summary = exc.summary

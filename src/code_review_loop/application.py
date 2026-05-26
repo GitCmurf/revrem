@@ -55,7 +55,7 @@ def run_review_loop(
     identity: RunIdentity = SYSTEM_IDENTITY,
     budget_state: budgets.BudgetState | None = None,
     phase_harnesses: PhaseHarnessBundle | None = None,
-    terminal_ui: bool = False,
+    terminal_ui: bool = True,
 ) -> ReviewLoopResult:
     """Run one bounded review/remediation loop and return the summary payload."""
     return ReviewLoopResult(
@@ -79,7 +79,7 @@ def resume_review_loop(
     clock: Clock = SYSTEM_CLOCK,
     identity: RunIdentity = SYSTEM_IDENTITY,
     phase_harnesses: PhaseHarnessBundle | None = None,
-    terminal_ui: bool = False,
+    terminal_ui: bool = True,
 ) -> ReviewLoopResult:
     """Resume a previous review loop run from ``run_dir``."""
     summary_path = run_dir / "summary.json"
