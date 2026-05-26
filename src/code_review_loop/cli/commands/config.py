@@ -161,7 +161,9 @@ def _editor_command() -> list[str]:
     editor = os.environ.get("EDITOR", "").strip()
     if not editor:
         raise RuntimeError("EDITOR is not set; cannot open a config editor")
-    command = shlex.split(editor, posix=True)
+    command = shlex.split(editor, posix=os.name != "nt")
+    if os.name == "nt":
+        command = [part.strip('"') for part in command]
     if not command:
         raise RuntimeError("EDITOR is empty; cannot open a config editor")
     return command

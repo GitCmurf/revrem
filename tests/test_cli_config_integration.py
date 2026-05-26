@@ -14,6 +14,7 @@ from code_review_loop.cli import args as cli_args
 from code_review_loop.cli import config_builder, config_support
 
 cli_main = import_module("code_review_loop.cli.main")
+config_command = import_module("code_review_loop.cli.commands.config")
 
 
 def test_main_resolves_latest_initial_review_from_custom_artifact_dir(tmp_path, monkeypatch):
@@ -1471,3 +1472,10 @@ def test_config_edit_requires_editor(tmp_path, monkeypatch, capsys):
 
     assert cli_main.main(["config", "edit", "smoke"]) == 1
     assert "EDITOR is not set" in capsys.readouterr().err
+
+
+def test_editor_command_uses_windows_quoting_when_needed(monkeypatch):
+    monkeypatch.setenv("EDITOR", '"C:\\Program Files\\Editor\\editor.exe" --wait')
+    monkeypatch.setattr(config_command.os, "name", "nt")
+
+    assert config_command._editor_command() == ["C:\\Program Files\\Editor\\editor.exe", "--wait"]
