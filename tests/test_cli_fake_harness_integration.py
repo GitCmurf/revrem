@@ -5,7 +5,8 @@ import json
 import pytest
 
 import code_review_loop.runner as runner_mod
-from code_review_loop import events
+from code_review_loop import events, harnesses
+from code_review_loop.adapters import subprocess_runner as subprocess_runner_mod
 
 
 def summary_shape(value):
@@ -19,12 +20,12 @@ def summary_shape(value):
 
 
 def test_fake_harness_can_drive_clear_review_without_shelling_out(tmp_path, monkeypatch):
-    monkeypatch.setenv(runner_mod.harnesses.FAKE_HARNESS_ENV, "1")
+    monkeypatch.setenv(harnesses.FAKE_HARNESS_ENV, "1")
     calls = []
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append(list(args))
-        return runner_mod.default_runner(args, cwd, input_text, timeout_seconds)
+        return subprocess_runner_mod.default_runner(args, cwd, input_text, timeout_seconds)
 
     config = runner_mod.LoopConfig(
         base="main",
@@ -47,12 +48,12 @@ def test_fake_harness_can_drive_clear_review_without_shelling_out(tmp_path, monk
 
 
 def test_fake_harness_can_drive_remediation_cycle(tmp_path, monkeypatch):
-    monkeypatch.setenv(runner_mod.harnesses.FAKE_HARNESS_ENV, "1")
+    monkeypatch.setenv(harnesses.FAKE_HARNESS_ENV, "1")
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if list(args) == ["revrem-fake-harness", "review", "--scenario", "review_findings"]:
             object.__setattr__(config, "review_model", "review_clear")
-        return runner_mod.default_runner(args, cwd, input_text, timeout_seconds)
+        return subprocess_runner_mod.default_runner(args, cwd, input_text, timeout_seconds)
 
     config = runner_mod.LoopConfig(
         base="main",
@@ -76,7 +77,7 @@ def test_fake_harness_can_drive_remediation_cycle(tmp_path, monkeypatch):
 
 
 def test_fake_harness_partial_remediation_surfaces_artifact(tmp_path, monkeypatch):
-    monkeypatch.setenv(runner_mod.harnesses.FAKE_HARNESS_ENV, "1")
+    monkeypatch.setenv(harnesses.FAKE_HARNESS_ENV, "1")
 
     config = runner_mod.LoopConfig(
         base="main",
@@ -91,7 +92,7 @@ def test_fake_harness_partial_remediation_surfaces_artifact(tmp_path, monkeypatc
     )
 
     with pytest.raises(runner_mod.RunLoopFailed) as excinfo:
-        runner_mod.run_loop(config, runner_mod.default_runner)
+        runner_mod.run_loop(config, subprocess_runner_mod.default_runner)
 
     assert excinfo.value.summary["stopped_reason"] == "remediation_failed"
     assert "partial progress" in (
@@ -100,12 +101,12 @@ def test_fake_harness_partial_remediation_surfaces_artifact(tmp_path, monkeypatc
 
 
 def test_fake_harness_can_drive_structured_triage(tmp_path, monkeypatch):
-    monkeypatch.setenv(runner_mod.harnesses.FAKE_HARNESS_ENV, "1")
+    monkeypatch.setenv(harnesses.FAKE_HARNESS_ENV, "1")
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if list(args) == ["revrem-fake-harness", "review", "--scenario", "review_findings"]:
             object.__setattr__(config, "review_model", "review_clear")
-        return runner_mod.default_runner(args, cwd, input_text, timeout_seconds)
+        return subprocess_runner_mod.default_runner(args, cwd, input_text, timeout_seconds)
 
     config = runner_mod.LoopConfig(
         base="main",
@@ -130,7 +131,7 @@ def test_fake_harness_can_drive_structured_triage(tmp_path, monkeypatch):
 
 
 def test_fake_harness_v2_triage_without_routing_uses_direct_remediation(tmp_path, monkeypatch):
-    monkeypatch.setenv(runner_mod.harnesses.FAKE_HARNESS_ENV, "1")
+    monkeypatch.setenv(harnesses.FAKE_HARNESS_ENV, "1")
 
     triage_payload = {
         "confirmed_findings": [
@@ -168,7 +169,7 @@ def test_fake_harness_v2_triage_without_routing_uses_direct_remediation(tmp_path
             object.__setattr__(config, "review_model", "review_clear")
         if list(args) == ["revrem-fake-harness", "triage", "--scenario", "triage_valid"]:
             return runner_mod.CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
-        return runner_mod.default_runner(args, cwd, input_text, timeout_seconds)
+        return subprocess_runner_mod.default_runner(args, cwd, input_text, timeout_seconds)
 
     config = runner_mod.LoopConfig(
         base="main",
@@ -195,7 +196,7 @@ def test_fake_harness_v2_triage_without_routing_uses_direct_remediation(tmp_path
 
 
 def test_fake_and_codex_summary_shapes_are_structurally_equivalent(tmp_path, monkeypatch):
-    monkeypatch.setenv(runner_mod.harnesses.FAKE_HARNESS_ENV, "1")
+    monkeypatch.setenv(harnesses.FAKE_HARNESS_ENV, "1")
     fake_dir = tmp_path / "fake"
     codex_dir = tmp_path / "codex"
     fake_dir.mkdir()
@@ -222,7 +223,7 @@ def test_fake_and_codex_summary_shapes_are_structurally_equivalent(tmp_path, mon
     def codex_runner(args, cwd, input_text=None, timeout_seconds=None):
         return runner_mod.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
 
-    fake_summary = runner_mod.run_loop(fake_config, runner_mod.default_runner)
+    fake_summary = runner_mod.run_loop(fake_config, subprocess_runner_mod.default_runner)
     codex_summary = runner_mod.run_loop(codex_config, codex_runner)
 
     assert summary_shape(fake_summary) == summary_shape(codex_summary)
@@ -232,7 +233,7 @@ def test_fake_and_codex_summary_shapes_are_structurally_equivalent(tmp_path, mon
 
 
 def test_fake_harness_timeout_surfaces_as_review_failure(tmp_path, monkeypatch):
-    monkeypatch.setenv(runner_mod.harnesses.FAKE_HARNESS_ENV, "1")
+    monkeypatch.setenv(harnesses.FAKE_HARNESS_ENV, "1")
     config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
@@ -244,7 +245,7 @@ def test_fake_harness_timeout_surfaces_as_review_failure(tmp_path, monkeypatch):
     )
 
     with pytest.raises(runner_mod.RunLoopFailed) as excinfo:
-        runner_mod.run_loop(config, runner_mod.default_runner)
+        runner_mod.run_loop(config, subprocess_runner_mod.default_runner)
 
     assert excinfo.value.summary["stopped_reason"] == "review_failed"
     assert "Fake harness timeout" in (
@@ -253,7 +254,7 @@ def test_fake_harness_timeout_surfaces_as_review_failure(tmp_path, monkeypatch):
 
 
 def test_fake_harness_cancellation_uses_controlled_cancellation_path(tmp_path, monkeypatch):
-    monkeypatch.setenv(runner_mod.harnesses.FAKE_HARNESS_ENV, "1")
+    monkeypatch.setenv(harnesses.FAKE_HARNESS_ENV, "1")
     config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
@@ -265,7 +266,7 @@ def test_fake_harness_cancellation_uses_controlled_cancellation_path(tmp_path, m
     )
 
     with pytest.raises(runner_mod.RunLoopFailed) as excinfo:
-        runner_mod.run_loop(config, runner_mod.default_runner)
+        runner_mod.run_loop(config, subprocess_runner_mod.default_runner)
 
     assert excinfo.value.summary["stopped_reason"] == "cancelled"
     records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
@@ -274,7 +275,7 @@ def test_fake_harness_cancellation_uses_controlled_cancellation_path(tmp_path, m
 
 
 def test_fake_harness_unsupported_surfaces_as_review_failure(tmp_path, monkeypatch):
-    monkeypatch.setenv(runner_mod.harnesses.FAKE_HARNESS_ENV, "1")
+    monkeypatch.setenv(harnesses.FAKE_HARNESS_ENV, "1")
     config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
@@ -286,14 +287,14 @@ def test_fake_harness_unsupported_surfaces_as_review_failure(tmp_path, monkeypat
     )
 
     with pytest.raises(runner_mod.RunLoopFailed) as excinfo:
-        runner_mod.run_loop(config, runner_mod.default_runner)
+        runner_mod.run_loop(config, subprocess_runner_mod.default_runner)
 
     assert excinfo.value.summary["stopped_reason"] == "review_failed"
     assert "unsupported" in (tmp_path / "artifacts" / "review-1.txt").read_text(encoding="utf-8")
 
 
 def test_fake_harness_token_charge_drives_budget_ceiling(tmp_path, monkeypatch):
-    monkeypatch.setenv(runner_mod.harnesses.FAKE_HARNESS_ENV, "1")
+    monkeypatch.setenv(harnesses.FAKE_HARNESS_ENV, "1")
     config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
@@ -306,7 +307,7 @@ def test_fake_harness_token_charge_drives_budget_ceiling(tmp_path, monkeypatch):
     )
 
     with pytest.raises(runner_mod.RunLoopFailed) as excinfo:
-        runner_mod.run_loop(config, runner_mod.default_runner)
+        runner_mod.run_loop(config, subprocess_runner_mod.default_runner)
 
     summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
     records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")

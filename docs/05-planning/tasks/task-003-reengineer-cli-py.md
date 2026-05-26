@@ -4,7 +4,7 @@ type: TASK
 title: Re-engineer cli.py from God object into a hexagonal review-loop core
 status: Draft
 version: '0.2'
-last_updated: '2026-05-25'
+last_updated: '2026-05-26'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -956,12 +956,15 @@ Treat that commit as a green checkpoint, not the Wave C finish line.
   ``code_review_loop.application.resume_review_loop`` after preconditions pass.
   Follow-up remediation renamed the relocated loop driver from ``loop`` to
   ``runner`` and deleted the legacy ``_run_loop`` symbol. Final polish moved
-  the side-effectful engine executor into ``code_review_loop.runner_shell``:
-  ``runner.py`` is now 959 lines and owns setup/preflight/cancellation/summary
-  finalization, while ``runner_shell.py`` owns phase-action execution through
+  the side-effectful engine executor into ``code_review_loop.runner_shell``.
+  Nit-clearance polish then moved subprocess execution into
+  ``code_review_loop.adapters.subprocess_runner`` and resume Git snapshots into
+  ``code_review_loop.adapters.git``/``code_review_loop.resume``. ``runner.py``
+  is now 777 lines and owns setup/preflight/cancellation/summary finalization,
+  while ``runner_shell.py`` owns phase-action execution through
   ``core.engine.run``. `tests/test_runner_engine_gate.py` fails if `runner.py`
-  reintroduces direct ``decide()`` calls, redefines the engine executor, or
-  retakes terminal-control ownership.
+  reintroduces direct ``decide()`` calls, redefines the engine executor, retakes
+  terminal-control ownership, or redefines process/resume support helpers.
 
   Final remediation also removed the adapter ``_X_impl.py`` migration split:
   each phase adapter now owns its implementation in its canonical module
@@ -1017,7 +1020,7 @@ Treat that commit as a green checkpoint, not the Wave C finish line.
   routing paths. The full local gate passed after the final decomposition:
   `./.venv/bin/ruff check .`, `./.venv/bin/mypy src`,
   `./.venv/bin/lint-imports`, `uv run --locked meminit check --format json`,
-  and `./.venv/bin/pytest -q` (`754 passed`). Final polish focused gates pass
+  and `./.venv/bin/pytest -q` (`756 passed`). Final polish focused gates pass
   for the application API, runner engine gate, terminal/progress, subprocess,
   engine, and split config/history/profile modules; full-suite evidence is
   refreshed at closeout.
@@ -1060,6 +1063,11 @@ Treat that commit as a green checkpoint, not the Wave C finish line.
 9. DONE in final polish: terminal title/control state moved to
    ``code_review_loop.adapters.terminal``; the runner imports adapter services
    and no longer owns terminal escape constants or `/dev/tty` writes.
+10. DONE in nit-clearance polish: CLI summary coercion is centralized in
+   ``cli.outcome.summary_from_result`` with a typed ``SummaryResult`` Protocol;
+   subprocess execution moved to ``adapters.subprocess_runner``; resume Git
+   snapshot helpers moved to ``adapters.git``/``resume``; and the behaviour
+   ledger now pins current engine ADT coverage.
 
 **Wave C1 + C2 status (2026-05-24).** C1a, C1b, C2a (both parts) and the
 TD-004 half of C2b have landed.

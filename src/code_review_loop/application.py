@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from code_review_loop import budgets, reporting, resume, runner
+from code_review_loop.adapters.subprocess_runner import default_runner
 from code_review_loop.clock import SYSTEM_CLOCK, Clock
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.ports import CommandResult, ProcessRunner
@@ -48,7 +49,7 @@ class ReviewLoopResult:
 
 def run_review_loop(
     config: LoopConfig,
-    process_runner: ProcessRunner = runner.default_runner,
+    process_runner: ProcessRunner = default_runner,
     *,
     clock: Clock = SYSTEM_CLOCK,
     identity: RunIdentity = SYSTEM_IDENTITY,

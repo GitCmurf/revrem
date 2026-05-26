@@ -4,7 +4,7 @@ type: LEDGER
 title: Behaviour ledger for the cli.py re-engineering (REVREM-TASK-003)
 status: Draft
 version: '0.1'
-last_updated: '2026-05-22'
+last_updated: '2026-05-26'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -173,6 +173,31 @@ separate setter calls):
 
 The A2/A2b golden-master snapshots (not this table) are the verification
 contract: B3b must leave those byte-identical.
+
+#### Current engine ADT coverage (Wave C closeout)
+
+The implementation now represents exits through `Stop(RunOutcome)` rather than
+separate `Exit*` action variants. This table pins each current `PhaseEvent` and
+`Action` variant to the branch rows below so future engine refactors cannot add
+an unledgered transition.
+
+| Engine type | Ledger row(s) | Meaning |
+|---|---|---|
+| `LoopStarted` | R1, R2 | Begin an iteration by requesting `RunReview(is_final=False)`. |
+| `ReviewDone` | R3, E1, F2-F6 | Review result gates review failure, early clear, triage/remediation, or final outcomes. |
+| `TriageDone` | T2-T6 | Triage either exits clear/failed or requests remediation. |
+| `RemediationDone` | M2-M3, CK1 | Remediation failure exits; success requests checks. |
+| `ChecksDone` | CK1, L1-L2, CM1 | Checks update pending failures, then either request commit or advance review. |
+| `CommitDone` | CM1-CM7, L3-L4 | Commit status either exits, retries via hook output, or advances review. |
+| `NoFinalReview` | NF1 | Exhausted loop without final review exits unknown. |
+| `Continue` | L1-L4 | Advance to the next iteration. |
+| `RunReview` | R1, R2, F1 | Execute iteration or final review. |
+| `RunTriage` | T1 | Execute triage for review findings. |
+| `RunRemediation` | M1 | Execute remediation. |
+| `RunChecks` | CK1 | Execute verification checks after remediation. |
+| `RunCommit` | CM1-CM7 | Execute optional commit when checks are clear. |
+| `RetryViaCommitHook` | CM3, L4 | Feed retryable commit hook output into the next remediation iteration. |
+| `Stop` | P1, R3, E1, T2-T3, T6, M3, CM2, CM4-CM5, CM7, F2-F6, NF1, X1-X2 | Terminal outcome wrapper applied by the shell. |
 
 #### `_run_loop` pre-loop guards (before state is initialised)
 

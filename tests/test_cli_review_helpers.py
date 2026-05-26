@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from importlib import import_module
 from pathlib import Path
 
@@ -751,12 +752,11 @@ def test_review_failure_detection_allows_nonzero_findings_without_stderr():
 
 
 def run_git(cwd: Path, *args: str) -> None:
-    result = runner_mod.subprocess.run(
+    result = subprocess.run(
         ["git", *args],
         cwd=cwd,
         text=True,
-        stdout=runner_mod.subprocess.PIPE,
-        stderr=runner_mod.subprocess.PIPE,
+        capture_output=True,
         check=False,
     )
     assert result.returncode == 0, result.stderr

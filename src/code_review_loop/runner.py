@@ -6,9 +6,7 @@ from __future__ import annotations
 import atexit
 import json
 import os
-import shlex
 import signal
-import subprocess
 import time
 from collections.abc import Callable, Sequence
 from contextlib import contextmanager, suppress
@@ -22,7 +20,6 @@ from code_review_loop import (
     bug_bundle as bug_bundle,
     diagnostics,
     events,
-    harnesses,
     profiles,
     progress,
     prompts_composer,
@@ -60,6 +57,7 @@ from code_review_loop.identity import SYSTEM_IDENTITY, RunIdentity
 from code_review_loop.runtime import RunLoopFailed as RunLoopFailed
 from code_review_loop.runtime import format_terminal_summary as format_terminal_summary
 from code_review_loop.runner_shell import run_iterations as run_iterations
+from code_review_loop.resume import resume_config_payload as resume_config_payload
 from code_review_loop.reporting import add_artifact_paths as add_artifact_paths
 from code_review_loop.reporting import add_summary_contract_fields as add_summary_contract_fields
 from code_review_loop.reporting import append_run_history as append_run_history
@@ -70,12 +68,10 @@ from code_review_loop.reporting import update_unexpected_behaviors as update_une
 from code_review_loop.reporting import write_summary as write_summary
 from code_review_loop.adapters.phase_support import CommitFailed as CommitFailed
 from code_review_loop.adapters.phase_support import _combined_output as _combined_output
-from code_review_loop.adapters.phase_support import _timeout_stream_text as _timeout_stream_text
 from code_review_loop.adapters.phase_support import build_commit_message_command as build_commit_message_command
 from code_review_loop.adapters.phase_support import compact_progress_label as compact_progress_label
 from code_review_loop.adapters.phase_support import ensure_model_budget as ensure_model_budget
 from code_review_loop.adapters.phase_support import emit_loop_failure_event as emit_loop_failure_event
-from code_review_loop.adapters.phase_support import lexical_git_repo_root as lexical_git_repo_root
 from code_review_loop.adapters.phase_support import log_review_findings as log_review_findings
 from code_review_loop.adapters.phase_support import normalize_revrem_conventional_subject as normalize_revrem_conventional_subject
 from code_review_loop.adapters.phase_support import phase_timeout_seconds as phase_timeout_seconds
@@ -89,7 +85,8 @@ from code_review_loop.adapters.phase_support import remaining_wall_budget_second
 from code_review_loop.adapters.phase_support import sanitize_commit_message as sanitize_commit_message
 from code_review_loop.adapters.phase_support import terminal_iteration_label as terminal_iteration_label
 from code_review_loop.adapters.phase_support import write_artifact as write_artifact
-from code_review_loop.adapters import terminal as terminal_adapter
+from code_review_loop.adapters.subprocess_runner import default_runner as default_runner
+from code_review_loop.adapters.git import git_state_for_resume as git_state_for_resume
 from code_review_loop.adapters.terminal import (
     restore_terminal_display as restore_terminal_display,
 )
@@ -242,111 +239,6 @@ def cancellation_interrupt_for_signal(signum: int, *, now: float) -> KeyboardInt
         return KeyboardInterrupt(f"forced cancellation after repeated {signal_name}")
     return KeyboardInterrupt(f"controlled cancellation after {signal_name}")
 
-
-def default_runner(args: Sequence[str], cwd: Path, input_text: str | None = None, timeout_seconds: float | None = None) -> CommandResult:
-    if harnesses.is_fake_harness_command(tuple(args)):
-        returncode, stdout, stderr = harnesses.run_fake_harness_command(tuple(args))
-        return CommandResult(
-            args=list(args),
-            returncode=returncode,
-            stdout=stdout,
-            stderr=stderr,
-            tokens=harnesses.fake_harness_token_charge(tuple(args)),
-        )
-    try:
-        completed = run_subprocess_with_terminal_title_refresh(
-            list(args),
-            cwd=cwd,
-            input=input_text,
-            timeout=timeout_seconds,
-        )
-        return CommandResult(
-            args=list(args),
-            returncode=completed.returncode,
-            stdout=completed.stdout,
-            stderr=completed.stderr,
-        )
-    except subprocess.TimeoutExpired as exc:
-        stdout = _timeout_stream_text(exc.output)
-        stderr = _timeout_stream_text(exc.stderr)
-        timeout_note = (
-            f"Command timed out after {timeout_seconds} second{'s' if timeout_seconds != 1 else ''}\n"
-            f"Command: {shlex.join(list(args))}\n"
-            f"cwd: {cwd}\n"
-        )
-        stderr = timeout_note + "\n[partial stderr]\n" + stderr if stderr else timeout_note
-        return CommandResult(
-            args=list(args),
-            returncode=-1,
-            stdout=stdout,
-            stderr=stderr,
-        )
-
-
-def run_subprocess_with_terminal_title_refresh(
-    args: list[str],
-    *,
-    cwd: Path,
-    input: str | None,
-    timeout: float | None,
-) -> subprocess.CompletedProcess[str]:
-    process = subprocess.Popen(
-        args,
-        cwd=cwd,
-        stdin=subprocess.PIPE if input is not None else None,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        start_new_session=True,
-    )
-    deadline = None if timeout is None else time.monotonic() + timeout  # det-exempt: governs a real subprocess I/O timeout; faking breaks process killing
-    pending_input = input
-    try:
-        while True:
-            terminal_adapter.refresh_terminal_title()
-            wait = terminal_adapter.TERMINAL_TITLE_REFRESH_SECONDS
-            if deadline is not None:
-                remaining = deadline - time.monotonic()  # det-exempt: governs a real subprocess I/O timeout; faking breaks process killing
-                if remaining <= 0:
-                    kill_process_tree(process)
-                    stdout, stderr = process.communicate()
-                    assert timeout is not None
-                    raise subprocess.TimeoutExpired(args, timeout, output=stdout, stderr=stderr)
-                wait = min(wait, remaining)
-            try:
-                stdout, stderr = process.communicate(input=pending_input, timeout=wait)
-                return subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
-            except subprocess.TimeoutExpired:
-                # `communicate()` cannot accept stdin again after it has started.
-                # Keep waiting without resending input; the subprocess object
-                # retains any buffered stdin internally.
-                pending_input = None
-                pass
-    except BaseException:
-        try:
-            if process.poll() is None:
-                kill_process_tree(process)
-            process.communicate()
-        except Exception:
-            pass
-        raise
-
-
-def kill_process_tree(process: subprocess.Popen[str]) -> None:
-    """Kill a POSIX/Linux subprocess group started with ``start_new_session``."""
-    pid = getattr(process, "pid", None)
-    if pid is None:
-        process.kill()
-        return
-    if not hasattr(os, "killpg"):
-        process.kill()
-        return
-    try:
-        os.killpg(pid, signal.SIGKILL)
-    except ProcessLookupError:
-        return
-    except OSError:
-        process.kill()
 
 # Checks implementation helpers. These remain imported here only where the
 # runner still has direct callers; new code should import their adapter module
@@ -883,77 +775,3 @@ def _run_session(
         return _finish_budget_exceeded(exc, config=config, state=state, summary=summary, clock=clock, ctx=ctx)
     finally:
         event_sink.close()
-
-
-def git_state_for_resume(config: LoopConfig) -> dict[str, object]:
-    if lexical_git_repo_root(config.cwd) is None:
-        return {
-            "head": None,
-            "base": config.base,
-            "base_commit": None,
-            "merge_base": None,
-            "available": False,
-        }
-    head = git_preflight_stdout(config.cwd, ["rev-parse", "HEAD"])
-    base_commit = git_preflight_stdout(config.cwd, ["rev-parse", "--verify", f"{config.base}^{{commit}}"])
-    merge_base = (
-        git_preflight_stdout(config.cwd, ["merge-base", "HEAD", config.base])
-        if base_commit is not None
-        else None
-    )
-    return {
-        "head": head,
-        "base": config.base,
-        "base_commit": base_commit,
-        "merge_base": merge_base,
-        "available": head is not None and base_commit is not None,
-    }
-
-
-def git_preflight_stdout(cwd: Path, args: Sequence[str]) -> str | None:
-    result = run_git_preflight(cwd, args)
-    if result.returncode != 0:
-        return None
-    value = result.stdout.strip()
-    return value or None
-
-
-def resume_config_payload(config: LoopConfig) -> dict[str, object]:
-    """Persist the loop inputs required to resume with the same safety envelope."""
-    return {
-        "base": config.base,
-        "max_iterations": config.max_iterations,
-        "codex_bin": config.codex_bin,
-        "harness_executables": dict(config.harness_executables),
-        "review_harness": config.review_harness,
-        "remediation_harness": config.remediation_harness,
-        "triage_harness": config.triage_harness,
-        "review_model": config.review_model or config.model,
-        "remediation_model": config.remediation_model or config.model,
-        "triage_model": config.triage_model,
-        "triage_enabled": config.triage_enabled,
-        "final_review": config.final_review,
-        "check_commands": list(config.check_commands),
-        "timeout_seconds": config.timeout_seconds,
-        "review_timeout_seconds": config.review_timeout_seconds,
-        "remediation_timeout_seconds": config.remediation_timeout_seconds,
-        "triage_timeout_seconds": config.triage_timeout_seconds,
-        "progress_style": config.progress_style,
-        "debug_status_detection": config.debug_status_detection,
-        "terminal_excerpt_chars": config.terminal_excerpt_chars,
-        "max_remediation_input_chars": config.max_remediation_input_chars,
-        "commit_after_remediation": config.commit_after_remediation,
-        "commit_on_hook_failure": config.commit_on_hook_failure,
-        "exec_sandbox": config.exec_sandbox,
-        "exec_json": config.exec_json,
-        "output_last_message": config.output_last_message,
-        "full_auto": config.full_auto,
-        "max_wall_seconds": config.budget_config.max_wall_seconds,
-        "max_tokens": config.budget_config.max_tokens,
-        "max_usd": str(config.budget_config.max_usd) if config.budget_config.max_usd is not None else None,
-        "soft_warn_fraction": config.budget_config.soft_warn_fraction,
-        "triage_prompt": config.triage_prompt,
-        "triage_on_invalid": config.triage_on_invalid,
-        "triage_contract": config.triage_contract,
-        "profile_name": config.profile_name,
-    }

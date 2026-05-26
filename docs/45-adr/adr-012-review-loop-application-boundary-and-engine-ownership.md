@@ -49,10 +49,11 @@ point for executing and resuming review loops:
 
 The runner is private application infrastructure, not a public API. The
 side-effectful iteration executor lives in `code_review_loop.runner_shell`,
-while `code_review_loop.runner` owns run setup, preflight, cancellation,
-summary finalization, and command-facing integration. Terminal title/control
-behavior lives in `code_review_loop.adapters.terminal`; runner code must not
-own terminal escape constants or `/dev/tty` writes.
+while subprocess execution lives in `code_review_loop.adapters.subprocess_runner`.
+`code_review_loop.runner` owns run setup, preflight, cancellation, summary
+finalization, and command-facing integration. Terminal title/control behavior
+lives in `code_review_loop.adapters.terminal`; runner code must not own
+terminal escape constants or `/dev/tty` writes.
 
 The core engine remains dependency-free. It exposes state-machine events,
 actions, a pure `decide()` transition function, and a reusable `run()` loop for
@@ -72,6 +73,8 @@ Architecture ratchets should enforce this story:
 - `code_review_loop.runner_shell` must not import `code_review_loop.runner`;
 - `code_review_loop.runner` must not own terminal-control constants or
   `/dev/tty` access;
+- `code_review_loop.runner` must not define subprocess runner or resume Git
+  snapshot helpers;
 - import-linter must continue proving core and adapter layer boundaries;
 - tests that need phase internals should import canonical adapter homes, not
   runner compatibility surfaces.

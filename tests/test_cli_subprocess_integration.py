@@ -9,6 +9,7 @@ import pytest
 
 import code_review_loop.runner as runner_mod
 from code_review_loop import application
+from code_review_loop.adapters import subprocess_runner as subprocess_runner_mod
 from code_review_loop.adapters import terminal as terminal_mod
 
 cli_main = import_module("code_review_loop.cli.main")
@@ -169,12 +170,12 @@ def test_subprocess_refresh_loop_kills_child_on_interrupt(tmp_path, monkeypatch)
     def fake_refresh():
         refresh_calls.append("refresh")
 
-    monkeypatch.setattr(runner_mod.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(subprocess_runner_mod.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(terminal_mod, "refresh_terminal_title", fake_refresh)
     monkeypatch.setattr(terminal_mod, "TERMINAL_TITLE_REFRESH_SECONDS", 0.01)
 
     with pytest.raises(KeyboardInterrupt):
-        runner_mod.run_subprocess_with_terminal_title_refresh(
+        subprocess_runner_mod.run_subprocess_with_terminal_title_refresh(
             ["codex", "exec"],
             cwd=tmp_path,
             input="prompt",
@@ -219,7 +220,7 @@ def test_kill_process_tree_targets_child_process_group(monkeypatch):
 
     monkeypatch.setattr(runner_mod.os, "killpg", fake_killpg)
 
-    runner_mod.kill_process_tree(FakeProcess())
+    subprocess_runner_mod.kill_process_tree(FakeProcess())
 
     assert calls == [("killpg", 12345, runner_mod.signal.SIGKILL)]
 
@@ -236,7 +237,7 @@ def test_subprocess_refresh_loop_does_not_resend_input_after_timeout(tmp_path, m
             self.communicate_calls += 1
             if self.communicate_calls == 1:
                 assert input == "prompt"
-                raise runner_mod.subprocess.TimeoutExpired(["codex", "exec"], timeout)
+                raise subprocess_runner_mod.subprocess.TimeoutExpired(["codex", "exec"], timeout)
             assert input is None
             return ("stdout", "stderr")
 
@@ -254,11 +255,11 @@ def test_subprocess_refresh_loop_does_not_resend_input_after_timeout(tmp_path, m
     def fake_refresh():
         refresh_calls.append("refresh")
 
-    monkeypatch.setattr(runner_mod.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(subprocess_runner_mod.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(terminal_mod, "refresh_terminal_title", fake_refresh)
     monkeypatch.setattr(terminal_mod, "TERMINAL_TITLE_REFRESH_SECONDS", 0.01)
 
-    completed = runner_mod.run_subprocess_with_terminal_title_refresh(
+    completed = subprocess_runner_mod.run_subprocess_with_terminal_title_refresh(
         ["codex", "exec"],
         cwd=tmp_path,
         input="prompt",
@@ -329,7 +330,7 @@ def test_default_runner_refreshes_active_terminal_title_during_child_process(tmp
 
     with terminal_mod.terminal_title_context(config):
         terminal_mod.set_terminal_title(config, "rev 1/1 RevRem")
-        result = runner_mod.default_runner(
+        result = subprocess_runner_mod.default_runner(
             [
                 terminal_mod.sys.executable,
                 "-c",
@@ -364,7 +365,7 @@ def test_default_runner_does_not_refresh_terminal_title_during_rich_progress(tmp
 
     with terminal_mod.terminal_title_context(config):
         terminal_mod.set_terminal_title(config, "rev 1/1 RevRem")
-        result = runner_mod.default_runner(
+        result = subprocess_runner_mod.default_runner(
             [
                 terminal_mod.sys.executable,
                 "-c",
@@ -405,7 +406,7 @@ def test_subprocess_refresh_loop_stops_resending_stdin_after_timeout(tmp_path, m
             self.inputs.append(input)
             if self.communicate_calls == 1:
                 assert input == "prompt"
-                raise runner_mod.subprocess.TimeoutExpired(["codex", "exec"], timeout)
+                raise subprocess_runner_mod.subprocess.TimeoutExpired(["codex", "exec"], timeout)
             assert input is None
             assert not self.stdin.closed, "stdin should stay open while waiting on the same child"
             return ("stdout", "stderr")
@@ -421,11 +422,11 @@ def test_subprocess_refresh_loop_stops_resending_stdin_after_timeout(tmp_path, m
     def fake_refresh():
         refresh_calls.append("refresh")
 
-    monkeypatch.setattr(runner_mod.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(subprocess_runner_mod.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(terminal_mod, "refresh_terminal_title", fake_refresh)
     monkeypatch.setattr(terminal_mod, "TERMINAL_TITLE_REFRESH_SECONDS", 0.01)
 
-    result = runner_mod.run_subprocess_with_terminal_title_refresh(
+    result = subprocess_runner_mod.run_subprocess_with_terminal_title_refresh(
         ["codex", "exec"],
         cwd=tmp_path,
         input="prompt",
@@ -442,16 +443,16 @@ def test_subprocess_refresh_loop_stops_resending_stdin_after_timeout(tmp_path, m
 
 def test_default_runner_timeout_records_command_cwd_and_partial_output(tmp_path, monkeypatch):
     def fake_run_subprocess(*args, **kwargs):
-        raise runner_mod.subprocess.TimeoutExpired(
+        raise subprocess_runner_mod.subprocess.TimeoutExpired(
             ["codex", "exec"],
             12,
             output="partial stdout\n",
             stderr="partial stderr\n",
         )
 
-    monkeypatch.setattr(runner_mod, "run_subprocess_with_terminal_title_refresh", fake_run_subprocess)
+    monkeypatch.setattr(subprocess_runner_mod, "run_subprocess_with_terminal_title_refresh", fake_run_subprocess)
 
-    result = runner_mod.default_runner(["codex", "exec"], tmp_path, "prompt", 12)
+    result = subprocess_runner_mod.default_runner(["codex", "exec"], tmp_path, "prompt", 12)
 
     assert result.returncode == -1
     assert result.stdout == "partial stdout\n"
@@ -467,7 +468,7 @@ def test_default_runner_timeout_kills_process_group_with_pipe_holding_child(tmp_
 
     start = time.monotonic()
 
-    result = runner_mod.default_runner(
+    result = subprocess_runner_mod.default_runner(
         ["bash", "-lc", "sleep 30 & wait"],
         tmp_path,
         None,

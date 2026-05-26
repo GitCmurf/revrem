@@ -1,22 +1,21 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from importlib import import_module
 from pathlib import Path
 
-import code_review_loop.runner as runner_mod
 from code_review_loop import suppressions
 
 cli_main = import_module("code_review_loop.cli.main")
 
 
 def run_git(cwd: Path, *args: str) -> None:
-    result = runner_mod.subprocess.run(
+    result = subprocess.run(
         ["git", *args],
         cwd=cwd,
         text=True,
-        stdout=runner_mod.subprocess.PIPE,
-        stderr=runner_mod.subprocess.PIPE,
+        capture_output=True,
         check=False,
     )
     assert result.returncode == 0, result.stderr

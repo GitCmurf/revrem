@@ -7,8 +7,10 @@ from pathlib import Path
 import pytest
 
 import code_review_loop.runner as runner_mod
-from code_review_loop import events
+from code_review_loop import events, harnesses
 from code_review_loop import resume as resume_mod
+from code_review_loop.adapters import git as git_adapter
+from code_review_loop.adapters import phase_support
 
 cli_main = import_module("code_review_loop.cli.main")
 
@@ -17,9 +19,9 @@ def test_git_preflight_stdout_treats_missing_stdout_as_empty(tmp_path, monkeypat
     def fake_run_git_preflight(cwd, args):
         return runner_mod.CommandResult(list(args), 0, stdout=None)
 
-    monkeypatch.setattr(resume_mod, "run_git_preflight", fake_run_git_preflight)
+    monkeypatch.setattr(git_adapter, "run_git_preflight", fake_run_git_preflight)
 
-    assert resume_mod.git_preflight_stdout(tmp_path, ["rev-parse", "HEAD"]) is None
+    assert git_adapter.git_preflight_stdout(tmp_path, ["rev-parse", "HEAD"]) is None
 
 
 def write_resume_run(
@@ -92,7 +94,7 @@ def install_matching_git(monkeypatch, *, head: str = "head-sha", base: str = "ba
             return runner_mod.CommandResult(["git", *args], 0, stdout=f"{base}\n")
         return runner_mod.CommandResult(["git", *args], 1, stderr="unexpected")
 
-    monkeypatch.setattr(resume_mod, "run_git_preflight", fake_git)
+    monkeypatch.setattr(git_adapter, "run_git_preflight", fake_git)
 
 
 def test_resume_preconditions_pass_for_matching_git_state(tmp_path, monkeypatch):
@@ -267,7 +269,7 @@ def test_resume_run_rejects_legacy_persisted_budget_ceiling(tmp_path, monkeypatc
 
 
 def test_resume_loop_config_seeds_cumulative_wall_budget_state(tmp_path, monkeypatch):
-    monkeypatch.setattr(runner_mod, "lexical_git_repo_root", lambda _cwd: tmp_path)
+    monkeypatch.setattr(phase_support, "lexical_git_repo_root", lambda _cwd: tmp_path)
     monkeypatch.setattr(runner_mod.budgets, "monotonic", lambda: 112.5)
 
     def fake_run_git_preflight(cwd, args):
@@ -282,7 +284,7 @@ def test_resume_loop_config_seeds_cumulative_wall_budget_state(tmp_path, monkeyp
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         return runner_mod.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
 
-    monkeypatch.setattr(runner_mod, "run_git_preflight", fake_run_git_preflight)
+    monkeypatch.setattr(git_adapter, "run_git_preflight", fake_run_git_preflight)
 
     config = runner_mod.LoopConfig(
         base="main",
@@ -417,7 +419,7 @@ def test_resume_main_returns_code_4_for_missing_summary(tmp_path, monkeypatch, c
 
 
 def test_resume_continues_from_existing_review_artifact(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv(runner_mod.harnesses.FAKE_HARNESS_ENV, "1")
+    monkeypatch.setenv(harnesses.FAKE_HARNESS_ENV, "1")
     monkeypatch.chdir(tmp_path)
     run_dir = tmp_path / "run"
     write_resume_run(run_dir)
@@ -436,7 +438,7 @@ def test_resume_continues_from_existing_review_artifact(tmp_path, monkeypatch, c
 
 
 def test_resume_and_uninterrupted_fake_run_have_same_final_status(tmp_path, monkeypatch):
-    monkeypatch.setenv(runner_mod.harnesses.FAKE_HARNESS_ENV, "1")
+    monkeypatch.setenv(harnesses.FAKE_HARNESS_ENV, "1")
     monkeypatch.chdir(tmp_path)
     run_dir = tmp_path / "run"
     uninterrupted_dir = tmp_path / "uninterrupted"

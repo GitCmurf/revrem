@@ -14,6 +14,7 @@ variants may be added per subcommand as their migrations land. See
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Protocol
 
 
 @dataclass(frozen=True)
@@ -45,4 +46,23 @@ disturbing the dispatcher, which only reads ``.exit_code``.
 """
 
 
-__all__ = ["CommandOk", "CommandFailed", "CommandOutcome"]
+class SummaryResult(Protocol):
+    """Application result shape consumed by CLI presentation code."""
+
+    def to_dict(self) -> dict[str, object]: ...
+
+
+def summary_from_result(result: SummaryResult | dict[str, object]) -> dict[str, object]:
+    """Return a mutable summary dict from an application result."""
+    if isinstance(result, dict):
+        return result
+    return result.to_dict()
+
+
+__all__ = [
+    "CommandFailed",
+    "CommandOk",
+    "CommandOutcome",
+    "SummaryResult",
+    "summary_from_result",
+]

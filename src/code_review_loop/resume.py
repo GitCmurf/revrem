@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from decimal import Decimal
 from pathlib import Path
 from typing import TypeVar
 
 from code_review_loop import budgets, diagnostics, events, profiles
-from code_review_loop.adapters.git import run_git_preflight
+from code_review_loop.adapters.git import git_preflight_stdout
 from code_review_loop.config import LoopConfig
 
 RESUMABLE_STOPPED_REASONS = frozenset(
@@ -244,6 +244,47 @@ def resume_loop_config(
     ), budget_state
 
 
+def resume_config_payload(config: LoopConfig) -> dict[str, object]:
+    """Persist the loop inputs required to resume with the same safety envelope."""
+    return {
+        "base": config.base,
+        "max_iterations": config.max_iterations,
+        "codex_bin": config.codex_bin,
+        "harness_executables": dict(config.harness_executables),
+        "review_harness": config.review_harness,
+        "remediation_harness": config.remediation_harness,
+        "triage_harness": config.triage_harness,
+        "review_model": config.review_model or config.model,
+        "remediation_model": config.remediation_model or config.model,
+        "triage_model": config.triage_model,
+        "triage_enabled": config.triage_enabled,
+        "final_review": config.final_review,
+        "check_commands": list(config.check_commands),
+        "timeout_seconds": config.timeout_seconds,
+        "review_timeout_seconds": config.review_timeout_seconds,
+        "remediation_timeout_seconds": config.remediation_timeout_seconds,
+        "triage_timeout_seconds": config.triage_timeout_seconds,
+        "progress_style": config.progress_style,
+        "debug_status_detection": config.debug_status_detection,
+        "terminal_excerpt_chars": config.terminal_excerpt_chars,
+        "max_remediation_input_chars": config.max_remediation_input_chars,
+        "commit_after_remediation": config.commit_after_remediation,
+        "commit_on_hook_failure": config.commit_on_hook_failure,
+        "exec_sandbox": config.exec_sandbox,
+        "exec_json": config.exec_json,
+        "output_last_message": config.output_last_message,
+        "full_auto": config.full_auto,
+        "max_wall_seconds": config.budget_config.max_wall_seconds,
+        "max_tokens": config.budget_config.max_tokens,
+        "max_usd": str(config.budget_config.max_usd) if config.budget_config.max_usd is not None else None,
+        "soft_warn_fraction": config.budget_config.soft_warn_fraction,
+        "triage_prompt": config.triage_prompt,
+        "triage_on_invalid": config.triage_on_invalid,
+        "triage_contract": config.triage_contract,
+        "profile_name": config.profile_name,
+    }
+
+
 def latest_resume_review_path(summary: dict[str, object], *, run_dir: Path) -> Path | None:
     artifact_paths = summary.get("artifact_paths")
     if not isinstance(artifact_paths, dict):
@@ -306,16 +347,6 @@ def resume_git_state_issues(summary: dict[str, object], *, cwd: Path) -> list[di
             )
         )
     return issues
-
-
-def git_preflight_stdout(cwd: Path, args: Sequence[str]) -> str | None:
-    result = run_git_preflight(cwd, args)
-    if result.returncode != 0:
-        return None
-    if result.stdout is None:
-        return None
-    value = result.stdout.strip()
-    return value or None
 
 
 def _resume_str(payload: dict[object, object], key: str, fallback: str) -> str:

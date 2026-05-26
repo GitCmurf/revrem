@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from importlib import import_module
 from pathlib import Path
 
@@ -26,12 +27,11 @@ def make_run_context(runner) -> RunContext:
 
 
 def run_git(cwd: Path, *args: str) -> None:
-    result = runner_mod.subprocess.run(
+    result = subprocess.run(
         ["git", *args],
         cwd=cwd,
         text=True,
-        stdout=runner_mod.subprocess.PIPE,
-        stderr=runner_mod.subprocess.PIPE,
+        capture_output=True,
         check=False,
     )
     assert result.returncode == 0, result.stderr

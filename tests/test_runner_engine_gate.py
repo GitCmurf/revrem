@@ -49,9 +49,25 @@ def test_runner_no_longer_owns_terminal_control() -> None:
     assert "CURSOR_SHOW" not in runner_source
 
 
+def test_runner_no_longer_owns_process_or_resume_support() -> None:
+    runner_source = (Path(__file__).resolve().parents[1] / "src" / "code_review_loop" / "runner.py").read_text(
+        encoding="utf-8"
+    )
+
+    for helper in (
+        "default_runner",
+        "run_subprocess_with_terminal_title_refresh",
+        "kill_process_tree",
+        "git_state_for_resume",
+        "git_preflight_stdout",
+        "resume_config_payload",
+    ):
+        assert f"def {helper}(" not in runner_source
+
+
 def test_runner_stays_below_polish_sprint_size_ceiling() -> None:
     runner_lines = (
         Path(__file__).resolve().parents[1] / "src" / "code_review_loop" / "runner.py"
     ).read_text(encoding="utf-8").splitlines()
 
-    assert len(runner_lines) < 1_000
+    assert len(runner_lines) < 800

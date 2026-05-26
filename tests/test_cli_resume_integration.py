@@ -11,12 +11,14 @@ import code_review_loop.runner as runner_mod
 from code_review_loop import application as application_mod
 from code_review_loop import events
 from code_review_loop import resume as resume_mod
+from code_review_loop.adapters import git as git_adapter
+from code_review_loop.adapters import phase_support
 
 cli_main = import_module("code_review_loop.cli.main")
 
 
 def test_summary_records_git_state_for_resume(tmp_path, monkeypatch):
-    monkeypatch.setattr(runner_mod, "lexical_git_repo_root", lambda _cwd: tmp_path)
+    monkeypatch.setattr(phase_support, "lexical_git_repo_root", lambda _cwd: tmp_path)
 
     def fake_run_git_preflight(cwd, args):
         if list(args) == ["rev-parse", "HEAD"]:
@@ -30,7 +32,7 @@ def test_summary_records_git_state_for_resume(tmp_path, monkeypatch):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         return runner_mod.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
 
-    monkeypatch.setattr(runner_mod, "run_git_preflight", fake_run_git_preflight)
+    monkeypatch.setattr(git_adapter, "run_git_preflight", fake_run_git_preflight)
 
     summary = runner_mod.run_loop(
         runner_mod.LoopConfig(
@@ -53,7 +55,7 @@ def test_summary_records_git_state_for_resume(tmp_path, monkeypatch):
 
 
 def test_resume_payload_preserves_full_auto_and_budget_limits(tmp_path, monkeypatch):
-    monkeypatch.setattr(runner_mod, "lexical_git_repo_root", lambda _cwd: tmp_path)
+    monkeypatch.setattr(phase_support, "lexical_git_repo_root", lambda _cwd: tmp_path)
 
     def fake_run_git_preflight(cwd, args):
         if list(args) == ["rev-parse", "HEAD"]:
@@ -67,7 +69,7 @@ def test_resume_payload_preserves_full_auto_and_budget_limits(tmp_path, monkeypa
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         return runner_mod.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
 
-    monkeypatch.setattr(runner_mod, "run_git_preflight", fake_run_git_preflight)
+    monkeypatch.setattr(git_adapter, "run_git_preflight", fake_run_git_preflight)
 
     config = runner_mod.LoopConfig(
         base="main",
@@ -182,7 +184,7 @@ def test_resume_loop_config_rejects_float_max_usd(tmp_path):
 
 
 def test_summary_records_unavailable_git_state_outside_git(tmp_path, monkeypatch):
-    monkeypatch.setattr(runner_mod, "lexical_git_repo_root", lambda _cwd: None)
+    monkeypatch.setattr(phase_support, "lexical_git_repo_root", lambda _cwd: None)
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         return runner_mod.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
