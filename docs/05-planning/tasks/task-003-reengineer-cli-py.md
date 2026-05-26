@@ -268,8 +268,14 @@ class ProcessRunner(Protocol):
             input_text: str | None = None,
             timeout_seconds: float | None = None) -> CommandResult: ...
 
-class Harness(Protocol):                       # one phase executor
-    def execute(self, request: PhaseRequest, ctx: RunContext) -> PhaseOutcome: ...
+class ReviewHarness(Protocol):                # one typed phase executor
+    def execute(self, request: ReviewRequest, ctx: RunContext) -> ReviewOutcome: ...
+
+class TriageHarness(Protocol):
+    def execute(self, request: TriageRequest, ctx: RunContext) -> TriageOutcome: ...
+
+# ChecksHarness / RemediationHarness / CommitHarness follow the same shape:
+# one explicit request type, one explicit outcome type, no umbrella tuple.
 
 class EventSink(Protocol):
     def emit(self, event: Event) -> None: ...
@@ -333,9 +339,11 @@ a `RunContext` with fake ports.
 The five phases are asymmetric today (`run_codex_review` returns
 `tuple[str, CommandResult]`; `run_triage` returns a 4-tuple;
 `run_remediation` returns `CommandResult`; `run_commit` returns `str`). They
-are unified under a `PhaseOutcome` **sum type** — not a
-lowest-common-denominator tuple. Forcing false symmetry would be its own
-smell; the sum type makes each phase's real result explicit and exhaustive.
+are unified under typed per-phase request/outcome ports — not a
+lowest-common-denominator tuple and not one false `PhaseOutcome` umbrella.
+Forcing false symmetry would be its own smell; each adapter exposes the result
+shape that phase actually owns, and the engine consumes only the typed phase
+events derived from those outcomes.
 
 ### State and outcome as types
 
@@ -354,38 +362,45 @@ Helpers go **home** to existing owners, not into shadow wrappers (no
 
 ```
 core/                         # dependency-free; import-linter enforced
-  ports.py                    # the Protocols above + CommandResult, Event, PhaseOutcome
+  ports.py                    # process/progress/phase Protocols + request/outcome values
   state.py                    # RunState aggregate + transitions
   outcome.py                  # RunOutcome ADT + exit-code mapping
-  engine.py                   # run(state, ctx) state machine + pure decide() (was _run_loop)
-  phases/                     # review / triage / remediate / check / commit (decide+execute split)
+  engine.py                   # run(state, executor) state machine + pure decide()
   review_interpretation.py    # the NLP heuristics, pure, with a fixture corpus
   policy.py                   # remediation routing (resolve_routing): pure logic only
   routing_types.py            # Profile/TriageRouteConfig/TriageRoutingRule DTOs lifted from profiles.py
 adapters/
   subprocess_runner.py        # default_runner + process-tree kill + timeout streaming
   terminal.py                 # titles, escape codes, recovery -> ProgressReporter sink
-  git.py                      # GitGateway impl
-  artifact_store.py           # ArtifactStore impl
+  git.py                      # git preflight + resume git-state snapshots
+  review.py / triage.py / remediation.py / checks.py / commit.py
+                              # canonical phase adapter implementations
   (events.py / progress.py / harnesses.py / budgets.py already exist; helpers move INTO them)
-cli/                          # the thin driver
-  __init__.py                 # main() registry dispatch (~10 lines + table)
+application.py                # supported non-CLI execution boundary; returns ReviewLoopResult
+runner.py                     # private session shell: setup/preflight/cancel/summary
+runner_shell.py               # side-effectful EngineExecutor for phase actions
+runtime.py                    # RunLoopFailed + terminal summary formatting
+resume.py                     # resume preconditions/config reconstruction/payload projection
+cli/                          # the thin command driver
+  __init__.py                 # package initializer; no compatibility facade
+  main.py                     # command dispatch; registry moves to commands/registry.py in D4
   args.py                     # all parse_*_args
   config_builder.py           # build_loop_config + profile resolution + coercion
   commands/                   # one module per subcommand: config, suppress, doctor,
                               #   replay, resume, history, policy, triage, bundle
-cli.py                        # TEMPORARY facade re-exporting the public surface; deleted in C3
 ```
 
-`code_review_loop.cli:main` remains the entry point throughout (it becomes a
-re-export, then the registry dispatcher). The library/driver split is proven
-in Wave D by a **headless, non-CLI test driver** that builds a `RunContext`
-and calls `core.engine.run` directly — **not** by rewiring `tui.py` into the
-execution path at runtime. The TUI's runtime role is unchanged this phase
-(it stays a control panel and artifact viewer, per the `REVREM-TASK-002`
-"no second execution engine" constraint); making the engine *drivable by* a
-non-CLI caller is the deliverable, and lifting the TUI into execution is a
-later, separately-gated milestone. See Wave D for the exact scope boundary.
+`code_review_loop.cli.main:main` is the command entry point; the supported
+programmatic entry point is `code_review_loop.application.run_review_loop`.
+The library/driver split is proven in Wave D at two levels: a **headless
+application driver** that calls the application API without `argparse`, and a
+**core engine driver** that calls `core.engine.run(state, executor)` with a
+test `EngineExecutor`. This is **not** TUI runtime execution and not a demo
+subcommand. The TUI's runtime role is unchanged this phase (it stays a control
+panel and artifact viewer, per the `REVREM-TASK-002` "no second execution
+engine" constraint); making the engine and application *drivable by* non-CLI
+callers is the deliverable, and lifting the TUI into execution is a later,
+separately-gated milestone. See Wave D for the exact scope boundary.
 
 ### `policy.py` cannot enter the core "unchanged" — and won't
 
@@ -586,7 +601,7 @@ A0 baseline + public-surface pin + import-linter scaffold
               └─> C1 command registry + slim main()
                     └─> C2 config-assembly + arg-parsing units
                           └─> C3 DELETE facade + split test_cli.py + enforce gates
-                                └─> D1 prove leverage (engine drivable headless; acceptance scenarios)
+                                └─> D prove leverage (headless SDK, shell seam, extensibility acceptance)
                                       └─> E1+ (SEQUEL) events-as-source-of-truth folds
 ```
 
@@ -610,7 +625,7 @@ Wave E is a named sequel, not part of this task's exit criteria.
 | C1 | REVREM-DEVEX-001 | `if/elif` dispatch ladder | — | Add subcommand w/o central edit |
 | C2 | REVREM-DEVEX-001 | Config assembly in God object | — | Isolated front-end |
 | C3 | REVREM-TEST-001 | 6,121-line test monolith; facade | C1 sunset, C2 zero | Tests mirror modules |
-| D1 | REVREM-PLAN-002 | "Library trapped in driver" | — | Engine drivable by non-CLI caller (TUI/SDK-ready) |
+| D | REVREM-PLAN-002 | "Library trapped in driver" | Application/headless acceptance | Engine and application drivable by non-CLI callers (TUI/SDK-ready) |
 
 ## Code / Tests / Docs Alignment
 
@@ -814,11 +829,14 @@ them.
 - *Risk:* low — pure functions and a mechanical DTO move; the only hazard is a
   missed re-export, caught by the import-from-final-home test.
 
-**B2. `Phase` protocol + five executors as ports** (C2)
+**B2. Typed phase ports + five executors** (C2)
 - *Intent:* finish the abandoned DI; retire the internal monkeypatches.
-- *Changes:* define `Harness`/`PhaseOutcome`; convert `run_codex_review`,
+- *Changes:* define per-phase request/outcome types and per-phase harness
+  protocols (`ReviewHarness`, `TriageHarness`, `RemediationHarness`,
+  `ChecksHarness`, `CommitHarness`); convert `run_codex_review`,
   `run_remediation`, `run_triage`, `run_checks`, `run_commit` to phase units
-  invoked via `ctx`; split each into pure `decide` + effectful `execute`.
+  invoked via `ctx`. Keep phase results typed to the real phase shape rather
+  than forcing a generic umbrella outcome.
 - *Tests:* migrate phase tests to fake harnesses; **delete** the
   corresponding `monkeypatch.setattr(MODULE,…)` sites; burn-down line in PR.
 - *Exit:* engine calls phases through `ctx`, not globals.
@@ -1027,7 +1045,7 @@ Treat that commit as a green checkpoint, not the Wave C finish line.
 
 **Required remediation before declaring Wave C done.**
 
-1. DONE in remediation: ``core.engine.run(state, ctx)`` exists as a
+1. DONE in remediation: ``core.engine.run(state, executor)`` exists as a
    dependency-free orchestration path over ``decide`` plus an injected
    executor, and the production runner consumes it for phase decisions instead
    of calling ``decide()`` directly.
@@ -1410,38 +1428,132 @@ Run all PRs with the golden-master suite after each.
 
 ### Wave D — Prove Leverage
 
-**D1. Demonstrate the library/driver split**
+Wave C made the architecture real; Wave D is the demonstration suite. It should
+not add demo-only production features. It should prove, with executable
+acceptance tests and ratchets, that the seams created in Waves A-C are useful
+to a caller that is not the CLI.
 
-*Intent:* prove the thesis with executable tests, not assertions. The engine
-must demonstrably be drivable by a non-CLI caller.
+**As-built state entering Wave D (2026-05-26).**
 
-*As-built state entering D1:* `core/` has no `argparse`, no terminal, no CLI
-import (import-linter enforces this). `adapters/` are real implementations.
-`cli.py` is the thin driver. Monkeypatch count is 0.
+- `code_review_loop.application.run_review_loop()` and `resume_review_loop()`
+  are the supported non-CLI execution surface and return `ReviewLoopResult`.
+- `core.engine.run(state, executor)` is dependency-free and takes an
+  `EngineExecutor`, not a `RunContext`.
+- `runner_shell.py` owns the side-effectful action executor for production
+  loop iterations; `runner.py` owns session setup/preflight/cancellation and
+  summary finalization.
+- Subprocess execution, terminal control, resume Git snapshots, and resume
+  payload construction now live outside `runner.py`
+  (`adapters.subprocess_runner`, `adapters.terminal`, `adapters.git`,
+  `resume.py`). `runner.py` is under the current `<800` ratchet.
+- The CLI command registry still lives in `cli/main.py`; proving subcommand
+  extensibility should improve that real seam, not add a throwaway `noop`
+  command.
+
+**D1. SDK/headless acceptance harness**
+
+*Intent:* prove the supported application boundary is useful without `argparse`,
+terminal state, or real subprocesses.
 
 - **Changes:**
-  1. Add `tests/support/headless.py`: a helper that builds a `RunContext` with
-     `FakeClock`, `FakeRunIdentity`, `FakeRunner` (from `tests/support/fakes.py`),
-     and fake adapters for all five phases, then calls
-     `core.engine.run(state, ctx)` directly without `argparse`. This is the
-     SDK-style driver that proves the engine is available to non-CLI callers.
-  2. Add `tests/test_integration_headless.py`: uses `headless.py` to drive a
-     full loop (review → triage → remediation → checks → commit) end-to-end
-     with fakes, asserting the correct `RunOutcome` is returned. No `argparse`,
-     no real subprocess, no terminal.
-  3. Add `tests/test_leverage_subcommand.py`: add a no-op subcommand
-     (`revrem noop`) by creating `cli/commands/noop.py` and one entry in
-     `_SUBCOMMANDS`; test that `main(["noop"])` returns 0 and that the only
-     files touched were `noop.py` + the registry.
-  4. Add `tests/test_leverage_heuristic.py`: construct a `RunContext` with a
-     fake `ReviewHarness` that returns `ReviewOutcome(status="findings", …)`;
-     run the engine; assert the loop terminates with `OutcomeFindings`. This
-     proves swapping a heuristic/harness requires no change to the core.
+  1. Add `tests/support/headless.py` with a small `HeadlessRun` builder that
+     accepts a `LoopConfig`, fake `ProcessRunner`, `FakeClock`,
+     `FakeRunIdentity`, optional `BudgetState`, and optional phase harness
+     overrides. It calls `application.run_review_loop()` and returns
+     `ReviewLoopResult`.
+  2. Add `tests/test_application_headless_integration.py` with SDK-style
+     scenarios:
+     - clear review exits with `ReviewLoopResult.final_status == "clear"`;
+     - findings → remediation → checks → final review exits clear;
+     - check failures carry into the next iteration without touching the CLI;
+     - budget/cancellation failures raise `RunLoopFailed` with the same summary
+       contract as the CLI.
+  3. Assert the headless scenarios do not import `code_review_loop.cli`,
+     `argparse`, or `subprocess_runner.default_runner`; fake process runners
+     must be explicit.
+- **Exit:** a non-CLI caller can execute and resume a bounded run through the
+  application API, inspect `ReviewLoopResult`, and serialize via `to_dict()`.
 
-- *Tests:* (a)–(d) above; import-linter contract passes on `core/`;
-  all A2 golden masters still hold.
-- *Exit:* all ten Phase Exit Criteria demonstrably met (see below).
-- *Risk:* low — mostly verification of work done in Waves A–C.
+**D2. Core engine acceptance harness**
+
+*Intent:* prove the pure engine remains independently reusable after the
+production shell moved to `runner_shell.py`.
+
+- **Changes:**
+  1. Add a reusable `RecordingEngineExecutor` test helper that implements
+     `EngineExecutor` and maps each non-terminal `Action` to the next
+     `EngineState`.
+  2. Extend `tests/test_engine_run.py` or add `tests/test_engine_acceptance.py`
+     with complete transition traces covering:
+     - review clear terminal path;
+     - review findings → triage → remediation → checks → final review;
+     - commit hook retry via `RetryViaCommitHook`;
+     - no-final-review exhaustion via `NoFinalReview`;
+     - step-limit fail-closed behavior.
+  3. For each trace, assert both the final `RunOutcome` and the exact action
+     sequence. These tests should import only `code_review_loop.core.*`.
+- **Exit:** a reviewer can see the state machine run without CLI, adapters,
+  terminal, filesystem, subprocesses, or `RunContext`.
+
+**D3. Runner-shell acceptance without CLI**
+
+*Intent:* prove production phase orchestration is not trapped in CLI command
+parsing while still testing the real runner-shell executor.
+
+- **Changes:**
+  1. Add `tests/test_runner_shell_acceptance.py` that constructs `RunState`,
+     `ConfigSnapshot`, `RunContext`, and fake phase harnesses, then calls
+     `runner_shell.run_iterations(...)` directly.
+  2. Cover one happy path and one retry/failure path; assert emitted events,
+     iteration records, routing artifacts where applicable, and the returned
+     `RunnerShellResult`.
+  3. Add a ratchet that `runner_shell.py` imports neither `cli` nor `runner`
+     and that runner-shell tests do not monkeypatch module globals.
+- **Exit:** the production action executor is reusable by a future TUI/SDK
+  orchestration layer without going through CLI parsing.
+
+**D4. Extensibility acceptance**
+
+*Intent:* demonstrate leverage with real seams rather than toy production
+commands.
+
+- **Changes:**
+  1. Move the command registry table from `cli/main.py` into
+     `cli/commands/__init__.py` or a dedicated `cli/commands/registry.py`.
+     `cli/main.py` should ask the registry for a handler and remain closed to
+     new subcommands.
+  2. Add an architecture test that adding a command requires no edit to
+     `cli/main.py`; pin this by asserting no concrete subcommand names appear
+     in `cli/main.py`.
+  3. Add a harness-swap acceptance test using an alternate fake
+     `ReviewHarness` or `ProcessRunner` through `tests/support/headless.py`.
+     The test must prove heuristic/phase behavior can change without editing
+     `core.engine`, `runner.py`, or `cli/main.py`.
+- **Exit:** "add a subcommand" and "swap review behavior" are demonstrated
+  against real extension points and guarded by tests.
+
+**D5. Public-review evidence pack**
+
+*Intent:* make the architecture easy to evaluate without reading the whole
+history.
+
+- **Changes:**
+  1. Add a compact `docs/45-adr/adr-012` appendix or task-doc section with a
+     dependency diagram for `cli -> application -> runner/session ->
+     runner_shell -> core.engine`, plus adapters below the application shell.
+  2. Refresh the Wave D evidence block with measured line counts, test counts,
+     import-linter status, and CodeRabbit result.
+  3. Add one "how to review this" checklist: application API, engine purity,
+     runner-shell ownership, adapter ownership, and DocOps/golden-master gates.
+- **Exit:** an adversarial reviewer can verify the leverage claims from named
+  tests and ratchets rather than trusting prose.
+
+- *Tests:* D1-D4 plus `ruff check .`, `mypy src`, `lint-imports`,
+  `uv run --locked meminit check --format json`, and full `pytest -q`.
+- *Exit:* all Phase Exit Criteria below are demonstrably met by named tests or
+  import-linter contracts.
+- *Risk:* low to medium. Most work is acceptance coverage and ratchets; the
+  only code movement is the command-registry relocation in D4.
 
 ### Wave E — Sequel (named, not in this task's exit criteria)
 
@@ -1451,29 +1563,28 @@ deleting the parallel bookkeeping. Designed-for by A3/B3 (typed state, event
 emission already on the stream) but staged so the core refactor is not
 blocked. Carries its own spec when scheduled.
 
-The 11 `_resume_*` helpers moved to `cli/commands/resume.py` in C1a are the
-primary target: once `RunState.from_dict(summary)` can reconstruct all loop
-state from the summary artifact, the bespoke deserialisers are deleted. The
-symmetry between `RunState.to_dict()` (A3) and `RunState.from_dict()`
-(E1) is the design goal.
+The `_resume_*` helpers now live in `resume.py`, alongside
+`resume_config_payload()` and resume precondition checks. They are the primary
+target for Wave E: once `RunState.from_dict(summary)` can reconstruct all loop
+state from the summary artifact or event stream, the bespoke deserialisers are
+deleted. The symmetry between `RunState.to_dict()` (A3) and
+`RunState.from_dict()` (E1) is the design goal.
 
-## Test Monolith Decomposition (`tests/test_cli.py`, 6,121 lines)
+## Test Decomposition State
 
-The test file is a co-symptom and is dismantled *as the seams land*, not in a
-separate cleanup:
+The original CLI test monolith has been dismantled. `tests/test_cli.py` is now
+a tiny compatibility smoke surface, config/profile/history coverage is split
+across behavior-focused files, and runner/engine/adapter tests target their
+canonical module homes. Wave D should not reopen the monolith.
 
-- **During A2:** new behaviour is pinned by golden-master + fakes, not by
-  reaching into internals.
-- **During B2/B3/B4:** every retired monkeypatch deletes or rewrites its
-  test to use fake ports / value-based assertions (C2 ratchet enforces no
-  regression).
-- **During C3:** the residue splits to mirror modules:
-  `test_review_interpretation.py` (fixture corpus),
-  `test_engine.py` (pure `decide` + loop transitions with fakes),
-  `test_phase_*.py`, `test_<subcommand>.py`, and a thin
-  `test_cli_e2e.py` for golden `main()` paths.
-- **End state:** the 64-symbol / `MODULE.X` reach-in shrinks to the intended
-  public API; no test imports an engine internal.
+- **For application leverage:** add headless SDK scenarios under a dedicated
+  application/headless test module.
+- **For core leverage:** keep pure engine traces in engine-only tests that
+  import `code_review_loop.core.*`.
+- **For shell leverage:** test `runner_shell.py` directly with fake phase
+  harnesses and no CLI imports.
+- **For extensibility:** add architecture ratchets rather than new production
+  demo commands.
 
 ## Phase Exit Criteria — leverage, not line count
 
@@ -1481,15 +1592,21 @@ The task is complete when **all** hold:
 
 1. **Core is dependency-free.** `import-linter` proves `core/` imports no
    `argparse`, no `adapters/*`, no `cli/*`, no terminal, no `tui`. (C4)
-2. **Engine is drivable without the CLI.** A test constructs a `RunContext`
-   and runs a full loop with fakes, no `argparse` and no real subprocess.
-3. **The engine is drivable by a non-CLI caller** — a headless integration
-   test runs a full loop through a `RunContext`, proving the core is
-   *available* to the TUI/SDK. (Wiring the TUI into execution at runtime is
-   out of scope while the `REVREM-TASK-002` "no second execution engine"
-   constraint holds; D1.)
-4. **Adding a subcommand or swapping a heuristic is a one-module change**,
-   demonstrated by acceptance tests (D1).
+2. **Engine is drivable without the CLI.** A test constructs
+   `EngineState` plus an `EngineExecutor` and runs `core.engine.run()` through
+   full transition traces with no `argparse`, adapters, terminal, filesystem,
+   subprocesses, or `RunContext`.
+3. **The application is drivable by a non-CLI caller** — a headless
+   integration test runs a bounded loop through
+   `application.run_review_loop()` with fake process runners and deterministic
+   collaborators, proving the supported surface is available to TUI/SDK
+   callers. (Wiring the TUI into execution at runtime is out of scope while
+   the `REVREM-TASK-002` "no second execution engine" constraint holds; D1.)
+4. **Adding a subcommand or swapping review behavior is an extension-point
+   change**, demonstrated by acceptance tests and ratchets: command dispatch is
+   closed to concrete subcommand names in `cli/main.py`, and review behavior can
+   change through a fake `ReviewHarness`/`ProcessRunner` without editing
+   `core.engine`, `runner.py`, or `cli/main.py`.
 5. **Monkeypatch count is 0** (C2 ratchet) and the facade is deleted (C1).
 6. **Exits are exhaustive.** `RunOutcome → exit_code` is total and
    `mypy`-checked; every code has a reachability test (C5).
@@ -1503,13 +1620,16 @@ Line-count and function-length guardrails (modules < 600, functions ≤ 40)
 are *checked but advisory*: a justified exception in a PR body is acceptable;
 a coupling or cycle violation is not.
 
-**Wave C closeout note (2026-05-25):** the supported non-CLI execution surface
+**Wave C closeout note (2026-05-26):** the supported non-CLI execution surface
 is `code_review_loop.application.run_review_loop()` /
-`resume_review_loop()`. The core engine owns dependency-free transitions via
-`decide()` and drives execution through `run()` with injected executors. The
-production runner uses `core.engine.run()` directly, does not call `decide()`
-directly, and does not use a one-step `run(max_steps=1)` capture bridge to
-obtain actions.
+`resume_review_loop()`, returning `ReviewLoopResult`. The core engine owns
+dependency-free transitions via `decide()` and drives execution through
+`run()` with injected `EngineExecutor`s. Production phase execution lives in
+`runner_shell.py`; `runner.py` is a private session shell and no longer owns
+subprocess execution, terminal title/control, resume Git snapshots, or resume
+payload construction. The production runner uses `core.engine.run()` directly,
+does not call `decide()` directly, and does not use a one-step
+`run(max_steps=1)` capture bridge to obtain actions.
 
 ## Adversarial-Review Anticipation
 
@@ -1537,18 +1657,14 @@ Pre-empting the sharp questions a reviewer will (rightly) ask:
   work (B2/B3) happens mid-programme behind the A-wave net, not as a final
   cutover. C3 is mechanical and last.
 
-## Open Questions
+## Resolved Planning Questions
 
-- Final package shape: `core/` + `adapters/` + `cli/` subpackages vs. flat
-  modules with naming discipline. (Leaning subpackages for the import-linter
-  contract clarity; confirm at B0.)
-- Exact home for `CommandResult` (a port-adjacent value type): `core/ports.py`
-  vs. a dedicated `core/types.py`. (Cosmetic; decide at B0.)
-- **`_run_loop` full-read is resolved into a B3a gate, not left open.** This
-  plan was written from a sampling of `_run_loop` (1994–2610, with the
-  budget-retry tail ~line 2392 read in outline only), which is acceptable for
-  a *plan* but not for *implementation*. Rather than leave it as a risk, B3a
-  now **mandates** a line-by-line read plus a committed branch → transition →
-  outcome table as its first deliverable (see Wave B3a). The B3 risk rating
-  already assumes control-flow surprises in the tail; the gate forces them to
-  surface before B3b/B3c build on the state-machine shape.
+- **Package shape:** Wave C landed the `core/` + `adapters/` + `cli/`
+  subpackage shape, with `application.py`, `runner.py`, `runner_shell.py`,
+  `resume.py`, and `runtime.py` as deliberately named shell modules.
+- **`CommandResult` home:** Wave C kept it in `core/ports.py` with the other
+  port-adjacent values.
+- **`_run_loop` full-read risk:** resolved by the B3a behaviour ledger and the
+  Wave C extraction into `core.engine`, `runner_shell.py`, and the private
+  session runner. Wave D now verifies the resulting leverage instead of
+  reopening the old monolith.
