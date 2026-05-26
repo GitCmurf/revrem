@@ -1433,6 +1433,15 @@ not add demo-only production features. It should prove, with executable
 acceptance tests and ratchets, that the seams created in Waves A-C are useful
 to a caller that is not the CLI.
 
+**Status (2026-05-26): not started.** No D-wave PR has landed; the as-built
+block below is the *baseline* Wave D enters with.
+
+**Per-wave discipline.** Each sub-wave names (a) the **Phase Exit Criterion** it
+discharges, (b) the **contracts** (C1–C7) it consumes, and (c) the **enforcement
+mechanism** for any "must not import X" claim — concretely, the import-linter
+contract id added to `pyproject.toml`. "Tests assert it" is not acceptable for a
+dependency-rule claim; the architecture is enforced or it is decoration.
+
 **As-built state entering Wave D (2026-05-26).**
 
 - `code_review_loop.application.run_review_loop()` and `resume_review_loop()`
@@ -1451,6 +1460,7 @@ to a caller that is not the CLI.
   command.
 
 **D1. SDK/headless acceptance harness**
+(satisfies Exit Criterion #3; consumes C4, C7)
 
 *Intent:* prove the supported application boundary is useful without `argparse`,
 terminal state, or real subprocesses.
@@ -1462,19 +1472,31 @@ terminal state, or real subprocesses.
      overrides. It calls `application.run_review_loop()` and returns
      `ReviewLoopResult`.
   2. Add `tests/test_application_headless_integration.py` with SDK-style
-     scenarios:
-     - clear review exits with `ReviewLoopResult.final_status == "clear"`;
-     - findings → remediation → checks → final review exits clear;
-     - check failures carry into the next iteration without touching the CLI;
-     - budget/cancellation failures raise `RunLoopFailed` with the same summary
-       contract as the CLI.
-  3. Assert the headless scenarios do not import `code_review_loop.cli`,
-     `argparse`, or `subprocess_runner.default_runner`; fake process runners
-     must be explicit.
+     scenarios — one per `RunOutcome` variant, so the headless surface is
+     proven exhaustive against C5:
+     - **Clear** — review exits with `ReviewLoopResult.final_status == "clear"`;
+     - **Findings → remediation → checks → final review** exits clear;
+     - **Check failures** carry into the next iteration without touching the CLI;
+     - **Setup failure** (`OutcomeFailed(reason="setup_failed")`) raises
+       `RunLoopFailed` with a `final_status == "setup_failed"` summary;
+     - **Budget ceiling** raises `RunLoopFailed` with `final_status ==
+       "budget_ceiling_hit"`;
+     - **Cancellation** raises `RunLoopFailed` with `final_status ==
+       "cancelled"`. (The matching of variants to summaries is the C3 machine
+       contract; any deviation is a ledgered change.)
+  3. **Enforcement (not assertion).** Add an import-linter contract
+     `headless-application-isolation`: the modules
+     `tests/support/headless.py` and `tests/test_application_headless_integration.py`
+     **forbid** imports of `code_review_loop.cli`, `argparse`, and
+     `code_review_loop.adapters.subprocess_runner.default_runner`. Fake process
+     runners must be explicit at construction. The contract lives in
+     `pyproject.toml` and is required in CI.
 - **Exit:** a non-CLI caller can execute and resume a bounded run through the
-  application API, inspect `ReviewLoopResult`, and serialize via `to_dict()`.
+  application API, inspect `ReviewLoopResult`, and serialize via `to_dict()`;
+  the import-linter contract is green.
 
 **D2. Core engine acceptance harness**
+(satisfies Exit Criterion #2; consumes C4, C5)
 
 *Intent:* prove the pure engine remains independently reusable after the
 production shell moved to `runner_shell.py`.
@@ -1491,11 +1513,20 @@ production shell moved to `runner_shell.py`.
      - no-final-review exhaustion via `NoFinalReview`;
      - step-limit fail-closed behavior.
   3. For each trace, assert both the final `RunOutcome` and the exact action
-     sequence. These tests should import only `code_review_loop.core.*`.
+     sequence.
+  4. **Enforcement.** Add an import-linter contract `engine-acceptance-purity`:
+     the engine-acceptance test module forbids imports of
+     `code_review_loop.cli`, `code_review_loop.adapters.*`,
+     `code_review_loop.runner`, `code_review_loop.runner_shell`,
+     `code_review_loop.application`, and `code_review_loop.tui`. Only
+     `code_review_loop.core.*` and `tests/support/*` are permitted. CI-required.
 - **Exit:** a reviewer can see the state machine run without CLI, adapters,
-  terminal, filesystem, subprocesses, or `RunContext`.
+  terminal, filesystem, subprocesses, or `RunContext`; the import-linter
+  contract is green.
 
 **D3. Runner-shell acceptance without CLI**
+(satisfies Exit Criterion #3 jointly with D1, plus the existing runner-engine
+gate; consumes C2, C4, C7)
 
 *Intent:* prove production phase orchestration is not trapped in CLI command
 parsing while still testing the real runner-shell executor.
@@ -1507,53 +1538,84 @@ parsing while still testing the real runner-shell executor.
   2. Cover one happy path and one retry/failure path; assert emitted events,
      iteration records, routing artifacts where applicable, and the returned
      `RunnerShellResult`.
-  3. Add a ratchet that `runner_shell.py` imports neither `cli` nor `runner`
-     and that runner-shell tests do not monkeypatch module globals.
+  3. **Enforcement.** Extend the existing import-linter contract that already
+     forbids `adapters/* → cli/runner` (per C3a remediation) with a sibling
+     `runner-shell-isolation` rule: `code_review_loop.runner_shell` may not
+     import `code_review_loop.cli` or `code_review_loop.runner`. Also extend
+     the C2 ratchet (`tests/test_monkeypatch_ratchet.py`) so that the new
+     runner-shell test module is in scope (the ratchet currently asserts the
+     project-wide `MODULE` count is 0; this ensures no regression slips in
+     through the new module).
 - **Exit:** the production action executor is reusable by a future TUI/SDK
-  orchestration layer without going through CLI parsing.
+  orchestration layer without going through CLI parsing; both contracts green.
 
 **D4. Extensibility acceptance**
+(satisfies Exit Criterion #4; consumes C1, C4)
 
 *Intent:* demonstrate leverage with real seams rather than toy production
 commands.
 
 - **Changes:**
-  1. Move the command registry table from `cli/main.py` into
-     `cli/commands/__init__.py` or a dedicated `cli/commands/registry.py`.
-     `cli/main.py` should ask the registry for a handler and remain closed to
-     new subcommands.
-  2. Add an architecture test that adding a command requires no edit to
-     `cli/main.py`; pin this by asserting no concrete subcommand names appear
-     in `cli/main.py`.
+  1. Move the command registry table from `cli/main.py` into a dedicated
+     `cli/commands/registry.py`. `cli/main.py` should ask the registry for a
+     handler and remain closed to new subcommands. **The current `"ui" →
+     tui.main` entry moves with the rest** — `cli/main.py` must not retain a
+     concrete name for it. The `tui` import that this requires (the registry
+     module will import `from code_review_loop import tui`) is the **one
+     allowed concrete coupling** in the driver layer; record it in the registry
+     module's module docstring and in the behavior ledger so a reviewer is not
+     confused by the apparent exception.
+  2. Add an architecture test (`tests/test_cli_main_is_closed.py`) that pins
+     the closure: grep `cli/main.py` for the set of subcommand names listed in
+     the registry and fail if any concrete name appears outside an import line.
+     This is a grep-gate, not a Python introspection trick — easier to audit
+     and survives renames.
   3. Add a harness-swap acceptance test using an alternate fake
      `ReviewHarness` or `ProcessRunner` through `tests/support/headless.py`.
      The test must prove heuristic/phase behavior can change without editing
-     `core.engine`, `runner.py`, or `cli/main.py`.
+     `core.engine`, `runner.py`, `runner_shell.py`, or `cli/main.py`. (The
+     listed modules become the architecturally-closed set; the test's edit-set
+     is the *open* set, demonstrating the seam.)
+- **Risk note:** this is the only D-wave that moves production code. Land the
+  registry relocation in its own commit ahead of the architecture test, so a
+  failure in either is easy to isolate. A2 golden masters must be byte-identical
+  across the relocation.
 - **Exit:** "add a subcommand" and "swap review behavior" are demonstrated
-  against real extension points and guarded by tests.
+  against real extension points and guarded by tests; `cli/main.py` carries
+  no concrete subcommand name.
 
 **D5. Public-review evidence pack**
+(supports all criteria; consumes C3)
 
 *Intent:* make the architecture easy to evaluate without reading the whole
-history.
+history. This wave produces *evidence*, not new architecture — its discipline
+is reproducibility, not narrative.
 
 - **Changes:**
-  1. Add a compact `docs/45-adr/adr-012` appendix or task-doc section with a
-     dependency diagram for `cli -> application -> runner/session ->
-     runner_shell -> core.engine`, plus adapters below the application shell.
-  2. Refresh the Wave D evidence block with measured line counts, test counts,
-     import-linter status, and CodeRabbit result.
-  3. Add one "how to review this" checklist: application API, engine purity,
-     runner-shell ownership, adapter ownership, and DocOps/golden-master gates.
-- **Exit:** an adversarial reviewer can verify the leverage claims from named
-  tests and ratchets rather than trusting prose.
-
-- *Tests:* D1-D4 plus `ruff check .`, `mypy src`, `lint-imports`,
-  `uv run --locked meminit check --format json`, and full `pytest -q`.
-- *Exit:* all Phase Exit Criteria below are demonstrably met by named tests or
-  import-linter contracts.
-- *Risk:* low to medium. Most work is acceptance coverage and ratchets; the
-  only code movement is the command-registry relocation in D4.
+  1. **Extend** `docs/45-adr/adr-012-review-loop-application-boundary-and-engine-ownership.md`
+     (which already exists from the C3a remediation — do not create a new
+     ADR) with a Wave-D appendix containing a dependency diagram for
+     `cli → application → runner → runner_shell → core.engine`, plus
+     adapters drawn below the application shell. ASCII diagram is sufficient;
+     don't introduce a new diagram tool.
+  2. Add an `## As-Built State at Wave D Exit` block to this document (mirroring
+     the `## As-Built State at Wave C Start` block), with each measurement
+     backed by a runnable command — at minimum: `wc -l` of the surviving
+     `cli/main.py`, `runner.py`, `runner_shell.py`, and `core/engine.py`; the
+     count of import-linter contracts; the count of D1/D2/D3 acceptance tests;
+     and the C2 ratchet baseline (must still be 0). Numbers without commands
+     are not acceptable evidence — the C-baseline block sets the standard.
+  3. Add a **"How to verify the leverage claims" checklist** as a top-level
+     section in this document: one line per Exit Criterion, naming the test
+     file or import-linter contract that proves it. A reviewer should be able
+     to spot-check the architecture in under ten minutes by following the
+     checklist; that is the bar.
+- *Tests:* D1-D4 plus the full gate suite: `ruff check .`, `mypy src`,
+  `lint-imports`, `uv run --locked meminit check --format json`, and `pytest -q`.
+- *Exit:* an adversarial reviewer can verify the leverage claims from named
+  tests and ratchets rather than trusting prose; all Phase Exit Criteria below
+  are demonstrably met by a named test, import-linter contract, or grep-gate.
+- *Risk:* low. Documentation and one new section in an existing ADR.
 
 ### Wave E — Sequel (named, not in this task's exit criteria)
 
@@ -1606,7 +1668,7 @@ The task is complete when **all** hold:
    change**, demonstrated by acceptance tests and ratchets: command dispatch is
    closed to concrete subcommand names in `cli/main.py`, and review behavior can
    change through a fake `ReviewHarness`/`ProcessRunner` without editing
-   `core.engine`, `runner.py`, or `cli/main.py`.
+   `core.engine`, `runner.py`, `runner_shell.py`, or `cli/main.py`.
 5. **Monkeypatch count is 0** (C2 ratchet) and the facade is deleted (C1).
 6. **Exits are exhaustive.** `RunOutcome → exit_code` is total and
    `mypy`-checked; every code has a reachability test (C5).
