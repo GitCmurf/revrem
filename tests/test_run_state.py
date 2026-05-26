@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+from typing import cast
+
+import pytest
+
 from code_review_loop.core.outcome import (
     OutcomeClear,
     OutcomeFailed,
     OutcomeFindings,
     OutcomeUnknown,
+    RunOutcome,
 )
 from code_review_loop.core.state import RunState
 
@@ -68,6 +73,13 @@ def test_mark_outcome_findings_and_unknown_preserve_terminal_status() -> None:
     unknown.mark_outcome(OutcomeUnknown(reason="max_iterations_reached"))
     assert unknown.to_dict()["final_status"] == "unknown"
     assert unknown.to_dict()["stopped_reason"] == "max_iterations_reached"
+
+
+def test_mark_outcome_fails_closed_for_unhandled_outcome_variant() -> None:
+    state = _state()
+
+    with pytest.raises(AssertionError):
+        state.mark_outcome(cast("RunOutcome", object()))
 
 
 def test_to_dict_is_a_projection_not_the_state_source() -> None:

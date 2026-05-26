@@ -216,8 +216,7 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         **parse_harness_bin_overrides(args.harness_bin),
     }
     max_iterations = pick(args.max_iterations, profile.pipeline.max_iterations, 2)
-    if args.max_iterations is not None:
-        max_iterations = resolve_max_iterations(max_iterations)
+    max_iterations = resolve_max_iterations(max_iterations)
     config = LoopConfig(
         base=pick(args.base, profile.pipeline.base, "main"),
         max_iterations=max_iterations,

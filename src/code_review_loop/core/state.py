@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import assert_never
 
 from code_review_loop.core.outcome import (
     OutcomeClear,
@@ -109,6 +110,8 @@ class RunState:
         check_failures: bool = False,
     ) -> None:
         """Apply one terminal outcome to the summary projection."""
+        if not isinstance(outcome, (OutcomeClear, OutcomeFailed, OutcomeFindings, OutcomeUnknown)):
+            assert_never(outcome)
         self.set_stopped_reason(outcome.reason)
         if check_failures:
             self.set_pending_check_failures(True)
