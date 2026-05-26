@@ -17,6 +17,14 @@ from code_review_loop.cli.config_builder import (
 from code_review_loop.core.outcome import outcome_to_exit_code
 
 
+def _summary_dict(result: object) -> dict[str, object]:
+    if hasattr(result, "to_dict"):
+        return result.to_dict()  # type: ignore[no-any-return, attr-defined]
+    if isinstance(result, dict):
+        return result
+    raise TypeError("application result must provide to_dict()")
+
+
 def _build_subcommand_registry() -> dict[str, Callable[[Sequence[str]], int]]:
     from code_review_loop import tui as _tui
     from code_review_loop.cli.commands import (
@@ -90,7 +98,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     try:
-        summary = application.run_review_loop(config)
+        result = application.run_review_loop(config)
+        summary = _summary_dict(result)
     except application.RunLoopFailed as exc:
         summary = exc.summary
         if not args.dry_run and not args.no_run_history and summary.get("run_id"):

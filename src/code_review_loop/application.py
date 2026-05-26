@@ -2,44 +2,71 @@
 
 This module is the non-CLI entrypoint for callers that want to execute or
 resume a review loop without depending on command parsing or terminal command
-modules. The current implementation delegates to the runner while ownership is
-being moved behind this boundary.
+modules.
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
 from code_review_loop import budgets, reporting, resume, runner
 from code_review_loop.clock import SYSTEM_CLOCK, Clock
 from code_review_loop.config import LoopConfig
-from code_review_loop.core.ports import CommandResult
+from code_review_loop.core.ports import CommandResult, ProcessRunner
 from code_review_loop.identity import SYSTEM_IDENTITY, RunIdentity
 from code_review_loop.runtime import RunLoopFailed, format_terminal_summary
 
-Runner = runner.Runner
+
+@dataclass(frozen=True)
+class ReviewLoopResult:
+    """Typed application result with an explicit summary projection."""
+
+    summary: Mapping[str, object]
+
+    def to_dict(self) -> dict[str, object]:
+        return dict(self.summary)
+
+    @property
+    def final_status(self) -> object:
+        return self.summary.get("final_status")
+
+    @property
+    def stopped_reason(self) -> object:
+        return self.summary.get("stopped_reason")
+
+    @property
+    def artifact_dir(self) -> object:
+        return self.summary.get("artifact_dir")
+
+    @property
+    def run_id(self) -> object:
+        return self.summary.get("run_id")
 
 
 def run_review_loop(
     config: LoopConfig,
-    process_runner: Runner = runner.default_runner,
+    process_runner: ProcessRunner = runner.default_runner,
     *,
     clock: Clock = SYSTEM_CLOCK,
     identity: RunIdentity = SYSTEM_IDENTITY,
     budget_state: budgets.BudgetState | None = None,
-) -> dict[str, object]:
+) -> ReviewLoopResult:
     """Run one bounded review/remediation loop and return the summary payload."""
-    return runner.run_loop(
-        config,
-        process_runner,
-        clock=clock,
-        identity=identity,
-        budget_state=budget_state,
+    return ReviewLoopResult(
+        runner.run_loop(
+            config,
+            process_runner,
+            clock=clock,
+            identity=identity,
+            budget_state=budget_state,
+        )
     )
 
 
-def resume_review_loop(run_dir: Path, *, cwd: Path | None = None) -> dict[str, object]:
+def resume_review_loop(run_dir: Path, *, cwd: Path | None = None) -> ReviewLoopResult:
     """Resume a previous review loop run from ``run_dir``."""
     summary_path = run_dir / "summary.json"
     try:
@@ -68,7 +95,7 @@ def append_run_history(summary: dict[str, object], config: LoopConfig) -> Path:
 __all__ = [
     "CommandResult",
     "RunLoopFailed",
-    "Runner",
+    "ReviewLoopResult",
     "append_run_history",
     "format_terminal_summary",
     "resume_review_loop",

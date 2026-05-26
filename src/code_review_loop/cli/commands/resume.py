@@ -15,6 +15,14 @@ from code_review_loop.runtime import RunLoopFailed, format_terminal_summary
 from ..outcome import CommandFailed, CommandOk
 
 
+def _summary_dict(result: object) -> dict[str, object]:
+    if hasattr(result, "to_dict"):
+        return result.to_dict()  # type: ignore[no-any-return, attr-defined]
+    if isinstance(result, dict):
+        return result
+    raise TypeError("application result must provide to_dict()")
+
+
 def main(argv: Sequence[str]) -> int:
     args = parse_resume_args(argv)
     run_dir = Path(args.run_dir)
@@ -32,7 +40,8 @@ def main(argv: Sequence[str]) -> int:
         if diagnostics.has_blocking_issue(issues):
             return CommandFailed(exit_code=4).exit_code
     try:
-        summary = application.resume_review_loop(run_dir, cwd=Path.cwd())
+        result = application.resume_review_loop(run_dir, cwd=Path.cwd())
+        summary = _summary_dict(result)
     except RunLoopFailed as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         code = outcome_to_exit_code(exc.outcome) if exc.outcome is not None else 1

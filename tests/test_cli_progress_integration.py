@@ -5,6 +5,7 @@ import re
 
 import code_review_loop.runner as runner_mod
 from code_review_loop.adapters import phase_support
+from code_review_loop.adapters import terminal as terminal_mod
 from code_review_loop.core.ports import RunContext
 from tests.support.fakes import FakeClock, FakeRunIdentity
 from tests.support.phase_harnesses import phase_harness_kwargs
@@ -205,7 +206,7 @@ class TtyBuffer(io.StringIO):
 
 def test_terminal_title_tracks_review_and_remediation_phases(tmp_path, monkeypatch):
     stderr = TtyBuffer()
-    monkeypatch.setattr(runner_mod.sys, "stderr", stderr)
+    monkeypatch.setattr(terminal_mod.sys, "stderr", stderr)
     review_outputs = iter(
         [
             "Needs work.\nREVIEW_STATUS: findings\n",
@@ -232,16 +233,16 @@ def test_terminal_title_tracks_review_and_remediation_phases(tmp_path, monkeypat
     output = stderr.getvalue()
 
     assert summary["final_status"] == "clear"
-    assert output.startswith(runner_mod.TERMINAL_TITLE_SAVE)
+    assert output.startswith(terminal_mod.TERMINAL_TITLE_SAVE)
     assert "\033]0;rev 1/2 RevRem\007\033]2;rev 1/2 RevRem\007" in output
     assert "\033]0;rem 1/2 RevRem\007\033]2;rem 1/2 RevRem\007" in output
     assert "\033]0;rev 2/2 RevRem\007\033]2;rev 2/2 RevRem\007" in output
-    assert output.endswith(runner_mod.TERMINAL_TITLE_RESTORE + runner_mod.CURSOR_SHOW)
+    assert output.endswith(terminal_mod.TERMINAL_TITLE_RESTORE + terminal_mod.CURSOR_SHOW)
 
 
 def test_terminal_title_restores_after_remediation_failure(tmp_path, monkeypatch):
     stderr = TtyBuffer()
-    monkeypatch.setattr(runner_mod.sys, "stderr", stderr)
+    monkeypatch.setattr(terminal_mod.sys, "stderr", stderr)
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
@@ -268,14 +269,14 @@ def test_terminal_title_restores_after_remediation_failure(tmp_path, monkeypatch
     output = stderr.getvalue()
     assert "\033]0;rev 1/1 RevRem\007\033]2;rev 1/1 RevRem\007" in output
     assert "\033]0;rem 1/1 RevRem\007\033]2;rem 1/1 RevRem\007" in output
-    assert output.endswith(runner_mod.TERMINAL_TITLE_RESTORE + runner_mod.CURSOR_SHOW)
+    assert output.endswith(terminal_mod.TERMINAL_TITLE_RESTORE + terminal_mod.CURSOR_SHOW)
 
 
 def test_terminal_title_never_writes_to_stdout(tmp_path, monkeypatch):
     stderr = io.StringIO()
     stdout = TtyBuffer()
-    monkeypatch.setattr(runner_mod.sys, "stderr", stderr)
-    monkeypatch.setattr(runner_mod.sys, "stdout", stdout)
+    monkeypatch.setattr(terminal_mod.sys, "stderr", stderr)
+    monkeypatch.setattr(terminal_mod.sys, "stdout", stdout)
     monkeypatch.setattr(runner_mod.Path, "exists", lambda self: False)
 
     config = runner_mod.LoopConfig(
@@ -288,7 +289,7 @@ def test_terminal_title_never_writes_to_stdout(tmp_path, monkeypatch):
         terminal_title=True,
     )
 
-    runner_mod.set_terminal_title(config, "rev 1/1 RevRem")
+    terminal_mod.set_terminal_title(config, "rev 1/1 RevRem")
 
     assert stderr.getvalue() == ""
     assert stdout.getvalue() == ""
@@ -297,8 +298,8 @@ def test_terminal_title_never_writes_to_stdout(tmp_path, monkeypatch):
 def test_terminal_title_is_suppressed_in_rich_mode_to_avoid_escape_leaks(tmp_path, monkeypatch):
     stderr = TtyBuffer()
     tty_sequences = []
-    monkeypatch.setattr(runner_mod.sys, "stderr", stderr)
-    monkeypatch.setattr(runner_mod, "write_terminal_control_to_tty", lambda sequence: tty_sequences.append(sequence) or True)
+    monkeypatch.setattr(terminal_mod.sys, "stderr", stderr)
+    monkeypatch.setattr(terminal_mod, "write_terminal_control_to_tty", lambda sequence: tty_sequences.append(sequence) or True)
     config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
@@ -309,15 +310,15 @@ def test_terminal_title_is_suppressed_in_rich_mode_to_avoid_escape_leaks(tmp_pat
         terminal_title=True,
     )
 
-    with runner_mod.terminal_title_context(config):
-        runner_mod.set_terminal_title(config, "rev 1/1 RevRem")
-        runner_mod.refresh_terminal_title()
+    with terminal_mod.terminal_title_context(config):
+        terminal_mod.set_terminal_title(config, "rev 1/1 RevRem")
+        terminal_mod.refresh_terminal_title()
 
     assert stderr.getvalue() == "".join(
         (
-        runner_mod.TERMINAL_TITLE_SAVE,
-        runner_mod.CURSOR_SHOW,
-        runner_mod.TERMINAL_TITLE_RESTORE,
+        terminal_mod.TERMINAL_TITLE_SAVE,
+        terminal_mod.CURSOR_SHOW,
+        terminal_mod.TERMINAL_TITLE_RESTORE,
         )
     )
     assert tty_sequences == []
@@ -349,7 +350,7 @@ def test_phase_terminal_title_skips_dev_tty_on_windows(tmp_path, monkeypatch):
 
 def test_terminal_title_context_restores_cursor_on_exit(tmp_path, monkeypatch):
     stderr = TtyBuffer()
-    monkeypatch.setattr(runner_mod.sys, "stderr", stderr)
+    monkeypatch.setattr(terminal_mod.sys, "stderr", stderr)
     config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
@@ -360,12 +361,12 @@ def test_terminal_title_context_restores_cursor_on_exit(tmp_path, monkeypatch):
         terminal_title=True,
     )
 
-    with runner_mod.terminal_title_context(config):
-        runner_mod.set_terminal_title(config, "rev 1/1 RevRem")
+    with terminal_mod.terminal_title_context(config):
+        terminal_mod.set_terminal_title(config, "rev 1/1 RevRem")
 
     output = stderr.getvalue()
-    assert runner_mod.CURSOR_SHOW in output
-    assert output.endswith(runner_mod.TERMINAL_TITLE_RESTORE)
+    assert terminal_mod.CURSOR_SHOW in output
+    assert output.endswith(terminal_mod.TERMINAL_TITLE_RESTORE)
 
 
 def test_progress_warning_context_resets_rich_unavailable_latch(tmp_path, capsys):

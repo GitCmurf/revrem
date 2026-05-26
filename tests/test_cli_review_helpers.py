@@ -9,6 +9,7 @@ from code_review_loop.adapters import remediation as remediation_impl
 from code_review_loop.adapters import review as review_impl
 from code_review_loop.adapters import triage as triage_impl
 from code_review_loop.core.ports import RunContext
+from code_review_loop.core.review_interpretation import detect_review_status
 from tests.support.fakes import FakeClock, FakeRunIdentity
 from tests.support.phase_harnesses import phase_harness_kwargs
 
@@ -25,55 +26,55 @@ def make_run_context(runner) -> RunContext:
 
 
 def test_detect_review_status_prefers_explicit_status_line():
-    assert runner_mod.detect_review_status("Looks good\nREVIEW_STATUS: clear\n") == "clear"
-    assert runner_mod.detect_review_status("One blocker\nREVIEW_STATUS: findings\n") == "findings"
+    assert detect_review_status("Looks good\nREVIEW_STATUS: clear\n") == "clear"
+    assert detect_review_status("One blocker\nREVIEW_STATUS: findings\n") == "findings"
 
 
 def test_detect_review_status_treats_ambiguous_output_as_unknown():
-    assert runner_mod.detect_review_status("This review has a detailed discussion.") == "unknown"
+    assert detect_review_status("This review has a detailed discussion.") == "unknown"
 
 
 def test_detect_review_status_accepts_exact_clear_review_lines():
-    assert runner_mod.detect_review_status("No findings.\n") == "clear"
-    assert runner_mod.detect_review_status("summary\nNo actionable findings\n") == "clear"
+    assert detect_review_status("No findings.\n") == "clear"
+    assert detect_review_status("summary\nNo actionable findings\n") == "clear"
     assert (
-        runner_mod.detect_review_status("I did not find any discrete, actionable bugs in the diff.")
+        detect_review_status("I did not find any discrete, actionable bugs in the diff.")
         == "clear"
     )
     assert (
-        runner_mod.detect_review_status(
+        detect_review_status(
             "I did not find any discrete, actionable correctness issues in the changes."
         )
         == "clear"
     )
     assert (
-        runner_mod.detect_review_status(
+        detect_review_status(
             "I did not find any discrete introduced bug that would break existing behavior."
         )
         == "clear"
     )
     assert (
-        runner_mod.detect_review_status(
+        detect_review_status(
             "I did not find a discrete introduced bug that should block the patch."
         )
         == "clear"
     )
     assert (
-        runner_mod.detect_review_status(
+        detect_review_status(
             "I did not identify any discrete introduced bugs that would block the patch. "
             "The changed code compiles and the repository's dev-check suite passes."
         )
         == "clear"
     )
     assert (
-        runner_mod.detect_review_status(
+        detect_review_status(
             "I did not identify any discrete introduced bugs that should block the patch. "
             "The repository's dev-check suite passes locally."
         )
         == "clear"
     )
     assert (
-        runner_mod.detect_review_status(
+        detect_review_status(
             "The diff was reviewed against the merge base and the changed implementation "
             "has corresponding tests and documentation. I did not identify a discrete "
             "introduced correctness, security, or maintainability issue that should block "
@@ -82,7 +83,7 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
         == "clear"
     )
     assert (
-        runner_mod.detect_review_status(
+        detect_review_status(
             "The changed code and accompanying tests pass the repository's dev-check suite, "
             "and I did not identify any discrete introduced correctness, security, or "
             "maintainability issue that should block the patch."
@@ -90,7 +91,7 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
         == "clear"
     )
     assert (
-        runner_mod.detect_review_status(
+        detect_review_status(
             "The diff was reviewed and the repository verification suite passes. "
             "I did not identify any discrete introduced correctness, security, or "
             "maintainability issues that should block the patch."
@@ -98,25 +99,25 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
         == "clear"
     )
     assert (
-        runner_mod.detect_review_status(
+        detect_review_status(
             "The changes pass locally without revealing any discrete correctness issue."
         )
         == "clear"
     )
     assert (
-        runner_mod.detect_review_status(
+        detect_review_status(
             "I did not identify any actionable correctness, security, or maintainability issues introduced by the diff."
         )
         == "clear"
     )
     assert (
-        runner_mod.detect_review_status(
+        detect_review_status(
             "I did not identify any introduced correctness, security, or maintainability issues that warrant an inline finding."
         )
         == "clear"
     )
     assert (
-        runner_mod.detect_review_status(
+        detect_review_status(
             "I reviewed the diff against the specified merge base and did not identify "
             "any discrete introduced correctness, security, or maintainability issues "
             "that warrant inline findings. The test suite also passes locally."
@@ -124,28 +125,28 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
         == "clear"
     )
     assert (
-        runner_mod.detect_review_status(
+        detect_review_status(
             "I did not identify any blocking defects in this patch. The tests pass."
         )
         == "clear"
     )
     assert (
-        runner_mod.detect_review_status(
+        detect_review_status(
             "I did not find any new regressions in the changed paths."
         )
         == "clear"
     )
     assert (
-        runner_mod.detect_review_status("This would warrant an inline finding.") == "unknown"
+        detect_review_status("This would warrant an inline finding.") == "unknown"
     )
     assert (
-        runner_mod.detect_review_status(
+        detect_review_status(
             "The changes add the alias and tests without any clear regressions or actionable bugs."
         )
         == "clear"
     )
     assert (
-        runner_mod.detect_review_status(
+        detect_review_status(
             '{\n'
             '  "findings": [],\n'
             '  "explanation": "I did not identify any discrete introduced bugs that should '
@@ -155,7 +156,7 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
         == "clear"
     )
     assert (
-        runner_mod.detect_review_status(
+        detect_review_status(
             '{"findings": [], "overall_correctness": "patch is correct"}\n'
         )
         == "clear"
@@ -164,7 +165,7 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
 
 def test_detect_review_status_does_not_generalize_negated_clear_with_findings():
     assert (
-        runner_mod.detect_review_status(
+        detect_review_status(
             "I did not identify any broad design problem.\n\n"
             "Full review comments:\n\n"
             "- [P2] Fix the actual bug — src/example.py:10\n"
@@ -172,14 +173,14 @@ def test_detect_review_status_does_not_generalize_negated_clear_with_findings():
         == "findings"
     )
     assert (
-        runner_mod.detect_review_status(
+        detect_review_status(
             "The patch has a concrete issue. I did not identify any alternative approach.\n"
             "Please fix the failure described above."
         )
         == "unknown"
     )
     assert (
-        runner_mod.detect_review_status(
+        detect_review_status(
             "I did not identify any broad design problem.\n\n"
             "- [P3] Tighten docs — docs/example.md:1\n"
         )
@@ -289,33 +290,33 @@ def test_progress_warning_status_emits_warning_event(tmp_path):
 
 def test_detect_review_status_does_not_treat_scoped_clear_prose_as_clear_when_issue_follows():
     assert (
-        runner_mod.detect_review_status(
+        detect_review_status(
             "I did not find any issue in the docs, but there is a bug in the CLI."
         )
         == "unknown"
     )
     assert (
-        runner_mod.detect_review_status(
+        detect_review_status(
             "I did not find any issue in the docs; however, there is a bug in the CLI."
         )
         == "unknown"
     )
     assert (
-        runner_mod.detect_review_status(
+        detect_review_status(
             "I did not find any discrete issue in the docs.\n\n"
             "However, there is a bug in the parser."
         )
         == "unknown"
     )
     assert (
-        runner_mod.detect_review_status(
+        detect_review_status(
             "I did not find any actionable bugs.\n\n"
             "No validation prevents this regression."
         )
         == "unknown"
     )
     assert (
-        runner_mod.detect_review_status(
+        detect_review_status(
             "I did not identify any introduced correctness, security, or maintainability "
             "issues that warrant an inline finding\n"
             "There is a regression in the parser."
@@ -331,7 +332,7 @@ def test_detect_review_status_ignores_stderr_transcript_noise():
         "tool output mentions review comments and examples like - [P2] historical note\n"
     )
 
-    assert runner_mod.detect_review_status(output) == "clear"
+    assert detect_review_status(output) == "clear"
 
 
 def test_detect_review_status_recognizes_codex_review_findings():
@@ -342,7 +343,7 @@ Full review comments:
 - [P2] Count filtered summaries after filtering — src/example.py:10-12
   This reports misleading data.
 """
-    assert runner_mod.detect_review_status(output) == "findings"
+    assert detect_review_status(output) == "findings"
 
 
 def test_review_status_diagnostics_explain_clear_with_stderr_noise():
@@ -717,9 +718,9 @@ def test_normalize_revrem_conventional_subject_preserves_suffix_when_truncated()
 
 def test_detect_review_status_requires_explicit_status_line():
     """Fuzzy patterns must not flip ambiguous output to clear."""
-    assert runner_mod.detect_review_status("no findings about style, but several about logic") == "unknown"
-    assert runner_mod.detect_review_status("review is clear of syntax errors but not semantic") == "unknown"
-    assert runner_mod.detect_review_status("") == "unknown"
+    assert detect_review_status("no findings about style, but several about logic") == "unknown"
+    assert detect_review_status("review is clear of syntax errors but not semantic") == "unknown"
+    assert detect_review_status("") == "unknown"
 
 
 def test_review_failure_detection_allows_nonzero_findings_without_stderr():

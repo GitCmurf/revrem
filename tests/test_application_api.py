@@ -18,7 +18,7 @@ def test_run_review_loop_is_non_cli_application_entrypoint(tmp_path: Path) -> No
             return CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
         raise AssertionError(f"unexpected command: {args}")
 
-    summary = application.run_review_loop(
+    result = application.run_review_loop(
         LoopConfig(
             base="main",
             max_iterations=1,
@@ -30,9 +30,15 @@ def test_run_review_loop_is_non_cli_application_entrypoint(tmp_path: Path) -> No
         process_runner,
     )
 
-    assert summary["final_status"] == "clear"
-    assert summary["stopped_reason"] == "review_clear"
+    assert result.final_status == "clear"
+    assert result.stopped_reason == "review_clear"
+    assert result.to_dict()["final_status"] == "clear"
     assert [call[1] for call in calls] == ["review"]
+
+
+def test_application_api_does_not_export_runner_alias() -> None:
+    assert "Runner" not in application.__all__
+    assert not hasattr(application, "Runner")
 
 
 def test_resume_review_loop_reports_missing_summary(tmp_path: Path) -> None:

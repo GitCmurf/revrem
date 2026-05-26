@@ -9,6 +9,7 @@ import pytest
 
 import code_review_loop.runner as runner_mod
 from code_review_loop import application
+from code_review_loop.adapters import terminal as terminal_mod
 
 cli_main = import_module("code_review_loop.cli.main")
 
@@ -169,8 +170,8 @@ def test_subprocess_refresh_loop_kills_child_on_interrupt(tmp_path, monkeypatch)
         refresh_calls.append("refresh")
 
     monkeypatch.setattr(runner_mod.subprocess, "Popen", fake_popen)
-    monkeypatch.setattr(runner_mod, "refresh_terminal_title", fake_refresh)
-    monkeypatch.setattr(runner_mod, "TERMINAL_TITLE_REFRESH_SECONDS", 0.01)
+    monkeypatch.setattr(terminal_mod, "refresh_terminal_title", fake_refresh)
+    monkeypatch.setattr(terminal_mod, "TERMINAL_TITLE_REFRESH_SECONDS", 0.01)
 
     with pytest.raises(KeyboardInterrupt):
         runner_mod.run_subprocess_with_terminal_title_refresh(
@@ -254,8 +255,8 @@ def test_subprocess_refresh_loop_does_not_resend_input_after_timeout(tmp_path, m
         refresh_calls.append("refresh")
 
     monkeypatch.setattr(runner_mod.subprocess, "Popen", fake_popen)
-    monkeypatch.setattr(runner_mod, "refresh_terminal_title", fake_refresh)
-    monkeypatch.setattr(runner_mod, "TERMINAL_TITLE_REFRESH_SECONDS", 0.01)
+    monkeypatch.setattr(terminal_mod, "refresh_terminal_title", fake_refresh)
+    monkeypatch.setattr(terminal_mod, "TERMINAL_TITLE_REFRESH_SECONDS", 0.01)
 
     completed = runner_mod.run_subprocess_with_terminal_title_refresh(
         ["codex", "exec"],
@@ -314,8 +315,8 @@ class TtyBuffer(io.StringIO):
 
 def test_default_runner_refreshes_active_terminal_title_during_child_process(tmp_path, monkeypatch):
     stderr = TtyBuffer()
-    monkeypatch.setattr(runner_mod.sys, "stderr", stderr)
-    monkeypatch.setattr(runner_mod, "TERMINAL_TITLE_REFRESH_SECONDS", 0.01)
+    monkeypatch.setattr(terminal_mod.sys, "stderr", stderr)
+    monkeypatch.setattr(terminal_mod, "TERMINAL_TITLE_REFRESH_SECONDS", 0.01)
     config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
@@ -326,11 +327,11 @@ def test_default_runner_refreshes_active_terminal_title_during_child_process(tmp
         terminal_title=True,
     )
 
-    with runner_mod.terminal_title_context(config):
-        runner_mod.set_terminal_title(config, "rev 1/1 RevRem")
+    with terminal_mod.terminal_title_context(config):
+        terminal_mod.set_terminal_title(config, "rev 1/1 RevRem")
         result = runner_mod.default_runner(
             [
-                runner_mod.sys.executable,
+                terminal_mod.sys.executable,
                 "-c",
                 "import time; time.sleep(0.05); print('done')",
             ],
@@ -344,13 +345,13 @@ def test_default_runner_refreshes_active_terminal_title_during_child_process(tmp
     assert result.returncode == 0
     assert result.stdout == "done\n"
     assert output.count(title_sequence) >= 2
-    assert output.endswith(runner_mod.TERMINAL_TITLE_RESTORE)
+    assert output.endswith(terminal_mod.TERMINAL_TITLE_RESTORE)
 
 
 def test_default_runner_does_not_refresh_terminal_title_during_rich_progress(tmp_path, monkeypatch):
     stderr = TtyBuffer()
-    monkeypatch.setattr(runner_mod.sys, "stderr", stderr)
-    monkeypatch.setattr(runner_mod, "TERMINAL_TITLE_REFRESH_SECONDS", 0.01)
+    monkeypatch.setattr(terminal_mod.sys, "stderr", stderr)
+    monkeypatch.setattr(terminal_mod, "TERMINAL_TITLE_REFRESH_SECONDS", 0.01)
     config = runner_mod.LoopConfig(
         base="main",
         max_iterations=1,
@@ -361,11 +362,11 @@ def test_default_runner_does_not_refresh_terminal_title_during_rich_progress(tmp
         terminal_title=True,
     )
 
-    with runner_mod.terminal_title_context(config):
-        runner_mod.set_terminal_title(config, "rev 1/1 RevRem")
+    with terminal_mod.terminal_title_context(config):
+        terminal_mod.set_terminal_title(config, "rev 1/1 RevRem")
         result = runner_mod.default_runner(
             [
-                runner_mod.sys.executable,
+                terminal_mod.sys.executable,
                 "-c",
                 "import time; time.sleep(0.05); print('done')",
             ],
@@ -379,7 +380,7 @@ def test_default_runner_does_not_refresh_terminal_title_during_rich_progress(tmp
     assert result.returncode == 0
     assert result.stdout == "done\n"
     assert title_sequence not in output
-    assert output.endswith(runner_mod.TERMINAL_TITLE_RESTORE)
+    assert output.endswith(terminal_mod.TERMINAL_TITLE_RESTORE)
 
 
 def test_subprocess_refresh_loop_stops_resending_stdin_after_timeout(tmp_path, monkeypatch):
@@ -421,8 +422,8 @@ def test_subprocess_refresh_loop_stops_resending_stdin_after_timeout(tmp_path, m
         refresh_calls.append("refresh")
 
     monkeypatch.setattr(runner_mod.subprocess, "Popen", fake_popen)
-    monkeypatch.setattr(runner_mod, "refresh_terminal_title", fake_refresh)
-    monkeypatch.setattr(runner_mod, "TERMINAL_TITLE_REFRESH_SECONDS", 0.01)
+    monkeypatch.setattr(terminal_mod, "refresh_terminal_title", fake_refresh)
+    monkeypatch.setattr(terminal_mod, "TERMINAL_TITLE_REFRESH_SECONDS", 0.01)
 
     result = runner_mod.run_subprocess_with_terminal_title_refresh(
         ["codex", "exec"],

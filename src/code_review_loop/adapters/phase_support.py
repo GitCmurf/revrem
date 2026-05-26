@@ -386,6 +386,28 @@ def progress_event(config: LoopConfig, phase: str, label: str, status: str, deta
         print_compact_progress(phase, label, status)
 
 
+def emit_loop_failure_event(
+    config: LoopConfig,
+    *,
+    phase: str,
+    iteration: int | str | None,
+    reason: str,
+    error: str,
+    ctx: RunContext,
+) -> None:
+    if ctx.event_sink is None:
+        return
+    ctx.event_sink.emit(
+        "failure",
+        phase=phase,
+        iteration=iteration,
+        payload={
+            "reason": reason,
+            "message": error,
+        },
+    )
+
+
 def progress_continuation(config: LoopConfig, phase: str, label: str, text: str, indent: int = 2) -> None:
     if not config.progress:
         return
@@ -441,31 +463,11 @@ def log_review_findings(config: LoopConfig, label: str, output: str, ctx: RunCon
 
 
 def set_phase_terminal_title(config: LoopConfig, phase: str, label: str) -> None:
-    if phase == "review":
-        prefix = "rev"
-    elif phase == "remediate":
-        prefix = "rem"
-    else:
-        return
-    if not config.terminal_title:
-        return
-    safe = f"{prefix} {terminal_iteration_label(label, config.max_iterations)} RevRem"
-    safe = safe.replace("\033", "").replace("\007", "").replace("\n", " ").replace("\r", " ")
-    if config.progress_style == "rich":
-        return
-    sequence = f"\033]0;{safe}\007\033]2;{safe}\007"
-    if sys.stderr.isatty():
-        sys.stderr.write(sequence)
-        sys.stderr.flush()
-        return
-    if os.name == "nt":
-        return
-    try:
-        with Path("/dev/tty").open("w", encoding="utf-8") as tty:
-            tty.write(sequence)
-            tty.flush()
-    except OSError:
-        return
+    from code_review_loop.adapters.terminal import (
+        set_phase_terminal_title as _set_phase_terminal_title,
+    )
+
+    _set_phase_terminal_title(config, phase, label)
 
 
 def terminal_iteration_label(label: str, max_iterations: int) -> str:

@@ -235,92 +235,110 @@ def decide(cfg: ConfigSnapshot, acc: LoopAccumulator, event: PhaseEvent, *, iter
     """
     if isinstance(event, LoopStarted):
         return RunReview(is_final=False)
-
     if isinstance(event, ReviewDone):
-        if event.exc is not None:
-            return Stop(OutcomeFailed(reason="review_failed", error=str(event.exc)))
-        if not event.is_final:
-            if event.status == "clear" and not acc.pending_check_failures:
-                return Stop(OutcomeClear(reason="review_clear", excerpt=""))
-            if cfg.triage_enabled:
-                return RunTriage()
-            return RunRemediation()
-        if acc.pending_check_failures:
+        return _decide_review(cfg, acc, event)
+    if isinstance(event, TriageDone):
+        return _decide_triage(acc, event)
+    if isinstance(event, RemediationDone):
+        return _decide_remediation(event)
+    if isinstance(event, ChecksDone):
+        return _decide_checks(cfg, acc, iteration)
+    if isinstance(event, CommitDone):
+        return _decide_commit(cfg, acc, event, iteration)
+    if isinstance(event, NoFinalReview):  # NF1
+        return _decide_no_final_review(acc)
+
+    assert_never(event)
+
+
+def _decide_review(cfg: ConfigSnapshot, acc: LoopAccumulator, event: ReviewDone) -> Action:
+    if event.exc is not None:
+        return Stop(OutcomeFailed(reason="review_failed", error=str(event.exc)))
+    if not event.is_final:
+        if event.status == "clear" and not acc.pending_check_failures:
+            return Stop(OutcomeClear(reason="review_clear", excerpt=""))
+        if cfg.triage_enabled:
+            return RunTriage()
+        return RunRemediation()
+    if acc.pending_check_failures:
+        return Stop(
+            OutcomeFindings(
+                reason="max_iterations_reached_with_check_failures",
+                check_failures=True,
+            )
+        )
+    if event.status == "clear":
+        return Stop(OutcomeClear(reason="review_clear"))
+    if event.status == "findings":
+        return Stop(OutcomeFindings(reason="max_iterations_reached"))
+    return Stop(OutcomeUnknown(reason="max_iterations_reached"))
+
+
+def _decide_triage(acc: LoopAccumulator, event: TriageDone) -> Action:
+    if event.exc is not None:
+        return Stop(OutcomeFailed(reason="triage_failed", error=str(event.exc)))
+    if event.is_clear and not acc.pending_check_failures:
+        if event.suppressed_count:
             return Stop(
-                OutcomeFindings(
-                    reason="max_iterations_reached_with_check_failures",
+                OutcomeClear(
+                    reason="all_findings_suppressed",
+                    suppressed_findings_count=event.suppressed_count,
+                )
+            )
+        return Stop(OutcomeClear(reason="triage_rejected_all_findings"))
+    return RunRemediation()
+
+
+def _decide_remediation(event: RemediationDone) -> Action:
+    if event.exc is not None:
+        return Stop(OutcomeFailed(reason="remediation_failed", error=str(event.exc)))
+    return RunChecks()
+
+
+def _decide_checks(cfg: ConfigSnapshot, acc: LoopAccumulator, iteration: int) -> Action:
+    if cfg.commit_after_remediation and not acc.pending_check_failures:
+        return RunCommit()
+    return _next_review_action(cfg, acc, iteration)
+
+
+def _decide_commit(cfg: ConfigSnapshot, acc: LoopAccumulator, event: CommitDone, iteration: int) -> Action:
+    if event.other_exc is not None:
+        return Stop(OutcomeFailed(reason="commit_failed", error=str(event.other_exc)))
+    if event.commit_failed is not None:
+        kind = getattr(event.commit_failed, "kind", "")
+        retryable = (
+            kind == "hook_failed"
+            and cfg.commit_on_hook_failure in ("remediate", "no-verify")
+            and iteration < cfg.max_iterations
+        )
+        if retryable:
+            return RetryViaCommitHook(hook_output=str(event.commit_failed))
+        if kind == "hook_failed":
+            return Stop(
+                OutcomeFailed(
+                    reason="commit_hook_failed",
+                    error=str(event.commit_failed),
+                    staged_changes_left=True,
                     check_failures=True,
                 )
             )
-        if event.status == "clear":
-            return Stop(OutcomeClear(reason="review_clear"))
-        if event.status == "findings":
-            return Stop(OutcomeFindings(reason="max_iterations_reached"))
-        return Stop(OutcomeUnknown(reason="max_iterations_reached"))
+        return Stop(OutcomeFailed(reason="commit_failed", error=str(event.commit_failed)))
+    if event.status == "skipped_no_changes":
+        if acc.last_review_status == "clear":
+            return Stop(OutcomeClear(reason="no_changes_after_remediation"))
+        if acc.last_review_status == "findings":
+            return Stop(OutcomeFindings(reason="no_changes_after_remediation"))
+        return Stop(OutcomeUnknown(reason="no_changes_after_remediation"))
+    return _next_review_action(cfg, acc, iteration)
 
-    if isinstance(event, TriageDone):
-        if event.exc is not None:
-            return Stop(OutcomeFailed(reason="triage_failed", error=str(event.exc)))
-        if event.is_clear and not acc.pending_check_failures:
-            if event.suppressed_count:
-                return Stop(
-                    OutcomeClear(
-                        reason="all_findings_suppressed",
-                        suppressed_findings_count=event.suppressed_count,
-                    )
-                )
-            return Stop(OutcomeClear(reason="triage_rejected_all_findings"))
-        return RunRemediation()
 
-    if isinstance(event, RemediationDone):
-        if event.exc is not None:
-            return Stop(OutcomeFailed(reason="remediation_failed", error=str(event.exc)))
-        return RunChecks()
-
-    if isinstance(event, ChecksDone):
-        if cfg.commit_after_remediation and not acc.pending_check_failures:
-            return RunCommit()
-        return _next_review_action(cfg, acc, iteration)
-
-    if isinstance(event, CommitDone):
-        if event.other_exc is not None:
-            return Stop(OutcomeFailed(reason="commit_failed", error=str(event.other_exc)))
-        if event.commit_failed is not None:
-            kind = getattr(event.commit_failed, "kind", "")
-            retryable = (
-                kind == "hook_failed"
-                and cfg.commit_on_hook_failure in ("remediate", "no-verify")
-                and iteration < cfg.max_iterations
-            )
-            if retryable:
-                return RetryViaCommitHook(hook_output=str(event.commit_failed))
-            if kind == "hook_failed":
-                return Stop(
-                    OutcomeFailed(
-                        reason="commit_hook_failed",
-                        error=str(event.commit_failed),
-                        staged_changes_left=True,
-                        check_failures=True,
-                    )
-                )
-            return Stop(OutcomeFailed(reason="commit_failed", error=str(event.commit_failed)))
-        if event.status == "skipped_no_changes":
-            if acc.last_review_status == "clear":
-                return Stop(OutcomeClear(reason="no_changes_after_remediation"))
-            if acc.last_review_status == "findings":
-                return Stop(OutcomeFindings(reason="no_changes_after_remediation"))
-            return Stop(OutcomeUnknown(reason="no_changes_after_remediation"))
-        return _next_review_action(cfg, acc, iteration)
-
-    if isinstance(event, NoFinalReview):  # NF1
-        return Stop(
-            OutcomeUnknown(
-                reason="max_iterations_reached",
-                check_failures=bool(acc.pending_check_failures),
-            )
+def _decide_no_final_review(acc: LoopAccumulator) -> Action:
+    return Stop(
+        OutcomeUnknown(
+            reason="max_iterations_reached",
+            check_failures=bool(acc.pending_check_failures),
         )
-
-    assert_never(event)
+    )
 
 
 def _next_review_action(cfg: ConfigSnapshot, acc: LoopAccumulator, iteration: int) -> Action:
@@ -328,4 +346,4 @@ def _next_review_action(cfg: ConfigSnapshot, acc: LoopAccumulator, iteration: in
         return Continue()
     if cfg.final_review:
         return RunReview(is_final=True)
-    return decide(cfg, acc, NoFinalReview(), iteration=iteration)
+    return _decide_no_final_review(acc)

@@ -955,11 +955,13 @@ Treat that commit as a green checkpoint, not the Wave C finish line.
   ``resume`` no longer imports the executable driver; the resume command calls
   ``code_review_loop.application.resume_review_loop`` after preconditions pass.
   Follow-up remediation renamed the relocated loop driver from ``loop`` to
-  ``runner`` and deleted the legacy ``_run_loop`` symbol. The current runner
-  session shell is 35 lines, with the happy path delegated to named helpers.
-  Production phase decisions now pass through ``core.engine.run`` via a
-  runner-local executor bridge, and `tests/test_runner_engine_gate.py` fails if
-  `runner.py` reintroduces direct ``decide()`` calls.
+  ``runner`` and deleted the legacy ``_run_loop`` symbol. Final polish moved
+  the side-effectful engine executor into ``code_review_loop.runner_shell``:
+  ``runner.py`` is now 959 lines and owns setup/preflight/cancellation/summary
+  finalization, while ``runner_shell.py`` owns phase-action execution through
+  ``core.engine.run``. `tests/test_runner_engine_gate.py` fails if `runner.py`
+  reintroduces direct ``decide()`` calls, redefines the engine executor, or
+  retakes terminal-control ownership.
 
   Final remediation also removed the adapter ``_X_impl.py`` migration split:
   each phase adapter now owns its implementation in its canonical module
@@ -970,7 +972,9 @@ Treat that commit as a green checkpoint, not the Wave C finish line.
 
   Reputation-polish follow-up introduced ``code_review_loop.application`` as the
   supported non-CLI execution boundary and recorded the ownership direction in
-  `REVREM-ADR-012`.
+  `REVREM-ADR-012`. The application API now returns ``ReviewLoopResult`` with
+  an explicit ``to_dict()`` summary projection and no longer exports the private
+  runner alias.
 
 * **C3c tech-debt cleanup is mostly complete.** TD-001, TD-002, TD-003, and
   TD-005 are resolved: `RunContext` is required in the runner/adapter execution
@@ -984,7 +988,7 @@ Treat that commit as a green checkpoint, not the Wave C finish line.
   per-run, stat-keyed file-scan cache.
 
   Test decomposition is complete for Wave C. The original CLI monolith has been
-  reduced to an 87-line smoke/e2e file, and progress/terminal-title,
+  reduced to an 86-line smoke/e2e file, and progress/terminal-title,
   commit/check, triage-loop, config/profile/history,
   doctor/preflight/bug-bundle, fake harness, resume/initial-review,
   review-helper/command-construction, suppressions, subprocess/terminal-title,
@@ -992,7 +996,11 @@ Treat that commit as a green checkpoint, not the Wave C finish line.
   `tests/test_cli_progress_integration.py`,
   `tests/test_cli_commit_integration.py`,
   `tests/test_cli_triage_integration.py`,
-  `tests/test_cli_config_integration.py`,
+  `tests/test_cli_initial_review_profiles.py`,
+  `tests/test_cli_artifact_ignore.py`,
+  `tests/test_cli_profile_overrides.py`,
+  `tests/test_cli_history_integration.py`,
+  `tests/test_cli_config_commands.py`,
   `tests/test_cli_doctor_integration.py`,
   `tests/test_cli_fake_harness_integration.py`,
   `tests/test_cli_resume_integration.py`,
@@ -1009,7 +1017,10 @@ Treat that commit as a green checkpoint, not the Wave C finish line.
   routing paths. The full local gate passed after the final decomposition:
   `./.venv/bin/ruff check .`, `./.venv/bin/mypy src`,
   `./.venv/bin/lint-imports`, `uv run --locked meminit check --format json`,
-  and `./.venv/bin/pytest -q` (`750 passed`).
+  and `./.venv/bin/pytest -q` (`754 passed`). Final polish focused gates pass
+  for the application API, runner engine gate, terminal/progress, subprocess,
+  engine, and split config/history/profile modules; full-suite evidence is
+  refreshed at closeout.
 
 **Required remediation before declaring Wave C done.**
 
@@ -1026,15 +1037,18 @@ Treat that commit as a green checkpoint, not the Wave C finish line.
    contexts are gone from runner and adapter execution helpers.
 5. DONE in remediation: the driver module has been renamed to ``runner``,
    CLI execution is routed through ``code_review_loop.application``,
-   ``_run_loop`` is gone, ``_run_session`` is 35 lines, and production phase
-   decisions are mediated by ``core.engine.run``.
+   ``_run_loop`` is gone, ``_run_session`` is 35 lines, production phase
+   decisions are mediated by ``core.engine.run``, and final polish moved the
+   engine executor to ``code_review_loop.runner_shell``.
 6. DONE in remediation: decompose ``tests/test_cli_integration.py`` into
-   behavior-level modules. The remaining file is an 87-line smoke/e2e surface;
+   behavior-level modules. The remaining file is an 86-line smoke/e2e surface;
    focused modules now cover progress/terminal-title, commit/check,
    triage-loop, config/profile/history, doctor/preflight/bug-bundle, fake
    harness, resume/initial-review, review-helper/command-construction,
    suppressions, subprocess/terminal-title, loop-outcome/budget/cancellation,
-   and summary formatting clusters.
+   and summary formatting clusters. Final polish further split the 1,509-line
+   config/profile/history module into five behavior-focused files, each under
+   510 lines.
 7. DONE in remediation: ``RunState`` now has semantic terminal transitions
    (``mark_outcome``/``mark_clear``/``mark_failed``/``mark_findings``/
    ``mark_unknown``), ``_execute_stop`` uses them, and ``to_dict()`` now returns
@@ -1043,6 +1057,9 @@ Treat that commit as a green checkpoint, not the Wave C finish line.
    adapter modules, duplicate phase-support helpers were removed from
    ``runner.py``, TD-006 registry copying is resolved with immutable cached
    mappings, and TD-007 routing-context reads are cached per run.
+9. DONE in final polish: terminal title/control state moved to
+   ``code_review_loop.adapters.terminal``; the runner imports adapter services
+   and no longer owns terminal escape constants or `/dev/tty` writes.
 
 **Wave C1 + C2 status (2026-05-24).** C1a, C1b, C2a (both parts) and the
 TD-004 half of C2b have landed.
