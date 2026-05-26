@@ -17,6 +17,7 @@ from code_review_loop.cli import config_builder, config_support
 cli_main = import_module("code_review_loop.cli.main")
 config_command = import_module("code_review_loop.cli.commands.config")
 history_command = import_module("code_review_loop.cli.commands.history")
+suppress_command = import_module("code_review_loop.cli.commands.suppress")
 
 
 def test_main_resolves_latest_initial_review_from_custom_artifact_dir(tmp_path, monkeypatch):
@@ -1022,6 +1023,24 @@ def test_history_unknown_command_reports_command_error(monkeypatch, capsys):
 
     assert history_command.main([]) == 1
     assert "unhandled history command: wat" in capsys.readouterr().err
+
+
+def test_config_unknown_command_reports_command_error(monkeypatch, capsys):
+    monkeypatch.setattr(config_command, "parse_config_args", lambda _argv: SimpleNamespace(command="wat"))
+
+    assert config_command.main([]) == 1
+    assert "unhandled config command: wat" in capsys.readouterr().err
+
+
+def test_suppress_unknown_command_reports_command_error(monkeypatch, capsys):
+    monkeypatch.setattr(
+        suppress_command,
+        "parse_suppress_args",
+        lambda _argv: SimpleNamespace(command="wat", scope="repo"),
+    )
+
+    assert suppress_command.main([]) == 1
+    assert "unhandled suppress command: wat" in capsys.readouterr().err
 
 
 def test_main_model_override_applies_to_review_and_remediation_only(tmp_path, monkeypatch):

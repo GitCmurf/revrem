@@ -113,10 +113,10 @@ def main(argv: Sequence[str]) -> int:
                 if "resolved_profile" in info:
                     print(f"resolved_profile: {json.dumps(info['resolved_profile'], indent=2)}")
             return CommandOk().exit_code
+        raise ValueError(f"unhandled config command: {args.command}")
     except (OSError, RuntimeError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return CommandFailed(exit_code=1).exit_code
-    raise AssertionError(f"unhandled config command: {args.command}")
 
 
 def _format_profile_list_item(item: profiles.ProfileListItem) -> str:

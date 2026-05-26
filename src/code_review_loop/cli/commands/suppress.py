@@ -65,10 +65,10 @@ def main(argv: Sequence[str]) -> int:
                     expires = f" expires={entry.expires_at}" if entry.expires_at else ""
                     print(f"{entry.fingerprint} {entry.severity_at_suppression} {entry.summary}{expires}")
             return CommandOk().exit_code
+        raise ValueError(f"unhandled suppress command: {args.command}")
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return CommandFailed(exit_code=1).exit_code
-    raise AssertionError(f"unhandled suppress command: {args.command}")
 
 
 def _suppression_path_for_scope(scope: str, cwd: Path) -> Path:
