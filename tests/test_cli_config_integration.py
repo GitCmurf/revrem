@@ -4,6 +4,7 @@ import json
 import os
 import re
 from importlib import import_module
+from types import SimpleNamespace
 
 import pytest
 
@@ -15,6 +16,7 @@ from code_review_loop.cli import config_builder, config_support
 
 cli_main = import_module("code_review_loop.cli.main")
 config_command = import_module("code_review_loop.cli.commands.config")
+history_command = import_module("code_review_loop.cli.commands.history")
 
 
 def test_main_resolves_latest_initial_review_from_custom_artifact_dir(tmp_path, monkeypatch):
@@ -1013,6 +1015,13 @@ def test_history_list_command_outputs_recent_runs(tmp_path, monkeypatch, capsys)
     json_text = capsys.readouterr().out
     assert '"run_id": "new"' in json_text
     assert '"run_id": "old"' not in json_text
+
+
+def test_history_unknown_command_reports_command_error(monkeypatch, capsys):
+    monkeypatch.setattr(history_command, "parse_history_args", lambda _argv: SimpleNamespace(command="wat"))
+
+    assert history_command.main([]) == 1
+    assert "unhandled history command: wat" in capsys.readouterr().err
 
 
 def test_main_model_override_applies_to_review_and_remediation_only(tmp_path, monkeypatch):

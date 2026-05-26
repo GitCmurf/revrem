@@ -34,7 +34,7 @@ def main(argv: Sequence[str]) -> int:
                     artifact_dir = record.get("artifact_dir") or ""
                     print(f"{run_id} {status} ({reason}) base={base} artifacts={artifact_dir}")
             return CommandOk().exit_code
+        raise ValueError(f"unhandled history command: {args.command}")
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return CommandFailed(exit_code=1).exit_code
-    raise AssertionError(f"unhandled history command: {args.command}")
