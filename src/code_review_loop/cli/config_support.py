@@ -41,20 +41,21 @@ def resolve_initial_review_file(value: str | None, search_root: Path) -> Path | 
     if value != "latest":
         return Path(value)
 
-    candidates = sorted(
-        (
-            path
-            for path in (
-                search_root / "review-final.txt",
-                *search_root.glob("*/review-final.txt"),
-            )
-            if path.is_file() and review_final_is_usable(path)
-        ),
-        key=lambda path: (path.stat().st_mtime, path.parent.name),
-    )
+    candidates: list[tuple[float, str, Path]] = []
+    for path in (
+        search_root / "review-final.txt",
+        *search_root.glob("*/review-final.txt"),
+    ):
+        try:
+            stat = path.stat()
+        except FileNotFoundError:
+            continue
+        if path.is_file() and review_final_is_usable(path):
+            candidates.append((stat.st_mtime, path.parent.name, path))
+    candidates.sort()
     if not candidates:
         return None
-    latest = candidates[-1]
+    latest = candidates[-1][2]
     if review_final_is_resolved(latest):
         return None
     return latest

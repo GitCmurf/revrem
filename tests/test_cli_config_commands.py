@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from importlib import import_module
 from types import SimpleNamespace
 
@@ -250,6 +251,7 @@ timeout_seconds = 1800
     assert captured_configs[0].remediation_timeout_seconds == 1800
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="uses a POSIX shell editor script")
 def test_config_commands_create_show_list_and_delete_profile(tmp_path, monkeypatch, capsys):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))

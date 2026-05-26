@@ -243,6 +243,7 @@ reasoning_effort = "low"
 
 [profiles.final-pr.commit]
 enabled = true
+message_model = "gpt-5.3-codex-spark"
 
 [profiles.final-pr.output]
 summary_format = "json"
@@ -291,5 +292,3 @@ soft_warn_fraction = 0.5
     assert config.budget_config.max_tokens == 1000
     assert str(config.budget_config.max_usd) == "0.75"
     assert config.budget_config.soft_warn_fraction == 0.5
-
-
