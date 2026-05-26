@@ -1433,8 +1433,9 @@ not add demo-only production features. It should prove, with executable
 acceptance tests and ratchets, that the seams created in Waves A-C are useful
 to a caller that is not the CLI.
 
-**Status (2026-05-26): not started.** No D-wave PR has landed; the as-built
-block below is the *baseline* Wave D enters with.
+**Status (2026-05-26): implemented.** Wave D landed the headless application
+harness, core-engine traces, runner-shell acceptance tests, command-registry
+relocation, import-linter contracts, and ADR evidence pack described below.
 
 **Per-wave discipline.** Each sub-wave names (a) the **Phase Exit Criterion** it
 discharges, (b) the **contracts** (C1–C7) it consumes, and (c) the **enforcement
@@ -1455,9 +1456,8 @@ dependency-rule claim; the architecture is enforced or it is decoration.
   payload construction now live outside `runner.py`
   (`adapters.subprocess_runner`, `adapters.terminal`, `adapters.git`,
   `resume.py`). `runner.py` is under the current `<800` ratchet.
-- The CLI command registry still lives in `cli/main.py`; proving subcommand
-  extensibility should improve that real seam, not add a throwaway `noop`
-  command.
+- The CLI command registry now lives in `cli/commands/registry.py`; `cli/main.py`
+  is guarded against concrete subcommand names by a Wave D architecture test.
 
 **D1. SDK/headless acceptance harness**
 (satisfies Exit Criterion #3; consumes C4, C7)
@@ -1478,7 +1478,8 @@ terminal state, or real subprocesses.
      - **Findings → remediation → checks → final review** exits clear;
      - **Check failures** carry into the next iteration without touching the CLI;
      - **Setup failure** (`OutcomeFailed(reason="setup_failed")`) raises
-       `RunLoopFailed` with a `final_status == "setup_failed"` summary;
+       `RunLoopFailed` with a `final_status == "error"` summary and
+       `stopped_reason == "setup_failed"`;
      - **Budget ceiling** raises `RunLoopFailed` with `final_status ==
        "budget_ceiling_hit"`;
      - **Cancellation** raises `RunLoopFailed` with `final_status ==

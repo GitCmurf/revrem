@@ -38,10 +38,10 @@ stable unless changed by a documented contract update.
 Adopt `code_review_loop.application` as the only supported programmatic entry
 point for executing and resuming review loops:
 
-- `run_review_loop(config, process_runner=..., clock=..., identity=..., budget_state=...)`
+- `run_review_loop(config, process_runner=..., clock=..., identity=..., budget_state=..., phase_harnesses=..., terminal_ui=False)`
   executes one bounded loop and returns `ReviewLoopResult`.
-- `resume_review_loop(run_dir, cwd=...)` resumes from an existing run
-  directory and returns `ReviewLoopResult`.
+- `resume_review_loop(run_dir, cwd=..., process_runner=..., clock=..., identity=..., phase_harnesses=..., terminal_ui=False)`
+  resumes from an existing run directory and returns `ReviewLoopResult`.
 - `ReviewLoopResult.to_dict()` is the explicit projection for command output,
   run history, and JSON serialization.
 - CLI command modules must call the application API rather than reaching into
@@ -78,3 +78,52 @@ Architecture ratchets should enforce this story:
 - import-linter must continue proving core and adapter layer boundaries;
 - tests that need phase internals should import canonical adapter homes, not
   runner compatibility surfaces.
+
+## Wave D Appendix: leverage proof
+
+Wave D proves the boundary with executable acceptance tests rather than a demo
+command. The dependency shape at exit is:
+
+```text
+cli/main.py
+  -> application.py
+       -> runner.py
+            -> runner_shell.py
+                 -> core/engine.py
+
+adapters/* implement ProcessRunner, terminal/progress, Git/resume snapshots,
+and the five phase harness ports consumed through RunContext.
+```
+
+### As-Built State at Wave D Exit
+
+Measurements below are command-backed so reviewers can refresh them:
+
+- `wc -l src/code_review_loop/cli/main.py src/code_review_loop/runner.py src/code_review_loop/runner_shell.py src/code_review_loop/core/engine.py`
+  reports `98`, `775`, `594`, and `349` lines respectively.
+- `rg -n '^\[\[tool\.importlinter\.contracts\]\]' pyproject.toml` reports
+  9 import-linter contracts.
+- `rg -n 'def test_' tests/test_application_headless_integration.py tests/test_engine_run.py tests/test_runner_shell_acceptance.py tests/test_wave_d_architecture.py`
+  reports 16 Wave D acceptance/ratchet tests.
+- `rg -n 'monkeypatch\.setattr\(MODULE,' tests` reports no production test
+  call-sites; the only matches are the ratchet's own explanatory strings.
+
+### How to verify the leverage claims
+
+- **Application API:** `tests/test_application_headless_integration.py` runs
+  clear, remediation, check-failure, setup-failure, budget, cancellation, and
+  resume scenarios through `application.run_review_loop()` /
+  `resume_review_loop()` without CLI parsing.
+- **Engine purity:** `tests/test_engine_run.py` drives `core.engine.run()` with
+  a recording executor and is guarded by the `Wave D engine acceptance tests
+  stay core-only` import-linter contract.
+- **Runner-shell ownership:** `tests/test_runner_shell_acceptance.py` calls
+  `runner_shell.run_iterations()` directly; `tests/test_runner_engine_gate.py`
+  and the `Runner shell must not import CLI or private runner` contract guard
+  the production direction.
+- **Command extensibility:** `src/code_review_loop/cli/commands/registry.py`
+  owns concrete subcommand names; `tests/test_wave_d_architecture.py` fails if
+  those names return to `cli/main.py`.
+- **DocOps/gates:** `tests/test_import_contracts.py` runs import-linter inside
+  pytest; `uv run --locked meminit check --format json` validates governed
+  documents.
