@@ -209,7 +209,6 @@ forbidden_modules = [
 [[tool.importlinter.contracts]]
 name = "Wave D headless application tests stay non-CLI"
 type = "forbidden"
-allow_indirect_imports = true
 source_modules = [
   "tests.support.headless",
   "tests.test_application_headless_integration",
@@ -218,4 +217,5 @@ forbidden_modules = [
   "argparse",
   "code_review_loop.cli",
   "code_review_loop.adapters.subprocess_runner",
+  "code_review_loop.tui",
 ]

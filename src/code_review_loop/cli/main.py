@@ -15,7 +15,7 @@ from code_review_loop.cli.config_builder import (
     profile_from_loop_config,
 )
 from code_review_loop.cli.outcome import summary_from_result
-from code_review_loop.core.outcome import outcome_to_exit_code
+from code_review_loop.core.outcome import OutcomeFailed, outcome_to_exit_code
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -33,10 +33,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         config, summary_format = build_loop_config(args, Path.cwd())
     except FileNotFoundError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
-        return 1
+        return 1  # outcome-exempt: configuration failed before RunOutcome exists
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
-        return 1
+        return 1  # outcome-exempt: configuration failed before RunOutcome exists
 
     if args.save_profile:
         profile = profile_from_loop_config(
@@ -55,12 +55,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         except FileExistsError as exc:
             print(f"ERROR: {exc}; pass --save-profile-force to replace it", file=sys.stderr)
-            return 1
+            return 1  # outcome-exempt: profile write failed before loop execution
         except OSError as exc:
             print(f"ERROR: could not save project profile: {exc}", file=sys.stderr)
-            return 1
+            return 1  # outcome-exempt: profile write failed before loop execution
         print(f"saved {args.save_profile} in {path}")
-        return 0
+        return 0  # outcome-exempt: profile save command does not run the loop
 
     try:
         result = application.run_review_loop(config)
@@ -73,13 +73,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             except OSError as history_exc:
                 print(f"WARNING: could not write run history: {history_exc}", file=sys.stderr)
         print(f"ERROR: {exc}", file=sys.stderr)
-        return outcome_to_exit_code(exc.outcome) if exc.outcome is not None else 1
+        return outcome_to_exit_code(exc.outcome) if exc.outcome is not None else 1  # outcome-exempt: legacy failures may lack outcome
     except KeyboardInterrupt:
         print("Cancelled by user.", file=sys.stderr)
-        return 5
+        return outcome_to_exit_code(
+            OutcomeFailed(reason="cancelled", error="cancelled by operator")
+        )
     except Exception as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
-        return 1
+        return 1  # outcome-exempt: unexpected pre-summary exception
 
     if not args.dry_run and not args.no_run_history and summary.get("run_id"):
         try:
@@ -94,5 +96,5 @@ def main(argv: Sequence[str] | None = None) -> int:
             print()
         print(json.dumps(summary, indent=2, sort_keys=True))
     if args.dry_run:
-        return 0
-    return 0 if summary.get("final_status") == "clear" else 2
+        return 0  # outcome-exempt: dry-run summary is intentionally non-terminal
+    return outcome_to_exit_code(result.outcome)

@@ -18,13 +18,16 @@ from pathlib import Path
 
 import pytest
 
-_COMMANDS_DIR = Path(__file__).resolve().parents[1] / "src" / "code_review_loop" / "cli" / "commands"
+_CLI_DIR = Path(__file__).resolve().parents[1] / "src" / "code_review_loop" / "cli"
+_COMMANDS_DIR = _CLI_DIR / "commands"
 _BARE_RETURN_INT = re.compile(r"^\s*return\s+-?[0-9]+\b")
 _EXEMPT = "outcome-exempt:"
 
 
 def _command_modules() -> list[Path]:
-    return sorted(p for p in _COMMANDS_DIR.glob("*.py") if p.name != "__init__.py")
+    modules = [(_CLI_DIR / "main.py")]
+    modules.extend(sorted(p for p in _COMMANDS_DIR.glob("*.py") if p.name != "__init__.py"))
+    return modules
 
 
 def _violations(path: Path) -> list[tuple[int, str]]:
@@ -39,7 +42,7 @@ def _violations(path: Path) -> list[tuple[int, str]]:
 def test_no_bare_return_int_in_command_modules(module_path: Path) -> None:
     violations = _violations(module_path)
     assert not violations, (
-        f"Bare integer return in cli/commands/{module_path.name} "
+        f"Bare integer return in {module_path.relative_to(_CLI_DIR.parent)} "
         f"(use CommandOk()/CommandFailed(exit_code=N).exit_code, or annotate "
         f"'# outcome-exempt: <reason>'):\n"
         + "\n".join(f"  L{n}: {text}" for n, text in violations)

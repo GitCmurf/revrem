@@ -11,6 +11,7 @@ from __future__ import annotations
 from support.fakes import FIXED_ISO, FIXED_RUN_ID, FakeClock, FakeRunIdentity
 
 import code_review_loop.runner as runner_mod
+from code_review_loop.cli import config_builder
 from code_review_loop import events
 
 
@@ -53,7 +54,7 @@ def test_run_loop_timestamps_and_run_id_are_deterministic(tmp_path):
 
 
 def test_default_artifact_dir_is_deterministic_under_fakes():
-    path = runner_mod.default_artifact_dir(clock=FakeClock(), identity=FakeRunIdentity())
+    path = config_builder.default_artifact_dir(clock=FakeClock(), identity=FakeRunIdentity())
     assert path.as_posix() == f".revrem/runs/20260102T030405Z-{FIXED_RUN_ID}"
 
 

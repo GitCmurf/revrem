@@ -66,9 +66,10 @@ def _context(
     triage: StaticTriageHarness | None = None,
 ) -> tuple[RunContext, events.JsonlSink]:
     config.artifact_dir.mkdir(parents=True, exist_ok=True)
-    sink = events.JsonlSink(config.artifact_dir, FIXED_RUN_ID, clock=FakeClock())
+    clock = FakeClock()
+    sink = events.JsonlSink(config.artifact_dir, FIXED_RUN_ID, clock=clock)
     ctx = RunContext(
-        clock=FakeClock(),
+        clock=clock,
         identity=FakeRunIdentity(),
         runner=RecordingProcessRunner(),
         event_sink=sink,
@@ -87,13 +88,14 @@ def test_runner_shell_executes_happy_path_without_cli(tmp_path: Path) -> None:
     config = _config(tmp_path, max_iterations=1)
     review = SequencedReviewHarness(["findings", "clear"])
     ctx, sink = _context(config, review=review)
+    clock = ctx.clock
     try:
         state = _state(config)
 
         result = run_iterations(
             config=config,
             state=state,
-            clock=FakeClock(),
+            clock=clock,
             ctx=ctx,
             snap=_snapshot(config),
             initial_review_output="",
@@ -115,13 +117,14 @@ def test_runner_shell_carries_check_failure_into_retry(tmp_path: Path) -> None:
     remediation = RecordingRemediationHarness()
     checks = SequencedChecksHarness([("pytest tests/",), ()])
     ctx, sink = _context(config, review=review, remediation=remediation, checks=checks)
+    clock = ctx.clock
     try:
         state = _state(config)
 
         result = run_iterations(
             config=config,
             state=state,
-            clock=FakeClock(),
+            clock=clock,
             ctx=ctx,
             snap=_snapshot(config),
             initial_review_output="",

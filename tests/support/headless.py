@@ -28,6 +28,14 @@ from code_review_loop.core.ports import (
 from tests.support.fakes import FakeClock, FakeRunIdentity
 
 
+class UnexpectedProcessCall(AssertionError):
+    """Raised when a headless test unexpectedly reaches the process runner."""
+
+    def __init__(self, argv: Sequence[str]):
+        super().__init__(f"unexpected process call: {list(argv)}")
+        self.argv = list(argv)
+
+
 class RecordingProcessRunner:
     """Process runner that records calls and fails unless configured."""
 
@@ -47,7 +55,7 @@ class RecordingProcessRunner:
         phase = argv[1] if len(argv) > 1 else ""
         response = self.responses.get(phase)
         if response is None:
-            raise AssertionError(f"unexpected process call: {argv}")
+            raise UnexpectedProcessCall(argv)
         if isinstance(response, BaseException):
             raise response
         return CommandResult(
@@ -152,7 +160,7 @@ class HeadlessRun:
             cwd=tmp_path,
             artifact_dir=tmp_path / "artifacts",
             progress=False,
-            triage_enabled=True,
+            triage_enabled=False,
         )
         return cls(config=config, **kwargs)
 

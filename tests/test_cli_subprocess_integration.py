@@ -8,6 +8,7 @@ from importlib import import_module
 import pytest
 
 import code_review_loop.runner as runner_mod
+from code_review_loop.cli import config_builder
 from code_review_loop import application
 from code_review_loop.adapters import subprocess_runner as subprocess_runner_mod
 from code_review_loop.adapters import terminal as terminal_mod
@@ -273,8 +274,8 @@ def test_subprocess_refresh_loop_does_not_resend_input_after_timeout(tmp_path, m
 
 
 def test_resolve_timeout_seconds_allows_disabling_timeout():
-    assert runner_mod.resolve_timeout_seconds(0) is None
-    assert runner_mod.resolve_timeout_seconds(900) == 900
+    assert config_builder.resolve_timeout_seconds(0) is None
+    assert config_builder.resolve_timeout_seconds(900) == 900
 
 
 def test_main_rejects_negative_timeout(tmp_path, monkeypatch, capsys):

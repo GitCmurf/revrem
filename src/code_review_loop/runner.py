@@ -10,8 +10,9 @@ import signal
 import time
 from collections.abc import Callable, Sequence
 from contextlib import contextmanager, suppress
+from importlib import import_module
 from pathlib import Path
-from typing import Any, NamedTuple, assert_never, cast
+from typing import Any, NamedTuple, NoReturn, assert_never, cast
 
 from code_review_loop import (
     __version__ as __version__,
@@ -24,6 +25,7 @@ from code_review_loop import (
     progress,
     prompts_composer,
 )
+from code_review_loop.artifact_ignore import ensure_default_artifact_ignore as ensure_default_artifact_ignore
 from code_review_loop.clock import SYSTEM_CLOCK, Clock, utc_iso
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.engine import (
@@ -55,6 +57,7 @@ from code_review_loop.core.review_interpretation import (
 )
 from code_review_loop.core.state import RunState
 from code_review_loop.identity import SYSTEM_IDENTITY, RunIdentity
+from code_review_loop.runtime import RunnerResult as RunnerResult
 from code_review_loop.runtime import RunLoopFailed as RunLoopFailed
 from code_review_loop.runtime import format_terminal_summary as format_terminal_summary
 from code_review_loop.runner_shell import run_iterations as run_iterations
@@ -86,7 +89,6 @@ from code_review_loop.adapters.phase_support import remaining_wall_budget_second
 from code_review_loop.adapters.phase_support import sanitize_commit_message as sanitize_commit_message
 from code_review_loop.adapters.phase_support import terminal_iteration_label as terminal_iteration_label
 from code_review_loop.adapters.phase_support import write_artifact as write_artifact
-from code_review_loop.adapters.subprocess_runner import default_runner as default_runner
 from code_review_loop.adapters.git import git_state_for_resume as git_state_for_resume
 from code_review_loop.adapters.terminal import (
     restore_terminal_display as restore_terminal_display,
@@ -94,44 +96,6 @@ from code_review_loop.adapters.terminal import (
 from code_review_loop.adapters.terminal import (
     terminal_title_context as terminal_title_context,
 )
-
-# REVREM-TASK-003 Wave C2a: parsers and their shared choice tuples are
-# canonical in ``cli/args.py``. Runner imports them from that canonical module
-# so command parsing has a single implementation.
-from code_review_loop.cli import args as _cli_args
-
-COMMIT_ON_HOOK_FAILURE_CHOICES = _cli_args.COMMIT_ON_HOOK_FAILURE_CHOICES
-PROGRESS_STYLE_CHOICES = _cli_args.PROGRESS_STYLE_CHOICES
-REASONING_EFFORT_CHOICES = _cli_args.REASONING_EFFORT_CHOICES
-parse_args = _cli_args.parse_args
-parse_bundle_bug_report_args = _cli_args.parse_bundle_bug_report_args
-parse_config_args = _cli_args.parse_config_args
-parse_doctor_args = _cli_args.parse_doctor_args
-parse_history_args = _cli_args.parse_history_args
-parse_policy_args = _cli_args.parse_policy_args
-parse_replay_args = _cli_args.parse_replay_args
-parse_resume_args = _cli_args.parse_resume_args
-parse_suppress_args = _cli_args.parse_suppress_args
-parse_triage_args = _cli_args.parse_triage_args
-
-# REVREM-TASK-003 Wave C2a: ``LoopConfig`` assembly + argument-resolution
-# helpers now live in ``cli/config_builder.py``. Runner imports the canonical
-# helpers directly so the executable loop and CLI config surface share one
-# implementation.
-from code_review_loop.cli import config_builder as _config_builder
-
-build_loop_config = _config_builder.build_loop_config
-default_artifact_dir = _config_builder.default_artifact_dir
-ensure_default_artifact_ignore = _config_builder.ensure_default_artifact_ignore
-new_profile_from_args = _config_builder.new_profile_from_args
-parse_harness_bin_overrides = _config_builder.parse_harness_bin_overrides
-pick = _config_builder.pick
-profile_from_loop_config = _config_builder.profile_from_loop_config
-profile_or_default = _config_builder.profile_or_default
-resolve_max_iterations = _config_builder.resolve_max_iterations
-resolve_profile_timeout_seconds = _config_builder.resolve_profile_timeout_seconds
-resolve_timeout_seconds = _config_builder.resolve_timeout_seconds
-should_prompt_for_new_profile = _config_builder.should_prompt_for_new_profile
 
 CANCELLATION_FORCE_WINDOW_SECONDS = 5.0
 _LAST_CANCELLATION_SIGNAL_AT: float | None = None
@@ -146,6 +110,19 @@ Review and check output:
 """
 
 Runner = Callable[[Sequence[str], Path, str | None, float | None], CommandResult]
+
+
+def _default_runner(
+    args: Sequence[str],
+    cwd: Path,
+    input_text: str | None = None,
+    timeout_seconds: float | None = None,
+) -> CommandResult:
+    runner = cast(Runner, import_module("code_review_loop.adapters.subprocess_runner").default_runner)
+    return runner(args, cwd, input_text, timeout_seconds)
+
+
+default_runner: Runner = _default_runner
 
 
 @contextmanager
@@ -334,7 +311,7 @@ def _execute_stop(
     *,
     last_review_output: str = "",
     cause: BaseException | None = None,
-) -> dict[str, object]:
+) -> RunnerResult:
     """Apply a Stop outcome to RunState, write summary, return or raise."""
     excerpt = (
         excerpt_for_terminal(last_review_output, config.terminal_excerpt_chars)
@@ -356,7 +333,7 @@ def _execute_stop(
 
     if isinstance(outcome, OutcomeClear):
         apply_common_tail()
-        return summary
+        return RunnerResult(summary, outcome)
 
     if isinstance(outcome, OutcomeFailed):
         apply_common_tail(check_failures=outcome.check_failures)
@@ -364,29 +341,30 @@ def _execute_stop(
 
     if isinstance(outcome, OutcomeFindings):
         apply_common_tail(check_failures=outcome.check_failures)
-        return summary
+        return RunnerResult(summary, outcome)
 
     if isinstance(outcome, OutcomeUnknown):
         apply_common_tail(check_failures=outcome.check_failures)
-        return summary
+        return RunnerResult(summary, outcome)
 
     assert_never(outcome)
 
 
 def run_loop(
     config: LoopConfig,
-    runner: Runner = default_runner,
+    runner: Runner | None = None,
     *,
     clock: Clock = SYSTEM_CLOCK,
     identity: RunIdentity = SYSTEM_IDENTITY,
     budget_state: budgets.BudgetState | None = None,
     phase_harnesses: PhaseHarnessBundle | None = None,
     terminal_ui: bool = True,
-) -> dict[str, object]:
+) -> RunnerResult:
+    active_runner = runner or default_runner
     if not terminal_ui:
         return _run_session(
             config,
-            runner,
+            active_runner,
             clock=clock,
             identity=identity,
             budget_state=budget_state,
@@ -401,7 +379,7 @@ def run_loop(
     ):
         return _run_session(
             config,
-            runner,
+            active_runner,
             clock=clock,
             identity=identity,
             budget_state=budget_state,
@@ -410,7 +388,7 @@ def run_loop(
         )
 
 
-def resume_run(run_dir: Path) -> dict[str, object]:
+def resume_run(run_dir: Path) -> RunnerResult:
     from code_review_loop import resume
 
     summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
@@ -570,7 +548,7 @@ def _run_preflight(
     *,
     clock: Clock,
     ctx: RunContext,
-) -> dict[str, object] | None:
+) -> RunnerResult | None:
     if not config.preflight_enabled or config.dry_run:
         return None
     issues = diagnostics.run_doctor(
@@ -638,7 +616,7 @@ def _finish_cancelled(
     summary: dict[str, object],
     clock: Clock,
     ctx: RunContext,
-) -> dict[str, object]:
+) -> NoReturn:
     artifacts.write_json_artifact(
         config.artifact_dir,
         "diagnostics.json",
@@ -663,7 +641,7 @@ def _finish_cancelled(
                 "message": "cancelled by operator",
             },
         )
-    return _execute_stop(
+    _execute_stop(
         OutcomeFailed(reason="cancelled", error="cancelled by operator"),
         state,
         summary,
@@ -672,6 +650,7 @@ def _finish_cancelled(
         ctx,
         cause=exc,
     )
+    raise AssertionError("unreachable")
 
 
 def _finish_budget_exceeded(
@@ -682,8 +661,8 @@ def _finish_budget_exceeded(
     summary: dict[str, object],
     clock: Clock,
     ctx: RunContext,
-) -> dict[str, object]:
-    return _execute_stop(
+) -> NoReturn:
+    _execute_stop(
         OutcomeFailed(reason="budget_ceiling_hit", error=str(exc)),
         state,
         summary,
@@ -692,6 +671,7 @@ def _finish_budget_exceeded(
         ctx,
         cause=exc,
     )
+    raise AssertionError("unreachable")
 
 
 def _run_session_body(
@@ -702,7 +682,7 @@ def _run_session_body(
     clock: Clock,
     ctx: RunContext,
     run_id: str,
-) -> dict[str, object]:
+) -> RunnerResult:
     preflight_result = _run_preflight(config, state, summary, clock=clock, ctx=ctx)
     if preflight_result is not None:
         return preflight_result
@@ -732,20 +712,21 @@ def _run_session_body(
 
 def _run_session(
     config: LoopConfig,
-    runner: Runner = default_runner,
+    runner: Runner | None = None,
     *,
     clock: Clock = SYSTEM_CLOCK,
     identity: RunIdentity = SYSTEM_IDENTITY,
     budget_state: budgets.BudgetState | None = None,
     phase_harnesses: PhaseHarnessBundle | None = None,
     terminal_ui: bool = True,
-) -> dict[str, object]:
+) -> RunnerResult:
     if config.max_iterations < 1:
         raise ValueError("--max-iterations must be at least 1")
 
+    active_runner = runner or default_runner
     setup = _prepare_run(
         config,
-        runner,
+        active_runner,
         clock=clock,
         identity=identity,
         budget_state=budget_state,

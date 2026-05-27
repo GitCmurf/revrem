@@ -8,6 +8,7 @@ from importlib import import_module
 import pytest
 
 import code_review_loop.runner as runner_mod
+from code_review_loop.cli.config_support import resolve_initial_review_file
 from code_review_loop import application as application_mod
 from code_review_loop import events
 from code_review_loop import resume as resume_mod
@@ -553,7 +554,7 @@ def test_resolve_initial_review_file_latest(tmp_path):
     older_review.write_text("old", encoding="utf-8")
     newer_review.write_text("new", encoding="utf-8")
 
-    assert runner_mod.resolve_initial_review_file("latest", tmp_path) == newer_review
+    assert resolve_initial_review_file("latest", tmp_path) == newer_review
 
 
 def test_resolve_initial_review_file_latest_returns_none_when_newest_run_is_clean(tmp_path):
@@ -576,7 +577,7 @@ def test_resolve_initial_review_file_latest_returns_none_when_newest_run_is_clea
     os.utime(unresolved_review, (1, 1))
     os.utime(clean_review, (2, 2))
 
-    assert runner_mod.resolve_initial_review_file("latest", tmp_path) is None
+    assert resolve_initial_review_file("latest", tmp_path) is None
 
 
 def test_resolve_initial_review_file_latest_returns_none_for_only_clean_runs(tmp_path):
@@ -588,11 +589,11 @@ def test_resolve_initial_review_file_latest_returns_none_for_only_clean_runs(tmp
         encoding="utf-8",
     )
 
-    assert runner_mod.resolve_initial_review_file("latest", tmp_path) is None
+    assert resolve_initial_review_file("latest", tmp_path) is None
 
 
 def test_resolve_initial_review_file_latest_returns_none_without_previous_runs(tmp_path):
-    assert runner_mod.resolve_initial_review_file("latest", tmp_path) is None
+    assert resolve_initial_review_file("latest", tmp_path) is None
 
 
 def test_resolve_initial_review_file_latest_skips_dry_run_review_stubs(tmp_path):
@@ -618,4 +619,4 @@ def test_resolve_initial_review_file_latest_skips_dry_run_review_stubs(tmp_path)
     os.utime(unresolved_review, (1, 1))
     os.utime(dry_review, (2, 2))
 
-    assert runner_mod.resolve_initial_review_file("latest", tmp_path) == unresolved_review
+    assert resolve_initial_review_file("latest", tmp_path) == unresolved_review

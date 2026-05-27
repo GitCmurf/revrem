@@ -7,18 +7,12 @@ These functions translate ``argparse.Namespace`` + profile defaults into a
 from __future__ import annotations
 
 import argparse
-import os
 import sys
-import tempfile
-import time
-from collections.abc import Iterator, Sequence
-from contextlib import contextmanager
+from collections.abc import Sequence
 from pathlib import Path
 
 from code_review_loop import budgets, harnesses, profiles
 from code_review_loop.cli.config_support import (
-    git_info_exclude_path,
-    lexical_git_repo_root,
     resolve_initial_review_file,
 )
 from code_review_loop.clock import SYSTEM_CLOCK, Clock
@@ -43,57 +37,6 @@ def default_artifact_dir(
 ) -> Path:
     timestamp = clock.now().strftime("%Y%m%dT%H%M%SZ")
     return Path(".revrem") / "runs" / f"{timestamp}-{identity.new_run_id()}"
-
-
-@contextmanager
-def _exclusive_lock_file(path: Path, *, timeout_seconds: float = 5.0) -> Iterator[None]:
-    lock_dir = path.with_name(f"{path.name}.lock")
-    deadline = time.monotonic() + timeout_seconds
-    while True:
-        try:
-            lock_dir.mkdir()
-            break
-        except FileExistsError:
-            if time.monotonic() >= deadline:
-                raise TimeoutError(f"timed out waiting for lock: {lock_dir}") from None
-            time.sleep(0.05)
-    try:
-        yield
-    finally:
-        os.rmdir(lock_dir)
-
-
-def ensure_default_artifact_ignore(config: LoopConfig) -> None:
-    artifact_dir = config.artifact_dir if config.artifact_dir.is_absolute() else config.cwd / config.artifact_dir
-    default_runs_dir = config.cwd / ".revrem" / "runs"
-    try:
-        artifact_dir.relative_to(default_runs_dir)
-    except ValueError:
-        return
-    # Keep the ignore file scoped to the workspace path the operator invoked,
-    # rather than resolving through symlinked ancestry and mutating an
-    # unrelated checkout's metadata.
-    repo_root = lexical_git_repo_root(config.cwd)
-    if repo_root == Path(tempfile.gettempdir()).resolve():
-        repo_root = None
-    ignore_path = git_info_exclude_path(repo_root) if repo_root is not None else None
-    if ignore_path is not None and repo_root is not None:
-        ignore_entry = f"{default_runs_dir.relative_to(repo_root).as_posix()}/"
-    else:
-        ignore_entry = "runs/"
-    ignore_path = ignore_path or (config.cwd / ".revrem" / ".gitignore")
-    ignore_path.parent.mkdir(parents=True, exist_ok=True)
-    with _exclusive_lock_file(ignore_path), ignore_path.open("a+", encoding="utf-8") as handle:
-        handle.seek(0)
-        existing = handle.read()
-        existing_entries = set(existing.splitlines())
-        if ignore_entry in existing_entries:
-            return
-        if existing and not existing.endswith("\n"):
-            existing += "\n"
-        handle.seek(0)
-        handle.truncate()
-        handle.write(f"{existing}{ignore_entry}\n")
 
 
 def resolve_timeout_seconds(value: float) -> float | None:

@@ -10,12 +10,13 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
+from importlib import import_module
 from pathlib import Path
 
 from code_review_loop import budgets, reporting, resume, runner
-from code_review_loop.adapters.subprocess_runner import default_runner
 from code_review_loop.clock import SYSTEM_CLOCK, Clock
 from code_review_loop.config import LoopConfig
+from code_review_loop.core.outcome import RunOutcome
 from code_review_loop.core.ports import CommandResult, PhaseHarnessBundle, ProcessRunner
 from code_review_loop.identity import SYSTEM_IDENTITY, RunIdentity
 from code_review_loop.runtime import RunLoopFailed, format_terminal_summary
@@ -26,6 +27,7 @@ class ReviewLoopResult:
     """Typed application result with an explicit summary projection."""
 
     summary: Mapping[str, object]
+    outcome: RunOutcome
 
     def to_dict(self) -> dict[str, object]:
         return dict(self.summary)
@@ -49,7 +51,7 @@ class ReviewLoopResult:
 
 def run_review_loop(
     config: LoopConfig,
-    process_runner: ProcessRunner = default_runner,
+    process_runner: ProcessRunner | None = None,
     *,
     clock: Clock = SYSTEM_CLOCK,
     identity: RunIdentity = SYSTEM_IDENTITY,
@@ -58,16 +60,20 @@ def run_review_loop(
     terminal_ui: bool = True,
 ) -> ReviewLoopResult:
     """Run one bounded review/remediation loop and return the summary payload."""
+    if process_runner is None:
+        process_runner = import_module("code_review_loop.adapters.subprocess_runner").default_runner
+    result = runner.run_loop(
+        config,
+        process_runner,
+        clock=clock,
+        identity=identity,
+        budget_state=budget_state,
+        phase_harnesses=phase_harnesses,
+        terminal_ui=terminal_ui,
+    )
     return ReviewLoopResult(
-        runner.run_loop(
-            config,
-            process_runner,
-            clock=clock,
-            identity=identity,
-            budget_state=budget_state,
-            phase_harnesses=phase_harnesses,
-            terminal_ui=terminal_ui,
-        )
+        summary=result.summary,
+        outcome=result.outcome,
     )
 
 
@@ -75,7 +81,7 @@ def resume_review_loop(
     run_dir: Path,
     *,
     cwd: Path | None = None,
-    process_runner: ProcessRunner = default_runner,
+    process_runner: ProcessRunner | None = None,
     clock: Clock = SYSTEM_CLOCK,
     identity: RunIdentity = SYSTEM_IDENTITY,
     phase_harnesses: PhaseHarnessBundle | None = None,

@@ -10,7 +10,7 @@ from pathlib import Path
 from code_review_loop import application, diagnostics, resume
 from code_review_loop.cli.args import parse_resume_args
 from code_review_loop.cli.outcome import summary_from_result
-from code_review_loop.core.outcome import outcome_to_exit_code
+from code_review_loop.core.outcome import OutcomeFailed, outcome_to_exit_code
 from code_review_loop.runtime import RunLoopFailed, format_terminal_summary
 
 from ..outcome import CommandFailed, CommandOk
@@ -41,7 +41,11 @@ def main(argv: Sequence[str]) -> int:
         return CommandFailed(exit_code=code).exit_code
     except KeyboardInterrupt:
         print("Cancelled by user.", file=sys.stderr)
-        return CommandFailed(exit_code=5).exit_code
+        return CommandFailed(
+            exit_code=outcome_to_exit_code(
+                OutcomeFailed(reason="cancelled", error="cancelled by operator")
+            )
+        ).exit_code
     except (OSError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return CommandFailed(exit_code=4).exit_code
@@ -49,6 +53,7 @@ def main(argv: Sequence[str]) -> int:
         print(json.dumps(summary, indent=2, sort_keys=True))
     else:
         print(format_terminal_summary(summary))
-    if summary.get("final_status") == "clear":
+    exit_code = outcome_to_exit_code(result.outcome)
+    if exit_code == CommandOk().exit_code:
         return CommandOk().exit_code
-    return CommandFailed(exit_code=2).exit_code
+    return CommandFailed(exit_code=exit_code).exit_code

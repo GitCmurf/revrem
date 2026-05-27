@@ -6,6 +6,12 @@ import pytest
 
 from code_review_loop import application, budgets
 from code_review_loop.config import LoopConfig
+from code_review_loop.core.outcome import (
+    OutcomeClear,
+    OutcomeFailed,
+    OutcomeFindings,
+    OutcomeUnknown,
+)
 from tests.support.headless import (
     HeadlessRun,
     RecordingRemediationHarness,
@@ -20,6 +26,7 @@ def test_headless_application_clear_review(tmp_path: Path) -> None:
     result = run.run()
 
     assert result.final_status == "clear"
+    assert isinstance(result.outcome, OutcomeClear)
     assert result.stopped_reason == "review_clear"
     assert run.review.calls[0].artifact_label == "review-1"
 
@@ -43,6 +50,7 @@ def test_headless_application_findings_remediation_checks_final_clear(tmp_path: 
     result = run.run()
 
     assert result.final_status == "clear"
+    assert isinstance(result.outcome, OutcomeClear)
     assert [request.iteration for request in run.remediation.calls] == [1]
     assert [request.iteration for request in run.checks.calls] == [1]
     assert [request.display_label for request in run.review.calls] == ["1", "final"]
@@ -67,8 +75,46 @@ def test_headless_application_check_failure_feeds_next_iteration(tmp_path: Path)
     result = run.run()
 
     assert result.final_status == "clear"
+    assert isinstance(result.outcome, OutcomeClear)
     assert [request.iteration for request in run.remediation.calls] == [1, 2]
     assert "pytest tests/ failed" in run.remediation.calls[1].remediation_input
+
+
+def test_headless_application_findings_outcome_is_typed(tmp_path: Path) -> None:
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        progress=False,
+        triage_enabled=False,
+    )
+    run = HeadlessRun(config=config, review=SequencedReviewHarness(["findings", "findings"]))
+
+    result = run.run()
+
+    assert result.final_status == "findings"
+    assert isinstance(result.outcome, OutcomeFindings)
+
+
+def test_headless_application_unknown_outcome_is_typed(tmp_path: Path) -> None:
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        progress=False,
+        triage_enabled=False,
+        final_review=False,
+    )
+    run = HeadlessRun(config=config, review=SequencedReviewHarness(["findings"]))
+
+    result = run.run()
+
+    assert result.final_status == "unknown"
+    assert isinstance(result.outcome, OutcomeUnknown)
 
 
 def test_headless_application_setup_failure_summary(tmp_path: Path) -> None:
@@ -88,6 +134,7 @@ def test_headless_application_setup_failure_summary(tmp_path: Path) -> None:
 
     assert excinfo.value.summary["final_status"] == "error"
     assert excinfo.value.summary["stopped_reason"] == "setup_failed"
+    assert isinstance(excinfo.value.outcome, OutcomeFailed)
 
 
 def test_headless_application_budget_failure_summary(tmp_path: Path) -> None:
@@ -103,6 +150,7 @@ def test_headless_application_budget_failure_summary(tmp_path: Path) -> None:
 
     assert excinfo.value.summary["final_status"] == "error"
     assert excinfo.value.summary["stopped_reason"] == "budget_ceiling_hit"
+    assert isinstance(excinfo.value.outcome, OutcomeFailed)
 
 
 def test_headless_application_cancellation_summary(tmp_path: Path) -> None:
@@ -117,6 +165,7 @@ def test_headless_application_cancellation_summary(tmp_path: Path) -> None:
 
     assert excinfo.value.summary["final_status"] == "error"
     assert excinfo.value.summary["stopped_reason"] == "cancelled"
+    assert isinstance(excinfo.value.outcome, OutcomeFailed)
 
 
 def test_headless_application_resume_uses_injected_runner(tmp_path: Path) -> None:
@@ -148,3 +197,4 @@ def test_headless_application_resume_uses_injected_runner(tmp_path: Path) -> Non
     )
 
     assert result.final_status == "clear"
+    assert isinstance(result.outcome, OutcomeClear)

@@ -6,6 +6,7 @@ from importlib import import_module
 import pytest
 
 import code_review_loop.runner as runner_mod
+from code_review_loop.cli import config_builder
 from code_review_loop.cli import config_support
 
 cli_main = import_module("code_review_loop.cli.main")
@@ -16,7 +17,7 @@ suppress_command = import_module("code_review_loop.cli.commands.suppress")
 
 
 def test_default_artifact_dir_uses_revrem_namespace():
-    artifact_dir = runner_mod.default_artifact_dir()
+    artifact_dir = config_builder.default_artifact_dir()
 
     assert artifact_dir.parts[:2] == (".revrem", "runs")
     assert re.fullmatch(r"\d{8}T\d{6}Z-[0-9a-f]{32}", artifact_dir.name)
@@ -24,7 +25,7 @@ def test_default_artifact_dir_uses_revrem_namespace():
 
 def test_profile_timeout_rejects_negative_values():
     with pytest.raises(ValueError, match="profile phase timeout must be non-negative"):
-        runner_mod.resolve_profile_timeout_seconds(-1)
+        config_builder.resolve_profile_timeout_seconds(-1)
 
 
 def test_run_loop_creates_repo_local_revrem_gitignore_for_default_artifacts(tmp_path):
@@ -202,5 +203,4 @@ def test_run_loop_falls_back_to_workspace_gitignore_for_symlinked_default_artifa
 
     assert (workspace / "linked" / ".revrem" / ".gitignore").read_text(encoding="utf-8") == "runs/\n"
     assert (repo_git_info / "exclude").read_text(encoding="utf-8") == "# local excludes\n"
-
 

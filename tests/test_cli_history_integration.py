@@ -5,11 +5,16 @@ from types import SimpleNamespace
 
 import code_review_loop.runner as runner_mod
 from code_review_loop import application as application_mod
+from code_review_loop.core.outcome import OutcomeClear
 
 cli_main = import_module("code_review_loop.cli.main")
 config_command = import_module("code_review_loop.cli.commands.config")
 history_command = import_module("code_review_loop.cli.commands.history")
 suppress_command = import_module("code_review_loop.cli.commands.suppress")
+
+
+def _clear_result(summary: dict[str, object]) -> application_mod.ReviewLoopResult:
+    return application_mod.ReviewLoopResult(summary=summary, outcome=OutcomeClear(reason="review_clear"))
 
 
 
@@ -20,7 +25,7 @@ def test_main_records_non_dry_run_history(tmp_path, monkeypatch, capsys):
     (tmp_path / ".git").mkdir()
 
     def fake_run_loop(config):
-        return {
+        return _clear_result({
             "run_id": "run-1",
             "started_at": "2026-05-02T10:00:00Z",
             "base": config.base,
@@ -32,7 +37,7 @@ def test_main_records_non_dry_run_history(tmp_path, monkeypatch, capsys):
             "stopped_reason": "review_clear",
             "pending_check_failures": False,
             "artifact_paths": {"summary": str(config.artifact_dir / "summary.json")},
-        }
+        })
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
     monkeypatch.setattr(runner_mod, "write_summary", lambda config, summary: None)
@@ -92,7 +97,7 @@ def test_main_skips_history_for_dry_run_and_explicit_opt_out(tmp_path, monkeypat
     (tmp_path / ".git").mkdir()
 
     def fake_run_loop(config):
-        return {
+        return _clear_result({
             "run_id": "run-1",
             "started_at": "2026-05-02T10:00:00Z",
             "base": config.base,
@@ -101,7 +106,7 @@ def test_main_skips_history_for_dry_run_and_explicit_opt_out(tmp_path, monkeypat
             "iterations": [],
             "final_status": "clear",
             "stopped_reason": "review_clear",
-        }
+        })
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
@@ -117,12 +122,12 @@ def test_main_skips_history_when_summary_has_no_run_id(tmp_path, monkeypatch):
     (tmp_path / ".git").mkdir()
 
     def fake_run_loop(config):
-        return {
+        return _clear_result({
             "artifact_dir": str(config.artifact_dir),
             "iterations": [],
             "final_status": "clear",
             "stopped_reason": "review_clear",
-        }
+        })
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
@@ -157,5 +162,4 @@ def test_history_unknown_command_reports_command_error(monkeypatch, capsys):
 
     assert history_command.main([]) == 1
     assert "unhandled history command: wat" in capsys.readouterr().err
-
 

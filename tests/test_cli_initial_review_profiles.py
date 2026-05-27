@@ -5,11 +5,16 @@ from importlib import import_module
 
 from code_review_loop import application as application_mod
 from code_review_loop import profiles
+from code_review_loop.core.outcome import OutcomeClear
 
 cli_main = import_module("code_review_loop.cli.main")
 config_command = import_module("code_review_loop.cli.commands.config")
 history_command = import_module("code_review_loop.cli.commands.history")
 suppress_command = import_module("code_review_loop.cli.commands.suppress")
+
+
+def _clear_result(summary: dict[str, object]) -> application_mod.ReviewLoopResult:
+    return application_mod.ReviewLoopResult(summary=summary, outcome=OutcomeClear(reason="review_clear"))
 
 
 
@@ -27,12 +32,12 @@ def test_main_resolves_latest_initial_review_from_custom_artifact_dir(tmp_path, 
 
     def fake_run_loop(config):
         captured_configs.append(config)
-        return {
+        return _clear_result({
             "artifact_dir": str(config.artifact_dir),
             "final_status": "clear",
             "stopped_reason": "review_clear",
             "iterations": [],
-        }
+        })
 
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()

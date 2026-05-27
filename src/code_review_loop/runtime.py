@@ -6,8 +6,23 @@ import ntpath
 import posixpath
 import re
 from pathlib import PurePath
+from typing import Mapping
 
 from code_review_loop.core.outcome import RunOutcome
+
+
+class RunnerResult(dict[str, object]):
+    """Dict-compatible run summary carrying the typed terminal outcome."""
+
+    outcome: RunOutcome
+
+    def __init__(self, summary: Mapping[str, object], outcome: RunOutcome):
+        super().__init__(summary)
+        self.outcome = outcome
+
+    @property
+    def summary(self) -> dict[str, object]:
+        return dict(self)
 
 
 class RunLoopFailed(RuntimeError):
