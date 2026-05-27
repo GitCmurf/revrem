@@ -8,10 +8,10 @@ from importlib import import_module
 import pytest
 
 import code_review_loop.runner as runner_mod
-from code_review_loop.cli import config_builder
 from code_review_loop import application
 from code_review_loop.adapters import subprocess_runner as subprocess_runner_mod
 from code_review_loop.adapters import terminal as terminal_mod
+from code_review_loop.cli import config_builder
 
 cli_main = import_module("code_review_loop.cli.main")
 

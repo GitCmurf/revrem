@@ -2,9 +2,9 @@
 document_id: REVREM-ADR-012
 type: ADR
 title: Review loop application boundary and engine ownership
-status: Draft
-version: '0.1'
-last_updated: '2026-05-26'
+status: Approved
+version: '0.2'
+last_updated: '2026-05-27'
 owner: GitCmurf
 docops_version: '2.0'
 ---
@@ -42,18 +42,21 @@ point for executing and resuming review loops:
   executes one bounded loop and returns `ReviewLoopResult`.
 - `resume_review_loop(run_dir, cwd=..., process_runner=..., clock=..., identity=..., phase_harnesses=..., terminal_ui=...)`
   resumes from an existing run directory and returns `ReviewLoopResult`.
-- `ReviewLoopResult.to_dict()` is the explicit projection for command output,
-  run history, and JSON serialization.
+- `ReviewLoopResult.outcome` is the typed terminal `RunOutcome`; string labels
+  in summaries and exit codes are projections from that outcome.
+- `ReviewLoopResult.to_dict()` is the explicit summary projection for command
+  output, run history, and JSON serialization.
 - CLI command modules must call the application API rather than reaching into
   the runner.
 
 The runner is private application infrastructure, not a public API. The
 side-effectful iteration executor lives in `code_review_loop.runner_shell`,
 while subprocess execution lives in `code_review_loop.adapters.subprocess_runner`.
-`code_review_loop.runner` owns run setup, preflight, cancellation, summary
-finalization, and command-facing integration. Terminal title/control behavior
-lives in `code_review_loop.adapters.terminal`; runner code must not own
-terminal escape constants or `/dev/tty` writes.
+`code_review_loop.runner_setup` owns setup/context wiring and first-review
+loading. `code_review_loop.runner` owns the bounded session shell: preflight,
+cancellation, summary finalization, and command-facing integration. Terminal
+title/control behavior lives in `code_review_loop.adapters.terminal`; runner
+code must not own terminal escape constants or `/dev/tty` writes.
 
 The core engine remains dependency-free. It exposes state-machine events,
 actions, a pure `decide()` transition function, and a reusable `run()` loop for
@@ -88,6 +91,7 @@ command. The dependency shape at exit is:
 cli/main.py
   -> application.py
        -> runner.py
+            -> runner_setup.py
             -> runner_shell.py
                  -> core/engine.py
 
@@ -95,35 +99,34 @@ adapters/* implement ProcessRunner, terminal/progress, Git/resume snapshots,
 and the five phase harness ports consumed through RunContext.
 ```
 
+Legend: `->` marks injected collaborators or private implementation calls.
+Typed terminal results flow back as `RunOutcome`; summaries and event artifacts
+are projections written at the shell boundary, not engine inputs.
+
 ### As-Built State at Wave D Exit
 
 Measurements below are command-backed so reviewers can refresh them:
 
-- `wc -l src/code_review_loop/cli/main.py src/code_review_loop/runner.py src/code_review_loop/runner_shell.py src/code_review_loop/core/engine.py`
-  reports `98`, `775`, `594`, and `349` lines respectively.
+- `wc -l src/code_review_loop/cli/main.py src/code_review_loop/runner.py src/code_review_loop/runner_setup.py src/code_review_loop/runner_shell.py src/code_review_loop/core/engine.py`
+  reports `100`, `551`, `174`, `594`, and `349` lines respectively.
 - `rg -n '^\[\[tool\.importlinter\.contracts\]\]' pyproject.toml` reports
   9 import-linter contracts.
-- `rg -n 'def test_' tests/test_application_headless_integration.py tests/test_engine_run.py tests/test_runner_shell_acceptance.py tests/test_wave_d_architecture.py`
-  reports 16 Wave D acceptance/ratchet tests.
+- `rg -n 'def test_' tests/test_application_headless_integration.py tests/test_engine_run.py tests/test_runner_shell_acceptance.py tests/test_wave_d_architecture.py tests/test_outcome_exit_code.py`
+  reports 31 Wave D acceptance, outcome, and ratchet tests.
 - `rg -n 'monkeypatch\.setattr\(MODULE,' tests` reports no production test
   call-sites; the only matches are the ratchet's own explanatory strings.
 
 ### How to verify the leverage claims
 
-- **Application API:** `tests/test_application_headless_integration.py` runs
-  clear, remediation, check-failure, setup-failure, budget, cancellation, and
-  resume scenarios through `application.run_review_loop()` /
-  `resume_review_loop()` without CLI parsing.
-- **Engine purity:** `tests/test_engine_run.py` drives `core.engine.run()` with
-  a recording executor and is guarded by the `Wave D engine acceptance tests
-  stay core-only` import-linter contract.
-- **Runner-shell ownership:** `tests/test_runner_shell_acceptance.py` calls
-  `runner_shell.run_iterations()` directly; `tests/test_runner_engine_gate.py`
-  and the `Runner shell must not import CLI or private runner` contract guard
-  the production direction.
-- **Command extensibility:** `src/code_review_loop/cli/commands/registry.py`
-  owns concrete subcommand names; `tests/test_wave_d_architecture.py` fails if
-  those names return to `cli/main.py`.
-- **DocOps/gates:** `tests/test_import_contracts.py` runs import-linter inside
-  pytest; `uv run --locked meminit check --format json` validates governed
-  documents.
+| Exit Criterion | Executable proof |
+| --- | --- |
+| #1 Core dependency-free | Import-linter contracts `Core must not import edge or adapter modules` and `Wave D engine acceptance tests stay core-only`; the latter also forbids common domain leaf modules. |
+| #2 Engine drivable without CLI | `tests/test_engine_run.py` drives `core.engine.run()` with a recording executor and no CLI, runner, shell, adapter, TUI, or domain-leaf imports. |
+| #3 Application drivable by non-CLI caller | `tests/test_application_headless_integration.py` runs clear, findings, unknown, setup-failure, budget, cancellation, and resume scenarios through `application.run_review_loop()` / `resume_review_loop()` with injected fakes. |
+| #4 Add command / swap behavior through extension seams | `tests/test_wave_d_architecture.py` proves `cli/main.py` is closed to concrete subcommand names; headless tests inject alternate phase harnesses without editing CLI, runner, runner shell, or engine code. |
+| #5 Monkeypatch facade gone | `tests/test_monkeypatch_ratchet.py` keeps `monkeypatch.setattr(MODULE, ...)` at zero production call-sites. |
+| #6 Exits exhaustive | `tests/test_outcome_exit_code.py` reaches every `RunOutcome` variant and every `OutcomeFailed.reason`; CLI success/cancellation paths map from typed outcomes. |
+| #7 No nondeterminism in core | `tests/test_determinism_gate.py` prevents raw time, random, subprocess, filesystem, and environment access in core modules. |
+| #8 Dependency graph acyclic | `tests/test_import_contracts.py` runs all 9 import-linter contracts, including core, adapter, runner-shell, CLI/application, and Wave D headless isolation rules. |
+| #9 Test monolith decomposed | `tests/test_cli.py` is a smoke-level compatibility shell; behavior now lives in focused command, runner, adapter, engine, and application modules. |
+| #10 Machine contract unchanged or ledgered | `docs/05-planning/behaviour-ledger-task-003.md` records summary/status transitions, including setup failure as `final_status == "error"` with `stopped_reason == "setup_failed"`. |

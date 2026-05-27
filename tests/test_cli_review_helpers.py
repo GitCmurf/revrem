@@ -10,7 +10,10 @@ from code_review_loop.adapters import remediation as remediation_impl
 from code_review_loop.adapters import review as review_impl
 from code_review_loop.adapters import triage as triage_impl
 from code_review_loop.core.ports import RunContext
-from code_review_loop.core.review_interpretation import detect_review_status
+from code_review_loop.core.review_interpretation import (
+    actionable_review_output,
+    detect_review_status,
+)
 from tests.support.fakes import FakeClock, FakeRunIdentity
 from tests.support.phase_harnesses import phase_harness_kwargs
 
@@ -765,7 +768,7 @@ def run_git(cwd: Path, *args: str) -> None:
 def test_actionable_review_output_drops_verbose_stderr_transcript():
     output = "Full review comments:\n\n- [P1] Fix the bug\n\n[stderr]\n" + ("diff --git a/x b/x\n" * 100)
 
-    assert runner_mod.actionable_review_output(output) == "Full review comments:\n\n- [P1] Fix the bug"
+    assert actionable_review_output(output) == "Full review comments:\n\n- [P1] Fix the bug"
 
 
 def test_trim_for_prompt_caps_large_review_text():

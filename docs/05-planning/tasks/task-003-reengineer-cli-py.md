@@ -1433,9 +1433,10 @@ not add demo-only production features. It should prove, with executable
 acceptance tests and ratchets, that the seams created in Waves A-C are useful
 to a caller that is not the CLI.
 
-**Status (2026-05-26): implemented.** Wave D landed the headless application
-harness, core-engine traces, runner-shell acceptance tests, command-registry
-relocation, import-linter contracts, and ADR evidence pack described below.
+**Status (2026-05-27): implemented and polished.** Wave D landed the headless
+application harness, typed SDK outcomes, core-engine traces, runner-shell
+acceptance tests, command-registry relocation, strict import-linter contracts,
+runner setup extraction, and ADR evidence pack described below.
 
 **Per-wave discipline.** Each sub-wave names (a) the **Phase Exit Criterion** it
 discharges, (b) the **contracts** (C1–C7) it consumes, and (c) the **enforcement
@@ -1446,16 +1447,18 @@ dependency-rule claim; the architecture is enforced or it is decoration.
 **As-built state entering Wave D (2026-05-26).**
 
 - `code_review_loop.application.run_review_loop()` and `resume_review_loop()`
-  are the supported non-CLI execution surface and return `ReviewLoopResult`.
+  are the supported non-CLI execution surface and return `ReviewLoopResult`
+  with a typed `RunOutcome` plus a summary projection.
 - `core.engine.run(state, executor)` is dependency-free and takes an
   `EngineExecutor`, not a `RunContext`.
 - `runner_shell.py` owns the side-effectful action executor for production
-  loop iterations; `runner.py` owns session setup/preflight/cancellation and
-  summary finalization.
-- Subprocess execution, terminal control, resume Git snapshots, and resume
-  payload construction now live outside `runner.py`
+  loop iterations; `runner_setup.py` owns setup/context wiring; `runner.py`
+  owns preflight/cancellation/session finalization.
+- Subprocess execution, terminal control, resume Git snapshots, resume payload
+  construction, and runner setup now live outside `runner.py`
   (`adapters.subprocess_runner`, `adapters.terminal`, `adapters.git`,
-  `resume.py`). `runner.py` is under the current `<800` ratchet.
+  `resume.py`, `runner_setup.py`). `runner.py` is under the tightened `<600`
+  ratchet.
 - The CLI command registry now lives in `cli/commands/registry.py`; `cli/main.py`
   is guarded against concrete subcommand names by a Wave D architecture test.
 
@@ -1473,8 +1476,10 @@ terminal state, or real subprocesses.
      `ReviewLoopResult`.
   2. Add `tests/test_application_headless_integration.py` with SDK-style
      scenarios — one per `RunOutcome` variant, so the headless surface is
-     proven exhaustive against C5:
-     - **Clear** — review exits with `ReviewLoopResult.final_status == "clear"`;
+     proven exhaustive against C5 and exposes `ReviewLoopResult.outcome` for
+     SDK callers:
+     - **Clear** — review exits with `ReviewLoopResult.final_status == "clear"`
+       and `ReviewLoopResult.outcome` is `OutcomeClear`;
      - **Findings → remediation → checks → final review** exits clear;
      - **Check failures** carry into the next iteration without touching the CLI;
      - **Setup failure** (`OutcomeFailed(reason="setup_failed")`) raises
@@ -1489,9 +1494,10 @@ terminal state, or real subprocesses.
      `headless-application-isolation`: the modules
      `tests/support/headless.py` and `tests/test_application_headless_integration.py`
      **forbid** imports of `code_review_loop.cli`, `argparse`, and
-     `code_review_loop.adapters.subprocess_runner.default_runner`. Fake process
-     runners must be explicit at construction. The contract lives in
-     `pyproject.toml` and is required in CI.
+     `code_review_loop.adapters.subprocess_runner`, and `code_review_loop.tui`.
+     Fake process runners must be explicit at construction. The contract lives
+     in `pyproject.toml`, has no indirect-import carve-out, and is required in
+     CI.
 - **Exit:** a non-CLI caller can execute and resume a bounded run through the
   application API, inspect `ReviewLoopResult`, and serialize via `to_dict()`;
   the import-linter contract is green.
@@ -1519,8 +1525,10 @@ production shell moved to `runner_shell.py`.
      the engine-acceptance test module forbids imports of
      `code_review_loop.cli`, `code_review_loop.adapters.*`,
      `code_review_loop.runner`, `code_review_loop.runner_shell`,
-     `code_review_loop.application`, and `code_review_loop.tui`. Only
-     `code_review_loop.core.*` and `tests/support/*` are permitted. CI-required.
+     `code_review_loop.application`, `code_review_loop.tui`, and common domain
+     leaves (`budgets`, `events`, `policy`, `profiles`, `reporting`, `resume`,
+     `triage`, etc.). Only `code_review_loop.core.*` and `tests/support/*` are
+     permitted. CI-required.
 - **Exit:** a reviewer can see the state machine run without CLI, adapters,
   terminal, filesystem, subprocesses, or `RunContext`; the import-linter
   contract is green.
@@ -1602,10 +1610,11 @@ is reproducibility, not narrative.
   2. Add an `## As-Built State at Wave D Exit` block to this document (mirroring
      the `## As-Built State at Wave C Start` block), with each measurement
      backed by a runnable command — at minimum: `wc -l` of the surviving
-     `cli/main.py`, `runner.py`, `runner_shell.py`, and `core/engine.py`; the
-     count of import-linter contracts; the count of D1/D2/D3 acceptance tests;
-     and the C2 ratchet baseline (must still be 0). Numbers without commands
-     are not acceptable evidence — the C-baseline block sets the standard.
+     `cli/main.py`, `runner.py`, `runner_setup.py`, `runner_shell.py`, and
+     `core/engine.py`; the count of import-linter contracts; the count of
+     D1/D2/D3/outcome acceptance tests; and the C2 ratchet baseline (must still
+     be 0). Numbers without commands are not acceptable evidence — the
+     C-baseline block sets the standard.
   3. Add a **"How to verify the leverage claims" checklist** as a top-level
      section in this document: one line per Exit Criterion, naming the test
      file or import-linter contract that proves it. A reviewer should be able

@@ -6,11 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from code_review_loop import harnesses, policy, prompts_composer
-from code_review_loop import runner as cli
+from code_review_loop import harnesses, policy, profiles, prompts_composer
 from code_review_loop._compat_jsonschema import validate
 from code_review_loop.adapters import remediation as remediation_impl
 from code_review_loop.cli.main import main as cli_main
+from code_review_loop.config import LoopConfig
 
 
 @pytest.fixture
@@ -110,7 +110,7 @@ model = "fake-clear"
 
 def test_build_remediation_command_uses_harness_executable(monkeypatch):
     monkeypatch.setenv(harnesses.FAKE_HARNESS_ENV, "1")
-    config = cli.LoopConfig(
+    config = LoopConfig(
         codex_bin="custom-codex",
         remediation_harness="codex",
         artifact_dir=Path("/tmp"),
@@ -131,22 +131,22 @@ def test_build_remediation_command_uses_harness_executable(monkeypatch):
     assert cmd[0] == harnesses.FAKE_HARNESS_COMMAND
 
 def test_deterministic_safety_signal_escalation():
-    profile = cli.profiles.Profile(
+    profile = profiles.Profile(
         name="test",
-        triage=cli.profiles.TriageConfig(
+        triage=profiles.TriageConfig(
             contract="v2",
-            routing=cli.profiles.TriageRoutingConfig(
+            routing=profiles.TriageRoutingConfig(
                 enabled=True,
-                rule=(cli.profiles.TriageRoutingRule(
+                rule=(profiles.TriageRoutingRule(
                     id="sec",
-                    when=cli.profiles.TriageRoutingRuleWhen(safety_signals_any=("sensitive-domain:auth",)),
-                    then=cli.profiles.TriageRoutingRuleThen(route="high-tier")
+                    when=profiles.TriageRoutingRuleWhen(safety_signals_any=("sensitive-domain:auth",)),
+                    then=profiles.TriageRoutingRuleThen(route="high-tier")
                 ),),
                 default_route="low-tier"
             ),
             routes={
-                "low-tier": cli.profiles.TriageRouteConfig(harness="codex"),
-                "high-tier": cli.profiles.TriageRouteConfig(harness="codex")
+                "low-tier": profiles.TriageRouteConfig(harness="codex"),
+                "high-tier": profiles.TriageRouteConfig(harness="codex")
             }
         )
     )

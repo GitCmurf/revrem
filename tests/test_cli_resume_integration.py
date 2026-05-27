@@ -8,12 +8,12 @@ from importlib import import_module
 import pytest
 
 import code_review_loop.runner as runner_mod
-from code_review_loop.cli.config_support import resolve_initial_review_file
 from code_review_loop import application as application_mod
 from code_review_loop import events
 from code_review_loop import resume as resume_mod
 from code_review_loop.adapters import git as git_adapter
 from code_review_loop.adapters import phase_support
+from code_review_loop.cli.config_support import resolve_initial_review_file
 
 cli_main = import_module("code_review_loop.cli.main")
 

@@ -70,4 +70,4 @@ def test_runner_stays_below_polish_sprint_size_ceiling() -> None:
         Path(__file__).resolve().parents[1] / "src" / "code_review_loop" / "runner.py"
     ).read_text(encoding="utf-8").splitlines()
 
-    assert len(runner_lines) < 800
+    assert len(runner_lines) < 600

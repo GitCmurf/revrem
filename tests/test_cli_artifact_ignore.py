@@ -6,15 +6,12 @@ from importlib import import_module
 import pytest
 
 import code_review_loop.runner as runner_mod
-from code_review_loop.cli import config_builder
-from code_review_loop.cli import config_support
+from code_review_loop.cli import config_builder, config_support
 
 cli_main = import_module("code_review_loop.cli.main")
 config_command = import_module("code_review_loop.cli.commands.config")
 history_command = import_module("code_review_loop.cli.commands.history")
 suppress_command = import_module("code_review_loop.cli.commands.suppress")
-
-
 
 def test_default_artifact_dir_uses_revrem_namespace():
     artifact_dir = config_builder.default_artifact_dir()
@@ -44,7 +41,6 @@ def test_run_loop_creates_repo_local_revrem_gitignore_for_default_artifacts(tmp_
     )
 
     runner_mod.run_loop(config, runner)
-    runner_mod.ensure_default_artifact_ignore(config)
 
     assert (tmp_path / ".revrem" / ".gitignore").read_text(encoding="utf-8") == "runs/\n"
 
@@ -203,4 +199,3 @@ def test_run_loop_falls_back_to_workspace_gitignore_for_symlinked_default_artifa
 
     assert (workspace / "linked" / ".revrem" / ".gitignore").read_text(encoding="utf-8") == "runs/\n"
     assert (repo_git_info / "exclude").read_text(encoding="utf-8") == "# local excludes\n"
-

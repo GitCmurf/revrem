@@ -5,10 +5,13 @@ from __future__ import annotations
 import ntpath
 import posixpath
 import re
-from pathlib import PurePath
-from typing import Mapping
+from collections.abc import Callable, Mapping, Sequence
+from pathlib import Path, PurePath
 
 from code_review_loop.core.outcome import RunOutcome
+from code_review_loop.core.ports import CommandResult
+
+Runner = Callable[[Sequence[str], Path, str | None, float | None], CommandResult]
 
 
 class RunnerResult(dict[str, object]):

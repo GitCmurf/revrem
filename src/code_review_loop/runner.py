@@ -8,11 +8,11 @@ import json
 import os
 import signal
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from contextlib import contextmanager, suppress
 from importlib import import_module
 from pathlib import Path
-from typing import Any, NamedTuple, NoReturn, assert_never, cast
+from typing import Any, NoReturn, assert_never, cast
 
 from code_review_loop import (
     __version__ as __version__,
@@ -20,17 +20,13 @@ from code_review_loop import (
     budgets,
     bug_bundle as bug_bundle,
     diagnostics,
-    events,
-    profiles,
     progress,
     prompts_composer,
 )
-from code_review_loop.artifact_ignore import ensure_default_artifact_ignore as ensure_default_artifact_ignore
-from code_review_loop.clock import SYSTEM_CLOCK, Clock, utc_iso
+from code_review_loop.clock import SYSTEM_CLOCK, Clock
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.engine import (
     ConfigSnapshot,
-    LoopAccumulator,
 )
 from code_review_loop.core.outcome import (
     OutcomeClear,
@@ -42,12 +38,9 @@ from code_review_loop.core.outcome import (
 from code_review_loop.core.ports import (
     CommandResult,
     PhaseHarnessBundle,
-    ProcessRunner,
-    ProgressReporter,
     RunContext,
 )
 from code_review_loop.core.review_interpretation import (
-    actionable_review_output,
     extract_finding_blocks as extract_finding_blocks,
     extract_review_summary as extract_review_summary,
     review_status_diagnostics as review_status_diagnostics,
@@ -59,15 +52,17 @@ from code_review_loop.core.state import RunState
 from code_review_loop.identity import SYSTEM_IDENTITY, RunIdentity
 from code_review_loop.runtime import RunnerResult as RunnerResult
 from code_review_loop.runtime import RunLoopFailed as RunLoopFailed
+from code_review_loop.runtime import Runner as Runner
 from code_review_loop.runtime import format_terminal_summary as format_terminal_summary
+from code_review_loop.runner_setup import load_initial_review as load_initial_review
+from code_review_loop.runner_setup import prepare_run as prepare_run
+from code_review_loop.runner_setup import profile_routed_harnesses as profile_routed_harnesses
 from code_review_loop.runner_shell import run_iterations as run_iterations
-from code_review_loop.resume import resume_config_payload as resume_config_payload
 from code_review_loop.reporting import add_artifact_paths as add_artifact_paths
 from code_review_loop.reporting import add_summary_contract_fields as add_summary_contract_fields
 from code_review_loop.reporting import append_run_history as append_run_history
 from code_review_loop.reporting import emit_artifact_write_events as emit_artifact_write_events
 from code_review_loop.reporting import iter_artifact_paths as iter_artifact_paths
-from code_review_loop.reporting import summary_budget_payload as summary_budget_payload
 from code_review_loop.reporting import update_unexpected_behaviors as update_unexpected_behaviors
 from code_review_loop.reporting import write_summary as write_summary
 from code_review_loop.adapters.phase_support import CommitFailed as CommitFailed
@@ -89,7 +84,6 @@ from code_review_loop.adapters.phase_support import remaining_wall_budget_second
 from code_review_loop.adapters.phase_support import sanitize_commit_message as sanitize_commit_message
 from code_review_loop.adapters.phase_support import terminal_iteration_label as terminal_iteration_label
 from code_review_loop.adapters.phase_support import write_artifact as write_artifact
-from code_review_loop.adapters.git import git_state_for_resume as git_state_for_resume
 from code_review_loop.adapters.terminal import (
     restore_terminal_display as restore_terminal_display,
 )
@@ -108,9 +102,6 @@ likely false positives, implementation order, and verification commands.
 
 Review and check output:
 """
-
-Runner = Callable[[Sequence[str], Path, str | None, float | None], CommandResult]
-
 
 def _default_runner(
     args: Sequence[str],
@@ -245,52 +236,6 @@ def excerpt_for_terminal(text: str, max_chars: int) -> str:
     return prompts_composer.trim_for_prompt(text, max_chars)
 
 
-def resolve_initial_review_file(value: str | None, search_root: Path) -> Path | None:
-    if value is None:
-        return None
-    if value != "latest":
-        return Path(value)
-
-    candidates = sorted(
-        (
-            path
-            for path in (
-                search_root / "review-final.txt",
-                *search_root.glob("*/review-final.txt"),
-            )
-            if path.is_file() and review_final_is_usable(path)
-        ),
-        key=lambda path: (path.stat().st_mtime, path.parent.name),
-    )
-    if not candidates:
-        return None
-    latest = candidates[-1]
-    if review_final_is_resolved(latest):
-        return None
-    return latest
-
-
-def review_final_is_resolved(review_path: Path) -> bool:
-    summary_path = review_path.with_name("summary.json")
-    if not summary_path.is_file():
-        return False
-    try:
-        summary = json.loads(summary_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return False
-    return isinstance(summary, dict) and summary.get("final_status") == "clear"
-
-
-def review_final_is_usable(review_path: Path) -> bool:
-    try:
-        review_text = actionable_review_output(review_path.read_text(encoding="utf-8")).strip()
-    except OSError:
-        return False
-    if not review_text:
-        return False
-    return not review_text.startswith("DRY_RUN")
-
-
 def _config_snapshot(config: LoopConfig) -> ConfigSnapshot:
     return ConfigSnapshot(
         max_iterations=config.max_iterations,
@@ -401,146 +346,6 @@ def resume_run(run_dir: Path) -> RunnerResult:
     return run_loop(config, budget_state=resumed_budget_state)
 
 
-class _RunSetup(NamedTuple):
-    state: RunState
-    summary: dict[str, object]
-    event_sink: events.JsonlSink
-    ctx: RunContext
-    run_id: str
-
-
-class _IterationRun(NamedTuple):
-    acc: LoopAccumulator
-    pending_check_failures: str
-    result: dict[str, object] | None
-
-
-def _check_commit_cleanliness(config: LoopConfig, runner: Runner) -> None:
-    if not config.commit_after_remediation or config.dry_run:
-        return
-    status_result = runner(
-        git_worktree_status_command_for_commit(config),
-        config.cwd,
-        None,
-        phase_timeout_seconds(config, config.timeout_seconds),
-    )
-    if status_result.returncode != 0:
-        raise RuntimeError("git worktree status check failed before auto-commit could start")
-    dirty_lines = [line for line in status_result.stdout.splitlines() if line.strip()]
-    if dirty_lines:
-        dirty_worktree = "\n".join(dirty_lines)
-        raise RuntimeError(
-            "refusing to enable --commit-after-remediation in a dirty worktree; "
-            "clean the checkout or pass --no-commit-after-remediation.\n"
-            f"Dirty paths:\n{dirty_worktree}"
-        )
-
-
-def _archive_existing_events(config: LoopConfig) -> None:
-    events_path = config.artifact_dir / events.EVENTS_FILENAME
-    if not events_path.is_file():
-        return
-    existing_run_id = events.first_run_id(events_path)
-    if existing_run_id is not None:
-        events_path.rename(events_path.with_name(f"events-{existing_run_id}.jsonl"))
-
-
-def _create_progress_reporter(config: LoopConfig) -> ProgressReporter | None:
-    from code_review_loop.adapters.terminal import TerminalProgressReporter
-
-    if config.progress and config.progress_style in ("rich", "compact"):
-        return TerminalProgressReporter(config.progress_style)
-    return None
-
-
-def _create_run_context(
-    config: LoopConfig,
-    runner: Runner,
-    *,
-    clock: Clock,
-    identity: RunIdentity,
-    event_sink: events.JsonlSink,
-    budget_state: budgets.BudgetState | None,
-    phase_harnesses: PhaseHarnessBundle | None,
-    terminal_ui: bool,
-) -> RunContext:
-    from code_review_loop.adapters.checks import ChecksAdapter
-    from code_review_loop.adapters.commit import CommitAdapter
-    from code_review_loop.adapters.remediation import RemediationAdapter
-    from code_review_loop.adapters.review import ReviewAdapter
-    from code_review_loop.adapters.triage import TriageAdapter
-
-    active_budget_state = budget_state if budget_state is not None else budgets.started_now()
-    harnesses = phase_harnesses or PhaseHarnessBundle(
-        checks=ChecksAdapter(config),
-        commit=CommitAdapter(config),
-        remediation=RemediationAdapter(config),
-        review=ReviewAdapter(config),
-        triage=TriageAdapter(config),
-    )
-    return RunContext(
-        clock=clock,
-        identity=identity,
-        runner=cast(ProcessRunner, runner),
-        event_sink=event_sink,
-        budget_state=active_budget_state,
-        progress_reporter=_create_progress_reporter(config) if terminal_ui else None,
-        phase_checks=harnesses.checks,
-        phase_commit=harnesses.commit,
-        phase_remediation=harnesses.remediation,
-        phase_review=harnesses.review,
-        phase_triage=harnesses.triage,
-    )
-
-
-def _prepare_run(
-    config: LoopConfig,
-    runner: Runner,
-    *,
-    clock: Clock,
-    identity: RunIdentity,
-    budget_state: budgets.BudgetState | None,
-    phase_harnesses: PhaseHarnessBundle | None,
-    terminal_ui: bool,
-) -> _RunSetup:
-    _check_commit_cleanliness(config, runner)
-    config.artifact_dir.mkdir(parents=True, exist_ok=True)
-    ensure_default_artifact_ignore(config)
-    run_id = identity.new_run_id()
-    state = RunState.create(
-        base=config.base,
-        git_state=git_state_for_resume(config),
-        resume_config=resume_config_payload(config),
-        run_id=run_id,
-        started_at=utc_iso(clock.now()),
-        profile=config.profile_name,
-        max_iterations=config.max_iterations,
-        artifact_dir=str(config.artifact_dir),
-        commit_on_hook_failure=config.commit_on_hook_failure,
-        budgets=summary_budget_payload(config),
-        initial_review_file=str(config.initial_review_file) if config.initial_review_file else None,
-    )
-    _archive_existing_events(config)
-    event_sink = events.JsonlSink(config.artifact_dir, run_id, clock=clock)
-    ctx = _create_run_context(
-        config,
-        runner,
-        clock=clock,
-        identity=identity,
-        event_sink=event_sink,
-        budget_state=budget_state,
-        phase_harnesses=phase_harnesses,
-        terminal_ui=terminal_ui,
-    )
-    return _RunSetup(state, state.to_dict(), event_sink, ctx, run_id)
-
-
-def _profile_routed_harnesses(profile: profiles.Profile) -> tuple[str, ...]:
-    if not profile.triage.enabled or not profile.triage.routing.enabled:
-        return ()
-    return tuple(route.harness for route in profile.triage.routes.values())
-
-
 def _run_preflight(
     config: LoopConfig,
     state: RunState,
@@ -564,7 +369,7 @@ def _run_preflight(
             triage_harness=config.triage_harness,
             commit_message_harness=config.commit_message_harness,
             routed_harnesses=(
-                _profile_routed_harnesses(config.profile_v2)
+                profile_routed_harnesses(config.profile_v2)
                 if config.profile_v2 is not None
                 else ()
             ),
@@ -596,16 +401,6 @@ def _run_preflight(
         OutcomeFailed(reason="setup_failed", error="preflight diagnostics found blocking issue"),
         state, summary, config, clock, ctx,
     )
-
-
-def _load_initial_review(config: LoopConfig, ctx: RunContext) -> str:
-    if config.initial_review_file is None:
-        return ""
-    initial_review_output = actionable_review_output(config.initial_review_file.read_text(encoding="utf-8"))
-    write_artifact(config.artifact_dir / "review-initial.txt", initial_review_output + "\n")
-    progress_event(config, "review", "initial", "loaded", str(config.initial_review_file), ctx=ctx)
-    log_review_findings(config, "initial", initial_review_output, ctx=ctx)
-    return initial_review_output
 
 
 def _finish_cancelled(
@@ -687,7 +482,7 @@ def _run_session_body(
     if preflight_result is not None:
         return preflight_result
 
-    initial_review_output = _load_initial_review(config, ctx)
+    initial_review_output = load_initial_review(config, ctx)
     snap = _config_snapshot(config)
     shell_result = run_iterations(
         config=config,
@@ -724,7 +519,7 @@ def _run_session(
         raise ValueError("--max-iterations must be at least 1")
 
     active_runner = runner or default_runner
-    setup = _prepare_run(
+    setup = prepare_run(
         config,
         active_runner,
         clock=clock,

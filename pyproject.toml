@@ -200,9 +200,20 @@ source_modules = [
 forbidden_modules = [
   "code_review_loop.adapters",
   "code_review_loop.application",
+  "code_review_loop.artifacts",
+  "code_review_loop.budgets",
   "code_review_loop.cli",
+  "code_review_loop.config",
+  "code_review_loop.diagnostics",
+  "code_review_loop.events",
+  "code_review_loop.harnesses",
+  "code_review_loop.policy",
+  "code_review_loop.profiles",
+  "code_review_loop.reporting",
+  "code_review_loop.resume",
   "code_review_loop.runner",
   "code_review_loop.runner_shell",
+  "code_review_loop.triage",
   "code_review_loop.tui",
 ]
 

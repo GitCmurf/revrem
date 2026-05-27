@@ -465,7 +465,7 @@ def test_config_new_reports_profile_write_oserror(tmp_path, monkeypatch, capsys)
     def fail_write_user_profile(*_args, **_kwargs):
         raise OSError("permission denied")
 
-    monkeypatch.setattr(runner_mod.profiles, "write_user_profile", fail_write_user_profile)
+    monkeypatch.setattr(profiles, "write_user_profile", fail_write_user_profile)
 
     assert cli_main.main(["config", "new", "smoke"]) == 1
     assert "ERROR: permission denied" in capsys.readouterr().err
