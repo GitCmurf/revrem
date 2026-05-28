@@ -61,6 +61,12 @@ from code_review_loop.core.review_interpretation import (
 from code_review_loop.core.state import RunState
 from code_review_loop.routing_artifacts import record_routing_outcome, resolve_and_record_routing
 
+# The densest legal iteration today is:
+# review -> remediation -> checks -> commit -> retry-via-hook (5 executor
+# steps), or review -> triage -> remediation -> checks -> commit -> continue
+# (6 executor steps). Keep two steps of per-iteration headroom for future
+# non-terminal policy actions; the overhead covers final review and the
+# terminal tail after the last configured iteration.
 _ENGINE_STEPS_PER_ITERATION = 8
 _ENGINE_STEP_BUDGET_OVERHEAD = 4
 

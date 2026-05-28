@@ -4,9 +4,10 @@ from dataclasses import replace
 from pathlib import Path
 
 from code_review_loop import budgets, events, profiles
+from code_review_loop.adapters.phase_support import CommitFailed
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.engine import ConfigSnapshot
-from code_review_loop.core.ports import RunContext
+from code_review_loop.core.ports import CommitOutcome, CommitRequest, RunContext
 from code_review_loop.core.state import RunState
 from code_review_loop.runner_shell import run_iterations
 from tests.support.fakes import FIXED_ISO, FIXED_RUN_ID, FakeClock, FakeRunIdentity
@@ -65,6 +66,7 @@ def _context(
     remediation: RecordingRemediationHarness | None = None,
     checks: SequencedChecksHarness | None = None,
     triage: StaticTriageHarness | None = None,
+    commit: StaticCommitHarness | None = None,
 ) -> tuple[RunContext, events.JsonlSink]:
     config.artifact_dir.mkdir(parents=True, exist_ok=True)
     clock = FakeClock()
@@ -77,12 +79,29 @@ def _context(
         budget_state=budgets.BudgetState(started_at_monotonic=0),
         progress_reporter=None,
         phase_checks=checks or SequencedChecksHarness(),
-        phase_commit=StaticCommitHarness(),
+        phase_commit=commit or StaticCommitHarness(),
         phase_remediation=remediation or RecordingRemediationHarness(),
         phase_review=review,
         phase_triage=triage or StaticTriageHarness(is_clear=False),
     )
     return ctx, sink
+
+
+class HookRetryCommitHarness:
+    def __init__(self, artifact_path: Path) -> None:
+        self.artifact_path = artifact_path
+        self.calls: list[CommitRequest] = []
+
+    def execute(self, request: CommitRequest, ctx: RunContext) -> CommitOutcome:
+        self.calls.append(request)
+        if len(self.calls) == 1:
+            raise CommitFailed(
+                iteration=request.iteration,
+                kind="hook_failed",
+                artifact_path=self.artifact_path,
+                output="Running mypy on staged Python files...\nFound 1 error in 1 file\n",
+            )
+        return CommitOutcome(status="committed")
 
 
 def test_runner_shell_executes_happy_path_without_cli(tmp_path: Path) -> None:
@@ -140,6 +159,42 @@ def test_runner_shell_carries_check_failure_into_retry(tmp_path: Path) -> None:
     assert [iteration["iteration"] for iteration in state.iterations] == [1, 2]
     assert [request.iteration for request in checks.calls] == [1, 2]
     assert "pytest tests/ failed" in remediation.calls[1].remediation_input
+
+
+def test_runner_shell_dense_commit_hook_retry_path_fits_step_budget(tmp_path: Path) -> None:
+    config = replace(
+        _config(tmp_path, max_iterations=2, triage_enabled=False),
+        commit_after_remediation=True,
+    )
+    review = SequencedReviewHarness(["findings", "findings", "clear"])
+    remediation = RecordingRemediationHarness()
+    checks = SequencedChecksHarness([(), ()])
+    commit = HookRetryCommitHarness(config.artifact_dir / "commit-1.txt")
+    ctx, sink = _context(config, review=review, remediation=remediation, checks=checks, commit=commit)
+    clock = ctx.clock
+    try:
+        state = _state(config)
+
+        result = run_iterations(
+            config=config,
+            state=state,
+            clock=clock,
+            ctx=ctx,
+            snap=_snapshot(config),
+            initial_review_output="",
+            run_id=FIXED_RUN_ID,
+        )
+    finally:
+        sink.close()
+
+    assert result.outcome.reason == "review_clear"
+    assert isinstance(result.cause, CommitFailed)
+    assert [request.iteration for request in commit.calls] == [1, 2]
+    assert [request.retrying for request in commit.calls] == [False, True]
+    assert len(remediation.calls) == 2
+    assert "Commit hook failure" in remediation.calls[1].remediation_input
+    assert "Running mypy" in remediation.calls[1].remediation_input
+    assert [iteration["commit_status"] for iteration in state.iterations] == ["hook_failed", "committed"]
 
 
 def test_runner_shell_records_v2_routing_artifacts_and_events(tmp_path: Path) -> None:
