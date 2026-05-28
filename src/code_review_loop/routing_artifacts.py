@@ -34,7 +34,8 @@ def resolve_and_record_routing(
 ) -> RoutingResolution:
     """Resolve a v2 remediation route and write its operator-visible artifacts."""
 
-    assert config.profile_v2 is not None
+    if config.profile_v2 is None:
+        raise RuntimeError("v2 routing requires profile_v2 configuration")
     resolved_route = _resolve_route(
         config=config,
         ctx=ctx,
@@ -78,7 +79,8 @@ def _resolve_route(
     failed_check_names: tuple[str, ...],
     cache: triage.RoutingContextCache,
 ) -> policy.ResolvedRoute:
-    assert config.profile_v2 is not None
+    if config.profile_v2 is None:
+        raise RuntimeError("v2 routing requires profile_v2 configuration")
     routing_config = config.profile_v2.triage.routing
     if not routing_config.enabled:
         return policy.ResolvedRoute(
