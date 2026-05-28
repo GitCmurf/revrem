@@ -45,7 +45,7 @@ from code_review_loop.core.engine import (
 from code_review_loop.core.engine import (
     run as run_engine,
 )
-from code_review_loop.core.outcome import OutcomeClear, RunOutcome
+from code_review_loop.core.outcome import OutcomeClear, OutcomeFailed, RunOutcome
 from code_review_loop.core.ports import (
     ChecksRequest,
     CommitRequest,
@@ -425,6 +425,6 @@ def run_iterations(
     )
     return RunnerShellResult(
         outcome=outcome,
-        cause=executor.cause,
+        cause=executor.cause if isinstance(outcome, OutcomeFailed) else None,
         last_review_output=latest_review_output,
     )

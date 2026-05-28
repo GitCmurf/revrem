@@ -188,7 +188,7 @@ def test_runner_shell_dense_commit_hook_retry_path_fits_step_budget(tmp_path: Pa
         sink.close()
 
     assert result.outcome.reason == "review_clear"
-    assert isinstance(result.cause, CommitFailed)
+    assert result.cause is None
     assert [request.iteration for request in commit.calls] == [1, 2]
     assert [request.retrying for request in commit.calls] == [False, True]
     assert len(remediation.calls) == 2
