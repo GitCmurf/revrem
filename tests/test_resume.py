@@ -347,14 +347,27 @@ enabled = true
 contract = "v2"
 [profiles.test.triage.routing]
 enabled = true
-default_route = "midtier"
-[profiles.test.triage.routes.midtier]
-harness = "codex"
-[profiles.test.triage.routes.frontier]
-harness = "claude"
+default_route = "mutated"
+[profiles.test.triage.routes.mutated]
+harness = "fake"
 """,
         encoding="utf-8",
     )
+    persisted_profile = {
+        "name": "test",
+        "triage": {
+            "enabled": True,
+            "contract": "v2",
+            "routing": {
+                "enabled": True,
+                "default_route": "midtier",
+            },
+            "routes": {
+                "midtier": {"harness": "codex"},
+                "frontier": {"harness": "claude"},
+            },
+        },
+    }
     run_dir = tmp_path / "run"
     write_resume_run(
         run_dir,
@@ -364,6 +377,7 @@ harness = "claude"
             "codex_bin": "codex",
             "profile_name": "test",
             "triage_contract": "v2",
+            "profile_v2": persisted_profile,
             "review_harness": "fake",
             "remediation_harness": "fake",
             "review_model": "review_clear",
@@ -380,6 +394,99 @@ harness = "claude"
     assert resumed.profile_v2 is not None
     assert resumed.profile_v2.triage.contract == "v2"
     assert tuple(route.harness for route in resumed.profile_v2.triage.routes.values()) == ("codex", "claude")
+    assert resumed.profile_v2.triage.routing.default_route == "midtier"
+
+
+def test_resume_loop_config_restores_commit_message_settings(tmp_path):
+    run_dir = tmp_path / "run"
+    write_resume_run(
+        run_dir,
+        resume_config={
+            "base": "main",
+            "max_iterations": 1,
+            "codex_bin": "codex",
+            "review_harness": "fake",
+            "remediation_harness": "fake",
+            "commit_after_remediation": True,
+            "commit_message_harness": "fake",
+            "commit_message_model": "commit-model",
+            "commit_message_prompt": "Summarize staged changes.",
+            "commit_message_prompt_overridden": True,
+            "commit_reasoning_effort": "high",
+            "commit_on_hook_failure": "no-verify",
+            "review_model": "review_clear",
+            "remediation_model": "remediation",
+            "final_review": True,
+            "check_commands": [],
+        },
+    )
+
+    resumed, _budget_state = resume_mod.resume_loop_config(
+        json.loads((run_dir / "summary.json").read_text(encoding="utf-8")), run_dir=run_dir
+    )
+
+    assert resumed.commit_after_remediation is True
+    assert resumed.commit_message_harness == "fake"
+    assert resumed.commit_message_model == "commit-model"
+    assert resumed.commit_message_prompt == "Summarize staged changes."
+    assert resumed.commit_message_prompt_overridden is True
+    assert resumed.commit_reasoning_effort == "high"
+    assert resumed.commit_on_hook_failure == "no-verify"
+
+
+def test_resume_config_payload_omits_default_extension_fields(tmp_path):
+    payload = resume_mod.resume_config_payload(
+        LoopConfig(
+            base="main",
+            max_iterations=1,
+            codex_bin="codex",
+            cwd=tmp_path,
+            artifact_dir=tmp_path / "artifacts",
+            final_review=False,
+        )
+    )
+
+    assert "commit_message_harness" not in payload
+    assert "commit_message_model" not in payload
+    assert "commit_message_prompt" not in payload
+    assert "commit_message_prompt_overridden" not in payload
+    assert "commit_reasoning_effort" not in payload
+    assert "reasoning_effort" not in payload
+    assert "review_reasoning_effort" not in payload
+    assert "remediation_reasoning_effort" not in payload
+    assert "triage_reasoning_effort" not in payload
+    assert "profile_v2" not in payload
+
+
+def test_resume_config_payload_persists_configured_extension_fields(tmp_path):
+    payload = resume_mod.resume_config_payload(
+        LoopConfig(
+            base="main",
+            max_iterations=1,
+            codex_bin="codex",
+            cwd=tmp_path,
+            artifact_dir=tmp_path / "artifacts",
+            commit_message_harness="fake",
+            commit_message_model="commit-model",
+            commit_message_prompt="Summarize staged changes.",
+            commit_message_prompt_overridden=True,
+            commit_reasoning_effort="high",
+            reasoning_effort="medium",
+            review_reasoning_effort="low",
+            remediation_reasoning_effort="high",
+            triage_reasoning_effort="minimal",
+        )
+    )
+
+    assert payload["commit_message_harness"] == "fake"
+    assert payload["commit_message_model"] == "commit-model"
+    assert payload["commit_message_prompt"] == "Summarize staged changes."
+    assert payload["commit_message_prompt_overridden"] is True
+    assert payload["commit_reasoning_effort"] == "high"
+    assert payload["reasoning_effort"] == "medium"
+    assert payload["review_reasoning_effort"] == "low"
+    assert payload["remediation_reasoning_effort"] == "high"
+    assert payload["triage_reasoning_effort"] == "minimal"
 
 
 def test_resume_preconditions_block_head_mismatch(tmp_path, monkeypatch):

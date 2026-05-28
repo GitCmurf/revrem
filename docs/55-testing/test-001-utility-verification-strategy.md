@@ -169,6 +169,9 @@ headers, private keys, local paths, usernames, and idempotence.
 `tests/test_bug_bundle.py` covers deterministic redacted bug-report bundles,
 manifest schema validation, default transcript exclusion, and raw-transcript
 opt-in behavior.
+`tests/test_resume.py` covers resumable run preconditions, budget restoration,
+and immutable resume configuration snapshots for commit-message generation and
+v2 triage routing.
 `tests/test_triage.py` covers structured triage v1 parsing, schema validation,
 invalid-output diagnostics, rejected-only false-positive fixtures, the labelled
 fixture precision floor, and structured remediation handoff formatting.

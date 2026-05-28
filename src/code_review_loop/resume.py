@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from dataclasses import asdict
 from decimal import Decimal
 from pathlib import Path
 from typing import TypeVar
@@ -199,10 +200,9 @@ def resume_loop_config(
     profile_name = _resume_optional_str(resume_config, "profile_name")
     if profile_name is None and isinstance(summary.get("profile"), str):
         profile_name = str(summary["profile"])
-    profile_v2 = None
+    profile_v2 = _resume_profile_v2(resume_config, profile_name)
     triage_contract = _resume_str(resume_config, "triage_contract", "v1")
-    if profile_name is not None:
-        profile_v2 = profiles.resolve_profile(profile_name, cwd=cwd, require_implemented=False)
+    if profile_v2 is not None:
         triage_contract = profile_v2.triage.contract
     return LoopConfig(
         base=_resume_str(resume_config, "base", "main"),
@@ -217,6 +217,10 @@ def resume_loop_config(
         review_model=_resume_optional_str(resume_config, "review_model"),
         remediation_model=_resume_optional_str(resume_config, "remediation_model"),
         triage_model=_resume_optional_str(resume_config, "triage_model"),
+        reasoning_effort=_resume_optional_str(resume_config, "reasoning_effort"),
+        review_reasoning_effort=_resume_optional_str(resume_config, "review_reasoning_effort"),
+        remediation_reasoning_effort=_resume_optional_str(resume_config, "remediation_reasoning_effort"),
+        triage_reasoning_effort=_resume_optional_str(resume_config, "triage_reasoning_effort"),
         triage_enabled=_resume_bool(resume_config, "triage_enabled", False),
         final_review=_resume_bool(resume_config, "final_review", True),
         timeout_seconds=_resume_optional_float(resume_config, "timeout_seconds"),
@@ -229,7 +233,14 @@ def resume_loop_config(
         max_remediation_input_chars=_resume_int(resume_config, "max_remediation_input_chars", 200_000),
         check_commands=_resume_str_tuple(resume_config, "check_commands"),
         commit_after_remediation=_resume_bool(resume_config, "commit_after_remediation", False),
+        commit_message_harness=_resume_str(resume_config, "commit_message_harness", "codex"),
+        commit_message_model=_resume_optional_str(resume_config, "commit_message_model"),
+        commit_message_prompt=_resume_optional_str(resume_config, "commit_message_prompt"),
+        commit_message_prompt_overridden=_resume_bool(
+            resume_config, "commit_message_prompt_overridden", False
+        ),
         commit_on_hook_failure=_resume_str(resume_config, "commit_on_hook_failure", "remediate"),
+        commit_reasoning_effort=_resume_optional_str(resume_config, "commit_reasoning_effort"),
         exec_sandbox=_resume_str(resume_config, "exec_sandbox", "workspace-write"),
         exec_json=_resume_bool(resume_config, "exec_json", False),
         output_last_message=_resume_bool(resume_config, "output_last_message", True),
@@ -246,7 +257,7 @@ def resume_loop_config(
 
 def resume_config_payload(config: LoopConfig) -> dict[str, object]:
     """Persist the loop inputs required to resume with the same safety envelope."""
-    return {
+    payload: dict[str, object] = {
         "base": config.base,
         "max_iterations": config.max_iterations,
         "codex_bin": config.codex_bin,
@@ -283,6 +294,60 @@ def resume_config_payload(config: LoopConfig) -> dict[str, object]:
         "triage_contract": config.triage_contract,
         "profile_name": config.profile_name,
     }
+    _put_if_not_none(payload, "reasoning_effort", config.reasoning_effort)
+    _put_if_not_none(payload, "review_reasoning_effort", config.review_reasoning_effort)
+    _put_if_not_none(payload, "remediation_reasoning_effort", config.remediation_reasoning_effort)
+    _put_if_not_none(payload, "triage_reasoning_effort", config.triage_reasoning_effort)
+    _put_if_not_default(payload, "commit_message_harness", config.commit_message_harness, "codex")
+    _put_if_not_none(payload, "commit_message_model", config.commit_message_model)
+    _put_if_not_none(payload, "commit_message_prompt", config.commit_message_prompt)
+    _put_if_not_default(
+        payload,
+        "commit_message_prompt_overridden",
+        config.commit_message_prompt_overridden,
+        False,
+    )
+    _put_if_not_none(payload, "commit_reasoning_effort", config.commit_reasoning_effort)
+    _put_if_not_none(payload, "profile_v2", _resume_profile_snapshot(config))
+    return payload
+
+
+def _put_if_not_none(payload: dict[str, object], key: str, value: object | None) -> None:
+    if value is not None:
+        payload[key] = value
+
+
+def _put_if_not_default(payload: dict[str, object], key: str, value: object, default: object) -> None:
+    if value != default:
+        payload[key] = value
+
+
+def _resume_profile_snapshot(config: LoopConfig) -> dict[str, object] | None:
+    """Persist immutable v2 routing inputs needed after profile files change."""
+    if config.profile_v2 is None:
+        return None
+    return {
+        "name": config.profile_v2.name,
+        "triage": asdict(config.profile_v2.triage),
+    }
+
+
+def _resume_profile_v2(
+    resume_config: dict[object, object],
+    profile_name: str | None,
+) -> profiles.Profile | None:
+    profile_payload = resume_config.get("profile_v2")
+    if not isinstance(profile_payload, dict):
+        return None
+    triage_payload = profile_payload.get("triage")
+    if not isinstance(triage_payload, dict):
+        return None
+    name = _resume_optional_str(profile_payload, "name") or profile_name or ""
+    return profiles.Profile(
+        name=name,
+        triage=profiles.parse_triage(triage_payload, "resume_config.profile_v2.triage"),
+        source="summary.json",
+    )
 
 
 def latest_resume_review_path(summary: dict[str, object], *, run_dir: Path) -> Path | None:
