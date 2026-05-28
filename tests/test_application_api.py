@@ -8,6 +8,7 @@ from code_review_loop import application
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.outcome import OutcomeClear
 from code_review_loop.core.ports import CommandResult
+from code_review_loop.runtime import RunnerResult
 
 
 def test_run_review_loop_is_non_cli_application_entrypoint(tmp_path: Path) -> None:
@@ -63,6 +64,23 @@ def test_review_loop_result_to_dict_deep_copies_nested_summary() -> None:
     fresh = result.to_dict()
     assert fresh["iterations"] == [{"iteration": 1, "review_status": "clear"}]
     assert fresh["artifact_paths"] == {"reviews": ["review-1.txt"]}
+
+
+def test_private_runner_result_to_dict_deep_copies_nested_summary() -> None:
+    result = RunnerResult(
+        summary={
+            "final_status": "clear",
+            "iterations": [{"iteration": 1, "review_status": "clear"}],
+        },
+        outcome=OutcomeClear(reason="review_clear"),
+    )
+
+    projected = result.to_dict()
+    iterations = projected["iterations"]
+    assert isinstance(iterations, list)
+    iterations.append({"iteration": 2, "review_status": "findings"})
+
+    assert result.to_dict()["iterations"] == [{"iteration": 1, "review_status": "clear"}]
 
 
 def test_resume_review_loop_reports_missing_summary(tmp_path: Path) -> None:

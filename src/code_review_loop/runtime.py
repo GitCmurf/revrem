@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import ntpath
 import posixpath
 import re
@@ -23,7 +24,7 @@ class RunnerResult:
     outcome: RunOutcome
 
     def to_dict(self) -> dict[str, object]:
-        return dict(self.summary)
+        return copy.deepcopy(dict(self.summary))
 
 
 class RunLoopFailed(RuntimeError):
