@@ -18,7 +18,10 @@ from code_review_loop import harnesses
 from code_review_loop.adapters import phase_support
 from code_review_loop.adapters.git import run_git_preflight
 from code_review_loop.core.ports import CommandResult, ReviewOutcome, ReviewRequest, RunContext
-from code_review_loop.core.review_interpretation import detect_review_status
+from code_review_loop.core.review_interpretation import (
+    detect_review_status,
+    review_status_diagnostics,
+)
 
 if TYPE_CHECKING:
     from code_review_loop.config import LoopConfig
@@ -81,7 +84,7 @@ def run_codex_review(
         raise RuntimeError(f"codex review failed for {artifact_label}; see {artifact_path}")
     status = detect_review_status(combined)
     if config.debug_status_detection:
-        diagnostics = phase_support.review_status_diagnostics(combined)
+        diagnostics = review_status_diagnostics(combined)
         phase_support.write_artifact(
             config.artifact_dir / f"{artifact_label}-status.json",
             json.dumps(diagnostics, indent=2, sort_keys=True) + "\n",
