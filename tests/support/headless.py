@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any
 
 from code_review_loop import application, budgets
 from code_review_loop.config import LoopConfig
@@ -15,12 +15,14 @@ from code_review_loop.core.ports import (
     CommandResult,
     CommitOutcome,
     CommitRequest,
+    CommitStatus,
     PhaseHarnessBundle,
     ProcessRunner,
     RemediationOutcome,
     RemediationRequest,
     ReviewOutcome,
     ReviewRequest,
+    ReviewStatus,
     RunContext,
     TriageOutcome,
     TriageRequest,
@@ -69,7 +71,7 @@ class RecordingProcessRunner:
 
 
 class SequencedReviewHarness:
-    def __init__(self, statuses: Sequence[str]) -> None:
+    def __init__(self, statuses: Sequence[ReviewStatus]) -> None:
         self.statuses = list(statuses)
         self.calls: list[ReviewRequest] = []
 
@@ -80,7 +82,7 @@ class SequencedReviewHarness:
         status = self.statuses.pop(0)
         stdout = f"review status: {status}\nREVIEW_STATUS: {status}\n"
         return ReviewOutcome(
-            status=cast("Literal['clear', 'findings', 'unknown']", status),
+            status=status,
             result=CommandResult(["fake", "review"], 0, stdout=stdout),
         )
 
@@ -129,13 +131,13 @@ class SequencedChecksHarness:
 
 
 class StaticCommitHarness:
-    def __init__(self, status: str = "skipped") -> None:
+    def __init__(self, status: CommitStatus = "skipped") -> None:
         self.status = status
         self.calls: list[CommitRequest] = []
 
     def execute(self, request: CommitRequest, ctx: RunContext) -> CommitOutcome:
         self.calls.append(request)
-        return CommitOutcome(status=cast("Literal['committed', 'skipped', 'skipped_no_changes']", self.status))
+        return CommitOutcome(status=self.status)
 
 
 @dataclass

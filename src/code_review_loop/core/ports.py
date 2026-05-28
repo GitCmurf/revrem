@@ -48,6 +48,9 @@ from code_review_loop.core.routing_types import ResolvedRoute as ResolvedRoute
 from code_review_loop.events import EventSink as EventSink
 from code_review_loop.identity import RunIdentity as RunIdentity
 
+ReviewStatus = Literal["clear", "findings", "unknown"]
+CommitStatus = Literal["committed", "skipped", "skipped_no_changes"]
+
 
 @dataclass(frozen=True)
 class CommandResult:
@@ -117,7 +120,7 @@ class CommitRequest:
 class CommitOutcome:
     """Result of a successful commit phase."""
 
-    status: Literal["committed", "skipped", "skipped_no_changes"]
+    status: CommitStatus
 
 
 @dataclass(frozen=True)
@@ -168,7 +171,7 @@ class ReviewRequest:
 class ReviewOutcome:
     """Result of a successful review phase."""
 
-    status: Literal["clear", "findings", "unknown"]
+    status: ReviewStatus
     result: CommandResult
 
 
