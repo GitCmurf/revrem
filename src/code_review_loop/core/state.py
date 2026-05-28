@@ -112,7 +112,7 @@ class RunState:
         if not isinstance(outcome, (OutcomeClear, OutcomeFailed, OutcomeFindings, OutcomeUnknown)):
             assert_never(outcome)
         if excerpt:
-            self.set_latest_review_excerpt(excerpt)
+            self.latest_review_excerpt = excerpt
 
         if isinstance(outcome, OutcomeClear):
             self.mark_clear(outcome.reason, suppressed_findings_count=outcome.suppressed_findings_count)
@@ -133,8 +133,8 @@ class RunState:
             return
 
     def mark_clear(self, reason: str, *, suppressed_findings_count: int = 0) -> None:
-        self.set_final_status("clear")
-        self.set_stopped_reason(reason)
+        self.final_status = "clear"
+        self.stopped_reason = reason
         if suppressed_findings_count:
             self.set_suppressed_findings_count(suppressed_findings_count)
 
@@ -146,45 +146,30 @@ class RunState:
         staged_changes_left: bool = False,
         check_failures: bool = False,
     ) -> None:
-        self.set_final_status("error")
-        self.set_stopped_reason(reason)
-        self.set_error(error)
+        self.final_status = "error"
+        self.stopped_reason = reason
+        self.error = error
         if staged_changes_left:
-            self.set_staged_changes_left(True)
+            self.staged_changes_left = True
         if check_failures:
             self.set_pending_check_failures(True)
 
     def mark_findings(self, reason: str, *, check_failures: bool = False) -> None:
-        self.set_final_status("findings")
-        self.set_stopped_reason(reason)
+        self.final_status = "findings"
+        self.stopped_reason = reason
         if check_failures:
             self.set_pending_check_failures(True)
 
     def mark_unknown(self, reason: str, *, check_failures: bool = False) -> None:
-        self.set_final_status("unknown")
-        self.set_stopped_reason(reason)
+        self.final_status = "unknown"
+        self.stopped_reason = reason
         if check_failures:
             self.set_pending_check_failures(True)
 
     # --- scalar mid-run transitions ---
-
-    def set_final_status(self, value: str) -> None:
-        self.final_status = value
-
-    def set_stopped_reason(self, value: str | None) -> None:
-        self.stopped_reason = value
-
-    def set_error(self, value: str) -> None:
-        self.error = value
-
-    def set_latest_review_excerpt(self, value: str) -> None:
-        self.latest_review_excerpt = value
 
     def set_suppressed_findings_count(self, value: int) -> None:
         self.suppressed_findings_count = value
 
     def set_pending_check_failures(self, value: bool) -> None:
         self.pending_check_failures = value
-
-    def set_staged_changes_left(self, value: bool) -> None:
-        self.staged_changes_left = value

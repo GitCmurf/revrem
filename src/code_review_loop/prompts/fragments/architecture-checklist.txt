@@ -11,7 +11,7 @@ spans multiple modules or alters structural boundaries. Confirm each item.
   introduce a new pattern for something the codebase already solves.
 - Make the smallest structural change that resolves the finding. Defer unrelated
   refactors; note them for a follow-up rather than bundling them in.
-- Preserve backward compatibility for persisted data, on-disk artifacts, and
+- Preserve compatibility for persisted data, on-disk artifacts, and
   serialized schemas unless a migration is explicitly part of the fix.
 - Keep configuration, defaults, and feature gating consistent with how the rest
   of the system is configured.

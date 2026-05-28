@@ -29,7 +29,7 @@ The current direction is:
 - Adapter modules own subprocess-facing phase behavior and terminal-state
   control.
 
-No backward compatibility is required for old Python import seams created
+No compatibility is required for old Python import seams created
 during Wave C migration. CLI behavior and persisted artifact schemas remain
 stable unless changed by a documented contract update.
 
