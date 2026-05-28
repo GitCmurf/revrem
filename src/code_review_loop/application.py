@@ -30,7 +30,7 @@ class ReviewLoopResult:
     outcome: RunOutcome
 
     def to_dict(self) -> dict[str, object]:
-        return self.summary
+        return dict(self.summary)
 
     @property
     def final_status(self) -> str | None:
