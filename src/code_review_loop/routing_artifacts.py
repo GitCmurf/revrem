@@ -7,6 +7,7 @@ from typing import Any
 
 from code_review_loop import artifacts, diagnostics, policy, prompts_composer, triage
 from code_review_loop.adapters.phase_support import (
+    phase_timeout_seconds,
     progress_event,
     remaining_wall_budget_seconds,
     write_artifact,
@@ -177,7 +178,7 @@ def build_routing_payload(
         "prompt": {
             "path": f"remediation-{iteration}-prompt.txt",
             "sha256": prompts_composer.compute_prompt_hash(remediation_input),
-            "bytes": len(remediation_input),
+            "bytes": len(remediation_input.encode("utf-8")),
             "fragments": list(resolved_route.prompt_fragments),
         },
     }
@@ -197,17 +198,22 @@ def _effective_route(resolved_route: policy.ResolvedRoute, config: LoopConfig) -
         "route_tier": resolved_route.route_tier,
         "harness": resolved_route.harness,
         "sandbox": resolved_route.sandbox,
-        "timeout_seconds": (
-            int(resolved_route.timeout_seconds)
-            if resolved_route.timeout_seconds is not None
-            else 300
-        ),
+        "timeout_seconds": _artifact_timeout_seconds(resolved_route, config),
     }
     if eff_model:
         effective_route["model"] = eff_model
     if eff_reasoning:
         effective_route["reasoning_effort"] = eff_reasoning
     return effective_route
+
+
+def _artifact_timeout_seconds(
+    resolved_route: policy.ResolvedRoute, config: LoopConfig
+) -> int:
+    effective_timeout = phase_timeout_seconds(config, resolved_route.timeout_seconds)
+    if effective_timeout is None:
+        return 0
+    return int(effective_timeout)
 
 
 def _proposed_route_fields(triage_payload: dict[str, Any]) -> dict[str, Any]:

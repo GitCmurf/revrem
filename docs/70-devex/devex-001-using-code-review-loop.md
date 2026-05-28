@@ -594,7 +594,10 @@ effective route through profile policy, writes `routing-N.json`,
 `routing_decision` / `routing_outcome` events into `events.jsonl`. Prompt and
 routing artifacts are also listed under `summary.artifact_paths.prompts` and
 `summary.artifact_paths.routing` for auditability; treat prompt artifacts as
-sensitive transcript-like local data.
+sensitive transcript-like local data. In `routing-N.json`, `prompt.bytes` is
+the UTF-8 byte size of the written prompt artifact, and
+`effective_route.timeout_seconds` records the timeout RevRem will pass to
+remediation execution after inheritance; `0` means unbounded.
 
 Codex-only routing profile:
 
