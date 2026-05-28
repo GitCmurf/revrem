@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
-from code_review_loop import budgets, events
+from code_review_loop import budgets, events, profiles
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.engine import ConfigSnapshot
 from code_review_loop.core.ports import RunContext
@@ -109,6 +110,8 @@ def test_runner_shell_executes_happy_path_without_cli(tmp_path: Path) -> None:
     assert [iteration["iteration"] for iteration in state.iterations] == [1]
     assert state.iterations[0]["review_status"] == "findings"
     assert result.last_review_output
+    records, _ = events.read_events(config.artifact_dir / "events.jsonl")
+    assert [record.kind for record in records] == []
 
 
 def test_runner_shell_carries_check_failure_into_retry(tmp_path: Path) -> None:
@@ -137,3 +140,63 @@ def test_runner_shell_carries_check_failure_into_retry(tmp_path: Path) -> None:
     assert [iteration["iteration"] for iteration in state.iterations] == [1, 2]
     assert [request.iteration for request in checks.calls] == [1, 2]
     assert "pytest tests/ failed" in remediation.calls[1].remediation_input
+
+
+def test_runner_shell_records_v2_routing_artifacts_and_events(tmp_path: Path) -> None:
+    profile = profiles.Profile(
+        name="test",
+        triage=profiles.TriageConfig(
+            contract="v2",
+            routing=profiles.TriageRoutingConfig(enabled=True, default_route="frontier"),
+            routes={"frontier": profiles.TriageRouteConfig(harness="codex", model="fake-clear")},
+        ),
+    )
+    config = _config(tmp_path, max_iterations=1, triage_enabled=True)
+    config = replace(
+        config,
+        triage_contract="v2",
+        profile_v2=profile,
+        remediation_harness="fake",
+    )
+    review = SequencedReviewHarness(["findings", "clear"])
+    triage = StaticTriageHarness(
+        handoff="fix it",
+        payload={
+            "schema_version": "2.0",
+            "run_id": FIXED_RUN_ID,
+            "source_review_artifact": "review-1.txt",
+            "confirmed_findings": [
+                {"summary": "Fix auth check", "severity": "P1", "files": ["auth.py"]}
+            ],
+            "classification": {
+                "domain_tags": ["security"],
+                "risk_level": "high",
+                "refactor_depth": "atomic",
+                "module_count": 1,
+            },
+        },
+    )
+    ctx, sink = _context(config, review=review, triage=triage)
+    clock = ctx.clock
+    try:
+        state = _state(config)
+
+        result = run_iterations(
+            config=config,
+            state=state,
+            clock=clock,
+            ctx=ctx,
+            snap=_snapshot(config),
+            initial_review_output="",
+            run_id=FIXED_RUN_ID,
+        )
+    finally:
+        sink.close()
+
+    assert result.outcome.reason == "review_clear"
+    assert (config.artifact_dir / "routing-1.json").is_file()
+    assert (config.artifact_dir / "routing-outcome-1.json").is_file()
+    records, _ = events.read_events(config.artifact_dir / "events.jsonl")
+    kinds = [record.kind for record in records]
+    assert "routing_decision" in kinds
+    assert "routing_outcome" in kinds

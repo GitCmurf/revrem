@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Any, Literal, cast
 
-from code_review_loop import budgets, policy, triage
+from code_review_loop import budgets, triage
 from code_review_loop.adapters.checks import format_check_failures as _format_check_failures
 from code_review_loop.adapters.commit import (
     format_commit_hook_failure_for_remediation as format_commit_hook_failure_for_remediation,
@@ -49,7 +49,6 @@ from code_review_loop.core.engine import (
 from code_review_loop.core.outcome import OutcomeClear, RunOutcome
 from code_review_loop.core.ports import (
     ChecksRequest,
-    CommandResult,
     CommitRequest,
     RemediationRequest,
     ReviewRequest,
@@ -62,6 +61,9 @@ from code_review_loop.core.review_interpretation import (
 )
 from code_review_loop.core.state import RunState
 from code_review_loop.routing_artifacts import record_routing_outcome, resolve_and_record_routing
+
+_ENGINE_STEPS_PER_ITERATION = 8
+_ENGINE_STEP_BUDGET_OVERHEAD = 4
 
 
 class _RunnerEngineExecutor:
@@ -81,30 +83,39 @@ class _RunnerEngineExecutor:
         self.ctx = ctx
         self.run_id = run_id
         self.initial_review_output = initial_review_output
-        self.last_review_output = ""
-        self.remediation_input = ""
-        self.resolved_route: policy.ResolvedRoute | None = None
-        self.failed_check_names: list[str] = []
         self.cause: BaseException | None = None
-        self.remediation_result: CommandResult | None = None
-        self.remediation_duration = 0.0
         self.routing_context_cache: triage.RoutingContextCache = {}
+        self.latest_state: EngineState | None = None
 
     def execute(self, action: Action, engine_state: EngineState) -> EngineState:
         if isinstance(action, Continue):
-            return replace(engine_state, event=LoopStarted(), iteration=engine_state.iteration + 1)
+            next_state = replace(engine_state, event=LoopStarted(), iteration=engine_state.iteration + 1)
+            self.latest_state = next_state
+            return next_state
         if isinstance(action, RunReview):
-            return self._run_review(engine_state, is_final=action.is_final)
+            next_state = self._run_review(engine_state, is_final=action.is_final)
+            self.latest_state = next_state
+            return next_state
         if isinstance(action, RunTriage):
-            return self._run_triage(engine_state)
+            next_state = self._run_triage(engine_state)
+            self.latest_state = next_state
+            return next_state
         if isinstance(action, RunRemediation):
-            return self._run_remediation(engine_state)
+            next_state = self._run_remediation(engine_state)
+            self.latest_state = next_state
+            return next_state
         if isinstance(action, RunChecks):
-            return self._run_checks(engine_state)
+            next_state = self._run_checks(engine_state)
+            self.latest_state = next_state
+            return next_state
         if isinstance(action, RunCommit):
-            return self._run_commit(engine_state)
+            next_state = self._run_commit(engine_state)
+            self.latest_state = next_state
+            return next_state
         if isinstance(action, RetryViaCommitHook):
-            return self._retry_after_commit_hook(engine_state, action)
+            next_state = self._retry_after_commit_hook(engine_state, action)
+            self.latest_state = next_state
+            return next_state
         raise AssertionError(f"engine executor received terminal action: {action!r}")
 
     @property
@@ -126,21 +137,26 @@ class _RunnerEngineExecutor:
                     event=ReviewDone(is_final=True, status="unknown", exc=exc),
                 )
             status, review = outcome.status, outcome.result
-            self.last_review_output = actionable_review_output(_combined_output(review))
-            acc = replace(engine_state.acc, last_review_status=status)
+            acc = replace(
+                engine_state.acc,
+                last_review_output=actionable_review_output(_combined_output(review)),
+                last_review_status=status,
+            )
             if status == "unknown" and not acc.pending_check_failures:
                 self.iterations.append({"iteration": "final", "review_status": status})
             return replace(engine_state, acc=acc, event=ReviewDone(is_final=True, status=status))
 
         iteration = engine_state.iteration
-        self.resolved_route = None
-        self.remediation_result = None
-        self.remediation_duration = 0.0
+        acc = replace(
+            engine_state.acc,
+            resolved_route=None,
+            remediation_result_returncode=None,
+            remediation_duration=0.0,
+        )
         if iteration == 1 and self.initial_review_output:
             status = cast("Literal['clear', 'findings', 'unknown']", detect_review_status(self.initial_review_output))
             if status == "unknown":
                 status = "findings"
-            self.last_review_output = self.initial_review_output
             self.iterations.append(
                 {
                     "iteration": iteration,
@@ -148,7 +164,11 @@ class _RunnerEngineExecutor:
                     "review_source": str(self.config.initial_review_file),
                 }
             )
-            acc = replace(engine_state.acc, last_review_status=cast("Literal['clear', 'findings', 'unknown']", status))
+            acc = replace(
+                acc,
+                last_review_output=self.initial_review_output,
+                last_review_status=cast("Literal['clear', 'findings', 'unknown']", status),
+            )
             return replace(engine_state, acc=acc, event=ReviewDone(is_final=False, status=acc.last_review_status))
 
         try:
@@ -172,16 +192,16 @@ class _RunnerEngineExecutor:
                 engine_state,
                 event=ReviewDone(is_final=False, status="unknown", exc=exc),
             )
-        self.last_review_output = actionable_review_output(_combined_output(review))
+        review_output = actionable_review_output(_combined_output(review))
         self.iterations.append({"iteration": iteration, "review_status": status})
-        acc = replace(engine_state.acc, last_review_status=status)
+        acc = replace(acc, last_review_output=review_output, last_review_status=status)
         return replace(engine_state, acc=acc, event=ReviewDone(is_final=False, status=status))
 
     def _run_triage(self, engine_state: EngineState) -> EngineState:
         iteration = engine_state.iteration
-        self.remediation_input = self.last_review_output
+        remediation_input = engine_state.acc.last_review_output
         if engine_state.acc.pending_check_failures:
-            self.remediation_input = engine_state.acc.pending_check_failures + "\n\n" + self.remediation_input
+            remediation_input = engine_state.acc.pending_check_failures + "\n\n" + remediation_input
         try:
             source_review_artifact = "review-initial.txt" if iteration == 1 and self.initial_review_output else f"review-{iteration}.txt"
             triage_outcome = self.ctx.phase_triage.execute(
@@ -189,11 +209,11 @@ class _RunnerEngineExecutor:
                     iteration=iteration,
                     run_id=self.run_id,
                     source_review_artifact=source_review_artifact,
-                    review_output=self.remediation_input,
+                    review_output=remediation_input,
                 ),
                 self.ctx,
             )
-            self.remediation_input = triage_outcome.handoff
+            acc = replace(engine_state.acc, remediation_input=triage_outcome.handoff)
             suppressed_count = triage_outcome.suppressed_count
             triage_no_actionable = triage_outcome.is_clear
             triage_payload = triage_outcome.payload
@@ -204,14 +224,15 @@ class _RunnerEngineExecutor:
                     self.iterations[-1]["suppressed_findings"] = True
                     self.state.set_suppressed_findings_count(suppressed_count)
                 if engine_state.acc.pending_check_failures:
-                    self.remediation_input = engine_state.acc.pending_check_failures
+                    acc = replace(acc, remediation_input=engine_state.acc.pending_check_failures)
                 return replace(
                     engine_state,
+                    acc=acc,
                     event=TriageDone(is_clear=True, suppressed_count=suppressed_count),
                 )
 
             if triage_payload and self.config.triage_contract == "v2" and self.config.profile_v2:
-                self._resolve_routing(iteration, triage_payload)
+                acc = self._resolve_routing(iteration, triage_payload, acc)
         except budgets.BudgetExceeded:
             raise
         except Exception as exc:
@@ -226,40 +247,53 @@ class _RunnerEngineExecutor:
                 ctx=self.ctx,
             )
             return replace(engine_state, event=TriageDone(is_clear=False, exc=exc))
-        return replace(engine_state, event=TriageDone(is_clear=False))
+        return replace(engine_state, acc=acc, event=TriageDone(is_clear=False))
 
-    def _resolve_routing(self, iteration: int, triage_payload: dict[str, Any]) -> None:
+    def _resolve_routing(
+        self,
+        iteration: int,
+        triage_payload: dict[str, Any],
+        acc: LoopAccumulator,
+    ) -> LoopAccumulator:
         resolution = resolve_and_record_routing(
             config=self.config,
             ctx=self.ctx,
             run_id=self.run_id,
             iteration=iteration,
             triage_payload=triage_payload,
-            remediation_input=self.remediation_input,
-            failed_check_names=tuple(self.failed_check_names),
+            remediation_input=acc.remediation_input,
+            failed_check_names=acc.failed_check_names,
             cache=self.routing_context_cache,
         )
-        self.resolved_route = resolution.resolved_route
-        self.remediation_input = resolution.remediation_input
+        return replace(
+            acc,
+            resolved_route=resolution.resolved_route,
+            remediation_input=resolution.remediation_input,
+        )
 
     def _run_remediation(self, engine_state: EngineState) -> EngineState:
         iteration = engine_state.iteration
+        remediation_input = engine_state.acc.remediation_input
         if not self.config.triage_enabled:
-            self.remediation_input = self.last_review_output
+            remediation_input = engine_state.acc.last_review_output
             if engine_state.acc.pending_check_failures:
-                self.remediation_input = engine_state.acc.pending_check_failures + "\n\n" + self.remediation_input
+                remediation_input = engine_state.acc.pending_check_failures + "\n\n" + remediation_input
         try:
             rem_start_time = self.clock.monotonic()
             rem_outcome = self.ctx.phase_remediation.execute(
                 RemediationRequest(
                     iteration=iteration,
-                    remediation_input=self.remediation_input,
-                    resolved_route=self.resolved_route,
+                    remediation_input=remediation_input,
+                    resolved_route=engine_state.acc.resolved_route,
                 ),
                 self.ctx,
             )
-            self.remediation_result = rem_outcome.result
-            self.remediation_duration = self.clock.monotonic() - rem_start_time
+            acc = replace(
+                engine_state.acc,
+                remediation_input=remediation_input,
+                remediation_result_returncode=rem_outcome.result.returncode,
+                remediation_duration=self.clock.monotonic() - rem_start_time,
+            )
         except budgets.BudgetExceeded:
             raise
         except Exception as exc:
@@ -274,29 +308,29 @@ class _RunnerEngineExecutor:
                 ctx=self.ctx,
             )
             return replace(engine_state, event=RemediationDone(exc=exc))
-        return replace(engine_state, event=RemediationDone())
+        return replace(engine_state, acc=acc, event=RemediationDone())
 
     def _run_checks(self, engine_state: EngineState) -> EngineState:
         iteration = engine_state.iteration
         checks_outcome = self.ctx.phase_checks.execute(ChecksRequest(iteration=iteration), self.ctx)
         check_results = list(checks_outcome.results)
-        self.failed_check_names = list(checks_outcome.failed_commands)
         pending_check_failures = _format_check_failures(check_results)
         self.state.set_pending_check_failures(bool(pending_check_failures))
-        self.iterations[-1]["check_failures"] = len(self.failed_check_names)
-        if self.resolved_route and self.remediation_result is not None:
+        self.iterations[-1]["check_failures"] = len(checks_outcome.failed_commands)
+        if engine_state.acc.resolved_route and engine_state.acc.remediation_result_returncode is not None:
             record_routing_outcome(
                 config=self.config,
                 ctx=self.ctx,
                 run_id=self.run_id,
                 iteration=iteration,
-                remediation_result=self.remediation_result,
-                remediation_duration=self.remediation_duration,
+                remediation_returncode=engine_state.acc.remediation_result_returncode,
+                remediation_duration=engine_state.acc.remediation_duration,
                 check_results=tuple(check_results),
             )
         acc = replace(
             engine_state.acc,
             pending_check_failures=pending_check_failures,
+            failed_check_names=tuple(checks_outcome.failed_commands),
             commit_retry=False if pending_check_failures else engine_state.acc.commit_retry,
         )
         return replace(engine_state, acc=acc, event=ChecksDone())
@@ -384,8 +418,16 @@ def run_iterations(
         event=LoopStarted(),
         iteration=1,
     )
-    outcome = run_engine(engine_state, executor, max_steps=config.max_iterations * 8 + 4)
-    latest_review_output = executor.last_review_output if isinstance(outcome, OutcomeClear) else ""
+    outcome = run_engine(
+        engine_state,
+        executor,
+        max_steps=config.max_iterations * _ENGINE_STEPS_PER_ITERATION + _ENGINE_STEP_BUDGET_OVERHEAD,
+    )
+    latest_review_output = (
+        executor.latest_state.acc.last_review_output
+        if executor.latest_state is not None and isinstance(outcome, OutcomeClear)
+        else ""
+    )
     return RunnerShellResult(
         outcome=outcome,
         cause=executor.cause,

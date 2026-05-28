@@ -299,7 +299,7 @@ def record_routing_outcome(
     ctx: RunContext,
     run_id: str,
     iteration: int,
-    remediation_result: CommandResult,
+    remediation_returncode: int,
     remediation_duration: float,
     check_results: tuple[CommandResult, ...],
 ) -> None:
@@ -310,7 +310,7 @@ def record_routing_outcome(
         "run_id": run_id,
         "iteration": iteration,
         "source_routing_artifact": f"routing-{iteration}.json",
-        "exit_code": remediation_result.returncode,
+        "exit_code": remediation_returncode,
         "wall_time_seconds": round(remediation_duration, 3),
         "checks_passed": all(result.returncode == 0 for result in check_results),
     }

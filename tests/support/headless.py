@@ -88,9 +88,16 @@ class SequencedReviewHarness:
 
 
 class StaticTriageHarness:
-    def __init__(self, *, is_clear: bool = False, handoff: str = "fix it") -> None:
+    def __init__(
+        self,
+        *,
+        is_clear: bool = False,
+        handoff: str = "fix it",
+        payload: dict[str, Any] | None = None,
+    ) -> None:
         self.is_clear = is_clear
         self.handoff = handoff
+        self.payload = payload
         self.calls: list[TriageRequest] = []
 
     def execute(self, request: TriageRequest, ctx: RunContext) -> TriageOutcome:
@@ -99,7 +106,7 @@ class StaticTriageHarness:
             handoff=self.handoff,
             suppressed_count=0,
             is_clear=self.is_clear,
-            payload={"confirmed_findings": []},
+            payload=self.payload if self.payload is not None else {"confirmed_findings": []},
         )
 
 

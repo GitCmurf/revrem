@@ -28,6 +28,7 @@ from code_review_loop.core.outcome import (
     OutcomeUnknown,
     RunOutcome,
 )
+from code_review_loop.core.routing_types import ResolvedRoute
 
 # ---------------------------------------------------------------------------
 # Config snapshot (read-only slice the engine needs from LoopConfig)
@@ -57,6 +58,12 @@ class LoopAccumulator:
     pending_check_failures: str  # empty string means none
     commit_retry: bool = False
     last_review_status: Literal["clear", "findings", "unknown"] = "unknown"
+    last_review_output: str = ""
+    remediation_input: str = ""
+    resolved_route: ResolvedRoute | None = None
+    failed_check_names: tuple[str, ...] = ()
+    remediation_result_returncode: int | None = None
+    remediation_duration: float = 0.0
 
 
 # ---------------------------------------------------------------------------
