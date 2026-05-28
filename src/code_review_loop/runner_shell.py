@@ -61,7 +61,7 @@ from code_review_loop.core.review_interpretation import (
     detect_review_status,
 )
 from code_review_loop.core.state import RunState
-from code_review_loop.routing_artifacts import resolve_and_record_routing
+from code_review_loop.routing_artifacts import record_routing_outcome, resolve_and_record_routing
 
 
 class _RunnerEngineExecutor:
@@ -285,18 +285,15 @@ class _RunnerEngineExecutor:
         self.state.set_pending_check_failures(bool(pending_check_failures))
         self.iterations[-1]["check_failures"] = len(self.failed_check_names)
         if self.resolved_route and self.remediation_result is not None:
-            outcome_payload = {
-                "schema_version": "1.0",
-                "run_id": self.run_id,
-                "iteration": iteration,
-                "source_routing_artifact": f"routing-{iteration}.json",
-                "exit_code": self.remediation_result.returncode,
-                "wall_time_seconds": round(self.remediation_duration, 3),
-                "checks_passed": all(result.returncode == 0 for result in check_results),
-            }
-            triage.write_routing_outcome_artifact(self.config.artifact_dir, iteration, outcome_payload)
-            if self.ctx.event_sink:
-                self.ctx.event_sink.emit("routing_outcome", phase="remediate", iteration=iteration, payload=outcome_payload)
+            record_routing_outcome(
+                config=self.config,
+                ctx=self.ctx,
+                run_id=self.run_id,
+                iteration=iteration,
+                remediation_result=self.remediation_result,
+                remediation_duration=self.remediation_duration,
+                check_results=tuple(check_results),
+            )
         acc = replace(
             engine_state.acc,
             pending_check_failures=pending_check_failures,

@@ -12,7 +12,7 @@ from code_review_loop.adapters.phase_support import (
     write_artifact,
 )
 from code_review_loop.config import LoopConfig
-from code_review_loop.core.ports import RunContext
+from code_review_loop.core.ports import CommandResult, RunContext
 
 
 @dataclass(frozen=True)
@@ -291,3 +291,29 @@ def _validate_and_write_routing_payload(
     if ctx.event_sink:
         ctx.event_sink.emit("routing_decision", phase="triage", iteration=iteration, payload=routing_payload)
     write_artifact(config.artifact_dir / f"remediation-{iteration}-prompt.txt", remediation_input)
+
+
+def record_routing_outcome(
+    *,
+    config: LoopConfig,
+    ctx: RunContext,
+    run_id: str,
+    iteration: int,
+    remediation_result: CommandResult,
+    remediation_duration: float,
+    check_results: tuple[CommandResult, ...],
+) -> None:
+    """Write the routing outcome artifact paired with a prior routing decision."""
+
+    outcome_payload = {
+        "schema_version": "1.0",
+        "run_id": run_id,
+        "iteration": iteration,
+        "source_routing_artifact": f"routing-{iteration}.json",
+        "exit_code": remediation_result.returncode,
+        "wall_time_seconds": round(remediation_duration, 3),
+        "checks_passed": all(result.returncode == 0 for result in check_results),
+    }
+    triage.write_routing_outcome_artifact(config.artifact_dir, iteration, outcome_payload)
+    if ctx.event_sink:
+        ctx.event_sink.emit("routing_outcome", phase="remediate", iteration=iteration, payload=outcome_payload)
