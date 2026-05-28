@@ -1478,7 +1478,7 @@ wc -l src/code_review_loop/cli/main.py src/code_review_loop/runner.py \
   src/code_review_loop/runner_setup.py src/code_review_loop/runner_shell.py \
   src/code_review_loop/runner_finish.py src/code_review_loop/routing_artifacts.py \
   src/code_review_loop/core/engine.py
-# 71, 192, 174, 435, 194, 319, 356 lines respectively
+# 71, 183, 174, 430, 194, 319, 356 lines respectively
 
 rg -n '^\[\[tool\.importlinter\.contracts\]\]' pyproject.toml | wc -l
 # 9 import-linter contracts
@@ -1486,8 +1486,9 @@ rg -n '^\[\[tool\.importlinter\.contracts\]\]' pyproject.toml | wc -l
 rg -n 'def test_' tests/test_application_headless_integration.py \
   tests/test_engine_run.py tests/test_runner_shell_acceptance.py \
   tests/test_wave_d_architecture.py tests/test_outcome_exit_code.py \
-  tests/test_runner_engine_gate.py tests/test_extensibility_swap.py | wc -l
-# 42 Wave D acceptance, outcome, and ratchet tests
+  tests/test_runner_engine_gate.py tests/test_extensibility_swap.py \
+  tests/test_architecture_surface.py tests/test_application_api.py | wc -l
+# 53 Wave D acceptance, outcome, SDK-boundary, and ratchet tests
 
 rg -n 'monkeypatch\.setattr\(MODULE,' tests
 # no production test call-sites; only ratchet explanatory strings
@@ -1499,6 +1500,14 @@ barrel exports, no subprocess default selection, and no test imports of
 `LoopAccumulator`; `routing_artifacts.py` owns both routing decision and routing
 outcome artifacts/events; `cli/main.py` delegates concrete subcommand lookup to
 `cli/commands/registry.py`.
+
+Final post-review polish closed the remaining visual and boundary-integrity
+nits: production modules no longer use `X as X` self-alias imports to mask
+dead imports, phase adapters import `phase_support` under its real name rather
+than `_cli`, `ReviewLoopResult.to_dict()` returns a deep mutation-safe
+projection, and `test_runner_shell_dense_commit_hook_retry_path_fits_step_budget`
+proves the default engine step budget admits the densest legitimate production
+runner-shell path.
 
 **D1. SDK/headless acceptance harness**
 (satisfies Exit Criterion #3; consumes C4, C7)
