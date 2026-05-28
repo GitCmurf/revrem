@@ -26,6 +26,26 @@ def test_runner_uses_core_engine_run_without_direct_decide_bridge() -> None:
     assert not re.search(r"\bdecide\s*\(", shell_source)
 
 
+def test_engine_acceptance_imports_only_core_modules() -> None:
+    path = Path(__file__).resolve().parents[1] / "tests" / "test_engine_run.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    offenders: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.startswith("code_review_loop.") and not alias.name.startswith("code_review_loop.core."):
+                    offenders.append(f"{path.name}:{node.lineno}: import {alias.name}")
+        if (
+            isinstance(node, ast.ImportFrom)
+            and node.module is not None
+            and node.module.startswith("code_review_loop.")
+            and not node.module.startswith("code_review_loop.core.")
+        ):
+            offenders.append(f"{path.name}:{node.lineno}: from {node.module} import ...")
+
+    assert offenders == []
+
+
 def test_runner_shell_has_no_reverse_runner_import() -> None:
     shell_source = (Path(__file__).resolve().parents[1] / "src" / "code_review_loop" / "runner_shell.py").read_text(
         encoding="utf-8"
