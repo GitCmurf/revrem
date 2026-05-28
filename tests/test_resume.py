@@ -7,17 +7,20 @@ from pathlib import Path
 import pytest
 
 import code_review_loop.runner as runner_mod
-from code_review_loop import events, harnesses
+from code_review_loop import budgets, events, harnesses
 from code_review_loop import resume as resume_mod
 from code_review_loop.adapters import git as git_adapter
 from code_review_loop.adapters import phase_support
+from code_review_loop.adapters import subprocess_runner as subprocess_runner_mod
+from code_review_loop.config import LoopConfig
+from code_review_loop.core.ports import CommandResult
 
 cli_main = import_module("code_review_loop.cli.main")
 
 
 def test_git_preflight_stdout_treats_missing_stdout_as_empty(tmp_path, monkeypatch):
     def fake_run_git_preflight(cwd, args):
-        return runner_mod.CommandResult(list(args), 0, stdout=None)
+        return CommandResult(list(args), 0, stdout=None)
 
     monkeypatch.setattr(git_adapter, "run_git_preflight", fake_run_git_preflight)
 
@@ -89,10 +92,10 @@ def write_resume_run(
 def install_matching_git(monkeypatch, *, head: str = "head-sha", base: str = "base-sha") -> None:
     def fake_git(cwd, args):
         if list(args) == ["rev-parse", "HEAD"]:
-            return runner_mod.CommandResult(["git", *args], 0, stdout=f"{head}\n")
+            return CommandResult(["git", *args], 0, stdout=f"{head}\n")
         if list(args) == ["rev-parse", "--verify", "main^{commit}"]:
-            return runner_mod.CommandResult(["git", *args], 0, stdout=f"{base}\n")
-        return runner_mod.CommandResult(["git", *args], 1, stderr="unexpected")
+            return CommandResult(["git", *args], 0, stdout=f"{base}\n")
+        return CommandResult(["git", *args], 1, stderr="unexpected")
 
     monkeypatch.setattr(git_adapter, "run_git_preflight", fake_git)
 
@@ -204,7 +207,7 @@ def test_resume_run_rejects_persisted_budget_ceiling(tmp_path, monkeypatch):
     monkeypatch.setattr(runner_mod, "run_loop", fail_if_called)
 
     with pytest.raises(ValueError, match="remaining token budget headroom"):
-        runner_mod.resume_run(run_dir)
+        runner_mod.resume_run(run_dir, fail_if_called)
 
     assert called is False
 
@@ -231,7 +234,7 @@ def test_resume_run_rejects_persisted_wall_budget_ceiling(tmp_path, monkeypatch)
     monkeypatch.setattr(runner_mod, "run_loop", fail_if_called)
 
     with pytest.raises(ValueError, match="remaining wall budget headroom"):
-        runner_mod.resume_run(run_dir)
+        runner_mod.resume_run(run_dir, fail_if_called)
 
     assert called is False
 
@@ -263,43 +266,43 @@ def test_resume_run_rejects_legacy_persisted_budget_ceiling(tmp_path, monkeypatc
     monkeypatch.setattr(runner_mod, "run_loop", fail_if_called)
 
     with pytest.raises(ValueError, match="remaining token budget headroom"):
-        runner_mod.resume_run(run_dir)
+        runner_mod.resume_run(run_dir, fail_if_called)
 
     assert called is False
 
 
 def test_resume_loop_config_seeds_cumulative_wall_budget_state(tmp_path, monkeypatch):
     monkeypatch.setattr(phase_support, "lexical_git_repo_root", lambda _cwd: tmp_path)
-    monkeypatch.setattr(runner_mod.budgets, "monotonic", lambda: 112.5)
+    monkeypatch.setattr(budgets, "monotonic", lambda: 112.5)
 
     def fake_run_git_preflight(cwd, args):
         if list(args) == ["rev-parse", "HEAD"]:
-            return runner_mod.CommandResult(["git", *args], 0, stdout="head-sha\n")
+            return CommandResult(["git", *args], 0, stdout="head-sha\n")
         if list(args) == ["rev-parse", "--verify", "main^{commit}"]:
-            return runner_mod.CommandResult(["git", *args], 0, stdout="base-sha\n")
+            return CommandResult(["git", *args], 0, stdout="base-sha\n")
         if list(args) == ["merge-base", "HEAD", "main"]:
-            return runner_mod.CommandResult(["git", *args], 0, stdout="merge-sha\n")
-        return runner_mod.CommandResult(["git", *args], 1, stderr="unexpected")
+            return CommandResult(["git", *args], 0, stdout="merge-sha\n")
+        return CommandResult(["git", *args], 1, stderr="unexpected")
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
-        return runner_mod.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+        return CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
 
     monkeypatch.setattr(git_adapter, "run_git_preflight", fake_run_git_preflight)
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
         cwd=tmp_path,
         artifact_dir=tmp_path / "artifacts",
-        budget_config=runner_mod.budgets.BudgetConfig(max_wall_seconds=30),
+        budget_config=budgets.BudgetConfig(max_wall_seconds=30),
     )
 
-    summary = runner_mod.run_loop(config, runner, budget_state=runner_mod.budgets.BudgetState(started_at_monotonic=100.0))
+    summary = runner_mod.run_loop(config, runner, budget_state=budgets.BudgetState(started_at_monotonic=100.0)).to_dict()
 
     assert summary["budgets"]["wall_elapsed_seconds"] == 12.5
 
-    monkeypatch.setattr(runner_mod.budgets, "monotonic", lambda: 200.0)
+    monkeypatch.setattr(budgets, "monotonic", lambda: 200.0)
     config, budget_state = resume_mod.resume_loop_config(summary, run_dir=tmp_path / "artifacts")
 
     assert budget_state is not None
@@ -445,9 +448,9 @@ def test_resume_and_uninterrupted_fake_run_have_same_final_status(tmp_path, monk
     write_resume_run(run_dir)
     install_matching_git(monkeypatch)
 
-    resumed = runner_mod.resume_run(run_dir)
+    resumed = runner_mod.resume_run(run_dir, subprocess_runner_mod.default_runner)
     uninterrupted = runner_mod.run_loop(
-        runner_mod.LoopConfig(
+        LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",
@@ -455,8 +458,10 @@ def test_resume_and_uninterrupted_fake_run_have_same_final_status(tmp_path, monk
             artifact_dir=uninterrupted_dir,
             review_harness="fake",
             review_model="review_clear",
-        )
+        ),
+        subprocess_runner_mod.default_runner,
     )
 
-    assert resumed["final_status"] == uninterrupted["final_status"] == "clear"
-    assert resumed["stopped_reason"] == uninterrupted["stopped_reason"] == "review_clear"
+    uninterrupted_summary = uninterrupted.to_dict()
+    assert resumed.summary["final_status"] == uninterrupted_summary["final_status"] == "clear"
+    assert resumed.summary["stopped_reason"] == uninterrupted_summary["stopped_reason"] == "review_clear"

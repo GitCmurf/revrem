@@ -5,6 +5,9 @@ from importlib import import_module
 import pytest
 
 import code_review_loop.runner as runner_mod
+from code_review_loop import __version__
+from code_review_loop.config import LoopConfig
+from code_review_loop.core.ports import CommandResult
 
 cli_main = import_module("code_review_loop.cli.main")
 
@@ -16,7 +19,7 @@ def test_main_reports_package_version(capsys):
     captured = capsys.readouterr()
 
     assert excinfo.value.code == 0
-    assert captured.out.strip() == f"revrem {runner_mod.__version__}"
+    assert captured.out.strip() == f"revrem {__version__}"
     assert captured.err == ""
 
 
@@ -32,10 +35,10 @@ def test_loop_stops_after_review_reports_clear(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text))
         if args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
-        return runner_mod.CommandResult(list(args), 0, stdout="remediated\n")
+            return CommandResult(list(args), 0, stdout=next(review_outputs))
+        return CommandResult(list(args), 0, stdout="remediated\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=2,
         codex_bin="codex",
@@ -44,7 +47,7 @@ def test_loop_stops_after_review_reports_clear(tmp_path):
         check_commands=("python -m pytest tests/unit",),
     )
 
-    summary = runner_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner).to_dict()
 
     assert summary["final_status"] == "clear"
     assert summary["stopped_reason"] == "review_clear"
@@ -69,10 +72,10 @@ def test_loop_stops_when_clear_review_has_noisy_stderr(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text))
         if args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
-        return runner_mod.CommandResult(list(args), 0, stdout="remediated\n")
+            return CommandResult(list(args), 0, stdout=next(review_outputs))
+        return CommandResult(list(args), 0, stdout="remediated\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=2,
         codex_bin="codex",
@@ -80,7 +83,7 @@ def test_loop_stops_when_clear_review_has_noisy_stderr(tmp_path):
         artifact_dir=tmp_path / "artifacts",
     )
 
-    summary = runner_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner).to_dict()
 
     assert summary["final_status"] == "clear"
     assert [call[0][1] for call in calls] == ["review", "exec", "review"]

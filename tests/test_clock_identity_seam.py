@@ -13,11 +13,13 @@ from support.fakes import FIXED_ISO, FIXED_RUN_ID, FakeClock, FakeRunIdentity
 import code_review_loop.runner as runner_mod
 from code_review_loop import events
 from code_review_loop.cli import config_builder
+from code_review_loop.config import LoopConfig
+from code_review_loop.core.ports import CommandResult
 
 
 def _clear_review_runner(args, cwd, input_text=None, timeout_seconds=None):
     if args[1] == "review":
-        return runner_mod.CommandResult(
+        return CommandResult(
             list(args),
             0,
             stdout='{"findings": [], "overall_correctness": "patch is correct"}\n',
@@ -26,7 +28,7 @@ def _clear_review_runner(args, cwd, input_text=None, timeout_seconds=None):
 
 
 def test_run_loop_timestamps_and_run_id_are_deterministic(tmp_path):
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -41,7 +43,7 @@ def test_run_loop_timestamps_and_run_id_are_deterministic(tmp_path):
         _clear_review_runner,
         clock=FakeClock(),
         identity=FakeRunIdentity(),
-    )
+    ).to_dict()
 
     assert summary["run_id"] == FIXED_RUN_ID
     assert summary["started_at"] == FIXED_ISO

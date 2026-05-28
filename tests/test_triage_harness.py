@@ -7,9 +7,9 @@ from unittest.mock import MagicMock, patch
 
 from support.phase_harnesses import phase_harness_kwargs
 
-import code_review_loop.runner as runner_mod
 from code_review_loop.adapters.triage import TriageAdapter
 from code_review_loop.clock import Clock
+from code_review_loop.config import LoopConfig
 from code_review_loop.core.ports import (
     RunContext,
     TriageOutcome,
@@ -30,7 +30,7 @@ def _ctx(runner=None, **kwargs: object) -> RunContext:
 class TestTriageAdapter:
     def test_dry_run_returns_outcome(self, tmp_path: Path) -> None:
         (tmp_path / "artifacts").mkdir()
-        config = runner_mod.LoopConfig(
+        config = LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",
@@ -53,7 +53,7 @@ class TestTriageAdapter:
 
     def test_all_fields_passed_through(self, tmp_path: Path) -> None:
         (tmp_path / "artifacts").mkdir()
-        config = runner_mod.LoopConfig(
+        config = LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",
@@ -90,7 +90,7 @@ class TestTriageAdapter:
 
     def test_clear_triage_outcome(self, tmp_path: Path) -> None:
         (tmp_path / "artifacts").mkdir()
-        config = runner_mod.LoopConfig(
+        config = LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",

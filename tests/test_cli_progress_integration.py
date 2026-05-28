@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import io
 import re
+from pathlib import Path
 
 import code_review_loop.runner as runner_mod
+from code_review_loop import progress
 from code_review_loop.adapters import phase_support
 from code_review_loop.adapters import terminal as terminal_mod
-from code_review_loop.core.ports import RunContext
+from code_review_loop.adapters.phase_support import progress_event
+from code_review_loop.config import LoopConfig
+from code_review_loop.core.ports import CommandResult, RunContext
 from tests.support.fakes import FakeClock, FakeRunIdentity
 from tests.support.phase_harnesses import phase_harness_kwargs
 
@@ -32,10 +36,10 @@ def test_progress_logs_review_and_finding_summaries(tmp_path, capsys):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
-        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return CommandResult(list(args), 0, stdout=next(review_outputs))
+        return CommandResult(list(args), 0, stdout="fixed\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -70,9 +74,9 @@ def test_compact_progress_uses_local_wall_time(monkeypatch):
 
 
 def test_rich_progress_falls_back_to_compact_once(tmp_path, capsys, monkeypatch):
-    monkeypatch.setattr(runner_mod.progress, "print_rich_event", lambda *args, **kwargs: False)
+    monkeypatch.setattr(progress, "print_rich_event", lambda *args, **kwargs: False)
     monkeypatch.setattr(phase_support, "_RICH_UNAVAILABLE_WARNED", False)
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -81,9 +85,9 @@ def test_rich_progress_falls_back_to_compact_once(tmp_path, capsys, monkeypatch)
         progress_style="rich",
     )
 
-    ctx = make_run_context(lambda *_args, **_kwargs: runner_mod.CommandResult([], 0))
-    runner_mod.progress_event(config, "review", "1", "start", "codex review --base main", ctx=ctx)
-    runner_mod.progress_event(config, "review", "1", "clear", ctx=ctx)
+    ctx = make_run_context(lambda *_args, **_kwargs: CommandResult([], 0))
+    progress_event(config, "review", "1", "start", "codex review --base main", ctx=ctx)
+    progress_event(config, "review", "1", "clear", ctx=ctx)
     captured = capsys.readouterr()
 
     assert captured.err.count("rich progress unavailable; using compact output") == 1
@@ -94,11 +98,11 @@ def test_rich_progress_falls_back_to_compact_once(tmp_path, capsys, monkeypatch)
 def test_rich_progress_renderer_is_used_when_available(tmp_path, capsys, monkeypatch):
     calls = []
     monkeypatch.setattr(
-        runner_mod.progress,
+        progress,
         "print_rich_event",
         lambda phase, label, status, detail="": calls.append((phase, label, status, detail)) or True,
     )
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -107,8 +111,8 @@ def test_rich_progress_renderer_is_used_when_available(tmp_path, capsys, monkeyp
         progress_style="rich",
     )
 
-    ctx = make_run_context(lambda *_args, **_kwargs: runner_mod.CommandResult([], 0))
-    runner_mod.progress_event(config, "review", "1", "start", "codex review --base main", ctx=ctx)
+    ctx = make_run_context(lambda *_args, **_kwargs: CommandResult([], 0))
+    progress_event(config, "review", "1", "start", "codex review --base main", ctx=ctx)
 
     assert calls == [("review", "1", "start", "codex review --base main")]
     assert capsys.readouterr().err == ""
@@ -130,10 +134,10 @@ def test_compact_progress_wraps_to_terminal_width(tmp_path, capsys, monkeypatch)
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
-        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return CommandResult(list(args), 0, stdout=next(review_outputs))
+        return CommandResult(list(args), 0, stdout="fixed\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -160,10 +164,10 @@ def test_progress_logs_finding_detail_lines(tmp_path, capsys):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
-        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return CommandResult(list(args), 0, stdout=next(review_outputs))
+        return CommandResult(list(args), 0, stdout="fixed\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -181,10 +185,10 @@ def test_progress_logs_finding_detail_lines(tmp_path, capsys):
 def test_quiet_progress_suppresses_progress_logs(tmp_path, capsys):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout="No findings.\n")
-        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return CommandResult(list(args), 0, stdout="No findings.\n")
+        return CommandResult(list(args), 0, stdout="fixed\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -216,10 +220,10 @@ def test_terminal_title_tracks_review_and_remediation_phases(tmp_path, monkeypat
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
-        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return CommandResult(list(args), 0, stdout=next(review_outputs))
+        return CommandResult(list(args), 0, stdout="fixed\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=2,
         codex_bin="codex",
@@ -229,7 +233,7 @@ def test_terminal_title_tracks_review_and_remediation_phases(tmp_path, monkeypat
         terminal_title=True,
     )
 
-    summary = runner_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner).to_dict()
     output = stderr.getvalue()
 
     assert summary["final_status"] == "clear"
@@ -246,10 +250,10 @@ def test_terminal_title_restores_after_remediation_failure(tmp_path, monkeypatch
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout="Needs work.\nREVIEW_STATUS: findings\n")
-        return runner_mod.CommandResult(list(args), 1, stderr="failed\n")
+            return CommandResult(list(args), 0, stdout="Needs work.\nREVIEW_STATUS: findings\n")
+        return CommandResult(list(args), 1, stderr="failed\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -277,9 +281,9 @@ def test_terminal_title_never_writes_to_stdout(tmp_path, monkeypatch):
     stdout = TtyBuffer()
     monkeypatch.setattr(terminal_mod.sys, "stderr", stderr)
     monkeypatch.setattr(terminal_mod.sys, "stdout", stdout)
-    monkeypatch.setattr(runner_mod.Path, "exists", lambda self: False)
+    monkeypatch.setattr(Path, "exists", lambda self: False)
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -300,7 +304,7 @@ def test_terminal_title_is_suppressed_in_rich_mode_to_avoid_escape_leaks(tmp_pat
     tty_sequences = []
     monkeypatch.setattr(terminal_mod.sys, "stderr", stderr)
     monkeypatch.setattr(terminal_mod, "write_terminal_control_to_tty", lambda sequence: tty_sequences.append(sequence) or True)
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -333,7 +337,7 @@ def test_phase_terminal_title_skips_dev_tty_on_windows(tmp_path, monkeypatch):
         "open",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("/dev/tty opened")),
     )
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -351,7 +355,7 @@ def test_phase_terminal_title_skips_dev_tty_on_windows(tmp_path, monkeypatch):
 def test_terminal_title_context_restores_cursor_on_exit(tmp_path, monkeypatch):
     stderr = TtyBuffer()
     monkeypatch.setattr(terminal_mod.sys, "stderr", stderr)
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",

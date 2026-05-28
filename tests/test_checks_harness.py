@@ -12,9 +12,9 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import code_review_loop.runner as runner_mod
 from code_review_loop.adapters.checks import ChecksAdapter
 from code_review_loop.clock import Clock
+from code_review_loop.config import LoopConfig
 from code_review_loop.core.ports import (
     ChecksOutcome,
     ChecksRequest,
@@ -54,7 +54,7 @@ def _runner_returning(*results: CommandResult):
 class TestChecksAdapter:
     def test_returns_checks_outcome_on_success(self, tmp_path: Path) -> None:
         (tmp_path / "artifacts").mkdir()
-        config = runner_mod.LoopConfig(
+        config = LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",
@@ -75,7 +75,7 @@ class TestChecksAdapter:
 
     def test_failed_check_appears_in_failed_commands(self, tmp_path: Path) -> None:
         (tmp_path / "artifacts").mkdir()
-        config = runner_mod.LoopConfig(
+        config = LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",
@@ -95,7 +95,7 @@ class TestChecksAdapter:
 
     def test_dry_run_skips_subprocess(self, tmp_path: Path) -> None:
         (tmp_path / "artifacts").mkdir()
-        config = runner_mod.LoopConfig(
+        config = LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",
@@ -117,7 +117,7 @@ class TestChecksAdapter:
     def test_adaptive_pytest_skip_for_typescript_repo(self, tmp_path: Path) -> None:
         (tmp_path / "artifacts").mkdir()
         (tmp_path / "package.json").write_text('{"scripts":{"test":"vitest"}}\n', encoding="utf-8")
-        config = runner_mod.LoopConfig(
+        config = LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",

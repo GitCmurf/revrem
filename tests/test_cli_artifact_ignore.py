@@ -7,6 +7,8 @@ import pytest
 
 import code_review_loop.runner as runner_mod
 from code_review_loop.cli import config_builder, config_support
+from code_review_loop.config import LoopConfig
+from code_review_loop.core.ports import CommandResult
 
 cli_main = import_module("code_review_loop.cli.main")
 config_command = import_module("code_review_loop.cli.commands.config")
@@ -28,10 +30,10 @@ def test_profile_timeout_rejects_negative_values():
 def test_run_loop_creates_repo_local_revrem_gitignore_for_default_artifacts(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout="No findings.\n")
-        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return CommandResult(list(args), 0, stdout="No findings.\n")
+        return CommandResult(list(args), 0, stdout="fixed\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -48,13 +50,13 @@ def test_run_loop_creates_repo_local_revrem_gitignore_for_default_artifacts(tmp_
 def test_run_loop_uses_git_info_exclude_for_default_artifacts_in_git_repo(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout="No findings.\n")
-        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return CommandResult(list(args), 0, stdout="No findings.\n")
+        return CommandResult(list(args), 0, stdout="fixed\n")
 
     git_info = tmp_path / ".git" / "info"
     git_info.mkdir(parents=True)
     (git_info / "exclude").write_text("# local excludes\n", encoding="utf-8")
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -72,8 +74,8 @@ def test_run_loop_uses_git_info_exclude_for_default_artifacts_in_git_repo(tmp_pa
 def test_run_loop_uses_repo_root_exclude_for_default_artifacts_from_subdirectory(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout="No findings.\n")
-        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return CommandResult(list(args), 0, stdout="No findings.\n")
+        return CommandResult(list(args), 0, stdout="fixed\n")
 
     repo_root = tmp_path / "repo"
     worktree = repo_root / "work"
@@ -81,7 +83,7 @@ def test_run_loop_uses_repo_root_exclude_for_default_artifacts_from_subdirectory
     git_info.mkdir(parents=True)
     (git_info / "exclude").write_text("# local excludes\n", encoding="utf-8")
     worktree.mkdir(parents=True)
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -101,8 +103,8 @@ def test_run_loop_uses_repo_root_exclude_for_default_artifacts_from_subdirectory
 def test_run_loop_uses_common_exclude_for_default_artifacts_in_linked_worktree(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout="No findings.\n")
-        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return CommandResult(list(args), 0, stdout="No findings.\n")
+        return CommandResult(list(args), 0, stdout="fixed\n")
 
     repo_root = tmp_path / "repo"
     common_git_dir = repo_root / ".git"
@@ -120,7 +122,7 @@ def test_run_loop_uses_common_exclude_for_default_artifacts_in_linked_worktree(t
         encoding="utf-8",
     )
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -146,14 +148,14 @@ def test_git_info_exclude_path_ignores_empty_gitdir_file(tmp_path):
 def test_run_loop_appends_repo_root_exclude_when_existing_longer_entry_contains_substring(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout="No findings.\n")
-        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return CommandResult(list(args), 0, stdout="No findings.\n")
+        return CommandResult(list(args), 0, stdout="fixed\n")
 
     repo_root = tmp_path
     git_info = repo_root / ".git" / "info"
     git_info.mkdir(parents=True)
     (git_info / "exclude").write_text("work/.revrem/runs/\n", encoding="utf-8")
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -172,8 +174,8 @@ def test_run_loop_appends_repo_root_exclude_when_existing_longer_entry_contains_
 def test_run_loop_falls_back_to_workspace_gitignore_for_symlinked_default_artifacts(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout="No findings.\n")
-        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return CommandResult(list(args), 0, stdout="No findings.\n")
+        return CommandResult(list(args), 0, stdout="fixed\n")
 
     repo_root = tmp_path / "repo"
     repo_git_info = repo_root / ".git" / "info"
@@ -186,7 +188,7 @@ def test_run_loop_falls_back_to_workspace_gitignore_for_symlinked_default_artifa
     linked_cwd = workspace / "linked"
     linked_cwd.symlink_to(repo_root / "nested", target_is_directory=True)
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",

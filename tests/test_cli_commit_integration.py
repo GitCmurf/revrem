@@ -8,7 +8,9 @@ import pytest
 import code_review_loop.runner as runner_mod
 from code_review_loop.adapters import checks as checks_impl
 from code_review_loop.adapters import commit as commit_impl
-from code_review_loop.core.ports import RunContext
+from code_review_loop.config import LoopConfig
+from code_review_loop.core.ports import CommandResult, RunContext
+from code_review_loop.runtime import RunLoopFailed
 from tests.support.fakes import FakeClock, FakeRunIdentity
 from tests.support.phase_harnesses import phase_harness_kwargs
 
@@ -42,28 +44,28 @@ def test_loop_commits_after_passing_checks(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
         if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
-            return runner_mod.CommandResult(list(args), 0, stdout="")
+            return CommandResult(list(args), 0, stdout="")
         if args[0] == "codex" and "review" in args:
-            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+            return CommandResult(list(args), 0, stdout=next(review_outputs))
         if args[0] == "pytest":
-            return runner_mod.CommandResult(list(args), 0, stdout="1 passed\n")
+            return CommandResult(list(args), 0, stdout="1 passed\n")
         if args[:3] == ["git", "add", "-A"]:
-            return runner_mod.CommandResult(list(args), 0)
+            return CommandResult(list(args), 0)
         if args[:4] == ["git", "-C", str(repo_root), "reset"]:
-            return runner_mod.CommandResult(list(args), 0)
+            return CommandResult(list(args), 0)
         if args[:3] == ["git", "diff", "--cached"] and "--quiet" in args:
-            return runner_mod.CommandResult(list(args), 1)
+            return CommandResult(list(args), 1)
         if args[:3] == ["git", "diff", "--cached"] and "--stat" in args:
-            return runner_mod.CommandResult(list(args), 0, stdout=" src/code.py | 2 +-\n")
+            return CommandResult(list(args), 0, stdout=" src/code.py | 2 +-\n")
         if args[:3] == ["git", "diff", "--cached"] and "--name-only" in args:
-            return runner_mod.CommandResult(list(args), 0, stdout="src/code.py\n")
+            return CommandResult(list(args), 0, stdout="src/code.py\n")
         if args[0:2] == ["codex", "exec"] and "--sandbox" in args:
-            return runner_mod.CommandResult(list(args), 0, stdout="fix(cli): harden RevRem commit flow\n")
+            return CommandResult(list(args), 0, stdout="fix(cli): harden RevRem commit flow\n")
         if args[:3] == ["git", "commit", "-m"]:
-            return runner_mod.CommandResult(list(args), 0, stdout="[branch abc] fix(cli): harden RevRem commit flow\n")
-        return runner_mod.CommandResult(list(args), 0, stdout="remediated\n")
+            return CommandResult(list(args), 0, stdout="[branch abc] fix(cli): harden RevRem commit flow\n")
+        return CommandResult(list(args), 0, stdout="remediated\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -74,7 +76,7 @@ def test_loop_commits_after_passing_checks(tmp_path):
         commit_message_model="gpt-5.3-codex-spark",
     )
 
-    summary = runner_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner).to_dict()
 
     commands = [call[0] for call in calls]
     assert ["git", "add", "-A"] in commands
@@ -101,7 +103,7 @@ def test_loop_commits_after_passing_checks(tmp_path):
 
 def test_git_staging_commands_for_commit_reset_relative_artifact_dir(tmp_path):
     repo_root, cwd = make_git_worktree(tmp_path)
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -122,7 +124,7 @@ def test_git_staging_commands_for_commit_reset_relative_artifact_dir(tmp_path):
 
 def test_git_staging_commands_skip_relative_artifact_dir_outside_cwd(tmp_path):
     _repo_root, cwd = make_git_worktree(tmp_path)
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -140,9 +142,9 @@ def test_run_commit_refuses_repo_root_artifact_dir_before_staging(tmp_path):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
-        return runner_mod.CommandResult(list(args), 0, stdout="unexpected\n")
+        return CommandResult(list(args), 0, stdout="unexpected\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -169,14 +171,14 @@ def test_loop_skips_commit_when_checks_fail(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
         if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
-            return runner_mod.CommandResult(list(args), 0, stdout="")
+            return CommandResult(list(args), 0, stdout="")
         if args[0] == "codex" and "review" in args:
-            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+            return CommandResult(list(args), 0, stdout=next(review_outputs))
         if args[0] == "pytest":
-            return runner_mod.CommandResult(list(args), 1, stdout="1 failed\n")
-        return runner_mod.CommandResult(list(args), 0, stdout="remediated\n")
+            return CommandResult(list(args), 1, stdout="1 failed\n")
+        return CommandResult(list(args), 0, stdout="remediated\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -187,7 +189,7 @@ def test_loop_skips_commit_when_checks_fail(tmp_path):
         commit_message_model="gpt-5.3-codex-spark",
     )
 
-    summary = runner_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner).to_dict()
 
     assert summary["iterations"][0]["check_failures"] == 1
     assert "commit_status" not in summary["iterations"][0]
@@ -204,7 +206,7 @@ def test_pytest_check_is_skipped_for_typescript_repo_without_python_surface(tmp_
         calls.append(list(args))
         raise AssertionError("pytest should be skipped before subprocess execution")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -233,7 +235,7 @@ def test_pytest_check_is_skipped_for_typescript_repo_with_incidental_python_file
         calls.append(list(args))
         raise AssertionError("pytest should be skipped before subprocess execution")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -257,7 +259,7 @@ def test_pytest_in_typescript_repo_is_normalized_when_subprocess_returns_non_pyt
 ):
     (tmp_path / "package.json").write_text('{"scripts":{"test":"vitest"}}\n', encoding="utf-8")
     command = ["pytest", "-q"]
-    result = runner_mod.CommandResult(command, returncode, stdout="pytest output\n", stderr="pytest error\n")
+    result = CommandResult(command, returncode, stdout="pytest output\n", stderr="pytest error\n")
 
     normalized = checks_impl.normalize_adaptive_check_result(command, tmp_path, result)
 
@@ -270,7 +272,7 @@ def test_pytest_in_typescript_repo_is_normalized_when_subprocess_returns_non_pyt
 def test_pytest_interrupt_is_preserved_for_typescript_repo(tmp_path):
     (tmp_path / "package.json").write_text('{"scripts":{"test":"vitest"}}\n', encoding="utf-8")
     command = ["pytest", "-q"]
-    result = runner_mod.CommandResult(command, 2, stdout="interrupted\n")
+    result = CommandResult(command, 2, stdout="interrupted\n")
 
     assert checks_impl.normalize_adaptive_check_result(command, tmp_path, result) is result
 
@@ -278,7 +280,7 @@ def test_pytest_interrupt_is_preserved_for_typescript_repo(tmp_path):
 def test_pytest_failure_is_preserved_for_python_repo(tmp_path):
     (tmp_path / "pyproject.toml").write_text("[project]\nname='demo'\n", encoding="utf-8")
     command = ["pytest", "-q"]
-    result = runner_mod.CommandResult(command, 5, stdout="no tests ran\n")
+    result = CommandResult(command, 5, stdout="no tests ran\n")
 
     assert checks_impl.adaptive_check_skip_reason(command, tmp_path) is None
     assert checks_impl.normalize_adaptive_check_result(command, tmp_path, result) is result
@@ -290,14 +292,14 @@ def test_loop_refuses_to_auto_commit_from_dirty_worktree(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
         if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
-            return runner_mod.CommandResult(
+            return CommandResult(
                 list(args),
                 0,
                 stdout=" M src/other.py\n?? notes.txt\n",
             )
         raise AssertionError(f"unexpected command: {args!r}")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -324,20 +326,20 @@ def test_loop_stops_after_unknown_review_when_remediation_has_no_staged_changes(
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
         if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
-            return runner_mod.CommandResult(list(args), 0, stdout="")
+            return CommandResult(list(args), 0, stdout="")
         if args[0] == "codex" and "review" in args:
-            return runner_mod.CommandResult(list(args), 0, stdout="The implementation appears sound.\n")
+            return CommandResult(list(args), 0, stdout="The implementation appears sound.\n")
         if args[0] == "pytest":
-            return runner_mod.CommandResult(list(args), 0, stdout="1 passed\n")
+            return CommandResult(list(args), 0, stdout="1 passed\n")
         if args[:3] == ["git", "add", "-A"]:
-            return runner_mod.CommandResult(list(args), 0)
+            return CommandResult(list(args), 0)
         if args[:4] == ["git", "-C", str(repo_root), "reset"]:
-            return runner_mod.CommandResult(list(args), 0)
+            return CommandResult(list(args), 0)
         if args[:3] == ["git", "diff", "--cached"] and "--quiet" in args:
-            return runner_mod.CommandResult(list(args), 0)
-        return runner_mod.CommandResult(list(args), 0, stdout="No edits were needed.\n")
+            return CommandResult(list(args), 0)
+        return CommandResult(list(args), 0, stdout="No edits were needed.\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=3,
         codex_bin="codex",
@@ -347,7 +349,7 @@ def test_loop_stops_after_unknown_review_when_remediation_has_no_staged_changes(
         commit_after_remediation=True,
     )
 
-    summary = runner_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner).to_dict()
 
     review_calls = [command for command, _input_text, _timeout in calls if command[0] == "codex" and "review" in command]
     assert len(review_calls) == 1
@@ -363,22 +365,22 @@ def test_loop_writes_failure_summary_when_commit_fails(tmp_path):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
-            return runner_mod.CommandResult(list(args), 0, stdout="")
+            return CommandResult(list(args), 0, stdout="")
         if args[0] == "codex" and "review" in args:
-            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+            return CommandResult(list(args), 0, stdout=next(review_outputs))
         if args[:3] == ["git", "add", "-A"]:
-            return runner_mod.CommandResult(list(args), 0)
+            return CommandResult(list(args), 0)
         if args[:4] == ["git", "-C", str(repo_root), "reset"]:
-            return runner_mod.CommandResult(list(args), 0)
+            return CommandResult(list(args), 0)
         if args[:3] == ["git", "diff", "--cached"] and "--quiet" in args:
-            return runner_mod.CommandResult(list(args), 1)
+            return CommandResult(list(args), 1)
         if args[:3] == ["git", "diff", "--cached"]:
-            return runner_mod.CommandResult(list(args), 0, stdout="src/code.py\n")
+            return CommandResult(list(args), 0, stdout="src/code.py\n")
         if args[:3] == ["git", "commit", "-m"]:
-            return runner_mod.CommandResult(list(args), 1, stderr="nothing to commit\n")
-        return runner_mod.CommandResult(list(args), 0, stdout="ok\n")
+            return CommandResult(list(args), 1, stderr="nothing to commit\n")
+        return CommandResult(list(args), 0, stdout="ok\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -388,7 +390,7 @@ def test_loop_writes_failure_summary_when_commit_fails(tmp_path):
         commit_message_model=None,
     )
 
-    with pytest.raises(runner_mod.RunLoopFailed):
+    with pytest.raises(RunLoopFailed):
         runner_mod.run_loop(config, runner)
 
     summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
@@ -414,24 +416,24 @@ def test_loop_remediates_commit_hook_failure_by_default(tmp_path):
         nonlocal commit_attempts
         calls.append((list(args), input_text, timeout_seconds))
         if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
-            return runner_mod.CommandResult(list(args), 0, stdout="")
+            return CommandResult(list(args), 0, stdout="")
         if args[0] == "codex" and "review" in args:
-            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+            return CommandResult(list(args), 0, stdout=next(review_outputs))
         if args[0:2] == ["codex", "exec"]:
             remediation_prompts.append(input_text or "")
-            return runner_mod.CommandResult(list(args), 0, stdout="remediated\n")
+            return CommandResult(list(args), 0, stdout="remediated\n")
         if args[:3] == ["git", "add", "-A"]:
-            return runner_mod.CommandResult(list(args), 0)
+            return CommandResult(list(args), 0)
         if args[:4] == ["git", "-C", str(repo_root), "reset"]:
-            return runner_mod.CommandResult(list(args), 0)
+            return CommandResult(list(args), 0)
         if args[:3] == ["git", "diff", "--cached"] and "--quiet" in args:
-            return runner_mod.CommandResult(list(args), 1)
+            return CommandResult(list(args), 1)
         if args[:3] == ["git", "diff", "--cached"]:
-            return runner_mod.CommandResult(list(args), 0, stdout="src/code.py\n")
+            return CommandResult(list(args), 0, stdout="src/code.py\n")
         if args[:3] == ["git", "commit", "-m"]:
             commit_attempts += 1
             if commit_attempts == 1:
-                return runner_mod.CommandResult(
+                return CommandResult(
                     list(args),
                     1,
                     stdout=(
@@ -440,10 +442,10 @@ def test_loop_remediates_commit_hook_failure_by_default(tmp_path):
                         "Found 1 error in 1 file\n"
                     ),
                 )
-            return runner_mod.CommandResult(list(args), 0, stdout="[branch abc] fix\n")
-        return runner_mod.CommandResult(list(args), 0, stdout="ok\n")
+            return CommandResult(list(args), 0, stdout="[branch abc] fix\n")
+        return CommandResult(list(args), 0, stdout="ok\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=2,
         codex_bin="codex",
@@ -454,7 +456,7 @@ def test_loop_remediates_commit_hook_failure_by_default(tmp_path):
         final_review=False,
     )
 
-    summary = runner_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner).to_dict()
 
     assert summary["iterations"][0]["commit_status"] == "hook_failed"
     assert summary["iterations"][0]["commit_failed"] is True
@@ -473,26 +475,26 @@ def test_loop_stops_on_commit_hook_failure_when_policy_is_stop(tmp_path):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
-            return runner_mod.CommandResult(list(args), 0, stdout="")
+            return CommandResult(list(args), 0, stdout="")
         if args[0] == "codex" and "review" in args:
-            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+            return CommandResult(list(args), 0, stdout=next(review_outputs))
         if args[:3] == ["git", "add", "-A"]:
-            return runner_mod.CommandResult(list(args), 0)
+            return CommandResult(list(args), 0)
         if args[:4] == ["git", "-C", str(repo_root), "reset"]:
-            return runner_mod.CommandResult(list(args), 0)
+            return CommandResult(list(args), 0)
         if args[:3] == ["git", "diff", "--cached"] and "--quiet" in args:
-            return runner_mod.CommandResult(list(args), 1)
+            return CommandResult(list(args), 1)
         if args[:3] == ["git", "diff", "--cached"]:
-            return runner_mod.CommandResult(list(args), 0, stdout="src/code.py\n")
+            return CommandResult(list(args), 0, stdout="src/code.py\n")
         if args[:3] == ["git", "commit", "-m"]:
-            return runner_mod.CommandResult(
+            return CommandResult(
                 list(args),
                 1,
                 stderr="pre-commit hook failed: mypy found 1 error\n",
             )
-        return runner_mod.CommandResult(list(args), 0, stdout="ok\n")
+        return CommandResult(list(args), 0, stdout="ok\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=2,
         codex_bin="codex",
@@ -503,7 +505,7 @@ def test_loop_stops_on_commit_hook_failure_when_policy_is_stop(tmp_path):
         commit_on_hook_failure="stop",
     )
 
-    with pytest.raises(runner_mod.RunLoopFailed):
+    with pytest.raises(RunLoopFailed):
         runner_mod.run_loop(config, runner)
 
     summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
@@ -520,18 +522,18 @@ def test_run_commit_uses_no_verify_only_on_retry(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append(list(args))
         if args[:3] == ["git", "add", "-A"]:
-            return runner_mod.CommandResult(list(args), 0)
+            return CommandResult(list(args), 0)
         if args[:4] == ["git", "-C", str(repo_root), "reset"]:
-            return runner_mod.CommandResult(list(args), 0)
+            return CommandResult(list(args), 0)
         if args[:3] == ["git", "diff", "--cached"] and "--quiet" in args:
-            return runner_mod.CommandResult(list(args), 1)
+            return CommandResult(list(args), 1)
         if args[:3] == ["git", "diff", "--cached"]:
-            return runner_mod.CommandResult(list(args), 0, stdout="src/code.py\n")
+            return CommandResult(list(args), 0, stdout="src/code.py\n")
         if args[:3] == ["git", "commit", "--no-verify"]:
-            return runner_mod.CommandResult(list(args), 0, stdout="[branch abc] fix\n")
-        return runner_mod.CommandResult(list(args), 0, stdout="ok\n")
+            return CommandResult(list(args), 0, stdout="[branch abc] fix\n")
+        return CommandResult(list(args), 0, stdout="ok\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",

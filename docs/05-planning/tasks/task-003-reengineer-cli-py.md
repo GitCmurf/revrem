@@ -1038,7 +1038,7 @@ Treat that commit as a green checkpoint, not the Wave C finish line.
   routing paths. The full local gate passed after the final decomposition:
   `./.venv/bin/ruff check .`, `./.venv/bin/mypy src`,
   `./.venv/bin/lint-imports`, `uv run --locked meminit check --format json`,
-  and `./.venv/bin/pytest -q` (`756 passed`). Final polish focused gates pass
+  and `./.venv/bin/pytest -q` (`779 passed`). Final polish focused gates pass
   for the application API, runner engine gate, terminal/progress, subprocess,
   engine, and split config/history/profile modules; full-suite evidence is
   refreshed at closeout.
@@ -1433,10 +1433,11 @@ not add demo-only production features. It should prove, with executable
 acceptance tests and ratchets, that the seams created in Waves A-C are useful
 to a caller that is not the CLI.
 
-**Status (2026-05-27): implemented and polished.** Wave D landed the headless
+**Status (2026-05-28): implemented and polished.** Wave D landed the headless
 application harness, typed SDK outcomes, core-engine traces, runner-shell
 acceptance tests, command-registry relocation, strict import-linter contracts,
-runner setup extraction, and ADR evidence pack described below.
+runner setup extraction, subprocess-blind private runner APIs, routing-artifact
+extraction, and the ADR evidence pack described below.
 
 **Per-wave discipline.** Each sub-wave names (a) the **Phase Exit Criterion** it
 discharges, (b) the **contracts** (C1–C7) it consumes, and (c) the **enforcement
@@ -1457,8 +1458,14 @@ dependency-rule claim; the architecture is enforced or it is decoration.
 - Subprocess execution, terminal control, resume Git snapshots, resume payload
   construction, and runner setup now live outside `runner.py`
   (`adapters.subprocess_runner`, `adapters.terminal`, `adapters.git`,
-  `resume.py`, `runner_setup.py`). `runner.py` is under the tightened `<600`
-  ratchet.
+  `resume.py`, `runner_setup.py`). `runner.py` requires an injected runner and
+  no longer imports, lazily loads, or re-exports the production
+  `default_runner`; only `application.py` selects that production default.
+  `runner.py` is under the tightened `<600` ratchet.
+- `routing_artifacts.py` owns v2 route resolution, routing-decision artifact
+  validation/emission, and composed remediation prompt artifact writes.
+  `runner_shell.py` is now a phase-action executor under a `<450` ratchet
+  instead of the owner of policy/reporting ceremony.
 - The CLI command registry now lives in `cli/commands/registry.py`; `cli/main.py`
   is guarded against concrete subcommand names by a Wave D architecture test.
 
@@ -1585,6 +1592,11 @@ commands.
      `core.engine`, `runner.py`, `runner_shell.py`, or `cli/main.py`. (The
      listed modules become the architecturally-closed set; the test's edit-set
      is the *open* set, demonstrating the seam.)
+  4. Add a runner-surface ratchet that permits tests to reach only
+     `runner_mod.run_loop`, `runner_mod.resume_run`, and the runner-owned
+     cancellation signal helper through the private runner module. Any test
+     that needs phase helpers, diagnostics, subprocesses, terminal behavior,
+     or summary formatting imports the canonical owner directly.
 - **Risk note:** this is the only D-wave that moves production code. Land the
   registry relocation in its own commit ahead of the architecture test, so a
   failure in either is easy to isolate. A2 golden masters must be byte-identical

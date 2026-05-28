@@ -5,7 +5,8 @@ from types import SimpleNamespace
 
 import code_review_loop.runner as runner_mod
 from code_review_loop import application as application_mod
-from code_review_loop.core.outcome import OutcomeClear
+from code_review_loop.core.outcome import OutcomeClear, OutcomeFailed
+from code_review_loop.runtime import RunLoopFailed
 
 cli_main = import_module("code_review_loop.cli.main")
 config_command = import_module("code_review_loop.cli.commands.config")
@@ -72,7 +73,11 @@ def test_main_records_failed_runs_in_history(tmp_path, monkeypatch, capsys):
     }
 
     def fake_run_loop(config):
-        raise runner_mod.RunLoopFailed(summary, "codex exec triage failed for iteration 1")
+        raise RunLoopFailed(
+            summary,
+            "codex exec triage failed for iteration 1",
+            outcome=OutcomeFailed(reason="triage_failed", error="codex exec triage failed for iteration 1"),
+        )
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
@@ -162,4 +167,3 @@ def test_history_unknown_command_reports_command_error(monkeypatch, capsys):
 
     assert history_command.main([]) == 1
     assert "unhandled history command: wat" in capsys.readouterr().err
-

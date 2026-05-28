@@ -10,6 +10,7 @@ from code_review_loop import harnesses, policy, profiles, prompts_composer, tria
 from code_review_loop import runner as cli
 from code_review_loop._compat_jsonschema import validate
 from code_review_loop.cli.main import main as cli_main
+from code_review_loop.core.ports import CommandResult
 
 
 @pytest.fixture
@@ -281,14 +282,14 @@ def test_routed_remediation_prompt_preserves_pending_check_failures(tmp_path, mo
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[0] == "revrem-fake-harness" and args[1] == "review":
-            return cli.CommandResult(list(args), 0, stdout=next(review_outputs))
+            return CommandResult(list(args), 0, stdout=next(review_outputs))
         if args[0] == "revrem-fake-harness" and args[1] == "triage":
-            return cli.CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
+            return CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
         if args[0] == "revrem-fake-harness" and args[1] == "remediation":
-            return cli.CommandResult(list(args), 0, stdout="remediated\n")
+            return CommandResult(list(args), 0, stdout="remediated\n")
         if args[0] == "pytest":
             returncode, stdout = next(check_outputs)
-            return cli.CommandResult(list(args), returncode, stdout=stdout)
+            return CommandResult(list(args), returncode, stdout=stdout)
         raise AssertionError(f"unexpected command: {args}")
 
     profile = profiles.Profile(
@@ -318,7 +319,7 @@ def test_routed_remediation_prompt_preserves_pending_check_failures(tmp_path, mo
         profile_v2=profile,
     )
 
-    summary = cli.run_loop(config, runner)
+    summary = cli.run_loop(config, runner).to_dict()
 
     assert summary["final_status"] == "unknown"
     prompt = (tmp_path / "artifacts" / "remediation-2-prompt.txt").read_text(

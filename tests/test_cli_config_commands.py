@@ -12,6 +12,7 @@ from code_review_loop import application as application_mod
 from code_review_loop import profiles
 from code_review_loop.cli import args as cli_args
 from code_review_loop.cli import config_builder
+from code_review_loop.core.ports import CommandResult
 
 cli_main = import_module("code_review_loop.cli.main")
 config_command = import_module("code_review_loop.cli.commands.config")
@@ -171,7 +172,7 @@ timeout_seconds = 1800
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
-        return runner_mod.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+        return CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
 
     assert summary_format == "text"
     assert config.timeout_seconds == 300
@@ -179,7 +180,7 @@ timeout_seconds = 1800
     assert config.remediation_timeout_seconds == 1800
 
     object.__setattr__(config, "preflight_enabled", False)
-    summary = runner_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner).to_dict()
 
     assert summary["final_status"] == "clear"
     assert len(calls) == 1

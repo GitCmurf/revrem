@@ -29,12 +29,6 @@ def test_command_result_is_homed_in_core_ports():
     assert result.stdout == "ok"
 
 
-def test_runner_reexports_the_same_command_result_object_during_driver_migration():
-    from code_review_loop import runner
-
-    assert runner.CommandResult is CommandResult
-
-
 def test_ports_surface_exposes_the_declared_protocols():
     for name in ("Clock", "RunIdentity", "ProcessRunner", "EventSink", "RunContext", "ProgressReporter"):
         assert hasattr(ports, name), f"core.ports missing {name}"

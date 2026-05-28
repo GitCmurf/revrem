@@ -9,9 +9,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 from support.phase_harnesses import phase_harness_kwargs
 
-import code_review_loop.runner as runner_mod
 from code_review_loop.adapters.review import ReviewAdapter
 from code_review_loop.clock import Clock
+from code_review_loop.config import LoopConfig
 from code_review_loop.core.ports import (
     CommandResult,
     ReviewOutcome,
@@ -35,7 +35,7 @@ def _ctx(runner=None, **kwargs: object) -> RunContext:
 class TestReviewAdapter:
     def test_dry_run_returns_findings_status(self, tmp_path: Path) -> None:
         (tmp_path / "artifacts").mkdir()
-        config = runner_mod.LoopConfig(
+        config = LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",
@@ -56,7 +56,7 @@ class TestReviewAdapter:
 
     def test_artifact_label_and_display_label_threaded(self, tmp_path: Path) -> None:
         (tmp_path / "artifacts").mkdir()
-        config = runner_mod.LoopConfig(
+        config = LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",
@@ -84,7 +84,7 @@ class TestReviewAdapter:
 
     def test_runtime_error_propagates(self, tmp_path: Path) -> None:
         (tmp_path / "artifacts").mkdir()
-        config = runner_mod.LoopConfig(
+        config = LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",

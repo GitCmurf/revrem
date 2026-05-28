@@ -9,11 +9,15 @@ import pytest
 
 import code_review_loop.runner as runner_mod
 from code_review_loop import application as application_mod
-from code_review_loop import events
+from code_review_loop import budgets, events, reporting
 from code_review_loop import resume as resume_mod
 from code_review_loop.adapters import git as git_adapter
 from code_review_loop.adapters import phase_support
 from code_review_loop.cli.config_support import resolve_initial_review_file
+from code_review_loop.config import LoopConfig
+from code_review_loop.core.outcome import OutcomeFailed
+from code_review_loop.core.ports import CommandResult
+from code_review_loop.runtime import RunLoopFailed
 
 cli_main = import_module("code_review_loop.cli.main")
 
@@ -23,20 +27,20 @@ def test_summary_records_git_state_for_resume(tmp_path, monkeypatch):
 
     def fake_run_git_preflight(cwd, args):
         if list(args) == ["rev-parse", "HEAD"]:
-            return runner_mod.CommandResult(["git", *args], 0, stdout="head-sha\n")
+            return CommandResult(["git", *args], 0, stdout="head-sha\n")
         if list(args) == ["rev-parse", "--verify", "main^{commit}"]:
-            return runner_mod.CommandResult(["git", *args], 0, stdout="base-sha\n")
+            return CommandResult(["git", *args], 0, stdout="base-sha\n")
         if list(args) == ["merge-base", "HEAD", "main"]:
-            return runner_mod.CommandResult(["git", *args], 0, stdout="merge-sha\n")
-        return runner_mod.CommandResult(["git", *args], 1, stderr="unexpected")
+            return CommandResult(["git", *args], 0, stdout="merge-sha\n")
+        return CommandResult(["git", *args], 1, stderr="unexpected")
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
-        return runner_mod.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+        return CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
 
     monkeypatch.setattr(git_adapter, "run_git_preflight", fake_run_git_preflight)
 
     summary = runner_mod.run_loop(
-        runner_mod.LoopConfig(
+        LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",
@@ -44,7 +48,7 @@ def test_summary_records_git_state_for_resume(tmp_path, monkeypatch):
             artifact_dir=tmp_path / "artifacts",
         ),
         runner,
-    )
+    ).to_dict()
 
     assert summary["git_state"] == {
         "head": "head-sha",
@@ -60,26 +64,26 @@ def test_resume_payload_preserves_full_auto_and_budget_limits(tmp_path, monkeypa
 
     def fake_run_git_preflight(cwd, args):
         if list(args) == ["rev-parse", "HEAD"]:
-            return runner_mod.CommandResult(["git", *args], 0, stdout="head-sha\n")
+            return CommandResult(["git", *args], 0, stdout="head-sha\n")
         if list(args) == ["rev-parse", "--verify", "main^{commit}"]:
-            return runner_mod.CommandResult(["git", *args], 0, stdout="base-sha\n")
+            return CommandResult(["git", *args], 0, stdout="base-sha\n")
         if list(args) == ["merge-base", "HEAD", "main"]:
-            return runner_mod.CommandResult(["git", *args], 0, stdout="merge-sha\n")
-        return runner_mod.CommandResult(["git", *args], 1, stderr="unexpected")
+            return CommandResult(["git", *args], 0, stdout="merge-sha\n")
+        return CommandResult(["git", *args], 1, stderr="unexpected")
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
-        return runner_mod.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+        return CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
 
     monkeypatch.setattr(git_adapter, "run_git_preflight", fake_run_git_preflight)
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
         cwd=tmp_path,
         artifact_dir=tmp_path / "artifacts",
         full_auto=False,
-        budget_config=runner_mod.budgets.BudgetConfig(
+        budget_config=budgets.BudgetConfig(
             max_wall_seconds=12.5,
             max_tokens=100,
             max_usd=Decimal("1.25"),
@@ -87,7 +91,7 @@ def test_resume_payload_preserves_full_auto_and_budget_limits(tmp_path, monkeypa
         ),
     )
 
-    summary = runner_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner).to_dict()
     resumed, _budget_state = resume_mod.resume_loop_config(summary, run_dir=tmp_path / "artifacts")
 
     assert summary["resume_config"]["full_auto"] is False
@@ -188,10 +192,10 @@ def test_summary_records_unavailable_git_state_outside_git(tmp_path, monkeypatch
     monkeypatch.setattr(phase_support, "lexical_git_repo_root", lambda _cwd: None)
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
-        return runner_mod.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+        return CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
 
     summary = runner_mod.run_loop(
-        runner_mod.LoopConfig(
+        LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",
@@ -199,7 +203,7 @@ def test_summary_records_unavailable_git_state_outside_git(tmp_path, monkeypatch
             artifact_dir=tmp_path / "artifacts",
         ),
         runner,
-    )
+    ).to_dict()
 
     assert summary["git_state"] == {
         "head": None,
@@ -220,10 +224,10 @@ def test_main_returns_exit_code_5_for_controlled_cancellation(tmp_path, monkeypa
     }
 
     def fake_run_loop(_config):
-        raise runner_mod.RunLoopFailed(
+        raise RunLoopFailed(
             summary,
             "cancelled by operator",
-            outcome=runner_mod.OutcomeFailed(reason="cancelled", error="cancelled by operator"),
+            outcome=OutcomeFailed(reason="cancelled", error="cancelled by operator"),
         )
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
@@ -236,9 +240,9 @@ def test_main_returns_exit_code_5_for_controlled_cancellation(tmp_path, monkeypa
 
 def test_loop_writes_failure_summary_when_initial_review_invocation_fails(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
-        return runner_mod.CommandResult(list(args), 1, stderr="Error: failed to create session\n")
+        return CommandResult(list(args), 1, stderr="Error: failed to create session\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -246,7 +250,7 @@ def test_loop_writes_failure_summary_when_initial_review_invocation_fails(tmp_pa
         artifact_dir=tmp_path / "artifacts",
     )
 
-    with pytest.raises(runner_mod.RunLoopFailed) as excinfo:
+    with pytest.raises(RunLoopFailed) as excinfo:
         runner_mod.run_loop(config, runner)
 
     summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
@@ -276,11 +280,11 @@ def test_loop_writes_failure_summary_when_final_review_invocation_fails(tmp_path
         if args[1] == "review":
             review_calls += 1
             if review_calls == 1:
-                return runner_mod.CommandResult(list(args), 0, stdout="Still failing.\nREVIEW_STATUS: findings\n")
-            return runner_mod.CommandResult(list(args), 1, stderr="Error: failed to create session\n")
-        return runner_mod.CommandResult(list(args), 0, stdout="attempted remediation\n")
+                return CommandResult(list(args), 0, stdout="Still failing.\nREVIEW_STATUS: findings\n")
+            return CommandResult(list(args), 1, stderr="Error: failed to create session\n")
+        return CommandResult(list(args), 0, stdout="attempted remediation\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -288,7 +292,7 @@ def test_loop_writes_failure_summary_when_final_review_invocation_fails(tmp_path
         artifact_dir=tmp_path / "artifacts",
     )
 
-    with pytest.raises(runner_mod.RunLoopFailed) as excinfo:
+    with pytest.raises(RunLoopFailed) as excinfo:
         runner_mod.run_loop(config, runner)
 
     summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
@@ -318,12 +322,12 @@ def test_append_run_history_preserves_budget_totals(tmp_path, monkeypatch):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return runner_mod.CommandResult(
+            return CommandResult(
                 list(args), 0, stdout="No findings.\nREVIEW_STATUS: clear\n", tokens=500, usd=Decimal("0.03")
             )
-        return runner_mod.CommandResult(list(args), 0, stdout="ok\n")
+        return CommandResult(list(args), 0, stdout="ok\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -331,13 +335,13 @@ def test_append_run_history_preserves_budget_totals(tmp_path, monkeypatch):
         artifact_dir=tmp_path / "artifacts",
     )
 
-    summary = runner_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner).to_dict()
     budgets_before = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))["budgets"]
 
     assert budgets_before["tokens"] == 500
     assert budgets_before["usd"] == "0.03"
 
-    history_path = runner_mod.append_run_history(summary, config)
+    history_path = reporting.append_run_history(summary, config)
     budgets_after = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))["budgets"]
 
     assert history_path == home / ".local" / "share" / "revrem" / "runs.jsonl"
@@ -346,10 +350,10 @@ def test_append_run_history_preserves_budget_totals(tmp_path, monkeypatch):
 
 
 def test_budget_exceeded_propagates_through_triage(tmp_path, monkeypatch):
-    exc = runner_mod.budgets.BudgetExceeded(ceiling="tokens", limit=100, actual=150)
+    exc = budgets.BudgetExceeded(ceiling="tokens", limit=100, actual=150)
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
-        return runner_mod.CommandResult(
+        return CommandResult(
             list(args), 0, stdout="## Finding\nbad code\nREVIEW_STATUS: findings\n"
         )
 
@@ -357,7 +361,7 @@ def test_budget_exceeded_propagates_through_triage(tmp_path, monkeypatch):
     import code_review_loop.adapters.triage as _triage_mod
     monkeypatch.setattr(_triage_mod.TriageAdapter, "execute", lambda *a, **kw: (_ for _ in ()).throw(exc))
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=2,
         codex_bin="codex",
@@ -366,17 +370,17 @@ def test_budget_exceeded_propagates_through_triage(tmp_path, monkeypatch):
         triage_enabled=True,
     )
 
-    with pytest.raises(runner_mod.RunLoopFailed) as excinfo:
+    with pytest.raises(RunLoopFailed) as excinfo:
         runner_mod.run_loop(config, runner)
 
     assert excinfo.value.summary["stopped_reason"] == "budget_ceiling_hit"
 
 
 def test_budget_exceeded_propagates_through_remediation(tmp_path, monkeypatch):
-    exc = runner_mod.budgets.BudgetExceeded(ceiling="tokens", limit=100, actual=150)
+    exc = budgets.BudgetExceeded(ceiling="tokens", limit=100, actual=150)
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
-        return runner_mod.CommandResult(
+        return CommandResult(
             list(args), 0, stdout="## Finding\nbad code\nREVIEW_STATUS: findings\n"
         )
 
@@ -384,7 +388,7 @@ def test_budget_exceeded_propagates_through_remediation(tmp_path, monkeypatch):
     import code_review_loop.adapters.remediation as _rem_mod
     monkeypatch.setattr(_rem_mod.RemediationAdapter, "execute", lambda *a, **kw: (_ for _ in ()).throw(exc))
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=2,
         codex_bin="codex",
@@ -392,19 +396,19 @@ def test_budget_exceeded_propagates_through_remediation(tmp_path, monkeypatch):
         artifact_dir=tmp_path / "artifacts",
     )
 
-    with pytest.raises(runner_mod.RunLoopFailed) as excinfo:
+    with pytest.raises(RunLoopFailed) as excinfo:
         runner_mod.run_loop(config, runner)
 
     assert excinfo.value.summary["stopped_reason"] == "budget_ceiling_hit"
 
 
 def test_budget_exceeded_propagates_through_commit(tmp_path, monkeypatch):
-    exc = runner_mod.budgets.BudgetExceeded(ceiling="tokens", limit=100, actual=150)
+    exc = budgets.BudgetExceeded(ceiling="tokens", limit=100, actual=150)
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if "status" in args:
-            return runner_mod.CommandResult(list(args), 0, stdout="")
-        return runner_mod.CommandResult(
+            return CommandResult(list(args), 0, stdout="")
+        return CommandResult(
             list(args), 0, stdout="## Finding\nbad code\nREVIEW_STATUS: findings\n"
         )
 
@@ -412,7 +416,7 @@ def test_budget_exceeded_propagates_through_commit(tmp_path, monkeypatch):
     import code_review_loop.adapters.commit as _commit_mod
     monkeypatch.setattr(_commit_mod.CommitAdapter, "execute", lambda *a, **kw: (_ for _ in ()).throw(exc))
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=2,
         codex_bin="codex",
@@ -421,7 +425,7 @@ def test_budget_exceeded_propagates_through_commit(tmp_path, monkeypatch):
         commit_after_remediation=True,
     )
 
-    with pytest.raises(runner_mod.RunLoopFailed) as excinfo:
+    with pytest.raises(RunLoopFailed) as excinfo:
         runner_mod.run_loop(config, runner)
 
     assert excinfo.value.summary["stopped_reason"] == "budget_ceiling_hit"
@@ -438,9 +442,9 @@ def test_run_loop_preserves_existing_events_on_resume(tmp_path):
             f.write(json.dumps(event.to_dict()) + "\n")
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
-        return runner_mod.CommandResult(list(args), 0, stdout="No findings.\nREVIEW_STATUS: clear\n")
+        return CommandResult(list(args), 0, stdout="No findings.\nREVIEW_STATUS: clear\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -472,10 +476,10 @@ def test_loop_can_start_from_initial_review_file(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text))
         if args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
-        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return CommandResult(list(args), 0, stdout=next(review_outputs))
+        return CommandResult(list(args), 0, stdout="fixed\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -484,7 +488,7 @@ def test_loop_can_start_from_initial_review_file(tmp_path):
         initial_review_file=initial_review,
     )
 
-    summary = runner_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner).to_dict()
 
     assert [call[0][1] for call in calls] == ["exec", "review"]
     assert calls[0][1] is not None and "Carry this forward" in calls[0][1]
@@ -519,12 +523,12 @@ def test_loop_writes_structured_triage_source_for_initial_review_file(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text))
         if args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout="REVIEW_STATUS: findings\n")
+            return CommandResult(list(args), 0, stdout="REVIEW_STATUS: findings\n")
         if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
-            return runner_mod.CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
-        return runner_mod.CommandResult(list(args), 0, stdout="remediated\n")
+            return CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
+        return CommandResult(list(args), 0, stdout="remediated\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -535,7 +539,7 @@ def test_loop_writes_structured_triage_source_for_initial_review_file(tmp_path):
         final_review=False,
     )
 
-    summary = runner_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner).to_dict()
 
     triage_json = json.loads((tmp_path / "artifacts" / "triage-1.json").read_text(encoding="utf-8"))
     assert triage_json["source_review_artifact"] == "review-initial.txt"

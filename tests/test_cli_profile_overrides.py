@@ -7,6 +7,8 @@ from code_review_loop import application as application_mod
 from code_review_loop import profiles
 from code_review_loop.cli import args as cli_args
 from code_review_loop.cli import config_builder
+from code_review_loop.config import LoopConfig
+from code_review_loop.core.ports import CommandResult
 
 cli_main = import_module("code_review_loop.cli.main")
 config_command = import_module("code_review_loop.cli.commands.config")
@@ -96,9 +98,9 @@ def test_run_loop_skips_commit_cleanliness_check_during_dry_run(tmp_path):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
-        return runner_mod.CommandResult(list(args), 0, stdout="should not be used\n")
+        return CommandResult(list(args), 0, stdout="should not be used\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -110,7 +112,7 @@ def test_run_loop_skips_commit_cleanliness_check_during_dry_run(tmp_path):
         check_commands=("pytest -q",),
     )
 
-    summary = runner_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner).to_dict()
 
     assert calls == []
     assert summary["final_status"] == "unknown"

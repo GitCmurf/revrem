@@ -6,32 +6,30 @@ import ntpath
 import posixpath
 import re
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path, PurePath
 
-from code_review_loop.core.outcome import RunOutcome
+from code_review_loop.core.outcome import OutcomeFailed, RunOutcome
 from code_review_loop.core.ports import CommandResult
 
 Runner = Callable[[Sequence[str], Path, str | None, float | None], CommandResult]
 
 
-class RunnerResult(dict[str, object]):
-    """Dict-compatible run summary carrying the typed terminal outcome."""
+@dataclass(frozen=True)
+class RunnerResult:
+    """Typed private runner result with an explicit summary projection."""
 
+    summary: Mapping[str, object]
     outcome: RunOutcome
 
-    def __init__(self, summary: Mapping[str, object], outcome: RunOutcome):
-        super().__init__(summary)
-        self.outcome = outcome
-
-    @property
-    def summary(self) -> dict[str, object]:
-        return dict(self)
+    def to_dict(self) -> dict[str, object]:
+        return dict(self.summary)
 
 
 class RunLoopFailed(RuntimeError):
     """Raised when a bounded loop finishes with an expected step failure."""
 
-    def __init__(self, summary: dict[str, object], message: str, *, outcome: RunOutcome | None = None):
+    def __init__(self, summary: dict[str, object], message: str, *, outcome: OutcomeFailed):
         super().__init__(message)
         self.summary = summary
         self.outcome = outcome

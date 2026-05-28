@@ -8,7 +8,11 @@ from importlib import import_module
 import pytest
 
 import code_review_loop.runner as runner_mod
-from code_review_loop import application, events
+from code_review_loop import application, budgets, events
+from code_review_loop.config import LoopConfig
+from code_review_loop.core.outcome import OutcomeFailed
+from code_review_loop.core.ports import CommandResult
+from code_review_loop.runtime import RunLoopFailed
 
 cli_main = import_module("code_review_loop.cli.main")
 
@@ -19,10 +23,10 @@ def test_loop_caps_remediation_passes_and_runs_final_review(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text))
         if args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout="Still failing.\nREVIEW_STATUS: findings\n")
-        return runner_mod.CommandResult(list(args), 0, stdout="attempted remediation\n")
+            return CommandResult(list(args), 0, stdout="Still failing.\nREVIEW_STATUS: findings\n")
+        return CommandResult(list(args), 0, stdout="attempted remediation\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=2,
         codex_bin="codex",
@@ -30,7 +34,7 @@ def test_loop_caps_remediation_passes_and_runs_final_review(tmp_path):
         artifact_dir=tmp_path / "artifacts",
     )
 
-    summary = runner_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner).to_dict()
 
     assert summary["final_status"] == "findings"
     assert summary["stopped_reason"] == "max_iterations_reached"
@@ -53,11 +57,11 @@ def test_loop_finishes_clear_when_final_review_goes_green(tmp_path):
         calls.append((list(args), input_text))
         if args[1] == "review":
             if len([call for call in calls if call[0][1] == "review"]) == 1:
-                return runner_mod.CommandResult(list(args), 0, stdout="Still failing.\nREVIEW_STATUS: findings\n")
-            return runner_mod.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
-        return runner_mod.CommandResult(list(args), 0, stdout="attempted remediation\n")
+                return CommandResult(list(args), 0, stdout="Still failing.\nREVIEW_STATUS: findings\n")
+            return CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+        return CommandResult(list(args), 0, stdout="attempted remediation\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -65,7 +69,7 @@ def test_loop_finishes_clear_when_final_review_goes_green(tmp_path):
         artifact_dir=tmp_path / "artifacts",
     )
 
-    summary = runner_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner).to_dict()
 
     assert summary["final_status"] == "clear"
     assert summary["stopped_reason"] == "review_clear"
@@ -87,13 +91,13 @@ def test_loop_continues_after_check_failure_and_feeds_output_into_next_pass(tmp_
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text))
         if args[0] == "codex" and args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+            return CommandResult(list(args), 0, stdout=next(review_outputs))
         if args[0] == "pytest":
             rc, out = next(check_outputs)
-            return runner_mod.CommandResult(list(args), rc, stdout=out)
-        return runner_mod.CommandResult(list(args), 0, stdout="remediated\n")
+            return CommandResult(list(args), rc, stdout=out)
+        return CommandResult(list(args), 0, stdout="remediated\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=2,
         codex_bin="codex",
@@ -102,7 +106,7 @@ def test_loop_continues_after_check_failure_and_feeds_output_into_next_pass(tmp_
         check_commands=("pytest tests/",),
     )
 
-    summary = runner_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner).to_dict()
 
     assert summary["final_status"] == "clear"
 
@@ -134,13 +138,13 @@ def test_pending_check_failure_blocks_early_clear_status(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text))
         if args[0] == "codex" and args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+            return CommandResult(list(args), 0, stdout=next(review_outputs))
         if args[0] == "pytest":
             rc, out = next(check_outputs)
-            return runner_mod.CommandResult(list(args), rc, stdout=out)
-        return runner_mod.CommandResult(list(args), 0, stdout="remediated\n")
+            return CommandResult(list(args), rc, stdout=out)
+        return CommandResult(list(args), 0, stdout="remediated\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=2,
         codex_bin="codex",
@@ -149,7 +153,7 @@ def test_pending_check_failure_blocks_early_clear_status(tmp_path):
         check_commands=("pytest tests/",),
     )
 
-    summary = runner_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner).to_dict()
 
     assert summary["final_status"] == "findings"
     assert summary["pending_check_failures"] is True
@@ -164,10 +168,10 @@ def test_skip_final_review_reports_unknown_status(tmp_path):
     """With --skip-final-review the loop must not report a stale pre-remediation status."""
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout="Issues found.\nREVIEW_STATUS: findings\n")
-        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return CommandResult(list(args), 0, stdout="Issues found.\nREVIEW_STATUS: findings\n")
+        return CommandResult(list(args), 0, stdout="fixed\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -176,7 +180,7 @@ def test_skip_final_review_reports_unknown_status(tmp_path):
         final_review=False,
     )
 
-    summary = runner_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner).to_dict()
 
     assert summary["final_status"] == "unknown", (
         "status after last remediation is unknowable without a follow-up review"
@@ -185,7 +189,7 @@ def test_skip_final_review_reports_unknown_status(tmp_path):
 
 
 def test_final_check_failure_prevents_clear_status(tmp_path):
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -203,12 +207,12 @@ def test_final_check_failure_prevents_clear_status(tmp_path):
 
     def sequenced_runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[0] == "codex" and args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+            return CommandResult(list(args), 0, stdout=next(review_outputs))
         if args[0] == "pytest":
-            return runner_mod.CommandResult(list(args), 1, stdout="1 FAILED\n")
-        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return CommandResult(list(args), 1, stdout="1 FAILED\n")
+        return CommandResult(list(args), 0, stdout="fixed\n")
 
-    summary = runner_mod.run_loop(config, sequenced_runner)
+    summary = runner_mod.run_loop(config, sequenced_runner).to_dict()
 
     assert summary["final_status"] == "findings"
     assert summary["pending_check_failures"] is True
@@ -217,10 +221,10 @@ def test_final_check_failure_prevents_clear_status(tmp_path):
 def test_loop_writes_failure_summary_when_remediation_fails(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout="Full review comments:\n\n- [P1] Fix\n")
-        return runner_mod.CommandResult(list(args), 1, stderr="Error: turn/start failed\n")
+            return CommandResult(list(args), 0, stdout="Full review comments:\n\n- [P1] Fix\n")
+        return CommandResult(list(args), 1, stderr="Error: turn/start failed\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -253,19 +257,19 @@ def test_loop_stops_before_model_call_when_wall_budget_exceeded(tmp_path):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append(args)
-        return runner_mod.CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
+        return CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
         cwd=tmp_path,
         artifact_dir=tmp_path / "artifacts",
-        budget_config=runner_mod.budgets.BudgetConfig(max_wall_seconds=0),
+        budget_config=budgets.BudgetConfig(max_wall_seconds=0),
     )
 
-    with pytest.raises(runner_mod.RunLoopFailed) as excinfo:
-        runner_mod.run_loop(config, runner, budget_state=runner_mod.budgets.BudgetState(started_at_monotonic=0))
+    with pytest.raises(RunLoopFailed) as excinfo:
+        runner_mod.run_loop(config, runner, budget_state=budgets.BudgetState(started_at_monotonic=0))
 
     summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
     records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
@@ -283,18 +287,18 @@ def test_loop_stops_before_model_call_when_wall_budget_exceeded(tmp_path):
 
 def test_loop_emits_budget_soft_warning_before_model_call(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
-        return runner_mod.CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
+        return CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
         cwd=tmp_path,
         artifact_dir=tmp_path / "artifacts",
-        budget_config=runner_mod.budgets.BudgetConfig(max_wall_seconds=100, soft_warn_fraction=0.5),
+        budget_config=budgets.BudgetConfig(max_wall_seconds=100, soft_warn_fraction=0.5),
     )
 
-    runner_mod.run_loop(config, runner, budget_state=runner_mod.budgets.BudgetState(started_at_monotonic=time.monotonic() - 60))
+    runner_mod.run_loop(config, runner, budget_state=budgets.BudgetState(started_at_monotonic=time.monotonic() - 60))
 
     records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
 
@@ -310,18 +314,18 @@ def test_loop_records_token_charge_and_stops_before_next_model_call(tmp_path):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append(list(args))
-        return runner_mod.CommandResult(list(args), 0, stdout="REVIEW_STATUS: findings\n", tokens=10)
+        return CommandResult(list(args), 0, stdout="REVIEW_STATUS: findings\n", tokens=10)
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
         cwd=tmp_path,
         artifact_dir=tmp_path / "artifacts",
-        budget_config=runner_mod.budgets.BudgetConfig(max_tokens=10),
+        budget_config=budgets.BudgetConfig(max_tokens=10),
     )
 
-    with pytest.raises(runner_mod.RunLoopFailed) as excinfo:
+    with pytest.raises(RunLoopFailed) as excinfo:
         runner_mod.run_loop(config, runner)
 
     summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
@@ -339,23 +343,23 @@ def test_loop_records_token_charge_and_stops_before_next_model_call(tmp_path):
 
 def test_loop_records_usd_charge_and_stops_before_next_model_call(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
-        return runner_mod.CommandResult(
+        return CommandResult(
             list(args),
             0,
             stdout="REVIEW_STATUS: findings\n",
             usd=Decimal("1.25"),
         )
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
         cwd=tmp_path,
         artifact_dir=tmp_path / "artifacts",
-        budget_config=runner_mod.budgets.BudgetConfig(max_usd=Decimal("1.25")),
+        budget_config=budgets.BudgetConfig(max_usd=Decimal("1.25")),
     )
 
-    with pytest.raises(runner_mod.RunLoopFailed):
+    with pytest.raises(RunLoopFailed):
         runner_mod.run_loop(config, runner)
 
     summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
@@ -377,10 +381,10 @@ def test_main_returns_exit_code_3_for_budget_ceiling(tmp_path, monkeypatch, caps
     }
 
     def fake_run_loop(_config, **_kwargs):
-        raise runner_mod.RunLoopFailed(
+        raise RunLoopFailed(
             summary,
             "wall budget exceeded",
-            outcome=runner_mod.OutcomeFailed(reason="budget_ceiling_hit", error="wall budget exceeded"),
+            outcome=OutcomeFailed(reason="budget_ceiling_hit", error="wall budget exceeded"),
         )
 
     monkeypatch.setattr(application, "run_review_loop", fake_run_loop)
@@ -395,7 +399,7 @@ def test_loop_writes_cancellation_summary_when_interrupted(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         raise KeyboardInterrupt
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -403,7 +407,7 @@ def test_loop_writes_cancellation_summary_when_interrupted(tmp_path):
         artifact_dir=tmp_path / "artifacts",
     )
 
-    with pytest.raises(runner_mod.RunLoopFailed) as excinfo:
+    with pytest.raises(RunLoopFailed) as excinfo:
         runner_mod.run_loop(config, runner)
 
     summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))

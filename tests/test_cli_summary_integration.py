@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import code_review_loop.runner as runner_mod
+from code_review_loop.config import LoopConfig
+from code_review_loop.core.ports import CommandResult
+from code_review_loop.runtime import format_terminal_summary
 
 
 def test_summary_includes_latest_review_excerpt_and_artifact_paths(tmp_path):
@@ -13,10 +16,10 @@ def test_summary_includes_latest_review_excerpt_and_artifact_paths(tmp_path):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
-        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return CommandResult(list(args), 0, stdout=next(review_outputs))
+        return CommandResult(list(args), 0, stdout="fixed\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -24,7 +27,7 @@ def test_summary_includes_latest_review_excerpt_and_artifact_paths(tmp_path):
         artifact_dir=tmp_path / "artifacts",
     )
 
-    summary = runner_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner).to_dict()
 
     assert summary["latest_review_excerpt"] == "No findings."
     assert "artifact_paths" in summary
@@ -49,7 +52,7 @@ def test_terminal_summary_surfaces_latest_findings_and_paths():
         "latest_review_excerpt": "Full review comments:\n\n- [P2] Fix summary counts",
     }
 
-    text = runner_mod.format_terminal_summary(summary)
+    text = format_terminal_summary(summary)
 
     assert "Review-remediation loop: findings (max_iterations_reached)" in text
     assert "Latest review: tmp/run/review-final.txt" in text
@@ -73,7 +76,7 @@ def test_terminal_summary_omits_latest_review_excerpt_when_clear():
         "latest_review_excerpt": "I did not find any discrete, actionable bugs.",
     }
 
-    text = runner_mod.format_terminal_summary(summary)
+    text = format_terminal_summary(summary)
 
     assert "Review-remediation loop: clear (review_clear)" in text
     assert "Latest review: tmp/run/review-1.txt" in text
@@ -101,7 +104,7 @@ def test_terminal_summary_prefers_commit_output_artifact():
         },
     }
 
-    text = runner_mod.format_terminal_summary(summary)
+    text = format_terminal_summary(summary)
 
     assert "1: review=findings, check failures: 0, commit=committed" in text
     assert "Latest commit artifact: tmp/run/commit-1.txt" in text
@@ -123,7 +126,7 @@ def test_terminal_summary_finds_commit_output_artifact_with_windows_separators()
         },
     }
 
-    text = runner_mod.format_terminal_summary(summary)
+    text = format_terminal_summary(summary)
 
     assert r"Latest commit artifact: C:\tmp\run\commit-1.txt" in text
 
@@ -138,10 +141,10 @@ def test_summary_records_unknown_review_warning_and_bug_report(tmp_path):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
-        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return CommandResult(list(args), 0, stdout=next(review_outputs))
+        return CommandResult(list(args), 0, stdout="fixed\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -150,8 +153,8 @@ def test_summary_records_unknown_review_warning_and_bug_report(tmp_path):
         debug_status_detection=True,
     )
 
-    summary = runner_mod.run_loop(config, runner)
-    text = runner_mod.format_terminal_summary(summary)
+    summary = runner_mod.run_loop(config, runner).to_dict()
+    text = format_terminal_summary(summary)
     report_path = tmp_path / "artifacts" / "unexpected-behavior-report.txt"
 
     assert summary["final_status"] == "clear"
@@ -180,10 +183,10 @@ def test_unknown_final_review_is_recorded_in_diagnostics(tmp_path):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
-        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return CommandResult(list(args), 0, stdout=next(review_outputs))
+        return CommandResult(list(args), 0, stdout="fixed\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -192,7 +195,7 @@ def test_unknown_final_review_is_recorded_in_diagnostics(tmp_path):
         debug_status_detection=True,
     )
 
-    summary = runner_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner).to_dict()
     report_path = tmp_path / "artifacts" / "unexpected-behavior-report.txt"
     final_status_path = tmp_path / "artifacts" / "review-final-status.json"
 

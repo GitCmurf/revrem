@@ -12,6 +12,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
+from typing import cast
 
 from code_review_loop import budgets, reporting, resume, runner
 from code_review_loop.clock import SYSTEM_CLOCK, Clock
@@ -33,20 +34,28 @@ class ReviewLoopResult:
         return dict(self.summary)
 
     @property
-    def final_status(self) -> object:
-        return self.summary.get("final_status")
+    def final_status(self) -> str | None:
+        value = self.summary.get("final_status")
+        return value if isinstance(value, str) else None
 
     @property
-    def stopped_reason(self) -> object:
-        return self.summary.get("stopped_reason")
+    def stopped_reason(self) -> str | None:
+        value = self.summary.get("stopped_reason")
+        return value if isinstance(value, str) else None
 
     @property
-    def artifact_dir(self) -> object:
-        return self.summary.get("artifact_dir")
+    def artifact_dir(self) -> str | None:
+        value = self.summary.get("artifact_dir")
+        return value if isinstance(value, str) else None
 
     @property
-    def run_id(self) -> object:
-        return self.summary.get("run_id")
+    def run_id(self) -> str | None:
+        value = self.summary.get("run_id")
+        return value if isinstance(value, str) else None
+
+
+def _load_default_process_runner() -> ProcessRunner:
+    return cast(ProcessRunner, import_module("code_review_loop.adapters.subprocess_runner").default_runner)
 
 
 def run_review_loop(
@@ -61,7 +70,7 @@ def run_review_loop(
 ) -> ReviewLoopResult:
     """Run one bounded review/remediation loop and return the summary payload."""
     if process_runner is None:
-        process_runner = import_module("code_review_loop.adapters.subprocess_runner").default_runner
+        process_runner = _load_default_process_runner()
     result = runner.run_loop(
         config,
         process_runner,
@@ -72,7 +81,7 @@ def run_review_loop(
         terminal_ui=terminal_ui,
     )
     return ReviewLoopResult(
-        summary=result.summary,
+        summary=result.to_dict(),
         outcome=result.outcome,
     )
 

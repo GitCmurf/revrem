@@ -7,6 +7,9 @@ import pytest
 
 import code_review_loop.runner as runner_mod
 from code_review_loop import suppressions
+from code_review_loop.config import LoopConfig
+from code_review_loop.core.ports import CommandResult
+from code_review_loop.runtime import RunLoopFailed
 
 
 def make_git_worktree(tmp_path: Path, cwd_rel: str | None = "work") -> tuple[Path, Path]:
@@ -28,12 +31,12 @@ def test_loop_runs_optional_triage_between_review_and_remediation(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
         if args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+            return CommandResult(list(args), 0, stdout=next(review_outputs))
         if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
-            return runner_mod.CommandResult(list(args), 0, stdout="Confirmed: fix profile merge first.\n")
-        return runner_mod.CommandResult(list(args), 0, stdout="remediated\n")
+            return CommandResult(list(args), 0, stdout="Confirmed: fix profile merge first.\n")
+        return CommandResult(list(args), 0, stdout="remediated\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -45,7 +48,7 @@ def test_loop_runs_optional_triage_between_review_and_remediation(tmp_path):
         triage_timeout_seconds=60,
     )
 
-    summary = runner_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner).to_dict()
 
     assert summary["final_status"] == "clear"
     assert [call[0][1] for call in calls] == ["review", "exec", "exec", "review"]
@@ -79,16 +82,16 @@ def test_loop_writes_structured_triage_artifact_and_handoff(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
         if args[1] == "review":
-            return runner_mod.CommandResult(
+            return CommandResult(
                 list(args),
                 0,
                 stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
             )
         if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
-            return runner_mod.CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
-        return runner_mod.CommandResult(list(args), 0, stdout="remediated\n")
+            return CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
+        return CommandResult(list(args), 0, stdout="remediated\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -98,7 +101,7 @@ def test_loop_writes_structured_triage_artifact_and_handoff(tmp_path):
         final_review=False,
     )
 
-    summary = runner_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner).to_dict()
 
     triage_json = json.loads((tmp_path / "artifacts" / "triage-1.json").read_text(encoding="utf-8"))
     assert triage_json["run_id"] == summary["run_id"]
@@ -143,16 +146,16 @@ def test_loop_skips_remediation_when_structured_triage_finding_is_suppressed(tmp
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
         if args[1] == "review":
-            return runner_mod.CommandResult(
+            return CommandResult(
                 list(args),
                 0,
                 stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
             )
         if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
-            return runner_mod.CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
+            return CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
         raise AssertionError(f"remediation/check should not run after suppression: {args!r}")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -162,7 +165,7 @@ def test_loop_skips_remediation_when_structured_triage_finding_is_suppressed(tmp
         final_review=False,
     )
 
-    summary = runner_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner).to_dict()
 
     triage_json = json.loads((tmp_path / "artifacts" / "triage-1.json").read_text(encoding="utf-8"))
     assert triage_json["confirmed_findings"] == []
@@ -218,16 +221,16 @@ def test_loop_does_not_clear_when_structured_triage_still_needs_more_info(tmp_pa
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
         if args[1] == "review":
-            return runner_mod.CommandResult(
+            return CommandResult(
                 list(args),
                 0,
                 stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
             )
         if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
-            return runner_mod.CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
-        return runner_mod.CommandResult(list(args), 0, stdout="remediated\n")
+            return CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
+        return CommandResult(list(args), 0, stdout="remediated\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -237,7 +240,7 @@ def test_loop_does_not_clear_when_structured_triage_still_needs_more_info(tmp_pa
         final_review=False,
     )
 
-    summary = runner_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner).to_dict()
 
     triage_json = json.loads((tmp_path / "artifacts" / "triage-1.json").read_text(encoding="utf-8"))
     assert triage_json["confirmed_findings"] == []
@@ -273,16 +276,16 @@ def test_loop_skips_remediation_when_structured_triage_only_rejects_findings(tmp
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
         if args[1] == "review":
-            return runner_mod.CommandResult(
+            return CommandResult(
                 list(args),
                 0,
                 stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
             )
         if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
-            return runner_mod.CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
+            return CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
         raise AssertionError(f"remediation/check should not run after rejected-only triage: {args!r}")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -292,7 +295,7 @@ def test_loop_skips_remediation_when_structured_triage_only_rejects_findings(tmp
         final_review=False,
     )
 
-    summary = runner_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner).to_dict()
 
     triage_json = json.loads((tmp_path / "artifacts" / "triage-1.json").read_text(encoding="utf-8"))
     assert triage_json["rejected_findings"][0]["fingerprint"] == "f1:abc123"
@@ -356,17 +359,17 @@ def test_loop_keeps_check_failure_gate_when_structured_triage_rejects_findings(t
         nonlocal check_attempts
         calls.append((list(args), input_text, timeout_seconds))
         if args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
+            return CommandResult(list(args), 0, stdout=next(review_outputs))
         if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
-            return runner_mod.CommandResult(list(args), 0, stdout=json.dumps(next(triage_outputs)))
+            return CommandResult(list(args), 0, stdout=json.dumps(next(triage_outputs)))
         if args[0] == "pytest":
             check_attempts += 1
             if check_attempts == 1:
-                return runner_mod.CommandResult(list(args), 1, stdout="FAILED\n")
-            return runner_mod.CommandResult(list(args), 0, stdout="passed\n")
-        return runner_mod.CommandResult(list(args), 0, stdout="remediated\n")
+                return CommandResult(list(args), 1, stdout="FAILED\n")
+            return CommandResult(list(args), 0, stdout="passed\n")
+        return CommandResult(list(args), 0, stdout="remediated\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=2,
         codex_bin="codex",
@@ -377,7 +380,7 @@ def test_loop_keeps_check_failure_gate_when_structured_triage_rejects_findings(t
         check_commands=("pytest -q",),
     )
 
-    summary = runner_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner).to_dict()
 
     assert summary["final_status"] == "unknown"
     assert summary["stopped_reason"] == "max_iterations_reached"
@@ -394,17 +397,17 @@ def test_loop_invalid_structured_triage_continues_with_original_review(tmp_path)
         nonlocal triage_attempts
         calls.append((list(args), input_text, timeout_seconds))
         if args[1] == "review":
-            return runner_mod.CommandResult(
+            return CommandResult(
                 list(args),
                 0,
                 stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
             )
         if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
             triage_attempts += 1
-            return runner_mod.CommandResult(list(args), 0, stdout='{"confirmed_findings": []')
-        return runner_mod.CommandResult(list(args), 0, stdout="remediated\n")
+            return CommandResult(list(args), 0, stdout='{"confirmed_findings": []')
+        return CommandResult(list(args), 0, stdout="remediated\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=2,
         codex_bin="codex",
@@ -436,20 +439,20 @@ def test_loop_failed_triage_command_writes_diagnostics(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
         if args[1] == "review":
-            return runner_mod.CommandResult(
+            return CommandResult(
                 list(args),
                 0,
                 stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
             )
         if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
-            return runner_mod.CommandResult(
+            return CommandResult(
                 list(args),
                 -1,
                 stderr="Command timed out after 1 second\n",
             )
-        return runner_mod.CommandResult(list(args), 0, stdout="remediated\n")
+        return CommandResult(list(args), 0, stdout="remediated\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -460,7 +463,7 @@ def test_loop_failed_triage_command_writes_diagnostics(tmp_path):
         final_review=False,
     )
 
-    with pytest.raises(runner_mod.RunLoopFailed):
+    with pytest.raises(RunLoopFailed):
         runner_mod.run_loop(config, runner)
 
     diagnostics_payload = json.loads(
@@ -488,13 +491,13 @@ def test_loop_malformed_suppressions_fail_open_for_structured_triage(tmp_path):
         nonlocal run_count
         calls.append((list(args), input_text, timeout_seconds))
         if args[1] == "review":
-            return runner_mod.CommandResult(
+            return CommandResult(
                 list(args),
                 0,
                 stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
             )
         if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
-            return runner_mod.CommandResult(
+            return CommandResult(
                 list(args),
                 0,
                 stdout=json.dumps(
@@ -519,20 +522,20 @@ def test_loop_malformed_suppressions_fail_open_for_structured_triage(tmp_path):
         if args[0] == "codex" and "exec" in args:
             run_count += 1
             remediation_inputs.append(input_text or "")
-            return runner_mod.CommandResult(list(args), 0, stdout="remediated\n")
+            return CommandResult(list(args), 0, stdout="remediated\n")
         if args[:3] == ["git", "add", "-A"]:
-            return runner_mod.CommandResult(list(args), 0)
+            return CommandResult(list(args), 0)
         if args[:3] == ["git", "diff", "--cached"] and "--quiet" in args:
-            return runner_mod.CommandResult(list(args), 1)
+            return CommandResult(list(args), 1)
         if args[:3] == ["git", "diff", "--cached"] and "--stat" in args:
-            return runner_mod.CommandResult(list(args), 0, stdout=" src/code.py | 1 +\n")
+            return CommandResult(list(args), 0, stdout=" src/code.py | 1 +\n")
         if args[:3] == ["git", "diff", "--cached"] and "--name-only" in args:
-            return runner_mod.CommandResult(list(args), 0, stdout="src/code.py\n")
+            return CommandResult(list(args), 0, stdout="src/code.py\n")
         if args[:3] == ["git", "commit", "-m"]:
-            return runner_mod.CommandResult(list(args), 0, stdout="[branch abc] fix(cli): harden RevRem commit flow\n")
-        return runner_mod.CommandResult(list(args), 0, stdout="passed\n")
+            return CommandResult(list(args), 0, stdout="[branch abc] fix(cli): harden RevRem commit flow\n")
+        return CommandResult(list(args), 0, stdout="passed\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -543,7 +546,7 @@ def test_loop_malformed_suppressions_fail_open_for_structured_triage(tmp_path):
         check_commands=(),
     )
 
-    summary = runner_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner).to_dict()
 
     assert summary["final_status"] == "unknown"
     assert summary["stopped_reason"] == "max_iterations_reached"
@@ -556,10 +559,10 @@ def test_loop_malformed_suppressions_fail_open_for_structured_triage(tmp_path):
 def test_loop_writes_failure_summary_when_triage_fails(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout="Full review comments:\n\n- [P2] Fix profile merge\n")
-        return runner_mod.CommandResult(list(args), 1, stderr="Error: triage failed\n")
+            return CommandResult(list(args), 0, stdout="Full review comments:\n\n- [P2] Fix profile merge\n")
+        return CommandResult(list(args), 1, stderr="Error: triage failed\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -587,10 +590,10 @@ def test_loop_writes_failure_summary_when_triage_fails(tmp_path):
 def test_debug_status_detection_writes_diagnostic_artifact(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout="No findings.\n")
-        return runner_mod.CommandResult(list(args), 0, stdout="remediated\n")
+            return CommandResult(list(args), 0, stdout="No findings.\n")
+        return CommandResult(list(args), 0, stdout="remediated\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -599,7 +602,7 @@ def test_debug_status_detection_writes_diagnostic_artifact(tmp_path):
         debug_status_detection=True,
     )
 
-    summary = runner_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner).to_dict()
 
     diagnostic_path = tmp_path / "artifacts" / "review-1-status.json"
     assert diagnostic_path.exists()

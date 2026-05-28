@@ -8,11 +8,9 @@ import json
 import os
 import signal
 import time
-from collections.abc import Sequence
 from contextlib import contextmanager, suppress
-from importlib import import_module
 from pathlib import Path
-from typing import Any, NoReturn, assert_never, cast
+from typing import Any, NoReturn, assert_never
 
 from code_review_loop import (
     __version__ as __version__,
@@ -36,7 +34,6 @@ from code_review_loop.core.outcome import (
     RunOutcome,
 )
 from code_review_loop.core.ports import (
-    CommandResult,
     PhaseHarnessBundle,
     RunContext,
 )
@@ -102,19 +99,6 @@ likely false positives, implementation order, and verification commands.
 
 Review and check output:
 """
-
-def _default_runner(
-    args: Sequence[str],
-    cwd: Path,
-    input_text: str | None = None,
-    timeout_seconds: float | None = None,
-) -> CommandResult:
-    runner = cast(Runner, import_module("code_review_loop.adapters.subprocess_runner").default_runner)
-    return runner(args, cwd, input_text, timeout_seconds)
-
-
-default_runner: Runner = _default_runner
-
 
 @contextmanager
 def terminal_recovery_context():
@@ -297,7 +281,7 @@ def _execute_stop(
 
 def run_loop(
     config: LoopConfig,
-    runner: Runner | None = None,
+    runner: Runner,
     *,
     clock: Clock = SYSTEM_CLOCK,
     identity: RunIdentity = SYSTEM_IDENTITY,
@@ -305,11 +289,10 @@ def run_loop(
     phase_harnesses: PhaseHarnessBundle | None = None,
     terminal_ui: bool = True,
 ) -> RunnerResult:
-    active_runner = runner or default_runner
     if not terminal_ui:
         return _run_session(
             config,
-            active_runner,
+            runner,
             clock=clock,
             identity=identity,
             budget_state=budget_state,
@@ -324,7 +307,7 @@ def run_loop(
     ):
         return _run_session(
             config,
-            active_runner,
+            runner,
             clock=clock,
             identity=identity,
             budget_state=budget_state,
@@ -333,7 +316,7 @@ def run_loop(
         )
 
 
-def resume_run(run_dir: Path) -> RunnerResult:
+def resume_run(run_dir: Path, runner: Runner) -> RunnerResult:
     from code_review_loop import resume
 
     summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
@@ -343,7 +326,7 @@ def resume_run(run_dir: Path) -> RunnerResult:
     if budget_issues:
         raise ValueError("; ".join(issue.message for issue in budget_issues))
     config, resumed_budget_state = resume.resume_loop_config(summary, run_dir=run_dir)
-    return run_loop(config, budget_state=resumed_budget_state)
+    return run_loop(config, runner, budget_state=resumed_budget_state)
 
 
 def _run_preflight(
@@ -507,7 +490,7 @@ def _run_session_body(
 
 def _run_session(
     config: LoopConfig,
-    runner: Runner | None = None,
+    runner: Runner,
     *,
     clock: Clock = SYSTEM_CLOCK,
     identity: RunIdentity = SYSTEM_IDENTITY,
@@ -518,10 +501,9 @@ def _run_session(
     if config.max_iterations < 1:
         raise ValueError("--max-iterations must be at least 1")
 
-    active_runner = runner or default_runner
     setup = prepare_run(
         config,
-        active_runner,
+        runner,
         clock=clock,
         identity=identity,
         budget_state=budget_state,

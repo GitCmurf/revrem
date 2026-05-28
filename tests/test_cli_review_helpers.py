@@ -9,10 +9,23 @@ from code_review_loop import application, events
 from code_review_loop.adapters import remediation as remediation_impl
 from code_review_loop.adapters import review as review_impl
 from code_review_loop.adapters import triage as triage_impl
-from code_review_loop.core.ports import RunContext
+from code_review_loop.adapters.commit import commit_message_for_staged_changes
+from code_review_loop.adapters.phase_support import (
+    build_commit_message_command,
+    normalize_revrem_conventional_subject,
+    progress_event,
+    sanitize_commit_message,
+)
+from code_review_loop.adapters.review import review_failed_to_run
+from code_review_loop.config import LoopConfig
+from code_review_loop.core.ports import CommandResult, RunContext
 from code_review_loop.core.review_interpretation import (
     actionable_review_output,
     detect_review_status,
+    extract_finding_blocks,
+    extract_finding_summaries,
+    extract_review_summary,
+    review_status_diagnostics,
 )
 from tests.support.fakes import FakeClock, FakeRunIdentity
 from tests.support.phase_harnesses import phase_harness_kwargs
@@ -198,14 +211,14 @@ def test_run_loop_treats_structured_empty_findings_review_as_clear(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text))
         if args[1] == "review":
-            return runner_mod.CommandResult(
+            return CommandResult(
                 list(args),
                 0,
                 stdout='{"findings": [], "overall_correctness": "patch is correct"}\n',
             )
         raise AssertionError(f"unexpected command: {args}")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -213,7 +226,7 @@ def test_run_loop_treats_structured_empty_findings_review_as_clear(tmp_path):
         artifact_dir=tmp_path / "artifacts",
     )
 
-    summary = runner_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner).to_dict()
 
     assert summary["final_status"] == "clear"
     assert summary["stopped_reason"] == "review_clear"
@@ -224,14 +237,14 @@ def test_run_loop_treats_structured_empty_findings_review_as_clear(tmp_path):
 def test_run_loop_writes_replayable_events_jsonl(tmp_path, capsys):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return runner_mod.CommandResult(
+            return CommandResult(
                 list(args),
                 0,
                 stdout='{"findings": [], "overall_correctness": "patch is correct"}\n',
             )
         raise AssertionError(f"unexpected command: {args}")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -241,7 +254,7 @@ def test_run_loop_writes_replayable_events_jsonl(tmp_path, capsys):
         final_review=False,
     )
 
-    summary = runner_mod.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner).to_dict()
     replay_code = cli_main.main(["replay", str(tmp_path / "artifacts")])
     records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
 
@@ -270,7 +283,7 @@ def test_run_loop_writes_replayable_events_jsonl(tmp_path, capsys):
 
 def test_progress_warning_status_emits_warning_event(tmp_path):
     sink = events.InMemorySink("run-1")
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -286,7 +299,7 @@ def test_progress_warning_status_emits_warning_event(tmp_path):
         event_sink=sink,
     )
 
-    runner_mod.progress_event(config, "triage", "1", "warning", "suppressions unavailable", ctx=ctx)
+    progress_event(config, "triage", "1", "warning", "suppressions unavailable", ctx=ctx)
 
     assert sink.events[0].kind == "warning"
     assert sink.events[0].payload["message"] == "suppressions unavailable"
@@ -357,7 +370,7 @@ def test_review_status_diagnostics_explain_clear_with_stderr_noise():
         "review comments:\n- [P2] stale transcript example\n"
     )
 
-    diagnostics = runner_mod.review_status_diagnostics(output)
+    diagnostics = review_status_diagnostics(output)
 
     assert diagnostics["status"] == "clear"
     assert diagnostics["clear_phrase_present"] is True
@@ -405,7 +418,7 @@ def test_extract_finding_summaries_limits_codex_findings():
 - [P2] Second bug — src/b.py:2
 - [P3] Third bug — src/c.py:3
 """
-    assert runner_mod.extract_finding_summaries(output, limit=2) == [
+    assert extract_finding_summaries(output, limit=2) == [
         "[P1] First bug — src/a.py:1",
         "[P2] Second bug — src/b.py:2",
     ]
@@ -421,7 +434,7 @@ def test_extract_finding_blocks_includes_short_detail():
 - [P2] Second bug — src/b.py:2
   Another detail.
 """
-    assert runner_mod.extract_finding_blocks(output, limit=2, detail_lines=2) == [
+    assert extract_finding_blocks(output, limit=2, detail_lines=2) == [
         [
             "[P1] First bug — src/a.py:1",
             "The first detail line.",
@@ -441,13 +454,13 @@ Full review comments:
 """
 
     assert (
-        runner_mod.extract_review_summary(output)
+        extract_review_summary(output)
         == "The loop can omit the only review transcript path in a failure summary."
     )
 
 
 def test_review_model_is_top_level_codex_option(tmp_path):
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -467,9 +480,9 @@ def test_non_codex_review_receives_explicit_review_prompt(tmp_path):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text))
-        return runner_mod.CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
+        return CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         cwd=tmp_path,
@@ -498,9 +511,9 @@ def test_opencode_review_prompt_is_passed_as_message_argument(tmp_path):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text))
-        return runner_mod.CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
+        return CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         cwd=tmp_path,
@@ -532,7 +545,7 @@ model = "sonnet"
 """,
         encoding="utf-8",
     )
-    captured: list[runner_mod.LoopConfig] = []
+    captured: list[LoopConfig] = []
 
     def fake_run_loop(config, **_kwargs):
         captured.append(config)
@@ -556,7 +569,7 @@ model = "sonnet"
 
 
 def test_model_overrides_and_reasoning_effort_are_passed_to_codex(tmp_path):
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -590,7 +603,7 @@ def test_model_overrides_and_reasoning_effort_are_passed_to_codex(tmp_path):
 
 
 def test_remediation_command_uses_deterministic_output_options(tmp_path):
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -609,7 +622,7 @@ def test_remediation_command_uses_deterministic_output_options(tmp_path):
 
 
 def test_triage_command_uses_read_only_exec_with_phase_model(tmp_path):
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -629,7 +642,7 @@ def test_triage_command_uses_read_only_exec_with_phase_model(tmp_path):
 
 
 def test_commit_message_command_uses_read_only_exec_with_configured_model(tmp_path):
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -639,7 +652,7 @@ def test_commit_message_command_uses_read_only_exec_with_configured_model(tmp_pa
         commit_reasoning_effort="minimal",
     )
 
-    command = runner_mod.build_commit_message_command(config)
+    command = build_commit_message_command(config)
 
     assert command == [
         "codex",
@@ -658,19 +671,19 @@ def test_commit_message_command_uses_read_only_exec_with_configured_model(tmp_pa
 
 def test_sanitize_commit_message_uses_first_plain_subject():
     assert (
-        runner_mod.sanitize_commit_message(
+        sanitize_commit_message(
             'Commit message: "Harden RevRem commit flow"\n\nExplanation...',
             fallback="fallback",
         )
         == "chore: Harden RevRem commit flow (RevRem)"
     )
     assert (
-        runner_mod.sanitize_commit_message("fix(cli): stop on no-op remediation", fallback="fallback")
+        sanitize_commit_message("fix(cli): stop on no-op remediation", fallback="fallback")
         == "fix(cli): stop on no-op remediation (RevRem)"
     )
-    assert runner_mod.sanitize_commit_message("", fallback="fallback") == "chore: fallback (RevRem)"
+    assert sanitize_commit_message("", fallback="fallback") == "chore: fallback (RevRem)"
     assert (
-        runner_mod.sanitize_commit_message(
+        sanitize_commit_message(
             "Use custom format",
             fallback="fallback",
             enforce_revrem_conventional=False,
@@ -680,7 +693,7 @@ def test_sanitize_commit_message_uses_first_plain_subject():
 
 
 def test_commit_message_for_staged_changes_respects_profile_prompt_override(tmp_path):
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -696,14 +709,14 @@ def test_commit_message_for_staged_changes_respects_profile_prompt_override(tmp_
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text))
         if args[:4] == ["git", "diff", "--cached", "--stat"]:
-            return runner_mod.CommandResult(list(args), 0, stdout=" file.py | 2 +-\n")
+            return CommandResult(list(args), 0, stdout=" file.py | 2 +-\n")
         if args[:4] == ["git", "diff", "--cached", "--name-only"]:
-            return runner_mod.CommandResult(list(args), 0, stdout="file.py\n")
+            return CommandResult(list(args), 0, stdout="file.py\n")
         if args[:2] == ["codex", "exec"]:
-            return runner_mod.CommandResult(list(args), 0, stdout="Use custom format\n")
+            return CommandResult(list(args), 0, stdout="Use custom format\n")
         raise AssertionError(f"unexpected command: {args!r}")
 
-    message = runner_mod.commit_message_for_staged_changes(config, runner, 1, make_run_context(runner))
+    message = commit_message_for_staged_changes(config, runner, 1, make_run_context(runner))
 
     assert message == "Use custom format"
     assert "Write a custom subject." in next(
@@ -714,7 +727,7 @@ def test_commit_message_for_staged_changes_respects_profile_prompt_override(tmp_
 def test_normalize_revrem_conventional_subject_preserves_suffix_when_truncated():
     subject = "fix(cli): " + "x" * 200
 
-    normalized = runner_mod.normalize_revrem_conventional_subject(subject)
+    normalized = normalize_revrem_conventional_subject(subject)
 
     assert normalized.endswith(" (RevRem)")
     assert len(normalized) == 120
@@ -729,26 +742,26 @@ def test_detect_review_status_requires_explicit_status_line():
 
 def test_review_failure_detection_allows_nonzero_findings_without_stderr():
     assert (
-        runner_mod.review_failed_to_run(
-            runner_mod.CommandResult(["codex", "review"], -9, stdout="", stderr="")
+        review_failed_to_run(
+            CommandResult(["codex", "review"], -9, stdout="", stderr="")
         )
         is True
     )
     assert (
-        runner_mod.review_failed_to_run(
-            runner_mod.CommandResult(["codex", "review"], 1, stdout="Finding\n", stderr="")
+        review_failed_to_run(
+            CommandResult(["codex", "review"], 1, stdout="Finding\n", stderr="")
         )
         is False
     )
     assert (
-        runner_mod.review_failed_to_run(
-            runner_mod.CommandResult(["codex", "review"], 1, stdout="", stderr="Error: thread/start failed")
+        review_failed_to_run(
+            CommandResult(["codex", "review"], 1, stdout="", stderr="Error: thread/start failed")
         )
         is True
     )
     assert (
-        runner_mod.review_failed_to_run(
-            runner_mod.CommandResult(["codex", "review"], 2, stdout="", stderr="error: bad args")
+        review_failed_to_run(
+            CommandResult(["codex", "review"], 2, stdout="", stderr="error: bad args")
         )
         is True
     )
@@ -797,10 +810,10 @@ def test_remediation_prompt_uses_actionable_output_and_cap(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text))
         if args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
-        return runner_mod.CommandResult(list(args), 0, stdout="fixed\n")
+            return CommandResult(list(args), 0, stdout=next(review_outputs))
+        return CommandResult(list(args), 0, stdout="fixed\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",

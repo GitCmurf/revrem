@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import io
+import os
 import shutil
+import signal
 import time
 from importlib import import_module
 
@@ -12,6 +14,8 @@ from code_review_loop import application
 from code_review_loop.adapters import subprocess_runner as subprocess_runner_mod
 from code_review_loop.adapters import terminal as terminal_mod
 from code_review_loop.cli import config_builder
+from code_review_loop.config import LoopConfig
+from code_review_loop.core.ports import CommandResult
 
 cli_main = import_module("code_review_loop.cli.main")
 
@@ -28,10 +32,10 @@ def test_loop_uses_phase_specific_timeouts_for_review_remediation_and_checks(tmp
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
         if args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
-        return runner_mod.CommandResult(list(args), 0, stdout="ok\n")
+            return CommandResult(list(args), 0, stdout=next(review_outputs))
+        return CommandResult(list(args), 0, stdout="ok\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -60,10 +64,10 @@ def test_loop_keeps_checks_on_global_timeout_when_remediation_is_disabled(tmp_pa
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
         if args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
-        return runner_mod.CommandResult(list(args), 0, stdout="ok\n")
+            return CommandResult(list(args), 0, stdout=next(review_outputs))
+        return CommandResult(list(args), 0, stdout="ok\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -92,10 +96,10 @@ def test_loop_preserves_disabled_global_timeout_for_remediation_and_checks(tmp_p
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
         if args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
-        return runner_mod.CommandResult(list(args), 0, stdout="ok\n")
+            return CommandResult(list(args), 0, stdout=next(review_outputs))
+        return CommandResult(list(args), 0, stdout="ok\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -124,10 +128,10 @@ def test_loop_uses_default_timeout_when_phase_timeouts_are_unset(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
         if args[1] == "review":
-            return runner_mod.CommandResult(list(args), 0, stdout=next(review_outputs))
-        return runner_mod.CommandResult(list(args), 0, stdout="ok\n")
+            return CommandResult(list(args), 0, stdout=next(review_outputs))
+        return CommandResult(list(args), 0, stdout="ok\n")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -191,8 +195,8 @@ def test_subprocess_refresh_loop_kills_child_on_interrupt(tmp_path, monkeypatch)
 def test_repeated_cancellation_signal_within_window_is_marked_forced(monkeypatch):
     monkeypatch.setattr(runner_mod, "_LAST_CANCELLATION_SIGNAL_AT", None)
 
-    first = runner_mod.cancellation_interrupt_for_signal(runner_mod.signal.SIGINT, now=100.0)
-    second = runner_mod.cancellation_interrupt_for_signal(runner_mod.signal.SIGINT, now=103.0)
+    first = runner_mod.cancellation_interrupt_for_signal(signal.SIGINT, now=100.0)
+    second = runner_mod.cancellation_interrupt_for_signal(signal.SIGINT, now=103.0)
 
     assert "controlled cancellation" in str(first)
     assert "forced cancellation" in str(second)
@@ -201,8 +205,8 @@ def test_repeated_cancellation_signal_within_window_is_marked_forced(monkeypatch
 def test_cancellation_signal_after_window_starts_new_controlled_stop(monkeypatch):
     monkeypatch.setattr(runner_mod, "_LAST_CANCELLATION_SIGNAL_AT", None)
 
-    runner_mod.cancellation_interrupt_for_signal(runner_mod.signal.SIGTERM, now=100.0)
-    later = runner_mod.cancellation_interrupt_for_signal(runner_mod.signal.SIGTERM, now=106.0)
+    runner_mod.cancellation_interrupt_for_signal(signal.SIGTERM, now=100.0)
+    later = runner_mod.cancellation_interrupt_for_signal(signal.SIGTERM, now=106.0)
 
     assert "controlled cancellation" in str(later)
 
@@ -219,11 +223,11 @@ def test_kill_process_tree_targets_child_process_group(monkeypatch):
     def fake_killpg(pid, sig):
         calls.append(("killpg", pid, sig))
 
-    monkeypatch.setattr(runner_mod.os, "killpg", fake_killpg)
+    monkeypatch.setattr(os, "killpg", fake_killpg)
 
     subprocess_runner_mod.kill_process_tree(FakeProcess())
 
-    assert calls == [("killpg", 12345, runner_mod.signal.SIGKILL)]
+    assert calls == [("killpg", 12345, signal.SIGKILL)]
 
 
 def test_subprocess_refresh_loop_does_not_resend_input_after_timeout(tmp_path, monkeypatch):
@@ -319,7 +323,7 @@ def test_default_runner_refreshes_active_terminal_title_during_child_process(tmp
     stderr = TtyBuffer()
     monkeypatch.setattr(terminal_mod.sys, "stderr", stderr)
     monkeypatch.setattr(terminal_mod, "TERMINAL_TITLE_REFRESH_SECONDS", 0.01)
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -354,7 +358,7 @@ def test_default_runner_does_not_refresh_terminal_title_during_rich_progress(tmp
     stderr = TtyBuffer()
     monkeypatch.setattr(terminal_mod.sys, "stderr", stderr)
     monkeypatch.setattr(terminal_mod, "TERMINAL_TITLE_REFRESH_SECONDS", 0.01)
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",

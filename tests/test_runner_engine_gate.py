@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
@@ -58,11 +59,31 @@ def test_runner_no_longer_owns_process_or_resume_support() -> None:
         "default_runner",
         "run_subprocess_with_terminal_title_refresh",
         "kill_process_tree",
+        "subprocess_runner",
         "git_state_for_resume",
         "git_preflight_stdout",
         "resume_config_payload",
     ):
         assert f"def {helper}(" not in runner_source
+        assert helper not in runner_source
+
+
+def test_tests_only_reach_runner_owned_surface() -> None:
+    allowed = {"run_loop", "resume_run", "cancellation_interrupt_for_signal"}
+    root = Path(__file__).resolve().parents[1] / "tests"
+    leaks: list[str] = []
+    for path in root.glob("test_*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Attribute)
+                and isinstance(node.value, ast.Name)
+                and node.value.id == "runner_mod"
+                and node.attr not in allowed
+            ):
+                leaks.append(f"{path.name}:{node.lineno}: runner_mod.{node.attr}")
+
+    assert leaks == []
 
 
 def test_runner_stays_below_polish_sprint_size_ceiling() -> None:
@@ -71,3 +92,11 @@ def test_runner_stays_below_polish_sprint_size_ceiling() -> None:
     ).read_text(encoding="utf-8").splitlines()
 
     assert len(runner_lines) < 600
+
+
+def test_runner_shell_stays_orchestration_sized() -> None:
+    shell_lines = (
+        Path(__file__).resolve().parents[1] / "src" / "code_review_loop" / "runner_shell.py"
+    ).read_text(encoding="utf-8").splitlines()
+
+    assert len(shell_lines) < 450

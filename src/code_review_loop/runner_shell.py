@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Any, Literal, cast
 
-from code_review_loop import artifacts, budgets, diagnostics, policy, prompts_composer, triage
+from code_review_loop import budgets, policy, triage
 from code_review_loop.adapters.checks import format_check_failures as _format_check_failures
 from code_review_loop.adapters.commit import (
     format_commit_hook_failure_for_remediation as format_commit_hook_failure_for_remediation,
@@ -21,9 +21,6 @@ from code_review_loop.adapters.phase_support import (
     emit_loop_failure_event as emit_loop_failure_event,
 )
 from code_review_loop.adapters.phase_support import progress_event as progress_event
-from code_review_loop.adapters.phase_support import (
-    remaining_wall_budget_seconds as remaining_wall_budget_seconds,
-)
 from code_review_loop.adapters.phase_support import write_artifact as write_artifact
 from code_review_loop.clock import Clock
 from code_review_loop.config import LoopConfig
@@ -64,138 +61,7 @@ from code_review_loop.core.review_interpretation import (
     detect_review_status,
 )
 from code_review_loop.core.state import RunState
-
-
-def _build_routing_payload(
-    *,
-    resolved_route: policy.ResolvedRoute,
-    triage_payload: dict[str, Any],
-    run_id: str,
-    iteration: int,
-    remediation_input: str,
-    config: LoopConfig,
-) -> dict[str, Any]:
-    """Assemble the per-iteration routing decision artifact.
-
-    Extracted from the inline ``_run_loop`` body in Wave C2b (TD-004). Pure with
-    respect to the loop state: every input is passed explicitly so future
-    callers (e.g. snapshot replay) can reconstruct the same artifact without
-    re-running the policy resolver.
-    """
-    eff_harness = resolved_route.harness
-    eff_model = resolved_route.model or config.remediation_model or config.model
-    eff_reasoning = (
-        resolved_route.reasoning_effort
-        or config.remediation_reasoning_effort
-        or config.reasoning_effort
-    )
-    eff_sandbox = resolved_route.sandbox
-    eff_timeout = (
-        int(resolved_route.timeout_seconds)
-        if resolved_route.timeout_seconds is not None
-        else 300
-    )
-
-    effective_route: dict[str, Any] = {
-        "route_tier": resolved_route.route_tier,
-        "harness": eff_harness,
-        "sandbox": eff_sandbox,
-        "timeout_seconds": eff_timeout,
-    }
-    if eff_model:
-        effective_route["model"] = eff_model
-    if eff_reasoning:
-        effective_route["reasoning_effort"] = eff_reasoning
-
-    proposal_present = bool(triage_payload.get("route_proposal"))
-    proposal_matches_effective = False
-    proposal_overrides: list[str] = []
-    proposed_fields: dict[str, Any] = {}
-    if proposal_present:
-        p = triage_payload["route_proposal"]
-        proposed_fields = {
-            k: p[k]
-            for k in (
-                "route_tier",
-                "harness",
-                "model",
-                "reasoning_effort",
-                "sandbox",
-                "timeout_seconds",
-                "rationale",
-            )
-            if k in p
-        }
-        comparable_keys = (
-            "route_tier",
-            "harness",
-            "model",
-            "reasoning_effort",
-            "sandbox",
-            "timeout_seconds",
-        )
-        proposal_overrides = [
-            key
-            for key in comparable_keys
-            if key in proposed_fields and effective_route.get(key) != proposed_fields[key]
-        ]
-        proposal_matches_effective = not proposal_overrides
-
-    if resolved_route.fallback_applied:
-        decision = "fallback_applied"
-        original = (
-            resolved_route.fallbacks_considered[0]
-            if resolved_route.fallbacks_considered
-            else "unknown"
-        )
-        rationale = f"Original route {original!r} fell back to {resolved_route.fallback_applied!r}."
-    elif proposal_present and proposal_matches_effective:
-        decision = "proposal_accepted"
-        rationale = "Model route proposal accepted by policy."
-    elif proposal_present:
-        decision = "policy_override"
-        if proposal_overrides:
-            fields = ", ".join(proposal_overrides)
-            rationale = (
-                "Policy selected the proposed tier but overrode "
-                f"proposal field(s): {fields}."
-            )
-        else:
-            rationale = "Policy overrode the model route proposal."
-    elif resolved_route.rule_id == "default":
-        decision = "default_route_applied"
-        rationale = "No model route proposal or rule match; applied default route."
-    else:
-        decision = "policy_override"
-        rationale = "Applied policy based on classification."
-
-    routing_payload: dict[str, Any] = {
-        "schema_version": "1.0",
-        "run_id": run_id,
-        "iteration": iteration,
-        "source_triage_artifact": f"triage-{iteration}.json",
-        "policy_decision": {
-            "decision": decision,
-            "matched_rule_ids": (
-                [resolved_route.rule_id]
-                if resolved_route.rule_id and resolved_route.rule_id != "default"
-                else []
-            ),
-            "rationale": rationale,
-        },
-        "effective_route": effective_route,
-        "fallbacks_considered": list(resolved_route.fallbacks_considered),
-        "prompt": {
-            "path": f"remediation-{iteration}-prompt.txt",
-            "sha256": prompts_composer.compute_prompt_hash(remediation_input),
-            "bytes": len(remediation_input),
-            "fragments": list(resolved_route.prompt_fragments),
-        },
-    }
-    if proposal_present:
-        routing_payload["model_proposal"] = proposed_fields
-    return routing_payload
-
+from code_review_loop.routing_artifacts import resolve_and_record_routing
 
 
 class _RunnerEngineExecutor:
@@ -363,82 +229,18 @@ class _RunnerEngineExecutor:
         return replace(engine_state, event=TriageDone(is_clear=False))
 
     def _resolve_routing(self, iteration: int, triage_payload: dict[str, Any]) -> None:
-        assert self.config.profile_v2 is not None
-        routing_config = self.config.profile_v2.triage.routing
-        if routing_config.enabled:
-            routing_context = triage.extract_routing_context(
-                triage_payload,
-                self.config.cwd,
-                failed_checks=tuple(self.failed_check_names),
-                cache=self.routing_context_cache,
-            )
-            model_proposal = triage_payload.get("route_proposal", {})
-            self.resolved_route = policy.resolve_routing(
-                self.config.profile_v2,
-                routing_context,
-                model_proposal_tier=model_proposal.get("route_tier"),
-                max_timeout_seconds=remaining_wall_budget_seconds(self.config, self.ctx),
-            )
-            progress_event(
-                self.config,
-                "triage",
-                str(iteration),
-                "routing",
-                f"routed to {self.resolved_route.route_tier} ({self.resolved_route.harness})",
-                ctx=self.ctx,
-            )
-        else:
-            self.resolved_route = policy.ResolvedRoute(
-                route_tier="default",
-                harness=self.config.remediation_harness,
-                model=self.config.remediation_model or self.config.model,
-                reasoning_effort=self.config.remediation_reasoning_effort or self.config.reasoning_effort,
-                timeout_seconds=self.config.remediation_timeout_seconds,
-                sandbox=self.config.exec_sandbox,
-                prompt_fragments=(),
-                allow_model_deescalation=True,
-                rule_id="default",
-            )
-
-        self.remediation_input = prompts_composer.compose_remediation_prompt(
-            self.config.cwd,
-            triage_payload,
-            self.resolved_route,
-            self.remediation_input,
-            max_chars=self.config.max_remediation_input_chars,
-            trusted_repo=self.config.trusted_repo,
-        )
-        routing_payload = _build_routing_payload(
-            resolved_route=self.resolved_route,
-            triage_payload=triage_payload,
+        resolution = resolve_and_record_routing(
+            config=self.config,
+            ctx=self.ctx,
             run_id=self.run_id,
             iteration=iteration,
+            triage_payload=triage_payload,
             remediation_input=self.remediation_input,
-            config=self.config,
+            failed_check_names=tuple(self.failed_check_names),
+            cache=self.routing_context_cache,
         )
-        try:
-            triage.validate_routing_payload(routing_payload)
-        except triage.TriageValidationError as exc:
-            issue = triage.invalid_triage_issue(exc, iteration=iteration)
-            artifacts.write_json_artifact(
-                self.config.artifact_dir,
-                f"diagnostics-{iteration}.json",
-                diagnostics.doctor_payload([issue]),
-            )
-            progress_event(
-                self.config,
-                "triage",
-                str(iteration),
-                "invalid",
-                f"routing payload schema validation failed: {exc}",
-                ctx=self.ctx,
-            )
-            raise RuntimeError(f"invalid routing decision artifact for iteration {iteration}: {exc}") from exc
-
-        triage.write_routing_artifact(self.config.artifact_dir, iteration, routing_payload)
-        if self.ctx.event_sink:
-            self.ctx.event_sink.emit("routing_decision", phase="triage", iteration=iteration, payload=routing_payload)
-        write_artifact(self.config.artifact_dir / f"remediation-{iteration}-prompt.txt", self.remediation_input)
+        self.resolved_route = resolution.resolved_route
+        self.remediation_input = resolution.remediation_input
 
     def _run_remediation(self, engine_state: EngineState) -> EngineState:
         iteration = engine_state.iteration

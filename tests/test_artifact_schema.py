@@ -6,6 +6,7 @@ from pathlib import Path
 from code_review_loop import diagnostics
 from code_review_loop import runner as cli_module
 from code_review_loop._compat_jsonschema import Draft202012Validator, validate
+from code_review_loop.core.ports import CommandResult
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_DIR = ROOT / "docs" / "52-api" / "schemas"
@@ -100,8 +101,8 @@ def test_summary_schema_validates_generated_summary(tmp_path):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return cli_module.CommandResult(list(args), 0, stdout=next(review_outputs))
-        return cli_module.CommandResult(list(args), 0, stdout="fixed\n")
+            return CommandResult(list(args), 0, stdout=next(review_outputs))
+        return CommandResult(list(args), 0, stdout="fixed\n")
 
     config = cli_module.LoopConfig(
         base="main",
@@ -111,7 +112,7 @@ def test_summary_schema_validates_generated_summary(tmp_path):
         artifact_dir=tmp_path / "artifacts",
     )
 
-    summary = cli_module.run_loop(config, runner)
+    summary = cli_module.run_loop(config, runner).to_dict()
     summary_payload = json.loads(
         (tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8")
     )

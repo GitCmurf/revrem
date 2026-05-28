@@ -7,9 +7,11 @@ from pathlib import Path
 
 import pytest
 
-import code_review_loop.runner as runner_mod
-from code_review_loop import profiles
+from code_review_loop import application as application_mod
+from code_review_loop import diagnostics, profiles
 from code_review_loop.adapters import review as review_impl
+from code_review_loop.adapters.review import review_base_preflight_error
+from code_review_loop.config import LoopConfig
 from code_review_loop.core.ports import RunContext
 from tests.support.fakes import FakeClock, FakeRunIdentity
 from tests.support.phase_harnesses import phase_harness_kwargs
@@ -53,7 +55,7 @@ def test_review_base_preflight_reports_unrelated_local_base_and_origin_hint(tmp_
     run_git(repo, "commit", "-m", "public launch")
     run_git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -61,7 +63,7 @@ def test_review_base_preflight_reports_unrelated_local_base_and_origin_hint(tmp_
         artifact_dir=repo / "artifacts",
     )
 
-    error = runner_mod.review_base_preflight_error(config)
+    error = review_base_preflight_error(config)
 
     assert error is not None
     assert "HEAD and base 'main' do not share a merge base" in error
@@ -86,7 +88,7 @@ def test_run_codex_review_fails_fast_when_base_has_no_merge_base(tmp_path):
     def runner(*_args, **_kwargs):
         raise AssertionError("codex review should not run when base preflight fails")
 
-    config = runner_mod.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -116,7 +118,7 @@ def test_doctor_json_reports_invalid_base_without_invoking_runner(tmp_path, monk
     def runner(*_args, **_kwargs):
         raise AssertionError("revrem doctor must not invoke the Codex runner")
 
-    monkeypatch.setattr(runner_mod, "default_runner", runner)
+    monkeypatch.setattr(application_mod, "_load_default_process_runner", lambda: runner)
 
     exit_code = cli_main.main(
         ["doctor", "--base", "missing", "--codex-bin", "git", "--format", "json"]
@@ -179,7 +181,7 @@ def test_doctor_json_reports_missing_git_as_blocking_issue(tmp_path, monkeypatch
     def fake_run(*_args, **_kwargs):
         raise FileNotFoundError("git")
 
-    monkeypatch.setattr(runner_mod.diagnostics.subprocess, "run", fake_run)
+    monkeypatch.setattr(diagnostics.subprocess, "run", fake_run)
 
     exit_code = cli_main.main(["doctor", "--base", "main", "--codex-bin", "git", "--format", "json"])
 
@@ -444,7 +446,7 @@ harness = "gemini"
             return "/usr/bin/claude"
         return None
 
-    monkeypatch.setattr(runner_mod.diagnostics.shutil, "which", fake_which)
+    monkeypatch.setattr(diagnostics.shutil, "which", fake_which)
     monkeypatch.chdir(repo)
 
     exit_code = cli_main.main(
