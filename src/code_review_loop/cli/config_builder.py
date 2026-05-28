@@ -1,7 +1,7 @@
 """LoopConfig assembly + small CLI-argument resolution helpers (Wave C2a).
 
 These functions translate ``argparse.Namespace`` + profile defaults into a
-``LoopConfig``. They are the front-end half of the original God-object module.
+``LoopConfig`` for the thin CLI driver.
 """
 
 from __future__ import annotations

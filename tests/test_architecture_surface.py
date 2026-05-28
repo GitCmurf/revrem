@@ -12,9 +12,12 @@ def test_production_source_has_no_wave_c_migration_scar_language() -> None:
         "cli._run_loop",
         "legacy shim",
         "back-compat",
+        "backward compatibility",
+        "God-object",
         "MODULE.",
         "monkeypatch surface",
         "Optional so phases",
+        "retained for migration",
     )
     offenders: list[str] = []
     for path in SOURCE_ROOT.rglob("*.py"):

@@ -1,12 +1,12 @@
 """Pure routing/profile DTOs (REVREM-TASK-003 B1b, B2a).
 
 All classes are frozen dataclasses with no I/O. Lifted from profiles.py so that
-policy.py can import them without pulling in the edge module. profiles.py
-re-exports every symbol here for backward compatibility.
+policy.py can import them without pulling in the edge module. ``profiles.py``
+imports these DTOs as its canonical profile data model.
 
 `ResolvedRoute` was originally in policy.py; moved here (pre-B2a) so that
 `core/phase_types.py` can reference it without depending on an edge module.
-policy.py re-exports it for backward compatibility.
+``policy.py`` imports it from this core DTO module.
 
 This module imports only the standard library (Contract C4).
 """
@@ -181,7 +181,7 @@ class ResolvedRoute:
     """The routing decision produced by resolve_routing (moved from policy.py pre-B2a).
 
     Originally lived in policy.py; moved here so core phase types can reference
-    it without importing an edge module. policy.py re-exports this class.
+    it without importing an edge module.
     """
 
     route_tier: str

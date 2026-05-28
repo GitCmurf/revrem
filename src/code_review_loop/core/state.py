@@ -166,7 +166,7 @@ class RunState:
         if check_failures:
             self.set_pending_check_failures(True)
 
-    # --- scalar terminal-state transitions (low-level, retained for migration) ---
+    # --- scalar mid-run transitions ---
 
     def set_final_status(self, value: str) -> None:
         self.final_status = value
