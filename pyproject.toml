@@ -223,6 +223,7 @@ type = "forbidden"
 source_modules = [
   "tests.support.headless",
   "tests.test_application_headless_integration",
+  "tests.test_extensibility_swap",
 ]
 forbidden_modules = [
   "argparse",

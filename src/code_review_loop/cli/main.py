@@ -15,13 +15,12 @@ from code_review_loop.cli.exit import map_application_call
 
 def main(argv: Sequence[str] | None = None) -> int:
     from code_review_loop import application
-    from code_review_loop.cli.commands.registry import build_subcommand_registry
+    from code_review_loop.cli.commands.registry import dispatch_or_none
 
     raw_argv = list(sys.argv[1:] if argv is None else argv)
-    if raw_argv:
-        handler = build_subcommand_registry().get(raw_argv[0])
-        if handler is not None:
-            return handler(raw_argv[1:])
+    dispatch_result = dispatch_or_none(raw_argv)
+    if dispatch_result is not None:
+        return dispatch_result
 
     args = parse_args(raw_argv)
     try:

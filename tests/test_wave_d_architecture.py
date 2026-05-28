@@ -19,3 +19,4 @@ def test_cli_main_is_closed_to_concrete_subcommand_names() -> None:
     leaked = sorted(name for name in build_subcommand_registry() if name in string_literals)
 
     assert leaked == []
+    assert "build_subcommand_registry" not in source

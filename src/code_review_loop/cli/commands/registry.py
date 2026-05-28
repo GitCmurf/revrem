@@ -37,3 +37,14 @@ def build_subcommand_registry() -> dict[str, Callable[[Sequence[str]], int]]:
         "triage": triage.main,
         "ui": _tui.main,
     }
+
+
+def dispatch_or_none(argv: Sequence[str]) -> int | None:
+    """Dispatch a concrete subcommand when ``argv`` starts with one."""
+
+    if not argv:
+        return None
+    handler = build_subcommand_registry().get(argv[0])
+    if handler is None:
+        return None
+    return handler(argv[1:])
