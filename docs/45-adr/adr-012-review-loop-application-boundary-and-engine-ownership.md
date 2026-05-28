@@ -130,7 +130,7 @@ the task document remains the single source for refreshed closeout evidence.
 | #6 Exits exhaustive | `tests/test_outcome_exit_code.py` reaches every `RunOutcome` variant and every `OutcomeFailed.reason`; CLI success/cancellation paths map from typed outcomes. |
 | #7 No nondeterminism in core | `tests/test_determinism_gate.py` scans `core/*.py` for raw time/id, random, subprocess, environment, and filesystem access; it also scans machine-contract shell files for raw time/id reads. |
 | #8 Dependency graph acyclic | `tests/test_import_contracts.py` runs all 9 import-linter contracts, including core, adapter, runner-shell, CLI/application, and Wave D headless isolation rules. |
-| #9 Test monolith decomposed | `tests/test_cli.py` is a smoke-level compatibility shell; behavior now lives in focused command, runner, adapter, engine, and application modules. |
+| #9 Test monolith decomposed | `tests/test_cli.py` has been deleted; behavior now lives in focused command, runner, adapter, engine, and application modules. |
 | #10 Machine contract unchanged or ledgered | `docs/05-planning/behaviour-ledger-task-003.md` records summary/status transitions, including setup failure as `final_status == "error"` with `stopped_reason == "setup_failed"`. |
 
 The import-linter contract for Wave D engine acceptance remains a maintained

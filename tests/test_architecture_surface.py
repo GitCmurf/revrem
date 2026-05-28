@@ -79,3 +79,16 @@ def test_phase_adapters_do_not_alias_support_as_cli() -> None:
             offenders.append(str(path.relative_to(ROOT)))
 
     assert offenders == []
+
+
+def test_wave_d_evidence_does_not_claim_deleted_test_cli_exists() -> None:
+    task_doc = (ROOT / "docs" / "05-planning" / "tasks" / "task-003-reengineer-cli-py.md").read_text(
+        encoding="utf-8"
+    )
+    adr = (
+        ROOT / "docs" / "45-adr" / "adr-012-review-loop-application-boundary-and-engine-ownership.md"
+    ).read_text(encoding="utf-8")
+
+    assert not (ROOT / "tests" / "test_cli.py").exists()
+    assert "tests/test_cli.py` is a smoke-level compatibility shell" not in task_doc
+    assert "tests/test_cli.py` is a smoke-level compatibility shell" not in adr
