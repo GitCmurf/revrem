@@ -562,9 +562,12 @@ wall-time is cheaper to normalize than to thread a clock through its helpers.)*
 - Determinism-critical reads go through `clock` / `identity` (passed as kwargs
   in A1, wrapped into `RunContext` in B0). Defaults are the real clock / real
   `uuid4`; tests inject deterministic fakes.
-- The grep-gate (`tests/test_determinism_gate.py`) scans the engine-path files
-  (`cli.py`, `events.py`) and fails on any raw `datetime.now` / `time.monotonic`
-  / `uuid.uuid4` read that is **neither** routed through a seam **nor** annotated
+- The grep-gate (`tests/test_determinism_gate.py`) scans the post-Wave-C engine
+  path. `core/*.py` is checked for raw time/id reads, `random`, subprocess,
+  environment, and filesystem access; machine-contract shell files
+  (`events.py`, `runner.py`, `runner_shell.py`, `runner_setup.py`,
+  `runner_finish.py`, `routing_artifacts.py`) are checked for raw time/id reads.
+  Any matching read must be routed through a seam or annotated
   `# det-exempt: <reason>` on the same line. It is line-number-free (keys off the
   marker), so it survives edits. `budgets.py` is out of the gate's scope this
   wave (its wall-time is normalized, per the row above).
@@ -695,7 +698,8 @@ them.
 - *Tests:* `tests/test_clock_identity_seam.py` proves a fake clock + identity
   make `run_id`, `started_at`, `finished_at`, every event `ts`, and the
   artifact-dir suffix deterministic; `tests/test_determinism_gate.py` fails on
-  any unmarked raw time/uuid read in `cli.py`/`events.py`.
+  any unmarked raw time/uuid read in machine-contract shell files and broader
+  nondeterminism/I/O reads in `core/*.py`.
 - *Exit:* loop output is reproducible under a fixed clock and identity.
 - *Risk:* medium — touch points are scattered; mitigated by default-real.
 
@@ -1709,6 +1713,26 @@ canonical module homes. Wave D should not reopen the monolith.
   harnesses and no CLI imports.
 - **For extensibility:** add architecture ratchets rather than new production
   demo commands.
+
+## How to verify the leverage claims
+
+| Exit Criterion | Executable proof |
+| --- | --- |
+| #1 Core dependency-free | Import-linter contract `Core must not import edge or adapter modules`; `tests/test_runner_engine_gate.py::test_engine_acceptance_imports_only_core_modules` supplies allowlist semantics for the engine acceptance test. |
+| #2 Engine drivable without CLI | `tests/test_engine_run.py` drives `core.engine.run()` with a recording executor and no CLI, runner, shell, adapter, TUI, or non-core `code_review_loop.*` imports. |
+| #3 Application drivable by non-CLI caller | `tests/test_application_headless_integration.py` runs clear, findings, unknown, setup-failure, budget, cancellation, and resume scenarios through `application.run_review_loop()` / `resume_review_loop()` with injected fakes. |
+| #4 Add command / swap behavior through extension seams | `tests/test_wave_d_architecture.py` proves `cli/main.py` is closed to concrete subcommand names; `tests/test_extensibility_swap.py` injects alternate review behavior without importing CLI, runner, runner shell, or engine; `tests/test_runner_engine_gate.py` prevents tests from importing the private runner. |
+| #5 Monkeypatch facade gone | `tests/test_monkeypatch_ratchet.py` keeps `monkeypatch.setattr(MODULE, ...)` at zero production call-sites. |
+| #6 Exits exhaustive | `tests/test_outcome_exit_code.py` reaches every `RunOutcome` variant and every `OutcomeFailed.reason`; CLI success/cancellation paths map from typed outcomes. |
+| #7 No nondeterminism in core | `tests/test_determinism_gate.py` scans `core/*.py` for raw time/id, random, subprocess, environment, and filesystem access; it also scans machine-contract shell files for raw time/id reads. |
+| #8 Dependency graph acyclic | `tests/test_import_contracts.py` runs all 9 import-linter contracts, including core, adapter, runner-shell, CLI/application, and Wave D headless isolation rules. |
+| #9 Test monolith decomposed | `tests/test_cli.py` is a smoke-level compatibility shell; behavior now lives in focused command, runner, adapter, engine, and application modules. |
+| #10 Machine contract unchanged or ledgered | `docs/05-planning/behaviour-ledger-task-003.md` records summary/status transitions, including setup failure as `final_status == "error"` with `stopped_reason == "setup_failed"`. |
+
+The import-linter contract for Wave D engine acceptance remains a maintained
+denylist because import-linter has no pure allowlist contract. The AST ratchet
+above is the allowlist proof: `tests/test_engine_run.py` may import only
+standard-library modules and `code_review_loop.core.*`.
 
 ## Phase Exit Criteria — leverage, not line count
 

@@ -122,13 +122,19 @@ the task document remains the single source for refreshed closeout evidence.
 
 | Exit Criterion | Executable proof |
 | --- | --- |
-| #1 Core dependency-free | Import-linter contracts `Core must not import edge or adapter modules` and `Wave D engine acceptance tests stay core-only`; the latter also forbids common domain leaf modules. |
+| #1 Core dependency-free | Import-linter contract `Core must not import edge or adapter modules`; `tests/test_runner_engine_gate.py::test_engine_acceptance_imports_only_core_modules` supplies allowlist semantics for the engine acceptance test. |
 | #2 Engine drivable without CLI | `tests/test_engine_run.py` drives `core.engine.run()` with a recording executor and no CLI, runner, shell, adapter, TUI, or domain-leaf imports. |
 | #3 Application drivable by non-CLI caller | `tests/test_application_headless_integration.py` runs clear, findings, unknown, setup-failure, budget, cancellation, and resume scenarios through `application.run_review_loop()` / `resume_review_loop()` with injected fakes. |
 | #4 Add command / swap behavior through extension seams | `tests/test_wave_d_architecture.py` proves `cli/main.py` is closed to concrete subcommand names; `tests/test_extensibility_swap.py` injects alternate review behavior without importing CLI, runner, runner shell, or engine; `tests/test_runner_engine_gate.py` prevents tests from importing the private runner. |
 | #5 Monkeypatch facade gone | `tests/test_monkeypatch_ratchet.py` keeps `monkeypatch.setattr(MODULE, ...)` at zero production call-sites. |
 | #6 Exits exhaustive | `tests/test_outcome_exit_code.py` reaches every `RunOutcome` variant and every `OutcomeFailed.reason`; CLI success/cancellation paths map from typed outcomes. |
-| #7 No nondeterminism in core | `tests/test_determinism_gate.py` prevents raw time, random, subprocess, filesystem, and environment access in core modules. |
+| #7 No nondeterminism in core | `tests/test_determinism_gate.py` scans `core/*.py` for raw time/id, random, subprocess, environment, and filesystem access; it also scans machine-contract shell files for raw time/id reads. |
 | #8 Dependency graph acyclic | `tests/test_import_contracts.py` runs all 9 import-linter contracts, including core, adapter, runner-shell, CLI/application, and Wave D headless isolation rules. |
 | #9 Test monolith decomposed | `tests/test_cli.py` is a smoke-level compatibility shell; behavior now lives in focused command, runner, adapter, engine, and application modules. |
 | #10 Machine contract unchanged or ledgered | `docs/05-planning/behaviour-ledger-task-003.md` records summary/status transitions, including setup failure as `final_status == "error"` with `stopped_reason == "setup_failed"`. |
+
+The import-linter contract for Wave D engine acceptance remains a maintained
+denylist because import-linter has no pure allowlist contract. The AST ratchet
+in `tests/test_runner_engine_gate.py` is the allowlist proof: the engine
+acceptance test may import only standard-library modules and
+`code_review_loop.core.*`.
