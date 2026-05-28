@@ -45,7 +45,13 @@ from code_review_loop.core.engine import (
 from code_review_loop.core.engine import (
     run as run_engine,
 )
-from code_review_loop.core.outcome import OutcomeClear, OutcomeFailed, RunOutcome
+from code_review_loop.core.outcome import (
+    OutcomeClear,
+    OutcomeFailed,
+    OutcomeFindings,
+    OutcomeUnknown,
+    RunOutcome,
+)
 from code_review_loop.core.ports import (
     ChecksRequest,
     CommitRequest,
@@ -418,11 +424,13 @@ def run_iterations(
         executor,
         max_steps=config.max_iterations * _ENGINE_STEPS_PER_ITERATION + _ENGINE_STEP_BUDGET_OVERHEAD,
     )
-    latest_review_output = (
-        executor.latest_state.acc.last_review_output
-        if executor.latest_state is not None and isinstance(outcome, OutcomeClear)
-        else ""
-    )
+    latest_review_output = ""
+    if executor.latest_state is not None and isinstance(
+        outcome, (OutcomeClear, OutcomeFindings, OutcomeUnknown)
+    ):
+        # Preserve the last actionable review text for operator-facing terminal
+        # summaries and resume flows when the run ends unresolved.
+        latest_review_output = executor.latest_state.acc.last_review_output
     return RunnerShellResult(
         outcome=outcome,
         cause=executor.cause if isinstance(outcome, OutcomeFailed) else None,

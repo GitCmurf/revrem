@@ -38,6 +38,7 @@ def test_loop_caps_remediation_passes_and_runs_final_review(tmp_path):
 
     assert summary["final_status"] == "findings"
     assert summary["stopped_reason"] == "max_iterations_reached"
+    assert "Still failing." in summary["latest_review_excerpt"]
     assert [call[0][1] for call in calls] == ["review", "exec", "review", "exec", "review"]
     assert len(summary["iterations"]) == 2
     assert (tmp_path / "artifacts" / "review-1.txt").exists()
@@ -186,6 +187,7 @@ def test_skip_final_review_reports_unknown_status(tmp_path):
         "status after last remediation is unknowable without a follow-up review"
     )
     assert summary["stopped_reason"] == "max_iterations_reached"
+    assert "Issues found." in summary["latest_review_excerpt"]
 
 
 def test_final_check_failure_prevents_clear_status(tmp_path):

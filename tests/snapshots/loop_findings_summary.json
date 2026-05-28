@@ -51,6 +51,7 @@
       "review_status": "findings"
     }
   ],
+  "latest_review_excerpt": "REVIEW_STATUS: findings",
   "max_iterations": 1,
   "pending_check_failures": false,
   "phases": {
