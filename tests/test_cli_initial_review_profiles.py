@@ -145,6 +145,74 @@ def test_main_save_profile_preserves_disabled_timeout(tmp_path, monkeypatch, cap
     assert saved.count("timeout_seconds = 0") == 2
 
 
+def test_main_save_profile_preserves_routing_and_harness_overrides(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    project_config = profiles.project_config_path(tmp_path)
+    project_config.write_text(
+        """
+[profiles.routed.triage]
+enabled = true
+contract = "v2"
+
+[profiles.routed.triage.routing]
+enabled = true
+default_route = "frontier"
+
+[[profiles.routed.triage.routing.rule]]
+id = "security"
+[profiles.routed.triage.routing.rule.when]
+domain_tags_any = ["security"]
+[profiles.routed.triage.routing.rule.then]
+route = "frontier"
+
+[profiles.routed.triage.routes.midtier]
+harness = "codex"
+model = "gpt-5.3-codex"
+
+[profiles.routed.triage.routes.frontier]
+harness = "claude"
+model = "claude-opus"
+fallback = "midtier"
+""",
+        encoding="utf-8",
+    )
+
+    def fail_run_loop(config):
+        raise AssertionError("--save-profile should exit before running the loop")
+
+    monkeypatch.setattr(application_mod, "run_review_loop", fail_run_loop)
+
+    exit_code = cli_main.main(
+        [
+            "--profile",
+            "routed",
+            "--harness-bin",
+            "claude=/opt/claude/bin/claude",
+            "--save-profile",
+            "saved-routed",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "saved saved-routed in" in captured.out
+
+    saved = profiles.resolve_profile("saved-routed", cwd=tmp_path)
+    assert saved.triage.contract == "v2"
+    assert saved.triage.routing.enabled is True
+    assert saved.triage.routing.default_route == "frontier"
+    assert saved.triage.routing.rule[0].id == "security"
+    assert saved.triage.routing.rule[0].then.route == "frontier"
+    assert saved.triage.routes["frontier"].harness == "claude"
+    assert saved.triage.routes["frontier"].fallback == "midtier"
+    assert saved.runtime.harness_executables == {
+        "claude": "/opt/claude/bin/claude",
+    }
+
+
 def test_main_save_profile_is_non_destructive_by_default(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()

@@ -323,7 +323,10 @@ To capture a one-off command as a project-local profile, add
 is non-destructive by default; pass `--save-profile-force` only when replacing
 an existing project profile intentionally. Explicit `--timeout-seconds 0`
 settings are written back as `timeout_seconds = 0` so a saved profile keeps the
-no-timeout behavior.
+no-timeout behavior. When the source profile uses v2 triage routing,
+`--save-profile` preserves the triage contract, routing rules, route table, and
+effective `runtime.harness_executables` map, including any one-off
+`--harness-bin HARNESS=EXECUTABLE` overrides supplied on the same command.
 
 ```bash
 revrem \

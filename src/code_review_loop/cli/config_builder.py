@@ -275,6 +275,17 @@ def profile_from_loop_config(
             timeout_seconds=saved_triage_timeout_seconds,
             prompt=config.triage_prompt,
             on_invalid=config.triage_on_invalid,
+            contract=config.triage_contract,
+            routing=(
+                config.profile_v2.triage.routing
+                if config.profile_v2 is not None
+                else profiles.TriageRoutingConfig()
+            ),
+            routes=(
+                dict(config.profile_v2.triage.routes)
+                if config.profile_v2 is not None
+                else {}
+            ),
         ),
         remediation=profiles.PhaseConfig(
             harness=config.remediation_harness,
@@ -299,6 +310,7 @@ def profile_from_loop_config(
         ),
         runtime=profiles.RuntimeConfig(
             codex_bin=config.codex_bin,
+            harness_executables=dict(config.harness_executables),
             exec_sandbox=config.exec_sandbox,
             exec_color=config.exec_color,
             exec_json=config.exec_json,
