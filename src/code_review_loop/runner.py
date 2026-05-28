@@ -248,8 +248,8 @@ def _execute_stop(
         else ""
     )
 
-    def apply_common_tail(*, check_failures: bool = False) -> None:
-        state.mark_outcome(outcome, excerpt=excerpt, check_failures=check_failures)
+    def apply_common_tail() -> None:
+        state.mark_outcome(outcome, excerpt=excerpt)
         summary.clear()
         summary.update(state.to_dict())
         write_summary(
@@ -265,15 +265,15 @@ def _execute_stop(
         return RunnerResult(summary, outcome)
 
     if isinstance(outcome, OutcomeFailed):
-        apply_common_tail(check_failures=outcome.check_failures)
+        apply_common_tail()
         raise RunLoopFailed(summary, outcome.error, outcome=outcome) from cause
 
     if isinstance(outcome, OutcomeFindings):
-        apply_common_tail(check_failures=outcome.check_failures)
+        apply_common_tail()
         return RunnerResult(summary, outcome)
 
     if isinstance(outcome, OutcomeUnknown):
-        apply_common_tail(check_failures=outcome.check_failures)
+        apply_common_tail()
         return RunnerResult(summary, outcome)
 
     assert_never(outcome)

@@ -78,13 +78,24 @@ def outcome_to_exit_code(outcome: RunOutcome) -> int:
     if isinstance(outcome, OutcomeClear):
         return 0
     if isinstance(outcome, OutcomeFailed):
-        if outcome.reason == "budget_ceiling_hit":
-            return 3
-        if outcome.reason == "setup_failed":
-            return 4
-        if outcome.reason == "cancelled":
-            return 5
-        return 1
+        match outcome.reason:
+            case "budget_ceiling_hit":
+                return 3
+            case "setup_failed":
+                return 4
+            case "cancelled":
+                return 5
+            case (
+                "commit_failed"
+                | "commit_hook_failed"
+                | "engine_step_limit_exceeded"
+                | "remediation_failed"
+                | "review_failed"
+                | "triage_failed"
+            ):
+                return 1
+            case _ as never:
+                assert_never(never)
     if isinstance(outcome, OutcomeFindings):
         return 2
     if isinstance(outcome, OutcomeUnknown):

@@ -107,14 +107,10 @@ class RunState:
         outcome: RunOutcome,
         *,
         excerpt: str = "",
-        check_failures: bool = False,
     ) -> None:
         """Apply one terminal outcome to the summary projection."""
         if not isinstance(outcome, (OutcomeClear, OutcomeFailed, OutcomeFindings, OutcomeUnknown)):
             assert_never(outcome)
-        self.set_stopped_reason(outcome.reason)
-        if check_failures:
-            self.set_pending_check_failures(True)
         if excerpt:
             self.set_latest_review_excerpt(excerpt)
 
