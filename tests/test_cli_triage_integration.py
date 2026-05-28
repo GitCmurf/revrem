@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-import code_review_loop.runner as runner_mod
+import tests.support.application_runner as runner_mod
 from code_review_loop import suppressions
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.ports import CommandResult

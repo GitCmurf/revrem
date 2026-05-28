@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from support.fakes import FIXED_ISO, FIXED_RUN_ID, FakeClock, FakeRunIdentity
 
-import code_review_loop.runner as runner_mod
+import tests.support.application_runner as runner_mod
 from code_review_loop import events
 from code_review_loop.cli import config_builder
 from code_review_loop.config import LoopConfig

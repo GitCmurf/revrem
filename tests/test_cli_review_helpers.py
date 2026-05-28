@@ -4,7 +4,7 @@ import subprocess
 from importlib import import_module
 from pathlib import Path
 
-import code_review_loop.runner as runner_mod
+import tests.support.application_runner as runner_mod
 from code_review_loop import application, events
 from code_review_loop.adapters import remediation as remediation_impl
 from code_review_loop.adapters import review as review_impl
@@ -18,6 +18,7 @@ from code_review_loop.adapters.phase_support import (
 )
 from code_review_loop.adapters.review import review_failed_to_run
 from code_review_loop.config import LoopConfig
+from code_review_loop.core.outcome import OutcomeClear
 from code_review_loop.core.ports import CommandResult, RunContext
 from code_review_loop.core.review_interpretation import (
     actionable_review_output,
@@ -549,7 +550,7 @@ model = "sonnet"
 
     def fake_run_loop(config, **_kwargs):
         captured.append(config)
-        return {"final_status": "clear", "stopped_reason": "review_clear"}
+        return application.ReviewLoopResult(summary={"final_status": "clear", "stopped_reason": "review_clear"}, outcome=OutcomeClear(reason="review_clear"))
 
     monkeypatch.setattr(application, "run_review_loop", fake_run_loop)
 

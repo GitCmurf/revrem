@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-import code_review_loop.runner as runner_mod
+import tests.support.application_runner as runner_mod
 from code_review_loop import budgets, events, harnesses
 from code_review_loop import resume as resume_mod
 from code_review_loop.adapters import git as git_adapter

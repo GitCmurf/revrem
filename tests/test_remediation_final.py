@@ -7,10 +7,11 @@ from pathlib import Path
 import pytest
 
 from code_review_loop import harnesses, policy, profiles, prompts_composer, triage
-from code_review_loop import runner as cli
 from code_review_loop._compat_jsonschema import validate
 from code_review_loop.cli.main import main as cli_main
+from code_review_loop.config import LoopConfig
 from code_review_loop.core.ports import CommandResult
+from tests.support import application_runner
 
 
 @pytest.fixture
@@ -302,7 +303,7 @@ def test_routed_remediation_prompt_preserves_pending_check_failures(tmp_path, mo
             },
         ),
     )
-    config = cli.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=2,
         cwd=tmp_path,
@@ -319,7 +320,7 @@ def test_routed_remediation_prompt_preserves_pending_check_failures(tmp_path, mo
         profile_v2=profile,
     )
 
-    summary = cli.run_loop(config, runner).to_dict()
+    summary = application_runner.run_loop(config, runner).to_dict()
 
     assert summary["final_status"] == "unknown"
     prompt = (tmp_path / "artifacts" / "remediation-2-prompt.txt").read_text(

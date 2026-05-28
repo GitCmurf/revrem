@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from importlib import import_module
 
-import code_review_loop.runner as runner_mod
+import tests.support.application_runner as runner_mod
 from code_review_loop import application as application_mod
 from code_review_loop import profiles
 from code_review_loop.cli import args as cli_args
 from code_review_loop.cli import config_builder
 from code_review_loop.config import LoopConfig
+from code_review_loop.core.outcome import OutcomeClear
 from code_review_loop.core.ports import CommandResult
 
 cli_main = import_module("code_review_loop.cli.main")
@@ -15,6 +16,9 @@ config_command = import_module("code_review_loop.cli.commands.config")
 history_command = import_module("code_review_loop.cli.commands.history")
 suppress_command = import_module("code_review_loop.cli.commands.suppress")
 
+
+def _clear_result(summary: dict[str, object]) -> application_mod.ReviewLoopResult:
+    return application_mod.ReviewLoopResult(summary=summary, outcome=OutcomeClear(reason="review_clear"))
 
 
 def test_main_cli_boolean_negations_override_profile_enabled_values(tmp_path, monkeypatch):
@@ -40,12 +44,12 @@ terminal_title = true
 
     def fake_run_loop(config):
         captured_configs.append(config)
-        return {
+        return _clear_result({
             "artifact_dir": str(config.artifact_dir),
             "final_status": "clear",
             "stopped_reason": "review_clear",
             "iterations": [],
-        }
+        })
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
@@ -141,12 +145,12 @@ output_last_message = false
 
     def fake_run_loop(config):
         captured_configs.append(config)
-        return {
+        return _clear_result({
             "artifact_dir": str(config.artifact_dir),
             "final_status": "clear",
             "stopped_reason": "review_clear",
             "iterations": [],
-        }
+        })
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
@@ -186,12 +190,12 @@ enabled = true
 
     def fake_run_loop(config):
         captured_configs.append(config)
-        return {
+        return _clear_result({
             "artifact_dir": str(config.artifact_dir),
             "final_status": "clear",
             "stopped_reason": "review_clear",
             "iterations": [],
-        }
+        })
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
@@ -228,12 +232,12 @@ message_model = "gpt-5.3-codex-spark"
 
     def fake_run_loop(config):
         captured_configs.append(config)
-        return {
+        return _clear_result({
             "artifact_dir": str(config.artifact_dir),
             "final_status": "clear",
             "stopped_reason": "review_clear",
             "iterations": [],
-        }
+        })
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
@@ -279,12 +283,12 @@ message_prompt = "Write a custom subject."
 
     def fake_run_loop(config):
         captured_configs.append(config)
-        return {
+        return _clear_result({
             "artifact_dir": str(config.artifact_dir),
             "final_status": "clear",
             "stopped_reason": "review_clear",
             "iterations": [],
-        }
+        })
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
@@ -327,12 +331,12 @@ timeout_seconds = 30
 
     def fake_run_loop(config):
         captured_configs.append(config)
-        return {
+        return _clear_result({
             "artifact_dir": str(config.artifact_dir),
             "final_status": "clear",
             "stopped_reason": "review_clear",
             "iterations": [],
-        }
+        })
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
@@ -372,12 +376,12 @@ reasoning_effort = "low"
 
     def fake_run_loop(config):
         captured_configs.append(config)
-        return {
+        return _clear_result({
             "artifact_dir": str(config.artifact_dir),
             "final_status": "clear",
             "stopped_reason": "review_clear",
             "iterations": [],
-        }
+        })
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
@@ -405,5 +409,4 @@ reasoning_effort = "low"
     assert config.triage_reasoning_effort == "low"
     assert config.remediation_reasoning_effort == "minimal"
     assert config.commit_reasoning_effort == "high"
-
 

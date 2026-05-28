@@ -4,7 +4,7 @@ from importlib import import_module
 
 import pytest
 
-import code_review_loop.runner as runner_mod
+import tests.support.application_runner as runner_mod
 from code_review_loop import __version__
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.ports import CommandResult

@@ -7,7 +7,7 @@ from importlib import import_module
 
 import pytest
 
-import code_review_loop.runner as runner_mod
+import tests.support.application_runner as runner_mod
 from code_review_loop import application as application_mod
 from code_review_loop import budgets, events, reporting
 from code_review_loop import resume as resume_mod

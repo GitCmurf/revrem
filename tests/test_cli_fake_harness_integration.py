@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-import code_review_loop.runner as runner_mod
+import tests.support.application_runner as runner_mod
 from code_review_loop import budgets, events, harnesses
 from code_review_loop.adapters import subprocess_runner as subprocess_runner_mod
 from code_review_loop.config import LoopConfig

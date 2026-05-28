@@ -68,20 +68,23 @@ def test_runner_no_longer_owns_process_or_resume_support() -> None:
         assert helper not in runner_source
 
 
-def test_tests_only_reach_runner_owned_surface() -> None:
-    allowed = {"run_loop", "resume_run", "cancellation_interrupt_for_signal"}
+def test_tests_do_not_import_private_runner() -> None:
     root = Path(__file__).resolve().parents[1] / "tests"
     leaks: list[str] = []
     for path in root.glob("test_*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.Attribute)
-                and isinstance(node.value, ast.Name)
-                and node.value.id == "runner_mod"
-                and node.attr not in allowed
-            ):
-                leaks.append(f"{path.name}:{node.lineno}: runner_mod.{node.attr}")
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name == "code_review_loop.runner":
+                        leaks.append(f"{path.name}:{node.lineno}: import code_review_loop.runner")
+            if isinstance(node, ast.ImportFrom) and node.module in {
+                "code_review_loop",
+                "code_review_loop.runner",
+            }:
+                for alias in node.names:
+                    if node.module == "code_review_loop.runner" or alias.name == "runner":
+                        leaks.append(f"{path.name}:{node.lineno}: from {node.module} import {alias.name}")
 
     assert leaks == []
 
@@ -91,7 +94,7 @@ def test_runner_stays_below_polish_sprint_size_ceiling() -> None:
         Path(__file__).resolve().parents[1] / "src" / "code_review_loop" / "runner.py"
     ).read_text(encoding="utf-8").splitlines()
 
-    assert len(runner_lines) < 600
+    assert len(runner_lines) < 300
 
 
 def test_runner_shell_stays_orchestration_sized() -> None:

@@ -3,7 +3,6 @@ from __future__ import annotations
 from importlib import import_module
 from types import SimpleNamespace
 
-import code_review_loop.runner as runner_mod
 from code_review_loop import application as application_mod
 from code_review_loop.core.outcome import OutcomeClear, OutcomeFailed
 from code_review_loop.runtime import RunLoopFailed
@@ -41,7 +40,6 @@ def test_main_records_non_dry_run_history(tmp_path, monkeypatch, capsys):
         })
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
-    monkeypatch.setattr(runner_mod, "write_summary", lambda config, summary: None)
 
     assert cli_main.main(["--base", "main"]) == 0
     output = capsys.readouterr().out

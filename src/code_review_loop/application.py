@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from importlib import import_module
 from pathlib import Path
+from typing import cast
 
 from code_review_loop import budgets, reporting, resume, runner
-from code_review_loop.adapters.subprocess_runner import default_runner
 from code_review_loop.clock import SYSTEM_CLOCK, Clock
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.outcome import RunOutcome
@@ -52,6 +53,10 @@ class ReviewLoopResult:
         return value if isinstance(value, str) else None
 
 
+def _load_default_process_runner() -> ProcessRunner:
+    return cast(ProcessRunner, import_module("code_review_loop.adapters.subprocess_runner").default_runner)
+
+
 def run_review_loop(
     config: LoopConfig,
     process_runner: ProcessRunner | None = None,
@@ -64,7 +69,7 @@ def run_review_loop(
 ) -> ReviewLoopResult:
     """Run one bounded review/remediation loop and return the summary payload."""
     if process_runner is None:
-        process_runner = default_runner
+        process_runner = _load_default_process_runner()
     result = runner.run_loop(
         config,
         process_runner,

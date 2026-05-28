@@ -17,7 +17,7 @@ from support.fakes import FIXED_RUN_ID, FakeClock, FakeRunIdentity, FakeRunner
 from support.normalize import CWD_PLACEHOLDER, DURATION_PLACEHOLDER, normalize
 from support.snapshot import assert_snapshot
 
-import code_review_loop.runner as runner_mod
+import tests.support.application_runner as runner_mod
 from code_review_loop import budgets, events
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.ports import CommandResult

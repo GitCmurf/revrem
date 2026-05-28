@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from code_review_loop import diagnostics
-from code_review_loop import runner as cli_module
+from code_review_loop import __version__, diagnostics
 from code_review_loop._compat_jsonschema import Draft202012Validator, validate
+from code_review_loop.config import LoopConfig
 from code_review_loop.core.ports import CommandResult
+from tests.support import application_runner
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_DIR = ROOT / "docs" / "52-api" / "schemas"
@@ -104,7 +105,7 @@ def test_summary_schema_validates_generated_summary(tmp_path):
             return CommandResult(list(args), 0, stdout=next(review_outputs))
         return CommandResult(list(args), 0, stdout="fixed\n")
 
-    config = cli_module.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -112,14 +113,14 @@ def test_summary_schema_validates_generated_summary(tmp_path):
         artifact_dir=tmp_path / "artifacts",
     )
 
-    summary = cli_module.run_loop(config, runner).to_dict()
+    summary = application_runner.run_loop(config, runner).to_dict()
     summary_payload = json.loads(
         (tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8")
     )
 
     validate(summary_payload, schema)
     assert summary["schema_version"] == "1.0"
-    assert summary_payload["cli_version"] == cli_module.__version__
+    assert summary_payload["cli_version"] == __version__
     assert summary_payload["harness"] == "codex"
     assert summary_payload["tokens"] is None
     assert summary_payload["usd"] is None

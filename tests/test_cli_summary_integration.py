@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import code_review_loop.runner as runner_mod
+import tests.support.application_runner as runner_mod
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.ports import CommandResult
 from code_review_loop.runtime import format_terminal_summary

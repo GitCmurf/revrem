@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from support.phase_harnesses import phase_harness_kwargs
 
-import code_review_loop.runner as runner_mod
+import tests.support.application_runner as runner_mod
 from code_review_loop.adapters.commit import CommitAdapter
 from code_review_loop.adapters.phase_support import CommitFailed
 from code_review_loop.clock import Clock

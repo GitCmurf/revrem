@@ -9,7 +9,7 @@ from importlib import import_module
 
 import pytest
 
-import code_review_loop.runner as runner_mod
+import tests.support.application_runner as runner_mod
 from code_review_loop import application
 from code_review_loop.adapters import subprocess_runner as subprocess_runner_mod
 from code_review_loop.adapters import terminal as terminal_mod
@@ -193,20 +193,20 @@ def test_subprocess_refresh_loop_kills_child_on_interrupt(tmp_path, monkeypatch)
 
 
 def test_repeated_cancellation_signal_within_window_is_marked_forced(monkeypatch):
-    monkeypatch.setattr(runner_mod, "_LAST_CANCELLATION_SIGNAL_AT", None)
+    monkeypatch.setattr(terminal_mod, "_LAST_CANCELLATION_SIGNAL_AT", None)
 
-    first = runner_mod.cancellation_interrupt_for_signal(signal.SIGINT, now=100.0)
-    second = runner_mod.cancellation_interrupt_for_signal(signal.SIGINT, now=103.0)
+    first = terminal_mod.cancellation_interrupt_for_signal(signal.SIGINT, now=100.0)
+    second = terminal_mod.cancellation_interrupt_for_signal(signal.SIGINT, now=103.0)
 
     assert "controlled cancellation" in str(first)
     assert "forced cancellation" in str(second)
 
 
 def test_cancellation_signal_after_window_starts_new_controlled_stop(monkeypatch):
-    monkeypatch.setattr(runner_mod, "_LAST_CANCELLATION_SIGNAL_AT", None)
+    monkeypatch.setattr(terminal_mod, "_LAST_CANCELLATION_SIGNAL_AT", None)
 
-    runner_mod.cancellation_interrupt_for_signal(signal.SIGTERM, now=100.0)
-    later = runner_mod.cancellation_interrupt_for_signal(signal.SIGTERM, now=106.0)
+    terminal_mod.cancellation_interrupt_for_signal(signal.SIGTERM, now=100.0)
+    later = terminal_mod.cancellation_interrupt_for_signal(signal.SIGTERM, now=106.0)
 
     assert "controlled cancellation" in str(later)
 

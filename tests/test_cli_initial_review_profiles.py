@@ -195,12 +195,12 @@ artifact_dir = "{custom_root}"
 
     def fake_run_loop(config):
         captured_configs.append(config)
-        return {
+        return _clear_result({
             "artifact_dir": str(config.artifact_dir),
             "final_status": "clear",
             "stopped_reason": "review_clear",
             "iterations": [],
-        }
+        })
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
@@ -267,12 +267,12 @@ soft_warn_fraction = 0.5
 
     def fake_run_loop(config):
         captured_configs.append(config)
-        return {
+        return _clear_result({
             "artifact_dir": str(config.artifact_dir),
             "final_status": "clear",
             "stopped_reason": "review_clear",
             "iterations": [],
-        }
+        })
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 

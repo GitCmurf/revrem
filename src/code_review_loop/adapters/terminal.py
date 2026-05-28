@@ -6,11 +6,15 @@ text output. Only constructed when config.progress=True and style is
 """
 from __future__ import annotations
 
+import atexit
 import os
+import signal
 import sys
+import time
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
+from typing import Any
 
 from code_review_loop import progress as _progress
 from code_review_loop.config import LoopConfig
@@ -23,6 +27,73 @@ CURSOR_SHOW = "\033[?25h"
 
 _CURRENT_TERMINAL_TITLE_SEQUENCE: str | None = None
 _TERMINAL_TITLE_PREFER_TTY: bool | None = False
+CANCELLATION_FORCE_WINDOW_SECONDS = 5.0
+_LAST_CANCELLATION_SIGNAL_AT: float | None = None
+
+
+def reset_cancellation_signal_debounce() -> float | None:
+    """Reset cancellation debounce state and return the previous timestamp."""
+
+    global _LAST_CANCELLATION_SIGNAL_AT
+    previous = _LAST_CANCELLATION_SIGNAL_AT
+    _LAST_CANCELLATION_SIGNAL_AT = None
+    return previous
+
+
+def restore_cancellation_signal_debounce(value: float | None) -> None:
+    """Restore cancellation debounce state after a temporary signal handler."""
+
+    global _LAST_CANCELLATION_SIGNAL_AT
+    _LAST_CANCELLATION_SIGNAL_AT = value
+
+
+def cancellation_interrupt_for_signal(signum: int, *, now: float) -> KeyboardInterrupt:
+    """Return the controlled/forced cancellation interrupt for a signal."""
+
+    global _LAST_CANCELLATION_SIGNAL_AT
+    forced = (
+        _LAST_CANCELLATION_SIGNAL_AT is not None
+        and now - _LAST_CANCELLATION_SIGNAL_AT <= CANCELLATION_FORCE_WINDOW_SECONDS
+    )
+    _LAST_CANCELLATION_SIGNAL_AT = now
+    signal_name = signal.Signals(signum).name
+    if forced:
+        return KeyboardInterrupt(f"forced cancellation after repeated {signal_name}")
+    return KeyboardInterrupt(f"controlled cancellation after {signal_name}")
+
+
+@contextmanager
+def terminal_recovery_context() -> Iterator[None]:
+    """Recover terminal state and translate cancellation signals during a run."""
+
+    previous_handlers: dict[signal.Signals, Any] = {}
+    previous_cancellation_signal_at = reset_cancellation_signal_debounce()
+    handled_signals = [signal.SIGINT, signal.SIGTERM]
+    if hasattr(signal, "SIGTSTP"):
+        handled_signals.append(signal.SIGTSTP)
+
+    def handle_signal(signum: int, frame: object | None) -> None:
+        restore_terminal_display()
+        if signum in {signal.SIGINT, signal.SIGTERM}:
+            raise cancellation_interrupt_for_signal(signum, now=time.monotonic())  # det-exempt: real-time debounce of double Ctrl-C; faking breaks the cancellation semantic
+        signal.signal(signum, signal.SIG_DFL)
+        os.kill(os.getpid(), signum)
+        if hasattr(signal, "SIGTSTP") and signum == signal.SIGTSTP:
+            signal.signal(signum, handle_signal)
+
+    for sig in handled_signals:
+        previous_handlers[sig] = signal.getsignal(sig)
+        signal.signal(sig, handle_signal)
+    atexit.register(restore_terminal_display)
+    try:
+        yield
+    finally:
+        restore_terminal_display()
+        with suppress(ValueError):
+            atexit.unregister(restore_terminal_display)
+        restore_cancellation_signal_debounce(previous_cancellation_signal_at)
+        for sig, handler in previous_handlers.items():
+            signal.signal(sig, handler)
 
 
 def terminal_title_supported(config: LoopConfig) -> bool:

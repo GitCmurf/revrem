@@ -4,7 +4,7 @@ import io
 import re
 from pathlib import Path
 
-import code_review_loop.runner as runner_mod
+import tests.support.application_runner as runner_mod
 from code_review_loop import progress
 from code_review_loop.adapters import phase_support
 from code_review_loop.adapters import terminal as terminal_mod
