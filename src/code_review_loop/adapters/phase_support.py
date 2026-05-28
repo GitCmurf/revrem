@@ -24,9 +24,6 @@ from code_review_loop.core.review_interpretation import (
     extract_review_summary,
     strip_finding_priority,
 )
-from code_review_loop.core.review_interpretation import (
-    review_status_diagnostics as review_status_diagnostics,
-)
 
 PROGRESS_PHASE_CODES = {
     "check": "chk",

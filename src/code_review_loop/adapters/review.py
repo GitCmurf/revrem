@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
 from code_review_loop import harnesses
-from code_review_loop.adapters import phase_support as _cli
+from code_review_loop.adapters import phase_support
 from code_review_loop.adapters.git import run_git_preflight
 from code_review_loop.core.ports import CommandResult, ReviewOutcome, ReviewRequest, RunContext
 from code_review_loop.core.review_interpretation import detect_review_status
@@ -31,7 +31,7 @@ def build_review_command(config: LoopConfig) -> list[str]:
         harnesses.PhaseCommandRequest(
             harness=config.review_harness,
             role="review",
-            executable=_cli._resolve_executable(config.review_harness, config),
+            executable=phase_support._resolve_executable(config.review_harness, config),
             base=config.base,
             model=config.review_model or config.model,
             reasoning_effort=config.review_reasoning_effort or config.reasoning_effort,
@@ -52,7 +52,7 @@ def run_codex_review(
     review_prompt = None
     if config.review_harness not in {"codex", "fake"}:
         review_prompt = (
-            f"{_cli.DEFAULT_REVIEW_PROMPT}\n\nBase branch: {config.base}\n"
+            f"{phase_support.DEFAULT_REVIEW_PROMPT}\n\nBase branch: {config.base}\n"
             f"Working directory: {config.cwd}\n"
         )
         command, review_prompt = harnesses.prepare_prompt_invocation(
@@ -60,33 +60,33 @@ def run_codex_review(
             command,
             review_prompt,
         )
-    _cli.set_phase_terminal_title(config, "review", display_label)
-    _cli.ensure_model_budget(config, phase="review", iteration=display_label, ctx=ctx)
-    _cli.progress_event(config, "review", display_label, "start", shlex.join(command), ctx=ctx)
+    phase_support.set_phase_terminal_title(config, "review", display_label)
+    phase_support.ensure_model_budget(config, phase="review", iteration=display_label, ctx=ctx)
+    phase_support.progress_event(config, "review", display_label, "start", shlex.join(command), ctx=ctx)
     if config.dry_run:
         result = CommandResult(command, 0, stdout="DRY_RUN\nREVIEW_STATUS: findings\n")
     else:
         artifact_path = config.artifact_dir / f"{artifact_label}.txt"
         if preflight_error := review_base_preflight_error(config):
-            _cli.write_artifact(artifact_path, preflight_error)
-            _cli.progress_event(config, "review", display_label, "failed", "invalid base", ctx=ctx)
+            phase_support.write_artifact(artifact_path, preflight_error)
+            phase_support.progress_event(config, "review", display_label, "failed", "invalid base", ctx=ctx)
             raise RuntimeError(f"codex review failed for {artifact_label}; see {artifact_path}")
-        result = runner(command, config.cwd, review_prompt, _cli.phase_timeout_seconds(config, config.review_timeout_seconds))
-    combined = _cli._combined_output(result)
+        result = runner(command, config.cwd, review_prompt, phase_support.phase_timeout_seconds(config, config.review_timeout_seconds))
+    combined = phase_support._combined_output(result)
     artifact_path = config.artifact_dir / f"{artifact_label}.txt"
-    _cli.write_artifact(artifact_path, combined)
-    _cli.record_model_charge(config, result, phase="review", iteration=display_label, ctx=ctx)
+    phase_support.write_artifact(artifact_path, combined)
+    phase_support.record_model_charge(config, result, phase="review", iteration=display_label, ctx=ctx)
     if review_failed_to_run(result):
-        _cli.progress_event(config, "review", display_label, "failed", f"exit {result.returncode}", ctx=ctx)
+        phase_support.progress_event(config, "review", display_label, "failed", f"exit {result.returncode}", ctx=ctx)
         raise RuntimeError(f"codex review failed for {artifact_label}; see {artifact_path}")
     status = detect_review_status(combined)
     if config.debug_status_detection:
-        diagnostics = _cli.review_status_diagnostics(combined)
-        _cli.write_artifact(
+        diagnostics = phase_support.review_status_diagnostics(combined)
+        phase_support.write_artifact(
             config.artifact_dir / f"{artifact_label}-status.json",
             json.dumps(diagnostics, indent=2, sort_keys=True) + "\n",
         )
-        _cli.progress_event(
+        phase_support.progress_event(
             config,
             "review",
             display_label,
@@ -99,13 +99,13 @@ def run_codex_review(
             ),
             ctx=ctx,
         )
-    if status != "findings" or not _cli.log_review_findings(config, display_label, combined, ctx=ctx):
-        _cli.progress_event(config, "review", display_label, status, ctx=ctx)
+    if status != "findings" or not phase_support.log_review_findings(config, display_label, combined, ctx=ctx):
+        phase_support.progress_event(config, "review", display_label, status, ctx=ctx)
     return status, result
 
 
 def review_base_preflight_error(config: LoopConfig) -> str | None:
-    if config.dry_run or _cli.lexical_git_repo_root(config.cwd) is None:
+    if config.dry_run or phase_support.lexical_git_repo_root(config.cwd) is None:
         return None
 
     inside = run_git_preflight(config.cwd, ["rev-parse", "--is-inside-work-tree"])
@@ -118,7 +118,7 @@ def review_base_preflight_error(config: LoopConfig) -> str | None:
         return (
             f"Review base preflight failed: base {base!r} is not a local commit.\n"
             f"Command: git rev-parse --verify {base}^{{commit}}\n"
-            f"{_cli._combined_output(base_result)}"
+            f"{phase_support._combined_output(base_result)}"
         )
 
     merge_base = run_git_preflight(config.cwd, ["merge-base", "HEAD", base])
@@ -133,7 +133,7 @@ def review_base_preflight_error(config: LoopConfig) -> str | None:
         f"HEAD: {head}\n"
         f"{base}: {base_sha}\n"
         f"Command: git merge-base HEAD {base}\n"
-        f"{_cli._combined_output(merge_base)}"
+        f"{phase_support._combined_output(merge_base)}"
         f"{hint}"
     )
 

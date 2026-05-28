@@ -10,7 +10,7 @@ import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 
-from code_review_loop.adapters import phase_support as _cli
+from code_review_loop.adapters import phase_support
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.ports import CommandResult
 
@@ -30,8 +30,8 @@ def run_git_preflight(cwd: Path, args: Sequence[str]) -> CommandResult:
         return CommandResult(
             command,
             -1,
-            stdout=_cli._timeout_stream_text(exc.output),
-            stderr=_cli._timeout_stream_text(exc.stderr),
+            stdout=phase_support._timeout_stream_text(exc.output),
+            stderr=phase_support._timeout_stream_text(exc.stderr),
         )
     return CommandResult(
         command,
@@ -52,7 +52,7 @@ def git_preflight_stdout(cwd: Path, args: Sequence[str]) -> str | None:
 
 
 def git_state_for_resume(config: LoopConfig) -> dict[str, object]:
-    if _cli.lexical_git_repo_root(config.cwd) is None:
+    if phase_support.lexical_git_repo_root(config.cwd) is None:
         return {
             "head": None,
             "base": config.base,

@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
 from code_review_loop import harnesses, prompts_composer
-from code_review_loop.adapters import phase_support as _cli
+from code_review_loop.adapters import phase_support
 from code_review_loop.core.ports import CommandResult, CommitOutcome, CommitRequest, RunContext
 from code_review_loop.core.review_interpretation import actionable_review_output
 
@@ -84,15 +84,15 @@ def commit_command_for_message(message: str, *, allow_no_verify: bool = False) -
 
 
 def classify_commit_failure(result: CommandResult) -> str:
-    output = _cli._combined_output(result)
-    return "hook_failed" if _cli.COMMIT_HOOK_FAILURE_RE.search(output) else "commit_failed"
+    output = phase_support._combined_output(result)
+    return "hook_failed" if phase_support.COMMIT_HOOK_FAILURE_RE.search(output) else "commit_failed"
 
 
 def run_commit(config: LoopConfig, runner: Runner, iteration: int, *, ctx: RunContext, retrying: bool = False) -> str:
-    _cli.progress_event(config, "commit", str(iteration), "start", "stage and commit verified remediation", ctx=ctx)
+    phase_support.progress_event(config, "commit", str(iteration), "start", "stage and commit verified remediation", ctx=ctx)
     if config.dry_run:
-        _cli.write_artifact(config.artifact_dir / f"commit-{iteration}.txt", "DRY_RUN commit skipped\n")
-        _cli.progress_event(config, "commit", str(iteration), "skipped", "dry-run", ctx=ctx)
+        phase_support.write_artifact(config.artifact_dir / f"commit-{iteration}.txt", "DRY_RUN commit skipped\n")
+        phase_support.progress_event(config, "commit", str(iteration), "skipped", "dry-run", ctx=ctx)
         return "skipped"
 
     commit_artifact_relative_path(config)
@@ -100,11 +100,11 @@ def run_commit(config: LoopConfig, runner: Runner, iteration: int, *, ctx: RunCo
         git_add_command_for_commit(config),
         config.cwd,
         None,
-        _cli.phase_timeout_seconds(config, config.timeout_seconds),
+        phase_support.phase_timeout_seconds(config, config.timeout_seconds),
     )
-    _cli.write_artifact(config.artifact_dir / f"commit-{iteration}-add.txt", _cli._combined_output(add_result))
+    phase_support.write_artifact(config.artifact_dir / f"commit-{iteration}-add.txt", phase_support._combined_output(add_result))
     if add_result.returncode != 0:
-        _cli.progress_event(config, "commit", str(iteration), "failed", "git add failed", ctx=ctx)
+        phase_support.progress_event(config, "commit", str(iteration), "failed", "git add failed", ctx=ctx)
         raise RuntimeError(
             f"git add failed for iteration {iteration}; "
             f"see {config.artifact_dir / f'commit-{iteration}-add.txt'}"
@@ -116,11 +116,11 @@ def run_commit(config: LoopConfig, runner: Runner, iteration: int, *, ctx: RunCo
             reset_command,
             config.cwd,
             None,
-            _cli.phase_timeout_seconds(config, config.timeout_seconds),
+            phase_support.phase_timeout_seconds(config, config.timeout_seconds),
         )
-        _cli.write_artifact(config.artifact_dir / f"commit-{iteration}-reset-artifacts.txt", _cli._combined_output(reset_result))
+        phase_support.write_artifact(config.artifact_dir / f"commit-{iteration}-reset-artifacts.txt", phase_support._combined_output(reset_result))
         if reset_result.returncode != 0:
-            _cli.progress_event(config, "commit", str(iteration), "failed", "git reset artifacts failed", ctx=ctx)
+            phase_support.progress_event(config, "commit", str(iteration), "failed", "git reset artifacts failed", ctx=ctx)
             raise RuntimeError(
                 f"git reset artifacts failed for iteration {iteration}; "
                 f"see {config.artifact_dir / f'commit-{iteration}-reset-artifacts.txt'}"
@@ -130,15 +130,15 @@ def run_commit(config: LoopConfig, runner: Runner, iteration: int, *, ctx: RunCo
         ["git", "diff", "--cached", "--quiet"],
         config.cwd,
         None,
-        _cli.phase_timeout_seconds(config, config.timeout_seconds),
+        phase_support.phase_timeout_seconds(config, config.timeout_seconds),
     )
     if diff_quiet.returncode == 0:
-        _cli.write_artifact(config.artifact_dir / f"commit-{iteration}.txt", "No staged changes to commit.\n")
-        _cli.progress_event(config, "commit", str(iteration), "skipped", "no staged changes", ctx=ctx)
+        phase_support.write_artifact(config.artifact_dir / f"commit-{iteration}.txt", "No staged changes to commit.\n")
+        phase_support.progress_event(config, "commit", str(iteration), "skipped", "no staged changes", ctx=ctx)
         return "skipped_no_changes"
     if diff_quiet.returncode != 1:
-        _cli.write_artifact(config.artifact_dir / f"commit-{iteration}.txt", _cli._combined_output(diff_quiet))
-        _cli.progress_event(config, "commit", str(iteration), "failed", "git diff --cached --quiet failed", ctx=ctx)
+        phase_support.write_artifact(config.artifact_dir / f"commit-{iteration}.txt", phase_support._combined_output(diff_quiet))
+        phase_support.progress_event(config, "commit", str(iteration), "failed", "git diff --cached --quiet failed", ctx=ctx)
         raise RuntimeError(f"git staged-diff check failed for iteration {iteration}")
 
     message = commit_message_for_staged_changes(config, runner, iteration, ctx=ctx)
@@ -149,30 +149,30 @@ def run_commit(config: LoopConfig, runner: Runner, iteration: int, *, ctx: RunCo
         ),
         config.cwd,
         None,
-        _cli.phase_timeout_seconds(config, config.timeout_seconds),
+        phase_support.phase_timeout_seconds(config, config.timeout_seconds),
     )
     commit_artifact_path = config.artifact_dir / f"commit-{iteration}.txt"
-    commit_output = _cli._combined_output(commit_result)
-    _cli.write_artifact(commit_artifact_path, commit_output)
+    commit_output = phase_support._combined_output(commit_result)
+    phase_support.write_artifact(commit_artifact_path, commit_output)
     if commit_result.returncode != 0:
         kind = classify_commit_failure(commit_result)
         detail = "git commit hook failed" if kind == "hook_failed" else "git commit failed"
-        _cli.progress_event(config, "commit", str(iteration), "failed", detail, ctx=ctx)
-        raise _cli.CommitFailed(
+        phase_support.progress_event(config, "commit", str(iteration), "failed", detail, ctx=ctx)
+        raise phase_support.CommitFailed(
             iteration=iteration,
             kind=kind,
             artifact_path=commit_artifact_path,
             output=commit_output,
         )
-    _cli.write_artifact(config.artifact_dir / f"commit-{iteration}-message.txt", message + "\n")
-    _cli.progress_event(config, "commit", str(iteration), "committed", message, ctx=ctx)
+    phase_support.write_artifact(config.artifact_dir / f"commit-{iteration}-message.txt", message + "\n")
+    phase_support.progress_event(config, "commit", str(iteration), "committed", message, ctx=ctx)
     return "committed"
 
 
 def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iteration: int, ctx: RunContext) -> str:
     fallback = deterministic_commit_message(iteration)
-    stat = runner(["git", "diff", "--cached", "--stat"], config.cwd, None, _cli.phase_timeout_seconds(config, config.timeout_seconds))
-    names = runner(["git", "diff", "--cached", "--name-only"], config.cwd, None, _cli.phase_timeout_seconds(config, config.timeout_seconds))
+    stat = runner(["git", "diff", "--cached", "--stat"], config.cwd, None, phase_support.phase_timeout_seconds(config, config.timeout_seconds))
+    names = runner(["git", "diff", "--cached", "--name-only"], config.cwd, None, phase_support.phase_timeout_seconds(config, config.timeout_seconds))
     stat_stdout = stat.stdout or ""
     names_stdout = names.stdout or ""
     context = "\n".join(
@@ -188,22 +188,22 @@ def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iterat
     )
     if not config.commit_message_model:
         return fallback
-    command = _cli.build_commit_message_command(config)
-    prompt_root = config.commit_message_prompt or _cli.DEFAULT_COMMIT_MESSAGE_PROMPT
+    command = phase_support.build_commit_message_command(config)
+    prompt_root = config.commit_message_prompt or phase_support.DEFAULT_COMMIT_MESSAGE_PROMPT
     prompt = f"{prompt_root}\n{prompts_composer.trim_for_prompt(context, config.max_remediation_input_chars)}"
     command, prompt_input = harnesses.prepare_prompt_invocation(
         config.commit_message_harness,
         command,
         prompt,
     )
-    _cli.ensure_model_budget(config, phase="commit-message", iteration=iteration, ctx=ctx)
-    result = runner(command, config.cwd, prompt_input, _cli.phase_timeout_seconds(config, config.timeout_seconds))
-    _cli.write_artifact(config.artifact_dir / f"commit-{iteration}-message-draft.txt", _cli._combined_output(result))
-    _cli.record_model_charge(config, result, phase="commit-message", iteration=iteration, ctx=ctx)
+    phase_support.ensure_model_budget(config, phase="commit-message", iteration=iteration, ctx=ctx)
+    result = runner(command, config.cwd, prompt_input, phase_support.phase_timeout_seconds(config, config.timeout_seconds))
+    phase_support.write_artifact(config.artifact_dir / f"commit-{iteration}-message-draft.txt", phase_support._combined_output(result))
+    phase_support.record_model_charge(config, result, phase="commit-message", iteration=iteration, ctx=ctx)
     if result.returncode != 0:
         return fallback
-    return _cli.sanitize_commit_message(
-        actionable_review_output(_cli._combined_output(result)),
+    return phase_support.sanitize_commit_message(
+        actionable_review_output(phase_support._combined_output(result)),
         fallback=fallback,
         enforce_revrem_conventional=not config.commit_message_prompt_overridden,
     )
@@ -213,7 +213,7 @@ def deterministic_commit_message(iteration: int) -> str:
     return f"chore: remediate review iteration {iteration} (RevRem)"
 
 
-def format_commit_hook_failure_for_remediation(exc: _cli.CommitFailed) -> str:
+def format_commit_hook_failure_for_remediation(exc: phase_support.CommitFailed) -> str:
     return "\n".join(
         [
             "Commit hook failure from the previous RevRem iteration.",

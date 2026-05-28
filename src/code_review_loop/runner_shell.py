@@ -13,15 +13,14 @@ from typing import Any, Literal, cast
 from code_review_loop import budgets, triage
 from code_review_loop.adapters.checks import format_check_failures as _format_check_failures
 from code_review_loop.adapters.commit import (
-    format_commit_hook_failure_for_remediation as format_commit_hook_failure_for_remediation,
+    format_commit_hook_failure_for_remediation,
 )
-from code_review_loop.adapters.phase_support import CommitFailed as CommitFailed
-from code_review_loop.adapters.phase_support import _combined_output as _combined_output
 from code_review_loop.adapters.phase_support import (
-    emit_loop_failure_event as emit_loop_failure_event,
+    CommitFailed,
+    _combined_output,
+    emit_loop_failure_event,
+    progress_event,
 )
-from code_review_loop.adapters.phase_support import progress_event as progress_event
-from code_review_loop.adapters.phase_support import write_artifact as write_artifact
 from code_review_loop.clock import Clock
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.engine import (

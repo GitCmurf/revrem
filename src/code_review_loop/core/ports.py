@@ -43,10 +43,10 @@ from pathlib import Path
 from typing import Any, Literal, Protocol
 
 from code_review_loop.budgets import BudgetState
-from code_review_loop.clock import Clock as Clock
-from code_review_loop.core.routing_types import ResolvedRoute as ResolvedRoute
-from code_review_loop.events import EventSink as EventSink
-from code_review_loop.identity import RunIdentity as RunIdentity
+from code_review_loop.clock import Clock
+from code_review_loop.core.routing_types import ResolvedRoute
+from code_review_loop.events import EventSink
+from code_review_loop.identity import RunIdentity
 
 ReviewStatus = Literal["clear", "findings", "unknown"]
 CommitStatus = Literal["committed", "skipped", "skipped_no_changes"]

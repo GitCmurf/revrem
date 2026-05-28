@@ -20,7 +20,7 @@ from code_review_loop import (
     suppressions,
     triage,
 )
-from code_review_loop.adapters import phase_support as _cli
+from code_review_loop.adapters import phase_support
 from code_review_loop.core.ports import CommandResult, RunContext, TriageOutcome, TriageRequest
 from code_review_loop.core.review_interpretation import actionable_review_output
 
@@ -35,7 +35,7 @@ def build_triage_command(config: LoopConfig) -> list[str]:
         harnesses.PhaseCommandRequest(
             harness=config.triage_harness,
             role="triage",
-            executable=_cli._resolve_executable(config.triage_harness, config),
+            executable=phase_support._resolve_executable(config.triage_harness, config),
             model=config.triage_model,
             reasoning_effort=config.triage_reasoning_effort,
             sandbox="read-only",
@@ -62,15 +62,15 @@ def run_triage(
         command,
         prompt,
     )
-    _cli.ensure_model_budget(config, phase="triage", iteration=iteration, ctx=ctx)
-    _cli.progress_event(config, "triage", str(iteration), "start", shlex.join(command), ctx=ctx)
+    phase_support.ensure_model_budget(config, phase="triage", iteration=iteration, ctx=ctx)
+    phase_support.progress_event(config, "triage", str(iteration), "start", shlex.join(command), ctx=ctx)
     if config.dry_run:
         result = CommandResult(command, 0, stdout="DRY_RUN triage skipped\n")
     else:
-        result = runner(command, config.cwd, prompt_input, _cli.phase_timeout_seconds(config, config.triage_timeout_seconds))
+        result = runner(command, config.cwd, prompt_input, phase_support.phase_timeout_seconds(config, config.triage_timeout_seconds))
     triage_artifact = config.artifact_dir / f"triage-{iteration}.txt"
-    _cli.write_artifact(triage_artifact, _cli._combined_output(result))
-    _cli.record_model_charge(config, result, phase="triage", iteration=iteration, ctx=ctx)
+    phase_support.write_artifact(triage_artifact, phase_support._combined_output(result))
+    phase_support.record_model_charge(config, result, phase="triage", iteration=iteration, ctx=ctx)
     if result.returncode != 0:
         issue = triage.command_failed_issue(
             iteration=iteration,
@@ -82,13 +82,13 @@ def run_triage(
             f"diagnostics-{iteration}.json",
             diagnostics.doctor_payload([issue]),
         )
-        _cli.progress_event(config, "triage", str(iteration), "failed", f"exit {result.returncode}", ctx=ctx)
+        phase_support.progress_event(config, "triage", str(iteration), "failed", f"exit {result.returncode}", ctx=ctx)
         raise RuntimeError(
             f"codex exec triage failed for iteration {iteration}; "
             f"see {triage_artifact}"
         )
-    _cli.progress_event(config, "triage", str(iteration), "done", ctx=ctx)
-    triage_output = actionable_review_output(_cli._combined_output(result))
+    phase_support.progress_event(config, "triage", str(iteration), "done", ctx=ctx)
+    triage_output = actionable_review_output(phase_support._combined_output(result))
     if triage.looks_structured_output(triage_output):
         try:
             payload = triage.parse_triage_payload(
@@ -104,7 +104,7 @@ def run_triage(
                 f"diagnostics-{iteration}.json",
                 diagnostics.doctor_payload([issue]),
             )
-            _cli.progress_event(config, "triage", str(iteration), "invalid", str(exc), ctx=ctx)
+            phase_support.progress_event(config, "triage", str(iteration), "invalid", str(exc), ctx=ctx)
             if config.triage_on_invalid == "stop":
                 raise RuntimeError(f"invalid structured triage output for iteration {iteration}: {exc}") from exc
             return review_output, 0, False, None
@@ -113,7 +113,7 @@ def run_triage(
             try:
                 matches = suppressions.load_effective_suppressions(config.cwd)
             except (OSError, ValueError) as exc:
-                _cli.progress_event(
+                phase_support.progress_event(
                     config,
                     "triage",
                     str(iteration),
@@ -125,7 +125,7 @@ def run_triage(
                 payload, suppressed_findings = suppressions.apply_to_triage_payload(payload, matches)
                 suppressed_count = len(suppressed_findings)
                 if suppressed_findings:
-                    _cli.progress_event(
+                    phase_support.progress_event(
                         config,
                         "triage",
                         str(iteration),

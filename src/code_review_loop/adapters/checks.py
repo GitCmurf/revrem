@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from code_review_loop.adapters import phase_support as _cli
+from code_review_loop.adapters import phase_support
 from code_review_loop.core.ports import ChecksOutcome, ChecksRequest, CommandResult, RunContext
 
 if TYPE_CHECKING:
@@ -77,7 +77,7 @@ def normalize_adaptive_check_result(
             stdout=(
                 "SKIPPED adaptive check: pytest exited "
                 f"{result.returncode}, but this repository appears to be non-Python\n"
-                + _cli._combined_output(result)
+                + phase_support._combined_output(result)
             ),
         )
     return result
@@ -136,7 +136,7 @@ def run_checks(
     results: list[CommandResult] = []
     for index, check in enumerate(config.check_commands, start=1):
         command = shlex.split(check)
-        _cli.progress_event(config, "check", f"{iteration}.{index}", "start", check, ctx=ctx)
+        phase_support.progress_event(config, "check", f"{iteration}.{index}", "start", check, ctx=ctx)
         adaptive_skip = adaptive_check_skip_reason(command, config.cwd)
         if adaptive_skip:
             result = CommandResult(
@@ -151,13 +151,13 @@ def run_checks(
             # remediation-specific timeout, so remediation tuning does not make
             # verification commands spuriously fail or run forever.
             result = runner(
-                command, config.cwd, None, _cli.phase_timeout_seconds(config, config.timeout_seconds)
+                command, config.cwd, None, phase_support.phase_timeout_seconds(config, config.timeout_seconds)
             )
             result = normalize_adaptive_check_result(command, config.cwd, result)
         results.append(result)
-        _cli.write_artifact(
+        phase_support.write_artifact(
             config.artifact_dir / f"check-{iteration}-{index}.txt",
-            _cli._combined_output(result),
+            phase_support._combined_output(result),
         )
         if ctx.event_sink is not None:
             ctx.event_sink.emit(
@@ -172,13 +172,13 @@ def run_checks(
                 },
             )
         if result.returncode == 0 and result.stdout.startswith("SKIPPED adaptive check:"):
-            _cli.progress_event(
+            phase_support.progress_event(
                 config, "check", f"{iteration}.{index}", "skipped", result.stdout.strip(), ctx=ctx
             )
         elif result.returncode == 0:
-            _cli.progress_event(config, "check", f"{iteration}.{index}", "passed", ctx=ctx)
+            phase_support.progress_event(config, "check", f"{iteration}.{index}", "passed", ctx=ctx)
         else:
-            _cli.progress_event(
+            phase_support.progress_event(
                 config, "check", f"{iteration}.{index}", "failed", f"exit {result.returncode}", ctx=ctx
             )
     failed_commands = [config.check_commands[i] for i, r in enumerate(results) if r.returncode != 0]
@@ -192,7 +192,7 @@ def format_check_failures(check_results: list[CommandResult]) -> str:
         return ""
     parts = ["Check failures from the previous iteration:"]
     for r in failures:
-        parts.append(f"\n$ {shlex.join(r.args)}\n{_cli._combined_output(r)}")
+        parts.append(f"\n$ {shlex.join(r.args)}\n{phase_support._combined_output(r)}")
     return "\n".join(parts)
 
 

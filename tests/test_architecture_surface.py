@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -52,3 +53,29 @@ def test_runner_imports_shared_phase_support_helpers() -> None:
         "sanitize_commit_message",
     ):
         assert f"def {helper}(" not in text
+
+
+def test_production_modules_do_not_hide_dead_imports_with_self_aliases() -> None:
+    offenders: list[str] = []
+    for path in SOURCE_ROOT.rglob("*.py"):
+        if path.name == "__init__.py":
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.Import, ast.ImportFrom)):
+                continue
+            for alias in node.names:
+                if alias.asname == alias.name:
+                    offenders.append(f"{path.relative_to(ROOT)}:{node.lineno}: {alias.name} as {alias.asname}")
+
+    assert offenders == []
+
+
+def test_phase_adapters_do_not_alias_support_as_cli() -> None:
+    offenders: list[str] = []
+    for path in (SOURCE_ROOT / "adapters").glob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        if "phase_support as _cli" in text or "_cli." in text:
+            offenders.append(str(path.relative_to(ROOT)))
+
+    assert offenders == []
