@@ -1469,6 +1469,37 @@ dependency-rule claim; the architecture is enforced or it is decoration.
 - The CLI command registry now lives in `cli/commands/registry.py`; `cli/main.py`
   is guarded against concrete subcommand names by a Wave D architecture test.
 
+**As-Built State at Wave D Exit (2026-05-28).**
+
+Measurements below are command-backed so reviewers can refresh them:
+
+```bash
+wc -l src/code_review_loop/cli/main.py src/code_review_loop/runner.py \
+  src/code_review_loop/runner_setup.py src/code_review_loop/runner_shell.py \
+  src/code_review_loop/runner_finish.py src/code_review_loop/routing_artifacts.py \
+  src/code_review_loop/core/engine.py
+# 71, 192, 174, 435, 194, 319, 356 lines respectively
+
+rg -n '^\[\[tool\.importlinter\.contracts\]\]' pyproject.toml | wc -l
+# 9 import-linter contracts
+
+rg -n 'def test_' tests/test_application_headless_integration.py \
+  tests/test_engine_run.py tests/test_runner_shell_acceptance.py \
+  tests/test_wave_d_architecture.py tests/test_outcome_exit_code.py \
+  tests/test_runner_engine_gate.py tests/test_extensibility_swap.py | wc -l
+# 42 Wave D acceptance, outcome, and ratchet tests
+
+rg -n 'monkeypatch\.setattr\(MODULE,' tests
+# no production test call-sites; only ratchet explanatory strings
+```
+
+At exit, `runner.py` is private session orchestration only: no compatibility
+barrel exports, no subprocess default selection, and no test imports of
+`code_review_loop.runner`. The production shell stores loop-crossing data in
+`LoopAccumulator`; `routing_artifacts.py` owns both routing decision and routing
+outcome artifacts/events; `cli/main.py` delegates concrete subcommand lookup to
+`cli/commands/registry.py`.
+
 **D1. SDK/headless acceptance harness**
 (satisfies Exit Criterion #3; consumes C4, C7)
 
@@ -1592,11 +1623,11 @@ commands.
      `core.engine`, `runner.py`, `runner_shell.py`, or `cli/main.py`. (The
      listed modules become the architecturally-closed set; the test's edit-set
      is the *open* set, demonstrating the seam.)
-  4. Add a runner-surface ratchet that permits tests to reach only
-     `runner_mod.run_loop`, `runner_mod.resume_run`, and the runner-owned
-     cancellation signal helper through the private runner module. Any test
-     that needs phase helpers, diagnostics, subprocesses, terminal behavior,
-     or summary formatting imports the canonical owner directly.
+  4. Add a runner-surface ratchet that forbids tests from importing the private
+     runner module at all. Any test that needs phase helpers, diagnostics,
+     subprocesses, terminal behavior, or summary formatting imports the
+     canonical owner directly; loop execution tests use the application
+     boundary.
 - **Risk note:** this is the only D-wave that moves production code. Land the
   registry relocation in its own commit ahead of the architecture test, so a
   failure in either is easy to isolate. A2 golden masters must be byte-identical

@@ -3,8 +3,8 @@ document_id: REVREM-LEDGER-003
 type: LEDGER
 title: Behaviour ledger for the cli.py re-engineering (REVREM-TASK-003)
 status: Draft
-version: '0.1'
-last_updated: '2026-05-26'
+version: '0.2'
+last_updated: '2026-05-28'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -55,6 +55,60 @@ There is no silent third option.
 ```
 
 ## Entries
+
+### 2026-05-28 — Wave D SDK result exposes typed terminal outcome
+
+- **Contract:** machine
+- **What changed:** `application.run_review_loop()` and
+  `application.resume_review_loop()` return `ReviewLoopResult`, carrying both
+  the summary dict and the typed `RunOutcome` that produced final status and
+  exit-code projections.
+- **Why:** SDK callers must not branch on `summary["final_status"]` strings to
+  understand terminal state; C5 requires typed outcomes at the boundary.
+- **Before / After:** before, non-CLI callers received only summary-shaped data;
+  after, callers inspect `ReviewLoopResult.outcome` and serialize with
+  `to_dict()`.
+- **schema_version impact:** none; persisted summary and artifact schemas are
+  unchanged.
+- **CHANGELOG:** not required; internal pre-release architecture task.
+
+### 2026-05-28 — Setup failure summary contract pinned by headless API tests
+
+- **Contract:** machine
+- **What changed:** setup/preflight failures are codified as
+  `final_status == "error"` with `stopped_reason == "setup_failed"` and
+  `OutcomeFailed(reason="setup_failed")`.
+- **Why:** Wave D headless tests make this exact pair an SDK-visible contract,
+  so future changes must be intentional and ledgered.
+- **Before / After:** behavior may have existed before Wave D; this entry
+  records it as a governed contract from Wave D exit onward.
+- **schema_version impact:** none.
+- **CHANGELOG:** not required; internal pre-release architecture task.
+
+### 2026-05-28 — Routing decision and outcome artifacts share one owner
+
+- **Contract:** machine
+- **What changed:** v2 routing writes both `routing-<n>.json` and
+  `routing-outcome-<n>.json` through `routing_artifacts.py`. The outcome event
+  payload records `exit_code`, rounded `wall_time_seconds`, and `checks_passed`
+  for the remediation attempt associated with the routing decision.
+- **Why:** the decision and outcome artifacts are a paired machine contract and
+  should not drift across runner-shell and routing modules.
+- **Before / After:** JSON/event shape is unchanged; ownership and acceptance
+  coverage changed.
+- **schema_version impact:** none.
+- **CHANGELOG:** not required; internal pre-release architecture task.
+
+### 2026-05-28 — CLI subcommand registry owns concrete command names
+
+- **Contract:** human
+- **What changed:** top-level CLI dispatch delegates concrete subcommand lookup
+  to `cli/commands/registry.py`, including the intentional `ui -> tui.main`
+  coupling. `cli/main.py` no longer owns concrete subcommand names.
+- **Why:** Wave D demonstrates command extensibility by making the registry the
+  single edit point for adding a command.
+- **Before / After:** operator-visible commands and outputs are unchanged.
+- **schema_version impact:** none.
 
 ### 2026-05-23 — B3c-iii: `_run_loop` wired through `decide()` + `_execute_stop()` (Wave B3c)
 

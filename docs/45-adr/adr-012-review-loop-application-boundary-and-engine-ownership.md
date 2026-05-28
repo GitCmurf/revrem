@@ -82,9 +82,9 @@ Architecture ratchets should enforce this story:
   snapshot helpers;
 - `code_review_loop.runner` must require injected process runners and must not
   import or lazily load `code_review_loop.adapters.subprocess_runner`;
-- tests may reach only the runner-owned private surface through
-  `runner_mod`; phase, diagnostic, terminal, subprocess, and summary helpers
-  must be imported from their canonical modules;
+- tests must not import the private runner module; phase, diagnostic, terminal,
+  subprocess, and summary helpers must be imported from their canonical
+  modules, while loop execution tests use the application boundary;
 - import-linter must continue proving core and adapter layer boundaries;
 - tests that need phase internals should import canonical adapter homes, not
   runner compatibility surfaces.
@@ -100,8 +100,8 @@ cli/main.py
        -> runner.py
             -> runner_setup.py
             -> runner_shell.py
-            -> routing_artifacts.py
                  -> core/engine.py
+                 -> routing_artifacts.py
 
 adapters/* implement ProcessRunner, terminal/progress, Git/resume snapshots,
 and the five phase harness ports consumed through RunContext.
@@ -113,16 +113,10 @@ are projections written at the shell boundary, not engine inputs.
 
 ### As-Built State at Wave D Exit
 
-Measurements below are command-backed so reviewers can refresh them:
-
-- `wc -l src/code_review_loop/cli/main.py src/code_review_loop/runner.py src/code_review_loop/runner_setup.py src/code_review_loop/runner_shell.py src/code_review_loop/routing_artifacts.py src/code_review_loop/core/engine.py`
-  reports `100`, `533`, `174`, `396`, `291`, and `349` lines respectively.
-- `rg -n '^\[\[tool\.importlinter\.contracts\]\]' pyproject.toml` reports
-  9 import-linter contracts.
-- `rg -n 'def test_' tests/test_application_headless_integration.py tests/test_engine_run.py tests/test_runner_shell_acceptance.py tests/test_wave_d_architecture.py tests/test_outcome_exit_code.py tests/test_runner_engine_gate.py`
-  reports 40 Wave D acceptance, outcome, and ratchet tests.
-- `rg -n 'monkeypatch\.setattr\(MODULE,' tests` reports no production test
-  call-sites; the only matches are the ratchet's own explanatory strings.
+Canonical command-backed measurements live in
+`docs/05-planning/tasks/task-003-reengineer-cli-py.md` under
+`As-Built State at Wave D Exit`. ADR-012 records the architectural decision;
+the task document remains the single source for refreshed closeout evidence.
 
 ### How to verify the leverage claims
 
@@ -131,7 +125,7 @@ Measurements below are command-backed so reviewers can refresh them:
 | #1 Core dependency-free | Import-linter contracts `Core must not import edge or adapter modules` and `Wave D engine acceptance tests stay core-only`; the latter also forbids common domain leaf modules. |
 | #2 Engine drivable without CLI | `tests/test_engine_run.py` drives `core.engine.run()` with a recording executor and no CLI, runner, shell, adapter, TUI, or domain-leaf imports. |
 | #3 Application drivable by non-CLI caller | `tests/test_application_headless_integration.py` runs clear, findings, unknown, setup-failure, budget, cancellation, and resume scenarios through `application.run_review_loop()` / `resume_review_loop()` with injected fakes. |
-| #4 Add command / swap behavior through extension seams | `tests/test_wave_d_architecture.py` proves `cli/main.py` is closed to concrete subcommand names; headless tests inject alternate phase harnesses without editing CLI, runner, runner shell, or engine code; `tests/test_runner_engine_gate.py` prevents tests from using `runner` as a barrel for foreign helper owners. |
+| #4 Add command / swap behavior through extension seams | `tests/test_wave_d_architecture.py` proves `cli/main.py` is closed to concrete subcommand names; `tests/test_extensibility_swap.py` injects alternate review behavior without importing CLI, runner, runner shell, or engine; `tests/test_runner_engine_gate.py` prevents tests from importing the private runner. |
 | #5 Monkeypatch facade gone | `tests/test_monkeypatch_ratchet.py` keeps `monkeypatch.setattr(MODULE, ...)` at zero production call-sites. |
 | #6 Exits exhaustive | `tests/test_outcome_exit_code.py` reaches every `RunOutcome` variant and every `OutcomeFailed.reason`; CLI success/cancellation paths map from typed outcomes. |
 | #7 No nondeterminism in core | `tests/test_determinism_gate.py` prevents raw time, random, subprocess, filesystem, and environment access in core modules. |
