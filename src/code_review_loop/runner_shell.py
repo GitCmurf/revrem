@@ -87,35 +87,25 @@ class _RunnerEngineExecutor:
         self.latest_state: EngineState | None = None
 
     def execute(self, action: Action, engine_state: EngineState) -> EngineState:
-        if isinstance(action, Continue):
-            next_state = replace(engine_state, event=LoopStarted(), iteration=engine_state.iteration + 1)
-            self.latest_state = next_state
-            return next_state
-        if isinstance(action, RunReview):
-            next_state = self._run_review(engine_state, is_final=action.is_final)
-            self.latest_state = next_state
-            return next_state
-        if isinstance(action, RunTriage):
-            next_state = self._run_triage(engine_state)
-            self.latest_state = next_state
-            return next_state
-        if isinstance(action, RunRemediation):
-            next_state = self._run_remediation(engine_state)
-            self.latest_state = next_state
-            return next_state
-        if isinstance(action, RunChecks):
-            next_state = self._run_checks(engine_state)
-            self.latest_state = next_state
-            return next_state
-        if isinstance(action, RunCommit):
-            next_state = self._run_commit(engine_state)
-            self.latest_state = next_state
-            return next_state
-        if isinstance(action, RetryViaCommitHook):
-            next_state = self._retry_after_commit_hook(engine_state, action)
-            self.latest_state = next_state
-            return next_state
-        raise AssertionError(f"engine executor received terminal action: {action!r}")
+        match action:
+            case Continue():
+                next_state = replace(engine_state, event=LoopStarted(), iteration=engine_state.iteration + 1)
+            case RunReview(is_final=is_final):
+                next_state = self._run_review(engine_state, is_final=is_final)
+            case RunTriage():
+                next_state = self._run_triage(engine_state)
+            case RunRemediation():
+                next_state = self._run_remediation(engine_state)
+            case RunChecks():
+                next_state = self._run_checks(engine_state)
+            case RunCommit():
+                next_state = self._run_commit(engine_state)
+            case RetryViaCommitHook():
+                next_state = self._retry_after_commit_hook(engine_state, action)
+            case _:
+                raise AssertionError(f"engine executor received terminal action: {action!r}")
+        self.latest_state = next_state
+        return next_state
 
     @property
     def iterations(self) -> list[dict[str, object]]:
