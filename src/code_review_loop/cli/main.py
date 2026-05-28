@@ -5,15 +5,11 @@ from __future__ import annotations
 import json
 import sys
 from collections.abc import Sequence
-from datetime import UTC, datetime
 from pathlib import Path
 
-from code_review_loop import profiles
 from code_review_loop.cli.args import parse_args
-from code_review_loop.cli.config_builder import (
-    build_loop_config,
-    profile_from_loop_config,
-)
+from code_review_loop.cli.commands.profile import save_profile_from_args
+from code_review_loop.cli.config_builder import build_loop_config
 from code_review_loop.cli.exit import map_application_call
 
 
@@ -38,28 +34,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1  # outcome-exempt: configuration failed before RunOutcome exists
 
     if args.save_profile:
-        profile = profile_from_loop_config(
-            args.save_profile,
+        return save_profile_from_args(
+            args,
             config,
             summary_format=summary_format,
-            description=f"Saved from RevRem CLI on {datetime.now(UTC).date().isoformat()}",
-            include_artifact_dir=args.artifact_dir is not None,
-            timeout_seconds=args.timeout_seconds,
+            cwd=Path.cwd(),
         )
-        try:
-            path = profiles.write_project_profile(
-                profile,
-                cwd=Path.cwd(),
-                force=args.save_profile_force,
-            )
-        except FileExistsError as exc:
-            print(f"ERROR: {exc}; pass --save-profile-force to replace it", file=sys.stderr)
-            return 1  # outcome-exempt: profile write failed before loop execution
-        except OSError as exc:
-            print(f"ERROR: could not save project profile: {exc}", file=sys.stderr)
-            return 1  # outcome-exempt: profile write failed before loop execution
-        print(f"saved {args.save_profile} in {path}")
-        return 0  # outcome-exempt: profile save command does not run the loop
 
     app_exit = map_application_call(lambda: application.run_review_loop(config))
     summary = app_exit.summary

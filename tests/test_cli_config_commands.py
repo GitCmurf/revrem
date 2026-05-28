@@ -12,6 +12,7 @@ from code_review_loop import application as application_mod
 from code_review_loop import profiles
 from code_review_loop.cli import args as cli_args
 from code_review_loop.cli import config_builder
+from code_review_loop.core.outcome import OutcomeClear
 from code_review_loop.core.ports import CommandResult
 
 cli_main = import_module("code_review_loop.cli.main")
@@ -19,6 +20,9 @@ config_command = import_module("code_review_loop.cli.commands.config")
 history_command = import_module("code_review_loop.cli.commands.history")
 suppress_command = import_module("code_review_loop.cli.commands.suppress")
 
+
+def _clear_result(summary: dict[str, object]) -> application_mod.ReviewLoopResult:
+    return application_mod.ReviewLoopResult(summary=summary, outcome=OutcomeClear(reason="review_clear"))
 
 
 def test_config_unknown_command_reports_command_error(monkeypatch, capsys):
@@ -68,12 +72,12 @@ reasoning_effort = "minimal"
 
     def fake_run_loop(config):
         captured_configs.append(config)
-        return {
+        return _clear_result({
             "artifact_dir": str(config.artifact_dir),
             "final_status": "clear",
             "stopped_reason": "review_clear",
             "iterations": [],
-        }
+        })
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
@@ -121,12 +125,12 @@ quiet_progress = true
 
     def fake_run_loop(config):
         captured_configs.append(config)
-        return {
+        return _clear_result({
             "artifact_dir": str(config.artifact_dir),
             "final_status": "clear",
             "stopped_reason": "review_clear",
             "iterations": [],
-        }
+        })
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
@@ -235,12 +239,12 @@ timeout_seconds = 1800
 
     def fake_run_loop(config):
         captured_configs.append(config)
-        return {
+        return _clear_result({
             "artifact_dir": str(config.artifact_dir),
             "final_status": "clear",
             "stopped_reason": "review_clear",
             "iterations": [],
-        }
+        })
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
