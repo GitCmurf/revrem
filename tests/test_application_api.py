@@ -44,15 +44,17 @@ def test_application_api_does_not_export_runner_alias() -> None:
 
 
 def test_review_loop_result_to_dict_deep_copies_nested_summary() -> None:
+    source_summary: dict[str, object] = {
+        "final_status": "clear",
+        "iterations": [{"iteration": 1, "review_status": "clear"}],
+        "artifact_paths": {"reviews": ["review-1.txt"]},
+    }
     result = application.ReviewLoopResult(
-        summary={
-            "final_status": "clear",
-            "iterations": [{"iteration": 1, "review_status": "clear"}],
-            "artifact_paths": {"reviews": ["review-1.txt"]},
-        },
+        summary=source_summary,
         outcome=OutcomeClear(reason="review_clear"),
     )
 
+    source_summary["final_status"] = "mutated"
     projected = result.to_dict()
     iterations = projected["iterations"]
     artifact_paths = projected["artifact_paths"]
@@ -62,8 +64,47 @@ def test_review_loop_result_to_dict_deep_copies_nested_summary() -> None:
     artifact_paths["reviews"].append("review-2.txt")  # type: ignore[index, union-attr]
 
     fresh = result.to_dict()
+    assert result.summary["final_status"] == "clear"
     assert fresh["iterations"] == [{"iteration": 1, "review_status": "clear"}]
     assert fresh["artifact_paths"] == {"reviews": ["review-1.txt"]}
+
+
+def test_review_loop_result_summary_property_deep_copies_nested_summary() -> None:
+    result = application.ReviewLoopResult(
+        summary={
+            "final_status": "clear",
+            "iterations": [{"iteration": 1, "review_status": "clear"}],
+        },
+        outcome=OutcomeClear(reason="review_clear"),
+    )
+
+    projected = result.summary
+    iterations = projected["iterations"]
+    assert isinstance(iterations, list)
+    iterations.append({"iteration": 2, "review_status": "findings"})
+
+    assert result.summary["iterations"] == [{"iteration": 1, "review_status": "clear"}]
+
+
+def test_run_loop_failed_summary_property_deep_copies_nested_summary() -> None:
+    from code_review_loop.core.outcome import OutcomeFailed
+    from code_review_loop.runtime import RunLoopFailed
+
+    exc = RunLoopFailed(
+        {
+            "final_status": "error",
+            "iterations": [{"iteration": 1, "review_status": "unknown"}],
+        },
+        "failed",
+        outcome=OutcomeFailed(reason="review_failed", error="failed"),
+    )
+
+    projected = exc.summary
+    iterations = projected["iterations"]
+    assert isinstance(iterations, list)
+    iterations.append({"iteration": 2, "review_status": "findings"})
+
+    assert exc.summary["iterations"] == [{"iteration": 1, "review_status": "unknown"}]
 
 
 def test_private_runner_result_to_dict_deep_copies_nested_summary() -> None:

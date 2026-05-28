@@ -23,34 +23,42 @@ from code_review_loop.identity import SYSTEM_IDENTITY, RunIdentity
 from code_review_loop.runtime import RunLoopFailed, format_terminal_summary
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class ReviewLoopResult:
     """Typed application result with an explicit summary projection."""
 
-    summary: dict[str, object]
+    _summary: dict[str, object]
     outcome: RunOutcome
 
+    def __init__(self, summary: dict[str, object], outcome: RunOutcome) -> None:
+        object.__setattr__(self, "_summary", copy.deepcopy(summary))
+        object.__setattr__(self, "outcome", outcome)
+
+    @property
+    def summary(self) -> dict[str, object]:
+        return copy.deepcopy(self._summary)
+
     def to_dict(self) -> dict[str, object]:
-        return copy.deepcopy(self.summary)
+        return self.summary
 
     @property
     def final_status(self) -> str | None:
-        value = self.summary.get("final_status")
+        value = self._summary.get("final_status")
         return value if isinstance(value, str) else None
 
     @property
     def stopped_reason(self) -> str | None:
-        value = self.summary.get("stopped_reason")
+        value = self._summary.get("stopped_reason")
         return value if isinstance(value, str) else None
 
     @property
     def artifact_dir(self) -> str | None:
-        value = self.summary.get("artifact_dir")
+        value = self._summary.get("artifact_dir")
         return value if isinstance(value, str) else None
 
     @property
     def run_id(self) -> str | None:
-        value = self.summary.get("run_id")
+        value = self._summary.get("run_id")
         return value if isinstance(value, str) else None
 
 
@@ -80,10 +88,7 @@ def run_review_loop(
         phase_harnesses=phase_harnesses,
         terminal_ui=terminal_ui,
     )
-    return ReviewLoopResult(
-        summary=result.to_dict(),
-        outcome=result.outcome,
-    )
+    return ReviewLoopResult(summary=result.to_dict(), outcome=result.outcome)
 
 
 def resume_review_loop(

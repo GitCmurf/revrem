@@ -32,8 +32,12 @@ class RunLoopFailed(RuntimeError):
 
     def __init__(self, summary: dict[str, object], message: str, *, outcome: OutcomeFailed):
         super().__init__(message)
-        self.summary = summary
+        self._summary = copy.deepcopy(summary)
         self.outcome = outcome
+
+    @property
+    def summary(self) -> dict[str, object]:
+        return copy.deepcopy(self._summary)
 
 
 def _artifact_filename(path: object) -> str:
