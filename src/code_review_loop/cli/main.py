@@ -14,8 +14,7 @@ from code_review_loop.cli.config_builder import (
     build_loop_config,
     profile_from_loop_config,
 )
-from code_review_loop.cli.outcome import summary_from_result
-from code_review_loop.core.outcome import OutcomeFailed, outcome_to_exit_code
+from code_review_loop.cli.exit import map_application_call
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -62,26 +61,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"saved {args.save_profile} in {path}")
         return 0  # outcome-exempt: profile save command does not run the loop
 
-    try:
-        result = application.run_review_loop(config)
-        summary = summary_from_result(result)
-    except application.RunLoopFailed as exc:
-        summary = exc.summary
+    app_exit = map_application_call(lambda: application.run_review_loop(config))
+    summary = app_exit.summary
+    if app_exit.error:
         if not args.dry_run and not args.no_run_history and summary.get("run_id"):
             try:
                 application.append_run_history(summary, config)
             except OSError as history_exc:
                 print(f"WARNING: could not write run history: {history_exc}", file=sys.stderr)
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return outcome_to_exit_code(exc.outcome) if exc.outcome is not None else 1  # outcome-exempt: legacy failures may lack outcome
-    except KeyboardInterrupt:
-        print("Cancelled by user.", file=sys.stderr)
-        return outcome_to_exit_code(
-            OutcomeFailed(reason="cancelled", error="cancelled by operator")
-        )
-    except Exception as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 1  # outcome-exempt: unexpected pre-summary exception
+        if app_exit.cancelled:
+            print(app_exit.error, file=sys.stderr)
+        else:
+            print(f"ERROR: {app_exit.error}", file=sys.stderr)
+        return app_exit.exit_code
 
     if not args.dry_run and not args.no_run_history and summary.get("run_id"):
         try:
@@ -97,4 +89,4 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps(summary, indent=2, sort_keys=True))
     if args.dry_run:
         return 0  # outcome-exempt: dry-run summary is intentionally non-terminal
-    return outcome_to_exit_code(result.outcome)
+    return app_exit.exit_code
