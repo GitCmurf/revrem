@@ -235,8 +235,10 @@ first default-artifact run in a Git repository, RevRem adds the default run
 path to the repository-local `.git/info/exclude` even when invoked from a
 subdirectory; outside Git repositories it falls back to `.revrem/.gitignore`
 containing `runs/`. This keeps local transcripts out of commits without
-mutating tracked ignore files. Linked worktrees use the common repository's
-`.git/info/exclude`.
+mutating tracked ignore files. When the ignore entry is already present, RevRem
+returns before taking the exclude-file write lock so no-op setup works in
+read-only Git metadata environments. Linked worktrees use the common
+repository's `.git/info/exclude`.
 If a capped run ends with findings, continue from the final review artifact:
 
 ```bash

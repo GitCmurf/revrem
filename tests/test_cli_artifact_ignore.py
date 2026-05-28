@@ -6,6 +6,7 @@ from importlib import import_module
 import pytest
 
 import tests.support.application_runner as runner_mod
+from code_review_loop import artifact_ignore
 from code_review_loop.cli import config_builder, config_support
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.ports import CommandResult
@@ -168,6 +169,38 @@ def test_run_loop_appends_repo_root_exclude_when_existing_longer_entry_contains_
 
     assert (git_info / "exclude").read_text(encoding="utf-8") == (
         "work/.revrem/runs/\n.revrem/runs/\n"
+    )
+
+
+def test_run_loop_skips_git_exclude_lock_when_default_ignore_entry_already_exists(
+    tmp_path, monkeypatch
+):
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[1] == "review":
+            return CommandResult(list(args), 0, stdout="No findings.\n")
+        return CommandResult(list(args), 0, stdout="fixed\n")
+
+    git_info = tmp_path / ".git" / "info"
+    git_info.mkdir(parents=True)
+    (git_info / "exclude").write_text("# local excludes\n.revrem/runs/\n", encoding="utf-8")
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / ".revrem" / "runs" / "run-1",
+        progress=False,
+    )
+
+    def fail_if_locked(path):
+        raise AssertionError(f"no-op ignore setup should not lock {path}")
+
+    monkeypatch.setattr(artifact_ignore, "_exclusive_lock_file", fail_if_locked)
+
+    runner_mod.run_loop(config, runner)
+
+    assert (git_info / "exclude").read_text(encoding="utf-8") == (
+        "# local excludes\n.revrem/runs/\n"
     )
 
 

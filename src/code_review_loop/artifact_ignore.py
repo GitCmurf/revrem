@@ -74,6 +74,10 @@ def ensure_default_artifact_ignore(config: LoopConfig) -> None:
         ignore_entry = "runs/"
     ignore_path = ignore_path or (config.cwd / ".revrem" / ".gitignore")
     ignore_path.parent.mkdir(parents=True, exist_ok=True)
+    if ignore_path.exists():
+        existing_entries = set(ignore_path.read_text(encoding="utf-8").splitlines())
+        if ignore_entry in existing_entries:
+            return
     with _exclusive_lock_file(ignore_path), ignore_path.open("a+", encoding="utf-8") as handle:
         handle.seek(0)
         existing = handle.read()
