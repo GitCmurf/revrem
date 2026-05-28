@@ -7,6 +7,7 @@ modules.
 
 from __future__ import annotations
 
+import copy
 import json
 from dataclasses import dataclass
 from importlib import import_module
@@ -30,7 +31,7 @@ class ReviewLoopResult:
     outcome: RunOutcome
 
     def to_dict(self) -> dict[str, object]:
-        return dict(self.summary)
+        return copy.deepcopy(self.summary)
 
     @property
     def final_status(self) -> str | None:
