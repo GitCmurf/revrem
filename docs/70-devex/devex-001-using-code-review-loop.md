@@ -317,6 +317,30 @@ CLI flags override profile values, so this is valid:
 revrem --profile final-pr --base release/1.2 --check "pytest -q tests/smoke"
 ```
 
+This repository also carries a project-local `dogfood` profile in
+`.revrem.toml`. It is intentionally not a portable profile: it runs the full
+local verification stack, enables commits, turns on triage v2 routing, records
+debug status diagnostics, and uses explicit phase models so RevRem can exercise
+its own operator surface. The normal Codex-only dogfood run is:
+
+```bash
+./.venv/bin/revrem --profile dogfood --base main --max-iterations 3
+```
+
+The profile includes an optional Gemini route for multi-file changes. Use it
+only when Gemini CLI and credentials are available; otherwise the Codex routes
+remain sufficient for local dogfood:
+
+```bash
+./.venv/bin/revrem \
+  --profile dogfood \
+  --base main \
+  --max-iterations 2 \
+  --harness-bin gemini=gemini \
+  --triage \
+  --routing
+```
+
 To capture a one-off command as a project-local profile, add
 `--save-profile NAME`. RevRem writes the effective configuration to
 `.revrem.toml` at the repository root and exits without running the loop. This

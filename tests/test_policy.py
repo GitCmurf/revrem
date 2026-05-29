@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from code_review_loop import policy, profiles
@@ -62,6 +64,26 @@ def test_resolve_routing_rule_match(base_profile):
     resolved = policy.resolve_routing(base_profile, context)
     assert resolved.route_tier == "frontier-thinking"
     assert resolved.rule_id == "security-rule"
+
+
+def test_project_dogfood_profile_routes_multi_file_changes_to_gemini():
+    loaded = profiles.load_profile_file(Path(profiles.PROJECT_CONFIG_NAME))
+    profile = loaded.profiles["dogfood"]
+    context = policy.RoutingContext(
+        domain_tags=("python",),
+        risk_level="medium",
+        refactor_depth="localised",
+        module_count=4,
+        failed_checks=(),
+        safety_signals=(),
+    )
+
+    resolved = policy.resolve_routing(profile, context)
+
+    assert resolved.route_tier == "gemini-pro"
+    assert resolved.harness == "gemini"
+    assert resolved.model == "gemini-3.1-pro-preview"
+    assert resolved.fallback_applied is None
 
 
 def test_resolve_routing_model_escalation():
