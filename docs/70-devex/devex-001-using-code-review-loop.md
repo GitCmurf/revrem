@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.13'
+version: '1.14'
 last_updated: '2026-05-29'
 owner: GitCmurf
 docops_version: '2.0'
@@ -348,6 +348,13 @@ the effective value came from CLI flags, the selected profile, or defaults.
 Explicit unbounded timeouts are shown as `0` in this operator-facing projection
 even though the subprocess layer receives `None`.
 
+Terminal progress and closeout output repeat phase provenance on line-wrapped
+messages so line-oriented tools can still grep for phase markers such as
+`|tri|`, `contract=v2`, and `source=mixed`. Suggested resume commands preserve
+one-off triage, routing, model, harness, effort, and explicit timeout overrides
+so a profile-less dogfood run can be resumed without silently dropping the
+operator's control surface.
+
 Commit-message drafting disables Codex web search for that read-only helper
 call so `--commit-reasoning-effort minimal` can be tested without inheriting
 tool settings from local Codex defaults. If model drafting still fails, RevRem
@@ -365,6 +372,10 @@ no-timeout behavior. When the source profile uses v2 triage routing,
 `--save-profile` preserves the triage contract, routing rules, route table, and
 effective `runtime.harness_executables` map, including any one-off
 `--harness-bin HARNESS=EXECUTABLE` overrides supplied on the same command.
+
+Project profile discovery intentionally ignores system temp roots and their
+ancestors when walking for `.git`. This prevents an ambient `/tmp/.git` marker
+from making every temporary test directory appear to be part of a repository.
 
 ```bash
 revrem \
@@ -958,6 +969,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.14 | 2026-05-29 | Codex | Documented resume override fidelity, wrapped progress prefix behavior, and temp-root ancestor exclusion |
 | 1.13 | 2026-05-29 | Codex | Documented triage/routing CLI overrides, executable-route validation modes, model-escalation controls, and commit-message harness override |
 | 1.12 | 2026-05-29 | Codex | Documented the project-local dogfood profile, resolved phase configuration summaries, and commit-message fallback hardening |
 | 1.11 | 2026-05-21 | Codex | Documented positive iteration validation and finite TOML numeric output |

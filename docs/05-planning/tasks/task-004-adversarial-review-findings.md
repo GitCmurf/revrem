@@ -3,7 +3,7 @@ document_id: REVREM-REVIEW-004
 type: TASK
 title: Adversarial review findings for TASK-004 dogfood hardening
 status: Draft
-version: '1.2'
+version: '1.3'
 last_updated: '2026-05-29'
 owner: GitCmurf
 docops_version: '2.0'
@@ -25,15 +25,37 @@ related_ids:
 
 # TASK-004 — Adversarial Review Findings
 
-> **This document has two rounds.** Round 2 (below) is the current,
-> authoritative re-evaluation after Codex's second completion claim. Round 1 (at
-> the bottom) is retained for history; **all Round 1 blockers and mediums are
-> remediated** and re-verified in Round 2.
+> **This document has three rounds.** Round 3 (below) is the current,
+> authoritative re-evaluation after the route-validation closeout. Earlier
+> rounds are retained for history; **all Round 1 and Round 2 blockers and
+> mediums are remediated** and re-verified in later rounds.
 
-> **Codex remediation status (2026-05-29):** Round 2 findings R2-1 through
-> R2-7 have been remediated in the follow-up implementation pass. The closeout
-> evidence is recorded in `REVREM-TASK-004`; the historical findings below are
-> retained as the review record that drove the changes.
+> **Codex remediation status (2026-05-29):** Round 3 findings F1 through F7
+> have been accepted for the final TASK-004 polish pass. The closeout evidence
+> is recorded in `REVREM-TASK-004`; the historical findings below are retained
+> as the review record that drove the changes.
+
+---
+
+## Round 3 — re-evaluation after route-validation remediation (2026-05-29)
+
+- **Reviewer:** Claude (Opus 4.8), adversarial re-evaluation against the TASK-004
+  dogfood hardening bar.
+- **Verdict:** **Complete and architecturally strong, but not yet
+  demonstration-class until final polish lands.** The remaining gap is narrow:
+  fallback commit subjects are still semantically weak, commit-type inference
+  can over-label fixes as `feat`, suggested resume commands drop the newly
+  added triage/routing override surface, and wrapped compact progress lines
+  omit the line prefix that makes them grep-friendly.
+- **Required remediations:** F1 descriptive fallback subject synthesis; F2
+  bugfix-first commit-type inference; F3 complete resume override projection;
+  F4 closeout phase-config `source=` visibility; F5 no subset-like check
+  artifact fallback on parse miss; F6 prefixed wrapped progress lines; F7
+  documented temp-root ancestor exclusion.
+- **Verification note:** Matrix A/C/E require live Codex/Gemini credentials.
+  The `--commit-reasoning-effort minimal` fix is structurally verified by the
+  scoped `--disable web_search` command shape; a real Codex Matrix C run remains
+  the operator proof after gates pass.
 
 ---
 

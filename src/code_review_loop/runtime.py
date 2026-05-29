@@ -147,8 +147,10 @@ def _phase_config_summary(phase_config: dict[object, object]) -> str:
         value = phase_config.get(phase)
         if not isinstance(value, dict):
             continue
+        source = value.get("source")
+        source_text = f"source={source}" if isinstance(source, str) and source else None
         if value.get("enabled") is False:
-            parts.append(f"{phase}=disabled")
+            parts.append(f"{phase}=disabled({source_text})" if source_text else f"{phase}=disabled")
             continue
         details = [
             str(item)
@@ -157,6 +159,7 @@ def _phase_config_summary(phase_config: dict[object, object]) -> str:
                 value.get("model"),
                 f"effort={value['reasoning_effort']}" if value.get("reasoning_effort") else None,
                 f"timeout={value['timeout_seconds']}" if value.get("timeout_seconds") is not None else None,
+                source_text,
             )
             if item
         ]
@@ -184,6 +187,7 @@ def _resume_command(summary: dict[str, object], review_path: str) -> str:
     timeout_seconds = config.get("timeout_seconds")
     if isinstance(timeout_seconds, int | float):
         command.extend(["--timeout-seconds", _format_number(timeout_seconds)])
+    _append_phase_resume_overrides(command, config, summary)
     commit_after = config.get("commit_after_remediation")
     if isinstance(commit_after, bool):
         command.append("--commit-after-remediation" if commit_after else "--no-commit-after-remediation")
@@ -192,6 +196,215 @@ def _resume_command(summary: dict[str, object], review_path: str) -> str:
     if isinstance(hook_policy, str) and hook_policy:
         command.extend(["--commit-on-hook-failure", hook_policy])
     return shlex.join(command)
+
+
+def _append_phase_resume_overrides(
+    command: list[str],
+    config: Mapping[object, object],
+    summary: Mapping[str, object],
+) -> None:
+    phase_config = summary.get("phase_config")
+    phase_config_map = phase_config if isinstance(phase_config, dict) else {}
+    profile = summary.get("profile")
+    profile_selected = isinstance(profile, str) and bool(profile)
+    _append_string_override(
+        command,
+        "--review-model",
+        config.get("review_model"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "review", "model"),
+    )
+    _append_string_override(
+        command,
+        "--review-reasoning-effort",
+        config.get("review_reasoning_effort"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "review", "reasoning_effort"),
+    )
+    _append_string_override(
+        command,
+        "--remediation-model",
+        config.get("remediation_model"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "remediation", "model"),
+    )
+    _append_string_override(
+        command,
+        "--remediation-reasoning-effort",
+        config.get("remediation_reasoning_effort"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "remediation", "reasoning_effort"),
+    )
+    _append_string_override(
+        command,
+        "--commit-message-model",
+        config.get("commit_message_model"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "commit_message", "model"),
+    )
+    _append_string_override(
+        command,
+        "--commit-message-harness",
+        config.get("commit_message_harness"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "commit_message", "harness"),
+    )
+    _append_string_override(
+        command,
+        "--commit-reasoning-effort",
+        config.get("commit_reasoning_effort"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "commit_message", "reasoning_effort"),
+    )
+    _append_bool_override(
+        command,
+        true_flag="--triage",
+        false_flag="--no-triage",
+        value=config.get("triage_enabled"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "triage", "enabled"),
+    )
+    _append_string_override(
+        command,
+        "--triage-contract",
+        config.get("triage_contract"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "triage", "contract"),
+        default="v1",
+    )
+    _append_string_override(
+        command,
+        "--triage-model",
+        config.get("triage_model"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "triage", "model"),
+    )
+    _append_string_override(
+        command,
+        "--triage-harness",
+        config.get("triage_harness"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "triage", "harness"),
+        default="codex",
+    )
+    _append_string_override(
+        command,
+        "--triage-reasoning-effort",
+        config.get("triage_reasoning_effort"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "triage", "reasoning_effort"),
+    )
+    _append_number_override(
+        command,
+        "--triage-timeout-seconds",
+        config.get("triage_timeout_seconds"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "triage", "timeout_seconds"),
+    )
+    _append_bool_override(
+        command,
+        true_flag="--routing",
+        false_flag="--no-routing",
+        value=config.get("routing_enabled"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "triage", "routing_enabled"),
+    )
+    _append_bool_override(
+        command,
+        true_flag="--routing-strict",
+        false_flag="--no-routing-strict",
+        value=config.get("routing_strict"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "triage", "routing_strict"),
+    )
+    _append_bool_override(
+        command,
+        true_flag="--allow-model-escalation",
+        false_flag="--no-allow-model-escalation",
+        value=config.get("allow_model_escalation"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "triage", "allow_model_escalation"),
+    )
+
+
+def _phase_field_source(phase_config: Mapping[object, object], phase: str, field: str) -> str | None:
+    value = phase_config.get(phase)
+    if not isinstance(value, dict):
+        return None
+    sources = value.get("sources")
+    if isinstance(sources, dict):
+        source = sources.get(field)
+        if isinstance(source, str):
+            return source
+    source = value.get("source")
+    return source if isinstance(source, str) else None
+
+
+def _should_emit_resume_override(
+    value: object,
+    *,
+    profile_selected: bool,
+    source: str | None,
+    default: object = None,
+) -> bool:
+    if value is None:
+        return False
+    if source == "cli":
+        return True
+    if value == default:
+        return False
+    return not profile_selected
+
+
+def _append_string_override(
+    command: list[str],
+    flag: str,
+    value: object,
+    *,
+    profile_selected: bool,
+    source: str | None,
+    default: object = None,
+) -> None:
+    if isinstance(value, str) and value and _should_emit_resume_override(
+        value,
+        profile_selected=profile_selected,
+        source=source,
+        default=default,
+    ):
+        command.extend([flag, value])
+
+
+def _append_number_override(
+    command: list[str],
+    flag: str,
+    value: object,
+    *,
+    profile_selected: bool,
+    source: str | None,
+) -> None:
+    if isinstance(value, int | float) and _should_emit_resume_override(
+        value,
+        profile_selected=profile_selected,
+        source=source,
+    ):
+        command.extend([flag, _format_number(value)])
+
+
+def _append_bool_override(
+    command: list[str],
+    *,
+    true_flag: str,
+    false_flag: str,
+    value: object,
+    profile_selected: bool,
+    source: str | None,
+) -> None:
+    if not isinstance(value, bool):
+        return
+    if source == "cli":
+        command.append(true_flag if value else false_flag)
+    elif not profile_selected and value:
+        command.append(true_flag)
 
 
 def _format_number(value: int | float) -> str:
@@ -211,7 +424,7 @@ def _latest_iteration_checks(paths: list[str]) -> list[str]:
         latest_iteration = max(latest_iteration, iteration)
         parsed.append((iteration, path))
     if latest_iteration < 0:
-        return paths[-2:]
+        return paths
     return [path for iteration, path in parsed if iteration == latest_iteration]
 
 

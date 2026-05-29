@@ -108,6 +108,22 @@ def test_terminal_summary_surfaces_latest_findings_and_paths():
             "max_iterations": 2,
             "check_commands": ["./.venv/bin/ruff check .", "./.venv/bin/pytest -q"],
             "timeout_seconds": 0,
+            "review_model": "gpt-5.5",
+            "review_reasoning_effort": "low",
+            "remediation_model": "gpt-5.4-mini",
+            "remediation_reasoning_effort": "medium",
+            "commit_message_model": "spark",
+            "commit_message_harness": "codex",
+            "commit_reasoning_effort": "minimal",
+            "triage_enabled": True,
+            "triage_contract": "v2",
+            "triage_model": "gpt-5.5",
+            "triage_harness": "codex",
+            "triage_reasoning_effort": "low",
+            "triage_timeout_seconds": 0,
+            "routing_enabled": True,
+            "routing_strict": False,
+            "allow_model_escalation": False,
             "commit_after_remediation": True,
             "commit_on_hook_failure": "remediate",
         },
@@ -117,11 +133,44 @@ def test_terminal_summary_surfaces_latest_findings_and_paths():
                 "model": "gpt-5.5",
                 "reasoning_effort": "low",
                 "timeout_seconds": 0,
-                "source": "profile:dogfood",
+                "source": "cli",
+                "sources": {"model": "cli", "reasoning_effort": "cli"},
             },
-            "triage": {"enabled": False},
-            "remediation": {"harness": "codex", "model": "gpt-5.4-mini"},
-            "commit_message": {"enabled": True, "harness": "codex", "model": "spark"},
+            "triage": {
+                "enabled": True,
+                "contract": "v2",
+                "harness": "codex",
+                "model": "gpt-5.5",
+                "reasoning_effort": "low",
+                "timeout_seconds": 0,
+                "source": "cli",
+                "sources": {
+                    "enabled": "cli",
+                    "contract": "cli",
+                    "model": "cli",
+                    "harness": "cli",
+                    "reasoning_effort": "cli",
+                    "timeout_seconds": "cli",
+                    "routing_enabled": "cli",
+                    "routing_strict": "cli",
+                    "allow_model_escalation": "cli",
+                },
+            },
+            "remediation": {
+                "harness": "codex",
+                "model": "gpt-5.4-mini",
+                "reasoning_effort": "medium",
+                "source": "cli",
+                "sources": {"model": "cli", "reasoning_effort": "cli"},
+            },
+            "commit_message": {
+                "enabled": True,
+                "harness": "codex",
+                "model": "spark",
+                "reasoning_effort": "minimal",
+                "source": "cli",
+                "sources": {"harness": "cli", "model": "cli", "reasoning_effort": "cli"},
+            },
         },
         "latest_review_excerpt": "Full review comments:\n\n- [P2] Fix summary counts",
     }
@@ -134,7 +183,13 @@ def test_terminal_summary_surfaces_latest_findings_and_paths():
     assert (
         "Continue command: ./.venv/bin/revrem --base main --max-iterations 2 "
         "--check './.venv/bin/ruff check .' --check './.venv/bin/pytest -q' "
-        "--timeout-seconds 0 --commit-after-remediation --initial-review-file "
+        "--timeout-seconds 0 --review-model gpt-5.5 --review-reasoning-effort low "
+        "--remediation-model gpt-5.4-mini --remediation-reasoning-effort medium "
+        "--commit-message-model spark --commit-message-harness codex "
+        "--commit-reasoning-effort minimal --triage --triage-contract v2 "
+        "--triage-model gpt-5.5 --triage-harness codex --triage-reasoning-effort low "
+        "--triage-timeout-seconds 0 --routing --no-routing-strict "
+        "--no-allow-model-escalation --commit-after-remediation --initial-review-file "
         "tmp/run/review-final.txt --commit-on-hook-failure remediate"
     ) in text
     assert "Latest remediation summary: tmp/run/remediation-2-last-message.txt" in text
@@ -142,6 +197,7 @@ def test_terminal_summary_surfaces_latest_findings_and_paths():
     assert "passed: ./.venv/bin/ruff check . (tmp/run/check-2-1.txt)" in text
     assert "failed: ./.venv/bin/pytest -q (tmp/run/check-2-2.txt)" in text
     assert "- [P2] Fix summary counts" in text
+    assert "source=cli" in text
 
 
 def test_terminal_summary_falls_back_to_accurate_check_artifact_label():
@@ -159,6 +215,24 @@ def test_terminal_summary_falls_back_to_accurate_check_artifact_label():
     )
 
     assert "Latest check output artifacts:" in text
+
+
+def test_terminal_summary_parse_miss_lists_all_check_artifacts():
+    text = format_terminal_summary(
+        {
+            "artifact_dir": "tmp/run",
+            "final_status": "findings",
+            "stopped_reason": "max_iterations_reached",
+            "iterations": [{"iteration": 1, "review_status": "findings", "check_failures": 0}],
+            "artifact_paths": {
+                "checks": ["tmp/run/ruff.txt", "tmp/run/mypy.txt", "tmp/run/pytest.txt"],
+            },
+        }
+    )
+
+    assert "tmp/run/ruff.txt" in text
+    assert "tmp/run/mypy.txt" in text
+    assert "tmp/run/pytest.txt" in text
 
 
 def test_terminal_summary_omits_latest_review_excerpt_when_clear():

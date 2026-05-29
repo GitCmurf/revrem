@@ -282,22 +282,26 @@ def wrap_progress_text(
     indent = len(head) if continuation_indent is None else continuation_indent
     first_width = max(20, terminal_columns() - len(prefix) - len(head))
     next_width = max(20, terminal_columns() - len(prefix) - indent)
-    wrapped = textwrap.wrap(
-        text,
-        width=first_width,
-        subsequent_indent="",
-        break_long_words=False,
-        break_on_hyphens=False,
-    ) or [""]
-    lines = [f"{prefix}{head}{wrapped[0]}"]
-    for line in wrapped[1:]:
-        for continuation in textwrap.wrap(
-            line,
-            width=next_width,
+    lines: list[str] = []
+    for raw_index, raw_line in enumerate(text.splitlines() or [""]):
+        line_head = head if raw_index == 0 else " " * indent
+        line_width = first_width if raw_index == 0 else next_width
+        wrapped = textwrap.wrap(
+            raw_line,
+            width=line_width,
+            subsequent_indent="",
             break_long_words=False,
             break_on_hyphens=False,
-        ) or [line]:
-            lines.append(f"{' ' * len(prefix)}{' ' * indent}{continuation}")
+        ) or [""]
+        lines.append(f"{prefix}{line_head}{wrapped[0]}")
+        for line in wrapped[1:]:
+            for continuation in textwrap.wrap(
+                line,
+                width=next_width,
+                break_long_words=False,
+                break_on_hyphens=False,
+            ) or [line]:
+                lines.append(f"{prefix}{' ' * indent}{continuation}")
     return lines
 
 
@@ -452,7 +456,7 @@ def progress_continuation(config: LoopConfig, phase: str, label: str, text: str,
         break_long_words=False,
         break_on_hyphens=False,
     ) or [""]:
-        print(f"{' ' * len(prefix)}{' ' * indent}{line}", file=sys.stderr, flush=True)
+        print(f"{prefix}{' ' * indent}{line}", file=sys.stderr, flush=True)
 
 
 def print_progress_message(config: LoopConfig, phase: str, label: str, text: str, *, head: str = "") -> None:

@@ -16,6 +16,8 @@ def temp_root_candidates() -> set[Path]:
         roots.add(Path("/tmp").resolve())
     candidates: set[Path] = set()
     for root in roots:
+        # Excluding ancestors is intentional: an ambient /tmp/.git should not
+        # make every temporary test directory look like a repository.
         candidates.add(root)
         candidates.update(root.parents)
     return candidates

@@ -13,6 +13,7 @@ CLI edge.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
@@ -304,9 +305,10 @@ def deterministic_commit_message(
     paths = staged_paths or []
     scope = _commit_scope(paths)
     change_type = _commit_type(paths, context=context)
+    summary = _commit_summary(change_type, paths, context=context)
     if scope:
-        return f"{change_type}({scope}): apply verified remediation {iteration} (RevRem)"
-    return f"{change_type}: apply verified remediation {iteration} (RevRem)"
+        return f"{change_type}({scope}): {summary} (RevRem)"
+    return f"{change_type}: {summary} (RevRem)"
 
 
 def _commit_scope(paths: list[str]) -> str:
@@ -330,14 +332,157 @@ def _commit_type(paths: list[str], *, context: str = "") -> str:
         return "docs"
     if paths and all(path.startswith("tests/") for path in paths):
         return "test"
-    lower_context = context.lower()
-    if any(term in lower_context for term in ("performance", "cache", "faster", "speed", "latency")):
+    leading_context = _commit_context_leading_text(context).lower()
+    if _contains_any(
+        leading_context,
+        (
+            r"\bfix(?:es|ed)?\b",
+            r"\bbug(?:s)?\b",
+            r"\bregression(?:s)?\b",
+            r"\bpreserve(?:s|d)?\b",
+            r"\bavoid(?:s|ed)?\b",
+            r"\bprevent(?:s|ed)?\b",
+            r"\brestore(?:s|d)?\b",
+            r"\bcorrect(?:s|ed)?\b",
+            r"\berror(?:s)?\b",
+            r"\bfail(?:s|ed|ure|ures)?\b",
+            r"\bbroken\b",
+        ),
+    ):
+        return "fix"
+    if _contains_any(leading_context, (r"\bperformance\b", r"\bcach(?:e|ing)\b", r"\bfaster\b", r"\bspeed\b", r"\blatency\b")):
         return "perf"
-    if any(term in lower_context for term in ("refactor", "extract", "split", "restructure", "decompose")):
+    if _contains_any(
+        leading_context,
+        (r"\brefactor(?:s|ed)?\b", r"\bextract(?:s|ed)?\b", r"\bsplit(?:s)?\b", r"\brestructure(?:s|d)?\b", r"\bdecompose(?:s|d)?\b"),
+    ):
         return "refactor"
-    if any(term in lower_context for term in ("add ", "adds ", "enable ", "support ", "new ", "feature")):
+    if _contains_any(
+        leading_context,
+        (r"\badd(?:s|ed)?\b", r"\benable(?:s|d)?\b", r"\bsupport(?:s|ed)?\b", r"\bnew\b", r"\bfeature(?:s)?\b"),
+    ):
         return "feat"
     return "fix"
+
+
+def _contains_any(text: str, patterns: tuple[str, ...]) -> bool:
+    return any(re.search(pattern, text) for pattern in patterns)
+
+
+def _commit_summary(change_type: str, paths: list[str], *, context: str) -> str:
+    leading_context = _commit_context_leading_text(context)
+    context_summary = _summary_from_context(change_type, leading_context)
+    if context_summary:
+        return context_summary
+    return _summary_from_paths(change_type, paths)
+
+
+def _commit_context_leading_text(context: str) -> str:
+    for raw_line in context.splitlines():
+        line = _clean_context_line(raw_line)
+        if line:
+            return line
+    return ""
+
+
+def _clean_context_line(line: str) -> str:
+    text = line.strip().strip("-* ")
+    text = re.sub(r"^\[[A-Z]\d+\]\s*", "", text)
+    text = re.sub(r"`([^`]+)`", r"\1", text)
+    text = re.sub(r"\s+[-—]\s+/.+$", "", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip(" .:")
+
+
+def _summary_from_context(change_type: str, text: str) -> str:
+    if not text:
+        return ""
+    lower = text.lower()
+    noun = _noun_from_text(lower)
+    if change_type == "feat":
+        if "triage" in lower and ("cli" in lower or "command line" in lower):
+            return "add triage cli override"
+        return f"add {noun}"
+    if change_type == "refactor":
+        return f"refactor {noun}"
+    if change_type == "perf":
+        return f"improve {noun} performance"
+    if change_type == "docs":
+        return f"document {noun}"
+    if change_type == "test":
+        return f"cover {noun}"
+    if "excerpt" in lower and "review" in lower:
+        return "preserve review excerpts"
+    if "valid profile" in lower or "profiles" in lower:
+        return "validate profiles correctly"
+    if "artifact" in lower and "metadata" in lower:
+        return "handle artifact metadata"
+    return f"fix {noun}"
+
+
+def _noun_from_text(lower_text: str) -> str:
+    noun_patterns = (
+        (("commit", "message"), "commit messages"),
+        (("runner", "setup"), "runner setup"),
+        (("review", "excerpt"), "review excerpts"),
+        (("phase", "config"), "phase config"),
+        (("resume", "command"), "resume command"),
+        (("progress", "line"), "progress lines"),
+        (("profile",), "profiles"),
+        (("routing",), "routing"),
+        (("triage",), "triage"),
+        (("artifact",), "artifacts"),
+    )
+    for needles, noun in noun_patterns:
+        if all(needle in lower_text for needle in needles):
+            return noun
+    words = re.findall(r"[a-z][a-z0-9-]+", lower_text)
+    stop_words = {
+        "the",
+        "and",
+        "for",
+        "with",
+        "from",
+        "this",
+        "that",
+        "when",
+        "where",
+        "into",
+        "review",
+        "remediation",
+    }
+    useful = [word for word in words if word not in stop_words]
+    return " ".join(useful[:3]) if useful else "review remediation"
+
+
+def _summary_from_paths(change_type: str, paths: list[str]) -> str:
+    noun = _path_noun(paths)
+    verbs = {
+        "docs": "document",
+        "feat": "add",
+        "fix": "fix",
+        "perf": "improve",
+        "refactor": "refactor",
+        "test": "cover",
+    }
+    return f"{verbs.get(change_type, 'update')} {noun}"
+
+
+def _path_noun(paths: list[str]) -> str:
+    if not paths:
+        return "review remediation"
+    dominant = max(paths, key=lambda path: (paths.count(path), path))
+    path = Path(dominant)
+    stem = path.stem.replace("_", " ").replace("-", " ")
+    if len(path.parts) >= 3 and path.parts[0] == "src":
+        package_part = path.parts[-2].replace("_", " ").replace("-", " ")
+        if package_part == "code review loop":
+            return stem
+        if package_part not in stem:
+            return f"{package_part} {stem}"
+    if len(path.parts) >= 2 and path.parts[0] == "tests":
+        return stem.removeprefix("test ")
+    return stem or "review remediation"
 
 
 def _display_timeout(value: float | None) -> str:

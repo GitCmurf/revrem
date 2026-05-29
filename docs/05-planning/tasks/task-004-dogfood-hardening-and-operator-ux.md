@@ -3,7 +3,7 @@ document_id: REVREM-TASK-004
 type: TASK
 title: Dogfood hardening and operator UX
 status: In Review
-version: '0.3'
+version: '0.4'
 last_updated: '2026-05-29'
 owner: GitCmurf
 docops_version: '2.0'
@@ -736,6 +736,35 @@ Round 2 implementation evidence:
 - verified `ruff`, `mypy`, `lint-imports`, `meminit check`, and `pytest -q`;
 - verified `pytest -q` in both required temp states:
   clean `/tmp` -> `838 passed`; polluted `/tmp/.git` -> `838 passed`.
+
+### Round 3 closeout scope
+
+The third adversarial review found TASK-004 complete and the architecture
+strong, with a final quality gap in operator-facing polish. The accepted Round
+3 remediation is:
+
+- replace the deterministic fallback subject
+  `apply verified remediation N` with path/context-derived Conventional Commit
+  subjects;
+- rank explicit bugfix/regression signals ahead of loose feature words during
+  fallback type inference;
+- preserve triage, routing, model, harness, effort, commit-message, and
+  timeout overrides in suggested resume commands;
+- repeat compact progress prefixes on wrapped physical lines so phase logs stay
+  grep-friendly;
+- show `source=` in closeout phase-configuration summaries;
+- avoid subset-like check artifact fallbacks when check artifact names are not
+  parseable;
+- document intentional temp-root ancestor exclusion in root discovery.
+
+Round 3 implementation evidence:
+
+- added regression coverage for descriptive fallback subjects, bugfix-vs-feat
+  inference, complete resume override projection, wrapped progress prefixes,
+  closeout phase provenance, and check-artifact parse misses;
+- verified the focused TASK-004 regression tests before full gate execution;
+- live dogfood Matrix A/C/E remains the final operator exercise after the code
+  gate is green because it depends on local Codex/Gemini credentials.
 
 ## Verification Commands
 

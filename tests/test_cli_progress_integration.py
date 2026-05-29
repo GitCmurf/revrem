@@ -148,8 +148,8 @@ def test_compact_progress_wraps_to_terminal_width(tmp_path, capsys, monkeypatch)
     runner_mod.run_loop(config, runner)
     captured = capsys.readouterr()
 
-    assert re.search(r"\n\s{25}onto another aligned line\.", captured.err)
-    assert re.search(r"\n\s{25}the same text column\.", captured.err)
+    assert re.search(r"\n\d\d:\d\d:\d\d\|rev\|1\s+\|\s+onto another aligned line\.", captured.err)
+    assert re.search(r"\n\d\d:\d\d:\d\d\|rev\|1\s+\|\s+the same text column\.", captured.err)
 
 
 def test_progress_logs_finding_detail_lines(tmp_path, capsys):
@@ -179,7 +179,21 @@ def test_progress_logs_finding_detail_lines(tmp_path, capsys):
     captured = capsys.readouterr()
 
     assert "This is the important detail." in captured.err
-    assert re.search(r"\n\s{25}This is the important detail\.", captured.err)
+    assert re.search(r"\n\d\d:\d\d:\d\d\|rev\|1\s+\|\s+This is the important detail\.", captured.err)
+
+
+def test_compact_progress_repeats_prefix_on_every_wrapped_line(monkeypatch):
+    monkeypatch.setattr(phase_support, "terminal_columns", lambda default=120: 58)
+
+    lines = phase_support.wrap_progress_text(
+        "12:34:56|tri|1   |",
+        "codex exec [contract=v2 source=mixed harness=codex model=gpt-5.5 timeout=0]",
+        head="start: ",
+    )
+
+    assert len(lines) > 1
+    assert all(line.startswith("12:34:56|tri|1   |") for line in lines)
+    assert "source=mixed" in " ".join(lines)
 
 
 def test_quiet_progress_suppresses_progress_logs(tmp_path, capsys):

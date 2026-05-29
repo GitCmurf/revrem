@@ -764,7 +764,8 @@ def test_commit_message_for_staged_changes_uses_specific_fallback_on_model_failu
 
     message = commit_message_for_staged_changes(config, runner, 2, make_run_context(runner))
 
-    assert message == "fix(core): apply verified remediation 2 (RevRem)"
+    assert message == "fix(core): fix foo (RevRem)"
+    assert "apply verified remediation" not in message
     assert (tmp_path / "artifacts" / "commit-2-message-fallback.json").is_file()
 
 
@@ -796,7 +797,7 @@ def test_commit_message_fallback_uses_review_context_for_feature_type(tmp_path):
 
     message = commit_message_for_staged_changes(config, runner, 3, make_run_context(runner))
 
-    assert message == "feat(core): apply verified remediation 3 (RevRem)"
+    assert message == "feat(core): add triage cli override (RevRem)"
 
 
 def test_commit_message_fallback_uses_remediation_context_for_refactor_type(tmp_path):
@@ -824,7 +825,37 @@ def test_commit_message_fallback_uses_remediation_context_for_refactor_type(tmp_
 
     message = commit_message_for_staged_changes(config, runner, 4, make_run_context(runner))
 
-    assert message == "refactor(core): apply verified remediation 4 (RevRem)"
+    assert message == "refactor(core): refactor runner setup (RevRem)"
+
+
+def test_commit_message_fallback_ranks_bugfix_context_above_feature_words(tmp_path):
+    artifact_dir = tmp_path / "artifacts"
+    artifact_dir.mkdir()
+    (artifact_dir / "review-5.txt").write_text(
+        "Fix a regression when profiles add support for draft routes.\n",
+        encoding="utf-8",
+    )
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=artifact_dir,
+        commit_message_model=None,
+    )
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[:4] == ["git", "diff", "--cached", "--stat"]:
+            return CommandResult(list(args), 0, stdout=" src/code_review_loop/profiles.py | 2 +-\n")
+        if args[:4] == ["git", "diff", "--cached", "--name-only"]:
+            return CommandResult(list(args), 0, stdout="src/code_review_loop/profiles.py\n")
+        raise AssertionError(f"unexpected command: {args!r}")
+
+    message = commit_message_for_staged_changes(config, runner, 5, make_run_context(runner))
+
+    assert message.startswith("fix(core): ")
+    assert "feat" not in message
+    assert "apply verified remediation" not in message
 
 
 def test_normalize_revrem_conventional_subject_preserves_suffix_when_truncated():
