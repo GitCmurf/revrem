@@ -1113,11 +1113,13 @@ def validate_profile(profile: Profile, *, require_implemented: bool) -> None:
         if profile.commit.enabled:
             require_implemented_harness(profile.commit.harness, field="commit.harness")
 
-        # Item 3: Validate that every route eventually resolves to an implemented harness
-        for route_name in profile.triage.routes:
-            route_issues = _walk_route_fallback_chain(profile.triage.routes, route_name)
-            if route_issues:
-                raise ValueError(route_issues[0])
+        # Only enforce route-chain implementation when routing can actually select routes.
+        # Disabled routing may still carry draft or experimental route tables for later use.
+        if profile.triage.routing.enabled:
+            for route_name in profile.triage.routes:
+                route_issues = _walk_route_fallback_chain(profile.triage.routes, route_name)
+                if route_issues:
+                    raise ValueError(route_issues[0])
 
 
 def _write_profile_file(

@@ -139,6 +139,36 @@ def test_validate_profile_rejects_circular_route_fallback_chain():
         profiles.validate_profile(profile, require_implemented=True)
 
 
+def test_resolve_profile_allows_disabled_routing_with_unimplemented_route_chain(tmp_path):
+    home = tmp_path / "home"
+    cwd = tmp_path / "repo"
+    cwd.mkdir()
+    path = profiles.user_config_path(home)
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        """
+[profiles.draft.triage]
+enabled = true
+
+[profiles.draft.triage.routing]
+enabled = false
+
+[profiles.draft.triage.routes.frontier]
+harness = "reserved"
+fallback = "midtier"
+
+[profiles.draft.triage.routes.midtier]
+harness = "reserved"
+""",
+        encoding="utf-8",
+    )
+
+    resolved = profiles.resolve_profile("draft", cwd=cwd, home=home)
+
+    assert resolved.triage.routing.enabled is False
+    assert tuple(resolved.triage.routes) == ("frontier", "midtier")
+
+
 def test_to_toml_preserves_routing(tmp_path):
     profile = profiles.Profile(
         name="test",
