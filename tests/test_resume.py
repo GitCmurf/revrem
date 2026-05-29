@@ -413,6 +413,7 @@ def test_resume_loop_config_restores_commit_message_settings(tmp_path):
             "commit_message_prompt": "Summarize staged changes.",
             "commit_message_prompt_overridden": True,
             "commit_reasoning_effort": "high",
+            "commit_timeout_seconds": 0,
             "commit_on_hook_failure": "no-verify",
             "review_model": "review_clear",
             "remediation_model": "remediation",
@@ -431,6 +432,7 @@ def test_resume_loop_config_restores_commit_message_settings(tmp_path):
     assert resumed.commit_message_prompt == "Summarize staged changes."
     assert resumed.commit_message_prompt_overridden is True
     assert resumed.commit_reasoning_effort == "high"
+    assert resumed.commit_timeout_seconds == 0
     assert resumed.commit_on_hook_failure == "no-verify"
 
 
@@ -472,6 +474,7 @@ def test_resume_config_payload_omits_default_extension_fields(tmp_path):
     assert "commit_message_prompt" not in payload
     assert "commit_message_prompt_overridden" not in payload
     assert "commit_reasoning_effort" not in payload
+    assert "commit_timeout_seconds" not in payload
     assert "trusted_repo" not in payload
     assert "reasoning_effort" not in payload
     assert "review_reasoning_effort" not in payload
@@ -493,6 +496,7 @@ def test_resume_config_payload_persists_configured_extension_fields(tmp_path):
             commit_message_prompt="Summarize staged changes.",
             commit_message_prompt_overridden=True,
             commit_reasoning_effort="high",
+            commit_timeout_seconds=0,
             reasoning_effort="medium",
             review_reasoning_effort="low",
             remediation_reasoning_effort="high",
@@ -505,6 +509,7 @@ def test_resume_config_payload_persists_configured_extension_fields(tmp_path):
     assert payload["commit_message_prompt"] == "Summarize staged changes."
     assert payload["commit_message_prompt_overridden"] is True
     assert payload["commit_reasoning_effort"] == "high"
+    assert payload["commit_timeout_seconds"] == 0
     assert payload["reasoning_effort"] == "medium"
     assert payload["review_reasoning_effort"] == "low"
     assert payload["remediation_reasoning_effort"] == "high"

@@ -136,7 +136,11 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         or profile.remediation.reasoning_effort
     )
     triage_reasoning_effort = args.triage_reasoning_effort or profile.triage.reasoning_effort
-    commit_reasoning_effort = args.commit_reasoning_effort or remediation_reasoning_effort
+    commit_reasoning_effort = (
+        args.commit_reasoning_effort
+        or profile.commit.reasoning_effort
+        or remediation_reasoning_effort
+    )
     review_model = args.review_model or args.model or profile.review.model
     remediation_model = args.remediation_model or args.model or profile.remediation.model
     commit_message_model = (
@@ -187,6 +191,7 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         ),
         commit_on_hook_failure=commit_on_hook_failure,
         commit_reasoning_effort=commit_reasoning_effort,
+        commit_timeout_seconds=profile.commit.timeout_seconds,
         triage_enabled=profile.triage.enabled,
         triage_model=profile.triage.model,
         triage_reasoning_effort=triage_reasoning_effort,
@@ -299,6 +304,8 @@ def profile_from_loop_config(
             message_model=config.commit_message_model,
             message_prompt=config.commit_message_prompt,
             on_hook_failure=config.commit_on_hook_failure,
+            reasoning_effort=config.commit_reasoning_effort,
+            timeout_seconds=config.commit_timeout_seconds,
         ),
         output=profiles.OutputConfig(
             summary_format=summary_format,

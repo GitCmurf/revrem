@@ -109,6 +109,43 @@ scope = "user"
     assert 'scope = "user"' in profiles.profile_to_toml(loaded.profiles["demo"])
 
 
+def test_project_dogfood_profile_parses_exact_committed_profile():
+    loaded = profiles.load_profile_file(Path(".revrem.toml"))
+
+    dogfood = loaded.profiles["dogfood"]
+    assert dogfood.pipeline.max_iterations == 3
+    assert dogfood.triage.enabled is True
+    assert dogfood.triage.contract == "v2"
+    assert dogfood.triage.routing.rule[0].id == "high-risk-frontier"
+    assert dogfood.triage.routing.rule[0].when.risk_level_min == "high"
+    assert dogfood.triage.routing.rule[1].id == "multi-file-gemini"
+    assert dogfood.triage.routing.rule[1].when.module_count_gte == 4
+    assert dogfood.triage.routes["gemini-pro"].harness == "gemini"
+    assert dogfood.commit.message_model == "gpt-5.3-codex-spark"
+    assert dogfood.commit.reasoning_effort == "low"
+    assert dogfood.commit.timeout_seconds == 0
+
+
+def test_profile_accepts_commit_reasoning_effort_and_timeout(tmp_path):
+    path = tmp_path / "profiles.toml"
+    path.write_text(
+        """
+[profiles.demo.commit]
+enabled = true
+reasoning_effort = "minimal"
+timeout_seconds = 0
+""",
+        encoding="utf-8",
+    )
+
+    loaded = profiles.load_profile_file(path)
+
+    assert loaded.profiles["demo"].commit.reasoning_effort == "minimal"
+    assert loaded.profiles["demo"].commit.timeout_seconds == 0
+    assert profiles.profile_to_dict(loaded.profiles["demo"])["commit"]["timeout_seconds"] == 0
+    assert 'reasoning_effort = "minimal"' in profiles.profile_to_toml(loaded.profiles["demo"])
+
+
 def test_resolve_profile_merges_suppression_scope_defaults(tmp_path):
     home = tmp_path / "home"
     cwd = tmp_path / "repo"

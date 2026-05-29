@@ -105,6 +105,8 @@ COMMIT_KEYS = (
     "message_model",
     "message_prompt",
     "on_hook_failure",
+    "reasoning_effort",
+    "timeout_seconds",
 )
 OUTPUT_KEYS = (
     "summary_format",
@@ -407,6 +409,11 @@ def parse_commit(raw: dict[str, Any]) -> CommitConfig:
     _reject_unknown_keys(raw, COMMIT_KEYS, "commit")
     harness = _str(raw.get("harness", "codex"), "commit.harness")
     validate_harness_name(harness, field="commit.harness")
+    reasoning_effort = _optional_str(raw.get("reasoning_effort"), "commit.reasoning_effort")
+    if reasoning_effort is not None and reasoning_effort not in REASONING_EFFORT_CHOICES:
+        raise ValueError(
+            f"commit.reasoning_effort must be one of {', '.join(REASONING_EFFORT_CHOICES)}"
+        )
     on_hook_failure = _str(raw.get("on_hook_failure", "remediate"), "commit.on_hook_failure")
     if on_hook_failure not in COMMIT_ON_HOOK_FAILURE_CHOICES:
         raise ValueError(
@@ -420,6 +427,8 @@ def parse_commit(raw: dict[str, Any]) -> CommitConfig:
         or "gpt-5.3-codex-spark",
         message_prompt=_optional_str(raw.get("message_prompt"), "commit.message_prompt"),
         on_hook_failure=on_hook_failure,
+        reasoning_effort=reasoning_effort,
+        timeout_seconds=_optional_float(raw.get("timeout_seconds"), "commit.timeout_seconds"),
     )
 
 

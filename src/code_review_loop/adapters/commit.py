@@ -171,8 +171,11 @@ def run_commit(config: LoopConfig, runner: Runner, iteration: int, *, ctx: RunCo
 
 def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iteration: int, ctx: RunContext) -> str:
     fallback = deterministic_commit_message(iteration)
-    stat = runner(["git", "diff", "--cached", "--stat"], config.cwd, None, phase_support.phase_timeout_seconds(config, config.timeout_seconds))
-    names = runner(["git", "diff", "--cached", "--name-only"], config.cwd, None, phase_support.phase_timeout_seconds(config, config.timeout_seconds))
+    timeout_seconds = phase_support.phase_timeout_seconds(
+        config, config.commit_timeout_seconds
+    )
+    stat = runner(["git", "diff", "--cached", "--stat"], config.cwd, None, timeout_seconds)
+    names = runner(["git", "diff", "--cached", "--name-only"], config.cwd, None, timeout_seconds)
     stat_stdout = stat.stdout or ""
     names_stdout = names.stdout or ""
     context = "\n".join(
@@ -197,7 +200,7 @@ def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iterat
         prompt,
     )
     phase_support.ensure_model_budget(config, phase="commit-message", iteration=iteration, ctx=ctx)
-    result = runner(command, config.cwd, prompt_input, phase_support.phase_timeout_seconds(config, config.timeout_seconds))
+    result = runner(command, config.cwd, prompt_input, timeout_seconds)
     phase_support.write_artifact(config.artifact_dir / f"commit-{iteration}-message-draft.txt", phase_support._combined_output(result))
     phase_support.record_model_charge(config, result, phase="commit-message", iteration=iteration, ctx=ctx)
     if result.returncode != 0:

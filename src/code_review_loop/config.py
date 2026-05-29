@@ -36,6 +36,7 @@ class LoopConfig:
     commit_message_prompt_overridden: bool = False
     commit_on_hook_failure: str = "remediate"
     commit_reasoning_effort: str | None = None
+    commit_timeout_seconds: float | None = None
     triage_enabled: bool = False
     triage_model: str | None = None
     triage_reasoning_effort: str | None = None

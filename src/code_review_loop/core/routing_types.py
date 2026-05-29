@@ -105,6 +105,8 @@ class CommitConfig:
     message_model: str | None = "gpt-5.3-codex-spark"
     message_prompt: str | None = None
     on_hook_failure: str = "remediate"
+    reasoning_effort: str | None = None
+    timeout_seconds: float | None = None
 
 
 @dataclass(frozen=True)
