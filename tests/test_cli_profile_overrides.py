@@ -440,3 +440,121 @@ reasoning_effort = "low"
     assert config.triage_reasoning_effort == "low"
     assert config.remediation_reasoning_effort == "minimal"
     assert config.commit_reasoning_effort == "high"
+
+
+def test_main_triage_cli_overrides_profile_disabled_values(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    config_path = home / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.final-pr.triage]
+enabled = false
+contract = "v1"
+harness = "codex"
+model = "profile-triage"
+
+[profiles.final-pr.triage.routing]
+enabled = false
+strict_on_unavailable_route = true
+""",
+        encoding="utf-8",
+    )
+    captured_configs = []
+
+    def fake_run_loop(config):
+        captured_configs.append(config)
+        return _clear_result({
+            "artifact_dir": str(config.artifact_dir),
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+            "iterations": [],
+        })
+
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
+
+    exit_code = cli_main.main(
+        [
+            "--profile",
+            "final-pr",
+            "--triage",
+            "--triage-contract",
+            "v2",
+            "--triage-model",
+            "cli-triage",
+            "--triage-harness",
+            "gemini",
+            "--triage-timeout-seconds",
+            "0",
+            "--routing",
+            "--no-routing-strict",
+            "--dry-run",
+        ]
+    )
+
+    assert exit_code == 0
+    config = captured_configs[0]
+    assert config.triage_enabled is True
+    assert config.triage_contract == "v2"
+    assert config.triage_model == "cli-triage"
+    assert config.triage_harness == "gemini"
+    assert config.triage_timeout_seconds is None
+    assert config.profile_v2 is not None
+    assert config.profile_v2.triage.routing.enabled is True
+    assert config.profile_v2.triage.routing.strict_on_unavailable_route is False
+
+
+def test_main_triage_cli_negations_override_profile_enabled_values(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    config_path = home / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.final-pr.triage]
+enabled = true
+contract = "v2"
+
+[profiles.final-pr.triage.routing]
+enabled = true
+strict_on_unavailable_route = true
+
+[profiles.final-pr.triage.routes.midtier-coder]
+harness = "codex"
+""",
+        encoding="utf-8",
+    )
+    captured_configs = []
+
+    def fake_run_loop(config):
+        captured_configs.append(config)
+        return _clear_result({
+            "artifact_dir": str(config.artifact_dir),
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+            "iterations": [],
+        })
+
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
+
+    exit_code = cli_main.main(["--profile", "final-pr", "--no-triage", "--no-routing", "--dry-run"])
+
+    assert exit_code == 0
+    config = captured_configs[0]
+    assert config.triage_enabled is False
+    assert config.profile_v2 is not None
+    assert config.profile_v2.triage.routing.enabled is False
+
+
+def test_routing_override_requires_v2_contract(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+
+    exit_code = cli_main.main(["--routing", "--dry-run"])
+
+    assert exit_code == 1

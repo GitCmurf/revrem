@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 
 from code_review_loop import budgets, harnesses, profiles
@@ -76,6 +77,16 @@ def resolve_profile_timeout_seconds(value: float | None) -> float | None:
     return value
 
 
+def resolve_optional_timeout_seconds(value: float | None, *, flag: str) -> float | None:
+    if value is None:
+        return None
+    if value < 0:
+        raise ValueError(f"{flag} must be 0 or greater")
+    if value == 0:
+        return None
+    return value
+
+
 def profile_or_default(
     name: str | None,
     cwd: Path,
@@ -97,19 +108,34 @@ def pick(cli_value, profile_value, fallback):
 
 def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, str]:
     profile = profile_or_default(args.profile, cwd)
+    triage_enabled = pick(args.triage_enabled, profile.triage.enabled, False)
+    triage_contract = pick(args.triage_contract, profile.triage.contract, "v1")
+    routing_enabled = pick(args.routing_enabled, profile.triage.routing.enabled, False)
+    routing_strict = pick(
+        args.routing_strict,
+        profile.triage.routing.strict_on_unavailable_route,
+        True,
+    )
+    if routing_enabled and triage_contract != "v2":
+        raise ValueError("--routing requires --triage-contract v2 or a v2 triage profile")
     if args.timeout_seconds is not None:
         timeout_seconds = resolve_timeout_seconds(args.timeout_seconds)
         review_timeout_seconds = timeout_seconds
         remediation_timeout_seconds = timeout_seconds
-        triage_timeout_seconds = timeout_seconds if profile.triage.enabled else None
+        triage_timeout_seconds = timeout_seconds if triage_enabled else None
     else:
         timeout_seconds = DEFAULT_TIMEOUT_SECONDS
         review_timeout_seconds = resolve_profile_timeout_seconds(profile.review.timeout_seconds)
         remediation_timeout_seconds = resolve_profile_timeout_seconds(profile.remediation.timeout_seconds)
         triage_timeout_seconds = (
             resolve_profile_timeout_seconds(profile.triage.timeout_seconds)
-            if profile.triage.enabled
+            if triage_enabled
             else None
+        )
+    if args.triage_timeout_seconds is not None:
+        triage_timeout_seconds = resolve_optional_timeout_seconds(
+            args.triage_timeout_seconds,
+            flag="--triage-timeout-seconds",
         )
     commit_after_remediation = (
         args.commit_after_remediation
@@ -136,6 +162,9 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         or profile.remediation.reasoning_effort
     )
     triage_reasoning_effort = args.triage_reasoning_effort or profile.triage.reasoning_effort
+    triage_harness = args.triage_harness or profile.triage.harness
+    harnesses.validate_harness_name(triage_harness, field="--triage-harness")
+    triage_model = args.triage_model or profile.triage.model
     commit_reasoning_effort = (
         args.commit_reasoning_effort
         or profile.commit.reasoning_effort
@@ -164,6 +193,21 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
     }
     max_iterations = pick(args.max_iterations, profile.pipeline.max_iterations, 2)
     max_iterations = resolve_max_iterations(max_iterations)
+    routing = replace(
+        profile.triage.routing,
+        enabled=routing_enabled,
+        strict_on_unavailable_route=routing_strict,
+    )
+    effective_triage = replace(
+        profile.triage,
+        enabled=triage_enabled,
+        harness=triage_harness,
+        model=triage_model,
+        timeout_seconds=triage_timeout_seconds,
+        contract=triage_contract,
+        routing=routing,
+    )
+    profile_v2 = replace(profile, triage=effective_triage)
     config = LoopConfig(
         base=pick(args.base, profile.pipeline.base, "main"),
         max_iterations=max_iterations,
@@ -176,7 +220,7 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         model=args.model,
         review_harness=profile.review.harness,
         remediation_harness=profile.remediation.harness,
-        triage_harness=profile.triage.harness,
+        triage_harness=triage_harness,
         commit_message_harness=profile.commit.harness,
         review_model=review_model,
         remediation_model=remediation_model,
@@ -192,13 +236,13 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         commit_on_hook_failure=commit_on_hook_failure,
         commit_reasoning_effort=commit_reasoning_effort,
         commit_timeout_seconds=profile.commit.timeout_seconds,
-        triage_enabled=profile.triage.enabled,
-        triage_model=profile.triage.model,
+        triage_enabled=triage_enabled,
+        triage_model=triage_model,
         triage_reasoning_effort=triage_reasoning_effort,
         triage_timeout_seconds=triage_timeout_seconds,
         triage_prompt=profile.triage.prompt,
         triage_on_invalid=profile.triage.on_invalid,
-        triage_contract=profile.triage.contract,
+        triage_contract=triage_contract,
         exec_sandbox=pick(args.exec_sandbox, profile.runtime.exec_sandbox, "workspace-write"),
         exec_color=pick(args.exec_color, profile.runtime.exec_color, "never"),
         full_auto=pick(args.full_auto, profile.runtime.full_auto, True),
@@ -232,7 +276,7 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         profile_name=args.profile,
         budget_config=budget_config,
         trusted_repo=pick(getattr(args, "trusted_repo", None), False, False),
-        profile_v2=profile,
+        profile_v2=profile_v2,
     )
     return config, (args.summary_format or profile.output.summary_format)
 

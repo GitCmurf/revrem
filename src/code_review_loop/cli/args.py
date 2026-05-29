@@ -42,6 +42,8 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     )
     parser.add_argument("--model", default=None, help="Optional model passed to both Codex review and remediation.")
     parser.add_argument("--review-model", default=None, help="Optional model override for codex review only.")
+    parser.add_argument("--triage-model", default=None, help="Optional model override for triage only.")
+    parser.add_argument("--triage-harness", default=None, help="Optional harness override for triage only.")
     parser.add_argument(
         "--remediation-model",
         default=None,
@@ -80,6 +82,63 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         choices=REASONING_EFFORT_CHOICES,
         default=None,
         help="Optional Codex model_reasoning_effort override for commit-message drafting only.",
+    )
+    triage_group = parser.add_mutually_exclusive_group()
+    triage_group.add_argument(
+        "--triage",
+        dest="triage_enabled",
+        action="store_true",
+        default=None,
+        help="Enable triage for this run, overriding the selected profile.",
+    )
+    triage_group.add_argument(
+        "--no-triage",
+        dest="triage_enabled",
+        action="store_false",
+        default=None,
+        help="Disable triage for this run, overriding the selected profile.",
+    )
+    parser.add_argument(
+        "--triage-contract",
+        choices=("v1", "v2"),
+        default=None,
+        help="Optional triage contract override.",
+    )
+    parser.add_argument(
+        "--triage-timeout-seconds",
+        type=float,
+        default=None,
+        help="Maximum seconds for triage. Use 0 to disable triage timeout.",
+    )
+    routing_group = parser.add_mutually_exclusive_group()
+    routing_group.add_argument(
+        "--routing",
+        dest="routing_enabled",
+        action="store_true",
+        default=None,
+        help="Enable v2 routing for this run, overriding the selected profile.",
+    )
+    routing_group.add_argument(
+        "--no-routing",
+        dest="routing_enabled",
+        action="store_false",
+        default=None,
+        help="Disable v2 routing for this run, overriding the selected profile.",
+    )
+    routing_strict_group = parser.add_mutually_exclusive_group()
+    routing_strict_group.add_argument(
+        "--routing-strict",
+        dest="routing_strict",
+        action="store_true",
+        default=None,
+        help="Fail when a selected routing route cannot resolve to an implemented harness.",
+    )
+    routing_strict_group.add_argument(
+        "--no-routing-strict",
+        dest="routing_strict",
+        action="store_false",
+        default=None,
+        help="Allow routing fallback when a selected route is unavailable.",
     )
     parser.add_argument(
         "--exec-sandbox",
