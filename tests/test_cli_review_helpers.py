@@ -660,6 +660,8 @@ def test_commit_message_command_uses_read_only_exec_with_configured_model(tmp_pa
         "exec",
         "-c",
         'model_reasoning_effort="minimal"',
+        "--disable",
+        "web_search",
         "--sandbox",
         "read-only",
         "--color",
@@ -668,6 +670,21 @@ def test_commit_message_command_uses_read_only_exec_with_configured_model(tmp_pa
         "gpt-5.3-codex-spark",
         "-",
     ]
+
+
+def test_remediation_command_does_not_disable_web_search(tmp_path):
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        remediation_reasoning_effort="minimal",
+    )
+
+    command = remediation_impl.build_remediation_command(config)
+
+    assert "--disable" not in command
 
 
 def test_sanitize_commit_message_uses_first_plain_subject():
@@ -723,6 +740,31 @@ def test_commit_message_for_staged_changes_respects_profile_prompt_override(tmp_
     assert "Write a custom subject." in next(
         prompt for args, prompt in calls if args[:2] == ["codex", "exec"]
     )
+
+
+def test_commit_message_for_staged_changes_uses_specific_fallback_on_model_failure(tmp_path):
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        commit_message_model="gpt-test-commit",
+        timeout_seconds=30,
+    )
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[:4] == ["git", "diff", "--cached", "--stat"]:
+            return CommandResult(list(args), 0, stdout=" src/code_review_loop/foo.py | 2 +-\n")
+        if args[:4] == ["git", "diff", "--cached", "--name-only"]:
+            return CommandResult(list(args), 0, stdout="src/code_review_loop/foo.py\n")
+        if args[:2] == ["codex", "exec"]:
+            return CommandResult(list(args), 1, stderr="model unavailable\n")
+        raise AssertionError(f"unexpected command: {args!r}")
+
+    message = commit_message_for_staged_changes(config, runner, 2, make_run_context(runner))
+
+    assert message == "fix(core): apply verified remediation 2 (RevRem)"
 
 
 def test_normalize_revrem_conventional_subject_preserves_suffix_when_truncated():

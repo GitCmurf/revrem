@@ -72,6 +72,8 @@ class CodexHarnessAdapter(HarnessAdapter):
     def _exec_command(self, request: PhaseCommandRequest) -> list[str]:
         command = [request.executable, "exec"]
         command.extend(_codex_config_args(request.reasoning_effort))
+        if request.role == "commit-message":
+            command.extend(["--disable", "web_search"])
         if request.role == "remediation" and request.full_auto:
             command.append("--full-auto")
         command.extend(["--sandbox", request.sandbox])

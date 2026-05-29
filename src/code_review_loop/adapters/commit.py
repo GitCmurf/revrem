@@ -170,7 +170,6 @@ def run_commit(config: LoopConfig, runner: Runner, iteration: int, *, ctx: RunCo
 
 
 def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iteration: int, ctx: RunContext) -> str:
-    fallback = deterministic_commit_message(iteration)
     timeout_seconds = phase_support.phase_timeout_seconds(
         config, config.commit_timeout_seconds
     )
@@ -178,6 +177,8 @@ def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iterat
     names = runner(["git", "diff", "--cached", "--name-only"], config.cwd, None, timeout_seconds)
     stat_stdout = stat.stdout or ""
     names_stdout = names.stdout or ""
+    staged_paths = [line.strip() for line in names_stdout.splitlines() if line.strip()]
+    fallback = deterministic_commit_message(iteration, staged_paths=staged_paths)
     context = "\n".join(
         part
         for part in (
@@ -204,6 +205,14 @@ def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iterat
     phase_support.write_artifact(config.artifact_dir / f"commit-{iteration}-message-draft.txt", phase_support._combined_output(result))
     phase_support.record_model_charge(config, result, phase="commit-message", iteration=iteration, ctx=ctx)
     if result.returncode != 0:
+        phase_support.progress_event(
+            config,
+            "commit-message",
+            str(iteration),
+            "fallback",
+            f"model drafting failed; using deterministic subject: {fallback}",
+            ctx=ctx,
+        )
         return fallback
     return phase_support.sanitize_commit_message(
         actionable_review_output(phase_support._combined_output(result)),
@@ -212,8 +221,37 @@ def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iterat
     )
 
 
-def deterministic_commit_message(iteration: int) -> str:
-    return f"chore: remediate review iteration {iteration} (RevRem)"
+def deterministic_commit_message(iteration: int, *, staged_paths: list[str] | None = None) -> str:
+    paths = staged_paths or []
+    scope = _commit_scope(paths)
+    change_type = _commit_type(paths)
+    if scope:
+        return f"{change_type}({scope}): apply verified remediation {iteration} (RevRem)"
+    return f"{change_type}: apply verified remediation {iteration} (RevRem)"
+
+
+def _commit_scope(paths: list[str]) -> str:
+    if not paths:
+        return "review"
+    first_parts = [Path(path).parts[0] for path in paths if Path(path).parts]
+    if not first_parts:
+        return "review"
+    counts = {part: first_parts.count(part) for part in set(first_parts)}
+    dominant = max(counts, key=lambda part: (counts[part], part))
+    scope_map = {
+        "src": "core",
+        "tests": "tests",
+        "docs": "docs",
+    }
+    return scope_map.get(dominant, dominant.replace("_", "-"))
+
+
+def _commit_type(paths: list[str]) -> str:
+    if paths and all(path.startswith("docs/") or path.endswith(".md") for path in paths):
+        return "docs"
+    if paths and all(path.startswith("tests/") for path in paths):
+        return "test"
+    return "fix"
 
 
 def format_commit_hook_failure_for_remediation(exc: phase_support.CommitFailed) -> str:
