@@ -101,6 +101,16 @@ def test_terminal_summary_surfaces_latest_findings_and_paths():
             "checks": ["tmp/run/check-2-1.txt", "tmp/run/check-2-2.txt"],
             "summary": "tmp/run/summary.json",
         },
+        "base": "main",
+        "max_iterations": 2,
+        "resume_config": {
+            "base": "main",
+            "max_iterations": 2,
+            "check_commands": ["./.venv/bin/ruff check .", "./.venv/bin/pytest -q"],
+            "timeout_seconds": 0,
+            "commit_after_remediation": True,
+            "commit_on_hook_failure": "remediate",
+        },
         "phase_config": {
             "review": {
                 "harness": "codex",
@@ -121,7 +131,12 @@ def test_terminal_summary_surfaces_latest_findings_and_paths():
     assert "Review-remediation loop: findings (max_iterations_reached)" in text
     assert "Phase config:" in text
     assert "Latest review: tmp/run/review-final.txt" in text
-    assert "Continue command: ./.venv/bin/revrem --initial-review-file tmp/run/review-final.txt" in text
+    assert (
+        "Continue command: ./.venv/bin/revrem --base main --max-iterations 2 "
+        "--check './.venv/bin/ruff check .' --check './.venv/bin/pytest -q' "
+        "--timeout-seconds 0 --commit-after-remediation --initial-review-file "
+        "tmp/run/review-final.txt --commit-on-hook-failure remediate"
+    ) in text
     assert "Latest remediation summary: tmp/run/remediation-2-last-message.txt" in text
     assert "Latest check status:" in text
     assert "passed: ./.venv/bin/ruff check . (tmp/run/check-2-1.txt)" in text

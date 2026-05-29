@@ -6,6 +6,7 @@ import copy
 import ntpath
 import posixpath
 import re
+import shlex
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePath
@@ -164,17 +165,39 @@ def _phase_config_summary(phase_config: dict[object, object]) -> str:
 
 
 def _resume_command(summary: dict[str, object], review_path: str) -> str:
+    resume_config = summary.get("resume_config")
+    config = resume_config if isinstance(resume_config, dict) else {}
     command = ["./.venv/bin/revrem"]
-    base = summary.get("base")
+    base = config.get("base") or summary.get("base")
     if isinstance(base, str) and base:
         command.extend(["--base", base])
+    max_iterations = config.get("max_iterations") or summary.get("max_iterations")
+    if isinstance(max_iterations, int):
+        command.extend(["--max-iterations", str(max_iterations)])
     profile = summary.get("profile")
     if isinstance(profile, str) and profile:
         command.extend(["--profile", profile])
+    elif isinstance(config.get("check_commands"), list):
+        for check in config["check_commands"]:
+            if isinstance(check, str) and check:
+                command.extend(["--check", check])
+    timeout_seconds = config.get("timeout_seconds")
+    if isinstance(timeout_seconds, int | float):
+        command.extend(["--timeout-seconds", _format_number(timeout_seconds)])
+    commit_after = config.get("commit_after_remediation")
+    if isinstance(commit_after, bool):
+        command.append("--commit-after-remediation" if commit_after else "--no-commit-after-remediation")
     command.extend(["--initial-review-file", review_path])
-    if summary.get("commit_no_verify") is False and summary.get("commit_on_hook_failure"):
-        command.extend(["--commit-on-hook-failure", str(summary["commit_on_hook_failure"])])
-    return " ".join(command)
+    hook_policy = config.get("commit_on_hook_failure") or summary.get("commit_on_hook_failure")
+    if isinstance(hook_policy, str) and hook_policy:
+        command.extend(["--commit-on-hook-failure", hook_policy])
+    return shlex.join(command)
+
+
+def _format_number(value: int | float) -> str:
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
 
 
 def _latest_iteration_checks(paths: list[str]) -> list[str]:

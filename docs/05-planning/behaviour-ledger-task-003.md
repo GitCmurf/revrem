@@ -56,6 +56,24 @@ There is no silent third option.
 
 ## Entries
 
+### 2026-05-29 — Phase configuration field provenance added to summaries
+
+- **Contract:** machine
+- **What changed:** each `phase_config` section in loop summaries and
+  `resume_config.phase_config` now includes a `sources` object mapping
+  individual fields to their source (`cli`, `profile:<name>`, `defaults`, or
+  `direct-config`). The existing phase-level `source` field remains; phases
+  with mixed field sources are marked `source == "mixed"`.
+- **Why:** `REVREM-TASK-004` dogfood runs need auditable CLI-over-profile
+  precedence without requiring operators to infer which field came from which
+  layer.
+- **Before / After:** before, summaries had only phase-level source markers;
+  after, golden-master summary snapshots include empty `sources` objects for
+  direct configurations and populated field maps for CLI/profile-built configs.
+- **schema_version impact:** none; pre-release `summary.json` remains at schema
+  version `1.0` while adding an optional object field.
+- **CHANGELOG:** not required; internal pre-release dogfood hardening.
+
 ### 2026-05-29 — Dogfood phase configuration added to loop summaries
 
 - **Contract:** machine

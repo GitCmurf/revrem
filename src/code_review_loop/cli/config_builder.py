@@ -118,6 +118,13 @@ def _phase_source(profile_name: str | None, cli_override: object) -> str:
     return f"profile:{profile_name}" if profile_name else "defaults"
 
 
+def _mixed_phase_source(field_sources: dict[str, str]) -> str:
+    sources = set(field_sources.values())
+    if len(sources) == 1:
+        return next(iter(sources))
+    return "mixed"
+
+
 def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, str]:
     profile = profile_or_default(args.profile, cwd)
     profile_source = f"profile:{args.profile}" if args.profile else "defaults"
@@ -252,6 +259,51 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         routing=routing,
     )
     profile_v2 = replace(profile, triage=effective_triage)
+    phase_config_field_sources = {
+        "review": {
+            "harness": profile_source,
+            "model": _phase_source(args.profile, args.review_model or args.model),
+            "reasoning_effort": _phase_source(
+                args.profile,
+                args.review_reasoning_effort or args.reasoning_effort,
+            ),
+            "timeout_seconds": "cli" if args.timeout_seconds is not None else profile_source,
+        },
+        "triage": {
+            "enabled": "cli" if args.triage_enabled is not None else profile_source,
+            "harness": "cli" if args.triage_harness is not None else profile_source,
+            "model": "cli" if args.triage_model is not None else profile_source,
+            "reasoning_effort": "cli" if args.triage_reasoning_effort is not None else profile_source,
+            "timeout_seconds": (
+                "cli"
+                if args.timeout_seconds is not None or args.triage_timeout_seconds is not None
+                else profile_source
+            ),
+            "contract": "cli" if args.triage_contract is not None else profile_source,
+            "routing_enabled": "cli" if args.routing_enabled is not None else profile_source,
+        },
+        "remediation": {
+            "harness": profile_source,
+            "model": _phase_source(args.profile, args.remediation_model or args.model),
+            "reasoning_effort": _phase_source(
+                args.profile,
+                args.remediation_reasoning_effort or args.reasoning_effort,
+            ),
+            "timeout_seconds": "cli" if args.timeout_seconds is not None else profile_source,
+            "sandbox": "cli" if args.exec_sandbox is not None else profile_source,
+        },
+        "commit_message": {
+            "enabled": "cli" if args.commit_after_remediation is not None else profile_source,
+            "harness": profile_source,
+            "model": _phase_source(args.profile, args.commit_message_model or args.model),
+            "reasoning_effort": "cli" if args.commit_reasoning_effort is not None else profile_source,
+            "timeout_seconds": "cli" if args.timeout_seconds is not None else profile_source,
+        },
+        "checks": {
+            "commands": "cli" if args.check is not None else profile_source,
+            "timeout_seconds": "cli" if args.timeout_seconds is not None else profile_source,
+        },
+    }
     config = LoopConfig(
         base=pick(args.base, profile.pipeline.base, "main"),
         max_iterations=max_iterations,
@@ -313,29 +365,10 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         remediation_timeout_seconds_display=remediation_timeout_seconds_display,
         triage_timeout_seconds_display=triage_timeout_seconds_display,
         phase_config_sources={
-            "review": _phase_source(args.profile, args.review_model or args.reasoning_effort or args.review_reasoning_effort),
-            "triage": _phase_source(
-                args.profile,
-                (
-                    args.triage_enabled
-                    if args.triage_enabled is not None
-                    else args.triage_model
-                    or args.triage_harness
-                    or args.triage_reasoning_effort
-                    or args.triage_timeout_seconds
-                    or args.triage_contract
-                ),
-            ),
-            "remediation": _phase_source(
-                args.profile,
-                args.remediation_model or args.reasoning_effort or args.remediation_reasoning_effort,
-            ),
-            "commit_message": _phase_source(
-                args.profile,
-                args.commit_message_model or args.commit_message_prompt or args.commit_reasoning_effort,
-            ),
-            "checks": "cli" if args.check is not None else profile_source,
+            phase: _mixed_phase_source(sources)
+            for phase, sources in phase_config_field_sources.items()
         },
+        phase_config_field_sources=phase_config_field_sources,
         debug_status_detection=pick(
             args.debug_status_detection,
             profile.output.debug_status_detection,

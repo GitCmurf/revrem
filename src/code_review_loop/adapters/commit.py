@@ -36,16 +36,20 @@ def git_worktree_status_command_for_commit(_config: LoopConfig) -> list[str]:
     return ["git", "status", "--porcelain=v1", "--untracked-files=all"]
 
 
-def git_repo_root(start: Path) -> Path:
-    resolved_start = start.resolve()
-    for candidate in (resolved_start, *resolved_start.parents):
-        if (candidate / ".git").exists():
-            return candidate
-    raise RuntimeError(f"unable to determine git repository root from {start}")
+def git_repo_root(config: LoopConfig, runner: Runner) -> Path | None:
+    result = runner(
+        ["git", "-C", str(config.cwd), "rev-parse", "--show-toplevel"],
+        config.cwd,
+        None,
+        phase_support.phase_timeout_seconds(config, config.timeout_seconds),
+    )
+    if result.returncode != 0:
+        return None
+    root = result.stdout.strip()
+    return Path(root).resolve() if root else None
 
 
-def commit_artifact_relative_path(config: LoopConfig) -> Path | None:
-    repo_root = git_repo_root(config.cwd)
+def commit_artifact_relative_path(config: LoopConfig, repo_root: Path) -> Path | None:
     artifact_root = (
         config.artifact_dir
         if config.artifact_dir.is_absolute()
@@ -64,11 +68,12 @@ def commit_artifact_relative_path(config: LoopConfig) -> Path | None:
     return artifact_rel
 
 
-def git_reset_artifact_command_for_commit(config: LoopConfig) -> list[str] | None:
-    artifact_rel = commit_artifact_relative_path(config)
+def git_reset_artifact_command_for_commit(config: LoopConfig, repo_root: Path | None) -> list[str] | None:
+    if repo_root is None:
+        return None
+    artifact_rel = commit_artifact_relative_path(config, repo_root)
     if artifact_rel is None:
         return None
-    repo_root = git_repo_root(config.cwd)
     # Keep generated loop artifacts out of the staged commit. Resolve artifact
     # paths from the git root so subdirectory invocations can still reset files
     # that live elsewhere inside the same repository.
@@ -108,7 +113,9 @@ def run_commit(config: LoopConfig, runner: Runner, iteration: int, *, ctx: RunCo
         phase_support.progress_event(config, "commit", str(iteration), "skipped", "dry-run", ctx=ctx)
         return "skipped"
 
-    commit_artifact_relative_path(config)
+    repo_root = git_repo_root(config, runner)
+    if repo_root is not None:
+        commit_artifact_relative_path(config, repo_root)
     add_result = runner(
         git_add_command_for_commit(config),
         config.cwd,
@@ -123,7 +130,7 @@ def run_commit(config: LoopConfig, runner: Runner, iteration: int, *, ctx: RunCo
             f"see {config.artifact_dir / f'commit-{iteration}-add.txt'}"
         )
 
-    reset_command = git_reset_artifact_command_for_commit(config)
+    reset_command = git_reset_artifact_command_for_commit(config, repo_root)
     if reset_command is not None:
         reset_result = runner(
             reset_command,
@@ -191,7 +198,12 @@ def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iterat
     stat_stdout = stat.stdout or ""
     names_stdout = names.stdout or ""
     staged_paths = [line.strip() for line in names_stdout.splitlines() if line.strip()]
-    fallback = deterministic_commit_message(iteration, staged_paths=staged_paths)
+    fallback_context = commit_message_fallback_context(config, iteration)
+    fallback = deterministic_commit_message(
+        iteration,
+        staged_paths=staged_paths,
+        context=fallback_context,
+    )
     context = "\n".join(
         part
         for part in (
@@ -200,8 +212,11 @@ def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iterat
             "",
             "Stat:",
             stat_stdout.strip(),
+            "",
+            "Review/remediation context:",
+            fallback_context.strip(),
         )
-        if part is not None
+        if part is not None and part != ""
     )
     if not config.commit_message_model:
         return fallback
@@ -260,10 +275,31 @@ def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iterat
     )
 
 
-def deterministic_commit_message(iteration: int, *, staged_paths: list[str] | None = None) -> str:
+def commit_message_fallback_context(config: LoopConfig, iteration: int) -> str:
+    parts: list[str] = []
+    for name in (
+        f"review-{iteration}.txt",
+        f"remediation-{iteration}.txt",
+        f"remediation-{iteration}-last-message.txt",
+    ):
+        path = config.artifact_dir / name
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace").strip()
+        if text:
+            parts.append(text)
+    return prompts_composer.trim_for_prompt("\n\n".join(parts), 20_000)
+
+
+def deterministic_commit_message(
+    iteration: int,
+    *,
+    staged_paths: list[str] | None = None,
+    context: str = "",
+) -> str:
     paths = staged_paths or []
     scope = _commit_scope(paths)
-    change_type = _commit_type(paths)
+    change_type = _commit_type(paths, context=context)
     if scope:
         return f"{change_type}({scope}): apply verified remediation {iteration} (RevRem)"
     return f"{change_type}: apply verified remediation {iteration} (RevRem)"
@@ -285,11 +321,18 @@ def _commit_scope(paths: list[str]) -> str:
     return scope_map.get(dominant, dominant.replace("_", "-"))
 
 
-def _commit_type(paths: list[str]) -> str:
+def _commit_type(paths: list[str], *, context: str = "") -> str:
     if paths and all(path.startswith("docs/") or path.endswith(".md") for path in paths):
         return "docs"
     if paths and all(path.startswith("tests/") for path in paths):
         return "test"
+    lower_context = context.lower()
+    if any(term in lower_context for term in ("performance", "cache", "faster", "speed", "latency")):
+        return "perf"
+    if any(term in lower_context for term in ("refactor", "extract", "split", "restructure", "decompose")):
+        return "refactor"
+    if any(term in lower_context for term in ("add ", "adds ", "enable ", "support ", "new ", "feature")):
+        return "feat"
     return "fix"
 
 

@@ -503,7 +503,16 @@ strict_on_unavailable_route = true
     assert config.triage_harness == "gemini"
     assert config.triage_timeout_seconds is None
     assert config.triage_timeout_seconds_display == 0
-    assert config.phase_config_sources["triage"] == "cli"
+    assert config.phase_config_sources["triage"] == "mixed"
+    assert config.phase_config_field_sources["triage"] == {
+        "enabled": "cli",
+        "harness": "cli",
+        "model": "cli",
+        "reasoning_effort": "profile:final-pr",
+        "timeout_seconds": "cli",
+        "contract": "cli",
+        "routing_enabled": "cli",
+    }
     assert config.profile_v2 is not None
     assert config.profile_v2.triage.routing.enabled is True
     assert config.profile_v2.triage.routing.strict_on_unavailable_route is False

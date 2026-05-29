@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import os
-import tempfile
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
 from code_review_loop.config import LoopConfig
+from code_review_loop.repo_roots import lexical_git_repo_root
 
 
 def git_info_exclude_path(cwd: Path) -> Path | None:
@@ -30,13 +30,6 @@ def git_info_exclude_path(cwd: Path) -> Path | None:
     if git_dir.parent.name == "worktrees":
         return git_dir.parent.parent / "info" / "exclude"
     return git_dir / "info" / "exclude"
-
-
-def lexical_git_repo_root(start: Path) -> Path | None:
-    for candidate in (start, *start.parents):
-        if (candidate / ".git").exists():
-            return candidate
-    return None
 
 
 @contextmanager
@@ -65,11 +58,13 @@ def ensure_default_artifact_ignore(config: LoopConfig) -> None:
     except ValueError:
         return
     repo_root = lexical_git_repo_root(config.cwd)
-    if repo_root == Path(tempfile.gettempdir()).resolve():
-        repo_root = None
     ignore_path = git_info_exclude_path(repo_root) if repo_root is not None else None
     if ignore_path is not None and repo_root is not None:
-        ignore_entry = f"{default_runs_dir.relative_to(repo_root).as_posix()}/"
+        try:
+            ignore_entry = f"{default_runs_dir.relative_to(repo_root).as_posix()}/"
+        except ValueError:
+            ignore_path = None
+            ignore_entry = "runs/"
     else:
         ignore_entry = "runs/"
     ignore_path = ignore_path or (config.cwd / ".revrem" / ".gitignore")

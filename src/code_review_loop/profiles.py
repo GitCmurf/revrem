@@ -42,6 +42,7 @@ from code_review_loop.harnesses import (
     require_implemented_harness,
     validate_harness_name,
 )
+from code_review_loop.repo_roots import repo_root_or_cwd
 
 USER_CONFIG_RELATIVE = Path(".config") / "revrem" / "profiles.toml"
 PROJECT_CONFIG_NAME = ".revrem.toml"
@@ -143,15 +144,7 @@ def project_config_path(cwd: Path) -> Path:
 
 
 def _repo_root(cwd: Path) -> Path:
-    current = cwd.resolve()
-    temp_roots = {Path(tempfile.gettempdir()).resolve()}
-    temp_roots.add(Path(os.environ.get("TMPDIR") or "/tmp").resolve())
-    for candidate in (current, *current.parents):
-        if candidate in temp_roots:
-            continue
-        if (candidate / ".git").exists():
-            return candidate
-    return current
+    return repo_root_or_cwd(cwd)
 
 
 def load_profile_file(path: Path) -> ProfileFile:

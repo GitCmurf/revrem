@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from code_review_loop.core.review_interpretation import actionable_review_output
+from code_review_loop.repo_roots import lexical_git_repo_root as _lexical_git_repo_root
 
 
 def git_info_exclude_path(cwd: Path) -> Path | None:
@@ -29,10 +30,7 @@ def git_info_exclude_path(cwd: Path) -> Path | None:
 
 
 def lexical_git_repo_root(start: Path) -> Path | None:
-    for candidate in (start, *start.parents):
-        if (candidate / ".git").exists():
-            return candidate
-    return None
+    return _lexical_git_repo_root(start)
 
 
 def resolve_initial_review_file(value: str | None, search_root: Path) -> Path | None:

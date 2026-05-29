@@ -31,6 +31,12 @@ def make_run_context(runner) -> RunContext:
     )
 
 
+def git_repo_root_result(args, cwd: Path, repo_root: Path) -> CommandResult | None:
+    if list(args) == ["git", "-C", str(cwd), "rev-parse", "--show-toplevel"]:
+        return CommandResult(list(args), 0, stdout=f"{repo_root}\n")
+    return None
+
+
 def test_loop_commits_after_passing_checks(tmp_path):
     calls = []
     review_outputs = iter(
@@ -43,6 +49,8 @@ def test_loop_commits_after_passing_checks(tmp_path):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
+        if (result := git_repo_root_result(args, cwd, repo_root)) is not None:
+            return result
         if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
             return CommandResult(list(args), 0, stdout="")
         if args[0] == "codex" and "review" in args:
@@ -117,7 +125,8 @@ def test_git_staging_commands_for_commit_reset_relative_artifact_dir(tmp_path):
     )
 
     assert commit_impl.git_add_command_for_commit(config) == ["git", "add", "-A"]
-    assert commit_impl.git_reset_artifact_command_for_commit(config) == [
+    assert commit_impl.git_add_command_for_commit(config) == ["git", "add", "-A"]
+    assert commit_impl.git_reset_artifact_command_for_commit(config, repo_root) == [
         "git",
         "-C",
         str(repo_root),
@@ -138,7 +147,7 @@ def test_git_staging_commands_skip_relative_artifact_dir_outside_cwd(tmp_path):
     )
 
     assert commit_impl.git_add_command_for_commit(config) == ["git", "add", "-A"]
-    assert commit_impl.git_reset_artifact_command_for_commit(config) is None
+    assert commit_impl.git_reset_artifact_command_for_commit(config, _repo_root) is None
 
 
 def test_run_commit_refuses_repo_root_artifact_dir_before_staging(tmp_path):
@@ -147,6 +156,8 @@ def test_run_commit_refuses_repo_root_artifact_dir_before_staging(tmp_path):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
+        if args[:5] == ["git", "-C", str(tmp_path), "rev-parse", "--show-toplevel"]:
+            return CommandResult(list(args), 0, stdout=f"{tmp_path}\n")
         return CommandResult(list(args), 0, stdout="unexpected\n")
 
     config = LoopConfig(
@@ -161,7 +172,13 @@ def test_run_commit_refuses_repo_root_artifact_dir_before_staging(tmp_path):
     with pytest.raises(RuntimeError, match="artifact-dir resolves to the repository root"):
         commit_impl.run_commit(config, runner, 1, ctx=make_run_context(runner))
 
-    assert calls == []
+    assert calls == [
+        (
+            ["git", "-C", str(tmp_path), "rev-parse", "--show-toplevel"],
+            None,
+            300,
+        )
+    ]
 
 
 def test_loop_skips_commit_when_checks_fail(tmp_path):
@@ -369,6 +386,8 @@ def test_loop_writes_failure_summary_when_commit_fails(tmp_path):
     repo_root, cwd = make_git_worktree(tmp_path)
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if (result := git_repo_root_result(args, cwd, repo_root)) is not None:
+            return result
         if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
             return CommandResult(list(args), 0, stdout="")
         if args[0] == "codex" and "review" in args:
@@ -420,6 +439,8 @@ def test_loop_remediates_commit_hook_failure_by_default(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         nonlocal commit_attempts
         calls.append((list(args), input_text, timeout_seconds))
+        if (result := git_repo_root_result(args, cwd, repo_root)) is not None:
+            return result
         if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
             return CommandResult(list(args), 0, stdout="")
         if args[0] == "codex" and "review" in args:
@@ -479,6 +500,8 @@ def test_loop_stops_on_commit_hook_failure_when_policy_is_stop(tmp_path):
     repo_root, cwd = make_git_worktree(tmp_path)
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if (result := git_repo_root_result(args, cwd, repo_root)) is not None:
+            return result
         if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
             return CommandResult(list(args), 0, stdout="")
         if args[0] == "codex" and "review" in args:
@@ -526,6 +549,8 @@ def test_run_commit_uses_no_verify_only_on_retry(tmp_path):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append(list(args))
+        if (result := git_repo_root_result(args, cwd, repo_root)) is not None:
+            return result
         if args[:3] == ["git", "add", "-A"]:
             return CommandResult(list(args), 0)
         if args[:4] == ["git", "-C", str(repo_root), "reset"]:

@@ -39,11 +39,15 @@ def _ctx(runner=None, **kwargs: object) -> RunContext:
     )
 
 
-def _git_runner(*, staged: bool = True, commit_ok: bool = True):
+def _git_runner(*, staged: bool = True, commit_ok: bool = True, repo_root: Path | None = None):
     """Minimal runner that satisfies run_commit's git subprocess calls."""
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         cmd = " ".join(args)
+        if args[:4] == ["git", "-C", str(cwd), "rev-parse"] and args[4:] == ["--show-toplevel"]:
+            if repo_root is None:
+                return CommandResult(list(args), 1, stderr="fatal: not a git repository\n")
+            return CommandResult(list(args), 0, stdout=f"{repo_root}\n")
         if "add" in cmd:
             return CommandResult(list(args), 0)
         if "reset" in cmd:
@@ -84,6 +88,7 @@ class TestCommitAdapter:
         runner.assert_not_called()
 
     def test_no_staged_changes_returns_skipped_no_changes(self, tmp_path: Path) -> None:
+        (tmp_path / ".git").mkdir()
         (tmp_path / "artifacts").mkdir()
         config = LoopConfig(
             base="main",
@@ -92,7 +97,23 @@ class TestCommitAdapter:
             cwd=tmp_path,
             artifact_dir=tmp_path / "artifacts",
         )
-        ctx = _ctx(runner=_git_runner(staged=False))
+        ctx = _ctx(runner=_git_runner(staged=False, repo_root=tmp_path))
+        adapter = CommitAdapter(config)
+
+        outcome = adapter.execute(CommitRequest(iteration=1), ctx)
+
+        assert outcome.status == "skipped_no_changes"
+
+    def test_no_staged_changes_without_repo_root_returns_skipped_no_changes(self, tmp_path: Path) -> None:
+        (tmp_path / "artifacts").mkdir()
+        config = LoopConfig(
+            base="main",
+            max_iterations=1,
+            codex_bin="codex",
+            cwd=tmp_path,
+            artifact_dir=tmp_path / "artifacts",
+        )
+        ctx = _ctx(runner=_git_runner(staged=False, repo_root=None))
         adapter = CommitAdapter(config)
 
         outcome = adapter.execute(CommitRequest(iteration=1), ctx)
@@ -100,6 +121,7 @@ class TestCommitAdapter:
         assert outcome.status == "skipped_no_changes"
 
     def test_commit_failed_propagates_unchanged(self, tmp_path: Path) -> None:
+        (tmp_path / ".git").mkdir()
         (tmp_path / "artifacts").mkdir()
         config = LoopConfig(
             base="main",
@@ -108,7 +130,7 @@ class TestCommitAdapter:
             cwd=tmp_path,
             artifact_dir=tmp_path / "artifacts",
         )
-        ctx = _ctx(runner=_git_runner(staged=True, commit_ok=False))
+        ctx = _ctx(runner=_git_runner(staged=True, commit_ok=False, repo_root=tmp_path))
         adapter = CommitAdapter(config)
 
         with pytest.raises(CommitFailed):

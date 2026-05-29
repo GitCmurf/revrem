@@ -181,6 +181,7 @@ def add_summary_contract_fields(
 
 
 def phase_config_payload(config: LoopConfig) -> dict[str, object]:
+    field_sources = config.phase_config_field_sources
     return {
         "review": {
             "harness": config.review_harness,
@@ -189,6 +190,7 @@ def phase_config_payload(config: LoopConfig) -> dict[str, object]:
             "timeout_seconds": config.review_timeout_seconds_display,
             "sandbox": "read-only",
             "source": config.phase_config_sources.get("review", "direct-config"),
+            "sources": field_sources.get("review", {}),
         },
         "triage": {
             "enabled": config.triage_enabled,
@@ -204,6 +206,7 @@ def phase_config_payload(config: LoopConfig) -> dict[str, object]:
             ),
             "sandbox": "read-only",
             "source": config.phase_config_sources.get("triage", "direct-config"),
+            "sources": field_sources.get("triage", {}),
         },
         "remediation": {
             "harness": config.remediation_harness,
@@ -212,6 +215,7 @@ def phase_config_payload(config: LoopConfig) -> dict[str, object]:
             "timeout_seconds": config.remediation_timeout_seconds_display,
             "sandbox": config.exec_sandbox,
             "source": config.phase_config_sources.get("remediation", "direct-config"),
+            "sources": field_sources.get("remediation", {}),
         },
         "commit_message": {
             "enabled": config.commit_after_remediation,
@@ -221,11 +225,13 @@ def phase_config_payload(config: LoopConfig) -> dict[str, object]:
             "timeout_seconds": config.commit_timeout_seconds_display,
             "sandbox": "read-only",
             "source": config.phase_config_sources.get("commit_message", "direct-config"),
+            "sources": field_sources.get("commit_message", {}),
         },
         "checks": {
             "commands": list(config.check_commands),
             "timeout_seconds": config.timeout_seconds_display,
             "source": config.phase_config_sources.get("checks", "direct-config"),
+            "sources": field_sources.get("checks", {}),
         },
     }
 

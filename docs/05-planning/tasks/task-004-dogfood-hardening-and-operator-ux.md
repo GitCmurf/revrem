@@ -2,8 +2,8 @@
 document_id: REVREM-TASK-004
 type: TASK
 title: Dogfood hardening and operator UX
-status: Draft
-version: '0.2'
+status: In Review
+version: '0.3'
 last_updated: '2026-05-29'
 owner: GitCmurf
 docops_version: '2.0'
@@ -629,7 +629,7 @@ but are not prerequisites for writing code:
 
 1. `gpt-5.3-codex-spark` as commit-message model with `low` effort.
 2. `gpt-5.3-codex-spark` as commit-message model with `minimal` effort after
-   removing search/tool config from commit drafting.
+   disabling Codex-supplied `web_search` for commit drafting.
 3. `gpt-5.4-mini` with `medium` effort for remediation through a resumed
    finding.
 4. Gemini CLI remediation with `gemini-3.1-pro-preview`, first as a direct
@@ -664,6 +664,45 @@ but are not prerequisites for writing code:
 - Non-Codex route/fallback behavior is covered by deterministic tests and, when
   local Gemini credentials are available, a real Gemini dogfood run.
 - `ruff`, `mypy`, `lint-imports`, `meminit check`, and `pytest -q` pass.
+
+## Adversarial Remediation Addendum
+
+An adversarial review after the first implementation pass found that the
+feature work was mostly in place, but the task could not be called complete
+because `pytest -q` was not hermetic across clean and polluted `/tmp` states.
+The accepted remediation scope is:
+
+- centralize lexical repository-root discovery behind a temp-root guard so a
+  stray `/tmp/.git` or `/tmp/.revrem.toml` cannot influence project profile,
+  suppression, or artifact-ignore discovery;
+- make commit artifact exclusion use the injected process runner for
+  `git rev-parse --show-toplevel`, and treat missing repo-root information as
+  "skip artifact reset" rather than a hard pre-staging failure;
+- keep the repo-root artifact-dir refusal for known repository roots;
+- make commit adapter tests create their own `.git` when they depend on one,
+  and add a no-repository regression for `skipped_no_changes`;
+- replace the fragmentary continue hint with a shell-quoted command carrying
+  base, max-iterations, profile or checks, timeout intent, commit mode, initial
+  review file, and hook policy;
+- make deterministic commit-message fallback use staged files plus
+  review/remediation context, so local fallback subjects remain professional
+  when model drafting fails;
+- add field-level `phase_config.*.sources` provenance alongside the existing
+  phase-level `source` summary, with mixed phase sources marked explicitly as
+  `mixed`;
+- remove the invalid stray `docs/tasks/TASK-004-adversarial-review.md` and
+  track the valid governed review report at
+  `docs/05-planning/tasks/task-004-adversarial-review-findings.md`.
+
+Closeout must verify both temp states:
+
+```bash
+rm -rf /tmp/.git /tmp/.revrem.toml
+./.venv/bin/pytest -q
+mkdir -p /tmp/.git
+./.venv/bin/pytest -q
+rm -rf /tmp/.git /tmp/.revrem.toml
+```
 
 ## Verification Commands
 

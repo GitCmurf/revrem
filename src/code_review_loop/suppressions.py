@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from code_review_loop._compat_tomli_w import _escape_basic_string as _toml_escape_string
+from code_review_loop.repo_roots import repo_root_or_cwd
 
 SUPPRESSION_SCHEMA_VERSION = "1.0"
 SUPPRESSION_FILE_RELATIVE = Path(".revrem") / "suppressions.toml"
@@ -385,8 +386,4 @@ def _required_str(raw: dict[str, object], key: str, path: Path) -> str:
 
 
 def _repo_root(cwd: Path) -> Path:
-    current = cwd.resolve()
-    for candidate in (current, *current.parents):
-        if (candidate / ".git").exists():
-            return candidate
-    return current
+    return repo_root_or_cwd(cwd)

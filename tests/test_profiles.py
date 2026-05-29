@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from code_review_loop import profiles
+from code_review_loop import profiles, repo_roots
 
 
 def test_resolve_profile_merges_user_project_and_defaults(tmp_path):
@@ -267,7 +267,8 @@ base = "trunk"
 
 def test_project_config_path_ignores_bare_temp_root_git_marker(tmp_path, monkeypatch):
     temp_root = tmp_path / "tmp-root"
-    cwd = temp_root / "work"
+    tmpdir = temp_root / "child-tmp"
+    cwd = tmpdir / "work"
     cwd.mkdir(parents=True)
     (temp_root / ".git").mkdir()
     (temp_root / ".revrem.toml").write_text(
@@ -284,7 +285,8 @@ base = "local"
 """,
         encoding="utf-8",
     )
-    monkeypatch.setattr(profiles.tempfile, "gettempdir", lambda: str(temp_root))
+    monkeypatch.setattr(repo_roots.tempfile, "gettempdir", lambda: str(temp_root))
+    monkeypatch.setenv("TMPDIR", str(tmpdir))
 
     assert profiles.project_config_path(cwd) == cwd / ".revrem.toml"
     resolved = profiles.resolve_profile("local", cwd=cwd)

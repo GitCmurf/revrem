@@ -768,6 +768,65 @@ def test_commit_message_for_staged_changes_uses_specific_fallback_on_model_failu
     assert (tmp_path / "artifacts" / "commit-2-message-fallback.json").is_file()
 
 
+def test_commit_message_fallback_uses_review_context_for_feature_type(tmp_path):
+    artifact_dir = tmp_path / "artifacts"
+    artifact_dir.mkdir()
+    (artifact_dir / "review-3.txt").write_text(
+        "Add a CLI flag to enable triage from the command line.\n",
+        encoding="utf-8",
+    )
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=artifact_dir,
+        commit_message_model="gpt-test-commit",
+        timeout_seconds=30,
+    )
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[:4] == ["git", "diff", "--cached", "--stat"]:
+            return CommandResult(list(args), 0, stdout=" src/code_review_loop/cli/args.py | 2 +-\n")
+        if args[:4] == ["git", "diff", "--cached", "--name-only"]:
+            return CommandResult(list(args), 0, stdout="src/code_review_loop/cli/args.py\n")
+        if args[:2] == ["codex", "exec"]:
+            return CommandResult(list(args), 1, stderr="model unavailable\n")
+        raise AssertionError(f"unexpected command: {args!r}")
+
+    message = commit_message_for_staged_changes(config, runner, 3, make_run_context(runner))
+
+    assert message == "feat(core): apply verified remediation 3 (RevRem)"
+
+
+def test_commit_message_fallback_uses_remediation_context_for_refactor_type(tmp_path):
+    artifact_dir = tmp_path / "artifacts"
+    artifact_dir.mkdir()
+    (artifact_dir / "remediation-4-last-message.txt").write_text(
+        "Refactor the runner setup into a cohesive helper module.\n",
+        encoding="utf-8",
+    )
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=artifact_dir,
+        commit_message_model=None,
+    )
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[:4] == ["git", "diff", "--cached", "--stat"]:
+            return CommandResult(list(args), 0, stdout=" src/code_review_loop/runner_setup.py | 2 +-\n")
+        if args[:4] == ["git", "diff", "--cached", "--name-only"]:
+            return CommandResult(list(args), 0, stdout="src/code_review_loop/runner_setup.py\n")
+        raise AssertionError(f"unexpected command: {args!r}")
+
+    message = commit_message_for_staged_changes(config, runner, 4, make_run_context(runner))
+
+    assert message == "refactor(core): apply verified remediation 4 (RevRem)"
+
+
 def test_normalize_revrem_conventional_subject_preserves_suffix_when_truncated():
     subject = "fix(cli): " + "x" * 200
 

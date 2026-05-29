@@ -260,6 +260,7 @@ def resume_loop_config(
         budget_config=_resume_budget_config(resume_config, budgets_payload if isinstance(budgets_payload, dict) else None),
         profile_v2=profile_v2,
         phase_config_sources=_resume_phase_sources(resume_config),
+        phase_config_field_sources=_resume_phase_field_sources(resume_config),
     ), budget_state
 
 
@@ -485,6 +486,26 @@ def _resume_phase_sources(payload: dict[object, object]) -> dict[str, str]:
         if isinstance(source, str):
             sources[phase] = source
     return sources
+
+
+def _resume_phase_field_sources(payload: dict[object, object]) -> dict[str, dict[str, str]]:
+    phase_config = payload.get("phase_config")
+    if not isinstance(phase_config, dict):
+        return {}
+    field_sources: dict[str, dict[str, str]] = {}
+    for phase in ("review", "triage", "remediation", "commit_message", "checks"):
+        section = phase_config.get(phase)
+        if not isinstance(section, dict):
+            continue
+        sources = section.get("sources")
+        if not isinstance(sources, dict):
+            continue
+        field_sources[phase] = {
+            str(field): source
+            for field, source in sources.items()
+            if isinstance(source, str)
+        }
+    return field_sources
 
 
 def _resume_str_tuple(payload: dict[object, object], key: str) -> tuple[str, ...]:

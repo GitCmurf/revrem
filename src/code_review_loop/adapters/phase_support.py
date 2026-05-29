@@ -25,6 +25,7 @@ from code_review_loop.core.review_interpretation import (
     extract_review_summary,
     strip_finding_priority,
 )
+from code_review_loop.repo_roots import lexical_git_repo_root as _lexical_git_repo_root
 
 PROGRESS_PHASE_CODES = {
     "check": "chk",
@@ -535,7 +536,4 @@ def normalize_revrem_conventional_subject(subject: str) -> str:
 
 
 def lexical_git_repo_root(start: Path) -> Path | None:
-    for candidate in (start, *start.parents):
-        if (candidate / ".git").exists():
-            return candidate
-    return None
+    return _lexical_git_repo_root(start)

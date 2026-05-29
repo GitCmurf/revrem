@@ -50,6 +50,7 @@
     "checks": {
       "commands": [],
       "source": "direct-config",
+      "sources": {},
       "timeout_seconds": 300
     },
     "commit_message": {
@@ -59,6 +60,7 @@
       "reasoning_effort": null,
       "sandbox": "read-only",
       "source": "direct-config",
+      "sources": {},
       "timeout_seconds": null
     },
     "remediation": {
@@ -67,6 +69,7 @@
       "reasoning_effort": null,
       "sandbox": "workspace-write",
       "source": "direct-config",
+      "sources": {},
       "timeout_seconds": null
     },
     "review": {
@@ -75,6 +78,7 @@
       "reasoning_effort": null,
       "sandbox": "read-only",
       "source": "direct-config",
+      "sources": {},
       "timeout_seconds": null
     },
     "triage": {
@@ -86,6 +90,7 @@
       "routing_enabled": false,
       "sandbox": "read-only",
       "source": "direct-config",
+      "sources": {},
       "timeout_seconds": null
     }
   },
@@ -117,6 +122,7 @@
       "checks": {
         "commands": [],
         "source": "direct-config",
+        "sources": {},
         "timeout_seconds": 300
       },
       "commit_message": {
@@ -126,6 +132,7 @@
         "reasoning_effort": null,
         "sandbox": "read-only",
         "source": "direct-config",
+        "sources": {},
         "timeout_seconds": null
       },
       "remediation": {
@@ -134,6 +141,7 @@
         "reasoning_effort": null,
         "sandbox": "workspace-write",
         "source": "direct-config",
+        "sources": {},
         "timeout_seconds": null
       },
       "review": {
@@ -142,6 +150,7 @@
         "reasoning_effort": null,
         "sandbox": "read-only",
         "source": "direct-config",
+        "sources": {},
         "timeout_seconds": null
       },
       "triage": {
@@ -153,6 +162,7 @@
         "routing_enabled": false,
         "sandbox": "read-only",
         "source": "direct-config",
+        "sources": {},
         "timeout_seconds": null
       }
     },
