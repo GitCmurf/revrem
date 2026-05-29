@@ -209,11 +209,11 @@ def _effective_route(resolved_route: policy.ResolvedRoute, config: LoopConfig) -
 
 def _artifact_timeout_seconds(
     resolved_route: policy.ResolvedRoute, config: LoopConfig
-) -> int:
+) -> float | int:
     effective_timeout = phase_timeout_seconds(config, resolved_route.timeout_seconds)
     if effective_timeout is None:
         return 0
-    return int(effective_timeout)
+    return effective_timeout
 
 
 def _proposed_route_fields(triage_payload: dict[str, Any]) -> dict[str, Any]:

@@ -31,7 +31,7 @@
         },
         "timeout_seconds": {
           "minimum": 0,
-          "type": "integer"
+          "type": "number"
         }
       },
       "required": [
@@ -80,7 +80,7 @@
         },
         "timeout_seconds": {
           "minimum": 0,
-          "type": "integer"
+          "type": "number"
         }
       },
       "required": [

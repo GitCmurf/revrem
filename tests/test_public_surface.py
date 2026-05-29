@@ -13,6 +13,10 @@ on ``code_review_loop.cli.main``.
 from __future__ import annotations
 
 import importlib
+import os
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -46,3 +50,19 @@ def test_package_version_is_exposed() -> None:
     cli = importlib.import_module("code_review_loop.cli")
     # cli re-exports __version__; the two must agree.
     assert cli.__version__ == pkg.__version__
+
+
+def test_cli_package_module_entrypoint_executes() -> None:
+    root = Path(__file__).resolve().parents[1]
+    env = {**os.environ, "PYTHONPATH": str(root / "src")}
+    result = subprocess.run(
+        [sys.executable, "-m", "code_review_loop.cli", "--version"],
+        cwd=root,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert importlib.import_module("code_review_loop").__version__ in result.stdout

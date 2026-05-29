@@ -43,6 +43,19 @@ def test_routing_payload_records_zero_for_unbounded_inherited_timeout(tmp_path):
     assert payload["effective_route"]["timeout_seconds"] == 0
 
 
+def test_routing_payload_preserves_fractional_route_timeout(tmp_path):
+    payload = routing_artifacts.build_routing_payload(
+        resolved_route=_route(timeout_seconds=0.5),
+        triage_payload={},
+        run_id="run-1",
+        iteration=1,
+        remediation_input="fix it",
+        config=LoopConfig(cwd=tmp_path, artifact_dir=tmp_path),
+    )
+
+    assert payload["effective_route"]["timeout_seconds"] == 0.5
+
+
 def test_routing_payload_counts_prompt_utf8_bytes(tmp_path):
     remediation_input = "Fix café ☕"
 
