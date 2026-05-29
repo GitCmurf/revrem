@@ -194,7 +194,9 @@ def test_fake_harness_v2_triage_without_routing_uses_direct_remediation(tmp_path
     run_dir = tmp_path / "artifacts"
 
     assert summary["final_status"] == "clear"
-    assert json.loads((run_dir / "triage-1.json").read_text(encoding="utf-8"))["prompt_version"] == "triage-v2"
+    triage_json = json.loads((run_dir / "triage-1.json").read_text(encoding="utf-8"))
+    assert triage_json["schema_version"] == "2.0"
+    assert triage_json["prompt_version"] == "triage-v2"
     assert (run_dir / "remediation-1.txt").read_text(encoding="utf-8") == "Fake remediation completed.\n"
 
 

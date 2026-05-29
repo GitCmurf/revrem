@@ -245,6 +245,7 @@ def resume_loop_config(
         exec_json=_resume_bool(resume_config, "exec_json", False),
         output_last_message=_resume_bool(resume_config, "output_last_message", True),
         full_auto=_resume_bool(resume_config, "full_auto", True),
+        trusted_repo=_resume_bool(resume_config, "trusted_repo", False),
         triage_prompt=_resume_optional_str(resume_config, "triage_prompt"),
         triage_on_invalid=_resume_str(resume_config, "triage_on_invalid", "continue"),
         triage_contract=triage_contract,
@@ -307,6 +308,7 @@ def resume_config_payload(config: LoopConfig) -> dict[str, object]:
         config.commit_message_prompt_overridden,
         False,
     )
+    _put_if_not_default(payload, "trusted_repo", config.trusted_repo, False)
     _put_if_not_none(payload, "commit_reasoning_effort", config.commit_reasoning_effort)
     _put_if_not_none(payload, "profile_v2", _resume_profile_snapshot(config))
     return payload

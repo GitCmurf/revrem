@@ -434,6 +434,27 @@ def test_resume_loop_config_restores_commit_message_settings(tmp_path):
     assert resumed.commit_on_hook_failure == "no-verify"
 
 
+def test_resume_config_payload_and_loop_config_restore_trusted_repo(tmp_path):
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        trusted_repo=True,
+    )
+    payload = resume_mod.resume_config_payload(config)
+    run_dir = tmp_path / "run"
+    write_resume_run(run_dir, resume_config=payload)
+
+    resumed, _budget_state = resume_mod.resume_loop_config(
+        json.loads((run_dir / "summary.json").read_text(encoding="utf-8")), run_dir=run_dir
+    )
+
+    assert payload["trusted_repo"] is True
+    assert resumed.trusted_repo is True
+
+
 def test_resume_config_payload_omits_default_extension_fields(tmp_path):
     payload = resume_mod.resume_config_payload(
         LoopConfig(
@@ -451,6 +472,7 @@ def test_resume_config_payload_omits_default_extension_fields(tmp_path):
     assert "commit_message_prompt" not in payload
     assert "commit_message_prompt_overridden" not in payload
     assert "commit_reasoning_effort" not in payload
+    assert "trusted_repo" not in payload
     assert "reasoning_effort" not in payload
     assert "review_reasoning_effort" not in payload
     assert "remediation_reasoning_effort" not in payload

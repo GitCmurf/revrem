@@ -78,7 +78,12 @@ def parse_triage_payload(
 
 
 def write_triage_artifact(run_dir: Path, iteration: int, payload: dict[str, Any]) -> Path:
-    return artifacts.write_json_artifact(run_dir, f"triage-{iteration}.json", payload)
+    return artifacts.write_json_artifact(
+        run_dir,
+        f"triage-{iteration}.json",
+        payload,
+        schema_version=str(payload.get("schema_version", artifacts.JSON_SCHEMA_VERSION)),
+    )
 
 
 def write_routing_artifact(run_dir: Path, iteration: int, payload: dict[str, Any]) -> Path:

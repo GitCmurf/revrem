@@ -99,6 +99,20 @@ def test_load_prompt_v2_includes_v2_fields():
     assert "triage-v2" in prompt
 
 
+def test_write_triage_artifact_preserves_payload_schema_version(tmp_path):
+    payload = {
+        "schema_version": "2.0",
+        "run_id": "run-123",
+        "source_review_artifact": "review-1.txt",
+        "prompt_version": "triage-v2",
+    }
+
+    path = triage.write_triage_artifact(tmp_path, 1, payload)
+
+    assert path.name == "triage-1.json"
+    assert json.loads(path.read_text(encoding="utf-8")) == payload
+
+
 def test_write_routing_artifacts(tmp_path):
     payload = {"effective_route": {"harness": "codex", "model": "m1"}}
     path = triage.write_routing_artifact(tmp_path, 1, payload)
