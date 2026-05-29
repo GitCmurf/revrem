@@ -58,6 +58,9 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
     history_path = summary.get("history_path")
     if history_path:
         lines.append(f"Run history: {history_path}")
+    phase_config = summary.get("phase_config")
+    if isinstance(phase_config, dict):
+        lines.append(f"Phase config: {_phase_config_summary(phase_config)}")
 
     iterations = summary.get("iterations")
     if isinstance(iterations, list) and iterations:
@@ -86,11 +89,14 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
         if isinstance(reviews, list) and reviews:
             lines.append(f"Latest review: {reviews[-1]}")
             if status == "findings":
-                lines.append(f"Continue from latest review: --initial-review-file {reviews[-1]}")
+                lines.append(f"Continue command: {_resume_command(summary, str(reviews[-1]))}")
         if isinstance(last_messages, list) and last_messages:
             lines.append(f"Latest remediation summary: {last_messages[-1]}")
         if isinstance(checks, list) and checks:
-            lines.append(f"Latest check outputs: {', '.join(str(path) for path in checks[-2:])}")
+            latest_checks = _latest_iteration_checks([str(path) for path in checks])
+            lines.append("Latest check outputs:")
+            for path in latest_checks:
+                lines.append(f"  - {path}")
         commits = artifact_paths.get("commits")
         if isinstance(commits, list) and commits:
             commit_outputs = [
@@ -123,3 +129,55 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
             lines.append(f"Bug report details: {bug_report_path}")
 
     return "\n".join(lines)
+
+
+def _phase_config_summary(phase_config: dict[object, object]) -> str:
+    parts: list[str] = []
+    for phase in ("review", "triage", "remediation", "commit_message"):
+        value = phase_config.get(phase)
+        if not isinstance(value, dict):
+            continue
+        if value.get("enabled") is False:
+            parts.append(f"{phase}=disabled")
+            continue
+        details = [
+            str(item)
+            for item in (
+                value.get("harness"),
+                value.get("model"),
+                f"effort={value['reasoning_effort']}" if value.get("reasoning_effort") else None,
+                f"timeout={value['timeout_seconds']}" if value.get("timeout_seconds") is not None else None,
+            )
+            if item
+        ]
+        parts.append(f"{phase}({', '.join(details)})")
+    return "; ".join(parts) if parts else "not recorded"
+
+
+def _resume_command(summary: dict[str, object], review_path: str) -> str:
+    command = ["./.venv/bin/revrem"]
+    base = summary.get("base")
+    if isinstance(base, str) and base:
+        command.extend(["--base", base])
+    profile = summary.get("profile")
+    if isinstance(profile, str) and profile:
+        command.extend(["--profile", profile])
+    command.extend(["--initial-review-file", review_path])
+    if summary.get("commit_no_verify") is False and summary.get("commit_on_hook_failure"):
+        command.extend(["--commit-on-hook-failure", str(summary["commit_on_hook_failure"])])
+    return " ".join(command)
+
+
+def _latest_iteration_checks(paths: list[str]) -> list[str]:
+    latest_iteration = -1
+    parsed: list[tuple[int, str]] = []
+    for path in paths:
+        match = re.search(r"check-(\d+)-\d+\.txt$", _artifact_filename(path))
+        if not match:
+            continue
+        iteration = int(match.group(1))
+        latest_iteration = max(latest_iteration, iteration)
+        parsed.append((iteration, path))
+    if latest_iteration < 0:
+        return paths[-2:]
+    return [path for iteration, path in parsed if iteration == latest_iteration]

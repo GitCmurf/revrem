@@ -67,3 +67,4 @@ class LoopConfig:
     profile_v2: profiles.Profile | None = None
     trusted_repo: bool = False
     triage_contract: str = "v1"
+    command_line: tuple[str, ...] = field(default_factory=tuple)

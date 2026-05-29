@@ -147,7 +147,8 @@ def add_summary_contract_fields(
     summary.setdefault("cli_version", __version__)
     summary.setdefault("harness", config.review_harness)
     summary.setdefault("harness_version", None)
-    summary.setdefault("command_line", None)
+    summary.setdefault("command_line", list(config.command_line) if config.command_line else None)
+    summary.setdefault("phase_config", phase_config_payload(config))
     summary.setdefault("tokens", None)
     summary.setdefault("usd", None)
     iterations = summary.get("iterations")
@@ -161,6 +162,48 @@ def add_summary_contract_fields(
     )
     summary.setdefault("finished_at", utc_iso(clock.now()))
     summary.setdefault("duration_seconds", _summary_duration_seconds(summary))
+
+
+def phase_config_payload(config: LoopConfig) -> dict[str, object]:
+    return {
+        "review": {
+            "harness": config.review_harness,
+            "model": config.review_model or config.model,
+            "reasoning_effort": config.review_reasoning_effort or config.reasoning_effort,
+            "timeout_seconds": config.review_timeout_seconds,
+        },
+        "triage": {
+            "enabled": config.triage_enabled,
+            "harness": config.triage_harness,
+            "model": config.triage_model,
+            "reasoning_effort": config.triage_reasoning_effort,
+            "timeout_seconds": config.triage_timeout_seconds,
+            "contract": config.triage_contract,
+            "routing_enabled": (
+                config.profile_v2.triage.routing.enabled
+                if config.profile_v2 is not None
+                else False
+            ),
+        },
+        "remediation": {
+            "harness": config.remediation_harness,
+            "model": config.remediation_model or config.model,
+            "reasoning_effort": config.remediation_reasoning_effort or config.reasoning_effort,
+            "timeout_seconds": config.remediation_timeout_seconds,
+            "sandbox": config.exec_sandbox,
+        },
+        "commit_message": {
+            "enabled": config.commit_after_remediation,
+            "harness": config.commit_message_harness,
+            "model": config.commit_message_model,
+            "reasoning_effort": config.commit_reasoning_effort,
+            "timeout_seconds": config.commit_timeout_seconds,
+        },
+        "checks": {
+            "commands": list(config.check_commands),
+            "timeout_seconds": config.timeout_seconds,
+        },
+    }
 
 
 def _summary_duration_seconds(summary: dict[str, object]) -> float | None:

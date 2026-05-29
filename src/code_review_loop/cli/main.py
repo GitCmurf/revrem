@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sys
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 
 from code_review_loop.cli.args import parse_args
@@ -25,6 +26,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(raw_argv)
     try:
         config, summary_format = build_loop_config(args, Path.cwd())
+        config = replace(config, command_line=("revrem", *raw_argv))
     except FileNotFoundError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1  # outcome-exempt: configuration failed before RunOutcome exists

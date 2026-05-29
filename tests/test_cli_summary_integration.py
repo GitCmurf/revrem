@@ -32,6 +32,8 @@ def test_summary_includes_latest_review_excerpt_and_artifact_paths(tmp_path):
     assert summary["latest_review_excerpt"] == "No findings."
     assert "artifact_paths" in summary
     assert summary["artifact_paths"]["summary"].endswith("summary.json")
+    assert "phase_config" in summary
+    assert summary["phase_config"]["review"]["harness"] == "codex"
 
 
 def test_terminal_summary_surfaces_latest_findings_and_paths():
@@ -49,15 +51,24 @@ def test_terminal_summary_surfaces_latest_findings_and_paths():
             "checks": ["tmp/run/check-2-1.txt", "tmp/run/check-2-2.txt"],
             "summary": "tmp/run/summary.json",
         },
+        "phase_config": {
+            "review": {"harness": "codex", "model": "gpt-5.5", "reasoning_effort": "low"},
+            "triage": {"enabled": False},
+            "remediation": {"harness": "codex", "model": "gpt-5.4-mini"},
+            "commit_message": {"enabled": True, "harness": "codex", "model": "spark"},
+        },
         "latest_review_excerpt": "Full review comments:\n\n- [P2] Fix summary counts",
     }
 
     text = format_terminal_summary(summary)
 
     assert "Review-remediation loop: findings (max_iterations_reached)" in text
+    assert "Phase config:" in text
     assert "Latest review: tmp/run/review-final.txt" in text
-    assert "Continue from latest review: --initial-review-file tmp/run/review-final.txt" in text
+    assert "Continue command: ./.venv/bin/revrem --initial-review-file tmp/run/review-final.txt" in text
     assert "Latest remediation summary: tmp/run/remediation-2-last-message.txt" in text
+    assert "Latest check outputs:" in text
+    assert "  - tmp/run/check-2-1.txt" in text
     assert "- [P2] Fix summary counts" in text
 
 
