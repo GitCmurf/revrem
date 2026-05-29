@@ -26,7 +26,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(raw_argv)
     try:
         config, summary_format = build_loop_config(args, Path.cwd())
-        config = replace(config, command_line=("revrem", *raw_argv))
+        config = replace(config, command_line=("revrem", *_redacted_argv(raw_argv)))
     except FileNotFoundError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1  # outcome-exempt: configuration failed before RunOutcome exists
@@ -71,3 +71,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.dry_run:
         return 0  # outcome-exempt: dry-run summary is intentionally non-terminal
     return app_exit.exit_code
+
+
+def _redacted_argv(argv: Sequence[str]) -> tuple[str, ...]:
+    redacted: list[str] = []
+    redact_next = False
+    sensitive_flags = {"--commit-message-prompt", "--triage-prompt"}
+    for item in argv:
+        if redact_next:
+            redacted.append("<redacted>")
+            redact_next = False
+            continue
+        if item in sensitive_flags:
+            redacted.append(item)
+            redact_next = True
+            continue
+        if any(item.startswith(f"{flag}=") for flag in sensitive_flags):
+            flag, _sep, _value = item.partition("=")
+            redacted.append(f"{flag}=<redacted>")
+            continue
+        redacted.append(item)
+    return tuple(redacted)

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import tests.support.application_runner as runner_mod
+from code_review_loop import artifacts, reporting
+from code_review_loop.cli.main import _redacted_argv
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.ports import CommandResult
 from code_review_loop.runtime import format_terminal_summary
@@ -36,6 +38,38 @@ def test_summary_includes_latest_review_excerpt_and_artifact_paths(tmp_path):
     assert summary["phase_config"]["review"]["harness"] == "codex"
 
 
+def test_command_line_redacts_prompt_values():
+    assert _redacted_argv(["--commit-message-prompt", "secret prompt", "--base", "main"]) == (
+        "--commit-message-prompt",
+        "<redacted>",
+        "--base",
+        "main",
+    )
+    assert _redacted_argv(["--commit-message-prompt=secret prompt"]) == (
+        "--commit-message-prompt=<redacted>",
+    )
+
+
+def test_summary_collects_commit_message_fallback_artifacts(tmp_path):
+    artifact_dir = tmp_path / "artifacts"
+    artifacts.write_json_artifact(
+        artifact_dir,
+        "commit-2-message-fallback.json",
+        {"iteration": 2, "reason": "model_drafting_failed", "subject": "fix(core): x (RevRem)"},
+    )
+    summary: dict[str, object] = {}
+
+    reporting.add_artifact_paths(summary, LoopConfig(artifact_dir=artifact_dir))
+
+    assert summary["commit_message_fallbacks"][0] | {"schema_version": "1.0"} == {
+        "iteration": 2,
+        "reason": "model_drafting_failed",
+        "subject": "fix(core): x (RevRem)",
+        "schema_version": "1.0",
+        "artifact": str(artifact_dir / "commit-2-message-fallback.json"),
+    }
+
+
 def test_terminal_summary_surfaces_latest_findings_and_paths():
     summary = {
         "artifact_dir": "tmp/run",
@@ -43,7 +77,23 @@ def test_terminal_summary_surfaces_latest_findings_and_paths():
         "stopped_reason": "max_iterations_reached",
         "iterations": [
             {"iteration": 1, "review_status": "findings", "check_failures": 0},
-            {"iteration": 2, "review_status": "findings", "check_failures": 1},
+            {
+                "iteration": 2,
+                "review_status": "findings",
+                "check_failures": 1,
+                "checks": [
+                    {
+                        "command": "./.venv/bin/ruff check .",
+                        "status": "passed",
+                        "artifact": "check-2-1.txt",
+                    },
+                    {
+                        "command": "./.venv/bin/pytest -q",
+                        "status": "failed",
+                        "artifact": "check-2-2.txt",
+                    },
+                ],
+            },
         ],
         "artifact_paths": {
             "reviews": ["tmp/run/review-1.txt", "tmp/run/review-final.txt"],
@@ -52,7 +102,13 @@ def test_terminal_summary_surfaces_latest_findings_and_paths():
             "summary": "tmp/run/summary.json",
         },
         "phase_config": {
-            "review": {"harness": "codex", "model": "gpt-5.5", "reasoning_effort": "low"},
+            "review": {
+                "harness": "codex",
+                "model": "gpt-5.5",
+                "reasoning_effort": "low",
+                "timeout_seconds": 0,
+                "source": "profile:dogfood",
+            },
             "triage": {"enabled": False},
             "remediation": {"harness": "codex", "model": "gpt-5.4-mini"},
             "commit_message": {"enabled": True, "harness": "codex", "model": "spark"},
@@ -67,9 +123,27 @@ def test_terminal_summary_surfaces_latest_findings_and_paths():
     assert "Latest review: tmp/run/review-final.txt" in text
     assert "Continue command: ./.venv/bin/revrem --initial-review-file tmp/run/review-final.txt" in text
     assert "Latest remediation summary: tmp/run/remediation-2-last-message.txt" in text
-    assert "Latest check outputs:" in text
-    assert "  - tmp/run/check-2-1.txt" in text
+    assert "Latest check status:" in text
+    assert "passed: ./.venv/bin/ruff check . (tmp/run/check-2-1.txt)" in text
+    assert "failed: ./.venv/bin/pytest -q (tmp/run/check-2-2.txt)" in text
     assert "- [P2] Fix summary counts" in text
+
+
+def test_terminal_summary_falls_back_to_accurate_check_artifact_label():
+    text = format_terminal_summary(
+        {
+            "artifact_dir": "tmp/run",
+            "final_status": "findings",
+            "stopped_reason": "max_iterations_reached",
+            "iterations": [{"iteration": 1, "review_status": "findings", "check_failures": 0}],
+            "artifact_paths": {
+                "checks": ["tmp/run/check-1-1.txt", "tmp/run/check-1-2.txt"],
+                "summary": "tmp/run/summary.json",
+            },
+        }
+    )
+
+    assert "Latest check output artifacts:" in text
 
 
 def test_terminal_summary_omits_latest_review_excerpt_when_clear():

@@ -17,7 +17,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
-from code_review_loop import harnesses, prompts_composer
+from code_review_loop import artifacts, harnesses, prompts_composer
 from code_review_loop.adapters import phase_support
 from code_review_loop.core.ports import CommandResult, CommitOutcome, CommitRequest, RunContext
 from code_review_loop.core.review_interpretation import actionable_review_output
@@ -89,7 +89,20 @@ def classify_commit_failure(result: CommandResult) -> str:
 
 
 def run_commit(config: LoopConfig, runner: Runner, iteration: int, *, ctx: RunContext, retrying: bool = False) -> str:
-    phase_support.progress_event(config, "commit", str(iteration), "start", "stage and commit verified remediation", ctx=ctx)
+    phase_support.progress_event(
+        config,
+        "commit",
+        str(iteration),
+        "start",
+        (
+            "stage and commit verified remediation "
+            f"[message_harness={config.commit_message_harness} "
+            f"model={config.commit_message_model} "
+            f"effort={config.commit_reasoning_effort} "
+            f"timeout={_display_timeout(config.commit_timeout_seconds_display)}]"
+        ),
+        ctx=ctx,
+    )
     if config.dry_run:
         phase_support.write_artifact(config.artifact_dir / f"commit-{iteration}.txt", "DRY_RUN commit skipped\n")
         phase_support.progress_event(config, "commit", str(iteration), "skipped", "dry-run", ctx=ctx)
@@ -201,10 +214,36 @@ def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iterat
         prompt,
     )
     phase_support.ensure_model_budget(config, phase="commit-message", iteration=iteration, ctx=ctx)
+    phase_support.progress_event(
+        config,
+        "commit-message",
+        str(iteration),
+        "start",
+        phase_support.resolved_phase_detail(
+            command,
+            harness=config.commit_message_harness,
+            model=config.commit_message_model,
+            reasoning_effort=config.commit_reasoning_effort,
+            timeout_seconds=config.commit_timeout_seconds_display,
+            sandbox="read-only",
+            source=config.phase_config_sources.get("commit_message", "direct-config"),
+        ),
+        ctx=ctx,
+    )
     result = runner(command, config.cwd, prompt_input, timeout_seconds)
     phase_support.write_artifact(config.artifact_dir / f"commit-{iteration}-message-draft.txt", phase_support._combined_output(result))
     phase_support.record_model_charge(config, result, phase="commit-message", iteration=iteration, ctx=ctx)
     if result.returncode != 0:
+        artifacts.write_json_artifact(
+            config.artifact_dir,
+            f"commit-{iteration}-message-fallback.json",
+            {
+                "iteration": iteration,
+                "reason": "model_drafting_failed",
+                "subject": fallback,
+                "draft_artifact": f"commit-{iteration}-message-draft.txt",
+            },
+        )
         phase_support.progress_event(
             config,
             "commit-message",
@@ -252,6 +291,10 @@ def _commit_type(paths: list[str]) -> str:
     if paths and all(path.startswith("tests/") for path in paths):
         return "test"
     return "fix"
+
+
+def _display_timeout(value: float | None) -> str:
+    return "inherit" if value is None else f"{value:g}"
 
 
 def format_commit_hook_failure_for_remediation(exc: phase_support.CommitFailed) -> str:

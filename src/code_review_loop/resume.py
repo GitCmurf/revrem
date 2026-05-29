@@ -9,7 +9,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import TypeVar
 
-from code_review_loop import budgets, diagnostics, events, profiles
+from code_review_loop import budgets, diagnostics, events, profiles, reporting
 from code_review_loop.adapters.git import git_preflight_stdout
 from code_review_loop.config import LoopConfig
 
@@ -227,6 +227,10 @@ def resume_loop_config(
         review_timeout_seconds=_resume_optional_float(resume_config, "review_timeout_seconds"),
         remediation_timeout_seconds=_resume_optional_float(resume_config, "remediation_timeout_seconds"),
         triage_timeout_seconds=_resume_optional_float(resume_config, "triage_timeout_seconds"),
+        timeout_seconds_display=_resume_phase_timeout(resume_config, "checks"),
+        review_timeout_seconds_display=_resume_phase_timeout(resume_config, "review"),
+        remediation_timeout_seconds_display=_resume_phase_timeout(resume_config, "remediation"),
+        triage_timeout_seconds_display=_resume_phase_timeout(resume_config, "triage"),
         debug_status_detection=_resume_bool(resume_config, "debug_status_detection", False),
         progress_style=_resume_str(resume_config, "progress_style", "compact"),
         terminal_excerpt_chars=_resume_int(resume_config, "terminal_excerpt_chars", 4_000),
@@ -242,6 +246,7 @@ def resume_loop_config(
         commit_on_hook_failure=_resume_str(resume_config, "commit_on_hook_failure", "remediate"),
         commit_reasoning_effort=_resume_optional_str(resume_config, "commit_reasoning_effort"),
         commit_timeout_seconds=_resume_optional_float(resume_config, "commit_timeout_seconds"),
+        commit_timeout_seconds_display=_resume_phase_timeout(resume_config, "commit_message"),
         exec_sandbox=_resume_str(resume_config, "exec_sandbox", "workspace-write"),
         exec_json=_resume_bool(resume_config, "exec_json", False),
         output_last_message=_resume_bool(resume_config, "output_last_message", True),
@@ -254,6 +259,7 @@ def resume_loop_config(
         profile_name=profile_name,
         budget_config=_resume_budget_config(resume_config, budgets_payload if isinstance(budgets_payload, dict) else None),
         profile_v2=profile_v2,
+        phase_config_sources=_resume_phase_sources(resume_config),
     ), budget_state
 
 
@@ -273,10 +279,11 @@ def resume_config_payload(config: LoopConfig) -> dict[str, object]:
         "triage_enabled": config.triage_enabled,
         "final_review": config.final_review,
         "check_commands": list(config.check_commands),
-        "timeout_seconds": config.timeout_seconds,
-        "review_timeout_seconds": config.review_timeout_seconds,
-        "remediation_timeout_seconds": config.remediation_timeout_seconds,
-        "triage_timeout_seconds": config.triage_timeout_seconds,
+        "timeout_seconds": config.timeout_seconds_display,
+        "review_timeout_seconds": config.review_timeout_seconds_display,
+        "remediation_timeout_seconds": config.remediation_timeout_seconds_display,
+        "triage_timeout_seconds": config.triage_timeout_seconds_display,
+        "phase_config": reporting.phase_config_payload(config),
         "progress_style": config.progress_style,
         "debug_status_detection": config.debug_status_detection,
         "terminal_excerpt_chars": config.terminal_excerpt_chars,
@@ -450,6 +457,34 @@ def _resume_optional_float(payload: dict[object, object], key: str) -> float | N
     if isinstance(value, int | float):
         return float(value)
     return None
+
+
+def _resume_phase_timeout(payload: dict[object, object], phase: str) -> float | None:
+    phase_config = payload.get("phase_config")
+    if not isinstance(phase_config, dict):
+        return None
+    section = phase_config.get(phase)
+    if not isinstance(section, dict):
+        return None
+    value = section.get("timeout_seconds")
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    return None
+
+
+def _resume_phase_sources(payload: dict[object, object]) -> dict[str, str]:
+    phase_config = payload.get("phase_config")
+    if not isinstance(phase_config, dict):
+        return {}
+    sources: dict[str, str] = {}
+    for phase in ("review", "triage", "remediation", "commit_message", "checks"):
+        section = phase_config.get(phase)
+        if not isinstance(section, dict):
+            continue
+        source = section.get("source")
+        if isinstance(source, str):
+            sources[phase] = source
+    return sources
 
 
 def _resume_str_tuple(payload: dict[object, object], key: str) -> tuple[str, ...]:

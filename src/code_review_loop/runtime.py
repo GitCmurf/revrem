@@ -94,9 +94,18 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
             lines.append(f"Latest remediation summary: {last_messages[-1]}")
         if isinstance(checks, list) and checks:
             latest_checks = _latest_iteration_checks([str(path) for path in checks])
-            lines.append("Latest check outputs:")
-            for path in latest_checks:
-                lines.append(f"  - {path}")
+            check_rows = _latest_check_rows(summary, latest_checks)
+            if check_rows:
+                lines.append("Latest check status:")
+                for row in check_rows:
+                    status_text = str(row.get("status", "unknown"))
+                    command = str(row.get("command", "check"))
+                    path = str(row.get("path", ""))
+                    lines.append(f"  - {status_text}: {command} ({path})")
+            else:
+                lines.append("Latest check output artifacts:")
+                for path in latest_checks:
+                    lines.append(f"  - {path}")
         commits = artifact_paths.get("commits")
         if isinstance(commits, list) and commits:
             commit_outputs = [
@@ -181,3 +190,26 @@ def _latest_iteration_checks(paths: list[str]) -> list[str]:
     if latest_iteration < 0:
         return paths[-2:]
     return [path for iteration, path in parsed if iteration == latest_iteration]
+
+
+def _latest_check_rows(summary: dict[str, object], latest_paths: list[str]) -> list[dict[str, object]]:
+    iterations = summary.get("iterations")
+    if not isinstance(iterations, list) or not iterations:
+        return []
+    latest = next((item for item in reversed(iterations) if isinstance(item, dict) and isinstance(item.get("checks"), list)), None)
+    if not isinstance(latest, dict):
+        return []
+    checks = latest.get("checks")
+    if not isinstance(checks, list):
+        return []
+    path_by_name = {_artifact_filename(path): path for path in latest_paths}
+    rows: list[dict[str, object]] = []
+    for item in checks:
+        if not isinstance(item, dict):
+            continue
+        artifact = item.get("artifact")
+        row = dict(item)
+        if isinstance(artifact, str):
+            row["path"] = path_by_name.get(artifact, artifact)
+        rows.append(row)
+    return rows

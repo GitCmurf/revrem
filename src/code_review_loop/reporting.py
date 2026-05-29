@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Iterator
 from contextlib import suppress
@@ -58,6 +59,21 @@ def add_artifact_paths(summary: dict[str, object], config: LoopConfig) -> None:
             or path.name.startswith("diagnostics-")
         ],
     }
+    fallbacks = commit_message_fallbacks(config.artifact_dir)
+    if fallbacks:
+        summary["commit_message_fallbacks"] = fallbacks
+
+
+def commit_message_fallbacks(artifact_dir: Path) -> list[dict[str, object]]:
+    fallbacks: list[dict[str, object]] = []
+    for path in sorted(artifact_dir.glob("commit-*-message-fallback.json"), key=artifact_sort_key):
+        with suppress(OSError, json.JSONDecodeError):
+            value = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(value, dict):
+                item = dict(value)
+                item.setdefault("artifact", str(path))
+                fallbacks.append(item)
+    return fallbacks
 
 
 def artifact_sort_key(path: Path) -> tuple[str, int, str]:
@@ -170,38 +186,46 @@ def phase_config_payload(config: LoopConfig) -> dict[str, object]:
             "harness": config.review_harness,
             "model": config.review_model or config.model,
             "reasoning_effort": config.review_reasoning_effort or config.reasoning_effort,
-            "timeout_seconds": config.review_timeout_seconds,
+            "timeout_seconds": config.review_timeout_seconds_display,
+            "sandbox": "read-only",
+            "source": config.phase_config_sources.get("review", "direct-config"),
         },
         "triage": {
             "enabled": config.triage_enabled,
             "harness": config.triage_harness,
             "model": config.triage_model,
             "reasoning_effort": config.triage_reasoning_effort,
-            "timeout_seconds": config.triage_timeout_seconds,
+            "timeout_seconds": config.triage_timeout_seconds_display,
             "contract": config.triage_contract,
             "routing_enabled": (
                 config.profile_v2.triage.routing.enabled
                 if config.profile_v2 is not None
                 else False
             ),
+            "sandbox": "read-only",
+            "source": config.phase_config_sources.get("triage", "direct-config"),
         },
         "remediation": {
             "harness": config.remediation_harness,
             "model": config.remediation_model or config.model,
             "reasoning_effort": config.remediation_reasoning_effort or config.reasoning_effort,
-            "timeout_seconds": config.remediation_timeout_seconds,
+            "timeout_seconds": config.remediation_timeout_seconds_display,
             "sandbox": config.exec_sandbox,
+            "source": config.phase_config_sources.get("remediation", "direct-config"),
         },
         "commit_message": {
             "enabled": config.commit_after_remediation,
             "harness": config.commit_message_harness,
             "model": config.commit_message_model,
             "reasoning_effort": config.commit_reasoning_effort,
-            "timeout_seconds": config.commit_timeout_seconds,
+            "timeout_seconds": config.commit_timeout_seconds_display,
+            "sandbox": "read-only",
+            "source": config.phase_config_sources.get("commit_message", "direct-config"),
         },
         "checks": {
             "commands": list(config.check_commands),
-            "timeout_seconds": config.timeout_seconds,
+            "timeout_seconds": config.timeout_seconds_display,
+            "source": config.phase_config_sources.get("checks", "direct-config"),
         },
     }
 

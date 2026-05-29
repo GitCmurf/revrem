@@ -56,6 +56,12 @@ class LoopConfig:
     timeout_seconds: float | None = DEFAULT_TIMEOUT_SECONDS
     review_timeout_seconds: float | None = None
     remediation_timeout_seconds: float | None = None
+    timeout_seconds_display: float | None = DEFAULT_TIMEOUT_SECONDS
+    review_timeout_seconds_display: float | None = None
+    remediation_timeout_seconds_display: float | None = None
+    triage_timeout_seconds_display: float | None = None
+    commit_timeout_seconds_display: float | None = None
+    phase_config_sources: dict[str, str] = field(default_factory=dict)
     debug_status_detection: bool = False
     progress: bool = True
     progress_style: str = "compact"

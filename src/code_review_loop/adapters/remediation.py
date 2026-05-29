@@ -7,7 +7,6 @@ reached through the module-level ``phase_support`` alias; C3 cleanup retires it.
 
 from __future__ import annotations
 
-import shlex
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -98,7 +97,34 @@ def run_remediation(
 
     phase_support.set_phase_terminal_title(config, "remediate", str(iteration))
     phase_support.ensure_model_budget(config, phase="remediate", iteration=iteration, ctx=ctx)
-    phase_support.progress_event(config, "remediate", str(iteration), "start", shlex.join(command), ctx=ctx)
+    phase_support.progress_event(
+        config,
+        "remediate",
+        str(iteration),
+        "start",
+        phase_support.resolved_phase_detail(
+            command,
+            harness=remediation_harness,
+            model=(resolved_route.model if resolved_route else None)
+            or config.remediation_model
+            or config.model,
+            reasoning_effort=(resolved_route.reasoning_effort if resolved_route else None)
+            or config.remediation_reasoning_effort
+            or config.reasoning_effort,
+            timeout_seconds=(
+                resolved_route.timeout_seconds
+                if resolved_route
+                else config.remediation_timeout_seconds_display
+            ),
+            sandbox=(resolved_route.sandbox if resolved_route else config.exec_sandbox),
+            source=(
+                f"route:{resolved_route.route_tier}"
+                if resolved_route
+                else config.phase_config_sources.get("remediation", "direct-config")
+            ),
+        ),
+        ctx=ctx,
+    )
     if config.dry_run:
         result = CommandResult(command, 0, stdout="DRY_RUN remediation skipped\n")
     else:

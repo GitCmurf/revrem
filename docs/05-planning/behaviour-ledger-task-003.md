@@ -3,8 +3,8 @@ document_id: REVREM-LEDGER-003
 type: LEDGER
 title: Behaviour ledger for the cli.py re-engineering (REVREM-TASK-003)
 status: Draft
-version: '0.2'
-last_updated: '2026-05-28'
+version: '0.3'
+last_updated: '2026-05-29'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -61,8 +61,10 @@ There is no silent third option.
 - **Contract:** machine
 - **What changed:** loop `summary.json` now includes a `phase_config`
   projection covering review, triage, remediation, commit-message drafting, and
-  checks. The projection records resolved harness/model/effort/timeout values
-  used for dogfood/debuggability.
+  checks. The projection records resolved harness/model/effort/timeout values,
+  sandbox where relevant, and a source marker (`cli`, `profile:<name>`, or
+  `defaults`) used for dogfood/debuggability. `resume_config` carries the same
+  projection so resumed runs preserve explicit operator intent.
 - **Why:** `REVREM-TASK-004` requires dogfood runs to be reproducible from
   artifacts without scraping terminal output or shell history.
 - **Before / After:** before, summaries carried scattered resume/config fields

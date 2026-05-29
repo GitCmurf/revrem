@@ -3,7 +3,7 @@
     "iteration": "1",
     "kind": "phase_start",
     "payload": {
-      "message": "codex review --base main",
+      "message": "codex review --base main [harness=codex sandbox=read-only source=direct-config]",
       "summary": "start"
     },
     "phase": "review",

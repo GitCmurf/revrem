@@ -1088,23 +1088,25 @@ def validate_profile(profile: Profile, *, require_implemented: bool) -> None:
     if profile.runtime.terminal_excerpt_chars < 1:
         raise ValueError("runtime.terminal_excerpt_chars must be positive")
 
-    # Routing validation
-    if profile.triage.routing.enabled:
-        if profile.triage.contract != "v2":
-            raise ValueError("triage.routing.enabled requires triage.contract = 'v2'")
+    if profile.triage.routing.enabled and profile.triage.contract != "v2":
+        raise ValueError("triage.routing.enabled requires triage.contract = 'v2'")
 
-        for i, rule in enumerate(profile.triage.routing.rule):
-            field = f"triage.routing.rule[{i}]"
-            if rule.then.route and rule.then.route not in profile.triage.routes:
-                raise ValueError(f"{field}.then.route refers to unknown route: {rule.then.route}")
+    # Routing validation. Route-table syntax and internal references are
+    # always checked; executable fallback chains are only required when routing
+    # can actually select a route.
+    for i, rule in enumerate(profile.triage.routing.rule):
+        field = f"triage.routing.rule[{i}]"
+        if rule.then.route and rule.then.route not in profile.triage.routes:
+            raise ValueError(f"{field}.then.route refers to unknown route: {rule.then.route}")
 
-        if (
-            profile.triage.routing.default_route
-            and profile.triage.routing.default_route not in profile.triage.routes
-        ):
-            raise ValueError(
-                f"triage.routing.default_route refers to unknown route: {profile.triage.routing.default_route}"
-            )
+    if (
+        profile.triage.routing.enabled
+        and profile.triage.routing.default_route
+        and profile.triage.routing.default_route not in profile.triage.routes
+    ):
+        raise ValueError(
+            f"triage.routing.default_route refers to unknown route: {profile.triage.routing.default_route}"
+        )
 
     for route_name, route in profile.triage.routes.items():
         field = f"triage.routes.{route_name}"

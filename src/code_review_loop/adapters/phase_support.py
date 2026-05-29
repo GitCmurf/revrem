@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import sys
 import textwrap
 from contextlib import contextmanager
@@ -381,6 +382,33 @@ def progress_event(config: LoopConfig, phase: str, label: str, status: str, deta
         print_compact_progress(phase, label, detail, head=f"{status}: ")
     else:
         print_compact_progress(phase, label, status)
+
+
+def resolved_phase_detail(
+    command: list[str],
+    *,
+    harness: str,
+    model: str | None,
+    reasoning_effort: str | None,
+    timeout_seconds: float | None,
+    sandbox: str | None = None,
+    contract: str | None = None,
+    source: str | None = None,
+) -> str:
+    fields = [f"harness={harness}"]
+    if model:
+        fields.append(f"model={model}")
+    if reasoning_effort:
+        fields.append(f"effort={reasoning_effort}")
+    if timeout_seconds is not None:
+        fields.append(f"timeout={timeout_seconds:g}")
+    if sandbox:
+        fields.append(f"sandbox={sandbox}")
+    if contract:
+        fields.append(f"contract={contract}")
+    if source:
+        fields.append(f"source={source}")
+    return f"{shlex.join(command)} [{' '.join(fields)}]"
 
 
 def emit_loop_failure_event(

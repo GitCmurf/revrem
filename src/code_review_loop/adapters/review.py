@@ -9,7 +9,6 @@ does not import the runner or CLI edge.
 from __future__ import annotations
 
 import json
-import shlex
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
@@ -65,7 +64,22 @@ def run_codex_review(
         )
     phase_support.set_phase_terminal_title(config, "review", display_label)
     phase_support.ensure_model_budget(config, phase="review", iteration=display_label, ctx=ctx)
-    phase_support.progress_event(config, "review", display_label, "start", shlex.join(command), ctx=ctx)
+    phase_support.progress_event(
+        config,
+        "review",
+        display_label,
+        "start",
+        phase_support.resolved_phase_detail(
+            command,
+            harness=config.review_harness,
+            model=config.review_model or config.model,
+            reasoning_effort=config.review_reasoning_effort or config.reasoning_effort,
+            timeout_seconds=config.review_timeout_seconds_display,
+            sandbox="read-only",
+            source=config.phase_config_sources.get("review", "direct-config"),
+        ),
+        ctx=ctx,
+    )
     if config.dry_run:
         result = CommandResult(command, 0, stdout="DRY_RUN\nREVIEW_STATUS: findings\n")
     else:

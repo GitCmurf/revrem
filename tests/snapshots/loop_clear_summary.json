@@ -54,6 +54,7 @@
   "phase_config": {
     "checks": {
       "commands": [],
+      "source": "direct-config",
       "timeout_seconds": 300
     },
     "commit_message": {
@@ -61,6 +62,8 @@
       "harness": "codex",
       "model": null,
       "reasoning_effort": null,
+      "sandbox": "read-only",
+      "source": "direct-config",
       "timeout_seconds": null
     },
     "remediation": {
@@ -68,12 +71,15 @@
       "model": null,
       "reasoning_effort": null,
       "sandbox": "workspace-write",
+      "source": "direct-config",
       "timeout_seconds": null
     },
     "review": {
       "harness": "codex",
       "model": null,
       "reasoning_effort": null,
+      "sandbox": "read-only",
+      "source": "direct-config",
       "timeout_seconds": null
     },
     "triage": {
@@ -83,6 +89,8 @@
       "model": null,
       "reasoning_effort": null,
       "routing_enabled": false,
+      "sandbox": "read-only",
+      "source": "direct-config",
       "timeout_seconds": null
     }
   },
@@ -110,6 +118,49 @@
     "max_usd": null,
     "max_wall_seconds": null,
     "output_last_message": true,
+    "phase_config": {
+      "checks": {
+        "commands": [],
+        "source": "direct-config",
+        "timeout_seconds": 300
+      },
+      "commit_message": {
+        "enabled": false,
+        "harness": "codex",
+        "model": null,
+        "reasoning_effort": null,
+        "sandbox": "read-only",
+        "source": "direct-config",
+        "timeout_seconds": null
+      },
+      "remediation": {
+        "harness": "codex",
+        "model": null,
+        "reasoning_effort": null,
+        "sandbox": "workspace-write",
+        "source": "direct-config",
+        "timeout_seconds": null
+      },
+      "review": {
+        "harness": "codex",
+        "model": null,
+        "reasoning_effort": null,
+        "sandbox": "read-only",
+        "source": "direct-config",
+        "timeout_seconds": null
+      },
+      "triage": {
+        "contract": "v1",
+        "enabled": false,
+        "harness": "codex",
+        "model": null,
+        "reasoning_effort": null,
+        "routing_enabled": false,
+        "sandbox": "read-only",
+        "source": "direct-config",
+        "timeout_seconds": null
+      }
+    },
     "profile_name": null,
     "progress_style": "compact",
     "remediation_harness": "codex",

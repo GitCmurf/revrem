@@ -7,7 +7,6 @@ fallbacks are preserved; only the home module changes.
 
 from __future__ import annotations
 
-import shlex
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -63,7 +62,23 @@ def run_triage(
         prompt,
     )
     phase_support.ensure_model_budget(config, phase="triage", iteration=iteration, ctx=ctx)
-    phase_support.progress_event(config, "triage", str(iteration), "start", shlex.join(command), ctx=ctx)
+    phase_support.progress_event(
+        config,
+        "triage",
+        str(iteration),
+        "start",
+        phase_support.resolved_phase_detail(
+            command,
+            harness=config.triage_harness,
+            model=config.triage_model,
+            reasoning_effort=config.triage_reasoning_effort,
+            timeout_seconds=config.triage_timeout_seconds_display,
+            sandbox="read-only",
+            contract=config.triage_contract,
+            source=config.phase_config_sources.get("triage", "direct-config"),
+        ),
+        ctx=ctx,
+    )
     if config.dry_run:
         result = CommandResult(command, 0, stdout="DRY_RUN triage skipped\n")
     else:

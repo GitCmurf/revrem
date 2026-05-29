@@ -7,6 +7,7 @@ without importing the public runner facade.
 
 from __future__ import annotations
 
+import shlex
 from dataclasses import dataclass, replace
 from typing import Any, Literal, cast
 
@@ -318,6 +319,15 @@ class _RunnerEngineExecutor:
         pending_check_failures = _format_check_failures(check_results)
         self.state.set_pending_check_failures(bool(pending_check_failures))
         self.iterations[-1]["check_failures"] = len(checks_outcome.failed_commands)
+        if check_results:
+            self.iterations[-1]["checks"] = [
+                {
+                    "command": shlex.join(result.args),
+                    "status": "passed" if result.returncode == 0 else "failed",
+                    "artifact": f"check-{iteration}-{index}.txt",
+                }
+                for index, result in enumerate(check_results, start=1)
+            ]
         if engine_state.acc.resolved_route and engine_state.acc.remediation_result_returncode is not None:
             record_routing_outcome(
                 config=self.config,

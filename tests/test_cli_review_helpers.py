@@ -274,7 +274,7 @@ def test_run_loop_writes_replayable_events_jsonl(tmp_path, capsys):
         "reviews",
     ]
     assert capsys.readouterr().out == (
-        "0001|review|1|phase_start: codex review --base main\n"
+        "0001|review|1|phase_start: codex review --base main [harness=codex sandbox=read-only source=direct-config]\n"
         "0002|review|1|phase_result: clear\n"
         f"0003|artifacts|artifact_write: {tmp_path / 'artifacts' / 'summary.json'}\n"
         f"0004|artifacts|artifact_write: {tmp_path / 'artifacts' / 'review-1.txt'}\n"
@@ -765,6 +765,7 @@ def test_commit_message_for_staged_changes_uses_specific_fallback_on_model_failu
     message = commit_message_for_staged_changes(config, runner, 2, make_run_context(runner))
 
     assert message == "fix(core): apply verified remediation 2 (RevRem)"
+    assert (tmp_path / "artifacts" / "commit-2-message-fallback.json").is_file()
 
 
 def test_normalize_revrem_conventional_subject_preserves_suffix_when_truncated():

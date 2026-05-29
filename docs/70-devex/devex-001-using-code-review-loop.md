@@ -3,8 +3,8 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.11'
-last_updated: '2026-05-21'
+version: '1.12'
+last_updated: '2026-05-29'
 owner: GitCmurf
 docops_version: '2.0'
 area: devex
@@ -340,6 +340,20 @@ remain sufficient for local dogfood:
   --triage \
   --routing
 ```
+
+Dogfood summaries include a `phase_config` object for review, triage,
+remediation, commit-message drafting, and checks. Each phase records the
+resolved harness, model, effort, timeout, sandbox where relevant, and whether
+the effective value came from CLI flags, the selected profile, or defaults.
+Explicit unbounded timeouts are shown as `0` in this operator-facing projection
+even though the subprocess layer receives `None`.
+
+Commit-message drafting disables Codex web search for that read-only helper
+call so `--commit-reasoning-effort minimal` can be tested without inheriting
+tool settings from local Codex defaults. If model drafting still fails, RevRem
+records the fallback in `commit-N-message-fallback.json`, includes it in the
+summary, and uses a deterministic path-derived Conventional Commit subject
+rather than an iteration-only placeholder.
 
 To capture a one-off command as a project-local profile, add
 `--save-profile NAME`. RevRem writes the effective configuration to
@@ -917,6 +931,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.12 | 2026-05-29 | Codex | Documented the project-local dogfood profile, resolved phase configuration summaries, and commit-message fallback hardening |
 | 1.11 | 2026-05-21 | Codex | Documented positive iteration validation and finite TOML numeric output |
 | 1.10 | 2026-05-21 | Codex | Documented temp-root `.git` marker handling during project profile discovery |
 | 1.9 | 2026-05-13 | Codex | Documented profile-level suppression scope policy |
