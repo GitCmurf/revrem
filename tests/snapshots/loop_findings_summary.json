@@ -54,6 +54,41 @@
   "latest_review_excerpt": "REVIEW_STATUS: findings",
   "max_iterations": 1,
   "pending_check_failures": false,
+  "phase_config": {
+    "checks": {
+      "commands": [],
+      "timeout_seconds": 300
+    },
+    "commit_message": {
+      "enabled": false,
+      "harness": "codex",
+      "model": null,
+      "reasoning_effort": null,
+      "timeout_seconds": null
+    },
+    "remediation": {
+      "harness": "codex",
+      "model": null,
+      "reasoning_effort": null,
+      "sandbox": "workspace-write",
+      "timeout_seconds": null
+    },
+    "review": {
+      "harness": "codex",
+      "model": null,
+      "reasoning_effort": null,
+      "timeout_seconds": null
+    },
+    "triage": {
+      "contract": "v1",
+      "enabled": false,
+      "harness": "codex",
+      "model": null,
+      "reasoning_effort": null,
+      "routing_enabled": false,
+      "timeout_seconds": null
+    }
+  },
   "phases": {
     "_summary": {
       "iteration_count": 1

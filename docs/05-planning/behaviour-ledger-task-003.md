@@ -56,6 +56,22 @@ There is no silent third option.
 
 ## Entries
 
+### 2026-05-29 — Dogfood phase configuration added to loop summaries
+
+- **Contract:** machine
+- **What changed:** loop `summary.json` now includes a `phase_config`
+  projection covering review, triage, remediation, commit-message drafting, and
+  checks. The projection records resolved harness/model/effort/timeout values
+  used for dogfood/debuggability.
+- **Why:** `REVREM-TASK-004` requires dogfood runs to be reproducible from
+  artifacts without scraping terminal output or shell history.
+- **Before / After:** before, summaries carried scattered resume/config fields
+  but no compact phase plan; after, golden-master summary snapshots include
+  `phase_config`.
+- **schema_version impact:** none; pre-release `summary.json` remains at schema
+  version `1.0` while adding an optional object field.
+- **CHANGELOG:** not required; internal pre-release dogfood hardening.
+
 ### 2026-05-28 — Wave D SDK result exposes typed terminal outcome
 
 - **Contract:** machine

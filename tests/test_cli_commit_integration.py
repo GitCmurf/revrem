@@ -82,7 +82,11 @@ def test_loop_commits_after_passing_checks(tmp_path):
     assert ["git", "add", "-A"] in commands
     assert ["git", "-C", str(repo_root), "reset", "--", "artifacts"] in commands
     assert ["git", "commit", "-m", "fix(cli): harden RevRem commit flow (RevRem)"] in commands
-    assert any(command[:6] == ["codex", "exec", "--sandbox", "read-only", "--color", "never"] for command in commands)
+    assert any(
+        command[:8]
+        == ["codex", "exec", "--disable", "web_search", "--sandbox", "read-only", "--color", "never"]
+        for command in commands
+    )
     assert summary["iterations"][0]["commit_status"] == "committed"
     assert set(summary["artifact_paths"]["commits"]) == {
         str(tmp_path / "artifacts" / "commit-1-add.txt"),
@@ -94,7 +98,8 @@ def test_loop_commits_after_passing_checks(tmp_path):
     commit_prompt = next(
         input_text
         for command, input_text, _timeout in calls
-        if command[:6] == ["codex", "exec", "--sandbox", "read-only", "--color", "never"]
+        if command[:8]
+        == ["codex", "exec", "--disable", "web_search", "--sandbox", "read-only", "--color", "never"]
     )
     assert commit_prompt is not None and "Files:" in commit_prompt
     assert "Conventional Commit" in commit_prompt
@@ -545,9 +550,9 @@ def test_run_commit_uses_no_verify_only_on_retry(tmp_path):
     )
 
     assert commit_impl.run_commit(config, runner, 1, ctx=make_run_context(runner)) == "committed"
-    assert ["git", "commit", "-m", "chore: remediate review iteration 1 (RevRem)"] in calls
-    assert ["git", "commit", "--no-verify", "-m", "chore: remediate review iteration 1 (RevRem)"] not in calls
+    assert ["git", "commit", "-m", "fix(core): apply verified remediation 1 (RevRem)"] in calls
+    assert ["git", "commit", "--no-verify", "-m", "fix(core): apply verified remediation 1 (RevRem)"] not in calls
 
     calls.clear()
     assert commit_impl.run_commit(config, runner, 1, ctx=make_run_context(runner), retrying=True) == "committed"
-    assert ["git", "commit", "--no-verify", "-m", "chore: remediate review iteration 1 (RevRem)"] in calls
+    assert ["git", "commit", "--no-verify", "-m", "fix(core): apply verified remediation 1 (RevRem)"] in calls
