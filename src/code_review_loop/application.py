@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import copy
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from importlib import import_module
 from pathlib import Path
 from typing import cast
@@ -79,8 +79,11 @@ def run_review_loop(
     """Run one bounded review/remediation loop and return the summary payload."""
     if process_runner is None:
         process_runner = _load_default_process_runner()
+    # Headless callers opt out of all terminal progress emission, even if the
+    # supplied config still has progress enabled for CLI runs.
+    effective_config = replace(config, progress=False) if not terminal_ui else config
     result = runner.run_loop(
-        config,
+        effective_config,
         process_runner,
         clock=clock,
         identity=identity,

@@ -31,6 +31,31 @@ def test_headless_application_clear_review(tmp_path: Path) -> None:
     assert run.review.calls[0].artifact_label == "review-1"
 
 
+def test_headless_application_terminal_ui_false_suppresses_progress_output(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        progress=True,
+        triage_enabled=False,
+    )
+    run = HeadlessRun(
+        config=config,
+        review=SequencedReviewHarness(["clear"]),
+    )
+
+    result = run.run()
+
+    captured = capsys.readouterr()
+    assert result.final_status == "clear"
+    assert captured.err == ""
+
+
 def test_headless_application_findings_remediation_checks_final_clear(tmp_path: Path) -> None:
     config = LoopConfig(
         base="main",
