@@ -409,4 +409,3 @@ reasoning_effort = "low"
     assert config.triage_reasoning_effort == "low"
     assert config.remediation_reasoning_effort == "minimal"
     assert config.commit_reasoning_effort == "high"
-
