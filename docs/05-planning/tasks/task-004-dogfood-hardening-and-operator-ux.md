@@ -96,16 +96,17 @@ delivering:
   `The following tools cannot be used with reasoning.effort 'minimal': web_search`.
   RevRem then committed with `chore: remediate review iteration 2 (RevRem)`.
 - **Root cause (verified from the evidence artifact):** RevRem's own
-  commit-message command (`harnesses._exec_command`) adds *no* tool/search
-  flags — it is `codex exec -c model_reasoning_effort="minimal" --sandbox
-  read-only --color ... --model ... -`. Yet the `web_search` tool was active for
-  the call and `reasoning.effort=minimal` is incompatible with it (the tool is
-  supplied by Codex itself — a `codex exec` default and/or the operator's Codex
-  config; the exact origin is not settled and the implementer should confirm via
-  Codex config/`--help`). The key point is that **RevRem does not add the tool,
-  so the fix is not "delete a flag we set"** — it is to **explicitly disable the
-  tool for the commit-message exec call** (e.g. a `-c`/config override that turns
-  off `web_search`/tools for this role) so `minimal` is usable.
+  commit-message command path (`build_commit_message_command()` ->
+  `harnesses.build_phase_command()` -> `CodexHarnessAdapter.command()`) adds
+  *no* tool/search flags — it is `codex exec -c
+  model_reasoning_effort="minimal" --sandbox read-only --color ... --model ...
+  -`. Yet the `web_search` tool was active for the call and
+  `reasoning.effort=minimal` is incompatible with it (the tool is supplied by
+  Codex defaults or operator Codex config, not by a RevRem phase flag). The key
+  point is that **RevRem does not add the tool, so the fix is not "delete a flag
+  we set"** — it is to **explicitly disable the tool for the commit-message exec
+  call** using Codex's documented feature override (`--disable web_search`, or
+  equivalent `-c features.web_search=false`) so `minimal` is usable.
 - **Impact:** The commit is technically valid but professionally inadequate.
   It obscures the change and makes dogfood history look careless.
 - **Required fix:**
@@ -286,11 +287,8 @@ timeout_seconds = 0
 enabled = true
 harness = "codex"
 message_model = "gpt-5.3-codex-spark"
-# NOTE: `reasoning_effort` and `timeout_seconds` are intentionally absent here.
-# The current `[profiles.*.commit]` schema (COMMIT_KEYS) only accepts
-# `enabled`, `harness`, `message_model`, `message_prompt`, `on_hook_failure`.
-# Setting commit reasoning effort or timeout from a profile is a schema gap
-# this task must resolve — see the schema-gap note below and slice T4a.
+reasoning_effort = "low"
+timeout_seconds = 0
 
 [profiles.dogfood.output]
 debug_status_detection = true
@@ -321,23 +319,24 @@ Notes:
 > - `when` predicates use `risk_level_min`/`risk_level_max` and
 >   `module_count_gte`/`module_count_lt`, not `risk` or `min_modules`
 >   (see `ROUTING_WHEN_KEYS`);
-> - `[profiles.*.commit]` uses `message_model`, not `model`, and does **not**
->   currently accept `reasoning_effort` or `timeout_seconds` (`COMMIT_KEYS`).
+> - `[profiles.*.commit]` uses `message_model`, not `model`;
+> - `[profiles.*.commit]` does **not** currently accept `reasoning_effort` or
+>   `timeout_seconds` (`COMMIT_KEYS`). This task deliberately changes that
+>   schema so the project-local dogfood profile is self-contained.
 >
 > Acceptance for T4a must include parsing this exact profile in a test so the
 > dogfood command cannot regress into an unparseable profile.
 
-- **Commit reasoning effort is a real schema gap, not a default to write down.**
+- **Commit reasoning effort is a real schema gap and this task closes it.**
   There is no `commit.reasoning_effort` profile key today. In
   `config_builder.py` commit effort resolves as
   `args.commit_reasoning_effort or remediation_reasoning_effort`, so absent a
   CLI flag the dogfood profile would commit at the *remediation* effort
-  (`medium`), not `low`. To make the dogfood profile commit at `low` without a
-  CLI flag, T4a must extend `COMMIT_KEYS` (and the profile→`LoopConfig`
-  mapping) to accept `reasoning_effort` (and probably `timeout_seconds` for
-  symmetry with other phases). If we choose not to extend the schema, the doc
-  must state plainly that commit effort/timeout are CLI-only and drop the
-  expectation of a profile-driven `low`.
+  (`medium`), not `low`. T4a must extend `COMMIT_KEYS`, `CommitConfig`, and the
+  profile→`LoopConfig` mapping to accept `reasoning_effort` and
+  `timeout_seconds`, with CLI overrides taking precedence. Commit-message
+  timeout should use the commit profile timeout when set, then the global
+  timeout; it must preserve explicit `0` in user-visible projections.
 
 ## CLI Control Surface
 
@@ -418,11 +417,10 @@ Closeout output must include:
   (`id`, `risk_level_min`, `module_count_gte`, `message_model`). The draft shape
   in this doc was confirmed unparseable by `profiles.parse_profile`; do not copy
   the original draft verbatim.
-- Decide the commit-effort schema gap (see the schema-gap note above): either
-  extend `COMMIT_KEYS` + the profile→`LoopConfig` mapping to accept
-  `reasoning_effort` (and `timeout_seconds`), or document commit effort/timeout
-  as CLI-only and remove the profile-driven `low` expectation. This decision
-  blocks the final shape of `[profiles.dogfood.commit]`.
+- Extend `COMMIT_KEYS`, `CommitConfig`, profile rendering, config builder, and
+  resume/phase-plan projections so `[profiles.*.commit]` accepts
+  `reasoning_effort` and `timeout_seconds`. Precedence is:
+  CLI commit override, profile commit setting, remediation/global fallback.
 - Introduce a typed resolved phase-plan projection used by dry run, progress,
   summary, and resume.
 - Preserve explicit `timeout_seconds = 0` in user-visible projections.
@@ -431,6 +429,8 @@ Closeout output must include:
   - **`profiles.parse_profile` accepts the exact committed `[profiles.dogfood]`
     block** (regression guard so the dogfood command can never ship an
     unparseable profile);
+  - commit reasoning effort and timeout parse from `[profiles.dogfood.commit]`
+    and flow into `LoopConfig`;
   - explicit zero timeout survives profile, CLI, summary, and resume payload;
   - dry-run JSON includes phase plan.
 
@@ -451,8 +451,10 @@ Closeout output must include:
 - Explicitly disable Codex's default server-side `web_search`/tools for the
   commit-message exec role (the failure is the default tool being incompatible
   with `reasoning.effort=minimal`, not a flag RevRem adds — see DF-001). The
-  fix belongs in `harnesses._exec_command` / `build_commit_message_command`,
-  scoped to the `commit-message` role so other roles are unaffected.
+  fix belongs in the `PhaseCommandRequest` -> `CodexHarnessAdapter.command()`
+  path, scoped to the `commit-message` role so other roles are unaffected. Use
+  Codex's documented `--disable web_search` feature override, or the equivalent
+  `-c features.web_search=false`, and assert the generated command shape.
 - Treat model-drafting failure as a first-class event and summary field.
 - Replace generic fallback with deterministic subject synthesis. This requires
   changing `deterministic_commit_message`, which today takes only `iteration`
@@ -464,6 +466,8 @@ Closeout output must include:
     proving it is forbidden.
 - Tests:
   - `--commit-reasoning-effort minimal` succeeds (asserts no `web_search` 400);
+  - generated Codex command for the `commit-message` role disables
+    `web_search`, while review/remediation command shapes are unchanged;
   - model failure yields deterministic non-generic subject;
   - fallback event appears in `events.jsonl` and `summary.json`.
 
@@ -642,8 +646,8 @@ but are not prerequisites for writing code:
 - `REVREM-TASK-004` dogfood profile exists in `.revrem.toml`, is documented, and
   parses cleanly under strict `_reject_unknown_keys` validation (guarded by a
   test that loads the exact committed block).
-- The commit-effort schema-gap decision (extend `COMMIT_KEYS` vs. CLI-only) is
-  made and reflected consistently in the profile, the docs, and the tests.
+- `[profiles.*.commit]` accepts `reasoning_effort` and `timeout_seconds`, and
+  the committed dogfood profile uses those keys.
 - Every profile/config boolean that affects the runtime loop and is relevant to
   dogfood has a CLI override or a documented reason it does not.
 - Model-backed phases display resolved harness/model/effort/timeout/sandbox
