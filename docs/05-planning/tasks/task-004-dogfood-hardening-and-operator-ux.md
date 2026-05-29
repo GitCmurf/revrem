@@ -704,6 +704,39 @@ mkdir -p /tmp/.git
 rm -rf /tmp/.git /tmp/.revrem.toml
 ```
 
+### Round 2 closeout scope
+
+The second adversarial review found the hermeticity fix complete and all gates
+green, with one remaining blocker and a small polish set. The accepted Round 2
+remediation is:
+
+- add explicit executable-route validation modes:
+  `revrem policy lint --executable-routes` and
+  `revrem doctor --validate-routes`;
+- keep normal disabled-routing behavior unchanged while making requested
+  validation fail on unavailable draft route chains;
+- expose `--commit-message-harness` for one-off commit-subject drafting
+  harness overrides;
+- expose `--allow-model-escalation` / `--no-allow-model-escalation` for the
+  routing policy boolean used by the dogfood profile;
+- document the new triage/routing control surface in `REVREM-DEVEX-001`;
+- remove the dead timeout-display parameter, replace the commit artifact-root
+  call-for-side-effect with a named guard, and restore always-on
+  `default_route` internal-reference validation when a route table exists or
+  routing is enabled.
+
+Round 2 implementation evidence:
+
+- added `policy lint --executable-routes` and `doctor --validate-routes`;
+- added `--commit-message-harness` and
+  `--allow-model-escalation` / `--no-allow-model-escalation`;
+- added regression tests for disabled-route default behavior, requested
+  executable-route validation, commit-message harness precedence, and routing
+  model-escalation precedence;
+- verified `ruff`, `mypy`, `lint-imports`, `meminit check`, and `pytest -q`;
+- verified `pytest -q` in both required temp states:
+  clean `/tmp` -> `838 passed`; polluted `/tmp/.git` -> `838 passed`.
+
 ## Verification Commands
 
 ```bash

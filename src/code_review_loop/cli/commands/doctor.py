@@ -41,7 +41,10 @@ def main(argv: Sequence[str]) -> int:
                 triage_enabled=profile.triage.enabled,
                 triage_harness=profile.triage.harness,
                 commit_message_harness=profile.commit.harness,
-                routed_harnesses=profile_routed_harnesses(profile),
+                routed_harnesses=profile_routed_harnesses(
+                    profile,
+                    include_disabled_routes=args.validate_routes,
+                ),
                 harness_executables=profile.runtime.harness_executables,
                 check_commands=tuple(args.check) if args.check is not None else profile.pipeline.checks,
                 commit_after_remediation=(
@@ -76,8 +79,14 @@ def _doctor_artifact_dir(args, profile: profiles.Profile) -> Path:
     return default_artifact_dir()
 
 
-def profile_routed_harnesses(profile: profiles.Profile) -> tuple[str, ...]:
-    if not profile.triage.enabled or not profile.triage.routing.enabled:
+def profile_routed_harnesses(
+    profile: profiles.Profile,
+    *,
+    include_disabled_routes: bool = False,
+) -> tuple[str, ...]:
+    if not include_disabled_routes and (
+        not profile.triage.enabled or not profile.triage.routing.enabled
+    ):
         return ()
     return tuple(route.harness for route in profile.triage.routes.values())
 

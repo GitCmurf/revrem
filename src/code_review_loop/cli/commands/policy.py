@@ -18,7 +18,11 @@ def main(argv: Sequence[str]) -> int:
     args = parse_policy_args(argv)
     try:
         if args.command == "lint":
-            code = policy_lint(args.profile, output_format=getattr(args, "format", None))
+            code = policy_lint(
+                args.profile,
+                output_format=getattr(args, "format", None),
+                executable_routes=args.executable_routes,
+            )
             return CommandOk(exit_code=code).exit_code if code == 0 else CommandFailed(exit_code=code).exit_code
         if args.command == "review":
             code = policy_review(Path(args.artifact_dir), output_format=getattr(args, "format", None))
@@ -29,10 +33,15 @@ def main(argv: Sequence[str]) -> int:
         return CommandFailed(exit_code=1).exit_code
 
 
-def policy_lint(profile_name: str, output_format: str | None = None) -> int:
+def policy_lint(
+    profile_name: str,
+    output_format: str | None = None,
+    *,
+    executable_routes: bool = False,
+) -> int:
     try:
         profile = profiles.resolve_profile(profile_name, cwd=Path.cwd(), require_implemented=False)
-        policy_issues = profiles.validate_policy(profile)
+        policy_issues = profiles.validate_policy(profile, executable_routes=executable_routes)
         if policy_issues:
             raise ValueError("\n".join(policy_issues))
         if output_format == "json":

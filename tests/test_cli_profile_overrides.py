@@ -98,6 +98,34 @@ def test_main_uses_profile_commit_message_harness(tmp_path, monkeypatch):
     assert config.commit_timeout_seconds == 0
 
 
+def test_cli_commit_message_harness_overrides_profile_commit_harness(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        config_builder,
+        "profile_or_default",
+        lambda name, cwd: profiles.Profile(
+            name="final-pr",
+            commit=profiles.CommitConfig(
+                enabled=True,
+                harness="codex",
+                message_model="fast-commit",
+            ),
+        ),
+    )
+    args = cli_args.parse_args([
+        "--profile",
+        "final-pr",
+        "--commit-message-harness",
+        "claude",
+        "--dry-run",
+    ])
+
+    config, _summary_format = config_builder.build_loop_config(args, tmp_path)
+
+    assert config.commit_message_harness == "claude"
+    assert config.phase_config_sources["commit_message"] == "mixed"
+    assert config.phase_config_field_sources["commit_message"]["harness"] == "cli"
+
+
 def test_cli_commit_reasoning_effort_overrides_profile_commit_effort(tmp_path, monkeypatch):
     monkeypatch.setattr(
         config_builder,
@@ -512,10 +540,12 @@ strict_on_unavailable_route = true
         "timeout_seconds": "cli",
         "contract": "cli",
         "routing_enabled": "cli",
+        "allow_model_escalation": "profile:final-pr",
     }
     assert config.profile_v2 is not None
     assert config.profile_v2.triage.routing.enabled is True
     assert config.profile_v2.triage.routing.strict_on_unavailable_route is False
+    assert config.profile_v2.triage.routing.allow_model_escalation is True
 
 
 def test_main_triage_cli_negations_override_profile_enabled_values(tmp_path, monkeypatch):
@@ -560,6 +590,56 @@ harness = "codex"
     assert config.triage_enabled is False
     assert config.profile_v2 is not None
     assert config.profile_v2.triage.routing.enabled is False
+
+
+def test_main_routing_model_escalation_cli_override(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    config_path = home / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.final-pr.triage]
+enabled = true
+contract = "v2"
+
+[profiles.final-pr.triage.routing]
+enabled = true
+default_route = "midtier-coder"
+allow_model_escalation = true
+
+[profiles.final-pr.triage.routes.midtier-coder]
+harness = "codex"
+""",
+        encoding="utf-8",
+    )
+    captured_configs = []
+
+    def fake_run_loop(config):
+        captured_configs.append(config)
+        return _clear_result({
+            "artifact_dir": str(config.artifact_dir),
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+            "iterations": [],
+        })
+
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
+
+    exit_code = cli_main.main([
+        "--profile",
+        "final-pr",
+        "--no-allow-model-escalation",
+        "--dry-run",
+    ])
+
+    assert exit_code == 0
+    config = captured_configs[0]
+    assert config.profile_v2 is not None
+    assert config.profile_v2.triage.routing.allow_model_escalation is False
+    assert config.phase_config_field_sources["triage"]["allow_model_escalation"] == "cli"
 
 
 def test_routing_override_requires_v2_contract(tmp_path, monkeypatch):

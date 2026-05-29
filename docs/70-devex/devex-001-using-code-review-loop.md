@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.12'
+version: '1.13'
 last_updated: '2026-05-29'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.11
-> **Last Updated:** 2026-05-21
+> **Version:** 1.13
+> **Last Updated:** 2026-05-29
 > **Type:** DEVEX
 > **Area:** devex
 > **Description:** Operator guide for the code-review-loop utility
@@ -560,9 +560,10 @@ single invocation should remain dry, pass `--no-commit-after-remediation` to
 override that profile setting. The commit step is separate from the remediation
 model: checks must pass first, RevRem skips the commit if there are no staged
 changes, and RevRem runs `git commit` itself. The optional `commit.harness`
-field selects the commit-message drafting adapter. The optional
-`commit.message_model` or `--commit-message-model` controls only the read-only
-model call that drafts the commit subject. If no explicit
+field selects the commit-message drafting adapter. Pass
+`--commit-message-harness` to override that drafting harness for one run. The
+optional `commit.message_model` or `--commit-message-model` controls only the
+read-only model call that drafts the commit subject. If no explicit
 CLI value is supplied, the profile value is used; the built-in profile default
 is `gpt-5.3-codex-spark`. With the default
 prompt, RevRem normalizes the final subject to Conventional Commit syntax and
@@ -729,6 +730,32 @@ Use `revrem policy lint --profile multi` to verify rule and fallback chains,
 `revrem triage explain <run-dir>` to inspect one routing decision, and
 `revrem policy review --artifact-dir <run-dir>` to summarize route outcomes
 without printing full prompts.
+
+For one-off dogfood runs, CLI flags can override the profile's triage and
+routing controls without editing `.revrem.toml`:
+
+```bash
+revrem --profile dogfood --triage --triage-contract v2 --routing
+revrem --profile dogfood --no-triage --no-routing --dry-run --summary-format json
+revrem --profile dogfood --no-allow-model-escalation
+```
+
+Use `--triage-model`, `--triage-harness`, and `--triage-timeout-seconds` to
+override the triage phase. Use `--routing-strict` or `--no-routing-strict` to
+control whether an unavailable selected route is a hard failure. Disabled
+routing may carry draft routes during normal runs, but references inside the
+route table are still validated.
+
+Executable route validation is opt-in when routing is disabled:
+
+```bash
+revrem policy lint --profile dogfood --executable-routes
+revrem doctor --profile dogfood --validate-routes
+```
+
+Use those checks before enabling a draft Gemini or Claude route. Without the
+opt-in flag, normal lint and doctor runs do not require disabled draft route
+harnesses to be installed.
 
 Structured triage is also the suppression-aware path. Add an explicit
 suppression when a fingerprinted finding is accepted, tracked elsewhere, or
@@ -931,6 +958,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.13 | 2026-05-29 | Codex | Documented triage/routing CLI overrides, executable-route validation modes, model-escalation controls, and commit-message harness override |
 | 1.12 | 2026-05-29 | Codex | Documented the project-local dogfood profile, resolved phase configuration summaries, and commit-message fallback hardening |
 | 1.11 | 2026-05-21 | Codex | Documented positive iteration validation and finite TOML numeric output |
 | 1.10 | 2026-05-21 | Codex | Documented temp-root `.git` marker handling during project profile discovery |

@@ -22,6 +22,13 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="revrem",
         description="Run a bounded Codex review/remediation loop against a base branch.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Triage/routing examples:\n"
+            "  revrem --profile dogfood --triage --triage-contract v2 --routing\n"
+            "  revrem --profile dogfood --no-triage --no-routing --dry-run --summary-format json\n"
+            "  revrem --profile dogfood --no-allow-model-escalation\n"
+        ),
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("--profile", default=None, help="Named profile from RevRem TOML config.")
@@ -44,6 +51,11 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--review-model", default=None, help="Optional model override for codex review only.")
     parser.add_argument("--triage-model", default=None, help="Optional model override for triage only.")
     parser.add_argument("--triage-harness", default=None, help="Optional harness override for triage only.")
+    parser.add_argument(
+        "--commit-message-harness",
+        default=None,
+        help="Optional harness override for read-only commit-message drafting.",
+    )
     parser.add_argument(
         "--remediation-model",
         default=None,
@@ -139,6 +151,21 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         action="store_false",
         default=None,
         help="Allow routing fallback when a selected route is unavailable.",
+    )
+    routing_escalation_group = parser.add_mutually_exclusive_group()
+    routing_escalation_group.add_argument(
+        "--allow-model-escalation",
+        dest="allow_model_escalation",
+        action="store_true",
+        default=None,
+        help="Allow v2 routing to accept a model-proposed route above the policy route.",
+    )
+    routing_escalation_group.add_argument(
+        "--no-allow-model-escalation",
+        dest="allow_model_escalation",
+        action="store_false",
+        default=None,
+        help="Reject model-proposed v2 routing escalation above the policy route.",
     )
     parser.add_argument(
         "--exec-sandbox",
@@ -501,6 +528,11 @@ def parse_doctor_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--artifact-dir", default=None, help="Artifact directory to validate.")
     parser.add_argument("--check", action="append", default=None, help="Check command to validate. Repeatable.")
     parser.add_argument(
+        "--validate-routes",
+        action="store_true",
+        help="Validate configured route harness executables even when profile routing is disabled.",
+    )
+    parser.add_argument(
         "--commit-after-remediation",
         action="store_true",
         default=None,
@@ -582,6 +614,11 @@ def parse_policy_args(argv: Sequence[str]) -> argparse.Namespace:
     lint = subparsers.add_parser("lint", help="Lint routing rules and routes in a profile.")
     lint.add_argument("--profile", required=True)
     lint.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)
+    lint.add_argument(
+        "--executable-routes",
+        action="store_true",
+        help="Validate route fallback chains for implemented harness support even when routing is disabled.",
+    )
     review = subparsers.add_parser("review", help="Summarize routing outcomes from run artifacts.")
     review.add_argument("--artifact-dir", required=True)
     review.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)

@@ -43,6 +43,26 @@ routing.default_route = "missing"
     assert cli_main(["policy", "lint", "--profile", "test"]) == 1
 
 
+def test_policy_lint_executable_routes_checks_disabled_draft_routes(tmp_path, monkeypatch):
+    (tmp_path / ".git").mkdir()
+    toml = """
+[profiles.test.triage]
+contract = "v2"
+
+[profiles.test.triage.routing]
+enabled = false
+default_route = "future"
+
+[profiles.test.triage.routes.future]
+harness = "reserved"
+"""
+    (tmp_path / ".revrem.toml").write_text(toml, encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    assert cli_main(["policy", "lint", "--profile", "test"]) == 0
+    assert cli_main(["policy", "lint", "--profile", "test", "--executable-routes"]) == 1
+
+
 def test_policy_review_summarizes_routing_outcomes(tmp_path, capsys):
     routing = {
         "iteration": 1,

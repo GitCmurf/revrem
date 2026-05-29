@@ -93,6 +93,28 @@ then.route = "missing"
         profiles.load_profile_file(path)
 
 
+def test_disabled_routing_still_validates_default_route_reference(tmp_path):
+    path = tmp_path / "profiles.toml"
+    path.write_text(
+        """
+[profiles.test.triage]
+contract = "v2"
+enabled = false
+
+[profiles.test.triage.routing]
+enabled = false
+default_route = "missing"
+
+[profiles.test.triage.routes.future]
+harness = "codex"
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="default_route refers to unknown route: missing"):
+        profiles.load_profile_file(path)
+
+
 def test_parse_triage_routing_rule_rejects_unknown_risk_and_refactor_values(tmp_path):
     path = tmp_path / "profiles.toml"
 
@@ -174,6 +196,7 @@ enabled = true
 
 [profiles.draft.triage.routing]
 enabled = false
+default_route = "frontier"
 
 [profiles.draft.triage.routes.frontier]
 harness = "reserved"

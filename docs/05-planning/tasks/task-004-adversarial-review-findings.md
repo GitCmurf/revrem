@@ -3,7 +3,7 @@ document_id: REVREM-REVIEW-004
 type: TASK
 title: Adversarial review findings for TASK-004 dogfood hardening
 status: Draft
-version: '1.0'
+version: '1.2'
 last_updated: '2026-05-29'
 owner: GitCmurf
 docops_version: '2.0'
@@ -22,22 +22,200 @@ related_ids:
 - REVREM-TASK-003
 ---
 
+
 # TASK-004 — Adversarial Review Findings
 
-- **Reviewer:** Claude (Opus 4.8), adversarial re-evaluation against the 6 axes.
-- **Verdict:** **NOT complete. Do not mark done.** The architecture and the
-  headline dogfood features are genuinely strong, but the acceptance criterion
-  "`pytest -q` passes" is **false on a clean checkout**, and is false in a
-  reproducible, environment-independent way. Two correctness/quality defects sit
-  directly under that failure.
-- **Method:** Read the committed source for every named DF item; ran `ruff`,
-  `mypy`, `lint-imports`, `meminit check`, and `pytest -q`; reproduced the test
-  failures from two distinct `/tmp` states; pinned each failure to a specific
-  line of production or test code.
+> **This document has two rounds.** Round 2 (below) is the current,
+> authoritative re-evaluation after Codex's second completion claim. Round 1 (at
+> the bottom) is retained for history; **all Round 1 blockers and mediums are
+> remediated** and re-verified in Round 2.
+
+> **Codex remediation status (2026-05-29):** Round 2 findings R2-1 through
+> R2-7 have been remediated in the follow-up implementation pass. The closeout
+> evidence is recorded in `REVREM-TASK-004`; the historical findings below are
+> retained as the review record that drove the changes.
 
 ---
 
-## Scorecard
+## Round 2 — re-evaluation after hermeticity remediation (2026-05-29)
+
+- **Reviewer:** Claude (Opus 4.8), adversarial re-evaluation against the 6 axes.
+- **Verdict:** **Close, but NOT yet complete.** The Round 1 blockers are
+  genuinely fixed: `pytest -q` (833 tests) is now green in **both** `/tmp`
+  states, and `ruff`, `mypy`, `lint-imports`, and `meminit check` all pass. The
+  feature work is strong and largely demonstration-class. It cannot be marked
+  done because **slice T4d is only half-built**: the DF-004 requirement that
+  executable route chains be validatable "when routing is enabled **or** a
+  lint/doctor command explicitly asks for executable-route validation" has no
+  on-demand path, and T4d's required "fails-when-requested" test was never
+  added (R2-1). Three further acceptance/documentation gaps (R2-2/3/4) and three
+  quality polish items (R2-5/6/7) remain.
+- **Method:** Read the committed source for the T4a–T4f slices and every named
+  DF item; ran the full gate (`ruff`, `mypy`, `lint-imports`, `meminit check`,
+  `pytest -q`) in clean and `/tmp/.git`-polluted states; ran live dry-run
+  Matrices D and F end-to-end; verified `--disable web_search` is a real
+  `codex exec 0.135.0` flag; traced each finding to a specific source line.
+  Note on DF-001: the "`--commit-reasoning-effort minimal` succeeds" criterion
+  is verified here by command-shape assertion (the scoped `--disable web_search`
+  is present and is a real flag), not by a live commit-message model call —
+  adequate for a code review, but the evidence basis is command shape, not a
+  round-trip against Codex.
+
+### Round 2 scorecard
+
+| Axis | Verdict | Basis |
+|---|---|---|
+| 1. Complete | **No** | T4d on-demand executable-route validation unbuilt; its required "fails-when-requested" test is missing (R2-1). |
+| 2. Highest quality | **Mostly yes** | Clean, well-targeted slices; three minor polish items (dead `unbounded_when_none` param, call-for-side-effect remnant, gated `default_route` check) — R2-5/6/7. |
+| 3. Modular / hexagonal | **Yes** | `lint-imports` 9/9 kept. Round 1 port leak fixed: `git_repo_root` now goes through the injected runner and degrades to `None`. |
+| 4. Properly tested | **Mostly yes** | Suite hermetic in both `/tmp` states (833 passed). Gap: T4d's "fails-when-requested" executable-validation test is absent because the opt-in mode is unbuilt (R2-1). |
+| 5. Documented (Meminit DocOps) | **Partial** | `meminit check` green; dogfood profile + phase_config well documented. New triage/routing CLI flags absent from DEVEX-001; `--commit-message-harness` omission undocumented (R2-2/4). |
+| 6. Demonstration-class | **Nearly** | The hermeticity fix, web_search scoping, explicit-`0` projection, and field-level provenance are genuinely star-senior. Shipping a test that locks in a spec violation is the one thing holding it back. |
+
+### Round 1 closure (re-verified, all remediated)
+
+| Round 1 finding | Status | Evidence |
+|---|---|---|
+| B1 — non-hermetic commit tests / dead call hard-raise / port leak | **Fixed** | `git_repo_root` uses injected runner + returns `None` (`commit.py:39-49`); `test_no_staged_changes_without_repo_root_returns_skipped_no_changes` added; suite green clean. |
+| B2 — incomplete temp-root exclusion / duplicated walkers | **Fixed** | Centralized in `repo_roots.py`; `temp_root_candidates()` excludes the temp root **and all parents**; suite green with `/tmp/.git` present. |
+| M3 — stray mis-formatted review artifact | **Fixed** | `docs/tasks/TASK-004-adversarial-review.md` deleted; `meminit check` → `success:true` (29 files). |
+| M4 — incomplete resume command | **Fixed** | `_resume_command` now emits base, max-iterations, profile/checks, timeout, commit mode, hook policy, initial-review-file (`runtime.py`). |
+| M5 — fallback ignored review context | **Fixed** | `_commit_type(..., context=)` infers feat/refactor/perf from review/remediation context (`commit.py:324-336`). |
+| M6 — coarse phase source markers | **Fixed** | Field-level `phase_config.*.sources` + phase-level `source` with explicit `mixed` (`config_builder.py`); confirmed live in Matrix D JSON. |
+
+---
+
+## Round 2 findings (hand back to Codex)
+
+### R2-1 — (HIGH / blocks "complete") T4d on-demand executable-route validation is unbuilt, and a test codifies the violation
+
+DF-004 and slice T4d require two independent triggers for executable
+route-chain validation: **(a)** routing enabled, **or** **(b)** "a lint/doctor
+command explicitly asks for executable-route validation." Only trigger (a) was
+built.
+
+- `profiles.validate_policy` (the `revrem policy lint` path) **early-returns
+  `[]` when routing is disabled** (`profiles.py:1045-1046`), so `policy lint`
+  can never surface a draft route's missing/unimplemented harness chain.
+- `runner_setup.profile_routed_harnesses` and the doctor copy
+  (`cli/commands/doctor.py:79-82`) both **early-return `()` when routing is
+  disabled**, so `revrem doctor` skips route-harness executable checks entirely.
+- There is **no flag** on `policy` or `doctor` (`cli/args.py`) to *request*
+  executable-route validation — trigger (b) simply does not exist.
+- The committed `tests/test_cli_doctor_integration.py::
+  test_doctor_profile_skips_unused_route_harnesses_when_routing_disabled` is
+  **correct** — it exercises the *default* path (nobody opted in, routing
+  disabled), where DF-004 mandates skipping. The gap is the opposite: T4d's
+  explicitly-required test — "the same profile **fails** `policy lint` or doctor
+  executable validation **when requested**" — is **absent**, because the opt-in
+  mode it would exercise was never built.
+
+**Required fix:**
+1. Add an opt-in mode, e.g. `revrem policy lint --executable-routes` (and/or
+   `revrem doctor --validate-routes`), that validates draft route fallback
+   chains for implemented/compatible harnesses **regardless of**
+   `routing.enabled`. Wire it through `validate_policy` / `profile_routed_harnesses`
+   with an explicit `include_disabled_routes: bool` parameter rather than the
+   current unconditional early-return.
+2. **Add** the T4d test case: the same disabled-routing profile with an
+   unimplemented draft route **fails** the requested executable validation.
+   Keep the existing default-skip test as-is — it is spec-correct.
+3. Keep the default (no flag, routing disabled) behavior unchanged so normal
+   runs are not regressed.
+
+### R2-2 — (MEDIUM) `--commit-message-harness` neither added nor its omission documented
+
+T4b: "add `--commit-message-harness HARNESS` **if** commit-message drafting can
+use non-Codex harnesses; **otherwise document** that only the model/prompt/effort
+are currently exposed." Commit-message drafting **can** use non-Codex harnesses —
+`config.commit_message_harness` is threaded into both the command builder and
+executable resolution (`phase_support.py:143-145`) and through
+`harnesses.prepare_prompt_invocation` (`commit.py:227`). The conditional
+therefore resolves to "add the flag," but no flag exists in `cli/args.py` and no
+rationale is documented anywhere. **Fix:** add `--commit-message-harness` with
+CLI-over-profile precedence and a parse/precedence test, matching the triage
+flags' pattern.
+
+### R2-3 — (MEDIUM) `allow_model_escalation` boolean has no CLI override and no documented exemption
+
+Acceptance: "Every profile/config boolean that affects the runtime loop and is
+relevant to dogfood has a CLI override or a documented reason it does not." The
+committed dogfood profile sets `allow_model_escalation = true`
+(`.revrem.toml:58`) — a routing boolean that affects loop behavior — but there
+is no `--allow-model-escalation` / `--no-allow-model-escalation` flag and no
+documented exemption. **Fix:** add the negative-style boolean pair (consistent
+with `--routing` / `--no-routing`) with CLI-over-profile precedence and a test,
+or record an explicit, justified exemption in DEVEX-001.
+
+### R2-4 — (MEDIUM) New triage/routing CLI flags are absent from REVREM-DEVEX-001
+
+The DEVEX-001 v1.12 delta documents the dogfood profile, `phase_config`, and the
+commit-message fallback well, but the **new operator control surface** added by
+T4b is undocumented in the governed guide: `--triage` / `--no-triage`,
+`--triage-contract`, `--triage-model`, `--triage-harness`,
+`--triage-timeout-seconds`, `--routing` / `--no-routing`, `--routing-strict` /
+`--no-routing-strict`. T4b also calls for help text "to include examples"; the
+argparse `help=` strings are single-line with no examples. **Fix:** add a flag
+reference (with at least the Matrix C/D examples) to DEVEX-001 and enrich the
+argparse help for the boolean toggles.
+
+### R2-5 — (LOW / quality) `display_timeout_seconds` is dead-parametrized
+
+`config_builder.display_timeout_seconds(value, *, unbounded_when_none=False)` is
+called only ever with the default `False`, making it an identity function;
+the intended "`None` → `0`" behavior is instead reimplemented by four duplicated
+`if x_display is None: x_display = DEFAULT_TIMEOUT_SECONDS` blocks. The helper
+does not earn its abstraction and the `unbounded_when_none=True` branch is never
+exercised. **Fix:** either route the explicit-`0` projection through the helper
+(use the param) or inline it and delete the helper.
+
+### R2-6 — (LOW / quality) residual call-for-side-effect in `run_commit`
+
+`commit.py:117-118` still calls `commit_artifact_relative_path(config, repo_root)`
+purely to trigger the "artifact-dir == repo-root" refusal and discards the
+result — the de-fanged remnant of Round 1's B1. It is now correct (it only
+raises in the legitimate refusal case), but a reader cannot tell that from a
+discarded call. **Fix:** extract a named guard, e.g.
+`_reject_artifact_dir_at_repo_root(config, repo_root)`, so the intent is
+self-evident.
+
+### R2-7 — (LOW) `default_route` internal-reference check was moved behind the routing-enabled gate
+
+T4d: "Keep syntax and internal-reference validation for draft routes
+**regardless of** routing enabled." The rule-level `then.route` reference check
+is correctly always-on (`profiles.py:1090-1093`), but the `default_route` →
+unknown-route reference check is now gated on `routing.enabled`
+(`profiles.py:1095-1101`). A disabled-routing profile with
+`default_route = "does-not-exist"` therefore passes validation. `default_route`
+is a pure internal reference (no executable requirement), so gating it is
+inconsistent with the stated invariant. **Fix:** restore the `default_route`
+reference check to always-on; keep only the executable-chain walk gated.
+
+---
+
+## Round 2 — Definition of done for Codex
+
+1. **R2-1** — build the on-demand executable-route validation mode; **add** the
+   T4d "fails-when-requested" test; keep the existing default-skip test and
+   behavior unchanged. **(blocks "complete")**
+2. **R2-2** — add `--commit-message-harness` (+ precedence test).
+3. **R2-3** — add the `allow_model_escalation` boolean toggle (+ test) or a
+   documented exemption.
+4. **R2-4** — document the new triage/routing flags in DEVEX-001 with examples;
+   enrich argparse help.
+5. **R2-5/6/7** — simplify `display_timeout_seconds`; extract the named
+   repo-root refusal guard; restore the always-on `default_route` check.
+6. Re-run the full gate in **both** `/tmp` states and update the task card with
+   evidence (test names / commit refs), not a bare status flip.
+
+---
+
+## Round 1 — original findings (remediated; retained for history)
+
+> Superseded by Round 2. Every blocker and medium below has been fixed and
+> re-verified; see the "Round 1 closure" table above.
+
+### Round 1 scorecard
 
 | Axis | Verdict | Basis |
 |---|---|---|

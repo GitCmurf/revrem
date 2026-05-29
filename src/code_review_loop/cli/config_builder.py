@@ -87,12 +87,6 @@ def resolve_optional_timeout_seconds(value: float | None, *, flag: str) -> float
     return value
 
 
-def display_timeout_seconds(value: float | None, *, unbounded_when_none: bool = False) -> float | None:
-    if value is None and unbounded_when_none:
-        return 0
-    return value
-
-
 def profile_or_default(
     name: str | None,
     cwd: Path,
@@ -136,6 +130,11 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         profile.triage.routing.strict_on_unavailable_route,
         True,
     )
+    allow_model_escalation = pick(
+        args.allow_model_escalation,
+        profile.triage.routing.allow_model_escalation,
+        True,
+    )
     if routing_enabled and triage_contract != "v2":
         raise ValueError("--routing requires --triage-contract v2 or a v2 triage profile")
     if args.timeout_seconds is not None:
@@ -157,20 +156,14 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
             else None
         )
         timeout_seconds_display = DEFAULT_TIMEOUT_SECONDS
-        review_timeout_seconds_display = display_timeout_seconds(
-            profile.review.timeout_seconds,
-            unbounded_when_none=False,
-        )
+        review_timeout_seconds_display = profile.review.timeout_seconds
         if review_timeout_seconds_display is None:
             review_timeout_seconds_display = DEFAULT_TIMEOUT_SECONDS
-        remediation_timeout_seconds_display = display_timeout_seconds(
-            profile.remediation.timeout_seconds,
-            unbounded_when_none=False,
-        )
+        remediation_timeout_seconds_display = profile.remediation.timeout_seconds
         if remediation_timeout_seconds_display is None:
             remediation_timeout_seconds_display = DEFAULT_TIMEOUT_SECONDS
         triage_timeout_seconds_display = (
-            display_timeout_seconds(profile.triage.timeout_seconds, unbounded_when_none=False)
+            profile.triage.timeout_seconds
             if triage_enabled
             else None
         )
@@ -187,8 +180,6 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         if args.commit_after_remediation is not None
         else profile.commit.enabled
     )
-    if commit_after_remediation and not args.dry_run:
-        harnesses.require_implemented_harness(profile.commit.harness, field="commit.harness")
     artifact_dir_value = args.artifact_dir or profile.output.artifact_dir
     artifact_dir = Path(artifact_dir_value) if artifact_dir_value else default_artifact_dir()
     search_root = artifact_dir if artifact_dir_value else artifact_dir.parent
@@ -209,6 +200,10 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
     triage_reasoning_effort = args.triage_reasoning_effort or profile.triage.reasoning_effort
     triage_harness = args.triage_harness or profile.triage.harness
     harnesses.validate_harness_name(triage_harness, field="--triage-harness")
+    commit_message_harness = args.commit_message_harness or profile.commit.harness
+    harnesses.validate_harness_name(commit_message_harness, field="--commit-message-harness")
+    if commit_after_remediation and not args.dry_run:
+        harnesses.require_implemented_harness(commit_message_harness, field="commit.harness")
     triage_model = args.triage_model or profile.triage.model
     commit_reasoning_effort = (
         args.commit_reasoning_effort
@@ -248,6 +243,7 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         profile.triage.routing,
         enabled=routing_enabled,
         strict_on_unavailable_route=routing_strict,
+        allow_model_escalation=allow_model_escalation,
     )
     effective_triage = replace(
         profile.triage,
@@ -281,6 +277,9 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
             ),
             "contract": "cli" if args.triage_contract is not None else profile_source,
             "routing_enabled": "cli" if args.routing_enabled is not None else profile_source,
+            "allow_model_escalation": (
+                "cli" if args.allow_model_escalation is not None else profile_source
+            ),
         },
         "remediation": {
             "harness": profile_source,
@@ -294,7 +293,7 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         },
         "commit_message": {
             "enabled": "cli" if args.commit_after_remediation is not None else profile_source,
-            "harness": profile_source,
+            "harness": "cli" if args.commit_message_harness is not None else profile_source,
             "model": _phase_source(args.profile, args.commit_message_model or args.model),
             "reasoning_effort": "cli" if args.commit_reasoning_effort is not None else profile_source,
             "timeout_seconds": "cli" if args.timeout_seconds is not None else profile_source,
@@ -317,7 +316,7 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         review_harness=profile.review.harness,
         remediation_harness=profile.remediation.harness,
         triage_harness=triage_harness,
-        commit_message_harness=profile.commit.harness,
+        commit_message_harness=commit_message_harness,
         review_model=review_model,
         remediation_model=remediation_model,
         reasoning_effort=args.reasoning_effort,

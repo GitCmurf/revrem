@@ -1039,25 +1039,21 @@ def _walk_route_fallback_chain(
 
 
 
-def validate_policy(profile: Profile) -> list[str]:
+def validate_policy(profile: Profile, *, executable_routes: bool = False) -> list[str]:
     issues = []
     triage = profile.triage
-    if not triage.routing.enabled:
-        return []
-
-    # Check routes and their fallback chains
-    for name in triage.routes:
-        issues.extend(_walk_route_fallback_chain(triage.routes, name))
-
-
 
     # Check rules
     for i, rule in enumerate(triage.routing.rule):
         if rule.then.route and rule.then.route not in triage.routes:
             issues.append(f"rule {rule.id or i!r} refers to unknown route {rule.then.route!r}")
 
-    if triage.routing.default_route not in triage.routes:
+    if (triage.routing.enabled or triage.routes) and triage.routing.default_route not in triage.routes:
         issues.append(f"default_route {triage.routing.default_route!r} is unknown")
+
+    if triage.routing.enabled or executable_routes:
+        for name in triage.routes:
+            issues.extend(_walk_route_fallback_chain(triage.routes, name))
 
     return issues
 
@@ -1093,7 +1089,7 @@ def validate_profile(profile: Profile, *, require_implemented: bool) -> None:
             raise ValueError(f"{field}.then.route refers to unknown route: {rule.then.route}")
 
     if (
-        profile.triage.routing.enabled
+        (profile.triage.routing.enabled or profile.triage.routes)
         and profile.triage.routing.default_route
         and profile.triage.routing.default_route not in profile.triage.routes
     ):

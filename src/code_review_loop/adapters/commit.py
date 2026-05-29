@@ -68,6 +68,10 @@ def commit_artifact_relative_path(config: LoopConfig, repo_root: Path) -> Path |
     return artifact_rel
 
 
+def reject_artifact_dir_at_repo_root(config: LoopConfig, repo_root: Path) -> None:
+    commit_artifact_relative_path(config, repo_root)
+
+
 def git_reset_artifact_command_for_commit(config: LoopConfig, repo_root: Path | None) -> list[str] | None:
     if repo_root is None:
         return None
@@ -115,7 +119,7 @@ def run_commit(config: LoopConfig, runner: Runner, iteration: int, *, ctx: RunCo
 
     repo_root = git_repo_root(config, runner)
     if repo_root is not None:
-        commit_artifact_relative_path(config, repo_root)
+        reject_artifact_dir_at_repo_root(config, repo_root)
     add_result = runner(
         git_add_command_for_commit(config),
         config.cwd,
