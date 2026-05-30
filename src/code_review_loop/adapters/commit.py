@@ -534,7 +534,7 @@ def _path_noun(paths: list[str]) -> str:
         package_part = path.parts[2].replace("_", " ").replace("-", " ")
         return f"{stem} in {package_part}"
     if len(path.parts) >= 2:
-        return f"{stem} in {path.parts[1]}"
+        return f"{stem} in {path.parts[0]}"
     return stem
 
 

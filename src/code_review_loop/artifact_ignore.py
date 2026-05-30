@@ -42,7 +42,7 @@ def _exclusive_lock_file(path: Path, *, timeout_seconds: float = 5.0) -> Iterato
             break
         except FileExistsError:
             try:
-                age = time.monotonic() - lock_dir.stat().st_mtime
+                age = time.time() - lock_dir.stat().st_mtime
                 if age > 60:
                     lock_dir.rmdir()
                     continue
