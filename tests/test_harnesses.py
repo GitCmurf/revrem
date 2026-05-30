@@ -65,6 +65,31 @@ def test_codex_adapter_builds_remediation_exec_command():
     assert command[-3:] == ["--output-last-message", "last.txt", "-"]
 
 
+def test_codex_commit_message_effort_resolution_promotes_known_incompatible_model():
+    resolution = harnesses.resolve_commit_message_reasoning_effort(
+        harness="codex",
+        model="gpt-5.3-codex-spark",
+        requested_effort="minimal",
+    )
+
+    assert resolution.effective == "low"
+    assert resolution.requested == "minimal"
+    assert resolution.adjustment == "codex_minimal_unsupported_by_model"
+
+
+def test_commit_message_effort_resolution_does_not_guess_unknown_model_capabilities():
+    for harness, model in (("codex", "gpt-future-codex"), ("gemini", "gpt-5.3-codex-spark")):
+        resolution = harnesses.resolve_commit_message_reasoning_effort(
+            harness=harness,
+            model=model,
+            requested_effort="minimal",
+        )
+
+        assert resolution.effective == "minimal"
+        assert resolution.requested == "minimal"
+        assert resolution.adjustment is None
+
+
 def test_unknown_harness_raises_value_error():
     request = harnesses.PhaseCommandRequest(
         harness="unknown",

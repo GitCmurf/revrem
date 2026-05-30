@@ -79,6 +79,32 @@ def test_parse_triage_payload_v2_accepts_minimal_reasoning_effort():
     assert payload["route_proposal"]["reasoning_effort"] == "minimal"
 
 
+def test_parse_triage_payload_v2_normalizes_review_priority_severities():
+    fixture = json.loads(_fixture("valid_v2"))
+    fixture["confirmed_findings"][0]["severity"] = "P2"
+    fixture["rejected_findings"] = [
+        {
+            "fingerprint": "f1:rejected",
+            "summary": "False positive",
+            "severity": "p3",
+            "affected_paths": ["src/code_review_loop/triage.py"],
+            "rationale": "The reported failure is not present.",
+            "rejection_reason": "Existing guard handles this path.",
+        }
+    ]
+
+    payload = triage.parse_triage_payload(
+        json.dumps(fixture),
+        run_id="run-123",
+        source_review_artifact="review-1.txt",
+        contract="v2",
+    )
+
+    assert payload["confirmed_findings"][0]["severity"] == "medium"
+    assert payload["rejected_findings"][0]["severity"] == "low"
+    assert len(payload["parsing_warnings"]) >= 2
+
+
 def test_parse_triage_payload_v2_fails_on_v1_contract():
     # v1 fixture doesn't have classification/routing, so it should fail v2 schema
     with pytest.raises(triage.TriageValidationError):

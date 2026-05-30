@@ -48,6 +48,32 @@ def test_rejected_only_triage_fixture_preserves_false_positive_rationale():
     assert payload["rejected_findings"][0]["rejection_reason"]
 
 
+def test_parse_triage_payload_normalizes_review_priority_severity():
+    fixture = json.loads(_fixture("valid"))
+    fixture["confirmed_findings"][0]["severity"] = "P2"
+
+    payload = triage.parse_triage_payload(
+        json.dumps(fixture),
+        run_id="run-123",
+        source_review_artifact="review-1.txt",
+    )
+
+    assert payload["confirmed_findings"][0]["severity"] == "medium"
+    assert any("P2" in warning and "medium" in warning for warning in payload["parsing_warnings"])
+
+
+def test_parse_triage_payload_rejects_unknown_review_priority_severity():
+    fixture = json.loads(_fixture("valid"))
+    fixture["confirmed_findings"][0]["severity"] = "P9"
+
+    with pytest.raises(triage.TriageValidationError):
+        triage.parse_triage_payload(
+            json.dumps(fixture),
+            run_id="run-123",
+            source_review_artifact="review-1.txt",
+        )
+
+
 def test_labelled_triage_fixture_precision_meets_plan_target():
     payload = triage.parse_triage_payload(
         _fixture("valid"),

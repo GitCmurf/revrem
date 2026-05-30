@@ -21,6 +21,13 @@ TRIAGE_V2_SCHEMA_RESOURCE = "schemas/triage-v2.schema.json"
 ROUTING_V1_SCHEMA_RESOURCE = "schemas/routing-v1.schema.json"
 
 MAX_SAFETY_SCAN_BYTES = 1024 * 1024
+_REVIEW_PRIORITY_SEVERITIES = {
+    "P0": "critical",
+    "P1": "high",
+    "P2": "medium",
+    "P3": "low",
+    "P4": "info",
+}
 
 RoutingContextCache: TypeAlias = dict[tuple[Path, int, int], tuple[tuple[str, ...], tuple[str, ...]]]
 
@@ -70,11 +77,42 @@ def parse_triage_payload(
         "prompt_version": payload.get("prompt_version") or prompt_version,
         "source_review_artifact": source_review_artifact,
     }
+    payload = _normalize_review_priority_severities(payload)
     validator = Draft202012Validator(_triage_schema(contract))
     errors = list(validator.iter_errors(payload))
     if errors:
         raise TriageValidationError(str(errors[0]))
     return payload
+
+
+def _normalize_review_priority_severities(payload: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(payload)
+    warnings = list(normalized.get("parsing_warnings") or [])
+    changed = False
+    for collection_name in ("confirmed_findings", "rejected_findings", "needs_more_info"):
+        collection = normalized.get(collection_name)
+        if not isinstance(collection, list):
+            continue
+        normalized_collection: list[Any] = []
+        for item in collection:
+            if not isinstance(item, dict):
+                normalized_collection.append(item)
+                continue
+            normalized_item = dict(item)
+            raw_severity = normalized_item.get("severity")
+            if isinstance(raw_severity, str):
+                mapped = _REVIEW_PRIORITY_SEVERITIES.get(raw_severity.strip().upper())
+                if mapped is not None:
+                    normalized_item["severity"] = mapped
+                    warnings.append(
+                        f"Normalized {collection_name} severity {raw_severity!r} to {mapped!r}."
+                    )
+                    changed = True
+            normalized_collection.append(normalized_item)
+        normalized[collection_name] = normalized_collection
+    if changed:
+        normalized["parsing_warnings"] = warnings
+    return normalized
 
 
 def write_triage_artifact(run_dir: Path, iteration: int, payload: dict[str, Any]) -> Path:

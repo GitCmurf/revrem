@@ -20,9 +20,6 @@ from code_review_loop.clock import SYSTEM_CLOCK, Clock
 from code_review_loop.config import DEFAULT_TIMEOUT_SECONDS, LoopConfig
 from code_review_loop.identity import SYSTEM_IDENTITY, RunIdentity
 
-_CODEX_MINIMAL_UNSUPPORTED_COMMIT_MODELS = frozenset({"gpt-5.3-codex-spark"})
-_CODEX_MINIMAL_UNSUPPORTED_ADJUSTMENT = "codex_minimal_unsupported_by_model"
-
 
 def should_prompt_for_new_profile(args: argparse.Namespace) -> bool:
     if args.interactive is not None:
@@ -222,18 +219,14 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         or args.model
         or review_model
     )
-    commit_reasoning_effort_requested = commit_reasoning_effort
-    commit_reasoning_effort_adjustment = None
-    if (
-        commit_message_harness == "codex"
-        and commit_reasoning_effort == "minimal"
-        and commit_message_model in _CODEX_MINIMAL_UNSUPPORTED_COMMIT_MODELS
-    ):
-        # This Codex commit-message model rejects reasoning.effort=minimal at
-        # the model-capability layer. The web_search override is a separate
-        # tool-level guard; use the lowest supported effort for this model.
-        commit_reasoning_effort = "low"
-        commit_reasoning_effort_adjustment = _CODEX_MINIMAL_UNSUPPORTED_ADJUSTMENT
+    commit_effort_resolution = harnesses.resolve_commit_message_reasoning_effort(
+        harness=commit_message_harness,
+        model=commit_message_model,
+        requested_effort=commit_reasoning_effort,
+    )
+    commit_reasoning_effort = commit_effort_resolution.effective
+    commit_reasoning_effort_requested = commit_effort_resolution.requested
+    commit_reasoning_effort_adjustment = commit_effort_resolution.adjustment
     commit_timeout_seconds = profile.commit.timeout_seconds
     commit_timeout_seconds_display = (
         profile.commit.timeout_seconds

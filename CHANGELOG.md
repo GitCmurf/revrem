@@ -148,6 +148,12 @@ This project follows Semantic Versioning once public releases begin.
 
 ### Changed
 
+- Structured triage now normalizes review priority severities (`P0`-`P4`) to
+  schema severities before validation, preserving strict failure for unknown
+  labels while allowing dogfood routing to proceed on common review output.
+- Deterministic commit-message fallback subjects now strip repeated trigger
+  verbs, avoid filename-derived scopes, and use deeper `src/code_review_loop`
+  package scopes.
 - README rewritten as the public project entry point.
 - Package metadata now uses `revrem` as the public distribution identity while
   retaining `code-review-loop` as a compatibility console command.

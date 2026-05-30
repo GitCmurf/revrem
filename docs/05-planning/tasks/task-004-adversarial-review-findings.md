@@ -3,7 +3,7 @@ document_id: REVREM-REVIEW-004
 type: TASK
 title: Adversarial review findings for TASK-004 dogfood hardening
 status: Draft
-version: '1.6'
+version: '1.7'
 last_updated: '2026-05-30'
 owner: GitCmurf
 docops_version: '2.0'
@@ -25,14 +25,69 @@ related_ids:
 
 # TASK-004 — Adversarial Review Findings
 
-> **This document has six rounds.** Round 6 (immediately below) is the current,
-> authoritative re-evaluation after the Round-5 polish pass was declared
-> complete. Earlier rounds are retained for history; **all Round 1–5
-> blockers/mediums are remediated** and re-verified.
+> **This document has seven rounds.** Round 7 (immediately below) is the current,
+> authoritative remediation note after the first real dogfood run exposed a
+> structured-triage severity mismatch. Earlier rounds are retained for history;
+> **all Round 1–5 blockers/mediums are remediated** and re-verified.
 
 > **Codex remediation status (2026-05-30):** Round 4 findings R4-1 through
-> R4-5 are remediated. Round 5 findings R5-1 and R5-2 are remediated, and R5-3
-> is covered by a credential-gated live smoke (`REVREM_LIVE_CODEX=1`).
+> R4-5 are remediated. Round 5 findings R5-1 and R5-2 are remediated, R5-3 is
+> covered by a credential-gated live smoke (`REVREM_LIVE_CODEX=1`), and Round 6
+> F2-F6 are remediated in code.
+
+---
+
+## Round 7 — live dogfood triage/routing remediation (2026-05-30)
+
+**Trigger:** the first non-dry-run Matrix A dogfood command produced a real
+commit and a final clear review, but the triage phase emitted
+`revrem.triage.invalid_output` because the live triage model used review-style
+`"severity": "P2"` in a v2 payload. The schema intentionally accepts only
+`info`, `low`, `medium`, `high`, and `critical`, so RevRem discarded the
+structured triage payload and no routing artifacts were produced.
+
+### Remediated
+
+- **F1 / live `P2` triage failure:** `parse_triage_payload` now normalizes known
+  review-priority severities before schema validation: `P0 -> critical`,
+  `P1 -> high`, `P2 -> medium`, `P3 -> low`, and `P4 -> info`. Unknown values
+  still fail validation. The parser appends a `parsing_warnings` entry whenever
+  it repairs a priority label, so the artifact records the boundary repair.
+- **Prompt hardening:** the v1 and v2 triage prompts now explicitly state the
+  severity enum and the `P0`-to-`P4` translation. This reduces recurrence while
+  keeping the parser robust against normal review vocabulary.
+- **F2/F3/F6 fallback taste and test honesty:** deterministic fallback subjects
+  now strip trigger verbs anywhere in the noun phrase, de-duplicate terms, and
+  suppress top-level filename scopes such as `docs(readme-md)` and
+  `chore(x-txt)`. Tests now cover interior trigger words and duplicate nouns,
+  not only leading verb repetition.
+- **F4 modularity:** the Codex minimal-effort compatibility rule moved from
+  `cli/config_builder.py` to the harness layer. Config assembly now consumes a
+  harness-owned reasoning-effort resolution instead of encoding model capability
+  facts itself.
+- **F5 scope signal:** fallback commit scopes now drill into
+  `src/code_review_loop/<area>/...`, producing scopes such as `cli`, `adapters`,
+  `core`, and direct module scopes such as `policy` instead of the near-constant
+  `code-review-loop`.
+
+### Verification added
+
+- Unit tests cover v1/v2 `P2` normalization and unknown-priority rejection.
+- Integration coverage exercises routing artifact creation from a fake v2
+  triage payload containing `P2`, proving the live failure mode no longer
+  prevents routing.
+- Fallback subject tests now forbid interior trigger verbs, duplicated summary
+  tokens, filename-derived scopes, and shallow `src/` scopes.
+- Harness tests pin the Codex model-specific `minimal -> low` adjustment and
+  prove unknown models/other harnesses are not guessed.
+
+### Remaining live sign-off
+
+Repeat Matrix A with `--profile dogfood` after this remediation. Acceptance:
+the run may end `clear` or `findings`, but it must not emit
+`revrem.triage.invalid_output` for `P0`-`P4` severities; triage artifacts must
+validate, and routing artifacts must be present whenever the structured v2
+triage payload carries route data.
 
 ---
 

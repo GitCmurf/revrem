@@ -42,10 +42,13 @@ def assert_professional_fallback_subject(
     message: str,
     *,
     expected_type: str,
-    expected_scope: str,
+    expected_scope: str | None,
     expected_terms: tuple[str, ...],
 ) -> None:
-    assert message.startswith(f"{expected_type}({expected_scope}): ")
+    if expected_scope is None:
+        assert message.startswith(f"{expected_type}: ")
+    else:
+        assert message.startswith(f"{expected_type}({expected_scope}): ")
     assert message.endswith(" (RevRem)")
     lowered = message.lower()
     assert "apply verified remediation" not in lowered
@@ -57,6 +60,10 @@ def assert_professional_fallback_subject(
         assert term in lowered
     assert re.search(r"^(\w+)(?:\([^)]*\))?: \1\b", lowered) is None
     assert re.search(r"^(\w+)\(\1s?\):", lowered) is None
+
+
+def commit_subject_summary(message: str) -> str:
+    return message.removesuffix(" (RevRem)").split(": ", 1)[1]
 
 
 def make_run_context(runner) -> RunContext:
@@ -792,7 +799,7 @@ def test_commit_message_for_staged_changes_uses_specific_fallback_on_model_failu
     assert_professional_fallback_subject(
         message,
         expected_type="chore",
-        expected_scope="code-review-loop",
+        expected_scope="foo",
         expected_terms=("foo",),
     )
     assert (tmp_path / "artifacts" / "commit-2-message-fallback.json").is_file()
@@ -829,7 +836,7 @@ def test_commit_message_fallback_uses_review_context_for_feature_type(tmp_path):
     assert_professional_fallback_subject(
         message,
         expected_type="feat",
-        expected_scope="code-review-loop",
+        expected_scope="cli",
         expected_terms=("cli", "flag", "triage"),
     )
 
@@ -862,7 +869,7 @@ def test_commit_message_fallback_uses_remediation_context_for_refactor_type(tmp_
     assert_professional_fallback_subject(
         message,
         expected_type="refactor",
-        expected_scope="code-review-loop",
+        expected_scope="runner-setup",
         expected_terms=("runner", "setup"),
     )
 
@@ -895,7 +902,7 @@ def test_commit_message_fallback_ranks_bugfix_context_above_feature_words(tmp_pa
     assert_professional_fallback_subject(
         message,
         expected_type="fix",
-        expected_scope="code-review-loop",
+        expected_scope="profiles",
         expected_terms=("regression", "profiles"),
     )
 
@@ -1043,6 +1050,94 @@ def test_deterministic_commit_message_strips_redundant_type_verbs():
         for term in expected_terms:
             assert term in lowered
 
+
+def test_deterministic_commit_message_strips_trigger_words_anywhere_and_dedupes_terms():
+    cases = [
+        (
+            deterministic_commit_message(
+                1,
+                staged_paths=["src/code_review_loop/cli/args.py"],
+                context="Add a CLI flag to enable triage in triage runs.",
+            ),
+            "feat(cli): cli flag triage runs",
+            {"add", "enable"},
+        ),
+        (
+            deterministic_commit_message(
+                1,
+                staged_paths=["src/code_review_loop/runner_shell.py"],
+                context="Fix preserve latest review excerpt for unresolved final reviews.",
+            ),
+            "fix(runner-shell): latest excerpt unresolved final",
+            {"fix", "preserve"},
+        ),
+        (
+            deterministic_commit_message(
+                1,
+                staged_paths=["src/foo/subprocess_runner.py"],
+                context="Refactor extract duplicated subprocess runner helpers.",
+            ),
+            "refactor(foo): duplicated subprocess runner helpers",
+            {"refactor", "extract"},
+        ),
+        (
+            deterministic_commit_message(
+                1,
+                staged_paths=["tests/test_profiles.py"],
+                context="Cover add coverage for escalation precedence.",
+            ),
+            "test: escalation precedence",
+            {"cover", "add", "coverage"},
+        ),
+    ]
+
+    for message, expected_prefix, forbidden_terms in cases:
+        assert message.startswith(expected_prefix)
+        summary_terms = commit_subject_summary(message).split()
+        assert len(summary_terms) == len(set(summary_terms))
+        assert not (set(summary_terms) & forbidden_terms)
+
+
+def test_deterministic_commit_message_suppresses_filename_scopes():
+    assert deterministic_commit_message(
+        1,
+        staged_paths=["README.md"],
+        context="Document installation steps.",
+    ).startswith("docs: ")
+    assert deterministic_commit_message(
+        1,
+        staged_paths=["x.txt"],
+        context="Refresh local fixture.",
+    ).startswith("chore: ")
+
+
+def test_deterministic_commit_message_uses_src_subpackage_scope():
+    cases = [
+        ("src/code_review_loop/cli/args.py", "feat(cli):"),
+        ("src/code_review_loop/adapters/commit.py", "fix(adapters):"),
+        ("src/code_review_loop/core/engine.py", "refactor(core):"),
+        ("src/code_review_loop/policy.py", "fix(policy):"),
+    ]
+
+    for path, prefix in cases:
+        message = deterministic_commit_message(
+            1,
+            staged_paths=[path],
+            context="Fix preserve route handling.",
+        )
+        if prefix.startswith("feat"):
+            message = deterministic_commit_message(
+                1,
+                staged_paths=[path],
+                context="Add route handling.",
+            )
+        elif prefix.startswith("refactor"):
+            message = deterministic_commit_message(
+                1,
+                staged_paths=[path],
+                context="Extract route handling.",
+            )
+        assert message.startswith(prefix)
 
 def test_normalize_revrem_conventional_subject_preserves_suffix_when_truncated():
     subject = "fix(cli): " + "x" * 200

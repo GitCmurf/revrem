@@ -20,6 +20,10 @@ context alone.
 Every finding object must include:
 `fingerprint`, `summary`, `severity`, `affected_paths`, and `rationale`.
 `needs_more_info` entries must also include `info_requested`.
+`severity` must be one of `info`, `low`, `medium`, `high`, or `critical`.
+Do not put review priority labels such as `P0`, `P1`, `P2`, `P3`, or `P4`
+in `severity`; translate them as `P0` -> `critical`, `P1` -> `high`,
+`P2` -> `medium`, `P3` -> `low`, and `P4` -> `info`.
 
 Fingerprint guidance:
 `fingerprint` must preserve the stable `f1:` finding ID from the review when

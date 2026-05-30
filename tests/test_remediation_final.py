@@ -120,7 +120,7 @@ def test_routing_artifact_and_events_validate_against_schemas(fake_harness, tmp_
     (findings_dir / "review.txt").write_text("Finding: f1\nREVIEW_STATUS: findings\n", encoding="utf-8")
 
     triage_payload = {
-        "confirmed_findings": [{"fingerprint": "f1", "summary": "s", "severity": "high", "affected_paths": ["a.py"], "rationale": "r"}],
+        "confirmed_findings": [{"fingerprint": "f1", "summary": "s", "severity": "P2", "affected_paths": ["a.py"], "rationale": "r"}],
         "rejected_findings": [],
         "needs_more_info": [],
         "implementation_order": ["f1"],
@@ -198,6 +198,9 @@ reasoning_effort = "high"
     run_dir = next(routing_path.iterdir())
     routing_file = run_dir / "routing-1.json"
     assert routing_file.is_file()
+    triage_data = json.loads((run_dir / "triage-1.json").read_text())
+    assert triage_data["confirmed_findings"][0]["severity"] == "medium"
+    assert any("P2" in warning for warning in triage_data["parsing_warnings"])
 
     routing_data = json.loads(routing_file.read_text())
     routing_schema = json.loads(files("code_review_loop").joinpath("schemas/routing-v1.schema.json").read_text(encoding="utf-8"))

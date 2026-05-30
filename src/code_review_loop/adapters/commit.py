@@ -327,12 +327,18 @@ def deterministic_commit_message(
 def _commit_scope(paths: list[str], *, change_type: str) -> str:
     if not paths:
         return "review"
-    first_parts = [Path(path).parts[0] for path in paths if Path(path).parts]
-    if not first_parts:
+    path_parts = [Path(path).parts for path in paths if Path(path).parts]
+    if not path_parts:
         return "review"
+    first_parts = [parts[0] for parts in path_parts]
     counts = {part: first_parts.count(part) for part in set(first_parts)}
     dominant = max(counts, key=lambda part: (counts[part], part))
-    scope = _src_scope(paths) if dominant == "src" else _slug(dominant)
+    if dominant == "src":
+        scope = _src_scope(paths)
+    elif all(len(parts) == 1 for parts in path_parts if parts[0] == dominant):
+        scope = ""
+    else:
+        scope = _slug(dominant)
     return "" if _is_low_signal_scope(scope, change_type=change_type) else scope
 
 
@@ -342,7 +348,11 @@ def _src_scope(paths: list[str]) -> str:
         path = Path(raw_path)
         if not path.parts or path.parts[0] != "src":
             continue
-        if len(path.parts) == 2:
+        if len(path.parts) >= 4 and path.parts[1] == "code_review_loop":
+            candidates.append(path.parts[2])
+        elif len(path.parts) == 2 or (
+            len(path.parts) == 3 and path.parts[1] == "code_review_loop"
+        ):
             candidates.append(path.stem)
         elif len(path.parts) > 2:
             candidates.append(path.parts[1])
@@ -465,10 +475,16 @@ def _noun_from_text(lower_text: str, *, verb: str) -> str:
         "finding",
         "findings",
     }
-    useful = [word for word in words if word != verb and word not in stop_words]
-    trigger_words = _summary_trigger_words(verb)
-    while useful and useful[0] in trigger_words:
-        useful.pop(0)
+    trigger_words = _all_summary_trigger_words()
+    useful: list[str] = []
+    seen: set[str] = set()
+    for word in words:
+        if word == verb or word in stop_words or word in trigger_words:
+            continue
+        if word in seen:
+            continue
+        seen.add(word)
+        useful.append(word)
     return " ".join(useful[:4]) if useful else "local changes"
 
 
@@ -494,6 +510,12 @@ def _path_noun(paths: list[str]) -> str:
     dominant = max(paths, key=lambda path: (paths.count(path), path))
     path = Path(dominant)
     stem = path.stem.replace("_", " ").replace("-", " ")
+    if len(path.parts) >= 3 and path.parts[0] == "src" and path.parts[1] == "code_review_loop":
+        if len(path.parts) == 3:
+            return stem
+        package_part = path.parts[2].replace("_", " ").replace("-", " ")
+        if package_part not in stem:
+            return f"{package_part} {stem}"
     if len(path.parts) >= 3 and path.parts[0] == "src":
         package_part = path.parts[-2].replace("_", " ").replace("-", " ")
         if package_part not in stem:
@@ -526,6 +548,13 @@ def _summary_trigger_words(verb: str) -> set[str]:
         "refactor": {"refactor", "refactors", "refactored", "extract", "extracts", "extracted", "split", "splits", "restructure", "restructures", "restructured", "decompose", "decomposes", "decomposed"},
         "update": {"update", "updates", "updated"},
     }.get(verb, {verb})
+
+
+def _all_summary_trigger_words() -> set[str]:
+    words: set[str] = set()
+    for verb in ("add", "cover", "document", "fix", "improve", "refactor", "update"):
+        words.update(_summary_trigger_words(verb))
+    return words
 
 
 def _display_timeout(value: float | None) -> str:

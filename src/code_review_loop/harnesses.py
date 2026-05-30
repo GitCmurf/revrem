@@ -9,6 +9,9 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Protocol
 
+CODEX_MINIMAL_UNSUPPORTED_COMMIT_MODELS = frozenset({"gpt-5.3-codex-spark"})
+CODEX_MINIMAL_UNSUPPORTED_ADJUSTMENT = "codex_minimal_unsupported_by_model"
+
 
 @dataclass(frozen=True)
 class HarnessCapabilities:
@@ -49,8 +52,34 @@ class PhaseCommandRequest:
     output_last_message_path: Path | None = None
 
 
+@dataclass(frozen=True)
+class ReasoningEffortResolution:
+    effective: str | None
+    requested: str | None
+    adjustment: str | None = None
+
+
 class HarnessAdapter(Protocol):
     def command(self, request: PhaseCommandRequest) -> list[str]: ...
+
+
+def resolve_commit_message_reasoning_effort(
+    *,
+    harness: str,
+    model: str | None,
+    requested_effort: str | None,
+) -> ReasoningEffortResolution:
+    if (
+        harness == "codex"
+        and requested_effort == "minimal"
+        and model in CODEX_MINIMAL_UNSUPPORTED_COMMIT_MODELS
+    ):
+        return ReasoningEffortResolution(
+            effective="low",
+            requested=requested_effort,
+            adjustment=CODEX_MINIMAL_UNSUPPORTED_ADJUSTMENT,
+        )
+    return ReasoningEffortResolution(effective=requested_effort, requested=requested_effort)
 
 
 class CodexHarnessAdapter(HarnessAdapter):

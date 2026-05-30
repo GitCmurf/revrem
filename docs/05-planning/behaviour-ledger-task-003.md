@@ -3,7 +3,7 @@ document_id: REVREM-LEDGER-003
 type: LEDGER
 title: Behaviour ledger for the cli.py re-engineering (REVREM-TASK-003)
 status: Draft
-version: '0.5'
+version: '0.6'
 last_updated: '2026-05-30'
 owner: GitCmurf
 docops_version: '2.0'
@@ -55,6 +55,25 @@ There is no silent third option.
 ```
 
 ## Entries
+
+### 2026-05-30 — Structured triage accepts review priority labels
+
+- **Contract:** machine
+- **What changed:** structured triage parsing now normalizes known review
+  priority labels in finding severities before schema validation:
+  `P0 -> critical`, `P1 -> high`, `P2 -> medium`, `P3 -> low`, and
+  `P4 -> info`. Unknown severity values remain validation failures. Normalized
+  payloads include a `parsing_warnings` entry documenting the repair.
+- **Why:** the first live dogfood run produced a valid review finding with
+  CodeRabbit-style `P2` severity in the triage JSON. Rejecting the entire
+  payload prevented v2 routing artifacts even though the intended severity was
+  unambiguous.
+- **Before / After:** before, a v1/v2 triage payload with
+  `"severity": "P2"` emitted `revrem.triage.invalid_output` and was discarded;
+  after, it is accepted as `"severity": "medium"` and routing can proceed.
+- **schema_version impact:** none; the stored artifact still conforms to the
+  existing triage schemas after boundary normalization.
+- **CHANGELOG:** not required; internal pre-release dogfood hardening.
 
 ### 2026-05-30 — Commit-message effort adjustment token corrected
 
