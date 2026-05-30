@@ -319,9 +319,22 @@ def deterministic_commit_message(
     change_type = _commit_type(paths, context=context)
     scope = _commit_scope(paths, change_type=change_type)
     summary = _commit_summary(change_type, paths, context=context)
+    summary = _cap_commit_summary(change_type, scope, summary)
     if scope:
         return f"{change_type}({scope}): {summary} (RevRem)"
     return f"{change_type}: {summary} (RevRem)"
+
+
+def _cap_commit_summary(change_type: str, scope: str, summary: str) -> str:
+    prefix = f"{change_type}({scope}): " if scope else f"{change_type}: "
+    suffix = " (RevRem)"
+    available = 72 - len(prefix) - len(suffix)
+    if available < 1:
+        return "local changes"
+    if len(summary) <= available:
+        return summary
+    trimmed = summary[:available].rsplit(" ", 1)[0].strip(" .,:;-")
+    return trimmed or "local changes"
 
 
 def _commit_scope(paths: list[str], *, change_type: str) -> str:

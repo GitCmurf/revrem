@@ -7,6 +7,8 @@ import pytest
 
 from code_review_loop import profiles, repo_roots
 
+ROOT = Path(__file__).resolve().parents[1]
+
 
 def test_resolve_profile_merges_user_project_and_defaults(tmp_path):
     home = tmp_path / "home"
@@ -110,7 +112,7 @@ scope = "user"
 
 
 def test_project_dogfood_profile_parses_exact_committed_profile():
-    loaded = profiles.load_profile_file(Path(".revrem.toml"))
+    loaded = profiles.load_profile_file(ROOT / ".revrem.toml")
 
     dogfood = loaded.profiles["dogfood"]
     assert dogfood.pipeline.max_iterations == 3

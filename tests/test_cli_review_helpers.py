@@ -1139,6 +1139,23 @@ def test_deterministic_commit_message_uses_src_subpackage_scope():
             )
         assert message.startswith(prefix)
 
+
+def test_deterministic_commit_message_caps_fallback_subject_length():
+    message = deterministic_commit_message(
+        1,
+        staged_paths=["src/code_review_loop/adapters/commit.py"],
+        context=(
+            "Fix extremely verbose deterministic fallback commit message "
+            "construction for routed remediation evidence artifacts."
+        ),
+    )
+
+    assert len(message) <= 72
+    assert message.endswith(" (RevRem)")
+    assert re.match(r"^fix\(adapters\): [a-z0-9 -]+ \(RevRem\)$", message)
+    assert not message.removesuffix(" (RevRem)").endswith(("-", ",", ":", ";", "."))
+
+
 def test_normalize_revrem_conventional_subject_preserves_suffix_when_truncated():
     subject = "fix(cli): " + "x" * 200
 
