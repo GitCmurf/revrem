@@ -151,6 +151,9 @@ This project follows Semantic Versioning once public releases begin.
 - Structured triage now normalizes review priority severities (`P0`-`P4`) to
   schema severities before validation, preserving strict failure for unknown
   labels while allowing dogfood routing to proceed on common review output.
+- Added a small captured-triage verification helper for replaying priority
+  normalization evidence without shell heredocs or fragile pasted Python
+  one-liners.
 - Deterministic commit-message fallback subjects now strip repeated trigger
   verbs, avoid filename-derived scopes, and use deeper `src/code_review_loop`
   package scopes.

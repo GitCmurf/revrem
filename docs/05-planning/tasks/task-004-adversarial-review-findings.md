@@ -3,7 +3,7 @@ document_id: REVREM-REVIEW-004
 type: TASK
 title: Adversarial review findings for TASK-004 dogfood hardening
 status: Draft
-version: '1.7'
+version: '1.8'
 last_updated: '2026-05-30'
 owner: GitCmurf
 docops_version: '2.0'
@@ -76,10 +76,28 @@ structured triage payload and no routing artifacts were produced.
 - Integration coverage exercises routing artifact creation from a fake v2
   triage payload containing `P2`, proving the live failure mode no longer
   prevents routing.
+- A durable helper, `tools/verify_triage_priority_artifact.py`, verifies captured
+  triage artifacts without heredocs or long `python -c` commands that are brittle
+  when pasted from the Codex TUI.
 - Fallback subject tests now forbid interior trigger verbs, duplicated summary
   tokens, filename-derived scopes, and shallow `src/` scopes.
 - Harness tests pin the Codex model-specific `minimal -> low` adjustment and
   prove unknown models/other harnesses are not guessed.
+
+### Operator evidence after remediation
+
+- Exact-artifact parser replay passed against
+  `.revrem/runs/20260530T112214Z-8eb597c0f74544f2a1045ee54795e7a5/triage-1.txt`:
+  the captured live `P2` severity now parses as `medium`, with a
+  `parsing_warnings` entry recording `P2 -> medium` normalization.
+- Forced-findings dry-run
+  `.revrem/runs/20260530T153825Z-a309f53b781e4d239b5d5c18b7d159f7` exercised
+  the loop flow but **did not prove live triage/routing**, because `--dry-run`
+  writes `DRY_RUN triage skipped`; `artifact_paths.routing` is therefore
+  correctly empty.
+- Full gates were green after the remediation: ruff clean, mypy clean
+  (74 files), import-linter 9/9 contracts kept, meminit 29/29 files passed, and
+  pytest `857 passed, 1 skipped`.
 
 ### Remaining live sign-off
 
