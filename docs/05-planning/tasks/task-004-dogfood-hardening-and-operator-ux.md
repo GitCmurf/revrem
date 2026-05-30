@@ -105,14 +105,18 @@ delivering:
   Codex defaults or operator Codex config, not by a RevRem phase flag). The key
   point is that **RevRem does not add the tool, so the fix is not "delete a flag
   we set"** — it is to **explicitly disable the tool for the commit-message exec
-  call** using Codex's documented feature override (`--disable web_search`, or
-  equivalent `-c features.web_search=false`) so `minimal` is usable.
+  call** using Codex's current config override (`-c web_search="disabled"`) so
+  `minimal` is not rejected because of inherited search tooling. Model-specific
+  effort support still applies.
 - **Impact:** The commit is technically valid but professionally inadequate.
   It obscures the change and makes dogfood history look careless.
 - **Required fix:**
   1. The commit-message exec invocation must explicitly disable server-side
-     tools (`web_search` at minimum) so it is compatible with every reasoning
-     effort, including `minimal`.
+     tools (`web_search` at minimum) so incompatible inherited tools do not
+     cause a `minimal` request to fail before the model can run.
+     For Codex commit-message drafting, `minimal` is promoted to `low` because
+     live Codex 0.135.0 still injects additional built-in tools that reject
+     `minimal`; `low` is the lowest live-compatible effort for this role.
   2. Any model failure must still fall back to a deterministic local subject
      derived from staged files, changed domains, and review context. Note the
      current `deterministic_commit_message(iteration)` takes only the iteration
@@ -453,8 +457,8 @@ Closeout output must include:
   with `reasoning.effort=minimal`, not a flag RevRem adds — see DF-001). The
   fix belongs in the `PhaseCommandRequest` -> `CodexHarnessAdapter.command()`
   path, scoped to the `commit-message` role so other roles are unaffected. Use
-  Codex's documented `--disable web_search` feature override, or the equivalent
-  `-c features.web_search=false`, and assert the generated command shape.
+  Codex's current `-c web_search="disabled"` override, and assert the generated
+  command shape.
 - Treat model-drafting failure as a first-class event and summary field.
 - Replace generic fallback with deterministic subject synthesis. This requires
   changing `deterministic_commit_message`, which today takes only `iteration`

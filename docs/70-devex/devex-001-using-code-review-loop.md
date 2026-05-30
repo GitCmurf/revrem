@@ -361,6 +361,11 @@ tool settings from local Codex defaults. If model drafting still fails, RevRem
 records the fallback in `commit-N-message-fallback.json`, includes it in the
 summary, and uses a deterministic path-derived Conventional Commit subject
 rather than an iteration-only placeholder.
+For the Codex commit-message harness, `minimal` is promoted to `low` at config
+resolution time because current Codex built-in tool injection still rejects
+minimal effort for this role; `low` is the lowest live-compatible drafting
+effort and avoids the inadequate one-line fallback pattern found during
+dogfood.
 
 To capture a one-off command as a project-local profile, add
 `--save-profile NAME`. RevRem writes the effective configuration to

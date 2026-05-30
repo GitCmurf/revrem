@@ -73,7 +73,7 @@ class CodexHarnessAdapter(HarnessAdapter):
         command = [request.executable, "exec"]
         command.extend(_codex_config_args(request.reasoning_effort))
         if request.role == "commit-message":
-            command.extend(["--disable", "web_search"])
+            command.extend(["-c", 'web_search="disabled"'])
         if request.role == "remediation" and request.full_auto:
             command.append("--full-auto")
         command.extend(["--sandbox", request.sandbox])

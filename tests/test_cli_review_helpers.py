@@ -660,8 +660,8 @@ def test_commit_message_command_uses_read_only_exec_with_configured_model(tmp_pa
         "exec",
         "-c",
         'model_reasoning_effort="minimal"',
-        "--disable",
-        "web_search",
+        "-c",
+        'web_search="disabled"',
         "--sandbox",
         "read-only",
         "--color",
@@ -684,7 +684,7 @@ def test_remediation_command_does_not_disable_web_search(tmp_path):
 
     command = remediation_impl.build_remediation_command(config)
 
-    assert "--disable" not in command
+    assert 'web_search="disabled"' not in command
 
 
 def test_sanitize_commit_message_uses_first_plain_subject():

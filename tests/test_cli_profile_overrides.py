@@ -153,6 +153,33 @@ def test_cli_commit_reasoning_effort_overrides_profile_commit_effort(tmp_path, m
     assert config.commit_timeout_seconds == 0
 
 
+def test_codex_commit_reasoning_effort_promotes_minimal_to_low(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        config_builder,
+        "profile_or_default",
+        lambda name, cwd: profiles.Profile(
+            name="final-pr",
+            commit=profiles.CommitConfig(
+                enabled=True,
+                harness="codex",
+                reasoning_effort="medium",
+            ),
+        ),
+    )
+    args = cli_args.parse_args([
+        "--profile",
+        "final-pr",
+        "--dry-run",
+        "--commit-reasoning-effort",
+        "minimal",
+    ])
+
+    config, _summary_format = config_builder.build_loop_config(args, tmp_path)
+
+    assert config.commit_reasoning_effort == "low"
+    assert config.phase_config_field_sources["commit_message"]["reasoning_effort"] == "cli"
+
+
 
 
 

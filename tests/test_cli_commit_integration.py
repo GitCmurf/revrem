@@ -92,7 +92,7 @@ def test_loop_commits_after_passing_checks(tmp_path):
     assert ["git", "commit", "-m", "fix(cli): harden RevRem commit flow (RevRem)"] in commands
     assert any(
         command[:8]
-        == ["codex", "exec", "--disable", "web_search", "--sandbox", "read-only", "--color", "never"]
+        == ["codex", "exec", "-c", 'web_search="disabled"', "--sandbox", "read-only", "--color", "never"]
         for command in commands
     )
     assert summary["iterations"][0]["commit_status"] == "committed"
@@ -107,7 +107,7 @@ def test_loop_commits_after_passing_checks(tmp_path):
         input_text
         for command, input_text, _timeout in calls
         if command[:8]
-        == ["codex", "exec", "--disable", "web_search", "--sandbox", "read-only", "--color", "never"]
+        == ["codex", "exec", "-c", 'web_search="disabled"', "--sandbox", "read-only", "--color", "never"]
     )
     assert commit_prompt is not None and "Files:" in commit_prompt
     assert "Conventional Commit" in commit_prompt

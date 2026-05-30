@@ -210,6 +210,11 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         or profile.commit.reasoning_effort
         or remediation_reasoning_effort
     )
+    if commit_message_harness == "codex" and commit_reasoning_effort == "minimal":
+        # Codex 0.135.0 still injects built-in tools that are incompatible with
+        # minimal reasoning. Commit-message drafting is cheap but quality
+        # sensitive, so use the lowest live-compatible effort instead.
+        commit_reasoning_effort = "low"
     commit_timeout_seconds = profile.commit.timeout_seconds
     commit_timeout_seconds_display = (
         profile.commit.timeout_seconds

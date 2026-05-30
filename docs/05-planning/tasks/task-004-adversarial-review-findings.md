@@ -54,8 +54,10 @@ related_ids:
   documented temp-root ancestor exclusion.
 - **Verification note:** Matrix A/C/E require live Codex/Gemini credentials.
   The `--commit-reasoning-effort minimal` fix is structurally verified by the
-  scoped `--disable web_search` command shape; a real Codex Matrix C run remains
-  the operator proof after gates pass.
+  scoped `-c web_search="disabled"` command shape; a real Codex Matrix C run
+  remains the operator proof after gates pass. Live follow-up on Codex 0.135.0
+  showed additional built-in tools still reject `minimal`, so the final
+  implementation promotes Codex commit-message `minimal` to `low`.
 
 ---
 
@@ -75,11 +77,11 @@ related_ids:
 - **Method:** Read the committed source for the T4a–T4f slices and every named
   DF item; ran the full gate (`ruff`, `mypy`, `lint-imports`, `meminit check`,
   `pytest -q`) in clean and `/tmp/.git`-polluted states; ran live dry-run
-  Matrices D and F end-to-end; verified `--disable web_search` is a real
-  `codex exec 0.135.0` flag; traced each finding to a specific source line.
+  Matrices D and F end-to-end; verified the then-planned search-disable command
+  shape; traced each finding to a specific source line.
   Note on DF-001: the "`--commit-reasoning-effort minimal` succeeds" criterion
-  is verified here by command-shape assertion (the scoped `--disable web_search`
-  is present and is a real flag), not by a live commit-message model call —
+  is verified here by command-shape assertion (the scoped search-disable
+  override is present), not by a live commit-message model call —
   adequate for a code review, but the evidence basis is command shape, not a
   round-trip against Codex.
 
@@ -405,7 +407,7 @@ document the phase-level granularity as intentional.
 ## What is genuinely good (keep — verified by reading source + tests)
 
 - **DF-001 web_search disable:** `CodexHarnessAdapter` scopes
-  `--disable web_search` to the `commit-message` role only (`harnesses.py:75-76`);
+  `-c web_search="disabled"` to the `commit-message` role only (`harnesses.py:75-76`);
   tests assert both its presence for commit-message and its **absence** for
   remediation (`test_cli_review_helpers.py:645-688`). Correct and well-targeted.
 - **DF-001 / T4a commit schema:** `COMMIT_KEYS` extended with
