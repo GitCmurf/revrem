@@ -3,7 +3,7 @@ document_id: REVREM-TASK-004
 type: TASK
 title: Dogfood hardening and operator UX
 status: In Review
-version: '0.5'
+version: '0.6'
 last_updated: '2026-05-30'
 owner: GitCmurf
 docops_version: '2.0'
@@ -114,9 +114,9 @@ delivering:
   1. The commit-message exec invocation must explicitly disable server-side
      tools (`web_search` at minimum) so incompatible inherited tools do not
      cause a `minimal` request to fail before the model can run.
-     For Codex commit-message drafting, `minimal` is promoted to `low` because
-     live Codex 0.135.0 still injects additional built-in tools that reject
-     `minimal`; `low` is the lowest live-compatible effort for this role.
+     For known Codex commit-message models that do not support
+     `reasoning.effort=minimal`, RevRem promotes `minimal` to `low`; `low` is
+     the lowest live-compatible effort for those models.
   2. Any model failure must still fall back to a deterministic local subject
      derived from staged files, changed domains, and review context. Note the
      current `deterministic_commit_message(iteration)` takes only the iteration
@@ -799,6 +799,29 @@ Round 4 implementation evidence:
 - retained the live Matrix A/C/E requirement as operator sign-off because those
   runs depend on local Codex/Gemini credentials.
 
+### Round 5 closeout scope
+
+The fifth adversarial review live-tested DF-001 through Codex 0.135.0 and found
+the remaining gaps were accuracy and taste, not architecture. The accepted
+Round 5 remediation is:
+
+- rename the Codex `minimal -> low` adjustment to
+  `codex_minimal_unsupported_by_model` and apply it only to known incompatible
+  commit-message models;
+- strip redundant trigger verbs from deterministic fallback subjects and
+  suppress low-value scopes such as `docs(docs)` and one-character path scopes;
+- add a credential-gated live Codex smoke so the DF-001 path can be verified
+  continuously when local credentials are available.
+
+Round 5 implementation evidence:
+
+- added property-style fallback tests forbidding verb-doubling and scope/type
+  collisions;
+- added regression coverage for model-specific effort promotion and future
+  Codex models that may support `minimal`;
+- added `REVREM_LIVE_CODEX=1` live smoke coverage for real commit-message
+  drafting through Codex.
+
 ## Verification Commands
 
 ```bash
@@ -807,6 +830,12 @@ Round 4 implementation evidence:
 lint-imports
 uv run --locked meminit check --format json
 ./.venv/bin/pytest -q
+```
+
+Optional live Codex smoke:
+
+```bash
+REVREM_LIVE_CODEX=1 ./.venv/bin/pytest -q tests/test_live_codex_commit_message.py
 ```
 
 Dogfood verification:

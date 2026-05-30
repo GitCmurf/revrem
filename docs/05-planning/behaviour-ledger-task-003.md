@@ -3,7 +3,7 @@ document_id: REVREM-LEDGER-003
 type: LEDGER
 title: Behaviour ledger for the cli.py re-engineering (REVREM-TASK-003)
 status: Draft
-version: '0.4'
+version: '0.5'
 last_updated: '2026-05-30'
 owner: GitCmurf
 docops_version: '2.0'
@@ -55,6 +55,24 @@ There is no silent third option.
 ```
 
 ## Entries
+
+### 2026-05-30 — Commit-message effort adjustment token corrected
+
+- **Contract:** machine
+- **What changed:** the operator-visible
+  `phase_config.commit_message.reasoning_effort_adjustment` value for known
+  Codex commit-message models changed from
+  `codex_minimal_tool_incompatibility` to
+  `codex_minimal_unsupported_by_model`.
+- **Why:** live DF-001 testing showed `gpt-5.3-codex-spark` rejects
+  `reasoning.effort=minimal` at the model-capability layer even after
+  `web_search` is disabled, so the previous token misidentified the cause.
+- **Before / After:** before, summaries and resume payloads attributed the
+  adjustment to tool incompatibility; after, they attribute it to the known
+  model capability gap.
+- **schema_version impact:** none; pre-release `summary.json` remains at schema
+  version `1.0` while correcting an enum-like detail value.
+- **CHANGELOG:** not required; internal pre-release dogfood hardening.
 
 ### 2026-05-30 — Dogfood phase configuration details expanded
 

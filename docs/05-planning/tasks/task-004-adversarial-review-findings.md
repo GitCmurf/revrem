@@ -3,7 +3,7 @@ document_id: REVREM-REVIEW-004
 type: TASK
 title: Adversarial review findings for TASK-004 dogfood hardening
 status: Draft
-version: '1.4'
+version: '1.5'
 last_updated: '2026-05-30'
 owner: GitCmurf
 docops_version: '2.0'
@@ -25,15 +25,120 @@ related_ids:
 
 # TASK-004 — Adversarial Review Findings
 
-> **This document has four rounds.** Round 4 (below) is the current,
-> authoritative re-evaluation after the final operator-polish pass. Earlier
-> rounds are retained for history; **all Round 1, Round 2, and Round 3
-> blockers/mediums are remediated** and re-verified in later rounds.
+> **This document has five rounds.** Round 5 (below) is the current,
+> authoritative re-evaluation after the Round-4 polish pass was declared
+> complete. Earlier rounds are retained for history; **all Round 1–5
+> blockers/mediums are remediated** and re-verified.
 
 > **Codex remediation status (2026-05-30):** Round 4 findings R4-1 through
-> R4-5 have been accepted for the final TASK-004 polish pass. The closeout
-> evidence is recorded in `REVREM-TASK-004`; the historical findings below are
-> retained as the review record that drove the changes.
+> R4-5 are remediated. Round 5 findings R5-1 and R5-2 are remediated, and R5-3
+> is covered by a credential-gated live smoke (`REVREM_LIVE_CODEX=1`).
+
+---
+
+## Round 5 — re-evaluation with live DF-001 exercise (2026-05-30)
+
+- **Reviewer:** Claude (Opus 4.8), adversarial re-evaluation. This round
+  departs from prior rounds by running the **real Codex 0.135.0 CLI** for the
+  commit-message role instead of only asserting generated command shape.
+- **Verdict:** **Code-complete and mergeable. Not a sixth round of blockers.**
+  All five gates pass and are hermetic across clean and polluted `/tmp`
+  (`845 passed` in each state, re-verified this round). Architecture is strong
+  (hexagonal ports/adapters, 9/9 import contracts kept). DF-001 — the finding
+  that *originated this entire task* — is now **proven live** for the first
+  time, closing the largest residual risk. Two real quality findings and one
+  durability improvement remain; none blocks merge.
+
+### What was verified live (new evidence prior rounds lacked)
+
+- **DF-001 fix works end-to-end.** The exact adapter-built command
+  `codex exec -c model_reasoning_effort="low" -c web_search="disabled" --sandbox read-only --color never --model gpt-5.3-codex-spark -`
+  returned **exit 0** with a clean professional subject
+  (`chore(harness): disable web search for commit-message role`) — the direct
+  inverse of the original `commit-2-message-draft.txt` HTTP 400 artifact.
+- **The `minimal -> low` promotion is genuinely necessary** — but for a reason
+  the code mis-states (see R5-1). Live `minimal` still returns HTTP 400.
+- **Resume command (DF-008) is demonstration-class.** `runtime._resume_command`
+  carries base, max-iterations, profile/checks, timeout, the full
+  review/remediation/commit/triage/routing override surface, commit mode, and
+  hook policy, shell-quoted via `shlex.join`, emitting overrides only when they
+  diverge from the profile. No finding.
+
+### R5-1 [Major — operator truthfulness] Promotion label/comment misattribute the cause
+
+- **Observed (live).** With `web_search="disabled"` already applied,
+  `model_reasoning_effort="minimal"` on `gpt-5.3-codex-spark` returns:
+  `Unsupported value: 'minimal' is not supported with the
+  'gpt-5.3-codex-spark-1p-codexswic-ev3' model. Supported values are: 'low',
+  'medium', 'high', and 'xhigh'.` (`status: 400`, `param: reasoning.effort`).
+- **Defect.** This is a **model-level** capability gap, not tool incompatibility.
+  Yet `config_builder.py:215-220` promotes with comment *"Codex 0.135.0 still
+  injects built-in tools that are incompatible with minimal reasoning"* and the
+  operator-visible `phase_config.commit_message.reasoning_effort_adjustment`
+  label is `codex_minimal_tool_incompatibility`. After web_search is disabled,
+  no tool is the cause — the model simply does not accept `minimal`. An operator
+  reading the provenance is actively misled, which is precisely the
+  operator-truthfulness bar Round 4 set.
+- **Required remediation:**
+  1. Rename the adjustment to a model-accurate token, e.g.
+     `codex_minimal_unsupported_by_model` (and update reporting/resume
+     projections + tests that assert the old string).
+  2. Rewrite the `config_builder.py` comment to state the model-capability
+     reason, optionally noting that disabling `web_search` was the *separate*
+     fix for the original tool-level 400.
+  3. The promotion is currently hardcoded for **all** Codex commit models
+     (`commit_message_harness == "codex" and effort == "minimal"`), but the
+     constraint is model-specific. Either document this as a deliberate
+     conservative blanket promotion, or gate it on known-incompatible models so
+     a future Codex model that supports `minimal` is not silently overridden.
+
+### R5-2 [Medium — fallback taste; repeat theme of Rounds 3 & 4] Ungrammatical/redundant fallback subjects
+
+- **Observed (live function output, `deterministic_commit_message`):**
+  - `fix(code-review-loop): fix preserve latest excerpt unresolved (RevRem)` — verb doubling (`fix … preserve`)
+  - `refactor(foo): refactor extract duplicated subprocess runner (RevRem)` — verb doubling
+  - `test(tests): cover add coverage escalation precedence (RevRem)` — triple redundancy
+  - `docs(docs): document new triage controls (RevRem)` — scope equals type
+  - `perf(a): improve performance cache repeated rev-parse (RevRem)` — redundant `improve performance` + single-letter scope `a`
+- **Root cause.** (a) `_noun_from_text` (`commit.py:431`) does not strip the
+  type-triggering verb/synonym from the noun phrase, so the Conventional-Commit
+  type verb collides with the noun's leading word. (b) No suppression when
+  `scope == type` or when scope is a non-informative single segment. The Round-4
+  property tests assert Conventional-Commit *shape* only, so these all pass.
+- **Required remediation:**
+  1. In `_noun_from_text`, drop a leading word that is the type verb or a known
+     synonym of it (extend the existing `stop_words`/verb logic).
+  2. In `_commit_scope`, suppress scope when it equals the resolved type
+     (`docs(docs)`) or is a single low-signal token.
+  3. Add property tests forbidding `^(\w+)(\(.+\))?: \1\b` verb-doubling and
+     `(\w+)\(\1\)` scope==type collisions.
+- **Severity note.** Last-resort fallback only; the literal acceptance criterion
+  ("fallback never emits generic iteration-only subjects") **is** met. Polish,
+  not a blocker.
+
+### R5-3 [Minor — durability] Convert the one-time DF-001 matrix into a continuous live smoke
+
+- The DF-001 path is exercised by command-shape unit tests plus this round's
+  manual live run. To stop DF-001 from silently regressing against future Codex
+  releases, add a **credential-gated** live smoke (skipped when `codex` or creds
+  are absent) that drafts a commit subject for the current staged diff through
+  the real harness and asserts a non-empty, non-error subject. This converts the
+  credential-gated Matrix A/C/E from a one-time operator sign-off into durable
+  CI-optional verification.
+- Also folds in over-eager `fix` classification: `_commit_type` fix patterns
+  (`error|fail|correct|broken|…`) match almost any review-derived context,
+  biasing most fallbacks to `fix`. Tighten alongside R5-2.
+
+### Round 5 scorecard
+
+| Dimension | Verdict | Evidence |
+|---|---|---|
+| 1. Complete | **Yes** | All acceptance criteria met; DF-001 proven live this round. |
+| 2. Highest quality | **Mostly** | R5-1 provenance mislabel and R5-2 fallback taste are the remaining gaps. |
+| 3. Modular / hexagonal | **Yes** | 9/9 import contracts kept; ports/adapters intact. |
+| 4. Tested | **Yes, with a gap** | `845 passed` × both `/tmp` states; R5-3 would close the live-evidence gap durably. |
+| 5. Documented (DocOps) | **Yes** | `meminit check` 29/29 OK. |
+| 6. Demonstration-class | **Yes, after R5-1/R5-2** | Resume command, phase_config provenance, and dry-run plan are exemplary; fallback taste and the mislabel are the only things short of star-senior bar. |
 
 ---
 
@@ -74,9 +179,10 @@ related_ids:
 - **Verification note:** Matrix A/C/E require live Codex/Gemini credentials.
   The `--commit-reasoning-effort minimal` fix is structurally verified by the
   scoped `-c web_search="disabled"` command shape; a real Codex Matrix C run
-  remains the operator proof after gates pass. Live follow-up on Codex 0.135.0
-  showed additional built-in tools still reject `minimal`, so the final
-  implementation promotes Codex commit-message `minimal` to `low`.
+  remains the operator proof after gates pass. Later live exercise showed
+  `gpt-5.3-codex-spark` rejects `minimal` at the model-capability layer, so the
+  implementation promotes that known incompatible commit-message model to
+  `low`.
 
 ---
 

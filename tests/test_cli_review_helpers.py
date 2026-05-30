@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import subprocess
 from importlib import import_module
 from pathlib import Path
@@ -9,7 +10,10 @@ from code_review_loop import application, events
 from code_review_loop.adapters import remediation as remediation_impl
 from code_review_loop.adapters import review as review_impl
 from code_review_loop.adapters import triage as triage_impl
-from code_review_loop.adapters.commit import commit_message_for_staged_changes
+from code_review_loop.adapters.commit import (
+    commit_message_for_staged_changes,
+    deterministic_commit_message,
+)
 from code_review_loop.adapters.phase_support import (
     build_commit_message_command,
     normalize_revrem_conventional_subject,
@@ -51,6 +55,8 @@ def assert_professional_fallback_subject(
     assert "validate profiles correctly" not in lowered
     for term in expected_terms:
         assert term in lowered
+    assert re.search(r"^(\w+)(?:\([^)]*\))?: \1\b", lowered) is None
+    assert re.search(r"^(\w+)\(\1s?\):", lowered) is None
 
 
 def make_run_context(runner) -> RunContext:
@@ -904,7 +910,7 @@ def test_commit_message_effort_adjustment_emits_operator_event(tmp_path):
         commit_message_model="gpt-test-commit",
         commit_reasoning_effort="low",
         commit_reasoning_effort_requested="minimal",
-        commit_reasoning_effort_adjustment="codex_minimal_tool_incompatibility",
+        commit_reasoning_effort_adjustment="codex_minimal_unsupported_by_model",
     )
     sink = events.InMemorySink("run1")
 
@@ -962,6 +968,80 @@ def test_commit_message_fallback_defaults_neutral_context_to_chore(tmp_path):
         expected_scope="package",
         expected_terms=("widget",),
     )
+
+
+def test_deterministic_commit_message_avoids_overeager_fix_for_generic_corrections():
+    message = deterministic_commit_message(
+        1,
+        staged_paths=["package/widget.py"],
+        context="Correct local wording in the widget helper.",
+    )
+
+    assert_professional_fallback_subject(
+        message,
+        expected_type="chore",
+        expected_scope="package",
+        expected_terms=("correct", "widget"),
+    )
+
+
+def test_deterministic_commit_message_strips_redundant_type_verbs():
+    cases = [
+        (
+            deterministic_commit_message(
+                1,
+                staged_paths=["src/code_review_loop/runner_shell.py"],
+                context="Preserve latest excerpt for unresolved final reviews.",
+            ),
+            "fix",
+            ("latest", "excerpt"),
+        ),
+        (
+            deterministic_commit_message(
+                1,
+                staged_paths=["src/foo/subprocess_runner.py"],
+                context="Extract duplicated subprocess runner helpers.",
+            ),
+            "refactor",
+            ("duplicated", "subprocess"),
+        ),
+        (
+            deterministic_commit_message(
+                1,
+                staged_paths=["tests/test_profiles.py"],
+                context="Add coverage for escalation precedence.",
+            ),
+            "test",
+            ("escalation", "precedence"),
+        ),
+        (
+            deterministic_commit_message(
+                1,
+                staged_paths=["docs/70-devex/devex-001-using-code-review-loop.md"],
+                context="New triage controls for operators.",
+            ),
+            "docs",
+            ("triage", "controls"),
+        ),
+        (
+            deterministic_commit_message(
+                1,
+                staged_paths=["a/cache.py"],
+                context="Performance cache repeated rev-parse calls.",
+            ),
+            "perf",
+            ("cache", "repeated"),
+        ),
+    ]
+
+    for message, expected_type, expected_terms in cases:
+        assert message.startswith(f"{expected_type}")
+        assert message.endswith(" (RevRem)")
+        lowered = message.lower()
+        assert re.search(r"^(\w+)(?:\([^)]*\))?: \1\b", lowered) is None
+        assert re.search(r"^(\w+)\(\1s?\):", lowered) is None
+        for term in expected_terms:
+            assert term in lowered
 
 
 def test_normalize_revrem_conventional_subject_preserves_suffix_when_truncated():

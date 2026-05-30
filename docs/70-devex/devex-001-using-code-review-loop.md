@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.15'
+version: '1.16'
 last_updated: '2026-05-30'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.15
+> **Version:** 1.16
 > **Last Updated:** 2026-05-30
 > **Type:** DEVEX
 > **Area:** devex
@@ -363,12 +363,18 @@ summary, and uses a deterministic repository-generic Conventional Commit
 subject derived from staged paths plus review/remediation context rather than an
 iteration-only placeholder or RevRem-specific canned vocabulary.
 For the Codex commit-message harness, `minimal` is promoted to `low` at config
-resolution time because current Codex built-in tool injection still rejects
-minimal effort for this role; `low` is the lowest live-compatible drafting
-effort and avoids the inadequate one-line fallback pattern found during
-dogfood. Summaries record both `requested_reasoning_effort` and the effective
-`reasoning_effort`, and progress emits a `config-adjusted` event when the
-promotion is applied.
+resolution time only for known commit-message models that reject
+`reasoning.effort=minimal`; `low` is the lowest live-compatible drafting effort
+for those models. Summaries record both `requested_reasoning_effort` and the
+effective `reasoning_effort`, and progress emits a `config-adjusted` event when
+the promotion is applied.
+
+Credentialed environments can continuously smoke-test the live Codex
+commit-message path:
+
+```bash
+REVREM_LIVE_CODEX=1 ./.venv/bin/pytest -q tests/test_live_codex_commit_message.py
+```
 
 To capture a one-off command as a project-local profile, add
 `--save-profile NAME`. RevRem writes the effective configuration to
@@ -977,6 +983,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.16 | 2026-05-30 | Codex | Documented model-specific commit-effort promotion and the credential-gated live Codex smoke |
 | 1.15 | 2026-05-30 | Codex | Documented repository-generic fallback subjects, visible commit-effort promotion, and broader command-line redaction |
 | 1.14 | 2026-05-29 | Codex | Documented resume override fidelity, wrapped progress prefix behavior, and temp-root ancestor exclusion |
 | 1.13 | 2026-05-29 | Codex | Documented triage/routing CLI overrides, executable-route validation modes, model-escalation controls, and commit-message harness override |

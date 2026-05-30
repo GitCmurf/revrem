@@ -316,15 +316,15 @@ def deterministic_commit_message(
     context: str = "",
 ) -> str:
     paths = staged_paths or []
-    scope = _commit_scope(paths)
     change_type = _commit_type(paths, context=context)
+    scope = _commit_scope(paths, change_type=change_type)
     summary = _commit_summary(change_type, paths, context=context)
     if scope:
         return f"{change_type}({scope}): {summary} (RevRem)"
     return f"{change_type}: {summary} (RevRem)"
 
 
-def _commit_scope(paths: list[str]) -> str:
+def _commit_scope(paths: list[str], *, change_type: str) -> str:
     if not paths:
         return "review"
     first_parts = [Path(path).parts[0] for path in paths if Path(path).parts]
@@ -332,9 +332,8 @@ def _commit_scope(paths: list[str]) -> str:
         return "review"
     counts = {part: first_parts.count(part) for part in set(first_parts)}
     dominant = max(counts, key=lambda part: (counts[part], part))
-    if dominant == "src":
-        return _src_scope(paths)
-    return _slug(dominant)
+    scope = _src_scope(paths) if dominant == "src" else _slug(dominant)
+    return "" if _is_low_signal_scope(scope, change_type=change_type) else scope
 
 
 def _src_scope(paths: list[str]) -> str:
@@ -369,10 +368,9 @@ def _commit_type(paths: list[str], *, context: str = "") -> str:
             r"\bavoid(?:s|ed)?\b",
             r"\bprevent(?:s|ed)?\b",
             r"\brestore(?:s|d)?\b",
-            r"\bcorrect(?:s|ed)?\b",
-            r"\berror(?:s)?\b",
-            r"\bfail(?:s|ed|ure|ures)?\b",
             r"\bbroken\b",
+            r"\btest failure(?:s)?\b",
+            r"\bfailing test(?:s)?\b",
         ),
     ):
         return "fix"
@@ -425,7 +423,7 @@ def _summary_from_context(change_type: str, text: str) -> str:
         return ""
     lower = text.lower()
     verb = _summary_verb(change_type)
-    return f"{verb} {_noun_from_text(lower, verb=verb)}"
+    return _noun_from_text(lower, verb=verb)
 
 
 def _noun_from_text(lower_text: str, *, verb: str) -> str:
@@ -468,6 +466,9 @@ def _noun_from_text(lower_text: str, *, verb: str) -> str:
         "findings",
     }
     useful = [word for word in words if word != verb and word not in stop_words]
+    trigger_words = _summary_trigger_words(verb)
+    while useful and useful[0] in trigger_words:
+        useful.pop(0)
     return " ".join(useful[:4]) if useful else "local changes"
 
 
@@ -505,6 +506,26 @@ def _path_noun(paths: list[str]) -> str:
 def _slug(value: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", value.lower().replace("_", "-")).strip("-")
     return slug or "local"
+
+
+def _is_low_signal_scope(scope: str, *, change_type: str) -> bool:
+    if not scope:
+        return True
+    if len(scope) == 1:
+        return True
+    return scope == change_type or (change_type == "test" and scope == "tests")
+
+
+def _summary_trigger_words(verb: str) -> set[str]:
+    return {
+        "add": {"add", "adds", "added", "enable", "enables", "enabled", "support", "supports", "supported", "new"},
+        "cover": {"add", "adds", "added", "coverage", "cover", "covers", "covered", "test", "tests"},
+        "document": {"document", "documents", "documented", "docs", "new"},
+        "fix": {"fix", "fixes", "fixed", "preserve", "preserves", "preserved", "avoid", "avoids", "avoided", "prevent", "prevents", "prevented", "restore", "restores", "restored"},
+        "improve": {"improve", "improves", "improved", "performance", "faster", "speed", "latency"},
+        "refactor": {"refactor", "refactors", "refactored", "extract", "extracts", "extracted", "split", "splits", "restructure", "restructures", "restructured", "decompose", "decomposes", "decomposed"},
+        "update": {"update", "updates", "updated"},
+    }.get(verb, {verb})
 
 
 def _display_timeout(value: float | None) -> str:

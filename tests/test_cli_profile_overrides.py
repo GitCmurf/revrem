@@ -163,6 +163,7 @@ def test_codex_commit_reasoning_effort_promotes_minimal_to_low(tmp_path, monkeyp
             commit=profiles.CommitConfig(
                 enabled=True,
                 harness="codex",
+                message_model="gpt-5.3-codex-spark",
                 reasoning_effort="medium",
             ),
         ),
@@ -179,15 +180,43 @@ def test_codex_commit_reasoning_effort_promotes_minimal_to_low(tmp_path, monkeyp
 
     assert config.commit_reasoning_effort == "low"
     assert config.commit_reasoning_effort_requested == "minimal"
-    assert config.commit_reasoning_effort_adjustment == "codex_minimal_tool_incompatibility"
+    assert config.commit_reasoning_effort_adjustment == "codex_minimal_unsupported_by_model"
     assert config.phase_config_field_sources["commit_message"]["reasoning_effort"] == "cli"
     phase_config = reporting.phase_config_payload(config)
     assert phase_config["commit_message"]["reasoning_effort"] == "low"
     assert phase_config["commit_message"]["requested_reasoning_effort"] == "minimal"
     assert (
         phase_config["commit_message"]["reasoning_effort_adjustment"]
-        == "codex_minimal_tool_incompatibility"
+        == "codex_minimal_unsupported_by_model"
     )
+
+
+def test_codex_commit_reasoning_effort_keeps_minimal_for_unknown_model(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        config_builder,
+        "profile_or_default",
+        lambda name, cwd: profiles.Profile(
+            name="future",
+            commit=profiles.CommitConfig(
+                enabled=True,
+                harness="codex",
+                message_model="gpt-future-codex",
+            ),
+        ),
+    )
+    args = cli_args.parse_args([
+        "--profile",
+        "future",
+        "--dry-run",
+        "--commit-reasoning-effort",
+        "minimal",
+    ])
+
+    config, _summary_format = config_builder.build_loop_config(args, tmp_path)
+
+    assert config.commit_reasoning_effort == "minimal"
+    assert config.commit_reasoning_effort_requested == "minimal"
+    assert config.commit_reasoning_effort_adjustment is None
 
 
 
