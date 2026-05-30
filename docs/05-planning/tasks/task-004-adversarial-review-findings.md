@@ -3,7 +3,7 @@ document_id: REVREM-REVIEW-004
 type: TASK
 title: Adversarial review findings for TASK-004 dogfood hardening
 status: Draft
-version: '1.8'
+version: '1.9'
 last_updated: '2026-05-30'
 owner: GitCmurf
 docops_version: '2.0'
@@ -25,15 +25,105 @@ related_ids:
 
 # TASK-004 — Adversarial Review Findings
 
-> **This document has seven rounds.** Round 7 (immediately below) is the current,
-> authoritative remediation note after the first real dogfood run exposed a
-> structured-triage severity mismatch. Earlier rounds are retained for history;
-> **all Round 1–5 blockers/mediums are remediated** and re-verified.
+> **This document has eight rounds.** Round 8 (immediately below) is the current,
+> authoritative re-evaluation. It found **no open code remediation** for Codex:
+> every code-level finding from Rounds 1–7 is remediated and re-verified, and the
+> only unmet acceptance item is the live, credentialed Matrix A/E operator
+> sign-off — which is an operator choice, not a Codex code task. Earlier rounds
+> are retained for history.
 
 > **Codex remediation status (2026-05-30):** Round 4 findings R4-1 through
 > R4-5 are remediated. Round 5 findings R5-1 and R5-2 are remediated, R5-3 is
-> covered by a credential-gated live smoke (`REVREM_LIVE_CODEX=1`), and Round 6
-> F2-F6 are remediated in code.
+> covered by a credential-gated live smoke (`REVREM_LIVE_CODEX=1`), Round 6
+> F2-F6 are remediated in code, and Round 7 F1 (live `P0`-`P4` triage severity
+> normalization) is remediated and proven by real-artifact parser replay.
+
+---
+
+## Round 8 — re-evaluation after Round-7 declared complete (2026-05-30)
+
+**Reviewer:** Claude Opus 4.8 (adversarial). **Method:** independent
+re-derivation against the working tree on `fix/revrem-dogfood-first` @ `46bd89d`.
+Every claim below was reproduced from a command captured in this review; no
+self-report was trusted.
+
+### Verdict by required dimension
+
+| Dimension | Verdict | Basis |
+|-----------|---------|-------|
+| 1. Complete | **Yes, modulo live operator sign-off** | All code-level acceptance criteria pass. The only unmet item — a live, credentialed Matrix A/E run that emits routing artifacts from a real model — requires real budget and auto-commits, and is already covered hermetically (see below). |
+| 2. Highest quality | **Yes** | DF-001 fix is role-scoped and minimal; provenance/visibility work is exemplary; commit-message decomposition is clean and pure-functional. |
+| 3. Modular / hexagonal | **Yes** | import-linter 9/9 contracts kept; model-capability knowledge lives in the harness layer (`resolve_commit_message_reasoning_effort`), not the CLI; the adapter layer does not import the runner/CLI. |
+| 4. Properly tested | **Yes** | `pytest -q` → **859 passed / 1 skipped** in a clean `/tmp` *and* a polluted `/tmp/.git`. Routing-artifact production is exercised end-to-end through the real runner via a fake harness with schema validation (`test_remediation_final.py:116`, `test_remediation_hardened.py:24`). |
+| 5. Documented (DocOps) | **Yes** | `REVREM-DEVEX-001` documents the full triage/routing/commit control surface and the dogfood runbook; `meminit check` → `success:true` (29/29). |
+| 6. Demonstration-class | **Yes** | Eight adversarial rounds, hermetic test matrix, field-level provenance, and faithful operator projections. This is star-senior-dev work. |
+
+### Verified green (reproduced, not trusted)
+
+- `ruff check .` ✓ · `mypy src` ✓ (74 files) · `lint-imports` ✓ (9 kept / 0 broken)
+  · `meminit check --format json` ✓ (`success:true`, 29 files).
+- `pytest -q` **859 passed / 1 skipped** with clean `/tmp` **and** with
+  `/tmp/.git` present. Round-1/2 hermeticity holds.
+- **DF-001:** `commit-message` role emits `-c web_search="disabled"`
+  (`harnesses.py:105`), scoped so review/remediation shapes are unchanged. The
+  `minimal -> low` promotion is model-gated to
+  `CODEX_MINIMAL_UNSUPPORTED_COMMIT_MODELS` and named
+  `codex_minimal_unsupported_by_model`.
+- **DF-002/DF-006 (Matrix F live dry-run):**
+  `revrem --profile dogfood --no-routing --dry-run --summary-format json`
+  emits `phase_config` with field-level `sources` provenance, an explicit
+  `source: "mixed"` when one CLI flag overrides one field of a profile phase,
+  and explicit `timeout_seconds: 0.0` in operator-facing projections. stdout is
+  pure JSON; Rich progress is correctly routed to stderr (pipeable).
+- **DF-003 (Matrix D live dry-run):** `--triage --triage-contract v2 --routing`
+  flips both on (`enabled`/`routing_enabled` source `cli`) with no profile edit;
+  `--no-triage` disables it with source `cli`.
+- **DF-004 (Matrix F live dry-run):** the `dogfood` profile resolves cleanly
+  under `--no-routing` with all three draft routes preserved in `profile_v2`;
+  no executable-route chain check fires.
+- **DF-005:** `latest_review_excerpt` is preserved for `OutcomeFindings` /
+  `OutcomeUnknown` in `core/state.py:mark_outcome`.
+- **Strict routing (commit `c205f7c`):** an unavailable route under
+  `strict_on_unavailable_route = true` now fails loudly *before* following its
+  fallback chain, with a message naming the ignored fallback.
+- **Round 7 F1:** `parse_triage_payload` normalizes `P0`-`P4` → enum severities
+  and records a `parsing_warnings` boundary repair; verified by real-artifact
+  parser replay against the captured live `20260530T112214Z` triage payload.
+
+### No open code findings
+
+The strongest candidate gap — "routing artifacts have never been produced" — is
+**not** a code defect. No recorded `.revrem/runs/` entry contains routing
+artifacts, but that is because every post-fix run is `--dry-run` and routing
+only materializes when a real v2 triage payload carries route data. The
+production path itself is proven hermetically end-to-end:
+`test_routing_artifact_and_events_validate_against_schemas` drives the runner
+through a fake harness and asserts `routing-1.json` + `routing-outcome-1.json`
+are written and schema-valid, with a `routing_decision` event.
+
+### Optional polish (non-blocking, not required for "done")
+
+- **P8-1 (taste):** `deterministic_commit_message` has no subject-length cap; a
+  `type(scope): <up to 4 nouns> (RevRem)` fallback can exceed the conventional
+  ~50/72-char subject budget. Consider trimming the noun phrase to keep the
+  subject line within 72 chars. Pure cosmetics; the subject is already
+  Conventional-Commit-shaped and descriptive.
+- **P8-2 (test hygiene):** `test_project_dogfood_profile_parses_exact_committed_profile`
+  loads `Path(".revrem.toml")` relative to CWD. It passes because pytest runs
+  from the repo root, but pinning it to a repo-root-relative path would make it
+  robust to invocation directory.
+
+### Remaining live sign-off (operator, not Codex)
+
+Codex and Gemini CLIs are both installed in this environment, but live Matrix
+A (`revrem --profile dogfood --base main --max-iterations 3`) auto-commits to
+the branch and consumes real model budget, so it was not run during this
+review. To close the headline "trust commits produced by the loop" criterion,
+the operator should run Matrix A (and optionally Matrix E for Gemini routing)
+and confirm: no `revrem.triage.invalid_output` for `P0`-`P4`; triage artifacts
+validate; and `artifact_paths.routing` is non-empty whenever the live v2 triage
+payload carries route data. A non-committing exercise
+(`--no-commit-after-remediation --max-iterations 1`) is a lower-risk first pass.
 
 ---
 
