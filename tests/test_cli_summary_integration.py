@@ -50,6 +50,21 @@ def test_command_line_redacts_prompt_values():
     )
 
 
+def test_command_line_redacts_secret_like_tokens(monkeypatch):
+    monkeypatch.setenv("HOME", "/home/example-user")
+    assert _redacted_argv([
+        "--api-token",
+        "ghp_abcdefghijklmnopqrstuvwxyz123456",
+        "--path=/home/example-user/project",
+        "--opaque=0123456789abcdef0123456789abcdef",
+    ]) == (
+        "--api-token",
+        "[REDACTED:github-token]",
+        "--path=[REDACTED:home]/project",
+        "--opaque=[REDACTED:generic-token]",
+    )
+
+
 def test_summary_collects_commit_message_fallback_artifacts(tmp_path):
     artifact_dir = tmp_path / "artifacts"
     artifacts.write_json_artifact(

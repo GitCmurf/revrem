@@ -3,8 +3,8 @@ document_id: REVREM-TASK-004
 type: TASK
 title: Dogfood hardening and operator UX
 status: In Review
-version: '0.4'
-last_updated: '2026-05-29'
+version: '0.5'
+last_updated: '2026-05-30'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -769,6 +769,35 @@ Round 3 implementation evidence:
 - verified the focused TASK-004 regression tests before full gate execution;
 - live dogfood Matrix A/C/E remains the final operator exercise after the code
   gate is green because it depends on local Codex/Gemini credentials.
+
+### Round 4 closeout scope
+
+The fourth adversarial review found the remaining TASK-004 issues concentrated
+in fallback subject taste and operator truthfulness. The accepted Round 4
+remediation is:
+
+- make deterministic commit-message fallback repository-generic, with no
+  RevRem-specific canned phrases or project noun lexicon;
+- default neutral fallback subjects to `chore`, not `fix`;
+- surface Codex commit-message `minimal -> low` promotion as operator-visible
+  configuration, including requested/effective effort in `phase_config` and a
+  `config-adjusted` progress/event entry;
+- apply secret redaction to every recorded command-line token, not only prompt
+  flags;
+- carry `routing_strict` provenance through the real config builder and verify
+  resume output against built `LoopConfig` state rather than hand-authored
+  summary fixtures.
+
+Round 4 implementation evidence:
+
+- replaced exact-string fallback tests with property assertions covering
+  Conventional Commit shape, path-derived scope, absence of generic/canned
+  phrases, and context-derived terms;
+- added regression coverage for neutral `chore` fallback, effort-promotion
+  events, broad argv redaction, and real `routing_strict` phase-source
+  projection;
+- retained the live Matrix A/C/E requirement as operator sign-off because those
+  runs depend on local Codex/Gemini credentials.
 
 ## Verification Commands
 

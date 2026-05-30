@@ -3,8 +3,8 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.14'
-last_updated: '2026-05-29'
+version: '1.15'
+last_updated: '2026-05-30'
 owner: GitCmurf
 docops_version: '2.0'
 area: devex
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.13
-> **Last Updated:** 2026-05-29
+> **Version:** 1.15
+> **Last Updated:** 2026-05-30
 > **Type:** DEVEX
 > **Area:** devex
 > **Description:** Operator guide for the code-review-loop utility
@@ -359,13 +359,16 @@ Commit-message drafting disables Codex web search for that read-only helper
 call so `--commit-reasoning-effort minimal` can be tested without inheriting
 tool settings from local Codex defaults. If model drafting still fails, RevRem
 records the fallback in `commit-N-message-fallback.json`, includes it in the
-summary, and uses a deterministic path-derived Conventional Commit subject
-rather than an iteration-only placeholder.
+summary, and uses a deterministic repository-generic Conventional Commit
+subject derived from staged paths plus review/remediation context rather than an
+iteration-only placeholder or RevRem-specific canned vocabulary.
 For the Codex commit-message harness, `minimal` is promoted to `low` at config
 resolution time because current Codex built-in tool injection still rejects
 minimal effort for this role; `low` is the lowest live-compatible drafting
 effort and avoids the inadequate one-line fallback pattern found during
-dogfood.
+dogfood. Summaries record both `requested_reasoning_effort` and the effective
+`reasoning_effort`, and progress emits a `config-adjusted` event when the
+promotion is applied.
 
 To capture a one-off command as a project-local profile, add
 `--save-profile NAME`. RevRem writes the effective configuration to
@@ -974,6 +977,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.15 | 2026-05-30 | Codex | Documented repository-generic fallback subjects, visible commit-effort promotion, and broader command-line redaction |
 | 1.14 | 2026-05-29 | Codex | Documented resume override fidelity, wrapped progress prefix behavior, and temp-root ancestor exclusion |
 | 1.13 | 2026-05-29 | Codex | Documented triage/routing CLI overrides, executable-route validation modes, model-escalation controls, and commit-message harness override |
 | 1.12 | 2026-05-29 | Codex | Documented the project-local dogfood profile, resolved phase configuration summaries, and commit-message fallback hardening |

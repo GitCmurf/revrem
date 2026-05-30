@@ -3,8 +3,8 @@ document_id: REVREM-LEDGER-003
 type: LEDGER
 title: Behaviour ledger for the cli.py re-engineering (REVREM-TASK-003)
 status: Draft
-version: '0.3'
-last_updated: '2026-05-29'
+version: '0.4'
+last_updated: '2026-05-30'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -55,6 +55,24 @@ There is no silent third option.
 ```
 
 ## Entries
+
+### 2026-05-30 — Dogfood phase configuration details expanded
+
+- **Contract:** machine
+- **What changed:** `phase_config.commit_message` now records
+  `requested_reasoning_effort` and `reasoning_effort_adjustment` alongside the
+  effective `reasoning_effort`. `phase_config.triage` now records
+  `routing_strict` and `allow_model_escalation` in the same summary projection
+  used for resume-command reconstruction.
+- **Why:** `REVREM-TASK-004` dogfood runs need to show when Codex commit-message
+  `minimal` effort was promoted to `low`, and they need lossless triage/routing
+  controls in profile-less resume output.
+- **Before / After:** before, golden-master summary snapshots omitted these
+  fields; after, the loop summary snapshots include null/default values for
+  direct-config runs and populated values for CLI/profile-built dogfood runs.
+- **schema_version impact:** none; pre-release `summary.json` remains at schema
+  version `1.0` while adding optional detail fields.
+- **CHANGELOG:** not required; internal pre-release dogfood hardening.
 
 ### 2026-05-29 — Phase configuration field provenance added to summaries
 

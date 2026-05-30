@@ -234,6 +234,19 @@ def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iterat
         prompt,
     )
     phase_support.ensure_model_budget(config, phase="commit-message", iteration=iteration, ctx=ctx)
+    if config.commit_reasoning_effort_adjustment:
+        phase_support.progress_event(
+            config,
+            "commit-message",
+            str(iteration),
+            "config-adjusted",
+            (
+                "reasoning_effort "
+                f"{config.commit_reasoning_effort_requested}->{config.commit_reasoning_effort} "
+                f"({config.commit_reasoning_effort_adjustment})"
+            ),
+            ctx=ctx,
+        )
     phase_support.progress_event(
         config,
         "commit-message",
@@ -319,12 +332,25 @@ def _commit_scope(paths: list[str]) -> str:
         return "review"
     counts = {part: first_parts.count(part) for part in set(first_parts)}
     dominant = max(counts, key=lambda part: (counts[part], part))
-    scope_map = {
-        "src": "core",
-        "tests": "tests",
-        "docs": "docs",
-    }
-    return scope_map.get(dominant, dominant.replace("_", "-"))
+    if dominant == "src":
+        return _src_scope(paths)
+    return _slug(dominant)
+
+
+def _src_scope(paths: list[str]) -> str:
+    candidates: list[str] = []
+    for raw_path in paths:
+        path = Path(raw_path)
+        if not path.parts or path.parts[0] != "src":
+            continue
+        if len(path.parts) == 2:
+            candidates.append(path.stem)
+        elif len(path.parts) > 2:
+            candidates.append(path.parts[1])
+    if not candidates:
+        return "src"
+    counts = {part: candidates.count(part) for part in set(candidates)}
+    return _slug(max(counts, key=lambda part: (counts[part], part)))
 
 
 def _commit_type(paths: list[str], *, context: str = "") -> str:
@@ -362,7 +388,7 @@ def _commit_type(paths: list[str], *, context: str = "") -> str:
         (r"\badd(?:s|ed)?\b", r"\benable(?:s|d)?\b", r"\bsupport(?:s|ed)?\b", r"\bnew\b", r"\bfeature(?:s)?\b"),
     ):
         return "feat"
-    return "fix"
+    return "chore"
 
 
 def _contains_any(text: str, patterns: tuple[str, ...]) -> bool:
@@ -398,49 +424,23 @@ def _summary_from_context(change_type: str, text: str) -> str:
     if not text:
         return ""
     lower = text.lower()
-    noun = _noun_from_text(lower)
-    if change_type == "feat":
-        if "triage" in lower and ("cli" in lower or "command line" in lower):
-            return "add triage cli override"
-        return f"add {noun}"
-    if change_type == "refactor":
-        return f"refactor {noun}"
-    if change_type == "perf":
-        return f"improve {noun} performance"
-    if change_type == "docs":
-        return f"document {noun}"
-    if change_type == "test":
-        return f"cover {noun}"
-    if "excerpt" in lower and "review" in lower:
-        return "preserve review excerpts"
-    if "valid profile" in lower or "profiles" in lower:
-        return "validate profiles correctly"
-    if "artifact" in lower and "metadata" in lower:
-        return "handle artifact metadata"
-    return f"fix {noun}"
+    verb = _summary_verb(change_type)
+    return f"{verb} {_noun_from_text(lower, verb=verb)}"
 
 
-def _noun_from_text(lower_text: str) -> str:
-    noun_patterns = (
-        (("commit", "message"), "commit messages"),
-        (("runner", "setup"), "runner setup"),
-        (("review", "excerpt"), "review excerpts"),
-        (("phase", "config"), "phase config"),
-        (("resume", "command"), "resume command"),
-        (("progress", "line"), "progress lines"),
-        (("profile",), "profiles"),
-        (("routing",), "routing"),
-        (("triage",), "triage"),
-        (("artifact",), "artifacts"),
-    )
-    for needles, noun in noun_patterns:
-        if all(needle in lower_text for needle in needles):
-            return noun
+def _noun_from_text(lower_text: str, *, verb: str) -> str:
     words = re.findall(r"[a-z][a-z0-9-]+", lower_text)
     stop_words = {
+        "a",
+        "an",
         "the",
         "and",
+        "or",
         "for",
+        "to",
+        "of",
+        "in",
+        "on",
         "with",
         "from",
         "this",
@@ -448,24 +448,43 @@ def _noun_from_text(lower_text: str) -> str:
         "when",
         "where",
         "into",
+        "while",
+        "without",
+        "by",
+        "can",
+        "could",
+        "should",
+        "would",
+        "must",
+        "may",
+        "might",
+        "please",
         "review",
         "remediation",
+        "revrem",
+        "codex",
+        "issue",
+        "finding",
+        "findings",
     }
-    useful = [word for word in words if word not in stop_words]
-    return " ".join(useful[:3]) if useful else "review remediation"
+    useful = [word for word in words if word != verb and word not in stop_words]
+    return " ".join(useful[:4]) if useful else "local changes"
 
 
 def _summary_from_paths(change_type: str, paths: list[str]) -> str:
     noun = _path_noun(paths)
-    verbs = {
+    return f"{_summary_verb(change_type)} {noun}"
+
+
+def _summary_verb(change_type: str) -> str:
+    return {
         "docs": "document",
         "feat": "add",
         "fix": "fix",
         "perf": "improve",
         "refactor": "refactor",
         "test": "cover",
-    }
-    return f"{verbs.get(change_type, 'update')} {noun}"
+    }.get(change_type, "update")
 
 
 def _path_noun(paths: list[str]) -> str:
@@ -476,13 +495,16 @@ def _path_noun(paths: list[str]) -> str:
     stem = path.stem.replace("_", " ").replace("-", " ")
     if len(path.parts) >= 3 and path.parts[0] == "src":
         package_part = path.parts[-2].replace("_", " ").replace("-", " ")
-        if package_part == "code review loop":
-            return stem
         if package_part not in stem:
             return f"{package_part} {stem}"
     if len(path.parts) >= 2 and path.parts[0] == "tests":
         return stem.removeprefix("test ")
-    return stem or "review remediation"
+    return stem or "local changes"
+
+
+def _slug(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", value.lower().replace("_", "-")).strip("-")
+    return slug or "local"
 
 
 def _display_timeout(value: float | None) -> str:

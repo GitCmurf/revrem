@@ -210,11 +210,14 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         or profile.commit.reasoning_effort
         or remediation_reasoning_effort
     )
+    commit_reasoning_effort_requested = commit_reasoning_effort
+    commit_reasoning_effort_adjustment = None
     if commit_message_harness == "codex" and commit_reasoning_effort == "minimal":
         # Codex 0.135.0 still injects built-in tools that are incompatible with
         # minimal reasoning. Commit-message drafting is cheap but quality
         # sensitive, so use the lowest live-compatible effort instead.
         commit_reasoning_effort = "low"
+        commit_reasoning_effort_adjustment = "codex_minimal_tool_incompatibility"
     commit_timeout_seconds = profile.commit.timeout_seconds
     commit_timeout_seconds_display = (
         profile.commit.timeout_seconds
@@ -282,6 +285,7 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
             ),
             "contract": "cli" if args.triage_contract is not None else profile_source,
             "routing_enabled": "cli" if args.routing_enabled is not None else profile_source,
+            "routing_strict": "cli" if args.routing_strict is not None else profile_source,
             "allow_model_escalation": (
                 "cli" if args.allow_model_escalation is not None else profile_source
             ),
@@ -335,6 +339,8 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         ),
         commit_on_hook_failure=commit_on_hook_failure,
         commit_reasoning_effort=commit_reasoning_effort,
+        commit_reasoning_effort_requested=commit_reasoning_effort_requested,
+        commit_reasoning_effort_adjustment=commit_reasoning_effort_adjustment,
         commit_timeout_seconds=commit_timeout_seconds,
         commit_timeout_seconds_display=commit_timeout_seconds_display,
         triage_enabled=triage_enabled,

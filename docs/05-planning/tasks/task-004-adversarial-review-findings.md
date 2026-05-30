@@ -3,8 +3,8 @@ document_id: REVREM-REVIEW-004
 type: TASK
 title: Adversarial review findings for TASK-004 dogfood hardening
 status: Draft
-version: '1.3'
-last_updated: '2026-05-29'
+version: '1.4'
+last_updated: '2026-05-30'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -25,17 +25,36 @@ related_ids:
 
 # TASK-004 — Adversarial Review Findings
 
-> **This document has three rounds.** Round 3 (below) is the current,
-> authoritative re-evaluation after the route-validation closeout. Earlier
-> rounds are retained for history; **all Round 1 and Round 2 blockers and
-> mediums are remediated** and re-verified in later rounds.
+> **This document has four rounds.** Round 4 (below) is the current,
+> authoritative re-evaluation after the final operator-polish pass. Earlier
+> rounds are retained for history; **all Round 1, Round 2, and Round 3
+> blockers/mediums are remediated** and re-verified in later rounds.
 
-> **Codex remediation status (2026-05-29):** Round 3 findings F1 through F7
-> have been accepted for the final TASK-004 polish pass. The closeout evidence
-> is recorded in `REVREM-TASK-004`; the historical findings below are retained
-> as the review record that drove the changes.
+> **Codex remediation status (2026-05-30):** Round 4 findings R4-1 through
+> R4-5 have been accepted for the final TASK-004 polish pass. The closeout
+> evidence is recorded in `REVREM-TASK-004`; the historical findings below are
+> retained as the review record that drove the changes.
 
 ---
+
+## Round 4 — re-evaluation after final operator-polish remediation (2026-05-30)
+
+- **Reviewer:** Claude (Opus 4.8), adversarial re-evaluation against the
+  reputation-at-stake dogfood bar.
+- **Verdict:** **Architecturally strong, with one blocker and four narrow
+  quality gaps before final dogfood sign-off.** The blocker is taste and
+  portability: fallback commit subjects must not inject RevRem-specific canned
+  vocabulary into arbitrary target repositories.
+- **Required remediations:** R4-1 repository-generic deterministic commit
+  fallback; R4-2 operator-visible Codex `minimal -> low` effort promotion;
+  R4-3 broad command-line redaction; R4-4 field-level `routing_strict`
+  provenance through real config construction; R4-5 neutral fallback type
+  defaults to `chore`.
+- **Verification note:** The implementation must keep property-style fallback
+  tests rather than fixture-reversed exact strings, and it must verify
+  configuration projections from `build_loop_config` state rather than
+  hand-authored summary dictionaries. Live Matrix A/C/E remains credential
+  gated and is the operator sign-off after the local gates pass.
 
 ## Round 3 — re-evaluation after route-validation remediation (2026-05-29)
 

@@ -245,6 +245,12 @@ def resume_loop_config(
         ),
         commit_on_hook_failure=_resume_str(resume_config, "commit_on_hook_failure", "remediate"),
         commit_reasoning_effort=_resume_optional_str(resume_config, "commit_reasoning_effort"),
+        commit_reasoning_effort_requested=_resume_optional_str(
+            resume_config, "commit_reasoning_effort_requested"
+        ),
+        commit_reasoning_effort_adjustment=_resume_optional_str(
+            resume_config, "commit_reasoning_effort_adjustment"
+        ),
         commit_timeout_seconds=_resume_optional_float(resume_config, "commit_timeout_seconds"),
         commit_timeout_seconds_display=_resume_phase_timeout(resume_config, "commit_message"),
         exec_sandbox=_resume_str(resume_config, "exec_sandbox", "workspace-write"),
@@ -304,6 +310,10 @@ def resume_config_payload(config: LoopConfig) -> dict[str, object]:
         "triage_contract": config.triage_contract,
         "profile_name": config.profile_name,
     }
+    if config.profile_v2 is not None:
+        payload["routing_enabled"] = config.profile_v2.triage.routing.enabled
+        payload["routing_strict"] = config.profile_v2.triage.routing.strict_on_unavailable_route
+        payload["allow_model_escalation"] = config.profile_v2.triage.routing.allow_model_escalation
     _put_if_not_none(payload, "reasoning_effort", config.reasoning_effort)
     _put_if_not_none(payload, "review_reasoning_effort", config.review_reasoning_effort)
     _put_if_not_none(payload, "remediation_reasoning_effort", config.remediation_reasoning_effort)
@@ -319,6 +329,8 @@ def resume_config_payload(config: LoopConfig) -> dict[str, object]:
     )
     _put_if_not_default(payload, "trusted_repo", config.trusted_repo, False)
     _put_if_not_none(payload, "commit_reasoning_effort", config.commit_reasoning_effort)
+    _put_if_not_none(payload, "commit_reasoning_effort_requested", config.commit_reasoning_effort_requested)
+    _put_if_not_none(payload, "commit_reasoning_effort_adjustment", config.commit_reasoning_effort_adjustment)
     _put_if_not_none(payload, "commit_timeout_seconds", config.commit_timeout_seconds)
     _put_if_not_none(payload, "profile_v2", _resume_profile_snapshot(config))
     return payload

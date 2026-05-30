@@ -204,6 +204,16 @@ def phase_config_payload(config: LoopConfig) -> dict[str, object]:
                 if config.profile_v2 is not None
                 else False
             ),
+            "routing_strict": (
+                config.profile_v2.triage.routing.strict_on_unavailable_route
+                if config.profile_v2 is not None
+                else False
+            ),
+            "allow_model_escalation": (
+                config.profile_v2.triage.routing.allow_model_escalation
+                if config.profile_v2 is not None
+                else True
+            ),
             "sandbox": "read-only",
             "source": config.phase_config_sources.get("triage", "direct-config"),
             "sources": field_sources.get("triage", {}),
@@ -222,6 +232,8 @@ def phase_config_payload(config: LoopConfig) -> dict[str, object]:
             "harness": config.commit_message_harness,
             "model": config.commit_message_model,
             "reasoning_effort": config.commit_reasoning_effort,
+            "requested_reasoning_effort": config.commit_reasoning_effort_requested,
+            "reasoning_effort_adjustment": config.commit_reasoning_effort_adjustment,
             "timeout_seconds": config.commit_timeout_seconds_display,
             "sandbox": "read-only",
             "source": config.phase_config_sources.get("commit_message", "direct-config"),

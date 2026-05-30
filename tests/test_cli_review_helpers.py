@@ -34,6 +34,25 @@ from tests.support.phase_harnesses import phase_harness_kwargs
 cli_main = import_module("code_review_loop.cli.main")
 
 
+def assert_professional_fallback_subject(
+    message: str,
+    *,
+    expected_type: str,
+    expected_scope: str,
+    expected_terms: tuple[str, ...],
+) -> None:
+    assert message.startswith(f"{expected_type}({expected_scope}): ")
+    assert message.endswith(" (RevRem)")
+    lowered = message.lower()
+    assert "apply verified remediation" not in lowered
+    assert "remediate review iteration" not in lowered
+    assert "triage cli override" not in lowered
+    assert "preserve review excerpts" not in lowered
+    assert "validate profiles correctly" not in lowered
+    for term in expected_terms:
+        assert term in lowered
+
+
 def make_run_context(runner) -> RunContext:
     return RunContext(
         clock=FakeClock(),
@@ -764,8 +783,12 @@ def test_commit_message_for_staged_changes_uses_specific_fallback_on_model_failu
 
     message = commit_message_for_staged_changes(config, runner, 2, make_run_context(runner))
 
-    assert message == "fix(core): fix foo (RevRem)"
-    assert "apply verified remediation" not in message
+    assert_professional_fallback_subject(
+        message,
+        expected_type="chore",
+        expected_scope="code-review-loop",
+        expected_terms=("foo",),
+    )
     assert (tmp_path / "artifacts" / "commit-2-message-fallback.json").is_file()
 
 
@@ -797,7 +820,12 @@ def test_commit_message_fallback_uses_review_context_for_feature_type(tmp_path):
 
     message = commit_message_for_staged_changes(config, runner, 3, make_run_context(runner))
 
-    assert message == "feat(core): add triage cli override (RevRem)"
+    assert_professional_fallback_subject(
+        message,
+        expected_type="feat",
+        expected_scope="code-review-loop",
+        expected_terms=("cli", "flag", "triage"),
+    )
 
 
 def test_commit_message_fallback_uses_remediation_context_for_refactor_type(tmp_path):
@@ -825,7 +853,12 @@ def test_commit_message_fallback_uses_remediation_context_for_refactor_type(tmp_
 
     message = commit_message_for_staged_changes(config, runner, 4, make_run_context(runner))
 
-    assert message == "refactor(core): refactor runner setup (RevRem)"
+    assert_professional_fallback_subject(
+        message,
+        expected_type="refactor",
+        expected_scope="code-review-loop",
+        expected_terms=("runner", "setup"),
+    )
 
 
 def test_commit_message_fallback_ranks_bugfix_context_above_feature_words(tmp_path):
@@ -853,9 +886,82 @@ def test_commit_message_fallback_ranks_bugfix_context_above_feature_words(tmp_pa
 
     message = commit_message_for_staged_changes(config, runner, 5, make_run_context(runner))
 
-    assert message.startswith("fix(core): ")
-    assert "feat" not in message
-    assert "apply verified remediation" not in message
+    assert_professional_fallback_subject(
+        message,
+        expected_type="fix",
+        expected_scope="code-review-loop",
+        expected_terms=("regression", "profiles"),
+    )
+
+
+def test_commit_message_effort_adjustment_emits_operator_event(tmp_path):
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        commit_message_model="gpt-test-commit",
+        commit_reasoning_effort="low",
+        commit_reasoning_effort_requested="minimal",
+        commit_reasoning_effort_adjustment="codex_minimal_tool_incompatibility",
+    )
+    sink = events.InMemorySink("run1")
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[:4] == ["git", "diff", "--cached", "--stat"]:
+            return CommandResult(list(args), 0, stdout=" src/pkg/widget.py | 2 +-\n")
+        if args[:4] == ["git", "diff", "--cached", "--name-only"]:
+            return CommandResult(list(args), 0, stdout="src/pkg/widget.py\n")
+        if args[:2] == ["codex", "exec"]:
+            return CommandResult(list(args), 1, stderr="model unavailable\n")
+        raise AssertionError(f"unexpected command: {args!r}")
+
+    commit_message_for_staged_changes(
+        config,
+        runner,
+        7,
+        RunContext(
+            runner=runner,
+            clock=FakeClock(),
+            identity=FakeRunIdentity(),
+            event_sink=sink,
+            **phase_harness_kwargs(),
+        ),
+    )
+
+    adjustment_events = [
+        event for event in sink.events if event.phase == "commit-message" and event.payload.get("summary") == "config-adjusted"
+    ]
+    assert adjustment_events
+    assert "minimal->low" in adjustment_events[0].payload["message"]
+
+
+def test_commit_message_fallback_defaults_neutral_context_to_chore(tmp_path):
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        commit_message_model=None,
+    )
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[:4] == ["git", "diff", "--cached", "--stat"]:
+            return CommandResult(list(args), 0, stdout=" package/widget.py | 2 +-\n")
+        if args[:4] == ["git", "diff", "--cached", "--name-only"]:
+            return CommandResult(list(args), 0, stdout="package/widget.py\n")
+        raise AssertionError(f"unexpected command: {args!r}")
+
+    message = commit_message_for_staged_changes(config, runner, 6, make_run_context(runner))
+
+    assert_professional_fallback_subject(
+        message,
+        expected_type="chore",
+        expected_scope="package",
+        expected_terms=("widget",),
+    )
 
 
 def test_normalize_revrem_conventional_subject_preserves_suffix_when_truncated():

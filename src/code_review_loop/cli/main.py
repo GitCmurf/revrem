@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 
+from code_review_loop import redaction
 from code_review_loop.cli.args import parse_args
 from code_review_loop.cli.commands.profile import save_profile_from_args
 from code_review_loop.cli.config_builder import build_loop_config
@@ -90,5 +91,5 @@ def _redacted_argv(argv: Sequence[str]) -> tuple[str, ...]:
             flag, _sep, _value = item.partition("=")
             redacted.append(f"{flag}=<redacted>")
             continue
-        redacted.append(item)
+        redacted.append(redaction.redact_text(item).text)
     return tuple(redacted)

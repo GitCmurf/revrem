@@ -4,12 +4,13 @@ from importlib import import_module
 
 import tests.support.application_runner as runner_mod
 from code_review_loop import application as application_mod
-from code_review_loop import profiles
+from code_review_loop import profiles, reporting
 from code_review_loop.cli import args as cli_args
 from code_review_loop.cli import config_builder
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.outcome import OutcomeClear
 from code_review_loop.core.ports import CommandResult
+from code_review_loop.runtime import format_terminal_summary
 
 cli_main = import_module("code_review_loop.cli.main")
 config_command = import_module("code_review_loop.cli.commands.config")
@@ -177,7 +178,16 @@ def test_codex_commit_reasoning_effort_promotes_minimal_to_low(tmp_path, monkeyp
     config, _summary_format = config_builder.build_loop_config(args, tmp_path)
 
     assert config.commit_reasoning_effort == "low"
+    assert config.commit_reasoning_effort_requested == "minimal"
+    assert config.commit_reasoning_effort_adjustment == "codex_minimal_tool_incompatibility"
     assert config.phase_config_field_sources["commit_message"]["reasoning_effort"] == "cli"
+    phase_config = reporting.phase_config_payload(config)
+    assert phase_config["commit_message"]["reasoning_effort"] == "low"
+    assert phase_config["commit_message"]["requested_reasoning_effort"] == "minimal"
+    assert (
+        phase_config["commit_message"]["reasoning_effort_adjustment"]
+        == "codex_minimal_tool_incompatibility"
+    )
 
 
 
@@ -567,12 +577,26 @@ strict_on_unavailable_route = true
         "timeout_seconds": "cli",
         "contract": "cli",
         "routing_enabled": "cli",
+        "routing_strict": "cli",
         "allow_model_escalation": "profile:final-pr",
     }
     assert config.profile_v2 is not None
     assert config.profile_v2.triage.routing.enabled is True
     assert config.profile_v2.triage.routing.strict_on_unavailable_route is False
     assert config.profile_v2.triage.routing.allow_model_escalation is True
+    text = format_terminal_summary(
+        {
+            "artifact_dir": "tmp/run",
+            "final_status": "findings",
+            "stopped_reason": "max_iterations_reached",
+            "artifact_paths": {"reviews": ["tmp/run/review-final.txt"]},
+            "base": "main",
+            "max_iterations": 1,
+            "resume_config": {"base": "main", "max_iterations": 1, "routing_strict": False},
+            "phase_config": reporting.phase_config_payload(config),
+        }
+    )
+    assert "--no-routing-strict" in text
 
 
 def test_main_triage_cli_negations_override_profile_enabled_values(tmp_path, monkeypatch):
