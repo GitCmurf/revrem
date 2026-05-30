@@ -164,6 +164,17 @@ def resolve_routing(
                 fallback_applied=current_tier if fallbacks_considered else None,
             )
 
+        if routing_config.strict_on_unavailable_route:
+            fallback_note = (
+                f" Configured fallback {route_cfg.fallback!r} is ignored because strict routing is enabled."
+                if route_cfg.fallback
+                else " Strict routing is enabled."
+            )
+            raise RuntimeError(
+                f"Route {current_tier!r} (harness {route_cfg.harness!r}) is unavailable or lacks "
+                f"required capabilities: {'; '.join(issues)}.{fallback_note}"
+            )
+
         if not route_cfg.fallback:
             raise RuntimeError(
                 f"Route {current_tier!r} (harness {route_cfg.harness!r}) is unavailable or lacks "

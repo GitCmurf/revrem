@@ -36,7 +36,11 @@ def test_fallback_behavior_for_unimplemented_harness():
         name="test",
         triage=profiles.TriageConfig(
             contract="v2",
-            routing=profiles.TriageRoutingConfig(enabled=True, default_route="midtier-coder"),
+            routing=profiles.TriageRoutingConfig(
+                enabled=True,
+                default_route="midtier-coder",
+                strict_on_unavailable_route=False,
+            ),
             routes={
                 "midtier-coder": profiles.TriageRouteConfig(harness="codex", model="fake-clear"),
                 "frontier-thinking": profiles.TriageRouteConfig(harness="reserved", model="fake-clear", fallback="midtier-coder")

@@ -174,6 +174,7 @@ def test_resolve_routing_rejects_multi_hop_fallback_cycle():
             routing=profiles.TriageRoutingConfig(
                 enabled=True,
                 default_route="frontier",
+                strict_on_unavailable_route=False,
             ),
             routes={
                 "frontier": profiles.TriageRouteConfig(
@@ -242,6 +243,7 @@ def test_resolve_routing_uses_explicit_fallback_when_route_exceeds_wall_budget()
             routing=profiles.TriageRoutingConfig(
                 enabled=True,
                 default_route="frontier",
+                strict_on_unavailable_route=False,
             ),
             routes={
                 "frontier": profiles.TriageRouteConfig(
@@ -272,6 +274,39 @@ def test_resolve_routing_uses_explicit_fallback_when_route_exceeds_wall_budget()
     assert resolved.route_tier == "efficient"
     assert resolved.fallback_applied == "efficient"
     assert resolved.fallbacks_considered == ("frontier",)
+
+
+def test_resolve_routing_strict_mode_rejects_unavailable_route_with_fallback():
+    profile = profiles.Profile(
+        name="test",
+        triage=profiles.TriageConfig(
+            contract="v2",
+            routing=profiles.TriageRoutingConfig(
+                enabled=True,
+                default_route="midtier-coder",
+                strict_on_unavailable_route=True,
+            ),
+            routes={
+                "midtier-coder": profiles.TriageRouteConfig(harness="codex", model="m1"),
+                "frontier-thinking": profiles.TriageRouteConfig(
+                    harness="reserved",
+                    model="m2",
+                    fallback="midtier-coder",
+                ),
+            },
+        ),
+    )
+    context = policy.RoutingContext(
+        domain_tags=(),
+        risk_level="low",
+        refactor_depth="atomic",
+        module_count=1,
+        failed_checks=(),
+        safety_signals=(),
+    )
+
+    with pytest.raises(RuntimeError, match="strict routing is enabled"):
+        policy.resolve_routing(profile, context, model_proposal_tier="frontier-thinking")
 
 
 def test_resolve_routing_fails_when_budget_exceeded_route_has_no_fallback():

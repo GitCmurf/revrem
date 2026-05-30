@@ -767,9 +767,11 @@ revrem --profile dogfood --no-allow-model-escalation
 
 Use `--triage-model`, `--triage-harness`, and `--triage-timeout-seconds` to
 override the triage phase. Use `--routing-strict` or `--no-routing-strict` to
-control whether an unavailable selected route is a hard failure. Disabled
-routing may carry draft routes during normal runs, but references inside the
-route table are still validated.
+control whether an unavailable selected route is a hard failure. When strict
+routing is enabled, RevRem stops on the selected route's capability or budget
+failure even if that route names a fallback. Disabled routing may carry draft
+routes during normal runs, but references inside the route table are still
+validated.
 
 Executable route validation is opt-in when routing is disabled:
 
