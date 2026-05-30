@@ -205,7 +205,6 @@ def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iterat
     staged_paths = [line.strip() for line in names_stdout.splitlines() if line.strip()]
     fallback_context = commit_message_fallback_context(config, iteration)
     fallback = deterministic_commit_message(
-        iteration,
         staged_paths=staged_paths,
         context=fallback_context,
     )
@@ -310,7 +309,6 @@ def commit_message_fallback_context(config: LoopConfig, iteration: int) -> str:
 
 
 def deterministic_commit_message(
-    iteration: int,
     *,
     staged_paths: list[str] | None = None,
     context: str = "",
@@ -344,7 +342,9 @@ def _commit_scope(paths: list[str], *, change_type: str) -> str:
     if not path_parts:
         return "review"
     first_parts = [parts[0] for parts in path_parts]
-    counts = {part: first_parts.count(part) for part in set(first_parts)}
+    counts: dict[str, int] = {}
+    for part in first_parts:
+        counts[part] = counts.get(part, 0) + 1
     dominant = max(counts, key=lambda part: (counts[part], part))
     if dominant == "src":
         scope = _src_scope(paths)
@@ -371,7 +371,9 @@ def _src_scope(paths: list[str]) -> str:
             candidates.append(path.parts[1])
     if not candidates:
         return "src"
-    counts = {part: candidates.count(part) for part in set(candidates)}
+    counts: dict[str, int] = {}
+    for part in candidates:
+        counts[part] = counts.get(part, 0) + 1
     return _slug(max(counts, key=lambda part: (counts[part], part)))
 
 
@@ -520,22 +522,20 @@ def _summary_verb(change_type: str) -> str:
 def _path_noun(paths: list[str]) -> str:
     if not paths:
         return "review remediation"
-    dominant = max(paths, key=lambda path: (paths.count(path), path))
-    path = Path(dominant)
+    counts: dict[str, int] = {}
+    for path_str in paths:
+        counts[path_str] = counts.get(path_str, 0) + 1
+    dominant_str = max(counts, key=lambda path_str: (counts[path_str], path_str))
+    path = Path(dominant_str)
     stem = path.stem.replace("_", " ").replace("-", " ")
     if len(path.parts) >= 3 and path.parts[0] == "src" and path.parts[1] == "code_review_loop":
         if len(path.parts) == 3:
             return stem
         package_part = path.parts[2].replace("_", " ").replace("-", " ")
-        if package_part not in stem:
-            return f"{package_part} {stem}"
-    if len(path.parts) >= 3 and path.parts[0] == "src":
-        package_part = path.parts[-2].replace("_", " ").replace("-", " ")
-        if package_part not in stem:
-            return f"{package_part} {stem}"
-    if len(path.parts) >= 2 and path.parts[0] == "tests":
-        return stem.removeprefix("test ")
-    return stem or "local changes"
+        return f"{stem} in {package_part}"
+    if len(path.parts) >= 2:
+        return f"{stem} in {path.parts[1]}"
+    return stem
 
 
 def _slug(value: str) -> str:

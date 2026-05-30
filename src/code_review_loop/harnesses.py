@@ -430,21 +430,25 @@ def prepare_prompt_invocation(
 def harness_capabilities_payload(name: str) -> dict[str, Any]:
     spec = harness_registry().get(name)
     if spec is None or spec.capabilities is None:
-        return asdict(
-            HarnessCapabilities(
-                review_supported=False,
-                remediation_supported=False,
-                triage_supported=False,
-                commit_message_supported=False,
-                non_interactive=False,
-                sandbox_modes=(),
-                timeout_supported=False,
-                cancellation_supported=False,
-                structured_output_supported=False,
-                cost_reporting="none",
-                supported_models=(),
-            )
-        )
+        return {
+            **asdict(
+                HarnessCapabilities(
+                    review_supported=False,
+                    remediation_supported=False,
+                    triage_supported=False,
+                    commit_message_supported=False,
+                    non_interactive=False,
+                    sandbox_modes=(),
+                    timeout_supported=False,
+                    cancellation_supported=False,
+                    structured_output_supported=False,
+                    cost_reporting="none",
+                    supported_models=(),
+                )
+            ),
+            "schema_version": "1.0",
+            "contract_version": "1.0",
+        }
     payload = asdict(spec.capabilities)
     # Ensure tuples are converted to lists for JSON schema validation
     if isinstance(payload.get("sandbox_modes"), tuple):

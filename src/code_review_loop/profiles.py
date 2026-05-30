@@ -11,7 +11,7 @@ import tempfile
 import tomllib
 from collections.abc import Callable
 from contextlib import suppress
-from dataclasses import asdict, replace
+from dataclasses import asdict, fields, replace
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, cast
@@ -1206,12 +1206,13 @@ def _atomic_write_text(path: Path, content: str) -> None:
 
 
 def _merge_dataclass(base: Any, override: Any) -> Any:
-    values = asdict(base)
-    defaults = asdict(type(override)())
-    for key, value in asdict(override).items():
-        if value != defaults[key]:
-            values[key] = value
-    return type(base)(**values)
+    overrides: dict[str, Any] = {}
+    for field in fields(override):
+        value = getattr(override, field.name)
+        default = getattr(type(override)(), field.name)
+        if value != default:
+            overrides[field.name] = value
+    return replace(base, **overrides)
 
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:

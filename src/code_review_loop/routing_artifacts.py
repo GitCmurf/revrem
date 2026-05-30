@@ -198,8 +198,10 @@ def _effective_route(resolved_route: policy.ResolvedRoute, config: LoopConfig) -
         "route_tier": resolved_route.route_tier,
         "harness": resolved_route.harness,
         "sandbox": resolved_route.sandbox,
-        "timeout_seconds": _artifact_timeout_seconds(resolved_route, config),
     }
+    timeout = _artifact_timeout_seconds(resolved_route, config)
+    if timeout is not None:
+        effective_route["timeout_seconds"] = timeout
     if eff_model:
         effective_route["model"] = eff_model
     if eff_reasoning:
@@ -209,10 +211,8 @@ def _effective_route(resolved_route: policy.ResolvedRoute, config: LoopConfig) -
 
 def _artifact_timeout_seconds(
     resolved_route: policy.ResolvedRoute, config: LoopConfig
-) -> float | int:
+) -> float | int | None:
     effective_timeout = phase_timeout_seconds(config, resolved_route.timeout_seconds)
-    if effective_timeout is None:
-        return 0
     return effective_timeout
 
 

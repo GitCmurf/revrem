@@ -91,7 +91,7 @@ def is_pytest_command(command: Sequence[str]) -> bool:
         return True
     if first.startswith("pytest"):
         return True
-    return len(command) >= 3 and first.startswith("python") and command[1:3] == ["-m", "pytest"]
+    return len(command) >= 3 and first.startswith("python") and command[1:3] == ("-m", "pytest")
 
 
 def has_non_python_project_surface(cwd: Path) -> bool:

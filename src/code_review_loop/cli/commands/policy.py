@@ -62,7 +62,14 @@ def policy_review(artifact_dir: Path, output_format: str | None = None) -> int:
         raise ValueError(f"artifact directory not found: {artifact_dir}")
 
     decisions: list[dict[str, Any]] = []
-    for routing_path in sorted(artifact_dir.glob("routing-*.json")):
+
+    def _routing_sort_key(path: Path) -> int:
+        parts = path.stem.split("-")
+        if len(parts) > 1 and parts[1].isdigit():
+            return int(parts[1])
+        return 0
+
+    for routing_path in sorted(artifact_dir.glob("routing-*.json"), key=_routing_sort_key):
         payload = json.loads(routing_path.read_text(encoding="utf-8"))
         if not isinstance(payload, dict):
             continue

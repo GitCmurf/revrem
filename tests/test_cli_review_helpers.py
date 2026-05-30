@@ -979,7 +979,6 @@ def test_commit_message_fallback_defaults_neutral_context_to_chore(tmp_path):
 
 def test_deterministic_commit_message_avoids_overeager_fix_for_generic_corrections():
     message = deterministic_commit_message(
-        1,
         staged_paths=["package/widget.py"],
         context="Correct local wording in the widget helper.",
     )
@@ -996,7 +995,6 @@ def test_deterministic_commit_message_strips_redundant_type_verbs():
     cases = [
         (
             deterministic_commit_message(
-                1,
                 staged_paths=["src/code_review_loop/runner_shell.py"],
                 context="Preserve latest excerpt for unresolved final reviews.",
             ),
@@ -1005,7 +1003,6 @@ def test_deterministic_commit_message_strips_redundant_type_verbs():
         ),
         (
             deterministic_commit_message(
-                1,
                 staged_paths=["src/foo/subprocess_runner.py"],
                 context="Extract duplicated subprocess runner helpers.",
             ),
@@ -1014,7 +1011,6 @@ def test_deterministic_commit_message_strips_redundant_type_verbs():
         ),
         (
             deterministic_commit_message(
-                1,
                 staged_paths=["tests/test_profiles.py"],
                 context="Add coverage for escalation precedence.",
             ),
@@ -1023,7 +1019,6 @@ def test_deterministic_commit_message_strips_redundant_type_verbs():
         ),
         (
             deterministic_commit_message(
-                1,
                 staged_paths=["docs/70-devex/devex-001-using-code-review-loop.md"],
                 context="New triage controls for operators.",
             ),
@@ -1032,7 +1027,6 @@ def test_deterministic_commit_message_strips_redundant_type_verbs():
         ),
         (
             deterministic_commit_message(
-                1,
                 staged_paths=["a/cache.py"],
                 context="Performance cache repeated rev-parse calls.",
             ),
@@ -1055,7 +1049,6 @@ def test_deterministic_commit_message_strips_trigger_words_anywhere_and_dedupes_
     cases = [
         (
             deterministic_commit_message(
-                1,
                 staged_paths=["src/code_review_loop/cli/args.py"],
                 context="Add a CLI flag to enable triage in triage runs.",
             ),
@@ -1064,7 +1057,6 @@ def test_deterministic_commit_message_strips_trigger_words_anywhere_and_dedupes_
         ),
         (
             deterministic_commit_message(
-                1,
                 staged_paths=["src/code_review_loop/runner_shell.py"],
                 context="Fix preserve latest review excerpt for unresolved final reviews.",
             ),
@@ -1073,7 +1065,6 @@ def test_deterministic_commit_message_strips_trigger_words_anywhere_and_dedupes_
         ),
         (
             deterministic_commit_message(
-                1,
                 staged_paths=["src/foo/subprocess_runner.py"],
                 context="Refactor extract duplicated subprocess runner helpers.",
             ),
@@ -1082,7 +1073,6 @@ def test_deterministic_commit_message_strips_trigger_words_anywhere_and_dedupes_
         ),
         (
             deterministic_commit_message(
-                1,
                 staged_paths=["tests/test_profiles.py"],
                 context="Cover add coverage for escalation precedence.",
             ),
@@ -1100,12 +1090,10 @@ def test_deterministic_commit_message_strips_trigger_words_anywhere_and_dedupes_
 
 def test_deterministic_commit_message_suppresses_filename_scopes():
     assert deterministic_commit_message(
-        1,
         staged_paths=["README.md"],
         context="Document installation steps.",
     ).startswith("docs: ")
     assert deterministic_commit_message(
-        1,
         staged_paths=["x.txt"],
         context="Refresh local fixture.",
     ).startswith("chore: ")
@@ -1121,19 +1109,16 @@ def test_deterministic_commit_message_uses_src_subpackage_scope():
 
     for path, prefix in cases:
         message = deterministic_commit_message(
-            1,
             staged_paths=[path],
             context="Fix preserve route handling.",
         )
         if prefix.startswith("feat"):
             message = deterministic_commit_message(
-                1,
                 staged_paths=[path],
                 context="Add route handling.",
             )
         elif prefix.startswith("refactor"):
             message = deterministic_commit_message(
-                1,
                 staged_paths=[path],
                 context="Extract route handling.",
             )
@@ -1142,7 +1127,6 @@ def test_deterministic_commit_message_uses_src_subpackage_scope():
 
 def test_deterministic_commit_message_caps_fallback_subject_length():
     message = deterministic_commit_message(
-        1,
         staged_paths=["src/code_review_loop/adapters/commit.py"],
         context=(
             "Fix extremely verbose deterministic fallback commit message "
