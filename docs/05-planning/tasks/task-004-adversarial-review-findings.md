@@ -3,7 +3,7 @@ document_id: REVREM-REVIEW-004
 type: TASK
 title: Adversarial review findings for TASK-004 dogfood hardening
 status: Draft
-version: '1.5'
+version: '1.6'
 last_updated: '2026-05-30'
 owner: GitCmurf
 docops_version: '2.0'
@@ -25,14 +25,176 @@ related_ids:
 
 # TASK-004 — Adversarial Review Findings
 
-> **This document has five rounds.** Round 5 (below) is the current,
-> authoritative re-evaluation after the Round-4 polish pass was declared
+> **This document has six rounds.** Round 6 (immediately below) is the current,
+> authoritative re-evaluation after the Round-5 polish pass was declared
 > complete. Earlier rounds are retained for history; **all Round 1–5
 > blockers/mediums are remediated** and re-verified.
 
 > **Codex remediation status (2026-05-30):** Round 4 findings R4-1 through
 > R4-5 are remediated. Round 5 findings R5-1 and R5-2 are remediated, and R5-3
 > is covered by a credential-gated live smoke (`REVREM_LIVE_CODEX=1`).
+
+---
+
+## Round 6 — re-evaluation after Round-5 polish declared complete (2026-05-30)
+
+**Reviewer:** Claude Opus 4.8 (adversarial). **Method:** independent
+re-derivation against the working tree on `fix/revrem-dogfood-first` @ `19a7441`,
+not a re-read of Codex's self-report. Every claim below was reproduced from a
+command captured in this review.
+
+### Verdict by required dimension
+
+| Dimension | Verdict | Basis |
+|-----------|---------|-------|
+| 1. Complete | **No — one item open (F1)** | Headline acceptance "Codex-only dogfood matrix passes" / "trust commits produced by the loop" is proven only by dry-run + argv-shape assertions; no real loop or live model call has ever run. |
+| 2. Highest quality | **Mostly yes** | Provenance/visibility work is excellent; residual taste defects in the deterministic fallback (F2/F3/F5). |
+| 3. Modular / hexagonal | **Yes, with one placement smell** | Import contracts (9 kept) and the phase-plan projection are clean; model-capability knowledge is misplaced in the CLI layer (F4). |
+| 4. Properly tested | **No — coverage shallower than changelog claims** | Suite is green (848) but a round-5 "forbidding verb-doubling" claim is not actually enforced by its test, and the headline live path is untested (F1, F6). |
+| 5. Fully documented (DocOps) | **Yes** | `REVREM-DEVEX-001` documents the full triage/routing/commit surface; `meminit check` → `success:true` (29 files). |
+| 6. Demonstration-class | **Not yet** | One green-gate-invisible test-honesty gap (F6) and an unrun headline deliverable (F1) are exactly what a star senior dev would not ship as "done." |
+
+### Verified green (reproduced, not trusted)
+
+- `ruff check .` ✓ · `mypy src` ✓ (74 files) · `lint-imports` ✓ (9 contracts kept,
+  0 broken) · `meminit check --format json` ✓ (`success:true`, 29 files).
+- `pytest -q` **848 passed / 1 skipped** in a **clean** `/tmp` *and* **848 passed**
+  with a polluted `/tmp/.git` + `/tmp/.revrem.toml`. Round-1/2 hermeticity holds.
+- **DF-002/DF-006 (excellent):** `phase_config` carries field-level `sources`
+  provenance with an explicit `source: "mixed"` marker when a CLI flag overrides
+  one field of an otherwise-profile phase, and explicit `timeout_seconds = 0.0`
+  survives into operator-facing projections. Reproduced via
+  `revrem --profile dogfood --no-routing --dry-run --summary-format json`.
+- **DF-003 (Matrix D):** `--triage --triage-contract v2 --routing` flips triage
+  and routing on with no profile edit.
+- **DF-004 (Matrix F):** the `dogfood` profile (which carries a route table)
+  resolves cleanly under `--no-routing`; no executable-route chain check fires.
+- **DF-001 command shape:** `commit-message` role emits
+  `-c web_search="disabled"`; positive *and* negative tests
+  (`test_remediation_command_does_not_disable_web_search`) lock the scoping.
+- **DF-005 / DF-007 / DF-008:** `latest_review_excerpt` is populated on a
+  `findings` outcome; the JSON summary carries a per-check status table
+  (`command`/`artifact`/`status`); terminal closeout prints a full
+  copy-pasteable `Continue command:` preserving `--profile`, `--no-routing`,
+  `--commit-after-remediation`, `--initial-review-file`, and hook policy.
+
+This is genuinely strong work. The findings below are residual, not a re-opening.
+
+### F1 — BLOCKER (for "complete" + "properly tested"): the headline deliverable has never actually run
+
+- **Evidence:** every recorded `dogfood` run under `.revrem/runs/` is `--dry-run`
+  (`20260530T023305Z`, `20260530T004018Z`, and the two I just produced). The
+  one credential-gated live test (`tests/test_live_codex_commit_message.py`) is
+  **skipped** in every gate run shown (`REVREM_LIVE_CODEX` unset).
+- **Why it's not closed by the green suite:** the task's own acceptance says
+  *"Codex-only dogfood matrix passes"* and *Done means … trust commits produced
+  by the loop.* Neither is demonstrated. Matrix A
+  (`revrem --profile dogfood --base main --max-iterations 3`, **no** `--dry-run`)
+  has never executed end-to-end; no real commit produced by the loop exists as
+  evidence.
+- **Sharper still:** even if the live smoke *were* run, it constructs the config
+  with `commit_reasoning_effort="low"` (the **already-promoted** state for
+  `gpt-5.3-codex-spark`). So it validates the `minimal→low` promotion path — it
+  does **not** demonstrate the actual DF-001 thesis that
+  `web_search="disabled"` lets a genuine `reasoning.effort=minimal` request
+  through. That raw claim is proven only by argv shape, never by a live 200.
+- **This is an operator action, not a Codex code task.** Five rounds have
+  converted this into "operator sign-off"; per the no-deferral instruction it is
+  named here as the one open item. It clears by *running*, not by more code:
+
+  ```bash
+  # 1. headline matrix — must produce real, specific commits
+  ./.venv/bin/revrem --profile dogfood --base main --max-iterations 3
+  # 2. raw DF-001 thesis — minimal must NOT 400 with web_search disabled
+  REVREM_LIVE_CODEX=1 REVREM_LIVE_CODEX_COMMIT_MODEL=gpt-5.5 \
+    ./.venv/bin/pytest -q tests/test_live_codex_commit_message.py
+  ```
+  Recommendation for Codex/the live smoke: add a variant that sends a true
+  `commit_reasoning_effort="minimal"` to a model **not** in the promotion set,
+  so the suite actually exercises "minimal survives because the tool is
+  disabled" rather than only the promotion detour.
+
+### F6 — REQUIRED (test honesty): round-5 "verb-doubling" claim is not enforced
+
+- **Claim (round-5 evidence):** *"added property-style fallback tests forbidding
+  verb-doubling and scope/type collisions."*
+- **Reality:** `test_deterministic_commit_message_strips_redundant_type_verbs`
+  asserts only **leading-position** trigger-verb removal plus noun presence. It
+  does not cover interior trigger verbs or repeated nouns, so the claim is
+  overstated relative to the test.
+- **Proof (reproduced):**
+  `deterministic_commit_message(2, staged_paths=["src/code_review_loop/cli/args.py"],
+  context="Add a new --triage flag to enable triage from the CLI.")` →
+  `feat(code-review-loop): triage flag enable triage (RevRem)` — interior verb
+  `enable` retained and noun `triage` doubled.
+- **Fix:** strip trigger verbs anywhere in the summary token list (not only
+  index 0) and de-duplicate repeated tokens; add a property test over the
+  interior-verb / duplicate-noun case so the changelog and the test agree.
+
+### F2 — REQUIRED (taste): fallback summaries read awkwardly
+
+Same root cause as F6. Beyond verb-doubling, the 4-token noun window produces
+phrases like `some vague change words` for low-information context. Tighten the
+`_noun_from_text` selection (drop residual trigger/filler words mid-phrase;
+prefer the first contiguous noun phrase) so degraded-path subjects stay crisp.
+
+### F3 — REQUIRED (taste): file-name-derived scopes leak as low-signal scopes
+
+- **Proof:** `["README.md"]` → `docs(readme-md): document README`;
+  `["x.txt"]` → `chore(x-txt): some vague change words`.
+- Round 5 committed to suppressing low-value scopes (`docs(docs)`, one-char).
+  `readme-md` / `x-txt` are *filename slugs* masquerading as package scopes.
+- **Fix:** in `_commit_scope`, when the dominant first path segment is a **file**
+  (has a suffix) rather than a directory, suppress the scope instead of slugging
+  the filename. Extend `_is_low_signal_scope` accordingly.
+
+### F4 — REQUIRED (modularity): model-capability knowledge lives in the CLI layer
+
+- `_CODEX_MINIMAL_UNSUPPORTED_COMMIT_MODELS = frozenset({"gpt-5.3-codex-spark"})`
+  sits in `cli/config_builder.py`. "Which Codex model rejects which
+  `reasoning.effort`" is **harness/model-capability** domain knowledge, not
+  CLI-argument-assembly knowledge.
+- For the stated hexagonal bar, this predicate belongs with the Codex harness
+  adapter (e.g. a `codex` capability helper the adapter owns) so the CLI edge
+  *asks* "does this model support minimal?" rather than *encoding* the model
+  fact. Round-5's narrowing was correct for behaviour; only the placement is the
+  smell. Move the registry + predicate down a layer and have `config_builder`
+  call it.
+
+### F5 — POLISH (scope signal): every `src/` change collapses to one scope
+
+- **Proof:** `_src_scope` returns `code-review-loop` for `cli/args.py`,
+  `adapters/commit.py`, and `core/ports.py` alike — because it stops at
+  `parts[1]` (the single top package). In a one-package repo the scope is
+  near-constant and therefore uninformative.
+- **Fix:** drill one segment deeper for `src/<pkg>/<subpkg>/...` paths so scopes
+  become `cli`, `adapters`, `core`, etc. — materially more useful, and it makes
+  the fallback subjects look authored rather than templated.
+
+### Handback summary
+
+- **To Codex (code):** F2, F3, F4, F5, and **F6** (fix the test *and* the
+  implementation so the changelog claim is true). All are bounded, strictly
+  in-scope quality improvements — no deferral.
+- **To the operator (run, not code):** F1 — execute Matrix A and the live
+  `REVREM_LIVE_CODEX=1` smoke (with the minimal-on-non-promoted-model variant)
+  and attach the resulting run/evidence artifact. Until that exists, "Codex-only
+  dogfood matrix passes" remains an assertion, not a fact.
+
+### Round 6 — definition of done
+
+1. **F6/F2** — strip trigger verbs at any position, de-dupe tokens, tighten the
+   noun window; replace the leading-only assertion with an interior-case
+   property test. **(required)**
+2. **F3** — suppress filename-derived scopes for repo-root single files.
+   **(required)**
+3. **F4** — relocate the Codex `minimal`-unsupported predicate to the harness
+   layer; `config_builder` queries it. **(required)**
+4. **F5** — deepen `_src_scope` to the sub-package segment. **(polish)**
+5. **F1** — operator runs Matrix A + the live minimal smoke; evidence artifact
+   committed and cited on the task card. **(blocks "complete"; not a Codex task)**
+6. Re-run the full gate in both `/tmp` states and update the task card with test
+   names / commit refs, not a status flip.
 
 ---
 
