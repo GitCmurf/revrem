@@ -113,6 +113,8 @@ class RunState:
             assert_never(outcome)
         if excerpt:
             self.latest_review_excerpt = excerpt
+        elif isinstance(outcome, OutcomeClear) and outcome.excerpt:
+            self.latest_review_excerpt = outcome.excerpt
 
         if isinstance(outcome, OutcomeClear):
             self.mark_clear(outcome.reason, suppressed_findings_count=outcome.suppressed_findings_count)

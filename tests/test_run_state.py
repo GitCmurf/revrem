@@ -75,6 +75,24 @@ def test_mark_outcome_findings_and_unknown_preserve_terminal_status() -> None:
     assert unknown.to_dict()["stopped_reason"] == "max_iterations_reached"
 
 
+def test_mark_outcome_clear_prefers_explicit_excerpt_keyword() -> None:
+    state = _state()
+    outcome = OutcomeClear(reason="clear", excerpt="outcome-excerpt")
+
+    state.mark_outcome(outcome, excerpt="explicit-excerpt")
+
+    assert state.latest_review_excerpt == "explicit-excerpt"
+
+
+def test_mark_outcome_clear_falls_back_to_outcome_excerpt() -> None:
+    state = _state()
+    outcome = OutcomeClear(reason="clear", excerpt="outcome-excerpt")
+
+    state.mark_outcome(outcome)
+
+    assert state.latest_review_excerpt == "outcome-excerpt"
+
+
 def test_mark_outcome_fails_closed_for_unhandled_outcome_variant() -> None:
     state = _state()
 
