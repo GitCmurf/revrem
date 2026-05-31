@@ -3,7 +3,7 @@ document_id: REVREM-PLAN-003
 type: PLAN
 title: Post-Launch Development Roadmap
 status: Approved
-version: '0.6'
+version: '0.7'
 last_updated: '2026-05-31'
 owner: GitCmurf
 docops_version: '2.0'
@@ -1053,11 +1053,11 @@ milestone work remains before the roadmap itself can be considered complete.
 | M3 — Triage Productization And Suppressions | Covered by `REVREM-TASK-002`; triage artifacts, structured handoff, suppressions, suppression CLI, audit/redaction behavior, and tests exist. | Completed |
 | M4 — Event Stream, Cost Governance, And Replay | Covered by `REVREM-TASK-002`; `events.jsonl`, replay fixtures, budget/cancellation/resume tests, and stable exit-code coverage exist. | Completed |
 | M5 — TUI Runs, Hooks, And Headless Mode | Headless application boundary exists from `REVREM-TASK-003`, but real TUI-launched runs, hook installation/examples, check discovery, and full resume equivalence remain open. | Remaining work |
-| M6 — Harness Contract And Non-OpenAI Backends | Fake harness and thin Codex/Claude/Gemini/opencode/Kilo command adapters exist; live secondary-harness smoke, provider hardening, and broader harness-operational proof remain open. | Partially complete |
+| M6 — Harness Contract And Non-OpenAI Backends | Fake harness and thin Codex/Claude/Gemini/opencode/Kilo command adapters exist via `REVREM-PLAN-004`; live secondary-harness smoke, provider hardening, and broader harness-operational proof are now governed by `REVREM-TASK-006`. | Partially complete |
 | M7 — Expert Profiles And Public DevEx Expansion | No bundled expert-profile suite, examples matrix, shell completions, or maintained demo asset are present. | Remaining work |
 | M8 — Hands-Off CI Surface And Static Report | No `revrem report` static HTML command or GitHub Action/PR-comment surface is present. | Remaining work |
 | M9 — Distillation Archive, Daemon, And Dataset Export | No archive export/dataset surface or `revrem watch` daemon is present. | Remaining work |
 
-Near-term governing follow-ups are therefore M5, the remaining live/provider
-hardening slice of M6, then M7-M9. Completed TASK-001 through TASK-004 do not
-close the whole roadmap.
+Near-term governing follow-ups are therefore M5, `REVREM-TASK-006` for the
+remaining live/provider hardening slice of M6, then M7-M9. Completed TASK-001
+through TASK-004 and the first slice of PLAN-004 do not close the whole roadmap.

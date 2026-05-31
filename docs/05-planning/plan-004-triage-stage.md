@@ -3,7 +3,7 @@ document_id: REVREM-PLAN-004
 type: PLAN
 title: Triage Stage as a Routing and Prompt-Construction Layer
 status: Approved
-version: '1.1'
+version: '1.2'
 last_updated: '2026-05-31'
 owner: GitCmurf
 docops_version: '2.0'
@@ -21,6 +21,7 @@ keywords:
 related_ids:
   - REVREM-PRD-001
   - REVREM-PLAN-003
+  - REVREM-TASK-006
   - REVREM-ADR-003
   - REVREM-ADR-004
   - REVREM-ADR-006
@@ -1004,15 +1005,16 @@ The implemented first slice is intentionally narrow:
 
 This slice gives operators the core value, better remediation prompts and
 auditable model choice, while validating the shared multi-harness boundary with
-deterministic tests. Live provider smoke coverage is tracked as follow-up
-hardening rather than as evidence for first-slice completion.
+deterministic tests. Live provider smoke coverage and provider-specific
+hardening are not part of this first-slice completion gate; they are governed
+by `REVREM-TASK-006`.
 
-## Completion Audit Snapshot
+## First-Slice Completion Audit
 
 This plan's **first routed-remediation slice is complete**. The plan should not
 be read as closing every future harness-hardening concern: live provider smoke
-coverage and provider-specific operational hardening remain follow-up work under
-`REVREM-PLAN-003` M6.
+coverage and provider-specific operational hardening remain open work under
+`REVREM-TASK-006`, which is the concrete follow-up for `REVREM-PLAN-003` M6.
 
 | Requirement | Current evidence inspected on 2026-05-31 | Audit status |
 |---|---|---|
@@ -1021,7 +1023,7 @@ coverage and provider-specific operational hardening remain follow-up work under
 | Policy parser/linter and route resolution exist | `src/code_review_loop/policy.py`, profile routing config parsing, `revrem policy lint`, `revrem triage explain`, and `revrem policy review` are implemented and documented. | Completed |
 | Multi-harness command boundary exists | `src/code_review_loop/harnesses.py` implements Codex, Claude, Gemini, opencode, Kilo, and fake adapters behind the shared command-building surface. | Completed for deterministic command construction |
 | Fake-harness and routing tests prove local behavior | Routing/policy/fake-harness tests cover route selection, fallback, artifacts, schema validation, and prompt-delivery command shape without live model calls. | Completed |
-| Live secondary provider proof | Live Claude/Gemini/opencode/Kilo end-to-end model smoke remains intentionally out of this first-slice gate. | Follow-up |
+| Live secondary provider proof | Live Claude/Gemini/opencode/Kilo end-to-end model smoke remains intentionally out of this first-slice gate and is now governed by `REVREM-TASK-006`. | Deferred to REVREM-TASK-006 |
 
 ## Pointers
 
