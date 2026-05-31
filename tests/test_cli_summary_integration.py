@@ -56,7 +56,7 @@ def test_command_line_redacts_secret_like_tokens(monkeypatch):
         "--api-token",
         "ghp_abcdefghijklmnopqrstuvwxyz123456",
         "--path=/home/example-user/project",
-        "--opaque=0123456789abcdef0123456789abcdef",
+        "--opaque=0123456789abcdef0123456789abcdef",  # pragma: allowlist secret
     ]) == (
         "--api-token",
         "[REDACTED:github-token]",
