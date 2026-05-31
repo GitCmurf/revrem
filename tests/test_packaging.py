@@ -56,7 +56,7 @@ def test_project_version_matches_package_version():
 def test_build_backend_version_is_pinned_for_reproducible_release_builds():
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
-    assert pyproject["build-system"]["requires"] == ["setuptools==80.9.0"]
+    assert pyproject["build-system"]["requires"] == ["setuptools==82.0.1"]
 
 
 def test_ci_builds_and_smokes_revrem_wheel():
