@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import tomllib
 
+import pytest
+
 from code_review_loop._compat_jsonschema import Draft202012Validator, validate
 from code_review_loop._compat_tomli_w import dumps
 
@@ -38,6 +40,20 @@ def test_local_tomli_w_escapes_control_characters_in_basic_strings():
     parsed = tomllib.loads(rendered)
 
     assert parsed["description"] == "before\x1bafter"
+
+
+def test_local_tomli_w_round_trips_finite_float():
+    rendered = dumps({"ratio": 1.25})
+
+    parsed = tomllib.loads(rendered)
+
+    assert parsed["ratio"] == 1.25
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_local_tomli_w_rejects_non_finite_float(value):
+    with pytest.raises(ValueError, match="TOML floats must be finite"):
+        dumps({"ratio": value})
 
 
 def test_local_jsonschema_validator_handles_required_properties_and_constants():

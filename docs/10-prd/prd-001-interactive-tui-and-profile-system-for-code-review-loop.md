@@ -149,9 +149,9 @@ bounded nested Codex execution, deterministic artifacts, plain shell compatibili
 - Multi-user server deployment.
 - Secret storage or credential management.
 - Automatic pushes, branch creation, or remote repository mutation.
-- Implementing non-Codex execution backends; Claude, Gemini, opencode, and Kilo
-  remain reserved profile syntax until their headless adapters are implemented
-  and tested.
+- Secret storage or credential management for non-Codex execution backends.
+  Claude, Gemini, opencode, and KiloCode adapters may execute through installed
+  local CLIs, but RevRem does not store or manage their credentials.
 
 ---
 
@@ -283,13 +283,13 @@ compact text remains the default for scripts and logs.
 Compact, verbose, and Rich progress timestamps use local terminal wall time for
 watched runs. Persisted run-history timestamps remain UTC ISO-8601 values.
 
-Optional Codex triage is implemented as a read-only interpretative phase between
+Optional triage is implemented as a read-only interpretative phase between
 review and remediation. It exists to turn review prose and check failures into a
-small action plan that a cheaper remediation model can execute. The triage
-artifact is stored as `triage-N.txt`; remediation receives both the triage
-handoff and the original review/check context. Non-Codex triage harness names
-remain valid configuration syntax for management commands but are rejected on
-the executable path until their adapters exist.
+small action plan that a cheaper remediation model can execute. With
+`triage.contract = "v2"` and routing enabled, RevRem also records the effective
+route and exact remediation prompt before invoking the selected remediation
+harness. Codex, Claude, Gemini, opencode, and KiloCode can be selected when
+their adapter capabilities satisfy the phase and route.
 
 Optional commit-after-remediation is implemented as a separate post-check phase.
 Remediation agents do not own git history. After checks pass, RevRem may stage
@@ -367,10 +367,12 @@ Implementation must preserve these boundaries:
   quiet progress, terminal-title updates, and checkpoint commits.
 - Reasoning-effort selection is phase-local: review, triage, remediation, and
   commit-message drafting can each be overridden independently from the CLI.
-- Harness execution lives behind `src/code_review_loop/harnesses.py`. Codex is
-  the only implemented adapter; reserved adapters for Claude, Gemini, opencode,
-  and Kilo deliberately fail if execution is requested while remaining valid
-  management/config syntax.
+- Harness execution lives behind `src/code_review_loop/harnesses.py`. Codex,
+  Claude, Gemini, opencode, and KiloCode have implemented headless CLI adapter
+  surfaces. Each adapter must declare its role support, prompt-delivery mode,
+  sandbox/full-auto mapping, timeout/cancellation behavior, and model-selection
+  semantics through the harness capability boundary before profile routes can
+  rely on it.
 - Optional dependencies are imported inside feature entry points only.
 - Config writes are atomic and never mutate files outside the selected config path.
 - Errors produce actionable messages and still write summary artifacts where a loop has started.
@@ -424,12 +426,10 @@ Milestone status as of version 1.4:
   `--profile` for initial profile selection, launches dry-run previews, and
   shells profile lifecycle actions through `revrem config` so the CLI remains
   the authoritative execution engine.
-- Codex triage is implemented; non-Codex harnesses remain reserved syntax and
-  executable command planning fails fast when an unimplemented backend is
-  selected.
-- Commit-message harness configuration is part of the same reserved harness
-  boundary. `commit.harness = "codex"` is executable today; other registered
-  harness names are valid management syntax but fail fast on executable runs.
+- Triage and commit-message harness configuration are part of the shared
+  harness boundary. Codex, Claude, Gemini, opencode, and KiloCode can be
+  selected when their declared capabilities match the phase and route; reserved
+  names still fail fast on executable runs.
 
 ### Non-Functional Requirements
 
@@ -510,7 +510,8 @@ Deliverables:
   `$XDG_DATA_HOME` when present.
 - `revrem history list` for recent run inspection.
 - `--no-run-history` opt-out for sensitive one-off local runs.
-- Optional read-only Codex triage phase with `triage-N.txt` artifacts.
+- Optional read-only triage phase with `triage-N.txt`, `triage-N.json`, and
+  routing artifacts when the v2 routing contract is enabled.
 - Renderer interface.
 - Compact renderer preserving current output.
 - Rich renderer behind optional extra.
@@ -649,8 +650,8 @@ revrem history --format json list --limit 5
 - Rich and Textual remain optional extras.
 - TOML writes use a small purpose-built renderer for the limited profile schema
   instead of adding a default runtime dependency.
-- Harness names are validated through an early registry and command-planning
-  adapter boundary; only the Codex adapter is executable today.
+- Harness names are validated through an adapter boundary that supports Codex,
+  Claude, Gemini, opencode, and KiloCode command planning.
 - Run history is append-only JSONL to avoid read-modify-write corruption and to
   keep TUI recent-run views simple.
 - Full in-TUI loop execution is deferred to `REVREM-PLAN-002`; the current TUI
@@ -658,8 +659,10 @@ revrem history --format json list --limit 5
 
 ### Open Questions
 
-- Which non-Codex headless harness should be implemented first, and what exact
-  machine-readable review/remediation contract should its adapter expose.
+- The first thin non-Codex headless adapters were implemented by
+  REVREM-PLAN-004. The remaining open question is which provider-specific live
+  smoke tests and capability refinements should be added first without
+  weakening the shared harness boundary.
 
 ---
 

@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from code_review_loop import cli as cli_module
-from code_review_loop import diagnostics
+from code_review_loop import __version__, diagnostics
 from code_review_loop._compat_jsonschema import Draft202012Validator, validate
+from code_review_loop.config import LoopConfig
+from code_review_loop.core.ports import CommandResult
+from tests.support import application_runner
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_DIR = ROOT / "docs" / "52-api" / "schemas"
@@ -14,6 +16,17 @@ ARTIFACT_FIXTURE_DIR = ROOT / "tests" / "fixtures" / "artifacts"
 
 def _load_schema(name: str) -> dict[str, object]:
     return json.loads((SCHEMA_DIR / name).read_text(encoding="utf-8"))
+
+
+def _validation_error_paths(errors: list[object]) -> list[object]:
+    paths: list[object] = []
+    for error in errors:
+        path = getattr(error, "path", None)
+        if path is None:
+            paths.append(str(error))
+        else:
+            paths.append(list(path))
+    return paths
 
 
 def test_schema_files_are_valid_draft_2020_12():
@@ -89,10 +102,10 @@ def test_summary_schema_validates_generated_summary(tmp_path):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return cli_module.CommandResult(list(args), 0, stdout=next(review_outputs))
-        return cli_module.CommandResult(list(args), 0, stdout="fixed\n")
+            return CommandResult(list(args), 0, stdout=next(review_outputs))
+        return CommandResult(list(args), 0, stdout="fixed\n")
 
-    config = cli_module.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
@@ -100,14 +113,14 @@ def test_summary_schema_validates_generated_summary(tmp_path):
         artifact_dir=tmp_path / "artifacts",
     )
 
-    summary = cli_module.run_loop(config, runner)
+    summary = application_runner.run_loop(config, runner).to_dict()
     summary_payload = json.loads(
         (tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8")
     )
 
     validate(summary_payload, schema)
     assert summary["schema_version"] == "1.0"
-    assert summary_payload["cli_version"] == cli_module.__version__
+    assert summary_payload["cli_version"] == __version__
     assert summary_payload["harness"] == "codex"
     assert summary_payload["tokens"] is None
     assert summary_payload["usd"] is None
@@ -131,3 +144,167 @@ def test_event_schema_validates_event_envelope():
     )
     validator = Draft202012Validator(schema)
     assert list(validator.iter_errors({"extra": "missing version"}))
+
+
+def test_routing_schema_accepts_unbounded_timeouts():
+    schema = _load_schema("routing-v1.schema.json")
+    payload = {
+        "schema_version": "1.0",
+        "run_id": "run-1",
+        "iteration": 1,
+        "source_triage_artifact": "triage-1.json",
+        "policy_decision": {
+            "matched_rule_ids": [],
+            "decision": "proposal_accepted",
+            "rationale": "accepted",
+        },
+        "effective_route": {
+            "route_tier": "efficient",
+            "harness": "codex",
+            "model": "gpt-test",
+            "reasoning_effort": "low",
+            "sandbox": "workspace-write",
+            "timeout_seconds": 0,
+        },
+        "fallbacks_considered": [],
+        "prompt": {
+            "path": "remediation-1-prompt.txt",
+            "sha256": "a" * 64,
+            "bytes": 1,
+            "fragments": [],
+        },
+    }
+
+    assert list(Draft202012Validator(schema).iter_errors(payload)) == []
+
+
+def test_routing_schema_accepts_fractional_timeouts():
+    schema = _load_schema("routing-v1.schema.json")
+    payload = {
+        "schema_version": "1.0",
+        "run_id": "run-1",
+        "iteration": 1,
+        "source_triage_artifact": "triage-1.json",
+        "policy_decision": {
+            "matched_rule_ids": [],
+            "decision": "proposal_accepted",
+            "rationale": "accepted",
+        },
+        "effective_route": {
+            "route_tier": "efficient",
+            "harness": "codex",
+            "model": "gpt-test",
+            "reasoning_effort": "low",
+            "sandbox": "workspace-write",
+            "timeout_seconds": 0.5,
+        },
+        "fallbacks_considered": [],
+        "prompt": {
+            "path": "remediation-1-prompt.txt",
+            "sha256": "a" * 64,
+            "bytes": 1,
+            "fragments": [],
+        },
+    }
+
+    assert list(Draft202012Validator(schema).iter_errors(payload)) == []
+
+
+def test_routing_schema_rejects_negative_timeouts():
+    schema = _load_schema("routing-v1.schema.json")
+    payload = {
+        "schema_version": "1.0",
+        "run_id": "run-1",
+        "iteration": 1,
+        "source_triage_artifact": "triage-1.json",
+        "policy_decision": {
+            "matched_rule_ids": [],
+            "decision": "proposal_accepted",
+            "rationale": "accepted",
+        },
+        "effective_route": {
+            "route_tier": "efficient",
+            "harness": "codex",
+            "model": "gpt-test",
+            "reasoning_effort": "low",
+            "sandbox": "workspace-write",
+            "timeout_seconds": -1,
+        },
+        "fallbacks_considered": [],
+        "prompt": {
+            "path": "remediation-1-prompt.txt",
+            "sha256": "a" * 64,
+            "bytes": 1,
+            "fragments": [],
+        },
+    }
+
+    errors = list(Draft202012Validator(schema).iter_errors(payload))
+
+    paths = _validation_error_paths(errors)
+    assert ["effective_route", "timeout_seconds"] in paths or any(
+        ".effective_route.timeout_seconds" in path for path in paths if isinstance(path, str)
+    )
+
+
+def test_routing_schema_accepts_minimal_reasoning_effort():
+    schema = _load_schema("routing-v1.schema.json")
+    payload = {
+        "schema_version": "1.0",
+        "run_id": "run-1",
+        "iteration": 1,
+        "source_triage_artifact": "triage-1.json",
+        "policy_decision": {
+            "matched_rule_ids": [],
+            "decision": "proposal_accepted",
+            "rationale": "accepted",
+        },
+        "effective_route": {
+            "route_tier": "efficient",
+            "harness": "codex",
+            "model": "gpt-test",
+            "reasoning_effort": "minimal",
+            "sandbox": "workspace-write",
+            "timeout_seconds": 1,
+        },
+        "model_proposal": {
+            "route_tier": "efficient",
+            "harness": "codex",
+            "model": "gpt-test",
+            "reasoning_effort": "minimal",
+            "sandbox": "workspace-write",
+            "timeout_seconds": 1,
+            "rationale": "accepted",
+        },
+        "fallbacks_considered": [],
+        "prompt": {
+            "path": "remediation-1-prompt.txt",
+            "sha256": "a" * 64,
+            "bytes": 1,
+            "fragments": [],
+        },
+    }
+
+    validate(payload, schema)
+
+
+def test_routing_outcome_schema_rejects_negative_metrics():
+    schema = _load_schema("routing-outcome-v1.schema.json")
+    payload = {
+        "schema_version": "1.0",
+        "run_id": "run-1",
+        "iteration": 1,
+        "source_routing_artifact": "routing-1.json",
+        "exit_code": 0,
+        "wall_time_seconds": -0.1,
+        "checks_passed": True,
+        "cost_usd": -1,
+        "tokens_consumed": -1,
+    }
+
+    errors = list(Draft202012Validator(schema).iter_errors(payload))
+
+    paths = _validation_error_paths(errors)
+    assert ["wall_time_seconds"] in paths or any(".wall_time_seconds" in path for path in paths if isinstance(path, str))
+    assert ["cost_usd"] in paths or any(".cost_usd" in path for path in paths if isinstance(path, str))
+    assert ["tokens_consumed"] in paths or any(".tokens_consumed" in path for path in paths if isinstance(path, str))

@@ -30,6 +30,7 @@ dependencies = ["jsonschema>=4.22", "tomli-w>=1.0"]
 dev = [
   "build>=1.2",
   "detect-secrets>=1.5",
+  "import-linter>=2.0",
   "mypy>=1.8",
   "pip-licenses>=5",
   "pre-commit>=4",
@@ -51,8 +52,8 @@ tui = [
 ]
 
 [project.scripts]
-code-review-loop = "code_review_loop.cli:main"
-revrem = "code_review_loop.cli:main"
+code-review-loop = "code_review_loop.cli.main:main"
+revrem = "code_review_loop.cli.main:main"
 
 [project.urls]
 Homepage = "https://github.com/GitCmurf/revrem"
@@ -64,7 +65,7 @@ Changelog = "https://github.com/GitCmurf/revrem/blob/main/CHANGELOG.md"
 where = ["src"]
 
 [tool.setuptools.package-data]
-code_review_loop = ["prompts/*.txt", "schemas/*.json"]
+code_review_loop = ["prompts/*.txt", "prompts/fragments/*.txt", "schemas/*.json"]
 
 [tool.pytest.ini_options]
 addopts = "-ra"
@@ -79,8 +80,154 @@ target-version = "py311"
 select = ["E", "F", "I", "UP", "B", "SIM"]
 ignore = ["E501"]
 
+[tool.ruff.lint.per-file-ignores]
+"src/code_review_loop/cli/__init__.py" = ["E402", "I001"]
+"src/code_review_loop/runner.py" = ["E402", "I001"]
+
 [tool.mypy]
 python_version = "3.11"
 check_untyped_defs = true
 warn_return_any = true
 warn_unused_configs = true
+
+# REVREM-TASK-003 Wave C: import-linter guards keep domain leaf modules below
+# the CLI package, with stricter core/adapter/runner boundaries below.
+[tool.importlinter]
+root_packages = ["code_review_loop", "tests"]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Domain leaf modules must not import the CLI package"
+type = "forbidden"
+source_modules = [
+  "code_review_loop.events",
+  "code_review_loop.budgets",
+  "code_review_loop.triage",
+  "code_review_loop.policy",
+  "code_review_loop.artifacts",
+  "code_review_loop.fingerprints",
+  "code_review_loop.redaction",
+  "code_review_loop.run_history",
+  "code_review_loop.core.state",
+]
+forbidden_modules = ["code_review_loop.cli"]
+
+# REVREM-TASK-003 Wave C remediation: make the dependency rule real. Core is a
+# dependency-free decision layer and must not reach edge drivers, adapters,
+# terminal/TUI integrations, profiles, or argparse.
+[[tool.importlinter.contracts]]
+name = "Core must not import edge or adapter modules"
+type = "forbidden"
+source_modules = [
+  "code_review_loop.core",
+  "code_review_loop.core.state",
+  "code_review_loop.core.ports",
+  "code_review_loop.core.engine",
+  "code_review_loop.core.outcome",
+]
+forbidden_modules = [
+  "code_review_loop.adapters",
+  "code_review_loop.cli",
+  "code_review_loop.runner",
+  "code_review_loop.profiles",
+  "code_review_loop.terminal",
+  "code_review_loop.tui",
+  "argparse",
+]
+
+# REVREM-TASK-003 Wave B1b: policy.py top-level imports must not reach the
+# profiles edge module. The lazy import of harnesses inside check_route_capabilities
+# is a function-local import and is intentionally permitted here.
+[[tool.importlinter.contracts]]
+name = "policy.py must not import profiles at the top level (B1b, C4 burn-down)"
+type = "forbidden"
+source_modules = [
+  "code_review_loop.policy",
+]
+forbidden_modules = [
+  "code_review_loop.profiles",
+]
+
+[[tool.importlinter.contracts]]
+name = "Adapters must not import CLI loop drivers (Wave C3b)"
+type = "forbidden"
+source_modules = [
+  "code_review_loop.adapters",
+]
+forbidden_modules = [
+  "code_review_loop.cli",
+  "code_review_loop.runner",
+]
+
+[[tool.importlinter.contracts]]
+name = "Resume planning must not import the runner (Wave C)"
+type = "forbidden"
+source_modules = [
+  "code_review_loop.resume",
+]
+forbidden_modules = [
+  "code_review_loop.runner",
+]
+
+[[tool.importlinter.contracts]]
+name = "CLI commands must use the application boundary"
+type = "forbidden"
+allow_indirect_imports = true
+source_modules = [
+  "code_review_loop.cli",
+]
+forbidden_modules = [
+  "code_review_loop.runner",
+]
+
+[[tool.importlinter.contracts]]
+name = "Runner shell must not import CLI or private runner"
+type = "forbidden"
+source_modules = [
+  "code_review_loop.runner_shell",
+]
+forbidden_modules = [
+  "code_review_loop.cli",
+  "code_review_loop.runner",
+]
+
+[[tool.importlinter.contracts]]
+name = "Wave D engine acceptance tests stay core-only"
+type = "forbidden"
+source_modules = [
+  "tests.test_engine_run",
+]
+forbidden_modules = [
+  "code_review_loop.adapters",
+  "code_review_loop.application",
+  "code_review_loop.artifacts",
+  "code_review_loop.budgets",
+  "code_review_loop.cli",
+  "code_review_loop.config",
+  "code_review_loop.diagnostics",
+  "code_review_loop.events",
+  "code_review_loop.harnesses",
+  "code_review_loop.policy",
+  "code_review_loop.profiles",
+  "code_review_loop.reporting",
+  "code_review_loop.resume",
+  "code_review_loop.runner",
+  "code_review_loop.runner_shell",
+  "code_review_loop.triage",
+  "code_review_loop.tui",
+]
+
+[[tool.importlinter.contracts]]
+name = "Wave D headless application tests stay non-CLI"
+type = "forbidden"
+source_modules = [
+  "tests.support.headless",
+  "tests.test_application_headless_integration",
+  "tests.test_extensibility_swap",
+]
+forbidden_modules = [
+  "argparse",
+  "code_review_loop.cli",
+  "code_review_loop.adapters.subprocess_runner",
+  "code_review_loop.tui",
+]

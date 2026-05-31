@@ -1,0 +1,39 @@
+{
+  "confirmed_findings": [
+    {
+      "affected_paths": ["src/a.py", "src/b.py", "src/c.py", "src/d.py", "src/e.py", "src/f.py"],
+      "fingerprint": "f1:architectural",
+      "rationale": "The change crosses six modules and requires a shared abstraction.",
+      "severity": "high",
+      "summary": "Refactor cross-module orchestration"
+    }
+  ],
+  "rejected_findings": [],
+  "needs_more_info": [],
+  "implementation_order": ["f1:architectural"],
+  "verification_commands": ["pytest"],
+  "parsing_warnings": [],
+  "classification": {
+    "domain_tags": ["public-api"],
+    "risk_level": "high",
+    "refactor_depth": "architectural",
+    "affected_modules": ["src/a.py", "src/b.py", "src/c.py", "src/d.py", "src/e.py", "src/f.py"],
+    "estimated_blast_radius": {"module_count": 6, "finding_count": 1},
+    "safety_signals": [],
+    "failed_check_signals": []
+  },
+  "route_proposal": {
+    "route_tier": "frontier",
+    "harness": "codex",
+    "model": "frontier-model",
+    "reasoning_effort": "high",
+    "sandbox": "workspace-write",
+    "timeout_seconds": 1800,
+    "rationale": "Architectural refactoring across six modules requires frontier reasoning."
+  },
+  "prompt_requirements": {
+    "required_fragments": ["engineering-principles"],
+    "definition_of_done": ["Preserve public API behavior and add regression coverage."],
+    "triage_prompt_draft": "Plan the abstraction before editing modules."
+  }
+}

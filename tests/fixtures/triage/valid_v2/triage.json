@@ -1,0 +1,50 @@
+{
+  "schema_version": "2.0",
+  "run_id": "run-123",
+  "source_review_artifact": "review-1.txt",
+  "prompt_version": "triage-v2",
+  "confirmed_findings": [
+    {
+      "fingerprint": "f1:c6ace015ccd20120",
+      "summary": "Fix summary contract",
+      "severity": "medium",
+      "affected_paths": ["src/code_review_loop/artifacts.py"],
+      "rationale": "The artifact schema requires a summary field."
+    }
+  ],
+  "rejected_findings": [],
+  "needs_more_info": [],
+  "implementation_order": ["f1:c6ace015ccd20120"],
+  "verification_commands": ["pytest tests/test_artifacts.py"],
+  "parsing_warnings": [],
+  "classification": {
+    "domain_tags": ["artifact-schema", "artifact-output"],
+    "risk_level": "medium",
+    "refactor_depth": "localised",
+    "affected_modules": ["src/code_review_loop/artifacts.py"],
+    "estimated_blast_radius": {
+      "module_count": 1,
+      "finding_count": 1
+    },
+    "safety_signals": ["artifact-contract"],
+    "failed_check_signals": ["pytest:tests/test_artifacts.py"]
+  },
+  "route_proposal": {
+    "route_tier": "midtier",
+    "harness": "codex",
+    "model": "gpt-5.4-mini",
+    "reasoning_effort": "medium",
+    "sandbox": "workspace-write",
+    "timeout_seconds": 900,
+    "rationale": "The confirmed finding is a local artifact schema contract fix with a targeted artifact test."
+  },
+  "prompt_requirements": {
+    "required_fragments": ["engineering-principles"],
+    "definition_of_done": [
+      "Fix the artifact schema summary contract.",
+      "Add or update regression coverage.",
+      "Run the configured checks."
+    ],
+    "triage_prompt_draft": "Please implement the artifact schema summary fix."
+  }
+}

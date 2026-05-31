@@ -102,7 +102,10 @@ revrem doctor --base main --check "pytest -q"
 ```
 
 `revrem doctor` validates the local Git base, writable artifact path, Codex
-executable, and configured check executables without invoking a model. Relative
+executable, routed remediation harness executables, and configured check
+executables without invoking a model. The internal `fake` harness used by local
+tests is exempt from PATH checks because it is handled by RevRem itself rather
+than launched as a standalone binary. Relative
 `--artifact-dir` values are resolved against the doctor `cwd`, not the process
 working directory. It warns when profile timeouts explicitly disable a phase
 timeout and when the current locale is not UTF-8 capable. Use `--format json`
@@ -143,12 +146,15 @@ Optional features include finding triage, JSON summaries, automatic remediation
 commits after passing checks, Rich progress rendering, and a dependency-gated
 Textual TUI.
 
-When triage output is structured JSON, RevRem validates it against
-`triage-v1.schema.json`, writes `triage-N.json`, and forwards the structured
-handoff plus the original review context to remediation. Invalid structured
-triage writes `diagnostics-N.json` and fails safe by continuing with the original
-review context. The bug-report bundle includes both `diagnostics.json` and
-numbered `diagnostics-N.json` artifacts so triage failures stay diagnosable.
+When triage output is structured JSON, RevRem validates it against the selected
+triage schema, writes `triage-N.json` with the payload's own `schema_version`,
+and forwards the structured handoff plus the original review context to
+remediation. Invalid structured triage writes `diagnostics-N.json` and fails
+safe by continuing with the original review context. Resumed runs restore the
+saved `--trusted-repo` setting so repo-local prompt fragments keep working when
+the original run relied on them. The bug-report bundle includes both
+`diagnostics.json` and numbered `diagnostics-N.json` artifacts so triage
+failures stay diagnosable.
 Structured triage also supports explicit suppressions via `revrem suppress`:
 matching confirmed findings are moved to
 `suppressed_findings`, remain visible in `triage-N.json`, and do not trigger

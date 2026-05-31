@@ -1,12 +1,30 @@
 from __future__ import annotations
 
 import json
+from importlib import import_module
 from pathlib import Path
 
 import pytest
 
-from code_review_loop import cli as MODULE
-from code_review_loop import events
+import tests.support.application_runner as runner_mod
+from code_review_loop import budgets, events, harnesses
+from code_review_loop import resume as resume_mod
+from code_review_loop.adapters import git as git_adapter
+from code_review_loop.adapters import phase_support
+from code_review_loop.adapters import subprocess_runner as subprocess_runner_mod
+from code_review_loop.config import LoopConfig
+from code_review_loop.core.ports import CommandResult
+
+cli_main = import_module("code_review_loop.cli.main")
+
+
+def test_git_preflight_stdout_treats_missing_stdout_as_empty(tmp_path, monkeypatch):
+    def fake_run_git_preflight(cwd, args):
+        return CommandResult(list(args), 0, stdout=None)
+
+    monkeypatch.setattr(git_adapter, "run_git_preflight", fake_run_git_preflight)
+
+    assert git_adapter.git_preflight_stdout(tmp_path, ["rev-parse", "HEAD"]) is None
 
 
 def write_resume_run(
@@ -74,12 +92,12 @@ def write_resume_run(
 def install_matching_git(monkeypatch, *, head: str = "head-sha", base: str = "base-sha") -> None:
     def fake_git(cwd, args):
         if list(args) == ["rev-parse", "HEAD"]:
-            return MODULE.CommandResult(["git", *args], 0, stdout=f"{head}\n")
+            return CommandResult(["git", *args], 0, stdout=f"{head}\n")
         if list(args) == ["rev-parse", "--verify", "main^{commit}"]:
-            return MODULE.CommandResult(["git", *args], 0, stdout=f"{base}\n")
-        return MODULE.CommandResult(["git", *args], 1, stderr="unexpected")
+            return CommandResult(["git", *args], 0, stdout=f"{base}\n")
+        return CommandResult(["git", *args], 1, stderr="unexpected")
 
-    monkeypatch.setattr(MODULE, "run_git_preflight", fake_git)
+    monkeypatch.setattr(git_adapter, "run_git_preflight", fake_git)
 
 
 def test_resume_preconditions_pass_for_matching_git_state(tmp_path, monkeypatch):
@@ -87,7 +105,7 @@ def test_resume_preconditions_pass_for_matching_git_state(tmp_path, monkeypatch)
     write_resume_run(run_dir)
     install_matching_git(monkeypatch)
 
-    issues = MODULE.resume_precondition_issues(run_dir, cwd=tmp_path)
+    issues = resume_mod.resume_precondition_issues(run_dir, cwd=tmp_path)
 
     assert issues == []
 
@@ -98,7 +116,7 @@ def test_resume_preconditions_pass_for_relative_artifact_paths(tmp_path, monkeyp
     write_resume_run(run_dir)
     install_matching_git(monkeypatch)
 
-    issues = MODULE.resume_precondition_issues(run_dir, cwd=tmp_path)
+    issues = resume_mod.resume_precondition_issues(run_dir, cwd=tmp_path)
 
     assert issues == []
 
@@ -119,7 +137,7 @@ def test_resume_preconditions_block_persisted_budget_ceiling(tmp_path, monkeypat
     )
     install_matching_git(monkeypatch)
 
-    issues = MODULE.resume_precondition_issues(run_dir, cwd=tmp_path)
+    issues = resume_mod.resume_precondition_issues(run_dir, cwd=tmp_path)
 
     assert [issue.code for issue in issues][:1] == ["revrem.resume.token_budget_exhausted"]
     assert any(issue.code == "revrem.resume.token_budget_exhausted" for issue in issues)
@@ -141,7 +159,7 @@ def test_resume_preconditions_block_persisted_usd_ceiling(tmp_path, monkeypatch)
     )
     install_matching_git(monkeypatch)
 
-    issues = MODULE.resume_precondition_issues(run_dir, cwd=tmp_path)
+    issues = resume_mod.resume_precondition_issues(run_dir, cwd=tmp_path)
 
     assert any(issue.code == "revrem.resume.usd_budget_exhausted" for issue in issues)
 
@@ -158,7 +176,7 @@ def test_resume_preconditions_block_persisted_wall_ceiling(tmp_path, monkeypatch
     )
     install_matching_git(monkeypatch)
 
-    issues = MODULE.resume_precondition_issues(run_dir, cwd=tmp_path)
+    issues = resume_mod.resume_precondition_issues(run_dir, cwd=tmp_path)
 
     assert any(issue.code == "revrem.resume.wall_budget_exhausted" for issue in issues)
 
@@ -186,10 +204,10 @@ def test_resume_run_rejects_persisted_budget_ceiling(tmp_path, monkeypatch):
         called = True
         raise AssertionError("run_loop should not be invoked when the budget ceiling is already exhausted")
 
-    monkeypatch.setattr(MODULE, "run_loop", fail_if_called)
+    monkeypatch.setattr(runner_mod, "run_loop", fail_if_called)
 
     with pytest.raises(ValueError, match="remaining token budget headroom"):
-        MODULE.resume_run(run_dir)
+        runner_mod.resume_run(run_dir, fail_if_called)
 
     assert called is False
 
@@ -213,10 +231,10 @@ def test_resume_run_rejects_persisted_wall_budget_ceiling(tmp_path, monkeypatch)
         called = True
         raise AssertionError("run_loop should not be invoked when the wall budget is already exhausted")
 
-    monkeypatch.setattr(MODULE, "run_loop", fail_if_called)
+    monkeypatch.setattr(runner_mod, "run_loop", fail_if_called)
 
     with pytest.raises(ValueError, match="remaining wall budget headroom"):
-        MODULE.resume_run(run_dir)
+        runner_mod.resume_run(run_dir, fail_if_called)
 
     assert called is False
 
@@ -245,51 +263,50 @@ def test_resume_run_rejects_legacy_persisted_budget_ceiling(tmp_path, monkeypatc
         called = True
         raise AssertionError("run_loop should not be invoked when the budget ceiling is already exhausted")
 
-    monkeypatch.setattr(MODULE, "run_loop", fail_if_called)
+    monkeypatch.setattr(runner_mod, "run_loop", fail_if_called)
 
     with pytest.raises(ValueError, match="remaining token budget headroom"):
-        MODULE.resume_run(run_dir)
+        runner_mod.resume_run(run_dir, fail_if_called)
 
     assert called is False
 
 
 def test_resume_loop_config_seeds_cumulative_wall_budget_state(tmp_path, monkeypatch):
-    monkeypatch.setattr(MODULE, "lexical_git_repo_root", lambda _cwd: tmp_path)
-    monkeypatch.setattr(MODULE.budgets, "monotonic", lambda: 112.5)
+    monkeypatch.setattr(phase_support, "lexical_git_repo_root", lambda _cwd: tmp_path)
+    monkeypatch.setattr(budgets, "monotonic", lambda: 112.5)
 
     def fake_run_git_preflight(cwd, args):
         if list(args) == ["rev-parse", "HEAD"]:
-            return MODULE.CommandResult(["git", *args], 0, stdout="head-sha\n")
+            return CommandResult(["git", *args], 0, stdout="head-sha\n")
         if list(args) == ["rev-parse", "--verify", "main^{commit}"]:
-            return MODULE.CommandResult(["git", *args], 0, stdout="base-sha\n")
+            return CommandResult(["git", *args], 0, stdout="base-sha\n")
         if list(args) == ["merge-base", "HEAD", "main"]:
-            return MODULE.CommandResult(["git", *args], 0, stdout="merge-sha\n")
-        return MODULE.CommandResult(["git", *args], 1, stderr="unexpected")
+            return CommandResult(["git", *args], 0, stdout="merge-sha\n")
+        return CommandResult(["git", *args], 1, stderr="unexpected")
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
-        return MODULE.CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+        return CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
 
-    monkeypatch.setattr(MODULE, "run_git_preflight", fake_run_git_preflight)
+    monkeypatch.setattr(git_adapter, "run_git_preflight", fake_run_git_preflight)
 
-    config = MODULE.LoopConfig(
+    config = LoopConfig(
         base="main",
         max_iterations=1,
         codex_bin="codex",
         cwd=tmp_path,
         artifact_dir=tmp_path / "artifacts",
-        budget_config=MODULE.budgets.BudgetConfig(max_wall_seconds=30),
-        budget_state=MODULE.budgets.BudgetState(started_at_monotonic=100.0),
+        budget_config=budgets.BudgetConfig(max_wall_seconds=30),
     )
 
-    summary = MODULE.run_loop(config, runner)
+    summary = runner_mod.run_loop(config, runner, budget_state=budgets.BudgetState(started_at_monotonic=100.0)).to_dict()
 
     assert summary["budgets"]["wall_elapsed_seconds"] == 12.5
 
-    monkeypatch.setattr(MODULE.budgets, "monotonic", lambda: 200.0)
-    resumed = MODULE.resume_loop_config(summary, run_dir=tmp_path / "artifacts")
+    monkeypatch.setattr(budgets, "monotonic", lambda: 200.0)
+    config, budget_state = resume_mod.resume_loop_config(summary, run_dir=tmp_path / "artifacts")
 
-    assert resumed.budget_state is not None
-    assert resumed.budget_state.started_at_monotonic == 187.5
+    assert budget_state is not None
+    assert budget_state.started_at_monotonic == 187.5
 
 
 def test_resume_loop_config_uses_legacy_budget_ceiling(tmp_path):
@@ -312,7 +329,7 @@ def test_resume_loop_config_uses_legacy_budget_ceiling(tmp_path):
         },
     }
 
-    resumed = MODULE.resume_loop_config(summary, run_dir=tmp_path)
+    resumed, _budget_state = resume_mod.resume_loop_config(summary, run_dir=tmp_path)
 
     assert resumed.budget_config.max_wall_seconds == 10
     assert resumed.budget_config.max_tokens == 100
@@ -320,12 +337,191 @@ def test_resume_loop_config_uses_legacy_budget_ceiling(tmp_path):
     assert resumed.budget_config.soft_warn_fraction == 0.8
 
 
+def test_resume_loop_config_restores_v2_triage_profile(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.test.triage]
+enabled = true
+contract = "v2"
+[profiles.test.triage.routing]
+enabled = true
+default_route = "mutated"
+[profiles.test.triage.routes.mutated]
+harness = "fake"
+""",
+        encoding="utf-8",
+    )
+    persisted_profile = {
+        "name": "test",
+        "triage": {
+            "enabled": True,
+            "contract": "v2",
+            "routing": {
+                "enabled": True,
+                "default_route": "midtier",
+            },
+            "routes": {
+                "midtier": {"harness": "codex"},
+                "frontier": {"harness": "claude"},
+            },
+        },
+    }
+    run_dir = tmp_path / "run"
+    write_resume_run(
+        run_dir,
+        resume_config={
+            "base": "main",
+            "max_iterations": 1,
+            "codex_bin": "codex",
+            "profile_name": "test",
+            "triage_contract": "v2",
+            "profile_v2": persisted_profile,
+            "review_harness": "fake",
+            "remediation_harness": "fake",
+            "review_model": "review_clear",
+            "remediation_model": "remediation",
+            "final_review": True,
+            "check_commands": [],
+        },
+    )
+
+    resumed, _budget_state = resume_mod.resume_loop_config(json.loads((run_dir / "summary.json").read_text()), run_dir=run_dir)
+
+    assert resumed.profile_name == "test"
+    assert resumed.triage_contract == "v2"
+    assert resumed.profile_v2 is not None
+    assert resumed.profile_v2.triage.contract == "v2"
+    assert tuple(route.harness for route in resumed.profile_v2.triage.routes.values()) == ("codex", "claude")
+    assert resumed.profile_v2.triage.routing.default_route == "midtier"
+
+
+def test_resume_loop_config_restores_commit_message_settings(tmp_path):
+    run_dir = tmp_path / "run"
+    write_resume_run(
+        run_dir,
+        resume_config={
+            "base": "main",
+            "max_iterations": 1,
+            "codex_bin": "codex",
+            "review_harness": "fake",
+            "remediation_harness": "fake",
+            "commit_after_remediation": True,
+            "commit_message_harness": "fake",
+            "commit_message_model": "commit-model",
+            "commit_message_prompt": "Summarize staged changes.",
+            "commit_message_prompt_overridden": True,
+            "commit_reasoning_effort": "high",
+            "commit_timeout_seconds": 0,
+            "commit_on_hook_failure": "no-verify",
+            "review_model": "review_clear",
+            "remediation_model": "remediation",
+            "final_review": True,
+            "check_commands": [],
+        },
+    )
+
+    resumed, _budget_state = resume_mod.resume_loop_config(
+        json.loads((run_dir / "summary.json").read_text(encoding="utf-8")), run_dir=run_dir
+    )
+
+    assert resumed.commit_after_remediation is True
+    assert resumed.commit_message_harness == "fake"
+    assert resumed.commit_message_model == "commit-model"
+    assert resumed.commit_message_prompt == "Summarize staged changes."
+    assert resumed.commit_message_prompt_overridden is True
+    assert resumed.commit_reasoning_effort == "high"
+    assert resumed.commit_timeout_seconds == 0
+    assert resumed.commit_on_hook_failure == "no-verify"
+
+
+def test_resume_config_payload_and_loop_config_restore_trusted_repo(tmp_path):
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        trusted_repo=True,
+    )
+    payload = resume_mod.resume_config_payload(config)
+    run_dir = tmp_path / "run"
+    write_resume_run(run_dir, resume_config=payload)
+
+    resumed, _budget_state = resume_mod.resume_loop_config(
+        json.loads((run_dir / "summary.json").read_text(encoding="utf-8")), run_dir=run_dir
+    )
+
+    assert payload["trusted_repo"] is True
+    assert resumed.trusted_repo is True
+
+
+def test_resume_config_payload_omits_default_extension_fields(tmp_path):
+    payload = resume_mod.resume_config_payload(
+        LoopConfig(
+            base="main",
+            max_iterations=1,
+            codex_bin="codex",
+            cwd=tmp_path,
+            artifact_dir=tmp_path / "artifacts",
+            final_review=False,
+        )
+    )
+
+    assert "commit_message_harness" not in payload
+    assert "commit_message_model" not in payload
+    assert "commit_message_prompt" not in payload
+    assert "commit_message_prompt_overridden" not in payload
+    assert "commit_reasoning_effort" not in payload
+    assert "commit_timeout_seconds" not in payload
+    assert "trusted_repo" not in payload
+    assert "reasoning_effort" not in payload
+    assert "review_reasoning_effort" not in payload
+    assert "remediation_reasoning_effort" not in payload
+    assert "triage_reasoning_effort" not in payload
+    assert "profile_v2" not in payload
+
+
+def test_resume_config_payload_persists_configured_extension_fields(tmp_path):
+    payload = resume_mod.resume_config_payload(
+        LoopConfig(
+            base="main",
+            max_iterations=1,
+            codex_bin="codex",
+            cwd=tmp_path,
+            artifact_dir=tmp_path / "artifacts",
+            commit_message_harness="fake",
+            commit_message_model="commit-model",
+            commit_message_prompt="Summarize staged changes.",
+            commit_message_prompt_overridden=True,
+            commit_reasoning_effort="high",
+            commit_timeout_seconds=0,
+            reasoning_effort="medium",
+            review_reasoning_effort="low",
+            remediation_reasoning_effort="high",
+            triage_reasoning_effort="minimal",
+        )
+    )
+
+    assert payload["commit_message_harness"] == "fake"
+    assert payload["commit_message_model"] == "commit-model"
+    assert payload["commit_message_prompt"] == "Summarize staged changes."
+    assert payload["commit_message_prompt_overridden"] is True
+    assert payload["commit_reasoning_effort"] == "high"
+    assert payload["commit_timeout_seconds"] == 0
+    assert payload["reasoning_effort"] == "medium"
+    assert payload["review_reasoning_effort"] == "low"
+    assert payload["remediation_reasoning_effort"] == "high"
+    assert payload["triage_reasoning_effort"] == "minimal"
+
+
 def test_resume_preconditions_block_head_mismatch(tmp_path, monkeypatch):
     run_dir = tmp_path / "run"
     write_resume_run(run_dir)
     install_matching_git(monkeypatch, head="different-head")
 
-    issues = MODULE.resume_precondition_issues(run_dir, cwd=tmp_path)
+    issues = resume_mod.resume_precondition_issues(run_dir, cwd=tmp_path)
 
     assert [issue.code for issue in issues] == ["revrem.resume.head_mismatch"]
 
@@ -335,7 +531,7 @@ def test_resume_preconditions_block_base_mismatch(tmp_path, monkeypatch):
     write_resume_run(run_dir)
     install_matching_git(monkeypatch, base="different-base")
 
-    issues = MODULE.resume_precondition_issues(run_dir, cwd=tmp_path)
+    issues = resume_mod.resume_precondition_issues(run_dir, cwd=tmp_path)
 
     assert [issue.code for issue in issues] == ["revrem.resume.base_mismatch"]
 
@@ -345,7 +541,7 @@ def test_resume_preconditions_block_truncated_events(tmp_path, monkeypatch):
     write_resume_run(run_dir, truncated=True)
     install_matching_git(monkeypatch)
 
-    issues = MODULE.resume_precondition_issues(run_dir, cwd=tmp_path)
+    issues = resume_mod.resume_precondition_issues(run_dir, cwd=tmp_path)
 
     assert [issue.code for issue in issues] == ["revrem.resume.truncated_events"]
 
@@ -353,20 +549,20 @@ def test_resume_preconditions_block_truncated_events(tmp_path, monkeypatch):
 def test_resume_main_returns_code_4_for_missing_summary(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
 
-    exit_code = MODULE.main(["resume", str(tmp_path / "missing")])
+    exit_code = cli_main.main(["resume", str(tmp_path / "missing")])
 
     assert exit_code == 4
     assert "revrem.resume.missing_summary" in capsys.readouterr().out
 
 
 def test_resume_continues_from_existing_review_artifact(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv(MODULE.harnesses.FAKE_HARNESS_ENV, "1")
+    monkeypatch.setenv(harnesses.FAKE_HARNESS_ENV, "1")
     monkeypatch.chdir(tmp_path)
     run_dir = tmp_path / "run"
     write_resume_run(run_dir)
     install_matching_git(monkeypatch)
 
-    exit_code = MODULE.main(["resume", str(run_dir)])
+    exit_code = cli_main.main(["resume", str(run_dir)])
     resumed_summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
 
     assert exit_code == 0
@@ -379,16 +575,16 @@ def test_resume_continues_from_existing_review_artifact(tmp_path, monkeypatch, c
 
 
 def test_resume_and_uninterrupted_fake_run_have_same_final_status(tmp_path, monkeypatch):
-    monkeypatch.setenv(MODULE.harnesses.FAKE_HARNESS_ENV, "1")
+    monkeypatch.setenv(harnesses.FAKE_HARNESS_ENV, "1")
     monkeypatch.chdir(tmp_path)
     run_dir = tmp_path / "run"
     uninterrupted_dir = tmp_path / "uninterrupted"
     write_resume_run(run_dir)
     install_matching_git(monkeypatch)
 
-    resumed = MODULE.resume_run(run_dir)
-    uninterrupted = MODULE.run_loop(
-        MODULE.LoopConfig(
+    resumed = runner_mod.resume_run(run_dir, subprocess_runner_mod.default_runner)
+    uninterrupted = runner_mod.run_loop(
+        LoopConfig(
             base="main",
             max_iterations=1,
             codex_bin="codex",
@@ -396,8 +592,10 @@ def test_resume_and_uninterrupted_fake_run_have_same_final_status(tmp_path, monk
             artifact_dir=uninterrupted_dir,
             review_harness="fake",
             review_model="review_clear",
-        )
+        ),
+        subprocess_runner_mod.default_runner,
     )
 
-    assert resumed["final_status"] == uninterrupted["final_status"] == "clear"
-    assert resumed["stopped_reason"] == uninterrupted["stopped_reason"] == "review_clear"
+    uninterrupted_summary = uninterrupted.to_dict()
+    assert resumed.summary["final_status"] == uninterrupted_summary["final_status"] == "clear"
+    assert resumed.summary["stopped_reason"] == uninterrupted_summary["stopped_reason"] == "review_clear"

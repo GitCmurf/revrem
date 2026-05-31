@@ -1,0 +1,39 @@
+{
+  "confirmed_findings": [
+    {
+      "affected_paths": ["src/reserved.py"],
+      "fingerprint": "f1:unavailable-harness",
+      "rationale": "The route points to a known but unavailable harness.",
+      "severity": "medium",
+      "summary": "Exercise unavailable harness fallback"
+    }
+  ],
+  "rejected_findings": [],
+  "needs_more_info": [],
+  "implementation_order": ["f1:unavailable-harness"],
+  "verification_commands": [],
+  "parsing_warnings": [],
+  "classification": {
+    "domain_tags": ["tests"],
+    "risk_level": "medium",
+    "refactor_depth": "localised",
+    "affected_modules": ["src/reserved.py"],
+    "estimated_blast_radius": {"module_count": 1, "finding_count": 1},
+    "safety_signals": [],
+    "failed_check_signals": []
+  },
+  "route_proposal": {
+    "route_tier": "reserved-route",
+    "harness": "reserved",
+    "model": "reserved-model",
+    "reasoning_effort": "medium",
+    "sandbox": "workspace-write",
+    "timeout_seconds": 600,
+    "rationale": "This fixture should require a configured fallback before execution."
+  },
+  "prompt_requirements": {
+    "required_fragments": [],
+    "definition_of_done": ["Unavailable harness routes must fall back explicitly or fail."],
+    "triage_prompt_draft": "Unavailable harness fixture."
+  }
+}

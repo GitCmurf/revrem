@@ -1,26 +1,16 @@
-"""Harness metadata for review/remediation backends.
-
-The loop only executes Codex today, but profiles should not bake Codex-specific
-shape into user configuration. This registry keeps validation and future command
-construction behind a small boundary.
-"""
+"""Harness metadata and command adapters for review/remediation backends."""
 
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Literal, cast
+from types import MappingProxyType
+from typing import Any, Protocol
 
-HARNESS_CAPABILITY_SCHEMA_VERSION = "1.0"
-FAKE_HARNESS_ENV = "REVREM_ALLOW_FAKE_HARNESS"
-FAKE_HARNESS_FIXTURE_ENV = "REVREM_FAKE_HARNESS_FIXTURE_DIR"
-FAKE_HARNESS_COMMAND = "revrem-fake-harness"
-FAKE_HARNESS_TOKEN_CHARGES = {
-    "cost_charge": 10,
-    "cost_ceiling": 10,
-}
-CostReporting = Literal["tokens", "usd", "none"]
+CODEX_MINIMAL_UNSUPPORTED_COMMIT_MODELS = frozenset({"gpt-5.3-codex-spark"})
+CODEX_MINIMAL_UNSUPPORTED_ADJUSTMENT = "codex_minimal_unsupported_by_model"
 
 
 @dataclass(frozen=True)
@@ -34,16 +24,8 @@ class HarnessCapabilities:
     timeout_supported: bool
     cancellation_supported: bool
     structured_output_supported: bool
-    cost_reporting: CostReporting
+    cost_reporting: str  # "none", "tokens", "usd"
     supported_models: tuple[str, ...]
-    contract_version: str = HARNESS_CAPABILITY_SCHEMA_VERSION
-
-    def to_dict(self) -> dict[str, object]:
-        payload = asdict(self)
-        payload["schema_version"] = HARNESS_CAPABILITY_SCHEMA_VERSION
-        payload["sandbox_modes"] = list(self.sandbox_modes)
-        payload["supported_models"] = list(self.supported_models)
-        return cast(dict[str, object], payload)
 
 
 @dataclass(frozen=True)
@@ -67,20 +49,40 @@ class PhaseCommandRequest:
     color: str = "never"
     full_auto: bool = True
     json_output: bool = False
-    output_last_message: bool = True
     output_last_message_path: Path | None = None
 
 
-class HarnessAdapter:
-    name: str
+@dataclass(frozen=True)
+class ReasoningEffortResolution:
+    effective: str | None
+    requested: str | None
+    adjustment: str | None = None
 
-    def command(self, request: PhaseCommandRequest) -> list[str]:
-        raise NotImplementedError
+
+class HarnessAdapter(Protocol):
+    def command(self, request: PhaseCommandRequest) -> list[str]: ...
+
+
+def resolve_commit_message_reasoning_effort(
+    *,
+    harness: str,
+    model: str | None,
+    requested_effort: str | None,
+) -> ReasoningEffortResolution:
+    if (
+        harness == "codex"
+        and requested_effort == "minimal"
+        and model in CODEX_MINIMAL_UNSUPPORTED_COMMIT_MODELS
+    ):
+        return ReasoningEffortResolution(
+            effective="low",
+            requested=requested_effort,
+            adjustment=CODEX_MINIMAL_UNSUPPORTED_ADJUSTMENT,
+        )
+    return ReasoningEffortResolution(effective=requested_effort, requested=requested_effort)
 
 
 class CodexHarnessAdapter(HarnessAdapter):
-    name = "codex"
-
     def command(self, request: PhaseCommandRequest) -> list[str]:
         if request.role == "review":
             return self._review_command(request)
@@ -99,6 +101,8 @@ class CodexHarnessAdapter(HarnessAdapter):
     def _exec_command(self, request: PhaseCommandRequest) -> list[str]:
         command = [request.executable, "exec"]
         command.extend(_codex_config_args(request.reasoning_effort))
+        if request.role == "commit-message":
+            command.extend(["-c", 'web_search="disabled"'])
         if request.role == "remediation" and request.full_auto:
             command.append("--full-auto")
         command.extend(["--sandbox", request.sandbox])
@@ -109,7 +113,6 @@ class CodexHarnessAdapter(HarnessAdapter):
             command.extend(["--model", request.model])
         if (
             request.role == "remediation"
-            and request.output_last_message
             and request.output_last_message_path is not None
         ):
             command.extend(["--output-last-message", str(request.output_last_message_path)])
@@ -117,7 +120,48 @@ class CodexHarnessAdapter(HarnessAdapter):
         return command
 
 
+
+class ClaudeHarnessAdapter(HarnessAdapter):
+    def command(self, request: PhaseCommandRequest) -> list[str]:
+        command = [request.executable, "--print"]
+        command.extend(_claude_permission_args(request))
+        if request.model:
+            command.extend(["--model", request.model])
+        return command
+
+
+class GeminiHarnessAdapter(HarnessAdapter):
+    def command(self, request: PhaseCommandRequest) -> list[str]:
+        # The gemini CLI runs non-interactively with `-p/--prompt <text>`; the
+        # prompt is the flag's value (stdin is only appended). --prompt is kept
+        # last so prepare_prompt_invocation can supply the prompt as its value.
+        command = [request.executable]
+        command.extend(_gemini_permission_args(request))
+        if request.model:
+            command.extend(["--model", request.model])
+        command.append("--prompt")
+        return command
+
+
+class OpenCodeHarnessAdapter(HarnessAdapter):
+    def command(self, request: PhaseCommandRequest) -> list[str]:
+        command = [request.executable, "run"]
+        command.extend(_opencode_permission_args(request))
+        if request.model:
+            command.extend(["--model", request.model])
+        return command
+
+
+class KiloHarnessAdapter(HarnessAdapter):
+    def command(self, request: PhaseCommandRequest) -> list[str]:
+        command = [request.executable, "run"]
+        command.extend(_kilo_permission_args(request))
+        if request.model:
+            command.extend(["--model", request.model])
+        return command
+
 class ReservedHarnessAdapter(HarnessAdapter):
+
     def __init__(self, name: str):
         self.name = name
 
@@ -162,33 +206,91 @@ HARNESS_REGISTRY: dict[str, HarnessSpec] = {
     "claude": HarnessSpec(
         name="claude",
         executable="claude",
-        implemented=False,
-        notes="Reserved for a future headless non-interactive Claude CLI adapter.",
+        implemented=True,
+        notes="Headless non-interactive Claude CLI adapter.",
+        capabilities=HarnessCapabilities(
+            review_supported=True,
+            remediation_supported=True,
+            triage_supported=True,
+            commit_message_supported=True,
+            non_interactive=True,
+            sandbox_modes=("read-only", "workspace-write"),
+            timeout_supported=False,
+            cancellation_supported=False,
+            structured_output_supported=False,
+            cost_reporting="none",
+            supported_models=(),
+        ),
     ),
     "gemini": HarnessSpec(
         name="gemini",
         executable="gemini",
-        implemented=False,
-        notes="Reserved for a future headless non-interactive Gemini CLI adapter.",
+        implemented=True,
+        notes="Headless non-interactive Gemini CLI adapter.",
+        capabilities=HarnessCapabilities(
+            review_supported=True,
+            remediation_supported=True,
+            triage_supported=True,
+            commit_message_supported=True,
+            non_interactive=True,
+            sandbox_modes=("read-only", "workspace-write"),
+            timeout_supported=False,
+            cancellation_supported=False,
+            structured_output_supported=False,
+            cost_reporting="none",
+            supported_models=(),
+        ),
     ),
     "opencode": HarnessSpec(
         name="opencode",
         executable="opencode",
-        implemented=False,
-        notes="Reserved for a future headless non-interactive opencode adapter.",
+        implemented=True,
+        notes="Headless non-interactive OpenCode adapter.",
+        capabilities=HarnessCapabilities(
+            review_supported=True,
+            remediation_supported=True,
+            triage_supported=True,
+            commit_message_supported=True,
+            non_interactive=True,
+            sandbox_modes=("read-only", "workspace-write"),
+            timeout_supported=False,
+            cancellation_supported=False,
+            structured_output_supported=False,
+            cost_reporting="none",
+            supported_models=(),
+        ),
     ),
     "kilo": HarnessSpec(
         name="kilo",
         executable="kilo",
+        implemented=True,
+        notes="Headless non-interactive Kilo adapter.",
+        capabilities=HarnessCapabilities(
+            review_supported=True,
+            remediation_supported=True,
+            triage_supported=True,
+            commit_message_supported=True,
+            non_interactive=True,
+            sandbox_modes=("read-only", "workspace-write"),
+            timeout_supported=False,
+            cancellation_supported=False,
+            structured_output_supported=False,
+            cost_reporting="none",
+            supported_models=(),
+        ),
+    ),
+    "reserved": HarnessSpec(
+        name="reserved",
+        executable="reserved",
         implemented=False,
-        notes="Reserved for a future headless non-interactive Kilo adapter.",
+        notes="Reserved for testing unimplemented harness validation.",
     ),
 }
 
 FAKE_HARNESS_SPEC = HarnessSpec(
     name="fake",
     executable="fake",
-    implemented=False,
+    implemented=True,
     notes="Test-only scripted harness; gated by REVREM_ALLOW_FAKE_HARNESS.",
     capabilities=HarnessCapabilities(
         review_supported=True,
@@ -207,112 +309,224 @@ FAKE_HARNESS_SPEC = HarnessSpec(
 
 HARNESS_ADAPTERS: dict[str, HarnessAdapter] = {
     "codex": CodexHarnessAdapter(),
-    "claude": ReservedHarnessAdapter("claude"),
-    "gemini": ReservedHarnessAdapter("gemini"),
-    "opencode": ReservedHarnessAdapter("opencode"),
-    "kilo": ReservedHarnessAdapter("kilo"),
+    "claude": ClaudeHarnessAdapter(),
+    "gemini": GeminiHarnessAdapter(),
+    "opencode": OpenCodeHarnessAdapter(),
+    "kilo": KiloHarnessAdapter(),
+    "reserved": ReservedHarnessAdapter("reserved"),
     "fake": FakeHarnessAdapter(),
 }
 
 
 def fake_harness_enabled() -> bool:
-    return os.environ.get(FAKE_HARNESS_ENV) == "1"
+    return os.environ.get("REVREM_ALLOW_FAKE_HARNESS") == "1"
 
 
-def harness_registry() -> dict[str, HarnessSpec]:
-    if not fake_harness_enabled():
-        return HARNESS_REGISTRY
-    return {**HARNESS_REGISTRY, "fake": FAKE_HARNESS_SPEC}
+FAKE_HARNESS_ENV = "REVREM_ALLOW_FAKE_HARNESS"
+FAKE_HARNESS_FIXTURE_ENV = "REVREM_FAKE_HARNESS_FIXTURE_DIR"
+FAKE_HARNESS_COMMAND = "revrem-fake-harness"
 
-
-def known_harness_names() -> tuple[str, ...]:
-    return tuple(harness_registry())
-
-
-def harness_capabilities(name: str) -> HarnessCapabilities:
-    validate_harness_name(name, field="harness")
-    spec = harness_registry()[name]
-    if spec.capabilities is None:
-        return HarnessCapabilities(
-            review_supported=False,
-            remediation_supported=False,
-            triage_supported=False,
-            commit_message_supported=False,
-            non_interactive=False,
-            sandbox_modes=(),
-            timeout_supported=False,
-            cancellation_supported=False,
-            structured_output_supported=False,
-            cost_reporting="none",
-            supported_models=(),
-        )
-    return spec.capabilities
-
-
-def harness_capabilities_payload(name: str) -> dict[str, object]:
-    return harness_capabilities(name).to_dict()
-
-
-def validate_harness_name(name: str, *, field: str) -> None:
-    if name not in harness_registry():
-        known = ", ".join(known_harness_names())
-        raise ValueError(f"{field} must be one of: {known}")
-
-
-def require_implemented_harness(name: str, *, field: str) -> None:
-    validate_harness_name(name, field=field)
-    spec = harness_registry()[name]
-    if not spec.implemented:
-        raise ValueError(
-            f"{field}={name!r} is valid profile syntax, but only the codex backend is implemented"
-        )
-
-
-def build_phase_command(request: PhaseCommandRequest) -> list[str]:
-    validate_harness_name(request.harness, field=f"{request.role}.harness")
-    adapter = HARNESS_ADAPTERS.get(request.harness, ReservedHarnessAdapter(request.harness))
-    return adapter.command(request)
-
-
-def is_fake_harness_command(args: list[str] | tuple[str, ...]) -> bool:
-    return bool(args) and args[0] == FAKE_HARNESS_COMMAND
-
-
-def fake_harness_token_charge(args: list[str] | tuple[str, ...]) -> int | None:
-    if len(args) != 4 or args[2] != "--scenario":
-        return None
-    return FAKE_HARNESS_TOKEN_CHARGES.get(args[3])
-
-
-def run_fake_harness_command(args: list[str] | tuple[str, ...]) -> tuple[int, str, str]:
-    if not fake_harness_enabled():
-        return 2, "", f"{FAKE_HARNESS_ENV}=1 is required for the fake harness\n"
-    if len(args) != 4 or args[2] != "--scenario":
-        return 2, "", "usage: revrem-fake-harness <role> --scenario <scenario>\n"
-    role = args[1]
-    scenario = args[3]
-    if scenario == "cancellation":
-        raise KeyboardInterrupt
-    if scenario == "timeout":
-        return -1, "", "Fake harness timeout\n"
-    if scenario == "unsupported":
-        return 2, "", "Fake harness unsupported capability\n"
-    fixture_dir = fake_harness_fixture_dir() / scenario
-    output_path = fixture_dir / f"{role}.txt"
-    if not output_path.is_file():
-        return 2, "", f"fake harness fixture not found: {output_path}\n"
-    returncode = 1 if scenario.endswith("_partial") else 0
-    return returncode, output_path.read_text(encoding="utf-8"), ""
-
-
-def fake_harness_fixture_dir() -> Path:
-    configured = os.environ.get(FAKE_HARNESS_FIXTURE_ENV)
-    if configured:
-        return Path(configured)
-    return Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "harnesses"
+ROOT = Path(__file__).resolve().parents[2]
+HARNESS_FIXTURES_DIR = ROOT / "tests" / "fixtures" / "harnesses"
 
 
 def _codex_config_args(reasoning_effort: str | None) -> list[str]:
     if reasoning_effort is None:
         return []
     return ["-c", f'model_reasoning_effort="{reasoning_effort}"']
+
+
+def _claude_permission_args(request: PhaseCommandRequest) -> list[str]:
+    if request.sandbox == "read-only":
+        return ["--permission-mode", "plan"]
+    if request.full_auto:
+        return ["--permission-mode", "auto"]
+    return []
+
+
+def _gemini_permission_args(request: PhaseCommandRequest) -> list[str]:
+    if request.sandbox == "read-only":
+        return ["--approval-mode", "plan"]
+    if request.full_auto:
+        return ["--approval-mode", "auto_edit"]
+    return []
+
+
+def _opencode_permission_args(request: PhaseCommandRequest) -> list[str]:
+    if request.full_auto and request.sandbox == "workspace-write":
+        return ["--dangerously-skip-permissions"]
+    return []
+
+
+def _kilo_permission_args(request: PhaseCommandRequest) -> list[str]:
+    if request.full_auto and request.sandbox == "workspace-write":
+        return ["--auto"]
+    return []
+
+
+PRODUCTION_HARNESS_REGISTRY = MappingProxyType(HARNESS_REGISTRY)
+TEST_HARNESS_REGISTRY = MappingProxyType({**HARNESS_REGISTRY, "fake": FAKE_HARNESS_SPEC})
+
+
+def harness_registry() -> Mapping[str, HarnessSpec]:
+    if fake_harness_enabled():
+        return TEST_HARNESS_REGISTRY
+    return PRODUCTION_HARNESS_REGISTRY
+
+
+def validate_harness_name(name: str, *, field: str = "harness") -> None:
+    registry = harness_registry()
+    if name not in registry:
+        known = ", ".join(sorted(registry.keys()))
+        raise ValueError(f"{field} must be one of: {known}")
+
+
+def require_implemented_harness(name: str, *, field: str = "harness") -> None:
+    spec = harness_registry().get(name)
+    if spec and not spec.implemented:
+        raise ValueError(
+            f"{field}={name!r} is valid profile syntax, but command execution is not implemented"
+        )
+
+
+def resolve_executable(
+    harness: str,
+    harness_executables: dict[str, str],
+    codex_bin: str,
+) -> str:
+    if harness in harness_executables:
+        return harness_executables[harness]
+    if harness == "codex":
+        return codex_bin
+    registry = harness_registry()
+    if harness in registry:
+        return registry[harness].executable
+    return harness
+
+
+def build_phase_command(request: PhaseCommandRequest) -> list[str]:
+    adapter = HARNESS_ADAPTERS.get(request.harness)
+    if adapter is None:
+        raise ValueError(f"unknown harness: {request.harness}")
+    return adapter.command(request)
+
+
+ARGV_PROMPT_HARNESSES = frozenset({"opencode", "kilo", "gemini"})
+
+
+def prepare_prompt_invocation(
+    harness: str,
+    command: list[str],
+    prompt: str | None,
+) -> tuple[list[str], str | None]:
+    """Adapt prompt delivery to each harness' non-interactive CLI contract."""
+    if prompt is None:
+        return command, None
+    if harness in ARGV_PROMPT_HARNESSES:
+        return [*command, prompt], None
+    return command, prompt
+
+
+def harness_capabilities_payload(name: str) -> dict[str, Any]:
+    spec = harness_registry().get(name)
+    if spec is None or spec.capabilities is None:
+        return {
+            **asdict(
+                HarnessCapabilities(
+                    review_supported=False,
+                    remediation_supported=False,
+                    triage_supported=False,
+                    commit_message_supported=False,
+                    non_interactive=False,
+                    sandbox_modes=(),
+                    timeout_supported=False,
+                    cancellation_supported=False,
+                    structured_output_supported=False,
+                    cost_reporting="none",
+                    supported_models=(),
+                )
+            ),
+            "schema_version": "1.0",
+            "contract_version": "1.0",
+        }
+    payload = asdict(spec.capabilities)
+    # Ensure tuples are converted to lists for JSON schema validation
+    if isinstance(payload.get("sandbox_modes"), tuple):
+        payload["sandbox_modes"] = list(payload["sandbox_modes"])
+    if isinstance(payload.get("supported_models"), tuple):
+        payload["supported_models"] = list(payload["supported_models"])
+
+    return {
+        **payload,
+        "schema_version": "1.0",
+        "contract_version": "1.0",
+    }
+
+
+def run_fake_harness_command(args: list[str] | tuple[str, ...]) -> tuple[int, str, str]:
+    if not fake_harness_enabled():
+        return 2, "", f"ERROR: fake harness disabled; set {FAKE_HARNESS_ENV}=1\n"
+    if len(args) < 2:
+        return 1, "", "ERROR: too few arguments for fake harness\n"
+    phase = args[1]
+    scenario = "clear"
+    for i, arg in enumerate(args):
+        if arg == "--scenario" and i + 1 < len(args):
+            scenario = args[i + 1]
+
+    if scenario == "timeout":
+        return -1, "", "Fake harness timeout\n"
+    if scenario == "cancellation":
+        raise KeyboardInterrupt()
+    if scenario == "unsupported":
+        return 2, "", "REVREM_ALLOW_FAKE_HARNESS is enabled, but this scenario is unsupported\n"
+
+    fixture_dir = os.environ.get(FAKE_HARNESS_FIXTURE_ENV)
+    base = Path(fixture_dir) / scenario if fixture_dir else HARNESS_FIXTURES_DIR / scenario
+
+    # Use specialized filenames for each role
+    if phase == "review":
+        path = base / "review.txt"
+    elif phase == "triage":
+        path = base / "triage.txt"
+    elif phase == "remediation":
+        path = base / "remediation.txt"
+    elif phase == "commit-message":
+        path = base / "commit.txt"
+    else:
+        return 1, "", f"ERROR: unknown fake phase: {phase}\n"
+
+    if not path.is_file():
+        return 2, "", f"ERROR: fake harness fixture not found: {path}\n"
+
+    if scenario == "remediation_partial":
+        return 1, path.read_text(encoding="utf-8"), ""
+    return 0, path.read_text(encoding="utf-8"), ""
+
+
+def is_fake_harness_command(args: list[str] | tuple[str, ...]) -> bool:
+    return bool(args and args[0] == FAKE_HARNESS_COMMAND)
+
+
+FAKE_HARNESS_TOKEN_CHARGES = {
+    "fake-findings": 5,
+    "cost_ceiling": 10,
+}
+
+
+def fake_harness_token_charge(args: list[str] | tuple[str, ...]) -> int | None:
+    if not is_fake_harness_command(args):
+        return None
+    scenario: str | None = None
+    for index, arg in enumerate(args):
+        if arg == "--scenario":
+            if index + 1 >= len(args):
+                return None
+            scenario = args[index + 1]
+            break
+        if arg.startswith("--scenario="):
+            scenario = arg.split("=", 1)[1]
+            break
+    if scenario is None:
+        return None
+    return FAKE_HARNESS_TOKEN_CHARGES.get(scenario)

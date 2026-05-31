@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping, Sequence
+from typing import Any, cast
 
 
 def dumps(data: Mapping[str, object]) -> str:
@@ -11,22 +13,37 @@ def dumps(data: Mapping[str, object]) -> str:
     return "\n".join(lines)
 
 
-def _write_table(lines: list[str], prefix: tuple[str, ...], table: Mapping[str, object]) -> None:
+def _classify_table_entries(
+    table: Mapping[str, object],
+) -> tuple[
+    list[tuple[str, object]],
+    list[tuple[str, Mapping[str, object]]],
+    list[tuple[str, Sequence[object]]],
+    list[tuple[str, Sequence[Mapping[str, object]]]],
+]:
     scalars: list[tuple[str, object]] = []
     nested: list[tuple[str, Mapping[str, object]]] = []
     arrays: list[tuple[str, Sequence[object]]] = []
-
+    array_of_tables: list[tuple[str, Sequence[Mapping[str, object]]]] = []
     for key, value in table.items():
         if isinstance(value, Mapping):
             nested.append((key, value))
         elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
-            arrays.append((key, value))
+            if value and all(isinstance(item, Mapping) for item in value):
+                array_of_tables.append((key, cast(Sequence[Mapping[str, Any]], value)))
+            else:
+                arrays.append((key, value))
         else:
             scalars.append((key, value))
+    return scalars, nested, arrays, array_of_tables
+
+
+def _write_table(lines: list[str], prefix: tuple[str, ...], table: Mapping[str, object]) -> None:
+    scalars, nested, arrays, array_of_tables = _classify_table_entries(table)
 
     # Implicit table: a node with only nested sub-tables needs no [header] line;
     # its children emit their own fully-qualified [a.b.c] paths.
-    container = not scalars and not arrays and nested
+    container = not scalars and not arrays and not array_of_tables and nested
     if prefix and not container:
         lines.append(f"[{'.'.join(_format_key(part) for part in prefix)}]")
 
@@ -36,9 +53,40 @@ def _write_table(lines: list[str], prefix: tuple[str, ...], table: Mapping[str, 
     for key, value in arrays:
         lines.append(f"{_format_key(key)} = {_format_array(value)}")
 
+    for key, values in array_of_tables:
+        for item in values:
+            if lines:
+                lines.append("")
+            header = f"[[{'.'.join(_format_key(part) for part in (*prefix, key))}]]"
+            lines.append(header)
+            _write_table_content(lines, (*prefix, key), item)
+
     for key, value in nested:
         if lines and (scalars or arrays or (prefix and not container)):
             lines.append("")
+        _write_table(lines, (*prefix, key), value)
+
+
+def _write_table_content(
+    lines: list[str], prefix: tuple[str, ...], table: Mapping[str, object]
+) -> None:
+    scalars, nested, arrays, array_of_tables = _classify_table_entries(table)
+
+    for key, value in scalars:
+        lines.append(f"{_format_key(key)} = {_format_value(value)}")
+
+    for key, value in arrays:
+        lines.append(f"{_format_key(key)} = {_format_array(value)}")
+
+    for key, values in array_of_tables:
+        for item in values:
+            lines.append("")
+            header = f"[[{'.'.join(_format_key(part) for part in (*prefix, key))}]]"
+            lines.append(header)
+            _write_table_content(lines, (*prefix, key), item)
+
+    for key, value in nested:
+        lines.append("")
         _write_table(lines, (*prefix, key), value)
 
 
@@ -59,6 +107,8 @@ def _format_value(value: object) -> str:
     if isinstance(value, int) and not isinstance(value, bool):
         return str(value)
     if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("TOML floats must be finite")
         return repr(value)
     if value is None:
         raise TypeError("TOML does not support null/None values")

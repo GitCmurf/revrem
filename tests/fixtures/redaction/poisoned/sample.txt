@@ -3,8 +3,8 @@ OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz1234567890
 GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyzABCDE1234567890  # pragma: allowlist secret
 AWS_ACCESS_KEY_ID=AKIAABCDEFGHIJKLMNOP  # pragma: allowlist secret
 ANTHROPIC_API_KEY=sk-ant-abcdefghijklmnopqrstuvwxyz1234567890
-HEX_SECRET=0123456789abcdef0123456789abcdef
-loose_hex=abcdef0123456789abcdef0123456789
+HEX_SECRET=0123456789abcdef0123456789abcdef  # pragma: allowlist secret
+loose_hex=abcdef0123456789abcdef0123456789  # pragma: allowlist secret
 path=/home/example-user/project
 actor=example-user
 -----BEGIN PRIVATE KEY-----  # pragma: allowlist secret

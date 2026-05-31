@@ -65,15 +65,39 @@ def test_codex_adapter_builds_remediation_exec_command():
     assert command[-3:] == ["--output-last-message", "last.txt", "-"]
 
 
-def test_reserved_harnesses_are_valid_but_not_executable():
-    with pytest.raises(NotImplementedError, match="claude"):
-        harnesses.build_phase_command(
-            harnesses.PhaseCommandRequest(
-                harness="claude",
-                role="review",
-                executable="claude",
-            )
+def test_codex_commit_message_effort_resolution_promotes_known_incompatible_model():
+    resolution = harnesses.resolve_commit_message_reasoning_effort(
+        harness="codex",
+        model="gpt-5.3-codex-spark",
+        requested_effort="minimal",
+    )
+
+    assert resolution.effective == "low"
+    assert resolution.requested == "minimal"
+    assert resolution.adjustment == "codex_minimal_unsupported_by_model"
+
+
+def test_commit_message_effort_resolution_does_not_guess_unknown_model_capabilities():
+    for harness, model in (("codex", "gpt-future-codex"), ("gemini", "gpt-5.3-codex-spark")):
+        resolution = harnesses.resolve_commit_message_reasoning_effort(
+            harness=harness,
+            model=model,
+            requested_effort="minimal",
         )
+
+        assert resolution.effective == "minimal"
+        assert resolution.requested == "minimal"
+        assert resolution.adjustment is None
+
+
+def test_unknown_harness_raises_value_error():
+    request = harnesses.PhaseCommandRequest(
+        harness="unknown",
+        role="remediation",
+        executable="unknown",
+    )
+    with pytest.raises(ValueError, match="unknown harness"):
+        harnesses.build_phase_command(request)
 
 
 def test_codex_capabilities_validate_against_schema():
@@ -104,6 +128,25 @@ def test_fake_harness_is_hidden_unless_explicitly_enabled(monkeypatch):
     payload = harnesses.harness_capabilities_payload("fake")
     assert payload["structured_output_supported"] is True
     assert payload["cost_reporting"] == "tokens"
+
+
+def test_harness_registry_is_cached_and_immutable(monkeypatch):
+    monkeypatch.delenv(harnesses.FAKE_HARNESS_ENV, raising=False)
+
+    registry = harnesses.harness_registry()
+
+    assert registry is harnesses.harness_registry()
+    with pytest.raises(TypeError):
+        registry["fake"] = harnesses.FAKE_HARNESS_SPEC  # type: ignore[index]
+
+
+def test_fake_harness_registry_is_cached_when_enabled(monkeypatch):
+    monkeypatch.setenv(harnesses.FAKE_HARNESS_ENV, "1")
+
+    registry = harnesses.harness_registry()
+
+    assert registry is harnesses.harness_registry()
+    assert "fake" in registry
 
 
 def test_fake_harness_builds_internal_command_when_enabled(monkeypatch):
@@ -203,3 +246,5 @@ def test_fake_harness_can_report_deterministic_token_charge():
         )
         is None
     )
+    assert harnesses.fake_harness_token_charge(["revrem-fake-harness", "review", "--scenario=cost_ceiling"]) == 10
+    assert harnesses.fake_harness_token_charge(["revrem-fake-harness", "review", "--model", "x"]) is None

@@ -22,3 +22,86 @@ enabled = true
 debug_status_detection = true
 progress_style = "rich"
 terminal_title = true
+
+[profiles.dogfood]
+description = "Project-local RevRem dogfood run with full verification, commits, diagnostics, and explicit phase models."
+
+[profiles.dogfood.pipeline]
+max_iterations = 3
+checks = [
+  "./.venv/bin/ruff check .",
+  "./.venv/bin/mypy src",
+  "lint-imports",
+  "uv run --locked meminit check --format json",
+  "./.venv/bin/pytest -q",
+]
+
+[profiles.dogfood.review]
+harness = "codex"
+model = "gpt-5.5"
+reasoning_effort = "low"
+timeout_seconds = 0
+
+[profiles.dogfood.triage]
+enabled = true
+contract = "v2"
+harness = "codex"
+model = "gpt-5.5"
+reasoning_effort = "low"
+timeout_seconds = 0
+on_invalid = "continue"
+
+[profiles.dogfood.triage.routing]
+enabled = true
+mode = "first-match"
+default_route = "codex-midi"
+allow_model_escalation = true
+strict_on_unavailable_route = false
+
+[[profiles.dogfood.triage.routing.rule]]
+id = "high-risk-frontier"
+when.risk_level_min = "high"
+then.route = "codex-frontier"
+
+[[profiles.dogfood.triage.routing.rule]]
+id = "multi-file-gemini"
+when.module_count_gte = 4
+then.route = "gemini-pro"
+
+[profiles.dogfood.triage.routes.codex-frontier]
+harness = "codex"
+model = "gpt-5.5"
+reasoning_effort = "medium"
+timeout_seconds = 0
+
+[profiles.dogfood.triage.routes.codex-midi]
+harness = "codex"
+model = "gpt-5.4-mini"
+reasoning_effort = "medium"
+timeout_seconds = 0
+
+[profiles.dogfood.triage.routes.gemini-pro]
+harness = "gemini"
+model = "gemini-3.1-pro-preview"
+reasoning_effort = "medium"
+timeout_seconds = 0
+fallback = "codex-midi"
+
+[profiles.dogfood.remediation]
+harness = "codex"
+model = "gpt-5.4-mini"
+reasoning_effort = "medium"
+timeout_seconds = 0
+
+[profiles.dogfood.commit]
+enabled = true
+harness = "codex"
+message_model = "gpt-5.3-codex-spark"
+reasoning_effort = "low"
+timeout_seconds = 0
+
+[profiles.dogfood.output]
+debug_status_detection = true
+progress_style = "rich"
+terminal_title = true
+summary_format = "both"

@@ -1,0 +1,210 @@
+{
+  "artifact_dir": "<RUN_DIR>/artifacts",
+  "artifact_paths": {
+    "artifact_dir": "<RUN_DIR>/artifacts",
+    "checks": [],
+    "commits": [],
+    "diagnostics": [],
+    "last_messages": [],
+    "prompts": [],
+    "remediations": [
+      "<RUN_DIR>/artifacts/remediation-1.txt"
+    ],
+    "reviews": [
+      "<RUN_DIR>/artifacts/review-1.txt"
+    ],
+    "routing": [],
+    "summary": "<RUN_DIR>/artifacts/summary.json",
+    "triage": []
+  },
+  "base": "main",
+  "budgets": {
+    "max_tokens": null,
+    "max_usd": null,
+    "max_wall_seconds": null,
+    "soft_warn_fraction": 0.8,
+    "tokens": null,
+    "usd": null,
+    "wall_elapsed_seconds": "<DURATION>"
+  },
+  "cli_version": "0.3.2",
+  "command_line": null,
+  "commit_no_verify": false,
+  "commit_on_hook_failure": "remediate",
+  "duration_seconds": 0.0,
+  "final_status": "unknown",
+  "finished_at": "2026-01-02T03:04:05Z",
+  "git_state": {
+    "available": false,
+    "base": "main",
+    "base_commit": null,
+    "head": null,
+    "merge_base": null
+  },
+  "harness": "codex",
+  "harness_version": null,
+  "initial_review_file": null,
+  "iterations": [
+    {
+      "check_failures": 0,
+      "iteration": 1,
+      "review_status": "findings"
+    }
+  ],
+  "latest_review_excerpt": "REVIEW_STATUS: findings",
+  "max_iterations": 1,
+  "pending_check_failures": false,
+  "phase_config": {
+    "checks": {
+      "commands": [],
+      "source": "direct-config",
+      "sources": {},
+      "timeout_seconds": 300
+    },
+    "commit_message": {
+      "enabled": false,
+      "harness": "codex",
+      "model": null,
+      "reasoning_effort": null,
+      "reasoning_effort_adjustment": null,
+      "requested_reasoning_effort": null,
+      "sandbox": "read-only",
+      "source": "direct-config",
+      "sources": {},
+      "timeout_seconds": null
+    },
+    "remediation": {
+      "harness": "codex",
+      "model": null,
+      "reasoning_effort": null,
+      "sandbox": "workspace-write",
+      "source": "direct-config",
+      "sources": {},
+      "timeout_seconds": null
+    },
+    "review": {
+      "harness": "codex",
+      "model": null,
+      "reasoning_effort": null,
+      "sandbox": "read-only",
+      "source": "direct-config",
+      "sources": {},
+      "timeout_seconds": null
+    },
+    "triage": {
+      "allow_model_escalation": true,
+      "contract": "v1",
+      "enabled": false,
+      "harness": "codex",
+      "model": null,
+      "reasoning_effort": null,
+      "routing_enabled": false,
+      "routing_strict": false,
+      "sandbox": "read-only",
+      "source": "direct-config",
+      "sources": {},
+      "timeout_seconds": null
+    }
+  },
+  "phases": {
+    "_summary": {
+      "iteration_count": 1
+    }
+  },
+  "profile": null,
+  "resume_config": {
+    "base": "main",
+    "check_commands": [],
+    "codex_bin": "codex",
+    "commit_after_remediation": false,
+    "commit_on_hook_failure": "remediate",
+    "debug_status_detection": false,
+    "exec_json": false,
+    "exec_sandbox": "workspace-write",
+    "final_review": false,
+    "full_auto": true,
+    "harness_executables": {},
+    "max_iterations": 1,
+    "max_remediation_input_chars": 200000,
+    "max_tokens": null,
+    "max_usd": null,
+    "max_wall_seconds": null,
+    "output_last_message": true,
+    "phase_config": {
+      "checks": {
+        "commands": [],
+        "source": "direct-config",
+        "sources": {},
+        "timeout_seconds": 300
+      },
+      "commit_message": {
+        "enabled": false,
+        "harness": "codex",
+        "model": null,
+        "reasoning_effort": null,
+        "reasoning_effort_adjustment": null,
+        "requested_reasoning_effort": null,
+        "sandbox": "read-only",
+        "source": "direct-config",
+        "sources": {},
+        "timeout_seconds": null
+      },
+      "remediation": {
+        "harness": "codex",
+        "model": null,
+        "reasoning_effort": null,
+        "sandbox": "workspace-write",
+        "source": "direct-config",
+        "sources": {},
+        "timeout_seconds": null
+      },
+      "review": {
+        "harness": "codex",
+        "model": null,
+        "reasoning_effort": null,
+        "sandbox": "read-only",
+        "source": "direct-config",
+        "sources": {},
+        "timeout_seconds": null
+      },
+      "triage": {
+        "allow_model_escalation": true,
+        "contract": "v1",
+        "enabled": false,
+        "harness": "codex",
+        "model": null,
+        "reasoning_effort": null,
+        "routing_enabled": false,
+        "routing_strict": false,
+        "sandbox": "read-only",
+        "source": "direct-config",
+        "sources": {},
+        "timeout_seconds": null
+      }
+    },
+    "profile_name": null,
+    "progress_style": "compact",
+    "remediation_harness": "codex",
+    "remediation_model": null,
+    "remediation_timeout_seconds": null,
+    "review_harness": "codex",
+    "review_model": null,
+    "review_timeout_seconds": null,
+    "soft_warn_fraction": 0.8,
+    "terminal_excerpt_chars": 4000,
+    "timeout_seconds": 300,
+    "triage_contract": "v1",
+    "triage_enabled": false,
+    "triage_harness": "codex",
+    "triage_model": null,
+    "triage_on_invalid": "continue",
+    "triage_prompt": null,
+    "triage_timeout_seconds": null
+  },
+  "run_id": "deadbeefcafe0000deadbeefcafe0000",
+  "schema_version": "1.0",
+  "started_at": "2026-01-02T03:04:05Z",
+  "stopped_reason": "max_iterations_reached",
+  "tokens": null,
+  "usd": null
+}

@@ -1,0 +1,322 @@
+{
+  "$id": "https://github.com/GitCmurf/revrem/schemas/triage/v2",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "classification": {
+      "additionalProperties": false,
+      "properties": {
+        "affected_modules": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "domain_tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "estimated_blast_radius": {
+          "additionalProperties": false,
+          "properties": {
+            "finding_count": {
+              "type": "integer"
+            },
+            "module_count": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "module_count",
+            "finding_count"
+          ],
+          "type": "object"
+        },
+        "failed_check_signals": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "refactor_depth": {
+          "enum": [
+            "atomic",
+            "localised",
+            "cross-module",
+            "architectural"
+          ]
+        },
+        "risk_level": {
+          "enum": [
+            "trivial",
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ]
+        },
+        "safety_signals": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "domain_tags",
+        "risk_level",
+        "refactor_depth",
+        "affected_modules",
+        "estimated_blast_radius",
+        "safety_signals",
+        "failed_check_signals"
+      ],
+      "type": "object"
+    },
+    "confirmed_findings": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "affected_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "rationale": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "info",
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "fingerprint",
+          "summary",
+          "severity",
+          "affected_paths",
+          "rationale"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "implementation_order": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "needs_more_info": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "affected_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "info_requested": {
+            "type": "string"
+          },
+          "rationale": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "info",
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "fingerprint",
+          "summary",
+          "severity",
+          "affected_paths",
+          "rationale",
+          "info_requested"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "parsing_warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "prompt_requirements": {
+      "additionalProperties": false,
+      "properties": {
+        "definition_of_done": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "required_fragments": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "triage_prompt_draft": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "required_fragments",
+        "definition_of_done",
+        "triage_prompt_draft"
+      ],
+      "type": "object"
+    },
+    "prompt_version": {
+      "const": "triage-v2"
+    },
+    "rejected_findings": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "affected_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "rationale": {
+            "type": "string"
+          },
+          "rejection_reason": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "info",
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "fingerprint",
+          "summary",
+          "severity",
+          "affected_paths",
+          "rationale",
+          "rejection_reason"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "route_proposal": {
+      "additionalProperties": false,
+      "properties": {
+        "harness": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "rationale": {
+          "type": "string"
+        },
+        "reasoning_effort": {
+          "enum": [
+            "minimal",
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "route_tier": {
+          "type": "string"
+        },
+        "sandbox": {
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "route_tier",
+        "harness",
+        "model",
+        "reasoning_effort",
+        "sandbox",
+        "timeout_seconds",
+        "rationale"
+      ],
+      "type": "object"
+    },
+    "run_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "2.0"
+    },
+    "source_review_artifact": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "verification_commands": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "source_review_artifact",
+    "prompt_version",
+    "confirmed_findings",
+    "rejected_findings",
+    "needs_more_info",
+    "implementation_order",
+    "verification_commands",
+    "parsing_warnings",
+    "classification",
+    "prompt_requirements"
+  ],
+  "title": "RevRem triage v2",
+  "type": "object"
+}

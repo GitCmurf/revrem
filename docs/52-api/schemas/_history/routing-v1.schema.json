@@ -1,0 +1,173 @@
+{
+  "$id": "https://github.com/GitCmurf/revrem/schemas/routing/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "effective_route": {
+      "additionalProperties": false,
+      "properties": {
+        "full_auto": {
+          "type": "boolean"
+        },
+        "harness": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "reasoning_effort": {
+          "enum": [
+            "minimal",
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "route_tier": {
+          "type": "string"
+        },
+        "sandbox": {
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "route_tier",
+        "harness",
+        "sandbox",
+        "timeout_seconds"
+      ],
+      "type": "object"
+    },
+    "fallbacks_considered": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "iteration": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "model_proposal": {
+      "additionalProperties": false,
+      "properties": {
+        "harness": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "rationale": {
+          "type": "string"
+        },
+        "reasoning_effort": {
+          "enum": [
+            "minimal",
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "route_tier": {
+          "type": "string"
+        },
+        "sandbox": {
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "route_tier",
+        "harness",
+        "model",
+        "rationale"
+      ],
+      "type": "object"
+    },
+    "policy_decision": {
+      "additionalProperties": false,
+      "properties": {
+        "decision": {
+          "enum": [
+            "proposal_accepted",
+            "policy_override",
+            "fallback_applied",
+            "default_route_applied"
+          ]
+        },
+        "matched_rule_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "rationale": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "matched_rule_ids",
+        "decision",
+        "rationale"
+      ],
+      "type": "object"
+    },
+    "prompt": {
+      "additionalProperties": false,
+      "properties": {
+        "bytes": {
+          "type": "integer"
+        },
+        "fragments": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "path": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "bytes",
+        "fragments"
+      ],
+      "type": "object"
+    },
+    "run_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0"
+    },
+    "source_triage_artifact": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "iteration",
+    "source_triage_artifact",
+    "policy_decision",
+    "effective_route",
+    "fallbacks_considered",
+    "prompt"
+  ],
+  "title": "RevRem routing v1",
+  "type": "object"
+}

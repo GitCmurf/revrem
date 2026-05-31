@@ -8,7 +8,7 @@ including ``minimum``, ``maximum``, ``pattern``, ``$ref``, ``allOf``,
 
 When ``jsonschema`` is *not* installed, a minimal compat validator is
 used instead.  The compat layer validates ``type``, ``const``, ``enum``,
-``required``, ``additionalProperties``, ``minLength``, and ``items`` but
+``minimum``, ``required``, ``additionalProperties``, ``minLength``, and ``items`` but
 silently ignores the keywords listed above.  Callers that rely on those
 keywords should ensure ``jsonschema`` is present.
 """
@@ -61,6 +61,12 @@ except ImportError:
 
         if "enum" in schema and instance not in schema["enum"]:
             yield f"{path}: expected one of {schema['enum']!r}"
+            return
+
+        if isinstance(instance, (int, float)) and not isinstance(instance, bool):
+            minimum = schema.get("minimum")
+            if minimum is not None and instance < minimum:
+                yield f"{path}: number less than {minimum!r}"
             return
 
         if isinstance(instance, str):

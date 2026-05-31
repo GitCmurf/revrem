@@ -1,0 +1,39 @@
+{
+  "confirmed_findings": [
+    {
+      "affected_paths": ["src/service.py", "tests/test_service.py"],
+      "fingerprint": "f1:careful",
+      "rationale": "The fix is local but requires non-trivial refactoring and tests.",
+      "severity": "medium",
+      "summary": "Refactor service validation flow"
+    }
+  ],
+  "rejected_findings": [],
+  "needs_more_info": [],
+  "implementation_order": ["f1:careful"],
+  "verification_commands": ["pytest tests/test_service.py"],
+  "parsing_warnings": [],
+  "classification": {
+    "domain_tags": ["tests"],
+    "risk_level": "medium",
+    "refactor_depth": "localised",
+    "affected_modules": ["src/service.py", "tests/test_service.py"],
+    "estimated_blast_radius": {"module_count": 2, "finding_count": 1},
+    "safety_signals": [],
+    "failed_check_signals": ["pytest:tests/test_service.py"]
+  },
+  "route_proposal": {
+    "route_tier": "midtier",
+    "harness": "codex",
+    "model": "midtier-model",
+    "reasoning_effort": "medium",
+    "sandbox": "workspace-write",
+    "timeout_seconds": 900,
+    "rationale": "A competent mid-tier coding model is sufficient with a clear definition of done."
+  },
+  "prompt_requirements": {
+    "required_fragments": ["engineering-principles"],
+    "definition_of_done": ["Refactor carefully and keep focused regression tests green."],
+    "triage_prompt_draft": "Use small, reviewable edits."
+  }
+}

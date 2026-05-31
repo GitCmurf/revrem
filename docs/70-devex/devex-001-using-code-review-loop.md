@@ -3,8 +3,8 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.9'
-last_updated: '2026-05-13'
+version: '1.16'
+last_updated: '2026-05-30'
 owner: GitCmurf
 docops_version: '2.0'
 area: devex
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.9
-> **Last Updated:** 2026-05-13
+> **Version:** 1.16
+> **Last Updated:** 2026-05-30
 > **Type:** DEVEX
 > **Area:** devex
 > **Description:** Operator guide for the code-review-loop utility
@@ -235,8 +235,10 @@ first default-artifact run in a Git repository, RevRem adds the default run
 path to the repository-local `.git/info/exclude` even when invoked from a
 subdirectory; outside Git repositories it falls back to `.revrem/.gitignore`
 containing `runs/`. This keeps local transcripts out of commits without
-mutating tracked ignore files. Linked worktrees use the common repository's
-`.git/info/exclude`.
+mutating tracked ignore files. When the ignore entry is already present, RevRem
+returns before taking the exclude-file write lock so no-op setup works in
+read-only Git metadata environments. Linked worktrees use the common
+repository's `.git/info/exclude`.
 If a capped run ends with findings, continue from the final review artifact:
 
 ```bash
@@ -259,7 +261,10 @@ older feedback.
 
 Profiles live in `~/.config/revrem/profiles.toml`. Project-local overrides live
 in `.revrem.toml` at the target repository root, so subdirectory invocations
-still pick up the same project settings. User-global `[defaults]` entries in
+still pick up the same project settings. If a temporary filesystem root such as
+`/tmp` contains an incidental `.git` marker, RevRem ignores that marker when
+discovering project config so isolated scratch work can still use its local
+`.revrem.toml`. User-global `[defaults]` entries in
 `profiles.toml` are loaded for bare `revrem` runs, merged before the selected
 user profile, and are preserved by `revrem config` writes. Existing profiles
 stay in their original explicit form when the file is rewritten, so omitted
@@ -312,13 +317,79 @@ CLI flags override profile values, so this is valid:
 revrem --profile final-pr --base release/1.2 --check "pytest -q tests/smoke"
 ```
 
+This repository also carries a project-local `dogfood` profile in
+`.revrem.toml`. It is intentionally not a portable profile: it runs the full
+local verification stack, enables commits, turns on triage v2 routing, records
+debug status diagnostics, and uses explicit phase models so RevRem can exercise
+its own operator surface. The normal Codex-only dogfood run is:
+
+```bash
+./.venv/bin/revrem --profile dogfood --base main --max-iterations 3
+```
+
+The profile includes an optional Gemini route for multi-file changes. Use it
+only when Gemini CLI and credentials are available; otherwise the Codex routes
+remain sufficient for local dogfood:
+
+```bash
+./.venv/bin/revrem \
+  --profile dogfood \
+  --base main \
+  --max-iterations 2 \
+  --harness-bin gemini=gemini \
+  --triage \
+  --routing
+```
+
+Dogfood summaries include a `phase_config` object for review, triage,
+remediation, commit-message drafting, and checks. Each phase records the
+resolved harness, model, effort, timeout, sandbox where relevant, and whether
+the effective value came from CLI flags, the selected profile, or defaults.
+Explicit unbounded timeouts are shown as `0` in this operator-facing projection
+even though the subprocess layer receives `None`.
+
+Terminal progress and closeout output repeat phase provenance on line-wrapped
+messages so line-oriented tools can still grep for phase markers such as
+`|tri|`, `contract=v2`, and `source=mixed`. Suggested resume commands preserve
+one-off triage, routing, model, harness, effort, and explicit timeout overrides
+so a profile-less dogfood run can be resumed without silently dropping the
+operator's control surface.
+
+Commit-message drafting disables Codex web search for that read-only helper
+call so `--commit-reasoning-effort minimal` can be tested without inheriting
+tool settings from local Codex defaults. If model drafting still fails, RevRem
+records the fallback in `commit-N-message-fallback.json`, includes it in the
+summary, and uses a deterministic repository-generic Conventional Commit
+subject derived from staged paths plus review/remediation context rather than an
+iteration-only placeholder or RevRem-specific canned vocabulary.
+For the Codex commit-message harness, `minimal` is promoted to `low` at config
+resolution time only for known commit-message models that reject
+`reasoning.effort=minimal`; `low` is the lowest live-compatible drafting effort
+for those models. Summaries record both `requested_reasoning_effort` and the
+effective `reasoning_effort`, and progress emits a `config-adjusted` event when
+the promotion is applied.
+
+Credentialed environments can continuously smoke-test the live Codex
+commit-message path:
+
+```bash
+REVREM_LIVE_CODEX=1 ./.venv/bin/pytest -q tests/test_live_codex_commit_message.py
+```
+
 To capture a one-off command as a project-local profile, add
 `--save-profile NAME`. RevRem writes the effective configuration to
 `.revrem.toml` at the repository root and exits without running the loop. This
 is non-destructive by default; pass `--save-profile-force` only when replacing
 an existing project profile intentionally. Explicit `--timeout-seconds 0`
 settings are written back as `timeout_seconds = 0` so a saved profile keeps the
-no-timeout behavior.
+no-timeout behavior. When the source profile uses v2 triage routing,
+`--save-profile` preserves the triage contract, routing rules, route table, and
+effective `runtime.harness_executables` map, including any one-off
+`--harness-bin HARNESS=EXECUTABLE` overrides supplied on the same command.
+
+Project profile discovery intentionally ignores system temp roots and their
+ancestors when walking for `.git`. This prevents an ambient `/tmp/.git` marker
+from making every temporary test directory appear to be part of a repository.
 
 ```bash
 revrem \
@@ -353,6 +424,10 @@ omits `timeout_seconds`, it falls back to the built-in default timeout instead
 of inheriting the sibling phase's value.
 Negative phase timeouts are rejected during profile loading as invalid
 configuration, matching the CLI's `--timeout-seconds` validation.
+`--max-iterations` and profile `pipeline.max_iterations` must be positive
+integers; invalid values fail before the review/remediation loop starts.
+Generated TOML config output rejects non-finite floats instead of writing
+non-portable `nan` or `inf` tokens.
 When terminal title refresh is enabled, the subprocess wrapper keeps waiting on
 the same child after a timeout without resending stdin, which avoids the
 `communicate()` retry error on long-running stdin-driven phases.
@@ -468,18 +543,30 @@ When setup preflight blocks execution, RevRem writes `diagnostics.json`,
 `summary.json`, and `events.jsonl` under the run artifact directory and exits
 with code `4` without invoking review or remediation.
 
-These management commands validate reserved harness names and triage syntax
-without requiring the backend to be executable yet; only `revrem --profile ...`
-rejects unimplemented harnesses before the loop starts.
+These management commands validate harness names, triage syntax, routing rules,
+and route capability chains without invoking a model. Executable runs still
+fail before remediation when the selected route names an unimplemented or
+incapable harness without an explicit valid fallback.
 
 The `--format` flag is accepted both before and after the subcommand, so the
 global form `revrem config --format json doctor --profile final-pr` works too.
 
-Profiles reserve `review.harness`, `triage.harness`,
-`remediation.harness`, and `commit.harness` for future headless adapters such
-as `claude`, `gemini`, `opencode`, and `kilo`. The current executable loop
-supports only Codex; using another harness in a resolved run fails before
-starting subprocesses.
+Profiles use `review.harness`, `triage.harness`, `remediation.harness`, and
+`commit.harness` to select headless adapters. Codex, Claude, Gemini, opencode,
+and KiloCode are executable when their installed CLIs satisfy the declared
+capabilities. Override non-default executable names from the profile:
+
+```toml
+[profiles.multi.runtime.harness_executables]
+claude = "/opt/claude/bin/claude"
+gemini = "gemini-dev"
+```
+
+or for a single run:
+
+```bash
+revrem --profile multi --harness-bin claude=/opt/claude/bin/claude
+```
 
 Harnesses expose a schema-validated capability payload that records supported
 phases, sandbox modes, timeout/cancellation support, structured output, and
@@ -498,9 +585,10 @@ single invocation should remain dry, pass `--no-commit-after-remediation` to
 override that profile setting. The commit step is separate from the remediation
 model: checks must pass first, RevRem skips the commit if there are no staged
 changes, and RevRem runs `git commit` itself. The optional `commit.harness`
-field selects the commit-message drafting adapter; only `codex` is executable
-today. The optional `commit.message_model` or `--commit-message-model` controls
-only the read-only Codex call that drafts the commit subject. If no explicit
+field selects the commit-message drafting adapter. Pass
+`--commit-message-harness` to override that drafting harness for one run. The
+optional `commit.message_model` or `--commit-message-model` controls only the
+read-only model call that drafts the commit subject. If no explicit
 CLI value is supplied, the profile value is used; the built-in profile default
 is `gpt-5.3-codex-spark`. With the default
 prompt, RevRem normalizes the final subject to Conventional Commit syntax and
@@ -543,9 +631,9 @@ revrem --profile final-pr \
   --commit-reasoning-effort minimal
 ```
 
-Optional Codex triage can run between review and remediation. It uses
-`codex exec` with `--sandbox read-only`, writes `triage-N.txt` beside the review
-and remediation artifacts, and passes a concise handoff plus the original
+Optional triage can run between review and remediation. It uses the configured
+triage harness in read-only mode, writes `triage-N.txt` beside the review and
+remediation artifacts, and passes a concise handoff plus the original
 review/check context into the remediation prompt. This is intended for cheaper
 interpretation models that can convert review prose into ordered action items
 without editing the workspace:
@@ -567,6 +655,134 @@ the remediation prompt. Invalid structured triage writes `diagnostics.json` with
 `revrem.triage.invalid_output`. The default `triage.on_invalid = "continue"`
 fails safe by ignoring invalid triage guidance; set `triage.on_invalid = "stop"`
 when a workflow should halt on malformed triage output.
+
+For routing, use `triage.contract = "v2"` plus
+`triage.routing.enabled = true`. RevRem validates `triage-v2`, resolves the
+effective route through profile policy, writes `routing-N.json`,
+`remediation-N-prompt.txt`, and `routing-outcome-N.json`, and emits
+`routing_decision` / `routing_outcome` events into `events.jsonl`. Prompt and
+routing artifacts are also listed under `summary.artifact_paths.prompts` and
+`summary.artifact_paths.routing` for auditability; treat prompt artifacts as
+sensitive transcript-like local data. In `routing-N.json`, `prompt.bytes` is
+the UTF-8 byte size of the written prompt artifact, and
+`effective_route.timeout_seconds` records the timeout RevRem will pass to
+remediation execution after inheritance; `0` means unbounded.
+
+Codex-only routing profile:
+
+```toml
+[profiles.secure.triage]
+enabled = true
+contract = "v2"
+harness = "codex"
+model = "gpt-5.4-mini"
+
+[profiles.secure.triage.routing]
+enabled = true
+default_route = "midtier-coder"
+
+[[profiles.secure.triage.routing.rule]]
+id = "security-frontier"
+when.domain_tags_any = ["security", "auth", "secrets", "pii"]
+then.route = "frontier-thinking"
+then.allow_model_deescalation = false
+then.prompt_fragments = ["engineering-principles", "security-checklist"]
+
+[profiles.secure.triage.routes.frontier-thinking]
+harness = "codex"
+model = "gpt-5.5"
+reasoning_effort = "high"
+timeout_seconds = 1800
+sandbox = "workspace-write"
+
+[profiles.secure.triage.routes.midtier-coder]
+harness = "codex"
+model = "gpt-5.4-mini"
+reasoning_effort = "medium"
+timeout_seconds = 900
+sandbox = "workspace-write"
+```
+
+Multi-harness routing profile:
+
+```toml
+[profiles.multi.runtime.harness_executables]
+claude = "claude"
+gemini = "gemini"
+opencode = "opencode"
+kilo = "kilo"
+
+[profiles.multi.triage]
+enabled = true
+contract = "v2"
+harness = "gemini"
+model = "gemini-3-flash"
+
+[profiles.multi.triage.routing]
+enabled = true
+default_route = "midtier-coder"
+
+[[profiles.multi.triage.routing.rule]]
+id = "sensitive-frontier"
+when.safety_signals_any = ["sensitive-domain:auth", "sensitive-domain:secrets"]
+then.route = "frontier-thinking"
+then.allow_model_deescalation = false
+
+[profiles.multi.triage.routes.frontier-thinking]
+harness = "claude"
+model = "sonnet"
+reasoning_effort = "high"
+timeout_seconds = 1800
+sandbox = "workspace-write"
+fallback = "midtier-coder"
+
+[profiles.multi.triage.routes.midtier-coder]
+harness = "gemini"
+model = "gemini-3-flash"
+reasoning_effort = "medium"
+timeout_seconds = 900
+sandbox = "workspace-write"
+fallback = "efficient-coder"
+
+[profiles.multi.triage.routes.efficient-coder]
+harness = "kilo"
+model = "provider/model"
+timeout_seconds = 300
+sandbox = "workspace-write"
+```
+
+Use `revrem policy lint --profile multi` to verify rule and fallback chains,
+`revrem triage explain <run-dir>` to inspect one routing decision, and
+`revrem policy review --artifact-dir <run-dir>` to summarize route outcomes
+without printing full prompts.
+
+For one-off dogfood runs, CLI flags can override the profile's triage and
+routing controls without editing `.revrem.toml`:
+
+```bash
+revrem --profile dogfood --triage --triage-contract v2 --routing
+revrem --profile dogfood --no-triage --no-routing --dry-run --summary-format json
+revrem --profile dogfood --no-allow-model-escalation
+```
+
+Use `--triage-model`, `--triage-harness`, and `--triage-timeout-seconds` to
+override the triage phase. Use `--routing-strict` or `--no-routing-strict` to
+control whether an unavailable selected route is a hard failure. When strict
+routing is enabled, RevRem stops on the selected route's capability or budget
+failure even if that route names a fallback. Disabled routing may carry draft
+routes during normal runs, but references inside the route table are still
+validated.
+
+Executable route validation is opt-in when routing is disabled:
+
+```bash
+revrem policy lint --profile dogfood --executable-routes
+revrem doctor --profile dogfood --validate-routes
+```
+
+Use those checks before enabling a draft Gemini or Claude route. Without the
+opt-in flag, normal lint and doctor runs do not require disabled draft route
+harnesses to be installed.
 
 Structured triage is also the suppression-aware path. Add an explicit
 suppression when a fingerprinted finding is accepted, tracked elsewhere, or
@@ -642,10 +858,11 @@ profile, `c` clones the selected profile, `x` exports, `i` imports from the
 path field, `delete` deletes through `revrem config delete --yes`, and `q`
 quits.
 
-Codex is currently the only executable review/remediation harness. The profile
-schema reserves `claude`, `gemini`, `opencode`, and `kilo` for future headless
-adapters; config management accepts those values, but executable runs fail fast
-until a backend adapter is implemented.
+Codex, Claude, Gemini, opencode, and KiloCode are executable
+review/remediation harnesses through the shared adapter boundary. Their CLIs
+must be installed and discoverable through `PATH`,
+`runtime.harness_executables`, or `--harness-bin`. Reserved harness names
+remain valid management syntax but fail fast on executable runs.
 
 ### Exit codes
 
@@ -768,6 +985,13 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.16 | 2026-05-30 | Codex | Documented model-specific commit-effort promotion and the credential-gated live Codex smoke |
+| 1.15 | 2026-05-30 | Codex | Documented repository-generic fallback subjects, visible commit-effort promotion, and broader command-line redaction |
+| 1.14 | 2026-05-29 | Codex | Documented resume override fidelity, wrapped progress prefix behavior, and temp-root ancestor exclusion |
+| 1.13 | 2026-05-29 | Codex | Documented triage/routing CLI overrides, executable-route validation modes, model-escalation controls, and commit-message harness override |
+| 1.12 | 2026-05-29 | Codex | Documented the project-local dogfood profile, resolved phase configuration summaries, and commit-message fallback hardening |
+| 1.11 | 2026-05-21 | Codex | Documented positive iteration validation and finite TOML numeric output |
+| 1.10 | 2026-05-21 | Codex | Documented temp-root `.git` marker handling during project profile discovery |
 | 1.9 | 2026-05-13 | Codex | Documented profile-level suppression scope policy |
 | 1.8 | 2026-05-13 | Codex | Documented optional redaction extra alongside progress and TUI extras |
 | 1.7 | 2026-05-13 | Codex | Documented live CLI preflight diagnostics before first model invocation |

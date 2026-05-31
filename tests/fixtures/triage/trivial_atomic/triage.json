@@ -1,0 +1,39 @@
+{
+  "confirmed_findings": [
+    {
+      "affected_paths": ["src/config.py"],
+      "fingerprint": "f1:trivial",
+      "rationale": "The fix is a single constant correction.",
+      "severity": "low",
+      "summary": "Correct default config label"
+    }
+  ],
+  "rejected_findings": [],
+  "needs_more_info": [],
+  "implementation_order": ["f1:trivial"],
+  "verification_commands": ["pytest tests/test_config.py"],
+  "parsing_warnings": [],
+  "classification": {
+    "domain_tags": ["style"],
+    "risk_level": "low",
+    "refactor_depth": "atomic",
+    "affected_modules": ["src/config.py"],
+    "estimated_blast_radius": {"module_count": 1, "finding_count": 1},
+    "safety_signals": [],
+    "failed_check_signals": []
+  },
+  "route_proposal": {
+    "route_tier": "efficient",
+    "harness": "codex",
+    "model": "efficient-model",
+    "reasoning_effort": "low",
+    "sandbox": "workspace-write",
+    "timeout_seconds": 300,
+    "rationale": "The change is atomic and low-risk."
+  },
+  "prompt_requirements": {
+    "required_fragments": [],
+    "definition_of_done": ["Apply the atomic fix and run the targeted test."],
+    "triage_prompt_draft": "Keep the patch to the single default value."
+  }
+}

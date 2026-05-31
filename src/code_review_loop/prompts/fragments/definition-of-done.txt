@@ -1,0 +1,15 @@
+# Definition of Done
+
+A remediation is complete only when all of the following hold:
+
+- Every confirmed finding handed to you is resolved, or is explicitly explained
+  as invalid/unsafe-to-fix in your final response.
+- The change is an atomic unit: implementation, tests, and documentation are
+  updated together.
+- New or updated automated tests prove the fixed behavior and would fail against
+  the unfixed code.
+- The configured verification commands have been run and pass; report any that
+  could not be run and why.
+- No unrelated work was reverted and no pre-existing user changes were lost.
+- The diff stays focused on the findings; incidental cleanup is avoided or
+  called out separately.

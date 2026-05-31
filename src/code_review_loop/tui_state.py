@@ -512,11 +512,7 @@ def run_event_view(event: event_model.Event) -> RunEventView:
 
 
 def event_detail(event: event_model.Event) -> str:
-    for key in ("status", "reason", "message", "summary", "path"):
-        value = event.payload.get(key)
-        if isinstance(value, str):
-            return value
-    return ""
+    return event_model.compact_detail(event)
 
 
 def resolve_record_path(path: str, *, record_cwd: object) -> Path:

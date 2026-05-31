@@ -5,7 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from code_review_loop import profiles
+from code_review_loop import profiles, repo_roots
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_resolve_profile_merges_user_project_and_defaults(tmp_path):
@@ -107,6 +109,43 @@ scope = "user"
     assert loaded.profiles["demo"].suppressions.scope == "user"
     assert profiles.profile_to_dict(loaded.profiles["demo"])["suppressions"]["scope"] == "user"
     assert 'scope = "user"' in profiles.profile_to_toml(loaded.profiles["demo"])
+
+
+def test_project_dogfood_profile_parses_exact_committed_profile():
+    loaded = profiles.load_profile_file(ROOT / ".revrem.toml")
+
+    dogfood = loaded.profiles["dogfood"]
+    assert dogfood.pipeline.max_iterations == 3
+    assert dogfood.triage.enabled is True
+    assert dogfood.triage.contract == "v2"
+    assert dogfood.triage.routing.rule[0].id == "high-risk-frontier"
+    assert dogfood.triage.routing.rule[0].when.risk_level_min == "high"
+    assert dogfood.triage.routing.rule[1].id == "multi-file-gemini"
+    assert dogfood.triage.routing.rule[1].when.module_count_gte == 4
+    assert dogfood.triage.routes["gemini-pro"].harness == "gemini"
+    assert dogfood.commit.message_model == "gpt-5.3-codex-spark"
+    assert dogfood.commit.reasoning_effort == "low"
+    assert dogfood.commit.timeout_seconds == 0
+
+
+def test_profile_accepts_commit_reasoning_effort_and_timeout(tmp_path):
+    path = tmp_path / "profiles.toml"
+    path.write_text(
+        """
+[profiles.demo.commit]
+enabled = true
+reasoning_effort = "minimal"
+timeout_seconds = 0
+""",
+        encoding="utf-8",
+    )
+
+    loaded = profiles.load_profile_file(path)
+
+    assert loaded.profiles["demo"].commit.reasoning_effort == "minimal"
+    assert loaded.profiles["demo"].commit.timeout_seconds == 0
+    assert profiles.profile_to_dict(loaded.profiles["demo"])["commit"]["timeout_seconds"] == 0
+    assert 'reasoning_effort = "minimal"' in profiles.profile_to_toml(loaded.profiles["demo"])
 
 
 def test_resolve_profile_merges_suppression_scope_defaults(tmp_path):
@@ -228,6 +267,35 @@ base = "trunk"
     assert resolved.pipeline.base == "trunk"
 
 
+def test_project_config_path_ignores_bare_temp_root_git_marker(tmp_path, monkeypatch):
+    temp_root = tmp_path / "tmp-root"
+    tmpdir = temp_root / "child-tmp"
+    cwd = tmpdir / "work"
+    cwd.mkdir(parents=True)
+    (temp_root / ".git").mkdir()
+    (temp_root / ".revrem.toml").write_text(
+        """
+[profiles.wrong.pipeline]
+base = "wrong"
+""",
+        encoding="utf-8",
+    )
+    (cwd / ".revrem.toml").write_text(
+        """
+[profiles.local.pipeline]
+base = "local"
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(repo_roots.tempfile, "gettempdir", lambda: str(temp_root))
+    monkeypatch.setenv("TMPDIR", str(tmpdir))
+
+    assert profiles.project_config_path(cwd) == cwd / ".revrem.toml"
+    resolved = profiles.resolve_profile("local", cwd=cwd)
+
+    assert resolved.pipeline.base == "local"
+
+
 def test_resolve_defaults_allows_project_defaults_to_reset_user_defaults(tmp_path):
     home = tmp_path / "home"
     cwd = tmp_path / "repo"
@@ -274,13 +342,13 @@ def test_resolve_defaults_rejects_unimplemented_harness(tmp_path):
     path.write_text(
         """
 [defaults.review]
-harness = "claude"
+harness = "reserved"
 """,
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="only the codex backend is implemented"):
-        profiles.resolve_defaults(cwd=cwd, home=home)
+    with pytest.raises(ValueError, match="command execution is not implemented"):
+        profiles.resolve_defaults(cwd=cwd, home=home, require_implemented=True)
 
 
 def test_resolve_profile_rejects_unknown_profile_when_only_defaults_exist(tmp_path):
@@ -314,6 +382,39 @@ harness = "not-real"
         profiles.load_profile_file(path)
 
 
+def test_profile_parses_harness_executable_overrides(tmp_path):
+    path = tmp_path / "profiles.toml"
+    path.write_text(
+        """
+[profiles.multi.runtime.harness_executables]
+claude = "/opt/claude"
+gemini = "gemini-dev"
+""",
+        encoding="utf-8",
+    )
+
+    profile = profiles.load_profile_file(path).profiles["multi"]
+
+    assert profile.runtime.harness_executables == {
+        "claude": "/opt/claude",
+        "gemini": "gemini-dev",
+    }
+
+
+def test_profile_rejects_unknown_harness_executable_override(tmp_path):
+    path = tmp_path / "profiles.toml"
+    path.write_text(
+        """
+[profiles.bad.runtime.harness_executables]
+not-real = "/opt/not-real"
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="runtime.harness_executables.not-real"):
+        profiles.load_profile_file(path)
+
+
 def test_resolved_profile_rejects_unimplemented_harness(tmp_path):
     home = tmp_path / "home"
     cwd = tmp_path / "repo"
@@ -323,13 +424,13 @@ def test_resolved_profile_rejects_unimplemented_harness(tmp_path):
     path.write_text(
         """
 [profiles.future.review]
-harness = "claude"
+harness = "reserved"
 """,
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="only the codex backend is implemented"):
-        profiles.resolve_profile("future", cwd=cwd, home=home)
+    with pytest.raises(ValueError, match="command execution is not implemented"):
+        profiles.resolve_profile("future", cwd=cwd, home=home, require_implemented=True)
 
 
 def test_resolve_profile_allows_reserved_harnesses_for_management_commands(tmp_path):
@@ -501,12 +602,12 @@ def test_resolve_profile_rejects_unimplemented_executable_triage_harness(tmp_pat
         """
 [profiles.future.triage]
 enabled = true
-harness = "gemini"
+harness = "reserved"
 """,
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="only the codex backend is implemented"):
+    with pytest.raises(ValueError, match="command execution is not implemented"):
         profiles.resolve_profile("future", cwd=cwd, home=home)
 
 
@@ -520,12 +621,12 @@ def test_resolve_profile_rejects_unimplemented_executable_commit_harness(tmp_pat
         """
 [profiles.future.commit]
 enabled = true
-harness = "gemini"
+harness = "reserved"
 """,
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="only the codex backend is implemented"):
+    with pytest.raises(ValueError, match="command execution is not implemented"):
         profiles.resolve_profile("future", cwd=cwd, home=home)
 
 

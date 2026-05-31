@@ -17,7 +17,9 @@
         "suppressed",
         "cancellation",
         "cost_charge",
-        "cost_ceiling_hit"
+        "cost_ceiling_hit",
+        "routing_decision",
+        "routing_outcome"
       ]
     },
     "iteration": {

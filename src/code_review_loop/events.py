@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Protocol, cast
 
 from code_review_loop import artifacts
+from code_review_loop.clock import SYSTEM_CLOCK, Clock, utc_iso
 
 EVENT_SCHEMA_VERSION = "1.0"
 EVENTS_FILENAME = "events.jsonl"
@@ -31,6 +32,8 @@ EVENT_KINDS = (
     "cancellation",
     "cost_charge",
     "cost_ceiling_hit",
+    "routing_decision",
+    "routing_outcome",
 )
 FLUSH_KINDS = frozenset({"phase_result", "failure", "summary", "cancellation", "cost_ceiling_hit"})
 
@@ -43,7 +46,7 @@ class Event:
     phase: str | None = None
     iteration: int | str | None = None
     payload: dict[str, Any] = field(default_factory=dict)
-    ts: str = field(default_factory=lambda: datetime.now(UTC).isoformat().replace("+00:00", "Z"))
+    ts: str = field(default_factory=lambda: datetime.now(UTC).isoformat().replace("+00:00", "Z"))  # det-exempt: dataclass default is a test-time fallback; production stamps ts via the injected Clock at sink-emit time
     schema_version: str = EVENT_SCHEMA_VERSION
 
     def to_dict(self) -> dict[str, Any]:
@@ -178,11 +181,12 @@ class RendererSink:
 
 
 class JsonlSink:
-    def __init__(self, run_dir: Path, run_id: str):
+    def __init__(self, run_dir: Path, run_id: str, *, clock: Clock = SYSTEM_CLOCK):
         self.run_dir = run_dir
         self.run_id = run_id
         self.path = artifacts.safe_artifact_path(run_dir, EVENTS_FILENAME)
         self._seq = 0
+        self._clock = clock
         self._handle = _open_fresh_artifact(self.path)
 
     def emit(
@@ -201,6 +205,7 @@ class JsonlSink:
             phase=phase,
             iteration=iteration,
             payload=payload or {},
+            ts=utc_iso(self._clock.now()),
         )
         self._handle.write(json.dumps(event.to_dict(), ensure_ascii=False, sort_keys=True) + "\n")
         if kind in FLUSH_KINDS:
@@ -255,7 +260,7 @@ def make_event(
         phase=phase,
         iteration=iteration,
         payload=payload or {},
-        ts=ts or datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        ts=ts or datetime.now(UTC).isoformat().replace("+00:00", "Z"),  # det-exempt: fallback when no ts is supplied; production sinks pass an injected-Clock ts
     )
 
 
@@ -347,14 +352,29 @@ def render_compact(events: list[Event]) -> str:
     for event in events:
         phase = event.phase or event.kind
         label = "" if event.iteration is None else str(event.iteration)
-        detail = _compact_detail(event)
+        detail = compact_detail(event)
         label_part = f"|{label}" if label else ""
         detail_part = f": {detail}" if detail else ""
         lines.append(f"{event.seq:04d}|{phase}{label_part}|{event.kind}{detail_part}")
     return "\n".join(lines) + ("\n" if lines else "")
 
 
-def _compact_detail(event: Event) -> str:
+def compact_detail(event: Event) -> str:
+    if event.kind == "routing_decision":
+        effective_route = event.payload.get("effective_route")
+        policy_decision = event.payload.get("policy_decision")
+        if isinstance(effective_route, dict) and isinstance(policy_decision, dict):
+            decision = policy_decision.get("decision")
+            route_tier = effective_route.get("route_tier")
+            harness = effective_route.get("harness")
+            if all(isinstance(value, str) for value in (decision, route_tier, harness)):
+                return f"{decision} {route_tier} via {harness}"
+    if event.kind == "routing_outcome":
+        checks_passed = event.payload.get("checks_passed")
+        exit_code = event.payload.get("exit_code")
+        if isinstance(checks_passed, bool) and isinstance(exit_code, int):
+            status = "checks_passed" if checks_passed else "checks_failed"
+            return f"{status} exit={exit_code}"
     for key in ("status", "reason", "message", "summary", "path"):
         value = event.payload.get(key)
         if isinstance(value, str):

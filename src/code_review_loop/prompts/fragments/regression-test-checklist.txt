@@ -1,0 +1,17 @@
+# Regression Test Checklist
+
+This change touches existing behavior. Protect it with tests.
+
+- Add a test that fails against the current (unfixed) code and passes after your
+  change, demonstrating the finding is actually resolved.
+- Cover the edge cases and failure modes implied by the finding, not only the
+  happy path.
+- Reuse the project's existing test harness, fixtures, and conventions; do not
+  introduce a parallel testing style.
+- Do not weaken or delete existing assertions to make the suite pass. If a test
+  must change, justify why the old expectation was wrong.
+- Avoid mocking the component under test; mock only true external boundaries.
+- Keep tests deterministic: no reliance on wall-clock timing, network, or
+  ordering that can flake.
+- Run the full configured test command, not just the new test, and confirm no
+  regressions elsewhere.

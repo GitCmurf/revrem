@@ -1,0 +1,13 @@
+# Atomic Task List
+
+This change was routed to an efficient remediation tier for small, low-risk
+fixes. Work in tight, verifiable steps.
+
+- Address one finding at a time, in the order provided.
+- Make the minimal edit that resolves the finding; do not expand scope.
+- After each fix, add or update the matching test before moving on.
+- Run the most relevant verification command for the file you changed.
+- Do not start a refactor, rename, or dependency change unless the finding
+  requires it.
+- If a finding turns out to be larger than a trivial fix, stop and report it
+  rather than attempting a broad change in this tier.

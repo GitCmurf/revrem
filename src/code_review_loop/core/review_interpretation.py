@@ -1,0 +1,328 @@
+"""NLP heuristics for classifying Codex review output (REVREM-TASK-003 B1a).
+
+This module is the canonical home for all regex constants and pure functions
+that interpret the natural-language (and structured JSON) output of review
+harnesses.  It is intentionally dependency-free — only stdlib is imported —
+so the logic is testable in isolation and can be consumed by any layer without
+pulling in edge concerns (LoopConfig, terminal I/O, subprocesses, etc.).
+
+Do NOT import from cli.py, argparse, or any non-stdlib module.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+
+# ---------------------------------------------------------------------------
+# Regex constants
+# ---------------------------------------------------------------------------
+
+STATUS_RE = re.compile(r"^\s*REVIEW_STATUS:\s*(clear|findings)\s*$", re.IGNORECASE | re.MULTILINE)
+CODEX_FINDING_RE = re.compile(r"^\s*-\s*\[P[0-3]\]\s+", re.MULTILINE)
+CODEX_FINDING_LINE_RE = re.compile(r"^\s*-\s*(\[P[0-3]\]\s+.+)$")
+REVIEW_COMMENTS_HEADING_RE = re.compile(
+    r"^\s*(full\s+)?review comments?:\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+NEGATED_CLEAR_REVIEW_STATEMENT_RE = re.compile(
+    r"(?:^|[.!?,;]\s+|,\s+and\s+|and\s+)(?:i\s+)?did not (?:identify|find) "
+    r"(?:any(?: discrete(?: introduced)?)?|a discrete(?: introduced)?)\b"
+    r"[^.!?]*(?:issue|issues|bug|bugs|defect|defects|regression|regressions|finding|findings|correctness|security|maintainability)"
+)
+
+AFFIRMATIVE_ISSUE_WORD_RE = re.compile(
+    r"\b(?:bug|bugs|issue|issues|regression|regressions|defect|defects|problem|problems|"
+    r"failure|failures|finding|findings)\b",
+    re.IGNORECASE,
+)
+STRUCTURED_EMPTY_FINDINGS_RE = re.compile(
+    r'(?<!\w)["\']?findings["\']?\s*:\s*\[\s*\](?!\w)',
+    re.IGNORECASE,
+)
+
+NEGATED_ISSUE_PREFIX_RE = r"(?:clear|discrete|actionable|introduced|known|new|obvious|blocking|material|major|serious|outstanding|significant|additional|further|remaining|open|critical|severe|real|actual|genuine|substantive|meaningful|correctness|security|maintainability)"
+NEGATED_ISSUE_PREFIX_CHAIN_RE = rf"{NEGATED_ISSUE_PREFIX_RE}(?:[\s,;:-]+{NEGATED_ISSUE_PREFIX_RE})*"
+NEGATED_ISSUE_WORD_RE = r"(?:bug|bugs|issue|issues|regression|regressions|defect|defects|problem|problems|failure|failures|finding|findings)"
+NEGATED_ISSUE_PROSE_RE = re.compile(
+    rf"\b(?:"
+    rf"no(?:\s+{NEGATED_ISSUE_PREFIX_CHAIN_RE})?\s+{NEGATED_ISSUE_WORD_RE}\b"
+    rf"|without(?:\s+any)?(?:\s+{NEGATED_ISSUE_PREFIX_CHAIN_RE})?\s+{NEGATED_ISSUE_WORD_RE}\b"
+    rf"|without\s+revealing(?:\s+any)?(?:\s+{NEGATED_ISSUE_PREFIX_CHAIN_RE})?\s+{NEGATED_ISSUE_WORD_RE}\b"
+    rf"|(?:did|does|do)\s+not\s+"
+    rf"(?:find|identify|detect|see|spot|surface|observe|notice)\s+"
+    rf"(?:any\s+)?(?:{NEGATED_ISSUE_PREFIX_CHAIN_RE}\s+)?{NEGATED_ISSUE_WORD_RE}\b"
+    rf"|(?:didn't|doesn't|don't|cannot|can't)\s+"
+    rf"(?:find|identify|detect|see|spot|surface|observe|notice)\s+"
+    rf"(?:any\s+)?(?:{NEGATED_ISSUE_PREFIX_CHAIN_RE}\s+)?{NEGATED_ISSUE_WORD_RE}\b"
+    rf")",
+    re.IGNORECASE,
+)
+CONTRASTIVE_CLAUSE_RE = re.compile(r"\b(?:but|however|though|although|yet|nevertheless|nonetheless|still)\b", re.IGNORECASE)
+
+CLEAR_PHRASES = (
+    # Keep only negated forms here. Broad phrases like "warrant an inline finding"
+    # can appear in positive review prose and must not force a clear status.
+    "did not find any discrete, actionable bugs",
+    "did not find any discrete, actionable correctness issues",
+    "did not find a discrete introduced bug",
+    "did not find any discrete introduced bug",
+    "did not find any actionable bugs",
+    "did not identify a discrete introduced correctness, security, or maintainability issue that should block the patch",
+    "did not identify any discrete introduced bugs that should block the patch",
+    "did not identify any discrete introduced bugs that would block the patch",
+    "did not identify any actionable correctness, security, or maintainability issues",
+    "did not identify any introduced correctness, security, or maintainability issues",
+    "did not identify any introduced correctness, security, or maintainability issues that warrant an inline finding",
+    "without revealing any discrete correctness issue",
+    "no discrete, actionable bugs",
+    "no actionable bugs",
+    "without any clear regressions or actionable bugs",
+    "without any clear regressions or actionable",
+)
+
+# ---------------------------------------------------------------------------
+# Core helper
+# ---------------------------------------------------------------------------
+
+
+def actionable_review_output(output: str) -> str:
+    """Keep the review's actionable comments, not the verbose tool transcript."""
+    review_text = output.split("\n[stderr]\n", 1)[0].strip()
+    if not review_text:
+        review_text = output.strip()
+    return review_text
+
+
+# ---------------------------------------------------------------------------
+# Prose-level helpers
+# ---------------------------------------------------------------------------
+
+
+def iter_review_prose_sentences(output: str):
+    """Yield prose fragments, treating line breaks as hard boundaries.
+
+    Review summaries are often wrapped onto new lines without terminal
+    punctuation, so line boundaries must split before sentence heuristics are
+    applied. That keeps a clear statement on one line from suppressing an issue
+    reported on the next line.
+    """
+
+    for paragraph in re.split(r"\n+", output.strip()):
+        paragraph = paragraph.strip()
+        if not paragraph:
+            continue
+        for sentence in re.split(r"(?<=[.!?])\s+", paragraph):
+            sentence = sentence.strip()
+            if sentence:
+                yield sentence
+
+
+def has_negated_clear_review_statement(normalized: str) -> bool:
+    return NEGATED_CLEAR_REVIEW_STATEMENT_RE.search(normalized) is not None
+
+
+def has_affirmative_contrastive_issue_clause(sentence: str) -> bool:
+    """Return True when a contrastive clause still reports an issue.
+
+    A sentence can negate issues in one clause and then introduce a real
+    finding after a contrastive marker such as "but" or "however". The
+    negation should not suppress the later clause.
+    """
+
+    for match in CONTRASTIVE_CLAUSE_RE.finditer(sentence):
+        suffix = sentence[match.end() :]
+        if not suffix:
+            continue
+        if not AFFIRMATIVE_ISSUE_WORD_RE.search(suffix):
+            continue
+        if NEGATED_ISSUE_PROSE_RE.search(suffix):
+            continue
+        return True
+    return False
+
+
+def has_affirmative_issue_prose(output: str) -> bool:
+    for sentence in iter_review_prose_sentences(output):
+        if not sentence:
+            continue
+        normalized_sentence = sentence.lower()
+        if STRUCTURED_EMPTY_FINDINGS_RE.search(sentence):
+            # Codex-style structured output often includes a literal empty findings
+            # array alongside a clear explanation. Do not treat that field name as
+            # affirmative issue prose.
+            continue
+        if not AFFIRMATIVE_ISSUE_WORD_RE.search(sentence):
+            continue
+        if has_affirmative_contrastive_issue_clause(sentence):
+            return True
+        if has_negated_clear_review_statement(normalized_sentence):
+            continue
+        if NEGATED_ISSUE_PROSE_RE.search(sentence):
+            continue
+        return True
+    return False
+
+
+def structured_review_status(output: str) -> str | None:
+    """Classify Codex structured JSON review output when it exposes findings."""
+    try:
+        parsed = json.loads(output)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    findings = parsed.get("findings")
+    if isinstance(findings, list):
+        return "findings" if findings else "clear"
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Top-level classifier
+# ---------------------------------------------------------------------------
+
+
+def detect_review_status(output: str) -> str:
+    """Return clear/findings/unknown for Codex review output."""
+    return _detect_review_status_from_actionable(actionable_review_output(output))
+
+
+def _detect_review_status_from_actionable(actionable_output: str) -> str:
+    match = STATUS_RE.search(actionable_output)
+    if match:
+        return match.group(1).lower()
+
+    structured_status = structured_review_status(actionable_output)
+    if structured_status is not None:
+        return structured_status
+
+    if CODEX_FINDING_RE.search(actionable_output):
+        return "findings"
+
+    normalized = actionable_output.lower()
+    finding_markers = (
+        "review comment:",
+        "review comments:",
+        "full review comments:",
+    )
+    if any(marker in normalized for marker in finding_markers):
+        return "findings"
+
+    normalized_lines = [line.strip().lower() for line in actionable_output.splitlines()]
+    clear_lines = {
+        "no findings.",
+        "no findings",
+        "no issues found.",
+        "no issues found",
+        "no actionable findings.",
+        "no actionable findings",
+    }
+    if any(line in clear_lines for line in normalized_lines):
+        return "clear"
+    if has_negated_clear_review_statement(normalized) and not has_affirmative_issue_prose(
+        actionable_output
+    ):
+        return "clear"
+    if any(phrase in normalized for phrase in CLEAR_PHRASES) and not has_affirmative_issue_prose(
+        actionable_output
+    ):
+        return "clear"
+    return "unknown"
+
+
+# ---------------------------------------------------------------------------
+# Diagnostics
+# ---------------------------------------------------------------------------
+
+
+def review_status_diagnostics(output: str) -> dict[str, object]:
+    """Return compact, targeted diagnostics for review-status classification."""
+    actionable_output = actionable_review_output(output)
+    stderr_present = "\n[stderr]\n" in output
+    explicit_status = STATUS_RE.search(actionable_output)
+    finding_lines = CODEX_FINDING_RE.findall(actionable_output)
+    normalized = actionable_output.lower()
+    clear_phrase_present = (
+        any(phrase in normalized for phrase in CLEAR_PHRASES)
+        or has_negated_clear_review_statement(normalized)
+    )
+    return {
+        "status": _detect_review_status_from_actionable(actionable_output),
+        "actionable_chars": len(actionable_output),
+        "stderr_present": stderr_present,
+        "explicit_status": explicit_status.group(1).lower() if explicit_status else None,
+        "finding_line_count": len(finding_lines),
+        "clear_phrase_present": clear_phrase_present,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Extraction helpers
+# ---------------------------------------------------------------------------
+
+
+def extract_finding_summaries(output: str, limit: int = 5) -> list[str]:
+    summaries: list[str] = []
+    for line in actionable_review_output(output).splitlines():
+        match = CODEX_FINDING_LINE_RE.match(line)
+        if not match:
+            continue
+        summaries.append(match.group(1).strip())
+        if len(summaries) >= limit:
+            break
+    return summaries
+
+
+def extract_finding_blocks(output: str, limit: int = 5, detail_lines: int = 2) -> list[list[str]]:
+    blocks: list[list[str]] = []
+    current: list[str] | None = None
+    current_details = 0
+
+    for raw_line in actionable_review_output(output).splitlines():
+        match = CODEX_FINDING_LINE_RE.match(raw_line)
+        if match:
+            if current:
+                blocks.append(current)
+                if len(blocks) >= limit:
+                    return blocks
+            current = [match.group(1).strip()]
+            current_details = 0
+            continue
+
+        if current is None or current_details >= detail_lines:
+            continue
+
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        current.append(stripped)
+        current_details += 1
+
+    if current and len(blocks) < limit:
+        blocks.append(current)
+    return blocks
+
+
+def extract_review_summary(output: str) -> str:
+    """Return the review's leading prose summary, excluding finding bullets."""
+    text = actionable_review_output(output).strip()
+    if not text:
+        return ""
+    text = REVIEW_COMMENTS_HEADING_RE.split(text, maxsplit=1)[0].strip()
+    paragraphs = [
+        " ".join(line.strip() for line in paragraph.splitlines() if line.strip())
+        for paragraph in re.split(r"\n\s*\n", text)
+    ]
+    for paragraph in paragraphs:
+        if paragraph and not CODEX_FINDING_LINE_RE.match(paragraph):
+            return paragraph
+    return ""
+
+
+def strip_finding_priority(finding: str) -> tuple[str, str]:
+    match = re.match(r"^(\[P[0-3]\])\s+(.+)$", finding)
+    if not match:
+        return "", finding
+    return match.group(1), match.group(2)

@@ -2,7 +2,7 @@
 document_id: REVREM-PLAN-003
 type: PLAN
 title: Post-Launch Development Roadmap
-status: Draft
+status: Approved
 version: '0.5'
 last_updated: '2026-05-12'
 owner: GitCmurf

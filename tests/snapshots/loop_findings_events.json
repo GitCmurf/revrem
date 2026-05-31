@@ -1,0 +1,105 @@
+[
+  {
+    "iteration": "1",
+    "kind": "phase_start",
+    "payload": {
+      "message": "codex review --base main [harness=codex sandbox=read-only source=direct-config]",
+      "summary": "start"
+    },
+    "phase": "review",
+    "run_id": "deadbeefcafe0000deadbeefcafe0000",
+    "schema_version": "1.0",
+    "seq": 1,
+    "ts": "2026-01-02T03:04:05Z"
+  },
+  {
+    "iteration": "1",
+    "kind": "phase_result",
+    "payload": {
+      "summary": "findings"
+    },
+    "phase": "review",
+    "run_id": "deadbeefcafe0000deadbeefcafe0000",
+    "schema_version": "1.0",
+    "seq": 2,
+    "ts": "2026-01-02T03:04:05Z"
+  },
+  {
+    "iteration": "1",
+    "kind": "phase_start",
+    "payload": {
+      "message": "codex exec --full-auto --sandbox workspace-write --color never --output-last-message <RUN_DIR>/artifacts/remediation-1-last-message.txt - [harness=codex sandbox=workspace-write source=direct-config]",
+      "summary": "start"
+    },
+    "phase": "remediate",
+    "run_id": "deadbeefcafe0000deadbeefcafe0000",
+    "schema_version": "1.0",
+    "seq": 3,
+    "ts": "2026-01-02T03:04:05Z"
+  },
+  {
+    "iteration": "1",
+    "kind": "phase_result",
+    "payload": {
+      "summary": "done"
+    },
+    "phase": "remediate",
+    "run_id": "deadbeefcafe0000deadbeefcafe0000",
+    "schema_version": "1.0",
+    "seq": 4,
+    "ts": "2026-01-02T03:04:05Z"
+  },
+  {
+    "iteration": null,
+    "kind": "artifact_write",
+    "payload": {
+      "kind": "summary",
+      "path": "<RUN_DIR>/artifacts/summary.json"
+    },
+    "phase": "artifacts",
+    "run_id": "deadbeefcafe0000deadbeefcafe0000",
+    "schema_version": "1.0",
+    "seq": 5,
+    "ts": "2026-01-02T03:04:05Z"
+  },
+  {
+    "iteration": null,
+    "kind": "artifact_write",
+    "payload": {
+      "bytes": 24,
+      "kind": "reviews",
+      "path": "<RUN_DIR>/artifacts/review-1.txt"
+    },
+    "phase": "artifacts",
+    "run_id": "deadbeefcafe0000deadbeefcafe0000",
+    "schema_version": "1.0",
+    "seq": 6,
+    "ts": "2026-01-02T03:04:05Z"
+  },
+  {
+    "iteration": null,
+    "kind": "artifact_write",
+    "payload": {
+      "bytes": 11,
+      "kind": "remediations",
+      "path": "<RUN_DIR>/artifacts/remediation-1.txt"
+    },
+    "phase": "artifacts",
+    "run_id": "deadbeefcafe0000deadbeefcafe0000",
+    "schema_version": "1.0",
+    "seq": 7,
+    "ts": "2026-01-02T03:04:05Z"
+  },
+  {
+    "iteration": null,
+    "kind": "summary",
+    "payload": {
+      "summary": "max_iterations_reached"
+    },
+    "phase": null,
+    "run_id": "deadbeefcafe0000deadbeefcafe0000",
+    "schema_version": "1.0",
+    "seq": 8,
+    "ts": "2026-01-02T03:04:05Z"
+  }
+]

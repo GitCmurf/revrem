@@ -27,8 +27,8 @@ def test_console_entry_points_include_stable_alias():
 
     scripts = pyproject["project"]["scripts"]
 
-    assert scripts["code-review-loop"] == "code_review_loop.cli:main"
-    assert scripts["revrem"] == "code_review_loop.cli:main"
+    assert scripts["code-review-loop"] == "code_review_loop.cli.main:main"
+    assert scripts["revrem"] == "code_review_loop.cli.main:main"
 
 
 def test_project_uses_revrem_distribution_identity():

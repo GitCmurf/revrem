@@ -66,8 +66,8 @@ checks = ["pytest -q", "git diff --check"]
         "kilo",
     }
     assert next(harness for harness in snapshot.harnesses if harness.name == "codex").implemented is True
-    assert next(harness for harness in snapshot.harnesses if harness.name == "claude").implemented is False
-
+    assert next(harness for harness in snapshot.harnesses if harness.name == "claude").implemented is True
+    assert next(harness for harness in snapshot.harnesses if harness.name == "reserved").implemented is False
 
 def test_home_snapshot_resolves_shared_defaults_before_building_previews(tmp_path):
     home = tmp_path / "home"
@@ -314,6 +314,51 @@ def test_run_monitor_view_derives_state_from_events_jsonl(tmp_path):
     assert "0002|checks|1.1|check_result: passed" in "\n".join(rendered.lines)
 
 
+def test_run_monitor_view_renders_routing_event_details(tmp_path):
+    repo = tmp_path / "repo"
+    run_dir = repo / ".revrem" / "runs" / "run-1"
+    run_dir.mkdir(parents=True)
+    event_sink = events.JsonlSink(run_dir, "run-1")
+    event_sink.emit(
+        "routing_decision",
+        phase="triage",
+        iteration=1,
+        payload={
+            "policy_decision": {"decision": "policy_override"},
+            "effective_route": {"route_tier": "frontier", "harness": "claude"},
+        },
+    )
+    event_sink.emit(
+        "routing_outcome",
+        phase="remediate",
+        iteration=1,
+        payload={"exit_code": 0, "checks_passed": True},
+    )
+    event_sink.close()
+    record = {
+        "run_id": "run-1",
+        "cwd": str(repo),
+        "final_status": "unknown",
+        "artifact_dir": ".revrem/runs/run-1",
+    }
+
+    monitor = tui_state.run_monitor_view(record)
+    rendered = tui_state.run_monitor_screen(
+        tui_state.HomeSnapshot(
+            cwd=str(repo),
+            profiles=(),
+            recent_runs=(record,),
+            harnesses=(),
+            run_previews=(),
+            run_monitors=(monitor,),
+        )
+    )
+
+    output = "\n".join(rendered.lines)
+    assert "routing_decision: policy_override frontier via claude" in output
+    assert "routing_outcome: checks_passed exit=0" in output
+
+
 def test_run_monitor_view_reports_truncated_events_jsonl(tmp_path):
     repo = tmp_path / "repo"
     run_dir = repo / ".revrem" / "runs" / "run-1"
@@ -366,6 +411,38 @@ def test_run_monitor_view_reports_invalid_events_jsonl(tmp_path):
 
     assert monitor.events == ()
     assert monitor.event_error == "event seq gap: expected 1, got 2"
+
+
+def test_run_monitor_view_reports_malformed_complete_events_jsonl(tmp_path):
+    repo = tmp_path / "repo"
+    run_dir = repo / ".revrem" / "runs" / "run-1"
+    run_dir.mkdir(parents=True)
+    event = events.make_event(
+        run_id="run-1",
+        seq=1,
+        kind="phase_start",
+        phase="review",
+        payload={"message": "start"},
+    )
+    (run_dir / "events.jsonl").write_text(
+        json.dumps(event.to_dict()) + "\n" + "{not json}\n",
+        encoding="utf-8",
+    )
+
+    monitor = tui_state.run_monitor_view(
+        {
+            "run_id": "run-1",
+            "cwd": str(repo),
+            "final_status": "failed",
+            "artifact_dir": ".revrem/runs/run-1",
+            "artifact_paths": {},
+        }
+    )
+
+    assert monitor.events_truncated is True
+    assert [event.kind for event in monitor.events] == ["phase_start", "failure"]
+    assert monitor.events[-1].detail == "truncated_events_jsonl"
+    assert monitor.event_error is None
 
 
 def test_shell_model_builds_operator_screens_and_selected_launch_plan(tmp_path):

@@ -17,6 +17,7 @@ dist/
 .venv/
 venv/
 .env
+.envrc
 .env.*
 !.env.example
 
@@ -31,5 +32,6 @@ venv/
 .revrem/tmp/
 .superpowers/
 .aider*
-.claude/settings.local.json
+.claude/
+.clawpatch/
 tmp/

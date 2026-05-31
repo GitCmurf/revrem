@@ -4,11 +4,12 @@ import importlib.util
 import sys
 import types
 
-from code_review_loop import cli, tui
+from code_review_loop import tui
+from code_review_loop.cli.main import main as cli_main
 
 
 def test_tui_dry_run_does_not_require_textual(capsys):
-    assert cli.main(["ui", "--dry-run"]) == 0
+    assert cli_main(["ui", "--dry-run"]) == 0
 
     captured = capsys.readouterr()
     assert "RevRem TUI entry point is available." in captured.out
@@ -40,7 +41,7 @@ def test_tui_reports_missing_optional_dependency(monkeypatch, capsys):
 
     monkeypatch.setattr(tui.importlib.util, "find_spec", fake_find_spec)
 
-    assert cli.main(["ui"]) == 1
+    assert cli_main(["ui"]) == 1
 
     captured = capsys.readouterr()
     assert captured.out == ""
@@ -60,7 +61,7 @@ def test_tui_reports_unknown_initial_profile(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(tui.importlib.util, "find_spec", lambda name: object() if name == "textual" else None)
     monkeypatch.setattr(tui.Path, "cwd", lambda: tmp_path)
 
-    assert cli.main(["ui", "--profile", "missing"]) == 1
+    assert cli_main(["ui", "--profile", "missing"]) == 1
 
     captured = capsys.readouterr()
     assert captured.out == ""
@@ -92,7 +93,7 @@ def test_tui_launches_textual_app_with_home_snapshot(monkeypatch, tmp_path):
     monkeypatch.setattr(tui.importlib.util, "find_spec", lambda name: object() if name == "textual" else None)
     monkeypatch.setattr(tui.Path, "cwd", lambda: tmp_path)
 
-    assert cli.main(["ui"]) == 0
+    assert cli_main(["ui"]) == 0
 
     assert launched == ["RevRemApp"]
     body = rendered_widgets[1]
@@ -154,7 +155,7 @@ checks = ["git diff --check"]
 
     monkeypatch.setattr(tui, "run_launch_plan", fake_run_launch_plan)
 
-    assert cli.main(["ui"]) == 0
+    assert cli_main(["ui"]) == 0
 
     assert actions[0][0] == ("revrem", "--profile", "final-pr", "--dry-run")
     assert actions[0][1] == tmp_path
@@ -212,7 +213,7 @@ def test_tui_edit_action_launches_profile_editor_with_suspended_app(monkeypatch,
 
     monkeypatch.setattr(tui, "run_launch_plan", fake_run_launch_plan)
 
-    assert cli.main(["ui", "--profile", "final-pr"]) == 0
+    assert cli_main(["ui", "--profile", "final-pr"]) == 0
 
     assert actions[:3] == [
         "suspend-enter",
@@ -271,7 +272,7 @@ def test_tui_profile_lifecycle_actions_use_config_commands(monkeypatch, tmp_path
 
     monkeypatch.setattr(tui, "run_launch_plan", fake_run_launch_plan)
 
-    assert cli.main(["ui", "--profile", "final-pr"]) == 0
+    assert cli_main(["ui", "--profile", "final-pr"]) == 0
 
     assert actions[:2] == [
         (("revrem", "config", "clone", "final-pr", "copy"), tmp_path, True),
