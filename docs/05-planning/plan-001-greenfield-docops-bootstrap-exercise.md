@@ -2,9 +2,9 @@
 document_id: REVREM-PLAN-001
 type: PLAN
 title: Greenfield DocOps bootstrap exercise
-status: Draft
-version: '0.1'
-last_updated: '2026-04-30'
+status: Approved
+version: '0.2'
+last_updated: '2026-05-31'
 owner: GitCmurf
 docops_version: '2.0'
 area: docops
@@ -92,3 +92,20 @@ ergonomics.
 - `meminit doctor --format json` passes.
 - `meminit check --format json` passes.
 - The final repository exists in the user's local workspace.
+
+### Completion Audit Snapshot
+
+This bootstrap exercise is complete and closed. The previous `Draft` status was
+stale: the repository has moved far beyond the greenfield bootstrap and now has
+the governed documentation, package scaffolding, CI/release surfaces, and
+DocOps checks that this exercise set out to validate.
+
+| Requirement | Current evidence inspected on 2026-05-31 | Audit status |
+|---|---|---|
+| Repository exists in the user's workspace | Current root is `/home/cmf/code/code-review-loop`; `origin` points at the public `GitCmurf/revrem` repository. | Completed |
+| Governed docs exist with deterministic IDs | `REVREM-DEVEX-001`, `REVREM-ADR-001`, `REVREM-PLAN-001`, and `REVREM-TEST-001` are present under `docs/`. | Completed |
+| Package/CLI scaffolding exists | `pyproject.toml` publishes `revrem` and `code-review-loop` console scripts; package code lives under `src/code_review_loop/`. | Completed |
+| DocOps compliance holds | `meminit check --format json` passed on 2026-05-31 with `success:true`, 29/29 files checked. | Completed |
+
+The candidate Meminit improvements remain product feedback for Meminit itself;
+they are not open implementation work in this repository.

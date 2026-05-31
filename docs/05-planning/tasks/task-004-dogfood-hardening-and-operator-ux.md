@@ -2,9 +2,9 @@
 document_id: REVREM-TASK-004
 type: TASK
 title: Dogfood hardening and operator UX
-status: In Review
-version: '0.6'
-last_updated: '2026-05-30'
+status: Approved
+version: '0.7'
+last_updated: '2026-05-31'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -696,7 +696,7 @@ The accepted remediation scope is:
   `mixed`;
 - remove the invalid stray `docs/tasks/TASK-004-adversarial-review.md` and
   track the valid governed review report at
-  `docs/05-planning/tasks/task-004-adversarial-review-findings.md`.
+  `docs/05-planning/tasks/task-005-adversarial-review-findings.md`.
 
 Closeout must verify both temp states:
 
@@ -866,3 +866,22 @@ that faithfully records the effective dogfood configuration. The first
 non-Codex route does not have to be mandatory, but its availability, fallback,
 and artifacts must be clear enough that enabling it is an operator choice, not
 a debugging session.
+
+## Completion Audit Snapshot
+
+This task is code-complete and closed. The previous `In Review` status was
+stale: the adversarial review record now reports no open code remediation.
+
+| Requirement | Current evidence inspected on 2026-05-31 | Audit status |
+|---|---|---|
+| Dogfood profile exists and parses | `.revrem.toml` contains `[profiles.dogfood]`; `tests/test_profiles.py::test_project_dogfood_profile_parses_exact_committed_profile` guards the exact committed block. | Completed |
+| Triage/routing/commit controls are implemented | `src/code_review_loop/cli/args.py`, `src/code_review_loop/cli/config_builder.py`, `src/code_review_loop/policy.py`, and focused CLI/profile/routing tests cover the one-off controls and disabled-routing behavior. | Completed |
+| Resolved phase configuration is visible | `phase_config` projections, source provenance, explicit timeout intent, dry-run JSON, resume payloads, and progress/closeout display are covered by CLI progress/summary/resume tests and documented in `REVREM-DEVEX-001`. | Completed |
+| Commit-message robustness is implemented | `src/code_review_loop/adapters/commit.py`, `src/code_review_loop/harnesses.py`, and commit harness/integration tests cover tool disabling, model-specific effort adjustment, and deterministic fallback subjects. | Completed |
+| Latest review/check/resume UX fixes are implemented | Runner/runtime/reporting tests cover latest review excerpts, accurate check tables, and full resume commands. | Completed |
+| Non-Codex route/fallback behavior is deterministic | Routing artifact, routing policy, and fake-harness integration tests cover route selection, fallback, and schema-valid routing artifacts without requiring Gemini credentials. | Completed |
+| Adversarial review has no open code findings | `REVREM-REVIEW-004` Round 8 records no open code remediation; only optional live Matrix A/E operator sign-off remains. | Completed for code; operator sign-off remains optional/live-gated |
+| DocOps remains green | `meminit check --format json` passed on 2026-05-31 with `success:true`, 29/29 files checked. | Completed |
+
+Live Matrix A/E dogfood runs remain useful operator sign-off, but they consume
+real model budget and may auto-commit. They are not an open Codex code task.

@@ -2,9 +2,9 @@
 document_id: REVREM-LEDGER-003
 type: LEDGER
 title: Behaviour ledger for the cli.py re-engineering (REVREM-TASK-003)
-status: Draft
-version: '0.6'
-last_updated: '2026-05-30'
+status: Approved
+version: '0.7'
+last_updated: '2026-05-31'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -55,6 +55,17 @@ There is no silent third option.
 ```
 
 ## Entries
+
+### 2026-05-31 — TASK-003 ledger closed
+
+- **Contract:** none
+- **What changed:** no runtime behavior changed. This entry records that
+  `REVREM-TASK-003` is complete and the ledger is now the historical audit
+  record for that task rather than an active work queue.
+- **Why:** the task status was corrected to `Approved` with completion evidence
+  on 2026-05-31. Future machine-contract changes should create new ledger
+  entries under their owning task or plan rather than treating TASK-003 as open.
+- **schema_version impact:** none.
 
 ### 2026-05-30 — Structured triage accepts review priority labels
 

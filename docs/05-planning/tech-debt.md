@@ -2,9 +2,9 @@
 document_id: REVREM-LEDGER-004
 type: LEDGER
 title: Tech Debt Register
-status: Draft
-version: '0.1'
-last_updated: '2026-05-25'
+status: Approved
+version: '0.2'
+last_updated: '2026-05-31'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -22,6 +22,12 @@ related_ids:
 # Tech Debt
 
 Issues identified during code review and simplification passes that were deferred because they require larger refactors, are tied to a planned phase transition, or are acceptable at current scale.
+
+## Current State
+
+All debt items currently listed in this register are resolved as of
+2026-05-31. The register remains as historical context and can accept new debt
+items later, but it does not currently contain open implementation work.
 
 ---
 
@@ -43,7 +49,7 @@ Phase execution now goes through required `RunContext` ports and
 
 ---
 
-## TD-002 — `acc.iteration` is redundant state in `LoopAccumulator`
+## TD-002 — `acc.iteration` is redundant state in `LoopAccumulator` (RESOLVED 2026-05-25)
 
 **Location (historical):** `src/code_review_loop/cli.py:1975–1978`
 (`_run_loop`), later `src/code_review_loop/core/engine.py`
@@ -61,7 +67,7 @@ transition table needs it.
 
 ---
 
-## TD-003 — `_execute_stop` repeats the same tail pattern across four outcome branches
+## TD-003 — `_execute_stop` repeats the same tail pattern across four outcome branches (RESOLVED 2026-05-25)
 
 **Location (historical):** `src/code_review_loop/cli.py:1770–1815`
 (`_execute_stop`), now `src/code_review_loop/runner.py` (`_execute_stop`)
@@ -94,7 +100,7 @@ Each branch sets its `final_status` and any unique fields, then calls the helper
 
 ---
 
-## TD-005 — `OutcomeFailed.reason` is stringly-typed; `outcome_to_exit_code` dispatches on raw strings
+## TD-005 — `OutcomeFailed.reason` is stringly-typed; `outcome_to_exit_code` dispatches on raw strings (RESOLVED 2026-05-25)
 
 **Location:** `src/code_review_loop/core/outcome.py:55–80`
 

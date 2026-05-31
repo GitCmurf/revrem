@@ -3,8 +3,8 @@ document_id: REVREM-PLAN-004
 type: PLAN
 title: Triage Stage as a Routing and Prompt-Construction Layer
 status: Approved
-version: '1.0'
-last_updated: '2026-05-21'
+version: '1.1'
+last_updated: '2026-05-31'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -1007,13 +1007,32 @@ auditable model choice, while validating the shared multi-harness boundary with
 deterministic tests. Live provider smoke coverage is tracked as follow-up
 hardening rather than as evidence for first-slice completion.
 
+## Completion Audit Snapshot
+
+This plan's **first routed-remediation slice is complete**. The plan should not
+be read as closing every future harness-hardening concern: live provider smoke
+coverage and provider-specific operational hardening remain follow-up work under
+`REVREM-PLAN-003` M6.
+
+| Requirement | Current evidence inspected on 2026-05-31 | Audit status |
+|---|---|---|
+| Triage v2, routing, and routing outcome schemas exist | `docs/52-api/schemas/triage-v2.schema.json`, `routing-v1.schema.json`, and `routing-outcome-v1.schema.json` exist with source/package schema counterparts. | Completed |
+| Prompt and routing artifacts exist | `src/code_review_loop/prompts/triage_v2.txt`, prompt fragments, routing artifact code, and routing schema tests are present. | Completed |
+| Policy parser/linter and route resolution exist | `src/code_review_loop/policy.py`, profile routing config parsing, `revrem policy lint`, `revrem triage explain`, and `revrem policy review` are implemented and documented. | Completed |
+| Multi-harness command boundary exists | `src/code_review_loop/harnesses.py` implements Codex, Claude, Gemini, opencode, Kilo, and fake adapters behind the shared command-building surface. | Completed for deterministic command construction |
+| Fake-harness and routing tests prove local behavior | Routing/policy/fake-harness tests cover route selection, fallback, artifacts, schema validation, and prompt-delivery command shape without live model calls. | Completed |
+| Live secondary provider proof | Live Claude/Gemini/opencode/Kilo end-to-end model smoke remains intentionally out of this first-slice gate. | Follow-up |
+
 ## Pointers
 
 - Current triage implementation: `src/code_review_loop/triage.py`
 - Current triage prompt: `src/code_review_loop/prompts/triage_v1.txt`
 - Current triage schema: `src/code_review_loop/schemas/triage-v1.schema.json`
   and `docs/52-api/schemas/triage-v1.schema.json`
-- Loop orchestration: `src/code_review_loop/cli.py`
+- Current loop orchestration shell: `src/code_review_loop/runner_shell.py`,
+  with the dependency-free transition engine in
+  `src/code_review_loop/core/engine.py` and CLI wiring under
+  `src/code_review_loop/cli/`
 - Profile system: `src/code_review_loop/profiles.py`
 - Harness registry and capability contract: `src/code_review_loop/harnesses.py`
   and REVREM-ADR-010
