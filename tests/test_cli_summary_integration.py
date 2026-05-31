@@ -54,7 +54,7 @@ def test_command_line_redacts_secret_like_tokens(monkeypatch):
     monkeypatch.setenv("HOME", "/home/example-user")
     assert _redacted_argv([
         "--api-token",
-        "ghp_abcdefghijklmnopqrstuvwxyz123456",
+        "ghp_abcdefghijklmnopqrstuvwxyz123456",  # pragma: allowlist secret
         "--path=/home/example-user/project",
         "--opaque=0123456789abcdef0123456789abcdef",  # pragma: allowlist secret
     ]) == (
