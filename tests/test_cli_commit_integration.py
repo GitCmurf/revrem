@@ -575,9 +575,9 @@ def test_run_commit_uses_no_verify_only_on_retry(tmp_path):
     )
 
     assert commit_impl.run_commit(config, runner, 1, ctx=make_run_context(runner)) == "committed"
-    assert ["git", "commit", "-m", "chore(code): update code (RevRem)"] in calls
-    assert ["git", "commit", "--no-verify", "-m", "chore(code): update code (RevRem)"] not in calls
+    assert ["git", "commit", "-m", "chore(code): update code in src (RevRem)"] in calls
+    assert ["git", "commit", "--no-verify", "-m", "chore(code): update code in src (RevRem)"] not in calls
 
     calls.clear()
     assert commit_impl.run_commit(config, runner, 1, ctx=make_run_context(runner), retrying=True) == "committed"
-    assert ["git", "commit", "--no-verify", "-m", "chore(code): update code (RevRem)"] in calls
+    assert ["git", "commit", "--no-verify", "-m", "chore(code): update code in src (RevRem)"] in calls

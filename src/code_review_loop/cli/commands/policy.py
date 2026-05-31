@@ -67,7 +67,7 @@ def policy_review(artifact_dir: Path, output_format: str | None = None) -> int:
         parts = path.stem.split("-")
         if len(parts) > 1 and parts[1].isdigit():
             return int(parts[1])
-        return 0
+        return 0  # outcome-exempt: sort key fallback
 
     for routing_path in sorted(artifact_dir.glob("routing-*.json"), key=_routing_sort_key):
         payload = json.loads(routing_path.read_text(encoding="utf-8"))

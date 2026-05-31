@@ -200,8 +200,7 @@ def _effective_route(resolved_route: policy.ResolvedRoute, config: LoopConfig) -
         "sandbox": resolved_route.sandbox,
     }
     timeout = _artifact_timeout_seconds(resolved_route, config)
-    if timeout is not None:
-        effective_route["timeout_seconds"] = timeout
+    effective_route["timeout_seconds"] = timeout if timeout is not None else 0
     if eff_model:
         effective_route["model"] = eff_model
     if eff_reasoning:

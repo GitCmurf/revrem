@@ -385,6 +385,10 @@ harness = "claude"
 
 [profiles.smoke.remediation]
 harness = "gemini"
+
+[profiles.smoke.runtime.harness_executables]
+claude = "git"
+gemini = "git"
 """,
         encoding="utf-8",
     )
