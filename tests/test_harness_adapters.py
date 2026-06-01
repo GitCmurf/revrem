@@ -41,6 +41,28 @@ def test_gemini_adapter_commands():
         assert "" not in cmd
 
 
+def test_gemini_review_command_uses_plan_approval_mode():
+    command = harnesses.build_phase_command(
+        harnesses.PhaseCommandRequest(
+            harness="gemini",
+            role="review",
+            executable="gemini",
+            model="gemini-3.1-pro-preview",
+            sandbox="read-only",
+            full_auto=False,
+        )
+    )
+
+    assert command == [
+        "gemini",
+        "--approval-mode",
+        "plan",
+        "--model",
+        "gemini-3.1-pro-preview",
+        "--prompt",
+    ]
+
+
 def test_opencode_adapter_commands():
     adapter = harnesses.OpenCodeHarnessAdapter()
     for role in ["review", "triage", "remediation", "commit-message"]:
@@ -102,7 +124,13 @@ def test_prompt_invocation_passes_prompt_as_argument_for_argv_harnesses():
         ["gemini", "--approval-mode", "auto_edit", "--prompt"],
         "review prompt",
     )
-    assert command == ["gemini", "--approval-mode", "auto_edit", "--prompt", "review prompt"]
+    assert command == [
+        "gemini",
+        "--approval-mode",
+        "auto_edit",
+        "--prompt",
+        "review prompt",
+    ]
     assert stdin is None
 
 
@@ -118,13 +146,28 @@ def test_prompt_invocation_passes_prompt_as_argument_for_argv_harnesses():
         (
             "gemini",
             "gemini",
-            ["gemini", "--approval-mode", "auto_edit", "--model", "M", "--prompt", "PROMPT"],
+            [
+                "gemini",
+                "--approval-mode",
+                "auto_edit",
+                "--model",
+                "M",
+                "--prompt",
+                "PROMPT",
+            ],
             False,
         ),
         (
             "opencode",
             "opencode",
-            ["opencode", "run", "--dangerously-skip-permissions", "--model", "M", "PROMPT"],
+            [
+                "opencode",
+                "run",
+                "--dangerously-skip-permissions",
+                "--model",
+                "M",
+                "PROMPT",
+            ],
             False,
         ),
         (
@@ -150,7 +193,9 @@ def test_full_noninteractive_invocation_matches_real_cli_contract(
         full_auto=True,
     )
     base_command = harnesses.build_phase_command(request)
-    command, stdin = harnesses.prepare_prompt_invocation(harness, base_command, "PROMPT")
+    command, stdin = harnesses.prepare_prompt_invocation(
+        harness, base_command, "PROMPT"
+    )
     if expects_stdin:
         assert stdin == "PROMPT"
         assert command == expected_command

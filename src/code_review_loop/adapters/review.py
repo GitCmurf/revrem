@@ -16,7 +16,12 @@ from typing import TYPE_CHECKING, Literal, cast
 from code_review_loop import harnesses
 from code_review_loop.adapters import phase_support
 from code_review_loop.adapters.git import run_git_preflight
-from code_review_loop.core.ports import CommandResult, ReviewOutcome, ReviewRequest, RunContext
+from code_review_loop.core.ports import (
+    CommandResult,
+    ReviewOutcome,
+    ReviewRequest,
+    RunContext,
+)
 from code_review_loop.core.review_interpretation import (
     detect_review_status,
     review_status_diagnostics,
@@ -37,6 +42,8 @@ def build_review_command(config: LoopConfig) -> list[str]:
             base=config.base,
             model=config.review_model or config.model,
             reasoning_effort=config.review_reasoning_effort or config.reasoning_effort,
+            sandbox="read-only",
+            full_auto=False,
         )
     )
 
@@ -63,7 +70,9 @@ def run_codex_review(
             review_prompt,
         )
     phase_support.set_phase_terminal_title(config, "review", display_label)
-    phase_support.ensure_model_budget(config, phase="review", iteration=display_label, ctx=ctx)
+    phase_support.ensure_model_budget(
+        config, phase="review", iteration=display_label, ctx=ctx
+    )
     phase_support.progress_event(
         config,
         "review",
@@ -86,16 +95,36 @@ def run_codex_review(
         artifact_path = config.artifact_dir / f"{artifact_label}.txt"
         if preflight_error := review_base_preflight_error(config):
             phase_support.write_artifact(artifact_path, preflight_error)
-            phase_support.progress_event(config, "review", display_label, "failed", "invalid base", ctx=ctx)
-            raise RuntimeError(f"codex review failed for {artifact_label}; see {artifact_path}")
-        result = runner(command, config.cwd, review_prompt, phase_support.phase_timeout_seconds(config, config.review_timeout_seconds))
+            phase_support.progress_event(
+                config, "review", display_label, "failed", "invalid base", ctx=ctx
+            )
+            raise RuntimeError(
+                f"codex review failed for {artifact_label}; see {artifact_path}"
+            )
+        result = runner(
+            command,
+            config.cwd,
+            review_prompt,
+            phase_support.phase_timeout_seconds(config, config.review_timeout_seconds),
+        )
     combined = phase_support._combined_output(result)
     artifact_path = config.artifact_dir / f"{artifact_label}.txt"
     phase_support.write_artifact(artifact_path, combined)
-    phase_support.record_model_charge(config, result, phase="review", iteration=display_label, ctx=ctx)
+    phase_support.record_model_charge(
+        config, result, phase="review", iteration=display_label, ctx=ctx
+    )
     if review_failed_to_run(result):
-        phase_support.progress_event(config, "review", display_label, "failed", f"exit {result.returncode}", ctx=ctx)
-        raise RuntimeError(f"codex review failed for {artifact_label}; see {artifact_path}")
+        phase_support.progress_event(
+            config,
+            "review",
+            display_label,
+            "failed",
+            f"exit {result.returncode}",
+            ctx=ctx,
+        )
+        raise RuntimeError(
+            f"codex review failed for {artifact_label}; see {artifact_path}"
+        )
     status = detect_review_status(combined)
     if config.debug_status_detection:
         diagnostics = review_status_diagnostics(combined)
@@ -116,7 +145,9 @@ def run_codex_review(
             ),
             ctx=ctx,
         )
-    if status != "findings" or not phase_support.log_review_findings(config, display_label, combined, ctx=ctx):
+    if status != "findings" or not phase_support.log_review_findings(
+        config, display_label, combined, ctx=ctx
+    ):
         phase_support.progress_event(config, "review", display_label, status, ctx=ctx)
     return status, result
 
@@ -130,7 +161,9 @@ def review_base_preflight_error(config: LoopConfig) -> str | None:
         return None
 
     base = config.base
-    base_result = run_git_preflight(config.cwd, ["rev-parse", "--verify", f"{base}^{{commit}}"])
+    base_result = run_git_preflight(
+        config.cwd, ["rev-parse", "--verify", f"{base}^{{commit}}"]
+    )
     if base_result.returncode != 0:
         return (
             f"Review base preflight failed: base {base!r} is not a local commit.\n"
@@ -164,7 +197,9 @@ def review_base_hint(config: LoopConfig, base: str) -> str:
         ["rev-parse", "--verify", f"{remote_base}^{{commit}}"],
     )
     if remote_base_result.returncode == 0:
-        remote_merge_base = run_git_preflight(config.cwd, ["merge-base", "HEAD", remote_base])
+        remote_merge_base = run_git_preflight(
+            config.cwd, ["merge-base", "HEAD", remote_base]
+        )
         if remote_merge_base.returncode == 0:
             return (
                 f"Hint: {remote_base!r} does share history with HEAD. "
@@ -207,4 +242,6 @@ class ReviewAdapter:
             display_label=request.display_label,
             ctx=ctx,
         )
-        return ReviewOutcome(status=cast(Literal["clear", "findings", "unknown"], status), result=result)
+        return ReviewOutcome(
+            status=cast(Literal["clear", "findings", "unknown"], status), result=result
+        )

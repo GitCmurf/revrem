@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.19'
+version: '1.20'
 last_updated: '2026-06-01'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.19
+> **Version:** 1.20
 > **Last Updated:** 2026-06-01
 > **Type:** DEVEX
 > **Area:** devex
@@ -918,6 +918,14 @@ must be installed and discoverable through `PATH`,
 `runtime.harness_executables`, or `--harness-bin`. Reserved harness names
 remain valid management syntax but fail fast on executable runs.
 
+External review harnesses do not have Codex's native `codex review --base`
+command, so RevRem supplies a review prompt that names the base branch and
+working directory, instructs the provider to inspect the diff against
+`<base>...HEAD`, and requires an explicit `REVIEW_STATUS` line. Review is always
+invoked in read-only mode; for Gemini this means `--approval-mode plan`. Gemini
+remediation still uses `--approval-mode auto_edit` when workspace writes are
+allowed.
+
 ### Exit codes
 
 - `0`: the loop ended clear.
@@ -1039,6 +1047,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.20 | 2026-06-01 | Codex | Documented external review prompts and Gemini read-only review invocation |
 | 1.19 | 2026-06-01 | Codex | Documented per-phase harness CLI parity and forced Gemini dogfood route selection |
 | 1.18 | 2026-06-01 | Codex | Documented Gemini workspace trust and live secondary auth prerequisite behavior |
 | 1.17 | 2026-05-31 | Codex | Documented credential-gated secondary harness live smoke tests and routed artifact expectations |

@@ -55,10 +55,19 @@ Previous review output:
 
 DEFAULT_REVIEW_PROMPT = """Review the current repository changes against the configured base branch.
 
+You are in the review phase only. Treat the working tree as read-only: do not
+edit files, apply patches, stage changes, commit changes, or remediate findings.
+
+Inspect the patch against the configured base branch. For CLIs without a native
+review command, use read-only commands such as `git diff --stat <base>...HEAD`,
+`git diff <base>...HEAD`, and targeted file inspection as needed. Run tests only
+when they are safe and useful for evaluating the patch.
+
 Prioritize correctness, security, behavioral regressions, missing tests, and
-maintainability risks. Return findings first, with file and line references
-where possible. End with `REVIEW_STATUS: findings` if remediation is required,
-or `REVIEW_STATUS: clear` if no actionable findings remain.
+maintainability risks. Return actionable findings first, with file and line
+references where possible. End with exactly `REVIEW_STATUS: findings` if
+remediation is required, or exactly `REVIEW_STATUS: clear` if no actionable
+findings remain.
 """
 
 DEFAULT_COMMIT_MESSAGE_PROMPT = """Write one concise Conventional Commit subject for the staged RevRem remediation changes.
@@ -134,7 +143,9 @@ def write_artifact(path: Path, content: str) -> None:
 
 
 def _resolve_executable(harness: str, config: LoopConfig) -> str:
-    return harnesses.resolve_executable(harness, config.harness_executables, config.codex_bin)
+    return harnesses.resolve_executable(
+        harness, config.harness_executables, config.codex_bin
+    )
 
 
 def build_commit_message_command(config: LoopConfig) -> list[str]:
@@ -160,10 +171,14 @@ def phase_timeout_seconds(config: LoopConfig, value: float | None) -> float | No
     return value
 
 
-def ensure_model_budget(config: LoopConfig, *, phase: str, iteration: int | str, ctx: RunContext) -> None:
+def ensure_model_budget(
+    config: LoopConfig, *, phase: str, iteration: int | str, ctx: RunContext
+) -> None:
     if ctx.budget_state is None:
         return
-    warning_due, elapsed = budgets.wall_warning_due(config.budget_config, ctx.budget_state)
+    warning_due, elapsed = budgets.wall_warning_due(
+        config.budget_config, ctx.budget_state
+    )
     if warning_due:
         ctx.budget_state.wall_warning_emitted = True
         if ctx.event_sink is not None:
@@ -197,10 +212,7 @@ def ensure_model_budget(config: LoopConfig, *, phase: str, iteration: int | str,
 
 
 def remaining_wall_budget_seconds(config: LoopConfig, ctx: RunContext) -> float | None:
-    if (
-        ctx.budget_state is None
-        or config.budget_config.max_wall_seconds is None
-    ):
+    if ctx.budget_state is None or config.budget_config.max_wall_seconds is None:
         return None
     elapsed = budgets.wall_elapsed_seconds(ctx.budget_state)
     return max(0.0, config.budget_config.max_wall_seconds - elapsed)
@@ -223,7 +235,9 @@ def record_model_charge(
         "usd": str(result.usd) if result.usd is not None else None,
     }
     if ctx.event_sink is not None:
-        ctx.event_sink.emit("cost_charge", phase=phase, iteration=iteration, payload=payload)
+        ctx.event_sink.emit(
+            "cost_charge", phase=phase, iteration=iteration, payload=payload
+        )
     try:
         budgets.record_charge(
             config.budget_config,
@@ -258,7 +272,9 @@ def compact_progress_label(label: str) -> str:
 
 
 def compact_progress_prefix(phase: str, label: str) -> str:
-    timestamp = datetime.now().strftime("%H:%M:%S")  # det-exempt: human-display timestamp
+    timestamp = datetime.now().strftime(
+        "%H:%M:%S"
+    )  # det-exempt: human-display timestamp
     phase_code = PROGRESS_PHASE_CODES.get(phase, phase[:3])
     return f"{timestamp}|{phase_code:<3}|{compact_progress_label(label):<4}|"
 
@@ -305,7 +321,9 @@ def wrap_progress_text(
     return lines
 
 
-def print_compact_progress(phase: str, label: str, text: str, *, head: str = "") -> None:
+def print_compact_progress(
+    phase: str, label: str, text: str, *, head: str = ""
+) -> None:
     prefix = compact_progress_prefix(phase, label)
     for line in wrap_progress_text(prefix, text, head=head):
         print(line, file=sys.stderr, flush=True)
@@ -316,7 +334,9 @@ def warn_rich_unavailable(phase: str, label: str) -> None:
     if _RICH_UNAVAILABLE_WARNED:
         return
     _RICH_UNAVAILABLE_WARNED = True
-    print_compact_progress(phase, label, "rich progress unavailable; using compact output", head="warn: ")
+    print_compact_progress(
+        phase, label, "rich progress unavailable; using compact output", head="warn: "
+    )
 
 
 @contextmanager
@@ -333,7 +353,9 @@ def progress_warning_context():
 def progress_log(config: LoopConfig, message: str) -> None:
     if not config.progress:
         return
-    timestamp = datetime.now().astimezone().isoformat(timespec="seconds")  # det-exempt: human-display timestamp
+    timestamp = (
+        datetime.now().astimezone().isoformat(timespec="seconds")
+    )  # det-exempt: human-display timestamp
     print(f"[{timestamp}] {message}", file=sys.stderr, flush=True)
 
 
@@ -353,7 +375,15 @@ def _progress_event_kind(status: str) -> str:
     return "phase_result"
 
 
-def progress_event(config: LoopConfig, phase: str, label: str, status: str, detail: str = "", *, ctx: RunContext) -> None:
+def progress_event(
+    config: LoopConfig,
+    phase: str,
+    label: str,
+    status: str,
+    detail: str = "",
+    *,
+    ctx: RunContext,
+) -> None:
     sink = ctx.event_sink
     if sink is not None:
         payload: dict[str, Any] = {"summary": status}
@@ -438,7 +468,9 @@ def emit_loop_failure_event(
     )
 
 
-def progress_continuation(config: LoopConfig, phase: str, label: str, text: str, indent: int = 2) -> None:
+def progress_continuation(
+    config: LoopConfig, phase: str, label: str, text: str, indent: int = 2
+) -> None:
     if not config.progress:
         return
     if config.progress_style == "rich":
@@ -459,7 +491,9 @@ def progress_continuation(config: LoopConfig, phase: str, label: str, text: str,
         print(f"{prefix}{' ' * indent}{line}", file=sys.stderr, flush=True)
 
 
-def print_progress_message(config: LoopConfig, phase: str, label: str, text: str, *, head: str = "") -> None:
+def print_progress_message(
+    config: LoopConfig, phase: str, label: str, text: str, *, head: str = ""
+) -> None:
     if not config.progress:
         return
     if config.progress_style == "rich":
@@ -472,23 +506,31 @@ def print_progress_message(config: LoopConfig, phase: str, label: str, text: str
     print_compact_progress(phase, label, text, head=head)
 
 
-def log_review_findings(config: LoopConfig, label: str, output: str, ctx: RunContext) -> bool:
+def log_review_findings(
+    config: LoopConfig, label: str, output: str, ctx: RunContext
+) -> bool:
     blocks = extract_finding_blocks(output)
     if not blocks:
         return False
     summary = extract_review_summary(output)
     if summary:
         if compact_progress_label(label) == "init":
-            progress_continuation(config, "review", label, summary, indent=COMPACT_PROGRESS_DETAIL_INDENT)
+            progress_continuation(
+                config, "review", label, summary, indent=COMPACT_PROGRESS_DETAIL_INDENT
+            )
         else:
             print_progress_message(config, "review", label, summary, head="issue: ")
     else:
-        progress_event(config, "review", label, f"findings-summary ({len(blocks)})", ctx=ctx)
+        progress_event(
+            config, "review", label, f"findings-summary ({len(blocks)})", ctx=ctx
+        )
     for block in blocks:
         priority, title = strip_finding_priority(block[0])
         print_progress_message(config, "review", label, title, head=f"{priority:<7}")
         for detail in block[1:]:
-            progress_continuation(config, "review", label, detail, indent=COMPACT_PROGRESS_DETAIL_INDENT)
+            progress_continuation(
+                config, "review", label, detail, indent=COMPACT_PROGRESS_DETAIL_INDENT
+            )
     return True
 
 
@@ -524,7 +566,11 @@ def sanitize_commit_message(
             if enforce_revrem_conventional:
                 return normalize_revrem_conventional_subject(line)
             return line[:120]
-    return normalize_revrem_conventional_subject(fallback) if enforce_revrem_conventional else fallback
+    return (
+        normalize_revrem_conventional_subject(fallback)
+        if enforce_revrem_conventional
+        else fallback
+    )
 
 
 def normalize_revrem_conventional_subject(subject: str) -> str:

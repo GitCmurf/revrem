@@ -88,7 +88,9 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
     assert detect_review_status("No findings.\n") == "clear"
     assert detect_review_status("summary\nNo actionable findings\n") == "clear"
     assert (
-        detect_review_status("I did not find any discrete, actionable bugs in the diff.")
+        detect_review_status(
+            "I did not find any discrete, actionable bugs in the diff."
+        )
         == "clear"
     )
     assert (
@@ -181,14 +183,10 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
         == "clear"
     )
     assert (
-        detect_review_status(
-            "I did not find any new regressions in the changed paths."
-        )
+        detect_review_status("I did not find any new regressions in the changed paths.")
         == "clear"
     )
-    assert (
-        detect_review_status("This would warrant an inline finding.") == "unknown"
-    )
+    assert detect_review_status("This would warrant an inline finding.") == "unknown"
     assert (
         detect_review_status(
             "The changes add the alias and tests without any clear regressions or actionable bugs."
@@ -197,11 +195,11 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
     )
     assert (
         detect_review_status(
-            '{\n'
+            "{\n"
             '  "findings": [],\n'
             '  "explanation": "I did not identify any discrete introduced bugs that should '
             'block the patch."\n'
-            '}\n'
+            "}\n"
         )
         == "clear"
     )
@@ -301,7 +299,9 @@ def test_run_loop_writes_replayable_events_jsonl(tmp_path, capsys):
         "artifact_write",
         "summary",
     ]
-    assert [event.payload.get("kind") for event in records if event.kind == "artifact_write"] == [
+    assert [
+        event.payload.get("kind") for event in records if event.kind == "artifact_write"
+    ] == [
         "summary",
         "reviews",
     ]
@@ -332,7 +332,9 @@ def test_progress_warning_status_emits_warning_event(tmp_path):
         event_sink=sink,
     )
 
-    progress_event(config, "triage", "1", "warning", "suppressions unavailable", ctx=ctx)
+    progress_event(
+        config, "triage", "1", "warning", "suppressions unavailable", ctx=ctx
+    )
 
     assert sink.events[0].kind == "warning"
     assert sink.events[0].payload["message"] == "suppressions unavailable"
@@ -530,13 +532,18 @@ def test_non_codex_review_receives_explicit_review_prompt(tmp_path):
         "claude",
         "--print",
         "--permission-mode",
-        "auto",
+        "plan",
         "--model",
         "sonnet",
     ]
     assert calls[0][1] is not None
     assert "Review the current repository changes" in calls[0][1]
+    assert "Treat the working tree as read-only" in calls[0][1]
+    assert "git diff <base>...HEAD" in calls[0][1]
+    assert "Base branch: main" in calls[0][1]
+    assert f"Working directory: {tmp_path}" in calls[0][1]
     assert "REVIEW_STATUS: findings" in calls[0][1]
+    assert "REVIEW_STATUS: clear" in calls[0][1]
 
 
 def test_opencode_review_prompt_is_passed_as_message_argument(tmp_path):
@@ -557,14 +564,45 @@ def test_opencode_review_prompt_is_passed_as_message_argument(tmp_path):
 
     runner_mod.run_loop(config, runner)
 
-    assert calls[0][0][:5] == [
+    assert calls[0][0][:4] == [
         "opencode",
         "run",
-        "--dangerously-skip-permissions",
         "--model",
         "provider/model",
     ]
+    assert "--dangerously-skip-permissions" not in calls[0][0]
     assert "Review the current repository changes" in calls[0][0][-1]
+    assert calls[0][1] is None
+
+
+def test_gemini_review_runs_in_plan_mode_with_prompt_argument(tmp_path):
+    calls: list[tuple[list[str], str | None]] = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text))
+        return CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="gemini",
+        review_model="gemini-3.1-pro-preview",
+    )
+
+    runner_mod.run_loop(config, runner)
+
+    assert calls[0][0][:5] == [
+        "gemini",
+        "--approval-mode",
+        "plan",
+        "--model",
+        "gemini-3.1-pro-preview",
+    ]
+    assert calls[0][0][-2] == "--prompt"
+    assert "Treat the working tree as read-only" in calls[0][0][-1]
+    assert "Base branch: main" in calls[0][0][-1]
     assert calls[0][1] is None
 
 
@@ -582,7 +620,10 @@ model = "sonnet"
 
     def fake_run_loop(config, **_kwargs):
         captured.append(config)
-        return application.ReviewLoopResult(summary={"final_status": "clear", "stopped_reason": "review_clear"}, outcome=OutcomeClear(reason="review_clear"))
+        return application.ReviewLoopResult(
+            summary={"final_status": "clear", "stopped_reason": "review_clear"},
+            outcome=OutcomeClear(reason="review_clear"),
+        )
 
     monkeypatch.setattr(application, "run_review_loop", fake_run_loop)
 
@@ -632,7 +673,9 @@ def test_model_overrides_and_reasoning_effort_are_passed_to_codex(tmp_path):
         'model_reasoning_effort="low"',
         "--full-auto",
     ]
-    assert remediation_command[remediation_command.index("--model") + 1] == "gpt-5.4-mini"
+    assert (
+        remediation_command[remediation_command.index("--model") + 1] == "gpt-5.4-mini"
+    )
 
 
 def test_remediation_command_uses_deterministic_output_options(tmp_path):
@@ -645,7 +688,9 @@ def test_remediation_command_uses_deterministic_output_options(tmp_path):
         exec_json=True,
     )
 
-    command = remediation_impl.build_remediation_command(config, tmp_path / "last-message.txt")
+    command = remediation_impl.build_remediation_command(
+        config, tmp_path / "last-message.txt"
+    )
 
     assert "--color" in command
     assert command[command.index("--color") + 1] == "never"
@@ -728,10 +773,14 @@ def test_sanitize_commit_message_uses_first_plain_subject():
         == "chore: Harden RevRem commit flow (RevRem)"
     )
     assert (
-        sanitize_commit_message("fix(cli): stop on no-op remediation", fallback="fallback")
+        sanitize_commit_message(
+            "fix(cli): stop on no-op remediation", fallback="fallback"
+        )
         == "fix(cli): stop on no-op remediation (RevRem)"
     )
-    assert sanitize_commit_message("", fallback="fallback") == "chore: fallback (RevRem)"
+    assert (
+        sanitize_commit_message("", fallback="fallback") == "chore: fallback (RevRem)"
+    )
     assert (
         sanitize_commit_message(
             "Use custom format",
@@ -766,7 +815,9 @@ def test_commit_message_for_staged_changes_respects_profile_prompt_override(tmp_
             return CommandResult(list(args), 0, stdout="Use custom format\n")
         raise AssertionError(f"unexpected command: {args!r}")
 
-    message = commit_message_for_staged_changes(config, runner, 1, make_run_context(runner))
+    message = commit_message_for_staged_changes(
+        config, runner, 1, make_run_context(runner)
+    )
 
     assert message == "Use custom format"
     assert "Write a custom subject." in next(
@@ -774,7 +825,9 @@ def test_commit_message_for_staged_changes_respects_profile_prompt_override(tmp_
     )
 
 
-def test_commit_message_for_staged_changes_uses_specific_fallback_on_model_failure(tmp_path):
+def test_commit_message_for_staged_changes_uses_specific_fallback_on_model_failure(
+    tmp_path,
+):
     config = LoopConfig(
         base="main",
         max_iterations=1,
@@ -787,14 +840,18 @@ def test_commit_message_for_staged_changes_uses_specific_fallback_on_model_failu
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[:4] == ["git", "diff", "--cached", "--stat"]:
-            return CommandResult(list(args), 0, stdout=" src/code_review_loop/foo.py | 2 +-\n")
+            return CommandResult(
+                list(args), 0, stdout=" src/code_review_loop/foo.py | 2 +-\n"
+            )
         if args[:4] == ["git", "diff", "--cached", "--name-only"]:
             return CommandResult(list(args), 0, stdout="src/code_review_loop/foo.py\n")
         if args[:2] == ["codex", "exec"]:
             return CommandResult(list(args), 1, stderr="model unavailable\n")
         raise AssertionError(f"unexpected command: {args!r}")
 
-    message = commit_message_for_staged_changes(config, runner, 2, make_run_context(runner))
+    message = commit_message_for_staged_changes(
+        config, runner, 2, make_run_context(runner)
+    )
 
     assert_professional_fallback_subject(
         message,
@@ -824,14 +881,20 @@ def test_commit_message_fallback_uses_review_context_for_feature_type(tmp_path):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[:4] == ["git", "diff", "--cached", "--stat"]:
-            return CommandResult(list(args), 0, stdout=" src/code_review_loop/cli/args.py | 2 +-\n")
+            return CommandResult(
+                list(args), 0, stdout=" src/code_review_loop/cli/args.py | 2 +-\n"
+            )
         if args[:4] == ["git", "diff", "--cached", "--name-only"]:
-            return CommandResult(list(args), 0, stdout="src/code_review_loop/cli/args.py\n")
+            return CommandResult(
+                list(args), 0, stdout="src/code_review_loop/cli/args.py\n"
+            )
         if args[:2] == ["codex", "exec"]:
             return CommandResult(list(args), 1, stderr="model unavailable\n")
         raise AssertionError(f"unexpected command: {args!r}")
 
-    message = commit_message_for_staged_changes(config, runner, 3, make_run_context(runner))
+    message = commit_message_for_staged_changes(
+        config, runner, 3, make_run_context(runner)
+    )
 
     assert_professional_fallback_subject(
         message,
@@ -859,12 +922,18 @@ def test_commit_message_fallback_uses_remediation_context_for_refactor_type(tmp_
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[:4] == ["git", "diff", "--cached", "--stat"]:
-            return CommandResult(list(args), 0, stdout=" src/code_review_loop/runner_setup.py | 2 +-\n")
+            return CommandResult(
+                list(args), 0, stdout=" src/code_review_loop/runner_setup.py | 2 +-\n"
+            )
         if args[:4] == ["git", "diff", "--cached", "--name-only"]:
-            return CommandResult(list(args), 0, stdout="src/code_review_loop/runner_setup.py\n")
+            return CommandResult(
+                list(args), 0, stdout="src/code_review_loop/runner_setup.py\n"
+            )
         raise AssertionError(f"unexpected command: {args!r}")
 
-    message = commit_message_for_staged_changes(config, runner, 4, make_run_context(runner))
+    message = commit_message_for_staged_changes(
+        config, runner, 4, make_run_context(runner)
+    )
 
     assert_professional_fallback_subject(
         message,
@@ -892,12 +961,18 @@ def test_commit_message_fallback_ranks_bugfix_context_above_feature_words(tmp_pa
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[:4] == ["git", "diff", "--cached", "--stat"]:
-            return CommandResult(list(args), 0, stdout=" src/code_review_loop/profiles.py | 2 +-\n")
+            return CommandResult(
+                list(args), 0, stdout=" src/code_review_loop/profiles.py | 2 +-\n"
+            )
         if args[:4] == ["git", "diff", "--cached", "--name-only"]:
-            return CommandResult(list(args), 0, stdout="src/code_review_loop/profiles.py\n")
+            return CommandResult(
+                list(args), 0, stdout="src/code_review_loop/profiles.py\n"
+            )
         raise AssertionError(f"unexpected command: {args!r}")
 
-    message = commit_message_for_staged_changes(config, runner, 5, make_run_context(runner))
+    message = commit_message_for_staged_changes(
+        config, runner, 5, make_run_context(runner)
+    )
 
     assert_professional_fallback_subject(
         message,
@@ -944,7 +1019,10 @@ def test_commit_message_effort_adjustment_emits_operator_event(tmp_path):
     )
 
     adjustment_events = [
-        event for event in sink.events if event.phase == "commit-message" and event.payload.get("summary") == "config-adjusted"
+        event
+        for event in sink.events
+        if event.phase == "commit-message"
+        and event.payload.get("summary") == "config-adjusted"
     ]
     assert adjustment_events
     assert "minimal->low" in adjustment_events[0].payload["message"]
@@ -967,7 +1045,9 @@ def test_commit_message_fallback_defaults_neutral_context_to_chore(tmp_path):
             return CommandResult(list(args), 0, stdout="package/widget.py\n")
         raise AssertionError(f"unexpected command: {args!r}")
 
-    message = commit_message_for_staged_changes(config, runner, 6, make_run_context(runner))
+    message = commit_message_for_staged_changes(
+        config, runner, 6, make_run_context(runner)
+    )
 
     assert_professional_fallback_subject(
         message,
@@ -1149,10 +1229,17 @@ def test_normalize_revrem_conventional_subject_preserves_suffix_when_truncated()
     assert len(normalized) == 120
     assert normalized.startswith("fix(cli): ")
 
+
 def test_detect_review_status_requires_explicit_status_line():
     """Fuzzy patterns must not flip ambiguous output to clear."""
-    assert detect_review_status("no findings about style, but several about logic") == "unknown"
-    assert detect_review_status("review is clear of syntax errors but not semantic") == "unknown"
+    assert (
+        detect_review_status("no findings about style, but several about logic")
+        == "unknown"
+    )
+    assert (
+        detect_review_status("review is clear of syntax errors but not semantic")
+        == "unknown"
+    )
     assert detect_review_status("") == "unknown"
 
 
@@ -1171,7 +1258,9 @@ def test_review_failure_detection_allows_nonzero_findings_without_stderr():
     )
     assert (
         review_failed_to_run(
-            CommandResult(["codex", "review"], 1, stdout="", stderr="Error: thread/start failed")
+            CommandResult(
+                ["codex", "review"], 1, stdout="", stderr="Error: thread/start failed"
+            )
         )
         is True
     )
@@ -1195,9 +1284,14 @@ def run_git(cwd: Path, *args: str) -> None:
 
 
 def test_actionable_review_output_drops_verbose_stderr_transcript():
-    output = "Full review comments:\n\n- [P1] Fix the bug\n\n[stderr]\n" + ("diff --git a/x b/x\n" * 100)
+    output = "Full review comments:\n\n- [P1] Fix the bug\n\n[stderr]\n" + (
+        "diff --git a/x b/x\n" * 100
+    )
 
-    assert actionable_review_output(output) == "Full review comments:\n\n- [P1] Fix the bug"
+    assert (
+        actionable_review_output(output)
+        == "Full review comments:\n\n- [P1] Fix the bug"
+    )
 
 
 def test_trim_for_prompt_caps_large_review_text():
