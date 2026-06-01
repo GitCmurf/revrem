@@ -3,8 +3,8 @@ document_id: REVREM-PLAN-003
 type: PLAN
 title: Post-Launch Development Roadmap
 status: Approved
-version: '0.7'
-last_updated: '2026-05-31'
+version: '0.8'
+last_updated: '2026-06-01'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -25,6 +25,7 @@ related_ids:
 - REVREM-TEST-001
 - REVREM-TASK-001
 - REVREM-TASK-002
+- REVREM-TASK-006
 ---
 
 # PLAN: Post-Launch Development Roadmap
@@ -1045,7 +1046,7 @@ This roadmap is **partially complete**, not closed. Its status remains
 `Approved` because it is the accepted governing roadmap, but substantial
 milestone work remains before the roadmap itself can be considered complete.
 
-| Milestone | Current state on 2026-05-31 | Audit status |
+| Milestone | Current state on 2026-06-01 | Audit status |
 |---|---|---|
 | M0 — Public Trust Baseline | Covered by `REVREM-TASK-001`; public repository, launch PR history, CI/release/community files, and DocOps checks are in place. | Completed |
 | M1 — Install And Release Distribution | Covered by `REVREM-TASK-002`; package metadata, wheel/sdist smoke, release workflow, provenance/checksum path, rollback runbook, and `v0.3.2` release evidence exist. | Completed |
@@ -1053,11 +1054,11 @@ milestone work remains before the roadmap itself can be considered complete.
 | M3 — Triage Productization And Suppressions | Covered by `REVREM-TASK-002`; triage artifacts, structured handoff, suppressions, suppression CLI, audit/redaction behavior, and tests exist. | Completed |
 | M4 — Event Stream, Cost Governance, And Replay | Covered by `REVREM-TASK-002`; `events.jsonl`, replay fixtures, budget/cancellation/resume tests, and stable exit-code coverage exist. | Completed |
 | M5 — TUI Runs, Hooks, And Headless Mode | Headless application boundary exists from `REVREM-TASK-003`, but real TUI-launched runs, hook installation/examples, check discovery, and full resume equivalence remain open. | Remaining work |
-| M6 — Harness Contract And Non-OpenAI Backends | Fake harness and thin Codex/Claude/Gemini/opencode/Kilo command adapters exist via `REVREM-PLAN-004`; live secondary-harness smoke, provider hardening, and broader harness-operational proof are now governed by `REVREM-TASK-006`. | Partially complete |
+| M6 — Harness Contract And Non-OpenAI Backends | Fake harness and thin Codex/Claude/Gemini/opencode/Kilo command adapters exist via `REVREM-PLAN-004`; `REVREM-TASK-006` records provider-gated live smoke coverage, missing-auth classification, and a successful credentialed Gemini routed-remediation smoke with routing artifacts. | Completed |
 | M7 — Expert Profiles And Public DevEx Expansion | No bundled expert-profile suite, examples matrix, shell completions, or maintained demo asset are present. | Remaining work |
 | M8 — Hands-Off CI Surface And Static Report | No `revrem report` static HTML command or GitHub Action/PR-comment surface is present. | Remaining work |
 | M9 — Distillation Archive, Daemon, And Dataset Export | No archive export/dataset surface or `revrem watch` daemon is present. | Remaining work |
 
-Near-term governing follow-ups are therefore M5, `REVREM-TASK-006` for the
-remaining live/provider hardening slice of M6, then M7-M9. Completed TASK-001
-through TASK-004 and the first slice of PLAN-004 do not close the whole roadmap.
+Near-term governing follow-ups are therefore M5, then M7-M9. Completed
+TASK-001 through TASK-004, the first slice of PLAN-004, and TASK-006 do not
+close the whole roadmap.

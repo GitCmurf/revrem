@@ -40,7 +40,8 @@ def add_artifact_paths(summary: dict[str, object], config: LoopConfig) -> None:
         "prompts": [
             str(path)
             for path in files
-            if path.name.startswith("remediation-") and path.name.endswith("-prompt.txt")
+            if path.name.startswith("remediation-")
+            and path.name.endswith("-prompt.txt")
         ],
         "routing": [str(path) for path in files if path.name.startswith("routing-")],
         "triage": [str(path) for path in files if path.name.startswith("triage-")],
@@ -66,7 +67,9 @@ def add_artifact_paths(summary: dict[str, object], config: LoopConfig) -> None:
 
 def commit_message_fallbacks(artifact_dir: Path) -> list[dict[str, object]]:
     fallbacks: list[dict[str, object]] = []
-    for path in sorted(artifact_dir.glob("commit-*-message-fallback.json"), key=artifact_sort_key):
+    for path in sorted(
+        artifact_dir.glob("commit-*-message-fallback.json"), key=artifact_sort_key
+    ):
         with suppress(OSError, json.JSONDecodeError):
             value = json.loads(path.read_text(encoding="utf-8"))
             if isinstance(value, dict):
@@ -103,7 +106,9 @@ def write_summary(
         summary["budgets"] = summary_budget_payload(config, budget_state=budget_state)
     if event_sink is not None:
         emit_artifact_write_events(config, summary, event_sink=event_sink)
-        summary_detail = summary.get("stopped_reason") or summary.get("final_status") or "summary"
+        summary_detail = (
+            summary.get("stopped_reason") or summary.get("final_status") or "summary"
+        )
         event_sink.emit("summary", payload={"summary": str(summary_detail)})
     artifacts.write_json_artifact(config.artifact_dir, "summary.json", summary)
 
@@ -125,7 +130,11 @@ def summary_budget_payload(
     return {
         "max_wall_seconds": config.budget_config.max_wall_seconds,
         "max_tokens": config.budget_config.max_tokens,
-        "max_usd": str(config.budget_config.max_usd) if config.budget_config.max_usd is not None else None,
+        "max_usd": (
+            str(config.budget_config.max_usd)
+            if config.budget_config.max_usd is not None
+            else None
+        ),
         "soft_warn_fraction": config.budget_config.soft_warn_fraction,
         "wall_elapsed_seconds": wall_elapsed_seconds,
         "tokens": tokens,
@@ -133,7 +142,9 @@ def summary_budget_payload(
     }
 
 
-def emit_artifact_write_events(config: LoopConfig, summary: dict[str, object], *, event_sink: EventSink) -> None:
+def emit_artifact_write_events(
+    config: LoopConfig, summary: dict[str, object], *, event_sink: EventSink
+) -> None:
     artifact_paths = summary.get("artifact_paths")
     if not isinstance(artifact_paths, dict):
         return
@@ -144,7 +155,9 @@ def emit_artifact_write_events(config: LoopConfig, summary: dict[str, object], *
         event_sink.emit("artifact_write", phase="artifacts", payload=payload)
 
 
-def iter_artifact_paths(artifact_paths: dict[object, object]) -> Iterator[tuple[str, str]]:
+def iter_artifact_paths(
+    artifact_paths: dict[object, object],
+) -> Iterator[tuple[str, str]]:
     for kind, value in artifact_paths.items():
         if kind == "artifact_dir":
             continue
@@ -163,7 +176,9 @@ def add_summary_contract_fields(
     summary.setdefault("cli_version", __version__)
     summary.setdefault("harness", config.review_harness)
     summary.setdefault("harness_version", None)
-    summary.setdefault("command_line", list(config.command_line) if config.command_line else None)
+    summary.setdefault(
+        "command_line", list(config.command_line) if config.command_line else None
+    )
     summary.setdefault("phase_config", phase_config_payload(config))
     summary.setdefault("tokens", None)
     summary.setdefault("usd", None)
@@ -172,7 +187,9 @@ def add_summary_contract_fields(
         "phases",
         {
             "_summary": {
-                "iteration_count": len(iterations) if isinstance(iterations, list) else 0,
+                "iteration_count": (
+                    len(iterations) if isinstance(iterations, list) else 0
+                ),
             },
         },
     )
@@ -182,46 +199,52 @@ def add_summary_contract_fields(
 
 def phase_config_payload(config: LoopConfig) -> dict[str, object]:
     field_sources = config.phase_config_field_sources
+    triage: dict[str, object] = {
+        "enabled": config.triage_enabled,
+        "harness": config.triage_harness,
+        "model": config.triage_model,
+        "reasoning_effort": config.triage_reasoning_effort,
+        "timeout_seconds": config.triage_timeout_seconds_display,
+        "contract": config.triage_contract,
+        "routing_enabled": (
+            config.profile_v2.triage.routing.enabled
+            if config.profile_v2 is not None
+            else False
+        ),
+        "routing_strict": (
+            config.profile_v2.triage.routing.strict_on_unavailable_route
+            if config.profile_v2 is not None
+            else False
+        ),
+        "allow_model_escalation": (
+            config.profile_v2.triage.routing.allow_model_escalation
+            if config.profile_v2 is not None
+            else True
+        ),
+        "sandbox": "read-only",
+        "source": config.phase_config_sources.get("triage", "direct-config"),
+        "sources": field_sources.get("triage", {}),
+    }
+    if config.profile_v2 is not None:
+        triage["routing_default_route"] = config.profile_v2.triage.routing.default_route
+
     return {
         "review": {
             "harness": config.review_harness,
             "model": config.review_model or config.model,
-            "reasoning_effort": config.review_reasoning_effort or config.reasoning_effort,
+            "reasoning_effort": config.review_reasoning_effort
+            or config.reasoning_effort,
             "timeout_seconds": config.review_timeout_seconds_display,
             "sandbox": "read-only",
             "source": config.phase_config_sources.get("review", "direct-config"),
             "sources": field_sources.get("review", {}),
         },
-        "triage": {
-            "enabled": config.triage_enabled,
-            "harness": config.triage_harness,
-            "model": config.triage_model,
-            "reasoning_effort": config.triage_reasoning_effort,
-            "timeout_seconds": config.triage_timeout_seconds_display,
-            "contract": config.triage_contract,
-            "routing_enabled": (
-                config.profile_v2.triage.routing.enabled
-                if config.profile_v2 is not None
-                else False
-            ),
-            "routing_strict": (
-                config.profile_v2.triage.routing.strict_on_unavailable_route
-                if config.profile_v2 is not None
-                else False
-            ),
-            "allow_model_escalation": (
-                config.profile_v2.triage.routing.allow_model_escalation
-                if config.profile_v2 is not None
-                else True
-            ),
-            "sandbox": "read-only",
-            "source": config.phase_config_sources.get("triage", "direct-config"),
-            "sources": field_sources.get("triage", {}),
-        },
+        "triage": triage,
         "remediation": {
             "harness": config.remediation_harness,
             "model": config.remediation_model or config.model,
-            "reasoning_effort": config.remediation_reasoning_effort or config.reasoning_effort,
+            "reasoning_effort": config.remediation_reasoning_effort
+            or config.reasoning_effort,
             "timeout_seconds": config.remediation_timeout_seconds_display,
             "sandbox": config.exec_sandbox,
             "source": config.phase_config_sources.get("remediation", "direct-config"),
@@ -236,7 +259,9 @@ def phase_config_payload(config: LoopConfig) -> dict[str, object]:
             "reasoning_effort_adjustment": config.commit_reasoning_effort_adjustment,
             "timeout_seconds": config.commit_timeout_seconds_display,
             "sandbox": "read-only",
-            "source": config.phase_config_sources.get("commit_message", "direct-config"),
+            "source": config.phase_config_sources.get(
+                "commit_message", "direct-config"
+            ),
             "sources": field_sources.get("commit_message", {}),
         },
         "checks": {

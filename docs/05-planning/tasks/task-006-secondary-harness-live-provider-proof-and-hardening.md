@@ -2,9 +2,9 @@
 document_id: REVREM-TASK-006
 type: TASK
 title: Secondary harness live provider proof and hardening
-status: Draft
-version: '0.1'
-last_updated: '2026-05-31'
+status: Approved
+version: '0.3'
+last_updated: '2026-06-01'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -91,7 +91,7 @@ execution fails.
 - At least one secondary provider completes an end-to-end routed remediation
   smoke in the maintainer environment and records the run directory in the task
   closeout evidence.
-- Missing or unavailable provider routes fail or fall back with clear
+- Missing or unavailable provider routes fail, fall back, or skip with clear
   diagnostics and do not look like generic internal errors.
 - Provider-specific command/prompt delivery remains covered by deterministic
   unit tests, independent of live credentials.
@@ -106,6 +106,7 @@ execution fails.
 ```bash
 meminit check --format json
 ./.venv/bin/pytest -q \
+  tests/test_live_secondary_harnesses.py \
   tests/test_harnesses.py \
   tests/test_harness_adapters.py \
   tests/test_routing_artifacts.py \
@@ -113,5 +114,77 @@ meminit check --format json
   tests/test_tui_state.py
 ```
 
-Provider-gated live commands are defined by the implementation PR. They must be
-off by default, named per provider, and documented in `REVREM-DEVEX-001`.
+Default local live-test skip check:
+
+```bash
+./.venv/bin/pytest -q tests/test_live_secondary_harnesses.py
+```
+
+Provider-gated live commands are off by default and documented in
+`REVREM-DEVEX-001`:
+
+```bash
+REVREM_LIVE_GEMINI=1 ./.venv/bin/pytest -q tests/test_live_secondary_harnesses.py
+REVREM_LIVE_CLAUDE=1 ./.venv/bin/pytest -q tests/test_live_secondary_harnesses.py
+REVREM_LIVE_OPENCODE=1 ./.venv/bin/pytest -q tests/test_live_secondary_harnesses.py
+REVREM_LIVE_KILO=1 ./.venv/bin/pytest -q tests/test_live_secondary_harnesses.py
+```
+
+### Implementation Progress
+
+2026-05-31:
+
+- Added `tests/test_live_secondary_harnesses.py` with provider-gated direct live
+  smoke tests for Claude, Gemini, opencode, and KiloCode.
+- Added a provider-gated routed live smoke that defaults to Gemini and can be
+  redirected with `REVREM_LIVE_ROUTED_PROVIDER`.
+- Added model and executable overrides through
+  `REVREM_LIVE_<PROVIDER>_MODEL` and `REVREM_LIVE_<PROVIDER>_BIN`.
+- Configured the Gemini live smoke to trust pytest temporary workspaces with
+  `GEMINI_CLI_TRUST_WORKSPACE=true`.
+- Classified interactive provider authentication setup as a skipped
+  prerequisite when a CLI tries to open an auth flow in a non-interactive test.
+- Updated `REVREM-DEVEX-001` with commands, skip behavior, and routed artifact
+  expectations.
+- Verified the default no-credential path skips cleanly:
+  `./.venv/bin/pytest -q tests/test_live_secondary_harnesses.py`
+  reported `5 skipped`.
+
+### Closeout Evidence
+
+2026-06-01:
+
+- Provider: Gemini CLI.
+- Command:
+
+  ```bash
+  REVREM_LIVE_GEMINI=1 \
+    REVREM_LIVE_ROUTED_PROVIDER=gemini \
+    ./.venv/bin/pytest -q tests/test_live_secondary_harnesses.py::test_live_routed_secondary_provider_smoke -s
+  ```
+
+- Result: `1 passed in 25.84s` in the credentialed maintainer terminal.
+- Run directory:
+  `/tmp/pytest-of-cmf/pytest-462/test_live_routed_secondary_pro0/artifacts`.
+- Evidence:
+  - `summary.json` reports `final_status: "clear"` and
+    `stopped_reason: "review_clear"`.
+  - `routing-1.json.effective_route.harness` is `gemini`.
+  - `routing-outcome-1.json` exists and is listed under
+    `summary.json.artifact_paths.routing`.
+  - `remediation-1-prompt.txt` exists and is listed under
+    `summary.json.artifact_paths.prompts`.
+  - `remediation-1.txt` contains `REVREM_LIVE_SECONDARY_SMOKE_OK`.
+
+The task is complete: secondary harness live proof exists for one real
+provider, the other provider tests remain opt-in and skip by default, and
+provider setup/auth failures are classified distinctly from internal loop
+failures.
+
+## Version History
+
+| Version | Date | Author | Changes |
+|---|---|---|---|
+| 0.3 | 2026-06-01 | Codex | Recorded Gemini live routed smoke evidence and marked the task complete |
+| 0.2 | 2026-05-31 | Codex | Added live secondary harness tests and evidence tracking |
+| 0.1 | 2026-05-31 | Codex | Initial governed task for live secondary provider proof |

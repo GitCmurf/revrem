@@ -3,8 +3,8 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.16'
-last_updated: '2026-05-30'
+version: '1.19'
+last_updated: '2026-06-01'
 owner: GitCmurf
 docops_version: '2.0'
 area: devex
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.16
-> **Last Updated:** 2026-05-30
+> **Version:** 1.19
+> **Last Updated:** 2026-06-01
 > **Type:** DEVEX
 > **Area:** devex
 > **Description:** Operator guide for the code-review-loop utility
@@ -341,6 +341,25 @@ remain sufficient for local dogfood:
   --routing
 ```
 
+To dogfood Gemini deliberately instead of waiting for routing policy to select
+it, force the profile's Gemini route from the CLI:
+
+```bash
+GEMINI_CLI_TRUST_WORKSPACE=true \
+./.venv/bin/revrem \
+  --profile dogfood \
+  --base main \
+  --max-iterations 3 \
+  --harness-bin gemini=gemini \
+  --routing \
+  --routing-strict \
+  --route gemini-pro
+```
+
+That command verifies the route machinery calls Gemini for routed remediation,
+passes the same triage-prescribed prompt context that Codex would receive, and
+records the selected harness in `routing-N.json` and `phase_config`.
+
 Dogfood summaries include a `phase_config` object for review, triage,
 remediation, commit-message drafting, and checks. Each phase records the
 resolved harness, model, effort, timeout, sandbox where relevant, and whether
@@ -375,6 +394,31 @@ commit-message path:
 ```bash
 REVREM_LIVE_CODEX=1 ./.venv/bin/pytest -q tests/test_live_codex_commit_message.py
 ```
+
+Credentialed environments can also smoke-test the secondary harness adapters.
+These tests are skipped by default and run only when the provider-specific
+opt-in is set:
+
+```bash
+./.venv/bin/pytest -q tests/test_live_secondary_harnesses.py
+
+REVREM_LIVE_GEMINI=1 ./.venv/bin/pytest -q tests/test_live_secondary_harnesses.py
+REVREM_LIVE_CLAUDE=1 ./.venv/bin/pytest -q tests/test_live_secondary_harnesses.py
+REVREM_LIVE_OPENCODE=1 ./.venv/bin/pytest -q tests/test_live_secondary_harnesses.py
+REVREM_LIVE_KILO=1 ./.venv/bin/pytest -q tests/test_live_secondary_harnesses.py
+```
+
+Use `REVREM_LIVE_<PROVIDER>_MODEL` to override the CLI's default model and
+`REVREM_LIVE_<PROVIDER>_BIN` when the executable is not on `PATH`, for example
+`REVREM_LIVE_GEMINI_MODEL=gemini-3-flash` or
+`REVREM_LIVE_CLAUDE_BIN=/opt/claude/bin/claude`. The routed live smoke defaults
+to Gemini; set `REVREM_LIVE_ROUTED_PROVIDER=claude`, `opencode`, or `kilo` to
+exercise another secondary provider. The routed smoke uses a temporary
+workspace, a fake review/triage front half, and the selected live provider only
+for routed remediation. The Gemini live smoke sets
+`GEMINI_CLI_TRUST_WORKSPACE=true` for the pytest process because Gemini refuses
+headless execution from pytest temporary directories unless the workspace is
+trusted.
 
 To capture a one-off command as a project-local profile, add
 `--save-profile NAME`. RevRem writes the effective configuration to
@@ -755,19 +799,29 @@ Use `revrem policy lint --profile multi` to verify rule and fallback chains,
 `revrem triage explain <run-dir>` to inspect one routing decision, and
 `revrem policy review --artifact-dir <run-dir>` to summarize route outcomes
 without printing full prompts.
+For live routed smoke tests, inspect the temporary run directory reported by
+pytest on failure or rerun with `-s` while debugging. A successful routed smoke
+writes `summary.json`, `events.jsonl`, `routing-1.json`,
+`remediation-1-prompt.txt`, `remediation-1.txt`, and
+`routing-outcome-1.json`; `routing-1.json.effective_route.harness` identifies
+the selected secondary provider.
 
 For one-off dogfood runs, CLI flags can override the profile's triage and
 routing controls without editing `.revrem.toml`:
 
 ```bash
 revrem --profile dogfood --triage --triage-contract v2 --routing
+revrem --profile dogfood --routing --route gemini-pro
 revrem --profile dogfood --no-triage --no-routing --dry-run --summary-format json
 revrem --profile dogfood --no-allow-model-escalation
 ```
 
-Use `--triage-model`, `--triage-harness`, and `--triage-timeout-seconds` to
-override the triage phase. Use `--routing-strict` or `--no-routing-strict` to
-control whether an unavailable selected route is a hard failure. When strict
+Use `--review-harness`, `--triage-harness`, `--remediation-harness`, and
+`--commit-harness` to override the per-phase harnesses. Use `--triage-model`,
+`--triage-timeout-seconds`, and the phase-specific model/effort flags to
+override model context. Use `--route` to force an existing route from the
+selected profile for one run, and `--routing-strict` or `--no-routing-strict`
+to control whether an unavailable selected route is a hard failure. When strict
 routing is enabled, RevRem stops on the selected route's capability or budget
 failure even if that route names a fallback. Disabled routing may carry draft
 routes during normal runs, but references inside the route table are still
@@ -985,6 +1039,9 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.19 | 2026-06-01 | Codex | Documented per-phase harness CLI parity and forced Gemini dogfood route selection |
+| 1.18 | 2026-06-01 | Codex | Documented Gemini workspace trust and live secondary auth prerequisite behavior |
+| 1.17 | 2026-05-31 | Codex | Documented credential-gated secondary harness live smoke tests and routed artifact expectations |
 | 1.16 | 2026-05-30 | Codex | Documented model-specific commit-effort promotion and the credential-gated live Codex smoke |
 | 1.15 | 2026-05-30 | Codex | Documented repository-generic fallback subjects, visible commit-effort promotion, and broader command-line redaction |
 | 1.14 | 2026-05-29 | Codex | Documented resume override fidelity, wrapped progress prefix behavior, and temp-root ancestor exclusion |

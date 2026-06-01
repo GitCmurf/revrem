@@ -39,7 +39,9 @@ def test_summary_includes_latest_review_excerpt_and_artifact_paths(tmp_path):
 
 
 def test_command_line_redacts_prompt_values():
-    assert _redacted_argv(["--commit-message-prompt", "secret prompt", "--base", "main"]) == (
+    assert _redacted_argv(
+        ["--commit-message-prompt", "secret prompt", "--base", "main"]
+    ) == (
         "--commit-message-prompt",
         "<redacted>",
         "--base",
@@ -52,12 +54,14 @@ def test_command_line_redacts_prompt_values():
 
 def test_command_line_redacts_secret_like_tokens(monkeypatch):
     monkeypatch.setenv("HOME", "/home/example-user")
-    assert _redacted_argv([
-        "--api-token",
-        "ghp_abcdefghijklmnopqrstuvwxyz123456",  # pragma: allowlist secret
-        "--path=/home/example-user/project",
-        "--opaque=0123456789abcdef0123456789abcdef",  # pragma: allowlist secret
-    ]) == (
+    assert _redacted_argv(
+        [
+            "--api-token",
+            "ghp_abcdefghijklmnopqrstuvwxyz123456",  # pragma: allowlist secret
+            "--path=/home/example-user/project",
+            "--opaque=0123456789abcdef0123456789abcdef",  # pragma: allowlist secret
+        ]
+    ) == (
         "--api-token",
         "[REDACTED:github-token]",
         "--path=[REDACTED:home]/project",
@@ -70,7 +74,11 @@ def test_summary_collects_commit_message_fallback_artifacts(tmp_path):
     artifacts.write_json_artifact(
         artifact_dir,
         "commit-2-message-fallback.json",
-        {"iteration": 2, "reason": "model_drafting_failed", "subject": "fix(core): x (RevRem)"},
+        {
+            "iteration": 2,
+            "reason": "model_drafting_failed",
+            "subject": "fix(core): x (RevRem)",
+        },
     )
     summary: dict[str, object] = {}
 
@@ -184,7 +192,11 @@ def test_terminal_summary_surfaces_latest_findings_and_paths():
                 "model": "spark",
                 "reasoning_effort": "minimal",
                 "source": "cli",
-                "sources": {"harness": "cli", "model": "cli", "reasoning_effort": "cli"},
+                "sources": {
+                    "harness": "cli",
+                    "model": "cli",
+                    "reasoning_effort": "cli",
+                },
             },
         },
         "latest_review_excerpt": "Full review comments:\n\n- [P2] Fix summary counts",
@@ -215,13 +227,40 @@ def test_terminal_summary_surfaces_latest_findings_and_paths():
     assert "source=cli" in text
 
 
+def test_terminal_summary_resume_command_preserves_forced_route():
+    text = format_terminal_summary(
+        {
+            "artifact_dir": "tmp/run",
+            "final_status": "findings",
+            "stopped_reason": "max_iterations_reached",
+            "artifact_paths": {"reviews": ["tmp/run/review-final.txt"]},
+            "base": "main",
+            "max_iterations": 1,
+            "resume_config": {
+                "base": "main",
+                "max_iterations": 1,
+                "routing_default_route": "gemini-pro",
+            },
+            "phase_config": {
+                "triage": {
+                    "sources": {"routing_default_route": "cli"},
+                },
+            },
+        }
+    )
+
+    assert "--route gemini-pro" in text
+
+
 def test_terminal_summary_falls_back_to_accurate_check_artifact_label():
     text = format_terminal_summary(
         {
             "artifact_dir": "tmp/run",
             "final_status": "findings",
             "stopped_reason": "max_iterations_reached",
-            "iterations": [{"iteration": 1, "review_status": "findings", "check_failures": 0}],
+            "iterations": [
+                {"iteration": 1, "review_status": "findings", "check_failures": 0}
+            ],
             "artifact_paths": {
                 "checks": ["tmp/run/check-1-1.txt", "tmp/run/check-1-2.txt"],
                 "summary": "tmp/run/summary.json",
@@ -238,9 +277,15 @@ def test_terminal_summary_parse_miss_lists_all_check_artifacts():
             "artifact_dir": "tmp/run",
             "final_status": "findings",
             "stopped_reason": "max_iterations_reached",
-            "iterations": [{"iteration": 1, "review_status": "findings", "check_failures": 0}],
+            "iterations": [
+                {"iteration": 1, "review_status": "findings", "check_failures": 0}
+            ],
             "artifact_paths": {
-                "checks": ["tmp/run/ruff.txt", "tmp/run/mypy.txt", "tmp/run/pytest.txt"],
+                "checks": [
+                    "tmp/run/ruff.txt",
+                    "tmp/run/mypy.txt",
+                    "tmp/run/pytest.txt",
+                ],
             },
         }
     )
@@ -279,7 +324,12 @@ def test_terminal_summary_prefers_commit_output_artifact():
         "final_status": "findings",
         "stopped_reason": "max_iterations_reached",
         "iterations": [
-            {"iteration": 1, "review_status": "findings", "check_failures": 0, "commit_status": "committed"},
+            {
+                "iteration": 1,
+                "review_status": "findings",
+                "check_failures": 0,
+                "commit_status": "committed",
+            },
         ],
         "artifact_paths": {
             "reviews": ["tmp/run/review-1.txt"],
@@ -352,7 +402,9 @@ def test_summary_records_unknown_review_warning_and_bug_report(tmp_path):
             "kind": "unknown_review_status",
             "iteration": 1,
             "review_path": str(tmp_path / "artifacts" / "review-1.txt"),
-            "status_diagnostics_path": str(tmp_path / "artifacts" / "review-1-status.json"),
+            "status_diagnostics_path": str(
+                tmp_path / "artifacts" / "review-1-status.json"
+            ),
         }
     ]
     assert summary["bug_report_path"] == str(report_path)

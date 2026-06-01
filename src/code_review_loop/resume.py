@@ -313,6 +313,7 @@ def resume_config_payload(config: LoopConfig) -> dict[str, object]:
     if config.profile_v2 is not None:
         payload["routing_enabled"] = config.profile_v2.triage.routing.enabled
         payload["routing_strict"] = config.profile_v2.triage.routing.strict_on_unavailable_route
+        payload["routing_default_route"] = config.profile_v2.triage.routing.default_route
         payload["allow_model_escalation"] = config.profile_v2.triage.routing.allow_model_escalation
     _put_if_not_none(payload, "reasoning_effort", config.reasoning_effort)
     _put_if_not_none(payload, "review_reasoning_effort", config.review_reasoning_effort)

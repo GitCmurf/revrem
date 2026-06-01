@@ -209,6 +209,14 @@ def _append_phase_resume_overrides(
     profile_selected = isinstance(profile, str) and bool(profile)
     _append_string_override(
         command,
+        "--review-harness",
+        config.get("review_harness"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "review", "harness"),
+        default="codex",
+    )
+    _append_string_override(
+        command,
         "--review-model",
         config.get("review_model"),
         profile_selected=profile_selected,
@@ -220,6 +228,14 @@ def _append_phase_resume_overrides(
         config.get("review_reasoning_effort"),
         profile_selected=profile_selected,
         source=_phase_field_source(phase_config_map, "review", "reasoning_effort"),
+    )
+    _append_string_override(
+        command,
+        "--remediation-harness",
+        config.get("remediation_harness"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "remediation", "harness"),
+        default="codex",
     )
     _append_string_override(
         command,
@@ -316,6 +332,13 @@ def _append_phase_resume_overrides(
         value=config.get("routing_strict"),
         profile_selected=profile_selected,
         source=_phase_field_source(phase_config_map, "triage", "routing_strict"),
+    )
+    _append_string_override(
+        command,
+        "--route",
+        config.get("routing_default_route"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "triage", "routing_default_route"),
     )
     _append_bool_override(
         command,
