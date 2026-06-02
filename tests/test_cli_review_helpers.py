@@ -581,7 +581,7 @@ def test_non_codex_review_receives_explicit_review_prompt(tmp_path):
     assert "REVIEW_STATUS: clear" in calls[0][1]
 
 
-def test_opencode_review_prompt_is_passed_as_message_argument(tmp_path):
+def test_opencode_review_prompt_is_passed_via_stdin(tmp_path):
     calls: list[tuple[list[str], str | None]] = []
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
@@ -606,11 +606,11 @@ def test_opencode_review_prompt_is_passed_as_message_argument(tmp_path):
         "provider/model",
     ]
     assert "--dangerously-skip-permissions" not in calls[0][0]
-    assert "Review the current repository changes" in calls[0][0][-1]
-    assert calls[0][1] is None
+    assert calls[0][1] is not None
+    assert "Review the current repository changes" in calls[0][1]
 
 
-def test_gemini_review_runs_in_plan_mode_with_prompt_argument(tmp_path):
+def test_gemini_review_runs_in_plan_mode_with_prompt_via_stdin(tmp_path):
     calls: list[tuple[list[str], str | None]] = []
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
@@ -635,10 +635,10 @@ def test_gemini_review_runs_in_plan_mode_with_prompt_argument(tmp_path):
         "--model",
         "gemini-3.1-pro-preview",
     ]
-    assert calls[0][0][-2] == "--prompt"
-    assert "Treat the working tree as read-only" in calls[0][0][-1]
-    assert "Base branch: main" in calls[0][0][-1]
-    assert calls[0][1] is None
+    assert "--prompt" not in calls[0][0]
+    assert calls[0][1] is not None
+    assert "Treat the working tree as read-only" in calls[0][1]
+    assert "Base branch: main" in calls[0][1]
 
 
 def test_gemini_review_prompt_includes_revrem_diff_context(tmp_path):
@@ -691,7 +691,8 @@ def test_gemini_review_prompt_includes_revrem_diff_context(tmp_path):
 
     summary = runner_mod.run_loop(config, runner).to_dict()
 
-    prompt = calls[0][0][-1]
+    prompt = calls[0][1]
+    assert prompt is not None
     context = (repo / "artifacts" / "review-1-context.txt").read_text(encoding="utf-8")
     artifact_paths = summary["artifact_paths"]
     assert "Use the supplied diff context as the authoritative patch input" in prompt

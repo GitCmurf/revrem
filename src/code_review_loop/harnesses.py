@@ -132,14 +132,11 @@ class ClaudeHarnessAdapter(HarnessAdapter):
 
 class GeminiHarnessAdapter(HarnessAdapter):
     def command(self, request: PhaseCommandRequest) -> list[str]:
-        # The gemini CLI runs non-interactively with `-p/--prompt <text>`; the
-        # prompt is the flag's value (stdin is only appended). --prompt is kept
-        # last so prepare_prompt_invocation can supply the prompt as its value.
+        # The gemini CLI runs non-interactively and reads from stdin.
         command = [request.executable]
         command.extend(_gemini_permission_args(request))
         if request.model:
             command.extend(["--model", request.model])
-        command.append("--prompt")
         return command
 
 
@@ -411,19 +408,12 @@ def build_phase_command(request: PhaseCommandRequest) -> list[str]:
     return adapter.command(request)
 
 
-ARGV_PROMPT_HARNESSES = frozenset({"opencode", "kilo", "gemini"})
-
-
 def prepare_prompt_invocation(
     harness: str,
     command: list[str],
     prompt: str | None,
 ) -> tuple[list[str], str | None]:
     """Adapt prompt delivery to each harness' non-interactive CLI contract."""
-    if prompt is None:
-        return command, None
-    if harness in ARGV_PROMPT_HARNESSES:
-        return [*command, prompt], None
     return command, prompt
 
 

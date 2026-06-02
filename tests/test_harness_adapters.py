@@ -34,10 +34,7 @@ def test_gemini_adapter_commands():
         assert cmd[cmd.index("--approval-mode") + 1] == "auto_edit"
         assert "--model" in cmd
         assert "m1" in cmd
-        # The real gemini CLI takes the prompt as the VALUE of -p/--prompt; the
-        # prompt is supplied via the argv path, so --prompt must be the final
-        # token and there must be no empty placeholder argument.
-        assert cmd[-1] == "--prompt"
+        assert "--prompt" not in cmd
         assert "" not in cmd
 
 
@@ -59,7 +56,6 @@ def test_gemini_review_command_uses_plan_approval_mode():
         "plan",
         "--model",
         "gemini-3.1-pro-preview",
-        "--prompt",
     ]
 
 
@@ -101,37 +97,30 @@ def test_prompt_invocation_uses_stdin_for_claude():
     assert stdin == "review prompt"
 
 
-def test_prompt_invocation_passes_prompt_as_argument_for_argv_harnesses():
+def test_prompt_invocation_passes_prompt_via_stdin_for_all_harnesses():
     command, stdin = harnesses.prepare_prompt_invocation(
         "opencode",
         ["opencode", "run"],
         "review prompt",
     )
-    assert command == ["opencode", "run", "review prompt"]
-    assert stdin is None
+    assert command == ["opencode", "run"]
+    assert stdin == "review prompt"
 
     command, stdin = harnesses.prepare_prompt_invocation(
         "kilo",
         ["kilo", "run"],
         "review prompt",
     )
-    assert command == ["kilo", "run", "review prompt"]
-    assert stdin is None
+    assert command == ["kilo", "run"]
+    assert stdin == "review prompt"
 
-    # gemini delivers the prompt as the value of its trailing --prompt flag.
     command, stdin = harnesses.prepare_prompt_invocation(
         "gemini",
-        ["gemini", "--approval-mode", "auto_edit", "--prompt"],
+        ["gemini", "--approval-mode", "auto_edit"],
         "review prompt",
     )
-    assert command == [
-        "gemini",
-        "--approval-mode",
-        "auto_edit",
-        "--prompt",
-        "review prompt",
-    ]
-    assert stdin is None
+    assert command == ["gemini", "--approval-mode", "auto_edit"]
+    assert stdin == "review prompt"
 
 
 @pytest.mark.parametrize(
@@ -152,10 +141,8 @@ def test_prompt_invocation_passes_prompt_as_argument_for_argv_harnesses():
                 "auto_edit",
                 "--model",
                 "M",
-                "--prompt",
-                "PROMPT",
             ],
-            False,
+            True,
         ),
         (
             "opencode",
@@ -166,15 +153,14 @@ def test_prompt_invocation_passes_prompt_as_argument_for_argv_harnesses():
                 "--dangerously-skip-permissions",
                 "--model",
                 "M",
-                "PROMPT",
             ],
-            False,
+            True,
         ),
         (
             "kilo",
             "kilo",
-            ["kilo", "run", "--auto", "--model", "M", "PROMPT"],
-            False,
+            ["kilo", "run", "--auto", "--model", "M"],
+            True,
         ),
     ],
 )
