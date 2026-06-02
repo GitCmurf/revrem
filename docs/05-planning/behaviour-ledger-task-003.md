@@ -3,7 +3,7 @@ document_id: REVREM-LEDGER-003
 type: LEDGER
 title: Behaviour ledger for the cli.py re-engineering (REVREM-TASK-003)
 status: Approved
-version: '0.8'
+version: '0.9'
 last_updated: '2026-06-02'
 owner: GitCmurf
 docops_version: '2.0'
@@ -55,6 +55,20 @@ There is no silent third option.
 ```
 
 ## Entries
+
+### 2026-06-02 — Gemini dogfood progress and failure wording hardening
+
+- **Contract:** human
+- **What changed:** prompt-bearing phase-start commands now render a compact
+  `<prompt chars=... first='...'>` summary instead of printing embedded prompt
+  newlines into rich/compact progress. Unstructured review findings now show a
+  first-line review summary before the `findings` status line. Remediation
+  failures name the selected harness, for example `gemini remediation failed`,
+  instead of the legacy `codex exec remediation failed` wording.
+- **Why:** the first pure-Gemini dogfood run exposed confusing rich-panel
+  wrapping, missing review-output context before triage/remediation, and a
+  misleading provider label on Gemini remediation failure.
+- **schema_version impact:** none.
 
 ### 2026-05-31 — TASK-003 ledger closed
 

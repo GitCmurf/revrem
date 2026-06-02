@@ -86,6 +86,16 @@ def test_rich_event_uses_text_objects_so_markup_in_output_is_literal(monkeypatch
     assert (": bad [/]", None) in rendered.parts
 
 
+def test_rich_event_collapses_multiline_detail(monkeypatch):
+    install_fake_rich(monkeypatch)
+
+    assert progress.print_rich_event("triage", "1", "start", "first\n\nsecond")
+
+    rendered = FakeConsole.printed[0]
+    assert isinstance(rendered, FakeText)
+    assert (": first second", None) in rendered.parts
+
+
 def test_rich_message_and_continuation_escape_markup_like_text(monkeypatch):
     install_fake_rich(monkeypatch)
 

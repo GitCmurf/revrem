@@ -75,7 +75,9 @@ class TestRemediationAdapter:
         with patch("code_review_loop.adapters.remediation.run_remediation") as mock_rem:
             mock_rem.return_value = CommandResult(["codex"], 0)
             outcome = adapter.execute(
-                RemediationRequest(iteration=2, remediation_input="prompt", resolved_route=route),
+                RemediationRequest(
+                    iteration=2, remediation_input="prompt", resolved_route=route
+                ),
                 ctx,
             )
 
@@ -102,6 +104,25 @@ class TestRemediationAdapter:
                 ctx,
             )
 
+    def test_runtime_error_names_selected_harness(self, tmp_path: Path) -> None:
+        (tmp_path / "artifacts").mkdir()
+        config = LoopConfig(
+            base="main",
+            max_iterations=1,
+            cwd=tmp_path,
+            artifact_dir=tmp_path / "artifacts",
+            remediation_harness="gemini",
+            remediation_model="gemini-3.1-pro-preview",
+        )
+        ctx = _ctx(runner=MagicMock(return_value=CommandResult(["gemini"], 1)))
+        adapter = RemediationAdapter(config)
+
+        with pytest.raises(RuntimeError, match="gemini remediation failed"):
+            adapter.execute(
+                RemediationRequest(iteration=1, remediation_input="fix"),
+                ctx,
+            )
+
 
 class TestEngineDispatch:
     def test_harness_called_when_wired(self) -> None:
@@ -111,7 +132,9 @@ class TestEngineDispatch:
         class SentinelHarness:
             calls: list[RemediationRequest] = []
 
-            def execute(self, request: RemediationRequest, ctx: RunContext) -> RemediationOutcome:
+            def execute(
+                self, request: RemediationRequest, ctx: RunContext
+            ) -> RemediationOutcome:
                 SentinelHarness.calls.append(request)
                 return fake_outcome
 

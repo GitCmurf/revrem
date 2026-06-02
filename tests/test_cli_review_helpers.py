@@ -704,9 +704,68 @@ def test_gemini_review_prompt_includes_revrem_diff_context(tmp_path):
     assert artifact_paths["reviews"] == [str(repo / "artifacts" / "review-1.txt")]
     assert str(repo / "artifacts" / "review-1-prompt.txt") in artifact_paths["prompts"]
     assert (
-        str(repo / "artifacts" / "review-1-context.txt")
-        in artifact_paths["contexts"]
+        str(repo / "artifacts" / "review-1-context.txt") in artifact_paths["contexts"]
     )
+
+
+def test_gemini_review_prompt_respects_configured_char_limit(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(
+        ["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test User"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    (repo / "sample.txt").write_text("base\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "checkout", "-b", "feature"], cwd=repo, check=True, capture_output=True
+    )
+    (repo / "sample.txt").write_text("change\n" + ("x" * 5000) + "\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "commit", "-am", "large change"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    calls: list[tuple[list[str], str | None]] = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text))
+        return CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        cwd=repo,
+        artifact_dir=repo / "artifacts",
+        review_harness="gemini",
+        review_model="gemini-3.1-pro-preview",
+        max_remediation_input_chars=1500,
+    )
+
+    runner_mod.run_loop(config, runner)
+
+    prompt = calls[0][1]
+    assert prompt is not None
+    assert len(prompt) <= 1500
+    assert "omitted" in prompt
+    context = (repo / "artifacts" / "review-1-context.txt").read_text(encoding="utf-8")
+    assert "omitted" in context
+    assert context in prompt
 
 
 def test_harness_bin_override_controls_non_codex_executable(tmp_path, monkeypatch):

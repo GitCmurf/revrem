@@ -3,7 +3,7 @@ document_id: REVREM-TASK-006
 type: TASK
 title: Secondary harness live provider proof and hardening
 status: Approved
-version: '0.4'
+version: '0.5'
 last_updated: '2026-06-02'
 owner: GitCmurf
 docops_version: '2.0'
@@ -164,6 +164,13 @@ REVREM_LIVE_KILO=1 ./.venv/bin/pytest -q tests/test_live_secondary_harnesses.py
 - Changed the no-op remediation completion rule so successful checks plus zero
   staged diff after remediation produce `final_status: "clear"` when the latest
   review status was `unknown`.
+- Added a whole-prompt character cap for external review contexts, using the
+  existing `max_remediation_input_chars` config/CLI limit as the conservative
+  provider-context guard.
+- Improved pure-Gemini dogfood observability: prompt-bearing progress lines now
+  summarize prompt size/first line, unstructured review findings print a leading
+  review summary before triage/remediation, and remediation failures name the
+  selected harness instead of saying `codex exec`.
 
 ### Closeout Evidence
 
@@ -201,6 +208,7 @@ context needed to audit whether a prompted provider saw the diff.
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 0.5 | 2026-06-02 | Codex | Recorded prompt-size, progress-output, and Gemini failure-label hardening |
 | 0.4 | 2026-06-02 | Codex | Recorded Gemini review-context and no-diff completion hardening |
 | 0.3 | 2026-06-01 | Codex | Recorded Gemini live routed smoke evidence and marked the task complete |
 | 0.2 | 2026-05-31 | Codex | Added live secondary harness tests and evidence tracking |

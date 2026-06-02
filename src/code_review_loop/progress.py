@@ -85,11 +85,16 @@ def _update_live(text: Any) -> bool:
         return False
     live, panel_type, group_type = _ACTIVE_LIVE
     _ACTIVE_LIVE_LINES.append(text)
-    live.update(panel_type(group_type(*_ACTIVE_LIVE_LINES), title="RevRem", border_style="green"))
+    live.update(
+        panel_type(
+            group_type(*_ACTIVE_LIVE_LINES), title="RevRem", border_style="green"
+        )
+    )
     return True
 
 
 def _clip(value: str) -> str:
+    value = " ".join(value.split())
     if len(value) <= RICH_TEXT_MAX_CHARS:
         return value
     return f"{value[: RICH_TEXT_MAX_CHARS - 1]}…"
@@ -139,7 +144,9 @@ def print_rich_message(phase: str, label: str, text: str, *, head: str = "") -> 
     return True
 
 
-def print_rich_continuation(phase: str, label: str, text: str, *, indent: int = 2) -> bool:
+def print_rich_continuation(
+    phase: str, label: str, text: str, *, indent: int = 2
+) -> bool:
     rendered = _styled_text(
         _timestamp_part(),
         (" ", None),

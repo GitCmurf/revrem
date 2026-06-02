@@ -13,7 +13,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
-from code_review_loop import harnesses
+from code_review_loop import harnesses, prompts_composer
 from code_review_loop.adapters import phase_support
 from code_review_loop.adapters.git import run_git_preflight
 from code_review_loop.core.ports import (
@@ -32,6 +32,12 @@ if TYPE_CHECKING:
 
 Runner = Callable[[Sequence[str], Path, str | None, float | None], CommandResult]
 MAX_EXTERNAL_REVIEW_DIFF_CHARS = 120_000
+EXTERNAL_REVIEW_PROMPT_TAIL = (
+    "Use the supplied diff context as the authoritative patch input. "
+    "If shell or tool access is unavailable, still review the supplied diff. "
+    "Do not claim that commands or tests ran unless their output is included "
+    "in this prompt or you successfully ran them yourself.\n"
+)
 
 
 def build_review_command(config: LoopConfig) -> list[str]:
@@ -62,12 +68,8 @@ def run_codex_review(
     review_prompt = None
     if config.review_harness not in {"codex", "fake"}:
         review_context = build_external_review_context(config)
-        review_prompt = (
-            f"{phase_support.DEFAULT_REVIEW_PROMPT}\n\n{review_context}\n\n"
-            "Use the supplied diff context as the authoritative patch input. "
-            "If shell or tool access is unavailable, still review the supplied diff. "
-            "Do not claim that commands or tests ran unless their output is included "
-            "in this prompt or you successfully ran them yourself.\n"
+        review_prompt, review_context = compose_external_review_prompt(
+            config, review_context
         )
         phase_support.write_artifact(
             config.artifact_dir / f"{artifact_label}-context.txt",
@@ -160,11 +162,48 @@ def run_codex_review(
             ),
             ctx=ctx,
         )
-    if status != "findings" or not phase_support.log_review_findings(
+    if status == "findings" and phase_support.log_review_findings(
         config, display_label, combined, ctx=ctx
     ):
+        return status, result
+    if status == "findings":
+        phase_support.log_review_summary_line(
+            config, display_label, combined, head="review: "
+        )
+        phase_support.progress_event(config, "review", display_label, status, ctx=ctx)
+    else:
         phase_support.progress_event(config, "review", display_label, status, ctx=ctx)
     return status, result
+
+
+def compose_external_review_prompt(
+    config: LoopConfig,
+    review_context: str,
+) -> tuple[str, str]:
+    prompt_head = f"{phase_support.DEFAULT_REVIEW_PROMPT}\n\n"
+    prompt_tail = f"\n\n{EXTERNAL_REVIEW_PROMPT_TAIL}"
+    available_context_chars = (
+        config.max_remediation_input_chars - len(prompt_head) - len(prompt_tail)
+    )
+    trimmed_context = prompts_composer.trim_for_prompt(
+        review_context,
+        max(1, available_context_chars),
+    )
+    prompt = f"{prompt_head}{trimmed_context}{prompt_tail}"
+    if len(prompt) > config.max_remediation_input_chars:
+        prompt = prompts_composer.trim_for_prompt(
+            prompt, config.max_remediation_input_chars
+        )
+        trimmed_context = prompts_composer.trim_for_prompt(
+            trimmed_context,
+            max(
+                1,
+                config.max_remediation_input_chars
+                - len(prompt_head)
+                - len(prompt_tail),
+            ),
+        )
+    return prompt, trimmed_context
 
 
 def build_external_review_context(config: LoopConfig) -> str:

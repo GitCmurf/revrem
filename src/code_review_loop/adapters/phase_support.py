@@ -359,6 +359,30 @@ def progress_log(config: LoopConfig, message: str) -> None:
     print(f"[{timestamp}] {message}", file=sys.stderr, flush=True)
 
 
+def one_line_progress_text(text: str) -> str:
+    return " ".join(text.split())
+
+
+def summarize_prompt_for_progress(prompt: str, max_chars: int = 80) -> str:
+    summary = one_line_progress_text(prompt)
+    if len(summary) > max_chars:
+        summary = f"{summary[: max_chars - 1]}…"
+    return f"<prompt chars={len(prompt)} first={summary!r}>"
+
+
+def command_for_progress(command: list[str]) -> list[str]:
+    if not command:
+        return []
+    summarized = list(command)
+    for index, value in enumerate(summarized[:-1]):
+        if value in {"--prompt", "-p"}:
+            summarized[index + 1] = summarize_prompt_for_progress(summarized[index + 1])
+            return summarized
+    if "\n" in summarized[-1]:
+        summarized[-1] = summarize_prompt_for_progress(summarized[-1])
+    return summarized
+
+
 def _progress_event_kind(status: str) -> str:
     if status == "start":
         return "phase_start"
@@ -405,16 +429,20 @@ def progress_event(
             return
         warn_rich_unavailable(phase, label)
         if detail:
-            print_compact_progress(phase, label, detail, head=f"{status}: ")
+            print_compact_progress(
+                phase, label, one_line_progress_text(detail), head=f"{status}: "
+            )
         else:
             print_compact_progress(phase, label, status)
         return
     if config.progress_style == "verbose":
-        suffix = f": {detail}" if detail else ""
+        suffix = f": {one_line_progress_text(detail)}" if detail else ""
         progress_log(config, f"{phase} {label}: {status}{suffix}")
         return
     if detail:
-        print_compact_progress(phase, label, detail, head=f"{status}: ")
+        print_compact_progress(
+            phase, label, one_line_progress_text(detail), head=f"{status}: "
+        )
     else:
         print_compact_progress(phase, label, status)
 
@@ -443,7 +471,7 @@ def resolved_phase_detail(
         fields.append(f"contract={contract}")
     if source:
         fields.append(f"source={source}")
-    return f"{shlex.join(command)} [{' '.join(fields)}]"
+    return f"{shlex.join(command_for_progress(command))} [{' '.join(fields)}]"
 
 
 def emit_loop_failure_event(
@@ -506,6 +534,20 @@ def print_progress_message(
     print_compact_progress(phase, label, text, head=head)
 
 
+def log_review_summary_line(
+    config: LoopConfig,
+    label: str,
+    output: str,
+    *,
+    head: str,
+) -> bool:
+    summary = extract_review_summary(output)
+    if not summary:
+        return False
+    print_progress_message(config, "review", label, summary, head=head)
+    return True
+
+
 def log_review_findings(
     config: LoopConfig, label: str, output: str, ctx: RunContext
 ) -> bool:
@@ -519,7 +561,7 @@ def log_review_findings(
                 config, "review", label, summary, indent=COMPACT_PROGRESS_DETAIL_INDENT
             )
         else:
-            print_progress_message(config, "review", label, summary, head="issue: ")
+            log_review_summary_line(config, label, output, head="issue: ")
     else:
         progress_event(
             config, "review", label, f"findings-summary ({len(blocks)})", ctx=ctx
