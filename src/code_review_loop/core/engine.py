@@ -120,7 +120,15 @@ class NoFinalReview:
     """Emitted post-loop when config.final_review is False."""
 
 
-PhaseEvent = LoopStarted | ReviewDone | TriageDone | RemediationDone | ChecksDone | CommitDone | NoFinalReview
+PhaseEvent = (
+    LoopStarted
+    | ReviewDone
+    | TriageDone
+    | RemediationDone
+    | ChecksDone
+    | CommitDone
+    | NoFinalReview
+)
 
 
 # ---------------------------------------------------------------------------
@@ -174,7 +182,16 @@ class Stop:
     outcome: RunOutcome
 
 
-Action = Continue | RunReview | RunTriage | RunRemediation | RunChecks | RunCommit | RetryViaCommitHook | Stop
+Action = (
+    Continue
+    | RunReview
+    | RunTriage
+    | RunRemediation
+    | RunChecks
+    | RunCommit
+    | RetryViaCommitHook
+    | Stop
+)
 
 
 # ---------------------------------------------------------------------------
@@ -205,7 +222,9 @@ class EngineExecutor(Protocol):
         ...
 
 
-def run(state: EngineState, ctx: EngineExecutor, *, max_steps: int | None = None) -> RunOutcome:
+def run(
+    state: EngineState, ctx: EngineExecutor, *, max_steps: int | None = None
+) -> RunOutcome:
     """Drive the dependency-free engine until it reaches a terminal outcome.
 
     ``run`` is intentionally small: every pure branch decision remains in
@@ -220,8 +239,21 @@ def run(state: EngineState, ctx: EngineExecutor, *, max_steps: int | None = None
         if isinstance(action, Stop):
             return action.outcome
         if max_steps is not None and steps >= max_steps:
-            return OutcomeFailed(reason="engine_step_limit_exceeded", error="engine step limit exceeded")
-        if isinstance(action, (Continue, RunReview, RunTriage, RunRemediation, RunChecks, RunCommit, RetryViaCommitHook)):
+            return OutcomeFailed(
+                reason="engine_step_limit_exceeded", error="engine step limit exceeded"
+            )
+        if isinstance(
+            action,
+            (
+                Continue,
+                RunReview,
+                RunTriage,
+                RunRemediation,
+                RunChecks,
+                RunCommit,
+                RetryViaCommitHook,
+            ),
+        ):
             state = ctx.execute(action, state)
             steps += 1
             continue
@@ -233,7 +265,9 @@ def run(state: EngineState, ctx: EngineExecutor, *, max_steps: int | None = None
 # ---------------------------------------------------------------------------
 
 
-def decide(cfg: ConfigSnapshot, acc: LoopAccumulator, event: PhaseEvent, *, iteration: int = 1) -> Action:
+def decide(
+    cfg: ConfigSnapshot, acc: LoopAccumulator, event: PhaseEvent, *, iteration: int = 1
+) -> Action:
     """Return the Action the shell should apply for the given phase event.
 
     This function is pure: no I/O, no side effects, deterministic. The
@@ -258,7 +292,9 @@ def decide(cfg: ConfigSnapshot, acc: LoopAccumulator, event: PhaseEvent, *, iter
     assert_never(event)
 
 
-def _decide_review(cfg: ConfigSnapshot, acc: LoopAccumulator, event: ReviewDone) -> Action:
+def _decide_review(
+    cfg: ConfigSnapshot, acc: LoopAccumulator, event: ReviewDone
+) -> Action:
     if event.exc is not None:
         return Stop(OutcomeFailed(reason="review_failed", error=str(event.exc)))
     if not event.is_final:
@@ -308,7 +344,9 @@ def _decide_checks(cfg: ConfigSnapshot, acc: LoopAccumulator, iteration: int) ->
     return _next_review_action(cfg, acc, iteration)
 
 
-def _decide_commit(cfg: ConfigSnapshot, acc: LoopAccumulator, event: CommitDone, iteration: int) -> Action:
+def _decide_commit(
+    cfg: ConfigSnapshot, acc: LoopAccumulator, event: CommitDone, iteration: int
+) -> Action:
     if event.other_exc is not None:
         return Stop(OutcomeFailed(reason="commit_failed", error=str(event.other_exc)))
     if event.commit_failed is not None:
@@ -329,13 +367,14 @@ def _decide_commit(cfg: ConfigSnapshot, acc: LoopAccumulator, event: CommitDone,
                     check_failures=True,
                 )
             )
-        return Stop(OutcomeFailed(reason="commit_failed", error=str(event.commit_failed)))
+        return Stop(
+            OutcomeFailed(reason="commit_failed", error=str(event.commit_failed))
+        )
     if event.status == "skipped_no_changes":
-        if acc.last_review_status == "clear":
+        if acc.last_review_status in {"clear", "unknown"}:
             return Stop(OutcomeClear(reason="no_changes_after_remediation"))
         if acc.last_review_status == "findings":
             return Stop(OutcomeFindings(reason="no_changes_after_remediation"))
-        return Stop(OutcomeUnknown(reason="no_changes_after_remediation"))
     return _next_review_action(cfg, acc, iteration)
 
 
@@ -348,7 +387,9 @@ def _decide_no_final_review(acc: LoopAccumulator) -> Action:
     )
 
 
-def _next_review_action(cfg: ConfigSnapshot, acc: LoopAccumulator, iteration: int) -> Action:
+def _next_review_action(
+    cfg: ConfigSnapshot, acc: LoopAccumulator, iteration: int
+) -> Action:
     if iteration < cfg.max_iterations:
         return Continue()
     if cfg.final_review:

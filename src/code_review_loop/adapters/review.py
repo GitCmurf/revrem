@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from code_review_loop.config import LoopConfig
 
 Runner = Callable[[Sequence[str], Path, str | None, float | None], CommandResult]
+MAX_EXTERNAL_REVIEW_DIFF_CHARS = 120_000
 
 
 def build_review_command(config: LoopConfig) -> list[str]:
@@ -60,9 +61,21 @@ def run_codex_review(
     command = build_review_command(config)
     review_prompt = None
     if config.review_harness not in {"codex", "fake"}:
+        review_context = build_external_review_context(config)
         review_prompt = (
-            f"{phase_support.DEFAULT_REVIEW_PROMPT}\n\nBase branch: {config.base}\n"
-            f"Working directory: {config.cwd}\n"
+            f"{phase_support.DEFAULT_REVIEW_PROMPT}\n\n{review_context}\n\n"
+            "Use the supplied diff context as the authoritative patch input. "
+            "If shell or tool access is unavailable, still review the supplied diff. "
+            "Do not claim that commands or tests ran unless their output is included "
+            "in this prompt or you successfully ran them yourself.\n"
+        )
+        phase_support.write_artifact(
+            config.artifact_dir / f"{artifact_label}-context.txt",
+            review_context,
+        )
+        phase_support.write_artifact(
+            config.artifact_dir / f"{artifact_label}-prompt.txt",
+            review_prompt,
         )
         command, review_prompt = harnesses.prepare_prompt_invocation(
             config.review_harness,
@@ -125,9 +138,9 @@ def run_codex_review(
         raise RuntimeError(
             f"codex review failed for {artifact_label}; see {artifact_path}"
         )
-    status = detect_review_status(combined)
+    status = detect_review_status(combined, harness=config.review_harness)
     if config.debug_status_detection:
-        diagnostics = review_status_diagnostics(combined)
+        diagnostics = review_status_diagnostics(combined, harness=config.review_harness)
         phase_support.write_artifact(
             config.artifact_dir / f"{artifact_label}-status.json",
             json.dumps(diagnostics, indent=2, sort_keys=True) + "\n",
@@ -139,8 +152,10 @@ def run_codex_review(
             "status-debug",
             (
                 f"status={diagnostics['status']} "
+                f"source={diagnostics['status_source']} "
                 f"findings={diagnostics['finding_line_count']} "
                 f"clear_phrase={diagnostics['clear_phrase_present']} "
+                f"tool_denial={diagnostics['tool_denial_present']} "
                 f"stderr={diagnostics['stderr_present']}"
             ),
             ctx=ctx,
@@ -150,6 +165,80 @@ def run_codex_review(
     ):
         phase_support.progress_event(config, "review", display_label, status, ctx=ctx)
     return status, result
+
+
+def build_external_review_context(config: LoopConfig) -> str:
+    sections = [
+        "Review context supplied by RevRem.",
+        f"Base branch: {config.base}",
+        f"Working directory: {config.cwd}",
+    ]
+    if phase_support.lexical_git_repo_root(config.cwd) is None:
+        sections.append("Git repository: unavailable")
+        return "\n".join(sections) + "\n"
+
+    head = run_git_preflight(config.cwd, ["rev-parse", "HEAD"])
+    base = run_git_preflight(
+        config.cwd, ["rev-parse", "--verify", f"{config.base}^{{commit}}"]
+    )
+    merge_base = run_git_preflight(config.cwd, ["merge-base", "HEAD", config.base])
+    sections.extend(
+        [
+            _format_git_context_result("HEAD", head),
+            _format_git_context_result(f"{config.base} commit", base),
+            _format_git_context_result("Merge base", merge_base),
+        ]
+    )
+    sections.extend(
+        [
+            _format_git_context_result(
+                "git status --short",
+                run_git_preflight(config.cwd, ["status", "--short"]),
+            ),
+            _format_git_context_result(
+                f"git diff --stat {config.base}...HEAD",
+                run_git_preflight(
+                    config.cwd, ["diff", "--stat", f"{config.base}...HEAD"]
+                ),
+            ),
+            _format_git_context_result(
+                f"git diff --name-status {config.base}...HEAD",
+                run_git_preflight(
+                    config.cwd, ["diff", "--name-status", f"{config.base}...HEAD"]
+                ),
+            ),
+            _format_git_context_result(
+                f"git diff {config.base}...HEAD",
+                run_git_preflight(config.cwd, ["diff", f"{config.base}...HEAD"]),
+                max_chars=MAX_EXTERNAL_REVIEW_DIFF_CHARS,
+            ),
+            _format_git_context_result(
+                "git diff --cached",
+                run_git_preflight(config.cwd, ["diff", "--cached"]),
+                max_chars=MAX_EXTERNAL_REVIEW_DIFF_CHARS,
+            ),
+            _format_git_context_result(
+                "git diff",
+                run_git_preflight(config.cwd, ["diff"]),
+                max_chars=MAX_EXTERNAL_REVIEW_DIFF_CHARS,
+            ),
+        ]
+    )
+    return "\n\n".join(sections) + "\n"
+
+
+def _format_git_context_result(
+    label: str,
+    result: CommandResult,
+    *,
+    max_chars: int | None = None,
+) -> str:
+    output = phase_support._combined_output(result).strip()
+    if max_chars is not None and len(output) > max_chars:
+        output = output[:max_chars] + "\n[RevRem: diff context truncated]\n"
+    if not output:
+        output = "[no output]"
+    return f"## {label}\nExit status: {result.returncode}\n{output}"
 
 
 def review_base_preflight_error(config: LoopConfig) -> str | None:

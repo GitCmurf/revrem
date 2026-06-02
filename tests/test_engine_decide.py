@@ -179,7 +179,9 @@ def test_decide_m3_remediation_exception_fails() -> None:
 
     action = decide(cfg, acc, event)
 
-    assert action == Stop(OutcomeFailed(reason="remediation_failed", error="remediation boom"))
+    assert action == Stop(
+        OutcomeFailed(reason="remediation_failed", error="remediation boom")
+    )
 
 
 def test_decide_m1_successful_remediation_continues() -> None:
@@ -232,11 +234,15 @@ def test_decide_cm4_non_retryable_hook_failure_fails_with_staged_changes() -> No
 def test_decide_cm5_non_hook_commit_failure_fails() -> None:
     cfg = ConfigSnapshot(3, True, True, "fail", True)
     acc = LoopAccumulator(pending_check_failures="")
-    event = CommitDone(status=None, commit_failed=_FakeCommitFailed("nothing_to_commit"))
+    event = CommitDone(
+        status=None, commit_failed=_FakeCommitFailed("nothing_to_commit")
+    )
 
     action = decide(cfg, acc, event)
 
-    assert action == Stop(OutcomeFailed(reason="commit_failed", error="commit nothing_to_commit"))
+    assert action == Stop(
+        OutcomeFailed(reason="commit_failed", error="commit nothing_to_commit")
+    )
 
 
 def test_decide_cm2_clear_skipped_no_changes_exits_clear() -> None:
@@ -265,7 +271,7 @@ def test_decide_cm2_findings_skipped_no_changes_exits_findings() -> None:
     assert action == Stop(OutcomeFindings(reason="no_changes_after_remediation"))
 
 
-def test_decide_cm2_unknown_skipped_no_changes_exits_unknown() -> None:
+def test_decide_cm2_unknown_skipped_no_changes_exits_clear() -> None:
     cfg = ConfigSnapshot(3, True, True, "fail", True)
     acc = LoopAccumulator(
         pending_check_failures="",
@@ -275,7 +281,7 @@ def test_decide_cm2_unknown_skipped_no_changes_exits_unknown() -> None:
 
     action = decide(cfg, acc, event)
 
-    assert action == Stop(OutcomeUnknown(reason="no_changes_after_remediation"))
+    assert action == Stop(OutcomeClear(reason="no_changes_after_remediation"))
 
 
 def test_decide_cm1_successful_commit_continues() -> None:
@@ -295,7 +301,9 @@ def test_decide_nf1_no_final_review_exits_unknown_with_check_failure_flag() -> N
 
     action = decide(cfg, acc, event)
 
-    assert action == Stop(OutcomeUnknown(reason="max_iterations_reached", check_failures=True))
+    assert action == Stop(
+        OutcomeUnknown(reason="max_iterations_reached", check_failures=True)
+    )
 
 
 def test_decide_t4_triage_clear_with_pending_check_failures_continues() -> None:
@@ -311,7 +319,13 @@ def test_decide_t4_triage_clear_with_pending_check_failures_continues() -> None:
 
 def test_decide_cm3_hook_failure_at_max_iterations_does_not_retry() -> None:
     """Retryable hook failure on the last iteration must not retry (CM4, not CM3)."""
-    cfg = ConfigSnapshot(max_iterations=3, triage_enabled=True, commit_after_remediation=True, commit_on_hook_failure="remediate", final_review=True)
+    cfg = ConfigSnapshot(
+        max_iterations=3,
+        triage_enabled=True,
+        commit_after_remediation=True,
+        commit_on_hook_failure="remediate",
+        final_review=True,
+    )
     acc = LoopAccumulator(pending_check_failures="")
     event = CommitDone(status=None, commit_failed=_FakeCommitFailed("hook_failed"))
 
@@ -329,7 +343,13 @@ def test_decide_cm3_hook_failure_at_max_iterations_does_not_retry() -> None:
 
 def test_decide_cm3_no_verify_hook_failure_retries() -> None:
     """commit_on_hook_failure='no-verify' also triggers the retry path (CM3)."""
-    cfg = ConfigSnapshot(max_iterations=3, triage_enabled=True, commit_after_remediation=True, commit_on_hook_failure="no-verify", final_review=True)
+    cfg = ConfigSnapshot(
+        max_iterations=3,
+        triage_enabled=True,
+        commit_after_remediation=True,
+        commit_on_hook_failure="no-verify",
+        final_review=True,
+    )
     acc = LoopAccumulator(pending_check_failures="")
     event = CommitDone(status=None, commit_failed=_FakeCommitFailed("hook_failed"))
 

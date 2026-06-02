@@ -22,13 +22,20 @@ def add_artifact_paths(summary: dict[str, object], config: LoopConfig) -> None:
         (path for path in artifact_dir.glob("*") if path.is_file()),
         key=artifact_sort_key,
     )
-    summary["artifact_paths"] = {
+    context_paths = [
+        str(path)
+        for path in files
+        if path.name.endswith("-context.txt")
+    ]
+    artifact_paths = {
         "artifact_dir": str(artifact_dir),
         "summary": str(artifact_dir / "summary.json"),
         "reviews": [
             str(path)
             for path in files
             if path.name.startswith("review-") and path.suffix == ".txt"
+            and not path.name.endswith("-context.txt")
+            and not path.name.endswith("-prompt.txt")
         ],
         "remediations": [
             str(path)
@@ -40,8 +47,7 @@ def add_artifact_paths(summary: dict[str, object], config: LoopConfig) -> None:
         "prompts": [
             str(path)
             for path in files
-            if path.name.startswith("remediation-")
-            and path.name.endswith("-prompt.txt")
+            if path.name.endswith("-prompt.txt")
         ],
         "routing": [str(path) for path in files if path.name.startswith("routing-")],
         "triage": [str(path) for path in files if path.name.startswith("triage-")],
@@ -60,6 +66,9 @@ def add_artifact_paths(summary: dict[str, object], config: LoopConfig) -> None:
             or path.name.startswith("diagnostics-")
         ],
     }
+    if context_paths:
+        artifact_paths["contexts"] = context_paths
+    summary["artifact_paths"] = artifact_paths
     fallbacks = commit_message_fallbacks(config.artifact_dir)
     if fallbacks:
         summary["commit_message_fallbacks"] = fallbacks

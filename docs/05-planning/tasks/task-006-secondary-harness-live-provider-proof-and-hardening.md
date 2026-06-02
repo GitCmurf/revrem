@@ -3,8 +3,8 @@ document_id: REVREM-TASK-006
 type: TASK
 title: Secondary harness live provider proof and hardening
 status: Approved
-version: '0.3'
-last_updated: '2026-06-01'
+version: '0.4'
+last_updated: '2026-06-02'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -150,6 +150,21 @@ REVREM_LIVE_KILO=1 ./.venv/bin/pytest -q tests/test_live_secondary_harnesses.py
   `./.venv/bin/pytest -q tests/test_live_secondary_harnesses.py`
   reported `5 skipped`.
 
+2026-06-02:
+
+- Hardened external review harnesses so Gemini, Claude, opencode, and KiloCode
+  receive a RevRem-generated diff context bundle instead of depending on
+  provider shell access in read-only mode.
+- Made prompted external review status strict: external review harnesses must
+  return explicit/structured status, while Codex native review keeps the
+  conservative clear-prose corpus because RevRem does not control `codex
+  review` output.
+- Added review prompt/context artifacts to summary artifact paths without
+  mixing them into review transcript paths.
+- Changed the no-op remediation completion rule so successful checks plus zero
+  staged diff after remediation produce `final_status: "clear"` when the latest
+  review status was `unknown`.
+
 ### Closeout Evidence
 
 2026-06-01:
@@ -179,12 +194,14 @@ REVREM_LIVE_KILO=1 ./.venv/bin/pytest -q tests/test_live_secondary_harnesses.py
 The task is complete: secondary harness live proof exists for one real
 provider, the other provider tests remain opt-in and skip by default, and
 provider setup/auth failures are classified distinctly from internal loop
-failures.
+failures. The follow-up Gemini dogfood hardening also records the review
+context needed to audit whether a prompted provider saw the diff.
 
 ## Version History
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 0.4 | 2026-06-02 | Codex | Recorded Gemini review-context and no-diff completion hardening |
 | 0.3 | 2026-06-01 | Codex | Recorded Gemini live routed smoke evidence and marked the task complete |
 | 0.2 | 2026-05-31 | Codex | Added live secondary harness tests and evidence tracking |
 | 0.1 | 2026-05-31 | Codex | Initial governed task for live secondary provider proof |

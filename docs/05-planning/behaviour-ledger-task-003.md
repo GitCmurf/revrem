@@ -3,8 +3,8 @@ document_id: REVREM-LEDGER-003
 type: LEDGER
 title: Behaviour ledger for the cli.py re-engineering (REVREM-TASK-003)
 status: Approved
-version: '0.7'
-last_updated: '2026-05-31'
+version: '0.8'
+last_updated: '2026-06-02'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -426,7 +426,7 @@ an unledgered transition.
 | # | Branch condition | State mutation | Outcome |
 |---|---|---|---|
 | CM1 | commit succeeds | `iterations[-1]["commit_status"]=status` | loop continues (or returns on `skipped_no_changes`) |
-| CM2 | `commit_status == "skipped_no_changes"` | `final_status=status` (last review status), `stopped_reason=no_changes_after_remediation`, `latest_review_excerpt=…` | `return summary` |
+| CM2 | `commit_status == "skipped_no_changes"` | `final_status=clear` when last review status is `clear` or `unknown`; `final_status=findings` only when the last review explicitly found findings. `stopped_reason=no_changes_after_remediation`, `latest_review_excerpt=…` | `return summary` |
 | CM3 | `CommitFailed(kind="hook_failed")` and `commit_on_hook_failure in {remediate, no-verify}` and `iteration < max_iterations` | `iterations[-1]["commit_status"]=hook_failed`, `_commit_retry=True`, `pending_check_failures=hook output`, `state.set_pending_check_failures(True)` | `continue` (next iteration, retrying with hook output as remediation input) |
 | CM4 | `CommitFailed(kind="hook_failed")` (non-retryable) | `final_status=error`, `stopped_reason=commit_hook_failed`, `error=str(exc)`, `staged_changes_left=True`, `pending_check_failures=True` | `raise RunLoopFailed` (summary written) |
 | CM5 | `CommitFailed` other kind | `final_status=error`, `stopped_reason=commit_failed`, `error=str(exc)` | `raise RunLoopFailed` (summary written) |
@@ -477,7 +477,7 @@ an unledgered transition.
 | `all_findings_suppressed` | `clear` | T2 |
 | `triage_failed` | `error` | T6 |
 | `remediation_failed` | `error` | M3 |
-| `no_changes_after_remediation` | *(last review status)* | CM2 |
+| `no_changes_after_remediation` | `clear` \| `findings` | CM2 |
 | `commit_hook_failed` | `error` | CM4 |
 | `commit_failed` | `error` | CM5, CM7 |
 | `max_iterations_reached_with_check_failures` | `findings` | F3 |

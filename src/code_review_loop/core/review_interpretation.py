@@ -18,7 +18,9 @@ import re
 # Regex constants
 # ---------------------------------------------------------------------------
 
-STATUS_RE = re.compile(r"^\s*REVIEW_STATUS:\s*(clear|findings)\s*$", re.IGNORECASE | re.MULTILINE)
+STATUS_RE = re.compile(
+    r"^\s*REVIEW_STATUS:\s*(clear|findings)\s*$", re.IGNORECASE | re.MULTILINE
+)
 CODEX_FINDING_RE = re.compile(r"^\s*-\s*\[P[0-3]\]\s+", re.MULTILINE)
 CODEX_FINDING_LINE_RE = re.compile(r"^\s*-\s*(\[P[0-3]\]\s+.+)$")
 REVIEW_COMMENTS_HEADING_RE = re.compile(
@@ -41,9 +43,25 @@ STRUCTURED_EMPTY_FINDINGS_RE = re.compile(
     r'(?<!\w)["\']?findings["\']?\s*:\s*\[\s*\](?!\w)',
     re.IGNORECASE,
 )
+TOOL_DENIAL_RE = re.compile(
+    r"(?:tool execution (?:denied|requires user confirmation)|denied by policy|requires user confirmation)",
+    re.IGNORECASE,
+)
+UNRELATED_FAILURE_RE = re.compile(
+    r"\b(?:failure|failures|issue|issues|problem|problems)\b"
+    r"[^.!?]*\b(?:environment|pyth?onpath|local environment|unchanged|unrelated|"
+    r"not caused by|not introduced by|not a regression|outside the diff|not from this patch)\b"
+    r"|"
+    r"\b(?:environment|pyth?onpath|local environment|unchanged|unrelated|"
+    r"not caused by|not introduced by|not a regression|outside the diff|not from this patch)\b"
+    r"[^.!?]*\b(?:failure|failures|issue|issues|problem|problems)\b",
+    re.IGNORECASE,
+)
 
 NEGATED_ISSUE_PREFIX_RE = r"(?:clear|discrete|actionable|introduced|known|new|obvious|blocking|material|major|serious|outstanding|significant|additional|further|remaining|open|critical|severe|real|actual|genuine|substantive|meaningful|correctness|security|maintainability)"
-NEGATED_ISSUE_PREFIX_CHAIN_RE = rf"{NEGATED_ISSUE_PREFIX_RE}(?:[\s,;:-]+{NEGATED_ISSUE_PREFIX_RE})*"
+NEGATED_ISSUE_PREFIX_CHAIN_RE = (
+    rf"{NEGATED_ISSUE_PREFIX_RE}(?:[\s,;:-]+{NEGATED_ISSUE_PREFIX_RE})*"
+)
 NEGATED_ISSUE_WORD_RE = r"(?:bug|bugs|issue|issues|regression|regressions|defect|defects|problem|problems|failure|failures|finding|findings)"
 NEGATED_ISSUE_PROSE_RE = re.compile(
     rf"\b(?:"
@@ -59,7 +77,10 @@ NEGATED_ISSUE_PROSE_RE = re.compile(
     rf")",
     re.IGNORECASE,
 )
-CONTRASTIVE_CLAUSE_RE = re.compile(r"\b(?:but|however|though|although|yet|nevertheless|nonetheless|still)\b", re.IGNORECASE)
+CONTRASTIVE_CLAUSE_RE = re.compile(
+    r"\b(?:but|however|though|although|yet|nevertheless|nonetheless|still)\b",
+    re.IGNORECASE,
+)
 
 CLEAR_PHRASES = (
     # Keep only negated forms here. Broad phrases like "warrant an inline finding"
@@ -69,6 +90,8 @@ CLEAR_PHRASES = (
     "did not find a discrete introduced bug",
     "did not find any discrete introduced bug",
     "did not find any actionable bugs",
+    "did not find any actionable bugs introduced by the reviewed diff",
+    "did not find any actionable bugs introduced by the diff",
     "did not identify a discrete introduced correctness, security, or maintainability issue that should block the patch",
     "did not identify any discrete introduced bugs that should block the patch",
     "did not identify any discrete introduced bugs that would block the patch",
@@ -81,6 +104,8 @@ CLEAR_PHRASES = (
     "without any clear regressions or actionable bugs",
     "without any clear regressions or actionable",
 )
+
+PROMPTED_REVIEW_HARNESSES = frozenset({"claude", "gemini", "opencode", "kilo"})
 
 # ---------------------------------------------------------------------------
 # Core helper
@@ -155,6 +180,8 @@ def has_affirmative_issue_prose(output: str) -> bool:
             continue
         if not AFFIRMATIVE_ISSUE_WORD_RE.search(sentence):
             continue
+        if UNRELATED_FAILURE_RE.search(sentence):
+            continue
         if has_affirmative_contrastive_issue_clause(sentence):
             return True
         if has_negated_clear_review_statement(normalized_sentence):
@@ -184,9 +211,31 @@ def structured_review_status(output: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-def detect_review_status(output: str) -> str:
-    """Return clear/findings/unknown for Codex review output."""
-    return _detect_review_status_from_actionable(actionable_review_output(output))
+def detect_review_status(output: str, *, harness: str = "codex") -> str:
+    """Return clear/findings/unknown for review output.
+
+    Codex native review is classified with a conservative prose corpus because
+    RevRem does not control that prompt. Prompted external review harnesses are
+    held to the explicit/structured status contract that RevRem supplies.
+    """
+    actionable_output = actionable_review_output(output)
+    if harness in PROMPTED_REVIEW_HARNESSES:
+        return _detect_prompted_review_status_from_actionable(actionable_output)
+    return _detect_review_status_from_actionable(actionable_output)
+
+
+def _detect_prompted_review_status_from_actionable(actionable_output: str) -> str:
+    match = STATUS_RE.search(actionable_output)
+    if match:
+        return match.group(1).lower()
+
+    structured_status = structured_review_status(actionable_output)
+    if structured_status is not None:
+        return structured_status
+
+    if CODEX_FINDING_RE.search(actionable_output):
+        return "findings"
+    return "unknown"
 
 
 def _detect_review_status_from_actionable(actionable_output: str) -> str:
@@ -221,13 +270,13 @@ def _detect_review_status_from_actionable(actionable_output: str) -> str:
     }
     if any(line in clear_lines for line in normalized_lines):
         return "clear"
-    if has_negated_clear_review_statement(normalized) and not has_affirmative_issue_prose(
-        actionable_output
-    ):
+    if has_negated_clear_review_statement(
+        normalized
+    ) and not has_affirmative_issue_prose(actionable_output):
         return "clear"
-    if any(phrase in normalized for phrase in CLEAR_PHRASES) and not has_affirmative_issue_prose(
-        actionable_output
-    ):
+    if any(
+        phrase in normalized for phrase in CLEAR_PHRASES
+    ) and not has_affirmative_issue_prose(actionable_output):
         return "clear"
     return "unknown"
 
@@ -237,24 +286,52 @@ def _detect_review_status_from_actionable(actionable_output: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def review_status_diagnostics(output: str) -> dict[str, object]:
+def review_status_diagnostics(
+    output: str, *, harness: str = "codex"
+) -> dict[str, object]:
     """Return compact, targeted diagnostics for review-status classification."""
     actionable_output = actionable_review_output(output)
     stderr_present = "\n[stderr]\n" in output
     explicit_status = STATUS_RE.search(actionable_output)
     finding_lines = CODEX_FINDING_RE.findall(actionable_output)
     normalized = actionable_output.lower()
+    matched_clear_phrase = next(
+        (phrase for phrase in CLEAR_PHRASES if phrase in normalized),
+        None,
+    )
     clear_phrase_present = (
-        any(phrase in normalized for phrase in CLEAR_PHRASES)
+        matched_clear_phrase is not None
         or has_negated_clear_review_statement(normalized)
     )
+    structured_status = structured_review_status(actionable_output)
+    if explicit_status:
+        status_source = "explicit_status"
+    elif structured_status is not None:
+        status_source = "structured_findings"
+    elif finding_lines:
+        status_source = "codex_finding_bullet"
+    elif (
+        harness not in PROMPTED_REVIEW_HARNESSES
+        and clear_phrase_present
+        and not has_affirmative_issue_prose(actionable_output)
+    ):
+        status_source = "codex_clear_prose"
+    else:
+        status_source = "none"
     return {
-        "status": _detect_review_status_from_actionable(actionable_output),
+        "status": detect_review_status(output, harness=harness),
+        "status_source": status_source,
         "actionable_chars": len(actionable_output),
         "stderr_present": stderr_present,
-        "explicit_status": explicit_status.group(1).lower() if explicit_status else None,
+        "explicit_status": (
+            explicit_status.group(1).lower() if explicit_status else None
+        ),
         "finding_line_count": len(finding_lines),
         "clear_phrase_present": clear_phrase_present,
+        "matched_clear_phrase": matched_clear_phrase,
+        "harness": harness,
+        "explicit_status_required": harness in PROMPTED_REVIEW_HARNESSES,
+        "tool_denial_present": TOOL_DENIAL_RE.search(output) is not None,
     }
 
 
@@ -275,7 +352,9 @@ def extract_finding_summaries(output: str, limit: int = 5) -> list[str]:
     return summaries
 
 
-def extract_finding_blocks(output: str, limit: int = 5, detail_lines: int = 2) -> list[list[str]]:
+def extract_finding_blocks(
+    output: str, limit: int = 5, detail_lines: int = 2
+) -> list[list[str]]:
     blocks: list[list[str]] = []
     current: list[str] | None = None
     current_details = 0

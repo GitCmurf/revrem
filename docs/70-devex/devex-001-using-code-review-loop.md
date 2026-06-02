@@ -3,8 +3,8 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.20'
-last_updated: '2026-06-01'
+version: '1.21'
+last_updated: '2026-06-02'
 owner: GitCmurf
 docops_version: '2.0'
 area: devex
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.20
-> **Last Updated:** 2026-06-01
+> **Version:** 1.21
+> **Last Updated:** 2026-06-02
 > **Type:** DEVEX
 > **Area:** devex
 > **Description:** Operator guide for the code-review-loop utility
@@ -639,12 +639,13 @@ prompt, RevRem normalizes the final subject to Conventional Commit syntax and
 appends `(RevRem)`. Passing `--commit-message-prompt` intentionally disables
 that default subject policy so special-purpose commit formats can be tested
 without fighting the normalizer. If a verified remediation pass produces no
-staged changes, RevRem stops the loop immediately; in that no-op path an
-`unknown` review status remains `final_status: "unknown"` with
-`stopped_reason: "no_changes_after_remediation"`, and the unexpected-status
-bug-report artifact is still recorded for operator follow-up. Auto-commit also
-requires a clean worktree before the loop starts so unrelated local edits
-cannot be staged by the broad `git add -A` step.
+staged changes after checks pass, RevRem stops the loop immediately with
+`final_status: "clear"` and
+`stopped_reason: "no_changes_after_remediation"`; the passing checks plus zero
+staged diff are treated as deterministic clear evidence when the preceding
+review status was still `unknown`. Auto-commit also requires a clean worktree
+before the loop starts so unrelated local edits cannot be staged by the broad
+`git add -A` step.
 
 Commit hooks are part of the commit phase, not an afterthought. When `git
 commit` appears to fail inside hooks, RevRem defaults to `commit.on_hook_failure
@@ -919,12 +920,20 @@ must be installed and discoverable through `PATH`,
 remain valid management syntax but fail fast on executable runs.
 
 External review harnesses do not have Codex's native `codex review --base`
-command, so RevRem supplies a review prompt that names the base branch and
-working directory, instructs the provider to inspect the diff against
-`<base>...HEAD`, and requires an explicit `REVIEW_STATUS` line. Review is always
-invoked in read-only mode; for Gemini this means `--approval-mode plan`. Gemini
-remediation still uses `--approval-mode auto_edit` when workspace writes are
-allowed.
+command, so RevRem supplies a review prompt that includes base/working-directory
+metadata plus a generated read-only context bundle: `git status --short`,
+`git diff --stat <base>...HEAD`, `git diff --name-status <base>...HEAD`,
+`git diff <base>...HEAD`, `git diff --cached`, and `git diff`. This lets Gemini
+and other prompted providers review the actual patch even when their headless
+read-only mode denies shell tools. External review harnesses must return an
+explicit `REVIEW_STATUS` line; Codex native review remains classified through
+its finding markers and conservative clear-prose examples because RevRem does
+not control the native review prompt. Review is always invoked in read-only
+mode; for Gemini this means `--approval-mode plan`. Gemini remediation still
+uses `--approval-mode auto_edit` when workspace writes are allowed. Review
+prompt and context artifacts are listed under `summary.artifact_paths.prompts`
+and `summary.artifact_paths.contexts`; the review transcript itself remains
+under `summary.artifact_paths.reviews`.
 
 ### Exit codes
 
@@ -1047,6 +1056,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.21 | 2026-06-02 | Codex | Documented external review diff-context artifacts and no-diff clear evidence |
 | 1.20 | 2026-06-01 | Codex | Documented external review prompts and Gemini read-only review invocation |
 | 1.19 | 2026-06-01 | Codex | Documented per-phase harness CLI parity and forced Gemini dogfood route selection |
 | 1.18 | 2026-06-01 | Codex | Documented Gemini workspace trust and live secondary auth prerequisite behavior |

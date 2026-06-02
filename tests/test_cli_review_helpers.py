@@ -186,6 +186,15 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
         detect_review_status("I did not find any new regressions in the changed paths.")
         == "clear"
     )
+    assert (
+        detect_review_status(
+            "I did not find any actionable bugs introduced by the reviewed diff. "
+            "The full test suite has one failure in an unchanged test path that appears "
+            "to be a local environment/PYTHONPATH issue rather than a regression in "
+            "the proposed changes."
+        )
+        == "clear"
+    )
     assert detect_review_status("This would warrant an inline finding.") == "unknown"
     assert (
         detect_review_status(
@@ -234,6 +243,32 @@ def test_detect_review_status_does_not_generalize_negated_clear_with_findings():
         )
         == "findings"
     )
+
+
+def test_prompted_review_harness_requires_explicit_status_for_clear_prose():
+    output = (
+        "I did not find any actionable bugs introduced by the reviewed diff. "
+        "No remediation is needed."
+    )
+
+    assert detect_review_status(output, harness="gemini") == "unknown"
+    diagnostics = review_status_diagnostics(output, harness="gemini")
+    assert diagnostics["explicit_status_required"] is True
+    assert diagnostics["status_source"] == "none"
+
+
+def test_prompted_review_harness_accepts_explicit_status_and_records_tool_denial():
+    output = (
+        "The supplied diff has no actionable findings.\n"
+        "REVIEW_STATUS: clear\n\n"
+        "[stderr]\n"
+        "Error executing tool run_shell_command: Tool execution denied by policy.\n"
+    )
+
+    assert detect_review_status(output, harness="gemini") == "clear"
+    diagnostics = review_status_diagnostics(output, harness="gemini")
+    assert diagnostics["status_source"] == "explicit_status"
+    assert diagnostics["tool_denial_present"] is True
 
 
 def test_run_loop_treats_structured_empty_findings_review_as_clear(tmp_path):
@@ -604,6 +639,73 @@ def test_gemini_review_runs_in_plan_mode_with_prompt_argument(tmp_path):
     assert "Treat the working tree as read-only" in calls[0][0][-1]
     assert "Base branch: main" in calls[0][0][-1]
     assert calls[0][1] is None
+
+
+def test_gemini_review_prompt_includes_revrem_diff_context(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(
+        ["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test User"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    (repo / "sample.py").write_text("VALUE = 1\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "checkout", "-b", "feature"], cwd=repo, check=True, capture_output=True
+    )
+    (repo / "sample.py").write_text("VALUE = 2\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "commit", "-am", "change value"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    calls: list[tuple[list[str], str | None]] = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text))
+        return CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        cwd=repo,
+        artifact_dir=repo / "artifacts",
+        review_harness="gemini",
+        review_model="gemini-3.1-pro-preview",
+    )
+
+    summary = runner_mod.run_loop(config, runner).to_dict()
+
+    prompt = calls[0][0][-1]
+    context = (repo / "artifacts" / "review-1-context.txt").read_text(encoding="utf-8")
+    artifact_paths = summary["artifact_paths"]
+    assert "Use the supplied diff context as the authoritative patch input" in prompt
+    assert "git diff --stat main...HEAD" in prompt
+    assert "git diff main...HEAD" in prompt
+    assert "+VALUE = 2" in prompt
+    assert context in prompt
+    assert (repo / "artifacts" / "review-1-prompt.txt").is_file()
+    assert artifact_paths["reviews"] == [str(repo / "artifacts" / "review-1.txt")]
+    assert str(repo / "artifacts" / "review-1-prompt.txt") in artifact_paths["prompts"]
+    assert (
+        str(repo / "artifacts" / "review-1-context.txt")
+        in artifact_paths["contexts"]
+    )
 
 
 def test_harness_bin_override_controls_non_codex_executable(tmp_path, monkeypatch):
