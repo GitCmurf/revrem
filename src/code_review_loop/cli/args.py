@@ -453,7 +453,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         default=None,
         help=(
             "Start by remediating a previous review artifact. Use 'latest' for the newest "
-            "usable non-clear review-final.txt; if none exists, start with a fresh review."
+            "compatible usable non-clear generated review; if none exists, start with a fresh review."
         ),
     )
     parser.add_argument(

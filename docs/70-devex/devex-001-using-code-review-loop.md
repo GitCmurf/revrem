@@ -251,11 +251,15 @@ revrem \
 
 Use `--initial-review-file latest` with the effective artifact directory. When
 `--artifact-dir` or a profile sets `output.artifact_dir`, `latest` resolves
-under that directory instead of the default workspace-local tree. `latest`
-uses the newest `review-final.txt` only when that run is still non-clear. If
-the newest run's `summary.json` reports `final_status = "clear"`, or there is
-no previous final review, RevRem starts with a fresh review instead of reviving
-older feedback.
+under that directory instead of the default workspace-local tree. `latest` uses
+the newest compatible usable generated review artifact from a non-clear run,
+including interrupted runs that have `review-1.txt`, `review-2.txt`, or later
+iteration reviews but no `review-final.txt`. Imported `review-initial.txt`
+artifacts are ignored so a restart does not keep reusing stale carried-in
+feedback. When run summaries include git state, `latest` skips artifacts from a
+different current `HEAD` or base. If the newest compatible run's `summary.json`
+reports `final_status = "clear"`, or there is no previous generated review,
+RevRem starts with a fresh review instead of reviving older feedback.
 
 ### Profile-based usage
 
@@ -945,7 +949,9 @@ table. When a review reports `findings` without Codex-style `[P1]` finding
 bullets, RevRem prints the leading review line before the status so operators
 can see the context being passed to triage/remediation. Remediation failures
 name the active harness, for example `gemini remediation failed`, and point to
-the remediation artifact.
+the remediation artifact. Known provider-state failures are called out in the
+same error; Gemini CLI quota exhaustion is reported as `provider quota
+exhausted` while the full CLI stderr remains in the remediation artifact.
 
 ### Exit codes
 

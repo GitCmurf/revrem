@@ -624,3 +624,97 @@ def test_resolve_initial_review_file_latest_skips_dry_run_review_stubs(tmp_path)
     os.utime(dry_review, (2, 2))
 
     assert resolve_initial_review_file("latest", tmp_path) == unresolved_review
+
+
+def test_resolve_initial_review_file_latest_uses_newer_iteration_review(tmp_path):
+    older = tmp_path / "20260428T010000Z"
+    newer = tmp_path / "20260428T020000Z"
+    older.mkdir()
+    newer.mkdir()
+    older_review = older / "review-final.txt"
+    newer_review = newer / "review-2.txt"
+    older_review.write_text("stale final findings", encoding="utf-8")
+    newer_review.write_text("newer iteration findings", encoding="utf-8")
+    (newer / "summary.json").write_text(
+        json.dumps(
+            {
+                "final_status": "error",
+                "stopped_reason": "remediation_failed",
+                "artifact_paths": {"reviews": [str(newer_review)]},
+            }
+        ),
+        encoding="utf-8",
+    )
+    os.utime(older_review, (1, 1))
+    os.utime(newer_review, (2, 2))
+
+    assert resolve_initial_review_file("latest", tmp_path) == newer_review
+
+
+def test_resolve_initial_review_file_latest_skips_imported_initial_review(tmp_path):
+    older = tmp_path / "20260428T010000Z"
+    restart = tmp_path / "20260428T020000Z"
+    older.mkdir()
+    restart.mkdir()
+    older_review = older / "review-final.txt"
+    imported_review = restart / "review-initial.txt"
+    older_review.write_text("older unresolved findings", encoding="utf-8")
+    imported_review.write_text("imported stale findings", encoding="utf-8")
+    (restart / "summary.json").write_text(
+        json.dumps(
+            {
+                "final_status": "error",
+                "stopped_reason": "remediation_failed",
+                "artifact_paths": {"reviews": [str(imported_review)]},
+            }
+        ),
+        encoding="utf-8",
+    )
+    os.utime(older_review, (1, 1))
+    os.utime(imported_review, (2, 2))
+
+    assert resolve_initial_review_file("latest", tmp_path) == older_review
+
+
+def test_resolve_initial_review_file_latest_skips_git_incompatible_runs(tmp_path):
+    stale = tmp_path / "20260428T010000Z"
+    current = tmp_path / "20260428T020000Z"
+    stale.mkdir()
+    current.mkdir()
+    stale_review = stale / "review-final.txt"
+    current_review = current / "review-final.txt"
+    stale_review.write_text("stale findings", encoding="utf-8")
+    current_review.write_text("current findings", encoding="utf-8")
+    for run, head in ((stale, "old-head"), (current, "current-head")):
+        (run / "summary.json").write_text(
+            json.dumps(
+                {
+                    "final_status": "findings",
+                    "git_state": {
+                        "available": True,
+                        "head": head,
+                        "base": "main",
+                        "base_commit": "base-sha",
+                        "merge_base": "base-sha",
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+    os.utime(current_review, (1, 1))
+    os.utime(stale_review, (2, 2))
+
+    assert (
+        resolve_initial_review_file(
+            "latest",
+            tmp_path,
+            current_git_state={
+                "available": True,
+                "head": "current-head",
+                "base": "main",
+                "base_commit": "base-sha",
+                "merge_base": "base-sha",
+            },
+        )
+        == current_review
+    )

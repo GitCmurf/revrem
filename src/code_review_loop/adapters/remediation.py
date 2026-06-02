@@ -148,20 +148,35 @@ def run_remediation(
         config, result, phase="remediate", iteration=iteration, ctx=ctx
     )
     if result.returncode != 0:
+        failure_reason = _provider_failure_reason(remediation_harness, result)
+        failure_detail = f": {failure_reason}" if failure_reason else ""
         phase_support.progress_event(
             config,
             "remediate",
             str(iteration),
             "failed",
-            f"exit {result.returncode}",
+            f"exit {result.returncode}{failure_detail}",
             ctx=ctx,
         )
         raise RuntimeError(
-            f"{remediation_harness} remediation failed for iteration {iteration}; "
+            f"{remediation_harness} remediation failed for iteration {iteration}"
+            f"{failure_detail}; "
             f"see {config.artifact_dir / f'remediation-{iteration}.txt'}"
         )
     phase_support.progress_event(config, "remediate", str(iteration), "done", ctx=ctx)
     return result
+
+
+def _provider_failure_reason(harness: str, result: CommandResult) -> str | None:
+    output = phase_support._combined_output(result).lower()
+    if harness == "gemini" and (
+        "quota_exhausted" in output
+        or "terminalquotaerror" in output
+        or "exhausted your capacity" in output
+        or ("code: 429" in output and "quota" in output)
+    ):
+        return "provider quota exhausted"
+    return None
 
 
 class RemediationAdapter:

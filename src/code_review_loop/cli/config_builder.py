@@ -14,6 +14,7 @@ from pathlib import Path
 
 from code_review_loop import budgets, harnesses, profiles
 from code_review_loop.cli.config_support import (
+    current_git_state_for_latest,
     resolve_initial_review_file,
 )
 from code_review_loop.clock import SYSTEM_CLOCK, Clock
@@ -179,6 +180,7 @@ def _resolve_model_phase(
 def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, str]:
     profile = profile_or_default(args.profile, cwd)
     profile_source = f"profile:{args.profile}" if args.profile else "defaults"
+    base = pick(args.base, profile.pipeline.base, "main")
     triage_enabled = pick(args.triage_enabled, profile.triage.enabled, False)
     triage_contract = pick(args.triage_contract, profile.triage.contract, "v1")
     routing_enabled = pick(args.routing_enabled, profile.triage.routing.enabled, False)
@@ -248,8 +250,15 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         Path(artifact_dir_value) if artifact_dir_value else default_artifact_dir()
     )
     search_root = artifact_dir if artifact_dir_value else artifact_dir.parent
+    current_git_state = (
+        current_git_state_for_latest(cwd, base)
+        if args.initial_review_file == "latest"
+        else None
+    )
     initial_review_file = resolve_initial_review_file(
-        args.initial_review_file, search_root
+        args.initial_review_file,
+        search_root,
+        current_git_state=current_git_state,
     )
     if initial_review_file is not None and not initial_review_file.is_file():
         raise FileNotFoundError(f"initial review file not found: {initial_review_file}")
@@ -441,7 +450,7 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         },
     }
     config = LoopConfig(
-        base=pick(args.base, profile.pipeline.base, "main"),
+        base=base,
         max_iterations=max_iterations,
         codex_bin=pick(args.codex_bin, profile.runtime.codex_bin, "codex"),
         harness_executables=harness_executables,

@@ -123,6 +123,39 @@ class TestRemediationAdapter:
                 ctx,
             )
 
+    def test_runtime_error_classifies_gemini_quota_exhaustion(
+        self, tmp_path: Path
+    ) -> None:
+        (tmp_path / "artifacts").mkdir()
+        config = LoopConfig(
+            base="main",
+            max_iterations=1,
+            cwd=tmp_path,
+            artifact_dir=tmp_path / "artifacts",
+            remediation_harness="gemini",
+            remediation_model="gemini-3.1-pro-preview",
+        )
+        ctx = _ctx(
+            runner=MagicMock(
+                return_value=CommandResult(
+                    ["gemini"],
+                    1,
+                    stderr=(
+                        "Error when talking to Gemini API: "
+                        "TerminalQuotaError: code: 429 QUOTA_EXHAUSTED. "
+                        "You have exhausted your capacity on this model."
+                    ),
+                )
+            )
+        )
+        adapter = RemediationAdapter(config)
+
+        with pytest.raises(RuntimeError, match="provider quota exhausted"):
+            adapter.execute(
+                RemediationRequest(iteration=1, remediation_input="fix"),
+                ctx,
+            )
+
 
 class TestEngineDispatch:
     def test_harness_called_when_wired(self) -> None:
