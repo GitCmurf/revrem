@@ -96,6 +96,28 @@ def test_rich_event_collapses_multiline_detail(monkeypatch):
     assert (": first second", None) in rendered.parts
 
 
+def test_rich_event_styles_structured_start_detail(monkeypatch):
+    install_fake_rich(monkeypatch)
+
+    assert progress.print_rich_event(
+        "review",
+        "1",
+        "start",
+        (
+            "opencode run · opencode/minimax-m3-free · low effort · "
+            "timeout=0 · sandbox read-only · prompt=126.7k stdin · source=mixed"
+        ),
+    )
+
+    rendered = FakeConsole.printed[0]
+    assert isinstance(rendered, FakeText)
+    assert ("review", "bold green") in rendered.parts
+    assert ("start", "green") in rendered.parts
+    assert ("opencode run", "bold") in rendered.parts
+    assert ("opencode/minimax-m3-free", "magenta") in rendered.parts
+    assert ("prompt=126.7k stdin", "blue") in rendered.parts
+
+
 def test_rich_message_and_continuation_escape_markup_like_text(monkeypatch):
     install_fake_rich(monkeypatch)
 

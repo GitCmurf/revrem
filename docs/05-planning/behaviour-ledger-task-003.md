@@ -56,6 +56,24 @@ There is no silent third option.
 
 ## Entries
 
+### 2026-06-02 — External harness progress and prompt diagnostics
+
+- **Contract:** machine
+- **What changed:** phase-start events now include the exact command argv,
+  harness, prompt delivery mode, and prompt character/byte counts when a prompt
+  is supplied. Resume summaries now include `external_review_input_chars`, and
+  operator-cancellation diagnostics include the latest prompt/context artifact
+  names and sizes when available. Human progress lines now render compact
+  provider summaries such as `opencode run · model · low effort · timeout=0 ·
+  sandbox read-only · prompt=80.0k stdin`.
+- **Why:** OpenCode dogfood showed that long external-review calls could appear
+  stuck with no visible evidence of prompt size, delivery mode, or exact phase
+  invocation. The new fields make the saved artifacts useful for debugging
+  provider hangs while keeping the terminal line readable.
+- **schema_version impact:** none; additive fields within the existing v1 event
+  and summary envelopes.
+- **CHANGELOG:** Unreleased / Added.
+
 ### 2026-06-02 — Gemini dogfood progress and failure wording hardening
 
 - **Contract:** human

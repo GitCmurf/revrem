@@ -104,6 +104,31 @@ def _timestamp_part() -> tuple[str, str]:
     return datetime.now().strftime("%H:%M:%S"), "dim"
 
 
+def _detail_parts(status: str, detail: str) -> list[tuple[str, str | None]]:
+    if not detail:
+        return []
+    clipped = _clip(detail)
+    if status != "start" or " · " not in clipped:
+        return [(f": {clipped}", None)]
+    values = clipped.split(" · ")
+    styles = [
+        "bold",
+        "magenta",
+        "cyan",
+        "yellow",
+        "yellow",
+        "blue",
+        "dim",
+    ]
+    parts: list[tuple[str, str | None]] = [(": ", None)]
+    for index, value in enumerate(values):
+        if index:
+            parts.append((" · ", "dim"))
+        style = styles[index] if index < len(styles) else None
+        parts.append((value, style))
+    return parts
+
+
 def print_rich_event(phase: str, label: str, status: str, detail: str = "") -> bool:
     rendered = _styled_text(
         _timestamp_part(),
@@ -113,7 +138,7 @@ def print_rich_event(phase: str, label: str, status: str, detail: str = "") -> b
         (label, "cyan"),
         (" ", None),
         (status, "green"),
-        (f": {_clip(detail)}" if detail else "", None),
+        *_detail_parts(status, detail),
     )
     if rendered is None:
         return False

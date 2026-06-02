@@ -341,7 +341,7 @@ def test_run_loop_writes_replayable_events_jsonl(tmp_path, capsys):
         "reviews",
     ]
     assert capsys.readouterr().out == (
-        "0001|review|1|phase_start: codex review --base main [harness=codex sandbox=read-only source=direct-config]\n"
+        "0001|review|1|phase_start: codex review · sandbox read-only · source=direct-config\n"
         "0002|review|1|phase_result: clear\n"
         f"0003|artifacts|artifact_write: {tmp_path / 'artifacts' / 'summary.json'}\n"
         f"0004|artifacts|artifact_write: {tmp_path / 'artifacts' / 'review-1.txt'}\n"
@@ -754,7 +754,7 @@ def test_gemini_review_prompt_respects_configured_char_limit(tmp_path):
         artifact_dir=repo / "artifacts",
         review_harness="gemini",
         review_model="gemini-3.1-pro-preview",
-        max_remediation_input_chars=1500,
+        external_review_input_chars=1500,
     )
 
     runner_mod.run_loop(config, runner)
@@ -764,8 +764,34 @@ def test_gemini_review_prompt_respects_configured_char_limit(tmp_path):
     assert len(prompt) <= 1500
     assert "omitted" in prompt
     context = (repo / "artifacts" / "review-1-context.txt").read_text(encoding="utf-8")
-    assert "omitted" in context
-    assert context in prompt
+    assert "x" * 1000 in context
+    assert context not in prompt
+
+
+def test_external_review_prompt_ignores_remediation_input_cap(tmp_path):
+    calls: list[tuple[list[str], str | None]] = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text))
+        return CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="opencode",
+        review_model="provider/model",
+        max_remediation_input_chars=200,
+        external_review_input_chars=1200,
+    )
+
+    runner_mod.run_loop(config, runner)
+
+    prompt = calls[0][1]
+    assert prompt is not None
+    assert len(prompt) > 200
+    assert len(prompt) <= 1200
 
 
 def test_harness_bin_override_controls_non_codex_executable(tmp_path, monkeypatch):

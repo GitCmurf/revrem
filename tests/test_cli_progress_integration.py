@@ -51,7 +51,8 @@ def test_progress_logs_review_and_finding_summaries(tmp_path, capsys):
     captured = capsys.readouterr()
 
     assert re.search(
-        r"\d{2}:\d{2}:\d{2}\|rev\|1\s{3}\|start: codex review --base main", captured.err
+        r"\d{2}:\d{2}:\d{2}\|rev\|1\s{3}\|start: codex review · sandbox read-only",
+        captured.err,
     )
     assert re.search(
         r"\d{2}:\d{2}:\d{2}\|rev\|1\s{3}\|issue: The query surfaces disagree\.",
@@ -223,12 +224,35 @@ def test_resolved_phase_detail_summarizes_prompt_arguments():
         model="gemini-3.1-pro-preview",
         reasoning_effort=None,
         timeout_seconds=0,
+        prompt_chars=1234,
+        prompt_delivery="stdin",
     )
 
-    assert "first line second line" in detail
+    assert detail.startswith("gemini · gemini-3.1-pro-preview")
     assert "\\n" not in detail
-    assert re.search(r"chars=\d+", detail)
-    assert "second line with much more detail" in detail
+    assert "prompt=1.2k stdin" in detail
+    assert "first line second line" not in detail
+
+
+def test_resolved_phase_detail_summarizes_opencode_without_repetition():
+    detail = phase_support.resolved_phase_detail(
+        ["opencode", "run", "--model", "opencode/minimax-m3-free"],
+        harness="opencode",
+        model="opencode/minimax-m3-free",
+        reasoning_effort="low",
+        timeout_seconds=0,
+        sandbox="read-only",
+        source="mixed",
+        prompt_chars=126_668,
+        prompt_delivery="stdin",
+    )
+
+    assert detail == (
+        "opencode run · opencode/minimax-m3-free · low effort · timeout=0 · "
+        "sandbox read-only · prompt=126.7k stdin · source=mixed"
+    )
+    assert "--model" not in detail
+    assert detail.count("opencode/minimax-m3-free") == 1
 
 
 def test_progress_logs_unstructured_review_finding_summary(tmp_path, capsys):

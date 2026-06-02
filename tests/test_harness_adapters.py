@@ -73,6 +73,25 @@ def test_opencode_adapter_commands():
         assert "m2" in cmd
 
 
+def test_opencode_adapter_debug_env_adds_provider_logs(monkeypatch):
+    monkeypatch.setenv("REVREM_OPENCODE_DEBUG", "1")
+    adapter = harnesses.OpenCodeHarnessAdapter()
+
+    cmd = adapter.command(
+        harnesses.PhaseCommandRequest(
+            harness="opencode",
+            role="review",
+            executable="opencode",
+            model="opencode/minimax-m3-free",
+            sandbox="read-only",
+            full_auto=False,
+        )
+    )
+
+    assert cmd[:5] == ["opencode", "run", "--print-logs", "--log-level", "INFO"]
+    assert "--model" in cmd
+
+
 def test_kilo_adapter_commands():
     adapter = harnesses.KiloHarnessAdapter()
     for role in ["review", "triage", "remediation", "commit-message"]:

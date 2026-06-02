@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.22'
+version: '1.23'
 last_updated: '2026-06-02'
 owner: GitCmurf
 docops_version: '2.0'
@@ -935,17 +935,23 @@ its finding markers and conservative clear-prose examples because RevRem does
 not control the native review prompt. Review is always invoked in read-only
 mode; for Gemini this means `--approval-mode plan`. Gemini remediation still
 uses `--approval-mode auto_edit` when workspace writes are allowed. Review
-prompt and context artifacts are listed under `summary.artifact_paths.prompts`
-and `summary.artifact_paths.contexts`; the review transcript itself remains
-under `summary.artifact_paths.reviews`. The supplied external review prompt is
-bounded by `runtime.max_remediation_input_chars` /
-`--max-remediation-input-chars`; RevRem trims by character count with an
-omission marker rather than attempting provider-specific token accounting.
+prompt and full generated context artifacts are listed under
+`summary.artifact_paths.prompts` and `summary.artifact_paths.contexts`; the
+review transcript itself remains under `summary.artifact_paths.reviews`. The
+provider-facing external review prompt is bounded by
+`runtime.external_review_input_chars` / `--external-review-input-chars`; RevRem
+trims by character count with an omission marker rather than attempting
+provider-specific token accounting.
 
-Progress output intentionally summarizes prompt-bearing commands. A Gemini
-review start line shows the command plus a compact `<prompt chars=... first=...>`
-placeholder instead of dumping the full prompt into the rich/compact progress
-table. When a review reports `findings` without Codex-style `[P1]` finding
+Progress output intentionally summarizes prompt-bearing commands. Phase start
+lines show the executable role, model, effort, timeout, sandbox, prompt size,
+delivery mode, and config source without repeating raw CLI syntax. For example:
+`opencode run · opencode/minimax-m3-free · low effort · timeout=0 · sandbox
+read-only · prompt=80.0k stdin · source=mixed`. Exact argv and prompt artifacts
+remain in `events.jsonl` and the run artifact directory. Set
+`REVREM_OPENCODE_DEBUG=1` to add OpenCode provider logs
+(`--print-logs --log-level INFO`) to OpenCode phase commands during local
+diagnosis. When a review reports `findings` without Codex-style `[P1]` finding
 bullets, RevRem prints the leading review line before the status so operators
 can see the context being passed to triage/remediation. Remediation failures
 name the active harness, for example `gemini remediation failed`, and point to
@@ -1074,6 +1080,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.23 | 2026-06-02 | Codex | Documented compact phase-start progress, OpenCode debug logs, and dedicated external review prompt cap |
 | 1.22 | 2026-06-02 | Codex | Documented prompt-size bounds, progress prompt summaries, and provider-specific remediation failure wording |
 | 1.21 | 2026-06-02 | Codex | Documented external review diff-context artifacts and no-diff clear evidence |
 | 1.20 | 2026-06-01 | Codex | Documented external review prompts and Gemini read-only review invocation |

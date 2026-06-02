@@ -232,6 +232,7 @@ def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iterat
         command,
         prompt,
     )
+    prompt_metadata = phase_support.prompt_progress_metadata(prompt_input)
     phase_support.ensure_model_budget(config, phase="commit-message", iteration=iteration, ctx=ctx)
     if config.commit_reasoning_effort_adjustment:
         phase_support.progress_event(
@@ -259,8 +260,15 @@ def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iterat
             timeout_seconds=config.commit_timeout_seconds_display,
             sandbox="read-only",
             source=config.phase_config_sources.get("commit_message", "direct-config"),
+            prompt_chars=prompt_metadata.get("prompt_chars"),
+            prompt_delivery=prompt_metadata["prompt_delivery"],
         ),
         ctx=ctx,
+        metadata={
+            "command": list(command),
+            "harness": config.commit_message_harness,
+            **prompt_metadata,
+        },
     )
     result = runner(command, config.cwd, prompt_input, timeout_seconds)
     phase_support.write_artifact(config.artifact_dir / f"commit-{iteration}-message-draft.txt", phase_support._combined_output(result))

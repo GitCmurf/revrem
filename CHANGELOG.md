@@ -77,6 +77,9 @@ This project follows Semantic Versioning once public releases begin.
   `revrem replay`, and `REVREM-ADR-008` for the event/replay contract.
 - Loop verification checks now emit explicit `check_result` events with
   command, status, return code, and artifact metadata.
+- Phase-start events now include exact argv and prompt delivery/size metadata
+  for provider debugging, with compact terminal summaries for external harness
+  calls.
 - Replay fixtures now cover clear and fully suppressed runs, and warning
   progress statuses map to first-class `warning` events.
 - Loop failure paths now emit structured `failure` events with stable reason

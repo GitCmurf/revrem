@@ -143,6 +143,8 @@ class GeminiHarnessAdapter(HarnessAdapter):
 class OpenCodeHarnessAdapter(HarnessAdapter):
     def command(self, request: PhaseCommandRequest) -> list[str]:
         command = [request.executable, "run"]
+        if os.environ.get("REVREM_OPENCODE_DEBUG") == "1":
+            command.extend(["--print-logs", "--log-level", "INFO"])
         command.extend(_opencode_permission_args(request))
         if request.model:
             command.extend(["--model", request.model])

@@ -353,6 +353,12 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         help="Maximum review/check text characters passed into each remediation prompt.",
     )
     parser.add_argument(
+        "--external-review-input-chars",
+        type=int,
+        default=None,
+        help="Maximum characters passed to prompted non-Codex review harnesses.",
+    )
+    parser.add_argument(
         "--terminal-excerpt-chars",
         type=int,
         default=None,

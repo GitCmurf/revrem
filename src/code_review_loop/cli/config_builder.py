@@ -18,7 +18,11 @@ from code_review_loop.cli.config_support import (
     resolve_initial_review_file,
 )
 from code_review_loop.clock import SYSTEM_CLOCK, Clock
-from code_review_loop.config import DEFAULT_TIMEOUT_SECONDS, LoopConfig
+from code_review_loop.config import (
+    DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS,
+    DEFAULT_TIMEOUT_SECONDS,
+    LoopConfig,
+)
 from code_review_loop.identity import SYSTEM_IDENTITY, RunIdentity
 
 
@@ -505,6 +509,11 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
             profile.runtime.max_remediation_input_chars,
             200_000,
         ),
+        external_review_input_chars=pick(
+            args.external_review_input_chars,
+            profile.runtime.external_review_input_chars,
+            DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS,
+        ),
         terminal_excerpt_chars=pick(
             args.terminal_excerpt_chars,
             profile.runtime.terminal_excerpt_chars,
@@ -634,6 +643,7 @@ def profile_from_loop_config(
             output_last_message=config.output_last_message,
             full_auto=config.full_auto,
             max_remediation_input_chars=config.max_remediation_input_chars,
+            external_review_input_chars=config.external_review_input_chars,
             terminal_excerpt_chars=config.terminal_excerpt_chars,
         ),
         budgets=profiles.BudgetConfig(

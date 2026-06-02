@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import NoReturn, assert_never
 
 from code_review_loop import artifacts, budgets, diagnostics, prompts_composer
@@ -137,6 +138,8 @@ def finish_cancelled(
     clock: Clock,
     ctx: RunContext,
 ) -> NoReturn:
+    evidence: dict[str, object] = {"reason": "operator_interrupt"}
+    evidence.update(_latest_prompt_evidence(config.artifact_dir))
     artifacts.write_json_artifact(
         config.artifact_dir,
         "diagnostics.json",
@@ -147,7 +150,7 @@ def finish_cancelled(
                     severity="blocking",
                     message="RevRem run was cancelled by the operator.",
                     hint="Inspect summary.json and events.jsonl to determine the last completed phase before resuming or rerunning.",
-                    evidence={"reason": "operator_interrupt"},
+                    evidence=evidence,
                 )
             ]
         ),
@@ -171,6 +174,29 @@ def finish_cancelled(
         cause=exc,
     )
     raise AssertionError("unreachable")
+
+
+def _latest_prompt_evidence(artifact_dir: Path) -> dict[str, object]:
+    prompt_paths = sorted(
+        artifact_dir.glob("*-prompt.txt"),
+        key=lambda path: path.stat().st_mtime,
+    )
+    if not prompt_paths:
+        return {}
+    prompt_path = prompt_paths[-1]
+    evidence: dict[str, object] = {
+        "latest_prompt_artifact": prompt_path.name,
+        "latest_prompt_bytes": prompt_path.stat().st_size,
+    }
+    parts = prompt_path.stem.split("-")
+    if len(parts) >= 2:
+        evidence["latest_prompt_phase"] = parts[0]
+        evidence["latest_prompt_iteration"] = parts[1]
+    context_path = prompt_path.with_name(prompt_path.name.replace("-prompt.txt", "-context.txt"))
+    if context_path.is_file():
+        evidence["latest_context_artifact"] = context_path.name
+        evidence["latest_context_bytes"] = context_path.stat().st_size
+    return evidence
 
 
 def finish_budget_exceeded(

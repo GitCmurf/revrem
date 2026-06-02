@@ -16,6 +16,7 @@ from code_review_loop.adapters import terminal as terminal_mod
 from code_review_loop.cli import config_builder
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.ports import CommandResult
+from code_review_loop.runner_finish import _latest_prompt_evidence
 
 cli_main = import_module("code_review_loop.cli.main")
 
@@ -228,6 +229,21 @@ def test_kill_process_tree_targets_child_process_group(monkeypatch):
     subprocess_runner_mod.kill_process_tree(FakeProcess())
 
     assert calls == [("killpg", 12345, signal.SIGKILL)]
+
+
+def test_latest_prompt_evidence_reports_cancelled_review_prompt(tmp_path):
+    artifact_dir = tmp_path / "artifacts"
+    artifact_dir.mkdir()
+    (artifact_dir / "review-1-context.txt").write_text("context", encoding="utf-8")
+    (artifact_dir / "review-1-prompt.txt").write_text("prompt text", encoding="utf-8")
+
+    evidence = _latest_prompt_evidence(artifact_dir)
+
+    assert evidence["latest_prompt_artifact"] == "review-1-prompt.txt"
+    assert evidence["latest_prompt_phase"] == "review"
+    assert evidence["latest_prompt_iteration"] == "1"
+    assert evidence["latest_prompt_bytes"] == len("prompt text")
+    assert evidence["latest_context_artifact"] == "review-1-context.txt"
 
 
 def test_subprocess_refresh_loop_does_not_resend_input_after_timeout(tmp_path, monkeypatch):

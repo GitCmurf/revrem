@@ -113,6 +113,7 @@
     "debug_status_detection": false,
     "exec_json": false,
     "exec_sandbox": "workspace-write",
+    "external_review_input_chars": 80000,
     "final_review": false,
     "full_auto": true,
     "harness_executables": {},

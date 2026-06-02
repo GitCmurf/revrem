@@ -61,6 +61,7 @@ def run_triage(
         command,
         prompt,
     )
+    prompt_metadata = phase_support.prompt_progress_metadata(prompt_input)
     phase_support.ensure_model_budget(config, phase="triage", iteration=iteration, ctx=ctx)
     phase_support.progress_event(
         config,
@@ -76,8 +77,15 @@ def run_triage(
             sandbox="read-only",
             contract=config.triage_contract,
             source=config.phase_config_sources.get("triage", "direct-config"),
+            prompt_chars=prompt_metadata.get("prompt_chars"),
+            prompt_delivery=prompt_metadata["prompt_delivery"],
         ),
         ctx=ctx,
+        metadata={
+            "command": list(command),
+            "harness": config.triage_harness,
+            **prompt_metadata,
+        },
     )
     if config.dry_run:
         result = CommandResult(command, 0, stdout="DRY_RUN triage skipped\n")

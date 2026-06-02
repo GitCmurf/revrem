@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import os
 import re
-import shlex
 import sys
 import textwrap
 from contextlib import contextmanager
@@ -407,12 +406,15 @@ def progress_event(
     detail: str = "",
     *,
     ctx: RunContext,
+    metadata: dict[str, Any] | None = None,
 ) -> None:
     sink = ctx.event_sink
     if sink is not None:
         payload: dict[str, Any] = {"summary": status}
         if detail:
             payload["message"] = detail
+        if metadata:
+            payload.update(metadata)
         sink.emit(
             _progress_event_kind(status),
             phase=phase,
@@ -457,21 +459,62 @@ def resolved_phase_detail(
     sandbox: str | None = None,
     contract: str | None = None,
     source: str | None = None,
+    prompt_chars: int | None = None,
+    prompt_delivery: str | None = None,
 ) -> str:
-    fields = [f"harness={harness}"]
+    fields = [command_summary_for_progress(command, harness=harness)]
     if model:
-        fields.append(f"model={model}")
+        fields.append(model)
     if reasoning_effort:
-        fields.append(f"effort={reasoning_effort}")
+        fields.append(f"{reasoning_effort} effort")
     if timeout_seconds is not None:
         fields.append(f"timeout={timeout_seconds:g}")
     if sandbox:
-        fields.append(f"sandbox={sandbox}")
+        fields.append(f"sandbox {sandbox}")
     if contract:
         fields.append(f"contract={contract}")
+    if prompt_chars is not None:
+        prompt_field = f"prompt={format_char_count(prompt_chars)}"
+        if prompt_delivery:
+            prompt_field = f"{prompt_field} {prompt_delivery}"
+        fields.append(prompt_field)
     if source:
         fields.append(f"source={source}")
-    return f"{shlex.join(command_for_progress(command))} [{' '.join(fields)}]"
+    return " · ".join(fields)
+
+
+def command_summary_for_progress(command: list[str], *, harness: str) -> str:
+    if not command:
+        return harness
+    executable = Path(command[0]).name
+    if harness in {"opencode", "kilo"} and len(command) > 1 and command[1] == "run":
+        return f"{executable} run"
+    if harness == "codex":
+        for token in ("review", "exec"):
+            if token in command:
+                return f"{executable} {token}"
+    if harness == "claude":
+        return f"{executable} --print"
+    return executable
+
+
+def format_char_count(count: int) -> str:
+    if count < 1_000:
+        return str(count)
+    if count < 1_000_000:
+        return f"{count / 1_000:.1f}k"
+    return f"{count / 1_000_000:.1f}m"
+
+
+def prompt_progress_metadata(prompt_input: str | None) -> dict[str, Any]:
+    if prompt_input is None:
+        return {"prompt_delivery": "none"}
+    encoded = prompt_input.encode("utf-8")
+    return {
+        "prompt_delivery": "stdin",
+        "prompt_chars": len(prompt_input),
+        "prompt_bytes": len(encoded),
+    }
 
 
 def emit_loop_failure_event(

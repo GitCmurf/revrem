@@ -96,6 +96,7 @@ def run_remediation(
         command,
         prompt,
     )
+    prompt_metadata = phase_support.prompt_progress_metadata(prompt_input)
 
     phase_support.set_phase_terminal_title(config, "remediate", str(iteration))
     phase_support.ensure_model_budget(
@@ -128,8 +129,15 @@ def run_remediation(
                 if resolved_route
                 else config.phase_config_sources.get("remediation", "direct-config")
             ),
+            prompt_chars=prompt_metadata.get("prompt_chars"),
+            prompt_delivery=prompt_metadata["prompt_delivery"],
         ),
         ctx=ctx,
+        metadata={
+            "command": list(command),
+            "harness": remediation_harness,
+            **prompt_metadata,
+        },
     )
     if config.dry_run:
         result = CommandResult(command, 0, stdout="DRY_RUN remediation skipped\n")

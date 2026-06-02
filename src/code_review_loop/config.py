@@ -8,6 +8,7 @@ from pathlib import Path
 from code_review_loop import budgets, profiles
 
 DEFAULT_TIMEOUT_SECONDS = 300
+DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS = 80_000
 
 
 @dataclass(frozen=True)
@@ -54,6 +55,7 @@ class LoopConfig:
     dry_run: bool = False
     final_review: bool = True
     max_remediation_input_chars: int = 200_000
+    external_review_input_chars: int = DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS
     terminal_excerpt_chars: int = 4_000
     timeout_seconds: float | None = DEFAULT_TIMEOUT_SECONDS
     review_timeout_seconds: float | None = None

@@ -68,7 +68,7 @@ def run_codex_review(
     review_prompt = None
     if config.review_harness not in {"codex", "fake"}:
         review_context = build_external_review_context(config)
-        review_prompt, review_context = compose_external_review_prompt(
+        review_prompt, _provider_context = compose_external_review_prompt(
             config, review_context
         )
         phase_support.write_artifact(
@@ -84,6 +84,7 @@ def run_codex_review(
             command,
             review_prompt,
         )
+    prompt_metadata = phase_support.prompt_progress_metadata(review_prompt)
     phase_support.set_phase_terminal_title(config, "review", display_label)
     phase_support.ensure_model_budget(
         config, phase="review", iteration=display_label, ctx=ctx
@@ -101,8 +102,15 @@ def run_codex_review(
             timeout_seconds=config.review_timeout_seconds_display,
             sandbox="read-only",
             source=config.phase_config_sources.get("review", "direct-config"),
+            prompt_chars=prompt_metadata.get("prompt_chars"),
+            prompt_delivery=prompt_metadata["prompt_delivery"],
         ),
         ctx=ctx,
+        metadata={
+            "command": list(command),
+            "harness": config.review_harness,
+            **prompt_metadata,
+        },
     )
     if config.dry_run:
         result = CommandResult(command, 0, stdout="DRY_RUN\nREVIEW_STATUS: findings\n")
@@ -183,22 +191,22 @@ def compose_external_review_prompt(
     prompt_head = f"{phase_support.DEFAULT_REVIEW_PROMPT}\n\n"
     prompt_tail = f"\n\n{EXTERNAL_REVIEW_PROMPT_TAIL}"
     available_context_chars = (
-        config.max_remediation_input_chars - len(prompt_head) - len(prompt_tail)
+        config.external_review_input_chars - len(prompt_head) - len(prompt_tail)
     )
     trimmed_context = prompts_composer.trim_for_prompt(
         review_context,
         max(1, available_context_chars),
     )
     prompt = f"{prompt_head}{trimmed_context}{prompt_tail}"
-    if len(prompt) > config.max_remediation_input_chars:
+    if len(prompt) > config.external_review_input_chars:
         prompt = prompts_composer.trim_for_prompt(
-            prompt, config.max_remediation_input_chars
+            prompt, config.external_review_input_chars
         )
         trimmed_context = prompts_composer.trim_for_prompt(
             trimmed_context,
             max(
                 1,
-                config.max_remediation_input_chars
+                config.external_review_input_chars
                 - len(prompt_head)
                 - len(prompt_tail),
             ),

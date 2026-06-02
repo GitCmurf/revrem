@@ -3,7 +3,15 @@
     "iteration": "1",
     "kind": "phase_start",
     "payload": {
-      "message": "codex review --base main [harness=codex sandbox=read-only source=direct-config]",
+      "command": [
+        "codex",
+        "review",
+        "--base",
+        "main"
+      ],
+      "harness": "codex",
+      "message": "codex review · sandbox read-only · source=direct-config",
+      "prompt_delivery": "none",
       "summary": "start"
     },
     "phase": "review",
@@ -28,7 +36,23 @@
     "iteration": "1",
     "kind": "phase_start",
     "payload": {
-      "message": "codex exec --full-auto --sandbox workspace-write --color never --output-last-message <RUN_DIR>/artifacts/remediation-1-last-message.txt - [harness=codex sandbox=workspace-write source=direct-config]",
+      "command": [
+        "codex",
+        "exec",
+        "--full-auto",
+        "--sandbox",
+        "workspace-write",
+        "--color",
+        "never",
+        "--output-last-message",
+        "<RUN_DIR>/artifacts/remediation-1-last-message.txt",
+        "-"
+      ],
+      "harness": "codex",
+      "message": "codex exec · sandbox workspace-write · prompt=679 stdin · source=direct-config",
+      "prompt_bytes": 679,
+      "prompt_chars": 679,
+      "prompt_delivery": "stdin",
       "summary": "start"
     },
     "phase": "remediate",
