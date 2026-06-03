@@ -696,6 +696,11 @@ reasoning_effort = "{value}"
             "external_review_input_chars",
             "runtime.external_review_input_chars must be an integer",
         ),
+        (
+            "runtime",
+            "external_review_warning_seconds",
+            "runtime.external_review_warning_seconds must be a number",
+        ),
     ],
 )
 def test_profile_rejects_boolean_integer_fields(tmp_path, section, field, message):
@@ -802,6 +807,7 @@ description = "Existing profile"
     assert "max_iterations = 2" not in rendered
     assert "max_remediation_input_chars = 200000" not in rendered
     assert "external_review_input_chars = 80000" not in rendered
+    assert "external_review_warning_seconds = 1800.0" not in rendered
     assert profiles.resolve_profile("smoke", cwd=tmp_path, home=home).description == "Smoke test"
 
     exported = tmp_path / "export.toml"

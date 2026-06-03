@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
@@ -39,6 +40,15 @@ EXTERNAL_REVIEW_PROMPT_TAIL = (
 )
 
 
+@dataclass(frozen=True)
+class ExternalReviewPrompt:
+    prompt: str
+    provider_context: str
+    context_chars: int
+    input_cap_chars: int
+    truncated: bool
+
+
 def build_review_command(config: LoopConfig) -> list[str]:
     return harnesses.build_phase_command(
         harnesses.PhaseCommandRequest(
@@ -65,11 +75,13 @@ def run_codex_review(
     display_label = display_label or artifact_label
     command = build_review_command(config)
     review_prompt = None
+    external_prompt: ExternalReviewPrompt | None = None
     if config.review_harness not in {"codex", "fake"}:
         review_context = build_external_review_context(config)
-        review_prompt, _provider_context = compose_external_review_prompt(
+        external_prompt = compose_external_review_prompt(
             config, review_context
         )
+        review_prompt = external_prompt.prompt
         phase_support.write_artifact(
             config.artifact_dir / f"{artifact_label}-context.txt",
             review_context,
@@ -113,12 +125,19 @@ def run_codex_review(
             source=config.phase_config_sources.get("review", "direct-config"),
             prompt_chars=prompt_metadata.get("prompt_chars"),
             prompt_delivery=prompt_metadata["prompt_delivery"],
+            prompt_context_chars=(
+                external_prompt.context_chars if external_prompt is not None else None
+            ),
+            prompt_truncated=(
+                external_prompt.truncated if external_prompt is not None else None
+            ),
         ),
         ctx=ctx,
         metadata={
             "command": list(command),
             "harness": config.review_harness,
             **prompt_metadata,
+            **external_review_prompt_metadata(external_prompt),
         },
     )
     if config.dry_run:
@@ -250,12 +269,25 @@ def run_review_with_retry(
     return last_result
 
 
+def external_review_prompt_metadata(
+    prompt: ExternalReviewPrompt | None,
+) -> dict[str, object]:
+    if prompt is None:
+        return {}
+    return {
+        "review_context_chars": prompt.context_chars,
+        "external_review_input_chars": prompt.input_cap_chars,
+        "prompt_truncated": prompt.truncated,
+    }
+
+
 def compose_external_review_prompt(
     config: LoopConfig,
     review_context: str,
-) -> tuple[str, str]:
+) -> ExternalReviewPrompt:
     prompt_head = f"{phase_support.DEFAULT_REVIEW_PROMPT}\n\n"
     prompt_tail = f"\n\n{EXTERNAL_REVIEW_PROMPT_TAIL}"
+    original_prompt_chars = len(prompt_head) + len(review_context) + len(prompt_tail)
     available_context_chars = (
         config.external_review_input_chars - len(prompt_head) - len(prompt_tail)
     )
@@ -277,7 +309,13 @@ def compose_external_review_prompt(
                 - len(prompt_tail),
             ),
         )
-    return prompt, trimmed_context
+    return ExternalReviewPrompt(
+        prompt=prompt,
+        provider_context=trimmed_context,
+        context_chars=len(review_context),
+        input_cap_chars=config.external_review_input_chars,
+        truncated=len(prompt) < original_prompt_chars,
+    )
 
 
 def build_external_review_context(config: LoopConfig) -> str:

@@ -471,6 +471,8 @@ def resolved_phase_detail(
     source: str | None = None,
     prompt_chars: int | None = None,
     prompt_delivery: str | None = None,
+    prompt_context_chars: int | None = None,
+    prompt_truncated: bool | None = None,
 ) -> str:
     fields = [command_summary_for_progress(command, harness=harness)]
     if model:
@@ -484,9 +486,20 @@ def resolved_phase_detail(
     if contract:
         fields.append(f"contract={contract}")
     if prompt_chars is not None:
-        prompt_field = f"prompt={format_char_count(prompt_chars)}"
+        prompt_field = "prompt="
+        if prompt_truncated and prompt_context_chars is not None:
+            prompt_field += (
+                f"{format_char_count(prompt_chars)}/"
+                f"{format_char_count(prompt_context_chars)}"
+            )
+        else:
+            prompt_field += format_char_count(prompt_chars)
         if prompt_delivery:
             prompt_field = f"{prompt_field} {prompt_delivery}"
+        if prompt_truncated is True:
+            prompt_field = f"{prompt_field} truncated"
+        elif prompt_truncated is False and prompt_context_chars is not None:
+            prompt_field = f"{prompt_field} full"
         fields.append(prompt_field)
     if source:
         fields.append(f"source={source_for_progress(source)}")
@@ -565,12 +578,30 @@ def run_with_waiting_progress(
         metadata: dict[str, Any] = {"elapsed_seconds": round(elapsed_seconds, 3)}
         if prompt_artifact is not None:
             metadata["prompt_artifact"] = str(prompt_artifact)
+        detail = (
+            f"{format_elapsed_seconds(elapsed_seconds)} elapsed · provider still running"
+            f"{prompt_detail}"
+        )
+        warning_seconds = config.external_review_warning_seconds
+        if (
+            phase == "review"
+            and config.review_harness not in {"codex", "fake"}
+            and warning_seconds > 0
+            and elapsed_seconds >= warning_seconds
+        ):
+            metadata["quiet_warning"] = True
+            metadata["warning_seconds"] = warning_seconds
+            detail = (
+                f"{format_elapsed_seconds(elapsed_seconds)} elapsed · provider still "
+                "running; no provider output is available until the process exits"
+                f"{prompt_detail}"
+            )
         progress_event(
             config,
             phase,
             label,
             "waiting",
-            f"{format_elapsed_seconds(elapsed_seconds)} elapsed · provider still running{prompt_detail}",
+            detail,
             ctx=ctx,
             metadata=metadata,
         )

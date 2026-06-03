@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 import tests.support.application_runner as runner_mod
-from code_review_loop import application, events
+from code_review_loop import application, events, waiting_progress
 from code_review_loop.adapters import remediation as remediation_impl
 from code_review_loop.adapters import review as review_impl
 from code_review_loop.adapters import triage as triage_impl
@@ -21,6 +21,7 @@ from code_review_loop.adapters.phase_support import (
     build_commit_message_command,
     normalize_revrem_conventional_subject,
     progress_event,
+    run_with_waiting_progress,
     sanitize_commit_message,
 )
 from code_review_loop.adapters.review import review_failed_to_run
@@ -851,6 +852,16 @@ def test_gemini_review_prompt_respects_configured_char_limit(tmp_path):
     context = (repo / "artifacts" / "review-1-context.txt").read_text(encoding="utf-8")
     assert "x" * 1000 in context
     assert context not in prompt
+    phase_start = next(
+        json.loads(line)
+        for line in (repo / "artifacts" / "events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if json.loads(line)["kind"] == "phase_start"
+    )
+    assert phase_start["payload"]["review_context_chars"] > 1500
+    assert phase_start["payload"]["external_review_input_chars"] == 1500
+    assert phase_start["payload"]["prompt_truncated"] is True
 
 
 def test_external_review_prompt_ignores_remediation_input_cap(tmp_path):
@@ -878,6 +889,52 @@ def test_external_review_prompt_ignores_remediation_input_cap(tmp_path):
     prompt = prompt_path.read_text(encoding="utf-8")
     assert len(prompt) > 200
     assert len(prompt) <= 1200
+
+
+def test_external_review_waiting_progress_warns_after_quiet_threshold(tmp_path):
+    sink = events.InMemorySink("run1")
+    config = LoopConfig(
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="gemini",
+        external_review_warning_seconds=10,
+    )
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        reporter = waiting_progress.current_reporter()
+        assert reporter is not None
+        reporter(5)
+        reporter(10)
+        return CommandResult(list(args), 0, stdout="done\n")
+
+    result = run_with_waiting_progress(
+        config,
+        runner,
+        ["gemini"],
+        tmp_path,
+        "prompt",
+        None,
+        phase="review",
+        label="1",
+        ctx=RunContext(
+            runner=runner,
+            clock=FakeClock(),
+            identity=FakeRunIdentity(),
+            event_sink=sink,
+            **phase_harness_kwargs(),
+        ),
+        prompt_artifact=tmp_path / "artifacts" / "review-1-prompt.txt",
+    )
+
+    assert result.returncode == 0
+    waiting_events = [
+        event for event in sink.events if event.payload.get("summary") == "waiting"
+    ]
+    assert waiting_events[0].payload.get("quiet_warning") is None
+    assert waiting_events[1].payload["quiet_warning"] is True
+    assert "no provider output is available until the process exits" in str(
+        waiting_events[1].payload["message"]
+    )
 
 
 def test_harness_bin_override_controls_non_codex_executable(tmp_path, monkeypatch):

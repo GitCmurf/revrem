@@ -56,6 +56,24 @@ There is no silent third option.
 
 ## Entries
 
+### 2026-06-03 — Gemini review context cap and quiet-run diagnostics
+
+- **Contract:** machine
+- **What changed:** the resolved runtime config can now choose
+  `external_review_input_chars = 600000` for Gemini Pro review models when no
+  CLI/profile cap is set. Review phase-start events add
+  `review_context_chars`, `external_review_input_chars`, and
+  `prompt_truncated`. Runtime summaries include
+  `external_review_warning_seconds`, and external review waiting events add
+  `quiet_warning` metadata after the configured non-terminating warning
+  threshold.
+- **Why:** Gemini dogfood showed the default `80k` character prompt cap could
+  truncate a larger generated diff context, and long-running provider calls
+  needed clearer diagnostics without changing `timeout=0` behavior.
+- **schema_version impact:** none; additive runtime fields and event payload
+  fields in the existing v1 envelopes.
+- **CHANGELOG:** Unreleased / Added.
+
 ### 2026-06-03 — Provider retry and commit-message subject fallback
 
 - **Contract:** machine

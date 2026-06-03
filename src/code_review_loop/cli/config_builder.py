@@ -20,6 +20,8 @@ from code_review_loop.cli.config_support import (
 from code_review_loop.clock import SYSTEM_CLOCK, Clock
 from code_review_loop.config import (
     DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS,
+    DEFAULT_EXTERNAL_REVIEW_WARNING_SECONDS,
+    DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS,
     DEFAULT_TIMEOUT_SECONDS,
     LoopConfig,
 )
@@ -92,6 +94,86 @@ def resolve_optional_timeout_seconds(value: float | None, *, flag: str) -> float
     if value == 0:
         return None
     return value
+
+
+def resolve_external_review_warning_seconds(value: float) -> float:
+    if value < 0:
+        raise ValueError("--external-review-warning-seconds must be 0 or greater")
+    return value
+
+
+def resolve_external_review_input_chars(
+    *,
+    args: argparse.Namespace,
+    profile: profiles.Profile,
+    profile_name: str | None,
+    cwd: Path,
+    review_harness: str,
+    review_model: str | None,
+) -> int:
+    if args.external_review_input_chars is not None:
+        return int(args.external_review_input_chars)
+    if profile_runtime_key_explicit(
+        profile_name, cwd, "external_review_input_chars"
+    ):
+        return profile.runtime.external_review_input_chars
+    if is_large_context_gemini_review_model(review_harness, review_model):
+        return DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS
+    return DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS
+
+
+def resolve_external_review_input_chars_source(
+    *,
+    args: argparse.Namespace,
+    profile_name: str | None,
+    cwd: Path,
+    review_harness: str,
+    review_model: str | None,
+    profile_source: str,
+) -> str:
+    if args.external_review_input_chars is not None:
+        return "cli"
+    if profile_runtime_key_explicit(
+        profile_name, cwd, "external_review_input_chars"
+    ):
+        return profile_source
+    if is_large_context_gemini_review_model(review_harness, review_model):
+        return "model-default"
+    return "defaults"
+
+
+def is_large_context_gemini_review_model(
+    review_harness: str,
+    review_model: str | None,
+) -> bool:
+    model = (review_model or "").lower()
+    return (
+        review_harness == "gemini"
+        and model.startswith("gemini-")
+        and "-pro" in model
+    )
+
+
+def profile_runtime_key_explicit(
+    profile_name: str | None,
+    cwd: Path,
+    key: str,
+) -> bool:
+    try:
+        user_file, project_file = profiles.load_profile_files(cwd=cwd)
+    except (OSError, ValueError):
+        return False
+    raw_sections: list[dict[str, object]] = []
+    for profile_file in (user_file, project_file):
+        if profile_file.raw_defaults:
+            raw_sections.append(profile_file.raw_defaults)
+        if profile_name and profile_name in profile_file.raw_profiles:
+            raw_sections.append(profile_file.raw_profiles[profile_name])
+    for raw in raw_sections:
+        runtime = raw.get("runtime")
+        if isinstance(runtime, dict) and key in runtime:
+            return True
+    return False
 
 
 def profile_or_default(
@@ -396,6 +478,29 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         raise ValueError(
             f"triage.routing.default_route refers to unknown route: {routing.default_route}"
         )
+    external_review_input_chars = resolve_external_review_input_chars(
+        args=args,
+        profile=profile,
+        profile_name=args.profile,
+        cwd=cwd,
+        review_harness=review_phase.harness,
+        review_model=review_phase.model or args.model,
+    )
+    external_review_input_chars_source = resolve_external_review_input_chars_source(
+        args=args,
+        profile_name=args.profile,
+        cwd=cwd,
+        review_harness=review_phase.harness,
+        review_model=review_phase.model or args.model,
+        profile_source=profile_source,
+    )
+    external_review_warning_seconds = resolve_external_review_warning_seconds(
+        pick(
+            args.external_review_warning_seconds,
+            profile.runtime.external_review_warning_seconds,
+            DEFAULT_EXTERNAL_REVIEW_WARNING_SECONDS,
+        )
+    )
     phase_config_field_sources = {
         "review": review_phase.field_sources,
         "triage": {
@@ -450,6 +555,14 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
             "commands": "cli" if args.check is not None else profile_source,
             "timeout_seconds": (
                 "cli" if args.timeout_seconds is not None else profile_source
+            ),
+        },
+        "runtime": {
+            "external_review_input_chars": external_review_input_chars_source,
+            "external_review_warning_seconds": (
+                "cli"
+                if args.external_review_warning_seconds is not None
+                else profile_source
             ),
         },
     }
@@ -509,11 +622,8 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
             profile.runtime.max_remediation_input_chars,
             200_000,
         ),
-        external_review_input_chars=pick(
-            args.external_review_input_chars,
-            profile.runtime.external_review_input_chars,
-            DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS,
-        ),
+        external_review_input_chars=external_review_input_chars,
+        external_review_warning_seconds=external_review_warning_seconds,
         terminal_excerpt_chars=pick(
             args.terminal_excerpt_chars,
             profile.runtime.terminal_excerpt_chars,
@@ -644,6 +754,7 @@ def profile_from_loop_config(
             full_auto=config.full_auto,
             max_remediation_input_chars=config.max_remediation_input_chars,
             external_review_input_chars=config.external_review_input_chars,
+            external_review_warning_seconds=config.external_review_warning_seconds,
             terminal_excerpt_chars=config.terminal_excerpt_chars,
         ),
         budgets=profiles.BudgetConfig(

@@ -371,6 +371,15 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         help="Maximum characters passed to prompted non-Codex review harnesses.",
     )
     parser.add_argument(
+        "--external-review-warning-seconds",
+        type=float,
+        default=None,
+        help=(
+            "Elapsed seconds before long-running prompted review waiting "
+            "messages include stronger diagnostics; 0 disables the warning."
+        ),
+    )
+    parser.add_argument(
         "--terminal-excerpt-chars",
         type=int,
         default=None,

@@ -204,6 +204,78 @@ def test_cli_review_and_remediation_harnesses_override_profile(tmp_path, monkeyp
     assert saved.remediation.harness == "opencode"
 
 
+def test_gemini_pro_review_uses_large_context_default_when_cap_omitted(
+    tmp_path, monkeypatch
+):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.gemini-review.review]
+harness = "gemini"
+model = "gemini-3.1-pro-preview"
+""",
+        encoding="utf-8",
+    )
+
+    args = cli_args.parse_args(["--profile", "gemini-review", "--dry-run"])
+    config, _summary_format = config_builder.build_loop_config(args, tmp_path)
+
+    assert config.external_review_input_chars == 600_000
+    assert (
+        config.phase_config_field_sources["runtime"]["external_review_input_chars"]
+        == "model-default"
+    )
+
+
+def test_explicit_external_review_cap_overrides_gemini_model_default(
+    tmp_path, monkeypatch
+):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.gemini-review.review]
+harness = "gemini"
+model = "gemini-3.1-pro-preview"
+
+[profiles.gemini-review.runtime]
+external_review_input_chars = 80000
+""",
+        encoding="utf-8",
+    )
+
+    args = cli_args.parse_args(
+        [
+            "--profile",
+            "gemini-review",
+            "--external-review-input-chars",
+            "1234",
+            "--dry-run",
+        ]
+    )
+    config, _summary_format = config_builder.build_loop_config(args, tmp_path)
+
+    assert config.external_review_input_chars == 1234
+    assert (
+        config.phase_config_field_sources["runtime"]["external_review_input_chars"]
+        == "cli"
+    )
+
+    args = cli_args.parse_args(["--profile", "gemini-review", "--dry-run"])
+    config, _summary_format = config_builder.build_loop_config(args, tmp_path)
+
+    assert config.external_review_input_chars == 80_000
+    assert (
+        config.phase_config_field_sources["runtime"]["external_review_input_chars"]
+        == "profile:gemini-review"
+    )
+
+
 def test_cli_commit_reasoning_effort_overrides_profile_commit_effort(
     tmp_path, monkeypatch
 ):

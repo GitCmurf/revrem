@@ -255,6 +255,38 @@ def test_resolved_phase_detail_summarizes_opencode_without_repetition():
     assert detail.count("opencode/minimax-m3-free") == 1
 
 
+def test_resolved_phase_detail_shows_external_review_truncation_status():
+    truncated = phase_support.resolved_phase_detail(
+        ["gemini", "--model", "gemini-3.1-pro-preview"],
+        harness="gemini",
+        model="gemini-3.1-pro-preview",
+        reasoning_effort="low",
+        timeout_seconds=0,
+        sandbox="read-only",
+        source="mixed",
+        prompt_chars=80_000,
+        prompt_delivery="stdin",
+        prompt_context_chars=466_882,
+        prompt_truncated=True,
+    )
+    full = phase_support.resolved_phase_detail(
+        ["gemini", "--model", "gemini-3.1-pro-preview"],
+        harness="gemini",
+        model="gemini-3.1-pro-preview",
+        reasoning_effort="low",
+        timeout_seconds=0,
+        sandbox="read-only",
+        source="mixed",
+        prompt_chars=466_882,
+        prompt_delivery="stdin",
+        prompt_context_chars=466_882,
+        prompt_truncated=False,
+    )
+
+    assert "prompt=80.0k/466.9k stdin truncated" in truncated
+    assert "prompt=466.9k stdin full" in full
+
+
 def test_progress_logs_unstructured_review_finding_summary(tmp_path, capsys):
     review_outputs = iter(
         [

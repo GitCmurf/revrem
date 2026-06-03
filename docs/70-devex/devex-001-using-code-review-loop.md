@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.25'
+version: '1.26'
 last_updated: '2026-06-03'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.25
+> **Version:** 1.26
 > **Last Updated:** 2026-06-03
 > **Type:** DEVEX
 > **Area:** devex
@@ -947,7 +947,11 @@ review transcript itself remains under `summary.artifact_paths.reviews`. The
 provider-facing external review prompt is bounded by
 `runtime.external_review_input_chars` / `--external-review-input-chars`; RevRem
 trims by character count with an omission marker rather than attempting
-provider-specific token accounting.
+provider-specific token accounting. When no CLI/profile cap is set, Gemini Pro
+review models use a larger `600000` character cap while other prompted review
+harnesses retain the conservative `80000` character default. Phase-start
+progress and events report whether the generated review context was supplied
+in full or truncated.
 If an external review subprocess fails with a known transient provider-side
 error, such as an OpenCode server error or a temporary rate-limit response,
 RevRem records `review-N-attempt-1.txt`, emits a `review retry` progress event,
@@ -965,7 +969,10 @@ not through stdin, so large RevRem prompts stay out of process listings and
 match OpenCode's headless CLI contract. Long-running
 model subprocesses emit `waiting` progress every five minutes without changing
 timeout behavior; `timeout=0` still means RevRem does not enforce a subprocess
-deadline. Set
+deadline. For prompted review harnesses, waiting messages add a stronger
+diagnostic after `runtime.external_review_warning_seconds` /
+`--external-review-warning-seconds` elapses, explaining that provider output is
+not available until the subprocess exits. Set
 `REVREM_OPENCODE_DEBUG=1` to add OpenCode provider logs
 (`--print-logs --log-level INFO`) to OpenCode phase commands during local
 diagnosis. When a review reports `findings` without Codex-style `[P1]` finding
@@ -1098,6 +1105,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.26 | 2026-06-03 | Codex | Documented Gemini review context cap and external review quiet-run diagnostics |
 | 1.25 | 2026-06-03 | Codex | Documented provider-failure review retry and commit-message prose rejection |
 | 1.24 | 2026-06-02 | Codex | Documented OpenCode prompt-file delivery and waiting progress diagnostics |
 | 1.23 | 2026-06-02 | Codex | Documented compact phase-start progress, OpenCode debug logs, and dedicated external review prompt cap |

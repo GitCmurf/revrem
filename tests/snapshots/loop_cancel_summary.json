@@ -83,6 +83,12 @@
       "sources": {},
       "timeout_seconds": null
     },
+    "runtime": {
+      "external_review_input_chars": 80000,
+      "external_review_warning_seconds": 1800,
+      "source": "direct-config",
+      "sources": {}
+    },
     "triage": {
       "allow_model_escalation": true,
       "contract": "v1",
@@ -114,6 +120,7 @@
     "exec_json": false,
     "exec_sandbox": "workspace-write",
     "external_review_input_chars": 80000,
+    "external_review_warning_seconds": 1800,
     "final_review": false,
     "full_auto": true,
     "harness_executables": {},
@@ -159,6 +166,12 @@
         "source": "direct-config",
         "sources": {},
         "timeout_seconds": null
+      },
+      "runtime": {
+        "external_review_input_chars": 80000,
+        "external_review_warning_seconds": 1800,
+        "source": "direct-config",
+        "sources": {}
       },
       "triage": {
         "allow_model_escalation": true,

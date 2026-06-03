@@ -236,6 +236,9 @@ def resume_loop_config(
         terminal_excerpt_chars=_resume_int(resume_config, "terminal_excerpt_chars", 4_000),
         max_remediation_input_chars=_resume_int(resume_config, "max_remediation_input_chars", 200_000),
         external_review_input_chars=_resume_int(resume_config, "external_review_input_chars", 80_000),
+        external_review_warning_seconds=_resume_float(
+            resume_config, "external_review_warning_seconds", 1_800
+        ),
         check_commands=_resume_str_tuple(resume_config, "check_commands"),
         commit_after_remediation=_resume_bool(resume_config, "commit_after_remediation", False),
         commit_message_harness=_resume_str(resume_config, "commit_message_harness", "codex"),
@@ -297,6 +300,7 @@ def resume_config_payload(config: LoopConfig) -> dict[str, object]:
         "terminal_excerpt_chars": config.terminal_excerpt_chars,
         "max_remediation_input_chars": config.max_remediation_input_chars,
         "external_review_input_chars": config.external_review_input_chars,
+        "external_review_warning_seconds": config.external_review_warning_seconds,
         "commit_after_remediation": config.commit_after_remediation,
         "commit_on_hook_failure": config.commit_on_hook_failure,
         "exec_sandbox": config.exec_sandbox,
@@ -464,6 +468,15 @@ def _resume_int(payload: dict[object, object], key: str, fallback: int) -> int:
 def _resume_optional_int(payload: dict[object, object], key: str) -> int | None:
     value = payload.get(key)
     return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _resume_float(payload: dict[object, object], key: str, fallback: float) -> float:
+    value = payload.get(key)
+    if isinstance(value, bool):
+        return fallback
+    if isinstance(value, int | float):
+        return float(value)
+    return fallback
 
 
 def _resume_optional_float(payload: dict[object, object], key: str) -> float | None:

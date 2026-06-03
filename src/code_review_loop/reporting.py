@@ -289,6 +289,12 @@ def phase_config_payload(config: LoopConfig) -> dict[str, object]:
             "source": config.phase_config_sources.get("checks", "direct-config"),
             "sources": field_sources.get("checks", {}),
         },
+        "runtime": {
+            "external_review_input_chars": config.external_review_input_chars,
+            "external_review_warning_seconds": config.external_review_warning_seconds,
+            "source": config.phase_config_sources.get("runtime", "direct-config"),
+            "sources": field_sources.get("runtime", {}),
+        },
     }
 
 

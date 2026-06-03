@@ -41,6 +41,11 @@ This project follows Semantic Versioning once public releases begin.
   model prose as an invalid subject, prefers a saved `commit-N-message-subject`
   sidecar when available, and falls back to the deterministic subject builder
   when the model output is not a usable subject.
+- Gemini Pro review runs now get a larger model-aware external review input
+  cap when no CLI/profile cap is set, and prompted review progress now reports
+  whether the supplied context is full or truncated. Long-running external
+  review subprocesses add a stronger non-terminating waiting diagnostic after
+  the configured quiet threshold.
 - Public GitHub launch materials: README, contribution guidance, security
   policy, support policy, issue templates, pull request template, CODEOWNERS,
   NOTICE, CI hardening, Scorecard workflow, and release provenance/SBOM
