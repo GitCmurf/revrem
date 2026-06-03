@@ -949,9 +949,10 @@ delivery mode, and config source without repeating raw CLI syntax. For example:
 `opencode run · opencode/minimax-m3-free · low effort · timeout=0 · sandbox
 read-only · prompt=80.0k file · source=profile+cli`. Exact argv and prompt
 artifacts remain in `events.jsonl` and the run artifact directory. OpenCode
-receives prompt-bearing phases through `opencode run --file <prompt-artifact>`
-with a short fixed message, not through stdin, so large RevRem prompts stay out
-of process listings and match OpenCode's headless CLI contract. Long-running
+receives prompt-bearing phases through `opencode run "Follow the attached
+RevRem prompt exactly." --file <prompt-artifact>`, not through stdin, so large
+RevRem prompts stay out of process listings and match OpenCode's headless CLI
+contract. Long-running
 model subprocesses emit `waiting` progress every five minutes without changing
 timeout behavior; `timeout=0` still means RevRem does not enforce a subprocess
 deadline. Set

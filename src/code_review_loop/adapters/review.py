@@ -132,7 +132,7 @@ def run_codex_review(
                 config, "review", display_label, "failed", "invalid base", ctx=ctx
             )
             raise RuntimeError(
-                f"codex review failed for {artifact_label}; see {artifact_path}"
+                f"{config.review_harness} review failed for {artifact_label}; see {artifact_path}"
             )
         result = phase_support.run_with_waiting_progress(
             config,
@@ -162,7 +162,7 @@ def run_codex_review(
             ctx=ctx,
         )
         raise RuntimeError(
-            f"codex review failed for {artifact_label}; see {artifact_path}"
+            f"{config.review_harness} review failed for {artifact_label}; see {artifact_path}"
         )
     status = detect_review_status(combined, harness=config.review_harness)
     if config.debug_status_detection:

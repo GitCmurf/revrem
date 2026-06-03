@@ -5,6 +5,8 @@ import subprocess
 from importlib import import_module
 from pathlib import Path
 
+import pytest
+
 import tests.support.application_runner as runner_mod
 from code_review_loop import application, events
 from code_review_loop.adapters import remediation as remediation_impl
@@ -599,9 +601,10 @@ def test_opencode_review_prompt_is_attached_as_file(tmp_path):
 
     runner_mod.run_loop(config, runner)
 
-    assert calls[0][0][:4] == [
+    assert calls[0][0][:5] == [
         "opencode",
         "run",
+        "Follow the attached RevRem prompt exactly.",
         "--model",
         "provider/model",
     ]
@@ -612,7 +615,24 @@ def test_opencode_review_prompt_is_attached_as_file(tmp_path):
     assert prompt_path.name == "review-1-prompt.txt"
     prompt = prompt_path.read_text(encoding="utf-8")
     assert "Review the current repository changes" in prompt
-    assert calls[0][0][-1] == "Follow the attached RevRem prompt exactly."
+    assert calls[0][0][2] == "Follow the attached RevRem prompt exactly."
+
+
+def test_opencode_review_failure_names_opencode_harness(tmp_path):
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        return CommandResult(list(args), 1, stderr="Error: provider failed\n")
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="opencode",
+        review_model="provider/model",
+    )
+
+    with pytest.raises(RuntimeError, match="opencode review failed for review-1"):
+        runner_mod.run_loop(config, runner)
 
 
 def test_gemini_review_runs_in_plan_mode_with_prompt_via_stdin(tmp_path):
