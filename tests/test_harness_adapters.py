@@ -129,9 +129,9 @@ def test_prompt_invocation_uses_file_for_opencode(tmp_path):
     assert command == [
         "opencode",
         "run",
+        "Follow the attached RevRem prompt exactly.",
         "--file",
         str(prompt_path),
-        "Follow the attached RevRem prompt exactly.",
     ]
     assert stdin is None
     assert "review prompt" not in command
@@ -186,9 +186,9 @@ def test_prompt_invocation_passes_prompt_via_stdin_for_stdin_harnesses():
                     "--dangerously-skip-permissions",
                     "--model",
                     "M",
+                    "Follow the attached RevRem prompt exactly.",
                     "--file",
                     "prompt.txt",
-                    "Follow the attached RevRem prompt exactly.",
                 ],
                 False,
             ),

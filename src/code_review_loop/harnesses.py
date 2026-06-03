@@ -445,8 +445,8 @@ def prepare_prompt_invocation(
         if prompt_artifact_path is None:
             raise ValueError("opencode prompt delivery requires a prompt artifact path")
         adapted = list(command)
-        adapted.extend(["--file", str(prompt_artifact_path)])
         adapted.append("Follow the attached RevRem prompt exactly.")
+        adapted.extend(["--file", str(prompt_artifact_path)])
         return PromptInvocation(
             adapted,
             None,

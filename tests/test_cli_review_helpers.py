@@ -612,9 +612,10 @@ def test_opencode_review_prompt_is_attached_as_file(tmp_path):
     assert "--dangerously-skip-permissions" not in calls[0][0]
     assert calls[0][1] is None
     assert "--file" in calls[0][0]
-    prompt_path = Path(calls[0][0][calls[0][0].index("--file") + 1])
+    file_index = calls[0][0].index("--file")
+    assert calls[0][0][file_index - 1] == "Follow the attached RevRem prompt exactly."
+    prompt_path = Path(calls[0][0][file_index + 1])
     assert prompt_path.name == "review-1-prompt.txt"
-    assert calls[0][0][-1] == "Follow the attached RevRem prompt exactly."
     prompt = prompt_path.read_text(encoding="utf-8")
     assert "Review the current repository changes" in prompt
 

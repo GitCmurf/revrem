@@ -60,7 +60,7 @@ There is no silent third option.
 
 - **Contract:** machine
 - **What changed:** OpenCode prompt-bearing commands now include the positional
-  message `Follow the attached RevRem prompt exactly.` together with
+  message `Follow the attached RevRem prompt exactly.` before
   `--file <prompt-artifact>`. Provider failure classification also treats
   OpenCode's `You must provide a message or a command` stderr as a CLI contract
   error.
