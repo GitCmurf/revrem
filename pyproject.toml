@@ -54,6 +54,7 @@ tui = [
 [project.scripts]
 code-review-loop = "code_review_loop.cli.main:main"
 revrem = "code_review_loop.cli.main:main"
+revrem-fake-harness = "code_review_loop.fake_harness.__main__:main"
 
 [project.urls]
 Homepage = "https://github.com/GitCmurf/revrem"

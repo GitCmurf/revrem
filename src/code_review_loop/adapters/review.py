@@ -31,7 +31,6 @@ if TYPE_CHECKING:
     from code_review_loop.config import LoopConfig
 
 Runner = Callable[[Sequence[str], Path, str | None, float | None], CommandResult]
-MAX_EXTERNAL_REVIEW_DIFF_CHARS = 120_000
 EXTERNAL_REVIEW_PROMPT_TAIL = (
     "Use the supplied diff context as the authoritative patch input. "
     "If shell or tool access is unavailable, still review the supplied diff. "
@@ -273,17 +272,14 @@ def build_external_review_context(config: LoopConfig) -> str:
             _format_git_context_result(
                 f"git diff {config.base}...HEAD",
                 run_git_preflight(config.cwd, ["diff", f"{config.base}...HEAD"]),
-                max_chars=MAX_EXTERNAL_REVIEW_DIFF_CHARS,
             ),
             _format_git_context_result(
                 "git diff --cached",
                 run_git_preflight(config.cwd, ["diff", "--cached"]),
-                max_chars=MAX_EXTERNAL_REVIEW_DIFF_CHARS,
             ),
             _format_git_context_result(
                 "git diff",
                 run_git_preflight(config.cwd, ["diff"]),
-                max_chars=MAX_EXTERNAL_REVIEW_DIFF_CHARS,
             ),
         ]
     )

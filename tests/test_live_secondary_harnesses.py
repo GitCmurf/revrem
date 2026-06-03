@@ -164,6 +164,64 @@ def test_live_secondary_provider_direct_smoke(
     assert LIVE_SMOKE_TOKEN in output
 
 
+def test_live_kilo_stdin_contract_is_accepted() -> None:
+    """Hermetic contract check: kilo's `run` subcommand accepts a prompt via stdin.
+
+    The full remediation path is covered by the parametrised live smoke above,
+    but that smoke requires an authenticated kilo CLI. This test is a tighter
+    check that only depends on the kilo binary being installed and that the
+    `run` subcommand does not reject stdin as a prompt source up-front.
+
+    Skipped by default; opt in with `REVREM_LIVE_KILO=1` and point
+    `REVREM_LIVE_KILO_BIN` at the binary if it is not on `PATH`.
+    """
+    if os.environ.get("REVREM_LIVE_KILO") != "1":
+        pytest.skip("set REVREM_LIVE_KILO=1 to run the kilo stdin-contract check")
+
+    configured = os.environ.get("REVREM_LIVE_KILO_BIN")
+    executable = configured or shutil.which("kilo")
+    if executable is None:
+        pytest.skip("kilo executable is not on PATH; set REVREM_LIVE_KILO_BIN")
+    if configured:
+        resolved = shutil.which(configured)
+        if resolved is not None:
+            executable = resolved
+        elif not Path(configured).is_file():
+            pytest.skip(
+                f"REVREM_LIVE_KILO_BIN={configured!r} is not executable on PATH "
+                "or an existing file"
+            )
+
+    help_result = default_runner(
+        [executable, "run", "--help"], Path.cwd(), stdin=None, timeout_seconds=30
+    )
+    assert help_result.returncode == 0, help_result.stdout + help_result.stderr
+
+    stdin_probe = (
+        "Print exactly: kilo-stdin-accepted. Do not edit files. "
+        "Do not call external tools. Do not include Markdown fences."
+    )
+    stdin_result = default_runner(
+        [executable, "run"],
+        Path.cwd(),
+        stdin=stdin_probe,
+        timeout_seconds=LIVE_TIMEOUT_SECONDS,
+    )
+    combined = (stdin_result.stdout or "") + (stdin_result.stderr or "")
+    normalized = combined.lower()
+    assert "stdin" not in normalized or "kilo-stdin-accepted" in combined, combined
+    _skip_if_provider_setup_missing(
+        LiveProvider(
+            name="kilo",
+            executable="kilo",
+            enable_env="REVREM_LIVE_KILO",
+            bin_env="REVREM_LIVE_KILO_BIN",
+            model_env="REVREM_LIVE_KILO_MODEL",
+        ),
+        combined,
+    )
+
+
 def test_live_routed_secondary_provider_smoke(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -172,6 +230,12 @@ def test_live_routed_secondary_provider_smoke(
     if provider is None:
         known = ", ".join(sorted(LIVE_PROVIDERS))
         pytest.skip(f"REVREM_LIVE_ROUTED_PROVIDER must be one of: {known}")
+    if shutil.which(harnesses.FAKE_HARNESS_COMMAND) is None:
+        pytest.skip(
+            f"{harnesses.FAKE_HARNESS_COMMAND!r} is not on PATH; install the "
+            "revrem dev extras (pip install -e .[dev]) or run from a checkout "
+            "with the console-script entry registered."
+        )
     _configure_live_provider_environment(provider, monkeypatch)
     runtime = _resolve_live_provider(provider)
 

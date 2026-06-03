@@ -28,6 +28,13 @@ This project follows Semantic Versioning once public releases begin.
 - OpenCode prompt-bearing phases now attach the saved prompt artifact with
   `opencode run --file` instead of using stdin, and model subprocesses emit
   five-minute `waiting` progress diagnostics while they remain active.
+- Kilo and Gemini prompt-bearing phases now deliver the prompt via stdin
+  instead of as a positional argv token, aligning them with the Claude
+  contract and matching the hermetic harness-adapter test that covers the
+  stdin path. Operators running `REVREM_LIVE_KILO=1` will see the kilo CLI
+  receive the prompt on stdin; kilo's CLI contract for non-interactive stdin
+  ingestion is the only externally validated check until kilo ships a
+  `--help` flag that confirms it.
 - Public GitHub launch materials: README, contribution guidance, security
   policy, support policy, issue templates, pull request template, CODEOWNERS,
   NOTICE, CI hardening, Scorecard workflow, and release provenance/SBOM

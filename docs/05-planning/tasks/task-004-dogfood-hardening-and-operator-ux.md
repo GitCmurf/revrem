@@ -880,7 +880,7 @@ stale: the adversarial review record now reports no open code remediation.
 | Commit-message robustness is implemented | `src/code_review_loop/adapters/commit.py`, `src/code_review_loop/harnesses.py`, and commit harness/integration tests cover tool disabling, model-specific effort adjustment, and deterministic fallback subjects. | Completed |
 | Latest review/check/resume UX fixes are implemented | Runner/runtime/reporting tests cover latest review excerpts, accurate check tables, and full resume commands. | Completed |
 | Non-Codex route/fallback behavior is deterministic | Routing artifact, routing policy, and fake-harness integration tests cover route selection, fallback, and schema-valid routing artifacts without requiring Gemini credentials. | Completed |
-| Adversarial review has no open code findings | `REVREM-REVIEW-004` Round 8 records no open code remediation; only optional live Matrix A/E operator sign-off remains. | Completed for code; operator sign-off remains optional/live-gated |
+| Adversarial review has no open code findings | `REVREM-TASK-005` Round 8 records no open code remediation; only optional live Matrix A/E operator sign-off remains. | Completed for code; operator sign-off remains optional/live-gated |
 | DocOps remains green | `meminit check --format json` passed on 2026-05-31 with `success:true`, 29/29 files checked. | Completed |
 
 Live Matrix A/E dogfood runs remain useful operator sign-off, but they consume

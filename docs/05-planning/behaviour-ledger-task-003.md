@@ -56,6 +56,37 @@ There is no silent third option.
 
 ## Entries
 
+### 2026-06-02 — Kilo and Gemini prompt delivery switched from argv to stdin
+
+- **Contract:** machine
+- **What changed:** `prepare_prompt_invocation` no longer keeps kilo or
+  gemini on a positional argv prompt path. Both harnesses now fall through
+  to the same stdin branch Claude already uses, so all non-Codex/non-OpenCode
+  harnesses share one prompt-delivery contract. The phase-start event payload
+  records `prompt_delivery == "stdin"` for kilo/gemini calls, and the saved
+  remediation prompt is no longer embedded in argv when these harnesses are
+  selected. The deleted `test_prompt_invocation_passes_prompt_as_argument_for_argv_harnesses`
+  coverage is superseded by `test_prompt_invocation_passes_prompt_via_stdin_for_stdin_harnesses`
+  and the parametrised `test_full_noninteractive_invocation_matches_real_cli_contract`
+  (which now asserts `expects_stdin=True` for both kilo and gemini).
+- **Why:** kilo's and gemini's non-interactive CLIs accept the prompt from
+  stdin in the same way Claude's does. Keeping a separate positional argv
+  path for kilo and gemini was duplicating the Codex-style behaviour that we
+  no longer want for any external harness, and it left kilo in particular
+  with a contract that no hermetic test could verify.
+- **schema_version impact:** none; the `prompt_delivery` field on
+  `phase_start` events is unchanged for kilo and gemini (it was already
+  `"stdin"` semantically; the argv variant was an internal branch in
+  `prepare_prompt_invocation`).
+- **CHANGELOG:** Unreleased / Added (kilo and gemini stdin delivery line).
+- **Residual operator-side risk:** the kilo CLI's acceptance of prompts on
+  stdin in non-interactive mode is only confirmed by the live smoke at
+  `tests/test_live_secondary_harnesses.py::test_live_secondary_provider_direct_smoke`
+  when `REVREM_LIVE_KILO=1`. Operators must run that live smoke at least
+  once per kilo upgrade; if kilo ever changes its non-interactive contract
+  to require a positional argument, every live kilo run will fail with
+  empty input until the harness adapter is updated.
+
 ### 2026-06-02 — External harness progress and prompt diagnostics
 
 - **Contract:** machine

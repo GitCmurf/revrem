@@ -12,6 +12,19 @@ _ACTIVE_LIVE: Any | None = None
 _ACTIVE_LIVE_LINES: deque[Any] | None = None
 RICH_LIVE_MAX_LINES = 7
 RICH_TEXT_MAX_CHARS = 140
+#: Rich style applied to each " · "-separated value in a structured start
+#: detail line. Index ``i`` styles value ``i``. Indices past the end render
+#: unstyled, so adding fields (e.g. a new ``route=`` segment) does not drop
+#: styling on the existing values.
+RICH_DETAIL_STYLES: tuple[str | None, ...] = (
+    "bold",
+    "magenta",
+    "cyan",
+    "yellow",
+    "yellow",
+    "blue",
+    "dim",
+)
 
 
 def rich_available() -> bool:
@@ -111,20 +124,13 @@ def _detail_parts(status: str, detail: str) -> list[tuple[str, str | None]]:
     if status != "start" or " · " not in clipped:
         return [(f": {clipped}", None)]
     values = clipped.split(" · ")
-    styles = [
-        "bold",
-        "magenta",
-        "cyan",
-        "yellow",
-        "yellow",
-        "blue",
-        "dim",
-    ]
     parts: list[tuple[str, str | None]] = [(": ", None)]
     for index, value in enumerate(values):
         if index:
             parts.append((" · ", "dim"))
-        style = styles[index] if index < len(styles) else None
+        style = (
+            RICH_DETAIL_STYLES[index] if index < len(RICH_DETAIL_STYLES) else None
+        )
         parts.append((value, style))
     return parts
 
