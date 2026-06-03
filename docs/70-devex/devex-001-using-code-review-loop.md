@@ -3,8 +3,8 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.24'
-last_updated: '2026-06-02'
+version: '1.25'
+last_updated: '2026-06-03'
 owner: GitCmurf
 docops_version: '2.0'
 area: devex
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.24
-> **Last Updated:** 2026-06-02
+> **Version:** 1.25
+> **Last Updated:** 2026-06-03
 > **Type:** DEVEX
 > **Area:** devex
 > **Description:** Operator guide for the code-review-loop utility
@@ -640,10 +640,16 @@ read-only model call that drafts the commit subject. If no explicit
 CLI value is supplied, the profile value is used; the built-in profile default
 is `gpt-5.3-codex-spark`. With the default
 prompt, RevRem normalizes the final subject to Conventional Commit syntax and
-appends `(RevRem)`. Passing `--commit-message-prompt` intentionally disables
-that default subject policy so special-purpose commit formats can be tested
-without fighting the normalizer. If a verified remediation pass produces no
-staged changes after checks pass, RevRem stops the loop immediately with
+appends `(RevRem)`. If the commit-message model returns explanatory prose
+instead of a subject, RevRem records `commit-N-message-fallback.json` with
+`reason: "model_drafting_invalid"` and uses the deterministic fallback subject
+instead of committing the prose. Harnesses that can extract a concise subject
+from their own transcript may write `commit-N-message-subject.txt`; RevRem
+prefers that sidecar over the raw draft transcript. Passing
+`--commit-message-prompt` intentionally disables that default subject policy so
+special-purpose commit formats can be tested without fighting the normalizer.
+If a verified remediation pass produces no staged changes after checks pass,
+RevRem stops the loop immediately with
 `final_status: "clear"` and
 `stopped_reason: "no_changes_after_remediation"`; the passing checks plus zero
 staged diff are treated as deterministic clear evidence when the preceding
@@ -942,6 +948,11 @@ provider-facing external review prompt is bounded by
 `runtime.external_review_input_chars` / `--external-review-input-chars`; RevRem
 trims by character count with an omission marker rather than attempting
 provider-specific token accounting.
+If an external review subprocess fails with a known transient provider-side
+error, such as an OpenCode server error or a temporary rate-limit response,
+RevRem records `review-N-attempt-1.txt`, emits a `review retry` progress event,
+and retries that review once. CLI contract errors, auth/setup failures, quota
+exhaustion, and Codex native review failures are not retried.
 
 Progress output intentionally summarizes prompt-bearing commands. Phase start
 lines show the executable role, model, effort, timeout, sandbox, prompt size,
@@ -963,7 +974,8 @@ can see the context being passed to triage/remediation. Remediation failures
 name the active harness, for example `gemini remediation failed`, and point to
 the remediation artifact. Known provider-state failures are called out in the
 same error; Gemini CLI quota exhaustion is reported as `provider quota
-exhausted` while the full CLI stderr remains in the remediation artifact.
+exhausted`, OpenCode server-side failures include the provider reference when
+one is present, and the full CLI stderr remains in the phase artifact.
 
 ### Exit codes
 
@@ -1086,6 +1098,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.25 | 2026-06-03 | Codex | Documented provider-failure review retry and commit-message prose rejection |
 | 1.24 | 2026-06-02 | Codex | Documented OpenCode prompt-file delivery and waiting progress diagnostics |
 | 1.23 | 2026-06-02 | Codex | Documented compact phase-start progress, OpenCode debug logs, and dedicated external review prompt cap |
 | 1.22 | 2026-06-02 | Codex | Documented prompt-size bounds, progress prompt summaries, and provider-specific remediation failure wording |

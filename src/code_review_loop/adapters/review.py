@@ -13,7 +13,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
-from code_review_loop import harnesses, prompts_composer
+from code_review_loop import harnesses, prompts_composer, provider_failures
 from code_review_loop.adapters import phase_support
 from code_review_loop.adapters.git import run_git_preflight
 from code_review_loop.core.ports import (
@@ -133,17 +133,14 @@ def run_codex_review(
             raise RuntimeError(
                 f"{config.review_harness} review failed for {artifact_label}; see {artifact_path}"
             )
-        result = phase_support.run_with_waiting_progress(
+        result = run_review_with_retry(
             config,
             runner,
             command,
-            config.cwd,
             review_prompt,
-            phase_support.phase_timeout_seconds(config, config.review_timeout_seconds),
-            phase="review",
-            label=display_label,
+            display_label,
+            invocation.prompt_artifact,
             ctx=ctx,
-            prompt_artifact=invocation.prompt_artifact,
         )
     combined = phase_support._combined_output(result)
     artifact_path = config.artifact_dir / f"{artifact_label}.txt"
@@ -152,16 +149,21 @@ def run_codex_review(
         config, result, phase="review", iteration=display_label, ctx=ctx
     )
     if review_failed_to_run(result):
+        failure = provider_failures.classify_provider_failure(
+            config.review_harness, result
+        )
+        failure_detail = f": {failure.detail}" if failure else ""
         phase_support.progress_event(
             config,
             "review",
             display_label,
             "failed",
-            f"exit {result.returncode}",
+            f"exit {result.returncode}{failure_detail}",
             ctx=ctx,
         )
         raise RuntimeError(
-            f"{config.review_harness} review failed for {artifact_label}; see {artifact_path}"
+            f"{config.review_harness} review failed for {artifact_label}"
+            f"{failure_detail}; see {artifact_path}"
         )
     status = detect_review_status(combined, harness=config.review_harness)
     if config.debug_status_detection:
@@ -197,6 +199,55 @@ def run_codex_review(
     else:
         phase_support.progress_event(config, "review", display_label, status, ctx=ctx)
     return status, result
+
+
+def run_review_with_retry(
+    config: LoopConfig,
+    runner: Runner,
+    command: list[str],
+    review_prompt: str | None,
+    display_label: str,
+    prompt_artifact: Path | None,
+    *,
+    ctx: RunContext,
+) -> CommandResult:
+    attempts = 2 if config.review_harness not in {"codex", "fake"} else 1
+    last_result: CommandResult | None = None
+    for attempt in range(1, attempts + 1):
+        result = phase_support.run_with_waiting_progress(
+            config,
+            runner,
+            command,
+            config.cwd,
+            review_prompt,
+            phase_support.phase_timeout_seconds(config, config.review_timeout_seconds),
+            phase="review",
+            label=display_label,
+            ctx=ctx,
+            prompt_artifact=prompt_artifact,
+        )
+        last_result = result
+        failure = provider_failures.classify_provider_failure(
+            config.review_harness, result
+        )
+        if not review_failed_to_run(result) or failure is None or not failure.transient:
+            return result
+        phase_support.write_artifact(
+            config.artifact_dir / f"review-{display_label}-attempt-{attempt}.txt",
+            phase_support._combined_output(result),
+        )
+        if attempt < attempts:
+            phase_support.progress_event(
+                config,
+                "review",
+                display_label,
+                "retry",
+                failure.detail,
+                ctx=ctx,
+                metadata={"reason": failure.reason, "attempt": attempt},
+            )
+    assert last_result is not None
+    return last_result
 
 
 def compose_external_review_prompt(
@@ -363,6 +414,8 @@ def review_failed_to_run(result: CommandResult) -> bool:
     if result.returncode < 0:
         return True
     if result.returncode >= 2:
+        return True
+    if provider_failures.classify_provider_failure("", result) is not None:
         return True
 
     stderr = result.stderr.lower()

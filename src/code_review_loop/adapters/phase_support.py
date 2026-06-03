@@ -95,6 +95,15 @@ CONVENTIONAL_COMMIT_RE = re.compile(
     r"^(?:build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)"
     r"(?:\([A-Za-z0-9_.-]+\))?!?:\s+\S.+$"
 )
+COMMIT_SUBJECT_LABEL_RE = re.compile(
+    r"^(?:commit\s+)?(?:message|subject):\s*(?P<subject>.+)$",
+    re.IGNORECASE,
+)
+COMMIT_META_PROSE_RE = re.compile(
+    r"^(?:looking at|based on|here(?:'s| is)|i need to|i'll|i will|let me|"
+    r"the commit subject is|the subject is|the commit message is)\b",
+    re.IGNORECASE,
+)
 REVREM_COMMIT_SUFFIX = " (RevRem)"
 MAX_COMMIT_SUBJECT_LEN = 120
 
@@ -702,16 +711,12 @@ def sanitize_commit_message(
     fallback: str,
     enforce_revrem_conventional: bool = True,
 ) -> str:
-    for raw_line in output.splitlines():
-        line = raw_line.strip().strip("`\"'")
-        if not line:
-            continue
-        line = re.sub(r"^commit message:\s*", "", line, flags=re.IGNORECASE).strip()
-        line = line.strip("`\"'")
-        if line:
-            if enforce_revrem_conventional:
-                return normalize_revrem_conventional_subject(line)
-            return line[:120]
+    subject = extract_commit_message_subject(
+        output,
+        enforce_revrem_conventional=enforce_revrem_conventional,
+    )
+    if subject:
+        return subject
     return (
         normalize_revrem_conventional_subject(fallback)
         if enforce_revrem_conventional
@@ -719,16 +724,69 @@ def sanitize_commit_message(
     )
 
 
+def extract_commit_message_subject(
+    output: str,
+    *,
+    enforce_revrem_conventional: bool = True,
+) -> str | None:
+    lines = [_clean_commit_subject_line(line) for line in output.splitlines()]
+    lines = [line for line in lines if line]
+    for line in lines:
+        match = COMMIT_SUBJECT_LABEL_RE.match(line)
+        if match:
+            return _normalize_candidate_commit_subject(
+                match.group("subject"),
+                enforce_revrem_conventional=enforce_revrem_conventional,
+            )
+    for line in lines:
+        if CONVENTIONAL_COMMIT_RE.match(_strip_revrem_suffix(line)):
+            return _normalize_candidate_commit_subject(
+                line,
+                enforce_revrem_conventional=enforce_revrem_conventional,
+            )
+    if enforce_revrem_conventional:
+        return None
+    for line in lines:
+        if COMMIT_META_PROSE_RE.match(line):
+            continue
+        return _normalize_candidate_commit_subject(
+            line,
+            enforce_revrem_conventional=enforce_revrem_conventional,
+        )
+    return None
+
+
+def _clean_commit_subject_line(line: str) -> str:
+    cleaned = line.strip().strip("`\"'")
+    cleaned = re.sub(r"^[-*]\s+", "", cleaned)
+    return cleaned.strip().strip("`\"'")
+
+
+def _normalize_candidate_commit_subject(
+    subject: str,
+    *,
+    enforce_revrem_conventional: bool,
+) -> str:
+    subject = subject.strip().strip("`\"'")
+    if enforce_revrem_conventional:
+        return normalize_revrem_conventional_subject(subject)
+    return subject[:120]
+
+
 def normalize_revrem_conventional_subject(subject: str) -> str:
     subject = subject.strip().rstrip(".")
     subject = re.sub(r"\s+", " ", subject)
-    subject = re.sub(r"\s+\(RevRem\)$", "", subject)
+    subject = _strip_revrem_suffix(subject)
     if not CONVENTIONAL_COMMIT_RE.match(subject):
         subject = f"chore: {subject}"
     max_base_len = MAX_COMMIT_SUBJECT_LEN - len(REVREM_COMMIT_SUFFIX)
     if len(subject) > max_base_len:
         subject = subject[:max_base_len].rstrip()
     return f"{subject}{REVREM_COMMIT_SUFFIX}"
+
+
+def _strip_revrem_suffix(subject: str) -> str:
+    return re.sub(r"\s+\(RevRem\)$", "", subject)
 
 
 def lexical_git_repo_root(start: Path) -> Path | None:

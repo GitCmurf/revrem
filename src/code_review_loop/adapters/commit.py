@@ -226,6 +226,10 @@ def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iterat
         return fallback
     command = phase_support.build_commit_message_command(config)
     prompt_root = config.commit_message_prompt or phase_support.DEFAULT_COMMIT_MESSAGE_PROMPT
+    prompt_root = (
+        f"{prompt_root.rstrip()}\n"
+        "Do not edit or write files; print only the subject.\n"
+    )
     prompt = f"{prompt_root}\n{prompts_composer.trim_for_prompt(context, config.max_remediation_input_chars)}"
     prompt_artifact_path = config.artifact_dir / f"commit-{iteration}-message-prompt.txt"
     phase_support.write_artifact(prompt_artifact_path, prompt)
@@ -309,10 +313,53 @@ def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iterat
             ctx=ctx,
         )
         return fallback
-    return phase_support.sanitize_commit_message(
-        actionable_review_output(phase_support._combined_output(result)),
-        fallback=fallback,
+    subject = model_commit_message_subject(
+        config,
+        iteration,
+        phase_support._combined_output(result),
         enforce_revrem_conventional=not config.commit_message_prompt_overridden,
+    )
+    if subject is not None:
+        return subject
+    artifacts.write_json_artifact(
+        config.artifact_dir,
+        f"commit-{iteration}-message-fallback.json",
+        {
+            "iteration": iteration,
+            "reason": "model_drafting_invalid",
+            "subject": fallback,
+            "draft_artifact": f"commit-{iteration}-message-draft.txt",
+        },
+    )
+    phase_support.progress_event(
+        config,
+        "commit-message",
+        str(iteration),
+        "fallback",
+        f"model drafting invalid; using deterministic subject: {fallback}",
+        ctx=ctx,
+    )
+    return fallback
+
+
+def model_commit_message_subject(
+    config: LoopConfig,
+    iteration: int,
+    draft_output: str,
+    *,
+    enforce_revrem_conventional: bool,
+) -> str | None:
+    subject_artifact = config.artifact_dir / f"commit-{iteration}-message-subject.txt"
+    if subject_artifact.is_file():
+        subject = phase_support.extract_commit_message_subject(
+            subject_artifact.read_text(encoding="utf-8", errors="replace"),
+            enforce_revrem_conventional=enforce_revrem_conventional,
+        )
+        if subject:
+            return subject
+    return phase_support.extract_commit_message_subject(
+        actionable_review_output(draft_output),
+        enforce_revrem_conventional=enforce_revrem_conventional,
     )
 
 

@@ -15,6 +15,7 @@ from code_review_loop import (
     harnesses,
     policy,
     prompts_composer,
+    provider_failures,
 )
 from code_review_loop.adapters import phase_support
 from code_review_loop.core.ports import (
@@ -167,8 +168,10 @@ def run_remediation(
         config, result, phase="remediate", iteration=iteration, ctx=ctx
     )
     if result.returncode != 0:
-        failure_reason = _provider_failure_reason(remediation_harness, result)
-        failure_detail = f": {failure_reason}" if failure_reason else ""
+        failure = provider_failures.classify_provider_failure(
+            remediation_harness, result
+        )
+        failure_detail = f": {failure.detail}" if failure else ""
         phase_support.progress_event(
             config,
             "remediate",
@@ -184,18 +187,6 @@ def run_remediation(
         )
     phase_support.progress_event(config, "remediate", str(iteration), "done", ctx=ctx)
     return result
-
-
-def _provider_failure_reason(harness: str, result: CommandResult) -> str | None:
-    output = phase_support._combined_output(result).lower()
-    if harness == "gemini" and (
-        "quota_exhausted" in output
-        or "terminalquotaerror" in output
-        or "exhausted your capacity" in output
-        or ("code: 429" in output and "quota" in output)
-    ):
-        return "provider quota exhausted"
-    return None
 
 
 class RemediationAdapter:

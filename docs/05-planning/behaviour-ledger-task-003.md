@@ -3,8 +3,8 @@ document_id: REVREM-LEDGER-003
 type: LEDGER
 title: Behaviour ledger for the cli.py re-engineering (REVREM-TASK-003)
 status: Approved
-version: '0.9'
-last_updated: '2026-06-02'
+version: '1.0'
+last_updated: '2026-06-03'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -55,6 +55,25 @@ There is no silent third option.
 ```
 
 ## Entries
+
+### 2026-06-03 — Provider retry and commit-message subject fallback
+
+- **Contract:** machine
+- **What changed:** external review harnesses now classify common provider
+  subprocess failures. Transient review failures emit a `review retry` progress
+  event with `reason` and `attempt` metadata, write `review-N-attempt-1.txt`,
+  and retry once before final failure. Non-transient provider failures surface
+  provider-specific detail in the phase error without retrying. The
+  commit-message phase now records `commit-N-message-fallback.json` with
+  `reason: "model_drafting_invalid"` when a model returns explanatory prose
+  instead of a subject, and it may consume `commit-N-message-subject.txt` as a
+  subject sidecar when a harness extracts one.
+- **Why:** OpenCode dogfood exposed provider server errors that should get one
+  bounded retry, CLI-contract failures that should fail fast, and model
+  commit-message prose that produced unusable committed subjects.
+- **schema_version impact:** none; additive artifact/event details in the
+  existing v1 envelopes.
+- **CHANGELOG:** Unreleased / Added.
 
 ### 2026-06-02 — Kilo and Gemini prompt delivery switched from argv to stdin
 

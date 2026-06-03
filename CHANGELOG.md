@@ -35,6 +35,12 @@ This project follows Semantic Versioning once public releases begin.
   receive the prompt on stdin; kilo's CLI contract for non-interactive stdin
   ingestion is the only externally validated check until kilo ships a
   `--help` flag that confirms it.
+- External review harness subprocesses now classify common provider failures
+  in operator errors and retry one transient provider-side review failure
+  before failing the phase. Commit-message drafting now rejects explanatory
+  model prose as an invalid subject, prefers a saved `commit-N-message-subject`
+  sidecar when available, and falls back to the deterministic subject builder
+  when the model output is not a usable subject.
 - Public GitHub launch materials: README, contribution guidance, security
   policy, support policy, issue templates, pull request template, CODEOWNERS,
   NOTICE, CI hardening, Scorecard workflow, and release provenance/SBOM

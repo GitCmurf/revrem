@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 from importlib import import_module
@@ -634,6 +635,66 @@ def test_opencode_review_failure_names_opencode_harness(tmp_path):
         runner_mod.run_loop(config, runner)
 
 
+def test_opencode_review_retries_once_on_transient_provider_failure(tmp_path):
+    calls: list[list[str]] = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append(list(args))
+        if len(calls) == 1:
+            return CommandResult(
+                list(args),
+                1,
+                stderr=(
+                    "Error: {"
+                    '"name":"UnknownError",'
+                    '"data":{"message":"Unexpected server error","ref":"err_3151eb39"}'
+                    "}\n"
+                ),
+            )
+        return CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="opencode",
+        review_model="provider/model",
+    )
+
+    summary = runner_mod.run_loop(config, runner).to_dict()
+
+    assert summary["final_status"] == "clear"
+    assert len(calls) == 2
+    attempt_artifact = tmp_path / "artifacts" / "review-1-attempt-1.txt"
+    assert "err_3151eb39" in attempt_artifact.read_text(encoding="utf-8")
+
+
+def test_opencode_review_does_not_retry_provider_cli_contract_error(tmp_path):
+    calls: list[list[str]] = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append(list(args))
+        return CommandResult(
+            list(args),
+            1,
+            stderr="Error: File not found: Follow the attached RevRem prompt exactly.\n",
+        )
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="opencode",
+        review_model="provider/model",
+    )
+
+    with pytest.raises(RuntimeError, match="provider CLI contract error"):
+        runner_mod.run_loop(config, runner)
+    assert len(calls) == 1
+
+
 def test_gemini_review_runs_in_plan_mode_with_prompt_via_stdin(tmp_path):
     calls: list[tuple[list[str], str | None]] = []
 
@@ -977,7 +1038,7 @@ def test_remediation_command_does_not_disable_web_search(tmp_path):
     assert 'web_search="disabled"' not in command
 
 
-def test_sanitize_commit_message_uses_first_plain_subject():
+def test_sanitize_commit_message_extracts_subject_without_meta_prose():
     assert (
         sanitize_commit_message(
             'Commit message: "Harden RevRem commit flow"\n\nExplanation...',
@@ -993,6 +1054,29 @@ def test_sanitize_commit_message_uses_first_plain_subject():
     )
     assert (
         sanitize_commit_message("", fallback="fallback") == "chore: fallback (RevRem)"
+    )
+    assert (
+        sanitize_commit_message(
+            "Looking at the staged changes and review findings, I need to write a concise "
+            "Conventional Commit subject.\n"
+            "\n"
+            "The main changes include:\n"
+            "- improved OpenCode integration\n"
+            "\n"
+            "Commit subject: fix(review): harden provider diagnostics\n",
+            fallback="fallback",
+        )
+        == "fix(review): harden provider diagnostics (RevRem)"
+    )
+    assert (
+        sanitize_commit_message(
+            "Looking at the staged changes and review findings, I need to write a concise "
+            "Conventional Commit subject.\n"
+            "The main changes include:\n"
+            "- improved OpenCode integration\n",
+            fallback="fallback",
+        )
+        == "chore: fallback (RevRem)"
     )
     assert (
         sanitize_commit_message(
@@ -1073,6 +1157,101 @@ def test_commit_message_for_staged_changes_uses_specific_fallback_on_model_failu
         expected_terms=("foo",),
     )
     assert (tmp_path / "artifacts" / "commit-2-message-fallback.json").is_file()
+
+
+def test_commit_message_for_staged_changes_uses_subject_artifact_over_model_prose(
+    tmp_path,
+):
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        commit_message_model="gpt-test-commit",
+        timeout_seconds=30,
+    )
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[:4] == ["git", "diff", "--cached", "--stat"]:
+            return CommandResult(
+                list(args), 0, stdout=" src/code_review_loop/review.py | 2 +-\n"
+            )
+        if args[:4] == ["git", "diff", "--cached", "--name-only"]:
+            return CommandResult(
+                list(args), 0, stdout="src/code_review_loop/review.py\n"
+            )
+        if args[:2] == ["codex", "exec"]:
+            (config.artifact_dir / "commit-8-message-subject.txt").write_text(
+                "fix(review): harden provider diagnostics (RevRem)\n",
+                encoding="utf-8",
+            )
+            return CommandResult(
+                list(args),
+                0,
+                stdout=(
+                    "Looking at the staged changes, I need to write a concise subject.\n"
+                    "The main changes include:\n"
+                ),
+            )
+        raise AssertionError(f"unexpected command: {args!r}")
+
+    message = commit_message_for_staged_changes(
+        config, runner, 8, make_run_context(runner)
+    )
+
+    assert message == "fix(review): harden provider diagnostics (RevRem)"
+
+
+def test_commit_message_for_staged_changes_falls_back_on_invalid_model_prose(
+    tmp_path,
+):
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        commit_message_model="gpt-test-commit",
+        timeout_seconds=30,
+    )
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[:4] == ["git", "diff", "--cached", "--stat"]:
+            return CommandResult(
+                list(args), 0, stdout=" src/code_review_loop/review.py | 2 +-\n"
+            )
+        if args[:4] == ["git", "diff", "--cached", "--name-only"]:
+            return CommandResult(
+                list(args), 0, stdout="src/code_review_loop/review.py\n"
+            )
+        if args[:2] == ["codex", "exec"]:
+            return CommandResult(
+                list(args),
+                0,
+                stdout=(
+                    "Looking at the staged changes, I need to write a concise subject.\n"
+                    "The main changes include:\n"
+                    "- provider diagnostics\n"
+                ),
+            )
+        raise AssertionError(f"unexpected command: {args!r}")
+
+    message = commit_message_for_staged_changes(
+        config, runner, 9, make_run_context(runner)
+    )
+    fallback_path = tmp_path / "artifacts" / "commit-9-message-fallback.json"
+    fallback = json.loads(fallback_path.read_text(encoding="utf-8"))
+
+    assert_professional_fallback_subject(
+        message,
+        expected_type="chore",
+        expected_scope="review",
+        expected_terms=("review",),
+    )
+    assert fallback["reason"] == "model_drafting_invalid"
+    assert "Looking at" not in message
+    assert "The main changes include" not in message
 
 
 def test_commit_message_fallback_uses_review_context_for_feature_type(tmp_path):
