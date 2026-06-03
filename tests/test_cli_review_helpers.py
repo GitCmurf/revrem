@@ -1696,13 +1696,13 @@ def test_detect_review_status_requires_explicit_status_line():
 def test_review_failure_detection_allows_nonzero_findings_without_stderr():
     assert (
         review_failed_to_run(
-            CommandResult(["codex", "review"], -9, stdout="", stderr="")
+            CommandResult(["codex", "review"], -9, stdout="", stderr=""), "codex"
         )
         is True
     )
     assert (
         review_failed_to_run(
-            CommandResult(["codex", "review"], 1, stdout="Finding\n", stderr="")
+            CommandResult(["codex", "review"], 1, stdout="Finding\n", stderr=""), "codex"
         )
         is False
     )
@@ -1710,13 +1710,13 @@ def test_review_failure_detection_allows_nonzero_findings_without_stderr():
         review_failed_to_run(
             CommandResult(
                 ["codex", "review"], 1, stdout="", stderr="Error: thread/start failed"
-            )
+            ), "codex"
         )
         is True
     )
     assert (
         review_failed_to_run(
-            CommandResult(["codex", "review"], 2, stdout="", stderr="error: bad args")
+            CommandResult(["codex", "review"], 2, stdout="", stderr="error: bad args"), "codex"
         )
         is True
     )

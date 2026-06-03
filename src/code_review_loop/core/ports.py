@@ -46,6 +46,7 @@ from code_review_loop.budgets import BudgetState
 from code_review_loop.clock import Clock
 from code_review_loop.core.routing_types import ResolvedRoute
 from code_review_loop.events import EventSink
+from code_review_loop.git_context_cache import GitContextCache
 from code_review_loop.identity import RunIdentity
 
 ReviewStatus = Literal["clear", "findings", "unknown"]
@@ -233,6 +234,7 @@ class RunContext:
     event_sink: EventSink | None = None
     budget_state: BudgetState | None = None
     progress_reporter: ProgressReporter | None = None
+    git_context_cache: GitContextCache | None = None
 
 
 @dataclass(frozen=True)

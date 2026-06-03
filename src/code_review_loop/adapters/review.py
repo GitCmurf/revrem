@@ -16,7 +16,14 @@ from typing import TYPE_CHECKING, Literal, cast
 
 from code_review_loop import harnesses, prompts_composer, provider_failures
 from code_review_loop.adapters import phase_support
-from code_review_loop.adapters.git import run_git_preflight
+from code_review_loop.adapters.git import (
+    GitContextCache,
+    cached_base_commit,
+    cached_diff_base_head,
+    cached_head_rev,
+    cached_merge_base,
+    run_git_preflight,
+)
 from code_review_loop.core.ports import (
     CommandResult,
     ReviewOutcome,
@@ -77,7 +84,9 @@ def run_codex_review(
     review_prompt = None
     external_prompt: ExternalReviewPrompt | None = None
     if config.review_harness not in {"codex", "fake"}:
-        review_context = build_external_review_context(config)
+        review_context = build_external_review_context(
+            config, git_context_cache=ctx.git_context_cache
+        )
         external_prompt = compose_external_review_prompt(
             config, review_context
         )
@@ -144,7 +153,9 @@ def run_codex_review(
         result = CommandResult(command, 0, stdout="DRY_RUN\nREVIEW_STATUS: findings\n")
     else:
         artifact_path = config.artifact_dir / f"{artifact_label}.txt"
-        if preflight_error := review_base_preflight_error(config):
+        if preflight_error := review_base_preflight_error(
+            config, git_context_cache=ctx.git_context_cache
+        ):
             phase_support.write_artifact(artifact_path, preflight_error)
             phase_support.progress_event(
                 config, "review", display_label, "failed", "invalid base", ctx=ctx
@@ -167,7 +178,7 @@ def run_codex_review(
     phase_support.record_model_charge(
         config, result, phase="review", iteration=display_label, ctx=ctx
     )
-    if review_failed_to_run(result):
+    if review_failed_to_run(result, config.review_harness):
         failure = provider_failures.classify_provider_failure(
             config.review_harness, result
         )
@@ -249,7 +260,11 @@ def run_review_with_retry(
         failure = provider_failures.classify_provider_failure(
             config.review_harness, result
         )
-        if not review_failed_to_run(result) or failure is None or not failure.transient:
+        if (
+            not review_failed_to_run(result, config.review_harness)
+            or failure is None
+            or not failure.transient
+        ):
             return result
         phase_support.write_artifact(
             config.artifact_dir / f"review-{display_label}-attempt-{attempt}.txt",
@@ -318,7 +333,23 @@ def compose_external_review_prompt(
     )
 
 
-def build_external_review_context(config: LoopConfig) -> str:
+def build_external_review_context(
+    config: LoopConfig,
+    *,
+    git_context_cache: GitContextCache | None = None,
+) -> str:
+    """Compose the diff/head context block prepended to an external (non-Codex,
+    non-fake) review prompt.
+
+    When ``git_context_cache`` is supplied (typically via
+    ``RunContext.git_context_cache``), the three commands shared with
+    ``review_base_preflight_error`` and the three ``base...HEAD`` diffs are
+    memoised on the cache so that a second invocation with the same
+    ``(cwd, base, head)`` tuple skips those git calls. Working-tree commands
+    (``status --short``, ``diff --cached``, ``diff``) are not cached because
+    they depend on the in-flight working-tree state, which may have changed
+    between calls.
+    """
     sections = [
         "Review context supplied by RevRem.",
         f"Base branch: {config.base}",
@@ -328,11 +359,12 @@ def build_external_review_context(config: LoopConfig) -> str:
         sections.append("Git repository: unavailable")
         return "\n".join(sections) + "\n"
 
-    head = run_git_preflight(config.cwd, ["rev-parse", "HEAD"])
-    base = run_git_preflight(
-        config.cwd, ["rev-parse", "--verify", f"{config.base}^{{commit}}"]
+    base = cached_base_commit(git_context_cache, config.cwd, config.base)
+    head = cached_head_rev(git_context_cache, config.cwd, config.base)
+    head_sha = head.stdout.strip()
+    merge_base = cached_merge_base(
+        git_context_cache, config.cwd, head_sha, config.base
     )
-    merge_base = run_git_preflight(config.cwd, ["merge-base", "HEAD", config.base])
     sections.extend(
         [
             _format_git_context_result("HEAD", head),
@@ -340,6 +372,26 @@ def build_external_review_context(config: LoopConfig) -> str:
             _format_git_context_result("Merge base", merge_base),
         ]
     )
+    if head_sha:
+        diff_stat = cached_diff_base_head(
+            git_context_cache, config.cwd, head_sha, config.base, stat=True
+        )
+        diff_name_status = cached_diff_base_head(
+            git_context_cache, config.cwd, head_sha, config.base, name_status=True
+        )
+        diff_full = cached_diff_base_head(
+            git_context_cache, config.cwd, head_sha, config.base
+        )
+    else:
+        diff_stat = run_git_preflight(
+            config.cwd, ["diff", "--stat", f"{config.base}...HEAD"]
+        )
+        diff_name_status = run_git_preflight(
+            config.cwd, ["diff", "--name-status", f"{config.base}...HEAD"]
+        )
+        diff_full = run_git_preflight(
+            config.cwd, ["diff", f"{config.base}...HEAD"]
+        )
     sections.extend(
         [
             _format_git_context_result(
@@ -348,19 +400,15 @@ def build_external_review_context(config: LoopConfig) -> str:
             ),
             _format_git_context_result(
                 f"git diff --stat {config.base}...HEAD",
-                run_git_preflight(
-                    config.cwd, ["diff", "--stat", f"{config.base}...HEAD"]
-                ),
+                diff_stat,
             ),
             _format_git_context_result(
                 f"git diff --name-status {config.base}...HEAD",
-                run_git_preflight(
-                    config.cwd, ["diff", "--name-status", f"{config.base}...HEAD"]
-                ),
+                diff_name_status,
             ),
             _format_git_context_result(
                 f"git diff {config.base}...HEAD",
-                run_git_preflight(config.cwd, ["diff", f"{config.base}...HEAD"]),
+                diff_full,
             ),
             _format_git_context_result(
                 "git diff --cached",
@@ -389,7 +437,11 @@ def _format_git_context_result(
     return f"## {label}\nExit status: {result.returncode}\n{output}"
 
 
-def review_base_preflight_error(config: LoopConfig) -> str | None:
+def review_base_preflight_error(
+    config: LoopConfig,
+    *,
+    git_context_cache: GitContextCache | None = None,
+) -> str | None:
     if config.dry_run or phase_support.lexical_git_repo_root(config.cwd) is None:
         return None
 
@@ -398,9 +450,7 @@ def review_base_preflight_error(config: LoopConfig) -> str | None:
         return None
 
     base = config.base
-    base_result = run_git_preflight(
-        config.cwd, ["rev-parse", "--verify", f"{base}^{{commit}}"]
-    )
+    base_result = cached_base_commit(git_context_cache, config.cwd, base)
     if base_result.returncode != 0:
         return (
             f"Review base preflight failed: base {base!r} is not a local commit.\n"
@@ -408,11 +458,11 @@ def review_base_preflight_error(config: LoopConfig) -> str | None:
             f"{phase_support._combined_output(base_result)}"
         )
 
-    merge_base = run_git_preflight(config.cwd, ["merge-base", "HEAD", base])
+    head = cached_head_rev(git_context_cache, config.cwd, base).stdout.strip() or "HEAD"
+    merge_base = cached_merge_base(git_context_cache, config.cwd, head, base)
     if merge_base.returncode == 0:
         return None
 
-    head = run_git_preflight(config.cwd, ["rev-parse", "HEAD"]).stdout.strip() or "HEAD"
     base_sha = base_result.stdout.strip() or base
     hint = review_base_hint(config, base)
     return (
@@ -445,7 +495,7 @@ def review_base_hint(config: LoopConfig, base: str) -> str:
     return "Use a base branch that shares history with HEAD, or realign the local branch.\n"
 
 
-def review_failed_to_run(result: CommandResult) -> bool:
+def review_failed_to_run(result: CommandResult, harness: str) -> bool:
     """Distinguish review invocation failures from review findings."""
     if result.returncode == 0:
         return False
@@ -453,7 +503,7 @@ def review_failed_to_run(result: CommandResult) -> bool:
         return True
     if result.returncode >= 2:
         return True
-    if provider_failures.classify_provider_failure("", result) is not None:
+    if provider_failures.classify_provider_failure(harness, result) is not None:
         return True
 
     stderr = result.stderr.lower()

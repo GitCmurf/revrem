@@ -188,6 +188,14 @@ def _latest_prompt_evidence(artifact_dir: Path) -> dict[str, object]:
         "latest_prompt_artifact": prompt_path.name,
         "latest_prompt_bytes": prompt_path.stat().st_size,
     }
+    # The artifact filename convention is ``<phase>-<iteration>-prompt.txt``
+    # (e.g. ``review-1-prompt.txt`` or ``commit-1-message-prompt.txt``). The
+    # stem split below assumes that two-segment shape; if prompt artifacts are
+    # renamed to embed extra hyphens (e.g. ``commit-1-message-prompt.txt``)
+    # this function will still report ``phase=commit``, ``iteration=1`` and
+    # drop the trailing segment. Update the producer side in
+    # ``adapters/review.py``, ``adapters/commit.py`` etc. before changing
+    # this convention.
     parts = prompt_path.stem.split("-")
     if len(parts) >= 2:
         evidence["latest_prompt_phase"] = parts[0]

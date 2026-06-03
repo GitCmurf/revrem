@@ -32,6 +32,7 @@ from code_review_loop.core.ports import (
 )
 from code_review_loop.core.review_interpretation import actionable_review_output
 from code_review_loop.core.state import RunState
+from code_review_loop.git_context_cache import GitContextCache
 from code_review_loop.identity import RunIdentity
 from code_review_loop.reporting import summary_budget_payload
 from code_review_loop.resume import resume_config_payload
@@ -113,6 +114,7 @@ def create_run_context(
         phase_remediation=harnesses.remediation,
         phase_review=harnesses.review,
         phase_triage=harnesses.triage,
+        git_context_cache=GitContextCache(),
     )
 
 
