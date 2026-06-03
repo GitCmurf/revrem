@@ -172,6 +172,14 @@ def test_live_kilo_stdin_contract_is_accepted() -> None:
     check that only depends on the kilo binary being installed and that the
     `run` subcommand does not reject stdin as a prompt source up-front.
 
+    The test first invokes `kilo run --help` to confirm the binary answers,
+    then probes stdin with a unique echo token. The probe token must appear
+    in the combined stdout/stderr, proving that kilo actually ingested the
+    stdin input (not merely that it did not print the literal word "stdin").
+    The residual risk is that kilo's help text does not explicitly confirm
+    stdin ingestion, so a kilo regression that drops stdin handling would
+    still pass the help check but fail the probe-token assertion.
+
     Skipped by default; opt in with `REVREM_LIVE_KILO=1` and point
     `REVREM_LIVE_KILO_BIN` at the binary if it is not on `PATH`.
     """
@@ -208,8 +216,7 @@ def test_live_kilo_stdin_contract_is_accepted() -> None:
         timeout_seconds=LIVE_TIMEOUT_SECONDS,
     )
     combined = (stdin_result.stdout or "") + (stdin_result.stderr or "")
-    normalized = combined.lower()
-    assert "stdin" not in normalized or "kilo-stdin-accepted" in combined, combined
+    assert "kilo-stdin-accepted" in combined, combined
     _skip_if_provider_setup_missing(
         LiveProvider(
             name="kilo",

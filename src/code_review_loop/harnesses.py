@@ -159,6 +159,11 @@ class OpenCodeHarnessAdapter(HarnessAdapter):
     def command(self, request: PhaseCommandRequest) -> list[str]:
         command = [request.executable, "run"]
         if os.environ.get("REVREM_OPENCODE_DEBUG") == "1":
+            # Best-effort operator aid: the resulting --print-logs / --log-level
+            # flags are confirmed-valid against `opencode run --help` but are
+            # not unit-tested against a real opencode binary, so a future
+            # opencode release that renames or removes them would surface here
+            # as a runtime failure only.
             command.extend(["--print-logs", "--log-level", "INFO"])
         command.extend(_opencode_permission_args(request))
         if request.model:
@@ -440,10 +445,6 @@ def prepare_prompt_invocation(
         if prompt_artifact_path is None:
             raise ValueError("opencode prompt delivery requires a prompt artifact path")
         adapted = list(command)
-        if len(adapted) >= 2 and adapted[1] == "run":
-            adapted.insert(2, "Follow the attached RevRem prompt exactly.")
-        else:
-            adapted.append("Follow the attached RevRem prompt exactly.")
         adapted.extend(["--file", str(prompt_artifact_path)])
         return PromptInvocation(
             adapted,

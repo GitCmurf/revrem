@@ -74,10 +74,12 @@ There is no silent third option.
   path for kilo and gemini was duplicating the Codex-style behaviour that we
   no longer want for any external harness, and it left kilo in particular
   with a contract that no hermetic test could verify.
-- **schema_version impact:** none; the `prompt_delivery` field on
-  `phase_start` events is unchanged for kilo and gemini (it was already
-  `"stdin"` semantically; the argv variant was an internal branch in
-  `prepare_prompt_invocation`).
+- **schema_version impact:** none; `prompt_delivery` is a new field on
+  `phase_start` events introduced alongside the other prompt diagnostics
+  in this release, and kilo/gemini now populate it with `"stdin"` on first
+  introduction (the argv positional prompt for these harnesses was an
+  internal branch in `prepare_prompt_invocation` that is being removed at
+  the same time, so no prior schema value is preserved).
 - **CHANGELOG:** Unreleased / Added (kilo and gemini stdin delivery line).
 - **Residual operator-side risk:** the kilo CLI's acceptance of prompts on
   stdin in non-interactive mode is only confirmed by the live smoke at

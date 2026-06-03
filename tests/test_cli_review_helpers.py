@@ -601,10 +601,9 @@ def test_opencode_review_prompt_is_attached_as_file(tmp_path):
 
     runner_mod.run_loop(config, runner)
 
-    assert calls[0][0][:5] == [
+    assert calls[0][0][:4] == [
         "opencode",
         "run",
-        "Follow the attached RevRem prompt exactly.",
         "--model",
         "provider/model",
     ]
@@ -615,7 +614,7 @@ def test_opencode_review_prompt_is_attached_as_file(tmp_path):
     assert prompt_path.name == "review-1-prompt.txt"
     prompt = prompt_path.read_text(encoding="utf-8")
     assert "Review the current repository changes" in prompt
-    assert calls[0][0][2] == "Follow the attached RevRem prompt exactly."
+    assert "Follow the attached RevRem prompt exactly." not in calls[0][0]
 
 
 def test_opencode_review_failure_names_opencode_harness(tmp_path):

@@ -176,6 +176,21 @@ This project follows Semantic Versioning once public releases begin.
 - CI now builds the `revrem` wheel, validates package metadata, and smoke-tests
   the installed wheel on Linux and macOS.
 - Local development gate expanded to include `git diff --check`.
+- OpenCode prompt-bearing phases now attach the saved prompt artifact with
+  `opencode run --file` only, with no literal positional message. The
+  previously-shipped `"Follow the attached RevRem prompt exactly."` positional
+  hint has been removed; the prompt contract is exactly what the `Added`
+  bullet below describes.
+- The CM2 commit-skip path now maps a `skipped_no_changes` outcome to
+  `final_status: "clear"` whenever the most recent review was `clear` **or**
+  `unknown`, and to `final_status: "findings"` only when the most recent
+  review explicitly found findings. Previously, an `unknown` review with
+  no staged remediation left the run in `final_status: "unknown"`; the
+  effective behaviour now treats a no-changes remediation as deterministic
+  clear evidence regardless of the preceding review's parse outcome.
+  `stopped_reason` remains `no_changes_after_remediation`. Operators who
+  scripted around the old `unknown` final status should adjust to the new
+  mapping.
 
 ### Security
 

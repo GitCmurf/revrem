@@ -82,13 +82,19 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         "--commit-harness",
         dest="commit_message_harness",
         default=None,
-        help="Optional harness override for read-only commit-message drafting.",
+        help=(
+            "Optional harness override for read-only commit-message drafting. "
+            "Alias: --commit-harness."
+        ),
     )
     parser.add_argument(
         "--remediation-harness",
         "--remediate-harness",
         default=None,
-        help="Optional harness override for remediation only.",
+        help=(
+            "Optional harness override for remediation only. "
+            "Alias: --remediate-harness."
+        ),
     )
     parser.add_argument(
         "--remediation-model",
@@ -121,7 +127,10 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         "--remediate-reasoning-effort",
         choices=REASONING_EFFORT_CHOICES,
         default=None,
-        help="Optional Codex model_reasoning_effort override for remediation only.",
+        help=(
+            "Optional Codex model_reasoning_effort override for remediation only. "
+            "Alias: --remediate-reasoning-effort."
+        ),
     )
     parser.add_argument(
         "--commit-reasoning-effort",
@@ -206,7 +215,10 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         "--route",
         dest="routing_default_route",
         default=None,
-        help="Force v2 routing to use an existing route name from the selected profile.",
+        help=(
+            "Force v2 routing to use an existing route name from the selected profile. "
+            "Alias: --route."
+        ),
     )
     parser.add_argument(
         "--exec-sandbox",
