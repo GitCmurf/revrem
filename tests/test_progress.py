@@ -105,7 +105,7 @@ def test_rich_event_styles_structured_start_detail(monkeypatch):
         "start",
         (
             "opencode run · opencode/minimax-m3-free · low effort · "
-            "timeout=0 · sandbox read-only · prompt=126.7k stdin · source=mixed"
+            "timeout=0 · sandbox read-only · prompt=126.7k file · source=profile+cli"
         ),
     )
 
@@ -115,7 +115,7 @@ def test_rich_event_styles_structured_start_detail(monkeypatch):
     assert ("start", "green") in rendered.parts
     assert ("opencode run", "bold") in rendered.parts
     assert ("opencode/minimax-m3-free", "magenta") in rendered.parts
-    assert ("prompt=126.7k stdin", "blue") in rendered.parts
+    assert ("prompt=126.7k file", "blue") in rendered.parts
 
 
 def test_rich_message_and_continuation_escape_markup_like_text(monkeypatch):

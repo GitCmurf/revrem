@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from code_review_loop import harnesses
@@ -116,14 +118,26 @@ def test_prompt_invocation_uses_stdin_for_claude():
     assert stdin == "review prompt"
 
 
-def test_prompt_invocation_passes_prompt_via_stdin_for_all_harnesses():
+def test_prompt_invocation_uses_file_for_opencode(tmp_path):
+    prompt_path = tmp_path / "prompt.txt"
     command, stdin = harnesses.prepare_prompt_invocation(
         "opencode",
         ["opencode", "run"],
         "review prompt",
+        prompt_artifact_path=prompt_path,
     )
-    assert command == ["opencode", "run"]
-    assert stdin == "review prompt"
+    assert command == [
+        "opencode",
+        "run",
+        "--file",
+        str(prompt_path),
+        "Follow the attached RevRem prompt exactly.",
+    ]
+    assert stdin is None
+    assert "review prompt" not in command
+
+
+def test_prompt_invocation_passes_prompt_via_stdin_for_stdin_harnesses():
 
     command, stdin = harnesses.prepare_prompt_invocation(
         "kilo",
@@ -172,8 +186,11 @@ def test_prompt_invocation_passes_prompt_via_stdin_for_all_harnesses():
                 "--dangerously-skip-permissions",
                 "--model",
                 "M",
+                "--file",
+                "prompt.txt",
+                "Follow the attached RevRem prompt exactly.",
             ],
-            True,
+            False,
         ),
         (
             "kilo",
@@ -198,8 +215,12 @@ def test_full_noninteractive_invocation_matches_real_cli_contract(
         full_auto=True,
     )
     base_command = harnesses.build_phase_command(request)
+    prompt_path = None if harness != "opencode" else Path("prompt.txt")
     command, stdin = harnesses.prepare_prompt_invocation(
-        harness, base_command, "PROMPT"
+        harness,
+        base_command,
+        "PROMPT",
+        prompt_artifact_path=prompt_path,
     )
     if expects_stdin:
         assert stdin == "PROMPT"

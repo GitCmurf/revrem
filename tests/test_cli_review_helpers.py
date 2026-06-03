@@ -581,7 +581,7 @@ def test_non_codex_review_receives_explicit_review_prompt(tmp_path):
     assert "REVIEW_STATUS: clear" in calls[0][1]
 
 
-def test_opencode_review_prompt_is_passed_via_stdin(tmp_path):
+def test_opencode_review_prompt_is_attached_as_file(tmp_path):
     calls: list[tuple[list[str], str | None]] = []
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
@@ -606,8 +606,13 @@ def test_opencode_review_prompt_is_passed_via_stdin(tmp_path):
         "provider/model",
     ]
     assert "--dangerously-skip-permissions" not in calls[0][0]
-    assert calls[0][1] is not None
-    assert "Review the current repository changes" in calls[0][1]
+    assert calls[0][1] is None
+    assert "--file" in calls[0][0]
+    prompt_path = Path(calls[0][0][calls[0][0].index("--file") + 1])
+    assert prompt_path.name == "review-1-prompt.txt"
+    prompt = prompt_path.read_text(encoding="utf-8")
+    assert "Review the current repository changes" in prompt
+    assert calls[0][0][-1] == "Follow the attached RevRem prompt exactly."
 
 
 def test_gemini_review_runs_in_plan_mode_with_prompt_via_stdin(tmp_path):
@@ -788,8 +793,9 @@ def test_external_review_prompt_ignores_remediation_input_cap(tmp_path):
 
     runner_mod.run_loop(config, runner)
 
-    prompt = calls[0][1]
-    assert prompt is not None
+    assert calls[0][1] is None
+    prompt_path = Path(calls[0][0][calls[0][0].index("--file") + 1])
+    prompt = prompt_path.read_text(encoding="utf-8")
     assert len(prompt) > 200
     assert len(prompt) <= 1200
 

@@ -127,6 +127,7 @@ def _skip_if_provider_setup_missing(provider: LiveProvider, output: str) -> None
 def test_live_secondary_provider_direct_smoke(
     provider: LiveProvider,
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     _configure_live_provider_environment(provider, monkeypatch)
     runtime = _resolve_live_provider(provider)
@@ -144,7 +145,16 @@ def test_live_secondary_provider_direct_smoke(
             full_auto=False,
         )
     )
-    command, stdin = harnesses.prepare_prompt_invocation(provider.name, command, prompt)
+    prompt_path = None
+    if provider.name == "opencode":
+        prompt_path = tmp_path / "opencode-live-prompt.txt"
+        prompt_path.write_text(prompt, encoding="utf-8")
+    command, stdin = harnesses.prepare_prompt_invocation(
+        provider.name,
+        command,
+        prompt,
+        prompt_artifact_path=prompt_path,
+    )
 
     result = default_runner(command, Path.cwd(), stdin, LIVE_TIMEOUT_SECONDS)
     output = phase_support._combined_output(result)

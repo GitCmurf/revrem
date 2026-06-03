@@ -6,7 +6,9 @@
     "commits": [],
     "diagnostics": [],
     "last_messages": [],
-    "prompts": [],
+    "prompts": [
+      "<RUN_DIR>/artifacts/remediation-1-prompt.txt"
+    ],
     "remediations": [
       "<RUN_DIR>/artifacts/remediation-1.txt"
     ],

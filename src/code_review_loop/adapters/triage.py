@@ -56,12 +56,17 @@ def run_triage(
     command = build_triage_command(config)
     prompt_root = config.triage_prompt or triage.load_prompt(contract=config.triage_contract)
     prompt = f"{prompt_root}\n{prompts_composer.trim_for_prompt(review_output, config.max_remediation_input_chars)}"
-    command, prompt_input = harnesses.prepare_prompt_invocation(
+    prompt_artifact_path = config.artifact_dir / f"triage-{iteration}-prompt.txt"
+    phase_support.write_artifact(prompt_artifact_path, prompt)
+    invocation = harnesses.prepare_prompt_invocation(
         config.triage_harness,
         command,
         prompt,
+        prompt_artifact_path=prompt_artifact_path,
     )
-    prompt_metadata = phase_support.prompt_progress_metadata(prompt_input)
+    command = invocation.command
+    prompt_input = invocation.stdin
+    prompt_metadata = phase_support.prompt_invocation_metadata(invocation)
     phase_support.ensure_model_budget(config, phase="triage", iteration=iteration, ctx=ctx)
     phase_support.progress_event(
         config,
@@ -90,7 +95,18 @@ def run_triage(
     if config.dry_run:
         result = CommandResult(command, 0, stdout="DRY_RUN triage skipped\n")
     else:
-        result = runner(command, config.cwd, prompt_input, phase_support.phase_timeout_seconds(config, config.triage_timeout_seconds))
+        result = phase_support.run_with_waiting_progress(
+            config,
+            runner,
+            command,
+            config.cwd,
+            prompt_input,
+            phase_support.phase_timeout_seconds(config, config.triage_timeout_seconds),
+            phase="triage",
+            label=str(iteration),
+            ctx=ctx,
+            prompt_artifact=invocation.prompt_artifact,
+        )
     triage_artifact = config.artifact_dir / f"triage-{iteration}.txt"
     phase_support.write_artifact(triage_artifact, phase_support._combined_output(result))
     phase_support.record_model_charge(config, result, phase="triage", iteration=iteration, ctx=ctx)

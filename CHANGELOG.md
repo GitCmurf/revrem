@@ -25,6 +25,9 @@ This project follows Semantic Versioning once public releases begin.
   how the policy engine resolved a specific routing decision.
 - Triage v2 schema, routing-v1 schema, and routing-outcome-v1 schema added
   to the public API definition.
+- OpenCode prompt-bearing phases now attach the saved prompt artifact with
+  `opencode run --file` instead of using stdin, and model subprocesses emit
+  five-minute `waiting` progress diagnostics while they remain active.
 - Public GitHub launch materials: README, contribution guidance, security
   policy, support policy, issue templates, pull request template, CODEOWNERS,
   NOTICE, CI hardening, Scorecard workflow, and release provenance/SBOM

@@ -116,6 +116,20 @@
   },
   {
     "iteration": null,
+    "kind": "artifact_write",
+    "payload": {
+      "bytes": 679,
+      "kind": "prompts",
+      "path": "<RUN_DIR>/artifacts/remediation-1-prompt.txt"
+    },
+    "phase": "artifacts",
+    "run_id": "deadbeefcafe0000deadbeefcafe0000",
+    "schema_version": "1.0",
+    "seq": 8,
+    "ts": "2026-01-02T03:04:05Z"
+  },
+  {
+    "iteration": null,
     "kind": "summary",
     "payload": {
       "summary": "max_iterations_reached"
@@ -123,7 +137,7 @@
     "phase": null,
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
     "schema_version": "1.0",
-    "seq": 8,
+    "seq": 9,
     "ts": "2026-01-02T03:04:05Z"
   }
 ]

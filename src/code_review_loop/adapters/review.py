@@ -79,12 +79,22 @@ def run_codex_review(
             config.artifact_dir / f"{artifact_label}-prompt.txt",
             review_prompt,
         )
-        command, review_prompt = harnesses.prepare_prompt_invocation(
+        prompt_artifact_path = config.artifact_dir / f"{artifact_label}-prompt.txt"
+        invocation = harnesses.prepare_prompt_invocation(
             config.review_harness,
             command,
             review_prompt,
+            prompt_artifact_path=prompt_artifact_path,
         )
-    prompt_metadata = phase_support.prompt_progress_metadata(review_prompt)
+        command = invocation.command
+        review_prompt = invocation.stdin
+    else:
+        invocation = harnesses.prepare_prompt_invocation(
+            config.review_harness,
+            command,
+            None,
+        )
+    prompt_metadata = phase_support.prompt_invocation_metadata(invocation)
     phase_support.set_phase_terminal_title(config, "review", display_label)
     phase_support.ensure_model_budget(
         config, phase="review", iteration=display_label, ctx=ctx
@@ -124,11 +134,17 @@ def run_codex_review(
             raise RuntimeError(
                 f"codex review failed for {artifact_label}; see {artifact_path}"
             )
-        result = runner(
+        result = phase_support.run_with_waiting_progress(
+            config,
+            runner,
             command,
             config.cwd,
             review_prompt,
             phase_support.phase_timeout_seconds(config, config.review_timeout_seconds),
+            phase="review",
+            label=display_label,
+            ctx=ctx,
+            prompt_artifact=invocation.prompt_artifact,
         )
     combined = phase_support._combined_output(result)
     artifact_path = config.artifact_dir / f"{artifact_label}.txt"

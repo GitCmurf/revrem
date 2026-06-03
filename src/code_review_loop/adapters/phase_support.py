@@ -11,12 +11,13 @@ import os
 import re
 import sys
 import textwrap
+from collections.abc import Callable, Sequence
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from code_review_loop import artifacts, budgets, harnesses, progress
+from code_review_loop import artifacts, budgets, harnesses, progress, waiting_progress
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.ports import CommandResult, RunContext
 from code_review_loop.core.review_interpretation import (
@@ -479,7 +480,7 @@ def resolved_phase_detail(
             prompt_field = f"{prompt_field} {prompt_delivery}"
         fields.append(prompt_field)
     if source:
-        fields.append(f"source={source}")
+        fields.append(f"source={source_for_progress(source)}")
     return " · ".join(fields)
 
 
@@ -515,6 +516,66 @@ def prompt_progress_metadata(prompt_input: str | None) -> dict[str, Any]:
         "prompt_chars": len(prompt_input),
         "prompt_bytes": len(encoded),
     }
+
+
+def prompt_invocation_metadata(invocation: harnesses.PromptInvocation) -> dict[str, Any]:
+    metadata: dict[str, Any] = {"prompt_delivery": invocation.delivery}
+    if invocation.prompt_chars is not None:
+        metadata["prompt_chars"] = invocation.prompt_chars
+    if invocation.prompt_bytes is not None:
+        metadata["prompt_bytes"] = invocation.prompt_bytes
+    if invocation.prompt_artifact is not None:
+        metadata["prompt_artifact"] = str(invocation.prompt_artifact)
+    return metadata
+
+
+def source_for_progress(source: str) -> str:
+    if source == "mixed":
+        return "profile+cli"
+    return source
+
+
+def run_with_waiting_progress(
+    config: LoopConfig,
+    runner: Callable[[Sequence[str], Path, str | None, float | None], CommandResult],
+    command: Sequence[str],
+    cwd: Path,
+    input_text: str | None,
+    timeout_seconds: float | None,
+    *,
+    phase: str,
+    label: str,
+    ctx: RunContext,
+    prompt_artifact: Path | None = None,
+) -> CommandResult:
+    prompt_detail = (
+        f" · prompt={prompt_artifact.name}" if prompt_artifact is not None else ""
+    )
+
+    def report(elapsed_seconds: float) -> None:
+        metadata: dict[str, Any] = {"elapsed_seconds": round(elapsed_seconds, 3)}
+        if prompt_artifact is not None:
+            metadata["prompt_artifact"] = str(prompt_artifact)
+        progress_event(
+            config,
+            phase,
+            label,
+            "waiting",
+            f"{format_elapsed_seconds(elapsed_seconds)} elapsed · provider still running{prompt_detail}",
+            ctx=ctx,
+            metadata=metadata,
+        )
+
+    with waiting_progress.subprocess_waiting_reporter(report):
+        return runner(command, cwd, input_text, timeout_seconds)
+
+
+def format_elapsed_seconds(seconds: float) -> str:
+    total = max(0, int(seconds))
+    minutes, remainder = divmod(total, 60)
+    if minutes:
+        return f"{minutes}m{remainder:02d}s" if remainder else f"{minutes}m"
+    return f"{remainder}s"
 
 
 def emit_loop_failure_event(

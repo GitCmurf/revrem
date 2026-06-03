@@ -91,12 +91,17 @@ def run_remediation(
     else:
         prompt = f"{phase_support.DEFAULT_REMEDIATION_PROMPT}\n{prompts_composer.trim_for_prompt(remediation_input, config.max_remediation_input_chars)}"
         timeout = config.remediation_timeout_seconds
-    command, prompt_input = harnesses.prepare_prompt_invocation(
+    prompt_artifact_path = config.artifact_dir / f"remediation-{iteration}-prompt.txt"
+    phase_support.write_artifact(prompt_artifact_path, prompt)
+    invocation = harnesses.prepare_prompt_invocation(
         remediation_harness,
         command,
         prompt,
+        prompt_artifact_path=prompt_artifact_path,
     )
-    prompt_metadata = phase_support.prompt_progress_metadata(prompt_input)
+    command = invocation.command
+    prompt_input = invocation.stdin
+    prompt_metadata = phase_support.prompt_invocation_metadata(invocation)
 
     phase_support.set_phase_terminal_title(config, "remediate", str(iteration))
     phase_support.ensure_model_budget(
@@ -142,11 +147,17 @@ def run_remediation(
     if config.dry_run:
         result = CommandResult(command, 0, stdout="DRY_RUN remediation skipped\n")
     else:
-        result = runner(
+        result = phase_support.run_with_waiting_progress(
+            config,
+            runner,
             command,
             config.cwd,
             prompt_input,
             phase_support.phase_timeout_seconds(config, timeout),
+            phase="remediate",
+            label=str(iteration),
+            ctx=ctx,
+            prompt_artifact=invocation.prompt_artifact,
         )
     phase_support.write_artifact(
         config.artifact_dir / f"remediation-{iteration}.txt",

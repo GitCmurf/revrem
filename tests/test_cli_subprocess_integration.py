@@ -10,7 +10,7 @@ from importlib import import_module
 import pytest
 
 import tests.support.application_runner as runner_mod
-from code_review_loop import application
+from code_review_loop import application, waiting_progress
 from code_review_loop.adapters import subprocess_runner as subprocess_runner_mod
 from code_review_loop.adapters import terminal as terminal_mod
 from code_review_loop.cli import config_builder
@@ -460,6 +460,62 @@ def test_subprocess_refresh_loop_stops_resending_stdin_after_timeout(tmp_path, m
     assert fake_process.communicate_calls == 2
     assert fake_process.inputs == ["prompt", None]
     assert len(refresh_calls) == 2
+
+
+def test_subprocess_runner_emits_waiting_progress_while_child_is_running(
+    tmp_path, monkeypatch
+):
+    reports: list[float] = []
+    monotonic_values = iter([0.0, 1.0, 6.0])
+
+    class FakeProcess:
+        returncode = 0
+
+        def __init__(self):
+            self.communicate_calls = 0
+
+        def communicate(self, input=None, timeout=None):
+            self.communicate_calls += 1
+            if self.communicate_calls == 1:
+                raise subprocess_runner_mod.subprocess.TimeoutExpired(
+                    ["opencode", "run"], timeout
+                )
+            return ("stdout", "stderr")
+
+        def poll(self):
+            return None
+
+        def kill(self):
+            raise AssertionError("process should not be killed")
+
+    fake_process = FakeProcess()
+
+    monkeypatch.setattr(
+        subprocess_runner_mod.subprocess,
+        "Popen",
+        lambda *args, **kwargs: fake_process,
+    )
+    monkeypatch.setattr(
+        subprocess_runner_mod.time,
+        "monotonic",
+        lambda: next(monotonic_values),
+    )
+    monkeypatch.setattr(
+        waiting_progress,
+        "WAITING_PROGRESS_INTERVAL_SECONDS",
+        5.0,
+    )
+
+    with waiting_progress.subprocess_waiting_reporter(reports.append):
+        result = subprocess_runner_mod.run_subprocess_with_terminal_title_refresh(
+            ["opencode", "run"],
+            cwd=tmp_path,
+            input=None,
+            timeout=None,
+        )
+
+    assert result.stdout == "stdout"
+    assert reports == [6.0]
 
 
 def test_default_runner_timeout_records_command_cwd_and_partial_output(tmp_path, monkeypatch):

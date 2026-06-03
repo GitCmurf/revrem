@@ -50,8 +50,18 @@ def add_artifact_paths(summary: dict[str, object], config: LoopConfig) -> None:
             if path.name.endswith("-prompt.txt")
         ],
         "routing": [str(path) for path in files if path.name.startswith("routing-")],
-        "triage": [str(path) for path in files if path.name.startswith("triage-")],
-        "commits": [str(path) for path in files if path.name.startswith("commit-")],
+        "triage": [
+            str(path)
+            for path in files
+            if path.name.startswith("triage-")
+            and not path.name.endswith("-prompt.txt")
+        ],
+        "commits": [
+            str(path)
+            for path in files
+            if path.name.startswith("commit-")
+            and not path.name.endswith("-prompt.txt")
+        ],
         "last_messages": [
             str(path)
             for path in files

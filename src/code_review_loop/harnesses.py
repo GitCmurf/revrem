@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -57,6 +57,21 @@ class ReasoningEffortResolution:
     effective: str | None
     requested: str | None
     adjustment: str | None = None
+
+
+@dataclass(frozen=True)
+class PromptInvocation:
+    command: list[str]
+    stdin: str | None
+    delivery: str
+    prompt_chars: int | None = None
+    prompt_bytes: int | None = None
+    prompt_artifact: Path | None = None
+
+    def __iter__(self) -> Iterator[object]:
+        # Preserve the historical `(command, stdin)` unpacking contract.
+        yield self.command
+        yield self.stdin
 
 
 class HarnessAdapter(Protocol):
@@ -414,9 +429,39 @@ def prepare_prompt_invocation(
     harness: str,
     command: list[str],
     prompt: str | None,
-) -> tuple[list[str], str | None]:
+    *,
+    prompt_artifact_path: Path | None = None,
+) -> PromptInvocation:
     """Adapt prompt delivery to each harness' non-interactive CLI contract."""
-    return command, prompt
+    if prompt is None:
+        return PromptInvocation(list(command), None, "none")
+    encoded = prompt.encode("utf-8")
+    if harness == "opencode":
+        if prompt_artifact_path is None:
+            raise ValueError("opencode prompt delivery requires a prompt artifact path")
+        adapted = list(command)
+        adapted.extend(
+            [
+                "--file",
+                str(prompt_artifact_path),
+                "Follow the attached RevRem prompt exactly.",
+            ]
+        )
+        return PromptInvocation(
+            adapted,
+            None,
+            "file",
+            prompt_chars=len(prompt),
+            prompt_bytes=len(encoded),
+            prompt_artifact=prompt_artifact_path,
+        )
+    return PromptInvocation(
+        list(command),
+        prompt,
+        "stdin",
+        prompt_chars=len(prompt),
+        prompt_bytes=len(encoded),
+    )
 
 
 def harness_capabilities_payload(name: str) -> dict[str, Any]:

@@ -227,12 +227,17 @@ def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iterat
     command = phase_support.build_commit_message_command(config)
     prompt_root = config.commit_message_prompt or phase_support.DEFAULT_COMMIT_MESSAGE_PROMPT
     prompt = f"{prompt_root}\n{prompts_composer.trim_for_prompt(context, config.max_remediation_input_chars)}"
-    command, prompt_input = harnesses.prepare_prompt_invocation(
+    prompt_artifact_path = config.artifact_dir / f"commit-{iteration}-message-prompt.txt"
+    phase_support.write_artifact(prompt_artifact_path, prompt)
+    invocation = harnesses.prepare_prompt_invocation(
         config.commit_message_harness,
         command,
         prompt,
+        prompt_artifact_path=prompt_artifact_path,
     )
-    prompt_metadata = phase_support.prompt_progress_metadata(prompt_input)
+    command = invocation.command
+    prompt_input = invocation.stdin
+    prompt_metadata = phase_support.prompt_invocation_metadata(invocation)
     phase_support.ensure_model_budget(config, phase="commit-message", iteration=iteration, ctx=ctx)
     if config.commit_reasoning_effort_adjustment:
         phase_support.progress_event(
@@ -270,7 +275,18 @@ def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iterat
             **prompt_metadata,
         },
     )
-    result = runner(command, config.cwd, prompt_input, timeout_seconds)
+    result = phase_support.run_with_waiting_progress(
+        config,
+        runner,
+        command,
+        config.cwd,
+        prompt_input,
+        timeout_seconds,
+        phase="commit-message",
+        label=str(iteration),
+        ctx=ctx,
+        prompt_artifact=invocation.prompt_artifact,
+    )
     phase_support.write_artifact(config.artifact_dir / f"commit-{iteration}-message-draft.txt", phase_support._combined_output(result))
     phase_support.record_model_charge(config, result, phase="commit-message", iteration=iteration, ctx=ctx)
     if result.returncode != 0:

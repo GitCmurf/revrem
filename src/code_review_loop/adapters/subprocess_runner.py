@@ -10,7 +10,7 @@ import time
 from collections.abc import Sequence
 from pathlib import Path
 
-from code_review_loop import harnesses
+from code_review_loop import harnesses, waiting_progress
 from code_review_loop.adapters import terminal as terminal_adapter
 from code_review_loop.adapters.phase_support import _timeout_stream_text
 from code_review_loop.core.ports import CommandResult
@@ -79,9 +79,16 @@ def run_subprocess_with_terminal_title_refresh(
     )
     deadline = None if timeout is None else time.monotonic() + timeout  # det-exempt: governs a real subprocess I/O timeout; faking breaks process killing
     pending_input = input
+    started_at = time.monotonic()  # det-exempt: progress heartbeat for real subprocesses
+    next_waiting_progress_at = started_at + waiting_progress.WAITING_PROGRESS_INTERVAL_SECONDS
     try:
         while True:
             terminal_adapter.refresh_terminal_title()
+            reporter = waiting_progress.current_reporter()
+            now = time.monotonic()  # det-exempt: progress heartbeat for real subprocesses
+            if reporter is not None and now >= next_waiting_progress_at:
+                reporter(now - started_at)
+                next_waiting_progress_at = now + waiting_progress.WAITING_PROGRESS_INTERVAL_SECONDS
             wait = terminal_adapter.TERMINAL_TITLE_REFRESH_SECONDS
             if deadline is not None:
                 remaining = deadline - time.monotonic()  # det-exempt: governs a real subprocess I/O timeout; faking breaks process killing

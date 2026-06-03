@@ -65,7 +65,10 @@ There is no silent third option.
   operator-cancellation diagnostics include the latest prompt/context artifact
   names and sizes when available. Human progress lines now render compact
   provider summaries such as `opencode run · model · low effort · timeout=0 ·
-  sandbox read-only · prompt=80.0k stdin`.
+  sandbox read-only · prompt=80.0k file`. OpenCode prompt-bearing phases now
+  attach the prompt artifact with `opencode run --file` instead of passing the
+  prompt on stdin, and long-running model subprocesses emit additive `waiting`
+  progress every five minutes.
 - **Why:** OpenCode dogfood showed that long external-review calls could appear
   stuck with no visible evidence of prompt size, delivery mode, or exact phase
   invocation. The new fields make the saved artifacts useful for debugging

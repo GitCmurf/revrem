@@ -244,12 +244,12 @@ def test_resolved_phase_detail_summarizes_opencode_without_repetition():
         sandbox="read-only",
         source="mixed",
         prompt_chars=126_668,
-        prompt_delivery="stdin",
+        prompt_delivery="file",
     )
 
     assert detail == (
         "opencode run · opencode/minimax-m3-free · low effort · timeout=0 · "
-        "sandbox read-only · prompt=126.7k stdin · source=mixed"
+        "sandbox read-only · prompt=126.7k file · source=profile+cli"
     )
     assert "--model" not in detail
     assert detail.count("opencode/minimax-m3-free") == 1

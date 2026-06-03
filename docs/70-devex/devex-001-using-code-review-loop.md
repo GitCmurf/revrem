@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.23'
+version: '1.24'
 last_updated: '2026-06-02'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.22
+> **Version:** 1.24
 > **Last Updated:** 2026-06-02
 > **Type:** DEVEX
 > **Area:** devex
@@ -947,8 +947,14 @@ Progress output intentionally summarizes prompt-bearing commands. Phase start
 lines show the executable role, model, effort, timeout, sandbox, prompt size,
 delivery mode, and config source without repeating raw CLI syntax. For example:
 `opencode run · opencode/minimax-m3-free · low effort · timeout=0 · sandbox
-read-only · prompt=80.0k stdin · source=mixed`. Exact argv and prompt artifacts
-remain in `events.jsonl` and the run artifact directory. Set
+read-only · prompt=80.0k file · source=profile+cli`. Exact argv and prompt
+artifacts remain in `events.jsonl` and the run artifact directory. OpenCode
+receives prompt-bearing phases through `opencode run --file <prompt-artifact>`
+with a short fixed message, not through stdin, so large RevRem prompts stay out
+of process listings and match OpenCode's headless CLI contract. Long-running
+model subprocesses emit `waiting` progress every five minutes without changing
+timeout behavior; `timeout=0` still means RevRem does not enforce a subprocess
+deadline. Set
 `REVREM_OPENCODE_DEBUG=1` to add OpenCode provider logs
 (`--print-logs --log-level INFO`) to OpenCode phase commands during local
 diagnosis. When a review reports `findings` without Codex-style `[P1]` finding
@@ -1080,6 +1086,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.24 | 2026-06-02 | Codex | Documented OpenCode prompt-file delivery and waiting progress diagnostics |
 | 1.23 | 2026-06-02 | Codex | Documented compact phase-start progress, OpenCode debug logs, and dedicated external review prompt cap |
 | 1.22 | 2026-06-02 | Codex | Documented prompt-size bounds, progress prompt summaries, and provider-specific remediation failure wording |
 | 1.21 | 2026-06-02 | Codex | Documented external review diff-context artifacts and no-diff clear evidence |
