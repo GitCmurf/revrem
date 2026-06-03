@@ -614,9 +614,9 @@ def test_opencode_review_prompt_is_attached_as_file(tmp_path):
     assert "--file" in calls[0][0]
     prompt_path = Path(calls[0][0][calls[0][0].index("--file") + 1])
     assert prompt_path.name == "review-1-prompt.txt"
+    assert calls[0][0][-1] == "Follow the attached RevRem prompt exactly."
     prompt = prompt_path.read_text(encoding="utf-8")
     assert "Review the current repository changes" in prompt
-    assert "Follow the attached RevRem prompt exactly." not in calls[0][0]
 
 
 def test_opencode_review_failure_names_opencode_harness(tmp_path):

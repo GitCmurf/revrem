@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.26'
+version: '1.27'
 last_updated: '2026-06-03'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.26
+> **Version:** 1.27
 > **Last Updated:** 2026-06-03
 > **Type:** DEVEX
 > **Area:** devex
@@ -965,8 +965,9 @@ delivery mode, and config source without repeating raw CLI syntax. For example:
 read-only · prompt=80.0k file · source=profile+cli`. Exact argv and prompt
 artifacts remain in `events.jsonl` and the run artifact directory. OpenCode
 receives prompt-bearing phases through `opencode run --file <prompt-artifact>`,
-not through stdin, so large RevRem prompts stay out of process listings and
-match OpenCode's headless CLI contract. Long-running
+plus a short positional instruction, not through stdin, so large RevRem prompts
+stay out of process listings and match OpenCode's headless CLI contract.
+Long-running
 model subprocesses emit `waiting` progress every five minutes without changing
 timeout behavior; `timeout=0` still means RevRem does not enforce a subprocess
 deadline. For prompted review harnesses, waiting messages add a stronger
@@ -1105,6 +1106,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.27 | 2026-06-03 | Codex | Documented OpenCode file attachment plus positional message invocation |
 | 1.26 | 2026-06-03 | Codex | Documented Gemini review context cap and external review quiet-run diagnostics |
 | 1.25 | 2026-06-03 | Codex | Documented provider-failure review retry and commit-message prose rejection |
 | 1.24 | 2026-06-02 | Codex | Documented OpenCode prompt-file delivery and waiting progress diagnostics |

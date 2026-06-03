@@ -56,6 +56,21 @@ There is no silent third option.
 
 ## Entries
 
+### 2026-06-03 — OpenCode file attachment requires a message
+
+- **Contract:** machine
+- **What changed:** OpenCode prompt-bearing commands now include the positional
+  message `Follow the attached RevRem prompt exactly.` together with
+  `--file <prompt-artifact>`. Provider failure classification also treats
+  OpenCode's `You must provide a message or a command` stderr as a CLI contract
+  error.
+- **Why:** live OpenCode review failed immediately because `opencode run --file
+  <prompt>` attaches a file but does not provide a message. The installed CLI
+  requires either positional `message` text or `--command`.
+- **schema_version impact:** none; command argv and failure classification
+  details are additive/behavioral within the existing v1 event envelope.
+- **CHANGELOG:** Unreleased / Added.
+
 ### 2026-06-03 — Gemini review context cap and quiet-run diagnostics
 
 - **Contract:** machine

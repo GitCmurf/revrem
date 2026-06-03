@@ -46,6 +46,10 @@ This project follows Semantic Versioning once public releases begin.
   whether the supplied context is full or truncated. Long-running external
   review subprocesses add a stronger non-terminating waiting diagnostic after
   the configured quiet threshold.
+- OpenCode prompt-bearing phases now pass a short positional instruction along
+  with `--file <prompt-artifact>`, matching the installed `opencode run`
+  contract that treats `--file` as an attachment rather than a standalone
+  prompt source.
 - Public GitHub launch materials: README, contribution guidance, security
   policy, support policy, issue templates, pull request template, CODEOWNERS,
   NOTICE, CI hardening, Scorecard workflow, and release provenance/SBOM

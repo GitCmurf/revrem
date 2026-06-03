@@ -26,7 +26,7 @@ def classify_provider_failure(
 
     if _has_any(normalized, ("authentication", "not authenticated", "login required", "api key")):
         return ProviderFailure("provider_auth_required", "provider auth/setup required", False)
-    if _has_any(normalized, ("file not found:", "for more information, try '--help'", "unknown option", "invalid option")):
+    if _has_any(normalized, ("file not found:", "for more information, try '--help'", "unknown option", "invalid option", "you must provide a message or a command")):
         return ProviderFailure("provider_cli_contract_error", "provider CLI contract error", False)
     if (
         "quota_exhausted" in normalized
