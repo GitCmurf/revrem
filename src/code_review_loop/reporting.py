@@ -15,6 +15,15 @@ from code_review_loop.clock import SYSTEM_CLOCK, Clock, utc_iso
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.ports import EventSink
 
+SUMMARY_SCHEMA_VERSION = "1.1"
+"""Bumped from ``"1.0"`` to mark the CM2 contract change: the
+``skipped_no_changes`` commit-skip path now maps to ``final_status: "clear"``
+whenever the most recent review was ``clear`` or ``unknown`` (previously
+``unknown``). Consumers that diff the schema can detect the contract change
+without reading the CHANGELOG. The legacy ``"1.0"`` value still validates
+against the documented schema; the bump is purely a signal in the summary
+payload."""
+
 
 def add_artifact_paths(summary: dict[str, object], config: LoopConfig) -> None:
     artifact_dir = config.artifact_dir
@@ -191,7 +200,7 @@ def iter_artifact_paths(
 def add_summary_contract_fields(
     config: LoopConfig, summary: dict[str, object], *, clock: Clock = SYSTEM_CLOCK
 ) -> None:
-    summary["schema_version"] = artifacts.JSON_SCHEMA_VERSION
+    summary["schema_version"] = SUMMARY_SCHEMA_VERSION
     summary.setdefault("cli_version", __version__)
     summary.setdefault("harness", config.review_harness)
     summary.setdefault("harness_version", None)

@@ -1233,7 +1233,7 @@ def test_commit_message_for_staged_changes_uses_specific_fallback_on_model_failu
     assert (tmp_path / "artifacts" / "commit-2-message-fallback.json").is_file()
 
 
-def test_commit_message_for_staged_changes_uses_subject_artifact_over_model_prose(
+def test_commit_message_for_staged_changes_parses_conventional_subject_from_model_output(
     tmp_path,
 ):
     config = LoopConfig(
@@ -1256,16 +1256,12 @@ def test_commit_message_for_staged_changes_uses_subject_artifact_over_model_pros
                 list(args), 0, stdout="src/code_review_loop/review.py\n"
             )
         if args[:2] == ["codex", "exec"]:
-            (config.artifact_dir / "commit-8-message-subject.txt").write_text(
-                "fix(review): harden provider diagnostics (RevRem)\n",
-                encoding="utf-8",
-            )
             return CommandResult(
                 list(args),
                 0,
                 stdout=(
                     "Looking at the staged changes, I need to write a concise subject.\n"
-                    "The main changes include:\n"
+                    "fix(review): harden provider diagnostics (RevRem)\n"
                 ),
             )
         raise AssertionError(f"unexpected command: {args!r}")

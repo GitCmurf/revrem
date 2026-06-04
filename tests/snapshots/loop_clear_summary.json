@@ -229,7 +229,7 @@
     "triage_timeout_seconds": null
   },
   "run_id": "deadbeefcafe0000deadbeefcafe0000",
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "started_at": "2026-01-02T03:04:05Z",
   "stopped_reason": "review_clear",
   "tokens": null,

@@ -9,6 +9,7 @@ does not import the runner or CLI edge.
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,6 +45,7 @@ EXTERNAL_REVIEW_PROMPT_TAIL = (
     "Do not claim that commands or tests ran unless their output is included "
     "in this prompt or you successfully ran them yourself.\n"
 )
+REVIEW_RETRY_BACKOFF_SECONDS = 1.0
 
 
 @dataclass(frozen=True)
@@ -82,6 +84,8 @@ def run_codex_review(
     command = build_review_command(config)
     review_prompt = None
     external_prompt: ExternalReviewPrompt | None = None
+    if ctx.git_context_cache is not None:
+        ctx.git_context_cache.invalidate_head_sha(str(config.cwd))
     if config.review_harness not in {"codex", "fake"}:
         review_context = build_external_review_context(
             config, git_context_cache=ctx.git_context_cache
@@ -279,6 +283,7 @@ def run_review_with_retry(
                 ctx=ctx,
                 metadata={"reason": failure.reason, "attempt": attempt},
             )
+            time.sleep(REVIEW_RETRY_BACKOFF_SECONDS)
     assert last_result is not None
     return last_result
 
@@ -314,15 +319,12 @@ def compose_external_review_prompt(
         prompt = prompts_composer.trim_for_prompt(
             prompt, config.external_review_input_chars
         )
-        trimmed_context = prompts_composer.trim_for_prompt(
-            trimmed_context,
-            max(
-                1,
-                config.external_review_input_chars
-                - len(prompt_head)
-                - len(prompt_tail),
-            ),
-        )
+        head_len = len(prompt_head)
+        tail_len = len(prompt_tail)
+        if len(prompt) > head_len + tail_len:
+            trimmed_context = prompt[head_len : len(prompt) - tail_len]
+        else:
+            trimmed_context = ""
     return ExternalReviewPrompt(
         prompt=prompt,
         provider_context=trimmed_context,
@@ -359,8 +361,8 @@ def build_external_review_context(
         return "\n".join(sections) + "\n"
 
     base = cached_base_commit(git_context_cache, config.cwd, config.base)
-    head = run_git_preflight(config.cwd, ["rev-parse", "HEAD"])
-    head_sha = head.stdout.strip()
+    head_sha = _cached_head_sha(git_context_cache, config.cwd)
+    head = _head_sha_result(head_sha)
     merge_base = cached_merge_base(
         git_context_cache, config.cwd, head_sha, config.base
     )
@@ -420,6 +422,38 @@ def build_external_review_context(
         ]
     )
     return "\n\n".join(sections) + "\n"
+
+
+def _cached_head_sha(
+    cache: GitContextCache | None, cwd: Path
+) -> str:
+    """Return the cached HEAD SHA for ``cwd`` or run ``git rev-parse HEAD``.
+
+    The result is memoised on ``GitContextCache.head_sha`` so a sequence of
+    ``build_external_review_context`` calls in a single phase avoids
+    re-running the subprocess. The cache is invalidated at phase
+    boundaries (see ``invalidate_head_sha``) to pick up a new SHA after
+    remediation commits.
+    """
+    key = str(cwd)
+    if cache is not None:
+        cached = cache.head_sha.get(key)
+        if cached is not None:
+            return cached
+    result = run_git_preflight(cwd, ["rev-parse", "HEAD"])
+    sha = result.stdout.strip()
+    if cache is not None and sha:
+        cache.head_sha[key] = sha
+    return sha
+
+
+def _head_sha_result(sha: str) -> CommandResult:
+    """Build a ``CommandResult`` stub that mirrors ``git rev-parse HEAD`` output.
+
+    Lets ``build_external_review_context`` feed the cached SHA into
+    ``_format_git_context_result`` without re-running the subprocess.
+    """
+    return CommandResult(["git", "rev-parse", "HEAD"], 0, stdout=sha + "\n")
 
 
 def _format_git_context_result(

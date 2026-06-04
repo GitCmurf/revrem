@@ -26,12 +26,12 @@ class GitContextCache:
 
     Keyed by ``(cwd, base)`` for the cheap base/merge-base lookups and by
     ``(cwd, base, head)`` for the expensive ``base...HEAD`` diffs. The HEAD
-    SHA is intentionally NOT cached: callers must always re-run
-    ``git rev-parse HEAD`` so that the live HEAD (which advances every
-    remediation commit) is used to key the per-head diff buckets. The
-    per-head diff buckets invalidate naturally because their key includes
-    the SHA, so a fresh remediation commit yields a fresh cache entry on
-    the next review iteration.
+    SHA is cached per ``cwd`` for the duration of a single phase (see
+    ``head_sha`` below) and invalidated via ``invalidate_head_sha`` at
+    phase boundaries such as the start of each review or remediation
+    phase. The per-head diff buckets invalidate naturally because their key
+    includes the SHA, so a fresh remediation commit yields a fresh cache
+    entry on the next review iteration.
     """
 
     base_commit: dict[tuple[str, str], str] = field(default_factory=dict)
@@ -41,3 +41,11 @@ class GitContextCache:
     base_head_diff_name_status: dict[tuple[str, str, str], str] = field(
         default_factory=dict
     )
+    head_sha: dict[str, str] = field(default_factory=dict)
+
+    def invalidate_head_sha(self, cwd: str | None = None) -> None:
+        """Drop the cached HEAD SHA for ``cwd`` (or every cwd if omitted)."""
+        if cwd is None:
+            self.head_sha.clear()
+        else:
+            self.head_sha.pop(cwd, None)

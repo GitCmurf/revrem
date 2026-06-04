@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from code_review_loop import provider_failures
+from code_review_loop.adapters import remediation as remediation_impl
 from code_review_loop.adapters import review as review_impl
 from code_review_loop.adapters.remediation import RemediationAdapter
 from code_review_loop.config import LoopConfig
@@ -115,6 +116,37 @@ def test_classify_provider_failure_returns_none_for_unrecognised_output() -> Non
     )
 
 
+def test_classify_provider_failure_ignores_help_text_api_key_mention() -> None:
+    """Help text such as ``pass --api-key YOUR_KEY`` must not be misread as
+    a provider authentication failure (no space between ``api`` and ``key``).
+    """
+    result = _result(1, stderr="Usage: opencode review --api-key YOUR_KEY [opts]")
+    assert (
+        provider_failures.classify_provider_failure(result, harness="harness")
+        is None
+    )
+
+
+def test_classify_provider_failure_ignores_unknownerrors_substring() -> None:
+    """``unknownerrors`` (no word boundary) must not match the
+    ``UnknownError`` JSON envelope signal."""
+    result = _result(1, stderr="recent unknownerrors: 3")
+    assert (
+        provider_failures.classify_provider_failure(result, harness="harness")
+        is None
+    )
+
+
+def test_classify_provider_failure_ignores_temporarily_unavailable_in_cache_message() -> None:
+    """Cache messages that mention ``temporarily unavailable`` must not
+    trigger the transient failure path on their own."""
+    result = _result(1, stderr="cache entry temporarily unavailable, retry later")
+    assert (
+        provider_failures.classify_provider_failure(result, harness="harness")
+        is None
+    )
+
+
 def test_review_failed_to_run_flags_provider_auth_required(tmp_path: Path) -> None:
     """``review_failed_to_run`` must use the harness parameter for
     classification so that provider_auth_required results are flagged as
@@ -125,6 +157,24 @@ def test_review_failed_to_run_flags_provider_auth_required(tmp_path: Path) -> No
     )
 
     assert review_impl.review_failed_to_run(result, "opencode") is True
+
+
+@pytest.mark.parametrize(
+    "harness",
+    ["", "opencode", "gemini", "kilo", "codex", "claude"],
+)
+def test_classify_provider_failure_is_harness_agnostic(
+    harness: str, tmp_path: Path
+) -> None:
+    """The ``harness`` argument is a forward-compat hook: it must not
+    affect the classification outcome until a harness-specific rule is
+    introduced deliberately.
+    """
+    result = _result(1, stderr="Error: 429 rate limit exceeded")
+    failure = provider_failures.classify_provider_failure(result, harness=harness)
+    assert failure is not None
+    assert failure.reason == "provider_rate_limited"
+    assert failure.transient is True
 
 
 def test_run_review_with_retry_does_not_retry_auth_required(tmp_path: Path) -> None:
@@ -348,3 +398,176 @@ def test_remediation_adapter_does_not_retry_quota_exhausted(tmp_path: Path) -> N
         adapter.execute(
             RemediationRequest(iteration=1, remediation_input="fix"), ctx
         )
+
+
+def test_run_review_with_retry_sleeps_between_transient_attempts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``run_review_with_retry`` must back off between transient retries so a
+    sustained rate limit does not produce a tight retry loop."""
+    calls: list[float] = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append(_monotonic())
+        if len(calls) == 1:
+            return CommandResult(
+                list(args), 1, stderr="Error: 429 rate limit exceeded"
+            )
+        return CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
+
+    sleeps: list[float] = []
+
+    def fake_sleep(seconds: float) -> None:
+        calls.append(_monotonic())
+        sleeps.append(seconds)
+
+    fake_now = {"t": 0.0}
+
+    def _monotonic() -> float:
+        return fake_now["t"]
+
+    def tick(seconds: float) -> None:
+        fake_now["t"] += seconds
+
+    monkeypatch.setattr(review_impl.time, "sleep", fake_sleep)
+    monkeypatch.setattr(review_impl.time, "monotonic", _monotonic)
+
+    real_sleep_calls: list[float] = []
+
+    def recording_sleep(seconds: float) -> None:
+        real_sleep_calls.append(seconds)
+        tick(seconds)
+
+    monkeypatch.setattr(review_impl.time, "sleep", recording_sleep)
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="opencode",
+        review_model="provider/model",
+    )
+    ctx = RunContext(
+        runner=runner,
+        clock=FakeClock(),
+        identity=FakeRunIdentity(),
+        **phase_harness_kwargs(),
+    )
+
+    result = review_impl.run_review_with_retry(
+        config,
+        runner,
+        ["opencode"],
+        None,
+        "1",
+        None,
+        ctx=ctx,
+    )
+
+    assert result.returncode == 0
+    assert len(real_sleep_calls) == 1
+    assert real_sleep_calls[0] >= review_impl.REVIEW_RETRY_BACKOFF_SECONDS
+
+
+def test_remediation_adapter_retries_transient_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Remediation should retry a transient rate-limit failure once and
+    succeed on the second attempt, mirroring the review-phase contract."""
+    (tmp_path / "artifacts").mkdir()
+    calls: list[list[str]] = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[:2] == ["git", "diff"]:
+            return CommandResult(list(args), 0, stdout="")
+        calls.append(list(args))
+        if len(calls) == 1:
+            return CommandResult(
+                list(args), 1, stderr="Error: 429 rate limit exceeded"
+            )
+        return CommandResult(list(args), 0, stdout="ok\n")
+
+    real_sleep_calls: list[float] = []
+
+    def recording_sleep(seconds: float) -> None:
+        real_sleep_calls.append(seconds)
+
+    monkeypatch.setattr(
+        "code_review_loop.adapters.remediation.time.sleep", recording_sleep
+    )
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        remediation_harness="opencode",
+        remediation_model="opencode/model",
+    )
+    ctx = RunContext(
+        runner=runner,
+        clock=FakeClock(),
+        identity=FakeRunIdentity(),
+        **phase_harness_kwargs(),
+    )
+    adapter = RemediationAdapter(config)
+
+    adapter.execute(RemediationRequest(iteration=1, remediation_input="fix"), ctx)
+
+    assert len(calls) == 2
+    assert real_sleep_calls == [
+        remediation_impl.REMEDIATION_RETRY_BACKOFF_SECONDS,
+    ]
+
+
+def test_remediation_adapter_does_not_retry_auth_required_repeatedly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Non-transient failures must still raise on the first attempt so a
+    misconfigured API key fails fast."""
+    (tmp_path / "artifacts").mkdir()
+    calls: list[list[str]] = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[:2] == ["git", "diff"]:
+            return CommandResult(list(args), 0, stdout="")
+        calls.append(list(args))
+        return CommandResult(
+            list(args),
+            1,
+            stderr="Error: authentication required; api key invalid",
+        )
+
+    sleep_calls: list[float] = []
+
+    def recording_sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+
+    monkeypatch.setattr(
+        "code_review_loop.adapters.remediation.time.sleep", recording_sleep
+    )
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        remediation_harness="opencode",
+        remediation_model="opencode/model",
+    )
+    ctx = RunContext(
+        runner=runner,
+        clock=FakeClock(),
+        identity=FakeRunIdentity(),
+        **phase_harness_kwargs(),
+    )
+    adapter = RemediationAdapter(config)
+
+    with pytest.raises(RuntimeError, match="provider auth/setup required"):
+        adapter.execute(
+            RemediationRequest(iteration=1, remediation_input="fix"), ctx
+        )
+
+    assert len(calls) == 1
+    assert sleep_calls == []

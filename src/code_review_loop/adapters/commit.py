@@ -314,8 +314,6 @@ def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iterat
         )
         return fallback
     subject = model_commit_message_subject(
-        config,
-        iteration,
         phase_support._combined_output(result),
         enforce_revrem_conventional=not config.commit_message_prompt_overridden,
     )
@@ -343,20 +341,10 @@ def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iterat
 
 
 def model_commit_message_subject(
-    config: LoopConfig,
-    iteration: int,
     draft_output: str,
     *,
     enforce_revrem_conventional: bool,
 ) -> str | None:
-    subject_artifact = config.artifact_dir / f"commit-{iteration}-message-subject.txt"
-    if subject_artifact.is_file():
-        subject = phase_support.extract_commit_message_subject(
-            subject_artifact.read_text(encoding="utf-8", errors="replace"),
-            enforce_revrem_conventional=enforce_revrem_conventional,
-        )
-        if subject:
-            return subject
     return phase_support.extract_commit_message_subject(
         actionable_review_output(draft_output),
         enforce_revrem_conventional=enforce_revrem_conventional,

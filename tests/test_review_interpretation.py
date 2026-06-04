@@ -14,6 +14,7 @@ from code_review_loop.core.review_interpretation import (
     extract_finding_blocks,
     extract_finding_summaries,
     extract_review_summary,
+    has_affirmative_issue_prose,
     strip_finding_priority,
 )
 
@@ -128,6 +129,35 @@ def test_detect_review_status_requires_explicit_status_line() -> None:
     assert detect_review_status("no findings about style, but several about logic") == "unknown"
     assert detect_review_status("review is clear of syntax errors but not semantic") == "unknown"
     assert detect_review_status("") == "unknown"
+
+
+# ---------------------------------------------------------------------------
+# has_affirmative_issue_prose (UNRELATED_FAILURE_RE over-filter regression)
+# ---------------------------------------------------------------------------
+
+
+def test_has_affirmative_issue_prose_keeps_real_finding_after_unrelated_clause() -> None:
+    """A sentence that mentions BOTH a real bug and an unrelated
+    environment issue must still be reported as affirmative issue prose.
+    The previous whole-sentence skip over-filtered such sentences.
+    """
+    output = (
+        "I found a real bug here, and an unrelated environment issue I will set aside."
+    )
+    assert has_affirmative_issue_prose(output) is True
+
+
+def test_has_affirmative_issue_prose_still_drops_purely_unrelated_clause() -> None:
+    output = "There is a pre-existing environment issue I will set aside."
+    assert has_affirmative_issue_prose(output) is False
+
+
+def test_has_affirmative_issue_prose_keeps_bug_in_separate_sentence_from_unrelated() -> None:
+    output = (
+        "There is an unrelated environment issue I will set aside.\n"
+        "The diff still introduces a real bug in the retry path."
+    )
+    assert has_affirmative_issue_prose(output) is True
 
 
 # ---------------------------------------------------------------------------

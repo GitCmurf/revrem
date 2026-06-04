@@ -896,6 +896,28 @@ base = "trunk"
     assert resolved.pipeline.base == "trunk"
 
 
+def test_profile_accepts_external_review_warning_seconds_zero(tmp_path):
+    """``external_review_warning_seconds = 0`` is the documented escape
+    hatch to disable the external-review slow-run warning. The boundary
+    must be pinned so a future validation tightening does not regress
+    this operator-facing affordance.
+    """
+    path = tmp_path / "profiles.toml"
+    path.write_text(
+        """
+[profiles.demo.runtime]
+external_review_warning_seconds = 0
+""",
+        encoding="utf-8",
+    )
+
+    loaded = profiles.load_profile_file(path)
+    assert loaded.profiles["demo"].runtime.external_review_warning_seconds == 0
+
+    rendered = profiles.profile_to_toml(loaded.profiles["demo"])
+    assert "external_review_warning_seconds = 0" in rendered
+
+
 def test_clone_user_profile_writes_resolved_profile_to_user_config(tmp_path):
     home = tmp_path / "home"
     repo = tmp_path / "repo"

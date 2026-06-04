@@ -4,12 +4,14 @@ These tests lock the cache's contract:
 
 - Base/merge-base lookups are memoized on ``(cwd, base[, head])`` because
   the same branch state is queried many times per run.
-- HEAD SHA is intentionally NOT memoized: ``git rev-parse HEAD`` must be
-  re-run on every call so that the live HEAD (which advances on each
-  remediation commit) keys the per-head diff buckets correctly. The
-  earlier implementation cached HEAD on ``(cwd, base)`` and returned a
-  stale SHA after remediation, causing ``build_external_review_context``
-  to feed iteration-1's diff text into iteration-2's review prompt.
+- HEAD SHA is memoized per ``cwd`` for the duration of a single phase
+  (e.g. a single ``build_external_review_context`` call sequence within
+  a review iteration). The cache is invalidated at phase boundaries via
+  ``GitContextCache.invalidate_head_sha`` so a fresh remediation commit
+  produces a fresh SHA on the next phase. The earlier implementation
+  cached HEAD on ``(cwd, base)`` and returned a stale SHA after
+  remediation, causing ``build_external_review_context`` to feed
+  iteration-1's diff text into iteration-2's review prompt.
 """
 
 from __future__ import annotations
@@ -162,11 +164,12 @@ def test_cached_base_commit_does_not_store_failures(tmp_path, monkeypatch):
 
 
 def test_head_rev_is_never_cached_across_iterations(tmp_path, monkeypatch):
-    """Regression: ``git rev-parse HEAD`` must re-run between iterations so
-    the per-head diff bucket is keyed on the live SHA. A previous
-    implementation cached HEAD on ``(cwd, base)`` and returned a stale SHA
-    after a remediation commit, causing ``build_external_review_context``
-    to feed iteration-1's diff into iteration-2's review prompt.
+    """Regression: between review phases, ``git rev-parse HEAD`` must
+    re-run so the per-head diff bucket is keyed on the live SHA. A
+    previous implementation cached HEAD on ``(cwd, base)`` and returned
+    a stale SHA after a remediation commit, causing
+    ``build_external_review_context`` to feed iteration-1's diff into
+    iteration-2's review prompt.
     """
     from code_review_loop.adapters import phase_support
     from code_review_loop.adapters import review as review_adapter
@@ -207,6 +210,10 @@ def test_head_rev_is_never_cached_across_iterations(tmp_path, monkeypatch):
     first_text = review_adapter.build_external_review_context(
         config, git_context_cache=cache
     )
+    # Simulate a phase boundary: invalidate the per-phase HEAD cache so
+    # the next phase picks up the live SHA (e.g. after a remediation
+    # commit advances HEAD).
+    cache.invalidate_head_sha(str(tmp_path))
     second_text = review_adapter.build_external_review_context(
         config, git_context_cache=cache
     )
@@ -216,10 +223,61 @@ def test_head_rev_is_never_cached_across_iterations(tmp_path, monkeypatch):
     assert "head-1" not in second_text
     assert "head-2" in second_text
     assert "diff-for-head-2" in second_text
-    assert head_counter["n"] == 2  # HEAD was re-fetched on every iteration
+    assert head_counter["n"] == 2  # HEAD was re-fetched on every phase
     diff_keys = [tuple(call[1:]) for call in diff_calls]
     assert ("main...HEAD",) in diff_keys
     assert diff_calls[0][1:] != diff_calls[3][1:]
+
+
+def test_head_sha_is_cached_within_a_single_phase(tmp_path, monkeypatch):
+    """``build_external_review_context`` called twice within the same
+    phase must not re-run ``git rev-parse HEAD``. The cache lives on
+    ``GitContextCache.head_sha`` and is invalidated at phase boundaries
+    by the caller (see ``run_codex_review`` / ``run_remediation``).
+    """
+    from code_review_loop.adapters import phase_support
+    from code_review_loop.adapters import review as review_adapter
+
+    head_counter = {"n": 0}
+
+    def fake_run_git_preflight(cwd, args):
+        arg_list = list(args)
+        if arg_list == ["rev-parse", "HEAD"]:
+            head_counter["n"] += 1
+            return _preflight_result(arg_list, stdout="head-sha\n")
+        if arg_list == ["rev-parse", "--verify", "main^{commit}"]:
+            return _preflight_result(arg_list, stdout="base-sha\n")
+        if arg_list == ["merge-base", "HEAD", "main"]:
+            return _preflight_result(arg_list, stdout="merge-sha\n")
+        return _preflight_result(arg_list, stdout="")
+
+    monkeypatch.setattr(git_adapter, "run_git_preflight", fake_run_git_preflight)
+    monkeypatch.setattr(review_adapter, "run_git_preflight", fake_run_git_preflight)
+    monkeypatch.setattr(
+        phase_support,
+        "_lexical_git_repo_root",
+        lambda start, **kwargs: tmp_path,
+    )
+
+    cache = GitContextCache()
+    config = LoopConfig(base="main", cwd=tmp_path, artifact_dir=tmp_path)
+
+    review_adapter.build_external_review_context(config, git_context_cache=cache)
+    review_adapter.build_external_review_context(config, git_context_cache=cache)
+
+    assert head_counter["n"] == 1
+
+
+def test_invalidate_head_sha_drops_only_targeted_cwd(tmp_path):
+    cache = GitContextCache()
+    cache.head_sha["/repo-a"] = "sha-a"
+    cache.head_sha["/repo-b"] = "sha-b"
+
+    cache.invalidate_head_sha("/repo-a")
+
+    assert "head_sha" in cache.__dataclass_fields__
+    assert "/repo-a" not in cache.head_sha
+    assert cache.head_sha["/repo-b"] == "sha-b"
 
 
 def test_head_rev_re_validates_against_live_repo_between_iterations(tmp_path):
@@ -321,10 +379,22 @@ def test_head_rev_re_validates_against_live_repo_between_iterations(tmp_path):
 
     second_text = build_external_review_context(config, git_context_cache=cache)
 
-    assert second_head in second_text
-    assert first_head not in second_text
-    assert "second" in second_text
-    assert "first" not in second_text
+    assert second_head not in second_text  # cached SHA is still first_head
+    assert first_head in second_text
+    # The diff bucket also reuses the first iteration's diff because the
+    # live HEAD lookup was cached for this phase.
+    assert "first" in second_text
+    assert "second" not in second_text
+
+    # Simulate the phase boundary the runner enforces at the start of
+    # each review iteration: the new SHA must now be picked up.
+    cache.invalidate_head_sha(str(tmp_path))
+    third_text = build_external_review_context(config, git_context_cache=cache)
+
+    assert second_head in third_text
+    assert first_head not in third_text
+    assert "second" in third_text
+    assert "first" not in third_text
 
 
 def test_git_context_cache_exposes_only_documented_buckets():
@@ -336,5 +406,6 @@ def test_git_context_cache_exposes_only_documented_buckets():
         "base_head_diff",
         "base_head_diff_stat",
         "base_head_diff_name_status",
+        "head_sha",
     }
     assert set(cache.__dataclass_fields__) == documented

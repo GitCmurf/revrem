@@ -119,7 +119,7 @@ def test_summary_schema_validates_generated_summary(tmp_path):
     )
 
     validate(summary_payload, schema)
-    assert summary["schema_version"] == "1.0"
+    assert summary["schema_version"] == "1.1"
     assert summary_payload["cli_version"] == __version__
     assert summary_payload["harness"] == "codex"
     assert summary_payload["tokens"] is None

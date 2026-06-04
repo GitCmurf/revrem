@@ -57,6 +57,12 @@ UNRELATED_FAILURE_RE = re.compile(
     r"[^.!?]*\b(?:failure|failures|issue|issues|problem|problems)\b",
     re.IGNORECASE,
 )
+UNRELATED_KEYWORD_RE = re.compile(
+    r"\b(?:environment|pyth?onpath|local environment|unchanged|unrelated|"
+    r"not caused by|not introduced by|not a regression|outside the diff|not from this patch)\b",
+    re.IGNORECASE,
+)
+_UNRELATED_PROXIMITY_CHARS = 80
 
 NEGATED_ISSUE_PREFIX_RE = r"(?:clear|discrete|actionable|introduced|known|new|obvious|blocking|material|major|serious|outstanding|significant|additional|further|remaining|open|critical|severe|real|actual|genuine|substantive|meaningful|correctness|security|maintainability)"
 NEGATED_ISSUE_PREFIX_CHAIN_RE = (
@@ -187,7 +193,16 @@ def has_affirmative_issue_prose(output: str) -> bool:
         if not AFFIRMATIVE_ISSUE_WORD_RE.search(sentence):
             continue
         if UNRELATED_FAILURE_RE.search(sentence):
-            continue
+            if not _sentence_introduces_unrelated_as_disclaimer(sentence):
+                # The unrelated span is not a separate disclaimer; the
+                # whole sentence is describing an issue that is itself
+                # tagged as unrelated. Drop it.
+                continue
+            stripped = _strip_unrelated_failure_spans(sentence)
+            if not AFFIRMATIVE_ISSUE_WORD_RE.search(stripped):
+                continue
+            sentence = stripped
+            normalized_sentence = sentence.lower()
         if has_affirmative_contrastive_issue_clause(sentence):
             return True
         if has_negated_clear_review_statement(normalized_sentence):
@@ -196,6 +211,56 @@ def has_affirmative_issue_prose(output: str) -> bool:
             continue
         return True
     return False
+
+
+def _strip_unrelated_failure_spans(sentence: str) -> str:
+    """Remove the spans matched by ``UNRELATED_FAILURE_RE`` from a sentence.
+
+    The regex matches clauses that explicitly tag an issue as "unrelated",
+    "not from this patch", etc. A sentence may mention BOTH an unrelated
+    environmental issue and a real finding; we only want to drop the
+    explicitly unrelated clause and keep the rest for downstream negation
+    checks. Collapsed whitespace is normalised so the remainder re-evaluates
+    cleanly.
+    """
+    parts: list[str] = []
+    last_end = 0
+    for match in UNRELATED_FAILURE_RE.finditer(sentence):
+        parts.append(sentence[last_end : match.start()])
+        last_end = match.end()
+    parts.append(sentence[last_end:])
+    collapsed = " ".join(" ".join(part.split()) for part in parts if part.strip())
+    return collapsed.strip()
+
+
+_UNRELATED_DISCLAIMER_INTRO_RE = re.compile(
+    r"\b(?:and|but|however|though|although|yet|while|though|whereas)\b",
+    re.IGNORECASE,
+)
+
+
+def _sentence_introduces_unrelated_as_disclaimer(sentence: str) -> bool:
+    """Return True when the sentence joins a real-issue clause with an
+    unrelated-issue clause via a conjunction such as "and" or "but".
+
+    When a sentence reads "I found a real bug, and an unrelated
+    environment issue I will set aside", the unrelated span is a
+    disclaimer around the issue. Stripping the span should keep the
+    real issue in the remainder.
+
+    For sentences that read "The diff has a failure in an unchanged
+    test path that appears to be a local environment issue, not a
+    regression", the whole sentence is describing the unrelated
+    failure. There is no conjunction introducing the unrelated span
+    as a parallel clause; the issue IS the unrelated thing.
+    """
+    if not _UNRELATED_DISCLAIMER_INTRO_RE.search(sentence):
+        return False
+    first_issue = AFFIRMATIVE_ISSUE_WORD_RE.search(sentence)
+    first_conjunction = _UNRELATED_DISCLAIMER_INTRO_RE.search(sentence)
+    if first_issue is None or first_conjunction is None:
+        return False
+    return first_issue.start() < first_conjunction.start()
 
 
 def structured_review_status(output: str) -> str | None:

@@ -12,4 +12,4 @@ process shells out to the binary directly).
 
 from code_review_loop.harnesses import run_fake_harness_command
 
-__all__ = ["main", "run_fake_harness_command"]
+__all__ = ["run_fake_harness_command"]

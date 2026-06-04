@@ -643,9 +643,7 @@ prompt, RevRem normalizes the final subject to Conventional Commit syntax and
 appends `(RevRem)`. If the commit-message model returns explanatory prose
 instead of a subject, RevRem records `commit-N-message-fallback.json` with
 `reason: "model_drafting_invalid"` and uses the deterministic fallback subject
-instead of committing the prose. Harnesses that can extract a concise subject
-from their own transcript may write `commit-N-message-subject.txt`; RevRem
-prefers that sidecar over the raw draft transcript. Passing
+instead of committing the prose. Passing
 `--commit-message-prompt` intentionally disables that default subject policy so
 special-purpose commit formats can be tested without fighting the normalizer.
 If a verified remediation pass produces no staged changes after checks pass,

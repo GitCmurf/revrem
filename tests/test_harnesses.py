@@ -248,3 +248,23 @@ def test_fake_harness_can_report_deterministic_token_charge():
     )
     assert harnesses.fake_harness_token_charge(["revrem-fake-harness", "review", "--scenario=cost_ceiling"]) == 10
     assert harnesses.fake_harness_token_charge(["revrem-fake-harness", "review", "--model", "x"]) is None
+
+
+@pytest.mark.parametrize(
+    ("harness", "effort", "expected"),
+    [
+        (None, "medium", "medium"),
+        ("", "medium", "medium"),
+        ("codex", "medium", "medium"),
+        ("opencode", "low", "n/a"),
+        ("fake", "high", "n/a"),
+        ("fake", None, None),
+    ],
+)
+def test_phase_effort_text_returns_n_a_for_unsupported_harnesses(
+    harness: str | None, effort: str | None, expected: str | None
+) -> None:
+    """The shared helper is the single source of truth for the n/a
+    decision used by ``runtime._phase_effort_text`` and
+    ``tui_state._phase_effort_text``."""
+    assert harnesses.phase_effort_text(harness, effort) == expected

@@ -204,7 +204,10 @@ This project follows Semantic Versioning once public releases begin.
   clear evidence regardless of the preceding review's parse outcome.
   `stopped_reason` remains `no_changes_after_remediation`. Operators who
   scripted around the old `unknown` final status should adjust to the new
-  mapping.
+  mapping. The summary `schema_version` was bumped from `"1.0"` to `"1.1"`
+  so scripted consumers that diff the schema can detect the contract
+  change without reading the CHANGELOG; the on-disk shape of the summary
+  is otherwise unchanged.
 
 ### Security
 

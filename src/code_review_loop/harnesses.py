@@ -108,6 +108,21 @@ def reasoning_effort_supported(harness: str) -> bool:
     return harness in REASONING_EFFORT_HARNESSES
 
 
+def phase_effort_text(harness: str | None, effort: str | None) -> str | None:
+    """Return the operator-facing effort text for a phase.
+
+    Mirrors the prior ``_phase_effort_text`` helpers in ``runtime.py`` and
+    ``tui_state.py``: unsupported harnesses are surfaced as ``"n/a"`` and a
+    missing effort is ``None``. Both call sites should use this helper so the
+    supported-harness set and the ``"n/a"`` literal stay in one place.
+    """
+    if not effort:
+        return None
+    if harness and not reasoning_effort_supported(harness):
+        return "n/a"
+    return effort
+
+
 class CodexHarnessAdapter(HarnessAdapter):
     def command(self, request: PhaseCommandRequest) -> list[str]:
         if request.role == "review":

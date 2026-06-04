@@ -10,7 +10,9 @@ import shlex
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePath
+from typing import cast
 
+from code_review_loop import harnesses
 from code_review_loop.core.outcome import OutcomeFailed, RunOutcome
 from code_review_loop.core.ports import CommandResult
 
@@ -177,12 +179,15 @@ def _phase_effort_text(value: dict[object, object]) -> str | None:
     effort = value.get("reasoning_effort")
     if not effort:
         return None
-    if value.get("reasoning_effort_supported") is False:
-        return "n/a"
     provider_effort = value.get("provider_reasoning_effort")
     if isinstance(provider_effort, str) and provider_effort:
         return provider_effort
-    return str(effort)
+    if value.get("reasoning_effort_supported") is False:
+        return "n/a"
+    return harnesses.phase_effort_text(
+        cast("str | None", value.get("harness")),
+        cast("str | None", effort),
+    )
 
 
 def _phase_source_text(value: dict[object, object]) -> str | None:

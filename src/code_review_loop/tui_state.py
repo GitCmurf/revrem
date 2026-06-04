@@ -602,8 +602,4 @@ def phase_view(
 
 
 def _phase_effort_text(harness: str | None, effort: str | None) -> str | None:
-    if not effort:
-        return None
-    if harness and not harnesses.reasoning_effort_supported(harness):
-        return "n/a"
-    return effort
+    return harnesses.phase_effort_text(harness, effort)

@@ -7,6 +7,7 @@ reached through the module-level ``phase_support`` alias; C3 cleanup retires it.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -29,6 +30,8 @@ if TYPE_CHECKING:
     from code_review_loop.config import LoopConfig
 
 Runner = Callable[[Sequence[str], Path, str | None, float | None], CommandResult]
+REMEDIATION_RETRY_BACKOFF_SECONDS = 1.0
+REMEDIATION_RETRY_ATTEMPTS = 2
 
 
 def build_remediation_command(
@@ -74,6 +77,8 @@ def run_remediation(
     resolved_route: policy.ResolvedRoute | None = None,
     ctx: RunContext,
 ) -> CommandResult:
+    if ctx.git_context_cache is not None:
+        ctx.git_context_cache.invalidate_head_sha(str(config.cwd))
     last_message_path = (
         config.artifact_dir / f"remediation-{iteration}-last-message.txt"
         if config.output_last_message
@@ -148,17 +153,16 @@ def run_remediation(
     if config.dry_run:
         result = CommandResult(command, 0, stdout="DRY_RUN remediation skipped\n")
     else:
-        result = phase_support.run_with_waiting_progress(
+        result = _run_remediation_with_retry(
             config,
             runner,
             command,
-            config.cwd,
             prompt_input,
-            phase_support.phase_timeout_seconds(config, timeout),
-            phase="remediate",
-            label=str(iteration),
+            timeout,
+            str(iteration),
             ctx=ctx,
             prompt_artifact=invocation.prompt_artifact,
+            harness=remediation_harness,
         )
     phase_support.write_artifact(
         config.artifact_dir / f"remediation-{iteration}.txt",
@@ -187,6 +191,59 @@ def run_remediation(
         )
     phase_support.progress_event(config, "remediate", str(iteration), "done", ctx=ctx)
     return result
+
+
+def _run_remediation_with_retry(
+    config: LoopConfig,
+    runner: Runner,
+    command: list[str],
+    prompt_input: str | None,
+    timeout: float | None,
+    label: str,
+    *,
+    ctx: RunContext,
+    prompt_artifact: Path | None,
+    harness: str,
+) -> CommandResult:
+    """Run the remediation subprocess with bounded transient retry.
+
+    Mirrors the policy used by ``run_review_with_retry`` so a transient
+    rate limit or transport error on remediation does not abort the loop.
+    Non-transient provider failures (auth, quota, contract) and any failure
+    on the codex or fake harness still raise on the first attempt.
+    """
+    attempts = 1 if harness in {"codex", "fake"} else REMEDIATION_RETRY_ATTEMPTS
+    last_result: CommandResult | None = None
+    for attempt in range(1, attempts + 1):
+        result = phase_support.run_with_waiting_progress(
+            config,
+            runner,
+            command,
+            config.cwd,
+            prompt_input,
+            phase_support.phase_timeout_seconds(config, timeout),
+            phase="remediate",
+            label=label,
+            ctx=ctx,
+            prompt_artifact=prompt_artifact,
+        )
+        last_result = result
+        failure = provider_failures.classify_provider_failure(result, harness=harness)
+        if failure is None or not failure.transient:
+            return result
+        if attempt < attempts:
+            phase_support.progress_event(
+                config,
+                "remediate",
+                label,
+                "retry",
+                failure.detail,
+                ctx=ctx,
+                metadata={"reason": failure.reason, "attempt": attempt},
+            )
+            time.sleep(REMEDIATION_RETRY_BACKOFF_SECONDS)
+    assert last_result is not None
+    return last_result
 
 
 class RemediationAdapter:
