@@ -231,6 +231,10 @@ def _run_remediation_with_retry(
         failure = provider_failures.classify_provider_failure(result, harness=harness)
         if failure is None or not failure.transient:
             return result
+        phase_support.write_artifact(
+            config.artifact_dir / f"remediation-{label}-attempt-{attempt}.txt",
+            phase_support._combined_output(result),
+        )
         if attempt < attempts:
             phase_support.progress_event(
                 config,

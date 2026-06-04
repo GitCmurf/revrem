@@ -210,6 +210,28 @@ def test_cli_commit_harness_alias_overrides_profile_commit_harness(
     assert config.phase_config_field_sources["commit_message"]["harness"] == "cli"
 
 
+def test_cli_remediation_harness_dest_binds_to_remediation_harness_attr() -> None:
+    """Pin the bound attribute name for --remediation-harness / --remediate-harness.
+
+    Regression guard: argparse auto-derives the dest from the first option string,
+    so adding `dest="remediation_harness"` is a future-proofing contract, not a
+    behavioral change today. The alias path (--remediate-harness) must also bind
+    to `args.remediation_harness` rather than `args.remediate_harness`.
+    """
+    args_primary = cli_args.parse_args(["--remediation-harness", "opencode"])
+    assert hasattr(args_primary, "remediation_harness")
+    assert args_primary.remediation_harness == "opencode"
+    assert not hasattr(args_primary, "remediate_harness")
+
+    args_alias = cli_args.parse_args(["--remediate-harness", "opencode"])
+    assert hasattr(args_alias, "remediation_harness")
+    assert args_alias.remediation_harness == "opencode"
+    assert not hasattr(args_alias, "remediate_harness")
+
+    args_default = cli_args.parse_args([])
+    assert args_default.remediation_harness is None
+
+
 def test_cli_review_and_remediation_harnesses_override_profile(tmp_path, monkeypatch):
     monkeypatch.setattr(
         config_builder,

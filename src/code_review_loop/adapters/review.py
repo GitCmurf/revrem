@@ -300,6 +300,39 @@ def external_review_prompt_metadata(
     }
 
 
+def _leading_match_length(text: str, prefix: str) -> int:
+    """Return the length of the longest prefix of ``prefix`` that matches
+    the start of ``text``.
+
+    Used to recover the head anchor after a second-pass trim that may
+    have partially clipped the original head string.
+    """
+    max_len = min(len(text), len(prefix))
+    matched = 0
+    for i in range(max_len):
+        if text[i] != prefix[i]:
+            break
+        matched = i + 1
+    return matched
+
+
+def _trailing_match_length(text: str, suffix: str) -> int:
+    """Return the length of the longest suffix of ``suffix`` that matches
+    the end of ``text``.
+
+    Used to recover the tail anchor after a second-pass trim that may
+    have partially clipped the original tail string. Scans from the
+    end of both strings; on first mismatch returns the running count.
+    """
+    max_len = min(len(text), len(suffix))
+    matched = 0
+    for i in range(1, max_len + 1):
+        if text[-i] != suffix[-i]:
+            break
+        matched = i
+    return matched
+
+
 def compose_external_review_prompt(
     config: LoopConfig,
     review_context: str,
@@ -319,10 +352,10 @@ def compose_external_review_prompt(
         prompt = prompts_composer.trim_for_prompt(
             prompt, config.external_review_input_chars
         )
-        head_len = len(prompt_head)
-        tail_len = len(prompt_tail)
-        if len(prompt) > head_len + tail_len:
-            trimmed_context = prompt[head_len : len(prompt) - tail_len]
+        actual_head_len = _leading_match_length(prompt, prompt_head)
+        actual_tail_len = _trailing_match_length(prompt, prompt_tail)
+        if actual_head_len + actual_tail_len <= len(prompt):
+            trimmed_context = prompt[actual_head_len : len(prompt) - actual_tail_len]
         else:
             trimmed_context = ""
     return ExternalReviewPrompt(

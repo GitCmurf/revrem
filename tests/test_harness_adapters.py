@@ -95,11 +95,18 @@ def test_opencode_adapter_debug_env_adds_provider_logs(monkeypatch):
 
 
 def test_opencode_debug_argv_is_well_formed(monkeypatch):
-    """Smoke test: the REVREM_OPENCODE_DEBUG argv shape is locked to a constant.
+    """Structural lock: the REVREM_OPENCODE_DEBUG argv shape is frozen.
 
-    A future opencode release that renames ``--print-logs`` or ``--log-level``
-    would need only one edit at the ``OPENCODE_DEBUG_ARGV`` constant. The
-    structural checks below guard against a silent flag-rename regression.
+    This is a *structural*, not a *behavioral* check: we do not invoke
+    ``opencode run --help`` here, so a future opencode release that
+    renames ``--print-logs`` or ``--log-level`` would still need an edit
+    at the ``OPENCODE_DEBUG_ARGV`` constant, but this test will not
+    detect the rename on its own. The structural guards below catch
+    silent flag-rename regressions (e.g., the constant being reordered
+    or a token silently losing its leading ``--``).
+
+    The ``unset`` branch (no debug flags injected) is covered by
+    ``test_opencode_debug_argv_off_by_default`` below.
     """
     monkeypatch.setenv("REVREM_OPENCODE_DEBUG", "1")
     adapter = harnesses.OpenCodeHarnessAdapter()

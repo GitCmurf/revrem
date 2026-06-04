@@ -521,6 +521,61 @@ def test_remediation_adapter_retries_transient_failure(
     ]
 
 
+def test_remediation_retry_persists_failed_attempt_artifact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Transient retry must persist a failed-attempt artifact for parity
+    with ``run_review_with_retry`` (which writes
+    ``review-{label}-attempt-{attempt}.txt``). Operators triaging a
+    transient retry should see the failed first attempt on disk, not only
+    the post-retry transcript.
+    """
+    artifact_dir = tmp_path / "artifacts"
+    artifact_dir.mkdir()
+    calls: list[list[str]] = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[:2] == ["git", "diff"]:
+            return CommandResult(list(args), 0, stdout="")
+        calls.append(list(args))
+        if len(calls) == 1:
+            return CommandResult(
+                list(args), 1, stderr="Error: 429 rate limit exceeded"
+            )
+        return CommandResult(list(args), 0, stdout="ok\n")
+
+    monkeypatch.setattr(
+        "code_review_loop.adapters.remediation.time.sleep", lambda _s: None
+    )
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        cwd=tmp_path,
+        artifact_dir=artifact_dir,
+        remediation_harness="opencode",
+        remediation_model="opencode/model",
+    )
+    ctx = RunContext(
+        runner=runner,
+        clock=FakeClock(),
+        identity=FakeRunIdentity(),
+        **phase_harness_kwargs(),
+    )
+    adapter = RemediationAdapter(config)
+
+    adapter.execute(RemediationRequest(iteration=2, remediation_input="fix"), ctx)
+
+    failed_attempt_artifact = artifact_dir / "remediation-2-attempt-1.txt"
+    assert failed_attempt_artifact.exists(), (
+        "remediation retry must persist the failed first-attempt artifact "
+        "for observability parity with run_review_with_retry"
+    )
+    contents = failed_attempt_artifact.read_text()
+    assert "429 rate limit exceeded" in contents
+    assert (artifact_dir / "remediation-2.txt").exists()
+
+
 def test_remediation_adapter_does_not_retry_auth_required_repeatedly(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

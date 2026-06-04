@@ -90,6 +90,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument(
         "--remediation-harness",
         "--remediate-harness",
+        dest="remediation_harness",
         default=None,
         help=(
             "Optional harness override for remediation only. "
