@@ -425,6 +425,8 @@ def progress_event(
             payload["message"] = detail
         if metadata:
             payload.update(metadata)
+        if _progress_event_kind(status) == "phase_start":
+            payload.setdefault("payload_schema_version", "1.1")
         sink.emit(
             _progress_event_kind(status),
             phase=phase,

@@ -120,26 +120,6 @@ def cached_merge_base(
     return result
 
 
-def cached_head_rev(
-    cache: GitContextCache | None,
-    cwd: Path,
-    base: str,
-) -> CommandResult:
-    """Return ``git rev-parse HEAD`` from the cache when available."""
-    key = (str(cwd), base)
-    if cache is not None and key in cache.head_rev:
-        stdout = cache.head_rev[key]
-        return CommandResult(
-            ["git", "rev-parse", "HEAD"],
-            0 if stdout else 1,
-            stdout=stdout,
-        )
-    result = run_git_preflight(cwd, ["rev-parse", "HEAD"])
-    if cache is not None and result.returncode == 0:
-        cache.head_rev[key] = result.stdout.strip()
-    return result
-
-
 def cached_diff_base_head(
     cache: GitContextCache | None,
     cwd: Path,
@@ -150,7 +130,9 @@ def cached_diff_base_head(
     name_status: bool = False,
 ) -> CommandResult:
     """Return ``git diff [options] <base>...HEAD`` from the cache when the
-    head SHA is unchanged, otherwise run it and update the cache.
+    ``(cwd, head, base)`` triple is unchanged, otherwise run it and update
+    the cache. Callers must pass the live HEAD SHA (do not cache it) so the
+    per-iteration diff is recomputed whenever remediation advances HEAD.
     """
     diff_args: list[str] = ["diff"]
     if stat:

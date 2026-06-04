@@ -11,7 +11,11 @@ from typing import TypeVar
 
 from code_review_loop import budgets, diagnostics, events, profiles, reporting
 from code_review_loop.adapters.git import git_preflight_stdout
-from code_review_loop.config import LoopConfig
+from code_review_loop.config import (
+    DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS,
+    DEFAULT_EXTERNAL_REVIEW_WARNING_SECONDS,
+    LoopConfig,
+)
 
 RESUMABLE_STOPPED_REASONS = frozenset(
     {
@@ -235,9 +239,13 @@ def resume_loop_config(
         progress_style=_resume_str(resume_config, "progress_style", "compact"),
         terminal_excerpt_chars=_resume_int(resume_config, "terminal_excerpt_chars", 4_000),
         max_remediation_input_chars=_resume_int(resume_config, "max_remediation_input_chars", 200_000),
-        external_review_input_chars=_resume_int(resume_config, "external_review_input_chars", 80_000),
+        external_review_input_chars=_resume_int(
+            resume_config, "external_review_input_chars", DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS
+        ),
         external_review_warning_seconds=_resume_float(
-            resume_config, "external_review_warning_seconds", 1_800
+            resume_config,
+            "external_review_warning_seconds",
+            DEFAULT_EXTERNAL_REVIEW_WARNING_SECONDS,
         ),
         check_commands=_resume_str_tuple(resume_config, "check_commands"),
         commit_after_remediation=_resume_bool(resume_config, "commit_after_remediation", False),
@@ -319,8 +327,13 @@ def resume_config_payload(config: LoopConfig) -> dict[str, object]:
     if config.profile_v2 is not None:
         payload["routing_enabled"] = config.profile_v2.triage.routing.enabled
         payload["routing_strict"] = config.profile_v2.triage.routing.strict_on_unavailable_route
-        payload["routing_default_route"] = config.profile_v2.triage.routing.default_route
         payload["allow_model_escalation"] = config.profile_v2.triage.routing.allow_model_escalation
+    _put_if_not_default(
+        payload,
+        "routing_default_route",
+        _routing_default_route_value(config),
+        "",
+    )
     _put_if_not_none(payload, "reasoning_effort", config.reasoning_effort)
     _put_if_not_none(payload, "review_reasoning_effort", config.review_reasoning_effort)
     _put_if_not_none(payload, "remediation_reasoning_effort", config.remediation_reasoning_effort)
@@ -351,6 +364,13 @@ def _put_if_not_none(payload: dict[str, object], key: str, value: object | None)
 def _put_if_not_default(payload: dict[str, object], key: str, value: object, default: object) -> None:
     if value != default:
         payload[key] = value
+
+
+def _routing_default_route_value(config: LoopConfig) -> str:
+    """Return the effective routing default route from the resolved profile."""
+    if config.profile_v2 is None:
+        return ""
+    return config.profile_v2.triage.routing.default_route or ""
 
 
 def _resume_profile_snapshot(config: LoopConfig) -> dict[str, object] | None:

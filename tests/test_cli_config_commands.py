@@ -508,3 +508,57 @@ def test_editor_command_uses_windows_quoting_when_needed(monkeypatch):
     monkeypatch.setattr(config_command.os, "name", "nt")
 
     assert config_command._editor_command() == ["C:\\Program Files\\Editor\\editor.exe", "--wait"]
+
+
+def test_is_large_context_gemini_review_model_accepts_canonical_pro_names():
+    assert config_builder.is_large_context_gemini_review_model(
+        "gemini", "gemini-3.1-pro-preview"
+    )
+    assert config_builder.is_large_context_gemini_review_model(
+        "gemini", "gemini-3-pro"
+    )
+    assert config_builder.is_large_context_gemini_review_model(
+        "gemini", "gemini-2.5-pro"
+    )
+
+
+def test_is_large_context_gemini_review_model_rejects_pretend_pro_suffixes():
+    assert not config_builder.is_large_context_gemini_review_model(
+        "gemini", "gemini-2.5-pretend-pro"
+    )
+    assert not config_builder.is_large_context_gemini_review_model(
+        "gemini", "gemini-2.5-prosomething-experimental"
+    )
+    assert not config_builder.is_large_context_gemini_review_model(
+        "gemini", "gemini-2.5-pro-"
+    )
+
+
+def test_is_large_context_gemini_review_model_rejects_non_gemini_harness():
+    assert not config_builder.is_large_context_gemini_review_model(
+        "codex", "gemini-3.1-pro-preview"
+    )
+    assert not config_builder.is_large_context_gemini_review_model(
+        "opencode", "gemini-3.1-pro-preview"
+    )
+
+
+def test_is_large_context_gemini_review_model_rejects_empty_model():
+    assert not config_builder.is_large_context_gemini_review_model("gemini", None)
+    assert not config_builder.is_large_context_gemini_review_model("gemini", "")
+
+
+def test_is_large_context_gemini_review_model_rejects_multi_segment_pro_suffix():
+    """Pin the deliberate single-segment scope of the optional ``-[a-z0-9]+``
+    suffix. A future model name like ``gemini-2.5-pro-exp-0827`` is rejected
+    by design; widening the pattern to ``(?:-[a-z0-9]+)*`` must be an
+    intentional, reviewable change rather than an accidental relaxation.
+    """
+    # Hypothetical future multi-segment names must currently fall back to
+    # the standard (smaller) external review input cap.
+    assert not config_builder.is_large_context_gemini_review_model(
+        "gemini", "gemini-2.5-pro-exp-0827"
+    )
+    assert not config_builder.is_large_context_gemini_review_model(
+        "gemini", "gemini-3.1-pro-preview-09"
+    )

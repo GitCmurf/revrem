@@ -155,16 +155,21 @@ class GeminiHarnessAdapter(HarnessAdapter):
         return command
 
 
+OPENCODE_DEBUG_ENV = "REVREM_OPENCODE_DEBUG"
+OPENCODE_DEBUG_ARGV: tuple[str, ...] = ("--print-logs", "--log-level", "INFO")
+
+
 class OpenCodeHarnessAdapter(HarnessAdapter):
     def command(self, request: PhaseCommandRequest) -> list[str]:
         command = [request.executable, "run"]
-        if os.environ.get("REVREM_OPENCODE_DEBUG") == "1":
-            # Best-effort operator aid: the resulting --print-logs / --log-level
-            # flags are confirmed-valid against `opencode run --help` but are
-            # not unit-tested against a real opencode binary, so a future
-            # opencode release that renames or removes them would surface here
-            # as a runtime failure only.
-            command.extend(["--print-logs", "--log-level", "INFO"])
+        if os.environ.get(OPENCODE_DEBUG_ENV) == "1":
+            # Best-effort operator aid. The argv values in
+            # ``OPENCODE_DEBUG_ARGV`` are confirmed-valid against
+            # ``opencode run --help`` and locked by
+            # ``test_opencode_debug_argv_is_well_formed``. If a future
+            # opencode release renames these flags, update the constant in
+            # one place and re-run the suite.
+            command.extend(OPENCODE_DEBUG_ARGV)
         command.extend(_opencode_permission_args(request))
         if request.model:
             command.extend(["--model", request.model])
@@ -501,6 +506,17 @@ def harness_capabilities_payload(name: str) -> dict[str, Any]:
 
 
 def run_fake_harness_command(args: list[str] | tuple[str, ...]) -> tuple[int, str, str]:
+    """Run the deterministic ``revrem-fake-harness`` script for tests.
+
+    Note: the ``--scenario timeout`` branch returns ``(-1, "", ...)``.
+    ``classify_provider_failure`` maps any negative return code to the
+    ``provider_interrupted`` reason with ``transient=True`` (see
+    ``provider_failures.classify_provider_failure``), and ``run_review_with_retry``
+    treats that as a retryable signal. Operators wiring the fake harness into
+    retry-counter tests will see two fake-harness invocations for one
+    ``--scenario timeout`` call. Other scenarios (clear, findings,
+    remediation_partial, etc.) use return code 0 or 2 and are not retried.
+    """
     if not fake_harness_enabled():
         return 2, "", f"ERROR: fake harness disabled; set {FAKE_HARNESS_ENV}=1\n"
     if len(args) < 2:

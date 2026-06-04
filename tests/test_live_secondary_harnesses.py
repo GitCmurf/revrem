@@ -164,21 +164,23 @@ def test_live_secondary_provider_direct_smoke(
     assert LIVE_SMOKE_TOKEN in output
 
 
-def test_live_kilo_stdin_contract_is_accepted() -> None:
-    """Hermetic contract check: kilo's `run` subcommand accepts a prompt via stdin.
+def test_live_kilo_stdin_contract_is_not_immediately_rejected() -> None:
+    """Best-effort check: kilo's `run` subcommand is not immediately rejected.
 
     The full remediation path is covered by the parametrised live smoke above,
     but that smoke requires an authenticated kilo CLI. This test is a tighter
     check that only depends on the kilo binary being installed and that the
-    `run` subcommand does not reject stdin as a prompt source up-front.
+    `run` subcommand does not reject stdin as a prompt source up-front. The
+    name says "is not immediately rejected" deliberately: a kilo that drops
+    stdin handling entirely would still pass the help-text probe, and a kilo
+    that quietly truncates large stdin or reads-but-ignores stdin would not
+    be detected by the echo-token probe. Treat this as a smoke check, not a
+    contract.
 
     The test first invokes `kilo run --help` to confirm the binary answers,
     then probes stdin with a unique echo token. The probe token must appear
-    in the combined stdout/stderr, proving that kilo actually ingested the
-    stdin input (not merely that it did not print the literal word "stdin").
-    The residual risk is that kilo's help text does not explicitly confirm
-    stdin ingestion, so a kilo regression that drops stdin handling would
-    still pass the help check but fail the probe-token assertion.
+    in the combined stdout/stderr, proving that kilo at least echoed the
+    stdin input through.
 
     Skipped by default; opt in with `REVREM_LIVE_KILO=1` and point
     `REVREM_LIVE_KILO_BIN` at the binary if it is not on `PATH`.

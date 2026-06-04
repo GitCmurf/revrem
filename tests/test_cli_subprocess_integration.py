@@ -246,6 +246,32 @@ def test_latest_prompt_evidence_reports_cancelled_review_prompt(tmp_path):
     assert evidence["latest_context_artifact"] == "review-1-context.txt"
 
 
+def test_latest_prompt_evidence_handles_three_segment_commit_prompt(tmp_path):
+    artifact_dir = tmp_path / "artifacts"
+    artifact_dir.mkdir()
+    (artifact_dir / "commit-1-message-prompt.txt").write_text(
+        "commit prompt", encoding="utf-8"
+    )
+
+    evidence = _latest_prompt_evidence(artifact_dir)
+
+    assert evidence["latest_prompt_artifact"] == "commit-1-message-prompt.txt"
+    assert evidence["latest_prompt_phase"] == "commit"
+    assert evidence["latest_prompt_iteration"] == "1"
+
+
+def test_latest_prompt_evidence_drops_phase_for_unknown_artifact_name(tmp_path):
+    artifact_dir = tmp_path / "artifacts"
+    artifact_dir.mkdir()
+    (artifact_dir / "diagnostic-1-prompt.txt").write_text("noise", encoding="utf-8")
+
+    evidence = _latest_prompt_evidence(artifact_dir)
+
+    assert evidence["latest_prompt_artifact"] == "diagnostic-1-prompt.txt"
+    assert "latest_prompt_phase" not in evidence
+    assert "latest_prompt_iteration" not in evidence
+
+
 def test_subprocess_refresh_loop_does_not_resend_input_after_timeout(tmp_path, monkeypatch):
     refresh_calls = []
 

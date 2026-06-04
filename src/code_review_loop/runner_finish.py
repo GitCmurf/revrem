@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import NoReturn, assert_never
 
@@ -188,18 +189,24 @@ def _latest_prompt_evidence(artifact_dir: Path) -> dict[str, object]:
         "latest_prompt_artifact": prompt_path.name,
         "latest_prompt_bytes": prompt_path.stat().st_size,
     }
-    # The artifact filename convention is ``<phase>-<iteration>-prompt.txt``
+    # The artifact filename convention is ``<phase>-<iteration>[-<suffix>]-prompt.txt``
     # (e.g. ``review-1-prompt.txt`` or ``commit-1-message-prompt.txt``). The
-    # stem split below assumes that two-segment shape; if prompt artifacts are
-    # renamed to embed extra hyphens (e.g. ``commit-1-message-prompt.txt``)
-    # this function will still report ``phase=commit``, ``iteration=1`` and
-    # drop the trailing segment. Update the producer side in
-    # ``adapters/review.py``, ``adapters/commit.py`` etc. before changing
-    # this convention.
-    parts = prompt_path.stem.split("-")
-    if len(parts) >= 2:
-        evidence["latest_prompt_phase"] = parts[0]
-        evidence["latest_prompt_iteration"] = parts[1]
+    # regex below pins the phase to a known value and the iteration to digits;
+    # the optional middle segment is dropped silently so existing 3-segment
+    # names still resolve, but a future unknown suffix is left out of the
+    # evidence rather than mis-parsed. Update the producer side in
+    # ``adapters/review.py``, ``adapters/commit.py`` etc. before introducing
+    # a new suffix.
+    match = re.fullmatch(
+        r"(?P<phase>review|remediate|remediation|triage|commit-message|commit)"
+        r"-(?P<iteration>\d+)"
+        r"(-[A-Za-z0-9_-]+)?"
+        r"-prompt",
+        prompt_path.stem,
+    )
+    if match is not None:
+        evidence["latest_prompt_phase"] = match.group("phase")
+        evidence["latest_prompt_iteration"] = match.group("iteration")
     context_path = prompt_path.with_name(prompt_path.name.replace("-prompt.txt", "-context.txt"))
     if context_path.is_file():
         evidence["latest_context_artifact"] = context_path.name

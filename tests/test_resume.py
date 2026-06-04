@@ -516,6 +516,32 @@ def test_resume_config_payload_persists_configured_extension_fields(tmp_path):
     assert payload["triage_reasoning_effort"] == "minimal"
 
 
+def test_resume_config_payload_and_loop_config_restore_external_review_settings(tmp_path):
+    payload = resume_mod.resume_config_payload(
+        LoopConfig(
+            base="main",
+            max_iterations=1,
+            codex_bin="codex",
+            cwd=tmp_path,
+            artifact_dir=tmp_path / "artifacts",
+            external_review_input_chars=600_000,
+            external_review_warning_seconds=600.5,
+        )
+    )
+
+    run_dir = tmp_path / "run"
+    write_resume_run(run_dir, resume_config=payload)
+    resumed, _budget_state = resume_mod.resume_loop_config(
+        json.loads((run_dir / "summary.json").read_text(encoding="utf-8")),
+        run_dir=run_dir,
+    )
+
+    assert payload["external_review_input_chars"] == 600_000
+    assert payload["external_review_warning_seconds"] == 600.5
+    assert resumed.external_review_input_chars == 600_000
+    assert resumed.external_review_warning_seconds == 600.5
+
+
 def test_resume_preconditions_block_head_mismatch(tmp_path, monkeypatch):
     run_dir = tmp_path / "run"
     write_resume_run(run_dir)

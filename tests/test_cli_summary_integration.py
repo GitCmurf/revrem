@@ -252,6 +252,101 @@ def test_terminal_summary_resume_command_preserves_forced_route():
     assert "--route gemini-pro" in text
 
 
+def test_terminal_summary_resume_command_preserves_external_review_overrides():
+    text = format_terminal_summary(
+        {
+            "artifact_dir": "tmp/run",
+            "final_status": "findings",
+            "stopped_reason": "max_iterations_reached",
+            "artifact_paths": {"reviews": ["tmp/run/review-final.txt"]},
+            "base": "main",
+            "max_iterations": 1,
+            "resume_config": {
+                "base": "main",
+                "max_iterations": 1,
+                "external_review_input_chars": 600_000,
+                "external_review_warning_seconds": 600,
+            },
+            "phase_config": {
+                "runtime": {
+                    "sources": {
+                        "external_review_input_chars": "cli",
+                        "external_review_warning_seconds": "cli",
+                    },
+                },
+            },
+        }
+    )
+
+    assert "--external-review-input-chars 600000" in text
+    assert "--external-review-warning-seconds 600" in text
+
+
+def test_terminal_summary_resume_command_preserves_non_default_harnesses():
+    text = format_terminal_summary(
+        {
+            "artifact_dir": "tmp/run",
+            "final_status": "findings",
+            "stopped_reason": "max_iterations_reached",
+            "artifact_paths": {"reviews": ["tmp/run/review-final.txt"]},
+            "base": "main",
+            "max_iterations": 1,
+            "resume_config": {
+                "base": "main",
+                "max_iterations": 1,
+                "review_harness": "opencode",
+                "remediation_harness": "kilo",
+            },
+            "phase_config": {
+                "review": {"harness": "opencode", "source": "cli"},
+                "remediation": {"harness": "kilo", "source": "cli"},
+            },
+        }
+    )
+
+    assert "--review-harness opencode" in text
+    assert "--remediation-harness kilo" in text
+
+
+def test_resume_config_payload_persists_routing_default_route_when_profile_v2_set(tmp_path):
+    from code_review_loop.config import LoopConfig
+    from code_review_loop.profiles import Profile, parse_triage
+    from code_review_loop.resume import resume_config_payload
+
+    triage_payload = {
+        "enabled": True,
+        "harness": "codex",
+        "model": None,
+        "reasoning_effort": None,
+        "timeout_seconds": 60,
+        "contract": "v2",
+        "routes": {
+            "gemini-pro": {"harness": "gemini", "model": "gemini-3.1-pro-preview"}
+        },
+        "routing": {
+            "enabled": True,
+            "strict_on_unavailable_route": True,
+            "default_route": "gemini-pro",
+            "allow_model_escalation": True,
+        },
+    }
+    profile_v2 = Profile(
+        name="test", triage=parse_triage(triage_payload, "test"), source="test"
+    )
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path,
+        profile_v2=profile_v2,
+    )
+
+    payload = resume_config_payload(config)
+
+    assert payload["routing_default_route"] == "gemini-pro"
+
+
 def test_terminal_summary_falls_back_to_accurate_check_artifact_label():
     text = format_terminal_summary(
         {

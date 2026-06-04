@@ -17,8 +17,19 @@ class ProviderFailure:
 
 
 def classify_provider_failure(
-    _harness: str, result: CommandResult
+    result: CommandResult,
+    harness: str = "",
 ) -> ProviderFailure | None:
+    """Classify a provider subprocess failure into a stable failure reason.
+
+    The ``harness`` argument is currently unused for classification — the
+    string matchers below are harness-agnostic. It is kept on the signature
+    so harness-specific rules can be added in the future without a breaking
+    API change for ``adapters/review.py`` and ``run_review_with_retry``.
+    Callers must continue to pass ``config.review_harness`` for that
+    forward compatibility.
+    """
+    del harness  # documented as a forward-compatibility hook
     if result.returncode == 0:
         return None
     output = _combined_output(result)

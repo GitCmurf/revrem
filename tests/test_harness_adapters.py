@@ -94,6 +94,62 @@ def test_opencode_adapter_debug_env_adds_provider_logs(monkeypatch):
     assert "--model" in cmd
 
 
+def test_opencode_debug_argv_is_well_formed(monkeypatch):
+    """Smoke test: the REVREM_OPENCODE_DEBUG argv shape is locked to a constant.
+
+    A future opencode release that renames ``--print-logs`` or ``--log-level``
+    would need only one edit at the ``OPENCODE_DEBUG_ARGV`` constant. The
+    structural checks below guard against a silent flag-rename regression.
+    """
+    monkeypatch.setenv("REVREM_OPENCODE_DEBUG", "1")
+    adapter = harnesses.OpenCodeHarnessAdapter()
+
+    cmd = adapter.command(
+        harnesses.PhaseCommandRequest(
+            harness="opencode",
+            role="review",
+            executable="opencode",
+            model="opencode/minimax-m3-free",
+            sandbox="read-only",
+            full_auto=False,
+        )
+    )
+
+    assert tuple(cmd[2 : 2 + len(harnesses.OPENCODE_DEBUG_ARGV)]) == (
+        harnesses.OPENCODE_DEBUG_ARGV
+    )
+    argv = harnesses.OPENCODE_DEBUG_ARGV
+    assert len(argv) >= 2, "OPENCODE_DEBUG_ARGV must contain at least one flag/value"
+    for index, token in enumerate(argv[:-1]):
+        assert token.startswith("--"), (
+            f"OPENCODE_DEBUG_ARGV[{index}]={token!r} must be a long option"
+        )
+    assert not argv[-1].startswith("--"), (
+        f"OPENCODE_DEBUG_ARGV terminal value {argv[-1]!r} must be a bare token"
+    )
+    assert harnesses.OPENCODE_DEBUG_ENV == "REVREM_OPENCODE_DEBUG"
+
+
+def test_opencode_debug_argv_off_by_default(monkeypatch):
+    """Without REVREM_OPENCODE_DEBUG=1, the debug flags must not be injected."""
+    monkeypatch.delenv("REVREM_OPENCODE_DEBUG", raising=False)
+    adapter = harnesses.OpenCodeHarnessAdapter()
+
+    cmd = adapter.command(
+        harnesses.PhaseCommandRequest(
+            harness="opencode",
+            role="review",
+            executable="opencode",
+            model="opencode/minimax-m3-free",
+            sandbox="read-only",
+            full_auto=False,
+        )
+    )
+
+    for flag in harnesses.OPENCODE_DEBUG_ARGV:
+        assert flag not in cmd
+
+
 def test_kilo_adapter_commands():
     adapter = harnesses.KiloHarnessAdapter()
     for role in ["review", "triage", "remediation", "commit-message"]:
@@ -106,6 +162,29 @@ def test_kilo_adapter_commands():
         assert "--auto" in cmd
         assert "--model" in cmd
         assert "m3" in cmd
+
+
+def test_kilo_adapter_omits_auto_for_unsupported_full_auto_sandbox_combos():
+    adapter = harnesses.KiloHarnessAdapter()
+    for full_auto, sandbox in (
+        (True, "read-only"),
+        (False, "workspace-write"),
+        (False, "read-only"),
+    ):
+        req = harnesses.PhaseCommandRequest(
+            harness="kilo",
+            role="remediation",
+            executable="kilo",
+            model="m3",
+            sandbox=sandbox,
+            full_auto=full_auto,
+        )
+        cmd = adapter.command(req)
+        assert cmd[0] == "kilo"
+        assert "run" in cmd
+        assert "--auto" not in cmd, (
+            f"--auto must be absent for full_auto={full_auto} sandbox={sandbox}"
+        )
 
 
 def test_prompt_invocation_uses_stdin_for_claude():

@@ -11,6 +11,7 @@
       ],
       "harness": "codex",
       "message": "codex review · sandbox read-only · source=direct-config",
+      "payload_schema_version": "1.1",
       "prompt_delivery": "none",
       "summary": "start"
     },
@@ -50,6 +51,7 @@
       ],
       "harness": "codex",
       "message": "codex exec · sandbox workspace-write · prompt=679 stdin · source=direct-config",
+      "payload_schema_version": "1.1",
       "prompt_bytes": 679,
       "prompt_chars": 679,
       "prompt_delivery": "stdin",

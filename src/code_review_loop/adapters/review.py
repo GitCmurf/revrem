@@ -20,7 +20,6 @@ from code_review_loop.adapters.git import (
     GitContextCache,
     cached_base_commit,
     cached_diff_base_head,
-    cached_head_rev,
     cached_merge_base,
     run_git_preflight,
 )
@@ -180,7 +179,7 @@ def run_codex_review(
     )
     if review_failed_to_run(result, config.review_harness):
         failure = provider_failures.classify_provider_failure(
-            config.review_harness, result
+            result, harness=config.review_harness
         )
         failure_detail = f": {failure.detail}" if failure else ""
         phase_support.progress_event(
@@ -258,7 +257,7 @@ def run_review_with_retry(
         )
         last_result = result
         failure = provider_failures.classify_provider_failure(
-            config.review_harness, result
+            result, harness=config.review_harness
         )
         if (
             not review_failed_to_run(result, config.review_harness)
@@ -360,7 +359,7 @@ def build_external_review_context(
         return "\n".join(sections) + "\n"
 
     base = cached_base_commit(git_context_cache, config.cwd, config.base)
-    head = cached_head_rev(git_context_cache, config.cwd, config.base)
+    head = run_git_preflight(config.cwd, ["rev-parse", "HEAD"])
     head_sha = head.stdout.strip()
     merge_base = cached_merge_base(
         git_context_cache, config.cwd, head_sha, config.base
@@ -458,7 +457,7 @@ def review_base_preflight_error(
             f"{phase_support._combined_output(base_result)}"
         )
 
-    head = cached_head_rev(git_context_cache, config.cwd, base).stdout.strip() or "HEAD"
+    head = run_git_preflight(config.cwd, ["rev-parse", "HEAD"]).stdout.strip() or "HEAD"
     merge_base = cached_merge_base(git_context_cache, config.cwd, head, base)
     if merge_base.returncode == 0:
         return None
@@ -496,14 +495,28 @@ def review_base_hint(config: LoopConfig, base: str) -> str:
 
 
 def review_failed_to_run(result: CommandResult, harness: str) -> bool:
-    """Distinguish review invocation failures from review findings."""
+    """Distinguish review invocation failures from review findings.
+
+    The ``harness`` argument is a forward-compat hook: it is forwarded to
+    ``provider_failures.classify_provider_failure`` so harness-specific
+    classification rules can be added in the future without an API change.
+    ``classify_provider_failure`` is currently harness-agnostic (it
+    discards the value) and is the gate that turns return codes and stderr
+    patterns into a structured provider-failure reason (see
+    ``tests/test_provider_failures.py`` for the failure cases this guards
+    against). Callers must continue to pass ``config.review_harness`` for
+    that forward compatibility.
+    """
     if result.returncode == 0:
         return False
     if result.returncode < 0:
         return True
     if result.returncode >= 2:
         return True
-    if provider_failures.classify_provider_failure(harness, result) is not None:
+    if (
+        provider_failures.classify_provider_failure(result, harness=harness)
+        is not None
+    ):
         return True
 
     stderr = result.stderr.lower()

@@ -7,6 +7,7 @@ These functions translate ``argparse.Namespace`` + profile defaults into a
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
@@ -142,16 +143,28 @@ def resolve_external_review_input_chars_source(
     return "defaults"
 
 
+_GEMINI_PRO_MODEL_PATTERN = re.compile(
+    r"^gemini-\d+(?:\.\d+)*-pro(?:-[a-z0-9]+)?$"
+)
+# Deliberate single-segment scope: the optional ``-[a-z0-9]+`` suffix
+# accepts exactly one dash-separated segment (e.g. ``-preview``,
+# ``-experimental``) and not multi-segment names like
+# ``-exp-0827``. Currently published Gemini Pro names use at most one
+# suffix segment, so widening the pattern to ``(?:-[a-z0-9]+)*`` would
+# only matter for hypothetical future model names. A regression test in
+# ``tests/test_cli_config_commands.py`` pins the deliberate single-segment
+# scope so a future widening is an intentional, reviewable change rather
+# than an accidental silent relaxation.
+
+
 def is_large_context_gemini_review_model(
     review_harness: str,
     review_model: str | None,
 ) -> bool:
     model = (review_model or "").lower()
-    return (
-        review_harness == "gemini"
-        and model.startswith("gemini-")
-        and "-pro" in model
-    )
+    if review_harness != "gemini" or not model.startswith("gemini-"):
+        return False
+    return _GEMINI_PRO_MODEL_PATTERN.match(model) is not None
 
 
 def profile_runtime_key_explicit(

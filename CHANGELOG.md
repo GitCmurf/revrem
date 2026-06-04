@@ -26,8 +26,14 @@ This project follows Semantic Versioning once public releases begin.
 - Triage v2 schema, routing-v1 schema, and routing-outcome-v1 schema added
   to the public API definition.
 - OpenCode prompt-bearing phases now attach the saved prompt artifact with
-  `opencode run --file` instead of using stdin, and model subprocesses emit
-  five-minute `waiting` progress diagnostics while they remain active.
+  `opencode run --file` and emit a short positional instruction
+  (`"Follow the attached RevRem prompt exactly."`) immediately before
+  `--file`, since live `opencode run` rejects an attached prompt artifact
+  without an accompanying positional message or `--command`. The behavior
+  described in the `Changed` entry below is the canonical contract; the
+  earlier "instead of using stdin" wording was superseded once the
+  positional message was added. Model subprocesses also emit five-minute
+  `waiting` progress diagnostics while they remain active.
 - Kilo and Gemini prompt-bearing phases now deliver the prompt via stdin
   instead of as a positional argv token, aligning them with the Claude
   contract and matching the hermetic harness-adapter test that covers the
@@ -46,10 +52,6 @@ This project follows Semantic Versioning once public releases begin.
   whether the supplied context is full or truncated. Long-running external
   review subprocesses add a stronger non-terminating waiting diagnostic after
   the configured quiet threshold.
-- OpenCode prompt-bearing phases now pass a short positional instruction along
-  with `--file <prompt-artifact>`, matching the installed `opencode run`
-  contract that treats `--file` as an attachment rather than a standalone
-  prompt source.
 - Public GitHub launch materials: README, contribution guidance, security
   policy, support policy, issue templates, pull request template, CODEOWNERS,
   NOTICE, CI hardening, Scorecard workflow, and release provenance/SBOM
@@ -104,7 +106,9 @@ This project follows Semantic Versioning once public releases begin.
   command, status, return code, and artifact metadata.
 - Phase-start events now include exact argv and prompt delivery/size metadata
   for provider debugging, with compact terminal summaries for external harness
-  calls.
+  calls. They also carry a self-describing `payload_schema_version: "1.1"`
+  field so external replay/diff tools can detect the richer payload shape
+  without relying on event-envelope `schema_version` bumps.
 - Replay fixtures now cover clear and fully suppressed runs, and warning
   progress statuses map to first-class `warning` events.
 - Loop failure paths now emit structured `failure` events with stable reason
@@ -191,11 +195,6 @@ This project follows Semantic Versioning once public releases begin.
 - CI now builds the `revrem` wheel, validates package metadata, and smoke-tests
   the installed wheel on Linux and macOS.
 - Local development gate expanded to include `git diff --check`.
-- OpenCode prompt-bearing phases now attach the saved prompt artifact with
-  `opencode run --file` only, with no literal positional message. The
-  previously-shipped `"Follow the attached RevRem prompt exactly."` positional
-  hint has been removed; the prompt contract is exactly what the `Added`
-  bullet below describes.
 - The CM2 commit-skip path now maps a `skipped_no_changes` outcome to
   `final_status: "clear"` whenever the most recent review was `clear` **or**
   `unknown`, and to `final_status: "findings"` only when the most recent

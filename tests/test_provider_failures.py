@@ -92,7 +92,7 @@ def test_classify_provider_failure_reason_and_transient(
 ) -> None:
     result = _result(**kwargs)
 
-    failure = provider_failures.classify_provider_failure("harness", result)
+    failure = provider_failures.classify_provider_failure(result, harness="harness")
 
     assert failure is not None
     assert failure.reason == expected_reason
@@ -102,7 +102,7 @@ def test_classify_provider_failure_reason_and_transient(
 def test_classify_provider_failure_returns_none_for_success() -> None:
     assert (
         provider_failures.classify_provider_failure(
-            "harness", _result(0, stdout="ok\n")
+            _result(0, stdout="ok\n"), harness="harness"
         )
         is None
     )
@@ -110,7 +110,9 @@ def test_classify_provider_failure_returns_none_for_success() -> None:
 
 def test_classify_provider_failure_returns_none_for_unrecognised_output() -> None:
     result = _result(1, stderr="some unrelated non-fatal log line")
-    assert provider_failures.classify_provider_failure("harness", result) is None
+    assert (
+        provider_failures.classify_provider_failure(result, harness="harness") is None
+    )
 
 
 def test_review_failed_to_run_flags_provider_auth_required(tmp_path: Path) -> None:

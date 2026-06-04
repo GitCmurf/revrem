@@ -25,17 +25,17 @@ class GitContextCache:
     ``runner_setup.create_run_context``.
 
     Keyed by ``(cwd, base)`` for the cheap base/merge-base lookups and by
-    ``(cwd, base, head)`` for the expensive ``base...HEAD`` diffs. The head
-    SHA is captured lazily; the cache is invalidated automatically when the
-    head SHA changes between calls (a fresh remediation commit always
-    changes it, so a cache hit only happens when an iteration is processed
-    more than once with the same head, e.g. a re-evaluation of the same
-    step).
+    ``(cwd, base, head)`` for the expensive ``base...HEAD`` diffs. The HEAD
+    SHA is intentionally NOT cached: callers must always re-run
+    ``git rev-parse HEAD`` so that the live HEAD (which advances every
+    remediation commit) is used to key the per-head diff buckets. The
+    per-head diff buckets invalidate naturally because their key includes
+    the SHA, so a fresh remediation commit yields a fresh cache entry on
+    the next review iteration.
     """
 
     base_commit: dict[tuple[str, str], str] = field(default_factory=dict)
     merge_base: dict[tuple[str, str, str], str] = field(default_factory=dict)
-    head_rev: dict[tuple[str, str], str] = field(default_factory=dict)
     base_head_diff: dict[tuple[str, str, str], str] = field(default_factory=dict)
     base_head_diff_stat: dict[tuple[str, str, str], str] = field(default_factory=dict)
     base_head_diff_name_status: dict[tuple[str, str, str], str] = field(

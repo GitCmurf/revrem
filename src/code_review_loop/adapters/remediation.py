@@ -169,7 +169,7 @@ def run_remediation(
     )
     if result.returncode != 0:
         failure = provider_failures.classify_provider_failure(
-            remediation_harness, result
+            result, harness=remediation_harness
         )
         failure_detail = f": {failure.detail}" if failure else ""
         phase_support.progress_event(

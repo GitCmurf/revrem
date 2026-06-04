@@ -348,6 +348,22 @@ def _append_phase_resume_overrides(
         profile_selected=profile_selected,
         source=_phase_field_source(phase_config_map, "triage", "allow_model_escalation"),
     )
+    _append_number_override(
+        command,
+        "--external-review-input-chars",
+        config.get("external_review_input_chars"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "runtime", "external_review_input_chars"),
+    )
+    _append_number_override(
+        command,
+        "--external-review-warning-seconds",
+        config.get("external_review_warning_seconds"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(
+            phase_config_map, "runtime", "external_review_warning_seconds"
+        ),
+    )
 
 
 def _phase_field_source(phase_config: Mapping[object, object], phase: str, field: str) -> str | None:

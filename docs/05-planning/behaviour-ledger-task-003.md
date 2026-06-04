@@ -176,6 +176,21 @@ There is no silent third option.
   misleading provider label on Gemini remediation failure.
 - **schema_version impact:** none.
 
+### 2026-06-03 — CM2 unknown→clear mapping is also signalled by the test rename
+
+- **Contract:** machine (test-name change is a leading indicator only)
+- **What changed:** Nothing operational. The unit test that pins the
+  commit-skip path's `final_status` was renamed from
+  `test_decide_cm2_unknown_skipped_no_changes_exits_unknown` to
+  `..._exits_clear` so a grep over test names reflects the new mapping.
+- **Why:** `revrem.engine` CM2 now maps `skipped_no_changes` after an
+  `unknown` review to `final_status: "clear"` (see the 2026-05-31 entry
+  above). Renaming the test name is the cheapest way to make a future
+  regression visible in the diff history without adding a new assertion.
+- **schema_version impact:** none.
+- **CHANGELOG:** Unreleased / Changed (CM2 row above already covers the
+  behavioural change; this entry exists only to point at the test rename).
+
 ### 2026-05-31 — TASK-003 ledger closed
 
 - **Contract:** none
