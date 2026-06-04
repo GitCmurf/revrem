@@ -480,7 +480,12 @@ def resolved_phase_detail(
     if model:
         fields.append(model)
     if reasoning_effort:
-        fields.append(f"{reasoning_effort} effort")
+        effort = (
+            reasoning_effort
+            if harnesses.reasoning_effort_supported(harness)
+            else "n/a"
+        )
+        fields.append(f"{effort} effort")
     if timeout_seconds is not None:
         fields.append(f"timeout={timeout_seconds:g}")
     if sandbox:

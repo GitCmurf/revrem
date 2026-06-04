@@ -104,7 +104,7 @@ def test_rich_event_styles_structured_start_detail(monkeypatch):
         "1",
         "start",
         (
-            "opencode run · opencode/minimax-m3-free · low effort · "
+            "opencode run · opencode/minimax-m3-free · n/a effort · "
             "timeout=0 · sandbox read-only · prompt=126.7k file · source=profile+cli"
         ),
     )
@@ -125,7 +125,7 @@ def test_rich_event_keeps_styling_when_detail_grows_past_seven_segments(monkeypa
         [
             "opencode run",
             "opencode/minimax-m3-free",
-            "low effort",
+            "n/a effort",
             "timeout=0",
             "sandbox read-only",
             "prompt=126.7k file",
@@ -144,7 +144,7 @@ def test_rich_event_keeps_styling_when_detail_grows_past_seven_segments(monkeypa
     expected_first_seven = [
         ("opencode run", "bold"),
         ("opencode/minimax-m3-free", "magenta"),
-        ("low effort", "cyan"),
+        ("n/a effort", "cyan"),
         ("timeout=0", "yellow"),
         ("sandbox read-only", "yellow"),
         ("prompt=126.7k file", "blue"),

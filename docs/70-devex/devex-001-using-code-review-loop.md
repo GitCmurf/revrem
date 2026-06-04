@@ -961,7 +961,7 @@ exhaustion, and Codex native review failures are not retried.
 Progress output intentionally summarizes prompt-bearing commands. Phase start
 lines show the executable role, model, effort, timeout, sandbox, prompt size,
 delivery mode, and config source without repeating raw CLI syntax. For example:
-`opencode run · opencode/minimax-m3-free · low effort · timeout=0 · sandbox
+`opencode run · opencode/minimax-m3-free · n/a effort · timeout=0 · sandbox
 read-only · prompt=80.0k file · source=profile+cli`. Exact argv and prompt
 artifacts remain in `events.jsonl` and the run artifact directory. OpenCode
 receives prompt-bearing phases through `opencode run --file <prompt-artifact>`,

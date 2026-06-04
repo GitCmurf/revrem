@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import os
 import shlex
+import signal
 from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from code_review_loop.adapters import phase_support
-from code_review_loop.core.ports import ChecksOutcome, ChecksRequest, CommandResult, RunContext
+from code_review_loop.core.ports import (
+    ChecksOutcome,
+    ChecksRequest,
+    CommandResult,
+    RunContext,
+)
 
 if TYPE_CHECKING:
     from code_review_loop.config import LoopConfig
@@ -81,6 +87,18 @@ def normalize_adaptive_check_result(
             ),
         )
     return result
+
+
+def format_returncode_for_progress(returncode: int) -> str:
+    """Render a subprocess return code for operator-facing progress."""
+    if returncode >= 0:
+        return f"exit {returncode}"
+    signal_number = abs(returncode)
+    try:
+        signal_name = signal.Signals(signal_number).name
+    except ValueError:
+        return f"exit {returncode} (signal {signal_number})"
+    return f"exit {returncode} ({signal_name})"
 
 
 def is_pytest_command(command: Sequence[str]) -> bool:
@@ -179,7 +197,12 @@ def run_checks(
             phase_support.progress_event(config, "check", f"{iteration}.{index}", "passed", ctx=ctx)
         else:
             phase_support.progress_event(
-                config, "check", f"{iteration}.{index}", "failed", f"exit {result.returncode}", ctx=ctx
+                config,
+                "check",
+                f"{iteration}.{index}",
+                "failed",
+                format_returncode_for_progress(result.returncode),
+                ctx=ctx,
             )
     failed_commands = [config.check_commands[i] for i, r in enumerate(results) if r.returncode != 0]
     return results, failed_commands

@@ -149,7 +149,7 @@ There is no silent third option.
   is supplied. Resume summaries now include `external_review_input_chars`, and
   operator-cancellation diagnostics include the latest prompt/context artifact
   names and sizes when available. Human progress lines now render compact
-  provider summaries such as `opencode run · model · low effort · timeout=0 ·
+  provider summaries such as `opencode run · model · n/a effort · timeout=0 ·
   sandbox read-only · prompt=80.0k file`. OpenCode prompt-bearing phases now
   attach the prompt artifact with `opencode run --file` instead of passing the
   prompt on stdin, and long-running model subprocesses emit additive `waiting`

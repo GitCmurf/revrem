@@ -59,6 +59,38 @@ def test_summary_records_git_state_for_resume(tmp_path, monkeypatch):
     }
 
 
+def test_summary_refreshes_git_state_at_terminal_stop(tmp_path, monkeypatch):
+    monkeypatch.setattr(phase_support, "lexical_git_repo_root", lambda _cwd: tmp_path)
+    heads = iter(["head-before", "head-after"])
+
+    def fake_run_git_preflight(cwd, args):
+        if list(args) == ["rev-parse", "HEAD"]:
+            return CommandResult(["git", *args], 0, stdout=f"{next(heads)}\n")
+        if list(args) == ["rev-parse", "--verify", "main^{commit}"]:
+            return CommandResult(["git", *args], 0, stdout="base-sha\n")
+        if list(args) == ["merge-base", "HEAD", "main"]:
+            return CommandResult(["git", *args], 0, stdout="merge-sha\n")
+        return CommandResult(["git", *args], 1, stderr="unexpected")
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        return CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+
+    monkeypatch.setattr(git_adapter, "run_git_preflight", fake_run_git_preflight)
+
+    summary = runner_mod.run_loop(
+        LoopConfig(
+            base="main",
+            max_iterations=1,
+            codex_bin="codex",
+            cwd=tmp_path,
+            artifact_dir=tmp_path / "artifacts",
+        ),
+        runner,
+    ).to_dict()
+
+    assert summary["git_state"]["head"] == "head-after"
+
+
 def test_resume_payload_preserves_full_auto_and_budget_limits(tmp_path, monkeypatch):
     monkeypatch.setattr(phase_support, "lexical_git_repo_root", lambda _cwd: tmp_path)
 

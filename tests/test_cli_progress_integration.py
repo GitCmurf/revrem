@@ -248,7 +248,7 @@ def test_resolved_phase_detail_summarizes_opencode_without_repetition():
     )
 
     assert detail == (
-        "opencode run · opencode/minimax-m3-free · low effort · timeout=0 · "
+        "opencode run · opencode/minimax-m3-free · n/a effort · timeout=0 · "
         "sandbox read-only · prompt=126.7k file · source=profile+cli"
     )
     assert "--model" not in detail

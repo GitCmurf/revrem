@@ -11,6 +11,7 @@ from typing import Any, Protocol
 
 CODEX_MINIMAL_UNSUPPORTED_COMMIT_MODELS = frozenset({"gpt-5.3-codex-spark"})
 CODEX_MINIMAL_UNSUPPORTED_ADJUSTMENT = "codex_minimal_unsupported_by_model"
+REASONING_EFFORT_HARNESSES = frozenset({"codex"})
 
 
 @dataclass(frozen=True)
@@ -95,6 +96,16 @@ def resolve_commit_message_reasoning_effort(
             adjustment=CODEX_MINIMAL_UNSUPPORTED_ADJUSTMENT,
         )
     return ReasoningEffortResolution(effective=requested_effort, requested=requested_effort)
+
+
+def reasoning_effort_supported(harness: str) -> bool:
+    """Return whether RevRem can enforce reasoning effort for this harness.
+
+    The resolved phase config may carry a reasoning-effort value for every
+    harness, but only adapters that map it into their provider argv should show
+    it as an effective operator control.
+    """
+    return harness in REASONING_EFFORT_HARNESSES
 
 
 class CodexHarnessAdapter(HarnessAdapter):

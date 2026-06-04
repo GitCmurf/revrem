@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import NoReturn, assert_never
 
 from code_review_loop import artifacts, budgets, diagnostics, prompts_composer
+from code_review_loop.adapters.git import git_state_for_resume
 from code_review_loop.adapters.phase_support import emit_loop_failure_event
 from code_review_loop.clock import Clock
 from code_review_loop.config import LoopConfig
@@ -50,6 +51,7 @@ def execute_stop(
         else ""
     )
     state.mark_outcome(outcome, excerpt=excerpt)
+    state.git_state = git_state_for_resume(config)
     summary.clear()
     summary.update(state.to_dict())
     write_summary(

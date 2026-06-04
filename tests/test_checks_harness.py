@@ -12,7 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from code_review_loop.adapters.checks import ChecksAdapter
+from code_review_loop.adapters.checks import ChecksAdapter, format_returncode_for_progress
 from code_review_loop.clock import Clock
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.ports import (
@@ -45,6 +45,20 @@ def _runner_returning(*results: CommandResult):
         return next(results_iter)
 
     return _runner
+
+
+class RecordingReporter:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, str, str]] = []
+
+    def phase(self, phase: str, label: str, status: str, detail: str = "") -> None:
+        self.calls.append((phase, label, status, detail))
+
+
+def test_format_returncode_for_progress_names_signal_exits() -> None:
+    assert format_returncode_for_progress(-9) == "exit -9 (SIGKILL)"
+    assert format_returncode_for_progress(-999) == "exit -999 (signal 999)"
+    assert format_returncode_for_progress(2) == "exit 2"
 
 
 # ---------------------------------------------------------------------------
@@ -92,6 +106,26 @@ class TestChecksAdapter:
         assert len(outcome.results) == 1
         assert outcome.results[0].returncode == 1
         assert "pytest -q" in outcome.failed_commands
+
+    def test_signal_killed_check_names_signal_in_progress(self, tmp_path: Path) -> None:
+        (tmp_path / "artifacts").mkdir()
+        config = LoopConfig(
+            base="main",
+            max_iterations=1,
+            codex_bin="codex",
+            cwd=tmp_path,
+            artifact_dir=tmp_path / "artifacts",
+            check_commands=("pytest -q",),
+        )
+        fail_result = CommandResult(["pytest", "-q"], -9, stdout="partial\n")
+        reporter = RecordingReporter()
+        ctx = _ctx(runner=_runner_returning(fail_result), progress_reporter=reporter)
+        adapter = ChecksAdapter(config)
+
+        outcome = adapter.execute(ChecksRequest(iteration=1), ctx)
+
+        assert outcome.results[0].returncode == -9
+        assert ("check", "1.1", "failed", "exit -9 (SIGKILL)") in reporter.calls
 
     def test_dry_run_skips_subprocess(self, tmp_path: Path) -> None:
         (tmp_path / "artifacts").mkdir()
