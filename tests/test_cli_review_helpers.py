@@ -275,6 +275,22 @@ def test_prompted_review_harness_accepts_explicit_status_and_records_tool_denial
     assert diagnostics["tool_denial_present"] is True
 
 
+def test_review_status_diagnostics_ignores_tool_denial_text_outside_stderr():
+    output = (
+        "The reviewed tests include this literal fixture text:\n"
+        "Error executing tool run_shell_command: Tool execution denied by policy.\n"
+        "REVIEW_STATUS: clear\n\n"
+        "[stderr]\n"
+        "Provider emitted non-fatal progress logs.\n"
+    )
+
+    diagnostics = review_status_diagnostics(output, harness="opencode")
+
+    assert diagnostics["status"] == "clear"
+    assert diagnostics["stderr_present"] is True
+    assert diagnostics["tool_denial_present"] is False
+
+
 def test_run_loop_treats_structured_empty_findings_review_as_clear(tmp_path):
     calls = []
 

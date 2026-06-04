@@ -4,7 +4,7 @@ type: LEDGER
 title: Behaviour ledger for the cli.py re-engineering (REVREM-TASK-003)
 status: Approved
 version: '1.0'
-last_updated: '2026-06-03'
+last_updated: '2026-06-04'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -55,6 +55,26 @@ There is no silent third option.
 ```
 
 ## Entries
+
+### 2026-06-04 — Provider effort and denial diagnostics clarified
+
+- **Contract:** machine + human
+- **What changed:** phase config summaries now distinguish configured
+  `reasoning_effort` from provider-enforced `provider_reasoning_effort`.
+  Human summaries and TUI phase displays show `effort=n/a` for harnesses where
+  RevRem cannot currently pass an effort control. Review diagnostics now set
+  `tool_denial_present` only when the provider stderr/control section contains
+  a denial marker, not when reviewed source or tests mention denial text.
+- **Why:** dogfood runs with OpenCode/Gemini showed two misleading signals:
+  non-Codex phases looked as if RevRem had set a thinking level, and denial
+  fixtures in the reviewed diff could make a successful review look tool-blocked.
+- **Before / After:** `phase_config.review.reasoning_effort = "low"` remains
+  the configured intent; `phase_config.review.provider_reasoning_effort = null`
+  and `reasoning_effort_supported = false` now describe provider reality for
+  OpenCode/Gemini. Terminal/TUI output changes from `effort=low` to
+  `effort=n/a` for those harnesses.
+- **schema_version impact:** none; JSON fields are additive and existing
+  configured-effort fields are preserved.
 
 ### 2026-06-03 — OpenCode file attachment requires a message
 

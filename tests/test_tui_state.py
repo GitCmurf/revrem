@@ -252,9 +252,36 @@ def test_pipeline_screen_shows_routing_default_and_route_harnesses():
         in screen.lines
     )
     assert (
-        "route gemini-pro: harness=gemini, model=gemini-2.5-pro, effort=high, "
+        "route gemini-pro: harness=gemini, model=gemini-2.5-pro, effort=n/a, "
         "timeout=900s, sandbox=read-only, fallback=midtier-coder"
     ) in screen.lines
+
+
+def test_pipeline_screen_marks_unsupported_phase_effort_as_na():
+    profile = profiles.Profile(
+        name="dogfood",
+        commit=profiles.CommitConfig(
+            enabled=True,
+            harness="opencode",
+            message_model="opencode/model",
+            reasoning_effort="low",
+        ),
+    )
+    snapshot = tui_state.HomeSnapshot(
+        cwd="/repo",
+        profiles=(),
+        recent_runs=(),
+        harnesses=(),
+        run_previews=(),
+        run_monitors=(),
+    )
+
+    screen = tui_state.pipeline_screen(snapshot, profile)
+
+    assert (
+        "commit: enabled, harness=opencode, model=opencode/model, effort=n/a"
+        in screen.lines
+    )
 
 
 def test_run_preview_keeps_profile_command_minimal_to_avoid_drift():

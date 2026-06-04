@@ -147,24 +147,59 @@ def _phase_config_summary(phase_config: dict[object, object]) -> str:
         value = phase_config.get(phase)
         if not isinstance(value, dict):
             continue
-        source = value.get("source")
-        source_text = f"source={source}" if isinstance(source, str) and source else None
+        source_text = _phase_source_text(value)
         if value.get("enabled") is False:
-            parts.append(f"{phase}=disabled({source_text})" if source_text else f"{phase}=disabled")
+            parts.append(
+                f"{phase}=disabled({source_text})" if source_text else f"{phase}=disabled"
+            )
             continue
+        effort = _phase_effort_text(value)
         details = [
             str(item)
             for item in (
                 value.get("harness"),
                 value.get("model"),
-                f"effort={value['reasoning_effort']}" if value.get("reasoning_effort") else None,
-                f"timeout={value['timeout_seconds']}" if value.get("timeout_seconds") is not None else None,
+                f"effort={effort}" if effort else None,
+                (
+                    f"timeout={value['timeout_seconds']}"
+                    if value.get("timeout_seconds") is not None
+                    else None
+                ),
                 source_text,
             )
             if item
         ]
         parts.append(f"{phase}({', '.join(details)})")
     return "; ".join(parts) if parts else "not recorded"
+
+
+def _phase_effort_text(value: dict[object, object]) -> str | None:
+    effort = value.get("reasoning_effort")
+    if not effort:
+        return None
+    if value.get("reasoning_effort_supported") is False:
+        return "n/a"
+    provider_effort = value.get("provider_reasoning_effort")
+    if isinstance(provider_effort, str) and provider_effort:
+        return provider_effort
+    return str(effort)
+
+
+def _phase_source_text(value: dict[object, object]) -> str | None:
+    source = value.get("source")
+    if source == "mixed":
+        sources = value.get("sources")
+        if isinstance(sources, dict):
+            source_values = {
+                str(item)
+                for item in sources.values()
+                if isinstance(item, str) and item
+            }
+            if "cli" in source_values and any(
+                item.startswith("profile") for item in source_values
+            ):
+                return "source=profile+cli"
+    return f"source={source}" if isinstance(source, str) and source else None
 
 
 def _resume_command(summary: dict[str, object], review_path: str) -> str:

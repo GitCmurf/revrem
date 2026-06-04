@@ -120,6 +120,12 @@ def actionable_review_output(output: str) -> str:
     return review_text
 
 
+def stderr_review_output(output: str) -> str:
+    """Return provider stderr/control text from a combined review artifact."""
+    _review_text, sep, stderr_text = output.partition("\n[stderr]\n")
+    return stderr_text.strip() if sep else ""
+
+
 # ---------------------------------------------------------------------------
 # Prose-level helpers
 # ---------------------------------------------------------------------------
@@ -291,6 +297,7 @@ def review_status_diagnostics(
 ) -> dict[str, object]:
     """Return compact, targeted diagnostics for review-status classification."""
     actionable_output = actionable_review_output(output)
+    stderr_output = stderr_review_output(output)
     stderr_present = "\n[stderr]\n" in output
     explicit_status = STATUS_RE.search(actionable_output)
     finding_lines = CODEX_FINDING_RE.findall(actionable_output)
@@ -331,7 +338,7 @@ def review_status_diagnostics(
         "matched_clear_phrase": matched_clear_phrase,
         "harness": harness,
         "explicit_status_required": harness in PROMPTED_REVIEW_HARNESSES,
-        "tool_denial_present": TOOL_DENIAL_RE.search(output) is not None,
+        "tool_denial_present": TOOL_DENIAL_RE.search(stderr_output) is not None,
     }
 
 

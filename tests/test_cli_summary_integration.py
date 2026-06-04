@@ -252,6 +252,33 @@ def test_terminal_summary_resume_command_preserves_forced_route():
     assert "--route gemini-pro" in text
 
 
+def test_terminal_summary_marks_unsupported_reasoning_effort_as_na():
+    text = format_terminal_summary(
+        {
+            "artifact_dir": "tmp/run",
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+            "phase_config": {
+                "review": {
+                    "harness": "opencode",
+                    "model": "opencode/minimax-m3-free",
+                    "reasoning_effort": "low",
+                    "reasoning_effort_supported": False,
+                    "provider_reasoning_effort": None,
+                    "timeout_seconds": 0,
+                    "source": "mixed",
+                    "sources": {"model": "cli", "timeout_seconds": "profile:dogfood"},
+                }
+            },
+        }
+    )
+
+    assert (
+        "review(opencode, opencode/minimax-m3-free, effort=n/a, timeout=0, "
+        "source=profile+cli)"
+    ) in text
+
+
 def test_terminal_summary_resume_command_preserves_external_review_overrides():
     text = format_terminal_summary(
         {

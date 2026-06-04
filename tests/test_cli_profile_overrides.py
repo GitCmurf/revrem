@@ -105,6 +105,52 @@ def test_main_uses_profile_commit_message_harness(tmp_path, monkeypatch):
     assert config.commit_timeout_seconds == 0
 
 
+def test_phase_config_payload_marks_unsupported_provider_reasoning_effort():
+    config = LoopConfig(
+        review_harness="opencode",
+        review_reasoning_effort="low",
+        triage_harness="opencode",
+        triage_reasoning_effort="low",
+        remediation_harness="opencode",
+        remediation_reasoning_effort="medium",
+        commit_message_harness="opencode",
+        commit_reasoning_effort="low",
+    )
+
+    phase_config = reporting.phase_config_payload(config)
+
+    assert phase_config["review"]["reasoning_effort"] == "low"
+    assert phase_config["review"]["reasoning_effort_supported"] is False
+    assert phase_config["review"]["provider_reasoning_effort"] is None
+    assert phase_config["remediation"]["reasoning_effort"] == "medium"
+    assert phase_config["remediation"]["reasoning_effort_supported"] is False
+    assert phase_config["remediation"]["provider_reasoning_effort"] is None
+    assert phase_config["commit_message"]["reasoning_effort_supported"] is False
+    assert phase_config["commit_message"]["provider_reasoning_effort"] is None
+
+
+def test_phase_config_payload_records_codex_provider_reasoning_effort():
+    config = LoopConfig(
+        review_harness="codex",
+        review_reasoning_effort="high",
+        triage_harness="codex",
+        triage_reasoning_effort="low",
+        remediation_harness="codex",
+        remediation_reasoning_effort="medium",
+        commit_message_harness="codex",
+        commit_reasoning_effort="minimal",
+    )
+
+    phase_config = reporting.phase_config_payload(config)
+
+    assert phase_config["review"]["reasoning_effort_supported"] is True
+    assert phase_config["review"]["provider_reasoning_effort"] == "high"
+    assert phase_config["triage"]["reasoning_effort_supported"] is True
+    assert phase_config["triage"]["provider_reasoning_effort"] == "low"
+    assert phase_config["commit_message"]["reasoning_effort_supported"] is True
+    assert phase_config["commit_message"]["provider_reasoning_effort"] == "minimal"
+
+
 def test_cli_commit_message_harness_overrides_profile_commit_harness(
     tmp_path, monkeypatch
 ):

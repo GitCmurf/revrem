@@ -9,7 +9,7 @@ from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
-from code_review_loop import __version__, artifacts, budgets, run_history
+from code_review_loop import __version__, artifacts, budgets, harnesses, run_history
 from code_review_loop.adapters.phase_support import write_artifact
 from code_review_loop.clock import SYSTEM_CLOCK, Clock, utc_iso
 from code_review_loop.config import LoopConfig
@@ -218,11 +218,13 @@ def add_summary_contract_fields(
 
 def phase_config_payload(config: LoopConfig) -> dict[str, object]:
     field_sources = config.phase_config_field_sources
+    triage_effort = config.triage_reasoning_effort
     triage: dict[str, object] = {
         "enabled": config.triage_enabled,
         "harness": config.triage_harness,
         "model": config.triage_model,
-        "reasoning_effort": config.triage_reasoning_effort,
+        "reasoning_effort": triage_effort,
+        **_provider_effort_fields(config.triage_harness, triage_effort),
         "timeout_seconds": config.triage_timeout_seconds_display,
         "contract": config.triage_contract,
         "routing_enabled": (
@@ -247,12 +249,18 @@ def phase_config_payload(config: LoopConfig) -> dict[str, object]:
     if config.profile_v2 is not None:
         triage["routing_default_route"] = config.profile_v2.triage.routing.default_route
 
+    review_effort = config.review_reasoning_effort or config.reasoning_effort
+    remediation_effort = (
+        config.remediation_reasoning_effort
+        or config.reasoning_effort
+    )
+    commit_effort = config.commit_reasoning_effort
     return {
         "review": {
             "harness": config.review_harness,
             "model": config.review_model or config.model,
-            "reasoning_effort": config.review_reasoning_effort
-            or config.reasoning_effort,
+            "reasoning_effort": review_effort,
+            **_provider_effort_fields(config.review_harness, review_effort),
             "timeout_seconds": config.review_timeout_seconds_display,
             "sandbox": "read-only",
             "source": config.phase_config_sources.get("review", "direct-config"),
@@ -262,8 +270,8 @@ def phase_config_payload(config: LoopConfig) -> dict[str, object]:
         "remediation": {
             "harness": config.remediation_harness,
             "model": config.remediation_model or config.model,
-            "reasoning_effort": config.remediation_reasoning_effort
-            or config.reasoning_effort,
+            "reasoning_effort": remediation_effort,
+            **_provider_effort_fields(config.remediation_harness, remediation_effort),
             "timeout_seconds": config.remediation_timeout_seconds_display,
             "sandbox": config.exec_sandbox,
             "source": config.phase_config_sources.get("remediation", "direct-config"),
@@ -273,7 +281,8 @@ def phase_config_payload(config: LoopConfig) -> dict[str, object]:
             "enabled": config.commit_after_remediation,
             "harness": config.commit_message_harness,
             "model": config.commit_message_model,
-            "reasoning_effort": config.commit_reasoning_effort,
+            "reasoning_effort": commit_effort,
+            **_provider_effort_fields(config.commit_message_harness, commit_effort),
             "requested_reasoning_effort": config.commit_reasoning_effort_requested,
             "reasoning_effort_adjustment": config.commit_reasoning_effort_adjustment,
             "timeout_seconds": config.commit_timeout_seconds_display,
@@ -295,6 +304,14 @@ def phase_config_payload(config: LoopConfig) -> dict[str, object]:
             "source": config.phase_config_sources.get("runtime", "direct-config"),
             "sources": field_sources.get("runtime", {}),
         },
+    }
+
+
+def _provider_effort_fields(harness: str, effort: str | None) -> dict[str, object]:
+    supported = harnesses.reasoning_effort_supported(harness)
+    return {
+        "reasoning_effort_supported": supported,
+        "provider_reasoning_effort": effort if supported else None,
     }
 
 
