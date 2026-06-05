@@ -250,7 +250,18 @@ def test_prompt_invocation_passes_gemini_prompt_via_argv_prompt():
 
 
 def test_prompt_invocation_rejects_oversized_gemini_argv_prompt():
-    prompt = "x" * (harnesses.GEMINI_ARGV_PROMPT_MAX_CHARS + 1)
+    prompt = "x" * (harnesses.GEMINI_ARGV_PROMPT_MAX_BYTES + 1)
+
+    with pytest.raises(ValueError, match="gemini prompt exceeds"):
+        harnesses.prepare_prompt_invocation(
+            "gemini",
+            ["gemini", "--approval-mode", "plan"],
+            prompt,
+        )
+
+
+def test_prompt_invocation_rejects_oversized_multibyte_gemini_argv_prompt():
+    prompt = "é" * (harnesses.GEMINI_ARGV_PROMPT_MAX_BYTES // 2 + 1)
 
     with pytest.raises(ValueError, match="gemini prompt exceeds"):
         harnesses.prepare_prompt_invocation(

@@ -64,7 +64,7 @@ There is no silent third option.
   `prompt_delivery == "argv-prompt"` in phase-start metadata. Phase-start
   `command` metadata redacts the prompt value as `<prompt chars=N>` while
   preserving command shape, prompt size, and prompt artifacts. RevRem refuses
-  Gemini prompt delivery above the current `200000` character CLI-delivery cap
+  Gemini prompt delivery above the current `100000` byte CLI-delivery cap
   before launching the provider. Review subprocess stderr beginning with
   `Command timed out after ...` is classified as
   `provider_timeout` / non-transient, so `run_review_with_retry` does not spend
@@ -144,9 +144,10 @@ There is no silent third option.
 ### 2026-06-03 — Gemini review context cap and quiet-run diagnostics
 
 - **Contract:** machine
-- **What changed:** the resolved runtime config can now choose
-  `external_review_input_chars = 200000` for Gemini Pro review models when no
-  CLI/profile cap is set. Review phase-start events add
+- **What changed:** the resolved runtime config briefly chose a larger
+  Gemini Pro review-model cap when no CLI/profile cap was set; the later
+  2026-06-05 Gemini argv prompt entry above supersedes that default and returns
+  Gemini to the conservative prompted-review default. Review phase-start events add
   `review_context_chars`, `external_review_input_chars`, and
   `prompt_truncated`. Runtime summaries include
   `external_review_warning_seconds`, and external review waiting events add

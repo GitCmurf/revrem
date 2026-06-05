@@ -49,17 +49,20 @@ available.
 Before sending the prompt to a prompted provider, RevRem trims it by character
 count using `runtime.external_review_input_chars` /
 `--external-review-input-chars`. The conservative default is `80000`
-characters. Gemini Pro review models get a larger `200000` character default
-when no CLI or profile override is set, matching RevRem's current Gemini CLI
-`--prompt` delivery guard. Progress output and events report the sent prompt
-size, generated context size, delivery mode, and whether the prompt was
-truncated, for example `prompt=80.0k/511.2k file truncated`.
+characters. Gemini uses the same `80000` character default because its
+headless CLI currently receives prompts through a single `--prompt` argument,
+which must stay below operating-system per-argument limits. Progress output
+and events report the sent prompt size, generated context size, delivery mode,
+and whether the prompt was truncated, for example
+`prompt=80.0k/511.2k argv-prompt truncated`.
 
 This bound is intentional. It avoids overflowing provider context windows,
 keeps very large dogfood runs from becoming unbounded in latency or cost, and
-does not require fragile provider-specific token accounting. It also lets
-RevRem keep large prompts out of argv/process listings by using stdin or
-provider-supported prompt files. However, the tradeoff is real: when the
+does not require fragile provider-specific token accounting. For harnesses that
+support stdin or prompt files, it also lets RevRem keep large prompts out of
+argv/process listings; Gemini's current `--prompt` path instead relies on a
+smaller byte guard to avoid operating-system argument limits. However, the
+tradeoff is real: when the
 provider receives only the first bounded slice of a large generated context,
 its review can miss omitted files or late diff hunks. A `REVIEW_STATUS: clear`
 from a prompted harness is therefore a clear result over the supplied prompt,

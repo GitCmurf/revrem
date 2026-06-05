@@ -12,7 +12,7 @@ from typing import Any, Protocol
 CODEX_MINIMAL_UNSUPPORTED_COMMIT_MODELS = frozenset({"gpt-5.3-codex-spark"})
 CODEX_MINIMAL_UNSUPPORTED_ADJUSTMENT = "codex_minimal_unsupported_by_model"
 REASONING_EFFORT_HARNESSES = frozenset({"codex"})
-GEMINI_ARGV_PROMPT_MAX_CHARS = 200_000
+GEMINI_ARGV_PROMPT_MAX_BYTES = 100_000
 
 
 @dataclass(frozen=True)
@@ -494,10 +494,10 @@ def prepare_prompt_invocation(
             prompt_artifact=prompt_artifact_path,
         )
     if harness == "gemini":
-        if len(prompt) > GEMINI_ARGV_PROMPT_MAX_CHARS:
+        if len(encoded) > GEMINI_ARGV_PROMPT_MAX_BYTES:
             raise ValueError(
                 "gemini prompt exceeds RevRem's current --prompt delivery cap "
-                f"({len(prompt)} > {GEMINI_ARGV_PROMPT_MAX_CHARS} chars); lower "
+                f"({len(encoded)} > {GEMINI_ARGV_PROMPT_MAX_BYTES} bytes); lower "
                 "--external-review-input-chars or use another review harness"
             )
         adapted = list(command)

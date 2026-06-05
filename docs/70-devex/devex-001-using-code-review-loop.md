@@ -945,18 +945,17 @@ review transcript itself remains under `summary.artifact_paths.reviews`. The
 provider-facing external review prompt is bounded by
 `runtime.external_review_input_chars` / `--external-review-input-chars`; RevRem
 trims by character count with an omission marker rather than attempting
-provider-specific token accounting. When no CLI/profile cap is set, Gemini Pro
-review models use a larger `200000` character cap while other prompted review
-harnesses retain the conservative `80000` character default. Phase-start
-progress and events report whether the generated review context was supplied
-in full or truncated. Gemini CLI is currently invoked with `--prompt` for
-prompt-bearing phases because direct `gemini --prompt` probes succeed while
+provider-specific token accounting. When no CLI/profile cap is set, prompted
+review harnesses, including Gemini, use the conservative `80000` character
+default. Phase-start progress and events report whether the generated review
+context was supplied in full or truncated. Gemini CLI is currently invoked with
+`--prompt` for prompt-bearing phases because direct `gemini --prompt` probes succeed while
 large stdin review dogfood runs have repeatedly timed out with no provider
-output. The model-aware default deliberately matches RevRem's current Gemini
-CLI `--prompt` delivery guard: lower `--external-review-input-chars`, use a
-smaller diff, or use a different review harness when the generated prompt is
-larger. This cap is a CLI delivery guard, not a claim about the Gemini model's
-API context window.
+output. RevRem refuses Gemini `--prompt` delivery above its current `100000`
+byte CLI-delivery guard, which stays below common Linux per-argument limits;
+lower `--external-review-input-chars`, use a smaller diff, or use a different
+review harness when the generated prompt is larger. This cap is a CLI delivery
+guard, not a claim about the Gemini model's API context window.
 If an external review subprocess fails with a known transient provider-side
 error, such as an OpenCode server error or a temporary rate-limit response,
 RevRem records `review-N-attempt-1.txt`, emits a `review retry` progress event,
