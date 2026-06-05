@@ -170,12 +170,12 @@ def test_prompt_safety_truncation_protection(tmp_path):
 
     # Header should remain. Review should be truncated.
     prompt = prompts_composer.compose_remediation_prompt(
-        tmp_path, triage_payload, resolved, original_review, max_chars=1000
+        tmp_path, triage_payload, resolved, original_review, max_chars=1200
     )
     assert "MUST_NOT_BE_TRUNCATED" in prompt
     assert "sec-rule" in prompt
     assert "[... omitted" in prompt
-    assert len(prompt) <= 1000
+    assert len(prompt) <= 1200
 
     # If limit is too small for header, it must fail
     with pytest.raises(ValueError, match="mandatory prompt header"):

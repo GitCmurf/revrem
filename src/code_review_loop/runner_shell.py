@@ -34,6 +34,7 @@ from code_review_loop.core.engine import (
     LoopAccumulator,
     LoopStarted,
     RemediationDone,
+    RetryViaChecks,
     RetryViaCommitHook,
     ReviewDone,
     RunChecks,
@@ -74,7 +75,7 @@ from code_review_loop.routing_artifacts import record_routing_outcome, resolve_a
 # (6 executor steps). Keep two steps of per-iteration headroom for future
 # non-terminal policy actions; the overhead covers final review and the
 # terminal tail after the last configured iteration.
-_ENGINE_STEPS_PER_ITERATION = 8
+_ENGINE_STEPS_PER_ITERATION = 10
 _ENGINE_STEP_BUDGET_OVERHEAD = 4
 
 
@@ -115,6 +116,8 @@ class _RunnerEngineExecutor:
                 next_state = self._run_commit(engine_state)
             case RetryViaCommitHook():
                 next_state = self._retry_after_commit_hook(engine_state, action)
+            case RetryViaChecks():
+                next_state = self._retry_after_checks(engine_state)
             case _:
                 raise AssertionError(f"engine executor received terminal action: {action!r}")
         self.latest_state = next_state
@@ -154,6 +157,7 @@ class _RunnerEngineExecutor:
             resolved_route=None,
             remediation_result_returncode=None,
             remediation_duration=0.0,
+            inner_check_retry_count=0,
         )
         if iteration == 1 and self.initial_review_output:
             status = cast("Literal['clear', 'findings', 'unknown']", detect_review_status(self.initial_review_output))
@@ -275,6 +279,9 @@ class _RunnerEngineExecutor:
 
     def _run_remediation(self, engine_state: EngineState) -> EngineState:
         iteration = engine_state.iteration
+        retry_count = engine_state.acc.inner_check_retry_count
+        artifact_label = f"{iteration}-retry-{retry_count}" if retry_count else str(iteration)
+        display_label = artifact_label
         remediation_input = engine_state.acc.remediation_input
         if not self.config.triage_enabled:
             remediation_input = engine_state.acc.last_review_output
@@ -287,6 +294,8 @@ class _RunnerEngineExecutor:
                     iteration=iteration,
                     remediation_input=remediation_input,
                     resolved_route=engine_state.acc.resolved_route,
+                    artifact_label=f"remediation-{artifact_label}",
+                    display_label=display_label,
                 ),
                 self.ctx,
             )
@@ -314,7 +323,16 @@ class _RunnerEngineExecutor:
 
     def _run_checks(self, engine_state: EngineState) -> EngineState:
         iteration = engine_state.iteration
-        checks_outcome = self.ctx.phase_checks.execute(ChecksRequest(iteration=iteration), self.ctx)
+        retry_count = engine_state.acc.inner_check_retry_count
+        artifact_label = f"{iteration}-retry-{retry_count}" if retry_count else str(iteration)
+        checks_outcome = self.ctx.phase_checks.execute(
+            ChecksRequest(
+                iteration=iteration,
+                artifact_label=artifact_label,
+                display_label=artifact_label,
+            ),
+            self.ctx,
+        )
         check_results = list(checks_outcome.results)
         pending_check_failures = _format_check_failures(check_results)
         self.state.set_pending_check_failures(bool(pending_check_failures))
@@ -324,7 +342,7 @@ class _RunnerEngineExecutor:
                 {
                     "command": shlex.join(result.args),
                     "status": "passed" if result.returncode == 0 else "failed",
-                    "artifact": f"check-{iteration}-{index}.txt",
+                    "artifact": f"check-{artifact_label}-{index}.txt",
                 }
                 for index, result in enumerate(check_results, start=1)
             ]
@@ -345,6 +363,27 @@ class _RunnerEngineExecutor:
             commit_retry=False if pending_check_failures else engine_state.acc.commit_retry,
         )
         return replace(engine_state, acc=acc, event=ChecksDone())
+
+    def _retry_after_checks(self, engine_state: EngineState) -> EngineState:
+        retry_count = engine_state.acc.inner_check_retry_count + 1
+        progress_event(
+            self.config,
+            "check",
+            str(engine_state.iteration),
+            "retry",
+            f"check failures will feed remediation retry {retry_count}/{self.config.inner_check_retries}",
+            ctx=self.ctx,
+        )
+        acc = replace(
+            engine_state.acc,
+            inner_check_retry_count=retry_count,
+            remediation_input=(
+                engine_state.acc.pending_check_failures
+                + "\n\n"
+                + engine_state.acc.remediation_input
+            ),
+        )
+        return self._run_remediation(replace(engine_state, acc=acc))
 
     def _run_commit(self, engine_state: EngineState) -> EngineState:
         iteration = engine_state.iteration

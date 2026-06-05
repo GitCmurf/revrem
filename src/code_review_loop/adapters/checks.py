@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import signal
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from code_review_loop.adapters import phase_support
 from code_review_loop.core.ports import (
@@ -101,6 +102,85 @@ def format_returncode_for_progress(returncode: int) -> str:
     return f"exit {returncode} ({signal_name})"
 
 
+def format_check_result_for_progress(result: CommandResult) -> str:
+    """Render failed check status, preserving timeout evidence when available."""
+    combined = phase_support._combined_output(result)
+    timeout = re.search(r"Command timed out after ([0-9.]+) seconds", combined)
+    if timeout:
+        return f"timeout after {timeout.group(1)}s"
+    return format_returncode_for_progress(result.returncode)
+
+
+def run_worktree_cleanliness_check(config: LoopConfig, runner) -> CommandResult:
+    """Fail if remediation left untracked, non-artifact files in the worktree."""
+    command = ["git", "status", "--porcelain", "--untracked-files=all"]
+    if config.dry_run:
+        return CommandResult(command, 0, stdout="DRY_RUN cleanliness check skipped\n")
+    if not _has_git_marker(config.cwd):
+        return CommandResult(
+            command,
+            0,
+            stdout="SKIPPED cleanliness check: repository has no .git marker\n",
+        )
+    result = cast(
+        CommandResult,
+        runner(
+            command,
+            config.cwd,
+            None,
+            phase_support.phase_timeout_seconds(config, config.timeout_seconds),
+        ),
+    )
+    if result.returncode != 0:
+        combined = phase_support._combined_output(result).lower()
+        if "not a git repository" in combined:
+            return CommandResult(
+                command,
+                0,
+                stdout="SKIPPED cleanliness check: repository is not a Git worktree\n",
+            )
+        return result
+
+    untracked = [
+        line
+        for line in result.stdout.splitlines()
+        if line.startswith("?? ") and not _is_artifact_status_line(config, line)
+    ]
+    if not untracked:
+        return CommandResult(command, 0, stdout=result.stdout, stderr=result.stderr)
+    return CommandResult(
+        command,
+        1,
+        stdout=(
+            "Untracked files remain after remediation:\n"
+            + "\n".join(untracked)
+            + "\nRemove scratch files, or intentionally add legitimate new files before checks pass.\n"
+        ),
+        stderr=result.stderr,
+    )
+
+
+def _is_artifact_status_line(config: LoopConfig, line: str) -> bool:
+    path_text = line[3:].strip()
+    if not path_text:
+        return False
+    artifact_dir = config.artifact_dir
+    try:
+        artifact_rel = artifact_dir.resolve().relative_to(config.cwd.resolve())
+    except ValueError:
+        return False
+    artifact_prefix = artifact_rel.as_posix().rstrip("/") + "/"
+    return path_text == artifact_rel.as_posix() or path_text.startswith(artifact_prefix)
+
+
+def _has_git_marker(cwd: Path) -> bool:
+    root = cwd.resolve()
+    for candidate in (root, *root.parents):
+        if (candidate / ".git").exists():
+            return candidate not in {Path("/tmp"), Path("/var/tmp")} or candidate == root
+    return False
+
+
 def is_pytest_command(command: Sequence[str]) -> bool:
     if not command:
         return False
@@ -146,15 +226,55 @@ def run_checks(
     runner,
     iteration: int,
     ctx: RunContext,
+    *,
+    artifact_label: str | None = None,
+    display_label: str | None = None,
 ) -> tuple[list[CommandResult], list[str]]:
     """Execute the configured check commands for ``iteration`` and return
     ``(results, failed_commands)``. Loop-shell side effects (progress events,
     artifact writes) are routed through ``adapters.phase_support``.
     """
+    artifact_prefix = artifact_label or str(iteration)
+    display_prefix = display_label or str(iteration)
     results: list[CommandResult] = []
-    for index, check in enumerate(config.check_commands, start=1):
+
+    cleanliness_check = "git status --porcelain --untracked-files=all"
+    phase_support.progress_event(
+        config, "check", f"{display_prefix}.1", "start", cleanliness_check, ctx=ctx
+    )
+    cleanliness_result = run_worktree_cleanliness_check(config, runner)
+    results.append(cleanliness_result)
+    phase_support.write_artifact(
+        config.artifact_dir / f"check-{artifact_prefix}-1.txt",
+        phase_support._combined_output(cleanliness_result),
+    )
+    if ctx.event_sink is not None:
+        ctx.event_sink.emit(
+            "check_result",
+            phase="check",
+            iteration=f"{display_prefix}.1",
+            payload={
+                "command": cleanliness_check,
+                "returncode": cleanliness_result.returncode,
+                "status": "passed" if cleanliness_result.returncode == 0 else "failed",
+                "artifact": f"check-{artifact_prefix}-1.txt",
+            },
+        )
+    if cleanliness_result.returncode == 0:
+        phase_support.progress_event(config, "check", f"{display_prefix}.1", "passed", ctx=ctx)
+    else:
+        phase_support.progress_event(
+            config,
+            "check",
+            f"{display_prefix}.1",
+            "failed",
+            format_check_result_for_progress(cleanliness_result),
+            ctx=ctx,
+        )
+
+    for index, check in enumerate(config.check_commands, start=2):
         command = shlex.split(check)
-        phase_support.progress_event(config, "check", f"{iteration}.{index}", "start", check, ctx=ctx)
+        phase_support.progress_event(config, "check", f"{display_prefix}.{index}", "start", check, ctx=ctx)
         adaptive_skip = adaptive_check_skip_reason(command, config.cwd)
         if adaptive_skip:
             result = CommandResult(
@@ -174,37 +294,40 @@ def run_checks(
             result = normalize_adaptive_check_result(command, config.cwd, result)
         results.append(result)
         phase_support.write_artifact(
-            config.artifact_dir / f"check-{iteration}-{index}.txt",
+            config.artifact_dir / f"check-{artifact_prefix}-{index}.txt",
             phase_support._combined_output(result),
         )
         if ctx.event_sink is not None:
             ctx.event_sink.emit(
                 "check_result",
                 phase="check",
-                iteration=f"{iteration}.{index}",
+                iteration=f"{display_prefix}.{index}",
                 payload={
                     "command": check,
                     "returncode": result.returncode,
                     "status": "passed" if result.returncode == 0 else "failed",
-                    "artifact": f"check-{iteration}-{index}.txt",
+                    "artifact": f"check-{artifact_prefix}-{index}.txt",
                 },
             )
         if result.returncode == 0 and result.stdout.startswith("SKIPPED adaptive check:"):
             phase_support.progress_event(
-                config, "check", f"{iteration}.{index}", "skipped", result.stdout.strip(), ctx=ctx
+                config, "check", f"{display_prefix}.{index}", "skipped", result.stdout.strip(), ctx=ctx
             )
         elif result.returncode == 0:
-            phase_support.progress_event(config, "check", f"{iteration}.{index}", "passed", ctx=ctx)
+            phase_support.progress_event(config, "check", f"{display_prefix}.{index}", "passed", ctx=ctx)
         else:
             phase_support.progress_event(
                 config,
                 "check",
-                f"{iteration}.{index}",
+                f"{display_prefix}.{index}",
                 "failed",
-                format_returncode_for_progress(result.returncode),
+                format_check_result_for_progress(result),
                 ctx=ctx,
             )
-    failed_commands = [config.check_commands[i] for i, r in enumerate(results) if r.returncode != 0]
+    command_names = (cleanliness_check, *config.check_commands)
+    failed_commands = [
+        command_names[i] for i, r in enumerate(results) if r.returncode != 0
+    ]
     return results, failed_commands
 
 
@@ -231,6 +354,8 @@ class ChecksAdapter:
             ctx.runner,
             request.iteration,
             ctx=ctx,
+            artifact_label=request.artifact_label,
+            display_label=request.display_label,
         )
         return ChecksOutcome(
             results=tuple(results),

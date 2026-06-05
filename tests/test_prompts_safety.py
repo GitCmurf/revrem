@@ -27,7 +27,7 @@ def test_compose_remediation_prompt_safety_sections_not_truncated(tmp_path):
     )
 
     # Tiny limit that fits header but not the rest
-    max_chars = 1000
+    max_chars = 1200
     original_review = "LONG_REVIEW_" * 200 # 2400 chars
 
     prompt = prompts_composer.compose_remediation_prompt(

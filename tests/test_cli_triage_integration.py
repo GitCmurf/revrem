@@ -249,7 +249,7 @@ def test_loop_does_not_clear_when_structured_triage_still_needs_more_info(tmp_pa
     assert summary["stopped_reason"] == "max_iterations_reached"
     assert summary["final_status"] == "unknown"
     assert "Structured triage handoff" in (calls[2][1] or "")
-    assert len(calls) == 3
+    assert len(calls) == 4
 
 
 def test_loop_skips_remediation_when_structured_triage_only_rejects_findings(tmp_path):
@@ -385,9 +385,9 @@ def test_loop_keeps_check_failure_gate_when_structured_triage_rejects_findings(t
     assert summary["final_status"] == "unknown"
     assert summary["stopped_reason"] == "max_iterations_reached"
     assert summary["pending_check_failures"] is False
-    assert len(calls) == 8
-    assert "Check failures from the previous iteration:" in (calls[6][1] or "")
-    assert "Structured triage handoff" not in (calls[6][1] or "")
+    assert len(calls) == 10
+    assert "Check failures from the previous iteration:" in (calls[7][1] or "")
+    assert "Structured triage handoff" not in (calls[7][1] or "")
 
 def test_loop_invalid_structured_triage_continues_with_original_review(tmp_path):
     calls = []

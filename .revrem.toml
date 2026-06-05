@@ -105,3 +105,6 @@ debug_status_detection = true
 progress_style = "rich"
 terminal_title = true
 summary_format = "both"
+
+[profiles.dogfood.runtime]
+inner_check_retries = 1

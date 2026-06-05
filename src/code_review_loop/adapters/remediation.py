@@ -75,12 +75,16 @@ def run_remediation(
     remediation_input: str,
     *,
     resolved_route: policy.ResolvedRoute | None = None,
+    artifact_label: str | None = None,
+    display_label: str | None = None,
     ctx: RunContext,
 ) -> CommandResult:
     if ctx.git_context_cache is not None:
         ctx.git_context_cache.invalidate_head_sha(str(config.cwd))
+    artifact_stem = artifact_label or f"remediation-{iteration}"
+    label = display_label or str(iteration)
     last_message_path = (
-        config.artifact_dir / f"remediation-{iteration}-last-message.txt"
+        config.artifact_dir / f"{artifact_stem}-last-message.txt"
         if config.output_last_message
         else None
     )
@@ -97,7 +101,7 @@ def run_remediation(
     else:
         prompt = f"{phase_support.DEFAULT_REMEDIATION_PROMPT}\n{prompts_composer.trim_for_prompt(remediation_input, config.max_remediation_input_chars)}"
         timeout = config.remediation_timeout_seconds
-    prompt_artifact_path = config.artifact_dir / f"remediation-{iteration}-prompt.txt"
+    prompt_artifact_path = config.artifact_dir / f"{artifact_stem}-prompt.txt"
     phase_support.write_artifact(prompt_artifact_path, prompt)
     invocation = harnesses.prepare_prompt_invocation(
         remediation_harness,
@@ -109,14 +113,14 @@ def run_remediation(
     prompt_input = invocation.stdin
     prompt_metadata = phase_support.prompt_invocation_metadata(invocation)
 
-    phase_support.set_phase_terminal_title(config, "remediate", str(iteration))
+    phase_support.set_phase_terminal_title(config, "remediate", label)
     phase_support.ensure_model_budget(
         config, phase="remediate", iteration=iteration, ctx=ctx
     )
     phase_support.progress_event(
         config,
         "remediate",
-        str(iteration),
+        label,
         "start",
         phase_support.resolved_phase_detail(
             command,
@@ -159,13 +163,13 @@ def run_remediation(
             command,
             prompt_input,
             timeout,
-            str(iteration),
+            label,
             ctx=ctx,
             prompt_artifact=invocation.prompt_artifact,
             harness=remediation_harness,
         )
     phase_support.write_artifact(
-        config.artifact_dir / f"remediation-{iteration}.txt",
+        config.artifact_dir / f"{artifact_stem}.txt",
         phase_support._combined_output(result),
     )
     phase_support.record_model_charge(
@@ -179,17 +183,17 @@ def run_remediation(
         phase_support.progress_event(
             config,
             "remediate",
-            str(iteration),
+            label,
             "failed",
             f"exit {result.returncode}{failure_detail}",
             ctx=ctx,
         )
         raise RuntimeError(
-            f"{remediation_harness} remediation failed for iteration {iteration}"
+            f"{remediation_harness} remediation failed for iteration {label}"
             f"{failure_detail}; "
-            f"see {config.artifact_dir / f'remediation-{iteration}.txt'}"
+            f"see {config.artifact_dir / f'{artifact_stem}.txt'}"
         )
-    phase_support.progress_event(config, "remediate", str(iteration), "done", ctx=ctx)
+    phase_support.progress_event(config, "remediate", label, "done", ctx=ctx)
     return result
 
 
@@ -265,6 +269,8 @@ class RemediationAdapter:
             request.iteration,
             request.remediation_input,
             resolved_route=request.resolved_route,
+            artifact_label=request.artifact_label,
+            display_label=request.display_label,
             ctx=ctx,
         )
         return RemediationOutcome(result=result)

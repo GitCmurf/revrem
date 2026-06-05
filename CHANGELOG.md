@@ -49,6 +49,14 @@ This project follows Semantic Versioning once public releases begin.
   when the model output is not a usable subject. RevRem-enforced subprocess
   timeouts are classified as non-transient provider timeouts and are not
   retried.
+- Remediation/check hardening now supports bounded inner remediation-check
+  retries via `runtime.inner_check_retries` / `--inner-check-retries`. The
+  dogfood profile enables one retry so post-remediation check failures can be
+  fed directly back to remediation before spending another full review pass.
+  The checks phase also starts with a worktree cleanliness check that fails on
+  untracked non-artifact files left by remediation, and check timeout progress
+  now reports timeout evidence instead of misleading signal names when the
+  captured artifact contains RevRem's timeout marker.
 - Gemini Pro review runs now get a larger model-aware external review input
   cap when no CLI/profile cap is set, and prompted review progress now reports
   whether the supplied context is full or truncated. Long-running external
@@ -210,6 +218,10 @@ This project follows Semantic Versioning once public releases begin.
   so scripted consumers that diff the schema can detect the contract
   change without reading the CHANGELOG; the on-disk shape of the summary
   is otherwise unchanged.
+- Returncode-1 review results are now parsed for explicit/structured review
+  status before provider-failure keyword classification. This preserves valid
+  review findings that mention provider-like text such as "rate limit" or
+  "API key" instead of misclassifying them as review invocation failures.
 
 ### Security
 

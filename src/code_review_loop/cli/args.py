@@ -366,6 +366,15 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         help="Maximum review/check text characters passed into each remediation prompt.",
     )
     parser.add_argument(
+        "--inner-check-retries",
+        type=int,
+        default=None,
+        help=(
+            "Retry remediation/checks inside the same iteration after failed "
+            "post-remediation checks. Defaults to profile value or 0."
+        ),
+    )
+    parser.add_argument(
         "--external-review-input-chars",
         type=int,
         default=None,

@@ -142,7 +142,8 @@ def test_headless_application_unknown_outcome_is_typed(tmp_path: Path) -> None:
     assert isinstance(result.outcome, OutcomeUnknown)
 
 
-def test_headless_application_setup_failure_summary(tmp_path: Path) -> None:
+def test_headless_application_setup_failure_summary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PATH", "/usr/bin:/bin:/usr/local/bin")
     config = LoopConfig(
         base="main",
         max_iterations=1,

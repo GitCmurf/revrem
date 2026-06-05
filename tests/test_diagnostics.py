@@ -274,7 +274,8 @@ def test_run_doctor_blocks_default_artifact_dir_when_path_component_is_file(tmp_
     assert issues[0].evidence["error"] == str(repo / ".revrem")
 
 
-def test_run_doctor_reports_missing_check_command(tmp_path):
+def test_run_doctor_reports_missing_check_command(tmp_path, monkeypatch):
+    monkeypatch.setenv("PATH", "/usr/bin:/bin:/usr/local/bin")
     repo = _make_repo(tmp_path)
 
     issues = diagnostics.run_doctor(

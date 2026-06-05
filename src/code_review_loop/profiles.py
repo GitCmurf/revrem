@@ -125,6 +125,7 @@ RUNTIME_KEYS = (
     "output_last_message",
     "full_auto",
     "max_remediation_input_chars",
+    "inner_check_retries",
     "external_review_input_chars",
     "external_review_warning_seconds",
     "terminal_excerpt_chars",
@@ -470,6 +471,10 @@ def parse_runtime(raw: dict[str, Any]) -> RuntimeConfig:
         max_remediation_input_chars=_int(
             raw.get("max_remediation_input_chars", 200_000),
             "runtime.max_remediation_input_chars",
+        ),
+        inner_check_retries=_int(
+            raw.get("inner_check_retries", 0),
+            "runtime.inner_check_retries",
         ),
         external_review_input_chars=_int(
             raw.get("external_review_input_chars", 80_000),
@@ -1084,6 +1089,8 @@ def validate_profile(profile: Profile, *, require_implemented: bool) -> None:
         raise ValueError(f"runtime.exec_color must be one of: {known}")
     if profile.runtime.max_remediation_input_chars < 1:
         raise ValueError("runtime.max_remediation_input_chars must be positive")
+    if profile.runtime.inner_check_retries < 0:
+        raise ValueError("runtime.inner_check_retries must be 0 or greater")
     if profile.runtime.external_review_input_chars < 1:
         raise ValueError("runtime.external_review_input_chars must be positive")
     if profile.runtime.external_review_warning_seconds < 0:

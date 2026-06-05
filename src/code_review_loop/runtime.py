@@ -390,6 +390,13 @@ def _append_phase_resume_overrides(
     )
     _append_number_override(
         command,
+        "--inner-check-retries",
+        config.get("inner_check_retries"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "runtime", "inner_check_retries"),
+    )
+    _append_number_override(
+        command,
         "--external-review-input-chars",
         config.get("external_review_input_chars"),
         profile_selected=profile_selected,

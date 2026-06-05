@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.29'
+version: '1.30'
 last_updated: '2026-06-05'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.29
+> **Version:** 1.30
 > **Last Updated:** 2026-06-05
 > **Type:** DEVEX
 > **Area:** devex
@@ -227,6 +227,20 @@ such as `package.json` or `tsconfig.json` and no recognized Python
 project/test surface. A stray helper `.py` file is not enough to keep pytest
 active. In that case pytest is recorded as a skipped adaptive check instead of
 blocking a clear review because pytest returned `2`, `4`, or `5`.
+
+Every post-remediation checks phase starts with a built-in worktree
+cleanliness check:
+
+```bash
+git status --porcelain --untracked-files=all
+```
+
+This fails when remediation leaves untracked non-artifact files behind, such as
+scratch scripts created during debugging. Configured checks then run after that
+synthetic check, so their progress labels start at `.2` and their artifacts are
+named accordingly (`check-1-2.txt`, `check-1-3.txt`, and so on). If a legitimate
+fix needs new files, make sure remediation intentionally adds them to the patch
+or removes accidental scratch files before checks pass.
 
 ### Continuation after findings
 
@@ -709,6 +723,14 @@ the remediation prompt. Invalid structured triage writes `diagnostics.json` with
 fails safe by ignoring invalid triage guidance; set `triage.on_invalid = "stop"`
 when a workflow should halt on malformed triage output.
 
+`runtime.inner_check_retries` / `--inner-check-retries` can run a bounded
+remediation-check retry inside the same outer iteration. When post-remediation
+checks fail and retries remain, RevRem feeds the check output directly back to
+remediation, writes retry artifacts such as `remediation-1-retry-1.txt` and
+`check-1-retry-1-2.txt`, and reruns checks before spending another full review
+pass. The dogfood profile sets this to `1`; the default for other profiles is
+`0`, preserving the older review-remediation-check-review rhythm.
+
 For routing, use `triage.contract = "v2"` plus
 `triage.routing.enabled = true`. RevRem validates `triage-v2`, resolves the
 effective route through profile policy, writes `routing-N.json`,
@@ -1122,6 +1144,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.30 | 2026-06-05 | Codex | Documented bounded inner check retries and worktree cleanliness checks |
 | 1.29 | 2026-06-05 | Codex | Documented Gemini argv prompt delivery guard and non-retryable provider timeouts |
 | 1.28 | 2026-06-05 | Codex | Documented system-suspend wait interpretation and prompted-harness status diagnostics |
 | 1.27 | 2026-06-03 | Codex | Documented OpenCode file attachment plus positional message invocation |

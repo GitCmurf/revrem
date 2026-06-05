@@ -239,6 +239,7 @@ def resume_loop_config(
         progress_style=_resume_str(resume_config, "progress_style", "compact"),
         terminal_excerpt_chars=_resume_int(resume_config, "terminal_excerpt_chars", 4_000),
         max_remediation_input_chars=_resume_int(resume_config, "max_remediation_input_chars", 200_000),
+        inner_check_retries=_resume_int(resume_config, "inner_check_retries", 0),
         external_review_input_chars=_resume_int(
             resume_config, "external_review_input_chars", DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS
         ),
@@ -307,6 +308,7 @@ def resume_config_payload(config: LoopConfig) -> dict[str, object]:
         "debug_status_detection": config.debug_status_detection,
         "terminal_excerpt_chars": config.terminal_excerpt_chars,
         "max_remediation_input_chars": config.max_remediation_input_chars,
+        "inner_check_retries": config.inner_check_retries,
         "external_review_input_chars": config.external_review_input_chars,
         "external_review_warning_seconds": config.external_review_warning_seconds,
         "commit_after_remediation": config.commit_after_remediation,

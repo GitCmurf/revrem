@@ -92,6 +92,7 @@
     "runtime": {
       "external_review_input_chars": 80000,
       "external_review_warning_seconds": 1800,
+      "inner_check_retries": 0,
       "source": "direct-config",
       "sources": {}
     },
@@ -132,6 +133,7 @@
     "final_review": false,
     "full_auto": true,
     "harness_executables": {},
+    "inner_check_retries": 0,
     "max_iterations": 1,
     "max_remediation_input_chars": 200000,
     "max_tokens": 10,
@@ -184,6 +186,7 @@
       "runtime": {
         "external_review_input_chars": 80000,
         "external_review_warning_seconds": 1800,
+        "inner_check_retries": 0,
         "source": "direct-config",
         "sources": {}
       },

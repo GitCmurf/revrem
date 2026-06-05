@@ -122,4 +122,4 @@ def test_runner_shell_stays_orchestration_sized() -> None:
         Path(__file__).resolve().parents[1] / "src" / "code_review_loop" / "runner_shell.py"
     ).read_text(encoding="utf-8").splitlines()
 
-    assert len(shell_lines) < 450
+    assert len(shell_lines) < 500

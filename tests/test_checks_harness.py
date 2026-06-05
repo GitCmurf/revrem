@@ -12,7 +12,11 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from code_review_loop.adapters.checks import ChecksAdapter, format_returncode_for_progress
+from code_review_loop.adapters.checks import (
+    ChecksAdapter,
+    format_check_result_for_progress,
+    format_returncode_for_progress,
+)
 from code_review_loop.clock import Clock
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.ports import (
@@ -61,6 +65,12 @@ def test_format_returncode_for_progress_names_signal_exits() -> None:
     assert format_returncode_for_progress(2) == "exit 2"
 
 
+def test_format_check_result_for_progress_names_timeouts() -> None:
+    result = CommandResult(["pytest", "-q"], -1, stderr="Command timed out after 300 seconds\n")
+
+    assert format_check_result_for_progress(result) == "timeout after 300s"
+
+
 # ---------------------------------------------------------------------------
 # ChecksAdapter unit tests
 # ---------------------------------------------------------------------------
@@ -83,8 +93,8 @@ class TestChecksAdapter:
         outcome = adapter.execute(ChecksRequest(iteration=1), ctx)
 
         assert isinstance(outcome, ChecksOutcome)
-        assert len(outcome.results) == 1
-        assert outcome.results[0].returncode == 0
+        assert len(outcome.results) == 2
+        assert outcome.results[1].returncode == 0
         assert outcome.failed_commands == ()
 
     def test_failed_check_appears_in_failed_commands(self, tmp_path: Path) -> None:
@@ -103,8 +113,8 @@ class TestChecksAdapter:
 
         outcome = adapter.execute(ChecksRequest(iteration=1), ctx)
 
-        assert len(outcome.results) == 1
-        assert outcome.results[0].returncode == 1
+        assert len(outcome.results) == 2
+        assert outcome.results[1].returncode == 1
         assert "pytest -q" in outcome.failed_commands
 
     def test_signal_killed_check_names_signal_in_progress(self, tmp_path: Path) -> None:
@@ -124,8 +134,8 @@ class TestChecksAdapter:
 
         outcome = adapter.execute(ChecksRequest(iteration=1), ctx)
 
-        assert outcome.results[0].returncode == -9
-        assert ("check", "1.1", "failed", "exit -9 (SIGKILL)") in reporter.calls
+        assert outcome.results[1].returncode == -9
+        assert ("check", "1.2", "failed", "exit -9 (SIGKILL)") in reporter.calls
 
     def test_dry_run_skips_subprocess(self, tmp_path: Path) -> None:
         (tmp_path / "artifacts").mkdir()
@@ -145,7 +155,8 @@ class TestChecksAdapter:
         outcome = adapter.execute(ChecksRequest(iteration=1), ctx)
 
         assert outcome.results[0].returncode == 0
-        assert "DRY_RUN" in outcome.results[0].stdout
+        assert outcome.results[1].returncode == 0
+        assert "DRY_RUN" in outcome.results[1].stdout
         runner.assert_not_called()
 
     def test_adaptive_pytest_skip_for_typescript_repo(self, tmp_path: Path) -> None:
@@ -165,8 +176,8 @@ class TestChecksAdapter:
 
         outcome = adapter.execute(ChecksRequest(iteration=1), ctx)
 
-        assert outcome.results[0].returncode == 0
-        assert "SKIPPED adaptive check" in outcome.results[0].stdout
+        assert outcome.results[1].returncode == 0
+        assert "SKIPPED adaptive check" in outcome.results[1].stdout
         runner.assert_not_called()
 
 

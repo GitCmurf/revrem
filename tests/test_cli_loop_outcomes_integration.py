@@ -119,11 +119,16 @@ def test_loop_continues_after_check_failure_and_feeds_output_into_next_pass(tmp_
     second_prompt = exec_calls[1][1]
     assert second_prompt is not None and "1 FAILED" in second_prompt
     records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
-    check_events = [event for event in records if event.kind == "check_result"]
+    check_events = [
+        event
+        for event in records
+        if event.kind == "check_result"
+        and event.payload["command"] == "pytest tests/"
+    ]
     assert truncated is False
     assert [event.payload["status"] for event in check_events] == ["failed", "passed"]
     assert check_events[0].payload["command"] == "pytest tests/"
-    assert check_events[0].payload["artifact"] == "check-1-1.txt"
+    assert check_events[0].payload["artifact"] == "check-1-2.txt"
 
 
 def test_pending_check_failure_blocks_early_clear_status(tmp_path):

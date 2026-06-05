@@ -99,6 +99,8 @@ class ChecksRequest:
     """Inputs for one checks phase invocation."""
 
     iteration: int
+    artifact_label: str | None = None
+    display_label: str | None = None
 
 
 @dataclass(frozen=True)
@@ -131,6 +133,8 @@ class RemediationRequest:
     iteration: int
     remediation_input: str
     resolved_route: ResolvedRoute | None = None
+    artifact_label: str | None = None
+    display_label: str | None = None
 
 
 @dataclass(frozen=True)

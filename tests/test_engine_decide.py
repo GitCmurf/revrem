@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from code_review_loop.core.engine import (
+    ChecksDone,
     CommitDone,
     ConfigSnapshot,
     Continue,
     LoopAccumulator,
     NoFinalReview,
     RemediationDone,
+    RetryViaChecks,
     RetryViaCommitHook,
     ReviewDone,
     RunChecks,
@@ -290,6 +292,27 @@ def test_decide_cm1_successful_commit_continues() -> None:
     event = CommitDone(status="committed")
 
     action = decide(cfg, acc, event)
+
+    assert action == Continue()
+
+
+def test_decide_ck_retry_inner_check_failure_before_next_review() -> None:
+    cfg = ConfigSnapshot(3, True, True, "fail", True, inner_check_retries=1)
+    acc = LoopAccumulator(pending_check_failures="ruff failed")
+
+    action = decide(cfg, acc, ChecksDone(), iteration=1)
+
+    assert action == RetryViaChecks()
+
+
+def test_decide_ck_inner_check_retry_exhausted_continues_outer_loop() -> None:
+    cfg = ConfigSnapshot(3, True, True, "fail", True, inner_check_retries=1)
+    acc = LoopAccumulator(
+        pending_check_failures="ruff failed",
+        inner_check_retry_count=1,
+    )
+
+    action = decide(cfg, acc, ChecksDone(), iteration=1)
 
     assert action == Continue()
 

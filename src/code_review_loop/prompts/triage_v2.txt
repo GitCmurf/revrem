@@ -17,6 +17,14 @@ in `rejected_findings` and explain the rejection in `rejection_reason`. Use
 `needs_more_info` when you cannot make a stable decision from the supplied
 context alone.
 
+Treat failed post-remediation checks as actionable even when the original review
+finding is otherwise resolved. Preserve the failed command output in
+`rationale`, include the failing command in `verification_commands`, and make
+the `definition_of_done` require both the code fix and a clean rerun of the
+failed check. If a check failure is caused by leftover scratch files or
+untracked files, triage it as a cleanup finding rather than asking the
+remediator to inspect unrelated code.
+
 Every finding object must include:
 `fingerprint`, `summary`, `severity`, `affected_paths`, and `rationale`.
 `needs_more_info` entries must also include `info_requested`.
@@ -51,6 +59,9 @@ Prompt requirements guidance:
 - `required_fragments`: List named fragments needed (e.g., engineering-principles).
 - `definition_of_done`: Provide specific criteria for remediation success.
 - `triage_prompt_draft`: A draft implementation instruction for the remediator.
+  It must tell the remediator not to create repository scratch files, to remove
+  any accidental temporary files, and not to claim verification unless the
+  command was actually run or its output is present in the supplied context.
 
 Contract guidance:
 `affected_paths` should list the minimum files needed to implement the finding.

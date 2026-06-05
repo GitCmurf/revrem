@@ -103,7 +103,10 @@
       "type": "string"
     },
     "schema_version": {
-      "const": "1.0"
+      "enum": [
+        "1.0",
+        "1.1"
+      ]
     },
     "started_at": {
       "format": "date-time",

@@ -277,11 +277,11 @@ def test_pytest_check_is_skipped_for_typescript_repo_without_python_surface(tmp_
     )
 
     assert calls == []
-    assert results[0].returncode == 0
+    assert results[1].returncode == 0
 
-    assert "appears to be non-Python" in results[0].stdout
+    assert "appears to be non-Python" in results[1].stdout
     assert "SKIPPED adaptive check" in (
-        tmp_path / "artifacts" / "check-1-1.txt"
+        tmp_path / "artifacts" / "check-1-2.txt"
     ).read_text(encoding="utf-8")
 
 
@@ -312,9 +312,9 @@ def test_pytest_check_is_skipped_for_typescript_repo_with_incidental_python_file
     )
 
     assert calls == []
-    assert results[0].returncode == 0
+    assert results[1].returncode == 0
 
-    assert "appears to be non-Python" in results[0].stdout
+    assert "appears to be non-Python" in results[1].stdout
 
 
 @pytest.mark.parametrize("returncode", [4, 5])

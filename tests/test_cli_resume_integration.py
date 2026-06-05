@@ -335,7 +335,18 @@ def test_loop_writes_failure_summary_when_final_review_invocation_fails(tmp_path
     assert summary["stopped_reason"] == "review_failed"
     assert summary["error"].startswith("codex review failed for review-final; see ")
     assert summary["iterations"] == [
-        {"iteration": 1, "review_status": "findings", "check_failures": 0},
+        {
+            "iteration": 1,
+            "review_status": "findings",
+            "check_failures": 0,
+            "checks": [
+                {
+                    "artifact": "check-1-1.txt",
+                    "command": "git status --porcelain --untracked-files=all",
+                    "status": "passed",
+                }
+            ],
+        },
         {"iteration": "final", "review_failed": True},
     ]
     assert summary["artifact_paths"]["reviews"] == [

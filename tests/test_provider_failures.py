@@ -171,6 +171,20 @@ def test_review_failed_to_run_flags_provider_auth_required(tmp_path: Path) -> No
     assert review_impl.review_failed_to_run(result, "opencode") is True
 
 
+def test_review_failed_to_run_preserves_returncode_one_findings_with_provider_keywords() -> None:
+    result = _result(
+        1,
+        stdout=(
+            "- [P1] Preserve finding text that mentions rate limit handling\n"
+            "  This is a legitimate review finding, not a provider failure.\n"
+            "REVIEW_STATUS: findings\n"
+        ),
+        stderr="",
+    )
+
+    assert review_impl.review_failed_to_run(result, "opencode") is False
+
+
 @pytest.mark.parametrize(
     "harness",
     ["", "opencode", "gemini", "kilo", "codex", "claude"],

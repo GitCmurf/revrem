@@ -586,6 +586,10 @@ def review_failed_to_run(result: CommandResult, harness: str) -> bool:
         return True
     if result.returncode >= 2:
         return True
+    if detect_review_status(
+        phase_support._combined_output(result), harness=harness
+    ) in {"clear", "findings"}:
+        return False
     if provider_failures.classify_provider_failure(result, harness=harness) is not None:
         return True
 

@@ -113,14 +113,19 @@ def resolve_external_review_input_chars(
     review_model: str | None,
 ) -> int:
     if args.external_review_input_chars is not None:
-        return int(args.external_review_input_chars)
-    if profile_runtime_key_explicit(
+        val = int(args.external_review_input_chars)
+    elif profile_runtime_key_explicit(
         profile_name, cwd, "external_review_input_chars"
     ):
-        return profile.runtime.external_review_input_chars
-    if is_large_context_gemini_review_model(review_harness, review_model):
-        return DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS
-    return DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS
+        val = profile.runtime.external_review_input_chars
+    elif is_large_context_gemini_review_model(review_harness, review_model):
+        val = DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS
+    else:
+        val = DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS
+
+    if val <= 0:
+        raise ValueError("external_review_input_chars must be greater than 0")
+    return val
 
 
 def resolve_external_review_input_chars_source(
@@ -514,6 +519,11 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
             DEFAULT_EXTERNAL_REVIEW_WARNING_SECONDS,
         )
     )
+    inner_check_retries = int(
+        pick(args.inner_check_retries, profile.runtime.inner_check_retries, 0)
+    )
+    if inner_check_retries < 0:
+        raise ValueError("inner_check_retries must be 0 or greater")
     phase_config_field_sources = {
         "review": review_phase.field_sources,
         "triage": {
@@ -571,6 +581,9 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
             ),
         },
         "runtime": {
+            "inner_check_retries": (
+                "cli" if args.inner_check_retries is not None else profile_source
+            ),
             "external_review_input_chars": external_review_input_chars_source,
             "external_review_warning_seconds": (
                 "cli"
@@ -635,6 +648,7 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
             profile.runtime.max_remediation_input_chars,
             200_000,
         ),
+        inner_check_retries=inner_check_retries,
         external_review_input_chars=external_review_input_chars,
         external_review_warning_seconds=external_review_warning_seconds,
         terminal_excerpt_chars=pick(
@@ -766,6 +780,7 @@ def profile_from_loop_config(
             output_last_message=config.output_last_message,
             full_auto=config.full_auto,
             max_remediation_input_chars=config.max_remediation_input_chars,
+            inner_check_retries=config.inner_check_retries,
             external_review_input_chars=config.external_review_input_chars,
             external_review_warning_seconds=config.external_review_warning_seconds,
             terminal_excerpt_chars=config.terminal_excerpt_chars,

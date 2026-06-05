@@ -102,7 +102,12 @@ Rules:
 - Preserve existing user changes; do not revert unrelated work.
 - Maintain the repository's Code + Documentation + Tests atomic-unit rule.
 - Add or update tests for behavior changes.
-- Run the most relevant verification commands before finishing.
+- Do not create scratch files in the repository. If you create temporary files,
+  place them outside the repo or delete them before finishing.
+- Leave no untracked files behind unless they are intentional patch files and
+  the final response calls them out explicitly.
+- Run the most relevant verification commands before finishing, and only claim
+  verification that you actually ran or that is included in the prompt.
 - If a finding is invalid or impossible to fix safely, explain that in your final response.
 """
 

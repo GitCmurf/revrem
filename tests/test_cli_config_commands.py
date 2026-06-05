@@ -218,6 +218,18 @@ timeout_seconds = -1
 
 
 
+def test_build_loop_config_rejects_non_positive_external_review_input_chars(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+
+    args = cli_args.parse_args(["--base", "main", "--external-review-input-chars", "0"])
+
+    with pytest.raises(ValueError, match="external_review_input_chars must be greater than 0"):
+        config_builder.build_loop_config(args, tmp_path)
+
+
 def test_main_uses_default_timeout_for_unset_phase_specific_timeout(tmp_path, monkeypatch):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))

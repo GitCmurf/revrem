@@ -44,6 +44,7 @@ class ConfigSnapshot:
     commit_after_remediation: bool
     commit_on_hook_failure: str  # "fail" | "remediate" | "no-verify"
     final_review: bool
+    inner_check_retries: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -64,6 +65,7 @@ class LoopAccumulator:
     failed_check_names: tuple[str, ...] = ()
     remediation_result_returncode: int | None = None
     remediation_duration: float = 0.0
+    inner_check_retry_count: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -176,6 +178,11 @@ class RetryViaCommitHook:
 
 
 @dataclass(frozen=True)
+class RetryViaChecks:
+    """Verification failed; feed check output into a bounded remediation retry."""
+
+
+@dataclass(frozen=True)
 class Stop:
     """Loop exits; outcome carries the terminal state (E1, T2, T3, F2-F6, NF1, …)."""
 
@@ -190,6 +197,7 @@ Action = (
     | RunChecks
     | RunCommit
     | RetryViaCommitHook
+    | RetryViaChecks
     | Stop
 )
 
@@ -252,6 +260,7 @@ def run(
                 RunChecks,
                 RunCommit,
                 RetryViaCommitHook,
+                RetryViaChecks,
             ),
         ):
             state = ctx.execute(action, state)
@@ -341,6 +350,8 @@ def _decide_remediation(event: RemediationDone) -> Action:
 def _decide_checks(cfg: ConfigSnapshot, acc: LoopAccumulator, iteration: int) -> Action:
     if cfg.commit_after_remediation and not acc.pending_check_failures:
         return RunCommit()
+    if acc.pending_check_failures and acc.inner_check_retry_count < cfg.inner_check_retries:
+        return RetryViaChecks()
     return _next_review_action(cfg, acc, iteration)
 
 

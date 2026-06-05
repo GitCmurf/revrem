@@ -57,6 +57,7 @@ class LoopConfig:
     dry_run: bool = False
     final_review: bool = True
     max_remediation_input_chars: int = 200_000
+    inner_check_retries: int = 0
     external_review_input_chars: int = DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS
     external_review_warning_seconds: float = DEFAULT_EXTERNAL_REVIEW_WARNING_SECONDS
     terminal_excerpt_chars: int = 4_000

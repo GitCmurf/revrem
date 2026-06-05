@@ -56,6 +56,37 @@ There is no silent third option.
 
 ## Entries
 
+### 2026-06-05 — Bounded remediation-check inner retry and cleanup gate
+
+- **Contract:** machine + human
+- **What changed:** `ConfigSnapshot` now carries `inner_check_retries`, and
+  `ChecksDone` with pending failures can produce a bounded
+  `RetryViaChecks` action before the normal outer review loop continues. Retry
+  artifacts use suffixed labels such as `remediation-1-retry-1.txt` and
+  `check-1-retry-1-2.txt` while preserving the outer iteration number. Every
+  checks phase now starts with a synthetic
+  `git status --porcelain --untracked-files=all` cleanliness check whose
+  result is written as `check-N-1.txt`; configured checks start at `.2`.
+  `resume_config` and continue commands preserve `inner_check_retries`.
+  Check progress renders captured RevRem timeout evidence as `timeout after
+  Ns` instead of only showing negative signal return codes.
+- **Why:** Gemini and OpenCode dogfood showed that secondary remediation can
+  repair review findings but leave check failures or scratch files behind.
+  Feeding check output back to remediation once is cheaper and more targeted
+  than forcing another full review pass, while the explicit cleanup check makes
+  repository scratch files visible before commit staging.
+- **Before / After:** before, remediation failure of `pytest`/`ruff` always
+  advanced to the next review/final-review path. With
+  `inner_check_retries = 1`, the first failed checks phase in an iteration
+  emits a retry progress line and reruns remediation with the check output
+  included; a second failed checks phase falls back to the existing outer loop.
+  Before, a timeout artifact could display as `exit -1 (SIGHUP)`; now timeout
+  marker text displays as `timeout after 300s`.
+- **schema_version impact:** none. Summary/event fields are additive within
+  existing runtime/check payloads, and artifact naming changes are recorded in
+  `artifact_paths` as usual.
+- **CHANGELOG:** Unreleased / Added and Changed.
+
 ### 2026-06-05 — Gemini argv prompt delivery and timeout classification
 
 - **Contract:** machine + human
