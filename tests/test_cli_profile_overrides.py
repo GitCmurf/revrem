@@ -291,7 +291,7 @@ model = "gemini-3.1-pro-preview"
     args = cli_args.parse_args(["--profile", "gemini-review", "--dry-run"])
     config, _summary_format = config_builder.build_loop_config(args, tmp_path)
 
-    assert config.external_review_input_chars == 600_000
+    assert config.external_review_input_chars == 200_000
     assert (
         config.phase_config_field_sources["runtime"]["external_review_input_chars"]
         == "model-default"

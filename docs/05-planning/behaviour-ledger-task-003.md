@@ -56,6 +56,35 @@ There is no silent third option.
 
 ## Entries
 
+### 2026-06-05 — Gemini argv prompt delivery and timeout classification
+
+- **Contract:** machine + human
+- **What changed:** Gemini prompt-bearing phases now deliver bounded prompts
+  with Gemini CLI's `--prompt` option and report
+  `prompt_delivery == "argv-prompt"` in phase-start metadata. Phase-start
+  `command` metadata redacts the prompt value as `<prompt chars=N>` while
+  preserving command shape, prompt size, and prompt artifacts. RevRem refuses
+  Gemini prompt delivery above the current `200000` character CLI-delivery cap
+  before launching the provider. Review subprocess stderr beginning with
+  `Command timed out after ...` is classified as
+  `provider_timeout` / non-transient, so `run_review_with_retry` does not spend
+  a second full timeout retrying RevRem's own timeout kill.
+- **Why:** Gemini dogfood showed direct `gemini --prompt` probes succeeded,
+  but large stdin review invocations could run until the configured timeout
+  with no provider output. The prior timeout path was also mislabeled as a
+  transient provider interruption and retried once, doubling the wall-clock
+  failure. The redaction keeps event metadata useful without duplicating large
+  prompts into command arrays.
+- **Before / After:** `gemini ... prompt=80.0k stdin truncated` becomes
+  `gemini ... prompt=80.0k argv-prompt truncated`; timeout failures report
+  provider timeout and fail after one configured deadline instead of retrying.
+  Event `command` values store `--prompt <prompt chars=N>`, not the prompt
+  body.
+- **schema_version impact:** none; `prompt_delivery` values are additive within
+  the existing phase-start payload schema, and command redaction preserves the
+  existing field while reducing payload size.
+- **CHANGELOG:** Unreleased / Added.
+
 ### 2026-06-05 — Prompted review status-debug tightened
 
 - **Contract:** machine + human
@@ -116,7 +145,7 @@ There is no silent third option.
 
 - **Contract:** machine
 - **What changed:** the resolved runtime config can now choose
-  `external_review_input_chars = 600000` for Gemini Pro review models when no
+  `external_review_input_chars = 200000` for Gemini Pro review models when no
   CLI/profile cap is set. Review phase-start events add
   `review_context_chars`, `external_review_input_chars`, and
   `prompt_truncated`. Runtime summaries include
@@ -149,31 +178,35 @@ There is no silent third option.
   existing v1 envelopes.
 - **CHANGELOG:** Unreleased / Added.
 
-### 2026-06-02 — Kilo and Gemini prompt delivery switched from argv to stdin
+### 2026-06-02 — Kilo prompt delivery switched from argv to stdin
 
 - **Contract:** machine
-- **What changed:** `prepare_prompt_invocation` no longer keeps kilo or
-  gemini on a positional argv prompt path. Both harnesses now fall through
-  to the same stdin branch Claude already uses, so all non-Codex/non-OpenCode
-  harnesses share one prompt-delivery contract. The phase-start event payload
-  records `prompt_delivery == "stdin"` for kilo/gemini calls, and the saved
-  remediation prompt is no longer embedded in argv when these harnesses are
-  selected. The deleted `test_prompt_invocation_passes_prompt_as_argument_for_argv_harnesses`
-  coverage is superseded by `test_prompt_invocation_passes_prompt_via_stdin_for_stdin_harnesses`
-  and the parametrised `test_full_noninteractive_invocation_matches_real_cli_contract`
-  (which now asserts `expects_stdin=True` for both kilo and gemini).
-- **Why:** kilo's and gemini's non-interactive CLIs accept the prompt from
-  stdin in the same way Claude's does. Keeping a separate positional argv
-  path for kilo and gemini was duplicating the Codex-style behaviour that we
-  no longer want for any external harness, and it left kilo in particular
-  with a contract that no hermetic test could verify.
+- **What changed:** `prepare_prompt_invocation` no longer keeps kilo on a
+  positional argv prompt path. Kilo now falls through to the same stdin branch
+  Claude already uses. The phase-start event payload records
+  `prompt_delivery == "stdin"` for kilo calls, and the saved remediation prompt
+  is no longer embedded in argv when Kilo is selected. The deleted
+  `test_prompt_invocation_passes_prompt_as_argument_for_argv_harnesses`
+  coverage is superseded by
+  `test_prompt_invocation_passes_prompt_via_stdin_for_kilo` and the
+  parametrised `test_full_noninteractive_invocation_matches_real_cli_contract`
+  (which asserts `expects_stdin=True` for Kilo).
+- **Why:** Kilo's non-interactive CLI accepts the prompt from stdin in the same
+  way Claude's does. Keeping a separate positional argv path for Kilo was
+  duplicating the Codex-style behaviour that we no longer
+  want for that harness, and it left Kilo with a contract that no hermetic test
+  could verify. Gemini was initially moved along the same path, but the
+  2026-06-05 Gemini dogfood entry above supersedes that part of the decision:
+  Gemini now uses its documented `--prompt` option for bounded prompts because
+  large stdin review invocations proved unreliable.
 - **schema_version impact:** none; `prompt_delivery` is a new field on
-  `phase_start` events introduced alongside the other prompt diagnostics
-  in this release, and kilo/gemini now populate it with `"stdin"` on first
-  introduction (the argv positional prompt for these harnesses was an
-  internal branch in `prepare_prompt_invocation` that is being removed at
-  the same time, so no prior schema value is preserved).
-- **CHANGELOG:** Unreleased / Added (kilo and gemini stdin delivery line).
+  `phase_start` events introduced alongside the other prompt diagnostics in
+  this release, and Kilo now populates it with `"stdin"` on first introduction
+  (the argv positional prompt for this harness was an internal branch in
+  `prepare_prompt_invocation` that is being removed at the same time, so no
+  prior schema value is preserved).
+- **CHANGELOG:** Unreleased / Added (Kilo stdin and Gemini `--prompt` delivery
+  line supersedes the original combined wording).
 - **Residual operator-side risk:** the kilo CLI's acceptance of prompts on
   stdin in non-interactive mode is only confirmed by the live smoke at
   `tests/test_live_secondary_harnesses.py::test_live_secondary_provider_direct_smoke`

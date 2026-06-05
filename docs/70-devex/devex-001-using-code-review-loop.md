@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.28'
+version: '1.29'
 last_updated: '2026-06-05'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.28
+> **Version:** 1.29
 > **Last Updated:** 2026-06-05
 > **Type:** DEVEX
 > **Area:** devex
@@ -946,15 +946,23 @@ provider-facing external review prompt is bounded by
 `runtime.external_review_input_chars` / `--external-review-input-chars`; RevRem
 trims by character count with an omission marker rather than attempting
 provider-specific token accounting. When no CLI/profile cap is set, Gemini Pro
-review models use a larger `600000` character cap while other prompted review
+review models use a larger `200000` character cap while other prompted review
 harnesses retain the conservative `80000` character default. Phase-start
 progress and events report whether the generated review context was supplied
-in full or truncated.
+in full or truncated. Gemini CLI is currently invoked with `--prompt` for
+prompt-bearing phases because direct `gemini --prompt` probes succeed while
+large stdin review dogfood runs have repeatedly timed out with no provider
+output. The model-aware default deliberately matches RevRem's current Gemini
+CLI `--prompt` delivery guard: lower `--external-review-input-chars`, use a
+smaller diff, or use a different review harness when the generated prompt is
+larger. This cap is a CLI delivery guard, not a claim about the Gemini model's
+API context window.
 If an external review subprocess fails with a known transient provider-side
 error, such as an OpenCode server error or a temporary rate-limit response,
 RevRem records `review-N-attempt-1.txt`, emits a `review retry` progress event,
 and retries that review once. CLI contract errors, auth/setup failures, quota
-exhaustion, and Codex native review failures are not retried.
+exhaustion, RevRem-enforced subprocess timeouts, and Codex native review
+failures are not retried.
 
 Progress output intentionally summarizes prompt-bearing commands. Phase start
 lines show the executable role, model, effort, timeout, sandbox, prompt size,
@@ -965,6 +973,9 @@ artifacts remain in `events.jsonl` and the run artifact directory. OpenCode
 receives prompt-bearing phases through `opencode run --file <prompt-artifact>`,
 plus a short positional instruction, not through stdin, so large RevRem prompts
 stay out of process listings and match OpenCode's headless CLI contract.
+Gemini receives prompt-bearing phases through `gemini --prompt <prompt>`;
+phase-start event `command` metadata redacts the prompt value while preserving
+prompt delivery, character count, byte count, and the saved prompt artifact.
 Long-running
 model subprocesses emit `waiting` progress every five minutes without changing
 timeout behavior; `timeout=0` still means RevRem does not enforce a subprocess
@@ -1112,6 +1123,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.29 | 2026-06-05 | Codex | Documented Gemini argv prompt delivery guard and non-retryable provider timeouts |
 | 1.28 | 2026-06-05 | Codex | Documented system-suspend wait interpretation and prompted-harness status diagnostics |
 | 1.27 | 2026-06-03 | Codex | Documented OpenCode file attachment plus positional message invocation |
 | 1.26 | 2026-06-03 | Codex | Documented Gemini review context cap and external review quiet-run diagnostics |

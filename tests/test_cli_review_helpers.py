@@ -304,8 +304,8 @@ def test_review_status_diagnostics_ignores_tool_denial_in_stderr_diff_transcript
         "REVIEW_STATUS: clear\n\n"
         "[stderr]\n"
         "\x1b[0m$ git diff main...HEAD tests/test_cli_review_helpers.py\n"
-        "+        \"Error executing tool run_shell_command: Tool execution denied by policy.\\n\"\n"
-        "tests/test_cli_review_helpers.py:4040:+        \"Tool execution denied by policy.\\n\"\n"
+        '+        "Error executing tool run_shell_command: Tool execution denied by policy.\\n"\n'
+        'tests/test_cli_review_helpers.py:4040:+        "Tool execution denied by policy.\\n"\n'
     )
 
     diagnostics = review_status_diagnostics(output, harness="opencode")
@@ -752,7 +752,7 @@ def test_opencode_review_does_not_retry_provider_cli_contract_error(tmp_path):
     assert len(calls) == 1
 
 
-def test_gemini_review_runs_in_plan_mode_with_prompt_via_stdin(tmp_path):
+def test_gemini_review_runs_in_plan_mode_with_prompt_via_prompt_arg(tmp_path):
     calls: list[tuple[list[str], str | None]] = []
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
@@ -777,10 +777,10 @@ def test_gemini_review_runs_in_plan_mode_with_prompt_via_stdin(tmp_path):
         "--model",
         "gemini-3.1-pro-preview",
     ]
-    assert "--prompt" not in calls[0][0]
-    assert calls[0][1] is not None
-    assert "Treat the working tree as read-only" in calls[0][1]
-    assert "Base branch: main" in calls[0][1]
+    prompt = calls[0][0][calls[0][0].index("--prompt") + 1]
+    assert calls[0][1] is None
+    assert "Treat the working tree as read-only" in prompt
+    assert "Base branch: main" in prompt
 
 
 def test_gemini_review_prompt_includes_revrem_diff_context(tmp_path):
@@ -833,8 +833,8 @@ def test_gemini_review_prompt_includes_revrem_diff_context(tmp_path):
 
     summary = runner_mod.run_loop(config, runner).to_dict()
 
-    prompt = calls[0][1]
-    assert prompt is not None
+    prompt = calls[0][0][calls[0][0].index("--prompt") + 1]
+    assert calls[0][1] is None
     context = (repo / "artifacts" / "review-1-context.txt").read_text(encoding="utf-8")
     artifact_paths = summary["artifact_paths"]
     assert "Use the supplied diff context as the authoritative patch input" in prompt
@@ -901,8 +901,8 @@ def test_gemini_review_prompt_respects_configured_char_limit(tmp_path):
 
     runner_mod.run_loop(config, runner)
 
-    prompt = calls[0][1]
-    assert prompt is not None
+    prompt = calls[0][0][calls[0][0].index("--prompt") + 1]
+    assert calls[0][1] is None
     assert len(prompt) <= 1500
     assert "omitted" in prompt
     context = (repo / "artifacts" / "review-1-context.txt").read_text(encoding="utf-8")
@@ -918,6 +918,15 @@ def test_gemini_review_prompt_respects_configured_char_limit(tmp_path):
     assert phase_start["payload"]["review_context_chars"] > 1500
     assert phase_start["payload"]["external_review_input_chars"] == 1500
     assert phase_start["payload"]["prompt_truncated"] is True
+    assert phase_start["payload"]["prompt_delivery"] == "argv-prompt"
+    assert phase_start["payload"]["prompt_chars"] == len(prompt)
+    assert (
+        phase_start["payload"]["command"][
+            phase_start["payload"]["command"].index("--prompt") + 1
+        ]
+        == f"<prompt chars={len(prompt)}>"
+    )
+    assert prompt not in json.dumps(phase_start["payload"]["command"])
 
 
 def test_external_review_prompt_ignores_remediation_input_cap(tmp_path):
@@ -1753,7 +1762,8 @@ def test_review_failure_detection_allows_nonzero_findings_without_stderr():
     )
     assert (
         review_failed_to_run(
-            CommandResult(["codex", "review"], 1, stdout="Finding\n", stderr=""), "codex"
+            CommandResult(["codex", "review"], 1, stdout="Finding\n", stderr=""),
+            "codex",
         )
         is False
     )
@@ -1761,13 +1771,15 @@ def test_review_failure_detection_allows_nonzero_findings_without_stderr():
         review_failed_to_run(
             CommandResult(
                 ["codex", "review"], 1, stdout="", stderr="Error: thread/start failed"
-            ), "codex"
+            ),
+            "codex",
         )
         is True
     )
     assert (
         review_failed_to_run(
-            CommandResult(["codex", "review"], 2, stdout="", stderr="error: bad args"), "codex"
+            CommandResult(["codex", "review"], 2, stdout="", stderr="error: bad args"),
+            "codex",
         )
         is True
     )

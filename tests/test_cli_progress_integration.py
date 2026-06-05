@@ -234,6 +234,24 @@ def test_resolved_phase_detail_summarizes_prompt_arguments():
     assert "first line second line" not in detail
 
 
+def test_command_for_progress_redacts_prompt_argument():
+    command = [
+        "gemini",
+        "--approval-mode",
+        "plan",
+        "--prompt",
+        "secret prompt\nwith many details",
+    ]
+
+    assert phase_support.command_for_progress(command) == [
+        "gemini",
+        "--approval-mode",
+        "plan",
+        "--prompt",
+        "<prompt chars=31>",
+    ]
+
+
 def test_resolved_phase_detail_summarizes_opencode_without_repetition():
     detail = phase_support.resolved_phase_detail(
         ["opencode", "run", "--model", "opencode/minimax-m3-free"],

@@ -12,6 +12,7 @@ from typing import Any, Protocol
 CODEX_MINIMAL_UNSUPPORTED_COMMIT_MODELS = frozenset({"gpt-5.3-codex-spark"})
 CODEX_MINIMAL_UNSUPPORTED_ADJUSTMENT = "codex_minimal_unsupported_by_model"
 REASONING_EFFORT_HARNESSES = frozenset({"codex"})
+GEMINI_ARGV_PROMPT_MAX_CHARS = 200_000
 
 
 @dataclass(frozen=True)
@@ -95,7 +96,9 @@ def resolve_commit_message_reasoning_effort(
             requested=requested_effort,
             adjustment=CODEX_MINIMAL_UNSUPPORTED_ADJUSTMENT,
         )
-    return ReasoningEffortResolution(effective=requested_effort, requested=requested_effort)
+    return ReasoningEffortResolution(
+        effective=requested_effort, requested=requested_effort
+    )
 
 
 def reasoning_effort_supported(harness: str) -> bool:
@@ -156,10 +159,11 @@ class CodexHarnessAdapter(HarnessAdapter):
             request.role == "remediation"
             and request.output_last_message_path is not None
         ):
-            command.extend(["--output-last-message", str(request.output_last_message_path)])
+            command.extend(
+                ["--output-last-message", str(request.output_last_message_path)]
+            )
         command.append("-")
         return command
-
 
 
 class ClaudeHarnessAdapter(HarnessAdapter):
@@ -173,7 +177,7 @@ class ClaudeHarnessAdapter(HarnessAdapter):
 
 class GeminiHarnessAdapter(HarnessAdapter):
     def command(self, request: PhaseCommandRequest) -> list[str]:
-        # The gemini CLI runs non-interactively and reads from stdin.
+        # Prompt delivery is adapted later by prepare_prompt_invocation.
         command = [request.executable]
         command.extend(_gemini_permission_args(request))
         if request.model:
@@ -209,6 +213,7 @@ class KiloHarnessAdapter(HarnessAdapter):
         if request.model:
             command.extend(["--model", request.model])
         return command
+
 
 class ReservedHarnessAdapter(HarnessAdapter):
 
@@ -415,7 +420,9 @@ def _kilo_permission_args(request: PhaseCommandRequest) -> list[str]:
 
 
 PRODUCTION_HARNESS_REGISTRY = MappingProxyType(HARNESS_REGISTRY)
-TEST_HARNESS_REGISTRY = MappingProxyType({**HARNESS_REGISTRY, "fake": FAKE_HARNESS_SPEC})
+TEST_HARNESS_REGISTRY = MappingProxyType(
+    {**HARNESS_REGISTRY, "fake": FAKE_HARNESS_SPEC}
+)
 
 
 def harness_registry() -> Mapping[str, HarnessSpec]:
@@ -485,6 +492,22 @@ def prepare_prompt_invocation(
             prompt_chars=len(prompt),
             prompt_bytes=len(encoded),
             prompt_artifact=prompt_artifact_path,
+        )
+    if harness == "gemini":
+        if len(prompt) > GEMINI_ARGV_PROMPT_MAX_CHARS:
+            raise ValueError(
+                "gemini prompt exceeds RevRem's current --prompt delivery cap "
+                f"({len(prompt)} > {GEMINI_ARGV_PROMPT_MAX_CHARS} chars); lower "
+                "--external-review-input-chars or use another review harness"
+            )
+        adapted = list(command)
+        adapted.extend(["--prompt", prompt])
+        return PromptInvocation(
+            adapted,
+            None,
+            "argv-prompt",
+            prompt_chars=len(prompt),
+            prompt_bytes=len(encoded),
         )
     return PromptInvocation(
         list(command),
@@ -558,10 +581,16 @@ def run_fake_harness_command(args: list[str] | tuple[str, ...]) -> tuple[int, st
     if scenario == "cancellation":
         raise KeyboardInterrupt()
     if scenario == "unsupported":
-        return 2, "", "REVREM_ALLOW_FAKE_HARNESS is enabled, but this scenario is unsupported\n"
+        return (
+            2,
+            "",
+            "REVREM_ALLOW_FAKE_HARNESS is enabled, but this scenario is unsupported\n",
+        )
 
     fixture_dir = os.environ.get(FAKE_HARNESS_FIXTURE_ENV)
-    base = Path(fixture_dir) / scenario if fixture_dir else HARNESS_FIXTURES_DIR / scenario
+    base = (
+        Path(fixture_dir) / scenario if fixture_dir else HARNESS_FIXTURES_DIR / scenario
+    )
 
     # Use specialized filenames for each role
     if phase == "review":

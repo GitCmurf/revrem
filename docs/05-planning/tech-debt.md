@@ -49,10 +49,11 @@ available.
 Before sending the prompt to a prompted provider, RevRem trims it by character
 count using `runtime.external_review_input_chars` /
 `--external-review-input-chars`. The conservative default is `80000`
-characters. Gemini Pro review models get a larger `600000` character default
-when no CLI or profile override is set. Progress output and events report the
-sent prompt size, generated context size, delivery mode, and whether the prompt
-was truncated, for example `prompt=80.0k/511.2k file truncated`.
+characters. Gemini Pro review models get a larger `200000` character default
+when no CLI or profile override is set, matching RevRem's current Gemini CLI
+`--prompt` delivery guard. Progress output and events report the sent prompt
+size, generated context size, delivery mode, and whether the prompt was
+truncated, for example `prompt=80.0k/511.2k file truncated`.
 
 This bound is intentional. It avoids overflowing provider context windows,
 keeps very large dogfood runs from becoming unbounded in latency or cost, and

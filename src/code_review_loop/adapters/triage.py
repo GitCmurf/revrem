@@ -20,7 +20,12 @@ from code_review_loop import (
     triage,
 )
 from code_review_loop.adapters import phase_support
-from code_review_loop.core.ports import CommandResult, RunContext, TriageOutcome, TriageRequest
+from code_review_loop.core.ports import (
+    CommandResult,
+    RunContext,
+    TriageOutcome,
+    TriageRequest,
+)
 from code_review_loop.core.review_interpretation import actionable_review_output
 
 if TYPE_CHECKING:
@@ -54,7 +59,9 @@ def run_triage(
     ctx: RunContext,
 ) -> tuple[str, int, bool, dict[str, Any] | None]:
     command = build_triage_command(config)
-    prompt_root = config.triage_prompt or triage.load_prompt(contract=config.triage_contract)
+    prompt_root = config.triage_prompt or triage.load_prompt(
+        contract=config.triage_contract
+    )
     prompt = f"{prompt_root}\n{prompts_composer.trim_for_prompt(review_output, config.max_remediation_input_chars)}"
     prompt_artifact_path = config.artifact_dir / f"triage-{iteration}-prompt.txt"
     phase_support.write_artifact(prompt_artifact_path, prompt)
@@ -67,7 +74,9 @@ def run_triage(
     command = invocation.command
     prompt_input = invocation.stdin
     prompt_metadata = phase_support.prompt_invocation_metadata(invocation)
-    phase_support.ensure_model_budget(config, phase="triage", iteration=iteration, ctx=ctx)
+    phase_support.ensure_model_budget(
+        config, phase="triage", iteration=iteration, ctx=ctx
+    )
     phase_support.progress_event(
         config,
         "triage",
@@ -87,7 +96,7 @@ def run_triage(
         ),
         ctx=ctx,
         metadata={
-            "command": list(command),
+            "command": phase_support.command_for_progress(list(command)),
             "harness": config.triage_harness,
             **prompt_metadata,
         },
@@ -108,8 +117,12 @@ def run_triage(
             prompt_artifact=invocation.prompt_artifact,
         )
     triage_artifact = config.artifact_dir / f"triage-{iteration}.txt"
-    phase_support.write_artifact(triage_artifact, phase_support._combined_output(result))
-    phase_support.record_model_charge(config, result, phase="triage", iteration=iteration, ctx=ctx)
+    phase_support.write_artifact(
+        triage_artifact, phase_support._combined_output(result)
+    )
+    phase_support.record_model_charge(
+        config, result, phase="triage", iteration=iteration, ctx=ctx
+    )
     if result.returncode != 0:
         issue = triage.command_failed_issue(
             iteration=iteration,
@@ -121,7 +134,14 @@ def run_triage(
             f"diagnostics-{iteration}.json",
             diagnostics.doctor_payload([issue]),
         )
-        phase_support.progress_event(config, "triage", str(iteration), "failed", f"exit {result.returncode}", ctx=ctx)
+        phase_support.progress_event(
+            config,
+            "triage",
+            str(iteration),
+            "failed",
+            f"exit {result.returncode}",
+            ctx=ctx,
+        )
         raise RuntimeError(
             f"codex exec triage failed for iteration {iteration}; "
             f"see {triage_artifact}"
@@ -143,9 +163,13 @@ def run_triage(
                 f"diagnostics-{iteration}.json",
                 diagnostics.doctor_payload([issue]),
             )
-            phase_support.progress_event(config, "triage", str(iteration), "invalid", str(exc), ctx=ctx)
+            phase_support.progress_event(
+                config, "triage", str(iteration), "invalid", str(exc), ctx=ctx
+            )
             if config.triage_on_invalid == "stop":
-                raise RuntimeError(f"invalid structured triage output for iteration {iteration}: {exc}") from exc
+                raise RuntimeError(
+                    f"invalid structured triage output for iteration {iteration}: {exc}"
+                ) from exc
             return review_output, 0, False, None
         suppressed_count = 0
         if config.suppressions_enabled:
@@ -161,7 +185,9 @@ def run_triage(
                     ctx=ctx,
                 )
             else:
-                payload, suppressed_findings = suppressions.apply_to_triage_payload(payload, matches)
+                payload, suppressed_findings = suppressions.apply_to_triage_payload(
+                    payload, matches
+                )
                 suppressed_count = len(suppressed_findings)
                 if suppressed_findings:
                     phase_support.progress_event(
@@ -173,16 +199,28 @@ def run_triage(
                         ctx=ctx,
                     )
         triage.write_triage_artifact(config.artifact_dir, iteration, payload)
-        has_actionable_findings = bool(payload.get("confirmed_findings") or payload.get("needs_more_info"))
+        has_actionable_findings = bool(
+            payload.get("confirmed_findings") or payload.get("needs_more_info")
+        )
         if not has_actionable_findings:
             return "", suppressed_count, True, payload
-        return triage.format_structured_handoff(payload, review_output), suppressed_count, False, payload
+        return (
+            triage.format_structured_handoff(payload, review_output),
+            suppressed_count,
+            False,
+            payload,
+        )
     return (
-        "Triage handoff from the previous review:\n"
-        f"{triage_output}\n\n"
-        "Original review/check context:\n"
-        f"{review_output}"
-    ), 0, False, None
+        (
+            "Triage handoff from the previous review:\n"
+            f"{triage_output}\n\n"
+            "Original review/check context:\n"
+            f"{review_output}"
+        ),
+        0,
+        False,
+        None,
+    )
 
 
 class TriageAdapter:

@@ -90,9 +90,7 @@ def run_codex_review(
         review_context = build_external_review_context(
             config, git_context_cache=ctx.git_context_cache
         )
-        external_prompt = compose_external_review_prompt(
-            config, review_context
-        )
+        external_prompt = compose_external_review_prompt(config, review_context)
         review_prompt = external_prompt.prompt
         phase_support.write_artifact(
             config.artifact_dir / f"{artifact_label}-context.txt",
@@ -146,7 +144,7 @@ def run_codex_review(
         ),
         ctx=ctx,
         metadata={
-            "command": list(command),
+            "command": phase_support.command_for_progress(list(command)),
             "harness": config.review_harness,
             **prompt_metadata,
             **external_review_prompt_metadata(external_prompt),
@@ -410,9 +408,7 @@ def build_external_review_context(
     base = cached_base_commit(git_context_cache, config.cwd, config.base)
     head_sha = _cached_head_sha(git_context_cache, config.cwd)
     head = _head_sha_result(head_sha)
-    merge_base = cached_merge_base(
-        git_context_cache, config.cwd, head_sha, config.base
-    )
+    merge_base = cached_merge_base(git_context_cache, config.cwd, head_sha, config.base)
     sections.extend(
         [
             _format_git_context_result("HEAD", head),
@@ -437,9 +433,7 @@ def build_external_review_context(
         diff_name_status = run_git_preflight(
             config.cwd, ["diff", "--name-status", f"{config.base}...HEAD"]
         )
-        diff_full = run_git_preflight(
-            config.cwd, ["diff", f"{config.base}...HEAD"]
-        )
+        diff_full = run_git_preflight(config.cwd, ["diff", f"{config.base}...HEAD"])
     sections.extend(
         [
             _format_git_context_result(
@@ -471,9 +465,7 @@ def build_external_review_context(
     return "\n\n".join(sections) + "\n"
 
 
-def _cached_head_sha(
-    cache: GitContextCache | None, cwd: Path
-) -> str:
+def _cached_head_sha(cache: GitContextCache | None, cwd: Path) -> str:
     """Return the cached HEAD SHA for ``cwd`` or run ``git rev-parse HEAD``.
 
     The result is memoised on ``GitContextCache.head_sha`` so a sequence of
@@ -594,10 +586,7 @@ def review_failed_to_run(result: CommandResult, harness: str) -> bool:
         return True
     if result.returncode >= 2:
         return True
-    if (
-        provider_failures.classify_provider_failure(result, harness=harness)
-        is not None
-    ):
+    if provider_failures.classify_provider_failure(result, harness=harness) is not None:
         return True
 
     stderr = result.stderr.lower()

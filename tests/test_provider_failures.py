@@ -31,7 +31,10 @@ def _result(returncode: int, *, stdout: str = "", stderr: str = "") -> CommandRe
     [
         # Non-retryable: provider refused to authenticate the caller.
         (
-            {"returncode": 1, "stderr": "Error: authentication required; api key invalid"},
+            {
+                "returncode": 1,
+                "stderr": "Error: authentication required; api key invalid",
+            },
             "provider_auth_required",
             False,
         ),
@@ -78,6 +81,18 @@ def _result(returncode: int, *, stdout: str = "", stderr: str = "") -> CommandRe
             "provider_rate_limited",
             True,
         ),
+        # Non-retryable: RevRem enforced the configured subprocess timeout.
+        (
+            {
+                "returncode": -1,
+                "stderr": (
+                    "Command timed out after 1800.0 seconds\n"
+                    "Command: gemini --approval-mode plan --model gemini-3.1-pro-preview\n"
+                ),
+            },
+            "provider_timeout",
+            False,
+        ),
         # Retryable: subprocess was signalled (e.g. SIGTERM) before exit.
         (
             {"returncode": -15, "stderr": "Killed"},
@@ -122,8 +137,7 @@ def test_classify_provider_failure_ignores_help_text_api_key_mention() -> None:
     """
     result = _result(1, stderr="Usage: opencode review --api-key YOUR_KEY [opts]")
     assert (
-        provider_failures.classify_provider_failure(result, harness="harness")
-        is None
+        provider_failures.classify_provider_failure(result, harness="harness") is None
     )
 
 
@@ -132,18 +146,18 @@ def test_classify_provider_failure_ignores_unknownerrors_substring() -> None:
     ``UnknownError`` JSON envelope signal."""
     result = _result(1, stderr="recent unknownerrors: 3")
     assert (
-        provider_failures.classify_provider_failure(result, harness="harness")
-        is None
+        provider_failures.classify_provider_failure(result, harness="harness") is None
     )
 
 
-def test_classify_provider_failure_ignores_temporarily_unavailable_in_cache_message() -> None:
+def test_classify_provider_failure_ignores_temporarily_unavailable_in_cache_message() -> (
+    None
+):
     """Cache messages that mention ``temporarily unavailable`` must not
     trigger the transient failure path on their own."""
     result = _result(1, stderr="cache entry temporarily unavailable, retry later")
     assert (
-        provider_failures.classify_provider_failure(result, harness="harness")
-        is None
+        provider_failures.classify_provider_failure(result, harness="harness") is None
     )
 
 
@@ -152,9 +166,7 @@ def test_review_failed_to_run_flags_provider_auth_required(tmp_path: Path) -> No
     classification so that provider_auth_required results are flagged as
     failures (the previous default of ``""`` would also catch them by string
     match but lost the harness name in any downstream log)."""
-    result = _result(
-        1, stderr="Error: authentication required; api key invalid"
-    )
+    result = _result(1, stderr="Error: authentication required; api key invalid")
 
     assert review_impl.review_failed_to_run(result, "opencode") is True
 
@@ -258,15 +270,56 @@ def test_run_review_with_retry_does_not_retry_quota_exhausted(tmp_path: Path) ->
     assert len(calls) == 1
 
 
+def test_run_review_with_retry_does_not_retry_timeout(tmp_path: Path) -> None:
+    calls: list[list[str]] = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append(list(args))
+        return CommandResult(
+            list(args),
+            -1,
+            stderr=(
+                "Command timed out after 1800.0 seconds\n"
+                "Command: gemini --approval-mode plan --model gemini-3.1-pro-preview\n"
+            ),
+        )
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="gemini",
+        review_model="gemini-3.1-pro-preview",
+    )
+    ctx = RunContext(
+        runner=runner,
+        clock=FakeClock(),
+        identity=FakeRunIdentity(),
+        **phase_harness_kwargs(),
+    )
+
+    result = review_impl.run_review_with_retry(
+        config,
+        runner,
+        ["gemini"],
+        None,
+        "1",
+        None,
+        ctx=ctx,
+    )
+
+    assert result.returncode == -1
+    assert len(calls) == 1
+
+
 def test_run_review_with_retry_retries_rate_limited(tmp_path: Path) -> None:
     calls: list[list[str]] = []
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append(list(args))
         if len(calls) == 1:
-            return CommandResult(
-                list(args), 1, stderr="Error: 429 rate limit exceeded"
-            )
+            return CommandResult(list(args), 1, stderr="Error: 429 rate limit exceeded")
         return CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
 
     config = LoopConfig(
@@ -363,9 +416,7 @@ def test_remediation_adapter_does_not_retry_auth_required(tmp_path: Path) -> Non
     adapter = RemediationAdapter(config)
 
     with pytest.raises(RuntimeError, match="provider auth/setup required"):
-        adapter.execute(
-            RemediationRequest(iteration=1, remediation_input="fix"), ctx
-        )
+        adapter.execute(RemediationRequest(iteration=1, remediation_input="fix"), ctx)
 
 
 def test_remediation_adapter_does_not_retry_quota_exhausted(tmp_path: Path) -> None:
@@ -395,9 +446,7 @@ def test_remediation_adapter_does_not_retry_quota_exhausted(tmp_path: Path) -> N
     adapter = RemediationAdapter(config)
 
     with pytest.raises(RuntimeError, match="provider quota exhausted"):
-        adapter.execute(
-            RemediationRequest(iteration=1, remediation_input="fix"), ctx
-        )
+        adapter.execute(RemediationRequest(iteration=1, remediation_input="fix"), ctx)
 
 
 def test_run_review_with_retry_sleeps_between_transient_attempts(
@@ -410,9 +459,7 @@ def test_run_review_with_retry_sleeps_between_transient_attempts(
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append(_monotonic())
         if len(calls) == 1:
-            return CommandResult(
-                list(args), 1, stderr="Error: 429 rate limit exceeded"
-            )
+            return CommandResult(list(args), 1, stderr="Error: 429 rate limit exceeded")
         return CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
 
     sleeps: list[float] = []
@@ -483,9 +530,7 @@ def test_remediation_adapter_retries_transient_failure(
             return CommandResult(list(args), 0, stdout="")
         calls.append(list(args))
         if len(calls) == 1:
-            return CommandResult(
-                list(args), 1, stderr="Error: 429 rate limit exceeded"
-            )
+            return CommandResult(list(args), 1, stderr="Error: 429 rate limit exceeded")
         return CommandResult(list(args), 0, stdout="ok\n")
 
     real_sleep_calls: list[float] = []
@@ -539,9 +584,7 @@ def test_remediation_retry_persists_failed_attempt_artifact(
             return CommandResult(list(args), 0, stdout="")
         calls.append(list(args))
         if len(calls) == 1:
-            return CommandResult(
-                list(args), 1, stderr="Error: 429 rate limit exceeded"
-            )
+            return CommandResult(list(args), 1, stderr="Error: 429 rate limit exceeded")
         return CommandResult(list(args), 0, stdout="ok\n")
 
     monkeypatch.setattr(
@@ -620,9 +663,7 @@ def test_remediation_adapter_does_not_retry_auth_required_repeatedly(
     adapter = RemediationAdapter(config)
 
     with pytest.raises(RuntimeError, match="provider auth/setup required"):
-        adapter.execute(
-            RemediationRequest(iteration=1, remediation_input="fix"), ctx
-        )
+        adapter.execute(RemediationRequest(iteration=1, remediation_input="fix"), ctx)
 
     assert len(calls) == 1
     assert sleep_calls == []

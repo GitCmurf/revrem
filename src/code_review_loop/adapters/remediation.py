@@ -145,7 +145,7 @@ def run_remediation(
         ),
         ctx=ctx,
         metadata={
-            "command": list(command),
+            "command": phase_support.command_for_progress(list(command)),
             "harness": remediation_harness,
             **prompt_metadata,
         },

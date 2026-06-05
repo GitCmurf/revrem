@@ -385,7 +385,7 @@ def command_for_progress(command: list[str]) -> list[str]:
     summarized = list(command)
     for index, value in enumerate(summarized[:-1]):
         if value in {"--prompt", "-p"}:
-            summarized[index + 1] = summarize_prompt_for_progress(summarized[index + 1])
+            summarized[index + 1] = f"<prompt chars={len(summarized[index + 1])}>"
             return summarized
     if "\n" in summarized[-1]:
         summarized[-1] = summarize_prompt_for_progress(summarized[-1])
@@ -481,9 +481,7 @@ def resolved_phase_detail(
         fields.append(model)
     if reasoning_effort:
         effort = (
-            reasoning_effort
-            if harnesses.reasoning_effort_supported(harness)
-            else "n/a"
+            reasoning_effort if harnesses.reasoning_effort_supported(harness) else "n/a"
         )
         fields.append(f"{effort} effort")
     if timeout_seconds is not None:
@@ -547,7 +545,9 @@ def prompt_progress_metadata(prompt_input: str | None) -> dict[str, Any]:
     }
 
 
-def prompt_invocation_metadata(invocation: harnesses.PromptInvocation) -> dict[str, Any]:
+def prompt_invocation_metadata(
+    invocation: harnesses.PromptInvocation,
+) -> dict[str, Any]:
     metadata: dict[str, Any] = {"prompt_delivery": invocation.delivery}
     if invocation.prompt_chars is not None:
         metadata["prompt_chars"] = invocation.prompt_chars

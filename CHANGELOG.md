@@ -34,19 +34,21 @@ This project follows Semantic Versioning once public releases begin.
   earlier "instead of using stdin" wording was superseded once the
   positional message was added. Model subprocesses also emit five-minute
   `waiting` progress diagnostics while they remain active.
-- Kilo and Gemini prompt-bearing phases now deliver the prompt via stdin
-  instead of as a positional argv token, aligning them with the Claude
-  contract and matching the hermetic harness-adapter test that covers the
-  stdin path. Operators running `REVREM_LIVE_KILO=1` will see the kilo CLI
-  receive the prompt on stdin; kilo's CLI contract for non-interactive stdin
-  ingestion is the only externally validated check until kilo ships a
-  `--help` flag that confirms it.
+- Kilo prompt-bearing phases now deliver the prompt via stdin instead of as a
+  positional argv token, aligning Kilo with the Claude contract and matching
+  the hermetic harness-adapter test that covers the stdin path. Gemini
+  prompt-bearing phases use Gemini CLI's `--prompt` option for bounded
+  prompts because live dogfood showed long-running stdin review invocations
+  could hang until RevRem's subprocess timeout, while direct `gemini --prompt`
+  probes completed successfully.
 - External review harness subprocesses now classify common provider failures
   in operator errors and retry one transient provider-side review failure
   before failing the phase. Commit-message drafting now rejects explanatory
   model prose as an invalid subject, prefers a saved `commit-N-message-subject`
   sidecar when available, and falls back to the deterministic subject builder
-  when the model output is not a usable subject.
+  when the model output is not a usable subject. RevRem-enforced subprocess
+  timeouts are classified as non-transient provider timeouts and are not
+  retried.
 - Gemini Pro review runs now get a larger model-aware external review input
   cap when no CLI/profile cap is set, and prompted review progress now reports
   whether the supplied context is full or truncated. Long-running external

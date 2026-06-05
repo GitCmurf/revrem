@@ -128,12 +128,12 @@ def test_opencode_debug_argv_is_well_formed(monkeypatch):
     argv = harnesses.OPENCODE_DEBUG_ARGV
     assert len(argv) >= 2, "OPENCODE_DEBUG_ARGV must contain at least one flag/value"
     for index, token in enumerate(argv[:-1]):
-        assert token.startswith("--"), (
-            f"OPENCODE_DEBUG_ARGV[{index}]={token!r} must be a long option"
-        )
-    assert not argv[-1].startswith("--"), (
-        f"OPENCODE_DEBUG_ARGV terminal value {argv[-1]!r} must be a bare token"
-    )
+        assert token.startswith(
+            "--"
+        ), f"OPENCODE_DEBUG_ARGV[{index}]={token!r} must be a long option"
+    assert not argv[-1].startswith(
+        "--"
+    ), f"OPENCODE_DEBUG_ARGV terminal value {argv[-1]!r} must be a bare token"
     assert harnesses.OPENCODE_DEBUG_ENV == "REVREM_OPENCODE_DEBUG"
 
 
@@ -189,9 +189,9 @@ def test_kilo_adapter_omits_auto_for_unsupported_full_auto_sandbox_combos():
         cmd = adapter.command(req)
         assert cmd[0] == "kilo"
         assert "run" in cmd
-        assert "--auto" not in cmd, (
-            f"--auto must be absent for full_auto={full_auto} sandbox={sandbox}"
-        )
+        assert (
+            "--auto" not in cmd
+        ), f"--auto must be absent for full_auto={full_auto} sandbox={sandbox}"
 
 
 def test_prompt_invocation_uses_stdin_for_claude():
@@ -223,8 +223,7 @@ def test_prompt_invocation_uses_file_for_opencode(tmp_path):
     assert "review prompt" not in command
 
 
-def test_prompt_invocation_passes_prompt_via_stdin_for_stdin_harnesses():
-
+def test_prompt_invocation_passes_prompt_via_stdin_for_kilo():
     command, stdin = harnesses.prepare_prompt_invocation(
         "kilo",
         ["kilo", "run"],
@@ -233,13 +232,32 @@ def test_prompt_invocation_passes_prompt_via_stdin_for_stdin_harnesses():
     assert command == ["kilo", "run"]
     assert stdin == "review prompt"
 
+
+def test_prompt_invocation_passes_gemini_prompt_via_argv_prompt():
     command, stdin = harnesses.prepare_prompt_invocation(
         "gemini",
         ["gemini", "--approval-mode", "auto_edit"],
         "review prompt",
     )
-    assert command == ["gemini", "--approval-mode", "auto_edit"]
-    assert stdin == "review prompt"
+    assert command == [
+        "gemini",
+        "--approval-mode",
+        "auto_edit",
+        "--prompt",
+        "review prompt",
+    ]
+    assert stdin is None
+
+
+def test_prompt_invocation_rejects_oversized_gemini_argv_prompt():
+    prompt = "x" * (harnesses.GEMINI_ARGV_PROMPT_MAX_CHARS + 1)
+
+    with pytest.raises(ValueError, match="gemini prompt exceeds"):
+        harnesses.prepare_prompt_invocation(
+            "gemini",
+            ["gemini", "--approval-mode", "plan"],
+            prompt,
+        )
 
 
 @pytest.mark.parametrize(
@@ -260,24 +278,26 @@ def test_prompt_invocation_passes_prompt_via_stdin_for_stdin_harnesses():
                 "auto_edit",
                 "--model",
                 "M",
+                "--prompt",
+                "PROMPT",
             ],
-            True,
+            False,
         ),
         (
             "opencode",
             "opencode",
-                [
-                    "opencode",
-                    "run",
-                    "--dangerously-skip-permissions",
-                    "--model",
-                    "M",
-                    "Follow the attached RevRem prompt exactly.",
-                    "--file",
-                    "prompt.txt",
-                ],
-                False,
-            ),
+            [
+                "opencode",
+                "run",
+                "--dangerously-skip-permissions",
+                "--model",
+                "M",
+                "Follow the attached RevRem prompt exactly.",
+                "--file",
+                "prompt.txt",
+            ],
+            False,
+        ),
         (
             "kilo",
             "kilo",
