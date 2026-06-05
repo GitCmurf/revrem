@@ -43,10 +43,16 @@ STRUCTURED_EMPTY_FINDINGS_RE = re.compile(
     r'(?<!\w)["\']?findings["\']?\s*:\s*\[\s*\](?!\w)',
     re.IGNORECASE,
 )
-TOOL_DENIAL_RE = re.compile(
-    r"(?:tool execution (?:denied|requires user confirmation)|denied by policy|requires user confirmation)",
+TOOL_DENIAL_CONTROL_RE = re.compile(
+    r"^(?:"
+    r"error executing tool\b.*(?:tool execution (?:denied|requires user confirmation)|denied by policy|requires user confirmation)"
+    r"|tool execution (?:denied|requires user confirmation)\b"
+    r"|denied by policy\b"
+    r"|requires user confirmation\b"
+    r")",
     re.IGNORECASE,
 )
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 UNRELATED_FAILURE_RE = re.compile(
     r"\b(?:failure|failures|issue|issues|problem|problems)\b"
     r"[^.!?]*\b(?:environment|pyth?onpath|local environment|unchanged|unrelated|"
@@ -130,6 +136,23 @@ def stderr_review_output(output: str) -> str:
     """Return provider stderr/control text from a combined review artifact."""
     _review_text, sep, stderr_text = output.partition("\n[stderr]\n")
     return stderr_text.strip() if sep else ""
+
+
+def tool_denial_evidence(stderr_output: str) -> str | None:
+    """Return provider-control denial evidence from stderr, if present.
+
+    External harnesses such as OpenCode write shell transcripts to stderr. Those
+    transcripts can include reviewed diff lines and test fixture strings that
+    mention "denied by policy" without representing a provider denial. Treat
+    only denial-looking lines that start as provider-control errors as evidence.
+    """
+    for raw_line in stderr_output.splitlines():
+        line = ANSI_ESCAPE_RE.sub("", raw_line).strip()
+        if not line:
+            continue
+        if TOOL_DENIAL_CONTROL_RE.search(line):
+            return line[:240]
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -363,6 +386,7 @@ def review_status_diagnostics(
     """Return compact, targeted diagnostics for review-status classification."""
     actionable_output = actionable_review_output(output)
     stderr_output = stderr_review_output(output)
+    denial_evidence = tool_denial_evidence(stderr_output)
     stderr_present = "\n[stderr]\n" in output
     explicit_status = STATUS_RE.search(actionable_output)
     finding_lines = CODEX_FINDING_RE.findall(actionable_output)
@@ -403,7 +427,9 @@ def review_status_diagnostics(
         "matched_clear_phrase": matched_clear_phrase,
         "harness": harness,
         "explicit_status_required": harness in PROMPTED_REVIEW_HARNESSES,
-        "tool_denial_present": TOOL_DENIAL_RE.search(stderr_output) is not None,
+        "tool_denial_present": denial_evidence is not None,
+        "tool_denial_source": "stderr_control" if denial_evidence else None,
+        "tool_denial_evidence": denial_evidence,
     }
 
 

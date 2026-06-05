@@ -3,8 +3,8 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.27'
-last_updated: '2026-06-03'
+version: '1.28'
+last_updated: '2026-06-05'
 owner: GitCmurf
 docops_version: '2.0'
 area: devex
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.27
-> **Last Updated:** 2026-06-03
+> **Version:** 1.28
+> **Last Updated:** 2026-06-05
 > **Type:** DEVEX
 > **Area:** devex
 > **Description:** Operator guide for the code-review-loop utility
@@ -971,12 +971,20 @@ timeout behavior; `timeout=0` still means RevRem does not enforce a subprocess
 deadline. For prompted review harnesses, waiting messages add a stronger
 diagnostic after `runtime.external_review_warning_seconds` /
 `--external-review-warning-seconds` elapses, explaining that provider output is
-not available until the subprocess exits. Set
+not available until the subprocess exits. If the host is suspended while a
+provider subprocess is running, terminal wall-clock timestamps may jump even
+though the elapsed provider-wait counter advances from monotonic/runtime time;
+interpret those gaps as host sleep unless other provider failure evidence is
+present. Set
 `REVREM_OPENCODE_DEBUG=1` to add OpenCode provider logs
 (`--print-logs --log-level INFO`) to OpenCode phase commands during local
 diagnosis. When a review reports `findings` without Codex-style `[P1]` finding
 bullets, RevRem prints the leading review line before the status so operators
-can see the context being passed to triage/remediation. Remediation failures
+can see the context being passed to triage/remediation. Prompted-harness
+`status-debug` output treats explicit `REVIEW_STATUS` as authoritative and
+labels Codex-style bullet counts separately as `codex_bullets`; `tool_denial`
+is reserved for provider-control denial evidence, not denial text echoed inside
+reviewed diffs or test fixtures. Remediation failures
 name the active harness, for example `gemini remediation failed`, and point to
 the remediation artifact. Known provider-state failures are called out in the
 same error; Gemini CLI quota exhaustion is reported as `provider quota
@@ -1104,6 +1112,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.28 | 2026-06-05 | Codex | Documented system-suspend wait interpretation and prompted-harness status diagnostics |
 | 1.27 | 2026-06-03 | Codex | Documented OpenCode file attachment plus positional message invocation |
 | 1.26 | 2026-06-03 | Codex | Documented Gemini review context cap and external review quiet-run diagnostics |
 | 1.25 | 2026-06-03 | Codex | Documented provider-failure review retry and commit-message prose rejection |

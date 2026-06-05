@@ -4,7 +4,7 @@ type: LEDGER
 title: Behaviour ledger for the cli.py re-engineering (REVREM-TASK-003)
 status: Approved
 version: '1.0'
-last_updated: '2026-06-04'
+last_updated: '2026-06-05'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -55,6 +55,27 @@ There is no silent third option.
 ```
 
 ## Entries
+
+### 2026-06-05 — Prompted review status-debug tightened
+
+- **Contract:** machine + human
+- **What changed:** review status diagnostics now report tool-denial evidence
+  only when a provider-control stderr line itself begins with a denial marker.
+  OpenCode shell transcripts written to stderr may contain reviewed diff lines
+  or test fixtures mentioning `denied by policy`; those no longer set
+  `tool_denial_present`. Prompted harness status-debug output also labels
+  Codex-style finding bullets as `codex_bullets` and reports the explicit
+  `REVIEW_STATUS` token, avoiding the misleading `findings=0` display.
+- **Why:** OpenCode dogfood showed correct loop status interpretation but
+  misleading diagnostics when stderr contained `git diff` output with denial
+  fixture text. Explicit `REVIEW_STATUS` remains the loop-control authority.
+- **Before / After:** `tool_denial_present=true` from a stderr diff transcript
+  becomes `false`; a real provider-control denial includes
+  `tool_denial_source="stderr_control"` and a short `tool_denial_evidence`
+  string. `status-debug` for OpenCode/Gemini shows
+  `explicit=findings codex_bullets=0` rather than `findings=0`.
+- **schema_version impact:** none; diagnostic fields are additive and
+  status-debug wording is human presentation.
 
 ### 2026-06-04 — Provider effort and denial diagnostics clarified
 

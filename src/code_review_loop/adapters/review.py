@@ -210,14 +210,7 @@ def run_codex_review(
             "review",
             display_label,
             "status-debug",
-            (
-                f"status={diagnostics['status']} "
-                f"source={diagnostics['status_source']} "
-                f"findings={diagnostics['finding_line_count']} "
-                f"clear_phrase={diagnostics['clear_phrase_present']} "
-                f"tool_denial={diagnostics['tool_denial_present']} "
-                f"stderr={diagnostics['stderr_present']}"
-            ),
+            _status_debug_detail(diagnostics),
             ctx=ctx,
         )
     if status == "findings" and phase_support.log_review_findings(
@@ -232,6 +225,27 @@ def run_codex_review(
     else:
         phase_support.progress_event(config, "review", display_label, status, ctx=ctx)
     return status, result
+
+
+def _status_debug_detail(diagnostics: dict[str, object]) -> str:
+    explicit_required = diagnostics.get("explicit_status_required") is True
+    bullet_label = "codex_bullets" if explicit_required else "findings"
+    parts = [
+        f"status={diagnostics['status']}",
+        f"source={diagnostics['status_source']}",
+    ]
+    explicit_status = diagnostics.get("explicit_status")
+    if explicit_required and explicit_status:
+        parts.append(f"explicit={explicit_status}")
+    parts.extend(
+        [
+            f"{bullet_label}={diagnostics['finding_line_count']}",
+            f"clear_phrase={diagnostics['clear_phrase_present']}",
+            f"tool_denial={diagnostics['tool_denial_present']}",
+            f"stderr={diagnostics['stderr_present']}",
+        ]
+    )
+    return " ".join(parts)
 
 
 def run_review_with_retry(

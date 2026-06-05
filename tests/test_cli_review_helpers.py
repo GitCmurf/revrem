@@ -273,6 +273,11 @@ def test_prompted_review_harness_accepts_explicit_status_and_records_tool_denial
     diagnostics = review_status_diagnostics(output, harness="gemini")
     assert diagnostics["status_source"] == "explicit_status"
     assert diagnostics["tool_denial_present"] is True
+    assert diagnostics["tool_denial_source"] == "stderr_control"
+    assert (
+        diagnostics["tool_denial_evidence"]
+        == "Error executing tool run_shell_command: Tool execution denied by policy."
+    )
 
 
 def test_review_status_diagnostics_ignores_tool_denial_text_outside_stderr():
@@ -289,6 +294,40 @@ def test_review_status_diagnostics_ignores_tool_denial_text_outside_stderr():
     assert diagnostics["status"] == "clear"
     assert diagnostics["stderr_present"] is True
     assert diagnostics["tool_denial_present"] is False
+    assert diagnostics["tool_denial_source"] is None
+    assert diagnostics["tool_denial_evidence"] is None
+
+
+def test_review_status_diagnostics_ignores_tool_denial_in_stderr_diff_transcript():
+    output = (
+        "The supplied diff has no actionable findings.\n"
+        "REVIEW_STATUS: clear\n\n"
+        "[stderr]\n"
+        "\x1b[0m$ git diff main...HEAD tests/test_cli_review_helpers.py\n"
+        "+        \"Error executing tool run_shell_command: Tool execution denied by policy.\\n\"\n"
+        "tests/test_cli_review_helpers.py:4040:+        \"Tool execution denied by policy.\\n\"\n"
+    )
+
+    diagnostics = review_status_diagnostics(output, harness="opencode")
+
+    assert diagnostics["status"] == "clear"
+    assert diagnostics["stderr_present"] is True
+    assert diagnostics["tool_denial_present"] is False
+    assert diagnostics["tool_denial_evidence"] is None
+
+
+def test_status_debug_detail_names_codex_bullets_for_prompted_harnesses():
+    diagnostics = review_status_diagnostics(
+        "## Findings\n\n1. Fix the issue.\nREVIEW_STATUS: findings\n",
+        harness="opencode",
+    )
+
+    detail = review_impl._status_debug_detail(diagnostics)
+
+    assert "status=findings" in detail
+    assert "explicit=findings" in detail
+    assert "codex_bullets=0" in detail
+    assert "findings=0" not in detail
 
 
 def test_run_loop_treats_structured_empty_findings_review_as_clear(tmp_path):
