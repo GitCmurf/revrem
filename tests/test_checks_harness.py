@@ -192,7 +192,7 @@ class TestChecksAdapter:
 class TestWorktreeCleanlinessCheck:
     """Cover the untracked-file handling in ``run_worktree_cleanliness_check``."""
 
-    def _config(self, tmp_path: Path) -> LoopConfig:
+    def _config(self, tmp_path: Path, *, commit_after_remediation: bool = True) -> LoopConfig:
         (tmp_path / "artifacts").mkdir()
         (tmp_path / ".git").mkdir()
         return LoopConfig(
@@ -202,6 +202,7 @@ class TestWorktreeCleanlinessCheck:
             cwd=tmp_path,
             artifact_dir=tmp_path / "artifacts",
             check_commands=("true",),
+            commit_after_remediation=commit_after_remediation,
         )
 
     def test_passes_when_no_untracked_files(self, tmp_path: Path) -> None:
@@ -363,6 +364,135 @@ class TestWorktreeCleanlinessCheck:
         assert result.returncode == 0
         assert "DRY_RUN" in result.stdout
         assert calls == []
+
+    def test_check_only_does_not_intent_add_or_recheck(self, tmp_path: Path) -> None:
+        """When auto-commit is disabled, the cleanliness check must not call
+        ``git add --intent-to-add`` and must not re-run ``git status``. The
+        untracked paths are reported in the result stdout so the operator can
+        see them, but the git index is left untouched.
+        """
+        config = self._config(tmp_path, commit_after_remediation=False)
+        calls: list[list[str]] = []
+
+        def runner(args, cwd, input_text=None, timeout_seconds=None):
+            cmd = list(args)
+            calls.append(cmd)
+            if cmd[:3] == ["git", "status", "--porcelain"]:
+                return CommandResult(cmd, 0, stdout="?? src/new.py\n")
+            if cmd[:3] == ["git", "add", "--intent-to-add"]:
+                return CommandResult(cmd, 0)
+            return CommandResult(cmd, 0, stdout="")
+
+        result = run_worktree_cleanliness_check(config, runner)
+
+        assert result.returncode == 0
+        assert [c for c in calls if c[:3] == ["git", "add", "--intent-to-add"]] == []
+        assert [c for c in calls if c[:3] == ["git", "status", "--porcelain"]] == [
+            ["git", "status", "--porcelain", "--untracked-files=all"]
+        ]
+        assert "auto-commit is disabled" in result.stdout
+        assert "src/new.py" in result.stdout
+
+    def test_check_only_lists_artifact_dir_files_without_staging(self, tmp_path: Path) -> None:
+        """In check-only mode, artifact-dir files are still filtered out of
+        the operator-facing list and never intent-added.
+        """
+        config = self._config(tmp_path, commit_after_remediation=False)
+        add_calls: list[list[str]] = []
+        status_invocations = 0
+
+        def runner(args, cwd, input_text=None, timeout_seconds=None):
+            nonlocal status_invocations
+            cmd = list(args)
+            if cmd[:3] == ["git", "status", "--porcelain"]:
+                status_invocations += 1
+                return CommandResult(
+                    cmd,
+                    0,
+                    stdout="?? artifacts/scratch.txt\n?? src/real.py\n",
+                )
+            if cmd[:3] == ["git", "add", "--intent-to-add"]:
+                add_calls.append(cmd)
+                return CommandResult(cmd, 0)
+            return CommandResult(cmd, 0, stdout="")
+
+        result = run_worktree_cleanliness_check(config, runner)
+
+        assert result.returncode == 0
+        assert add_calls == []
+        assert status_invocations == 1
+        assert "src/real.py" in result.stdout
+        assert "artifacts/scratch.txt" not in result.stdout
+
+    def test_check_only_does_not_mutate_git_index(self, tmp_path: Path) -> None:
+        """End-to-end: with a real git repo and ``commit_after_remediation``
+        disabled, the cleanliness check must not leave any intent-to-add
+        entries in the index. ``git status --short`` should keep the untracked
+        marker (``??``) and never show the ``A `` (intent-added) marker.
+        """
+        import subprocess
+
+        (tmp_path / "artifacts").mkdir()
+        subprocess.run(["git", "init", "-b", "main"], cwd=tmp_path, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "t@e.com"], cwd=tmp_path, check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "T"], cwd=tmp_path, check=True, capture_output=True
+        )
+        (tmp_path / "README").write_text("hi\n", encoding="utf-8")
+        subprocess.run(["git", "add", "README"], cwd=tmp_path, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "init"], cwd=tmp_path, check=True, capture_output=True
+        )
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "new.py").write_text("print('hello')\n", encoding="utf-8")
+
+        config = LoopConfig(
+            base="main",
+            max_iterations=1,
+            codex_bin="codex",
+            cwd=tmp_path,
+            artifact_dir=tmp_path / "artifacts",
+            check_commands=("true",),
+            commit_after_remediation=False,
+        )
+
+        def _real_runner(args, cwd, input_text=None, timeout_seconds=None):
+            completed = subprocess.run(
+                list(args),
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+            )
+            return CommandResult(list(args), completed.returncode, stdout=completed.stdout, stderr=completed.stderr)
+
+        result = run_worktree_cleanliness_check(config, _real_runner)
+
+        assert result.returncode == 0, result.stdout
+        assert "auto-commit is disabled" in result.stdout
+        assert "src/new.py" in result.stdout
+
+        status_after = subprocess.run(
+            ["git", "status", "--short", "--untracked-files=all"],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        status_lines = status_after.stdout.splitlines()
+        assert any(line.startswith("?? src/new.py") for line in status_lines)
+        assert not any(line.startswith("A ") for line in status_lines)
+
+        diff_after = subprocess.run(
+            ["git", "diff", "--name-only"],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert diff_after.stdout.strip() == ""
 
 # ---------------------------------------------------------------------------
 # Engine dispatch: ctx.phase_checks wired vs. absent

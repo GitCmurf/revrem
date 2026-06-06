@@ -74,12 +74,14 @@ This project follows Semantic Versioning once public releases begin.
   ignored with a visible prompt warning instead of aborting remediation. The
   triage v2 prompt now lists the built-in fragment allowlist and tells models
   not to invent names such as `bounded-execution`.
-- Startup pending-review detection now looks for compatible non-clear review
-  feedback when `--initial-review-file` was not supplied. Interactive TTY runs
-  prompt the operator to reuse the review, inspect more detail, start fresh, or
-  cancel before any provider call; non-interactive runs ignore the candidate
-  unless `--pending-review auto` is supplied. `--pending-review ignore` always
-  starts fresh, and explicit `--initial-review-file` remains authoritative.
+- Startup pending-review detection now looks for non-clear review feedback when
+  `--initial-review-file` was not supplied. Interactive TTY runs prompt the
+  operator to reuse the review, inspect more detail, start fresh, or cancel
+  before any provider call; reviews from a different `HEAD`/base are offered
+  with an explicit warning. Non-interactive runs ignore the candidate unless
+  `--pending-review auto` is supplied, and `auto` only uses compatible
+  candidates. `--pending-review ignore` always starts fresh, and explicit
+  `--initial-review-file` remains authoritative.
 - Gemini Pro review runs now get a larger model-aware external review input
   cap when no CLI/profile cap is set, and prompted review progress now reports
   whether the supplied context is full or truncated. Long-running external
@@ -225,6 +227,14 @@ This project follows Semantic Versioning once public releases begin.
   paths are recorded in the check artifact for visibility, and any
   `git add --intent-to-add` failure surfaces the underlying git error so the
   operator can clean up by hand.
+- The post-remediation worktree cleanliness check no longer mutates the git
+  index during check-only runs. `git add --intent-to-add` is now gated on
+  `commit_after_remediation`, so a normal verification run leaves the
+  operator's index and worktree untouched. Auto-commit behavior is unchanged:
+  untracked non-artifact files are still intent-added so the upcoming commit
+  phase can pick them up. In check-only mode, the check passes and lists the
+  remaining untracked paths in the artifact so the operator can decide how to
+  handle them.
 - Provider subprocess timeouts enforced by RevRem are classified as
   non-transient even when the subprocess emitted partial stdout before
   RevRem's `Command timed out after ...` marker.

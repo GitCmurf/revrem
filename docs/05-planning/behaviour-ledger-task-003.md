@@ -60,19 +60,22 @@ There is no silent third option.
 
 - **Contract:** human
 - **What changed:** when no explicit `--initial-review-file` is supplied,
-  interactive TTY runs now check for compatible non-clear review feedback before
-  starting a fresh provider review. If a candidate exists, RevRem offers to use
-  it, show more detail, start fresh, or cancel. Non-interactive runs ignore the
-  candidate unless `--pending-review auto` is supplied; `--pending-review ignore`
-  always starts fresh.
+  interactive TTY runs now check for non-clear review feedback before starting a
+  fresh provider review. If a compatible candidate exists, RevRem offers to use
+  it, show more detail, start fresh, or cancel. If only a candidate from a
+  different `HEAD`/base exists, RevRem still offers it but warns about the
+  mismatch. Non-interactive runs ignore the candidate unless
+  `--pending-review auto` is supplied; `auto` uses only compatible candidates
+  and `--pending-review ignore` always starts fresh.
 - **Why:** Dogfood showed a run could produce useful review output and then fail
   during triage/remediation setup, leaving an expensive review unremediated.
   A watched local operator should be able to reuse that review without
   remembering `--initial-review-file latest`, while automation must not block
   on stdin.
 - **Before / After:** before, a restart without `--initial-review-file latest`
-  always spent a new review call. After, TTY restarts offer the compatible
-  pending review first, and explicit/non-interactive modes remain deterministic.
+  always spent a new review call. After, TTY restarts offer pending review
+  feedback first, warning when it comes from a different checkout state, while
+  explicit/non-interactive modes remain deterministic.
 - **schema_version impact:** none.
 - **CHANGELOG:** Unreleased / Added.
 

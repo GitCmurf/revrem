@@ -243,6 +243,14 @@ with `git add --intent-to-add` so the upcoming `git add -A` in the commit phase
 picks them up. The auto-staged paths are recorded in the check artifact
 (`check-N-1.txt`) for visibility.
 
+When `--commit-after-remediation` is disabled, the cleanliness check is
+non-mutating: it does not run `git add --intent-to-add` and does not re-run
+`git status`. The check passes, and any untracked non-artifact paths are
+listed in the check artifact so the operator can decide whether to clean
+them up, add them explicitly, or re-run with `--commit` to let RevRem stage
+them. The operator's git index and worktree state are not changed by the
+check.
+
 Known generated output and temporary directories should be covered by
 `.gitignore` or placed under `--artifact-dir`; files inside `--artifact-dir`
 remain exempt from the cleanliness check. Secrets and policy violations should
@@ -293,13 +301,15 @@ generated review, RevRem starts with a fresh review instead of reviving older
 feedback.
 
 If `--initial-review-file` is omitted, interactive terminal runs also check for
-compatible pending review feedback before making a fresh review provider call.
-When found, RevRem asks whether to use the review, show more detail, start
-fresh, or cancel. Non-interactive runs do not prompt and start fresh by
-default. Use `--pending-review auto` to reuse the detected review without
-prompting, or `--pending-review ignore` to suppress the startup check. An
-explicit `--initial-review-file` path or `latest` always takes precedence over
-the pending-review prompt.
+pending review feedback before making a fresh review provider call. When found,
+RevRem asks whether to use the review, show more detail, start fresh, or cancel.
+If the only pending review is from a different `HEAD`/base, the interactive
+prompt still offers it but labels the mismatch clearly so the operator can
+decide whether that older finding is still relevant. Non-interactive runs do
+not prompt and start fresh by default. Use `--pending-review auto` to reuse the
+detected compatible review without prompting, or `--pending-review ignore` to
+suppress the startup check. An explicit `--initial-review-file` path or `latest`
+always takes precedence over the pending-review prompt.
 
 ### Profile-based usage
 

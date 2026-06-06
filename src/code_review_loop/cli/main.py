@@ -89,18 +89,27 @@ def _apply_pending_review_choice(config, args):
     if config.initial_review_file is not None:
         return config
     mode = args.pending_review
+    interactive = sys.stdin.isatty() and sys.stdout.isatty()
     if mode is None:
-        mode = "prompt" if sys.stdin.isatty() and sys.stdout.isatty() else "ignore"
+        mode = "prompt" if interactive else "ignore"
     if mode == "ignore":
         return config
     candidate = _pending_review_candidate(config)
     if candidate is None:
+        if interactive:
+            incompatible_candidate = _pending_review_candidate_ignoring_git(config)
+            if incompatible_candidate is not None:
+                return _prompt_for_pending_review(
+                    config,
+                    incompatible_candidate,
+                    compatible=False,
+                )
         return config
     if mode == "auto":
         return replace(config, initial_review_file=candidate.path)
-    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+    if not interactive:
         return config
-    return _prompt_for_pending_review(config, candidate)
+    return _prompt_for_pending_review(config, candidate, compatible=True)
 
 
 def _pending_review_candidate(config) -> PendingReviewCandidate | None:
@@ -111,8 +120,18 @@ def _pending_review_candidate(config) -> PendingReviewCandidate | None:
     )
 
 
-def _prompt_for_pending_review(config, candidate: PendingReviewCandidate):
-    _print_pending_review_summary(candidate)
+def _pending_review_candidate_ignoring_git(config) -> PendingReviewCandidate | None:
+    search_root = config.artifact_dir.parent if config.artifact_dir_is_default else config.artifact_dir
+    return find_pending_review_candidate(search_root, current_git_state=None)
+
+
+def _prompt_for_pending_review(
+    config,
+    candidate: PendingReviewCandidate,
+    *,
+    compatible: bool,
+):
+    _print_pending_review_summary(candidate, compatible=compatible)
     while True:
         print(
             "Use this review? [u]se / [d]etails / [f]resh / [c]ancel: ",
@@ -139,7 +158,11 @@ def _prompt_for_pending_review(config, candidate: PendingReviewCandidate):
         print("Choose u, d, f, or c.", file=sys.stderr)
 
 
-def _print_pending_review_summary(candidate: PendingReviewCandidate) -> None:
+def _print_pending_review_summary(
+    candidate: PendingReviewCandidate,
+    *,
+    compatible: bool,
+) -> None:
     status_parts = [
         part
         for part in (candidate.final_status, candidate.stopped_reason, candidate.error)
@@ -147,11 +170,15 @@ def _print_pending_review_summary(candidate: PendingReviewCandidate) -> None:
     ]
     status = " · ".join(status_parts) if status_parts else "previous non-clear run"
     excerpt = trim_for_prompt(candidate.excerpt, 500).replace("\n", " ").strip()
+    if compatible:
+        heading = "RevRem found compatible pending review feedback before starting a new review."
+    else:
+        heading = (
+            "RevRem found pending review feedback from a different HEAD/base. "
+            "Reuse it only if you intentionally want to remediate that older review."
+        )
     print(
-        "RevRem found compatible pending review feedback before starting a new review.\n"
-        f"Review: {candidate.path}\n"
-        f"Run: {candidate.run_dir}\n"
-        f"Status: {status}",
+        f"{heading}\nReview: {candidate.path}\nRun: {candidate.run_dir}\nStatus: {status}",
         file=sys.stderr,
     )
     if excerpt:

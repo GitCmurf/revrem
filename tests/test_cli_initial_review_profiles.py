@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 from importlib import import_module
 
@@ -23,17 +24,24 @@ def _clear_result(summary: dict[str, object]) -> application_mod.ReviewLoopResul
     return application_mod.ReviewLoopResult(summary=summary, outcome=OutcomeClear(reason="review_clear"))
 
 
-def _write_pending_review(root, text="Full review comments:\n\n- [P2] Fix pending review\n"):
+def _write_pending_review(
+    root,
+    text="Full review comments:\n\n- [P2] Fix pending review\n",
+    *,
+    git_state=None,
+):
     run = root / ".revrem" / "runs" / "20260428T010000Z"
     run.mkdir(parents=True)
     review = run / "review-1.txt"
     review.write_text(text, encoding="utf-8")
-    (run / "summary.json").write_text(
-        '{"final_status":"error","stopped_reason":"triage_failed","artifact_paths":{"reviews":["'
-        + str(review)
-        + '"]}}',
-        encoding="utf-8",
-    )
+    summary = {
+        "final_status": "error",
+        "stopped_reason": "triage_failed",
+        "artifact_paths": {"reviews": [str(review)]},
+    }
+    if git_state is not None:
+        summary["git_state"] = git_state
+    (run / "summary.json").write_text(json.dumps(summary), encoding="utf-8")
     return review
 
 
@@ -173,6 +181,56 @@ def test_main_pending_review_prompt_can_show_details_then_use(
     assert captured_configs[0].initial_review_file == pending_review
     assert "Pending review detail:" in captured.err
     assert "Fix pending review" in captured.err
+
+
+def test_main_pending_review_prompt_can_use_incompatible_candidate(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    pending_review = _write_pending_review(
+        tmp_path,
+        git_state={
+            "available": True,
+            "head": "old-head",
+            "base": "main",
+            "base_commit": "base-sha",
+            "merge_base": "base-sha",
+        },
+    )
+    captured_configs = []
+
+    def fake_run_loop(config):
+        captured_configs.append(config)
+        return _clear_result({
+            "artifact_dir": str(config.artifact_dir),
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+            "iterations": [],
+        })
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
+    monkeypatch.setattr(
+        cli_main,
+        "current_git_state_for_latest",
+        lambda cwd, base: {
+            "available": True,
+            "head": "new-head",
+            "base": "main",
+            "base_commit": "base-sha",
+            "merge_base": "base-sha",
+        },
+    )
+    monkeypatch.setattr("sys.stdin", _TTYStringIO("u\n"))
+    monkeypatch.setattr("sys.stdout", _TTYStringIO())
+
+    exit_code = cli_main.main(["--quiet-progress"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured_configs[0].initial_review_file == pending_review
+    assert "different HEAD/base" in captured.err
 
 
 def test_main_pending_review_prompt_can_cancel_before_provider_calls(

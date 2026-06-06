@@ -167,6 +167,8 @@ def run_worktree_cleanliness_check(
     ]
     if not untracked:
         return CommandResult(command, 0, stdout=result.stdout, stderr=result.stderr)
+    if not config.commit_after_remediation:
+        return _cleanliness_check_untracked_no_commit(command, untracked, result.stderr)
     intent_added, intent_errors = _intent_add_untracked(config, runner, untracked)
     if intent_errors:
         return CommandResult(
@@ -214,6 +216,30 @@ def run_worktree_cleanliness_check(
     else:
         summary = "Worktree cleanliness check passed."
     return CommandResult(command, 0, stdout=summary + "\n", stderr=recheck.stderr)
+
+
+def _cleanliness_check_untracked_no_commit(
+    command: list[str],
+    untracked: list[str],
+    stderr: str,
+) -> CommandResult:
+    """Report untracked non-artifact files when auto-commit is disabled.
+
+    Check-only remediation runs must not mutate the operator's git index, so
+    ``git add --intent-to-add`` is skipped entirely. The untracked paths are
+    listed in the check output so the operator can decide how to handle them
+    (clean scratch files, add legitimate new files explicitly, or re-run with
+    ``--commit`` to let RevRem stage them).
+    """
+    listed = "\n".join(f"  + {line[3:].strip()}" for line in untracked)
+    summary = (
+        "Worktree cleanliness check passed; auto-commit is disabled so RevRem "
+        "will not stage untracked non-artifact files. The following paths "
+        "remain in the worktree and are the operator's responsibility:\n"
+        + listed
+        + "\n"
+    )
+    return CommandResult(command, 0, stdout=summary, stderr=stderr)
 
 
 def _intent_add_untracked(
