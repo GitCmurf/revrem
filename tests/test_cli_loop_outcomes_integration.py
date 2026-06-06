@@ -170,6 +170,53 @@ def test_pending_check_failure_blocks_early_clear_status(tmp_path):
     assert exec_calls[1][1] is not None and "1 FAILED" in exec_calls[1][1]
 
 
+def test_timeout_only_check_failure_skips_inner_remediation_retry(tmp_path):
+    calls: list[tuple[list[str], str | None]] = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text))
+        if args[0] == "codex" and args[1] == "review":
+            return CommandResult(list(args), 0, stdout="Fix it.\nREVIEW_STATUS: findings\n")
+        if args[0] == "pytest":
+            return CommandResult(
+                list(args),
+                -1,
+                stderr="Command timed out after 300 seconds\n",
+            )
+        return CommandResult(list(args), 0, stdout="remediated\n")
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        check_commands=("pytest -q",),
+        final_review=False,
+        inner_check_retries=1,
+    )
+
+    summary = runner_mod.run_loop(config, runner).to_dict()
+
+    assert summary["final_status"] == "unknown"
+    assert summary["pending_check_failures"] is True
+    assert summary["stopped_reason"] == "max_iterations_reached"
+
+    exec_calls = [c for c in calls if c[0][0] == "codex" and c[0][1] == "exec"]
+    assert len(exec_calls) == 1
+    assert not (tmp_path / "artifacts" / "remediation-1-retry-1.txt").exists()
+
+    records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
+    assert truncated is False
+    assert any(
+        event.kind == "warning"
+        and event.phase == "check"
+        and event.payload.get("message")
+        == "check failures are timeout-only; skipping remediation retry"
+        for event in records
+    )
+
+
 def test_skip_final_review_reports_unknown_status(tmp_path):
     """With --skip-final-review the loop must not report a stale pre-remediation status."""
     def runner(args, cwd, input_text=None, timeout_seconds=None):

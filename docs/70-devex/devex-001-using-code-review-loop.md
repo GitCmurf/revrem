@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.30'
+version: '1.31'
 last_updated: '2026-06-05'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.30
+> **Version:** 1.31
 > **Last Updated:** 2026-06-05
 > **Type:** DEVEX
 > **Area:** devex
@@ -265,15 +265,19 @@ revrem \
 
 Use `--initial-review-file latest` with the effective artifact directory. When
 `--artifact-dir` or a profile sets `output.artifact_dir`, `latest` resolves
-under that directory instead of the default workspace-local tree. `latest` uses
-the newest compatible usable generated review artifact from a non-clear run,
+under that directory instead of the default workspace-local tree. `latest`
+orders compatible candidates by run/review modification time, then uses the
+newest compatible usable generated review artifact from a non-clear run,
 including interrupted runs that have `review-1.txt`, `review-2.txt`, or later
 iteration reviews but no `review-final.txt`. Imported `review-initial.txt`
 artifacts are ignored so a restart does not keep reusing stale carried-in
 feedback. When run summaries include git state, `latest` skips artifacts from a
-different current `HEAD` or base. If the newest compatible run's `summary.json`
-reports `final_status = "clear"`, or there is no previous generated review,
-RevRem starts with a fresh review instead of reviving older feedback.
+different current `HEAD` or base. When RevRem can identify the current
+`HEAD`/base, historical summaries that do not record git state are not treated
+as compatible `latest` candidates. If the newest compatible run's
+`summary.json` reports `final_status = "clear"`, or there is no previous
+generated review, RevRem starts with a fresh review instead of reviving older
+feedback.
 
 ### Profile-based usage
 
@@ -729,7 +733,12 @@ checks fail and retries remain, RevRem feeds the check output directly back to
 remediation, writes retry artifacts such as `remediation-1-retry-1.txt` and
 `check-1-retry-1-2.txt`, and reruns checks before spending another full review
 pass. The dogfood profile sets this to `1`; the default for other profiles is
-`0`, preserving the older review-remediation-check-review rhythm.
+`0`, preserving the older review-remediation-check-review rhythm. If every
+failed check is a RevRem-enforced timeout (`Command timed out after ...` in the
+check artifact), RevRem does not spend the inner remediation retry. It keeps
+the check failure pending and emits a warning so the operator can increase
+`--timeout-seconds`, narrow the checks, or rerun locally after investigating
+the slow command.
 
 For routing, use `triage.contract = "v2"` plus
 `triage.routing.enabled = true`. RevRem validates `triage-v2`, resolves the
@@ -1144,6 +1153,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.31 | 2026-06-05 | Codex | Documented timeout-only check retry suppression and latest-review ordering |
 | 1.30 | 2026-06-05 | Codex | Documented bounded inner check retries and worktree cleanliness checks |
 | 1.29 | 2026-06-05 | Codex | Documented Gemini argv prompt delivery guard and non-retryable provider timeouts |
 | 1.28 | 2026-06-05 | Codex | Documented system-suspend wait interpretation and prompted-harness status diagnostics |

@@ -622,7 +622,38 @@ def test_resolve_initial_review_file_latest_returns_none_when_newest_run_is_clea
         encoding="utf-8",
     )
     os.utime(unresolved_review, (1, 1))
+    os.utime(unresolved_run / "summary.json", (1, 1))
+    os.utime(unresolved_run, (1, 1))
+    os.utime(clean_run / "summary.json", (2, 2))
+    os.utime(clean_run, (2, 2))
     os.utime(clean_review, (2, 2))
+
+    assert resolve_initial_review_file("latest", tmp_path) is None
+
+
+def test_resolve_initial_review_file_latest_uses_sort_time_for_clean_runs(tmp_path):
+    clean_run = tmp_path / "20260428T010000Z"
+    unresolved_run = tmp_path / "20260428T020000Z"
+    clean_run.mkdir()
+    unresolved_run.mkdir()
+    clean_review = clean_run / "review-final.txt"
+    unresolved_review = unresolved_run / "review-final.txt"
+    clean_review.write_text("clean", encoding="utf-8")
+    unresolved_review.write_text("findings", encoding="utf-8")
+    (clean_run / "summary.json").write_text(
+        json.dumps({"final_status": "clear", "stopped_reason": "review_clear"}),
+        encoding="utf-8",
+    )
+    (unresolved_run / "summary.json").write_text(
+        json.dumps({"final_status": "findings", "stopped_reason": "max_iterations_reached"}),
+        encoding="utf-8",
+    )
+    os.utime(unresolved_review, (1, 1))
+    os.utime(unresolved_run / "summary.json", (1, 1))
+    os.utime(unresolved_run, (1, 1))
+    os.utime(clean_run / "summary.json", (3, 3))
+    os.utime(clean_run, (3, 3))
+    os.utime(clean_review, (3, 3))
 
     assert resolve_initial_review_file("latest", tmp_path) is None
 
@@ -760,4 +791,32 @@ def test_resolve_initial_review_file_latest_skips_git_incompatible_runs(tmp_path
             },
         )
         == current_review
+    )
+
+
+def test_resolve_initial_review_file_latest_skips_runs_without_git_state_when_current_available(
+    tmp_path,
+):
+    stale = tmp_path / "20260428T010000Z"
+    stale.mkdir()
+    stale_review = stale / "review-final.txt"
+    stale_review.write_text("stale findings", encoding="utf-8")
+    (stale / "summary.json").write_text(
+        json.dumps({"final_status": "findings"}),
+        encoding="utf-8",
+    )
+
+    assert (
+        resolve_initial_review_file(
+            "latest",
+            tmp_path,
+            current_git_state={
+                "available": True,
+                "head": "current-head",
+                "base": "main",
+                "base_commit": "base-sha",
+                "merge_base": "base-sha",
+            },
+        )
+        is None
     )

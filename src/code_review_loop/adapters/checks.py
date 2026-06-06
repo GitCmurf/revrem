@@ -111,6 +111,13 @@ def format_check_result_for_progress(result: CommandResult) -> str:
     return format_returncode_for_progress(result.returncode)
 
 
+def all_failed_checks_are_revrem_timeouts(results: Sequence[CommandResult]) -> bool:
+    failed = [result for result in results if result.returncode != 0]
+    if not failed:
+        return False
+    return all("Command timed out after " in phase_support._combined_output(result) for result in failed)
+
+
 def run_worktree_cleanliness_check(config: LoopConfig, runner) -> CommandResult:
     """Fail if remediation left untracked, non-artifact files in the worktree."""
     command = ["git", "status", "--porcelain", "--untracked-files=all"]

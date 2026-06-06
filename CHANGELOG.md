@@ -56,7 +56,16 @@ This project follows Semantic Versioning once public releases begin.
   The checks phase also starts with a worktree cleanliness check that fails on
   untracked non-artifact files left by remediation, and check timeout progress
   now reports timeout evidence instead of misleading signal names when the
-  captured artifact contains RevRem's timeout marker.
+  captured artifact contains RevRem's timeout marker. Timeout-only check
+  failures do not trigger the inner remediation retry, preventing provider
+  quota spend on test-runtime budget issues that need an operator rerun or a
+  larger check timeout instead of another model edit.
+- `--initial-review-file latest` now orders compatible runs by run/review
+  modification time, not only artifact directory name, and keeps the "newest
+  clear run means start fresh" contract so older unresolved reviews are not
+  revived after a later successful run. When current git state is available,
+  runs without recorded git state are no longer considered compatible `latest`
+  candidates.
 - Gemini Pro review runs now get a larger model-aware external review input
   cap when no CLI/profile cap is set, and prompted review progress now reports
   whether the supplied context is full or truncated. Long-running external

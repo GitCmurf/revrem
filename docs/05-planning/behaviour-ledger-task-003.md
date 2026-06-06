@@ -69,7 +69,11 @@ There is no silent third option.
   result is written as `check-N-1.txt`; configured checks start at `.2`.
   `resume_config` and continue commands preserve `inner_check_retries`.
   Check progress renders captured RevRem timeout evidence as `timeout after
-  Ns` instead of only showing negative signal return codes.
+  Ns` instead of only showing negative signal return codes. If every failed
+  check contains RevRem's own `Command timed out after ...` marker, the inner
+  remediation retry is suppressed, the pending check failure remains, and a
+  warning event records that the retry was skipped because the failure is a
+  runtime budget issue rather than actionable code feedback.
 - **Why:** Gemini and OpenCode dogfood showed that secondary remediation can
   repair review findings but leave check failures or scratch files behind.
   Feeding check output back to remediation once is cheaper and more targeted
@@ -81,11 +85,32 @@ There is no silent third option.
   emits a retry progress line and reruns remediation with the check output
   included; a second failed checks phase falls back to the existing outer loop.
   Before, a timeout artifact could display as `exit -1 (SIGHUP)`; now timeout
-  marker text displays as `timeout after 300s`.
+  marker text displays as `timeout after 300s`, and timeout-only check failures
+  do not spend the configured inner remediation retry.
 - **schema_version impact:** none. Summary/event fields are additive within
   existing runtime/check payloads, and artifact naming changes are recorded in
   `artifact_paths` as usual.
 - **CHANGELOG:** Unreleased / Added and Changed.
+
+### 2026-06-05 — Latest initial review compatibility guard
+
+- **Contract:** machine + human
+- **What changed:** `--initial-review-file latest` resolves candidates by
+  run/review modification time and preserves the existing rule that a newer
+  compatible clear run starts a fresh review instead of reviving older
+  findings. When the current checkout's git state is available, historical run
+  summaries without recorded git state are not treated as compatible latest
+  candidates.
+- **Why:** Dogfood showed that a stale carried-in review from an older codebase
+  can trigger unnecessary triage/remediation and quota spend. A previous run
+  that cannot prove it matches the current `HEAD`/base is safer to ignore than
+  to remediate.
+- **Before / After:** before, old runs without git-state metadata could be
+  selected by `latest` and fed to remediation. After, `latest` starts fresh
+  unless the newest unresolved candidate can prove git compatibility or the
+  caller has no current git state to compare against.
+- **schema_version impact:** none.
+- **CHANGELOG:** Unreleased / Added.
 
 ### 2026-06-05 — Gemini argv prompt delivery and timeout classification
 

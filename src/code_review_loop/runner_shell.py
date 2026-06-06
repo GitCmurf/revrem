@@ -12,7 +12,12 @@ from dataclasses import dataclass, replace
 from typing import Any, Literal, cast
 
 from code_review_loop import budgets, triage
-from code_review_loop.adapters.checks import format_check_failures as _format_check_failures
+from code_review_loop.adapters.checks import (
+    all_failed_checks_are_revrem_timeouts as _all_failed_checks_are_revrem_timeouts,
+)
+from code_review_loop.adapters.checks import (
+    format_check_failures as _format_check_failures,
+)
 from code_review_loop.adapters.commit import (
     format_commit_hook_failure_for_remediation,
 )
@@ -335,6 +340,7 @@ class _RunnerEngineExecutor:
         )
         check_results = list(checks_outcome.results)
         pending_check_failures = _format_check_failures(check_results)
+        timeout_only_failures = bool(pending_check_failures) and _all_failed_checks_are_revrem_timeouts(check_results)
         self.state.set_pending_check_failures(bool(pending_check_failures))
         self.iterations[-1]["check_failures"] = len(checks_outcome.failed_commands)
         if check_results:
@@ -360,8 +366,19 @@ class _RunnerEngineExecutor:
             engine_state.acc,
             pending_check_failures=pending_check_failures,
             failed_check_names=tuple(checks_outcome.failed_commands),
+            inner_check_retry_count=(
+                self.config.inner_check_retries
+                if timeout_only_failures
+                else engine_state.acc.inner_check_retry_count
+            ),
             commit_retry=False if pending_check_failures else engine_state.acc.commit_retry,
         )
+        if timeout_only_failures and self.config.inner_check_retries > retry_count:
+            progress_event(
+                self.config, "check", str(iteration), "warning",
+                "check failures are timeout-only; skipping remediation retry",
+                ctx=self.ctx,
+            )
         return replace(engine_state, acc=acc, event=ChecksDone())
 
     def _retry_after_checks(self, engine_state: EngineState) -> EngineState:
@@ -425,16 +442,11 @@ class _RunnerEngineExecutor:
         pending_check_failures = format_commit_hook_failure_for_remediation(commit_failed)
         self.state.set_pending_check_failures(True)
         progress_event(
-            self.config,
-            "commit",
-            str(engine_state.iteration),
-            "retry",
-            "hook output will feed next remediation",
-            ctx=self.ctx,
+            self.config, "commit", str(engine_state.iteration), "retry",
+            "hook output will feed next remediation", ctx=self.ctx,
         )
         acc = replace(engine_state.acc, commit_retry=True, pending_check_failures=pending_check_failures)
         return replace(engine_state, acc=acc, event=LoopStarted(), iteration=engine_state.iteration + 1)
-
 
 
 @dataclass(frozen=True)

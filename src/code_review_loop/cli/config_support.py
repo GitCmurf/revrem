@@ -45,7 +45,7 @@ def resolve_initial_review_file(
     if value != "latest":
         return Path(value)
 
-    candidates: list[tuple[str, float, Path | None]] = []
+    candidates: list[tuple[float, str, Path | None]] = []
     for run_dir in _latest_run_dirs(search_root):
         summary = _read_run_summary(run_dir)
         if not _git_state_is_compatible(summary, current_git_state):
@@ -53,14 +53,14 @@ def resolve_initial_review_file(
         review_paths = _usable_run_review_paths(run_dir, search_root, summary)
         if _run_is_resolved(summary):
             candidates.append(
-                (run_dir.name, _run_sort_time(run_dir, review_paths), None)
+                (_run_sort_time(run_dir, review_paths), run_dir.name, None)
             )
             continue
         if not review_paths:
             continue
         latest_review = review_paths[-1]
         candidates.append(
-            (run_dir.name, _run_sort_time(run_dir, review_paths), latest_review)
+            (_run_sort_time(run_dir, review_paths), run_dir.name, latest_review)
         )
     candidates.sort()
     if not candidates:
@@ -192,7 +192,7 @@ def _git_state_is_compatible(
         return True
     previous = summary.get("git_state")
     if not isinstance(previous, dict) or previous.get("available") is not True:
-        return True
+        return False
     for key in ("head", "base", "base_commit", "merge_base"):
         current_value = current_git_state.get(key)
         previous_value = previous.get(key)
