@@ -492,6 +492,13 @@ def _handle_commit_message_side_effects(
     new_lines = sorted(after_status - before_status)
     if not new_lines:
         return "clean"
+    # ``git status --porcelain`` reports paths relative to the repository root
+    # even when RevRem is launched from a subdirectory, so resolve any new
+    # ``??`` paths from the lexical git root (falling back to ``config.cwd``
+    # outside a worktree) before deciding whether the path is safe to remove.
+    # Otherwise a root-level helper file created by the model is treated as
+    # missing/unsafe and the commit phase aborts instead of falling back.
+    status_root = lexical_git_repo_root(config.cwd) or config.cwd.resolve()
     created_paths: list[str] = []
     unsafe_lines: list[str] = []
     for line in new_lines:
@@ -502,9 +509,9 @@ def _handle_commit_message_side_effects(
         if not path_text:
             unsafe_lines.append(line)
             continue
-        target = (config.cwd / path_text).resolve()
+        target = (status_root / path_text).resolve()
         try:
-            target.relative_to(config.cwd.resolve())
+            target.relative_to(status_root)
         except ValueError:
             unsafe_lines.append(line)
             continue

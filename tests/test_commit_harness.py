@@ -6,6 +6,7 @@ propagation, retrying flag threading, and harness dispatch correctness.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -13,7 +14,11 @@ import pytest
 from support.phase_harnesses import phase_harness_kwargs
 
 import tests.support.application_runner as runner_mod
-from code_review_loop.adapters.commit import CommitAdapter
+from code_review_loop.adapters.commit import (
+    CommitAdapter,
+    _commit_message_worktree_status,
+    _handle_commit_message_side_effects,
+)
 from code_review_loop.adapters.phase_support import CommitFailed
 from code_review_loop.clock import Clock
 from code_review_loop.config import LoopConfig
@@ -213,3 +218,162 @@ class TestEngineDispatch:
             runner_mod.run_loop(config, runner)
 
         assert excinfo.value.summary["stopped_reason"] == "budget_ceiling_hit"
+
+
+# ---------------------------------------------------------------------------
+# Commit-message side-effect cleanup path resolution
+# ---------------------------------------------------------------------------
+
+
+class TestCommitMessageSideEffects:
+    """``_handle_commit_message_side_effects`` must resolve ``??`` paths from
+    the lexical git repository root so root-level helper files created by the
+    commit-message model are removed (and reported as cleaned) rather than
+    being classified as missing/unsafe worktree paths when RevRem is launched
+    from a subdirectory.
+    """
+
+    def test_removes_root_level_helper_file_when_launched_from_subdirectory(
+        self, tmp_path: Path
+    ) -> None:
+        repo = tmp_path / "repo"
+        subdir = repo / "packages" / "app"
+        subdir.mkdir(parents=True)
+        (repo / ".git").mkdir()
+        artifact_dir = subdir / "artifacts"
+        artifact_dir.mkdir()
+        config = LoopConfig(
+            base="main",
+            max_iterations=1,
+            codex_bin="codex",
+            cwd=subdir,
+            artifact_dir=artifact_dir,
+        )
+
+        helper_path = repo / "commit-subject.txt"
+        helper_path.write_text("fix(review): cleanup from subdir (RevRem)\n", encoding="utf-8")
+
+        status_outputs = iter(["", "?? commit-subject.txt\n"])
+
+        def runner(args, cwd, input_text=None, timeout_seconds=None):
+            if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+                return CommandResult(list(args), 0, stdout=next(status_outputs))
+            return CommandResult(list(args), 0)
+
+        before_status = _commit_message_worktree_status(config, runner)
+        assert before_status == set()
+        outcome = _handle_commit_message_side_effects(
+            config,
+            runner,
+            4,
+            before_status=before_status,
+            timeout_seconds=None,
+        )
+
+        assert outcome == "fallback"
+        assert not helper_path.exists()
+        side_effects = json.loads(
+            (artifact_dir / "commit-4-message-side-effects.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert side_effects["created_paths_removed"] == ["commit-subject.txt"]
+        assert side_effects["unsafe_status_lines"] == []
+
+    def test_does_not_target_subdirectory_path_for_root_level_helper(
+        self, tmp_path: Path
+    ) -> None:
+        """When RevRem is launched from a subdirectory and the commit-message
+        model writes a root-level helper file, the cleanup must remove the
+        root-level file and leave a same-named file under the launch
+        directory untouched.
+        """
+        repo = tmp_path / "repo"
+        subdir = repo / "packages" / "app"
+        subdir.mkdir(parents=True)
+        (repo / ".git").mkdir()
+        artifact_dir = subdir / "artifacts"
+        artifact_dir.mkdir()
+        config = LoopConfig(
+            base="main",
+            max_iterations=1,
+            codex_bin="codex",
+            cwd=subdir,
+            artifact_dir=artifact_dir,
+        )
+
+        helper_path = repo / "commit-subject.txt"
+        helper_path.write_text("fix(review): cleanup from subdir (RevRem)\n", encoding="utf-8")
+        decoy = subdir / "commit-subject.txt"
+        decoy.write_text("decoy under subdir should be preserved\n", encoding="utf-8")
+
+        status_outputs = iter(["", "?? commit-subject.txt\n"])
+
+        def runner(args, cwd, input_text=None, timeout_seconds=None):
+            if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+                return CommandResult(list(args), 0, stdout=next(status_outputs))
+            return CommandResult(list(args), 0)
+
+        before_status = _commit_message_worktree_status(config, runner)
+        outcome = _handle_commit_message_side_effects(
+            config,
+            runner,
+            5,
+            before_status=before_status,
+            timeout_seconds=None,
+        )
+
+        assert outcome == "fallback"
+        assert not helper_path.exists()
+        assert decoy.exists(), "decoy file under launch directory must be preserved"
+        side_effects = json.loads(
+            (artifact_dir / "commit-5-message-side-effects.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert side_effects["created_paths_removed"] == ["commit-subject.txt"]
+        assert side_effects["unsafe_status_lines"] == []
+
+    def test_rejects_path_escaping_repo_root(self, tmp_path: Path) -> None:
+        """Status paths that escape the repository root must still be
+        classified as unsafe; the repo-root fix must not weaken the
+        containment check.
+        """
+        repo = tmp_path / "repo"
+        subdir = repo / "packages" / "app"
+        subdir.mkdir(parents=True)
+        (repo / ".git").mkdir()
+        artifact_dir = subdir / "artifacts"
+        artifact_dir.mkdir()
+        config = LoopConfig(
+            base="main",
+            max_iterations=1,
+            codex_bin="codex",
+            cwd=subdir,
+            artifact_dir=artifact_dir,
+        )
+
+        status_outputs = iter(["", "?? ../escape.txt\n"])
+
+        def runner(args, cwd, input_text=None, timeout_seconds=None):
+            if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+                return CommandResult(list(args), 0, stdout=next(status_outputs))
+            return CommandResult(list(args), 0)
+
+        before_status = _commit_message_worktree_status(config, runner)
+        with pytest.raises(RuntimeError, match="commit-message drafting modified"):
+            _handle_commit_message_side_effects(
+                config,
+                runner,
+                6,
+                before_status=before_status,
+                timeout_seconds=None,
+            )
+
+        side_effects = json.loads(
+            (artifact_dir / "commit-6-message-side-effects.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert side_effects["created_paths_removed"] == []
+        assert side_effects["unsafe_status_lines"] == ["?? ../escape.txt"]
