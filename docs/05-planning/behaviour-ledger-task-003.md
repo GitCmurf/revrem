@@ -56,6 +56,48 @@ There is no silent third option.
 
 ## Entries
 
+### 2026-06-06 — Startup pending-review choice
+
+- **Contract:** human
+- **What changed:** when no explicit `--initial-review-file` is supplied,
+  interactive TTY runs now check for compatible non-clear review feedback before
+  starting a fresh provider review. If a candidate exists, RevRem offers to use
+  it, show more detail, start fresh, or cancel. Non-interactive runs ignore the
+  candidate unless `--pending-review auto` is supplied; `--pending-review ignore`
+  always starts fresh.
+- **Why:** Dogfood showed a run could produce useful review output and then fail
+  during triage/remediation setup, leaving an expensive review unremediated.
+  A watched local operator should be able to reuse that review without
+  remembering `--initial-review-file latest`, while automation must not block
+  on stdin.
+- **Before / After:** before, a restart without `--initial-review-file latest`
+  always spent a new review call. After, TTY restarts offer the compatible
+  pending review first, and explicit/non-interactive modes remain deterministic.
+- **schema_version impact:** none.
+- **CHANGELOG:** Unreleased / Added.
+
+### 2026-06-06 — Latest-review retry artifact and fragment trust hardening
+
+- **Contract:** machine + human
+- **What changed:** `--initial-review-file latest` now accepts only canonical
+  generated review outputs (`review-N.txt` and `review-final.txt`) and ignores
+  retry-attempt transcripts such as `review-1-attempt-1.txt`, even when
+  `summary.json` lists them. Remediation prompt composition still fails hard
+  for unresolved route/profile fragments, but unresolved
+  triage-generated `required_fragments` are ignored and recorded as a visible
+  warning in the remediation prompt.
+- **Why:** Dogfood showed that `latest` could select provider retry output
+  instead of review findings, and that a weaker triage model could invent a
+  fragment name (`bounded-execution`) that aborted remediation before the
+  finding was attempted.
+- **Before / After:** before, a newer `review-*-attempt-*.txt` could seed a
+  restart and any unresolved triage fragment could raise. After, retry
+  transcripts are never usable latest-review candidates; model-invented
+  fragments are advisory and dropped while trusted configured fragments remain
+  strict.
+- **schema_version impact:** none.
+- **CHANGELOG:** Unreleased / Added.
+
 ### 2026-06-06 — Provider timeout and secondary-prompt hardening
 
 - **Contract:** machine + human

@@ -36,13 +36,23 @@ def compose_remediation_prompt(
 
     triage_requirements = triage_payload.get("prompt_requirements", {})
     # Triage-prescribed Fragments
+    ignored_triage_fragments: list[str] = []
     for frag_name in triage_requirements.get("required_fragments", []):
         if frag_name not in resolved_route.prompt_fragments:
             frag_content = load_fragment(cwd, frag_name, trusted_repo=trusted_repo)
             if frag_content:
                 header_parts.append(f"--- Fragment: {frag_name} ---\n{frag_content}")
             else:
-                raise ValueError(f"Triage-prescribed prompt fragment {frag_name!r} could not be resolved or is untrusted.")
+                ignored_triage_fragments.append(str(frag_name))
+
+    if ignored_triage_fragments:
+        ignored = ", ".join(sorted(ignored_triage_fragments))
+        header_parts.append(
+            "Ignored unresolved triage-requested prompt fragments:\n"
+            f"{ignored}\n"
+            "These names came from model-generated triage output, not trusted "
+            "routing policy. Continue with the trusted remediation rules above."
+        )
 
     # Definition of Done
     dod = triage_requirements.get("definition_of_done", [])

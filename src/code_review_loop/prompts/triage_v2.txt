@@ -69,7 +69,12 @@ Routing proposal guidance:
 - Provide a clear `rationale` for these choices.
 
 Prompt requirements guidance:
-- `required_fragments`: List named fragments needed (e.g., engineering-principles).
+- `required_fragments`: Use `[]` unless one of RevRem's built-in fragment names
+  is specifically needed. The only built-in fragment names are:
+  `architecture-checklist`, `atomic-task-list`, `definition-of-done`,
+  `engineering-principles`, `regression-test-checklist`, and
+  `security-checklist`. Do not invent new names such as `bounded-execution`;
+  put that guidance in `definition_of_done` or `triage_prompt_draft` instead.
 - `definition_of_done`: Provide specific criteria for remediation success.
 - `triage_prompt_draft`: A draft implementation instruction for the remediator.
   It must tell the remediator not to create repository scratch files, to remove

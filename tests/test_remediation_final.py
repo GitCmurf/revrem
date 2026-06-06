@@ -101,11 +101,11 @@ def test_failed_checks_any_matches_exact_command():
 def test_missing_prompt_fragment_fails_routing(tmp_path):
     triage_payload = {
         "classification": {"risk_level": "low", "refactor_depth": "atomic"},
-        "prompt_requirements": {"required_fragments": ["missing-fragment"]}
+        "prompt_requirements": {"required_fragments": []},
     }
     resolved = policy.ResolvedRoute(
         route_tier="f", harness="h", model="m", reasoning_effort="l", timeout_seconds=1,
-        sandbox="s", prompt_fragments=(), allow_model_deescalation=True
+        sandbox="s", prompt_fragments=("missing-fragment",), allow_model_deescalation=True
     )
 
     with pytest.raises(ValueError, match="could not be resolved or is untrusted"):

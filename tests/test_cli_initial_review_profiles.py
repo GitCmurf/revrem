@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import os
 from importlib import import_module
 
@@ -13,8 +14,182 @@ history_command = import_module("code_review_loop.cli.commands.history")
 suppress_command = import_module("code_review_loop.cli.commands.suppress")
 
 
+class _TTYStringIO(io.StringIO):
+    def isatty(self):
+        return True
+
+
 def _clear_result(summary: dict[str, object]) -> application_mod.ReviewLoopResult:
     return application_mod.ReviewLoopResult(summary=summary, outcome=OutcomeClear(reason="review_clear"))
+
+
+def _write_pending_review(root, text="Full review comments:\n\n- [P2] Fix pending review\n"):
+    run = root / ".revrem" / "runs" / "20260428T010000Z"
+    run.mkdir(parents=True)
+    review = run / "review-1.txt"
+    review.write_text(text, encoding="utf-8")
+    (run / "summary.json").write_text(
+        '{"final_status":"error","stopped_reason":"triage_failed","artifact_paths":{"reviews":["'
+        + str(review)
+        + '"]}}',
+        encoding="utf-8",
+    )
+    return review
+
+
+def test_main_pending_review_auto_uses_candidate(tmp_path, monkeypatch):
+    pending_review = _write_pending_review(tmp_path)
+    captured_configs = []
+
+    def fake_run_loop(config):
+        captured_configs.append(config)
+        return _clear_result({
+            "artifact_dir": str(config.artifact_dir),
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+            "iterations": [],
+        })
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
+
+    exit_code = cli_main.main(["--pending-review", "auto", "--quiet-progress"])
+
+    assert exit_code == 0
+    assert captured_configs[0].initial_review_file == pending_review
+
+
+def test_main_pending_review_does_not_override_explicit_initial_review(
+    tmp_path,
+    monkeypatch,
+):
+    pending_review = _write_pending_review(tmp_path)
+    explicit_review = tmp_path / "explicit-review.txt"
+    explicit_review.write_text("explicit", encoding="utf-8")
+    captured_configs = []
+
+    def fake_run_loop(config):
+        captured_configs.append(config)
+        return _clear_result({
+            "artifact_dir": str(config.artifact_dir),
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+            "iterations": [],
+        })
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
+
+    exit_code = cli_main.main(
+        [
+            "--initial-review-file",
+            str(explicit_review),
+            "--pending-review",
+            "auto",
+            "--quiet-progress",
+        ]
+    )
+
+    assert exit_code == 0
+    assert captured_configs[0].initial_review_file == explicit_review
+    assert captured_configs[0].initial_review_file != pending_review
+
+
+def test_main_pending_review_default_ignores_candidate_when_not_tty(
+    tmp_path,
+    monkeypatch,
+):
+    _write_pending_review(tmp_path)
+    captured_configs = []
+
+    def fake_run_loop(config):
+        captured_configs.append(config)
+        return _clear_result({
+            "artifact_dir": str(config.artifact_dir),
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+            "iterations": [],
+        })
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
+
+    exit_code = cli_main.main(["--quiet-progress"])
+
+    assert exit_code == 0
+    assert captured_configs[0].initial_review_file is None
+
+
+def test_main_pending_review_prompt_can_start_fresh(tmp_path, monkeypatch):
+    _write_pending_review(tmp_path)
+    captured_configs = []
+
+    def fake_run_loop(config):
+        captured_configs.append(config)
+        return _clear_result({
+            "artifact_dir": str(config.artifact_dir),
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+            "iterations": [],
+        })
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
+    monkeypatch.setattr("sys.stdin", _TTYStringIO("f\n"))
+    monkeypatch.setattr("sys.stdout", _TTYStringIO())
+
+    exit_code = cli_main.main(["--quiet-progress"])
+
+    assert exit_code == 0
+    assert captured_configs[0].initial_review_file is None
+
+
+def test_main_pending_review_prompt_can_show_details_then_use(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    pending_review = _write_pending_review(tmp_path)
+    captured_configs = []
+
+    def fake_run_loop(config):
+        captured_configs.append(config)
+        return _clear_result({
+            "artifact_dir": str(config.artifact_dir),
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+            "iterations": [],
+        })
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
+    monkeypatch.setattr("sys.stdin", _TTYStringIO("d\nu\n"))
+    monkeypatch.setattr("sys.stdout", _TTYStringIO())
+
+    exit_code = cli_main.main(["--quiet-progress"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured_configs[0].initial_review_file == pending_review
+    assert "Pending review detail:" in captured.err
+    assert "Fix pending review" in captured.err
+
+
+def test_main_pending_review_prompt_can_cancel_before_provider_calls(
+    tmp_path,
+    monkeypatch,
+):
+    _write_pending_review(tmp_path)
+
+    def fail_run_loop(config):
+        raise AssertionError("run loop should not start after cancel")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(application_mod, "run_review_loop", fail_run_loop)
+    monkeypatch.setattr("sys.stdin", _TTYStringIO("c\n"))
+    monkeypatch.setattr("sys.stdout", _TTYStringIO())
+
+    assert cli_main.main(["--quiet-progress"]) == 130
 
 
 

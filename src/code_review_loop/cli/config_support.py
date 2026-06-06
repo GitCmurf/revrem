@@ -3,11 +3,23 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 from code_review_loop.core.review_interpretation import actionable_review_output
 from code_review_loop.repo_roots import lexical_git_repo_root as _lexical_git_repo_root
+
+
+@dataclass(frozen=True)
+class PendingReviewCandidate:
+    path: Path
+    run_dir: Path
+    final_status: str | None
+    stopped_reason: str | None
+    error: str | None
+    excerpt: str
 
 
 def git_info_exclude_path(cwd: Path) -> Path | None:
@@ -61,6 +73,45 @@ def resolve_initial_review_file(
         latest_review = review_paths[-1]
         candidates.append(
             (_run_sort_time(run_dir, review_paths), run_dir.name, latest_review)
+        )
+    candidates.sort()
+    if not candidates:
+        return None
+    return candidates[-1][2]
+
+
+def find_pending_review_candidate(
+    search_root: Path,
+    *,
+    current_git_state: dict[str, object] | None = None,
+) -> PendingReviewCandidate | None:
+    candidates: list[tuple[float, str, PendingReviewCandidate | None]] = []
+    for run_dir in _latest_run_dirs(search_root):
+        summary = _read_run_summary(run_dir)
+        if not _git_state_is_compatible(summary, current_git_state):
+            continue
+        review_paths = _usable_run_review_paths(run_dir, search_root, summary)
+        if _run_is_resolved(summary):
+            candidates.append(
+                (_run_sort_time(run_dir, review_paths), run_dir.name, None)
+            )
+            continue
+        if not review_paths:
+            continue
+        latest_review = review_paths[-1]
+        candidates.append(
+            (
+                _run_sort_time(run_dir, review_paths),
+                run_dir.name,
+                PendingReviewCandidate(
+                    path=latest_review,
+                    run_dir=run_dir,
+                    final_status=_optional_summary_str(summary, "final_status"),
+                    stopped_reason=_optional_summary_str(summary, "stopped_reason"),
+                    error=_optional_summary_str(summary, "error"),
+                    excerpt=_review_excerpt(latest_review, summary),
+                ),
+            )
         )
     candidates.sort()
     if not candidates:
@@ -159,15 +210,22 @@ def _resolve_summary_path(value: str, run_dir: Path, search_root: Path) -> Path 
 
 def _is_generated_review_artifact(path: Path) -> bool:
     name = path.name
-    if name == "review-initial.txt":
-        return False
-    if not name.startswith("review-") or path.suffix != ".txt":
-        return False
-    return not (
-        name.endswith("-prompt.txt")
-        or name.endswith("-context.txt")
-        or name.endswith("-last-message.txt")
-    )
+    return name == "review-final.txt" or re.fullmatch(r"review-\d+\.txt", name) is not None
+
+
+def _optional_summary_str(summary: dict[str, object], key: str) -> str | None:
+    value = summary.get(key)
+    return value if isinstance(value, str) and value else None
+
+
+def _review_excerpt(path: Path, summary: dict[str, object]) -> str:
+    excerpt = _optional_summary_str(summary, "latest_review_excerpt")
+    if excerpt:
+        return excerpt
+    try:
+        return actionable_review_output(path.read_text(encoding="utf-8")).strip()
+    except OSError:
+        return ""
 
 
 def _run_sort_time(run_dir: Path, review_paths: list[Path]) -> float:

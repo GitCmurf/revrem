@@ -125,6 +125,9 @@ def test_load_prompt_v2_includes_v2_fields():
     assert "triage-v2" in prompt
     assert '"estimated_blast_radius": {"finding_count": 1, "module_count": 1}' in prompt
     assert "Do not use `findings`, `modules`" in prompt
+    assert "Use `[]` unless one of RevRem's built-in fragment names" in prompt
+    assert "`engineering-principles`" in prompt
+    assert "Do not invent new names such as `bounded-execution`" in prompt
 
 
 def test_write_triage_artifact_preserves_payload_schema_version(tmp_path):

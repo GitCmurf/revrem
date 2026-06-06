@@ -494,6 +494,16 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--pending-review",
+        choices=("prompt", "ignore", "auto"),
+        default=None,
+        help=(
+            "What to do when startup discovers compatible pending review feedback and "
+            "--initial-review-file was not supplied. Default: prompt in interactive "
+            "terminals, ignore in non-interactive runs."
+        ),
+    )
+    parser.add_argument(
         "--no-run-history",
         action="store_true",
         help="Do not append metadata for this non-dry-run invocation to the local RevRem history.",

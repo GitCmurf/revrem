@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.33'
+version: '1.35'
 last_updated: '2026-06-06'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.33
+> **Version:** 1.35
 > **Last Updated:** 2026-06-06
 > **Type:** DEVEX
 > **Area:** devex
@@ -280,15 +280,26 @@ under that directory instead of the default workspace-local tree. `latest`
 orders compatible candidates by run/review modification time, then uses the
 newest compatible usable generated review artifact from a non-clear run,
 including interrupted runs that have `review-1.txt`, `review-2.txt`, or later
-iteration reviews but no `review-final.txt`. Imported `review-initial.txt`
-artifacts are ignored so a restart does not keep reusing stale carried-in
-feedback. When run summaries include git state, `latest` skips artifacts from a
-different current `HEAD` or base. When RevRem can identify the current
-`HEAD`/base, historical summaries that do not record git state are not treated
-as compatible `latest` candidates. If the newest compatible run's
+iteration reviews but no `review-final.txt`. Retry-attempt transcripts such as
+`review-1-attempt-1.txt` are ignored because they contain provider failure
+diagnostics rather than review findings. Imported `review-initial.txt` artifacts
+are also ignored so a restart does not keep reusing stale carried-in feedback.
+When run summaries include git state, `latest` skips artifacts from a different
+current `HEAD` or base. When RevRem can identify the current `HEAD`/base,
+historical summaries that do not record git state are not treated as compatible
+`latest` candidates. If the newest compatible run's
 `summary.json` reports `final_status = "clear"`, or there is no previous
 generated review, RevRem starts with a fresh review instead of reviving older
 feedback.
+
+If `--initial-review-file` is omitted, interactive terminal runs also check for
+compatible pending review feedback before making a fresh review provider call.
+When found, RevRem asks whether to use the review, show more detail, start
+fresh, or cancel. Non-interactive runs do not prompt and start fresh by
+default. Use `--pending-review auto` to reuse the detected review without
+prompting, or `--pending-review ignore` to suppress the startup check. An
+explicit `--initial-review-file` path or `latest` always takes precedence over
+the pending-review prompt.
 
 ### Profile-based usage
 
@@ -798,6 +809,15 @@ timeout_seconds = 900
 sandbox = "workspace-write"
 ```
 
+Configured `then.prompt_fragments` are trusted operator policy. If a configured
+fragment cannot be resolved, RevRem fails before remediation so the profile can
+be fixed. Triage v2 output can also suggest `prompt_requirements.required_fragments`,
+but those names are model-generated guidance: unresolved triage-suggested names
+are ignored with a visible remediation-prompt warning instead of aborting the
+loop. Built-in fragment names are `architecture-checklist`, `atomic-task-list`,
+`definition-of-done`, `engineering-principles`, `regression-test-checklist`, and
+`security-checklist`.
+
 Multi-harness routing profile:
 
 ```toml
@@ -1164,6 +1184,8 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.35 | 2026-06-06 | Codex | Documented startup pending-review detection and --pending-review modes |
+| 1.34 | 2026-06-06 | Codex | Documented retry-attempt exclusion from latest review selection and triage fragment trust policy |
 | 1.33 | 2026-06-06 | Codex | Documented worktree cleanliness clean-start and auto-staging policy |
 | 1.32 | 2026-06-06 | Codex | Documented worktree cleanliness auto-staging of legitimate new files |
 | 1.31 | 2026-06-05 | Codex | Documented timeout-only check retry suppression and latest-review ordering |

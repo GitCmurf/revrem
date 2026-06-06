@@ -65,7 +65,21 @@ This project follows Semantic Versioning once public releases begin.
   clear run means start fresh" contract so older unresolved reviews are not
   revived after a later successful run. When current git state is available,
   runs without recorded git state are no longer considered compatible `latest`
-  candidates.
+  candidates. Retry-attempt transcripts such as `review-1-attempt-1.txt` are
+  excluded from latest-review discovery, including when a summary lists them as
+  review artifacts, so provider diagnostics cannot seed a restart remediation.
+- Remediation prompt composition now treats route/profile prompt fragments as
+  trusted configuration that still fails hard when missing, while
+  triage-generated `required_fragments` are advisory: unresolved names are
+  ignored with a visible prompt warning instead of aborting remediation. The
+  triage v2 prompt now lists the built-in fragment allowlist and tells models
+  not to invent names such as `bounded-execution`.
+- Startup pending-review detection now looks for compatible non-clear review
+  feedback when `--initial-review-file` was not supplied. Interactive TTY runs
+  prompt the operator to reuse the review, inspect more detail, start fresh, or
+  cancel before any provider call; non-interactive runs ignore the candidate
+  unless `--pending-review auto` is supplied. `--pending-review ignore` always
+  starts fresh, and explicit `--initial-review-file` remains authoritative.
 - Gemini Pro review runs now get a larger model-aware external review input
   cap when no CLI/profile cap is set, and prompted review progress now reports
   whether the supplied context is full or truncated. Long-running external

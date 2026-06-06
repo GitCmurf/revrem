@@ -13,7 +13,10 @@ from code_review_loop import budgets, events, reporting
 from code_review_loop import resume as resume_mod
 from code_review_loop.adapters import git as git_adapter
 from code_review_loop.adapters import phase_support
-from code_review_loop.cli.config_support import resolve_initial_review_file
+from code_review_loop.cli.config_support import (
+    find_pending_review_candidate,
+    resolve_initial_review_file,
+)
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.outcome import OutcomeFailed
 from code_review_loop.core.ports import CommandResult
@@ -723,6 +726,96 @@ def test_resolve_initial_review_file_latest_uses_newer_iteration_review(tmp_path
     os.utime(newer_review, (2, 2))
 
     assert resolve_initial_review_file("latest", tmp_path) == newer_review
+
+
+def test_resolve_initial_review_file_latest_skips_retry_attempt_artifacts(tmp_path):
+    run = tmp_path / "20260428T020000Z"
+    run.mkdir()
+    review = run / "review-1.txt"
+    attempt = run / "review-1-attempt-1.txt"
+    review.write_text("real findings", encoding="utf-8")
+    attempt.write_text("provider transient failure", encoding="utf-8")
+    os.utime(review, (1, 1))
+    os.utime(attempt, (2, 2))
+
+    assert resolve_initial_review_file("latest", tmp_path) == review
+
+
+def test_resolve_initial_review_file_latest_skips_summary_retry_attempt_artifacts(
+    tmp_path,
+):
+    run = tmp_path / "20260428T020000Z"
+    run.mkdir()
+    review = run / "review-1.txt"
+    attempt = run / "review-1-attempt-1.txt"
+    review.write_text("real findings", encoding="utf-8")
+    attempt.write_text("provider transient failure", encoding="utf-8")
+    (run / "summary.json").write_text(
+        json.dumps(
+            {
+                "final_status": "findings",
+                "artifact_paths": {"reviews": [str(review), str(attempt)]},
+            }
+        ),
+        encoding="utf-8",
+    )
+    os.utime(review, (1, 1))
+    os.utime(attempt, (2, 2))
+
+    assert resolve_initial_review_file("latest", tmp_path) == review
+
+
+def test_find_pending_review_candidate_reports_metadata(tmp_path):
+    run = tmp_path / "20260428T020000Z"
+    run.mkdir()
+    review = run / "review-1.txt"
+    review.write_text("Full review comments:\n\n- [P2] Fix restart path\n", encoding="utf-8")
+    (run / "summary.json").write_text(
+        json.dumps(
+            {
+                "final_status": "error",
+                "stopped_reason": "triage_failed",
+                "error": "fragment missing",
+                "artifact_paths": {"reviews": [str(review)]},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    candidate = find_pending_review_candidate(tmp_path)
+
+    assert candidate is not None
+    assert candidate.path == review
+    assert candidate.run_dir == run
+    assert candidate.final_status == "error"
+    assert candidate.stopped_reason == "triage_failed"
+    assert candidate.error == "fragment missing"
+    assert "Fix restart path" in candidate.excerpt
+
+
+def test_find_pending_review_candidate_returns_none_after_newer_clear_run(tmp_path):
+    unresolved = tmp_path / "20260428T010000Z"
+    clear = tmp_path / "20260428T020000Z"
+    unresolved.mkdir()
+    clear.mkdir()
+    unresolved_review = unresolved / "review-1.txt"
+    clear_review = clear / "review-final.txt"
+    unresolved_review.write_text("findings", encoding="utf-8")
+    clear_review.write_text("clear", encoding="utf-8")
+    (unresolved / "summary.json").write_text(
+        json.dumps({"final_status": "findings"}),
+        encoding="utf-8",
+    )
+    (clear / "summary.json").write_text(
+        json.dumps({"final_status": "clear"}),
+        encoding="utf-8",
+    )
+    os.utime(unresolved_review, (1, 1))
+    os.utime(unresolved / "summary.json", (1, 1))
+    os.utime(clear_review, (2, 2))
+    os.utime(clear / "summary.json", (2, 2))
+
+    assert find_pending_review_candidate(tmp_path) is None
 
 
 def test_resolve_initial_review_file_latest_skips_imported_initial_review(tmp_path):

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 
+import pytest
+
 from code_review_loop import policy, prompts_composer
 
 
@@ -41,6 +43,57 @@ def test_compose_remediation_prompt_includes_fragments(tmp_path):
     assert "DONE" in prompt
     assert "REVIEW CONTENT" in prompt
     assert "Risk Level: high" in prompt
+
+
+def test_compose_remediation_prompt_ignores_unresolved_triage_fragments(tmp_path):
+    triage_payload = {
+        "classification": {"risk_level": "medium", "refactor_depth": "localised"},
+        "prompt_requirements": {
+            "required_fragments": ["bounded-execution"],
+            "triage_prompt_draft": "Fix the finding.",
+        },
+    }
+    resolved_route = policy.ResolvedRoute(
+        route_tier="t1",
+        harness="h1",
+        model="m1",
+        reasoning_effort="low",
+        timeout_seconds=60,
+        sandbox="s1",
+        prompt_fragments=(),
+        allow_model_deescalation=True,
+    )
+
+    prompt = prompts_composer.compose_remediation_prompt(
+        tmp_path, triage_payload, resolved_route, "REVIEW CONTENT"
+    )
+
+    assert "Ignored unresolved triage-requested prompt fragments:" in prompt
+    assert "bounded-execution" in prompt
+    assert "Fix the finding." in prompt
+    assert "REVIEW CONTENT" in prompt
+
+
+def test_compose_remediation_prompt_fails_missing_configured_route_fragment(tmp_path):
+    triage_payload = {
+        "classification": {"risk_level": "low", "refactor_depth": "atomic"},
+        "prompt_requirements": {"required_fragments": []},
+    }
+    resolved_route = policy.ResolvedRoute(
+        route_tier="t1",
+        harness="h1",
+        model="m1",
+        reasoning_effort="low",
+        timeout_seconds=60,
+        sandbox="s1",
+        prompt_fragments=("missing-fragment",),
+        allow_model_deescalation=True,
+    )
+
+    with pytest.raises(ValueError, match="Required prompt fragment"):
+        prompts_composer.compose_remediation_prompt(
+            tmp_path, triage_payload, resolved_route, "REVIEW CONTENT"
+        )
 
 
 def test_compute_prompt_hash():

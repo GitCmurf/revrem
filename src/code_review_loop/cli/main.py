@@ -12,7 +12,13 @@ from code_review_loop import redaction
 from code_review_loop.cli.args import parse_args
 from code_review_loop.cli.commands.profile import save_profile_from_args
 from code_review_loop.cli.config_builder import build_loop_config
+from code_review_loop.cli.config_support import (
+    PendingReviewCandidate,
+    current_git_state_for_latest,
+    find_pending_review_candidate,
+)
 from code_review_loop.cli.exit import map_application_call
+from code_review_loop.prompts_composer import trim_for_prompt
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -43,6 +49,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             cwd=Path.cwd(),
         )
 
+    pending_result = _apply_pending_review_choice(config, args)
+    if pending_result is None:
+        return 130  # outcome-exempt: operator cancelled before RunOutcome exists
+    config = pending_result
+
     app_exit = map_application_call(lambda: application.run_review_loop(config))
     summary = app_exit.summary
     if app_exit.error:
@@ -72,6 +83,79 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.dry_run:
         return 0  # outcome-exempt: dry-run summary is intentionally non-terminal
     return app_exit.exit_code
+
+
+def _apply_pending_review_choice(config, args):
+    if config.initial_review_file is not None:
+        return config
+    mode = args.pending_review
+    if mode is None:
+        mode = "prompt" if sys.stdin.isatty() and sys.stdout.isatty() else "ignore"
+    if mode == "ignore":
+        return config
+    candidate = _pending_review_candidate(config)
+    if candidate is None:
+        return config
+    if mode == "auto":
+        return replace(config, initial_review_file=candidate.path)
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return config
+    return _prompt_for_pending_review(config, candidate)
+
+
+def _pending_review_candidate(config) -> PendingReviewCandidate | None:
+    search_root = config.artifact_dir.parent if config.artifact_dir_is_default else config.artifact_dir
+    return find_pending_review_candidate(
+        search_root,
+        current_git_state=current_git_state_for_latest(config.cwd, config.base),
+    )
+
+
+def _prompt_for_pending_review(config, candidate: PendingReviewCandidate):
+    _print_pending_review_summary(candidate)
+    while True:
+        print(
+            "Use this review? [u]se / [d]etails / [f]resh / [c]ancel: ",
+            end="",
+            file=sys.stderr,
+            flush=True,
+        )
+        choice = input().strip().lower()
+        if choice in {"u", "use", "y", "yes"}:
+            return replace(config, initial_review_file=candidate.path)
+        if choice in {"d", "detail", "details", "more"}:
+            print(
+                "\nPending review detail:\n"
+                f"{trim_for_prompt(candidate.excerpt, config.terminal_excerpt_chars)}\n"
+                f"Artifact: {candidate.path}\n",
+                file=sys.stderr,
+            )
+            continue
+        if choice in {"f", "fresh", "n", "no", "skip"}:
+            return config
+        if choice in {"c", "cancel", "q", "quit"}:
+            print("Cancelled before provider calls.", file=sys.stderr)
+            return None
+        print("Choose u, d, f, or c.", file=sys.stderr)
+
+
+def _print_pending_review_summary(candidate: PendingReviewCandidate) -> None:
+    status_parts = [
+        part
+        for part in (candidate.final_status, candidate.stopped_reason, candidate.error)
+        if part
+    ]
+    status = " · ".join(status_parts) if status_parts else "previous non-clear run"
+    excerpt = trim_for_prompt(candidate.excerpt, 500).replace("\n", " ").strip()
+    print(
+        "RevRem found compatible pending review feedback before starting a new review.\n"
+        f"Review: {candidate.path}\n"
+        f"Run: {candidate.run_dir}\n"
+        f"Status: {status}",
+        file=sys.stderr,
+    )
+    if excerpt:
+        print(f"Excerpt: {excerpt}", file=sys.stderr)
 
 
 def _redacted_argv(argv: Sequence[str]) -> tuple[str, ...]:
