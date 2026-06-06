@@ -10,6 +10,7 @@ from code_review_loop.adapters.phase_support import CommitFailed, emit_loop_fail
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.engine import CommitDone, EngineState
 from code_review_loop.core.ports import CommitRequest, RunContext
+from code_review_loop.repo_roots import lexical_git_repo_root
 from code_review_loop.run_guards import current_head
 
 
@@ -35,7 +36,7 @@ def execute_commit_phase(
             ctx,
         )
         iterations[-1]["commit_status"] = commit_outcome.status
-        if commit_outcome.status == "committed" and (config.cwd / ".git").exists():
+        if commit_outcome.status == "committed" and lexical_git_repo_root(config.cwd):
             expected_head = current_head(config, ctx) or expected_head
     except CommitFailed as exc:
         iterations[-1]["commit_status"] = exc.kind

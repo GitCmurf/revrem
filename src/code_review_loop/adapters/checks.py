@@ -17,6 +17,7 @@ from code_review_loop.core.ports import (
     CommandResult,
     RunContext,
 )
+from code_review_loop.git_status import is_artifact_status_line
 
 if TYPE_CHECKING:
     from code_review_loop.config import LoopConfig
@@ -274,16 +275,7 @@ def _intent_add_untracked(
 
 
 def _is_artifact_status_line(config: LoopConfig, line: str) -> bool:
-    path_text = line[3:].strip()
-    if not path_text:
-        return False
-    artifact_dir = config.artifact_dir
-    try:
-        artifact_rel = artifact_dir.resolve().relative_to(config.cwd.resolve())
-    except ValueError:
-        return False
-    artifact_prefix = artifact_rel.as_posix().rstrip("/") + "/"
-    return path_text == artifact_rel.as_posix() or path_text.startswith(artifact_prefix)
+    return is_artifact_status_line(config, line)
 
 
 def _has_git_marker(cwd: Path) -> bool:

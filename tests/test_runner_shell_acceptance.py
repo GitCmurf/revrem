@@ -6,7 +6,7 @@ from pathlib import Path
 from code_review_loop import budgets, events, profiles
 from code_review_loop.adapters.phase_support import CommitFailed
 from code_review_loop.config import LoopConfig
-from code_review_loop.core.engine import ConfigSnapshot
+from code_review_loop.core.engine import ConfigSnapshot, EngineState, LoopAccumulator, LoopStarted
 from code_review_loop.core.ports import (
     CommandResult,
     CommitOutcome,
@@ -16,6 +16,7 @@ from code_review_loop.core.ports import (
     RunContext,
 )
 from code_review_loop.core.state import RunState
+from code_review_loop.runner_commit_phase import execute_commit_phase
 from code_review_loop.runner_shell import run_iterations
 from tests.support.fakes import FIXED_ISO, FIXED_RUN_ID, FakeClock, FakeRunIdentity
 from tests.support.headless import (
@@ -313,6 +314,44 @@ def test_runner_shell_stops_before_remediation_when_head_moves_during_review(
     assert result.outcome.reason == "remediation_failed"
     assert "HEAD moved from start-head to new-head" in str(result.cause)
     assert remediation.calls == []
+
+
+def test_commit_phase_refreshes_expected_head_without_cwd_git_marker(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    subdir = repo / "subdir"
+    subdir.mkdir(parents=True)
+    (repo / ".git").mkdir()
+    config = replace(_config(subdir), commit_after_remediation=True)
+    process_runner = RecordingProcessRunner(
+        {
+            "rev-parse": CommandResult(["git", "rev-parse", "HEAD"], 0, stdout="new-head\n"),
+        }
+    )
+    ctx, sink = _context(
+        config,
+        review=SequencedReviewHarness(["clear"]),
+        commit=StaticCommitHarness(status="committed"),
+        runner=process_runner,
+    )
+    try:
+        result = execute_commit_phase(
+            config=config,
+            ctx=ctx,
+            iterations=[{"iteration": 1}],
+            engine_state=EngineState(
+                cfg=_snapshot(config),
+                acc=LoopAccumulator(pending_check_failures=""),
+                event=LoopStarted(),
+                iteration=1,
+            ),
+            expected_head="old-head",
+        )
+    finally:
+        sink.close()
+
+    assert result.expected_head == "new-head"
 
 
 def test_runner_shell_marks_stale_review_resolved_when_validation_noops(

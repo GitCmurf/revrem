@@ -26,17 +26,19 @@ def is_artifact_status_line(config: LoopConfig, line: str) -> bool:
     path_parts = [part.strip() for part in path_text.split(" -> ") if part.strip()]
     if not path_parts:
         return True
-    artifact_prefixes = {".revrem/"}
+    artifact_roots = {".revrem"}
     rel_artifact = _relative_artifact_dir(config)
     if rel_artifact is not None:
         rel_text = rel_artifact.as_posix().rstrip("/")
         if rel_text:
-            artifact_prefixes.add(rel_text)
-            artifact_prefixes.add(f"{rel_text}/")
-    return all(
-        any(part == prefix.rstrip("/") or part.startswith(prefix) for prefix in artifact_prefixes)
-        for part in path_parts
-    )
+            artifact_roots.add(rel_text)
+    return all(any(_is_under_path_root(part, root) for root in artifact_roots) for part in path_parts)
+
+
+def _is_under_path_root(path: str, root: str) -> bool:
+    normalized = path.strip().rstrip("/")
+    normalized_root = root.strip().rstrip("/")
+    return normalized == normalized_root or normalized.startswith(f"{normalized_root}/")
 
 
 def _relative_artifact_dir(config: LoopConfig) -> Path | None:

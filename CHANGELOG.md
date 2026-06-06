@@ -85,7 +85,8 @@ This project follows Semantic Versioning once public releases begin.
 - When an operator chooses pending review feedback from a different `HEAD`/base,
   RevRem now treats the run as stale-review validation. Remediation is prompted
   to make no edits and emit `REVREM_STALE_REVIEW_STATUS: resolved` when the
-  finding no longer applies to the current checkout.
+  finding no longer applies to the current checkout. The prompt now presents
+  that choice as validation instead of ordinary review reuse.
 - Gemini Pro review runs now get a larger model-aware external review input
   cap when no CLI/profile cap is set, and prompted review progress now reports
   whether the supplied context is full or truncated. Long-running external
@@ -237,6 +238,16 @@ This project follows Semantic Versioning once public releases begin.
   pass, and the commit phase has no staged changes, RevRem stops with
   `stale_review_already_resolved` and surfaces the validation output instead
   of repeating the old stale finding as `no_changes_after_remediation`.
+- Auto-commit safety guards now treat artifact exemptions as path-boundary
+  exact, so sibling paths such as `artifacts2/...` are not ignored when the
+  artifact directory is `artifacts`.
+- Successful auto-commits now refresh the expected `HEAD` even when RevRem is
+  launched from a repository subdirectory or linked-worktree-style checkout
+  where `.git` is not directly under `cwd`.
+- Commit-message drafting now detects read-only phase side effects. Newly
+  created non-artifact helper files are removed with a diagnostic artifact and
+  deterministic fallback subject; modifications to existing paths abort the
+  commit phase instead of committing contaminated state.
 - The post-remediation worktree cleanliness check no longer blocks legitimate
   patches that add new files. Untracked non-artifact files are now marked with
   `git add --intent-to-add` so the upcoming `git add -A` in the commit phase

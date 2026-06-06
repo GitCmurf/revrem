@@ -152,7 +152,7 @@ def _prompt_for_pending_review(
             flush=True,
         )
         choice = input().strip().lower()
-        if choice in {"u", "use", "y", "yes"}:
+        if choice in {"u", "use", "v", "validate", "y", "yes"}:
             return replace(
                 config,
                 initial_review_file=candidate.path,
@@ -191,11 +191,11 @@ def _print_pending_review_summary(
         prompt = "Use this review? [u]se / [d]etails / [f]resh / [c]ancel: "
     else:
         heading = (
-            "RevRem found pending review feedback from a different HEAD/base. "
-            "Validate it only if you intentionally want to check whether that older "
-            "review still applies."
+            "RevRem found an older review from a different HEAD/base. "
+            "Validate it only if you want RevRem to check whether that older "
+            "finding still applies to the current checkout."
         )
-        prompt = "Validate this stale review? [u]se / [d]etails / [f]resh / [c]ancel: "
+        prompt = "Validate this older review? [v]alidate / [d]etails / [f]resh / [c]ancel: "
     print(
         f"{heading}\nReview: {candidate.path}\nRun: {candidate.run_dir}\nStatus: {status}",
         file=sys.stderr,

@@ -27,6 +27,8 @@ from code_review_loop.core.ports import (
     RunContext,
 )
 from code_review_loop.core.review_interpretation import actionable_review_output
+from code_review_loop.git_status import non_artifact_status_lines
+from code_review_loop.repo_roots import lexical_git_repo_root
 
 if TYPE_CHECKING:
     from code_review_loop.config import LoopConfig
@@ -353,6 +355,11 @@ def commit_message_for_staged_changes(
             **prompt_metadata,
         },
     )
+    before_status = _commit_message_worktree_status(
+        config,
+        runner,
+        timeout_seconds=timeout_seconds,
+    )
     result = phase_support.run_with_waiting_progress(
         config,
         runner,
@@ -372,6 +379,33 @@ def commit_message_for_staged_changes(
     phase_support.record_model_charge(
         config, result, phase="commit-message", iteration=iteration, ctx=ctx
     )
+    side_effect_status = _handle_commit_message_side_effects(
+        config,
+        runner,
+        iteration,
+        before_status=before_status,
+        timeout_seconds=timeout_seconds,
+    )
+    if side_effect_status == "fallback":
+        artifacts.write_json_artifact(
+            config.artifact_dir,
+            f"commit-{iteration}-message-fallback.json",
+            {
+                "iteration": iteration,
+                "reason": "model_drafting_side_effects",
+                "subject": fallback,
+                "draft_artifact": f"commit-{iteration}-message-draft.txt",
+            },
+        )
+        phase_support.progress_event(
+            config,
+            "commit-message",
+            str(iteration),
+            "fallback",
+            f"model drafting wrote files; using deterministic subject: {fallback}",
+            ctx=ctx,
+        )
+        return fallback
     if result.returncode != 0:
         artifacts.write_json_artifact(
             config.artifact_dir,
@@ -417,6 +451,83 @@ def commit_message_for_staged_changes(
         ctx=ctx,
     )
     return fallback
+
+
+def _commit_message_worktree_status(
+    config: LoopConfig,
+    runner: Runner,
+    *,
+    timeout_seconds: float | None = None,
+) -> set[str] | None:
+    if lexical_git_repo_root(config.cwd) is None:
+        return None
+    result = runner(
+        git_worktree_status_command_for_commit(config),
+        config.cwd,
+        None,
+        timeout_seconds,
+    )
+    if result.returncode != 0:
+        return None
+    return set(non_artifact_status_lines(config, result.stdout))
+
+
+def _handle_commit_message_side_effects(
+    config: LoopConfig,
+    runner: Runner,
+    iteration: int,
+    *,
+    before_status: set[str] | None,
+    timeout_seconds: float | None,
+) -> Literal["clean", "fallback"]:
+    if before_status is None:
+        return "clean"
+    after_status = _commit_message_worktree_status(
+        config,
+        runner,
+        timeout_seconds=timeout_seconds,
+    )
+    if after_status is None:
+        return "clean"
+    new_lines = sorted(after_status - before_status)
+    if not new_lines:
+        return "clean"
+    created_paths: list[str] = []
+    unsafe_lines: list[str] = []
+    for line in new_lines:
+        if not line.startswith("?? "):
+            unsafe_lines.append(line)
+            continue
+        path_text = line[3:].strip()
+        if not path_text:
+            unsafe_lines.append(line)
+            continue
+        target = (config.cwd / path_text).resolve()
+        try:
+            target.relative_to(config.cwd.resolve())
+        except ValueError:
+            unsafe_lines.append(line)
+            continue
+        if not target.exists() or target.is_dir():
+            unsafe_lines.append(line)
+            continue
+        target.unlink()
+        created_paths.append(path_text)
+    artifacts.write_json_artifact(
+        config.artifact_dir,
+        f"commit-{iteration}-message-side-effects.json",
+        {
+            "iteration": iteration,
+            "created_paths_removed": created_paths,
+            "unsafe_status_lines": unsafe_lines,
+        },
+    )
+    if unsafe_lines:
+        raise RuntimeError(
+            "commit-message drafting modified existing or unsafe worktree paths; "
+            f"see {config.artifact_dir / f'commit-{iteration}-message-side-effects.json'}"
+        )
+    return "fallback" if created_paths else "clean"
 
 
 def model_commit_message_subject(

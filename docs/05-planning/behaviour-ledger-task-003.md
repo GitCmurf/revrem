@@ -133,6 +133,31 @@ There is no silent third option.
   string space.
 - **CHANGELOG:** Unreleased / Fixed.
 
+### 2026-06-06 — Git guard and commit-message side-effect hardening
+
+- **Contract:** machine + human
+- **What changed:** artifact dirty-path filtering now matches only exact path
+  boundaries, so `artifacts2/...` and `artifacts-old/...` are no longer treated
+  as children of `artifacts`. Successful commits refresh the expected `HEAD`
+  even when RevRem runs from a repository subdirectory or linked-worktree-style
+  checkout without a `.git` marker at `cwd`. Older pending-review prompts now
+  display validation language. Commit-message drafting records and removes
+  newly created non-artifact helper files, falls back to the deterministic
+  subject, and aborts if the read-only phase modifies existing paths.
+- **Why:** Dogfood with Gemini remediation showed two remaining auto-commit
+  safety gaps, a confusing stale-review prompt, and an OpenCode commit-message
+  draft that wrote `commit-subject.txt` despite the read-only contract.
+- **Before / After:** before, sibling artifact-like paths could be ignored by
+  dirty-worktree guards, subdirectory commits could leave `expected_head`
+  stale, older-review prompts said "use", and a commit-message helper file
+  could leak into the worktree. After, artifact exemptions are boundary exact,
+  commit HEAD tracking works from supported cwd layouts, stale prompts say
+  "validate", and read-only commit-message side effects are diagnosed and
+  handled before committing.
+- **schema_version impact:** none. The side-effect diagnostic is an additive
+  artifact.
+- **CHANGELOG:** Unreleased / Fixed.
+
 ### 2026-06-06 — Latest-review retry artifact and fragment trust hardening
 
 - **Contract:** machine + human

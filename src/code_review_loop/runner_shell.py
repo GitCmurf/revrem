@@ -392,6 +392,12 @@ class _RunnerEngineExecutor:
                 "check failures are timeout-only; skipping remediation retry",
                 ctx=self.ctx,
             )
+        elif pending_check_failures and retry_count >= self.config.inner_check_retries > 0:
+            progress_event(
+                self.config, "check", str(iteration), "warning",
+                "check failures remain after remediation retries; skipping commit",
+                ctx=self.ctx,
+            )
         return replace(engine_state, acc=acc, event=ChecksDone())
 
     def _retry_after_checks(self, engine_state: EngineState) -> EngineState:
@@ -481,13 +487,8 @@ def run_iterations(
     if executor.latest_state is not None and isinstance(
         outcome, (OutcomeClear, OutcomeFindings, OutcomeUnknown)
     ):
-        # Preserve the last actionable review text for operator-facing terminal
-        # summaries and resume flows when the run ends unresolved.
         latest_review_output = executor.latest_state.acc.last_review_output
-    if (
-        isinstance(outcome, OutcomeUnknown)
-        and outcome.reason == "stale_review_already_resolved"
-    ):
+    if isinstance(outcome, OutcomeUnknown) and outcome.reason == "stale_review_already_resolved":
         latest_review_output = executor.stale_review_validation_output
     return RunnerShellResult(
         outcome=outcome,

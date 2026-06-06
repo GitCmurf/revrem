@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.38'
+version: '1.39'
 last_updated: '2026-06-06'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.38
+> **Version:** 1.39
 > **Last Updated:** 2026-06-06
 > **Type:** DEVEX
 > **Area:** devex
@@ -269,6 +269,10 @@ then run after that synthetic check, so their progress labels start at `.2` and
 their artifacts are named accordingly (`check-1-2.txt`, `check-1-3.txt`, and so
 on).
 
+Artifact exemptions are path-boundary exact. A custom artifact directory named
+`artifacts` exempts `artifacts` and `artifacts/...`, but not sibling paths such
+as `artifacts2/...` or `artifacts-old/...`.
+
 ### Continuation after findings
 
 The loop writes artifacts under `.revrem/runs/<timestamp>-<suffix>/` by default. On the
@@ -310,14 +314,17 @@ feedback.
 
 If `--initial-review-file` is omitted, interactive terminal runs also check for
 pending review feedback before making a fresh review provider call. When found,
-RevRem asks whether to use the review, show more detail, start fresh, or cancel.
+RevRem asks whether to use or validate the review, show more detail, start
+fresh, or cancel.
 If the only pending review is from a different `HEAD`/base, the interactive
-prompt still offers it but labels the mismatch clearly so the operator can
-decide whether that older finding is still relevant. Non-interactive runs do
-not prompt and start fresh by default. Use `--pending-review auto` to reuse the
-detected compatible review without prompting, or `--pending-review ignore` to
-suppress the startup check. An explicit `--initial-review-file` path or `latest`
-always takes precedence over the pending-review prompt.
+prompt offers validation, not ordinary reuse, and labels the mismatch clearly
+so the operator can decide whether that older finding is still relevant.
+Non-interactive runs do not prompt and start fresh by default. Use
+`--pending-review auto` to reuse the detected compatible review without
+prompting, or `--pending-review ignore` to suppress the startup check. `auto`
+never prompts for incompatible older reviews. An explicit
+`--initial-review-file` path or `latest` always takes precedence over the
+pending-review prompt.
 
 When an operator intentionally uses a pending review from a different
 `HEAD`/base, RevRem treats it as stale-review validation instead of ordinary
@@ -328,6 +335,13 @@ resolved, the model must make no edits and include
 the commit phase finds no staged changes, RevRem stops with
 `stale_review_already_resolved` and surfaces the validation output instead of
 continuing to report the old stale finding.
+
+Commit-message drafting is treated as read-only even when an external harness
+tries to write a helper file. If drafting creates a new non-artifact file,
+RevRem removes that file, records `commit-N-message-side-effects.json`, and
+uses the deterministic fallback subject. If drafting modifies an existing or
+tracked path, RevRem aborts the commit phase instead of committing contaminated
+state.
 
 ### Profile-based usage
 
@@ -1223,6 +1237,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.39 | 2026-06-06 | Codex | Documented prompt, path-boundary, subdirectory HEAD refresh, and commit-message side-effect hardening |
 | 1.38 | 2026-06-06 | Codex | Documented stale pending-review validation and resolved no-op handling |
 | 1.37 | 2026-06-06 | Codex | Documented in-run auto-commit guard before first remediation |
 | 1.36 | 2026-06-06 | Codex | Documented enforced auto-commit clean-start preflight before provider calls |

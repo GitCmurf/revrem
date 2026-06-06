@@ -233,7 +233,7 @@ def test_main_pending_review_prompt_can_use_incompatible_candidate(
     assert captured_configs[0].initial_review_file == pending_review
     assert captured_configs[0].initial_review_mode == "stale"
     assert "different HEAD/base" in captured.err
-    assert "Validate this stale review?" in captured.err
+    assert "Validate this older review?" in captured.err
 
 
 def test_main_pending_review_prompt_can_cancel_before_provider_calls(

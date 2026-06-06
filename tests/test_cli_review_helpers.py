@@ -1380,6 +1380,112 @@ def test_commit_message_for_staged_changes_falls_back_on_invalid_model_prose(
     assert "The main changes include" not in message
 
 
+def test_commit_message_for_staged_changes_removes_created_side_effect_file(
+    tmp_path,
+):
+    (tmp_path / ".git").mkdir()
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        commit_message_model="gpt-test-commit",
+        timeout_seconds=30,
+    )
+    status_outputs = iter(["", "?? commit-subject.txt\n"])
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[:4] == ["git", "diff", "--cached", "--stat"]:
+            return CommandResult(
+                list(args), 0, stdout=" src/code_review_loop/review.py | 2 +-\n"
+            )
+        if args[:4] == ["git", "diff", "--cached", "--name-only"]:
+            return CommandResult(
+                list(args), 0, stdout="src/code_review_loop/review.py\n"
+            )
+        if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+            return CommandResult(list(args), 0, stdout=next(status_outputs))
+        if args[:2] == ["codex", "exec"]:
+            (tmp_path / "commit-subject.txt").write_text(
+                "fix(review): harden provider diagnostics (RevRem)",
+                encoding="utf-8",
+            )
+            return CommandResult(
+                list(args),
+                0,
+                stdout="I wrote commit-subject.txt with the subject.\n",
+            )
+        raise AssertionError(f"unexpected command: {args!r}")
+
+    message = commit_message_for_staged_changes(
+        config, runner, 9, make_run_context(runner)
+    )
+    side_effect_path = tmp_path / "artifacts" / "commit-9-message-side-effects.json"
+    side_effects = json.loads(side_effect_path.read_text(encoding="utf-8"))
+
+    assert not (tmp_path / "commit-subject.txt").exists()
+    assert_professional_fallback_subject(
+        message,
+        expected_type="chore",
+        expected_scope="review",
+        expected_terms=("review",),
+    )
+    assert side_effects["created_paths_removed"] == ["commit-subject.txt"]
+    assert side_effects["unsafe_status_lines"] == []
+    assert json.loads(
+        (tmp_path / "artifacts" / "commit-9-message-fallback.json").read_text(
+            encoding="utf-8"
+        )
+    )["reason"] == "model_drafting_side_effects"
+
+
+def test_commit_message_for_staged_changes_aborts_on_tracked_side_effect(
+    tmp_path,
+):
+    (tmp_path / ".git").mkdir()
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        commit_message_model="gpt-test-commit",
+        timeout_seconds=30,
+    )
+    status_outputs = iter(["", " M src/code_review_loop/review.py\n"])
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[:4] == ["git", "diff", "--cached", "--stat"]:
+            return CommandResult(
+                list(args), 0, stdout=" src/code_review_loop/review.py | 2 +-\n"
+            )
+        if args[:4] == ["git", "diff", "--cached", "--name-only"]:
+            return CommandResult(
+                list(args), 0, stdout="src/code_review_loop/review.py\n"
+            )
+        if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+            return CommandResult(list(args), 0, stdout=next(status_outputs))
+        if args[:2] == ["codex", "exec"]:
+            return CommandResult(
+                list(args),
+                0,
+                stdout="fix(review): harden provider diagnostics (RevRem)\n",
+            )
+        raise AssertionError(f"unexpected command: {args!r}")
+
+    with pytest.raises(RuntimeError, match="commit-message drafting modified"):
+        commit_message_for_staged_changes(config, runner, 9, make_run_context(runner))
+
+    side_effects = json.loads(
+        (tmp_path / "artifacts" / "commit-9-message-side-effects.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert side_effects["created_paths_removed"] == []
+    assert side_effects["unsafe_status_lines"] == [" M src/code_review_loop/review.py"]
+
+
 def test_commit_message_fallback_uses_review_context_for_feature_type(tmp_path):
     artifact_dir = tmp_path / "artifacts"
     artifact_dir.mkdir()
