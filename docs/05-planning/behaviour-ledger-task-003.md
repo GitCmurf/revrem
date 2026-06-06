@@ -3,8 +3,8 @@ document_id: REVREM-LEDGER-003
 type: LEDGER
 title: Behaviour ledger for the cli.py re-engineering (REVREM-TASK-003)
 status: Approved
-version: '1.0'
-last_updated: '2026-06-05'
+version: '1.1'
+last_updated: '2026-06-06'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -55,6 +55,40 @@ There is no silent third option.
 ```
 
 ## Entries
+
+### 2026-06-06 — Cleanliness check auto-stages legitimate new files
+
+- **Contract:** machine + human
+- **What changed:** `run_worktree_cleanliness_check` now marks untracked
+  non-artifact files with `git add --intent-to-add` instead of failing the
+  check. The check still excludes files in the configured artifact directory,
+  and any `git add -N` error surfaces the underlying git output. After the
+  intent-to-add pass, the check re-runs `git status --porcelain`; if any
+  untracked non-artifact files remain (e.g. the intent-to-add step ran but
+  could not register a file), the check still fails with a list of the
+  remaining paths. The successful summary now lists the auto-staged paths in
+  `check-N-1.txt` for operator visibility.
+- **Why:** Earlier revisions of the cleanup gate failed the loop before the
+  commit phase could run `git add -A`, so any remediation that legitimately
+  added a new file (a new test, module, or doc) had no way to pass checks
+  without the model staging the file itself. Auto-staging with
+  `--intent-to-add` is git-idiomatic: it registers the file with the index
+  without writing content, so `git add -A` in the commit phase stages the
+  full content normally, and the `?? ` flag that triggered the failure is
+  removed.
+- **Before / After:** before, a remediation patch that added
+  `src/new_module.py` failed the worktree cleanliness check because the file
+  showed as `?? src/new_module.py`. After, the cleanliness check runs
+  `git add --intent-to-add -- src/new_module.py`, the re-check shows
+  `A  src/new_module.py`, and the check records the auto-staged path in the
+  artifact before passing. A `git add -N` failure (e.g. permission error)
+  still fails the check with the underlying git error, so genuine scratch
+  files that the operator must clean up by hand remain visible.
+- **schema_version impact:** none. The check artifact gains an
+  auto-staged-paths summary line, but its contract was previously
+  "passes/fails with stdout body"; the additional line is purely additive
+  and the surrounding event payload is unchanged.
+- **CHANGELOG:** Unreleased / Fixed.
 
 ### 2026-06-05 — Bounded remediation-check inner retry and cleanup gate
 

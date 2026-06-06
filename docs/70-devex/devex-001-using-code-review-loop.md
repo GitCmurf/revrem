@@ -3,8 +3,8 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.31'
-last_updated: '2026-06-05'
+version: '1.32'
+last_updated: '2026-06-06'
 owner: GitCmurf
 docops_version: '2.0'
 area: devex
@@ -235,12 +235,18 @@ cleanliness check:
 git status --porcelain --untracked-files=all
 ```
 
-This fails when remediation leaves untracked non-artifact files behind, such as
-scratch scripts created during debugging. Configured checks then run after that
-synthetic check, so their progress labels start at `.2` and their artifacts are
-named accordingly (`check-1-2.txt`, `check-1-3.txt`, and so on). If a legitimate
-fix needs new files, make sure remediation intentionally adds them to the patch
-or removes accidental scratch files before checks pass.
+The check excludes untracked files inside the configured `--artifact-dir`
+(those are loop scratch, not part of the patch). Any remaining untracked
+non-artifact files are auto-staged with `git add --intent-to-add` so the
+upcoming `git add -A` in the commit phase can pick them up. This keeps the
+cleanliness check from blocking legitimate patches that add new files
+(tests, modules, documentation) without requiring the model to stage files
+during remediation. The auto-staged paths are recorded in the check artifact
+(`check-N-1.txt`) for visibility. If `git add --intent-to-add` itself fails
+for any path, the check fails with the underlying git error so the operator
+can clean up by hand. Configured checks then run after that synthetic check,
+so their progress labels start at `.2` and their artifacts are named
+accordingly (`check-1-2.txt`, `check-1-3.txt`, and so on).
 
 ### Continuation after findings
 
@@ -1153,6 +1159,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.32 | 2026-06-06 | Codex | Documented worktree cleanliness auto-staging of legitimate new files |
 | 1.31 | 2026-06-05 | Codex | Documented timeout-only check retry suppression and latest-review ordering |
 | 1.30 | 2026-06-05 | Codex | Documented bounded inner check retries and worktree cleanliness checks |
 | 1.29 | 2026-06-05 | Codex | Documented Gemini argv prompt delivery guard and non-retryable provider timeouts |

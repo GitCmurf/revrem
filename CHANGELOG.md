@@ -197,6 +197,17 @@ This project follows Semantic Versioning once public releases begin.
 - Profiles now support `[suppressions] scope = "repo" | "user"` so teams can
   declare their expected suppression write policy alongside review settings.
 
+### Fixed
+
+- The post-remediation worktree cleanliness check no longer blocks legitimate
+  patches that add new files. Untracked non-artifact files are now marked with
+  `git add --intent-to-add` so the upcoming `git add -A` in the commit phase
+  can pick them up, instead of failing the check before the commit flow can
+  stage them. Files in the configured `--artifact-dir` remain exempt, the
+  auto-staged paths are recorded in the check artifact for visibility, and
+  any `git add --intent-to-add` failure surfaces the underlying git error so
+  the operator can clean up by hand.
+
 ### Changed
 
 - Structured triage now normalizes review priority severities (`P0`-`P4`) to

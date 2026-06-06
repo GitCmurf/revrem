@@ -119,7 +119,16 @@ def all_failed_checks_are_revrem_timeouts(results: Sequence[CommandResult]) -> b
 
 
 def run_worktree_cleanliness_check(config: LoopConfig, runner) -> CommandResult:
-    """Fail if remediation left untracked, non-artifact files in the worktree."""
+    """Fail if remediation left untracked, non-artifact files in the worktree.
+
+    Untracked non-artifact files are first marked with ``git add --intent-to-add``
+    so the upcoming ``git add -A`` in the commit phase can pick them up. This
+    keeps the cleanliness check from blocking legitimate patches that add new
+    files (tests, modules, documentation) without requiring the model to stage
+    files during remediation. Files inside the configured artifact directory
+    remain exempt, and any ``git add --intent-to-add`` failure surfaces the
+    underlying git error to the operator.
+    """
     command = ["git", "status", "--porcelain", "--untracked-files=all"]
     if config.dry_run:
         return CommandResult(command, 0, stdout="DRY_RUN cleanliness check skipped\n")
@@ -155,16 +164,84 @@ def run_worktree_cleanliness_check(config: LoopConfig, runner) -> CommandResult:
     ]
     if not untracked:
         return CommandResult(command, 0, stdout=result.stdout, stderr=result.stderr)
-    return CommandResult(
-        command,
-        1,
-        stdout=(
-            "Untracked files remain after remediation:\n"
-            + "\n".join(untracked)
-            + "\nRemove scratch files, or intentionally add legitimate new files before checks pass.\n"
+    intent_added, intent_errors = _intent_add_untracked(config, runner, untracked)
+    if intent_errors:
+        return CommandResult(
+            command,
+            1,
+            stdout=(
+                "Untracked files remain after remediation and could not be intent-added:\n"
+                + "\n".join(intent_errors)
+                + "\nRemove scratch files, or fix the underlying git error before checks pass.\n"
+            ),
+            stderr=result.stderr,
+        )
+    recheck = cast(
+        CommandResult,
+        runner(
+            command,
+            config.cwd,
+            None,
+            phase_support.phase_timeout_seconds(config, config.timeout_seconds),
         ),
-        stderr=result.stderr,
     )
+    if recheck.returncode != 0:
+        return recheck
+    remaining = [
+        line
+        for line in recheck.stdout.splitlines()
+        if line.startswith("?? ") and not _is_artifact_status_line(config, line)
+    ]
+    if remaining:
+        return CommandResult(
+            command,
+            1,
+            stdout=(
+                "Untracked files remain after remediation:\n"
+                + "\n".join(remaining)
+                + "\nRemove scratch files, or intentionally add legitimate new files before checks pass.\n"
+            ),
+            stderr=recheck.stderr,
+        )
+    if intent_added:
+        summary = (
+            "Worktree cleanliness check passed; auto-staged untracked files with "
+            "--intent-to-add:\n" + "\n".join(f"  + {path}" for path in intent_added)
+        )
+    else:
+        summary = "Worktree cleanliness check passed."
+    return CommandResult(command, 0, stdout=summary + "\n", stderr=recheck.stderr)
+
+
+def _intent_add_untracked(
+    config: LoopConfig, runner, untracked_lines: list[str]
+) -> tuple[list[str], list[str]]:
+    """Run ``git add --intent-to-add`` for each untracked non-artifact path.
+
+    Returns ``(intent_added_paths, error_lines)``. ``git add -N`` registers the
+    file with the index without writing its content, so the upcoming
+    ``git add -A`` in the commit phase can pick it up without the model having
+    to stage files itself.
+    """
+    intent_added: list[str] = []
+    intent_errors: list[str] = []
+    timeout_seconds = phase_support.phase_timeout_seconds(config, config.timeout_seconds)
+    for line in untracked_lines:
+        path_text = line[3:].strip()
+        if not path_text:
+            continue
+        add_result = runner(
+            ["git", "add", "--intent-to-add", "--", path_text],
+            config.cwd,
+            None,
+            timeout_seconds,
+        )
+        if add_result.returncode == 0:
+            intent_added.append(path_text)
+        else:
+            detail = phase_support._combined_output(add_result).strip() or "git add failed"
+            intent_errors.append(f"{path_text}: {detail}")
+    return intent_added, intent_errors
 
 
 def _is_artifact_status_line(config: LoopConfig, line: str) -> bool:

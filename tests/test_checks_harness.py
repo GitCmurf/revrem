@@ -5,6 +5,9 @@ the legacy tuple return into a ChecksOutcome.  These tests verify:
   1. The adapter wraps run_checks output into ChecksOutcome correctly.
   2. The engine dispatch at _run_loop's checks call-site uses ctx.phase_checks.
   3. A fully fake harness can replace the adapter without touching cli.py.
+  4. The worktree cleanliness check auto-stages untracked non-artifact files
+     with ``git add --intent-to-add`` so legitimate patches that add new files
+     do not block the post-remediation verification flow.
 """
 
 from __future__ import annotations
@@ -16,6 +19,7 @@ from code_review_loop.adapters.checks import (
     ChecksAdapter,
     format_check_result_for_progress,
     format_returncode_for_progress,
+    run_worktree_cleanliness_check,
 )
 from code_review_loop.clock import Clock
 from code_review_loop.config import LoopConfig
@@ -179,6 +183,187 @@ class TestChecksAdapter:
         assert outcome.results[1].returncode == 0
         assert "SKIPPED adaptive check" in outcome.results[1].stdout
         runner.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Worktree cleanliness check tests
+# ---------------------------------------------------------------------------
+
+
+class TestWorktreeCleanlinessCheck:
+    """Cover the untracked-file handling in ``run_worktree_cleanliness_check``."""
+
+    def _config(self, tmp_path: Path) -> LoopConfig:
+        (tmp_path / "artifacts").mkdir()
+        (tmp_path / ".git").mkdir()
+        return LoopConfig(
+            base="main",
+            max_iterations=1,
+            codex_bin="codex",
+            cwd=tmp_path,
+            artifact_dir=tmp_path / "artifacts",
+            check_commands=("true",),
+        )
+
+    def test_passes_when_no_untracked_files(self, tmp_path: Path) -> None:
+        config = self._config(tmp_path)
+        calls: list[list[str]] = []
+
+        def runner(args, cwd, input_text=None, timeout_seconds=None):
+            calls.append(list(args))
+            return CommandResult(list(args), 0, stdout="")
+
+        result = run_worktree_cleanliness_check(config, runner)
+
+        assert result.returncode == 0
+        assert calls == [["git", "status", "--porcelain", "--untracked-files=all"]]
+
+    def test_auto_stages_legitimate_untracked_files(self, tmp_path: Path) -> None:
+        config = self._config(tmp_path)
+        status_calls: list[str] = []
+        add_calls: list[list[str]] = []
+
+        def runner(args, cwd, input_text=None, timeout_seconds=None):
+            cmd = list(args)
+            if cmd[:3] == ["git", "status", "--porcelain"]:
+                status_calls.append(cmd[2] if len(cmd) > 2 else "")
+                if not status_calls or len(status_calls) == 1:
+                    return CommandResult(
+                        cmd, 0, stdout="?? src/new_module.py\n?? tests/test_new.py\n"
+                    )
+                return CommandResult(cmd, 0, stdout="")
+            if cmd[:3] == ["git", "add", "--intent-to-add"]:
+                add_calls.append(cmd)
+                return CommandResult(cmd, 0)
+            return CommandResult(cmd, 0, stdout="")
+
+        result = run_worktree_cleanliness_check(config, runner)
+
+        assert result.returncode == 0
+        assert "auto-staged" in result.stdout
+        assert "src/new_module.py" in result.stdout
+        assert "tests/test_new.py" in result.stdout
+        assert ["git", "add", "--intent-to-add", "--", "src/new_module.py"] in add_calls
+        assert ["git", "add", "--intent-to-add", "--", "tests/test_new.py"] in add_calls
+        assert len([c for c in status_calls if c == "--porcelain"]) >= 2
+
+    def test_skips_artifact_dir_files(self, tmp_path: Path) -> None:
+        config = self._config(tmp_path)
+        calls: list[list[str]] = []
+        status_invocations = 0
+
+        def runner(args, cwd, input_text=None, timeout_seconds=None):
+            cmd = list(args)
+            calls.append(cmd)
+            if cmd[:3] == ["git", "status", "--porcelain"]:
+                nonlocal status_invocations
+                status_invocations += 1
+                if status_invocations == 1:
+                    return CommandResult(
+                        cmd,
+                        0,
+                        stdout="?? artifacts/scratch.txt\n?? src/real.py\n",
+                    )
+                return CommandResult(
+                    cmd, 0, stdout="?? artifacts/scratch.txt\nA  src/real.py\n"
+                )
+            if cmd[:3] == ["git", "add", "--intent-to-add"]:
+                return CommandResult(cmd, 0)
+            return CommandResult(cmd, 0, stdout="")
+
+        result = run_worktree_cleanliness_check(config, runner)
+
+        assert result.returncode == 0
+        add_paths = [c[4] for c in calls if c[:3] == ["git", "add", "--intent-to-add"]]
+        assert add_paths == ["src/real.py"]
+        assert "src/real.py" in result.stdout
+        assert "artifacts/scratch.txt" not in result.stdout
+
+    def test_fails_when_intent_add_errors(self, tmp_path: Path) -> None:
+        config = self._config(tmp_path)
+
+        def runner(args, cwd, input_text=None, timeout_seconds=None):
+            cmd = list(args)
+            if cmd[:3] == ["git", "status", "--porcelain"]:
+                return CommandResult(cmd, 0, stdout="?? src/broken.py\n")
+            if cmd[:3] == ["git", "add", "--intent-to-add"]:
+                return CommandResult(cmd, 128, stderr="fatal: cannot add\n")
+            return CommandResult(cmd, 0, stdout="")
+
+        result = run_worktree_cleanliness_check(config, runner)
+
+        assert result.returncode == 1
+        assert "could not be intent-added" in result.stdout
+        assert "src/broken.py" in result.stdout
+        assert "fatal: cannot add" in result.stdout
+
+    def test_fails_when_remaining_untracked_after_intent_add(self, tmp_path: Path) -> None:
+        config = self._config(tmp_path)
+        status_invocations = 0
+
+        def runner(args, cwd, input_text=None, timeout_seconds=None):
+            nonlocal status_invocations
+            cmd = list(args)
+            if cmd[:3] == ["git", "status", "--porcelain"]:
+                status_invocations += 1
+                if status_invocations == 1:
+                    return CommandResult(cmd, 0, stdout="?? src/new.py\n")
+                return CommandResult(cmd, 0, stdout="?? src/new.py\n")
+            if cmd[:3] == ["git", "add", "--intent-to-add"]:
+                return CommandResult(cmd, 0)
+            return CommandResult(cmd, 0, stdout="")
+
+        result = run_worktree_cleanliness_check(config, runner)
+
+        assert result.returncode == 1
+        assert "Untracked files remain after remediation" in result.stdout
+        assert "src/new.py" in result.stdout
+
+    def test_skips_when_no_git_marker(self, tmp_path: Path) -> None:
+        (tmp_path / "artifacts").mkdir()
+        config = LoopConfig(
+            base="main",
+            max_iterations=1,
+            codex_bin="codex",
+            cwd=tmp_path,
+            artifact_dir=tmp_path / "artifacts",
+            check_commands=("true",),
+        )
+        calls: list[list[str]] = []
+
+        def runner(args, cwd, input_text=None, timeout_seconds=None):
+            calls.append(list(args))
+            return CommandResult(list(args), 0, stdout="")
+
+        result = run_worktree_cleanliness_check(config, runner)
+
+        assert result.returncode == 0
+        assert "SKIPPED cleanliness check" in result.stdout
+        assert calls == []
+
+    def test_skips_when_dry_run(self, tmp_path: Path) -> None:
+        (tmp_path / "artifacts").mkdir()
+        (tmp_path / ".git").mkdir()
+        config = LoopConfig(
+            base="main",
+            max_iterations=1,
+            codex_bin="codex",
+            cwd=tmp_path,
+            artifact_dir=tmp_path / "artifacts",
+            check_commands=("true",),
+            dry_run=True,
+        )
+        calls: list[list[str]] = []
+
+        def runner(args, cwd, input_text=None, timeout_seconds=None):
+            calls.append(list(args))
+            return CommandResult(list(args), 0, stdout="")
+
+        result = run_worktree_cleanliness_check(config, runner)
+
+        assert result.returncode == 0
+        assert "DRY_RUN" in result.stdout
+        assert calls == []
 
 
 # ---------------------------------------------------------------------------
