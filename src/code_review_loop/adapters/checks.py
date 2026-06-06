@@ -18,6 +18,7 @@ from code_review_loop.core.ports import (
     RunContext,
 )
 from code_review_loop.git_status import is_artifact_status_line
+from code_review_loop.repo_roots import lexical_git_repo_root
 
 if TYPE_CHECKING:
     from code_review_loop.config import LoopConfig
@@ -252,17 +253,24 @@ def _intent_add_untracked(
     file with the index without writing its content, so the upcoming
     ``git add -A`` in the commit phase can pick it up without the model having
     to stage files itself.
+
+    ``git status --porcelain`` always emits paths relative to the repository
+    root, even when RevRem is launched from a subdirectory. The intent-add
+    subprocess must therefore be rooted at the git worktree so the pathspec
+    matches the index's view of the tree; otherwise Git resolves the path
+    against ``config.cwd`` and the pathspec misses the file.
     """
     intent_added: list[str] = []
     intent_errors: list[str] = []
     timeout_seconds = phase_support.phase_timeout_seconds(config, config.timeout_seconds)
+    intent_cwd = lexical_git_repo_root(config.cwd) or config.cwd
     for line in untracked_lines:
         path_text = line[3:].strip()
         if not path_text:
             continue
         add_result = runner(
             ["git", "add", "--intent-to-add", "--", path_text],
-            config.cwd,
+            intent_cwd,
             None,
             timeout_seconds,
         )

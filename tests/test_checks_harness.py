@@ -494,6 +494,182 @@ class TestWorktreeCleanlinessCheck:
         )
         assert diff_after.stdout.strip() == ""
 
+    def test_intent_add_runs_from_git_root_when_cwd_is_subdirectory(self, tmp_path: Path) -> None:
+        """``git status --porcelain`` emits paths relative to the repository
+        root even when the subprocess is launched from a subdirectory. The
+        ``git add --intent-to-add`` subprocess must therefore be rooted at
+        the git worktree so the repo-root-relative pathspec resolves
+        correctly. Otherwise Git would look under ``<cwd>/<path>`` and the
+        pathspec would miss the file.
+        """
+        repo = tmp_path / "repo"
+        subdir = repo / "sub"
+        subdir.mkdir(parents=True)
+        (repo / ".git").mkdir()
+        (subdir / "artifacts").mkdir()
+
+        config = LoopConfig(
+            base="main",
+            max_iterations=1,
+            codex_bin="codex",
+            cwd=subdir,
+            artifact_dir=subdir / "artifacts",
+            check_commands=("true",),
+            commit_after_remediation=True,
+        )
+
+        add_calls: list[tuple[list[str], Path]] = []
+        status_invocations = 0
+
+        def runner(args, cwd, input_text=None, timeout_seconds=None):
+            nonlocal status_invocations
+            cmd = list(args)
+            if cmd[:3] == ["git", "status", "--porcelain"]:
+                status_invocations += 1
+                if status_invocations == 1:
+                    return CommandResult(
+                        cmd,
+                        0,
+                        stdout="?? sub/src/new_module.py\n?? sub/tests/test_new.py\n",
+                    )
+                return CommandResult(cmd, 0, stdout="")
+            if cmd[:3] == ["git", "add", "--intent-to-add"]:
+                add_calls.append((cmd, cwd))
+                return CommandResult(cmd, 0)
+            return CommandResult(cmd, 0, stdout="")
+
+        result = run_worktree_cleanliness_check(config, runner)
+
+        assert result.returncode == 0, result.stdout
+        assert add_calls, "expected git add --intent-to-add to be called"
+        for cmd, cwd in add_calls:
+            assert cmd == ["git", "add", "--intent-to-add", "--", cmd[-1]]
+            assert cwd == repo, f"intent-add cwd must be the git root; got {cwd}"
+        assert [c[0][-1] for c in add_calls] == [
+            "sub/src/new_module.py",
+            "sub/tests/test_new.py",
+        ]
+
+    def test_intent_add_falls_back_to_cwd_when_no_git_root(self, tmp_path: Path) -> None:
+        """When the cwd is itself the git worktree, the intent-add subprocess
+        should use ``config.cwd`` as its root. This is the same fallback that
+        preserves the original behaviour for callers that have not enabled
+        subdirectory invocations.
+        """
+        import subprocess
+
+        (tmp_path / "artifacts").mkdir()
+        subprocess.run(["git", "init", "-b", "main"], cwd=tmp_path, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "t@e.com"], cwd=tmp_path, check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "T"], cwd=tmp_path, check=True, capture_output=True
+        )
+        (tmp_path / "README").write_text("hi\n", encoding="utf-8")
+        subprocess.run(["git", "add", "README"], cwd=tmp_path, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=tmp_path, check=True, capture_output=True)
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "new.py").write_text("print('hi')\n", encoding="utf-8")
+
+        config = LoopConfig(
+            base="main",
+            max_iterations=1,
+            codex_bin="codex",
+            cwd=tmp_path,
+            artifact_dir=tmp_path / "artifacts",
+            check_commands=("true",),
+            commit_after_remediation=True,
+        )
+
+        add_cwds: list[Path] = []
+        status_invocations = 0
+
+        def runner(args, cwd, input_text=None, timeout_seconds=None):
+            nonlocal status_invocations
+            cmd = list(args)
+            if cmd[:3] == ["git", "status", "--porcelain"]:
+                status_invocations += 1
+                if status_invocations == 1:
+                    return CommandResult(cmd, 0, stdout="?? src/new.py\n")
+                return CommandResult(cmd, 0, stdout="")
+            if cmd[:3] == ["git", "add", "--intent-to-add"]:
+                add_cwds.append(cwd)
+                return CommandResult(cmd, 0)
+            return CommandResult(cmd, 0, stdout="")
+
+        result = run_worktree_cleanliness_check(config, runner)
+
+        assert result.returncode == 0, result.stdout
+        assert add_cwds == [tmp_path]
+
+    def test_intent_add_stage_new_file_in_subdirectory_with_real_git(self, tmp_path: Path) -> None:
+        """End-to-end: with a real git repository rooted above ``cwd`` and
+        ``commit_after_remediation`` enabled, the cleanliness check must
+        successfully intent-add a new file that lives inside a
+        subdirectory. The status output reports the path as
+        ``sub/...`` (repo-root-relative); the intent-add subprocess must
+        resolve it against the git root so the pathspec matches.
+        """
+        import subprocess
+
+        repo = tmp_path / "repo"
+        subdir = repo / "sub"
+        subdir.mkdir(parents=True)
+        (subdir / "artifacts").mkdir()
+        subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "t@e.com"], cwd=repo, check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "T"], cwd=repo, check=True, capture_output=True
+        )
+        (repo / "README").write_text("hi\n", encoding="utf-8")
+        subprocess.run(["git", "add", "README"], cwd=repo, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
+        (subdir / "src").mkdir()
+        (subdir / "src" / "new.py").write_text("print('hello')\n", encoding="utf-8")
+
+        config = LoopConfig(
+            base="main",
+            max_iterations=1,
+            codex_bin="codex",
+            cwd=subdir,
+            artifact_dir=subdir / "artifacts",
+            check_commands=("true",),
+            commit_after_remediation=True,
+        )
+
+        def _real_runner(args, cwd, input_text=None, timeout_seconds=None):
+            completed = subprocess.run(
+                list(args),
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+            )
+            return CommandResult(list(args), completed.returncode, stdout=completed.stdout, stderr=completed.stderr)
+
+        result = run_worktree_cleanliness_check(config, _real_runner)
+
+        assert result.returncode == 0, result.stdout
+        assert "auto-staged" in result.stdout
+        assert "sub/src/new.py" in result.stdout
+
+        status_after = subprocess.run(
+            ["git", "status", "--short", "--untracked-files=all"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        status_lines = status_after.stdout.splitlines()
+        # After intent-add the path should appear as `` A sub/src/new.py``
+        # rather than ``?? sub/src/new.py``. The leading space is the empty
+        # index status; ``A`` is the intent-to-add work-tree status.
+        assert any(line.startswith(" A sub/src/new.py") for line in status_lines)
+        assert not any(line.startswith("?? sub/src/new.py") for line in status_lines)
+
 # ---------------------------------------------------------------------------
 # Engine dispatch: ctx.phase_checks wired vs. absent
 # ---------------------------------------------------------------------------
