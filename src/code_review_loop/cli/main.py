@@ -17,6 +17,7 @@ from code_review_loop.cli.config_support import (
     PendingReviewCandidate,
     current_git_state_for_latest,
     find_pending_review_candidate,
+    lexical_git_repo_root,
 )
 from code_review_loop.cli.exit import map_application_call
 from code_review_loop.git_status import non_artifact_status_lines
@@ -103,7 +104,7 @@ def _apply_pending_review_choice(config, args):
         return config
     candidate = _pending_review_candidate(config)
     if candidate is None:
-        if interactive:
+        if interactive and mode == "prompt":
             incompatible_candidate = _pending_review_candidate_ignoring_git(config)
             if incompatible_candidate is not None:
                 return _prompt_for_pending_review(
@@ -208,7 +209,7 @@ def _auto_commit_clean_start_error(config) -> str | None:
     """Return an operator-facing error when auto-commit would start dirty."""
     if config.dry_run or not config.commit_after_remediation:
         return None
-    if not (config.cwd / ".git").exists():
+    if lexical_git_repo_root(config.cwd) is None:
         return None
     try:
         result = subprocess.run(

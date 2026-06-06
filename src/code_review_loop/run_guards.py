@@ -7,6 +7,7 @@ from code_review_loop.config import LoopConfig
 from code_review_loop.core.engine import EngineState
 from code_review_loop.core.ports import RunContext
 from code_review_loop.git_status import non_artifact_status_lines
+from code_review_loop.repo_roots import lexical_git_repo_root
 
 
 def assert_worktree_stable_before_remediation(
@@ -19,7 +20,7 @@ def assert_worktree_stable_before_remediation(
     """Stop auto-commit remediation if review/triage raced checkout changes."""
     if not config.commit_after_remediation or config.dry_run:
         return
-    if not (config.cwd / ".git").exists():
+    if lexical_git_repo_root(config.cwd) is None:
         return
     if engine_state.acc.pending_check_failures or engine_state.acc.commit_retry:
         return

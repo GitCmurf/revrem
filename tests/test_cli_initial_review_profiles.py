@@ -284,6 +284,38 @@ def test_main_auto_commit_refuses_dirty_worktree_before_provider_calls(
     assert "local-note.txt" in captured.err
 
 
+def test_main_auto_commit_refuses_dirty_worktree_from_subdirectory(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    (tmp_path / ".git").mkdir()
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+    monkeypatch.chdir(subdir)
+
+    def fail_run_loop(config):
+        raise AssertionError("run loop should not start from a dirty auto-commit worktree")
+
+    def fake_git_status(*args, **kwargs):
+        return subprocess.CompletedProcess(
+            args[0],
+            0,
+            stdout=" M src/code_review_loop/cli/main.py\n?? local-note.txt\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(application_mod, "run_review_loop", fail_run_loop)
+    monkeypatch.setattr(cli_main.subprocess, "run", fake_git_status)
+
+    exit_code = cli_main.main(["--commit-after-remediation", "--quiet-progress"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "auto-commit requires a clean worktree" in captured.err
+    assert "local-note.txt" in captured.err
+
+
 def test_main_auto_commit_preflight_ignores_artifact_status_lines(
     tmp_path,
     monkeypatch,
