@@ -72,14 +72,12 @@ from code_review_loop.core.review_interpretation import (
     detect_review_status,
 )
 from code_review_loop.core.state import RunState
+from code_review_loop.iteration_labels import artifact_label, event_iteration_label
 from code_review_loop.routing_artifacts import record_routing_outcome, resolve_and_record_routing
 
-# The densest legal iteration today is:
-# review -> remediation -> checks -> commit -> retry-via-hook (5 executor
-# steps), or review -> triage -> remediation -> checks -> commit -> continue
-# (6 executor steps). Keep two steps of per-iteration headroom for future
-# non-terminal policy actions; the overhead covers final review and the
-# terminal tail after the last configured iteration.
+# Step budget: review -> remediation -> checks -> commit -> retry-via-hook
+# (5 executor steps) is the densest legal iteration today; keep two extra
+# per-iteration steps for future policy actions plus the terminal tail.
 _ENGINE_STEPS_PER_ITERATION = 10
 _ENGINE_STEP_BUDGET_OVERHEAD = 4
 
@@ -285,8 +283,8 @@ class _RunnerEngineExecutor:
     def _run_remediation(self, engine_state: EngineState) -> EngineState:
         iteration = engine_state.iteration
         retry_count = engine_state.acc.inner_check_retry_count
-        artifact_label = f"{iteration}-retry-{retry_count}" if retry_count else str(iteration)
-        display_label = artifact_label
+        artifact_stem = artifact_label(iteration, retry_count)
+        display_label = event_iteration_label(iteration, retry_count)
         remediation_input = engine_state.acc.remediation_input
         if not self.config.triage_enabled:
             remediation_input = engine_state.acc.last_review_output
@@ -299,7 +297,7 @@ class _RunnerEngineExecutor:
                     iteration=iteration,
                     remediation_input=remediation_input,
                     resolved_route=engine_state.acc.resolved_route,
-                    artifact_label=f"remediation-{artifact_label}",
+                    artifact_label=f"remediation-{artifact_stem}",
                     display_label=display_label,
                 ),
                 self.ctx,
@@ -329,12 +327,13 @@ class _RunnerEngineExecutor:
     def _run_checks(self, engine_state: EngineState) -> EngineState:
         iteration = engine_state.iteration
         retry_count = engine_state.acc.inner_check_retry_count
-        artifact_label = f"{iteration}-retry-{retry_count}" if retry_count else str(iteration)
+        artifact_stem = artifact_label(iteration, retry_count)
+        display_label = event_iteration_label(iteration, retry_count)
         checks_outcome = self.ctx.phase_checks.execute(
             ChecksRequest(
                 iteration=iteration,
-                artifact_label=artifact_label,
-                display_label=artifact_label,
+                artifact_label=artifact_stem,
+                display_label=display_label,
             ),
             self.ctx,
         )
@@ -348,7 +347,7 @@ class _RunnerEngineExecutor:
                 {
                     "command": shlex.join(result.args),
                     "status": "passed" if result.returncode == 0 else "failed",
-                    "artifact": f"check-{artifact_label}-{index}.txt",
+                    "artifact": f"check-{artifact_stem}-{index}.txt",
                 }
                 for index, result in enumerate(check_results, start=1)
             ]

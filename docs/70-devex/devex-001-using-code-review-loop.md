@@ -772,6 +772,17 @@ the check failure pending and emits a warning so the operator can increase
 `--timeout-seconds`, narrow the checks, or rerun locally after investigating
 the slow command.
 
+The on-disk artifact stems keep the operator-friendly `-retry-N` suffix,
+but the `iteration` field on `phase_start` and `phase_result` events uses
+a schema-compatible dotted label instead. A first retry of iteration 1
+appears on disk as `remediation-1-retry-1.txt` while the corresponding
+`phase_start` / `phase_result` events carry `"iteration": "1.1"`; checks
+that run under that retry extend the sub-index to `"1.1.1"`, `"1.1.2"`,
+etc. Both forms fit the `events-v1` schema's `iteration` pattern, so
+`events.jsonl` produced by a run that actually triggers an inner-check
+retry validates against `docs/52-api/schemas/events-v1.schema.json` end
+to end.
+
 For routing, use `triage.contract = "v2"` plus
 `triage.routing.enabled = true`. RevRem validates `triage-v2`, resolves the
 effective route through profile policy, writes `routing-N.json`,

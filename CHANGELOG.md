@@ -238,6 +238,17 @@ This project follows Semantic Versioning once public releases begin.
 - Provider subprocess timeouts enforced by RevRem are classified as
   non-transient even when the subprocess emitted partial stdout before
   RevRem's `Command timed out after ...` marker.
+- Inner-check retry events now emit schema-compatible `iteration` labels
+  (e.g. `1.1`, `1.1.1`) on `phase_start` and `phase_result` events instead
+  of the `1-retry-1` / `1-retry-1.1` strings the events-v1 schema used to
+  reject, so runs that actually exercise `--inner-check-retries` once
+  again produce `events.jsonl` artifacts that validate against
+  `docs/52-api/schemas/events-v1.schema.json`. The on-disk artifact stem
+  keeps the operator-visible `remediation-1-retry-1.txt` /
+  `check-1-retry-1-2.txt` shape documented in the devex guide; the
+  events-v1 schema was widened from one to up to two dotted sub-indices
+  (`[0-9]+(\.[0-9]+){0,2}`) so check sub-iterations under a retry still
+  fit the contract.
 
 ### Changed
 
