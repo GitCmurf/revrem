@@ -79,6 +79,21 @@ def test_parse_triage_payload_v2_accepts_minimal_reasoning_effort():
     assert payload["route_proposal"]["reasoning_effort"] == "minimal"
 
 
+def test_triage_v2_packaged_schema_accepts_suppressed_findings_field():
+    payload = triage.parse_triage_payload(
+        _fixture("valid_v2"),
+        run_id="run-123",
+        source_review_artifact="review-1.txt",
+        contract="v2",
+    )
+    payload["suppressed_findings"] = []
+
+    validate(
+        payload,
+        json.loads(files("code_review_loop").joinpath("schemas/triage-v2.schema.json").read_text(encoding="utf-8")),
+    )
+
+
 def test_parse_triage_payload_v2_normalizes_review_priority_severities():
     fixture = json.loads(_fixture("valid_v2"))
     fixture["confirmed_findings"][0]["severity"] = "P2"

@@ -146,6 +146,58 @@ def test_event_schema_validates_event_envelope():
     assert list(validator.iter_errors({"extra": "missing version"}))
 
 
+def test_triage_v2_schema_accepts_suppressed_findings_metadata():
+    schema = _load_schema("triage-v2.schema.json")
+    payload = {
+        "schema_version": "2.0",
+        "run_id": "run-1",
+        "source_review_artifact": "review-1.txt",
+        "prompt_version": "triage-v2",
+        "confirmed_findings": [],
+        "rejected_findings": [],
+        "needs_more_info": [],
+        "implementation_order": [],
+        "verification_commands": [],
+        "parsing_warnings": [],
+        "classification": {
+            "domain_tags": [],
+            "risk_level": "low",
+            "refactor_depth": "atomic",
+            "affected_modules": [],
+            "estimated_blast_radius": {
+                "module_count": 0,
+                "finding_count": 0,
+            },
+            "safety_signals": [],
+            "failed_check_signals": [],
+        },
+        "prompt_requirements": {
+            "required_fragments": [],
+            "definition_of_done": [],
+            "triage_prompt_draft": "",
+        },
+        "suppressed_findings": [
+            {
+                "fingerprint": "f1:abc123",
+                "summary": "Suppressed known false positive",
+                "severity": "low",
+                "affected_paths": ["src/example.py"],
+                "rationale": "Covered by a suppression entry.",
+                "suppressed": True,
+                "suppression": {
+                    "scope": "path",
+                    "source_path": "src/example.py",
+                    "summary": "Known acceptable finding",
+                    "rationale": "Documented exception.",
+                    "expires_at": None,
+                },
+            }
+        ],
+    }
+
+    validate(payload, schema)
+
+
 def test_routing_schema_accepts_unbounded_timeouts():
     schema = _load_schema("routing-v1.schema.json")
     payload = {

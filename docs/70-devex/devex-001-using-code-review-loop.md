@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.35'
+version: '1.37'
 last_updated: '2026-06-06'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.35
+> **Version:** 1.37
 > **Last Updated:** 2026-06-06
 > **Type:** DEVEX
 > **Area:** devex
@@ -236,12 +236,20 @@ git status --porcelain --untracked-files=all
 ```
 
 When `--commit-after-remediation` is enabled, RevRem first refuses to start
-from a dirty worktree, including pre-existing untracked files. Given that
-clean-start invariant, non-artifact `?? ` paths that appear after remediation
-are treated as intentional remediation output: the cleanliness check marks them
-with `git add --intent-to-add` so the upcoming `git add -A` in the commit phase
-picks them up. The auto-staged paths are recorded in the check artifact
-(`check-N-1.txt`) for visibility.
+from a dirty worktree, including pre-existing untracked files, before making
+any provider call. Given that clean-start invariant, non-artifact `?? ` paths
+that appear after remediation are treated as intentional remediation output:
+the cleanliness check marks them with `git add --intent-to-add` so the upcoming
+`git add -A` in the commit phase picks them up. The auto-staged paths are
+recorded in the check artifact (`check-N-1.txt`) for visibility.
+
+RevRem also re-checks `HEAD` and non-artifact worktree status before the first
+remediation attempt for each reviewed finding. If another process edits the
+worktree or advances `HEAD` while review/triage is running, RevRem stops before
+remediation, leaving the review artifact available for `--initial-review-file`
+or pending-review reuse. This guard intentionally does not run for inner
+check retries or commit-hook retries, where the worktree is already expected
+to contain remediation changes.
 
 When `--commit-after-remediation` is disabled, the cleanliness check is
 non-mutating: it does not run `git add --intent-to-add` and does not re-run
@@ -1205,6 +1213,8 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.37 | 2026-06-06 | Codex | Documented in-run auto-commit guard before first remediation |
+| 1.36 | 2026-06-06 | Codex | Documented enforced auto-commit clean-start preflight before provider calls |
 | 1.35 | 2026-06-06 | Codex | Documented startup pending-review detection and --pending-review modes |
 | 1.34 | 2026-06-06 | Codex | Documented retry-attempt exclusion from latest review selection and triage fragment trust policy |
 | 1.33 | 2026-06-06 | Codex | Documented worktree cleanliness clean-start and auto-staging policy |

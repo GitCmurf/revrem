@@ -56,6 +56,35 @@ There is no silent third option.
 
 ## Entries
 
+### 2026-06-06 — Auto-commit clean-start/in-run guards and triage suppression schema
+
+- **Contract:** machine + human
+- **What changed:** auto-commit runs now inspect `git status --porcelain
+  --untracked-files=all` before any provider call and exit with a preflight
+  error when non-artifact worktree changes already exist. They also re-check
+  `HEAD` and non-artifact worktree status before the first remediation attempt
+  for each review finding, stopping before remediation if the checkout changed
+  during review/triage. Triage v2 schemas now allow the optional
+  `suppressed_findings` array that RevRem writes after applying suppressions.
+- **Why:** Dogfood showed that the post-remediation cleanliness check could
+  pass while later `git add -A` swept unrelated pre-existing edits into a
+  remediation commit. Operator discussion then highlighted the adjacent
+  expensive-run case: a human or another agent might change the checkout while
+  RevRem is reviewing, making the subsequent remediation stale. The same run
+  also showed valid v2 triage artifacts with suppression metadata failing
+  schema validation because the public and packaged schemas lagged the emitted
+  artifact shape.
+- **Before / After:** before, a dirty worktree could reach review/remediation
+  and be staged by the commit phase; after, auto-commit mode fails before
+  provider spend unless the initial non-artifact worktree is clean. Before, a
+  concurrent edit or commit during review could still enter remediation; after,
+  RevRem stops after preserving the review output and before remediation. Before
+  `triage-v2.schema.json` rejected `suppressed_findings`; after, it validates
+  artifacts that include an empty or populated suppression array.
+- **schema_version impact:** none. The triage v2 schema was widened
+  additively; `summary.json` and `events.jsonl` versions are unchanged.
+- **CHANGELOG:** Unreleased / Fixed.
+
 ### 2026-06-06 — Startup pending-review choice
 
 - **Contract:** human

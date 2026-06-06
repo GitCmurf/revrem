@@ -7,7 +7,7 @@ from code_review_loop import budgets, events, profiles
 from code_review_loop.adapters.phase_support import CommitFailed
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.engine import ConfigSnapshot
-from code_review_loop.core.ports import CommitOutcome, CommitRequest, RunContext
+from code_review_loop.core.ports import CommandResult, CommitOutcome, CommitRequest, RunContext
 from code_review_loop.core.state import RunState
 from code_review_loop.runner_shell import run_iterations
 from tests.support.fakes import FIXED_ISO, FIXED_RUN_ID, FakeClock, FakeRunIdentity
@@ -67,6 +67,8 @@ def _context(
     checks: SequencedChecksHarness | None = None,
     triage: StaticTriageHarness | None = None,
     commit: StaticCommitHarness | None = None,
+    runner: RecordingProcessRunner | None = None,
+    git_head_at_start: str | None = None,
 ) -> tuple[RunContext, events.JsonlSink]:
     config.artifact_dir.mkdir(parents=True, exist_ok=True)
     clock = FakeClock()
@@ -74,7 +76,7 @@ def _context(
     ctx = RunContext(
         clock=clock,
         identity=FakeRunIdentity(),
-        runner=RecordingProcessRunner(),
+        runner=runner or RecordingProcessRunner(),
         event_sink=sink,
         budget_state=budgets.BudgetState(started_at_monotonic=0),
         progress_reporter=None,
@@ -83,6 +85,7 @@ def _context(
         phase_remediation=remediation or RecordingRemediationHarness(),
         phase_review=review,
         phase_triage=triage or StaticTriageHarness(is_clear=False),
+        git_head_at_start=git_head_at_start,
     )
     return ctx, sink
 
@@ -195,6 +198,103 @@ def test_runner_shell_dense_commit_hook_retry_path_fits_step_budget(tmp_path: Pa
     assert "Commit hook failure" in remediation.calls[1].remediation_input
     assert "Running mypy" in remediation.calls[1].remediation_input
     assert [iteration["commit_status"] for iteration in state.iterations] == ["hook_failed", "committed"]
+
+
+def test_runner_shell_stops_before_remediation_when_worktree_changes_during_review(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / ".git").mkdir()
+    config = replace(
+        _config(tmp_path, max_iterations=1, triage_enabled=False),
+        commit_after_remediation=True,
+    )
+    review = SequencedReviewHarness(["findings"])
+    remediation = RecordingRemediationHarness()
+    process_runner = RecordingProcessRunner(
+        {
+            "rev-parse": CommandResult(["git", "rev-parse", "HEAD"], 0, stdout="start-head\n"),
+            "status": CommandResult(
+                ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+                0,
+                stdout=" M src/concurrent.py\n",
+            ),
+        }
+    )
+    ctx, sink = _context(
+        config,
+        review=review,
+        remediation=remediation,
+        runner=process_runner,
+        git_head_at_start="start-head",
+    )
+    clock = ctx.clock
+    try:
+        state = _state(config)
+
+        result = run_iterations(
+            config=config,
+            state=state,
+            clock=clock,
+            ctx=ctx,
+            snap=_snapshot(config),
+            initial_review_output="",
+            run_id=FIXED_RUN_ID,
+        )
+    finally:
+        sink.close()
+
+    assert result.outcome.reason == "remediation_failed"
+    assert "worktree changed during run before remediation" in str(result.cause)
+    assert "src/concurrent.py" in str(result.cause)
+    assert remediation.calls == []
+
+
+def test_runner_shell_stops_before_remediation_when_head_moves_during_review(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / ".git").mkdir()
+    config = replace(
+        _config(tmp_path, max_iterations=1, triage_enabled=False),
+        commit_after_remediation=True,
+    )
+    review = SequencedReviewHarness(["findings"])
+    remediation = RecordingRemediationHarness()
+    process_runner = RecordingProcessRunner(
+        {
+            "rev-parse": CommandResult(["git", "rev-parse", "HEAD"], 0, stdout="new-head\n"),
+            "status": CommandResult(
+                ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+                0,
+                stdout="",
+            ),
+        }
+    )
+    ctx, sink = _context(
+        config,
+        review=review,
+        remediation=remediation,
+        runner=process_runner,
+        git_head_at_start="start-head",
+    )
+    clock = ctx.clock
+    try:
+        state = _state(config)
+
+        result = run_iterations(
+            config=config,
+            state=state,
+            clock=clock,
+            ctx=ctx,
+            snap=_snapshot(config),
+            initial_review_output="",
+            run_id=FIXED_RUN_ID,
+        )
+    finally:
+        sink.close()
+
+    assert result.outcome.reason == "remediation_failed"
+    assert "HEAD moved from start-head to new-head" in str(result.cause)
+    assert remediation.calls == []
 
 
 def test_runner_shell_records_v2_routing_artifacts_and_events(tmp_path: Path) -> None:

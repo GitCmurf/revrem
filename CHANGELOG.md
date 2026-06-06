@@ -215,6 +215,19 @@ This project follows Semantic Versioning once public releases begin.
 
 ### Fixed
 
+- Auto-commit runs now enforce the documented clean-start invariant before any
+  provider call. If `--commit-after-remediation` is enabled and `git status
+  --porcelain --untracked-files=all` reports non-artifact changes at startup,
+  RevRem exits with the dirty paths instead of later allowing `git add -A` to
+  sweep pre-existing local edits into a remediation commit.
+- Auto-commit runs now re-check `HEAD` and non-artifact worktree status before
+  the first remediation attempt for each review finding. If another process
+  edits or commits during the review/triage window, RevRem preserves the review
+  artifact and stops before spending remediation work on a stale checkout.
+- The public and packaged triage v2 schemas now accept the optional
+  `suppressed_findings` array that RevRem already writes to triage artifacts
+  after applying suppressions, so schema-validating consumers no longer reject
+  valid suppressed v2 triage artifacts.
 - The post-remediation worktree cleanliness check no longer blocks legitimate
   patches that add new files. Untracked non-artifact files are now marked with
   `git add --intent-to-add` so the upcoming `git add -A` in the commit phase

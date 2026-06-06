@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from collections.abc import Sequence
 from dataclasses import replace
@@ -18,6 +19,7 @@ from code_review_loop.cli.config_support import (
     find_pending_review_candidate,
 )
 from code_review_loop.cli.exit import map_application_call
+from code_review_loop.git_status import non_artifact_status_lines
 from code_review_loop.prompts_composer import trim_for_prompt
 
 
@@ -53,6 +55,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if pending_result is None:
         return 130  # outcome-exempt: operator cancelled before RunOutcome exists
     config = pending_result
+
+    auto_commit_error = _auto_commit_clean_start_error(config)
+    if auto_commit_error is not None:
+        print(f"ERROR: {auto_commit_error}", file=sys.stderr)
+        return 1  # outcome-exempt: safety preflight failed before RunOutcome exists
 
     app_exit = map_application_call(lambda: application.run_review_loop(config))
     summary = app_exit.summary
@@ -184,6 +191,41 @@ def _print_pending_review_summary(
     if excerpt:
         print(f"Excerpt: {excerpt}", file=sys.stderr)
 
+
+def _auto_commit_clean_start_error(config) -> str | None:
+    """Return an operator-facing error when auto-commit would start dirty."""
+    if config.dry_run or not config.commit_after_remediation:
+        return None
+    if not (config.cwd / ".git").exists():
+        return None
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            cwd=config.cwd,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError as exc:
+        return f"could not inspect git worktree before auto-commit run: {exc}"
+    combined = f"{result.stdout}\n{result.stderr}".lower()
+    if result.returncode != 0:
+        if "not a git repository" in combined:
+            return None
+        return (
+            "could not inspect git worktree before auto-commit run: "
+            + (result.stderr.strip() or f"git status exited {result.returncode}")
+        )
+    dirty = non_artifact_status_lines(config, result.stdout)
+    if not dirty:
+        return None
+    shown = "\n".join(f"  {line}" for line in dirty[:20])
+    more = "" if len(dirty) <= 20 else f"\n  ... and {len(dirty) - 20} more"
+    return (
+        "auto-commit requires a clean worktree before provider calls. "
+        "Commit, stash, ignore, or remove existing non-artifact changes first:\n"
+        f"{shown}{more}"
+    )
 
 def _redacted_argv(argv: Sequence[str]) -> tuple[str, ...]:
     redacted: list[str] = []

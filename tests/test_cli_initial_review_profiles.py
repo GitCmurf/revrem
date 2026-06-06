@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import subprocess
 from importlib import import_module
 
 from code_review_loop import application as application_mod
@@ -248,6 +249,71 @@ def test_main_pending_review_prompt_can_cancel_before_provider_calls(
     monkeypatch.setattr("sys.stdout", _TTYStringIO())
 
     assert cli_main.main(["--quiet-progress"]) == 130
+
+
+def test_main_auto_commit_refuses_dirty_worktree_before_provider_calls(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+
+    def fail_run_loop(config):
+        raise AssertionError("run loop should not start from a dirty auto-commit worktree")
+
+    def fake_git_status(*args, **kwargs):
+        return subprocess.CompletedProcess(
+            args[0],
+            0,
+            stdout=" M src/code_review_loop/cli/main.py\n?? local-note.txt\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(application_mod, "run_review_loop", fail_run_loop)
+    monkeypatch.setattr(cli_main.subprocess, "run", fake_git_status)
+
+    exit_code = cli_main.main(["--commit-after-remediation", "--quiet-progress"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "auto-commit requires a clean worktree" in captured.err
+    assert "src/code_review_loop/cli/main.py" in captured.err
+    assert "local-note.txt" in captured.err
+
+
+def test_main_auto_commit_preflight_ignores_artifact_status_lines(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    captured_configs = []
+
+    def fake_run_loop(config):
+        captured_configs.append(config)
+        return _clear_result({
+            "artifact_dir": str(config.artifact_dir),
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+            "iterations": [],
+        })
+
+    def fake_git_status(*args, **kwargs):
+        return subprocess.CompletedProcess(
+            args[0],
+            0,
+            stdout="?? .revrem/runs/20260606T000000Z/review-1.txt\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
+    monkeypatch.setattr(cli_main.subprocess, "run", fake_git_status)
+
+    exit_code = cli_main.main(["--commit-after-remediation", "--quiet-progress"])
+
+    assert exit_code == 0
+    assert captured_configs
 
 
 

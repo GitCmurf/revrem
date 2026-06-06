@@ -296,6 +296,66 @@
       "minLength": 1,
       "type": "string"
     },
+    "suppressed_findings": {
+      "items": {
+        "additionalProperties": true,
+        "properties": {
+          "affected_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "rationale": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "info",
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "suppressed": {
+            "const": true
+          },
+          "suppression": {
+            "additionalProperties": true,
+            "properties": {
+              "expires_at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "rationale": {
+                "type": "string"
+              },
+              "scope": {
+                "type": "string"
+              },
+              "source_path": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
     "verification_commands": {
       "items": {
         "type": "string"

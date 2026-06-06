@@ -239,6 +239,7 @@ class RunContext:
     budget_state: BudgetState | None = None
     progress_reporter: ProgressReporter | None = None
     git_context_cache: GitContextCache | None = None
+    git_head_at_start: str | None = None
 
 
 @dataclass(frozen=True)

@@ -158,4 +158,3 @@ def cached_diff_base_head(
     if cache is not None and result.returncode == 0:
         bucket[key] = result.stdout
     return result
-

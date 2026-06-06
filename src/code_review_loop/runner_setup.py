@@ -33,6 +33,7 @@ from code_review_loop.core.ports import (
 from code_review_loop.core.review_interpretation import actionable_review_output
 from code_review_loop.core.state import RunState
 from code_review_loop.git_context_cache import GitContextCache
+from code_review_loop.git_status import non_artifact_status_lines
 from code_review_loop.identity import RunIdentity
 from code_review_loop.reporting import summary_budget_payload
 from code_review_loop.resume import resume_config_payload
@@ -58,7 +59,7 @@ def check_commit_cleanliness(config: LoopConfig, runner: Runner) -> None:
     )
     if status_result.returncode != 0:
         raise RuntimeError("git worktree status check failed before auto-commit could start")
-    dirty_lines = [line for line in status_result.stdout.splitlines() if line.strip()]
+    dirty_lines = non_artifact_status_lines(config, status_result.stdout)
     if dirty_lines:
         dirty_worktree = "\n".join(dirty_lines)
         raise RuntimeError(
@@ -93,6 +94,7 @@ def create_run_context(
     budget_state: budgets.BudgetState | None,
     phase_harnesses: PhaseHarnessBundle | None,
     terminal_ui: bool,
+    git_head_at_start: str | None,
 ) -> RunContext:
     active_budget_state = budget_state if budget_state is not None else budgets.started_now()
     harnesses = phase_harnesses or PhaseHarnessBundle(
@@ -115,6 +117,7 @@ def create_run_context(
         phase_review=harnesses.review,
         phase_triage=harnesses.triage,
         git_context_cache=GitContextCache(),
+        git_head_at_start=git_head_at_start,
     )
 
 
@@ -132,9 +135,12 @@ def prepare_run(
     config.artifact_dir.mkdir(parents=True, exist_ok=True)
     ensure_default_artifact_ignore(config)
     run_id = identity.new_run_id()
+    git_state = git_state_for_resume(config)
+    git_head_value = git_state.get("head")
+    git_head_at_start = git_head_value if isinstance(git_head_value, str) else None
     state = RunState.create(
         base=config.base,
-        git_state=git_state_for_resume(config),
+        git_state=git_state,
         resume_config=resume_config_payload(config),
         run_id=run_id,
         started_at=utc_iso(clock.now()),
@@ -156,6 +162,7 @@ def prepare_run(
         budget_state=budget_state,
         phase_harnesses=phase_harnesses,
         terminal_ui=terminal_ui,
+        git_head_at_start=git_head_at_start,
     )
     return RunSetup(state, state.to_dict(), event_sink, ctx, run_id)
 

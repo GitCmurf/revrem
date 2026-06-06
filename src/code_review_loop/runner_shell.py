@@ -1,9 +1,4 @@
-"""Private imperative shell that executes core engine actions.
-
-The pure state machine lives in :mod:`code_review_loop.core.engine`. This
-module owns the side-effectful translation from engine actions to phase ports
-without importing the public runner facade.
-"""
+"""Private imperative shell that executes core engine actions."""
 
 from __future__ import annotations
 
@@ -18,9 +13,7 @@ from code_review_loop.adapters.checks import (
 from code_review_loop.adapters.checks import (
     format_check_failures as _format_check_failures,
 )
-from code_review_loop.adapters.commit import (
-    format_commit_hook_failure_for_remediation,
-)
+from code_review_loop.adapters.commit import format_commit_hook_failure_for_remediation
 from code_review_loop.adapters.phase_support import (
     CommitFailed,
     _combined_output,
@@ -49,9 +42,7 @@ from code_review_loop.core.engine import (
     RunTriage,
     TriageDone,
 )
-from code_review_loop.core.engine import (
-    run as run_engine,
-)
+from code_review_loop.core.engine import run as run_engine
 from code_review_loop.core.outcome import (
     OutcomeClear,
     OutcomeFailed,
@@ -74,10 +65,11 @@ from code_review_loop.core.review_interpretation import (
 from code_review_loop.core.state import RunState
 from code_review_loop.iteration_labels import artifact_label, event_iteration_label
 from code_review_loop.routing_artifacts import record_routing_outcome, resolve_and_record_routing
+from code_review_loop.run_guards import (
+    assert_worktree_stable_before_remediation,
+    current_head,
+)
 
-# Step budget: review -> remediation -> checks -> commit -> retry-via-hook
-# (5 executor steps) is the densest legal iteration today; keep two extra
-# per-iteration steps for future policy actions plus the terminal tail.
 _ENGINE_STEPS_PER_ITERATION = 10
 _ENGINE_STEP_BUDGET_OVERHEAD = 4
 
@@ -102,6 +94,7 @@ class _RunnerEngineExecutor:
         self.cause: BaseException | None = None
         self.routing_context_cache: triage.RoutingContextCache = {}
         self.latest_state: EngineState | None = None
+        self.expected_head = ctx.git_head_at_start
 
     def execute(self, action: Action, engine_state: EngineState) -> EngineState:
         match action:
@@ -291,6 +284,12 @@ class _RunnerEngineExecutor:
             if engine_state.acc.pending_check_failures:
                 remediation_input = engine_state.acc.pending_check_failures + "\n\n" + remediation_input
         try:
+            assert_worktree_stable_before_remediation(
+                self.config,
+                self.ctx,
+                engine_state,
+                expected_head=self.expected_head,
+            )
             rem_start_time = self.clock.monotonic()
             rem_outcome = self.ctx.phase_remediation.execute(
                 RemediationRequest(
@@ -409,6 +408,8 @@ class _RunnerEngineExecutor:
                 self.ctx,
             )
             self.iterations[-1]["commit_status"] = commit_outcome.status
+            if commit_outcome.status == "committed" and (self.config.cwd / ".git").exists():
+                self.expected_head = current_head(self.config, self.ctx) or self.expected_head
         except CommitFailed as exc:
             self.cause = exc
             self.iterations[-1]["commit_status"] = exc.kind
