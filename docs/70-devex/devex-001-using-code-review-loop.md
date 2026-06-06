@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.32'
+version: '1.33'
 last_updated: '2026-06-06'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.31
-> **Last Updated:** 2026-06-05
+> **Version:** 1.33
+> **Last Updated:** 2026-06-06
 > **Type:** DEVEX
 > **Area:** devex
 > **Description:** Operator guide for the code-review-loop utility
@@ -235,18 +235,23 @@ cleanliness check:
 git status --porcelain --untracked-files=all
 ```
 
-The check excludes untracked files inside the configured `--artifact-dir`
-(those are loop scratch, not part of the patch). Any remaining untracked
-non-artifact files are auto-staged with `git add --intent-to-add` so the
-upcoming `git add -A` in the commit phase can pick them up. This keeps the
-cleanliness check from blocking legitimate patches that add new files
-(tests, modules, documentation) without requiring the model to stage files
-during remediation. The auto-staged paths are recorded in the check artifact
-(`check-N-1.txt`) for visibility. If `git add --intent-to-add` itself fails
-for any path, the check fails with the underlying git error so the operator
-can clean up by hand. Configured checks then run after that synthetic check,
-so their progress labels start at `.2` and their artifacts are named
-accordingly (`check-1-2.txt`, `check-1-3.txt`, and so on).
+When `--commit-after-remediation` is enabled, RevRem first refuses to start
+from a dirty worktree, including pre-existing untracked files. Given that
+clean-start invariant, non-artifact `?? ` paths that appear after remediation
+are treated as intentional remediation output: the cleanliness check marks them
+with `git add --intent-to-add` so the upcoming `git add -A` in the commit phase
+picks them up. The auto-staged paths are recorded in the check artifact
+(`check-N-1.txt`) for visibility.
+
+Known generated output and temporary directories should be covered by
+`.gitignore` or placed under `--artifact-dir`; files inside `--artifact-dir`
+remain exempt from the cleanliness check. Secrets and policy violations should
+be caught by configured verification commands or commit hooks. If
+`git add --intent-to-add` itself fails for any path, the check fails with the
+underlying git error so the operator can clean up by hand. Configured checks
+then run after that synthetic check, so their progress labels start at `.2` and
+their artifacts are named accordingly (`check-1-2.txt`, `check-1-3.txt`, and so
+on).
 
 ### Continuation after findings
 
@@ -1159,6 +1164,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.33 | 2026-06-06 | Codex | Documented worktree cleanliness clean-start and auto-staging policy |
 | 1.32 | 2026-06-06 | Codex | Documented worktree cleanliness auto-staging of legitimate new files |
 | 1.31 | 2026-06-05 | Codex | Documented timeout-only check retry suppression and latest-review ordering |
 | 1.30 | 2026-06-05 | Codex | Documented bounded inner check retries and worktree cleanliness checks |

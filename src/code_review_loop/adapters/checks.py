@@ -118,16 +118,19 @@ def all_failed_checks_are_revrem_timeouts(results: Sequence[CommandResult]) -> b
     return all("Command timed out after " in phase_support._combined_output(result) for result in failed)
 
 
-def run_worktree_cleanliness_check(config: LoopConfig, runner) -> CommandResult:
+def run_worktree_cleanliness_check(
+    config: LoopConfig,
+    runner,
+) -> CommandResult:
     """Fail if remediation left untracked, non-artifact files in the worktree.
 
-    Untracked non-artifact files are first marked with ``git add --intent-to-add``
-    so the upcoming ``git add -A`` in the commit phase can pick them up. This
-    keeps the cleanliness check from blocking legitimate patches that add new
-    files (tests, modules, documentation) without requiring the model to stage
-    files during remediation. Files inside the configured artifact directory
-    remain exempt, and any ``git add --intent-to-add`` failure surfaces the
-    underlying git error to the operator.
+    RevRem refuses to enable auto-commit from a dirty worktree before the loop
+    starts, so untracked non-artifact files that appear after remediation are
+    treated as intentional remediation output. They are marked with
+    ``git add --intent-to-add`` so the upcoming ``git add -A`` in the commit
+    phase can pick them up. Known generated output should be covered by
+    ``.gitignore`` or the artifact-dir exemption; secret and policy violations
+    should be caught by configured verification or commit hooks.
     """
     command = ["git", "status", "--porcelain", "--untracked-files=all"]
     if config.dry_run:

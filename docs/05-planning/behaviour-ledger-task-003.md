@@ -3,7 +3,7 @@ document_id: REVREM-LEDGER-003
 type: LEDGER
 title: Behaviour ledger for the cli.py re-engineering (REVREM-TASK-003)
 status: Approved
-version: '1.1'
+version: '1.2'
 last_updated: '2026-06-06'
 owner: GitCmurf
 docops_version: '2.0'
@@ -55,6 +55,55 @@ There is no silent third option.
 ```
 
 ## Entries
+
+### 2026-06-06 — Provider timeout and secondary-prompt hardening
+
+- **Contract:** machine + human
+- **What changed:** `classify_provider_failure` now treats RevRem-enforced
+  subprocess timeouts as non-transient when `returncode == -1` and the combined
+  output contains `Command timed out after ...`, even if partial provider stdout
+  precedes the timeout marker. The triage v2 prompt now gives exact
+  `estimated_blast_radius` key names (`finding_count`, `module_count`) and
+  minimal valid JSON examples. The commit-message prompt now explicitly asks for
+  exactly one output line and includes good/bad examples to discourage
+  explanatory prose.
+- **Why:** Dogfood showed that local timeouts could be misclassified as
+  retryable provider-transient failures when stdout came before stderr; it also
+  showed secondary models using invalid triage key names and explaining commit
+  subjects instead of outputting only the subject.
+- **Before / After:** before, a local timeout with partial stdout could trigger
+  provider retry logic; after, it is non-transient timeout evidence. Before,
+  weaker triage/commit-message models had only prose instructions; after, they
+  also receive concrete examples of valid and invalid output shapes.
+- **schema_version impact:** none.
+- **CHANGELOG:** Unreleased / Fixed and Changed.
+
+### 2026-06-06 — Cleanliness check auto-stages remediation-created files
+
+- **Contract:** machine + human
+- **What changed:** The post-remediation cleanliness check no longer fails
+  merely because remediation created a new non-artifact file. RevRem already
+  refuses to enter `--commit-after-remediation` from a dirty worktree, including
+  pre-existing untracked files. Given that clean-start invariant, `?? ` files
+  that appear after remediation are treated as intentional remediation output
+  and marked with `git add --intent-to-add`; the later commit phase's
+  `git add -A` stages their contents. Files under `--artifact-dir` remain
+  exempt.
+- **Why:** Legitimate fixes often add tests, modules, or documentation. Blocking
+  every post-remediation `?? ` path forced models to stage files during
+  remediation or made valid fixes impossible. Known generated paths should be
+  covered by `.gitignore` or `--artifact-dir`, while secrets and policy issues
+  are the responsibility of configured verification/commit hooks.
+- **Before / After:** before, a remediation that added `tests/test_new.py`
+  failed the synthetic cleanliness check before `pytest`, `ruff`, or commit
+  staging could run. After, the check runs `git add --intent-to-add --`
+  for `tests/test_new.py`, records the auto-staged path in `check-N-1.txt`, and
+  proceeds to the configured checks. If `git add --intent-to-add` fails, the
+  check fails with the underlying git output.
+- **schema_version impact:** none. Check artifact stdout can include an
+  auto-staged path summary, but artifact names and summary structure are
+  unchanged.
+- **CHANGELOG:** Unreleased / Fixed.
 
 ### 2026-06-06 — Cleanliness check auto-stages legitimate new files
 

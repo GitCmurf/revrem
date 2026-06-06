@@ -35,7 +35,7 @@ def classify_provider_failure(
     output = _combined_output(result)
     normalized = output.lower()
 
-    if normalized.startswith("command timed out after"):
+    if result.returncode == -1 and "command timed out after" in normalized:
         return ProviderFailure(
             "provider_timeout", "provider subprocess timed out", False
         )

@@ -78,12 +78,20 @@ findings remain.
 DEFAULT_COMMIT_MESSAGE_PROMPT = """Write one concise Conventional Commit subject for the staged RevRem remediation changes.
 
 Rules:
-- Output only the commit subject.
+- Output exactly one line: the commit subject and nothing else.
+- Do not explain your reasoning, describe the prompt, introduce the subject, use bullets, or add Markdown.
 - Use Conventional Commit syntax, for example: fix(cli): stop after no-op remediation.
 - Use imperative mood.
 - End the subject with:  (RevRem)
 - Keep it concise.
 - Do not use Markdown or quotes.
+- The response must match this shape: type(scope): imperative summary (RevRem)
+
+Good output:
+fix(cli): stop after no-op remediation (RevRem)
+
+Bad output:
+Looking at the staged changes, I need to write a concise subject.
 
 Staged change summary:
 """

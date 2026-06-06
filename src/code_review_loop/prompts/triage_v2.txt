@@ -44,9 +44,22 @@ Classification guidance:
 - `risk_level`: Assess the risk of the change (trivial, low, medium, high, critical).
 - `refactor_depth`: Assess the scope (atomic, localised, cross-module, architectural).
 - `affected_modules`: List the top-level modules or packages affected.
-- `estimated_blast_radius`: Provide finding and module counts.
+- `estimated_blast_radius`: Must be an object with exactly these keys:
+  `finding_count` and `module_count`. Do not use `findings`, `modules`,
+  `count`, or any other key names.
 - `safety_signals`: Call out specific security/safety concerns (e.g., sensitive-domain:auth).
 - `failed_check_signals`: Reference any failed checks provided in the context.
+
+Minimal valid `classification` example:
+{
+  "domain_tags": ["developer-experience"],
+  "risk_level": "medium",
+  "refactor_depth": "localised",
+  "affected_modules": ["code_review_loop.adapters.checks"],
+  "estimated_blast_radius": {"finding_count": 1, "module_count": 1},
+  "safety_signals": [],
+  "failed_check_signals": []
+}
 
 Routing proposal guidance:
 - Recommend a `route_tier` (e.g., frontier-thinking, midtier-coder, efficient-coder).
@@ -62,6 +75,30 @@ Prompt requirements guidance:
   It must tell the remediator not to create repository scratch files, to remove
   any accidental temporary files, and not to claim verification unless the
   command was actually run or its output is present in the supplied context.
+
+Minimal valid top-level skeleton:
+{
+  "confirmed_findings": [],
+  "rejected_findings": [],
+  "needs_more_info": [],
+  "implementation_order": [],
+  "verification_commands": [],
+  "parsing_warnings": [],
+  "classification": {
+    "domain_tags": [],
+    "risk_level": "low",
+    "refactor_depth": "atomic",
+    "affected_modules": [],
+    "estimated_blast_radius": {"finding_count": 0, "module_count": 0},
+    "safety_signals": [],
+    "failed_check_signals": []
+  },
+  "prompt_requirements": {
+    "required_fragments": [],
+    "definition_of_done": [],
+    "triage_prompt_draft": "No remediation required."
+  }
+}
 
 Contract guidance:
 `affected_paths` should list the minimum files needed to implement the finding.

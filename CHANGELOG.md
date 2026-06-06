@@ -203,13 +203,24 @@ This project follows Semantic Versioning once public releases begin.
   patches that add new files. Untracked non-artifact files are now marked with
   `git add --intent-to-add` so the upcoming `git add -A` in the commit phase
   can pick them up, instead of failing the check before the commit flow can
-  stage them. Files in the configured `--artifact-dir` remain exempt, the
-  auto-staged paths are recorded in the check artifact for visibility, and
-  any `git add --intent-to-add` failure surfaces the underlying git error so
-  the operator can clean up by hand.
+  stage them. Auto-commit mode already refuses to start from a dirty
+  worktree, so non-artifact files that appear after remediation are treated as
+  intentional remediation output. Known generated paths should be covered by
+  `.gitignore` or `--artifact-dir`, and secrets or policy violations remain the
+  responsibility of configured verification and commit hooks. Auto-staged
+  paths are recorded in the check artifact for visibility, and any
+  `git add --intent-to-add` failure surfaces the underlying git error so the
+  operator can clean up by hand.
+- Provider subprocess timeouts enforced by RevRem are classified as
+  non-transient even when the subprocess emitted partial stdout before
+  RevRem's `Command timed out after ...` marker.
 
 ### Changed
 
+- Triage v2 and commit-message prompts are stricter for weaker secondary
+  models: the triage prompt now includes exact `estimated_blast_radius`
+  key names plus minimal valid JSON examples, and the commit-message prompt
+  explicitly requires one output line with no explanatory prose.
 - Structured triage now normalizes review priority severities (`P0`-`P4`) to
   schema severities before validation, preserving strict failure for unknown
   labels while allowing dogfood routing to proceed on common review output.

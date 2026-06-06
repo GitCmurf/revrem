@@ -184,7 +184,6 @@ class TestChecksAdapter:
         assert "SKIPPED adaptive check" in outcome.results[1].stdout
         runner.assert_not_called()
 
-
 # ---------------------------------------------------------------------------
 # Worktree cleanliness check tests
 # ---------------------------------------------------------------------------
@@ -364,7 +363,6 @@ class TestWorktreeCleanlinessCheck:
         assert result.returncode == 0
         assert "DRY_RUN" in result.stdout
         assert calls == []
-
 
 # ---------------------------------------------------------------------------
 # Engine dispatch: ctx.phase_checks wired vs. absent

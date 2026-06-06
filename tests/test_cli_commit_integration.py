@@ -248,9 +248,10 @@ def test_loop_skips_commit_when_checks_fail(tmp_path):
 
     assert summary["iterations"][0]["check_failures"] == 1
     assert "commit_status" not in summary["iterations"][0]
-    assert [
+    git_calls = [
         command for command, _input_text, _timeout in calls if command[0] == "git"
-    ] == [["git", "status", "--porcelain=v1", "--untracked-files=all"]]
+    ]
+    assert git_calls == [["git", "status", "--porcelain=v1", "--untracked-files=all"]]
 
 
 def test_pytest_check_is_skipped_for_typescript_repo_without_python_surface(tmp_path):

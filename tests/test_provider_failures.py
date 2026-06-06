@@ -124,6 +124,37 @@ def test_classify_provider_failure_returns_none_for_success() -> None:
     )
 
 
+def test_classify_provider_failure_detects_timeout_after_partial_stdout() -> None:
+    result = _result(
+        -1,
+        stdout="partial provider output mentioning work before timeout\n",
+        stderr=(
+            "Command timed out after 1800.0 seconds\n"
+            "Command: gemini --approval-mode plan --model gemini-3.1-pro-preview\n"
+        ),
+    )
+
+    failure = provider_failures.classify_provider_failure(result, harness="gemini")
+
+    assert failure is not None
+    assert failure.reason == "provider_timeout"
+    assert failure.transient is False
+
+
+def test_classify_provider_failure_does_not_treat_textual_timeout_finding_as_local_timeout() -> None:
+    result = _result(
+        1,
+        stdout="Finding: provider timeout handling is incorrect\n",
+        stderr="",
+    )
+
+    failure = provider_failures.classify_provider_failure(result, harness="codex")
+
+    assert failure is not None
+    assert failure.reason == "provider_transient_error"
+    assert failure.transient is True
+
+
 def test_classify_provider_failure_returns_none_for_unrecognised_output() -> None:
     result = _result(1, stderr="some unrelated non-fatal log line")
     assert (

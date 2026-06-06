@@ -18,6 +18,7 @@ from code_review_loop.adapters.commit import (
     deterministic_commit_message,
 )
 from code_review_loop.adapters.phase_support import (
+    DEFAULT_COMMIT_MESSAGE_PROMPT,
     build_commit_message_command,
     normalize_revrem_conventional_subject,
     progress_event,
@@ -1208,6 +1209,13 @@ def test_sanitize_commit_message_extracts_subject_without_meta_prose():
         )
         == "Use custom format"
     )
+
+
+def test_default_commit_message_prompt_rejects_meta_prose():
+    assert "Output exactly one line" in DEFAULT_COMMIT_MESSAGE_PROMPT
+    assert "Do not explain your reasoning" in DEFAULT_COMMIT_MESSAGE_PROMPT
+    assert "fix(cli): stop after no-op remediation (RevRem)" in DEFAULT_COMMIT_MESSAGE_PROMPT
+    assert "Looking at the staged changes" in DEFAULT_COMMIT_MESSAGE_PROMPT
 
 
 def test_commit_message_for_staged_changes_respects_profile_prompt_override(tmp_path):
