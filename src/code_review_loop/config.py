@@ -76,6 +76,7 @@ class LoopConfig:
     progress_style: str = "compact"
     terminal_title: bool = False
     initial_review_file: Path | None = None
+    initial_review_mode: str = "none"
     check_commands: tuple[str, ...] = field(default_factory=tuple)
     profile_name: str | None = None
     budget_config: budgets.BudgetConfig = field(default_factory=budgets.BudgetConfig)

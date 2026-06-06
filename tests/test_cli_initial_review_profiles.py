@@ -231,7 +231,9 @@ def test_main_pending_review_prompt_can_use_incompatible_candidate(
     captured = capsys.readouterr()
     assert exit_code == 0
     assert captured_configs[0].initial_review_file == pending_review
+    assert captured_configs[0].initial_review_mode == "stale"
     assert "different HEAD/base" in captured.err
+    assert "Validate this stale review?" in captured.err
 
 
 def test_main_pending_review_prompt_can_cancel_before_provider_calls(

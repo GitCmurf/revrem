@@ -7,7 +7,14 @@ from code_review_loop import budgets, events, profiles
 from code_review_loop.adapters.phase_support import CommitFailed
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.engine import ConfigSnapshot
-from code_review_loop.core.ports import CommandResult, CommitOutcome, CommitRequest, RunContext
+from code_review_loop.core.ports import (
+    CommandResult,
+    CommitOutcome,
+    CommitRequest,
+    RemediationOutcome,
+    RemediationRequest,
+    RunContext,
+)
 from code_review_loop.core.state import RunState
 from code_review_loop.runner_shell import run_iterations
 from tests.support.fakes import FIXED_ISO, FIXED_RUN_ID, FakeClock, FakeRunIdentity
@@ -56,6 +63,7 @@ def _state(config: LoopConfig) -> RunState:
         commit_on_hook_failure=config.commit_on_hook_failure,
         budgets={},
         initial_review_file=None,
+        initial_review_mode=config.initial_review_mode,
     )
 
 
@@ -105,6 +113,16 @@ class HookRetryCommitHarness:
                 output="Running mypy on staged Python files...\nFound 1 error in 1 file\n",
             )
         return CommitOutcome(status="committed")
+
+
+class StaticRemediationHarness:
+    def __init__(self, stdout: str) -> None:
+        self.stdout = stdout
+        self.calls: list[RemediationRequest] = []
+
+    def execute(self, request: RemediationRequest, ctx: RunContext) -> RemediationOutcome:
+        self.calls.append(request)
+        return RemediationOutcome(result=CommandResult(["fake", "exec"], 0, stdout=self.stdout))
 
 
 def test_runner_shell_executes_happy_path_without_cli(tmp_path: Path) -> None:
@@ -295,6 +313,85 @@ def test_runner_shell_stops_before_remediation_when_head_moves_during_review(
     assert result.outcome.reason == "remediation_failed"
     assert "HEAD moved from start-head to new-head" in str(result.cause)
     assert remediation.calls == []
+
+
+def test_runner_shell_marks_stale_review_resolved_when_validation_noops(
+    tmp_path: Path,
+) -> None:
+    config = replace(
+        _config(tmp_path, max_iterations=1, triage_enabled=False),
+        commit_after_remediation=True,
+        initial_review_mode="stale",
+    )
+    remediation = StaticRemediationHarness(
+        "Finding is already fixed.\nREVREM_STALE_REVIEW_STATUS: resolved\n"
+        "Verification: git diff --check passed.\n"
+    )
+    commit = StaticCommitHarness(status="skipped_no_changes")
+    ctx, sink = _context(
+        config,
+        review=SequencedReviewHarness(["clear"]),
+        remediation=remediation,
+        commit=commit,
+    )
+    clock = ctx.clock
+    try:
+        state = _state(config)
+
+        result = run_iterations(
+            config=config,
+            state=state,
+            clock=clock,
+            ctx=ctx,
+            snap=_snapshot(config),
+            initial_review_output="Full review comments:\n\n- [P2] Old finding\n",
+            run_id=FIXED_RUN_ID,
+        )
+    finally:
+        sink.close()
+
+    assert result.outcome.reason == "stale_review_already_resolved"
+    assert result.last_review_output.startswith("Finding is already fixed.")
+    assert remediation.calls
+    assert "Stale pending-review validation mode" in remediation.calls[0].remediation_input
+    assert state.iterations[0]["stale_review_resolved"] is True
+
+
+def test_runner_shell_keeps_no_change_findings_without_stale_marker(
+    tmp_path: Path,
+) -> None:
+    config = replace(
+        _config(tmp_path, max_iterations=1, triage_enabled=False),
+        commit_after_remediation=True,
+        initial_review_mode="stale",
+    )
+    remediation = StaticRemediationHarness("No edits were needed.\n")
+    commit = StaticCommitHarness(status="skipped_no_changes")
+    ctx, sink = _context(
+        config,
+        review=SequencedReviewHarness(["clear"]),
+        remediation=remediation,
+        commit=commit,
+    )
+    clock = ctx.clock
+    try:
+        state = _state(config)
+
+        result = run_iterations(
+            config=config,
+            state=state,
+            clock=clock,
+            ctx=ctx,
+            snap=_snapshot(config),
+            initial_review_output="Full review comments:\n\n- [P2] Old finding\n",
+            run_id=FIXED_RUN_ID,
+        )
+    finally:
+        sink.close()
+
+    assert result.outcome.reason == "no_changes_after_remediation"
+    assert result.outcome.__class__.__name__ == "OutcomeFindings"
+    assert "Old finding" in result.last_review_output
 
 
 def test_runner_shell_records_v2_routing_artifacts_and_events(tmp_path: Path) -> None:

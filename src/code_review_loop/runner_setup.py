@@ -150,6 +150,7 @@ def prepare_run(
         commit_on_hook_failure=config.commit_on_hook_failure,
         budgets=summary_budget_payload(config),
         initial_review_file=str(config.initial_review_file) if config.initial_review_file else None,
+        initial_review_mode=config.initial_review_mode,
     )
     archive_existing_events(config)
     event_sink = events.JsonlSink(config.artifact_dir, run_id, clock=clock)

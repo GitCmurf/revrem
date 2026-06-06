@@ -66,6 +66,7 @@ class LoopAccumulator:
     remediation_result_returncode: int | None = None
     remediation_duration: float = 0.0
     inner_check_retry_count: int = 0
+    stale_review_resolved: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -382,6 +383,8 @@ def _decide_commit(
             OutcomeFailed(reason="commit_failed", error=str(event.commit_failed))
         )
     if event.status == "skipped_no_changes":
+        if acc.stale_review_resolved:
+            return Stop(OutcomeUnknown(reason="stale_review_already_resolved"))
         if acc.last_review_status in {"clear", "unknown"}:
             return Stop(OutcomeClear(reason="no_changes_after_remediation"))
         if acc.last_review_status == "findings":

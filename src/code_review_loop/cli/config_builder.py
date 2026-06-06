@@ -364,6 +364,7 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         search_root,
         current_git_state=current_git_state,
     )
+    initial_review_mode = "explicit" if initial_review_file is not None else "none"
     if initial_review_file is not None and not initial_review_file.is_file():
         raise FileNotFoundError(f"initial review file not found: {initial_review_file}")
     checks = tuple(args.check) if args.check is not None else profile.pipeline.checks
@@ -679,6 +680,7 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         ),
         terminal_title=pick(args.terminal_title, profile.output.terminal_title, False),
         initial_review_file=initial_review_file,
+        initial_review_mode=initial_review_mode,
         check_commands=checks,
         profile_name=args.profile,
         budget_config=budget_config,

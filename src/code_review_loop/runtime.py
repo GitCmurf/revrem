@@ -124,7 +124,10 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
     excerpt = str(summary.get("latest_review_excerpt") or "").strip()
     if excerpt and status != "clear":
         lines.append("")
-        lines.append("Latest actionable review output:")
+        if reason == "stale_review_already_resolved":
+            lines.append("Stale review validation output:")
+        else:
+            lines.append("Latest actionable review output:")
         lines.append(excerpt)
 
     if summary.get("error"):

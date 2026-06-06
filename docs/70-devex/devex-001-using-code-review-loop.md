@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.37'
+version: '1.38'
 last_updated: '2026-06-06'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.37
+> **Version:** 1.38
 > **Last Updated:** 2026-06-06
 > **Type:** DEVEX
 > **Area:** devex
@@ -318,6 +318,16 @@ not prompt and start fresh by default. Use `--pending-review auto` to reuse the
 detected compatible review without prompting, or `--pending-review ignore` to
 suppress the startup check. An explicit `--initial-review-file` path or `latest`
 always takes precedence over the pending-review prompt.
+
+When an operator intentionally uses a pending review from a different
+`HEAD`/base, RevRem treats it as stale-review validation instead of ordinary
+remediation. The remediation prompt asks the model to first decide whether the
+finding still applies to the current checkout. If the finding is already
+resolved, the model must make no edits and include
+`REVREM_STALE_REVIEW_STATUS: resolved` in its response. When checks pass and
+the commit phase finds no staged changes, RevRem stops with
+`stale_review_already_resolved` and surfaces the validation output instead of
+continuing to report the old stale finding.
 
 ### Profile-based usage
 
@@ -1213,6 +1223,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.38 | 2026-06-06 | Codex | Documented stale pending-review validation and resolved no-op handling |
 | 1.37 | 2026-06-06 | Codex | Documented in-run auto-commit guard before first remediation |
 | 1.36 | 2026-06-06 | Codex | Documented enforced auto-commit clean-start preflight before provider calls |
 | 1.35 | 2026-06-06 | Codex | Documented startup pending-review detection and --pending-review modes |

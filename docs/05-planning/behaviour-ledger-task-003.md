@@ -108,6 +108,31 @@ There is no silent third option.
 - **schema_version impact:** none.
 - **CHANGELOG:** Unreleased / Added.
 
+### 2026-06-06 — Stale pending-review validation
+
+- **Contract:** human
+- **What changed:** when an interactive operator chooses pending review
+  feedback from a different `HEAD`/base, RevRem records that choice as stale
+  review validation. The remediation prompt now asks the model to first decide
+  whether the finding still applies to the current checkout and to make no
+  edits plus emit `REVREM_STALE_REVIEW_STATUS: resolved` when it is already
+  fixed. If checks pass and the commit phase finds no changes, the loop stops
+  as `stale_review_already_resolved` and the terminal summary shows the
+  validation output rather than repeating the old review comment.
+- **Why:** Dogfood showed that reusing an incompatible pending review could
+  spend triage/remediation/checks, prove the finding no longer applied, and
+  still end as `findings (no_changes_after_remediation)` with the stale review
+  excerpt. That made the useful validation look like an unresolved failure.
+- **Before / After:** before, every no-change remediation from a reused review
+  was reported as unresolved findings. After, stale-review reuse has an
+  explicit no-op resolved path, while compatible and explicitly supplied review
+  files keep the existing no-change findings behavior unless they opt into the
+  stale prompt path.
+- **schema_version impact:** none. `initial_review_mode` is additive summary
+  metadata and the stopped reason is a new value in the existing outcome
+  string space.
+- **CHANGELOG:** Unreleased / Fixed.
+
 ### 2026-06-06 — Latest-review retry artifact and fragment trust hardening
 
 - **Contract:** machine + human

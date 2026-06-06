@@ -6,7 +6,7 @@ import shlex
 from dataclasses import dataclass, replace
 from typing import Any, Literal, cast
 
-from code_review_loop import budgets, triage
+from code_review_loop import budgets, stale_review, triage
 from code_review_loop.adapters.checks import (
     all_failed_checks_are_revrem_timeouts as _all_failed_checks_are_revrem_timeouts,
 )
@@ -52,7 +52,6 @@ from code_review_loop.core.outcome import (
 )
 from code_review_loop.core.ports import (
     ChecksRequest,
-    CommitRequest,
     RemediationRequest,
     ReviewRequest,
     RunContext,
@@ -67,8 +66,8 @@ from code_review_loop.iteration_labels import artifact_label, event_iteration_la
 from code_review_loop.routing_artifacts import record_routing_outcome, resolve_and_record_routing
 from code_review_loop.run_guards import (
     assert_worktree_stable_before_remediation,
-    current_head,
 )
+from code_review_loop.runner_commit_phase import execute_commit_phase
 
 _ENGINE_STEPS_PER_ITERATION = 10
 _ENGINE_STEP_BUDGET_OVERHEAD = 4
@@ -95,6 +94,7 @@ class _RunnerEngineExecutor:
         self.routing_context_cache: triage.RoutingContextCache = {}
         self.latest_state: EngineState | None = None
         self.expected_head = ctx.git_head_at_start
+        self.stale_review_validation_output = ""
 
     def execute(self, action: Action, engine_state: EngineState) -> EngineState:
         match action:
@@ -154,6 +154,7 @@ class _RunnerEngineExecutor:
             remediation_result_returncode=None,
             remediation_duration=0.0,
             inner_check_retry_count=0,
+            stale_review_resolved=False,
         )
         if iteration == 1 and self.initial_review_output:
             status = cast("Literal['clear', 'findings', 'unknown']", detect_review_status(self.initial_review_output))
@@ -283,6 +284,12 @@ class _RunnerEngineExecutor:
             remediation_input = engine_state.acc.last_review_output
             if engine_state.acc.pending_check_failures:
                 remediation_input = engine_state.acc.pending_check_failures + "\n\n" + remediation_input
+        if stale_review.should_validate_stale_review(
+            self.config,
+            engine_state,
+            initial_review_output=self.initial_review_output,
+        ):
+            remediation_input = stale_review.validation_prompt(remediation_input)
         try:
             assert_worktree_stable_before_remediation(
                 self.config,
@@ -306,7 +313,15 @@ class _RunnerEngineExecutor:
                 remediation_input=remediation_input,
                 remediation_result_returncode=rem_outcome.result.returncode,
                 remediation_duration=self.clock.monotonic() - rem_start_time,
+                stale_review_resolved=stale_review.contains_resolved_marker(
+                    _combined_output(rem_outcome.result)
+                ),
             )
+            if acc.stale_review_resolved:
+                self.stale_review_validation_output = actionable_review_output(
+                    _combined_output(rem_outcome.result)
+                )
+                self.iterations[-1]["stale_review_resolved"] = True
         except budgets.BudgetExceeded:
             raise
         except Exception as exc:
@@ -401,39 +416,16 @@ class _RunnerEngineExecutor:
         return self._run_remediation(replace(engine_state, acc=acc))
 
     def _run_commit(self, engine_state: EngineState) -> EngineState:
-        iteration = engine_state.iteration
-        try:
-            commit_outcome = self.ctx.phase_commit.execute(
-                CommitRequest(iteration=iteration, retrying=engine_state.acc.commit_retry),
-                self.ctx,
-            )
-            self.iterations[-1]["commit_status"] = commit_outcome.status
-            if commit_outcome.status == "committed" and (self.config.cwd / ".git").exists():
-                self.expected_head = current_head(self.config, self.ctx) or self.expected_head
-        except CommitFailed as exc:
-            self.cause = exc
-            self.iterations[-1]["commit_status"] = exc.kind
-            self.iterations[-1]["commit_failed"] = True
-            self.iterations[-1]["commit_artifact"] = str(exc.artifact_path)
-            return replace(engine_state, event=CommitDone(status=exc.kind, commit_failed=exc))
-        except budgets.BudgetExceeded:
-            raise
-        except Exception as exc:
-            self.cause = exc
-            self.iterations[-1]["commit_failed"] = True
-            emit_loop_failure_event(
-                self.config,
-                phase="commit",
-                iteration=iteration,
-                reason="commit_failed",
-                error=str(exc),
-                ctx=self.ctx,
-            )
-            return replace(engine_state, event=CommitDone(status=None, other_exc=exc))
-        return replace(
-            engine_state,
-            event=CommitDone(status=cast("str | None", self.iterations[-1].get("commit_status"))),
+        result = execute_commit_phase(
+            config=self.config,
+            ctx=self.ctx,
+            iterations=self.iterations,
+            engine_state=engine_state,
+            expected_head=self.expected_head,
         )
+        self.cause = result.cause or self.cause
+        self.expected_head = result.expected_head
+        return result.state
 
     def _retry_after_commit_hook(self, engine_state: EngineState, action: RetryViaCommitHook) -> EngineState:
         commit_failed = engine_state.event.commit_failed if isinstance(engine_state.event, CommitDone) else None
@@ -492,6 +484,11 @@ def run_iterations(
         # Preserve the last actionable review text for operator-facing terminal
         # summaries and resume flows when the run ends unresolved.
         latest_review_output = executor.latest_state.acc.last_review_output
+    if (
+        isinstance(outcome, OutcomeUnknown)
+        and outcome.reason == "stale_review_already_resolved"
+    ):
+        latest_review_output = executor.stale_review_validation_output
     return RunnerShellResult(
         outcome=outcome,
         cause=executor.cause if isinstance(outcome, OutcomeFailed) else None,

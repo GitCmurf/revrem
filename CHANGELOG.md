@@ -82,6 +82,10 @@ This project follows Semantic Versioning once public releases begin.
   `--pending-review auto` is supplied, and `auto` only uses compatible
   candidates. `--pending-review ignore` always starts fresh, and explicit
   `--initial-review-file` remains authoritative.
+- When an operator chooses pending review feedback from a different `HEAD`/base,
+  RevRem now treats the run as stale-review validation. Remediation is prompted
+  to make no edits and emit `REVREM_STALE_REVIEW_STATUS: resolved` when the
+  finding no longer applies to the current checkout.
 - Gemini Pro review runs now get a larger model-aware external review input
   cap when no CLI/profile cap is set, and prompted review progress now reports
   whether the supplied context is full or truncated. Long-running external
@@ -228,6 +232,11 @@ This project follows Semantic Versioning once public releases begin.
   `suppressed_findings` array that RevRem already writes to triage artifacts
   after applying suppressions, so schema-validating consumers no longer reject
   valid suppressed v2 triage artifacts.
+- Stale pending-review reuse now has a resolved no-op stop path. If the
+  validation remediation emits `REVREM_STALE_REVIEW_STATUS: resolved`, checks
+  pass, and the commit phase has no staged changes, RevRem stops with
+  `stale_review_already_resolved` and surfaces the validation output instead
+  of repeating the old stale finding as `no_changes_after_remediation`.
 - The post-remediation worktree cleanliness check no longer blocks legitimate
   patches that add new files. Untracked non-artifact files are now marked with
   `git add --intent-to-add` so the upcoming `git add -A` in the commit phase

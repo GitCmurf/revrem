@@ -325,6 +325,7 @@ def resume_config_payload(config: LoopConfig) -> dict[str, object]:
         "triage_on_invalid": config.triage_on_invalid,
         "triage_contract": config.triage_contract,
         "profile_name": config.profile_name,
+        "initial_review_mode": config.initial_review_mode,
     }
     if config.profile_v2 is not None:
         payload["routing_enabled"] = config.profile_v2.triage.routing.enabled

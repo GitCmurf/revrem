@@ -113,7 +113,11 @@ def _apply_pending_review_choice(config, args):
                 )
         return config
     if mode == "auto":
-        return replace(config, initial_review_file=candidate.path)
+        return replace(
+            config,
+            initial_review_file=candidate.path,
+            initial_review_mode="compatible",
+        )
     if not interactive:
         return config
     return _prompt_for_pending_review(config, candidate, compatible=True)
@@ -138,17 +142,21 @@ def _prompt_for_pending_review(
     *,
     compatible: bool,
 ):
-    _print_pending_review_summary(candidate, compatible=compatible)
+    prompt = _print_pending_review_summary(candidate, compatible=compatible)
     while True:
         print(
-            "Use this review? [u]se / [d]etails / [f]resh / [c]ancel: ",
+            prompt,
             end="",
             file=sys.stderr,
             flush=True,
         )
         choice = input().strip().lower()
         if choice in {"u", "use", "y", "yes"}:
-            return replace(config, initial_review_file=candidate.path)
+            return replace(
+                config,
+                initial_review_file=candidate.path,
+                initial_review_mode="compatible" if compatible else "stale",
+            )
         if choice in {"d", "detail", "details", "more"}:
             print(
                 "\nPending review detail:\n"
@@ -169,7 +177,7 @@ def _print_pending_review_summary(
     candidate: PendingReviewCandidate,
     *,
     compatible: bool,
-) -> None:
+) -> str:
     status_parts = [
         part
         for part in (candidate.final_status, candidate.stopped_reason, candidate.error)
@@ -179,17 +187,21 @@ def _print_pending_review_summary(
     excerpt = trim_for_prompt(candidate.excerpt, 500).replace("\n", " ").strip()
     if compatible:
         heading = "RevRem found compatible pending review feedback before starting a new review."
+        prompt = "Use this review? [u]se / [d]etails / [f]resh / [c]ancel: "
     else:
         heading = (
             "RevRem found pending review feedback from a different HEAD/base. "
-            "Reuse it only if you intentionally want to remediate that older review."
+            "Validate it only if you intentionally want to check whether that older "
+            "review still applies."
         )
+        prompt = "Validate this stale review? [u]se / [d]etails / [f]resh / [c]ancel: "
     print(
         f"{heading}\nReview: {candidate.path}\nRun: {candidate.run_dir}\nStatus: {status}",
         file=sys.stderr,
     )
     if excerpt:
         print(f"Excerpt: {excerpt}", file=sys.stderr)
+    return prompt
 
 
 def _auto_commit_clean_start_error(config) -> str | None:
