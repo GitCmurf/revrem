@@ -308,19 +308,16 @@ class _RunnerEngineExecutor:
                 ),
                 self.ctx,
             )
+            combined_output = _combined_output(rem_outcome.result)
             acc = replace(
                 engine_state.acc,
                 remediation_input=remediation_input,
                 remediation_result_returncode=rem_outcome.result.returncode,
                 remediation_duration=self.clock.monotonic() - rem_start_time,
-                stale_review_resolved=stale_review.contains_resolved_marker(
-                    _combined_output(rem_outcome.result)
-                ),
+                stale_review_resolved=stale_review.contains_resolved_marker(combined_output),
             )
             if acc.stale_review_resolved:
-                self.stale_review_validation_output = actionable_review_output(
-                    _combined_output(rem_outcome.result)
-                )
+                self.stale_review_validation_output = stale_review.validation_summary(combined_output)
                 self.iterations[-1]["stale_review_resolved"] = True
         except budgets.BudgetExceeded:
             raise
@@ -488,7 +485,7 @@ def run_iterations(
         outcome, (OutcomeClear, OutcomeFindings, OutcomeUnknown)
     ):
         latest_review_output = executor.latest_state.acc.last_review_output
-    if isinstance(outcome, OutcomeUnknown) and outcome.reason == "stale_review_already_resolved":
+    if getattr(outcome, "reason", "") == "stale_review_already_resolved":
         latest_review_output = executor.stale_review_validation_output
     return RunnerShellResult(
         outcome=outcome,

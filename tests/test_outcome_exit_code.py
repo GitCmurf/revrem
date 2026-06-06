@@ -17,6 +17,10 @@ def test_clear_exits_0() -> None:
     assert outcome_to_exit_code(OutcomeClear(reason="review_clear")) == 0
 
 
+def test_resolved_stale_review_exits_0() -> None:
+    assert outcome_to_exit_code(OutcomeClear(reason="stale_review_already_resolved")) == 0
+
+
 def test_clear_with_suppressed_findings_exits_0() -> None:
     assert outcome_to_exit_code(OutcomeClear(reason="all_findings_suppressed", suppressed_findings_count=3)) == 0
 

@@ -286,6 +286,20 @@ def test_decide_cm2_unknown_skipped_no_changes_exits_clear() -> None:
     assert action == Stop(OutcomeClear(reason="no_changes_after_remediation"))
 
 
+def test_decide_cm2_stale_review_resolved_skipped_no_changes_exits_clear() -> None:
+    cfg = ConfigSnapshot(3, True, True, "fail", True)
+    acc = LoopAccumulator(
+        pending_check_failures="",
+        last_review_status="findings",
+        stale_review_resolved=True,
+    )
+    event = CommitDone(status="skipped_no_changes")
+
+    action = decide(cfg, acc, event)
+
+    assert action == Stop(OutcomeClear(reason="stale_review_already_resolved"))
+
+
 def test_decide_cm1_successful_commit_continues() -> None:
     cfg = ConfigSnapshot(3, True, True, "fail", True)
     acc = LoopAccumulator(pending_check_failures="")
@@ -294,6 +308,24 @@ def test_decide_cm1_successful_commit_continues() -> None:
     action = decide(cfg, acc, event)
 
     assert action == Continue()
+
+
+def test_decide_cm1_stale_review_resolved_commit_fails_invariant() -> None:
+    cfg = ConfigSnapshot(3, True, True, "fail", True)
+    acc = LoopAccumulator(pending_check_failures="", stale_review_resolved=True)
+    event = CommitDone(status="committed")
+
+    action = decide(cfg, acc, event)
+
+    assert action == Stop(
+        OutcomeFailed(
+            reason="remediation_failed",
+            error=(
+                "stale review validation emitted resolved marker but produced "
+                "changes to commit"
+            ),
+        )
+    )
 
 
 def test_decide_ck_retry_inner_check_failure_before_next_review() -> None:

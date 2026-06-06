@@ -444,7 +444,7 @@ def test_terminal_summary_labels_stale_review_validation_output():
     text = format_terminal_summary(
         {
             "artifact_dir": "tmp/run",
-            "final_status": "unknown",
+            "final_status": "clear",
             "stopped_reason": "stale_review_already_resolved",
             "artifact_paths": {
                 "reviews": ["tmp/run/review-initial.txt"],
@@ -457,7 +457,7 @@ def test_terminal_summary_labels_stale_review_validation_output():
         }
     )
 
-    assert "Review-remediation loop: unknown (stale_review_already_resolved)" in text
+    assert "Review-remediation loop: clear (stale_review_already_resolved)" in text
     assert "Stale review validation output:" in text
     assert "Latest actionable review output:" not in text
     assert "The cited whitespace finding no longer applies." in text

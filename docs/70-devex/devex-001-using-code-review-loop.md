@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.39'
+version: '1.40'
 last_updated: '2026-06-06'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.39
+> **Version:** 1.40
 > **Last Updated:** 2026-06-06
 > **Type:** DEVEX
 > **Area:** devex
@@ -331,10 +331,14 @@ When an operator intentionally uses a pending review from a different
 remediation. The remediation prompt asks the model to first decide whether the
 finding still applies to the current checkout. If the finding is already
 resolved, the model must make no edits and include
+`STALE_REVIEW_VALIDATION:` evidence ending with
 `REVREM_STALE_REVIEW_STATUS: resolved` in its response. When checks pass and
-the commit phase finds no staged changes, RevRem stops with
-`stale_review_already_resolved` and surfaces the validation output instead of
-continuing to report the old stale finding.
+the commit phase finds no staged changes, RevRem stops as
+`clear (stale_review_already_resolved)`, exits `0`, and surfaces only the
+compact validation output instead of continuing to report the old stale
+finding. If the model emits the resolved marker but produces changes that would
+be committed, RevRem fails the run rather than accepting a contradictory
+validation.
 
 Commit-message drafting is treated as read-only even when an external harness
 tries to write a helper file. If drafting creates a new non-artifact file,
@@ -1237,6 +1241,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.40 | 2026-06-06 | Codex | Documented clear stale-review validation status, compact validation evidence, and resolved-marker no-edit invariant |
 | 1.39 | 2026-06-06 | Codex | Documented prompt, path-boundary, subdirectory HEAD refresh, and commit-message side-effect hardening |
 | 1.38 | 2026-06-06 | Codex | Documented stale pending-review validation and resolved no-op handling |
 | 1.37 | 2026-06-06 | Codex | Documented in-run auto-commit guard before first remediation |

@@ -6,6 +6,7 @@ from code_review_loop.config import LoopConfig
 from code_review_loop.core.engine import EngineState
 
 STALE_REVIEW_RESOLVED_MARKER = "REVREM_STALE_REVIEW_STATUS: resolved"
+STALE_REVIEW_VALIDATION_HEADER = "STALE_REVIEW_VALIDATION:"
 
 
 def should_validate_stale_review(
@@ -30,12 +31,29 @@ def validation_prompt(remediation_input: str) -> str:
         "The supplied review artifact came from a different HEAD/base than the "
         "current checkout. Before editing, verify each finding against the "
         "current tree. If the finding is already resolved, make no edits and "
-        f"include `{STALE_REVIEW_RESOLVED_MARKER}` plus the command/file "
-        "evidence that proves it. If the finding still applies, remediate it "
-        "normally and do not emit the resolved marker.\n\n"
+        "emit this compact block, with concrete file/test/command evidence:\n\n"
+        f"{STALE_REVIEW_VALIDATION_HEADER}\n"
+        "status: resolved\n"
+        "findings_checked: <count>\n"
+        "evidence:\n"
+        "- <why the stale finding no longer applies>\n"
+        f"{STALE_REVIEW_RESOLVED_MARKER}\n\n"
+        "If any finding still applies, remediate it normally and do not emit "
+        "the resolved marker.\n\n"
         f"{remediation_input}"
     )
 
 
 def contains_resolved_marker(output: str) -> bool:
     return STALE_REVIEW_RESOLVED_MARKER in output
+
+
+def validation_summary(output: str) -> str:
+    start = output.find(STALE_REVIEW_VALIDATION_HEADER)
+    if start < 0:
+        return output.strip()
+    marker_end = output.find(STALE_REVIEW_RESOLVED_MARKER, start)
+    if marker_end < 0:
+        return output[start:].strip()
+    end = marker_end + len(STALE_REVIEW_RESOLVED_MARKER)
+    return output[start:end].strip()

@@ -363,8 +363,15 @@ def test_runner_shell_marks_stale_review_resolved_when_validation_noops(
         initial_review_mode="stale",
     )
     remediation = StaticRemediationHarness(
-        "Finding is already fixed.\nREVREM_STALE_REVIEW_STATUS: resolved\n"
-        "Verification: git diff --check passed.\n"
+        "Preface should not be surfaced.\n"
+        "STALE_REVIEW_VALIDATION:\n"
+        "status: resolved\n"
+        "findings_checked: 1\n"
+        "evidence:\n"
+        "- git diff --check passed\n"
+        "REVREM_STALE_REVIEW_STATUS: resolved\n"
+        "[stderr]\n"
+        "provider footer should not be surfaced\n"
     )
     commit = StaticCommitHarness(status="skipped_no_changes")
     ctx, sink = _context(
@@ -390,10 +397,58 @@ def test_runner_shell_marks_stale_review_resolved_when_validation_noops(
         sink.close()
 
     assert result.outcome.reason == "stale_review_already_resolved"
-    assert result.last_review_output.startswith("Finding is already fixed.")
+    assert result.outcome.__class__.__name__ == "OutcomeClear"
+    assert result.last_review_output.startswith("STALE_REVIEW_VALIDATION:")
+    assert "Preface should not be surfaced" not in result.last_review_output
+    assert "provider footer should not be surfaced" not in result.last_review_output
     assert remediation.calls
     assert "Stale pending-review validation mode" in remediation.calls[0].remediation_input
+    assert "STALE_REVIEW_VALIDATION:" in remediation.calls[0].remediation_input
     assert state.iterations[0]["stale_review_resolved"] is True
+
+
+def test_runner_shell_fails_if_stale_review_resolved_marker_commits_changes(
+    tmp_path: Path,
+) -> None:
+    config = replace(
+        _config(tmp_path, max_iterations=1, triage_enabled=False),
+        commit_after_remediation=True,
+        initial_review_mode="stale",
+    )
+    remediation = StaticRemediationHarness(
+        "STALE_REVIEW_VALIDATION:\n"
+        "status: resolved\n"
+        "findings_checked: 1\n"
+        "evidence:\n"
+        "- tests passed\n"
+        "REVREM_STALE_REVIEW_STATUS: resolved\n"
+    )
+    commit = StaticCommitHarness(status="committed")
+    ctx, sink = _context(
+        config,
+        review=SequencedReviewHarness(["clear"]),
+        remediation=remediation,
+        commit=commit,
+    )
+    clock = ctx.clock
+    try:
+        state = _state(config)
+
+        result = run_iterations(
+            config=config,
+            state=state,
+            clock=clock,
+            ctx=ctx,
+            snap=_snapshot(config),
+            initial_review_output="Full review comments:\n\n- [P2] Old finding\n",
+            run_id=FIXED_RUN_ID,
+        )
+    finally:
+        sink.close()
+
+    assert result.outcome.reason == "remediation_failed"
+    assert result.outcome.__class__.__name__ == "OutcomeFailed"
+    assert "produced changes to commit" in result.outcome.error
 
 
 def test_runner_shell_keeps_no_change_findings_without_stale_marker(

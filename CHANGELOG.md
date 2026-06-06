@@ -86,7 +86,10 @@ This project follows Semantic Versioning once public releases begin.
   RevRem now treats the run as stale-review validation. Remediation is prompted
   to make no edits and emit `REVREM_STALE_REVIEW_STATUS: resolved` when the
   finding no longer applies to the current checkout. The prompt now presents
-  that choice as validation instead of ordinary review reuse.
+  that choice as validation instead of ordinary review reuse, requires a compact
+  `STALE_REVIEW_VALIDATION:` evidence block, reports resolved stale reviews as
+  `clear (stale_review_already_resolved)`, and fails if a resolved marker is
+  paired with committed edits.
 - Gemini Pro review runs now get a larger model-aware external review input
   cap when no CLI/profile cap is set, and prompted review progress now reports
   whether the supplied context is full or truncated. Long-running external

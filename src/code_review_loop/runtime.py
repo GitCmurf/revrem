@@ -122,7 +122,7 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
             lines.append(f"JSON summary: {summary_path}")
 
     excerpt = str(summary.get("latest_review_excerpt") or "").strip()
-    if excerpt and status != "clear":
+    if excerpt and (status != "clear" or reason == "stale_review_already_resolved"):
         lines.append("")
         if reason == "stale_review_already_resolved":
             lines.append("Stale review validation output:")
