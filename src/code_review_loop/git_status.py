@@ -35,6 +35,47 @@ def is_artifact_status_line(config: LoopConfig, line: str) -> bool:
     )
 
 
+def untracked_paths_from_status_z(status_stdout: str) -> list[str]:
+    """Decode ``git status -z`` output and return the untracked paths verbatim.
+
+    ``git status -z`` is the unambiguous, machine-friendly variant of the
+    porcelain output. The format is NUL-delimited (rather than LF-delimited)
+    and paths are emitted byte-for-byte with no quoting and no escaping. Each
+    non-renamed entry looks like ``XY PATH\\0`` where ``XY`` is a 2-character
+    status code; the cleanliness check only needs the untracked entries
+    (``?? ...``) and ignores renamed/copied entries (``R  \\0ORIG\\0NEW\\0``).
+
+    Returning the decoded paths (not raw lines) is deliberate: callers can
+    pass the paths straight to ``git add --intent-to-add -- <path>`` without
+    re-parsing the same string and without accidentally forwarding Git's
+    surrounding quotes or escapes to a downstream subprocess.
+    """
+    paths: list[str] = []
+    for entry in status_stdout.split("\0"):
+        if not entry:
+            continue
+        if not entry.startswith("?? "):
+            continue
+        path = entry[3:]
+        if path:
+            paths.append(path)
+    return paths
+
+
+def is_artifact_path(config: LoopConfig, path: str) -> bool:
+    """Return whether a single repo-root-relative path is a RevRem artifact.
+
+    Mirrors :func:`is_artifact_status_line` for callers that already have the
+    decoded path in hand (e.g. parsed from ``git status -z`` output) and do
+    not want to synthesise a status line just to reuse the line-based check.
+    """
+    normalized = path.strip().rstrip("/")
+    if not normalized:
+        return True
+    artifact_roots = _artifact_roots(config)
+    return any(_is_under_path_root(normalized, root) for root in artifact_roots)
+
+
 def _artifact_roots(config: LoopConfig) -> set[str]:
     """Return the repo-root-relative path prefixes that count as artifacts.
 

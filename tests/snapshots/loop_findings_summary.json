@@ -55,7 +55,7 @@
       "checks": [
         {
           "artifact": "check-1-1.txt",
-          "command": "git status --porcelain --untracked-files=all",
+          "command": "git status -z --untracked-files=all",
           "status": "passed"
         }
       ],

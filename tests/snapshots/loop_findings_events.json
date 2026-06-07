@@ -79,7 +79,7 @@
     "iteration": "1.1",
     "kind": "phase_start",
     "payload": {
-      "message": "git status --porcelain --untracked-files=all",
+      "message": "git status -z --untracked-files=all",
       "payload_schema_version": "1.1",
       "summary": "start"
     },
@@ -94,7 +94,7 @@
     "kind": "check_result",
     "payload": {
       "artifact": "check-1-1.txt",
-      "command": "git status --porcelain --untracked-files=all",
+      "command": "git status -z --untracked-files=all",
       "returncode": 0,
       "status": "passed"
     },

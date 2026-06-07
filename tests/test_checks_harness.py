@@ -216,20 +216,20 @@ class TestWorktreeCleanlinessCheck:
         result = run_worktree_cleanliness_check(config, runner)
 
         assert result.returncode == 0
-        assert calls == [["git", "status", "--porcelain", "--untracked-files=all"]]
+        assert calls == [["git", "status", "-z", "--untracked-files=all"]]
 
     def test_auto_stages_legitimate_untracked_files(self, tmp_path: Path) -> None:
         config = self._config(tmp_path)
-        status_calls: list[str] = []
+        status_calls: list[list[str]] = []
         add_calls: list[list[str]] = []
 
         def runner(args, cwd, input_text=None, timeout_seconds=None):
             cmd = list(args)
-            if cmd[:3] == ["git", "status", "--porcelain"]:
-                status_calls.append(cmd[2] if len(cmd) > 2 else "")
-                if not status_calls or len(status_calls) == 1:
+            if cmd[:2] == ["git", "status"] and "-z" in cmd:
+                status_calls.append(cmd)
+                if len(status_calls) == 1:
                     return CommandResult(
-                        cmd, 0, stdout="?? src/new_module.py\n?? tests/test_new.py\n"
+                        cmd, 0, stdout="?? src/new_module.py\0?? tests/test_new.py\0"
                     )
                 return CommandResult(cmd, 0, stdout="")
             if cmd[:3] == ["git", "add", "--intent-to-add"]:
@@ -245,7 +245,58 @@ class TestWorktreeCleanlinessCheck:
         assert "tests/test_new.py" in result.stdout
         assert ["git", "add", "--intent-to-add", "--", "src/new_module.py"] in add_calls
         assert ["git", "add", "--intent-to-add", "--", "tests/test_new.py"] in add_calls
-        assert len([c for c in status_calls if c == "--porcelain"]) >= 2
+        assert len(status_calls) >= 2
+
+    def test_decodes_paths_with_spaces_and_backslashes(self, tmp_path: Path) -> None:
+        """Regression test: ``git status -z`` emits untracked paths verbatim
+        (no quoting, no escaping), so the parsed paths must reach
+        ``git add --intent-to-add`` byte-for-byte. The previous
+        ``--porcelain`` parser forwarded Git's quoted form
+        (``"a b"`` / ``"back\\slash"``) which makes the pathspec miss the file.
+        """
+        config = self._config(tmp_path)
+        add_calls: list[list[str]] = []
+        status_invocations = 0
+
+        def runner(args, cwd, input_text=None, timeout_seconds=None):
+            nonlocal status_invocations
+            cmd = list(args)
+            if cmd[:2] == ["git", "status"] and "-z" in cmd:
+                status_invocations += 1
+                if status_invocations == 1:
+                    return CommandResult(
+                        cmd,
+                        0,
+                        stdout=(
+                            "?? src/has space.py\0"
+                            "?? docs/back\\slash.md\0"
+                            "?? src/quote\"file.py\0"
+                            "?? src/newline\nfile.py\0"
+                        ),
+                    )
+                return CommandResult(cmd, 0, stdout="")
+            if cmd[:3] == ["git", "add", "--intent-to-add"]:
+                add_calls.append(cmd)
+                return CommandResult(cmd, 0)
+            return CommandResult(cmd, 0, stdout="")
+
+        result = run_worktree_cleanliness_check(config, runner)
+
+        assert result.returncode == 0, result.stdout
+        added_paths = [c[4] for c in add_calls]
+        assert added_paths == [
+            "src/has space.py",
+            "docs/back\\slash.md",
+            "src/quote\"file.py",
+            "src/newline\nfile.py",
+        ]
+        for path in added_paths:
+            assert path in result.stdout
+        for cmd in add_calls:
+            pathspec = cmd[-1]
+            assert not pathspec.startswith('"') and not pathspec.endswith('"'), (
+                f"intent-add pathspec must be unquoted, got {cmd!r}"
+            )
 
     def test_skips_artifact_dir_files(self, tmp_path: Path) -> None:
         config = self._config(tmp_path)
@@ -255,17 +306,17 @@ class TestWorktreeCleanlinessCheck:
         def runner(args, cwd, input_text=None, timeout_seconds=None):
             cmd = list(args)
             calls.append(cmd)
-            if cmd[:3] == ["git", "status", "--porcelain"]:
+            if cmd[:2] == ["git", "status"] and "-z" in cmd:
                 nonlocal status_invocations
                 status_invocations += 1
                 if status_invocations == 1:
                     return CommandResult(
                         cmd,
                         0,
-                        stdout="?? artifacts/scratch.txt\n?? src/real.py\n",
+                        stdout="?? artifacts/scratch.txt\0?? src/real.py\0",
                     )
                 return CommandResult(
-                    cmd, 0, stdout="?? artifacts/scratch.txt\nA  src/real.py\n"
+                    cmd, 0, stdout="?? artifacts/scratch.txt\0A  src/real.py\0"
                 )
             if cmd[:3] == ["git", "add", "--intent-to-add"]:
                 return CommandResult(cmd, 0)
@@ -284,8 +335,8 @@ class TestWorktreeCleanlinessCheck:
 
         def runner(args, cwd, input_text=None, timeout_seconds=None):
             cmd = list(args)
-            if cmd[:3] == ["git", "status", "--porcelain"]:
-                return CommandResult(cmd, 0, stdout="?? src/broken.py\n")
+            if cmd[:2] == ["git", "status"] and "-z" in cmd:
+                return CommandResult(cmd, 0, stdout="?? src/broken.py\0")
             if cmd[:3] == ["git", "add", "--intent-to-add"]:
                 return CommandResult(cmd, 128, stderr="fatal: cannot add\n")
             return CommandResult(cmd, 0, stdout="")
@@ -304,11 +355,11 @@ class TestWorktreeCleanlinessCheck:
         def runner(args, cwd, input_text=None, timeout_seconds=None):
             nonlocal status_invocations
             cmd = list(args)
-            if cmd[:3] == ["git", "status", "--porcelain"]:
+            if cmd[:2] == ["git", "status"] and "-z" in cmd:
                 status_invocations += 1
                 if status_invocations == 1:
-                    return CommandResult(cmd, 0, stdout="?? src/new.py\n")
-                return CommandResult(cmd, 0, stdout="?? src/new.py\n")
+                    return CommandResult(cmd, 0, stdout="?? src/new.py\0")
+                return CommandResult(cmd, 0, stdout="?? src/new.py\0")
             if cmd[:3] == ["git", "add", "--intent-to-add"]:
                 return CommandResult(cmd, 0)
             return CommandResult(cmd, 0, stdout="")
@@ -377,8 +428,8 @@ class TestWorktreeCleanlinessCheck:
         def runner(args, cwd, input_text=None, timeout_seconds=None):
             cmd = list(args)
             calls.append(cmd)
-            if cmd[:3] == ["git", "status", "--porcelain"]:
-                return CommandResult(cmd, 0, stdout="?? src/new.py\n")
+            if cmd[:2] == ["git", "status"] and "-z" in cmd:
+                return CommandResult(cmd, 0, stdout="?? src/new.py\0")
             if cmd[:3] == ["git", "add", "--intent-to-add"]:
                 return CommandResult(cmd, 0)
             return CommandResult(cmd, 0, stdout="")
@@ -387,8 +438,8 @@ class TestWorktreeCleanlinessCheck:
 
         assert result.returncode == 0
         assert [c for c in calls if c[:3] == ["git", "add", "--intent-to-add"]] == []
-        assert [c for c in calls if c[:3] == ["git", "status", "--porcelain"]] == [
-            ["git", "status", "--porcelain", "--untracked-files=all"]
+        assert [c for c in calls if c[:2] == ["git", "status"] and "-z" in c] == [
+            ["git", "status", "-z", "--untracked-files=all"]
         ]
         assert "auto-commit is disabled" in result.stdout
         assert "src/new.py" in result.stdout
@@ -404,12 +455,12 @@ class TestWorktreeCleanlinessCheck:
         def runner(args, cwd, input_text=None, timeout_seconds=None):
             nonlocal status_invocations
             cmd = list(args)
-            if cmd[:3] == ["git", "status", "--porcelain"]:
+            if cmd[:2] == ["git", "status"] and "-z" in cmd:
                 status_invocations += 1
                 return CommandResult(
                     cmd,
                     0,
-                    stdout="?? artifacts/scratch.txt\n?? src/real.py\n",
+                    stdout="?? artifacts/scratch.txt\0?? src/real.py\0",
                 )
             if cmd[:3] == ["git", "add", "--intent-to-add"]:
                 add_calls.append(cmd)
@@ -495,7 +546,7 @@ class TestWorktreeCleanlinessCheck:
         assert diff_after.stdout.strip() == ""
 
     def test_intent_add_runs_from_git_root_when_cwd_is_subdirectory(self, tmp_path: Path) -> None:
-        """``git status --porcelain`` emits paths relative to the repository
+        """``git status -z`` emits paths relative to the repository
         root even when the subprocess is launched from a subdirectory. The
         ``git add --intent-to-add`` subprocess must therefore be rooted at
         the git worktree so the repo-root-relative pathspec resolves
@@ -524,13 +575,13 @@ class TestWorktreeCleanlinessCheck:
         def runner(args, cwd, input_text=None, timeout_seconds=None):
             nonlocal status_invocations
             cmd = list(args)
-            if cmd[:3] == ["git", "status", "--porcelain"]:
+            if cmd[:2] == ["git", "status"] and "-z" in cmd:
                 status_invocations += 1
                 if status_invocations == 1:
                     return CommandResult(
                         cmd,
                         0,
-                        stdout="?? sub/src/new_module.py\n?? sub/tests/test_new.py\n",
+                        stdout="?? sub/src/new_module.py\0?? sub/tests/test_new.py\0",
                     )
                 return CommandResult(cmd, 0, stdout="")
             if cmd[:3] == ["git", "add", "--intent-to-add"]:
@@ -588,10 +639,10 @@ class TestWorktreeCleanlinessCheck:
         def runner(args, cwd, input_text=None, timeout_seconds=None):
             nonlocal status_invocations
             cmd = list(args)
-            if cmd[:3] == ["git", "status", "--porcelain"]:
+            if cmd[:2] == ["git", "status"] and "-z" in cmd:
                 status_invocations += 1
                 if status_invocations == 1:
-                    return CommandResult(cmd, 0, stdout="?? src/new.py\n")
+                    return CommandResult(cmd, 0, stdout="?? src/new.py\0")
                 return CommandResult(cmd, 0, stdout="")
             if cmd[:3] == ["git", "add", "--intent-to-add"]:
                 add_cwds.append(cwd)
@@ -669,6 +720,90 @@ class TestWorktreeCleanlinessCheck:
         # index status; ``A`` is the intent-to-add work-tree status.
         assert any(line.startswith(" A sub/src/new.py") for line in status_lines)
         assert not any(line.startswith("?? sub/src/new.py") for line in status_lines)
+
+    def test_intent_add_decodes_paths_with_spaces_in_real_git(self, tmp_path: Path) -> None:
+        """End-to-end regression test for the porcelain quoting bug.
+
+        With a real git repository and ``commit_after_remediation`` enabled,
+        the cleanliness check must successfully intent-add untracked files
+        whose names contain characters that ``git status --porcelain`` would
+        have wrapped in C-style quotes (spaces, double-quotes, backslashes).
+        The NUL-delimited parser passes the paths through verbatim, so the
+        intent-add pathspec resolves against the worktree and the recheck
+        shows the ``A`` intent-to-add marker for each file.
+        """
+        import subprocess
+
+        (tmp_path / "artifacts").mkdir()
+        subprocess.run(["git", "init", "-b", "main"], cwd=tmp_path, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "t@e.com"], cwd=tmp_path, check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "T"], cwd=tmp_path, check=True, capture_output=True
+        )
+        (tmp_path / "README").write_text("hi\n", encoding="utf-8")
+        subprocess.run(["git", "add", "README"], cwd=tmp_path, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "init"], cwd=tmp_path, check=True, capture_output=True
+        )
+        (tmp_path / "src").mkdir()
+        spaced = tmp_path / "src" / "has space.py"
+        spaced.write_text("print('hello')\n", encoding="utf-8")
+        quoted = tmp_path / "src" / 'quote"file.py'
+        quoted.write_text("print('hi')\n", encoding="utf-8")
+        slashed = tmp_path / "src" / "back\\slash.py"
+        slashed.write_text("print('yo')\n", encoding="utf-8")
+
+        config = LoopConfig(
+            base="main",
+            max_iterations=1,
+            codex_bin="codex",
+            cwd=tmp_path,
+            artifact_dir=tmp_path / "artifacts",
+            check_commands=("true",),
+            commit_after_remediation=True,
+        )
+
+        def _real_runner(args, cwd, input_text=None, timeout_seconds=None):
+            completed = subprocess.run(
+                list(args),
+                cwd=cwd,
+                capture_output=True,
+                timeout=timeout_seconds,
+            )
+            return CommandResult(
+                list(args),
+                completed.returncode,
+                stdout=completed.stdout.decode("utf-8", errors="surrogateescape"),
+                stderr=completed.stderr.decode("utf-8", errors="surrogateescape"),
+            )
+
+        result = run_worktree_cleanliness_check(config, _real_runner)
+
+        assert result.returncode == 0, result.stdout
+        for path in ("src/has space.py", 'src/quote"file.py', "src/back\\slash.py"):
+            assert path in result.stdout, f"expected {path!r} in auto-staged list"
+
+        status_after = subprocess.run(
+            ["git", "status", "-z", "--untracked-files=all"],
+            cwd=tmp_path,
+            capture_output=True,
+            check=True,
+        )
+        status_text = status_after.stdout.decode("utf-8", errors="surrogateescape")
+        for path in ("src/has space.py", 'src/quote"file.py', "src/back\\slash.py"):
+            # After ``git add --intent-to-add`` the path moves from ``??``
+            # (untracked) to `` A`` (intent-added work-tree entry). Either
+            # way the path is no longer reported as ``?? <path>\0``; the
+            # check below makes sure the bug — forwarding Git's quoted
+            # form so ``git add`` misses the file and the path stays as
+            # ``??`` — cannot recur.
+            untracked_marker = f"?? {path}\0"
+            assert untracked_marker not in status_text, (
+                f"path {path!r} should have been intent-added and is no "
+                f"longer untracked; got status output {status_text!r}"
+            )
 
 # ---------------------------------------------------------------------------
 # Engine dispatch: ctx.phase_checks wired vs. absent

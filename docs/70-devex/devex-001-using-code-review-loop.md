@@ -232,7 +232,7 @@ Every post-remediation checks phase starts with a built-in worktree
 cleanliness check:
 
 ```bash
-git status --porcelain --untracked-files=all
+git status -z --untracked-files=all
 ```
 
 When `--commit-after-remediation` is enabled, RevRem first refuses to start

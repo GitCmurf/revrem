@@ -17,7 +17,10 @@ from code_review_loop.core.ports import (
     CommandResult,
     RunContext,
 )
-from code_review_loop.git_status import is_artifact_status_line
+from code_review_loop.git_status import (
+    is_artifact_path,
+    untracked_paths_from_status_z,
+)
 from code_review_loop.repo_roots import lexical_git_repo_root
 
 if TYPE_CHECKING:
@@ -133,8 +136,16 @@ def run_worktree_cleanliness_check(
     phase can pick them up. Known generated output should be covered by
     ``.gitignore`` or the artifact-dir exemption; secret and policy violations
     should be caught by configured verification or commit hooks.
+
+    The status call uses ``git status -z`` so untracked paths are returned
+    verbatim. The line-oriented ``--porcelain`` output wraps any path that
+    contains an "unusual" character (spaces, backslashes, non-ASCII bytes,
+    etc.) in C-style quotes and escapes, and forwarding that quoted form to
+    ``git add --intent-to-add`` makes the pathspec miss the file. NUL-delimited
+    output does not quote or escape, so the parsed paths are passed through
+    unchanged.
     """
-    command = ["git", "status", "--porcelain", "--untracked-files=all"]
+    command = ["git", "status", "-z", "--untracked-files=all"]
     if config.dry_run:
         return CommandResult(command, 0, stdout="DRY_RUN cleanliness check skipped\n")
     if not _has_git_marker(config.cwd):
@@ -162,11 +173,7 @@ def run_worktree_cleanliness_check(
             )
         return result
 
-    untracked = [
-        line
-        for line in result.stdout.splitlines()
-        if line.startswith("?? ") and not _is_artifact_status_line(config, line)
-    ]
+    untracked = _untracked_non_artifact_paths(config, result.stdout)
     if not untracked:
         return CommandResult(command, 0, stdout=result.stdout, stderr=result.stderr)
     if not config.commit_after_remediation:
@@ -194,11 +201,7 @@ def run_worktree_cleanliness_check(
     )
     if recheck.returncode != 0:
         return recheck
-    remaining = [
-        line
-        for line in recheck.stdout.splitlines()
-        if line.startswith("?? ") and not _is_artifact_status_line(config, line)
-    ]
+    remaining = _untracked_non_artifact_paths(config, recheck.stdout)
     if remaining:
         return CommandResult(
             command,
@@ -220,6 +223,15 @@ def run_worktree_cleanliness_check(
     return CommandResult(command, 0, stdout=summary + "\n", stderr=recheck.stderr)
 
 
+def _untracked_non_artifact_paths(config: LoopConfig, status_stdout: str) -> list[str]:
+    """Return the decoded untracked non-artifact paths from ``git status -z``."""
+    return [
+        path
+        for path in untracked_paths_from_status_z(status_stdout)
+        if not is_artifact_path(config, path)
+    ]
+
+
 def _cleanliness_check_untracked_no_commit(
     command: list[str],
     untracked: list[str],
@@ -233,7 +245,7 @@ def _cleanliness_check_untracked_no_commit(
     (clean scratch files, add legitimate new files explicitly, or re-run with
     ``--commit`` to let RevRem stage them).
     """
-    listed = "\n".join(f"  + {line[3:].strip()}" for line in untracked)
+    listed = "\n".join(f"  + {path}" for path in untracked)
     summary = (
         "Worktree cleanliness check passed; auto-commit is disabled so RevRem "
         "will not stage untracked non-artifact files. The following paths "
@@ -245,7 +257,7 @@ def _cleanliness_check_untracked_no_commit(
 
 
 def _intent_add_untracked(
-    config: LoopConfig, runner, untracked_lines: list[str]
+    config: LoopConfig, runner, untracked_paths: list[str]
 ) -> tuple[list[str], list[str]]:
     """Run ``git add --intent-to-add`` for each untracked non-artifact path.
 
@@ -254,18 +266,20 @@ def _intent_add_untracked(
     ``git add -A`` in the commit phase can pick it up without the model having
     to stage files itself.
 
-    ``git status --porcelain`` always emits paths relative to the repository
-    root, even when RevRem is launched from a subdirectory. The intent-add
-    subprocess must therefore be rooted at the git worktree so the pathspec
-    matches the index's view of the tree; otherwise Git resolves the path
-    against ``config.cwd`` and the pathspec misses the file.
+    ``git status -z`` always emits paths relative to the repository root, even
+    when RevRem is launched from a subdirectory. The intent-add subprocess
+    must therefore be rooted at the git worktree so the pathspec matches the
+    index's view of the tree; otherwise Git resolves the path against
+    ``config.cwd`` and the pathspec misses the file.
+
+    The paths fed in here are already decoded (no surrounding quotes, no
+    C-style escapes), so they can be forwarded to ``git add`` byte-for-byte.
     """
     intent_added: list[str] = []
     intent_errors: list[str] = []
     timeout_seconds = phase_support.phase_timeout_seconds(config, config.timeout_seconds)
     intent_cwd = lexical_git_repo_root(config.cwd) or config.cwd
-    for line in untracked_lines:
-        path_text = line[3:].strip()
+    for path_text in untracked_paths:
         if not path_text:
             continue
         add_result = runner(
@@ -280,10 +294,6 @@ def _intent_add_untracked(
             detail = phase_support._combined_output(add_result).strip() or "git add failed"
             intent_errors.append(f"{path_text}: {detail}")
     return intent_added, intent_errors
-
-
-def _is_artifact_status_line(config: LoopConfig, line: str) -> bool:
-    return is_artifact_status_line(config, line)
 
 
 def _has_git_marker(cwd: Path) -> bool:
@@ -351,7 +361,7 @@ def run_checks(
     display_prefix = display_label or str(iteration)
     results: list[CommandResult] = []
 
-    cleanliness_check = "git status --porcelain --untracked-files=all"
+    cleanliness_check = "git status -z --untracked-files=all"
     phase_support.progress_event(
         config, "check", f"{display_prefix}.1", "start", cleanliness_check, ctx=ctx
     )

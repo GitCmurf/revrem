@@ -233,9 +233,17 @@ This project follows Semantic Versioning once public releases begin.
 
 - Auto-commit runs now enforce the documented clean-start invariant before any
   provider call. If `--commit-after-remediation` is enabled and `git status
-  --porcelain --untracked-files=all` reports non-artifact changes at startup,
+  -z --untracked-files=all` reports non-artifact changes at startup,
   RevRem exits with the dirty paths instead of later allowing `git add -A` to
   sweep pre-existing local edits into a remediation commit.
+- The post-remediation worktree cleanliness check now parses `git status -z`
+  output (NUL-delimited, no quoting) instead of the line-oriented `--porcelain`
+  variant, so untracked files whose names contain spaces, backslashes, or
+  embedded newlines are decoded verbatim before being forwarded to
+  `git add --intent-to-add`. The previous line parser passed Git's C-style
+  quoted form (`"a b"`, `"back\\slash"`) to `git add`, which made the
+  pathspec miss the file and rejected legitimate remediation output as a
+  clean-state violation.
 - Auto-commit runs now re-check `HEAD` and non-artifact worktree status before
   the first remediation attempt for each review finding. If another process
   edits or commits during the review/triage window, RevRem preserves the review

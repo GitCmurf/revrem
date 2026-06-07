@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from code_review_loop.config import LoopConfig
-from code_review_loop.git_status import non_artifact_status_lines
+from code_review_loop.git_status import (
+    is_artifact_path,
+    non_artifact_status_lines,
+    untracked_paths_from_status_z,
+)
 
 
 def test_non_artifact_status_lines_match_artifact_dir_on_path_boundaries(tmp_path):
@@ -122,3 +126,66 @@ def test_non_artifact_status_lines_falls_back_to_cwd_when_no_git_root(tmp_path):
     )
 
     assert dirty == ["?? src/code.py"]
+
+
+def test_untracked_paths_from_status_z_returns_paths_verbatim() -> None:
+    """The NUL-delimited parser must not strip, quote, or escape anything
+    from the untracked path entries — that is the whole point of switching
+    from ``--porcelain`` to ``-z`` for the cleanliness check.
+    """
+    assert untracked_paths_from_status_z("") == []
+    assert untracked_paths_from_status_z(
+        "?? src/new.py\0?? tests/test_new.py\0"
+    ) == ["src/new.py", "tests/test_new.py"]
+    assert untracked_paths_from_status_z("?? a b\0") == ["a b"]
+    assert untracked_paths_from_status_z("?? back\\slash\0") == ["back\\slash"]
+    assert untracked_paths_from_status_z('?? quote"file\0') == ['quote"file']
+    # ``git status -z`` preserves literal newline bytes inside the path
+    # component because NUL is the only record separator; a path that
+    # contains a real newline stays intact between two ``?? `` status
+    # codes on either side.
+    assert untracked_paths_from_status_z("?? has\nnewline\0?? plain\0") == [
+        "has\nnewline",
+        "plain",
+    ]
+
+
+def test_untracked_paths_from_status_z_ignores_non_untracked_entries() -> None:
+    """Only ``??`` status codes are relevant to the cleanliness check;
+    other status codes (modified, deleted, renamed, etc.) must be skipped
+    even when they appear between untracked entries.
+    """
+    stdout = (
+        " M src/existing.py\0"      # modified, not untracked
+        "?? src/added.py\0"          # untracked
+        "D  src/removed.py\0"        # deleted, not untracked
+        "?? docs/note.md\0"          # untracked
+        "R  old.txt\0new.txt\0"      # renamed (3-part entry)
+    )
+    assert untracked_paths_from_status_z(stdout) == [
+        "src/added.py",
+        "docs/note.md",
+    ]
+
+
+def test_untracked_paths_from_status_z_skips_empty_path_entries() -> None:
+    """Defensive: a malformed status line with no path after ``?? `` should
+    be dropped rather than forwarded as an empty pathspec to ``git add``.
+    """
+    assert untracked_paths_from_status_z("?? \0?? src/real.py\0") == ["src/real.py"]
+
+
+def test_is_artifact_path_matches_revrem_and_explicit_artifact_dir(tmp_path) -> None:
+    """Path-based artifact check mirrors the line-based check, so a caller
+    that already has decoded paths from ``git status -z`` can apply the
+    same exemption without re-synthesising status lines.
+    """
+    (tmp_path / "artifacts").mkdir()
+    config = LoopConfig(cwd=tmp_path, artifact_dir=tmp_path / "artifacts")
+
+    assert is_artifact_path(config, "artifacts/review-1.txt") is True
+    assert is_artifact_path(config, "artifacts") is True
+    assert is_artifact_path(config, ".revrem/runs/run-1/x.txt") is True
+    assert is_artifact_path(config, "src/code.py") is False
+    assert is_artifact_path(config, "artifacts-old/leak.txt") is False
+    assert is_artifact_path(config, "") is True
