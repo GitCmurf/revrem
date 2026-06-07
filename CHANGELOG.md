@@ -90,6 +90,12 @@ This project follows Semantic Versioning once public releases begin.
   `STALE_REVIEW_VALIDATION:` evidence block, reports resolved stale reviews as
   `clear (stale_review_already_resolved)`, and fails if a resolved marker is
   paired with committed edits.
+- Commit-message drafting now detects repository mutations by read-only
+  commit-message harnesses. If the harness already committed the staged patch
+  and left the repository clean, RevRem adopts that commit, records
+  `commit-N-message-side-effects.json`, and prints a warning that the model or
+  harness is unsuitable for commit-message drafting; unsafe HEAD/index
+  mutations still fail.
 - Gemini Pro review runs now get a larger model-aware external review input
   cap when no CLI/profile cap is set, and prompted review progress now reports
   whether the supplied context is full or truncated. Long-running external

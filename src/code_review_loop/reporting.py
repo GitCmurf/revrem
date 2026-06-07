@@ -91,6 +91,9 @@ def add_artifact_paths(summary: dict[str, object], config: LoopConfig) -> None:
     fallbacks = commit_message_fallbacks(config.artifact_dir)
     if fallbacks:
         summary["commit_message_fallbacks"] = fallbacks
+    side_effects = commit_message_side_effects(config.artifact_dir)
+    if side_effects:
+        summary["commit_message_side_effects"] = side_effects
 
 
 def commit_message_fallbacks(artifact_dir: Path) -> list[dict[str, object]]:
@@ -105,6 +108,20 @@ def commit_message_fallbacks(artifact_dir: Path) -> list[dict[str, object]]:
                 item.setdefault("artifact", str(path))
                 fallbacks.append(item)
     return fallbacks
+
+
+def commit_message_side_effects(artifact_dir: Path) -> list[dict[str, object]]:
+    side_effects: list[dict[str, object]] = []
+    for path in sorted(
+        artifact_dir.glob("commit-*-message-side-effects.json"), key=artifact_sort_key
+    ):
+        with suppress(OSError, json.JSONDecodeError):
+            value = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(value, dict):
+                item = dict(value)
+                item.setdefault("artifact", str(path))
+                side_effects.append(item)
+    return side_effects
 
 
 def artifact_sort_key(path: Path) -> tuple[str, int, str]:

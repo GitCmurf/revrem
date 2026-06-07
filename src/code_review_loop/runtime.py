@@ -143,6 +143,14 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
         if bug_report_path:
             lines.append(f"Bug report details: {bug_report_path}")
 
+    side_effects = summary.get("commit_message_side_effects")
+    if isinstance(side_effects, list) and side_effects:
+        lines.append("")
+        lines.append(
+            "WARNING: commit-message harness mutated repository state; this "
+            "model/harness is unsuitable for commit-message drafting until fixed."
+        )
+
     return "\n".join(lines)
 
 

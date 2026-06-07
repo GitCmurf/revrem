@@ -3,8 +3,8 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.40'
-last_updated: '2026-06-06'
+version: '1.41'
+last_updated: '2026-06-07'
 owner: GitCmurf
 docops_version: '2.0'
 area: devex
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.40
-> **Last Updated:** 2026-06-06
+> **Version:** 1.41
+> **Last Updated:** 2026-06-07
 > **Type:** DEVEX
 > **Area:** devex
 > **Description:** Operator guide for the code-review-loop utility
@@ -345,7 +345,11 @@ tries to write a helper file. If drafting creates a new non-artifact file,
 RevRem removes that file, records `commit-N-message-side-effects.json`, and
 uses the deterministic fallback subject. If drafting modifies an existing or
 tracked path, RevRem aborts the commit phase instead of committing contaminated
-state.
+state. If the commit-message harness commits the staged patch itself and leaves
+the repository clean, RevRem adopts that commit, records the side-effect
+artifact in `summary.json` under `commit_message_side_effects`, and prints a
+warning that the model/harness is unsuitable for commit-message drafting until
+fixed. Partial HEAD/index mutations remain errors.
 
 ### Profile-based usage
 
@@ -1241,6 +1245,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.41 | 2026-06-07 | Codex | Documented commit-message self-commit adoption, side-effect summary artifacts, and operator warning |
 | 1.40 | 2026-06-06 | Codex | Documented clear stale-review validation status, compact validation evidence, and resolved-marker no-edit invariant |
 | 1.39 | 2026-06-06 | Codex | Documented prompt, path-boundary, subdirectory HEAD refresh, and commit-message side-effect hardening |
 | 1.38 | 2026-06-06 | Codex | Documented stale pending-review validation and resolved no-op handling |

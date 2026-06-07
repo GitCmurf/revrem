@@ -93,6 +93,33 @@ def test_summary_collects_commit_message_fallback_artifacts(tmp_path):
     }
 
 
+def test_summary_collects_commit_message_side_effect_artifacts(tmp_path):
+    artifact_dir = tmp_path / "artifacts"
+    artifacts.write_json_artifact(
+        artifact_dir,
+        "commit-2-message-side-effects.json",
+        {
+            "schema_version": "1.0",
+            "iteration": 2,
+            "kind": "self_commit_adopted",
+            "severity": "warning",
+            "warning": "commit-message harness mutated repository state",
+        },
+    )
+    summary: dict[str, object] = {}
+
+    reporting.add_artifact_paths(summary, LoopConfig(artifact_dir=artifact_dir))
+
+    assert summary["commit_message_side_effects"][0] == {
+        "schema_version": "1.0",
+        "iteration": 2,
+        "kind": "self_commit_adopted",
+        "severity": "warning",
+        "warning": "commit-message harness mutated repository state",
+        "artifact": str(artifact_dir / "commit-2-message-side-effects.json"),
+    }
+
+
 def test_terminal_summary_surfaces_latest_findings_and_paths():
     summary = {
         "artifact_dir": "tmp/run",
@@ -513,6 +540,37 @@ def test_terminal_summary_finds_commit_output_artifact_with_windows_separators()
     text = format_terminal_summary(summary)
 
     assert r"Latest commit artifact: C:\tmp\run\commit-1.txt" in text
+
+
+def test_terminal_summary_warns_for_commit_message_side_effects():
+    summary = {
+        "artifact_dir": "tmp/run",
+        "final_status": "clear",
+        "stopped_reason": "review_clear",
+        "iterations": [
+            {
+                "iteration": 1,
+                "review_status": "clear",
+                "check_failures": 0,
+                "commit_status": "committed",
+            }
+        ],
+        "artifact_paths": {
+            "reviews": ["tmp/run/review-1.txt"],
+            "summary": "tmp/run/summary.json",
+        },
+        "commit_message_side_effects": [
+            {
+                "kind": "self_commit_adopted",
+                "severity": "warning",
+            }
+        ],
+    }
+
+    text = format_terminal_summary(summary)
+
+    assert "WARNING: commit-message harness mutated repository state" in text
+    assert "unsuitable for commit-message drafting" in text
 
 
 def test_summary_records_unknown_review_warning_and_bug_report(tmp_path):

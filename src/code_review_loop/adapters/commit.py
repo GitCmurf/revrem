@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
@@ -34,6 +35,18 @@ if TYPE_CHECKING:
     from code_review_loop.config import LoopConfig
 
 Runner = Callable[[Sequence[str], Path, str | None, float | None], CommandResult]
+
+COMMIT_MESSAGE_SIDE_EFFECT_WARNING = (
+    "commit-message harness mutated repository state; this model/harness is "
+    "unsuitable for commit-message drafting until fixed"
+)
+
+
+@dataclass(frozen=True)
+class _AdoptedCommit:
+    head_before: str
+    head_after: str
+    artifact: str
 
 
 def git_add_command_for_commit(_config: LoopConfig) -> list[str]:
@@ -223,6 +236,26 @@ def run_commit(
         raise RuntimeError(f"git staged-diff check failed for iteration {iteration}")
 
     message = commit_message_for_staged_changes(config, runner, iteration, ctx=ctx)
+    if isinstance(message, _AdoptedCommit):
+        phase_support.write_artifact(
+            config.artifact_dir / f"commit-{iteration}.txt",
+            (
+                "Commit-message harness already committed the staged changes.\n"
+                f"{COMMIT_MESSAGE_SIDE_EFFECT_WARNING}.\n"
+                f"HEAD before: {message.head_before}\n"
+                f"HEAD after: {message.head_after}\n"
+                f"Diagnostic: {message.artifact}\n"
+            ),
+        )
+        phase_support.progress_event(
+            config,
+            "commit",
+            str(iteration),
+            "committed",
+            f"adopted commit-message side-effect commit; {COMMIT_MESSAGE_SIDE_EFFECT_WARNING}",
+            ctx=ctx,
+        )
+        return "committed"
     commit_result = runner(
         commit_command_for_message(
             message,
@@ -260,7 +293,7 @@ def run_commit(
 
 def commit_message_for_staged_changes(
     config: LoopConfig, runner: Runner, iteration: int, ctx: RunContext
-) -> str:
+) -> str | _AdoptedCommit:
     timeout_seconds = phase_support.phase_timeout_seconds(
         config, config.commit_timeout_seconds
     )
@@ -294,13 +327,19 @@ def commit_message_for_staged_changes(
     )
     if not config.commit_message_model:
         return fallback
+    before_head = _commit_message_head(config, runner, timeout_seconds=timeout_seconds)
+    before_cached_raw = _commit_message_cached_raw(
+        config, runner, timeout_seconds=timeout_seconds
+    )
     command = phase_support.build_commit_message_command(config)
     prompt_root = (
         config.commit_message_prompt or phase_support.DEFAULT_COMMIT_MESSAGE_PROMPT
     )
     prompt_root = (
         f"{prompt_root.rstrip()}\n"
-        "Do not edit or write files; print only the subject.\n"
+        "Do not edit, write, stage, or commit files. Do not run git add or "
+        "git commit. Print only the subject; repository mutations are detected "
+        "and recorded as commit-message side effects.\n"
     )
     prompt = f"{prompt_root}\n{prompts_composer.trim_for_prompt(context, config.max_remediation_input_chars)}"
     prompt_artifact_path = (
@@ -386,6 +425,16 @@ def commit_message_for_staged_changes(
         before_status=before_status,
         timeout_seconds=timeout_seconds,
     )
+    repo_mutation = _handle_commit_message_repo_mutation(
+        config,
+        runner,
+        iteration,
+        before_head=before_head,
+        before_cached_raw=before_cached_raw,
+        timeout_seconds=timeout_seconds,
+    )
+    if repo_mutation is not None:
+        return repo_mutation
     if side_effect_status == "fallback":
         artifacts.write_json_artifact(
             config.artifact_dir,
@@ -472,6 +521,111 @@ def _commit_message_worktree_status(
     return set(non_artifact_status_lines(config, result.stdout))
 
 
+def _commit_message_head(
+    config: LoopConfig,
+    runner: Runner,
+    *,
+    timeout_seconds: float | None,
+) -> str | None:
+    if lexical_git_repo_root(config.cwd) is None:
+        return None
+    result = runner(["git", "rev-parse", "HEAD"], config.cwd, None, timeout_seconds)
+    if result.returncode != 0:
+        return None
+    head = result.stdout.strip()
+    return head or None
+
+
+def _commit_message_cached_raw(
+    config: LoopConfig,
+    runner: Runner,
+    *,
+    timeout_seconds: float | None,
+) -> str | None:
+    if lexical_git_repo_root(config.cwd) is None:
+        return None
+    result = runner(["git", "diff", "--cached", "--raw"], config.cwd, None, timeout_seconds)
+    if result.returncode != 0:
+        return None
+    return result.stdout
+
+
+def _commit_message_cached_is_empty(
+    config: LoopConfig,
+    runner: Runner,
+    *,
+    timeout_seconds: float | None,
+) -> bool:
+    result = runner(
+        ["git", "diff", "--cached", "--quiet"],
+        config.cwd,
+        None,
+        timeout_seconds,
+    )
+    return result.returncode == 0
+
+
+def _handle_commit_message_repo_mutation(
+    config: LoopConfig,
+    runner: Runner,
+    iteration: int,
+    *,
+    before_head: str | None,
+    before_cached_raw: str | None,
+    timeout_seconds: float | None,
+) -> _AdoptedCommit | None:
+    if before_head is None and before_cached_raw is None:
+        return None
+    after_head = _commit_message_head(config, runner, timeout_seconds=timeout_seconds)
+    after_cached_raw = _commit_message_cached_raw(
+        config, runner, timeout_seconds=timeout_seconds
+    )
+    head_changed = bool(before_head and after_head and before_head != after_head)
+    cached_changed = (
+        before_cached_raw is not None
+        and after_cached_raw is not None
+        and before_cached_raw != after_cached_raw
+    )
+    if not head_changed and not cached_changed:
+        return None
+    clean_status = _commit_message_worktree_status(
+        config, runner, timeout_seconds=timeout_seconds
+    )
+    cached_empty = _commit_message_cached_is_empty(
+        config, runner, timeout_seconds=timeout_seconds
+    )
+    artifact = _write_commit_message_side_effect_artifact(
+        config.artifact_dir,
+        iteration,
+        kind=(
+            "self_commit_adopted"
+            if head_changed and clean_status == set() and cached_empty
+            else "unsafe_repo_mutation"
+        ),
+        severity=(
+            "warning"
+            if head_changed and clean_status == set() and cached_empty
+            else "error"
+        ),
+        head_before=before_head,
+        head_after=after_head,
+        cached_diff_changed=cached_changed,
+        cached_diff_empty=cached_empty,
+        non_artifact_status_lines=sorted(clean_status or []),
+        warning=COMMIT_MESSAGE_SIDE_EFFECT_WARNING,
+    )
+    if head_changed and clean_status == set() and cached_empty and after_head:
+        return _AdoptedCommit(
+            head_before=before_head or "",
+            head_after=after_head,
+            artifact=str(artifact),
+        )
+    raise RuntimeError(
+        "commit-message drafting mutated repository HEAD or staged changes; "
+        f"see {artifact}"
+    )
+
+
 def _handle_commit_message_side_effects(
     config: LoopConfig,
     runner: Runner,
@@ -520,14 +674,14 @@ def _handle_commit_message_side_effects(
             continue
         target.unlink()
         created_paths.append(path_text)
-    artifacts.write_json_artifact(
+    _write_commit_message_side_effect_artifact(
         config.artifact_dir,
-        f"commit-{iteration}-message-side-effects.json",
-        {
-            "iteration": iteration,
-            "created_paths_removed": created_paths,
-            "unsafe_status_lines": unsafe_lines,
-        },
+        iteration,
+        kind="helper_files_removed" if created_paths else "unsafe_worktree_paths",
+        severity="warning" if created_paths and not unsafe_lines else "error",
+        created_paths_removed=created_paths,
+        unsafe_status_lines=unsafe_lines,
+        warning=COMMIT_MESSAGE_SIDE_EFFECT_WARNING,
     )
     if unsafe_lines:
         raise RuntimeError(
@@ -535,6 +689,41 @@ def _handle_commit_message_side_effects(
             f"see {config.artifact_dir / f'commit-{iteration}-message-side-effects.json'}"
         )
     return "fallback" if created_paths else "clean"
+
+
+def _write_commit_message_side_effect_artifact(
+    artifact_dir: Path,
+    iteration: int,
+    *,
+    kind: str,
+    severity: str,
+    warning: str,
+    created_paths_removed: list[str] | None = None,
+    unsafe_status_lines: list[str] | None = None,
+    head_before: str | None = None,
+    head_after: str | None = None,
+    cached_diff_changed: bool | None = None,
+    cached_diff_empty: bool | None = None,
+    non_artifact_status_lines: list[str] | None = None,
+) -> Path:
+    return artifacts.write_json_artifact(
+        artifact_dir,
+        f"commit-{iteration}-message-side-effects.json",
+        {
+            "schema_version": "1.0",
+            "iteration": iteration,
+            "kind": kind,
+            "severity": severity,
+            "warning": warning,
+            "created_paths_removed": created_paths_removed or [],
+            "unsafe_status_lines": unsafe_status_lines or [],
+            "head_before": head_before,
+            "head_after": head_after,
+            "cached_diff_changed": cached_diff_changed,
+            "cached_diff_empty": cached_diff_empty,
+            "non_artifact_status_lines": non_artifact_status_lines or [],
+        },
+    )
 
 
 def model_commit_message_subject(

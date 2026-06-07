@@ -122,4 +122,3 @@ def test_non_artifact_status_lines_falls_back_to_cwd_when_no_git_root(tmp_path):
     )
 
     assert dirty == ["?? src/code.py"]
-

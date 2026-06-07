@@ -146,7 +146,11 @@ There is no silent third option.
   checkout without a `.git` marker at `cwd`. Older pending-review prompts now
   display validation language. Commit-message drafting records and removes
   newly created non-artifact helper files, falls back to the deterministic
-  subject, and aborts if the read-only phase modifies existing paths.
+  subject, and aborts if the read-only phase modifies existing paths. If the
+  commit-message harness commits the already-staged patch itself and leaves the
+  repository clean, RevRem adopts that commit, records the side-effect artifact,
+  and warns that the model/harness is unsuitable for future commit-message
+  drafting; unsafe HEAD/index mutations still fail.
 - **Why:** Dogfood with Gemini remediation showed two remaining auto-commit
   safety gaps, a confusing stale-review prompt, and an OpenCode commit-message
   draft that wrote `commit-subject.txt` despite the read-only contract.
@@ -155,10 +159,12 @@ There is no silent third option.
   stale, older-review prompts said "use", and a commit-message helper file
   could leak into the worktree. After, artifact exemptions are boundary exact,
   commit HEAD tracking works from supported cwd layouts, stale prompts say
-  "validate", and read-only commit-message side effects are diagnosed and
-  handled before committing.
+  "validate", read-only commit-message helper files are diagnosed before
+  committing, and clean self-commits are adopted with a prominent warning
+  instead of turning into a misleading `git commit failed` error.
 - **schema_version impact:** none. The side-effect diagnostic is an additive
-  artifact.
+  artifact and the summary gains an additive `commit_message_side_effects`
+  collection.
 - **CHANGELOG:** Unreleased / Fixed.
 
 ### 2026-06-06 — Latest-review retry artifact and fragment trust hardening

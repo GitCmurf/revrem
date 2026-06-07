@@ -1404,6 +1404,12 @@ def test_commit_message_for_staged_changes_removes_created_side_effect_file(
             return CommandResult(
                 list(args), 0, stdout="src/code_review_loop/review.py\n"
             )
+        if args == ["git", "rev-parse", "HEAD"]:
+            return CommandResult(list(args), 0, stdout="same-head\n")
+        if args == ["git", "diff", "--cached", "--raw"]:
+            return CommandResult(
+                list(args), 0, stdout=":100644 100644 old new M\tsrc/code_review_loop/review.py\n"
+            )
         if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
             return CommandResult(list(args), 0, stdout=next(status_outputs))
         if args[:2] == ["codex", "exec"]:
@@ -1463,6 +1469,12 @@ def test_commit_message_for_staged_changes_aborts_on_tracked_side_effect(
         if args[:4] == ["git", "diff", "--cached", "--name-only"]:
             return CommandResult(
                 list(args), 0, stdout="src/code_review_loop/review.py\n"
+            )
+        if args == ["git", "rev-parse", "HEAD"]:
+            return CommandResult(list(args), 0, stdout="same-head\n")
+        if args == ["git", "diff", "--cached", "--raw"]:
+            return CommandResult(
+                list(args), 0, stdout=":100644 100644 old new M\tsrc/code_review_loop/review.py\n"
             )
         if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
             return CommandResult(list(args), 0, stdout=next(status_outputs))

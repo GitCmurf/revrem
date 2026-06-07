@@ -15,6 +15,7 @@ from support.phase_harnesses import phase_harness_kwargs
 
 import tests.support.application_runner as runner_mod
 from code_review_loop.adapters.commit import (
+    COMMIT_MESSAGE_SIDE_EFFECT_WARNING,
     CommitAdapter,
     _commit_message_worktree_status,
     _handle_commit_message_side_effects,
@@ -165,6 +166,128 @@ class TestCommitAdapter:
         _, kwargs = mock_commit.call_args
         assert kwargs.get("retrying") is True
         assert outcome.status == "committed"
+
+    def test_adopts_clean_commit_message_self_commit(self, tmp_path: Path) -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        artifact_dir = repo / "artifacts"
+        artifact_dir.mkdir()
+        config = LoopConfig(
+            base="main",
+            max_iterations=1,
+            codex_bin="codex",
+            cwd=repo,
+            artifact_dir=artifact_dir,
+            commit_message_model="test-model",
+        )
+        head = {"value": "before"}
+        cached_raw = {"value": ":100644 100644 old new M\tfile.py\n"}
+        commit_commands: list[list[str]] = []
+
+        def runner(args, cwd, input_text=None, timeout_seconds=None):
+            argv = list(args)
+            if argv[:4] == ["git", "-C", str(repo), "rev-parse"]:
+                return CommandResult(argv, 0, stdout=f"{repo}\n")
+            if argv == ["git", "add", "-A"]:
+                return CommandResult(argv, 0)
+            if argv[:4] == ["git", "-C", str(repo), "reset"]:
+                return CommandResult(argv, 0)
+            if argv == ["git", "diff", "--cached", "--quiet"]:
+                return CommandResult(argv, 0 if not cached_raw["value"] else 1)
+            if argv == ["git", "diff", "--cached", "--stat"]:
+                return CommandResult(argv, 0, stdout=" file.py | 1 +\n")
+            if argv == ["git", "diff", "--cached", "--name-only"]:
+                return CommandResult(argv, 0, stdout="file.py\n")
+            if argv == ["git", "rev-parse", "HEAD"]:
+                return CommandResult(argv, 0, stdout=f"{head['value']}\n")
+            if argv == ["git", "diff", "--cached", "--raw"]:
+                return CommandResult(argv, 0, stdout=cached_raw["value"])
+            if argv == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+                return CommandResult(argv, 0, stdout="")
+            if argv[:2] == ["git", "commit"]:
+                commit_commands.append(argv)
+                return CommandResult(argv, 1, stderr="should not be called\n")
+            head["value"] = "after"
+            cached_raw["value"] = ""
+            return CommandResult(argv, 0, stdout="fix(core): self committed (RevRem)\n")
+
+        ctx = _ctx(runner=runner)
+        adapter = CommitAdapter(config)
+
+        outcome = adapter.execute(CommitRequest(iteration=7), ctx)
+
+        assert outcome.status == "committed"
+        assert commit_commands == []
+        side_effects = json.loads(
+            (artifact_dir / "commit-7-message-side-effects.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert side_effects["kind"] == "self_commit_adopted"
+        assert side_effects["severity"] == "warning"
+        assert side_effects["head_before"] == "before"
+        assert side_effects["head_after"] == "after"
+        assert side_effects["warning"] == COMMIT_MESSAGE_SIDE_EFFECT_WARNING
+        assert COMMIT_MESSAGE_SIDE_EFFECT_WARNING in (
+            artifact_dir / "commit-7.txt"
+        ).read_text(encoding="utf-8")
+
+    def test_rejects_commit_message_staged_diff_mutation_without_head_change(
+        self, tmp_path: Path
+    ) -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        artifact_dir = repo / "artifacts"
+        artifact_dir.mkdir()
+        config = LoopConfig(
+            base="main",
+            max_iterations=1,
+            codex_bin="codex",
+            cwd=repo,
+            artifact_dir=artifact_dir,
+            commit_message_model="test-model",
+        )
+        cached_raw = {"value": ":100644 100644 old new M\tfile.py\n"}
+
+        def runner(args, cwd, input_text=None, timeout_seconds=None):
+            argv = list(args)
+            if argv[:4] == ["git", "-C", str(repo), "rev-parse"]:
+                return CommandResult(argv, 0, stdout=f"{repo}\n")
+            if argv == ["git", "add", "-A"]:
+                return CommandResult(argv, 0)
+            if argv[:4] == ["git", "-C", str(repo), "reset"]:
+                return CommandResult(argv, 0)
+            if argv == ["git", "diff", "--cached", "--quiet"]:
+                return CommandResult(argv, 0 if not cached_raw["value"] else 1)
+            if argv == ["git", "diff", "--cached", "--stat"]:
+                return CommandResult(argv, 0, stdout=" file.py | 1 +\n")
+            if argv == ["git", "diff", "--cached", "--name-only"]:
+                return CommandResult(argv, 0, stdout="file.py\n")
+            if argv == ["git", "rev-parse", "HEAD"]:
+                return CommandResult(argv, 0, stdout="same-head\n")
+            if argv == ["git", "diff", "--cached", "--raw"]:
+                return CommandResult(argv, 0, stdout=cached_raw["value"])
+            if argv == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+                return CommandResult(argv, 0, stdout="")
+            cached_raw["value"] = ""
+            return CommandResult(argv, 0, stdout="fix(core): invalid mutation (RevRem)\n")
+
+        ctx = _ctx(runner=runner)
+        adapter = CommitAdapter(config)
+
+        with pytest.raises(RuntimeError, match="mutated repository HEAD or staged changes"):
+            adapter.execute(CommitRequest(iteration=8), ctx)
+
+        side_effects = json.loads(
+            (artifact_dir / "commit-8-message-side-effects.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert side_effects["kind"] == "unsafe_repo_mutation"
+        assert side_effects["severity"] == "error"
+        assert side_effects["cached_diff_changed"] is True
 
 
 # ---------------------------------------------------------------------------
