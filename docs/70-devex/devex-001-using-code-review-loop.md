@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.41'
+version: '1.42'
 last_updated: '2026-06-07'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.41
+> **Version:** 1.42
 > **Last Updated:** 2026-06-07
 > **Type:** DEVEX
 > **Area:** devex
@@ -799,6 +799,14 @@ the remediation prompt. Invalid structured triage writes `diagnostics.json` with
 fails safe by ignoring invalid triage guidance; set `triage.on_invalid = "stop"`
 when a workflow should halt on malformed triage output.
 
+For v2 triage, RevRem performs narrow pre-validation repairs for common review
+model drift: review priority labels such as `P2` are translated to schema
+severities, and `needs_more_info.info_requested` arrays of strings are joined
+into a single newline-delimited string. Mixed arrays and non-string values still
+fail validation. The v2 prompt tells models to preserve `f1:` fingerprints when
+present and to use `review-comment:<1-based-order>` with a parsing warning for
+uniquely identifiable review comments that lack a stable finding ID.
+
 `runtime.inner_check_retries` / `--inner-check-retries` can run a bounded
 remediation-check retry inside the same outer iteration. When post-remediation
 checks fail and retries remain, RevRem feeds the check output directly back to
@@ -1069,10 +1077,13 @@ provider-facing external review prompt is bounded by
 `runtime.external_review_input_chars` / `--external-review-input-chars`; RevRem
 trims by character count with an omission marker rather than attempting
 provider-specific token accounting. When no CLI/profile cap is set, prompted
-review harnesses, including Gemini, use the conservative `80000` character
-default. Phase-start progress and events report whether the generated review
-context was supplied in full or truncated. Gemini CLI is currently invoked with
-`--prompt` for prompt-bearing phases because direct `gemini --prompt` probes succeed while
+review harnesses use the conservative `80000` character default, while Gemini
+Pro review models use a `95000` character model-aware default that still stays
+under the current Gemini `--prompt` delivery guard. Phase-start progress and
+events report whether the generated review context was supplied in full or
+truncated. Gemini CLI is currently invoked with
+`--prompt` for prompt-bearing phases because direct `gemini --prompt` probes
+succeed while
 large stdin review dogfood runs have repeatedly timed out with no provider
 output. RevRem refuses Gemini `--prompt` delivery above its current `100000`
 byte CLI-delivery guard, which stays below common Linux per-argument limits;
@@ -1245,6 +1256,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.42 | 2026-06-07 | Codex | Documented triage v2 info-request normalization, fallback review-comment fingerprints, and Gemini Pro prompt-cap default |
 | 1.41 | 2026-06-07 | Codex | Documented commit-message self-commit adoption, side-effect summary artifacts, and operator warning |
 | 1.40 | 2026-06-06 | Codex | Documented clear stale-review validation status, compact validation evidence, and resolved-marker no-edit invariant |
 | 1.39 | 2026-06-06 | Codex | Documented prompt, path-boundary, subdirectory HEAD refresh, and commit-message side-effect hardening |

@@ -56,6 +56,31 @@ There is no silent third option.
 
 ## Entries
 
+### 2026-06-07 — Triage v2 info-request normalization and Gemini prompt-cap safety
+
+- **Contract:** machine + human
+- **What changed:** structured triage parsing now normalizes
+  `needs_more_info.info_requested` values that arrive as arrays of strings into
+  one newline-delimited string before schema validation, recording a parsing
+  warning. The triage v2 prompt now explicitly requires a single string and
+  tells models to use `review-comment:<1-based-order>` for uniquely identifiable
+  review comments without stable `f1:` IDs. Gemini Pro prompted review defaults
+  now use a 95k character cap when no CLI/profile override is supplied.
+- **Why:** Dogfood with a weaker triage model showed it could emit multiple
+  information requests as a JSON array despite the schema requiring a string,
+  wasting remediation flow on an avoidable invalid-triage warning. A subsequent
+  review also showed that raising Gemini Pro's default above the current
+  `--prompt` delivery guard would abort locally before invoking Gemini.
+- **Before / After:** before, `info_requested: ["a", "b"]` failed the v2
+  schema and was ignored under `triage.on_invalid = "continue"`; after, it is
+  accepted as `"a\nb"` with a parsing warning, while mixed arrays still fail.
+  Before, Gemini Pro model-aware defaults could be configured above the 100k
+  argv-delivery guard; after, the default remains larger than the normal 80k
+  cap but below the guard.
+- **schema_version impact:** none. The triage v2 schema is unchanged; this is a
+  parser normalization and prompt/default hardening.
+- **CHANGELOG:** Unreleased / Added.
+
 ### 2026-06-06 — Auto-commit clean-start/in-run guards and triage suppression schema
 
 - **Contract:** machine + human

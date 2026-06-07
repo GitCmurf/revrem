@@ -98,7 +98,9 @@ This project follows Semantic Versioning once public releases begin.
   mutations still fail.
 - Gemini Pro review runs now get a larger model-aware external review input
   cap when no CLI/profile cap is set, and prompted review progress now reports
-  whether the supplied context is full or truncated. Long-running external
+  whether the supplied context is full or truncated. The Gemini Pro default
+  stays below the current Gemini `--prompt` delivery guard so model-aware
+  defaults do not create local argv-delivery failures. Long-running external
   review subprocesses add a stronger non-terminating waiting diagnostic after
   the configured quiet threshold.
 - Public GitHub launch materials: README, contribution guidance, security
@@ -308,6 +310,10 @@ This project follows Semantic Versioning once public releases begin.
 - Structured triage now normalizes review priority severities (`P0`-`P4`) to
   schema severities before validation, preserving strict failure for unknown
   labels while allowing dogfood routing to proceed on common review output.
+- Structured triage now also normalizes `needs_more_info.info_requested` values
+  that are emitted as arrays of strings into a single newline-delimited string,
+  and the v2 prompt clarifies fallback fingerprints for uniquely identifiable
+  review comments without stable `f1:` IDs.
 - Added a small captured-triage verification helper for replaying priority
   normalization evidence without shell heredocs or fragile pasted Python
   one-liners.
@@ -321,18 +327,14 @@ This project follows Semantic Versioning once public releases begin.
   the installed wheel on Linux and macOS.
 - Local development gate expanded to include `git diff --check`.
 - The CM2 commit-skip path now maps a `skipped_no_changes` outcome to
-  `final_status: "clear"` whenever the most recent review was `clear` **or**
-  `unknown`, and to `final_status: "findings"` only when the most recent
-  review explicitly found findings. Previously, an `unknown` review with
-  no staged remediation left the run in `final_status: "unknown"`; the
-  effective behaviour now treats a no-changes remediation as deterministic
-  clear evidence regardless of the preceding review's parse outcome.
-  `stopped_reason` remains `no_changes_after_remediation`. Operators who
-  scripted around the old `unknown` final status should adjust to the new
-  mapping. The summary `schema_version` was bumped from `"1.0"` to `"1.1"`
-  so scripted consumers that diff the schema can detect the contract
-  change without reading the CHANGELOG; the on-disk shape of the summary
-  is otherwise unchanged.
+  `final_status: "clear"` only when the most recent review was `clear`, and to
+  `final_status: "findings"` only when the most recent review explicitly found
+  findings. An `unknown` review with no staged remediation remains
+  `final_status: "unknown"` so an inconclusive review cannot become a clear
+  exit. `stopped_reason` remains `no_changes_after_remediation`. The summary
+  `schema_version` was bumped from `"1.0"` to `"1.1"` so scripted consumers
+  that diff the schema can detect the contract change without reading the
+  CHANGELOG; the on-disk shape of the summary is otherwise unchanged.
 - Returncode-1 review results are now parsed for explicit/structured review
   status before provider-failure keyword classification. This preserves valid
   review findings that mention provider-like text such as "rate limit" or

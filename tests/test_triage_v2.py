@@ -120,6 +120,61 @@ def test_parse_triage_payload_v2_normalizes_review_priority_severities():
     assert len(payload["parsing_warnings"]) >= 2
 
 
+def test_parse_triage_payload_v2_normalizes_info_requested_string_lists():
+    fixture = json.loads(_fixture("valid_v2"))
+    fixture["confirmed_findings"] = []
+    fixture["needs_more_info"] = [
+        {
+            "fingerprint": "review-comment:1",
+            "summary": "Missing review context",
+            "severity": "medium",
+            "affected_paths": ["src/code_review_loop/core/engine.py"],
+            "rationale": "The finding cannot be mapped from the supplied review context.",
+            "info_requested": [
+                "Please provide the source review artifact.",
+                "Please provide the commit that introduced the behavior.",
+            ],
+        }
+    ]
+
+    payload = triage.parse_triage_payload(
+        json.dumps(fixture),
+        run_id="run-123",
+        source_review_artifact="review-1.txt",
+        contract="v2",
+    )
+
+    assert (
+        payload["needs_more_info"][0]["info_requested"]
+        == "Please provide the source review artifact.\n"
+        "Please provide the commit that introduced the behavior."
+    )
+    assert "Normalized needs_more_info info_requested list" in payload["parsing_warnings"][-1]
+
+
+def test_parse_triage_payload_v2_rejects_mixed_info_requested_lists():
+    fixture = json.loads(_fixture("valid_v2"))
+    fixture["confirmed_findings"] = []
+    fixture["needs_more_info"] = [
+        {
+            "fingerprint": "review-comment:1",
+            "summary": "Missing review context",
+            "severity": "medium",
+            "affected_paths": ["src/code_review_loop/core/engine.py"],
+            "rationale": "The finding cannot be mapped from the supplied review context.",
+            "info_requested": ["Please provide the source review artifact.", 2],
+        }
+    ]
+
+    with pytest.raises(triage.TriageValidationError):
+        triage.parse_triage_payload(
+            json.dumps(fixture),
+            run_id="run-123",
+            source_review_artifact="review-1.txt",
+            contract="v2",
+        )
+
+
 def test_parse_triage_payload_v2_fails_on_v1_contract():
     # v1 fixture doesn't have classification/routing, so it should fail v2 schema
     with pytest.raises(triage.TriageValidationError):
@@ -143,6 +198,8 @@ def test_load_prompt_v2_includes_v2_fields():
     assert "Use `[]` unless one of RevRem's built-in fragment names" in prompt
     assert "`engineering-principles`" in prompt
     assert "Do not invent new names such as `bounded-execution`" in prompt
+    assert "`info_requested` must be a single string, not an array" in prompt
+    assert "`review-comment:<1-based-order>`" in prompt
 
 
 def test_write_triage_artifact_preserves_payload_schema_version(tmp_path):

@@ -108,6 +108,17 @@ def _normalize_review_priority_severities(payload: dict[str, Any]) -> dict[str, 
                         f"Normalized {collection_name} severity {raw_severity!r} to {mapped!r}."
                     )
                     changed = True
+            raw_info_requested = normalized_item.get("info_requested")
+            if (
+                collection_name == "needs_more_info"
+                and isinstance(raw_info_requested, list)
+                and all(isinstance(part, str) for part in raw_info_requested)
+            ):
+                normalized_item["info_requested"] = "\n".join(raw_info_requested)
+                warnings.append(
+                    "Normalized needs_more_info info_requested list to a newline-delimited string."
+                )
+                changed = True
             normalized_collection.append(normalized_item)
         normalized[collection_name] = normalized_collection
     if changed:

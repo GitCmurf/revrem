@@ -235,8 +235,10 @@ def test_gemini_pro_default_review_input_chars_exceeds_standard_default():
         DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS,
         DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS,
     )
+    from code_review_loop.harnesses import GEMINI_ARGV_PROMPT_MAX_BYTES
 
     assert DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS > DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS
+    assert DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS < GEMINI_ARGV_PROMPT_MAX_BYTES
 
 
 def test_main_uses_default_timeout_for_unset_phase_specific_timeout(tmp_path, monkeypatch):

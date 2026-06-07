@@ -28,6 +28,8 @@ remediator to inspect unrelated code.
 Every finding object must include:
 `fingerprint`, `summary`, `severity`, `affected_paths`, and `rationale`.
 `needs_more_info` entries must also include `info_requested`.
+`info_requested` must be a single string, not an array. If you have multiple
+questions, combine them into one newline-separated string.
 `severity` must be one of `info`, `low`, `medium`, `high`, or `critical`.
 Do not put review priority labels such as `P0`, `P1`, `P2`, `P3`, or `P4`
 in `severity`; translate them as `P0` -> `critical`, `P1` -> `high`,
@@ -35,8 +37,12 @@ in `severity`; translate them as `P0` -> `critical`, `P1` -> `high`,
 
 Fingerprint guidance:
 `fingerprint` must preserve the stable `f1:` finding ID from the review when
-one is present. Do not invent a new fingerprint. If a comment has no stable
-fingerprint and the match is ambiguous, put it in `needs_more_info` instead of
+one is present. If no `f1:` ID is present but the supplied review comments are
+still uniquely identifiable by path/line/order, use
+`review-comment:<1-based-order>` and add a `parsing_warnings` entry explaining
+the fallback. The absence of an `f1:` ID alone is not a reason to ask for more
+information. If a comment has no stable fingerprint and the match is genuinely
+ambiguous from the supplied context, put it in `needs_more_info` instead of
 guessing.
 
 Classification guidance:

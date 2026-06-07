@@ -295,6 +295,7 @@ model = "gemini-3.1-pro-preview"
         DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS,
         DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS,
     )
+    from code_review_loop.harnesses import GEMINI_ARGV_PROMPT_MAX_BYTES
 
     assert config.external_review_input_chars == DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS
     assert (
@@ -302,6 +303,7 @@ model = "gemini-3.1-pro-preview"
         == "model-default"
     )
     assert DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS > DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS
+    assert DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS < GEMINI_ARGV_PROMPT_MAX_BYTES
 
 
 def test_explicit_external_review_cap_overrides_gemini_model_default(
