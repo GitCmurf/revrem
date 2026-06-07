@@ -56,6 +56,24 @@ There is no silent third option.
 
 ## Entries
 
+### 2026-06-07 — Block-local stale-validation status parsing
+
+- **Contract:** machine + human
+- **What changed:** stale-validation status is read only from the first
+  `STALE_REVIEW_VALIDATION:` block in provider stdout before any `[stderr]`
+  transcript. Echoed prompt templates or original review text outside that
+  block cannot override the validator's status; conflicting `status:` and
+  `REVREM_STALE_REVIEW_STATUS:` values are treated as `unknown`.
+- **Why:** Dogfood showed a validator correctly emitted `still_applies`, but
+  RevRem scanned the combined stdout/stderr transcript, found an echoed
+  `REVREM_STALE_REVIEW_STATUS: resolved` template in stderr, and incorrectly
+  reported `stale_review_already_resolved`.
+- **Before / After:** before, any marker anywhere in the transcript could win.
+  After, only the validation block controls the outcome, and ambiguity fails
+  closed before remediation or clear.
+- **schema_version impact:** none.
+- **CHANGELOG:** Unreleased / Added.
+
 ### 2026-06-07 — Read-only stale validation and model-unavailable fail-fast
 
 - **Contract:** machine + human

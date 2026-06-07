@@ -5,10 +5,12 @@ from __future__ import annotations
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.engine import EngineState
 
+STALE_REVIEW_STATUS_VALUES = ("resolved", "still_applies", "unknown")
 STALE_REVIEW_RESOLVED_MARKER = "REVREM_STALE_REVIEW_STATUS: resolved"
 STALE_REVIEW_STILL_APPLIES_MARKER = "REVREM_STALE_REVIEW_STATUS: still_applies"
 STALE_REVIEW_UNKNOWN_MARKER = "REVREM_STALE_REVIEW_STATUS: unknown"
 STALE_REVIEW_VALIDATION_HEADER = "STALE_REVIEW_VALIDATION:"
+STDERR_SENTINEL = "\n[stderr]\n"
 
 
 def should_validate_stale_review(
@@ -67,34 +69,62 @@ def read_only_validation_prompt(review_input: str) -> str:
 
 
 def contains_resolved_marker(output: str) -> bool:
-    return STALE_REVIEW_RESOLVED_MARKER in output
+    return validation_status(output) == "resolved"
 
 
 def validation_status(output: str) -> str:
-    if STALE_REVIEW_RESOLVED_MARKER in output:
-        return "resolved"
-    if STALE_REVIEW_STILL_APPLIES_MARKER in output:
-        return "still_applies"
-    if STALE_REVIEW_UNKNOWN_MARKER in output:
+    block = _validation_block(output)
+    if block is None:
         return "unknown"
-    return "unknown"
+    status_line_value = _status_line_value(block)
+    marker_value = _marker_value(block)
+    if status_line_value and marker_value and status_line_value != marker_value:
+        return "unknown"
+    return status_line_value or marker_value or "unknown"
 
 
 def validation_summary(output: str) -> str:
-    start = output.find(STALE_REVIEW_VALIDATION_HEADER)
+    block = _validation_block(output)
+    return block if block is not None else _stdout_only(output).strip()
+
+
+def _stdout_only(output: str) -> str:
+    return output.split(STDERR_SENTINEL, 1)[0]
+
+
+def _validation_block(output: str) -> str | None:
+    stdout = _stdout_only(output)
+    start = stdout.find(STALE_REVIEW_VALIDATION_HEADER)
     if start < 0:
-        return output.strip()
+        return None
     marker_positions = [
-        (output.find(marker, start), marker)
-        for marker in (
-            STALE_REVIEW_RESOLVED_MARKER,
-            STALE_REVIEW_STILL_APPLIES_MARKER,
-            STALE_REVIEW_UNKNOWN_MARKER,
-        )
+        (stdout.find(f"REVREM_STALE_REVIEW_STATUS: {value}", start), value)
+        for value in STALE_REVIEW_STATUS_VALUES
     ]
-    marker_positions = [(index, marker) for index, marker in marker_positions if index >= 0]
-    if not marker_positions:
-        return output[start:].strip()
-    marker_start, marker = min(marker_positions, key=lambda item: item[0])
-    end = marker_start + len(marker)
-    return output[start:end].strip()
+    marker_positions = [(index, value) for index, value in marker_positions if index >= 0]
+    if marker_positions:
+        marker_start, value = min(marker_positions, key=lambda item: item[0])
+        marker = f"REVREM_STALE_REVIEW_STATUS: {value}"
+        return stdout[start : marker_start + len(marker)].strip()
+    return stdout[start:].strip()
+
+
+def _status_line_value(block: str) -> str | None:
+    for line in block.splitlines():
+        key, separator, value = line.partition(":")
+        if separator and key.strip().lower() == "status":
+            normalized = value.strip().lower()
+            if normalized in STALE_REVIEW_STATUS_VALUES:
+                return normalized
+            return None
+    return None
+
+
+def _marker_value(block: str) -> str | None:
+    earliest: tuple[int, str] | None = None
+    for value in STALE_REVIEW_STATUS_VALUES:
+        marker = f"REVREM_STALE_REVIEW_STATUS: {value}"
+        index = block.find(marker)
+        if index >= 0 and (earliest is None or index < earliest[0]):
+            earliest = (index, value)
+    return earliest[1] if earliest else None

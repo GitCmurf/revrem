@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.45'
+version: '1.46'
 last_updated: '2026-06-07'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.45
+> **Version:** 1.46
 > **Last Updated:** 2026-06-07
 > **Type:** DEVEX
 > **Area:** devex
@@ -341,7 +341,12 @@ the non-artifact Git status snapshot remains unchanged, RevRem stops as
 compact validation output instead of continuing to report the old stale
 finding. If validation returns `REVREM_STALE_REVIEW_STATUS: still_applies`,
 RevRem proceeds to normal remediation. If validation returns `unknown` or the
-read-only validation provider fails, RevRem stops before remediation. If the
+read-only validation provider fails, RevRem stops before remediation. RevRem
+parses only the first `STALE_REVIEW_VALIDATION:` block in provider stdout before
+any `[stderr]` transcript, so echoed prompt templates or review context cannot
+override the validator's status. If the block's `status:` line and
+`REVREM_STALE_REVIEW_STATUS:` marker disagree, RevRem treats validation as
+`unknown` and fails closed. If the
 model emits the resolved marker but produces changes that would be committed,
 or if checks leave non-artifact status changes behind, RevRem fails the run
 rather than accepting a contradictory validation. The resolved marker is only
@@ -1274,6 +1279,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.46 | 2026-06-07 | Codex | Documented block-local stale-validation status parsing and fail-closed ambiguous validation |
 | 1.45 | 2026-06-07 | Codex | Documented read-only stale validation preflight and non-retryable provider model availability failures |
 | 1.44 | 2026-06-07 | Codex | Documented deterministic stale-validation no-edits guard and configurable provider retries |
 | 1.43 | 2026-06-07 | Codex | Documented stale-review marker scoping and check-only untracked cleanliness failure |

@@ -164,6 +164,23 @@ def _stale_validation_runner(status: str = "resolved") -> RecordingProcessRunner
     )
 
 
+def _stale_validation_runner_with_stderr_echo(
+    status: str,
+    *,
+    echoed_status: str,
+) -> RecordingProcessRunner:
+    return RecordingProcessRunner(
+        {
+            "exec": CommandResult(
+                ["codex", "exec"],
+                0,
+                stdout=_stale_validation_output(status),
+                stderr=f"Prompt template: REVREM_STALE_REVIEW_STATUS: {echoed_status}\n",
+            )
+        }
+    )
+
+
 def test_runner_shell_executes_happy_path_without_cli(tmp_path: Path) -> None:
     config = _config(tmp_path, max_iterations=1)
     review = SequencedReviewHarness(["findings", "clear"])
@@ -681,6 +698,48 @@ def test_runner_shell_keeps_no_change_findings_without_stale_marker(
     assert remediation.calls
     assert state.iterations[0]["stale_review_still_applies"] is True
     assert "Old finding" in result.last_review_output
+
+
+def test_runner_shell_stale_review_still_applies_ignores_stderr_resolved_echo(
+    tmp_path: Path,
+) -> None:
+    config = replace(
+        _config(tmp_path, max_iterations=1, triage_enabled=False),
+        commit_after_remediation=True,
+        initial_review_mode="stale",
+    )
+    remediation = StaticRemediationHarness("No edits were needed.\n")
+    commit = StaticCommitHarness(status="skipped_no_changes")
+    ctx, sink = _context(
+        config,
+        review=SequencedReviewHarness(["clear"]),
+        remediation=remediation,
+        commit=commit,
+        runner=_stale_validation_runner_with_stderr_echo(
+            "still_applies",
+            echoed_status="resolved",
+        ),
+    )
+    clock = ctx.clock
+    try:
+        state = _state(config)
+
+        result = run_iterations(
+            config=config,
+            state=state,
+            clock=clock,
+            ctx=ctx,
+            snap=_snapshot(config),
+            initial_review_output="Full review comments:\n\n- [P2] Old finding\n",
+            run_id=FIXED_RUN_ID,
+        )
+    finally:
+        sink.close()
+
+    assert result.outcome.reason == "no_changes_after_remediation"
+    assert result.outcome.__class__.__name__ == "OutcomeFindings"
+    assert remediation.calls
+    assert state.iterations[0]["stale_review_still_applies"] is True
 
 
 def test_runner_shell_stale_review_unknown_stops_before_remediation(

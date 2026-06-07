@@ -91,7 +91,11 @@ This project follows Semantic Versioning once public releases begin.
   validator emits `still_applies`, RevRem proceeds to normal remediation; if it
   emits `unknown` or fails, RevRem stops before remediation. Normal remediation
   runs still ignore the marker text unless the run is actually validating stale
-  review feedback.
+  review feedback. Stale-validation status is now parsed only from the first
+  `STALE_REVIEW_VALIDATION:` block in provider stdout before any `[stderr]`
+  transcript; echoed prompt templates or review context cannot override the
+  validator's answer, and conflicting `status:`/marker values fail closed as
+  `unknown`.
 - Transient provider retry attempts and backoff are now runtime settings
   preserved in summaries and continuation commands. Defaults remain two
   attempts with one second of backoff, while the project-local dogfood profile
