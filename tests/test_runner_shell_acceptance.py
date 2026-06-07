@@ -126,6 +126,21 @@ class StaticRemediationHarness:
         return RemediationOutcome(result=CommandResult(["fake", "exec"], 0, stdout=self.stdout))
 
 
+class SequencedGitStatusRunner:
+    def __init__(self, statuses: list[str]) -> None:
+        self.statuses = statuses
+        self.calls: list[list[str]] = []
+
+    def __call__(self, args, cwd, input_text=None, timeout_seconds=None):
+        command = list(args)
+        self.calls.append(command)
+        if command == ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"]:
+            if not self.statuses:
+                raise AssertionError("git status sequence exhausted")
+            return CommandResult(command, 0, stdout=self.statuses.pop(0))
+        return CommandResult(command, 0, stdout="")
+
+
 def test_runner_shell_executes_happy_path_without_cli(tmp_path: Path) -> None:
     config = _config(tmp_path, max_iterations=1)
     review = SequencedReviewHarness(["findings", "clear"])
@@ -507,6 +522,98 @@ def test_runner_shell_stale_review_resolved_without_commit_exits_clear(
     assert result.outcome.__class__.__name__ == "OutcomeClear"
     assert remediation.calls, "remediation must have run to emit the resolved marker"
     assert state.iterations[0]["stale_review_resolved"] is True
+
+
+def test_runner_shell_stale_review_resolved_fails_if_remediation_edits(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / ".git").mkdir()
+    config = replace(
+        _config(tmp_path, max_iterations=1, triage_enabled=False),
+        commit_after_remediation=False,
+        initial_review_mode="stale",
+    )
+    remediation = StaticRemediationHarness(
+        "STALE_REVIEW_VALIDATION:\n"
+        "status: resolved\n"
+        "findings_checked: 1\n"
+        "evidence:\n"
+        "- old finding is gone\n"
+        "REVREM_STALE_REVIEW_STATUS: resolved\n"
+    )
+    runner = SequencedGitStatusRunner(["", " M src/changed.py\0"])
+    ctx, sink = _context(
+        config,
+        review=SequencedReviewHarness(["clear"]),
+        remediation=remediation,
+        runner=runner,
+    )
+    clock = ctx.clock
+    try:
+        state = _state(config)
+
+        result = run_iterations(
+            config=config,
+            state=state,
+            clock=clock,
+            ctx=ctx,
+            snap=_snapshot(config),
+            initial_review_output="Full review comments:\n\n- [P2] Old finding\n",
+            run_id=FIXED_RUN_ID,
+        )
+    finally:
+        sink.close()
+
+    assert result.outcome.__class__.__name__ == "OutcomeFailed"
+    assert result.outcome.reason == "remediation_failed"
+    assert "changed non-artifact git status" in result.outcome.error
+    assert "M src/changed.py" in result.outcome.error
+
+
+def test_runner_shell_stale_review_resolved_fails_if_checks_leave_edits(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / ".git").mkdir()
+    config = replace(
+        _config(tmp_path, max_iterations=1, triage_enabled=False),
+        commit_after_remediation=False,
+        initial_review_mode="stale",
+    )
+    remediation = StaticRemediationHarness(
+        "STALE_REVIEW_VALIDATION:\n"
+        "status: resolved\n"
+        "findings_checked: 1\n"
+        "evidence:\n"
+        "- old finding is gone\n"
+        "REVREM_STALE_REVIEW_STATUS: resolved\n"
+    )
+    runner = SequencedGitStatusRunner(["", "", "?? leaked.txt\0"])
+    ctx, sink = _context(
+        config,
+        review=SequencedReviewHarness(["clear"]),
+        remediation=remediation,
+        runner=runner,
+    )
+    clock = ctx.clock
+    try:
+        state = _state(config)
+
+        result = run_iterations(
+            config=config,
+            state=state,
+            clock=clock,
+            ctx=ctx,
+            snap=_snapshot(config),
+            initial_review_output="Full review comments:\n\n- [P2] Old finding\n",
+            run_id=FIXED_RUN_ID,
+        )
+    finally:
+        sink.close()
+
+    assert result.outcome.__class__.__name__ == "OutcomeFailed"
+    assert result.outcome.reason == "remediation_failed"
+    assert "changed non-artifact git status" in result.outcome.error
+    assert "?? leaked.txt" in result.outcome.error
 
 
 def test_runner_shell_keeps_no_change_findings_without_stale_marker(

@@ -130,6 +130,8 @@ class RuntimeConfig:
     full_auto: bool = True
     max_remediation_input_chars: int = 200_000
     inner_check_retries: int = 0
+    provider_retry_attempts: int = 2
+    provider_retry_backoff_seconds: float = 1.0
     external_review_input_chars: int = 80_000
     external_review_warning_seconds: float = 1_800
     terminal_excerpt_chars: int = 4_000

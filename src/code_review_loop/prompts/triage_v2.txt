@@ -118,4 +118,5 @@ should be fixed.
 `verification_commands` should contain the shortest command set that proves the
 remediation.
 Use `parsing_warnings` for any ambiguity you had to resolve while preserving the
-original review context.
+original review context. `parsing_warnings` must be an array of strings, not
+objects; write `"message text"` instead of `{"message": "message text"}`.

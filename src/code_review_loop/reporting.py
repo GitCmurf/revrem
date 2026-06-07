@@ -326,6 +326,8 @@ def phase_config_payload(config: LoopConfig) -> dict[str, object]:
         },
         "runtime": {
             "inner_check_retries": config.inner_check_retries,
+            "provider_retry_attempts": config.provider_retry_attempts,
+            "provider_retry_backoff_seconds": config.provider_retry_backoff_seconds,
             "external_review_input_chars": config.external_review_input_chars,
             "external_review_warning_seconds": config.external_review_warning_seconds,
             "source": config.phase_config_sources.get("runtime", "direct-config"),

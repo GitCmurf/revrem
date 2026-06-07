@@ -126,6 +126,8 @@ RUNTIME_KEYS = (
     "full_auto",
     "max_remediation_input_chars",
     "inner_check_retries",
+    "provider_retry_attempts",
+    "provider_retry_backoff_seconds",
     "external_review_input_chars",
     "external_review_warning_seconds",
     "terminal_excerpt_chars",
@@ -475,6 +477,14 @@ def parse_runtime(raw: dict[str, Any]) -> RuntimeConfig:
         inner_check_retries=_int(
             raw.get("inner_check_retries", 0),
             "runtime.inner_check_retries",
+        ),
+        provider_retry_attempts=_int(
+            raw.get("provider_retry_attempts", 2),
+            "runtime.provider_retry_attempts",
+        ),
+        provider_retry_backoff_seconds=_float(
+            raw.get("provider_retry_backoff_seconds", 1.0),
+            "runtime.provider_retry_backoff_seconds",
         ),
         external_review_input_chars=_int(
             raw.get("external_review_input_chars", 80_000),
@@ -1091,6 +1101,10 @@ def validate_profile(profile: Profile, *, require_implemented: bool) -> None:
         raise ValueError("runtime.max_remediation_input_chars must be positive")
     if profile.runtime.inner_check_retries < 0:
         raise ValueError("runtime.inner_check_retries must be 0 or greater")
+    if profile.runtime.provider_retry_attempts < 1:
+        raise ValueError("runtime.provider_retry_attempts must be at least 1")
+    if profile.runtime.provider_retry_backoff_seconds < 0:
+        raise ValueError("runtime.provider_retry_backoff_seconds must be 0 or greater")
     if profile.runtime.external_review_input_chars < 1:
         raise ValueError("runtime.external_review_input_chars must be positive")
     if profile.runtime.external_review_warning_seconds < 0:

@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.43'
+version: '1.44'
 last_updated: '2026-06-07'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.43
+> **Version:** 1.44
 > **Last Updated:** 2026-06-07
 > **Type:** DEVEX
 > **Area:** devex
@@ -334,15 +334,20 @@ finding still applies to the current checkout. If the finding is already
 resolved, the model must make no edits and include
 `STALE_REVIEW_VALIDATION:` evidence ending with
 `REVREM_STALE_REVIEW_STATUS: resolved` in its response. When checks pass and
-the commit phase finds no staged changes, RevRem stops as
+the non-artifact Git status snapshot remains unchanged, RevRem stops as
 `clear (stale_review_already_resolved)`, exits `0`, and surfaces only the
 compact validation output instead of continuing to report the old stale
 finding. If the model emits the resolved marker but produces changes that would
-be committed, RevRem fails the run rather than accepting a contradictory
-validation. The resolved marker is only interpreted in stale-review validation
-mode; ordinary remediation output can quote
+be committed, or if checks leave non-artifact status changes behind, RevRem
+fails the run rather than accepting a contradictory validation. The resolved
+marker is only interpreted in stale-review validation mode; ordinary remediation
+output can quote
 `REVREM_STALE_REVIEW_STATUS: resolved` while fixing stale-review-related code
-without changing the loop outcome.
+without changing the loop outcome. RevRem enforces the no-edits invariant with
+a non-artifact `git status --porcelain=v1 -z --untracked-files=all` snapshot
+before validation and again before returning clear, so resolved stale
+validation cannot hide tracked edits, untracked files, or check-time side
+effects.
 
 Commit-message drafting is treated as read-only even when an external harness
 tries to write a helper file. If drafting creates a new non-artifact file,
@@ -1094,12 +1099,16 @@ byte CLI-delivery guard, which stays below common Linux per-argument limits;
 lower `--external-review-input-chars`, use a smaller diff, or use a different
 review harness when the generated prompt is larger. This cap is a CLI delivery
 guard, not a claim about the Gemini model's API context window.
-If an external review subprocess fails with a known transient provider-side
-error, such as an OpenCode server error or a temporary rate-limit response,
-RevRem records `review-N-attempt-1.txt`, emits a `review retry` progress event,
-and retries that review once. CLI contract errors, auth/setup failures, quota
-exhaustion, RevRem-enforced subprocess timeouts, and Codex native review
-failures are not retried.
+If an external review or remediation subprocess fails with a known transient
+provider-side error, such as an OpenCode server error or a temporary rate-limit
+response, RevRem records `review-N-attempt-1.txt` or
+`remediation-N-attempt-1.txt`, emits a retry progress event, waits
+`runtime.provider_retry_backoff_seconds`, and retries up to
+`runtime.provider_retry_attempts` total attempts. Defaults stay conservative at
+two attempts and one second of backoff; the project-local dogfood profile uses
+three attempts and five seconds of backoff for watched, expensive loop runs.
+CLI contract errors, auth/setup failures, quota exhaustion, RevRem-enforced
+subprocess timeouts, and Codex native review failures are not retried.
 
 Progress output intentionally summarizes prompt-bearing commands. Phase start
 lines show the executable role, model, effort, timeout, sandbox, prompt size,
@@ -1260,6 +1269,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.44 | 2026-06-07 | Codex | Documented deterministic stale-validation no-edits guard and configurable provider retries |
 | 1.43 | 2026-06-07 | Codex | Documented stale-review marker scoping and check-only untracked cleanliness failure |
 | 1.42 | 2026-06-07 | Codex | Documented triage v2 info-request normalization, fallback review-comment fingerprints, and Gemini Pro prompt-cap default |
 | 1.41 | 2026-06-07 | Codex | Documented commit-message self-commit adoption, side-effect summary artifacts, and operator warning |

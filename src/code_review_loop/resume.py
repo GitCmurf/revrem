@@ -14,6 +14,8 @@ from code_review_loop.adapters.git import git_preflight_stdout
 from code_review_loop.config import (
     DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS,
     DEFAULT_EXTERNAL_REVIEW_WARNING_SECONDS,
+    DEFAULT_PROVIDER_RETRY_ATTEMPTS,
+    DEFAULT_PROVIDER_RETRY_BACKOFF_SECONDS,
     LoopConfig,
 )
 
@@ -240,6 +242,16 @@ def resume_loop_config(
         terminal_excerpt_chars=_resume_int(resume_config, "terminal_excerpt_chars", 4_000),
         max_remediation_input_chars=_resume_int(resume_config, "max_remediation_input_chars", 200_000),
         inner_check_retries=_resume_int(resume_config, "inner_check_retries", 0),
+        provider_retry_attempts=_resume_int(
+            resume_config,
+            "provider_retry_attempts",
+            DEFAULT_PROVIDER_RETRY_ATTEMPTS,
+        ),
+        provider_retry_backoff_seconds=_resume_float(
+            resume_config,
+            "provider_retry_backoff_seconds",
+            DEFAULT_PROVIDER_RETRY_BACKOFF_SECONDS,
+        ),
         external_review_input_chars=_resume_int(
             resume_config, "external_review_input_chars", DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS
         ),
@@ -309,6 +321,8 @@ def resume_config_payload(config: LoopConfig) -> dict[str, object]:
         "terminal_excerpt_chars": config.terminal_excerpt_chars,
         "max_remediation_input_chars": config.max_remediation_input_chars,
         "inner_check_retries": config.inner_check_retries,
+        "provider_retry_attempts": config.provider_retry_attempts,
+        "provider_retry_backoff_seconds": config.provider_retry_backoff_seconds,
         "external_review_input_chars": config.external_review_input_chars,
         "external_review_warning_seconds": config.external_review_warning_seconds,
         "commit_after_remediation": config.commit_after_remediation,

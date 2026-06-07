@@ -94,6 +94,8 @@
       "external_review_input_chars": 80000,
       "external_review_warning_seconds": 1800,
       "inner_check_retries": 0,
+      "provider_retry_attempts": 2,
+      "provider_retry_backoff_seconds": 1.0,
       "source": "direct-config",
       "sources": {}
     },
@@ -189,6 +191,8 @@
         "external_review_input_chars": 80000,
         "external_review_warning_seconds": 1800,
         "inner_check_retries": 0,
+        "provider_retry_attempts": 2,
+        "provider_retry_backoff_seconds": 1.0,
         "source": "direct-config",
         "sources": {}
       },
@@ -211,6 +215,8 @@
     },
     "profile_name": null,
     "progress_style": "compact",
+    "provider_retry_attempts": 2,
+    "provider_retry_backoff_seconds": 1.0,
     "remediation_harness": "codex",
     "remediation_model": null,
     "remediation_timeout_seconds": null,

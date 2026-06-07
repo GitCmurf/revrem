@@ -23,6 +23,8 @@ from code_review_loop.config import (
     DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS,
     DEFAULT_EXTERNAL_REVIEW_WARNING_SECONDS,
     DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS,
+    DEFAULT_PROVIDER_RETRY_ATTEMPTS,
+    DEFAULT_PROVIDER_RETRY_BACKOFF_SECONDS,
     DEFAULT_TIMEOUT_SECONDS,
     LoopConfig,
 )
@@ -525,6 +527,24 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
     )
     if inner_check_retries < 0:
         raise ValueError("inner_check_retries must be 0 or greater")
+    provider_retry_attempts = int(
+        pick(
+            args.provider_retry_attempts,
+            profile.runtime.provider_retry_attempts,
+            DEFAULT_PROVIDER_RETRY_ATTEMPTS,
+        )
+    )
+    if provider_retry_attempts < 1:
+        raise ValueError("provider_retry_attempts must be at least 1")
+    provider_retry_backoff_seconds = float(
+        pick(
+            args.provider_retry_backoff_seconds,
+            profile.runtime.provider_retry_backoff_seconds,
+            DEFAULT_PROVIDER_RETRY_BACKOFF_SECONDS,
+        )
+    )
+    if provider_retry_backoff_seconds < 0:
+        raise ValueError("provider_retry_backoff_seconds must be 0 or greater")
     phase_config_field_sources = {
         "review": review_phase.field_sources,
         "triage": {
@@ -584,6 +604,14 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         "runtime": {
             "inner_check_retries": (
                 "cli" if args.inner_check_retries is not None else profile_source
+            ),
+            "provider_retry_attempts": (
+                "cli" if args.provider_retry_attempts is not None else profile_source
+            ),
+            "provider_retry_backoff_seconds": (
+                "cli"
+                if args.provider_retry_backoff_seconds is not None
+                else profile_source
             ),
             "external_review_input_chars": external_review_input_chars_source,
             "external_review_warning_seconds": (
@@ -650,6 +678,8 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
             200_000,
         ),
         inner_check_retries=inner_check_retries,
+        provider_retry_attempts=provider_retry_attempts,
+        provider_retry_backoff_seconds=provider_retry_backoff_seconds,
         external_review_input_chars=external_review_input_chars,
         external_review_warning_seconds=external_review_warning_seconds,
         terminal_excerpt_chars=pick(
@@ -783,6 +813,8 @@ def profile_from_loop_config(
             full_auto=config.full_auto,
             max_remediation_input_chars=config.max_remediation_input_chars,
             inner_check_retries=config.inner_check_retries,
+            provider_retry_attempts=config.provider_retry_attempts,
+            provider_retry_backoff_seconds=config.provider_retry_backoff_seconds,
             external_review_input_chars=config.external_review_input_chars,
             external_review_warning_seconds=config.external_review_warning_seconds,
             terminal_excerpt_chars=config.terminal_excerpt_chars,

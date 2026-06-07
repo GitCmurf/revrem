@@ -175,6 +175,42 @@ def test_parse_triage_payload_v2_rejects_mixed_info_requested_lists():
         )
 
 
+def test_parse_triage_payload_v2_normalizes_warning_message_objects():
+    fixture = json.loads(_fixture("valid_v2"))
+    fixture["parsing_warnings"] = [
+        {
+            "message": (
+                "The review comment did not include a stable f1 ID, so it was "
+                "keyed as review-comment:1."
+            )
+        }
+    ]
+
+    payload = triage.parse_triage_payload(
+        json.dumps(fixture),
+        run_id="run-123",
+        source_review_artifact="review-1.txt",
+        contract="v2",
+    )
+
+    assert payload["parsing_warnings"] == [
+        "The review comment did not include a stable f1 ID, so it was keyed as review-comment:1."
+    ]
+
+
+def test_parse_triage_payload_v2_rejects_warning_objects_without_string_message():
+    fixture = json.loads(_fixture("valid_v2"))
+    fixture["parsing_warnings"] = [{"message": 3}]
+
+    with pytest.raises(triage.TriageValidationError):
+        triage.parse_triage_payload(
+            json.dumps(fixture),
+            run_id="run-123",
+            source_review_artifact="review-1.txt",
+            contract="v2",
+        )
+
+
 def test_parse_triage_payload_v2_fails_on_v1_contract():
     # v1 fixture doesn't have classification/routing, so it should fail v2 schema
     with pytest.raises(triage.TriageValidationError):
@@ -200,6 +236,7 @@ def test_load_prompt_v2_includes_v2_fields():
     assert "Do not invent new names such as `bounded-execution`" in prompt
     assert "`info_requested` must be a single string, not an array" in prompt
     assert "`review-comment:<1-based-order>`" in prompt
+    assert "`parsing_warnings` must be an array of strings" in prompt
 
 
 def test_write_triage_artifact_preserves_payload_schema_version(tmp_path):

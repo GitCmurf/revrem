@@ -67,6 +67,7 @@ class LoopAccumulator:
     remediation_duration: float = 0.0
     inner_check_retry_count: int = 0
     stale_review_resolved: bool = False
+    stale_review_dirty: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -350,6 +351,24 @@ def _decide_remediation(event: RemediationDone) -> Action:
 
 def _decide_checks(cfg: ConfigSnapshot, acc: LoopAccumulator, iteration: int) -> Action:
     if acc.stale_review_resolved:
+        if acc.stale_review_dirty:
+            return Stop(
+                OutcomeFailed(
+                    reason="remediation_failed",
+                    error=acc.stale_review_dirty,
+                )
+            )
+        if acc.pending_check_failures:
+            return Stop(
+                OutcomeFailed(
+                    reason="remediation_failed",
+                    error=(
+                        "stale review validation emitted resolved marker but "
+                        "verification checks failed"
+                    ),
+                    check_failures=True,
+                )
+            )
         return Stop(OutcomeClear(reason="stale_review_already_resolved"))
     if cfg.commit_after_remediation and not acc.pending_check_failures:
         return RunCommit()

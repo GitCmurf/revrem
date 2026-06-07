@@ -87,8 +87,9 @@ def parse_triage_payload(
 
 def _normalize_review_priority_severities(payload: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(payload)
-    warnings = list(normalized.get("parsing_warnings") or [])
-    changed = False
+    raw_warnings = normalized.get("parsing_warnings")
+    warnings_can_update = raw_warnings is None or isinstance(raw_warnings, list)
+    warnings, changed = _normalize_parsing_warnings(raw_warnings or [])
     for collection_name in ("confirmed_findings", "rejected_findings", "needs_more_info"):
         collection = normalized.get(collection_name)
         if not isinstance(collection, list):
@@ -104,9 +105,10 @@ def _normalize_review_priority_severities(payload: dict[str, Any]) -> dict[str, 
                 mapped = _REVIEW_PRIORITY_SEVERITIES.get(raw_severity.strip().upper())
                 if mapped is not None:
                     normalized_item["severity"] = mapped
-                    warnings.append(
-                        f"Normalized {collection_name} severity {raw_severity!r} to {mapped!r}."
-                    )
+                    if warnings_can_update:
+                        warnings.append(
+                            f"Normalized {collection_name} severity {raw_severity!r} to {mapped!r}."
+                        )
                     changed = True
             raw_info_requested = normalized_item.get("info_requested")
             if (
@@ -115,15 +117,33 @@ def _normalize_review_priority_severities(payload: dict[str, Any]) -> dict[str, 
                 and all(isinstance(part, str) for part in raw_info_requested)
             ):
                 normalized_item["info_requested"] = "\n".join(raw_info_requested)
-                warnings.append(
-                    "Normalized needs_more_info info_requested list to a newline-delimited string."
-                )
+                if warnings_can_update:
+                    warnings.append(
+                        "Normalized needs_more_info info_requested list to a newline-delimited string."
+                    )
                 changed = True
             normalized_collection.append(normalized_item)
         normalized[collection_name] = normalized_collection
-    if changed:
+    if changed and warnings_can_update:
         normalized["parsing_warnings"] = warnings
     return normalized
+
+
+def _normalize_parsing_warnings(raw_warnings: Any) -> tuple[list[Any], bool]:
+    if not isinstance(raw_warnings, list):
+        return [], False
+    normalized: list[Any] = []
+    changed = False
+    for warning in raw_warnings:
+        if isinstance(warning, str):
+            normalized.append(warning)
+            continue
+        if isinstance(warning, dict) and isinstance(warning.get("message"), str):
+            normalized.append(warning["message"])
+            changed = True
+            continue
+        normalized.append(warning)
+    return normalized, changed
 
 
 def write_triage_artifact(run_dir: Path, iteration: int, payload: dict[str, Any]) -> Path:

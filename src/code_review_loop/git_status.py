@@ -62,6 +62,40 @@ def untracked_paths_from_status_z(status_stdout: str) -> list[str]:
     return paths
 
 
+def non_artifact_status_entries_from_status_z(
+    config: LoopConfig,
+    status_stdout: str,
+) -> tuple[str, ...]:
+    """Return stable non-artifact entries from ``git status --porcelain=v1 -z``.
+
+    This is used for no-edit invariants where both tracked modifications and
+    untracked files matter. Rename/copy entries carry two paths in porcelain
+    ``-z`` output; they are treated as artifact-only only when both paths are
+    under artifact roots.
+    """
+    entries: list[str] = []
+    parts = status_stdout.split("\0")
+    index = 0
+    while index < len(parts):
+        entry = parts[index]
+        index += 1
+        if not entry:
+            continue
+        status = entry[:2]
+        path = entry[3:] if len(entry) >= 3 else ""
+        paths = [path] if path else []
+        if (status[:1] in {"R", "C"} or status[1:2] in {"R", "C"}) and index < len(parts):
+            old_path = parts[index]
+            index += 1
+            if old_path:
+                paths.append(old_path)
+        if paths and all(is_artifact_path(config, part) for part in paths):
+            continue
+        rendered = f"{status} {' -> '.join(paths)}" if paths else status
+        entries.append(rendered)
+    return tuple(sorted(entries))
+
+
 def is_artifact_path(config: LoopConfig, path: str) -> bool:
     """Return whether a single repo-root-relative path is a RevRem artifact.
 

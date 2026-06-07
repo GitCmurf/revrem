@@ -256,7 +256,11 @@ def run_review_with_retry(
     *,
     ctx: RunContext,
 ) -> CommandResult:
-    attempts = 2 if config.review_harness not in {"codex", "fake"} else 1
+    attempts = (
+        config.provider_retry_attempts
+        if config.review_harness not in {"codex", "fake"}
+        else 1
+    )
     last_result: CommandResult | None = None
     for attempt in range(1, attempts + 1):
         result = phase_support.run_with_waiting_progress(
@@ -295,7 +299,7 @@ def run_review_with_retry(
                 ctx=ctx,
                 metadata={"reason": failure.reason, "attempt": attempt},
             )
-            time.sleep(REVIEW_RETRY_BACKOFF_SECONDS)
+            time.sleep(config.provider_retry_backoff_seconds)
     assert last_result is not None
     return last_result
 

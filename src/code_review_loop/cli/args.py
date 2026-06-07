@@ -375,6 +375,24 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--provider-retry-attempts",
+        type=int,
+        default=None,
+        help=(
+            "Attempts for transient non-Codex provider review/remediation failures. "
+            "Includes the initial attempt. Defaults to profile value or 2."
+        ),
+    )
+    parser.add_argument(
+        "--provider-retry-backoff-seconds",
+        type=float,
+        default=None,
+        help=(
+            "Seconds to wait between transient non-Codex provider retry attempts. "
+            "Defaults to profile value or 1.0."
+        ),
+    )
+    parser.add_argument(
         "--external-review-input-chars",
         type=int,
         default=None,

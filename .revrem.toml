@@ -108,3 +108,5 @@ summary_format = "both"
 
 [profiles.dogfood.runtime]
 inner_check_retries = 1
+provider_retry_attempts = 3
+provider_retry_backoff_seconds = 5.0

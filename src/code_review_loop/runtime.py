@@ -408,6 +408,22 @@ def _append_phase_resume_overrides(
     )
     _append_number_override(
         command,
+        "--provider-retry-attempts",
+        config.get("provider_retry_attempts"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "runtime", "provider_retry_attempts"),
+    )
+    _append_number_override(
+        command,
+        "--provider-retry-backoff-seconds",
+        config.get("provider_retry_backoff_seconds"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(
+            phase_config_map, "runtime", "provider_retry_backoff_seconds"
+        ),
+    )
+    _append_number_override(
+        command,
         "--external-review-input-chars",
         config.get("external_review_input_chars"),
         profile_selected=profile_selected,

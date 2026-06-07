@@ -3,6 +3,7 @@ from __future__ import annotations
 from code_review_loop.config import LoopConfig
 from code_review_loop.git_status import (
     is_artifact_path,
+    non_artifact_status_entries_from_status_z,
     non_artifact_status_lines,
     untracked_paths_from_status_z,
 )
@@ -173,6 +174,31 @@ def test_untracked_paths_from_status_z_skips_empty_path_entries() -> None:
     be dropped rather than forwarded as an empty pathspec to ``git add``.
     """
     assert untracked_paths_from_status_z("?? \0?? src/real.py\0") == ["src/real.py"]
+
+
+def test_non_artifact_status_entries_from_status_z_filters_artifacts(tmp_path):
+    config = LoopConfig(cwd=tmp_path, artifact_dir=tmp_path / ".revrem" / "runs" / "r1")
+
+    entries = non_artifact_status_entries_from_status_z(
+        config,
+        " M src/changed.py\0"
+        "?? .revrem/runs/r1/review-1.txt\0"
+        "?? docs/new note.md\0",
+    )
+
+    assert entries == (" M src/changed.py", "?? docs/new note.md")
+
+
+def test_non_artifact_status_entries_from_status_z_handles_renames(tmp_path):
+    config = LoopConfig(cwd=tmp_path, artifact_dir=tmp_path / "artifacts")
+
+    entries = non_artifact_status_entries_from_status_z(
+        config,
+        "R  src/new.py\0src/old.py\0"
+        "R  artifacts/new.txt\0artifacts/old.txt\0",
+    )
+
+    assert entries == ("R  src/new.py -> src/old.py",)
 
 
 def test_is_artifact_path_matches_revrem_and_explicit_artifact_dir(tmp_path) -> None:

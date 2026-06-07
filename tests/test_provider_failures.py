@@ -13,7 +13,6 @@ from pathlib import Path
 import pytest
 
 from code_review_loop import provider_failures
-from code_review_loop.adapters import remediation as remediation_impl
 from code_review_loop.adapters import review as review_impl
 from code_review_loop.adapters.remediation import RemediationAdapter
 from code_review_loop.config import LoopConfig
@@ -607,8 +606,52 @@ def test_remediation_adapter_retries_transient_failure(
 
     assert len(calls) == 2
     assert real_sleep_calls == [
-        remediation_impl.REMEDIATION_RETRY_BACKOFF_SECONDS,
+        config.provider_retry_backoff_seconds,
     ]
+
+
+def test_remediation_adapter_uses_configured_retry_attempts_and_backoff(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "artifacts").mkdir()
+    calls: list[list[str]] = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[:2] == ["git", "diff"]:
+            return CommandResult(list(args), 0, stdout="")
+        calls.append(list(args))
+        if len(calls) < 3:
+            return CommandResult(list(args), 1, stderr="Error: 429 rate limit exceeded")
+        return CommandResult(list(args), 0, stdout="ok\n")
+
+    sleep_calls: list[float] = []
+    monkeypatch.setattr(
+        "code_review_loop.adapters.remediation.time.sleep",
+        lambda seconds: sleep_calls.append(seconds),
+    )
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        remediation_harness="opencode",
+        remediation_model="opencode/model",
+        provider_retry_attempts=3,
+        provider_retry_backoff_seconds=4.5,
+    )
+    ctx = RunContext(
+        runner=runner,
+        clock=FakeClock(),
+        identity=FakeRunIdentity(),
+        **phase_harness_kwargs(),
+    )
+    adapter = RemediationAdapter(config)
+
+    adapter.execute(RemediationRequest(iteration=1, remediation_input="fix"), ctx)
+
+    assert len(calls) == 3
+    assert sleep_calls == [4.5, 4.5]
 
 
 def test_remediation_retry_persists_failed_attempt_artifact(

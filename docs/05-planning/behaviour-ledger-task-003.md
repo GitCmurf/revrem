@@ -56,6 +56,29 @@ There is no silent third option.
 
 ## Entries
 
+### 2026-06-07 — Stale-validation no-edits guard and dogfood provider retry policy
+
+- **Contract:** machine + human
+- **What changed:** resolved stale-review validation now snapshots
+  non-artifact `git status --porcelain=v1 -z --untracked-files=all` entries
+  before validation and before returning clear. If remediation or checks change
+  tracked or untracked non-artifact paths, RevRem fails instead of reporting
+  `stale_review_already_resolved`. Runtime config now includes
+  `provider_retry_attempts` and `provider_retry_backoff_seconds`; the dogfood
+  profile sets them to `3` and `5.0`.
+- **Why:** Dogfood showed that stopping immediately after a resolved marker
+  could bypass the no-edits invariant and that watched OpenCode remediation
+  loops benefit from a stronger retry policy without changing defaults for all
+  users.
+- **Before / After:** before, a resolved marker could clear even if the model
+  edited files or checks left new non-artifact changes. After, the resolved
+  marker clears only with passing checks and unchanged non-artifact status.
+  Before, retry attempts/backoff were hard-coded. After, they are runtime
+  settings preserved in summaries, resume config, and continuation commands.
+- **schema_version impact:** none. Summary schema version is unchanged; retry
+  settings are additive runtime/resume fields.
+- **CHANGELOG:** Unreleased / Added.
+
 ### 2026-06-07 — Stale-review resolved marker scoped to validation mode
 
 - **Contract:** machine + human

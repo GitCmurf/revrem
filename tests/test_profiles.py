@@ -126,6 +126,8 @@ def test_project_dogfood_profile_parses_exact_committed_profile():
     assert dogfood.commit.message_model == "gpt-5.3-codex-spark"
     assert dogfood.commit.reasoning_effort == "low"
     assert dogfood.commit.timeout_seconds == 0
+    assert dogfood.runtime.provider_retry_attempts == 3
+    assert dogfood.runtime.provider_retry_backoff_seconds == 5.0
 
 
 def test_profile_accepts_commit_reasoning_effort_and_timeout(tmp_path):

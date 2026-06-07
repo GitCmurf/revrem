@@ -524,6 +524,8 @@ def test_resume_config_payload_and_loop_config_restore_external_review_settings(
             codex_bin="codex",
             cwd=tmp_path,
             artifact_dir=tmp_path / "artifacts",
+            provider_retry_attempts=4,
+            provider_retry_backoff_seconds=2.5,
             external_review_input_chars=600_000,
             external_review_warning_seconds=600.5,
         )
@@ -536,8 +538,12 @@ def test_resume_config_payload_and_loop_config_restore_external_review_settings(
         run_dir=run_dir,
     )
 
+    assert payload["provider_retry_attempts"] == 4
+    assert payload["provider_retry_backoff_seconds"] == 2.5
     assert payload["external_review_input_chars"] == 600_000
     assert payload["external_review_warning_seconds"] == 600.5
+    assert resumed.provider_retry_attempts == 4
+    assert resumed.provider_retry_backoff_seconds == 2.5
     assert resumed.external_review_input_chars == 600_000
     assert resumed.external_review_warning_seconds == 600.5
 

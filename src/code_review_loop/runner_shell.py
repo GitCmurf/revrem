@@ -4,15 +4,13 @@ from __future__ import annotations
 
 import shlex
 from dataclasses import dataclass, replace
-from typing import Any, Literal, cast
+from typing import Literal, cast
 
-from code_review_loop import budgets, stale_review, triage
+from code_review_loop import budgets, stale_review, stale_validation_status, triage
 from code_review_loop.adapters.checks import (
     all_failed_checks_are_revrem_timeouts as _all_failed_checks_are_revrem_timeouts,
 )
-from code_review_loop.adapters.checks import (
-    format_check_failures as _format_check_failures,
-)
+from code_review_loop.adapters.checks import format_check_failures as _format_check_failures
 from code_review_loop.adapters.commit import format_commit_hook_failure_for_remediation
 from code_review_loop.adapters.phase_support import (
     CommitFailed,
@@ -63,11 +61,10 @@ from code_review_loop.core.review_interpretation import (
 )
 from code_review_loop.core.state import RunState
 from code_review_loop.iteration_labels import artifact_label, event_iteration_label
-from code_review_loop.routing_artifacts import record_routing_outcome, resolve_and_record_routing
-from code_review_loop.run_guards import (
-    assert_worktree_stable_before_remediation,
-)
+from code_review_loop.routing_artifacts import record_routing_outcome
+from code_review_loop.run_guards import assert_worktree_stable_before_remediation
 from code_review_loop.runner_commit_phase import execute_commit_phase
+from code_review_loop.runner_routing_phase import resolve_routing_accumulator
 
 _ENGINE_STEPS_PER_ITERATION = 10
 _ENGINE_STEP_BUDGET_OVERHEAD = 4
@@ -95,6 +92,7 @@ class _RunnerEngineExecutor:
         self.latest_state: EngineState | None = None
         self.expected_head = ctx.git_head_at_start
         self.stale_review_validation_output = ""
+        self.stale_review_status_before: tuple[str, ...] | None = None
 
     def execute(self, action: Action, engine_state: EngineState) -> EngineState:
         match action:
@@ -119,10 +117,6 @@ class _RunnerEngineExecutor:
         self.latest_state = next_state
         return next_state
 
-    @property
-    def iterations(self) -> list[dict[str, object]]:
-        return self.state.iterations
-
     def _run_review(self, engine_state: EngineState, *, is_final: bool) -> EngineState:
         if is_final:
             try:
@@ -132,7 +126,7 @@ class _RunnerEngineExecutor:
                 )
             except RuntimeError as exc:
                 self.cause = exc
-                self.iterations.append({"iteration": "final", "review_failed": True})
+                self.state.iterations.append({"iteration": "final", "review_failed": True})
                 return replace(
                     engine_state,
                     event=ReviewDone(is_final=True, status="unknown", exc=exc),
@@ -144,7 +138,7 @@ class _RunnerEngineExecutor:
                 last_review_status=status,
             )
             if status == "unknown" and not acc.pending_check_failures:
-                self.iterations.append({"iteration": "final", "review_status": status})
+                self.state.iterations.append({"iteration": "final", "review_status": status})
             return replace(engine_state, acc=acc, event=ReviewDone(is_final=True, status=status))
 
         iteration = engine_state.iteration
@@ -155,12 +149,14 @@ class _RunnerEngineExecutor:
             remediation_duration=0.0,
             inner_check_retry_count=0,
             stale_review_resolved=False,
+            stale_review_dirty="",
         )
+        self.stale_review_status_before = None
         if iteration == 1 and self.initial_review_output:
             status = cast("Literal['clear', 'findings', 'unknown']", detect_review_status(self.initial_review_output))
             if status == "unknown":
                 status = "findings"
-            self.iterations.append(
+            self.state.iterations.append(
                 {
                     "iteration": iteration,
                     "review_status": status,
@@ -182,7 +178,7 @@ class _RunnerEngineExecutor:
             status, review = outcome.status, outcome.result
         except RuntimeError as exc:
             self.cause = exc
-            self.iterations.append({"iteration": iteration, "review_failed": True})
+            self.state.iterations.append({"iteration": iteration, "review_failed": True})
             emit_loop_failure_event(
                 self.config,
                 phase="review",
@@ -196,7 +192,7 @@ class _RunnerEngineExecutor:
                 event=ReviewDone(is_final=False, status="unknown", exc=exc),
             )
         review_output = actionable_review_output(_combined_output(review))
-        self.iterations.append({"iteration": iteration, "review_status": status})
+        self.state.iterations.append({"iteration": iteration, "review_status": status})
         acc = replace(acc, last_review_output=review_output, last_review_status=status)
         return replace(engine_state, acc=acc, event=ReviewDone(is_final=False, status=status))
 
@@ -221,10 +217,10 @@ class _RunnerEngineExecutor:
             triage_no_actionable = triage_outcome.is_clear
             triage_payload = triage_outcome.payload
             if suppressed_count:
-                self.iterations[-1]["suppressed_findings_count"] = suppressed_count
+                self.state.iterations[-1]["suppressed_findings_count"] = suppressed_count
             if triage_no_actionable:
                 if suppressed_count:
-                    self.iterations[-1]["suppressed_findings"] = True
+                    self.state.iterations[-1]["suppressed_findings"] = True
                     self.state.set_suppressed_findings_count(suppressed_count)
                 if engine_state.acc.pending_check_failures:
                     acc = replace(acc, remediation_input=engine_state.acc.pending_check_failures)
@@ -235,12 +231,20 @@ class _RunnerEngineExecutor:
                 )
 
             if triage_payload and self.config.triage_contract == "v2" and self.config.profile_v2:
-                acc = self._resolve_routing(iteration, triage_payload, acc)
+                acc = resolve_routing_accumulator(
+                    config=self.config,
+                    ctx=self.ctx,
+                    run_id=self.run_id,
+                    iteration=iteration,
+                    triage_payload=triage_payload,
+                    acc=acc,
+                    cache=self.routing_context_cache,
+                )
         except budgets.BudgetExceeded:
             raise
         except Exception as exc:
             self.cause = exc
-            self.iterations[-1]["triage_failed"] = True
+            self.state.iterations[-1]["triage_failed"] = True
             emit_loop_failure_event(
                 self.config,
                 phase="triage",
@@ -251,28 +255,6 @@ class _RunnerEngineExecutor:
             )
             return replace(engine_state, event=TriageDone(is_clear=False, exc=exc))
         return replace(engine_state, acc=acc, event=TriageDone(is_clear=False))
-
-    def _resolve_routing(
-        self,
-        iteration: int,
-        triage_payload: dict[str, Any],
-        acc: LoopAccumulator,
-    ) -> LoopAccumulator:
-        resolution = resolve_and_record_routing(
-            config=self.config,
-            ctx=self.ctx,
-            run_id=self.run_id,
-            iteration=iteration,
-            triage_payload=triage_payload,
-            remediation_input=acc.remediation_input,
-            failed_check_names=acc.failed_check_names,
-            cache=self.routing_context_cache,
-        )
-        return replace(
-            acc,
-            resolved_route=resolution.resolved_route,
-            remediation_input=resolution.remediation_input,
-        )
 
     def _run_remediation(self, engine_state: EngineState) -> EngineState:
         iteration = engine_state.iteration
@@ -290,6 +272,10 @@ class _RunnerEngineExecutor:
             initial_review_output=self.initial_review_output,
         )
         if validating_stale_review:
+            self.stale_review_status_before = stale_validation_status.non_artifact_status_snapshot(
+                self.config,
+                self.ctx,
+            )
             remediation_input = stale_review.validation_prompt(remediation_input)
         try:
             assert_worktree_stable_before_remediation(
@@ -321,13 +307,20 @@ class _RunnerEngineExecutor:
                 ),
             )
             if acc.stale_review_resolved:
+                dirty = stale_validation_status.dirty_message(
+                    self.config,
+                    self.ctx,
+                    self.stale_review_status_before,
+                )
+                if dirty:
+                    raise RuntimeError(dirty)
                 self.stale_review_validation_output = stale_review.validation_summary(combined_output)
-                self.iterations[-1]["stale_review_resolved"] = True
+                self.state.iterations[-1]["stale_review_resolved"] = True
         except budgets.BudgetExceeded:
             raise
         except Exception as exc:
             self.cause = exc
-            self.iterations[-1]["remediation_failed"] = True
+            self.state.iterations[-1]["remediation_failed"] = True
             emit_loop_failure_event(
                 self.config,
                 phase="remediate",
@@ -356,9 +349,9 @@ class _RunnerEngineExecutor:
         pending_check_failures = _format_check_failures(check_results)
         timeout_only_failures = bool(pending_check_failures) and _all_failed_checks_are_revrem_timeouts(check_results)
         self.state.set_pending_check_failures(bool(pending_check_failures))
-        self.iterations[-1]["check_failures"] = len(checks_outcome.failed_commands)
+        self.state.iterations[-1]["check_failures"] = len(checks_outcome.failed_commands)
         if check_results:
-            self.iterations[-1]["checks"] = [
+            self.state.iterations[-1]["checks"] = [
                 {
                     "command": shlex.join(result.args),
                     "status": "passed" if result.returncode == 0 else "failed",
@@ -387,6 +380,14 @@ class _RunnerEngineExecutor:
             ),
             commit_retry=False if pending_check_failures else engine_state.acc.commit_retry,
         )
+        if acc.stale_review_resolved:
+            dirty = stale_validation_status.dirty_message(
+                self.config,
+                self.ctx,
+                self.stale_review_status_before,
+            )
+            if dirty:
+                acc = replace(acc, stale_review_dirty=dirty)
         if timeout_only_failures and self.config.inner_check_retries > retry_count:
             progress_event(
                 self.config, "check", str(iteration), "warning",
@@ -426,7 +427,7 @@ class _RunnerEngineExecutor:
         result = execute_commit_phase(
             config=self.config,
             ctx=self.ctx,
-            iterations=self.iterations,
+            iterations=self.state.iterations,
             engine_state=engine_state,
             expected_head=self.expected_head,
         )

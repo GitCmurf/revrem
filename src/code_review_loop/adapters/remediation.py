@@ -216,7 +216,7 @@ def _run_remediation_with_retry(
     Non-transient provider failures (auth, quota, contract) and any failure
     on the codex or fake harness still raise on the first attempt.
     """
-    attempts = 1 if harness in {"codex", "fake"} else REMEDIATION_RETRY_ATTEMPTS
+    attempts = 1 if harness in {"codex", "fake"} else config.provider_retry_attempts
     last_result: CommandResult | None = None
     for attempt in range(1, attempts + 1):
         result = phase_support.run_with_waiting_progress(
@@ -249,7 +249,7 @@ def _run_remediation_with_retry(
                 ctx=ctx,
                 metadata={"reason": failure.reason, "attempt": attempt},
             )
-            time.sleep(REMEDIATION_RETRY_BACKOFF_SECONDS)
+            time.sleep(config.provider_retry_backoff_seconds)
     assert last_result is not None
     return last_result
 

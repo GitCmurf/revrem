@@ -352,6 +352,42 @@ external_review_input_chars = 80000
     )
 
 
+def test_provider_retry_cli_overrides_profile_runtime(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.retry.runtime]
+provider_retry_attempts = 3
+provider_retry_backoff_seconds = 5.0
+""",
+        encoding="utf-8",
+    )
+
+    args = cli_args.parse_args(
+        [
+            "--profile",
+            "retry",
+            "--provider-retry-attempts",
+            "4",
+            "--provider-retry-backoff-seconds",
+            "2.5",
+            "--dry-run",
+        ]
+    )
+    config, _summary_format = config_builder.build_loop_config(args, tmp_path)
+
+    assert config.provider_retry_attempts == 4
+    assert config.provider_retry_backoff_seconds == 2.5
+    assert config.phase_config_field_sources["runtime"]["provider_retry_attempts"] == "cli"
+    assert (
+        config.phase_config_field_sources["runtime"]["provider_retry_backoff_seconds"]
+        == "cli"
+    )
+
+
 def test_cli_commit_reasoning_effort_overrides_profile_commit_effort(
     tmp_path, monkeypatch
 ):

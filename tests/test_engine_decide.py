@@ -359,12 +359,8 @@ def test_decide_ck_stale_review_resolved_exits_clear_without_next_review() -> No
     assert action == Stop(OutcomeClear(reason="stale_review_already_resolved"))
 
 
-def test_decide_ck_stale_review_resolved_takes_precedence_over_pending_check_failures() -> None:
-    """When the stale review is resolved but checks still produced failures,
-    the resolved state is the authoritative terminal outcome. Pending check
-    failures from the just-completed check phase cannot override the
-    remediation's own validation that the finding is already resolved.
-    """
+def test_decide_ck_stale_review_resolved_with_pending_check_failures_fails() -> None:
+    """A resolved stale review is clear only when verification also passes."""
     cfg = ConfigSnapshot(
         max_iterations=3,
         triage_enabled=True,
@@ -379,7 +375,40 @@ def test_decide_ck_stale_review_resolved_takes_precedence_over_pending_check_fai
 
     action = decide(cfg, acc, ChecksDone(), iteration=2)
 
-    assert action == Stop(OutcomeClear(reason="stale_review_already_resolved"))
+    assert action == Stop(
+        OutcomeFailed(
+            reason="remediation_failed",
+            error=(
+                "stale review validation emitted resolved marker but "
+                "verification checks failed"
+            ),
+            check_failures=True,
+        )
+    )
+
+
+def test_decide_ck_stale_review_resolved_with_dirty_status_fails() -> None:
+    cfg = ConfigSnapshot(
+        max_iterations=3,
+        triage_enabled=True,
+        commit_after_remediation=False,
+        commit_on_hook_failure="fail",
+        final_review=True,
+    )
+    acc = LoopAccumulator(
+        pending_check_failures="",
+        stale_review_resolved=True,
+        stale_review_dirty="stale review validation changed non-artifact git status",
+    )
+
+    action = decide(cfg, acc, ChecksDone(), iteration=2)
+
+    assert action == Stop(
+        OutcomeFailed(
+            reason="remediation_failed",
+            error="stale review validation changed non-artifact git status",
+        )
+    )
 
 
 def test_decide_ck_stale_review_resolved_exits_before_commit() -> None:

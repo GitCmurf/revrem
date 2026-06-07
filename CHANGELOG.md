@@ -92,7 +92,13 @@ This project follows Semantic Versioning once public releases begin.
   paired with committed edits. Normal remediation runs now ignore that marker
   text unless the run is actually validating stale review feedback, so fixing
   stale-review logic cannot trip the stale-validation invariant by quoting the
-  marker.
+  marker. Resolved stale validation now also snapshots non-artifact Git status
+  before validation and before returning clear, so tracked edits, untracked
+  files, or check-time side effects cannot be hidden behind a resolved marker.
+- Transient provider retry attempts and backoff are now runtime settings
+  preserved in summaries and continuation commands. Defaults remain two
+  attempts with one second of backoff, while the project-local dogfood profile
+  uses three attempts with five seconds of backoff for watched expensive runs.
 - Commit-message drafting now detects repository mutations by read-only
   commit-message harnesses. If the harness already committed the staged patch
   and left the repository clean, RevRem adopts that commit, records
@@ -311,15 +317,12 @@ This project follows Semantic Versioning once public releases begin.
   `clear` and `findings` mappings for that reason are unchanged. This
   preserves the prior non-clear exit for the case where RevRem never
   received a clear review signal.
-- Stale-review validation in non-commit mode now short-circuits the
-  checks phase to `stale_review_already_resolved` instead of falling
-  through to `_next_review_action`. The previous behaviour made
-  `--no-final-review` runs end at `max_iterations_reached` and final-
-  review runs spend a redundant provider call after the remediation
-  had already proven the finding resolved. The resolved state now
-  takes precedence over pending check failures and over the commit
-  phase, mirroring the existing `skipped_no_changes` branch in
-  `_decide_commit`.
+- Stale-review validation now reports `stale_review_already_resolved`
+  only after verification checks pass and a deterministic non-artifact
+  Git status snapshot remains unchanged. This avoids a redundant final
+  provider call when the stale finding is already resolved, while still
+  failing the run if validation output claims resolution but leaves
+  tracked edits, untracked files, or check-time side effects behind.
 - The post-remediation worktree cleanliness check now fails (exit
   code 1) when untracked non-artifact files remain in a non-auto-commit
   run, instead of reporting `check_failures: 0` while leaving the
