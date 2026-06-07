@@ -291,11 +291,17 @@ model = "gemini-3.1-pro-preview"
     args = cli_args.parse_args(["--profile", "gemini-review", "--dry-run"])
     config, _summary_format = config_builder.build_loop_config(args, tmp_path)
 
-    assert config.external_review_input_chars == 80_000
+    from code_review_loop.config import (
+        DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS,
+        DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS,
+    )
+
+    assert config.external_review_input_chars == DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS
     assert (
         config.phase_config_field_sources["runtime"]["external_review_input_chars"]
         == "model-default"
     )
+    assert DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS > DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS
 
 
 def test_explicit_external_review_cap_overrides_gemini_model_default(

@@ -230,6 +230,15 @@ def test_build_loop_config_rejects_non_positive_external_review_input_chars(tmp_
         config_builder.build_loop_config(args, tmp_path)
 
 
+def test_gemini_pro_default_review_input_chars_exceeds_standard_default():
+    from code_review_loop.config import (
+        DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS,
+        DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS,
+    )
+
+    assert DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS > DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS
+
+
 def test_main_uses_default_timeout_for_unset_phase_specific_timeout(tmp_path, monkeypatch):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
