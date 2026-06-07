@@ -265,7 +265,7 @@ def pipeline_screen(
             details.append(f"harness={phase.harness}")
         if phase.model:
             details.append(f"model={phase.model}")
-        effort = _phase_effort_text(phase.harness, phase.reasoning_effort)
+        effort = harnesses.phase_effort_text(phase.harness, phase.reasoning_effort)
         if effort:
             details.append(f"effort={effort}")
         if phase.timeout_seconds is not None:
@@ -285,7 +285,7 @@ def pipeline_screen(
             details = [f"harness={route.harness}"]
             if route.model:
                 details.append(f"model={route.model}")
-            effort = _phase_effort_text(route.harness, route.reasoning_effort)
+            effort = harnesses.phase_effort_text(route.harness, route.reasoning_effort)
             if effort:
                 details.append(f"effort={effort}")
             if route.timeout_seconds is not None:
@@ -601,5 +601,3 @@ def phase_view(
     )
 
 
-def _phase_effort_text(harness: str | None, effort: str | None) -> str | None:
-    return harnesses.phase_effort_text(harness, effort)

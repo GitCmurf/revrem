@@ -113,41 +113,27 @@ def resolve_external_review_input_chars(
     cwd: Path,
     review_harness: str,
     review_model: str | None,
-) -> int:
+    profile_source: str,
+) -> tuple[int, str]:
+    """Return (chars_limit, source_label) together to avoid duplicating the three-branch decision."""
     if args.external_review_input_chars is not None:
         val = int(args.external_review_input_chars)
+        source = "cli"
     elif profile_runtime_key_explicit(
         profile_name, cwd, "external_review_input_chars"
     ):
         val = profile.runtime.external_review_input_chars
+        source = profile_source
     elif is_large_context_gemini_review_model(review_harness, review_model):
         val = DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS
+        source = "model-default"
     else:
         val = DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS
+        source = "defaults"
 
     if val <= 0:
         raise ValueError("external_review_input_chars must be greater than 0")
-    return val
-
-
-def resolve_external_review_input_chars_source(
-    *,
-    args: argparse.Namespace,
-    profile_name: str | None,
-    cwd: Path,
-    review_harness: str,
-    review_model: str | None,
-    profile_source: str,
-) -> str:
-    if args.external_review_input_chars is not None:
-        return "cli"
-    if profile_runtime_key_explicit(
-        profile_name, cwd, "external_review_input_chars"
-    ):
-        return profile_source
-    if is_large_context_gemini_review_model(review_harness, review_model):
-        return "model-default"
-    return "defaults"
+    return val, source
 
 
 _GEMINI_PRO_MODEL_PATTERN = re.compile(
@@ -494,16 +480,9 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         raise ValueError(
             f"triage.routing.default_route refers to unknown route: {routing.default_route}"
         )
-    external_review_input_chars = resolve_external_review_input_chars(
+    external_review_input_chars, external_review_input_chars_source = resolve_external_review_input_chars(
         args=args,
         profile=profile,
-        profile_name=args.profile,
-        cwd=cwd,
-        review_harness=review_phase.harness,
-        review_model=review_phase.model or args.model,
-    )
-    external_review_input_chars_source = resolve_external_review_input_chars_source(
-        args=args,
         profile_name=args.profile,
         cwd=cwd,
         review_harness=review_phase.harness,
