@@ -74,6 +74,16 @@ def test_decide_review_non_final_clear_with_check_failures_continues() -> None:
     assert action == RunTriage()
 
 
+def test_decide_review_non_final_unknown_stops_before_triage() -> None:
+    cfg = ConfigSnapshot(3, True, True, "fail", True)
+    acc = LoopAccumulator(pending_check_failures="")
+    event = ReviewDone(is_final=False, status="unknown")
+
+    action = decide(cfg, acc, event)
+
+    assert action == Stop(OutcomeUnknown(reason="review_unknown"))
+
+
 def test_decide_f2_final_review_exception_fails() -> None:
     cfg = ConfigSnapshot(3, True, True, "fail", True)
     acc = LoopAccumulator(pending_check_failures="")

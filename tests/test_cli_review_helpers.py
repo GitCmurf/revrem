@@ -106,6 +106,15 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
     )
     assert (
         detect_review_status(
+            "I did not identify any introduced, actionable correctness issues in "
+            "the changed code. A local full pytest run had one subprocess import "
+            "failure in an existing test/tool path, but it does not appear tied "
+            "to the diff under review."
+        )
+        == "clear"
+    )
+    assert (
+        detect_review_status(
             "I did not find any discrete introduced bug that would break existing behavior."
         )
         == "clear"

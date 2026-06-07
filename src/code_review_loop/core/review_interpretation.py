@@ -56,16 +56,19 @@ ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 UNRELATED_FAILURE_RE = re.compile(
     r"\b(?:failure|failures|issue|issues|problem|problems)\b"
     r"[^.!?]*\b(?:environment|pyth?onpath|local environment|unchanged|unrelated|"
-    r"not caused by|not introduced by|not a regression|outside the diff|not from this patch)\b"
+    r"not caused by|not introduced by|not a regression|outside the diff|not from this patch|"
+    r"not tied to|does not appear tied to|doesn't appear tied to)\b"
     r"|"
     r"\b(?:environment|pyth?onpath|local environment|unchanged|unrelated|"
-    r"not caused by|not introduced by|not a regression|outside the diff|not from this patch)\b"
+    r"not caused by|not introduced by|not a regression|outside the diff|not from this patch|"
+    r"not tied to|does not appear tied to|doesn't appear tied to)\b"
     r"[^.!?]*\b(?:failure|failures|issue|issues|problem|problems)\b",
     re.IGNORECASE,
 )
 UNRELATED_KEYWORD_RE = re.compile(
     r"\b(?:environment|pyth?onpath|local environment|unchanged|unrelated|"
-    r"not caused by|not introduced by|not a regression|outside the diff|not from this patch)\b",
+    r"not caused by|not introduced by|not a regression|outside the diff|not from this patch|"
+    r"not tied to|does not appear tied to|doesn't appear tied to)\b",
     re.IGNORECASE,
 )
 _UNRELATED_PROXIMITY_CHARS = 80
@@ -108,6 +111,7 @@ CLEAR_PHRASES = (
     "did not identify any discrete introduced bugs that should block the patch",
     "did not identify any discrete introduced bugs that would block the patch",
     "did not identify any actionable correctness, security, or maintainability issues",
+    "did not identify any introduced, actionable correctness issues",
     "did not identify any introduced correctness, security, or maintainability issues",
     "did not identify any introduced correctness, security, or maintainability issues that warrant an inline finding",
     "without revealing any discrete correctness issue",

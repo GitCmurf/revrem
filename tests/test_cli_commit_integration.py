@@ -397,7 +397,7 @@ def test_loop_refuses_to_auto_commit_from_dirty_worktree(tmp_path):
     ]
 
 
-def test_loop_stops_after_unknown_review_when_remediation_has_no_staged_changes(
+def test_loop_stops_after_unknown_review_before_remediation_or_commit(
     tmp_path,
 ):
     calls = []
@@ -438,11 +438,18 @@ def test_loop_stops_after_unknown_review_when_remediation_has_no_staged_changes(
         for command, _input_text, _timeout in calls
         if command[0] == "codex" and "review" in command
     ]
+    commit_calls = [
+        command
+        for command, _input_text, _timeout in calls
+        if command[:3] == ["git", "add", "-A"]
+        or (command[:3] == ["git", "diff", "--cached"] and "--quiet" in command)
+    ]
     assert len(review_calls) == 1
+    assert commit_calls == []
     assert summary["final_status"] == "unknown"
-    assert summary["stopped_reason"] == "no_changes_after_remediation"
+    assert summary["stopped_reason"] == "review_unknown"
     assert summary["iterations"][0]["review_status"] == "unknown"
-    assert summary["iterations"][0]["commit_status"] == "skipped_no_changes"
+    assert "commit_status" not in summary["iterations"][0]
 
 
 def test_loop_writes_failure_summary_when_commit_fails(tmp_path):

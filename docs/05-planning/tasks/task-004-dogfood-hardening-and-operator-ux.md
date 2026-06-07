@@ -51,6 +51,9 @@ review artifacts. They produced valid commits and caught real regressions:
   expected to have one-off overrides;
 - insufficient live feedback about the harness, model, reasoning effort,
   timeout, sandbox, and source of each phase configuration.
+- unknown review-status classification being allowed to continue through
+  triage and report a clear outcome, even though the review contract was
+  inconclusive.
 
 This task is the dogfood hardening programme that turns those findings into a
 reviewable set of implementation slices. It is not a re-opening of
@@ -71,6 +74,8 @@ delivering:
 - robust commit-message drafting and deterministic professional fallback;
 - correct handling of disabled routing, read-only no-op artifact setup,
   unresolved final-review excerpts, and explicit unbounded timeouts;
+- fail-closed semantics for unknown review status so triage cannot convert an
+  inconclusive review into an apparently clear run;
 - a documented multi-model and multi-harness validation matrix, including a
   first non-Codex remediation path through Gemini CLI when available.
 

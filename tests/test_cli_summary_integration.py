@@ -573,7 +573,7 @@ def test_terminal_summary_warns_for_commit_message_side_effects():
     assert "unsuitable for commit-message drafting" in text
 
 
-def test_summary_records_unknown_review_warning_and_bug_report(tmp_path):
+def test_summary_records_terminal_unknown_review_warning_and_bug_report(tmp_path):
     review_outputs = iter(
         [
             "This review output is ambiguous.\n",
@@ -599,7 +599,8 @@ def test_summary_records_unknown_review_warning_and_bug_report(tmp_path):
     text = format_terminal_summary(summary)
     report_path = tmp_path / "artifacts" / "unexpected-behavior-report.txt"
 
-    assert summary["final_status"] == "clear"
+    assert summary["final_status"] == "unknown"
+    assert summary["stopped_reason"] == "review_unknown"
     assert summary["unexpected_behaviors"] == [
         {
             "kind": "unknown_review_status",
@@ -613,6 +614,7 @@ def test_summary_records_unknown_review_warning_and_bug_report(tmp_path):
     assert summary["bug_report_path"] == str(report_path)
     assert report_path.is_file()
     assert "iteration 1" in report_path.read_text(encoding="utf-8")
+    assert "Review-remediation loop: unknown (review_unknown)" in text
     assert "WARNING: unexpected loop behavior detected." in text
     assert f"Bug report details: {report_path}" in text
 

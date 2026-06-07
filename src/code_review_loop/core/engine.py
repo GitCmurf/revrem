@@ -313,6 +313,8 @@ def _decide_review(
     if not event.is_final:
         if event.status == "clear" and not acc.pending_check_failures:
             return Stop(OutcomeClear(reason="review_clear", excerpt=""))
+        if event.status == "unknown":
+            return Stop(OutcomeUnknown(reason="review_unknown"))
         if cfg.triage_enabled:
             return RunTriage()
         return RunRemediation()
