@@ -22,6 +22,7 @@ OutcomeFailedReason = Literal[
     "remediation_failed",
     "review_failed",
     "setup_failed",
+    "stale_validation_failed",
     "triage_failed",
 ]
 
@@ -91,6 +92,7 @@ def outcome_to_exit_code(outcome: RunOutcome) -> int:
                 | "engine_step_limit_exceeded"
                 | "remediation_failed"
                 | "review_failed"
+                | "stale_validation_failed"
                 | "triage_failed"
             ):
                 return 1

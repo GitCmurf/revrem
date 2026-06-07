@@ -51,6 +51,10 @@ def classify_provider_failure(
         return ProviderFailure(
             "provider_quota_exhausted", "provider quota exhausted", False
         )
+    if _matches_any(normalized, MODEL_UNAVAILABLE_PATTERNS):
+        return ProviderFailure(
+            "provider_model_unavailable", "provider model unavailable", False
+        )
     if _matches_any(normalized, SERVER_ERROR_PATTERNS):
         ref = _extract_error_ref(output)
         suffix = f" ref={ref}" if ref else ""
@@ -96,6 +100,12 @@ QUOTA_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bterminalquotaerror\b"),
     re.compile(r"\bexhausted your capacity\b"),
     re.compile(r"\bcode:\s*429\b.*\bquota\b"),
+)
+MODEL_UNAVAILABLE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bmodel not found\b"),
+    re.compile(r"\bunknown model\b"),
+    re.compile(r"\bunsupported model\b"),
+    re.compile(r"\bdid you mean:\b"),
 )
 SERVER_ERROR_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bunknownerror\b"),

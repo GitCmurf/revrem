@@ -46,6 +46,22 @@ def _result(returncode: int, *, stdout: str = "", stderr: str = "") -> CommandRe
             "provider_quota_exhausted",
             False,
         ),
+        # Non-retryable: configured provider model is unavailable even when
+        # the CLI also wraps the response in a generic server-error envelope.
+        (
+            {
+                "returncode": 1,
+                "stderr": (
+                    "Error: Model not found: opencode/minimax-m3-free. "
+                    "Did you mean: deepseek-v4-flash-free?\n"
+                    'Error: {"name":"UnknownError",'
+                    '"data":{"message":"Unexpected server error",'
+                    '"ref":"err_3151eb39"}}'
+                ),
+            },
+            "provider_model_unavailable",
+            False,
+        ),
         # Non-retryable: CLI contract error (File not found, bad option, ...).
         (
             {"returncode": 1, "stderr": "Error: File not found: missing.txt"},
@@ -652,6 +668,57 @@ def test_remediation_adapter_uses_configured_retry_attempts_and_backoff(
 
     assert len(calls) == 3
     assert sleep_calls == [4.5, 4.5]
+
+
+def test_remediation_adapter_does_not_retry_model_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "artifacts").mkdir()
+    calls: list[list[str]] = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[:2] == ["git", "diff"]:
+            return CommandResult(list(args), 0, stdout="")
+        calls.append(list(args))
+        return CommandResult(
+            list(args),
+            1,
+            stderr=(
+                "Error: Model not found: opencode/minimax-m3-free. "
+                "Did you mean: deepseek-v4-flash-free?\n"
+                'Error: {"name":"UnknownError","data":{"message":"Unexpected server error"}}'
+            ),
+        )
+
+    sleep_calls: list[float] = []
+    monkeypatch.setattr(
+        "code_review_loop.adapters.remediation.time.sleep",
+        lambda seconds: sleep_calls.append(seconds),
+    )
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        remediation_harness="opencode",
+        remediation_model="opencode/minimax-m3-free",
+        provider_retry_attempts=3,
+        provider_retry_backoff_seconds=4.5,
+    )
+    ctx = RunContext(
+        runner=runner,
+        clock=FakeClock(),
+        identity=FakeRunIdentity(),
+        **phase_harness_kwargs(),
+    )
+    adapter = RemediationAdapter(config)
+
+    with pytest.raises(RuntimeError, match="provider model unavailable"):
+        adapter.execute(RemediationRequest(iteration=1, remediation_input="fix"), ctx)
+
+    assert len(calls) == 1
+    assert sleep_calls == []
 
 
 def test_remediation_retry_persists_failed_attempt_artifact(

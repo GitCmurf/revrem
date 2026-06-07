@@ -56,6 +56,27 @@ There is no silent third option.
 
 ## Entries
 
+### 2026-06-07 — Read-only stale validation and model-unavailable fail-fast
+
+- **Contract:** machine + human
+- **What changed:** stale pending-review validation now runs a read-only
+  provider pass before any write-capable remediation. `resolved` skips
+  remediation and proceeds to checks, `still_applies` proceeds to normal
+  remediation, and `unknown` or validation failure stops before remediation.
+  Provider model availability failures such as `Model not found` are classified
+  as non-transient before generic server-error wrappers.
+- **Why:** Dogfood showed that a stale finding already fixed in the current
+  checkout could still burn remediation calls and fail on an unavailable
+  remediation model. The OpenCode error included both `Model not found` and an
+  `UnknownError` envelope, so generic server-error retrying was too broad.
+- **Before / After:** before, validating an older review always invoked the
+  remediation harness, and model-unavailable output could be retried as a
+  transient server error. After, resolved stale findings avoid remediation
+  entirely, and unavailable models fail fast with a setup/config signal.
+- **schema_version impact:** none. New artifacts and summary fields are
+  additive.
+- **CHANGELOG:** Unreleased / Added.
+
 ### 2026-06-07 — Stale-validation no-edits guard and dogfood provider retry policy
 
 - **Contract:** machine + human

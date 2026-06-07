@@ -24,6 +24,7 @@ from typing import Literal, Protocol, assert_never
 from code_review_loop.core.outcome import (
     OutcomeClear,
     OutcomeFailed,
+    OutcomeFailedReason,
     OutcomeFindings,
     OutcomeUnknown,
     RunOutcome,
@@ -103,6 +104,7 @@ class RemediationDone:
     """Emitted after the remediation phase completes."""
 
     exc: BaseException | None = None
+    failure_reason: OutcomeFailedReason = "remediation_failed"
 
 
 @dataclass(frozen=True)
@@ -345,7 +347,7 @@ def _decide_triage(acc: LoopAccumulator, event: TriageDone) -> Action:
 
 def _decide_remediation(event: RemediationDone) -> Action:
     if event.exc is not None:
-        return Stop(OutcomeFailed(reason="remediation_failed", error=str(event.exc)))
+        return Stop(OutcomeFailed(reason=event.failure_reason, error=str(event.exc)))
     return RunChecks()
 
 

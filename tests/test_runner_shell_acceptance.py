@@ -127,18 +127,41 @@ class StaticRemediationHarness:
 
 
 class SequencedGitStatusRunner:
-    def __init__(self, statuses: list[str]) -> None:
+    def __init__(self, statuses: list[str], validation_stdout: str | None = None) -> None:
         self.statuses = statuses
+        self.validation_stdout = validation_stdout or _stale_validation_output("resolved")
         self.calls: list[list[str]] = []
 
     def __call__(self, args, cwd, input_text=None, timeout_seconds=None):
         command = list(args)
         self.calls.append(command)
+        if len(command) > 1 and command[1] == "exec":
+            return CommandResult(command, 0, stdout=self.validation_stdout)
         if command == ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"]:
             if not self.statuses:
                 raise AssertionError("git status sequence exhausted")
             return CommandResult(command, 0, stdout=self.statuses.pop(0))
         return CommandResult(command, 0, stdout="")
+
+
+def _stale_validation_output(status: str) -> str:
+    return (
+        "Preface should not be surfaced.\n"
+        "STALE_REVIEW_VALIDATION:\n"
+        f"status: {status}\n"
+        "findings_checked: 1\n"
+        "evidence:\n"
+        f"- stale finding is {status}\n"
+        f"REVREM_STALE_REVIEW_STATUS: {status}\n"
+        "[stderr]\n"
+        "provider footer should not be surfaced\n"
+    )
+
+
+def _stale_validation_runner(status: str = "resolved") -> RecordingProcessRunner:
+    return RecordingProcessRunner(
+        {"exec": CommandResult(["codex", "exec"], 0, stdout=_stale_validation_output(status))}
+    )
 
 
 def test_runner_shell_executes_happy_path_without_cli(tmp_path: Path) -> None:
@@ -394,6 +417,7 @@ def test_runner_shell_marks_stale_review_resolved_when_validation_noops(
         review=SequencedReviewHarness(["clear"]),
         remediation=remediation,
         commit=commit,
+        runner=_stale_validation_runner("resolved"),
     )
     clock = ctx.clock
     try:
@@ -416,10 +440,10 @@ def test_runner_shell_marks_stale_review_resolved_when_validation_noops(
     assert result.last_review_output.startswith("STALE_REVIEW_VALIDATION:")
     assert "Preface should not be surfaced" not in result.last_review_output
     assert "provider footer should not be surfaced" not in result.last_review_output
-    assert remediation.calls
-    assert "Stale pending-review validation mode" in remediation.calls[0].remediation_input
-    assert "STALE_REVIEW_VALIDATION:" in remediation.calls[0].remediation_input
+    assert remediation.calls == []
     assert state.iterations[0]["stale_review_resolved"] is True
+    assert (config.artifact_dir / "stale-validation-1.txt").is_file()
+    assert (config.artifact_dir / "stale-validation-1-prompt.txt").is_file()
 
 
 def test_runner_shell_skips_commit_when_stale_review_resolved(
@@ -450,6 +474,7 @@ def test_runner_shell_skips_commit_when_stale_review_resolved(
         review=SequencedReviewHarness(["findings", "clear"]),
         remediation=remediation,
         commit=commit,
+        runner=_stale_validation_runner("resolved"),
     )
     clock = ctx.clock
     try:
@@ -469,6 +494,7 @@ def test_runner_shell_skips_commit_when_stale_review_resolved(
 
     assert result.outcome.reason == "stale_review_already_resolved"
     assert result.outcome.__class__.__name__ == "OutcomeClear"
+    assert remediation.calls == []
     assert commit.calls == [], (
         "commit phase must not run after stale-review validation resolved "
         "the finding; the loop should stop at the checks phase"
@@ -501,6 +527,7 @@ def test_runner_shell_stale_review_resolved_without_commit_exits_clear(
         config,
         review=SequencedReviewHarness(["clear"]),
         remediation=remediation,
+        runner=_stale_validation_runner("resolved"),
     )
     clock = ctx.clock
     try:
@@ -520,7 +547,7 @@ def test_runner_shell_stale_review_resolved_without_commit_exits_clear(
 
     assert result.outcome.reason == "stale_review_already_resolved"
     assert result.outcome.__class__.__name__ == "OutcomeClear"
-    assert remediation.calls, "remediation must have run to emit the resolved marker"
+    assert remediation.calls == []
     assert state.iterations[0]["stale_review_resolved"] is True
 
 
@@ -565,7 +592,7 @@ def test_runner_shell_stale_review_resolved_fails_if_remediation_edits(
         sink.close()
 
     assert result.outcome.__class__.__name__ == "OutcomeFailed"
-    assert result.outcome.reason == "remediation_failed"
+    assert result.outcome.reason == "stale_validation_failed"
     assert "changed non-artifact git status" in result.outcome.error
     assert "M src/changed.py" in result.outcome.error
 
@@ -631,6 +658,7 @@ def test_runner_shell_keeps_no_change_findings_without_stale_marker(
         review=SequencedReviewHarness(["clear"]),
         remediation=remediation,
         commit=commit,
+        runner=_stale_validation_runner("still_applies"),
     )
     clock = ctx.clock
     try:
@@ -650,7 +678,45 @@ def test_runner_shell_keeps_no_change_findings_without_stale_marker(
 
     assert result.outcome.reason == "no_changes_after_remediation"
     assert result.outcome.__class__.__name__ == "OutcomeFindings"
+    assert remediation.calls
+    assert state.iterations[0]["stale_review_still_applies"] is True
     assert "Old finding" in result.last_review_output
+
+
+def test_runner_shell_stale_review_unknown_stops_before_remediation(
+    tmp_path: Path,
+) -> None:
+    config = replace(
+        _config(tmp_path, max_iterations=1, triage_enabled=False),
+        commit_after_remediation=True,
+        initial_review_mode="stale",
+    )
+    remediation = StaticRemediationHarness("should not run\n")
+    ctx, sink = _context(
+        config,
+        review=SequencedReviewHarness(["clear"]),
+        remediation=remediation,
+        runner=_stale_validation_runner("unknown"),
+    )
+    clock = ctx.clock
+    try:
+        state = _state(config)
+
+        result = run_iterations(
+            config=config,
+            state=state,
+            clock=clock,
+            ctx=ctx,
+            snap=_snapshot(config),
+            initial_review_output="Full review comments:\n\n- [P2] Old finding\n",
+            run_id=FIXED_RUN_ID,
+        )
+    finally:
+        sink.close()
+
+    assert result.outcome.__class__.__name__ == "OutcomeFailed"
+    assert result.outcome.reason == "stale_validation_failed"
+    assert remediation.calls == []
 
 
 def test_runner_shell_ignores_stale_resolved_marker_outside_validation_mode(

@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.44'
+version: '1.45'
 last_updated: '2026-06-07'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.44
+> **Version:** 1.45
 > **Last Updated:** 2026-06-07
 > **Type:** DEVEX
 > **Area:** devex
@@ -329,19 +329,23 @@ pending-review prompt.
 
 When an operator intentionally uses a pending review from a different
 `HEAD`/base, RevRem treats it as stale-review validation instead of ordinary
-remediation. The remediation prompt asks the model to first decide whether the
-finding still applies to the current checkout. If the finding is already
-resolved, the model must make no edits and include
+remediation. RevRem first runs a read-only stale-validation provider pass using
+the configured review harness/model. That pass decides whether the finding
+still applies to the current checkout before any write-capable remediation
+provider is invoked. If the finding is already resolved, the validator must make
+no edits and include
 `STALE_REVIEW_VALIDATION:` evidence ending with
 `REVREM_STALE_REVIEW_STATUS: resolved` in its response. When checks pass and
 the non-artifact Git status snapshot remains unchanged, RevRem stops as
 `clear (stale_review_already_resolved)`, exits `0`, and surfaces only the
 compact validation output instead of continuing to report the old stale
-finding. If the model emits the resolved marker but produces changes that would
-be committed, or if checks leave non-artifact status changes behind, RevRem
-fails the run rather than accepting a contradictory validation. The resolved
-marker is only interpreted in stale-review validation mode; ordinary remediation
-output can quote
+finding. If validation returns `REVREM_STALE_REVIEW_STATUS: still_applies`,
+RevRem proceeds to normal remediation. If validation returns `unknown` or the
+read-only validation provider fails, RevRem stops before remediation. If the
+model emits the resolved marker but produces changes that would be committed,
+or if checks leave non-artifact status changes behind, RevRem fails the run
+rather than accepting a contradictory validation. The resolved marker is only
+interpreted in stale-review validation mode; ordinary remediation output can quote
 `REVREM_STALE_REVIEW_STATUS: resolved` while fixing stale-review-related code
 without changing the loop outcome. RevRem enforces the no-edits invariant with
 a non-artifact `git status --porcelain=v1 -z --untracked-files=all` snapshot
@@ -1108,7 +1112,8 @@ response, RevRem records `review-N-attempt-1.txt` or
 two attempts and one second of backoff; the project-local dogfood profile uses
 three attempts and five seconds of backoff for watched, expensive loop runs.
 CLI contract errors, auth/setup failures, quota exhaustion, RevRem-enforced
-subprocess timeouts, and Codex native review failures are not retried.
+subprocess timeouts, unavailable provider models, and Codex native review
+failures are not retried.
 
 Progress output intentionally summarizes prompt-bearing commands. Phase start
 lines show the executable role, model, effort, timeout, sandbox, prompt size,
@@ -1269,6 +1274,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.45 | 2026-06-07 | Codex | Documented read-only stale validation preflight and non-retryable provider model availability failures |
 | 1.44 | 2026-06-07 | Codex | Documented deterministic stale-validation no-edits guard and configurable provider retries |
 | 1.43 | 2026-06-07 | Codex | Documented stale-review marker scoping and check-only untracked cleanliness failure |
 | 1.42 | 2026-06-07 | Codex | Documented triage v2 info-request normalization, fallback review-comment fingerprints, and Gemini Pro prompt-cap default |

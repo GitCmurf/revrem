@@ -83,22 +83,21 @@ This project follows Semantic Versioning once public releases begin.
   candidates. `--pending-review ignore` always starts fresh, and explicit
   `--initial-review-file` remains authoritative.
 - When an operator chooses pending review feedback from a different `HEAD`/base,
-  RevRem now treats the run as stale-review validation. Remediation is prompted
-  to make no edits and emit `REVREM_STALE_REVIEW_STATUS: resolved` when the
-  finding no longer applies to the current checkout. The prompt now presents
-  that choice as validation instead of ordinary review reuse, requires a compact
-  `STALE_REVIEW_VALIDATION:` evidence block, reports resolved stale reviews as
-  `clear (stale_review_already_resolved)`, and fails if a resolved marker is
-  paired with committed edits. Normal remediation runs now ignore that marker
-  text unless the run is actually validating stale review feedback, so fixing
-  stale-review logic cannot trip the stale-validation invariant by quoting the
-  marker. Resolved stale validation now also snapshots non-artifact Git status
-  before validation and before returning clear, so tracked edits, untracked
-  files, or check-time side effects cannot be hidden behind a resolved marker.
+  RevRem now treats the run as stale-review validation. A read-only validation
+  pass using the configured review harness/model runs before write-capable
+  remediation; if it emits `REVREM_STALE_REVIEW_STATUS: resolved`, remediation
+  is skipped and the loop reports `clear (stale_review_already_resolved)` after
+  checks pass and the non-artifact Git status snapshot remains unchanged. If the
+  validator emits `still_applies`, RevRem proceeds to normal remediation; if it
+  emits `unknown` or fails, RevRem stops before remediation. Normal remediation
+  runs still ignore the marker text unless the run is actually validating stale
+  review feedback.
 - Transient provider retry attempts and backoff are now runtime settings
   preserved in summaries and continuation commands. Defaults remain two
   attempts with one second of backoff, while the project-local dogfood profile
   uses three attempts with five seconds of backoff for watched expensive runs.
+  Provider model availability errors such as OpenCode `Model not found` are now
+  classified before generic server-error wrappers and are not retried.
 - Commit-message drafting now detects repository mutations by read-only
   commit-message harnesses. If the harness already committed the staged patch
   and left the repository clean, RevRem adopts that commit, records

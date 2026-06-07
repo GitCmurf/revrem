@@ -11,9 +11,7 @@ from code_review_loop.adapters.checks import (
     all_failed_checks_are_revrem_timeouts as _all_failed_checks_are_revrem_timeouts,
 )
 from code_review_loop.adapters.checks import format_check_failures as _format_check_failures
-from code_review_loop.adapters.commit import format_commit_hook_failure_for_remediation
 from code_review_loop.adapters.phase_support import (
-    CommitFailed,
     _combined_output,
     emit_loop_failure_event,
     progress_event,
@@ -23,7 +21,6 @@ from code_review_loop.config import LoopConfig
 from code_review_loop.core.engine import (
     Action,
     ChecksDone,
-    CommitDone,
     ConfigSnapshot,
     Continue,
     EngineState,
@@ -64,7 +61,9 @@ from code_review_loop.iteration_labels import artifact_label, event_iteration_la
 from code_review_loop.routing_artifacts import record_routing_outcome
 from code_review_loop.run_guards import assert_worktree_stable_before_remediation
 from code_review_loop.runner_commit_phase import execute_commit_phase
+from code_review_loop.runner_retry_phase import retry_after_checks, retry_after_commit_hook
 from code_review_loop.runner_routing_phase import resolve_routing_accumulator
+from code_review_loop.runner_stale_phase import run_stale_preflight
 
 _ENGINE_STEPS_PER_ITERATION = 10
 _ENGINE_STEP_BUDGET_OVERHEAD = 4
@@ -111,7 +110,9 @@ class _RunnerEngineExecutor:
             case RetryViaCommitHook():
                 next_state = self._retry_after_commit_hook(engine_state, action)
             case RetryViaChecks():
-                next_state = self._retry_after_checks(engine_state)
+                next_state = self._run_remediation(
+                    retry_after_checks(self.config, self.ctx, engine_state)
+                )
             case _:
                 raise AssertionError(f"engine executor received terminal action: {action!r}")
         self.latest_state = next_state
@@ -276,7 +277,6 @@ class _RunnerEngineExecutor:
                 self.config,
                 self.ctx,
             )
-            remediation_input = stale_review.validation_prompt(remediation_input)
         try:
             assert_worktree_stable_before_remediation(
                 self.config,
@@ -285,6 +285,22 @@ class _RunnerEngineExecutor:
                 expected_head=self.expected_head,
             )
             rem_start_time = self.clock.monotonic()
+            if validating_stale_review:
+                preflight = run_stale_preflight(
+                    config=self.config,
+                    ctx=self.ctx,
+                    clock=self.clock,
+                    iteration=iteration,
+                    remediation_input=remediation_input,
+                    acc=engine_state.acc,
+                    started_at=rem_start_time,
+                    status_before=self.stale_review_status_before,
+                )
+                if preflight.acc is not None:
+                    self.stale_review_validation_output = preflight.summary
+                    self.state.iterations[-1]["stale_review_resolved"] = True
+                    return replace(engine_state, acc=preflight.acc, event=RemediationDone())
+                self.state.iterations[-1]["stale_review_still_applies"] = True
             rem_outcome = self.ctx.phase_remediation.execute(
                 RemediationRequest(
                     iteration=iteration,
@@ -320,16 +336,22 @@ class _RunnerEngineExecutor:
             raise
         except Exception as exc:
             self.cause = exc
-            self.state.iterations[-1]["remediation_failed"] = True
+            failure_reason: Literal["stale_validation_failed", "remediation_failed"] = (
+                "stale_validation_failed" if validating_stale_review else "remediation_failed"
+            )
+            self.state.iterations[-1][failure_reason] = True
             emit_loop_failure_event(
                 self.config,
-                phase="remediate",
+                phase="stale-validation" if validating_stale_review else "remediate",
                 iteration=iteration,
-                reason="remediation_failed",
+                reason=failure_reason,
                 error=str(exc),
                 ctx=self.ctx,
             )
-            return replace(engine_state, event=RemediationDone(exc=exc))
+            return replace(
+                engine_state,
+                event=RemediationDone(exc=exc, failure_reason=failure_reason),
+            )
         return replace(engine_state, acc=acc, event=RemediationDone())
 
     def _run_checks(self, engine_state: EngineState) -> EngineState:
@@ -402,27 +424,6 @@ class _RunnerEngineExecutor:
             )
         return replace(engine_state, acc=acc, event=ChecksDone())
 
-    def _retry_after_checks(self, engine_state: EngineState) -> EngineState:
-        retry_count = engine_state.acc.inner_check_retry_count + 1
-        progress_event(
-            self.config,
-            "check",
-            str(engine_state.iteration),
-            "retry",
-            f"check failures will feed remediation retry {retry_count}/{self.config.inner_check_retries}",
-            ctx=self.ctx,
-        )
-        acc = replace(
-            engine_state.acc,
-            inner_check_retry_count=retry_count,
-            remediation_input=(
-                engine_state.acc.pending_check_failures
-                + "\n\n"
-                + engine_state.acc.remediation_input
-            ),
-        )
-        return self._run_remediation(replace(engine_state, acc=acc))
-
     def _run_commit(self, engine_state: EngineState) -> EngineState:
         result = execute_commit_phase(
             config=self.config,
@@ -436,17 +437,13 @@ class _RunnerEngineExecutor:
         return result.state
 
     def _retry_after_commit_hook(self, engine_state: EngineState, action: RetryViaCommitHook) -> EngineState:
-        commit_failed = engine_state.event.commit_failed if isinstance(engine_state.event, CommitDone) else None
-        if not isinstance(commit_failed, CommitFailed):
-            raise RuntimeError(action.hook_output)
-        pending_check_failures = format_commit_hook_failure_for_remediation(commit_failed)
-        self.state.set_pending_check_failures(True)
-        progress_event(
-            self.config, "commit", str(engine_state.iteration), "retry",
-            "hook output will feed next remediation", ctx=self.ctx,
+        return retry_after_commit_hook(
+            config=self.config,
+            ctx=self.ctx,
+            state=self.state,
+            engine_state=engine_state,
+            action=action,
         )
-        acc = replace(engine_state.acc, commit_retry=True, pending_check_failures=pending_check_failures)
-        return replace(engine_state, acc=acc, event=LoopStarted(), iteration=engine_state.iteration + 1)
 
 
 @dataclass(frozen=True)
