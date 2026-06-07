@@ -89,7 +89,10 @@ This project follows Semantic Versioning once public releases begin.
   that choice as validation instead of ordinary review reuse, requires a compact
   `STALE_REVIEW_VALIDATION:` evidence block, reports resolved stale reviews as
   `clear (stale_review_already_resolved)`, and fails if a resolved marker is
-  paired with committed edits.
+  paired with committed edits. Normal remediation runs now ignore that marker
+  text unless the run is actually validating stale review feedback, so fixing
+  stale-review logic cannot trip the stale-validation invariant by quoting the
+  marker.
 - Commit-message drafting now detects repository mutations by read-only
   commit-message harnesses. If the harness already committed the staged patch
   and left the repository clean, RevRem adopts that commit, records

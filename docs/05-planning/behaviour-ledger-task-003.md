@@ -56,6 +56,27 @@ There is no silent third option.
 
 ## Entries
 
+### 2026-06-07 — Stale-review resolved marker scoped to validation mode
+
+- **Contract:** machine + human
+- **What changed:** remediation output is now scanned for
+  `REVREM_STALE_REVIEW_STATUS: resolved` only when the current run is actually
+  validating intentionally reused stale review feedback. Normal remediation
+  runs that quote that marker while fixing stale-review code no longer set
+  `stale_review_resolved` or trigger the contradictory "resolved marker but
+  produced changes to commit" invariant.
+- **Why:** Dogfood remediation of stale-review logic included the marker text
+  in ordinary remediation output. Because marker detection was not scoped to
+  stale-validation mode, a successful normal commit was followed by a false
+  `remediation_failed` outcome.
+- **Before / After:** before, any remediation transcript containing the marker
+  could make a normal commit fail after it had already been created. After,
+  the marker is meaningful only for `initial_review_mode = "stale"` validation
+  runs; normal remediation proceeds to commit/review as usual.
+- **schema_version impact:** none. Summary/event schemas are unchanged; this
+  narrows when an existing state flag is set.
+- **CHANGELOG:** Unreleased / Added.
+
 ### 2026-06-07 — Triage v2 info-request normalization and Gemini prompt-cap safety
 
 - **Contract:** machine + human

@@ -432,7 +432,7 @@ def test_runner_shell_skips_commit_when_stale_review_resolved(
     commit = StaticCommitHarness(status="committed")
     ctx, sink = _context(
         config,
-        review=SequencedReviewHarness(["clear"]),
+        review=SequencedReviewHarness(["findings", "clear"]),
         remediation=remediation,
         commit=commit,
     )
@@ -544,6 +544,51 @@ def test_runner_shell_keeps_no_change_findings_without_stale_marker(
     assert result.outcome.reason == "no_changes_after_remediation"
     assert result.outcome.__class__.__name__ == "OutcomeFindings"
     assert "Old finding" in result.last_review_output
+
+
+def test_runner_shell_ignores_stale_resolved_marker_outside_validation_mode(
+    tmp_path: Path,
+) -> None:
+    """A normal remediation may quote the stale-review marker while fixing a
+    stale-review-related bug. Only actual stale-validation runs should let that
+    marker change the loop outcome or commit invariant.
+    """
+    config = replace(
+        _config(tmp_path, max_iterations=2, triage_enabled=False),
+        commit_after_remediation=True,
+        initial_review_mode="none",
+    )
+    remediation = StaticRemediationHarness(
+        "Fixed the stale-review handling bug.\n"
+        "The prompt referenced REVREM_STALE_REVIEW_STATUS: resolved as text.\n"
+    )
+    commit = StaticCommitHarness(status="committed")
+    ctx, sink = _context(
+        config,
+        review=SequencedReviewHarness(["findings", "clear"]),
+        remediation=remediation,
+        commit=commit,
+    )
+    clock = ctx.clock
+    try:
+        state = _state(config)
+
+        result = run_iterations(
+            config=config,
+            state=state,
+            clock=clock,
+            ctx=ctx,
+            snap=_snapshot(config),
+            initial_review_output="",
+            run_id=FIXED_RUN_ID,
+        )
+    finally:
+        sink.close()
+
+    assert result.outcome.reason == "review_clear"
+    assert result.outcome.__class__.__name__ == "OutcomeClear"
+    assert commit.calls, "normal commit flow must continue outside stale validation"
+    assert "stale_review_resolved" not in state.iterations[0]
 
 
 def test_runner_shell_records_v2_routing_artifacts_and_events(tmp_path: Path) -> None:

@@ -284,11 +284,12 @@ class _RunnerEngineExecutor:
             remediation_input = engine_state.acc.last_review_output
             if engine_state.acc.pending_check_failures:
                 remediation_input = engine_state.acc.pending_check_failures + "\n\n" + remediation_input
-        if stale_review.should_validate_stale_review(
+        validating_stale_review = stale_review.should_validate_stale_review(
             self.config,
             engine_state,
             initial_review_output=self.initial_review_output,
-        ):
+        )
+        if validating_stale_review:
             remediation_input = stale_review.validation_prompt(remediation_input)
         try:
             assert_worktree_stable_before_remediation(
@@ -314,7 +315,10 @@ class _RunnerEngineExecutor:
                 remediation_input=remediation_input,
                 remediation_result_returncode=rem_outcome.result.returncode,
                 remediation_duration=self.clock.monotonic() - rem_start_time,
-                stale_review_resolved=stale_review.contains_resolved_marker(combined_output),
+                stale_review_resolved=(
+                    validating_stale_review
+                    and stale_review.contains_resolved_marker(combined_output)
+                ),
             )
             if acc.stale_review_resolved:
                 self.stale_review_validation_output = stale_review.validation_summary(combined_output)
