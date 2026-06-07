@@ -151,17 +151,12 @@ def resolve_external_review_input_chars_source(
 
 
 _GEMINI_PRO_MODEL_PATTERN = re.compile(
-    r"^gemini-\d+(?:\.\d+)*-pro(?:-[a-z0-9]+)?$"
+    r"^gemini-\d+(?:\.\d+)*-pro(?:-[a-z0-9]+)*$"
 )
-# Deliberate single-segment scope: the optional ``-[a-z0-9]+`` suffix
-# accepts exactly one dash-separated segment (e.g. ``-preview``,
-# ``-experimental``) and not multi-segment names like
-# ``-exp-0827``. Currently published Gemini Pro names use at most one
-# suffix segment, so widening the pattern to ``(?:-[a-z0-9]+)*`` would
-# only matter for hypothetical future model names. A regression test in
-# ``tests/test_cli_config_commands.py`` pins the deliberate single-segment
-# scope so a future widening is an intentional, reviewable change rather
-# than an accidental silent relaxation.
+# Multi-segment suffix scope: the optional ``(?:-[a-z0-9]+)*`` suffix
+# accepts zero or more dash-separated segments (e.g. ``-preview``,
+# ``-exp-03-25``, ``-exp-0827``). This ensures current and future Gemini
+# Pro model names with multi-segment suffixes receive the large-context cap.
 
 
 def is_large_context_gemini_review_model(

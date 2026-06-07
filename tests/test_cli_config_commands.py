@@ -571,17 +571,16 @@ def test_is_large_context_gemini_review_model_rejects_empty_model():
     assert not config_builder.is_large_context_gemini_review_model("gemini", "")
 
 
-def test_is_large_context_gemini_review_model_rejects_multi_segment_pro_suffix():
-    """Pin the deliberate single-segment scope of the optional ``-[a-z0-9]+``
-    suffix. A future model name like ``gemini-2.5-pro-exp-0827`` is rejected
-    by design; widening the pattern to ``(?:-[a-z0-9]+)*`` must be an
-    intentional, reviewable change rather than an accidental relaxation.
+def test_is_large_context_gemini_review_model_accepts_multi_segment_pro_suffix():
+    """Multi-segment Pro suffixes like ``-exp-03-25`` and ``-preview-09``
+    are accepted and receive the large-context cap.
     """
-    # Hypothetical future multi-segment names must currently fall back to
-    # the standard (smaller) external review input cap.
-    assert not config_builder.is_large_context_gemini_review_model(
+    assert config_builder.is_large_context_gemini_review_model(
+        "gemini", "gemini-2.5-pro-exp-03-25"
+    )
+    assert config_builder.is_large_context_gemini_review_model(
         "gemini", "gemini-2.5-pro-exp-0827"
     )
-    assert not config_builder.is_large_context_gemini_review_model(
+    assert config_builder.is_large_context_gemini_review_model(
         "gemini", "gemini-3.1-pro-preview-09"
     )
