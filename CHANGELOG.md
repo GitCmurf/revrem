@@ -291,6 +291,13 @@ This project follows Semantic Versioning once public releases begin.
   events-v1 schema was widened from one to up to two dotted sub-indices
   (`[0-9]+(\.[0-9]+){0,2}`) so check sub-iterations under a retry still
   fit the contract.
+- A no-op remediation that ends with an `unknown` last review status now
+  exits with `final_status: "unknown"` (exit code 2) instead of being
+  reported as `final_status: "clear"` (exit code 0). The
+  `stopped_reason` remains `no_changes_after_remediation`, and the
+  `clear` and `findings` mappings for that reason are unchanged. This
+  preserves the prior non-clear exit for the case where RevRem never
+  received a clear review signal.
 
 ### Changed
 

@@ -3,8 +3,8 @@ document_id: REVREM-LEDGER-003
 type: LEDGER
 title: Behaviour ledger for the cli.py re-engineering (REVREM-TASK-003)
 status: Approved
-version: '1.2'
-last_updated: '2026-06-06'
+version: '1.3'
+last_updated: '2026-06-07'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -272,6 +272,38 @@ There is no silent third option.
   and the surrounding event payload is unchanged.
 - **CHANGELOG:** Unreleased / Fixed.
 
+### 2026-06-07 — CM2 preserves unknown review outcome on no-op remediation
+
+- **Contract:** machine
+- **What changed:** `core.engine._decide_commit` CM2 no longer collapses an
+  `unknown` last review status into `OutcomeClear` when the commit phase
+  reports `skipped_no_changes`. The branch now returns
+  `Stop(OutcomeUnknown(reason="no_changes_after_remediation"))`, mapping to
+  exit code 2, matching the prior behaviour and the post-loop `unknown`
+  outcomes (F6, NF1). `clear` and `findings` mappings are unchanged. The
+  unit test was renamed from
+  `test_decide_cm2_unknown_skipped_no_changes_exits_clear` back to
+  `..._exits_unknown` and its assertion updated; the
+  `test_loop_stops_after_unknown_review_when_remediation_has_no_staged_changes`
+  CLI commit integration test now expects `final_status: "unknown"`.
+- **Why:** A bounded review-remediation loop that ends with an unknown
+  review status has not received a clear review signal. Mapping that
+  no-op commit back to `OutcomeClear` (exit code 0) marked an
+  inconclusive review/remediation cycle as successful and broke operator
+  intent for review harnesses that legitimately return `unknown` (e.g.
+  harness timeouts or pre-loop stale review validation paths).
+- **Before / After:** before, an unknown review followed by a no-op
+  remediation exited 0 with `final_status: "clear"` and
+  `stopped_reason: "no_changes_after_remediation"`; after, the same run
+  exits 2 with `final_status: "unknown"` and the same
+  `stopped_reason`. The 2026-06-03 entry below is superseded.
+- **schema_version impact:** none; the JSON summary shape is unchanged
+  (the `stopped_reason` value is unchanged; only the typed
+  `final_status`/`OutcomeUnknown` mapping changes). The
+  `stopped_reason` × `final_status` cross-reference table now lists
+  `unknown` as a valid final status for `no_changes_after_remediation`.
+- **CHANGELOG:** Unreleased / Fixed.
+
 ### 2026-06-05 — Bounded remediation-check inner retry and cleanup gate
 
 - **Contract:** machine + human
@@ -537,6 +569,9 @@ There is no silent third option.
 - **schema_version impact:** none.
 - **CHANGELOG:** Unreleased / Changed (CM2 row above already covers the
   behavioural change; this entry exists only to point at the test rename).
+- **Superseded by:** 2026-06-07 entry below — the unknown→clear mapping was
+  reverted; the renamed test is renamed back and the unknown case now exits
+  unknown.
 
 ### 2026-05-31 — TASK-003 ledger closed
 
@@ -908,7 +943,7 @@ an unledgered transition.
 | # | Branch condition | State mutation | Outcome |
 |---|---|---|---|
 | CM1 | commit succeeds | `iterations[-1]["commit_status"]=status` | loop continues (or returns on `skipped_no_changes`) |
-| CM2 | `commit_status == "skipped_no_changes"` | `final_status=clear` when last review status is `clear` or `unknown`; `final_status=findings` only when the last review explicitly found findings. `stopped_reason=no_changes_after_remediation`, `latest_review_excerpt=…` | `return summary` |
+| CM2 | `commit_status == "skipped_no_changes"` | `final_status=clear` when last review status is `clear`; `final_status=unknown` when the last review was indeterminate; `final_status=findings` only when the last review explicitly found findings. `stopped_reason=no_changes_after_remediation`, `latest_review_excerpt=…` | `return summary` |
 | CM3 | `CommitFailed(kind="hook_failed")` and `commit_on_hook_failure in {remediate, no-verify}` and `iteration < max_iterations` | `iterations[-1]["commit_status"]=hook_failed`, `_commit_retry=True`, `pending_check_failures=hook output`, `state.set_pending_check_failures(True)` | `continue` (next iteration, retrying with hook output as remediation input) |
 | CM4 | `CommitFailed(kind="hook_failed")` (non-retryable) | `final_status=error`, `stopped_reason=commit_hook_failed`, `error=str(exc)`, `staged_changes_left=True`, `pending_check_failures=True` | `raise RunLoopFailed` (summary written) |
 | CM5 | `CommitFailed` other kind | `final_status=error`, `stopped_reason=commit_failed`, `error=str(exc)` | `raise RunLoopFailed` (summary written) |
@@ -959,7 +994,7 @@ an unledgered transition.
 | `all_findings_suppressed` | `clear` | T2 |
 | `triage_failed` | `error` | T6 |
 | `remediation_failed` | `error` | M3 |
-| `no_changes_after_remediation` | `clear` \| `findings` | CM2 |
+| `no_changes_after_remediation` | `clear` \| `findings` \| `unknown` | CM2 |
 | `commit_hook_failed` | `error` | CM4 |
 | `commit_failed` | `error` | CM5, CM7 |
 | `max_iterations_reached_with_check_failures` | `findings` | F3 |

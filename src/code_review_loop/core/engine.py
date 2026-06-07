@@ -385,8 +385,10 @@ def _decide_commit(
     if event.status == "skipped_no_changes":
         if acc.stale_review_resolved:
             return Stop(OutcomeClear(reason="stale_review_already_resolved"))
-        if acc.last_review_status in {"clear", "unknown"}:
+        if acc.last_review_status == "clear":
             return Stop(OutcomeClear(reason="no_changes_after_remediation"))
+        if acc.last_review_status == "unknown":
+            return Stop(OutcomeUnknown(reason="no_changes_after_remediation"))
         if acc.last_review_status == "findings":
             return Stop(OutcomeFindings(reason="no_changes_after_remediation"))
     if acc.stale_review_resolved and event.status == "committed":

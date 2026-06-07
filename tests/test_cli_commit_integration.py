@@ -439,7 +439,7 @@ def test_loop_stops_after_unknown_review_when_remediation_has_no_staged_changes(
         if command[0] == "codex" and "review" in command
     ]
     assert len(review_calls) == 1
-    assert summary["final_status"] == "clear"
+    assert summary["final_status"] == "unknown"
     assert summary["stopped_reason"] == "no_changes_after_remediation"
     assert summary["iterations"][0]["review_status"] == "unknown"
     assert summary["iterations"][0]["commit_status"] == "skipped_no_changes"

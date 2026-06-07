@@ -273,7 +273,7 @@ def test_decide_cm2_findings_skipped_no_changes_exits_findings() -> None:
     assert action == Stop(OutcomeFindings(reason="no_changes_after_remediation"))
 
 
-def test_decide_cm2_unknown_skipped_no_changes_exits_clear() -> None:
+def test_decide_cm2_unknown_skipped_no_changes_exits_unknown() -> None:
     cfg = ConfigSnapshot(3, True, True, "fail", True)
     acc = LoopAccumulator(
         pending_check_failures="",
@@ -283,7 +283,7 @@ def test_decide_cm2_unknown_skipped_no_changes_exits_clear() -> None:
 
     action = decide(cfg, acc, event)
 
-    assert action == Stop(OutcomeClear(reason="no_changes_after_remediation"))
+    assert action == Stop(OutcomeUnknown(reason="no_changes_after_remediation"))
 
 
 def test_decide_cm2_stale_review_resolved_skipped_no_changes_exits_clear() -> None:
