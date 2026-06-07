@@ -407,9 +407,15 @@ def test_runner_shell_marks_stale_review_resolved_when_validation_noops(
     assert state.iterations[0]["stale_review_resolved"] is True
 
 
-def test_runner_shell_fails_if_stale_review_resolved_marker_commits_changes(
+def test_runner_shell_skips_commit_when_stale_review_resolved(
     tmp_path: Path,
 ) -> None:
+    """When stale-review validation resolves an issue, the loop must stop
+    with ``stale_review_already_resolved`` before the commit phase is reached.
+    Calling the commit adapter after the stale finding is resolved would be
+    a redundant provider call and could mask the resolved state with a
+    generic ``review_clear`` from a final review.
+    """
     config = replace(
         _config(tmp_path, max_iterations=1, triage_enabled=False),
         commit_after_remediation=True,
@@ -446,9 +452,61 @@ def test_runner_shell_fails_if_stale_review_resolved_marker_commits_changes(
     finally:
         sink.close()
 
-    assert result.outcome.reason == "remediation_failed"
-    assert result.outcome.__class__.__name__ == "OutcomeFailed"
-    assert "produced changes to commit" in result.outcome.error
+    assert result.outcome.reason == "stale_review_already_resolved"
+    assert result.outcome.__class__.__name__ == "OutcomeClear"
+    assert commit.calls == [], (
+        "commit phase must not run after stale-review validation resolved "
+        "the finding; the loop should stop at the checks phase"
+    )
+
+
+def test_runner_shell_stale_review_resolved_without_commit_exits_clear(
+    tmp_path: Path,
+) -> None:
+    """In non-commit mode the loop must stop with ``stale_review_already_resolved``
+    once stale-review validation emits the resolved marker. The previous
+    behaviour fell through to the next review action, which made
+    ``--no-final-review`` runs end at ``max_iterations_reached`` and
+    final-review runs issue a redundant provider call.
+    """
+    config = replace(
+        _config(tmp_path, max_iterations=1, triage_enabled=False),
+        commit_after_remediation=False,
+        initial_review_mode="stale",
+    )
+    remediation = StaticRemediationHarness(
+        "STALE_REVIEW_VALIDATION:\n"
+        "status: resolved\n"
+        "findings_checked: 1\n"
+        "evidence:\n"
+        "- git diff --check passed\n"
+        "REVREM_STALE_REVIEW_STATUS: resolved\n"
+    )
+    ctx, sink = _context(
+        config,
+        review=SequencedReviewHarness(["clear"]),
+        remediation=remediation,
+    )
+    clock = ctx.clock
+    try:
+        state = _state(config)
+
+        result = run_iterations(
+            config=config,
+            state=state,
+            clock=clock,
+            ctx=ctx,
+            snap=_snapshot(config),
+            initial_review_output="Full review comments:\n\n- [P2] Old finding\n",
+            run_id=FIXED_RUN_ID,
+        )
+    finally:
+        sink.close()
+
+    assert result.outcome.reason == "stale_review_already_resolved"
+    assert result.outcome.__class__.__name__ == "OutcomeClear"
+    assert remediation.calls, "remediation must have run to emit the resolved marker"
+    assert state.iterations[0]["stale_review_resolved"] is True
 
 
 def test_runner_shell_keeps_no_change_findings_without_stale_marker(

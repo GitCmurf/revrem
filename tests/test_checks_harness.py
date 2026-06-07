@@ -205,6 +205,46 @@ class TestWorktreeCleanlinessCheck:
             commit_after_remediation=commit_after_remediation,
         )
 
+    def test_check_only_fails_when_untracked_non_artifact_files_remain(
+        self, tmp_path: Path
+    ) -> None:
+        """Non-auto-commit runs must fail the cleanliness check when
+        untracked non-artifact files are present. The previous behaviour
+        returned exit code 0, which let the loop report clear while leaving
+        new files outside the reviewed ``git diff`` patch.
+        """
+        config = self._config(tmp_path, commit_after_remediation=False)
+
+        def runner(args, cwd, input_text=None, timeout_seconds=None):
+            cmd = list(args)
+            if cmd[:2] == ["git", "status"] and "-z" in cmd:
+                return CommandResult(
+                    cmd,
+                    0,
+                    stdout="?? src/leftover.py\0?? docs/notes.md\0",
+                )
+            return CommandResult(cmd, 0, stdout="")
+
+        result = run_worktree_cleanliness_check(config, runner)
+
+        assert result.returncode == 1
+        assert "FAILED" in result.stdout
+        assert "auto-commit is disabled" in result.stdout
+        assert "src/leftover.py" in result.stdout
+        assert "docs/notes.md" in result.stdout
+        assert "git diff" in result.stdout
+
+    def test_check_only_passes_when_no_untracked_files(self, tmp_path: Path) -> None:
+        """Non-auto-commit runs with no untracked files still pass cleanly."""
+        config = self._config(tmp_path, commit_after_remediation=False)
+
+        def runner(args, cwd, input_text=None, timeout_seconds=None):
+            return CommandResult(list(args), 0, stdout="")
+
+        result = run_worktree_cleanliness_check(config, runner)
+
+        assert result.returncode == 0
+
     def test_passes_when_no_untracked_files(self, tmp_path: Path) -> None:
         config = self._config(tmp_path)
         calls: list[list[str]] = []
@@ -419,8 +459,10 @@ class TestWorktreeCleanlinessCheck:
     def test_check_only_does_not_intent_add_or_recheck(self, tmp_path: Path) -> None:
         """When auto-commit is disabled, the cleanliness check must not call
         ``git add --intent-to-add`` and must not re-run ``git status``. The
-        untracked paths are reported in the result stdout so the operator can
-        see them, but the git index is left untouched.
+        untracked paths are surfaced in the result stdout so the operator and
+        the model can see them, but the git index is left untouched and the
+        result is reported as failed so remediation must account for the
+        untracked paths before the loop can report clear.
         """
         config = self._config(tmp_path, commit_after_remediation=False)
         calls: list[list[str]] = []
@@ -436,17 +478,22 @@ class TestWorktreeCleanlinessCheck:
 
         result = run_worktree_cleanliness_check(config, runner)
 
-        assert result.returncode == 0
+        assert result.returncode == 1
         assert [c for c in calls if c[:3] == ["git", "add", "--intent-to-add"]] == []
-        assert [c for c in calls if c[:2] == ["git", "status"] and "-z" in c] == [
-            ["git", "status", "-z", "--untracked-files=all"]
-        ]
+        assert [
+            c
+            for c in calls
+            if c[:2] == ["git", "status"] and "-z" in c
+        ] == [["git", "status", "-z", "--untracked-files=all"]]
         assert "auto-commit is disabled" in result.stdout
+        assert "FAILED" in result.stdout
         assert "src/new.py" in result.stdout
 
     def test_check_only_lists_artifact_dir_files_without_staging(self, tmp_path: Path) -> None:
         """In check-only mode, artifact-dir files are still filtered out of
-        the operator-facing list and never intent-added.
+        the operator-facing list and never intent-added, and the result is
+        reported as failed so the operator must account for the remaining
+        untracked non-artifact file before the loop can report clear.
         """
         config = self._config(tmp_path, commit_after_remediation=False)
         add_calls: list[list[str]] = []
@@ -469,17 +516,20 @@ class TestWorktreeCleanlinessCheck:
 
         result = run_worktree_cleanliness_check(config, runner)
 
-        assert result.returncode == 0
+        assert result.returncode == 1
         assert add_calls == []
         assert status_invocations == 1
         assert "src/real.py" in result.stdout
         assert "artifacts/scratch.txt" not in result.stdout
+        assert "FAILED" in result.stdout
 
     def test_check_only_does_not_mutate_git_index(self, tmp_path: Path) -> None:
         """End-to-end: with a real git repo and ``commit_after_remediation``
         disabled, the cleanliness check must not leave any intent-to-add
         entries in the index. ``git status --short`` should keep the untracked
-        marker (``??``) and never show the ``A `` (intent-added) marker.
+        marker (``??``) and never show the ``A `` (intent-added) marker. The
+        result must be reported as failed so remediation must account for the
+        untracked path before the loop can report clear.
         """
         import subprocess
 
@@ -521,8 +571,9 @@ class TestWorktreeCleanlinessCheck:
 
         result = run_worktree_cleanliness_check(config, _real_runner)
 
-        assert result.returncode == 0, result.stdout
+        assert result.returncode == 1, result.stdout
         assert "auto-commit is disabled" in result.stdout
+        assert "FAILED" in result.stdout
         assert "src/new.py" in result.stdout
 
         status_after = subprocess.run(

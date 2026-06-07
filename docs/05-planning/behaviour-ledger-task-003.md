@@ -3,7 +3,7 @@ document_id: REVREM-LEDGER-003
 type: LEDGER
 title: Behaviour ledger for the cli.py re-engineering (REVREM-TASK-003)
 status: Approved
-version: '1.3'
+version: '1.4'
 last_updated: '2026-06-07'
 owner: GitCmurf
 docops_version: '2.0'
@@ -327,6 +327,62 @@ There is no silent third option.
   `final_status`/`OutcomeUnknown` mapping changes). The
   `stopped_reason` × `final_status` cross-reference table now lists
   `unknown` as a valid final status for `no_changes_after_remediation`.
+- **CHANGELOG:** Unreleased / Fixed.
+
+### 2026-06-07 — Stale-resolved short-circuit and check-only cleanliness failure
+
+- **Contract:** machine + human
+- **What changed:** Two control-flow / check-semantics fixes in the
+  post-remediation path:
+  1. `core.engine._decide_checks` now short-circuits to
+     `Stop(OutcomeClear(reason="stale_review_already_resolved"))` when
+     `acc.stale_review_resolved` is True, before evaluating
+     `_next_review_action`. The previous behaviour fell through to the
+     next review action, which made `--no-final-review` runs end at
+     `max_iterations_reached` and final-review runs issue a redundant
+     provider call that masked the resolved state with a generic
+     `review_clear`. The check is taken before commit and takes
+     precedence over any pending check failures reported by the just-
+     completed checks phase.
+  2. `adapters.checks._cleanliness_check_untracked_no_commit` now
+     returns `CommandResult(command, 1, ...)` when untracked non-artifact
+     files remain in the worktree. The previous behaviour reported the
+     untracked paths in the check stdout and returned exit code 0, which
+     let the loop finish clear while leaving new files outside the
+     reviewed `git diff` patch. The new output explicitly says
+     `Worktree cleanliness check FAILED`, lists the untracked paths,
+     and tells the operator to remove scratch files, stage legitimate
+     files explicitly, or re-run with `--commit`.
+- **Why:** Dogfood with stale-review validation showed that the
+  no-commit resolved path could end with `max_iterations_reached`
+  (because the checks branch returned to `_next_review_action` and the
+  loop exhausted iterations before any `NoFinalReview` event was
+  emitted), and that `--final-review` runs re-paid for a final review
+  call after remediation had already proven the finding resolved.
+  Separately, a non-auto-commit run that left an untracked helper file
+  reported `check_failures: 0` while subsequent `git diff`-based
+  review context silently omitted the file, allowing the loop to
+  report clear with a new file outside the reviewed patch. Both gaps
+  are correctness regressions introduced when the resolved/no-commit
+  paths were wired in.
+- **Before / After:** before, a stale-review-resolved run in
+  `--no-final-review` mode returned `OutcomeUnknown(reason="max_iterations_reached")`,
+  and the same run in final-review mode returned
+  `OutcomeClear(reason="review_clear")` after a redundant review call.
+  A non-auto-commit run that created an untracked helper file reported
+  cleanliness as passed (exit 0). After, the resolved path returns
+  `OutcomeClear(reason="stale_review_already_resolved")` without
+  spending a final review call, and the cleanliness check fails with
+  exit 1 and a list of the untracked paths. The
+  `test_runner_shell_fails_if_stale_review_resolved_marker_commits_changes`
+  acceptance test was rewritten as
+  `test_runner_shell_skips_commit_when_stale_review_resolved` to
+  document that the commit phase is no longer reached in this flow.
+- **schema_version impact:** none. The stopped reason
+  `stale_review_already_resolved` is unchanged; the change only
+  re-routes the resolved state to an earlier short-circuit. The
+  cleanliness check artifact gains a `FAILED` prefix in non-auto-commit
+  mode; the surrounding event payload is unchanged.
 - **CHANGELOG:** Unreleased / Fixed.
 
 ### 2026-06-05 — Bounded remediation-check inner retry and cleanup gate

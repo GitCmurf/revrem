@@ -337,6 +337,71 @@ def test_decide_ck_retry_inner_check_failure_before_next_review() -> None:
     assert action == RetryViaChecks()
 
 
+def test_decide_ck_stale_review_resolved_exits_clear_without_next_review() -> None:
+    """Stale-review validation that emits the resolved marker must short-circuit
+    the checks phase and return ``stale_review_already_resolved`` before
+    ``_next_review_action`` is reached. The previous behaviour fell through to
+    the next review action, which produced ``max_iterations_reached`` for
+    ``--no-final-review`` runs and triggered a redundant provider call for
+    final-review runs.
+    """
+    cfg = ConfigSnapshot(
+        max_iterations=3,
+        triage_enabled=True,
+        commit_after_remediation=False,
+        commit_on_hook_failure="fail",
+        final_review=False,
+    )
+    acc = LoopAccumulator(pending_check_failures="", stale_review_resolved=True)
+
+    action = decide(cfg, acc, ChecksDone(), iteration=1)
+
+    assert action == Stop(OutcomeClear(reason="stale_review_already_resolved"))
+
+
+def test_decide_ck_stale_review_resolved_takes_precedence_over_pending_check_failures() -> None:
+    """When the stale review is resolved but checks still produced failures,
+    the resolved state is the authoritative terminal outcome. Pending check
+    failures from the just-completed check phase cannot override the
+    remediation's own validation that the finding is already resolved.
+    """
+    cfg = ConfigSnapshot(
+        max_iterations=3,
+        triage_enabled=True,
+        commit_after_remediation=False,
+        commit_on_hook_failure="fail",
+        final_review=True,
+    )
+    acc = LoopAccumulator(
+        pending_check_failures="untracked non-artifact files remain",
+        stale_review_resolved=True,
+    )
+
+    action = decide(cfg, acc, ChecksDone(), iteration=2)
+
+    assert action == Stop(OutcomeClear(reason="stale_review_already_resolved"))
+
+
+def test_decide_ck_stale_review_resolved_exits_before_commit() -> None:
+    """Even with auto-commit enabled, a resolved stale review must not reach
+    the commit phase. The commit adapter would never see a
+    ``CommitDone(status="committed")`` event in this flow because
+    ``_decide_checks`` returns the resolved state first.
+    """
+    cfg = ConfigSnapshot(
+        max_iterations=3,
+        triage_enabled=True,
+        commit_after_remediation=True,
+        commit_on_hook_failure="fail",
+        final_review=True,
+    )
+    acc = LoopAccumulator(pending_check_failures="", stale_review_resolved=True)
+
+    action = decide(cfg, acc, ChecksDone(), iteration=1)
+
+    assert action == Stop(OutcomeClear(reason="stale_review_already_resolved"))
+
+
 def test_decide_ck_inner_check_retry_exhausted_continues_outer_loop() -> None:
     cfg = ConfigSnapshot(3, True, True, "fail", True, inner_check_retries=1)
     acc = LoopAccumulator(

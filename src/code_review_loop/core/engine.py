@@ -349,6 +349,8 @@ def _decide_remediation(event: RemediationDone) -> Action:
 
 
 def _decide_checks(cfg: ConfigSnapshot, acc: LoopAccumulator, iteration: int) -> Action:
+    if acc.stale_review_resolved:
+        return Stop(OutcomeClear(reason="stale_review_already_resolved"))
     if cfg.commit_after_remediation and not acc.pending_check_failures:
         return RunCommit()
     if acc.pending_check_failures and acc.inner_check_retry_count < cfg.inner_check_retries:

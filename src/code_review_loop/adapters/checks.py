@@ -237,23 +237,29 @@ def _cleanliness_check_untracked_no_commit(
     untracked: list[str],
     stderr: str,
 ) -> CommandResult:
-    """Report untracked non-artifact files when auto-commit is disabled.
+    """Fail the cleanliness check when untracked non-artifact files remain.
 
     Check-only remediation runs must not mutate the operator's git index, so
     ``git add --intent-to-add`` is skipped entirely. The untracked paths are
-    listed in the check output so the operator can decide how to handle them
-    (clean scratch files, add legitimate new files explicitly, or re-run with
-    ``--commit`` to let RevRem stage them).
+    surfaced in a non-zero exit result so the operator and the model must
+    account for them before the loop can report clear: legitimate new files
+    must be added explicitly, scratch files must be deleted, or the run must
+    be re-launched with ``--commit`` to let RevRem stage them. Returning exit
+    code 0 here would let untracked files escape the post-remediation check
+    while subsequent ``git diff``-based review context silently omits them.
     """
     listed = "\n".join(f"  + {path}" for path in untracked)
     summary = (
-        "Worktree cleanliness check passed; auto-commit is disabled so RevRem "
-        "will not stage untracked non-artifact files. The following paths "
-        "remain in the worktree and are the operator's responsibility:\n"
+        "Worktree cleanliness check FAILED: auto-commit is disabled so RevRem "
+        "will not stage untracked non-artifact files, and downstream review "
+        "context is built from ``git diff`` so these paths would be omitted "
+        "from the reviewed patch. Remove scratch files, explicitly stage "
+        "legitimate new files, or re-run with ``--commit`` to let RevRem "
+        "stage them. The following untracked paths must be accounted for:\n"
         + listed
         + "\n"
     )
-    return CommandResult(command, 0, stdout=summary, stderr=stderr)
+    return CommandResult(command, 1, stdout=summary, stderr=stderr)
 
 
 def _intent_add_untracked(

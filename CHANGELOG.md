@@ -308,6 +308,25 @@ This project follows Semantic Versioning once public releases begin.
   `clear` and `findings` mappings for that reason are unchanged. This
   preserves the prior non-clear exit for the case where RevRem never
   received a clear review signal.
+- Stale-review validation in non-commit mode now short-circuits the
+  checks phase to `stale_review_already_resolved` instead of falling
+  through to `_next_review_action`. The previous behaviour made
+  `--no-final-review` runs end at `max_iterations_reached` and final-
+  review runs spend a redundant provider call after the remediation
+  had already proven the finding resolved. The resolved state now
+  takes precedence over pending check failures and over the commit
+  phase, mirroring the existing `skipped_no_changes` branch in
+  `_decide_commit`.
+- The post-remediation worktree cleanliness check now fails (exit
+  code 1) when untracked non-artifact files remain in a non-auto-commit
+  run, instead of reporting `check_failures: 0` while leaving the
+  files outside the reviewed `git diff` patch. The check stdout now
+  starts with `Worktree cleanliness check FAILED`, lists the untracked
+  paths, and tells the operator to remove scratch files, stage
+  legitimate new files explicitly, or re-run with `--commit` to let
+  RevRem stage them. The git index is still untouched in check-only
+  mode; auto-commit mode keeps auto-staging untracked files via
+  `git add --intent-to-add`.
 
 ### Changed
 
