@@ -19,6 +19,9 @@ from code_review_loop.adapters.review import (
     EXTERNAL_REVIEW_PROMPT_TAIL,
     compose_external_review_prompt,
 )
+from code_review_loop.adapters import phase_support
+BASE_LEN = len(phase_support.DEFAULT_REVIEW_PROMPT) + len(EXTERNAL_REVIEW_PROMPT_TAIL) + 4
+
 from code_review_loop.config import LoopConfig
 
 
@@ -45,13 +48,13 @@ def test_compose_external_review_prompt_keeps_context_within_cap() -> None:
 
 
 def test_compose_external_review_prompt_truncates_long_context() -> None:
-    config = _config(external_review_input_chars=400)
+    config = _config(external_review_input_chars=BASE_LEN + 400)
     review_context = "context body\n" * 200
 
     result = compose_external_review_prompt(config, review_context)
 
     assert result.truncated is True
-    assert len(result.prompt) <= 400
+    assert len(result.prompt) <= BASE_LEN + 400
     assert result.provider_context in result.prompt
 
 
@@ -75,12 +78,12 @@ def test_compose_external_review_prompt_second_pass_preserves_substring_invarian
     ``provider_context`` was the pre-second-pass ``trimmed_context`` and
     no longer a substring of the returned ``prompt``.
     """
-    config = _config(external_review_input_chars=120)
+    config = _config(external_review_input_chars=BASE_LEN + 120)
     review_context = ("X" * 40 + "Y" * 40) * 5
 
     result = compose_external_review_prompt(config, review_context)
 
-    assert len(result.prompt) <= 120
+    assert len(result.prompt) <= BASE_LEN + 120
     assert result.provider_context in result.prompt, (
         "provider_context must remain a substring of prompt across both trims"
     )
@@ -98,7 +101,7 @@ def test_compose_external_review_prompt_keeps_head_and_tail_anchors() -> None:
 
 @pytest.mark.parametrize(
     "external_review_input_chars",
-    [60, 80, 100, 120, 150],
+    [BASE_LEN + 60, BASE_LEN + 80, BASE_LEN + 100, BASE_LEN + 120, BASE_LEN + 150],
 )
 def test_compose_external_review_prompt_provider_context_matches_head_tail_anchors(
     external_review_input_chars: int,

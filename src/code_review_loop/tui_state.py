@@ -599,5 +599,3 @@ def phase_view(
         reasoning_effort=phase.reasoning_effort,
         timeout_seconds=phase.timeout_seconds,
     )
-
-

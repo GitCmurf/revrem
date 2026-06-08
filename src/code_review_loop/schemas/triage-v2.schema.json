@@ -298,7 +298,7 @@
     },
     "suppressed_findings": {
       "items": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "affected_paths": {
             "items": {
@@ -328,7 +328,7 @@
             "const": true
           },
           "suppression": {
-            "additionalProperties": true,
+            "additionalProperties": false,
             "properties": {
               "expires_at": {
                 "type": [
@@ -349,10 +349,20 @@
                 "type": "string"
               }
             },
-            "type": "object"
+            "type": "object",
+            "required": [
+              "summary",
+              "scope"
+            ]
           }
         },
-        "type": "object"
+        "type": "object",
+        "required": [
+          "fingerprint",
+          "summary",
+          "suppressed",
+          "suppression"
+        ]
       },
       "type": "array"
     },

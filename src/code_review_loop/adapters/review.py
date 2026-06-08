@@ -101,20 +101,26 @@ def run_codex_review(
             review_prompt,
         )
         prompt_artifact_path = config.artifact_dir / f"{artifact_label}-prompt.txt"
-        invocation = harnesses.prepare_prompt_invocation(
-            config.review_harness,
-            command,
-            review_prompt,
-            prompt_artifact_path=prompt_artifact_path,
-        )
+        try:
+            invocation = harnesses.prepare_prompt_invocation(
+                config.review_harness,
+                command,
+                review_prompt,
+                prompt_artifact_path=prompt_artifact_path,
+            )
+        except ValueError as exc:
+            raise RuntimeError(str(exc)) from exc
         command = invocation.command
         review_prompt = invocation.stdin
     else:
-        invocation = harnesses.prepare_prompt_invocation(
-            config.review_harness,
-            command,
-            None,
-        )
+        try:
+            invocation = harnesses.prepare_prompt_invocation(
+                config.review_harness,
+                command,
+                None,
+            )
+        except ValueError as exc:
+            raise RuntimeError(str(exc)) from exc
     prompt_metadata = phase_support.prompt_invocation_metadata(invocation)
     phase_support.set_phase_terminal_title(config, "review", display_label)
     phase_support.ensure_model_budget(
@@ -355,6 +361,8 @@ def compose_external_review_prompt(
 ) -> ExternalReviewPrompt:
     prompt_head = f"{phase_support.DEFAULT_REVIEW_PROMPT}\n\n"
     prompt_tail = f"\n\n{EXTERNAL_REVIEW_PROMPT_TAIL}"
+    if config.external_review_input_chars < len(prompt_head) + len(prompt_tail):
+        raise ValueError(f"external_review_input_chars ({config.external_review_input_chars}) is too small for mandatory prompt scaffolding ({len(prompt_head) + len(prompt_tail)} chars).")
     original_prompt_chars = len(prompt_head) + len(review_context) + len(prompt_tail)
     available_context_chars = (
         config.external_review_input_chars - len(prompt_head) - len(prompt_tail)
@@ -485,9 +493,9 @@ def _cached_head_sha(cache: GitContextCache | None, cwd: Path) -> str:
             return cached
     result = run_git_preflight(cwd, ["rev-parse", "HEAD"])
     sha = result.stdout.strip()
-    if cache is not None and sha:
+    if cache is not None and result.returncode == 0 and sha:
         cache.head_sha[key] = sha
-    return sha
+    return sha if result.returncode == 0 else ""
 
 
 def _head_sha_result(sha: str) -> CommandResult:
@@ -534,7 +542,7 @@ def review_base_preflight_error(
             f"{phase_support._combined_output(base_result)}"
         )
 
-    head = run_git_preflight(config.cwd, ["rev-parse", "HEAD"]).stdout.strip() or "HEAD"
+    head = _cached_head_sha(git_context_cache, config.cwd) or "HEAD"
     merge_base = cached_merge_base(git_context_cache, config.cwd, head, base)
     if merge_base.returncode == 0:
         return None

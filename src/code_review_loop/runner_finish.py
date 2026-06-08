@@ -179,17 +179,27 @@ def finish_cancelled(
     raise AssertionError("unreachable")
 
 
+def _safe_mtime(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
+
 def _latest_prompt_evidence(artifact_dir: Path) -> dict[str, object]:
     prompt_paths = sorted(
         artifact_dir.glob("*-prompt.txt"),
-        key=lambda path: path.stat().st_mtime,
+        key=_safe_mtime,
     )
     if not prompt_paths:
         return {}
     prompt_path = prompt_paths[-1]
+    try:
+        size = prompt_path.stat().st_size
+    except OSError:
+        size = 0
     evidence: dict[str, object] = {
         "latest_prompt_artifact": prompt_path.name,
-        "latest_prompt_bytes": prompt_path.stat().st_size,
+        "latest_prompt_bytes": size,
     }
     # The artifact filename convention is ``<phase>-<iteration>[-<suffix>]-prompt.txt``
     # (e.g. ``review-1-prompt.txt`` or ``commit-1-message-prompt.txt``). The
@@ -211,8 +221,12 @@ def _latest_prompt_evidence(artifact_dir: Path) -> dict[str, object]:
         evidence["latest_prompt_iteration"] = match.group("iteration")
     context_path = prompt_path.with_name(prompt_path.name.replace("-prompt.txt", "-context.txt"))
     if context_path.is_file():
-        evidence["latest_context_artifact"] = context_path.name
-        evidence["latest_context_bytes"] = context_path.stat().st_size
+        try:
+            size = context_path.stat().st_size
+            evidence["latest_context_artifact"] = context_path.name
+            evidence["latest_context_bytes"] = size
+        except OSError:
+            pass
     return evidence
 
 

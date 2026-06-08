@@ -148,7 +148,7 @@ def _git_stdout(cwd: Path, args: list[str]) -> str | None:
             timeout=15,
             check=False,
         )
-    except subprocess.TimeoutExpired:
+    except (subprocess.TimeoutExpired, OSError):
         return None
     if completed.returncode != 0:
         return None

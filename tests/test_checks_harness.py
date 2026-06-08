@@ -256,7 +256,7 @@ class TestWorktreeCleanlinessCheck:
         result = run_worktree_cleanliness_check(config, runner)
 
         assert result.returncode == 0
-        assert calls == [["git", "status", "-z", "--untracked-files=all"]]
+        assert calls == [["git", "status", "-z", "--porcelain=v1", "--untracked-files=all"]]
 
     def test_auto_stages_legitimate_untracked_files(self, tmp_path: Path) -> None:
         config = self._config(tmp_path)
@@ -484,7 +484,7 @@ class TestWorktreeCleanlinessCheck:
             c
             for c in calls
             if c[:2] == ["git", "status"] and "-z" in c
-        ] == [["git", "status", "-z", "--untracked-files=all"]]
+        ] == [["git", "status", "-z", "--porcelain=v1", "--untracked-files=all"]]
         assert "auto-commit is disabled" in result.stdout
         assert "FAILED" in result.stdout
         assert "src/new.py" in result.stdout
@@ -837,7 +837,7 @@ class TestWorktreeCleanlinessCheck:
             assert path in result.stdout, f"expected {path!r} in auto-staged list"
 
         status_after = subprocess.run(
-            ["git", "status", "-z", "--untracked-files=all"],
+            ["git", "status", "-z", "--porcelain=v1", "--untracked-files=all"],
             cwd=tmp_path,
             capture_output=True,
             check=True,

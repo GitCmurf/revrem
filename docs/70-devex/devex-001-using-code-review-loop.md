@@ -237,7 +237,7 @@ git status -z --untracked-files=all
 
 When `--commit-after-remediation` is enabled, RevRem first refuses to start
 from a dirty worktree, including pre-existing untracked files, before making
-any provider call. Given that clean-start invariant, non-artifact `?? ` paths
+any provider call. Given that clean-start invariant, non-artifact `??` paths
 that appear after remediation are treated as intentional remediation output:
 the cleanliness check marks them with `git add --intent-to-add` so the upcoming
 `git add -A` in the commit phase picks them up. The auto-staged paths are

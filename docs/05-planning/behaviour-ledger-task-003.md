@@ -325,13 +325,13 @@ There is no silent third option.
 - **What changed:** The post-remediation cleanliness check no longer fails
   merely because remediation created a new non-artifact file. RevRem already
   refuses to enter `--commit-after-remediation` from a dirty worktree, including
-  pre-existing untracked files. Given that clean-start invariant, `?? ` files
+  pre-existing untracked files. Given that clean-start invariant, `??` files
   that appear after remediation are treated as intentional remediation output
   and marked with `git add --intent-to-add`; the later commit phase's
   `git add -A` stages their contents. Files under `--artifact-dir` remain
   exempt.
 - **Why:** Legitimate fixes often add tests, modules, or documentation. Blocking
-  every post-remediation `?? ` path forced models to stage files during
+  every post-remediation `??` path forced models to stage files during
   remediation or made valid fixes impossible. Known generated paths should be
   covered by `.gitignore` or `--artifact-dir`, while secrets and policy issues
   are the responsibility of configured verification/commit hooks.
@@ -364,7 +364,7 @@ There is no silent third option.
   without the model staging the file itself. Auto-staging with
   `--intent-to-add` is git-idiomatic: it registers the file with the index
   without writing content, so `git add -A` in the commit phase stages the
-  full content normally, and the `?? ` flag that triggered the failure is
+  full content normally, and the `??` flag that triggered the failure is
   removed.
 - **Before / After:** before, a remediation patch that added
   `src/new_module.py` failed the worktree cleanliness check because the file

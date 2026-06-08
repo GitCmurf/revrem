@@ -216,7 +216,7 @@ def _run_remediation_with_retry(
     Non-transient provider failures (auth, quota, contract) and any failure
     on the codex or fake harness still raise on the first attempt.
     """
-    attempts = 1 if harness in {"codex", "fake"} else config.provider_retry_attempts
+    attempts = 1 if harness in {"codex", "fake"} else max(1, config.provider_retry_attempts)
     last_result: CommandResult | None = None
     for attempt in range(1, attempts + 1):
         result = phase_support.run_with_waiting_progress(

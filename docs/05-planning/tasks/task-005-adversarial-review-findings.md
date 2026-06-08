@@ -285,7 +285,7 @@ named here as the one open item. It clears by *running*, not by more code:
 so the suite actually exercises "minimal survives because the tool is
 disabled" rather than only the promotion detour.
 
-  ### F6 — REQUIRED (test honesty): round-5 "verb-doubling" claim is not enforced
+### F6 — REQUIRED (test honesty): round-5 "verb-doubling" claim is not enforced
 
 * **Claim (round-5 evidence):** *"added property-style fallback tests forbidding
 verb-doubling and scope/type collisions."*

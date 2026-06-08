@@ -69,7 +69,7 @@ def test_compose_remediation_prompt_ignores_unresolved_triage_fragments(tmp_path
     )
 
     assert "Ignored unresolved triage-requested prompt fragments:" in prompt
-    assert "bounded-execution" in prompt
+    assert "1 unresolved fragments omitted." in prompt
     assert "Fix the finding." in prompt
     assert "REVIEW CONTENT" in prompt
 

@@ -349,10 +349,20 @@
                 "type": "string"
               }
             },
-            "type": "object"
+            "type": "object",
+            "required": [
+              "summary",
+              "scope"
+            ]
           }
         },
-        "type": "object"
+        "type": "object",
+        "required": [
+          "fingerprint",
+          "severity",
+          "suppressed",
+          "suppression"
+        ]
       },
       "type": "array"
     },

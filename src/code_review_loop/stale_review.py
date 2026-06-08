@@ -94,7 +94,7 @@ def _stdout_only(output: str) -> str:
 
 def _validation_block(output: str) -> str | None:
     stdout = _stdout_only(output)
-    start = stdout.find(STALE_REVIEW_VALIDATION_HEADER)
+    start = stdout.rfind(STALE_REVIEW_VALIDATION_HEADER)
     if start < 0:
         return None
     marker_positions = [

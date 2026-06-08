@@ -672,12 +672,16 @@ def _handle_commit_message_side_effects(
         if not target.exists() or target.is_dir():
             unsafe_lines.append(line)
             continue
-        target.unlink()
-        created_paths.append(path_text)
+        try:
+            target.unlink()
+            created_paths.append(path_text)
+        except OSError:
+            unsafe_lines.append(line)
+    kind = "helper_files_removed" if created_paths else "unsafe_worktree_paths"
     _write_commit_message_side_effect_artifact(
         config.artifact_dir,
         iteration,
-        kind="helper_files_removed" if created_paths else "unsafe_worktree_paths",
+        kind=kind,
         severity="warning" if created_paths and not unsafe_lines else "error",
         created_paths_removed=created_paths,
         unsafe_status_lines=unsafe_lines,

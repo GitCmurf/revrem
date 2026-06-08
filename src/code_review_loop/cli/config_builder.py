@@ -131,7 +131,7 @@ def resolve_external_review_input_chars(
         val = DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS
         source = "defaults"
 
-    if val <= 0:
+    if val is not None and val <= 0:
         raise ValueError("external_review_input_chars must be greater than 0")
     return val, source
 
@@ -251,7 +251,7 @@ def _resolve_model_phase(
         timeout_seconds=timeout_seconds,
         timeout_seconds_display=timeout_seconds_display,
         field_sources={
-            "harness": "cli" if harness_override is not None else profile_source,
+            "harness": "cli" if harness_override else profile_source,
             "model": _phase_source(
                 profile_name, model_override or shared_model_override
             ),
@@ -489,6 +489,7 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         review_model=review_phase.model or args.model,
         profile_source=profile_source,
     )
+    external_review_warning_seconds_source = "cli" if args.external_review_warning_seconds is not None else profile_source
     external_review_warning_seconds = resolve_external_review_warning_seconds(
         pick(
             args.external_review_warning_seconds,
@@ -588,11 +589,7 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
                 else profile_source
             ),
             "external_review_input_chars": external_review_input_chars_source,
-            "external_review_warning_seconds": (
-                "cli"
-                if args.external_review_warning_seconds is not None
-                else profile_source
-            ),
+            "external_review_warning_seconds": external_review_warning_seconds_source,
         },
     }
     config = LoopConfig(

@@ -27,7 +27,7 @@ def assert_worktree_stable_before_remediation(
     if engine_state.acc.inner_check_retry_count:
         return
     current = current_head(config, ctx)
-    if expected_head is not None and current and current != expected_head:
+    if expected_head is not None and (current is None or current != expected_head):
         raise RuntimeError(
             "worktree changed during run before remediation: HEAD moved from "
             f"{expected_head} to {current}. RevRem preserved the review "

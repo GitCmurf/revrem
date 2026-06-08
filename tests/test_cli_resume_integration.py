@@ -345,7 +345,7 @@ def test_loop_writes_failure_summary_when_final_review_invocation_fails(tmp_path
             "checks": [
                 {
                     "artifact": "check-1-1.txt",
-                    "command": "git status -z --untracked-files=all",
+                    "command": "git status -z --porcelain=v1 --untracked-files=all",
                     "status": "passed",
                 }
             ],

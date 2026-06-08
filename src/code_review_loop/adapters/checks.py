@@ -110,7 +110,7 @@ def format_returncode_for_progress(returncode: int) -> str:
 def format_check_result_for_progress(result: CommandResult) -> str:
     """Render failed check status, preserving timeout evidence when available."""
     combined = phase_support._combined_output(result)
-    timeout = re.search(r"Command timed out after ([0-9.]+) seconds", combined)
+    timeout = re.search(r"Command timed out after ([0-9.]+) second(?:s)?", combined)
     if timeout:
         return f"timeout after {timeout.group(1)}s"
     return format_returncode_for_progress(result.returncode)
@@ -145,7 +145,7 @@ def run_worktree_cleanliness_check(
     output does not quote or escape, so the parsed paths are passed through
     unchanged.
     """
-    command = ["git", "status", "-z", "--untracked-files=all"]
+    command = ["git", "status", "-z", "--porcelain=v1", "--untracked-files=all"]
     if config.dry_run:
         return CommandResult(command, 0, stdout="DRY_RUN cleanliness check skipped\n")
     if not _has_git_marker(config.cwd):
@@ -303,11 +303,7 @@ def _intent_add_untracked(
 
 
 def _has_git_marker(cwd: Path) -> bool:
-    root = cwd.resolve()
-    for candidate in (root, *root.parents):
-        if (candidate / ".git").exists():
-            return candidate not in {Path("/tmp"), Path("/var/tmp")} or candidate == root
-    return False
+    return lexical_git_repo_root(cwd) is not None
 
 
 def is_pytest_command(command: Sequence[str]) -> bool:
@@ -367,7 +363,7 @@ def run_checks(
     display_prefix = display_label or str(iteration)
     results: list[CommandResult] = []
 
-    cleanliness_check = "git status -z --untracked-files=all"
+    cleanliness_check = "git status -z --porcelain=v1 --untracked-files=all"
     phase_support.progress_event(
         config, "check", f"{display_prefix}.1", "start", cleanliness_check, ctx=ctx
     )

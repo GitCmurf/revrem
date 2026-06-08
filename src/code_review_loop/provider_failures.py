@@ -75,7 +75,9 @@ def classify_provider_failure(
 
 
 def _combined_output(result: CommandResult) -> str:
-    return "\n".join(part for part in (result.stdout, result.stderr) if part)
+    stdout = result.stdout or ""
+    stderr = result.stderr or ""
+    return "\n".join(part for part in (stdout, stderr) if part)
 
 
 def _matches_any(value: str, patterns: tuple[re.Pattern[str], ...]) -> bool:
@@ -105,7 +107,7 @@ MODEL_UNAVAILABLE_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bmodel not found\b"),
     re.compile(r"\bunknown model\b"),
     re.compile(r"\bunsupported model\b"),
-    re.compile(r"\bdid you mean:\b"),
+    re.compile(r"\bdid you mean:"),
 )
 SERVER_ERROR_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bunknownerror\b"),

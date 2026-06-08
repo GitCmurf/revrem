@@ -543,7 +543,7 @@ def _resume_phase_sources(payload: dict[object, object]) -> dict[str, str]:
     if not isinstance(phase_config, dict):
         return {}
     sources: dict[str, str] = {}
-    for phase in ("review", "triage", "remediation", "commit_message", "checks"):
+    for phase in ("review", "triage", "remediation", "commit_message", "checks", "runtime"):
         section = phase_config.get(phase)
         if not isinstance(section, dict):
             continue
@@ -558,7 +558,7 @@ def _resume_phase_field_sources(payload: dict[object, object]) -> dict[str, dict
     if not isinstance(phase_config, dict):
         return {}
     field_sources: dict[str, dict[str, str]] = {}
-    for phase in ("review", "triage", "remediation", "commit_message", "checks"):
+    for phase in ("review", "triage", "remediation", "commit_message", "checks", "runtime"):
         section = phase_config.get(phase)
         if not isinstance(section, dict):
             continue

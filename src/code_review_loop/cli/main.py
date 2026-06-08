@@ -151,7 +151,11 @@ def _prompt_for_pending_review(
             file=sys.stderr,
             flush=True,
         )
-        choice = input().strip().lower()
+        try:
+            choice = input().strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print("\nCancelled.")
+            return None
         if choice in {"u", "use", "v", "validate", "y", "yes"}:
             return replace(
                 config,

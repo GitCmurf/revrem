@@ -24,8 +24,8 @@ related_ids:
 > **Document ID:** REVREM-TASK-001
 > **Owner:** GitCmurf
 > **Status:** Approved
-> **Version:** 0.4
-> **Last Updated:** 2026-05-07
+> **Version:** 0.5
+> **Last Updated:** 2026-05-31
 > **Type:** TASK
 > **Area:** release
 > **Description:** Task list for preparing code-review-loop for first public GitHub repository publication

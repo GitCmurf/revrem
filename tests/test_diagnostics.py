@@ -275,7 +275,7 @@ def test_run_doctor_blocks_default_artifact_dir_when_path_component_is_file(tmp_
 
 
 def test_run_doctor_reports_missing_check_command(tmp_path, monkeypatch):
-    monkeypatch.setenv("PATH", "/usr/bin:/bin:/usr/local/bin")
+    monkeypatch.setattr(diagnostics.shutil, "which", lambda cmd, **kwargs: None if cmd == "definitely-missing-revrem-check" else "mocked")
     repo = _make_repo(tmp_path)
 
     issues = diagnostics.run_doctor(
