@@ -387,7 +387,7 @@ def test_decide_ck_stale_review_resolved_with_pending_check_failures_fails() -> 
 
     assert action == Stop(
         OutcomeFailed(
-            reason="remediation_failed",
+            reason="stale_validation_failed",
             error=(
                 "stale review validation emitted resolved marker but "
                 "verification checks failed"
@@ -415,7 +415,7 @@ def test_decide_ck_stale_review_resolved_with_dirty_status_fails() -> None:
 
     assert action == Stop(
         OutcomeFailed(
-            reason="remediation_failed",
+            reason="stale_validation_failed",
             error="stale review validation changed non-artifact git status",
         )
     )

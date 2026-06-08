@@ -20,7 +20,7 @@ from code_review_loop.cli.config_support import (
     lexical_git_repo_root,
 )
 from code_review_loop.cli.exit import map_application_call
-from code_review_loop.git_status import non_artifact_status_lines
+from code_review_loop.git_status import non_artifact_status_entries_from_status_z
 from code_review_loop.prompts_composer import trim_for_prompt
 
 
@@ -217,7 +217,7 @@ def _auto_commit_clean_start_error(config) -> str | None:
         return None
     try:
         result = subprocess.run(
-            ["git", "status", "--porcelain", "--untracked-files=all"],
+            ["git", "status", "-z", "--porcelain=v1", "--untracked-files=all"],
             cwd=config.cwd,
             check=False,
             capture_output=True,
@@ -233,7 +233,7 @@ def _auto_commit_clean_start_error(config) -> str | None:
             "could not inspect git worktree before auto-commit run: "
             + (result.stderr.strip() or f"git status exited {result.returncode}")
         )
-    dirty = non_artifact_status_lines(config, result.stdout)
+    dirty = non_artifact_status_entries_from_status_z(config, result.stdout)
     if not dirty:
         return None
     shown = "\n".join(f"  {line}" for line in dirty[:20])

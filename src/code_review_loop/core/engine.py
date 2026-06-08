@@ -358,14 +358,14 @@ def _decide_checks(cfg: ConfigSnapshot, acc: LoopAccumulator, iteration: int) ->
         if acc.stale_review_dirty:
             return Stop(
                 OutcomeFailed(
-                    reason="remediation_failed",
+                    reason="stale_validation_failed",
                     error=acc.stale_review_dirty,
                 )
             )
         if acc.pending_check_failures:
             return Stop(
                 OutcomeFailed(
-                    reason="remediation_failed",
+                    reason="stale_validation_failed",
                     error=(
                         "stale review validation emitted resolved marker but "
                         "verification checks failed"

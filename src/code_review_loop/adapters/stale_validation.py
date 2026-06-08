@@ -62,12 +62,44 @@ def run_stale_validation(
             **metadata,
         },
     )
-    result = ctx.runner(
-        invocation.command,
-        config.cwd,
-        invocation.stdin,
-        phase_support.phase_timeout_seconds(config, config.review_timeout_seconds),
-    )
+    import time
+    from code_review_loop.adapters.review import review_failed_to_run
+    attempts = config.provider_retry_attempts if config.review_harness not in {"codex", "fake"} else 1
+    last_result = None
+    for attempt in range(1, attempts + 1):
+        result = phase_support.run_with_waiting_progress(
+            config,
+            ctx.runner,
+            invocation.command,
+            config.cwd,
+            invocation.stdin,
+            phase_support.phase_timeout_seconds(config, config.review_timeout_seconds),
+            phase="stale-validation",
+            label=str(iteration),
+            ctx=ctx,
+            prompt_artifact=invocation.prompt_artifact,
+        )
+        last_result = result
+        failure = provider_failures.classify_provider_failure(result, harness=config.review_harness)
+        if not review_failed_to_run(result, config.review_harness) or failure is None or not failure.transient:
+            break
+        phase_support.write_artifact(
+            config.artifact_dir / f"stale-validation-{iteration}-attempt-{attempt}.txt",
+            phase_support._combined_output(result),
+        )
+        if attempt < attempts:
+            phase_support.progress_event(
+                config,
+                "stale-validation",
+                str(iteration),
+                "retry",
+                failure.detail,
+                ctx=ctx,
+                metadata={"reason": failure.reason, "attempt": attempt},
+            )
+            time.sleep(config.provider_retry_backoff_seconds)
+    assert last_result is not None
+    result = last_result
     combined = phase_support._combined_output(result)
     artifact_path = config.artifact_dir / f"{label}.txt"
     phase_support.write_artifact(artifact_path, combined)

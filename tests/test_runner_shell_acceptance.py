@@ -655,7 +655,7 @@ def test_runner_shell_stale_review_resolved_fails_if_checks_leave_edits(
         sink.close()
 
     assert result.outcome.__class__.__name__ == "OutcomeFailed"
-    assert result.outcome.reason == "remediation_failed"
+    assert result.outcome.reason == "stale_validation_failed"
     assert "changed non-artifact git status" in result.outcome.error
     assert "?? leaked.txt" in result.outcome.error
 
