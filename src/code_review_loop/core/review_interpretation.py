@@ -403,26 +403,32 @@ def review_status_diagnostics(output: str, *, harness: str = "codex") -> dict[st
         status_source = "structured_findings"
     elif finding_lines:
         status_source = "codex_finding_bullet"
-    elif any(
-        marker in normalized
-        for marker in (
-            "review comment:",
-            "review comments:",
-            "full review comments:",
+    elif (
+        harness not in PROMPTED_REVIEW_HARNESSES
+        and any(
+            marker in normalized
+            for marker in (
+                "review comment:",
+                "review comments:",
+                "full review comments:",
+            )
         )
     ):
         status_source = "finding_markers"
-    elif any(
-        line
-        in {
-            "no findings.",
-            "no findings",
-            "no issues found.",
-            "no issues found",
-            "no actionable findings.",
-            "no actionable findings",
-        }
-        for line in [raw_line.strip().lower() for raw_line in actionable_output.splitlines()]
+    elif (
+        harness not in PROMPTED_REVIEW_HARNESSES
+        and any(
+            line
+            in {
+                "no findings.",
+                "no findings",
+                "no issues found.",
+                "no issues found",
+                "no actionable findings.",
+                "no actionable findings",
+            }
+            for line in [raw_line.strip().lower() for raw_line in actionable_output.splitlines()]
+        )
     ):
         status_source = "clear_lines"
     elif (

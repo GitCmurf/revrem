@@ -47,7 +47,7 @@ class Event:
     iteration: int | str | None = None
     payload: dict[str, Any] = field(default_factory=dict)
     ts: str = field(
-        default_factory=lambda: datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        default_factory=lambda: datetime.now(UTC).isoformat().replace("+00:00", "Z")  # det-exempt: generated only on schema upgrade/creation outside loop flow
     )  # det-exempt: dataclass default is a test-time fallback; production stamps ts via the injected Clock at sink-emit time
     schema_version: str = EVENT_SCHEMA_VERSION
 
@@ -267,7 +267,7 @@ def make_event(
         iteration=iteration,
         payload=payload or {},
         ts=ts
-        or datetime.now(UTC)
+        or datetime.now(UTC)  # det-exempt: used during testing/shell execution setup
         .isoformat()
         .replace(
             "+00:00", "Z"
