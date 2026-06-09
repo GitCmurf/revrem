@@ -90,18 +90,18 @@ def run_codex_review(
         review_context = build_external_review_context(
             config, git_context_cache=ctx.git_context_cache
         )
-        external_prompt = compose_external_review_prompt(config, review_context)
-        review_prompt = external_prompt.prompt
-        phase_support.write_artifact(
-            config.artifact_dir / f"{artifact_label}-context.txt",
-            review_context,
-        )
-        phase_support.write_artifact(
-            config.artifact_dir / f"{artifact_label}-prompt.txt",
-            review_prompt,
-        )
-        prompt_artifact_path = config.artifact_dir / f"{artifact_label}-prompt.txt"
         try:
+            external_prompt = compose_external_review_prompt(config, review_context)
+            review_prompt = external_prompt.prompt
+            phase_support.write_artifact(
+                config.artifact_dir / f"{artifact_label}-context.txt",
+                review_context,
+            )
+            phase_support.write_artifact(
+                config.artifact_dir / f"{artifact_label}-prompt.txt",
+                review_prompt,
+            )
+            prompt_artifact_path = config.artifact_dir / f"{artifact_label}-prompt.txt"
             invocation = harnesses.prepare_prompt_invocation(
                 config.review_harness,
                 command,
