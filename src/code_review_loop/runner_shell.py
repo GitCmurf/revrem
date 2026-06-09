@@ -405,11 +405,14 @@ class _RunnerEngineExecutor:
             commit_retry=False if pending_check_failures else engine_state.acc.commit_retry,
         )
         if acc.stale_review_resolved:
-            dirty = stale_validation_status.dirty_message(
-                self.config,
-                self.ctx,
-                self.stale_review_status_before,
-            )
+            try:
+                dirty = stale_validation_status.dirty_message(
+                    self.config,
+                    self.ctx,
+                    self.stale_review_status_before,
+                )
+            except Exception as exc:
+                dirty = str(exc)
             if dirty:
                 acc = replace(acc, stale_review_dirty=dirty)
         if timeout_only_failures and self.config.inner_check_retries > retry_count:
