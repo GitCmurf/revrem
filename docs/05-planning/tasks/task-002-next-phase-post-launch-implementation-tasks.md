@@ -3,8 +3,8 @@ document_id: REVREM-TASK-002
 type: TASK
 title: Next-phase post-launch implementation tasks
 status: Approved
-version: '0.4'
-last_updated: '2026-05-15'
+version: '0.5'
+last_updated: '2026-05-31'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -1573,6 +1573,11 @@ GitHub/PyPI credentials or a merge to `main`.
 - `main` includes the release closeout commit `a3a1926`.
 - The published release is `v0.3.2`.
 - GitHub Release: `https://github.com/GitCmurf/revrem/releases/tag/v0.3.2`
+- Completion was rechecked on 2026-05-31 against current `main`:
+  `meminit check --format json` passed with `success:true`; package metadata,
+  schema files, fake harness tests, doctor/replay/budget/resume surfaces, and
+  release workflows remain present in the working tree. The `Approved` status is
+  the allowed DocOps state for this completed task.
 
 ## Completion Audit Checklist
 

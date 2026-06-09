@@ -86,7 +86,14 @@ TRIAGE_KEYS = (
     "routing",
     "routes",
 )
-ROUTING_KEYS = ("enabled", "mode", "default_route", "strict_on_unavailable_route", "rule", "allow_model_escalation")
+ROUTING_KEYS = (
+    "enabled",
+    "mode",
+    "default_route",
+    "strict_on_unavailable_route",
+    "rule",
+    "allow_model_escalation",
+)
 ROUTING_RULE_KEYS = ("id", "when", "then")
 ROUTING_WHEN_KEYS = (
     "domain_tags_any",
@@ -98,7 +105,12 @@ ROUTING_WHEN_KEYS = (
     "safety_signals_any",
     "failed_checks_any",
 )
-ROUTING_THEN_KEYS = ("route", "prompt_fragments", "allow_model_deescalation", "allow_model_escalation")
+ROUTING_THEN_KEYS = (
+    "route",
+    "prompt_fragments",
+    "allow_model_deescalation",
+    "allow_model_escalation",
+)
 ROUTE_KEYS = ("harness", "model", "reasoning_effort", "timeout_seconds", "sandbox", "fallback")
 COMMIT_KEYS = (
     "enabled",
@@ -125,6 +137,11 @@ RUNTIME_KEYS = (
     "output_last_message",
     "full_auto",
     "max_remediation_input_chars",
+    "inner_check_retries",
+    "provider_retry_attempts",
+    "provider_retry_backoff_seconds",
+    "external_review_input_chars",
+    "external_review_warning_seconds",
     "terminal_excerpt_chars",
     "harness_executables",
 )
@@ -162,12 +179,10 @@ def load_profile_file(path: Path) -> ProfileFile:
     profiles_raw = raw.get("profiles", {})
     profiles_table = _table(profiles_raw, f"{path}:profiles")
     raw_profiles = {
-        name: _table(value, f"{path}:profiles.{name}")
-        for name, value in profiles_table.items()
+        name: _table(value, f"{path}:profiles.{name}") for name, value in profiles_table.items()
     }
     profiles = {
-        name: parse_profile(name, value, source=str(path))
-        for name, value in raw_profiles.items()
+        name: parse_profile(name, value, source=str(path)) for name, value in raw_profiles.items()
     }
     return ProfileFile(
         path=path,
@@ -192,9 +207,7 @@ def parse_profile(name: str, raw: dict[str, Any], *, source: str | None = None) 
     commit = parse_commit(_table(raw.get("commit", {}), f"{name}.commit"))
     runtime = parse_runtime(_table(raw.get("runtime", {}), f"{name}.runtime"))
     budgets = parse_budgets(_table(raw.get("budgets", {}), f"{name}.budgets"))
-    suppressions = parse_suppressions(
-        _table(raw.get("suppressions", {}), f"{name}.suppressions")
-    )
+    suppressions = parse_suppressions(_table(raw.get("suppressions", {}), f"{name}.suppressions"))
     profile = Profile(
         name=name,
         description=description,
@@ -263,7 +276,9 @@ def parse_triage(raw: dict[str, Any], field: str) -> TriageConfig:
     if contract not in TRIAGE_CONTRACT_CHOICES:
         raise ValueError(f"{field}.contract must be one of {', '.join(TRIAGE_CONTRACT_CHOICES)}")
 
-    routing = parse_triage_routing(_table(raw.get("routing", {}), f"{field}.routing"), f"{field}.routing")
+    routing = parse_triage_routing(
+        _table(raw.get("routing", {}), f"{field}.routing"), f"{field}.routing"
+    )
     routes_raw = _table(raw.get("routes", {}), f"{field}.routes")
     routes = {
         name: parse_triage_route(_table(value, f"{field}.routes.{name}"), f"{field}.routes.{name}")
@@ -306,15 +321,21 @@ def parse_triage_routing(raw: dict[str, Any], field: str) -> TriageRoutingConfig
             raw.get("strict_on_unavailable_route", True), f"{field}.strict_on_unavailable_route"
         ),
         rule=rules,
-        allow_model_escalation=_bool(raw.get("allow_model_escalation", True), f"{field}.allow_model_escalation"),
+        allow_model_escalation=_bool(
+            raw.get("allow_model_escalation", True), f"{field}.allow_model_escalation"
+        ),
     )
 
 
 def parse_triage_routing_rule(raw: dict[str, Any], field: str) -> TriageRoutingRule:
     _reject_unknown_keys(raw, ROUTING_RULE_KEYS, field)
     rule_id = _str(raw.get("id"), f"{field}.id")
-    when = parse_triage_routing_rule_when(_table(raw.get("when", {}), f"{field}.when"), f"{field}.when")
-    then = parse_triage_routing_rule_then(_table(raw.get("then", {}), f"{field}.then"), f"{field}.then")
+    when = parse_triage_routing_rule_when(
+        _table(raw.get("when", {}), f"{field}.when"), f"{field}.when"
+    )
+    then = parse_triage_routing_rule_then(
+        _table(raw.get("then", {}), f"{field}.then"), f"{field}.then"
+    )
     return TriageRoutingRule(id=rule_id, when=when, then=then)
 
 
@@ -342,14 +363,20 @@ def parse_triage_routing_rule_when(raw: dict[str, Any], field: str) -> TriageRou
             f"{', '.join(TRIAGE_REFACTOR_DEPTH_CHOICES)}"
         )
     return TriageRoutingRuleWhen(
-        domain_tags_any=tuple(_str_list(raw.get("domain_tags_any", []), f"{field}.domain_tags_any")),
+        domain_tags_any=tuple(
+            _str_list(raw.get("domain_tags_any", []), f"{field}.domain_tags_any")
+        ),
         risk_level_min=risk_level_min,
         risk_level_max=risk_level_max,
         refactor_depth_any=refactor_depth_any,
         module_count_gte=_optional_int(raw.get("module_count_gte"), f"{field}.module_count_gte"),
         module_count_lt=_optional_int(raw.get("module_count_lt"), f"{field}.module_count_lt"),
-        safety_signals_any=tuple(_str_list(raw.get("safety_signals_any", []), f"{field}.safety_signals_any")),
-        failed_checks_any=tuple(_str_list(raw.get("failed_checks_any", []), f"{field}.failed_checks_any")),
+        safety_signals_any=tuple(
+            _str_list(raw.get("safety_signals_any", []), f"{field}.safety_signals_any")
+        ),
+        failed_checks_any=tuple(
+            _str_list(raw.get("failed_checks_any", []), f"{field}.failed_checks_any")
+        ),
     )
 
 
@@ -410,8 +437,7 @@ def parse_commit(raw: dict[str, Any]) -> CommitConfig:
     on_hook_failure = _str(raw.get("on_hook_failure", "remediate"), "commit.on_hook_failure")
     if on_hook_failure not in COMMIT_ON_HOOK_FAILURE_CHOICES:
         raise ValueError(
-            "commit.on_hook_failure must be one of "
-            f"{', '.join(COMMIT_ON_HOOK_FAILURE_CHOICES)}"
+            f"commit.on_hook_failure must be one of {', '.join(COMMIT_ON_HOOK_FAILURE_CHOICES)}"
         )
     return CommitConfig(
         enabled=_bool(raw.get("enabled", False), "commit.enabled"),
@@ -469,6 +495,26 @@ def parse_runtime(raw: dict[str, Any]) -> RuntimeConfig:
             raw.get("max_remediation_input_chars", 200_000),
             "runtime.max_remediation_input_chars",
         ),
+        inner_check_retries=_int(
+            raw.get("inner_check_retries", 0),
+            "runtime.inner_check_retries",
+        ),
+        provider_retry_attempts=_int(
+            raw.get("provider_retry_attempts", 2),
+            "runtime.provider_retry_attempts",
+        ),
+        provider_retry_backoff_seconds=_float(
+            raw.get("provider_retry_backoff_seconds", 1.0),
+            "runtime.provider_retry_backoff_seconds",
+        ),
+        external_review_input_chars=_int(
+            raw.get("external_review_input_chars", 80_000),
+            "runtime.external_review_input_chars",
+        ),
+        external_review_warning_seconds=_float(
+            raw.get("external_review_warning_seconds", 1_800),
+            "runtime.external_review_warning_seconds",
+        ),
         terminal_excerpt_chars=_int(
             raw.get("terminal_excerpt_chars", 4_000),
             "runtime.terminal_excerpt_chars",
@@ -503,8 +549,7 @@ def parse_suppressions(raw: dict[str, Any]) -> SuppressionsConfig:
     scope = _str(raw.get("scope", "repo"), "suppressions.scope")
     if scope not in SUPPRESSION_SCOPE_CHOICES:
         raise ValueError(
-            "suppressions.scope must be one of: "
-            f"{', '.join(SUPPRESSION_SCOPE_CHOICES)}"
+            f"suppressions.scope must be one of: {', '.join(SUPPRESSION_SCOPE_CHOICES)}"
         )
     return SuppressionsConfig(scope=scope)
 
@@ -752,7 +797,7 @@ def _deep_remove_none(value: Any) -> Any:
     if isinstance(value, dict):
         return {k: _deep_remove_none(v) for k, v in value.items() if v is not None}
     if isinstance(value, list | tuple):
-        return type(value)(_deep_remove_none(v) for v in value if v is not None) # type: ignore
+        return type(value)(_deep_remove_none(v) for v in value if v is not None)  # type: ignore
     return value
 
 
@@ -877,7 +922,9 @@ def clone_user_profile(
         raise ValueError("clone target must be different from source profile")
     source = resolve_profile(source_name, cwd=cwd, home=home, require_implemented=False)
     source_file = load_profile_file(Path(source.source)) if source.source is not None else None
-    raw_source_profile = source_file.raw_profiles.get(source_name) if source_file is not None else None
+    raw_source_profile = (
+        source_file.raw_profiles.get(source_name) if source_file is not None else None
+    )
     cloned = replace(source, name=target_name, source=None)
     return write_user_profile(cloned, home=home, force=force, raw_profile=raw_source_profile)
 
@@ -994,9 +1041,7 @@ def minimal_profile(name: str, *, description: str = "") -> Profile:
     return Profile(name=name, description=description)
 
 
-def _walk_route_fallback_chain(
-    routes: dict[str, TriageRouteConfig], route_name: str
-) -> list[str]:
+def _walk_route_fallback_chain(routes: dict[str, TriageRouteConfig], route_name: str) -> list[str]:
     """Return a list of issues for a single route's fallback chain."""
     from code_review_loop import policy
 
@@ -1038,7 +1083,6 @@ def _walk_route_fallback_chain(
     return issues
 
 
-
 def validate_policy(profile: Profile, *, executable_routes: bool = False) -> list[str]:
     issues = []
     triage = profile.triage
@@ -1048,7 +1092,9 @@ def validate_policy(profile: Profile, *, executable_routes: bool = False) -> lis
         if rule.then.route and rule.then.route not in triage.routes:
             issues.append(f"rule {rule.id or i!r} refers to unknown route {rule.then.route!r}")
 
-    if (triage.routing.enabled or triage.routes) and triage.routing.default_route not in triage.routes:
+    if (
+        triage.routing.enabled or triage.routes
+    ) and triage.routing.default_route not in triage.routes:
         issues.append(f"default_route {triage.routing.default_route!r} is unknown")
 
     if triage.routing.enabled or executable_routes:
@@ -1074,6 +1120,16 @@ def validate_profile(profile: Profile, *, require_implemented: bool) -> None:
         raise ValueError(f"runtime.exec_color must be one of: {known}")
     if profile.runtime.max_remediation_input_chars < 1:
         raise ValueError("runtime.max_remediation_input_chars must be positive")
+    if profile.runtime.inner_check_retries < 0:
+        raise ValueError("runtime.inner_check_retries must be 0 or greater")
+    if profile.runtime.provider_retry_attempts < 1:
+        raise ValueError("runtime.provider_retry_attempts must be at least 1")
+    if profile.runtime.provider_retry_backoff_seconds < 0:
+        raise ValueError("runtime.provider_retry_backoff_seconds must be 0 or greater")
+    if profile.runtime.external_review_input_chars < 1:
+        raise ValueError("runtime.external_review_input_chars must be positive")
+    if profile.runtime.external_review_warning_seconds < 0:
+        raise ValueError("runtime.external_review_warning_seconds must be 0 or greater")
     if profile.runtime.terminal_excerpt_chars < 1:
         raise ValueError("runtime.terminal_excerpt_chars must be positive")
 
@@ -1154,7 +1210,9 @@ def _write_profile_file(
                 ).rstrip()
             )
         else:
-            blocks.append(_raw_profile_to_toml_impl(raw_profiles[name], root=("profiles", name)).rstrip())
+            blocks.append(
+                _raw_profile_to_toml_impl(raw_profiles[name], root=("profiles", name)).rstrip()
+            )
     _atomic_write_text(path, "\n\n".join(blocks) + "\n")
 
 

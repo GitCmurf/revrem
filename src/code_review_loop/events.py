@@ -46,7 +46,9 @@ class Event:
     phase: str | None = None
     iteration: int | str | None = None
     payload: dict[str, Any] = field(default_factory=dict)
-    ts: str = field(default_factory=lambda: datetime.now(UTC).isoformat().replace("+00:00", "Z"))  # det-exempt: dataclass default is a test-time fallback; production stamps ts via the injected Clock at sink-emit time
+    ts: str = field(
+        default_factory=lambda: datetime.now(UTC).isoformat().replace("+00:00", "Z")  # det-exempt: generated only on schema upgrade/creation outside loop flow
+    )  # det-exempt: dataclass default is a test-time fallback; production stamps ts via the injected Clock at sink-emit time
     schema_version: str = EVENT_SCHEMA_VERSION
 
     def to_dict(self) -> dict[str, Any]:
@@ -120,7 +122,9 @@ class RendererSink:
         self._close_timeout_seconds = close_timeout_seconds
         self._closed = False
         self._queue: queue.Queue[Event | None] = queue.Queue(maxsize=max_queue)
-        self._thread = threading.Thread(target=self._drain, name="revrem-renderer-sink", daemon=True)
+        self._thread = threading.Thread(
+            target=self._drain, name="revrem-renderer-sink", daemon=True
+        )
         self._thread.start()
 
     def emit(
@@ -229,7 +233,9 @@ def _open_fresh_artifact(path: Path):
         fd = os.open(path, flags, 0o666)
     except OSError as exc:
         if exc.errno == errno.ELOOP:
-            raise artifacts.ArtifactPathError(f"artifact path must not be a symlink: {path}") from exc
+            raise artifacts.ArtifactPathError(
+                f"artifact path must not be a symlink: {path}"
+            ) from exc
         raise
 
     try:
@@ -260,7 +266,12 @@ def make_event(
         phase=phase,
         iteration=iteration,
         payload=payload or {},
-        ts=ts or datetime.now(UTC).isoformat().replace("+00:00", "Z"),  # det-exempt: fallback when no ts is supplied; production sinks pass an injected-Clock ts
+        ts=ts
+        or datetime.now(UTC)  # det-exempt: used during testing/shell execution setup
+        .isoformat()
+        .replace(
+            "+00:00", "Z"
+        ),  # det-exempt: fallback when no ts is supplied; production sinks pass an injected-Clock ts
     )
 
 

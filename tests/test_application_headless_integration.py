@@ -142,7 +142,10 @@ def test_headless_application_unknown_outcome_is_typed(tmp_path: Path) -> None:
     assert isinstance(result.outcome, OutcomeUnknown)
 
 
-def test_headless_application_setup_failure_summary(tmp_path: Path) -> None:
+def test_headless_application_setup_failure_summary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PATH", "/usr/bin:/bin:/usr/local/bin")
     config = LoopConfig(
         base="main",
         max_iterations=1,
@@ -197,7 +200,9 @@ def test_headless_application_resume_uses_injected_runner(tmp_path: Path) -> Non
     from code_review_loop.core.ports import CommandResult
 
     def process_runner(args, cwd, input_text=None, timeout_seconds=None):
-        return CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+        return CommandResult(
+            list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n"
+        )
 
     config = LoopConfig(
         base="main",

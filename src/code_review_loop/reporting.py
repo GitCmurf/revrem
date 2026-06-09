@@ -9,11 +9,20 @@ from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
-from code_review_loop import __version__, artifacts, budgets, run_history
+from code_review_loop import __version__, artifacts, budgets, harnesses, run_history
 from code_review_loop.adapters.phase_support import write_artifact
 from code_review_loop.clock import SYSTEM_CLOCK, Clock, utc_iso
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.ports import EventSink
+
+SUMMARY_SCHEMA_VERSION = "1.1"
+"""Bumped from ``"1.0"`` to mark the CM2 contract change: the
+``skipped_no_changes`` commit-skip path now maps to ``final_status: "clear"``
+whenever the most recent review was ``clear`` or ``unknown`` (previously
+``unknown``). Consumers that diff the schema can detect the contract change
+without reading the CHANGELOG. The legacy ``"1.0"`` value still validates
+against the documented schema; the bump is purely a signal in the summary
+payload."""
 
 
 def add_artifact_paths(summary: dict[str, object], config: LoopConfig) -> None:
@@ -22,13 +31,17 @@ def add_artifact_paths(summary: dict[str, object], config: LoopConfig) -> None:
         (path for path in artifact_dir.glob("*") if path.is_file()),
         key=artifact_sort_key,
     )
-    summary["artifact_paths"] = {
+    context_paths = [str(path) for path in files if path.name.endswith("-context.txt")]
+    artifact_paths = {
         "artifact_dir": str(artifact_dir),
         "summary": str(artifact_dir / "summary.json"),
         "reviews": [
             str(path)
             for path in files
-            if path.name.startswith("review-") and path.suffix == ".txt"
+            if path.name.startswith("review-")
+            and path.suffix == ".txt"
+            and not path.name.endswith("-context.txt")
+            and not path.name.endswith("-prompt.txt")
         ],
         "remediations": [
             str(path)
@@ -37,14 +50,18 @@ def add_artifact_paths(summary: dict[str, object], config: LoopConfig) -> None:
             and "last-message" not in path.name
             and not path.name.endswith("-prompt.txt")
         ],
-        "prompts": [
+        "prompts": [str(path) for path in files if path.name.endswith("-prompt.txt")],
+        "routing": [str(path) for path in files if path.name.startswith("routing-")],
+        "triage": [
             str(path)
             for path in files
-            if path.name.startswith("remediation-") and path.name.endswith("-prompt.txt")
+            if path.name.startswith("triage-") and not path.name.endswith("-prompt.txt")
         ],
-        "routing": [str(path) for path in files if path.name.startswith("routing-")],
-        "triage": [str(path) for path in files if path.name.startswith("triage-")],
-        "commits": [str(path) for path in files if path.name.startswith("commit-")],
+        "commits": [
+            str(path)
+            for path in files
+            if path.name.startswith("commit-") and not path.name.endswith("-prompt.txt")
+        ],
         "last_messages": [
             str(path)
             for path in files
@@ -59,9 +76,15 @@ def add_artifact_paths(summary: dict[str, object], config: LoopConfig) -> None:
             or path.name.startswith("diagnostics-")
         ],
     }
+    if context_paths:
+        artifact_paths["contexts"] = context_paths
+    summary["artifact_paths"] = artifact_paths
     fallbacks = commit_message_fallbacks(config.artifact_dir)
     if fallbacks:
         summary["commit_message_fallbacks"] = fallbacks
+    side_effects = commit_message_side_effects(config.artifact_dir)
+    if side_effects:
+        summary["commit_message_side_effects"] = side_effects
 
 
 def commit_message_fallbacks(artifact_dir: Path) -> list[dict[str, object]]:
@@ -74,6 +97,20 @@ def commit_message_fallbacks(artifact_dir: Path) -> list[dict[str, object]]:
                 item.setdefault("artifact", str(path))
                 fallbacks.append(item)
     return fallbacks
+
+
+def commit_message_side_effects(artifact_dir: Path) -> list[dict[str, object]]:
+    side_effects: list[dict[str, object]] = []
+    for path in sorted(
+        artifact_dir.glob("commit-*-message-side-effects.json"), key=artifact_sort_key
+    ):
+        with suppress(OSError, json.JSONDecodeError):
+            value = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(value, dict):
+                item = dict(value)
+                item.setdefault("artifact", str(path))
+                side_effects.append(item)
+    return side_effects
 
 
 def artifact_sort_key(path: Path) -> tuple[str, int, str]:
@@ -125,7 +162,9 @@ def summary_budget_payload(
     return {
         "max_wall_seconds": config.budget_config.max_wall_seconds,
         "max_tokens": config.budget_config.max_tokens,
-        "max_usd": str(config.budget_config.max_usd) if config.budget_config.max_usd is not None else None,
+        "max_usd": (
+            str(config.budget_config.max_usd) if config.budget_config.max_usd is not None else None
+        ),
         "soft_warn_fraction": config.budget_config.soft_warn_fraction,
         "wall_elapsed_seconds": wall_elapsed_seconds,
         "tokens": tokens,
@@ -133,7 +172,9 @@ def summary_budget_payload(
     }
 
 
-def emit_artifact_write_events(config: LoopConfig, summary: dict[str, object], *, event_sink: EventSink) -> None:
+def emit_artifact_write_events(
+    config: LoopConfig, summary: dict[str, object], *, event_sink: EventSink
+) -> None:
     artifact_paths = summary.get("artifact_paths")
     if not isinstance(artifact_paths, dict):
         return
@@ -144,7 +185,9 @@ def emit_artifact_write_events(config: LoopConfig, summary: dict[str, object], *
         event_sink.emit("artifact_write", phase="artifacts", payload=payload)
 
 
-def iter_artifact_paths(artifact_paths: dict[object, object]) -> Iterator[tuple[str, str]]:
+def iter_artifact_paths(
+    artifact_paths: dict[object, object],
+) -> Iterator[tuple[str, str]]:
     for kind, value in artifact_paths.items():
         if kind == "artifact_dir":
             continue
@@ -159,7 +202,7 @@ def iter_artifact_paths(artifact_paths: dict[object, object]) -> Iterator[tuple[
 def add_summary_contract_fields(
     config: LoopConfig, summary: dict[str, object], *, clock: Clock = SYSTEM_CLOCK
 ) -> None:
-    summary["schema_version"] = artifacts.JSON_SCHEMA_VERSION
+    summary["schema_version"] = SUMMARY_SCHEMA_VERSION
     summary.setdefault("cli_version", __version__)
     summary.setdefault("harness", config.review_harness)
     summary.setdefault("harness_version", None)
@@ -172,7 +215,7 @@ def add_summary_contract_fields(
         "phases",
         {
             "_summary": {
-                "iteration_count": len(iterations) if isinstance(iterations, list) else 0,
+                "iteration_count": (len(iterations) if isinstance(iterations, list) else 0),
             },
         },
     )
@@ -182,46 +225,55 @@ def add_summary_contract_fields(
 
 def phase_config_payload(config: LoopConfig) -> dict[str, object]:
     field_sources = config.phase_config_field_sources
+    triage_effort = config.triage_reasoning_effort
+    triage: dict[str, object] = {
+        "enabled": config.triage_enabled,
+        "harness": config.triage_harness,
+        "model": config.triage_model,
+        "reasoning_effort": triage_effort,
+        **_provider_effort_fields(config.triage_harness, triage_effort),
+        "timeout_seconds": config.triage_timeout_seconds_display,
+        "contract": config.triage_contract,
+        "routing_enabled": (
+            config.profile_v2.triage.routing.enabled if config.profile_v2 is not None else False
+        ),
+        "routing_strict": (
+            config.profile_v2.triage.routing.strict_on_unavailable_route
+            if config.profile_v2 is not None
+            else False
+        ),
+        "allow_model_escalation": (
+            config.profile_v2.triage.routing.allow_model_escalation
+            if config.profile_v2 is not None
+            else True
+        ),
+        "sandbox": "read-only",
+        "source": config.phase_config_sources.get("triage", "direct-config"),
+        "sources": field_sources.get("triage", {}),
+    }
+    if config.profile_v2 is not None:
+        triage["routing_default_route"] = config.profile_v2.triage.routing.default_route
+
+    review_effort = config.review_reasoning_effort or config.reasoning_effort
+    remediation_effort = config.remediation_reasoning_effort or config.reasoning_effort
+    commit_effort = config.commit_reasoning_effort
     return {
         "review": {
             "harness": config.review_harness,
             "model": config.review_model or config.model,
-            "reasoning_effort": config.review_reasoning_effort or config.reasoning_effort,
+            "reasoning_effort": review_effort,
+            **_provider_effort_fields(config.review_harness, review_effort),
             "timeout_seconds": config.review_timeout_seconds_display,
             "sandbox": "read-only",
             "source": config.phase_config_sources.get("review", "direct-config"),
             "sources": field_sources.get("review", {}),
         },
-        "triage": {
-            "enabled": config.triage_enabled,
-            "harness": config.triage_harness,
-            "model": config.triage_model,
-            "reasoning_effort": config.triage_reasoning_effort,
-            "timeout_seconds": config.triage_timeout_seconds_display,
-            "contract": config.triage_contract,
-            "routing_enabled": (
-                config.profile_v2.triage.routing.enabled
-                if config.profile_v2 is not None
-                else False
-            ),
-            "routing_strict": (
-                config.profile_v2.triage.routing.strict_on_unavailable_route
-                if config.profile_v2 is not None
-                else False
-            ),
-            "allow_model_escalation": (
-                config.profile_v2.triage.routing.allow_model_escalation
-                if config.profile_v2 is not None
-                else True
-            ),
-            "sandbox": "read-only",
-            "source": config.phase_config_sources.get("triage", "direct-config"),
-            "sources": field_sources.get("triage", {}),
-        },
+        "triage": triage,
         "remediation": {
             "harness": config.remediation_harness,
             "model": config.remediation_model or config.model,
-            "reasoning_effort": config.remediation_reasoning_effort or config.reasoning_effort,
+            "reasoning_effort": remediation_effort,
+            **_provider_effort_fields(config.remediation_harness, remediation_effort),
             "timeout_seconds": config.remediation_timeout_seconds_display,
             "sandbox": config.exec_sandbox,
             "source": config.phase_config_sources.get("remediation", "direct-config"),
@@ -231,7 +283,8 @@ def phase_config_payload(config: LoopConfig) -> dict[str, object]:
             "enabled": config.commit_after_remediation,
             "harness": config.commit_message_harness,
             "model": config.commit_message_model,
-            "reasoning_effort": config.commit_reasoning_effort,
+            "reasoning_effort": commit_effort,
+            **_provider_effort_fields(config.commit_message_harness, commit_effort),
             "requested_reasoning_effort": config.commit_reasoning_effort_requested,
             "reasoning_effort_adjustment": config.commit_reasoning_effort_adjustment,
             "timeout_seconds": config.commit_timeout_seconds_display,
@@ -245,6 +298,23 @@ def phase_config_payload(config: LoopConfig) -> dict[str, object]:
             "source": config.phase_config_sources.get("checks", "direct-config"),
             "sources": field_sources.get("checks", {}),
         },
+        "runtime": {
+            "inner_check_retries": config.inner_check_retries,
+            "provider_retry_attempts": config.provider_retry_attempts,
+            "provider_retry_backoff_seconds": config.provider_retry_backoff_seconds,
+            "external_review_input_chars": config.external_review_input_chars,
+            "external_review_warning_seconds": config.external_review_warning_seconds,
+            "source": config.phase_config_sources.get("runtime", "direct-config"),
+            "sources": field_sources.get("runtime", {}),
+        },
+    }
+
+
+def _provider_effort_fields(harness: str, effort: str | None) -> dict[str, object]:
+    supported = harnesses.reasoning_effort_supported(harness)
+    return {
+        "reasoning_effort_supported": supported,
+        "provider_reasoning_effort": effort if supported else None,
     }
 
 

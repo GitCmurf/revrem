@@ -17,9 +17,19 @@ in `rejected_findings` and explain the rejection in `rejection_reason`. Use
 `needs_more_info` when you cannot make a stable decision from the supplied
 context alone.
 
+Treat failed post-remediation checks as actionable even when the original review
+finding is otherwise resolved. Preserve the failed command output in
+`rationale`, include the failing command in `verification_commands`, and make
+the `definition_of_done` require both the code fix and a clean rerun of the
+failed check. If a check failure is caused by leftover scratch files or
+untracked files, triage it as a cleanup finding rather than asking the
+remediator to inspect unrelated code.
+
 Every finding object must include:
 `fingerprint`, `summary`, `severity`, `affected_paths`, and `rationale`.
 `needs_more_info` entries must also include `info_requested`.
+`info_requested` must be a single string, not an array. If you have multiple
+questions, combine them into one newline-separated string.
 `severity` must be one of `info`, `low`, `medium`, `high`, or `critical`.
 Do not put review priority labels such as `P0`, `P1`, `P2`, `P3`, or `P4`
 in `severity`; translate them as `P0` -> `critical`, `P1` -> `high`,
@@ -27,8 +37,12 @@ in `severity`; translate them as `P0` -> `critical`, `P1` -> `high`,
 
 Fingerprint guidance:
 `fingerprint` must preserve the stable `f1:` finding ID from the review when
-one is present. Do not invent a new fingerprint. If a comment has no stable
-fingerprint and the match is ambiguous, put it in `needs_more_info` instead of
+one is present. If no `f1:` ID is present but the supplied review comments are
+still uniquely identifiable by path/line/order, use
+`review-comment:<1-based-order>` and add a `parsing_warnings` entry explaining
+the fallback. The absence of an `f1:` ID alone is not a reason to ask for more
+information. If a comment has no stable fingerprint and the match is genuinely
+ambiguous from the supplied context, put it in `needs_more_info` instead of
 guessing.
 
 Classification guidance:
@@ -36,9 +50,22 @@ Classification guidance:
 - `risk_level`: Assess the risk of the change (trivial, low, medium, high, critical).
 - `refactor_depth`: Assess the scope (atomic, localised, cross-module, architectural).
 - `affected_modules`: List the top-level modules or packages affected.
-- `estimated_blast_radius`: Provide finding and module counts.
+- `estimated_blast_radius`: Must be an object with exactly these keys:
+  `finding_count` and `module_count`. Do not use `findings`, `modules`,
+  `count`, or any other key names.
 - `safety_signals`: Call out specific security/safety concerns (e.g., sensitive-domain:auth).
 - `failed_check_signals`: Reference any failed checks provided in the context.
+
+Minimal valid `classification` example:
+{
+  "domain_tags": ["developer-experience"],
+  "risk_level": "medium",
+  "refactor_depth": "localised",
+  "affected_modules": ["code_review_loop.adapters.checks"],
+  "estimated_blast_radius": {"finding_count": 1, "module_count": 1},
+  "safety_signals": [],
+  "failed_check_signals": []
+}
 
 Routing proposal guidance:
 - Recommend a `route_tier` (e.g., frontier-thinking, midtier-coder, efficient-coder).
@@ -48,9 +75,41 @@ Routing proposal guidance:
 - Provide a clear `rationale` for these choices.
 
 Prompt requirements guidance:
-- `required_fragments`: List named fragments needed (e.g., engineering-principles).
+- `required_fragments`: Use `[]` unless one of RevRem's built-in fragment names
+  is specifically needed. The only built-in fragment names are:
+  `architecture-checklist`, `atomic-task-list`, `definition-of-done`,
+  `engineering-principles`, `regression-test-checklist`, and
+  `security-checklist`. Do not invent new names such as `bounded-execution`;
+  put that guidance in `definition_of_done` or `triage_prompt_draft` instead.
 - `definition_of_done`: Provide specific criteria for remediation success.
 - `triage_prompt_draft`: A draft implementation instruction for the remediator.
+  It must tell the remediator not to create repository scratch files, to remove
+  any accidental temporary files, and not to claim verification unless the
+  command was actually run or its output is present in the supplied context.
+
+Minimal valid top-level skeleton:
+{
+  "confirmed_findings": [],
+  "rejected_findings": [],
+  "needs_more_info": [],
+  "implementation_order": [],
+  "verification_commands": [],
+  "parsing_warnings": [],
+  "classification": {
+    "domain_tags": [],
+    "risk_level": "low",
+    "refactor_depth": "atomic",
+    "affected_modules": [],
+    "estimated_blast_radius": {"finding_count": 0, "module_count": 0},
+    "safety_signals": [],
+    "failed_check_signals": []
+  },
+  "prompt_requirements": {
+    "required_fragments": [],
+    "definition_of_done": [],
+    "triage_prompt_draft": "No remediation required."
+  }
+}
 
 Contract guidance:
 `affected_paths` should list the minimum files needed to implement the finding.
@@ -59,4 +118,5 @@ should be fixed.
 `verification_commands` should contain the shortest command set that proves the
 remediation.
 Use `parsing_warnings` for any ambiguity you had to resolve while preserving the
-original review context.
+original review context. `parsing_warnings` must be an array of strings, not
+objects; write `"message text"` instead of `{"message": "message text"}`.

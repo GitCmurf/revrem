@@ -202,7 +202,9 @@ def test_resume_run_rejects_persisted_budget_ceiling(tmp_path, monkeypatch):
     def fail_if_called(*args, **kwargs):
         nonlocal called
         called = True
-        raise AssertionError("run_loop should not be invoked when the budget ceiling is already exhausted")
+        raise AssertionError(
+            "run_loop should not be invoked when the budget ceiling is already exhausted"
+        )
 
     monkeypatch.setattr(runner_mod, "run_loop", fail_if_called)
 
@@ -229,7 +231,9 @@ def test_resume_run_rejects_persisted_wall_budget_ceiling(tmp_path, monkeypatch)
     def fail_if_called(*args, **kwargs):
         nonlocal called
         called = True
-        raise AssertionError("run_loop should not be invoked when the wall budget is already exhausted")
+        raise AssertionError(
+            "run_loop should not be invoked when the wall budget is already exhausted"
+        )
 
     monkeypatch.setattr(runner_mod, "run_loop", fail_if_called)
 
@@ -261,7 +265,9 @@ def test_resume_run_rejects_legacy_persisted_budget_ceiling(tmp_path, monkeypatc
     def fail_if_called(*args, **kwargs):
         nonlocal called
         called = True
-        raise AssertionError("run_loop should not be invoked when the budget ceiling is already exhausted")
+        raise AssertionError(
+            "run_loop should not be invoked when the budget ceiling is already exhausted"
+        )
 
     monkeypatch.setattr(runner_mod, "run_loop", fail_if_called)
 
@@ -285,7 +291,9 @@ def test_resume_loop_config_seeds_cumulative_wall_budget_state(tmp_path, monkeyp
         return CommandResult(["git", *args], 1, stderr="unexpected")
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
-        return CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+        return CommandResult(
+            list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n"
+        )
 
     monkeypatch.setattr(git_adapter, "run_git_preflight", fake_run_git_preflight)
 
@@ -298,7 +306,9 @@ def test_resume_loop_config_seeds_cumulative_wall_budget_state(tmp_path, monkeyp
         budget_config=budgets.BudgetConfig(max_wall_seconds=30),
     )
 
-    summary = runner_mod.run_loop(config, runner, budget_state=budgets.BudgetState(started_at_monotonic=100.0)).to_dict()
+    summary = runner_mod.run_loop(
+        config, runner, budget_state=budgets.BudgetState(started_at_monotonic=100.0)
+    ).to_dict()
 
     assert summary["budgets"]["wall_elapsed_seconds"] == 12.5
 
@@ -387,13 +397,18 @@ harness = "fake"
         },
     )
 
-    resumed, _budget_state = resume_mod.resume_loop_config(json.loads((run_dir / "summary.json").read_text()), run_dir=run_dir)
+    resumed, _budget_state = resume_mod.resume_loop_config(
+        json.loads((run_dir / "summary.json").read_text()), run_dir=run_dir
+    )
 
     assert resumed.profile_name == "test"
     assert resumed.triage_contract == "v2"
     assert resumed.profile_v2 is not None
     assert resumed.profile_v2.triage.contract == "v2"
-    assert tuple(route.harness for route in resumed.profile_v2.triage.routes.values()) == ("codex", "claude")
+    assert tuple(route.harness for route in resumed.profile_v2.triage.routes.values()) == (
+        "codex",
+        "claude",
+    )
     assert resumed.profile_v2.triage.routing.default_route == "midtier"
 
 
@@ -516,6 +531,38 @@ def test_resume_config_payload_persists_configured_extension_fields(tmp_path):
     assert payload["triage_reasoning_effort"] == "minimal"
 
 
+def test_resume_config_payload_and_loop_config_restore_external_review_settings(tmp_path):
+    payload = resume_mod.resume_config_payload(
+        LoopConfig(
+            base="main",
+            max_iterations=1,
+            codex_bin="codex",
+            cwd=tmp_path,
+            artifact_dir=tmp_path / "artifacts",
+            provider_retry_attempts=4,
+            provider_retry_backoff_seconds=2.5,
+            external_review_input_chars=600_000,
+            external_review_warning_seconds=600.5,
+        )
+    )
+
+    run_dir = tmp_path / "run"
+    write_resume_run(run_dir, resume_config=payload)
+    resumed, _budget_state = resume_mod.resume_loop_config(
+        json.loads((run_dir / "summary.json").read_text(encoding="utf-8")),
+        run_dir=run_dir,
+    )
+
+    assert payload["provider_retry_attempts"] == 4
+    assert payload["provider_retry_backoff_seconds"] == 2.5
+    assert payload["external_review_input_chars"] == 600_000
+    assert payload["external_review_warning_seconds"] == 600.5
+    assert resumed.provider_retry_attempts == 4
+    assert resumed.provider_retry_backoff_seconds == 2.5
+    assert resumed.external_review_input_chars == 600_000
+    assert resumed.external_review_warning_seconds == 600.5
+
+
 def test_resume_preconditions_block_head_mismatch(tmp_path, monkeypatch):
     run_dir = tmp_path / "run"
     write_resume_run(run_dir)
@@ -598,4 +645,8 @@ def test_resume_and_uninterrupted_fake_run_have_same_final_status(tmp_path, monk
 
     uninterrupted_summary = uninterrupted.to_dict()
     assert resumed.summary["final_status"] == uninterrupted_summary["final_status"] == "clear"
-    assert resumed.summary["stopped_reason"] == uninterrupted_summary["stopped_reason"] == "review_clear"
+    assert (
+        resumed.summary["stopped_reason"]
+        == uninterrupted_summary["stopped_reason"]
+        == "review_clear"
+    )

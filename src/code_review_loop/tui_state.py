@@ -116,7 +116,9 @@ def build_home_snapshot(
     history_limit: int = 5,
     history_path: Path | None = None,
 ) -> HomeSnapshot:
-    resolved_profiles = tuple(profiles.resolve_profiles(cwd=cwd, home=home, require_implemented=False))
+    resolved_profiles = tuple(
+        profiles.resolve_profiles(cwd=cwd, home=home, require_implemented=False)
+    )
     return home_snapshot_for_profiles(
         cwd=cwd,
         resolved_profiles=resolved_profiles,
@@ -139,10 +141,7 @@ def home_snapshot_for_profiles(
         recent_runs=recent_runs,
         harnesses=harness_views(),
         run_previews=tuple(run_preview(profile) for profile in resolved_profiles),
-        run_monitors=tuple(
-            run_monitor_view(record)
-            for record in recent_runs
-        ),
+        run_monitors=tuple(run_monitor_view(record) for record in recent_runs),
     )
 
 
@@ -154,7 +153,9 @@ def build_shell_model(
     history_path: Path | None = None,
     selected_profile_name: str | None = None,
 ) -> TuiShellModel:
-    resolved_profiles = tuple(profiles.resolve_profiles(cwd=cwd, home=home, require_implemented=False))
+    resolved_profiles = tuple(
+        profiles.resolve_profiles(cwd=cwd, home=home, require_implemented=False)
+    )
     snapshot = home_snapshot_for_profiles(
         cwd=cwd,
         resolved_profiles=resolved_profiles,
@@ -165,10 +166,13 @@ def build_shell_model(
     plan = launch_plan(selected_profile, dry_run=True) if selected_profile is not None else None
     return TuiShellModel(
         snapshot=snapshot,
-        selected_profile_name=selected_profile.name if selected_profile is not None else None,
+        selected_profile_name=(selected_profile.name if selected_profile is not None else None),
         selected_launch_plan=plan,
         screens=(
-            home_screen(snapshot, selected_profile_name=selected_profile.name if selected_profile else None),
+            home_screen(
+                snapshot,
+                selected_profile_name=(selected_profile.name if selected_profile else None),
+            ),
             profiles_screen(snapshot),
             pipeline_screen(snapshot, selected_profile),
             run_monitor_screen(snapshot),
@@ -224,7 +228,9 @@ def profiles_screen(snapshot: HomeSnapshot) -> TuiScreen:
             f"{profile.name} | {profile.description or '-'} | {profile.base} | "
             f"{profile.max_iterations} | {len(profile.checks)} | {profile.source or '-'}"
         )
-    lines.append("Actions: New, Edit, Clone, Delete, Export, and Import shell through revrem config.")
+    lines.append(
+        "Actions: New, Edit, Clone, Delete, Export, and Import shell through revrem config."
+    )
     return TuiScreen(name="profiles", title="Profiles", lines=tuple(lines))
 
 
@@ -243,13 +249,35 @@ def pipeline_screen(snapshot: HomeSnapshot, selected_profile: profiles.Profile |
             details.append(f"harness={phase.harness}")
         if phase.model:
             details.append(f"model={phase.model}")
-        if phase.reasoning_effort:
-            details.append(f"effort={phase.reasoning_effort}")
+        effort = harnesses.phase_effort_text(phase.harness, phase.reasoning_effort)
+        if effort:
+            details.append(f"effort={effort}")
         if phase.timeout_seconds is not None:
             details.append(f"timeout={phase.timeout_seconds:g}s")
         if phase.command_count is not None:
             details.append(f"commands={phase.command_count}")
         lines.append(f"{phase.name}: " + ", ".join(details))
+    if selected_profile.triage.routing.enabled:
+        routing = selected_profile.triage.routing
+        lines.append(
+            "routing: "
+            f"default_route={routing.default_route}, "
+            f"strict={routing.strict_on_unavailable_route}, "
+            f"allow_model_escalation={routing.allow_model_escalation}"
+        )
+        for name, route in sorted(selected_profile.triage.routes.items()):
+            details = [f"harness={route.harness}"]
+            if route.model:
+                details.append(f"model={route.model}")
+            effort = harnesses.phase_effort_text(route.harness, route.reasoning_effort)
+            if effort:
+                details.append(f"effort={effort}")
+            if route.timeout_seconds is not None:
+                details.append(f"timeout={route.timeout_seconds:g}s")
+            details.append(f"sandbox={route.sandbox}")
+            if route.fallback:
+                details.append(f"fallback={route.fallback}")
+            lines.append(f"route {name}: " + ", ".join(details))
     plan = launch_plan(selected_profile, dry_run=True)
     lines.append(f"Dry-run launch: {plan.shell_command}")
     return TuiScreen(name="pipeline", title="Pipeline", lines=tuple(lines))
@@ -336,8 +364,19 @@ def pipeline_phases(profile: profiles.Profile) -> tuple[PhaseView, ...]:
         phase_view("review", True, profile.review),
         phase_view("triage", profile.triage.enabled, profile.triage),
         phase_view("remediation", True, profile.remediation),
-        PhaseView("checks", bool(profile.pipeline.checks), command_count=len(profile.pipeline.checks)),
-        PhaseView("commit", profile.commit.enabled, model=profile.commit.message_model),
+        PhaseView(
+            "checks",
+            bool(profile.pipeline.checks),
+            command_count=len(profile.pipeline.checks),
+        ),
+        PhaseView(
+            "commit",
+            profile.commit.enabled,
+            harness=profile.commit.harness,
+            model=profile.commit.message_model,
+            reasoning_effort=profile.commit.reasoning_effort,
+            timeout_seconds=profile.commit.timeout_seconds,
+        ),
     ]
     return tuple(phases)
 
@@ -460,9 +499,7 @@ def run_monitor_view(record: dict[str, Any]) -> RunMonitorView:
         run_id=str(record.get("run_id") or ""),
         final_status=str(record.get("final_status") or "unknown"),
         stopped_reason=(
-            str(record["stopped_reason"])
-            if isinstance(record.get("stopped_reason"), str)
-            else None
+            str(record["stopped_reason"]) if isinstance(record.get("stopped_reason"), str) else None
         ),
         artifact_dir=str(artifact_dir) if isinstance(artifact_dir, str) else None,
         artifacts=tuple(artifacts),
@@ -477,7 +514,9 @@ def artifact_link_view(kind: str, path: str, *, record_cwd: str | None = None) -
     return ArtifactLinkView(kind=kind, path=path, exists=resolved_path.exists())
 
 
-def run_event_views(record: dict[str, Any]) -> tuple[tuple[RunEventView, ...], bool, str | None]:
+def run_event_views(
+    record: dict[str, Any],
+) -> tuple[tuple[RunEventView, ...], bool, str | None]:
     events_path = events_path_for_record(record)
     if events_path is None or not events_path.is_file():
         return (), False, None
@@ -522,7 +561,9 @@ def resolve_record_path(path: str, *, record_cwd: object) -> Path:
     return resolved_path
 
 
-def phase_view(name: str, enabled: bool, phase: profiles.PhaseConfig | profiles.TriageConfig) -> PhaseView:
+def phase_view(
+    name: str, enabled: bool, phase: profiles.PhaseConfig | profiles.TriageConfig
+) -> PhaseView:
     return PhaseView(
         name=name,
         enabled=enabled,

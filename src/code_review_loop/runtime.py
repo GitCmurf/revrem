@@ -10,7 +10,9 @@ import shlex
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePath
+from typing import cast
 
+from code_review_loop import harnesses
 from code_review_loop.core.outcome import OutcomeFailed, RunOutcome
 from code_review_loop.core.ports import CommandResult
 
@@ -72,7 +74,9 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
             iteration = item.get("iteration")
             review_status = item.get("review_status", "unknown")
             check_failures = item.get("check_failures")
-            check_text = "checks not run" if check_failures is None else f"check failures: {check_failures}"
+            check_text = (
+                "checks not run" if check_failures is None else f"check failures: {check_failures}"
+            )
             failed = " remediation failed" if item.get("remediation_failed") else ""
             commit_status = item.get("commit_status")
             commit_text = f", commit={commit_status}" if commit_status else ""
@@ -120,9 +124,12 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
             lines.append(f"JSON summary: {summary_path}")
 
     excerpt = str(summary.get("latest_review_excerpt") or "").strip()
-    if excerpt and status != "clear":
+    if excerpt and (status != "clear" or reason == "stale_review_already_resolved"):
         lines.append("")
-        lines.append("Latest actionable review output:")
+        if reason == "stale_review_already_resolved":
+            lines.append("Stale review validation output:")
+        else:
+            lines.append("Latest actionable review output:")
         lines.append(excerpt)
 
     if summary.get("error"):
@@ -138,6 +145,14 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
         if bug_report_path:
             lines.append(f"Bug report details: {bug_report_path}")
 
+    side_effects = summary.get("commit_message_side_effects")
+    if isinstance(side_effects, list) and side_effects:
+        lines.append("")
+        lines.append(
+            "WARNING: commit-message harness mutated repository state; this "
+            "model/harness is unsuitable for commit-message drafting until fixed."
+        )
+
     return "\n".join(lines)
 
 
@@ -147,24 +162,56 @@ def _phase_config_summary(phase_config: dict[object, object]) -> str:
         value = phase_config.get(phase)
         if not isinstance(value, dict):
             continue
-        source = value.get("source")
-        source_text = f"source={source}" if isinstance(source, str) and source else None
+        source_text = _phase_source_text(value)
         if value.get("enabled") is False:
             parts.append(f"{phase}=disabled({source_text})" if source_text else f"{phase}=disabled")
             continue
+        effort = _phase_effort_text(value)
         details = [
             str(item)
             for item in (
                 value.get("harness"),
                 value.get("model"),
-                f"effort={value['reasoning_effort']}" if value.get("reasoning_effort") else None,
-                f"timeout={value['timeout_seconds']}" if value.get("timeout_seconds") is not None else None,
+                f"effort={effort}" if effort else None,
+                (
+                    f"timeout={value['timeout_seconds']}"
+                    if value.get("timeout_seconds") is not None
+                    else None
+                ),
                 source_text,
             )
             if item
         ]
         parts.append(f"{phase}({', '.join(details)})")
     return "; ".join(parts) if parts else "not recorded"
+
+
+def _phase_effort_text(value: dict[object, object]) -> str | None:
+    effort = value.get("reasoning_effort")
+    if not effort:
+        return None
+    provider_effort = value.get("provider_reasoning_effort")
+    if isinstance(provider_effort, str) and provider_effort:
+        return provider_effort
+    if value.get("reasoning_effort_supported") is False:
+        return "n/a"
+    return harnesses.phase_effort_text(
+        cast("str | None", value.get("harness")),
+        cast("str | None", effort),
+    )
+
+
+def _phase_source_text(value: dict[object, object]) -> str | None:
+    source = value.get("source")
+    if source == "mixed":
+        sources = value.get("sources")
+        if isinstance(sources, dict):
+            source_values = {
+                str(item) for item in sources.values() if isinstance(item, str) and item
+            }
+            if "cli" in source_values and any(item.startswith("profile") for item in source_values):
+                return "source=profile+cli"
+    return f"source={source}" if isinstance(source, str) and source else None
 
 
 def _resume_command(summary: dict[str, object], review_path: str) -> str:
@@ -190,7 +237,9 @@ def _resume_command(summary: dict[str, object], review_path: str) -> str:
     _append_phase_resume_overrides(command, config, summary)
     commit_after = config.get("commit_after_remediation")
     if isinstance(commit_after, bool):
-        command.append("--commit-after-remediation" if commit_after else "--no-commit-after-remediation")
+        command.append(
+            "--commit-after-remediation" if commit_after else "--no-commit-after-remediation"
+        )
     command.extend(["--initial-review-file", review_path])
     hook_policy = config.get("commit_on_hook_failure") or summary.get("commit_on_hook_failure")
     if isinstance(hook_policy, str) and hook_policy:
@@ -209,6 +258,14 @@ def _append_phase_resume_overrides(
     profile_selected = isinstance(profile, str) and bool(profile)
     _append_string_override(
         command,
+        "--review-harness",
+        config.get("review_harness"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "review", "harness"),
+        default="codex",
+    )
+    _append_string_override(
+        command,
         "--review-model",
         config.get("review_model"),
         profile_selected=profile_selected,
@@ -220,6 +277,14 @@ def _append_phase_resume_overrides(
         config.get("review_reasoning_effort"),
         profile_selected=profile_selected,
         source=_phase_field_source(phase_config_map, "review", "reasoning_effort"),
+    )
+    _append_string_override(
+        command,
+        "--remediation-harness",
+        config.get("remediation_harness"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "remediation", "harness"),
+        default="codex",
     )
     _append_string_override(
         command,
@@ -317,6 +382,13 @@ def _append_phase_resume_overrides(
         profile_selected=profile_selected,
         source=_phase_field_source(phase_config_map, "triage", "routing_strict"),
     )
+    _append_string_override(
+        command,
+        "--route",
+        config.get("routing_default_route"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "triage", "routing_default_route"),
+    )
     _append_bool_override(
         command,
         true_flag="--allow-model-escalation",
@@ -325,9 +397,46 @@ def _append_phase_resume_overrides(
         profile_selected=profile_selected,
         source=_phase_field_source(phase_config_map, "triage", "allow_model_escalation"),
     )
+    _append_number_override(
+        command,
+        "--inner-check-retries",
+        config.get("inner_check_retries"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "runtime", "inner_check_retries"),
+    )
+    _append_number_override(
+        command,
+        "--provider-retry-attempts",
+        config.get("provider_retry_attempts"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "runtime", "provider_retry_attempts"),
+    )
+    _append_number_override(
+        command,
+        "--provider-retry-backoff-seconds",
+        config.get("provider_retry_backoff_seconds"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "runtime", "provider_retry_backoff_seconds"),
+    )
+    _append_number_override(
+        command,
+        "--external-review-input-chars",
+        config.get("external_review_input_chars"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "runtime", "external_review_input_chars"),
+    )
+    _append_number_override(
+        command,
+        "--external-review-warning-seconds",
+        config.get("external_review_warning_seconds"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "runtime", "external_review_warning_seconds"),
+    )
 
 
-def _phase_field_source(phase_config: Mapping[object, object], phase: str, field: str) -> str | None:
+def _phase_field_source(
+    phase_config: Mapping[object, object], phase: str, field: str
+) -> str | None:
     value = phase_config.get(phase)
     if not isinstance(value, dict):
         return None
@@ -365,11 +474,15 @@ def _append_string_override(
     source: str | None,
     default: object = None,
 ) -> None:
-    if isinstance(value, str) and value and _should_emit_resume_override(
-        value,
-        profile_selected=profile_selected,
-        source=source,
-        default=default,
+    if (
+        isinstance(value, str)
+        and value
+        and _should_emit_resume_override(
+            value,
+            profile_selected=profile_selected,
+            source=source,
+            default=default,
+        )
     ):
         command.extend([flag, value])
 
@@ -428,11 +541,20 @@ def _latest_iteration_checks(paths: list[str]) -> list[str]:
     return [path for iteration, path in parsed if iteration == latest_iteration]
 
 
-def _latest_check_rows(summary: dict[str, object], latest_paths: list[str]) -> list[dict[str, object]]:
+def _latest_check_rows(
+    summary: dict[str, object], latest_paths: list[str]
+) -> list[dict[str, object]]:
     iterations = summary.get("iterations")
     if not isinstance(iterations, list) or not iterations:
         return []
-    latest = next((item for item in reversed(iterations) if isinstance(item, dict) and isinstance(item.get("checks"), list)), None)
+    latest = next(
+        (
+            item
+            for item in reversed(iterations)
+            if isinstance(item, dict) and isinstance(item.get("checks"), list)
+        ),
+        None,
+    )
     if not isinstance(latest, dict):
         return []
     checks = latest.get("checks")

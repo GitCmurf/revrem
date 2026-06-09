@@ -35,6 +35,5 @@ def test_import_linter_contracts_are_kept() -> None:
         check=False,
     )
     assert result.returncode == 0, (
-        "import-linter contracts broken (C4):\n"
-        f"{result.stdout}\n{result.stderr}"
+        f"import-linter contracts broken (C4):\n{result.stdout}\n{result.stderr}"
     )

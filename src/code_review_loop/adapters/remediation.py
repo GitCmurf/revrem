@@ -7,6 +7,7 @@ reached through the module-level ``phase_support`` alias; C3 cleanup retires it.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -15,6 +16,7 @@ from code_review_loop import (
     harnesses,
     policy,
     prompts_composer,
+    provider_failures,
 )
 from code_review_loop.adapters import phase_support
 from code_review_loop.core.ports import (
@@ -28,6 +30,8 @@ if TYPE_CHECKING:
     from code_review_loop.config import LoopConfig
 
 Runner = Callable[[Sequence[str], Path, str | None, float | None], CommandResult]
+REMEDIATION_RETRY_BACKOFF_SECONDS = 1.0
+REMEDIATION_RETRY_ATTEMPTS = 2
 
 
 def build_remediation_command(
@@ -71,17 +75,21 @@ def run_remediation(
     remediation_input: str,
     *,
     resolved_route: policy.ResolvedRoute | None = None,
+    artifact_label: str | None = None,
+    display_label: str | None = None,
     ctx: RunContext,
 ) -> CommandResult:
+    if ctx.git_context_cache is not None:
+        ctx.git_context_cache.invalidate_head_sha(str(config.cwd))
+    artifact_stem = artifact_label or f"remediation-{iteration}"
+    label = display_label or str(iteration)
     last_message_path = (
-        config.artifact_dir / f"remediation-{iteration}-last-message.txt"
+        config.artifact_dir / f"{artifact_stem}-last-message.txt"
         if config.output_last_message
         else None
     )
     command = build_remediation_command(config, last_message_path, resolved_route=resolved_route)
-    remediation_harness = (
-        resolved_route.harness if resolved_route else config.remediation_harness
-    )
+    remediation_harness = resolved_route.harness if resolved_route else config.remediation_harness
 
     if resolved_route:
         prompt = remediation_input
@@ -89,18 +97,24 @@ def run_remediation(
     else:
         prompt = f"{phase_support.DEFAULT_REMEDIATION_PROMPT}\n{prompts_composer.trim_for_prompt(remediation_input, config.max_remediation_input_chars)}"
         timeout = config.remediation_timeout_seconds
-    command, prompt_input = harnesses.prepare_prompt_invocation(
+    prompt_artifact_path = config.artifact_dir / f"{artifact_stem}-prompt.txt"
+    phase_support.write_artifact(prompt_artifact_path, prompt)
+    invocation = harnesses.prepare_prompt_invocation(
         remediation_harness,
         command,
         prompt,
+        prompt_artifact_path=prompt_artifact_path,
     )
+    command = invocation.command
+    prompt_input = invocation.stdin
+    prompt_metadata = phase_support.prompt_invocation_metadata(invocation)
 
-    phase_support.set_phase_terminal_title(config, "remediate", str(iteration))
+    phase_support.set_phase_terminal_title(config, "remediate", label)
     phase_support.ensure_model_budget(config, phase="remediate", iteration=iteration, ctx=ctx)
     phase_support.progress_event(
         config,
         "remediate",
-        str(iteration),
+        label,
         "start",
         phase_support.resolved_phase_detail(
             command,
@@ -122,23 +136,112 @@ def run_remediation(
                 if resolved_route
                 else config.phase_config_sources.get("remediation", "direct-config")
             ),
+            prompt_chars=prompt_metadata.get("prompt_chars"),
+            prompt_delivery=prompt_metadata["prompt_delivery"],
         ),
         ctx=ctx,
+        metadata={
+            "command": phase_support.command_for_progress(list(command)),
+            "harness": remediation_harness,
+            **prompt_metadata,
+        },
     )
     if config.dry_run:
         result = CommandResult(command, 0, stdout="DRY_RUN remediation skipped\n")
     else:
-        result = runner(command, config.cwd, prompt_input, phase_support.phase_timeout_seconds(config, timeout))
-    phase_support.write_artifact(config.artifact_dir / f"remediation-{iteration}.txt", phase_support._combined_output(result))
-    phase_support.record_model_charge(config, result, phase="remediate", iteration=iteration, ctx=ctx)
-    if result.returncode != 0:
-        phase_support.progress_event(config, "remediate", str(iteration), "failed", f"exit {result.returncode}", ctx=ctx)
-        raise RuntimeError(
-            f"codex exec remediation failed for iteration {iteration}; "
-            f"see {config.artifact_dir / f'remediation-{iteration}.txt'}"
+        result = _run_remediation_with_retry(
+            config,
+            runner,
+            command,
+            prompt_input,
+            timeout,
+            label,
+            ctx=ctx,
+            prompt_artifact=invocation.prompt_artifact,
+            harness=remediation_harness,
         )
-    phase_support.progress_event(config, "remediate", str(iteration), "done", ctx=ctx)
+    phase_support.write_artifact(
+        config.artifact_dir / f"{artifact_stem}.txt",
+        phase_support._combined_output(result),
+    )
+    phase_support.record_model_charge(
+        config, result, phase="remediate", iteration=iteration, ctx=ctx
+    )
+    if result.returncode != 0:
+        failure = provider_failures.classify_provider_failure(result, harness=remediation_harness)
+        failure_detail = f": {failure.detail}" if failure else ""
+        phase_support.progress_event(
+            config,
+            "remediate",
+            label,
+            "failed",
+            f"exit {result.returncode}{failure_detail}",
+            ctx=ctx,
+        )
+        raise RuntimeError(
+            f"{remediation_harness} remediation failed for iteration {label}"
+            f"{failure_detail}; "
+            f"see {config.artifact_dir / f'{artifact_stem}.txt'}"
+        )
+    phase_support.progress_event(config, "remediate", label, "done", ctx=ctx)
     return result
+
+
+def _run_remediation_with_retry(
+    config: LoopConfig,
+    runner: Runner,
+    command: list[str],
+    prompt_input: str | None,
+    timeout: float | None,
+    label: str,
+    *,
+    ctx: RunContext,
+    prompt_artifact: Path | None,
+    harness: str,
+) -> CommandResult:
+    """Run the remediation subprocess with bounded transient retry.
+
+    Mirrors the policy used by ``run_review_with_retry`` so a transient
+    rate limit or transport error on remediation does not abort the loop.
+    Non-transient provider failures (auth, quota, contract) and any failure
+    on the codex or fake harness still raise on the first attempt.
+    """
+    attempts = 1 if harness in {"codex", "fake"} else max(1, config.provider_retry_attempts)
+    last_result: CommandResult | None = None
+    for attempt in range(1, attempts + 1):
+        result = phase_support.run_with_waiting_progress(
+            config,
+            runner,
+            command,
+            config.cwd,
+            prompt_input,
+            phase_support.phase_timeout_seconds(config, timeout),
+            phase="remediate",
+            label=label,
+            ctx=ctx,
+            prompt_artifact=prompt_artifact,
+        )
+        last_result = result
+        failure = provider_failures.classify_provider_failure(result, harness=harness)
+        if failure is None or not failure.transient:
+            return result
+        phase_support.write_artifact(
+            config.artifact_dir / f"remediation-{label}-attempt-{attempt}.txt",
+            phase_support._combined_output(result),
+        )
+        if attempt < attempts:
+            phase_support.progress_event(
+                config,
+                "remediate",
+                label,
+                "retry",
+                failure.detail,
+                ctx=ctx,
+                metadata={"reason": failure.reason, "attempt": attempt},
+            )
+            time.sleep(config.provider_retry_backoff_seconds)
+    assert last_result is not None
+    return last_result
 
 
 class RemediationAdapter:
@@ -154,6 +257,8 @@ class RemediationAdapter:
             request.iteration,
             request.remediation_input,
             resolved_route=request.resolved_route,
+            artifact_label=request.artifact_label,
+            display_label=request.display_label,
             ctx=ctx,
         )
         return RemediationOutcome(result=result)

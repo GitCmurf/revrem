@@ -34,8 +34,11 @@ def main(argv: Sequence[str]) -> int:
                 cwd=Path.cwd(),
                 base=args.base if args.base is not None else profile.pipeline.base,
                 artifact_dir=artifact_dir,
-                artifact_dir_is_default=args.artifact_dir is None and profile.output.artifact_dir is None,
-                codex_bin=args.codex_bin if args.codex_bin is not None else profile.runtime.codex_bin,
+                artifact_dir_is_default=args.artifact_dir is None
+                and profile.output.artifact_dir is None,
+                codex_bin=args.codex_bin
+                if args.codex_bin is not None
+                else profile.runtime.codex_bin,
                 review_harness=profile.review.harness,
                 remediation_harness=profile.remediation.harness,
                 triage_enabled=profile.triage.enabled,
@@ -46,7 +49,9 @@ def main(argv: Sequence[str]) -> int:
                     include_disabled_routes=args.validate_routes,
                 ),
                 harness_executables=profile.runtime.harness_executables,
-                check_commands=tuple(args.check) if args.check is not None else profile.pipeline.checks,
+                check_commands=tuple(args.check)
+                if args.check is not None
+                else profile.pipeline.checks,
                 commit_after_remediation=(
                     args.commit_after_remediation
                     if args.commit_after_remediation is not None
@@ -73,7 +78,9 @@ def main(argv: Sequence[str]) -> int:
 
 
 def _doctor_artifact_dir(args, profile: profiles.Profile) -> Path:
-    artifact_dir = args.artifact_dir if args.artifact_dir is not None else profile.output.artifact_dir
+    artifact_dir = (
+        args.artifact_dir if args.artifact_dir is not None else profile.output.artifact_dir
+    )
     if artifact_dir is not None:
         return Path(artifact_dir)
     return default_artifact_dir()

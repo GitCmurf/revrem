@@ -102,6 +102,88 @@ class TestRemediationAdapter:
                 ctx,
             )
 
+    def test_runtime_error_names_selected_harness(self, tmp_path: Path) -> None:
+        (tmp_path / "artifacts").mkdir()
+        config = LoopConfig(
+            base="main",
+            max_iterations=1,
+            cwd=tmp_path,
+            artifact_dir=tmp_path / "artifacts",
+            remediation_harness="gemini",
+            remediation_model="gemini-3.1-pro-preview",
+        )
+        ctx = _ctx(runner=MagicMock(return_value=CommandResult(["gemini"], 1)))
+        adapter = RemediationAdapter(config)
+
+        with pytest.raises(RuntimeError, match="gemini remediation failed"):
+            adapter.execute(
+                RemediationRequest(iteration=1, remediation_input="fix"),
+                ctx,
+            )
+
+    def test_runtime_error_classifies_gemini_quota_exhaustion(self, tmp_path: Path) -> None:
+        (tmp_path / "artifacts").mkdir()
+        config = LoopConfig(
+            base="main",
+            max_iterations=1,
+            cwd=tmp_path,
+            artifact_dir=tmp_path / "artifacts",
+            remediation_harness="gemini",
+            remediation_model="gemini-3.1-pro-preview",
+        )
+        ctx = _ctx(
+            runner=MagicMock(
+                return_value=CommandResult(
+                    ["gemini"],
+                    1,
+                    stderr=(
+                        "Error when talking to Gemini API: "
+                        "TerminalQuotaError: code: 429 QUOTA_EXHAUSTED. "
+                        "You have exhausted your capacity on this model."
+                    ),
+                )
+            )
+        )
+        adapter = RemediationAdapter(config)
+
+        with pytest.raises(RuntimeError, match="provider quota exhausted"):
+            adapter.execute(
+                RemediationRequest(iteration=1, remediation_input="fix"),
+                ctx,
+            )
+
+    def test_runtime_error_classifies_opencode_server_error(self, tmp_path: Path) -> None:
+        (tmp_path / "artifacts").mkdir()
+        config = LoopConfig(
+            base="main",
+            max_iterations=1,
+            cwd=tmp_path,
+            artifact_dir=tmp_path / "artifacts",
+            remediation_harness="opencode",
+            remediation_model="opencode/minimax-m3-free",
+        )
+        ctx = _ctx(
+            runner=MagicMock(
+                return_value=CommandResult(
+                    ["opencode", "run"],
+                    1,
+                    stderr=(
+                        "Error: {"
+                        '"name":"UnknownError",'
+                        '"data":{"message":"Unexpected server error","ref":"err_3151eb39"}'
+                        "}\n"
+                    ),
+                )
+            )
+        )
+        adapter = RemediationAdapter(config)
+
+        with pytest.raises(RuntimeError, match="provider server error ref=err_3151eb39"):
+            adapter.execute(
+                RemediationRequest(iteration=1, remediation_input="fix"),
+                ctx,
+            )
+
 
 class TestEngineDispatch:
     def test_harness_called_when_wired(self) -> None:

@@ -126,6 +126,8 @@ def test_project_dogfood_profile_parses_exact_committed_profile():
     assert dogfood.commit.message_model == "gpt-5.3-codex-spark"
     assert dogfood.commit.reasoning_effort == "low"
     assert dogfood.commit.timeout_seconds == 0
+    assert dogfood.runtime.provider_retry_attempts == 3
+    assert dogfood.runtime.provider_retry_backoff_seconds == 5.0
 
 
 def test_profile_accepts_commit_reasoning_effort_and_timeout(tmp_path):
@@ -691,6 +693,16 @@ reasoning_effort = "{value}"
             "max_remediation_input_chars",
             "runtime.max_remediation_input_chars must be an integer",
         ),
+        (
+            "runtime",
+            "external_review_input_chars",
+            "runtime.external_review_input_chars must be an integer",
+        ),
+        (
+            "runtime",
+            "external_review_warning_seconds",
+            "runtime.external_review_warning_seconds must be a number",
+        ),
     ],
 )
 def test_profile_rejects_boolean_integer_fields(tmp_path, section, field, message):
@@ -796,6 +808,8 @@ description = "Existing profile"
     assert 'base = "main"' not in rendered
     assert "max_iterations = 2" not in rendered
     assert "max_remediation_input_chars = 200000" not in rendered
+    assert "external_review_input_chars = 80000" not in rendered
+    assert "external_review_warning_seconds = 1800.0" not in rendered
     assert profiles.resolve_profile("smoke", cwd=tmp_path, home=home).description == "Smoke test"
 
     exported = tmp_path / "export.toml"
@@ -875,13 +889,35 @@ base = "trunk"
     rendered = config_path.read_text(encoding="utf-8")
     assert 'model = "gpt-5.5"' in rendered
     assert 'reasoning_effort = "medium"' in rendered
-    assert 'max_iterations = 5' in rendered
+    assert "max_iterations = 5" in rendered
 
     resolved = profiles.resolve_profile("imported", cwd=tmp_path, home=home)
     assert resolved.review.model == "gpt-5.5"
     assert resolved.review.reasoning_effort == "medium"
     assert resolved.pipeline.max_iterations == 5
     assert resolved.pipeline.base == "trunk"
+
+
+def test_profile_accepts_external_review_warning_seconds_zero(tmp_path):
+    """``external_review_warning_seconds = 0`` is the documented escape
+    hatch to disable the external-review slow-run warning. The boundary
+    must be pinned so a future validation tightening does not regress
+    this operator-facing affordance.
+    """
+    path = tmp_path / "profiles.toml"
+    path.write_text(
+        """
+[profiles.demo.runtime]
+external_review_warning_seconds = 0
+""",
+        encoding="utf-8",
+    )
+
+    loaded = profiles.load_profile_file(path)
+    assert loaded.profiles["demo"].runtime.external_review_warning_seconds == 0
+
+    rendered = profiles.profile_to_toml(loaded.profiles["demo"])
+    assert "external_review_warning_seconds = 0" in rendered
 
 
 def test_clone_user_profile_writes_resolved_profile_to_user_config(tmp_path):
@@ -990,7 +1026,7 @@ description = "Keep me"
     profiles.write_user_profile(profiles.minimal_profile("smoke"), home=home)
 
     rendered = config_path.read_text(encoding="utf-8")
-    assert '[profiles.main.pipeline]' in rendered
+    assert "[profiles.main.pipeline]" in rendered
     assert 'base = "main"' in rendered
     assert profiles.resolve_profile("main", cwd=tmp_path, home=home).pipeline.base == "main"
 
@@ -1015,7 +1051,9 @@ description = "Existing profile"
     rendered = config_path.read_text(encoding="utf-8")
     assert "[profiles.existing.output]" not in rendered
     assert "terminal_title = false" not in rendered
-    assert profiles.resolve_profile("existing", cwd=tmp_path, home=home).output.terminal_title is True
+    assert (
+        profiles.resolve_profile("existing", cwd=tmp_path, home=home).output.terminal_title is True
+    )
 
 
 def test_write_user_profile_quotes_profile_names_and_round_trips(tmp_path):
@@ -1027,7 +1065,10 @@ def test_write_user_profile_quotes_profile_names_and_round_trips(tmp_path):
 
     assert '[profiles."foo.bar baz"]' in rendered
     assert '[profiles."foo.bar baz".review]' not in rendered
-    assert profiles.resolve_profile("foo.bar baz", cwd=tmp_path, home=home).description == "Quoted profile"
+    assert (
+        profiles.resolve_profile("foo.bar baz", cwd=tmp_path, home=home).description
+        == "Quoted profile"
+    )
 
 
 def test_write_user_profile_quotes_non_ascii_profile_names(tmp_path):
@@ -1039,7 +1080,9 @@ def test_write_user_profile_quotes_non_ascii_profile_names(tmp_path):
 
     assert '[profiles."démo"]' in rendered
     assert "[profiles.démo]" not in rendered
-    assert profiles.resolve_profile("démo", cwd=tmp_path, home=home).description == "Non-ASCII profile"
+    assert (
+        profiles.resolve_profile("démo", cwd=tmp_path, home=home).description == "Non-ASCII profile"
+    )
 
 
 def test_profile_json_is_stable():

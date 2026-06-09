@@ -8,6 +8,11 @@ from pathlib import Path
 from code_review_loop import budgets, profiles
 
 DEFAULT_TIMEOUT_SECONDS = 300
+DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS = 80_000
+DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS = 95_000
+DEFAULT_EXTERNAL_REVIEW_WARNING_SECONDS = 1_800
+DEFAULT_PROVIDER_RETRY_ATTEMPTS = 2
+DEFAULT_PROVIDER_RETRY_BACKOFF_SECONDS = 1.0
 
 
 @dataclass(frozen=True)
@@ -54,6 +59,11 @@ class LoopConfig:
     dry_run: bool = False
     final_review: bool = True
     max_remediation_input_chars: int = 200_000
+    inner_check_retries: int = 0
+    provider_retry_attempts: int = DEFAULT_PROVIDER_RETRY_ATTEMPTS
+    provider_retry_backoff_seconds: float = DEFAULT_PROVIDER_RETRY_BACKOFF_SECONDS
+    external_review_input_chars: int = DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS
+    external_review_warning_seconds: float = DEFAULT_EXTERNAL_REVIEW_WARNING_SECONDS
     terminal_excerpt_chars: int = 4_000
     timeout_seconds: float | None = DEFAULT_TIMEOUT_SECONDS
     review_timeout_seconds: float | None = None
@@ -70,6 +80,7 @@ class LoopConfig:
     progress_style: str = "compact"
     terminal_title: bool = False
     initial_review_file: Path | None = None
+    initial_review_mode: str = "none"
     check_commands: tuple[str, ...] = field(default_factory=tuple)
     profile_name: str | None = None
     budget_config: budgets.BudgetConfig = field(default_factory=budgets.BudgetConfig)

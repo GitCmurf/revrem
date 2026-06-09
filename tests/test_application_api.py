@@ -17,7 +17,9 @@ def test_run_review_loop_is_non_cli_application_entrypoint(tmp_path: Path) -> No
     def process_runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append(list(args))
         if args[1] == "review":
-            return CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+            return CommandResult(
+                list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n"
+            )
         raise AssertionError(f"unexpected command: {args}")
 
     result = application.run_review_loop(

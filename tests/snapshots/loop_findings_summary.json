@@ -2,11 +2,15 @@
   "artifact_dir": "<RUN_DIR>/artifacts",
   "artifact_paths": {
     "artifact_dir": "<RUN_DIR>/artifacts",
-    "checks": [],
+    "checks": [
+      "<RUN_DIR>/artifacts/check-1-1.txt"
+    ],
     "commits": [],
     "diagnostics": [],
     "last_messages": [],
-    "prompts": [],
+    "prompts": [
+      "<RUN_DIR>/artifacts/remediation-1-prompt.txt"
+    ],
     "remediations": [
       "<RUN_DIR>/artifacts/remediation-1.txt"
     ],
@@ -44,9 +48,17 @@
   "harness": "codex",
   "harness_version": null,
   "initial_review_file": null,
+  "initial_review_mode": "none",
   "iterations": [
     {
       "check_failures": 0,
+      "checks": [
+        {
+          "artifact": "check-1-1.txt",
+          "command": "git status -z --porcelain=v1 --untracked-files=all",
+          "status": "passed"
+        }
+      ],
       "iteration": 1,
       "review_status": "findings"
     }
@@ -65,8 +77,10 @@
       "enabled": false,
       "harness": "codex",
       "model": null,
+      "provider_reasoning_effort": null,
       "reasoning_effort": null,
       "reasoning_effort_adjustment": null,
+      "reasoning_effort_supported": true,
       "requested_reasoning_effort": null,
       "sandbox": "read-only",
       "source": "direct-config",
@@ -76,7 +90,9 @@
     "remediation": {
       "harness": "codex",
       "model": null,
+      "provider_reasoning_effort": null,
       "reasoning_effort": null,
+      "reasoning_effort_supported": true,
       "sandbox": "workspace-write",
       "source": "direct-config",
       "sources": {},
@@ -85,11 +101,22 @@
     "review": {
       "harness": "codex",
       "model": null,
+      "provider_reasoning_effort": null,
       "reasoning_effort": null,
+      "reasoning_effort_supported": true,
       "sandbox": "read-only",
       "source": "direct-config",
       "sources": {},
       "timeout_seconds": null
+    },
+    "runtime": {
+      "external_review_input_chars": 80000,
+      "external_review_warning_seconds": 1800,
+      "inner_check_retries": 0,
+      "provider_retry_attempts": 2,
+      "provider_retry_backoff_seconds": 1.0,
+      "source": "direct-config",
+      "sources": {}
     },
     "triage": {
       "allow_model_escalation": true,
@@ -97,7 +124,9 @@
       "enabled": false,
       "harness": "codex",
       "model": null,
+      "provider_reasoning_effort": null,
       "reasoning_effort": null,
+      "reasoning_effort_supported": true,
       "routing_enabled": false,
       "routing_strict": false,
       "sandbox": "read-only",
@@ -121,9 +150,13 @@
     "debug_status_detection": false,
     "exec_json": false,
     "exec_sandbox": "workspace-write",
+    "external_review_input_chars": 80000,
+    "external_review_warning_seconds": 1800,
     "final_review": false,
     "full_auto": true,
     "harness_executables": {},
+    "initial_review_mode": "none",
+    "inner_check_retries": 0,
     "max_iterations": 1,
     "max_remediation_input_chars": 200000,
     "max_tokens": null,
@@ -141,8 +174,10 @@
         "enabled": false,
         "harness": "codex",
         "model": null,
+        "provider_reasoning_effort": null,
         "reasoning_effort": null,
         "reasoning_effort_adjustment": null,
+        "reasoning_effort_supported": true,
         "requested_reasoning_effort": null,
         "sandbox": "read-only",
         "source": "direct-config",
@@ -152,7 +187,9 @@
       "remediation": {
         "harness": "codex",
         "model": null,
+        "provider_reasoning_effort": null,
         "reasoning_effort": null,
+        "reasoning_effort_supported": true,
         "sandbox": "workspace-write",
         "source": "direct-config",
         "sources": {},
@@ -161,11 +198,22 @@
       "review": {
         "harness": "codex",
         "model": null,
+        "provider_reasoning_effort": null,
         "reasoning_effort": null,
+        "reasoning_effort_supported": true,
         "sandbox": "read-only",
         "source": "direct-config",
         "sources": {},
         "timeout_seconds": null
+      },
+      "runtime": {
+        "external_review_input_chars": 80000,
+        "external_review_warning_seconds": 1800,
+        "inner_check_retries": 0,
+        "provider_retry_attempts": 2,
+        "provider_retry_backoff_seconds": 1.0,
+        "source": "direct-config",
+        "sources": {}
       },
       "triage": {
         "allow_model_escalation": true,
@@ -173,7 +221,9 @@
         "enabled": false,
         "harness": "codex",
         "model": null,
+        "provider_reasoning_effort": null,
         "reasoning_effort": null,
+        "reasoning_effort_supported": true,
         "routing_enabled": false,
         "routing_strict": false,
         "sandbox": "read-only",
@@ -184,6 +234,8 @@
     },
     "profile_name": null,
     "progress_style": "compact",
+    "provider_retry_attempts": 2,
+    "provider_retry_backoff_seconds": 1.0,
     "remediation_harness": "codex",
     "remediation_model": null,
     "remediation_timeout_seconds": null,
@@ -202,7 +254,7 @@
     "triage_timeout_seconds": null
   },
   "run_id": "deadbeefcafe0000deadbeefcafe0000",
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "started_at": "2026-01-02T03:04:05Z",
   "stopped_reason": "max_iterations_reached",
   "tokens": null,

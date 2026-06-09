@@ -20,7 +20,9 @@ def test_devex_front_matter_version_matches_latest_history_row():
     history_rows = [
         line
         for line in lines[history_start + 1 :]
-        if line.startswith("| ") and not line.startswith("| Version ") and not line.startswith("|---")
+        if line.startswith("| ")
+        and not line.startswith("| Version ")
+        and not line.startswith("|---")
     ]
 
     assert history_rows, "Version History table is missing or empty"

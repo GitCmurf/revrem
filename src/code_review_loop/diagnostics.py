@@ -262,7 +262,11 @@ def _artifact_dir_issues(config: DoctorConfig, git_root: Path | None) -> list[Di
     if config.artifact_dir is None:
         return []
     try:
-        target = config.artifact_dir if config.artifact_dir.is_absolute() else config.cwd / config.artifact_dir
+        target = (
+            config.artifact_dir
+            if config.artifact_dir.is_absolute()
+            else config.cwd / config.artifact_dir
+        )
         if config.artifact_dir_is_default:
             _validate_default_artifact_dir(target)
         else:

@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from code_review_loop.core.engine import (
+    ChecksDone,
     CommitDone,
     ConfigSnapshot,
     Continue,
     LoopAccumulator,
     NoFinalReview,
     RemediationDone,
+    RetryViaChecks,
     RetryViaCommitHook,
     ReviewDone,
     RunChecks,
@@ -70,6 +72,16 @@ def test_decide_review_non_final_clear_with_check_failures_continues() -> None:
     action = decide(cfg, acc, event)
 
     assert action == RunTriage()
+
+
+def test_decide_review_non_final_unknown_stops_before_triage() -> None:
+    cfg = ConfigSnapshot(3, True, True, "fail", True)
+    acc = LoopAccumulator(pending_check_failures="")
+    event = ReviewDone(is_final=False, status="unknown")
+
+    action = decide(cfg, acc, event)
+
+    assert action == Stop(OutcomeUnknown(reason="review_unknown"))
 
 
 def test_decide_f2_final_review_exception_fails() -> None:
@@ -278,12 +290,157 @@ def test_decide_cm2_unknown_skipped_no_changes_exits_unknown() -> None:
     assert action == Stop(OutcomeUnknown(reason="no_changes_after_remediation"))
 
 
+def test_decide_cm2_stale_review_resolved_skipped_no_changes_exits_clear() -> None:
+    cfg = ConfigSnapshot(3, True, True, "fail", True)
+    acc = LoopAccumulator(
+        pending_check_failures="",
+        last_review_status="findings",
+        stale_review_resolved=True,
+    )
+    event = CommitDone(status="skipped_no_changes")
+
+    action = decide(cfg, acc, event)
+
+    assert action == Stop(OutcomeClear(reason="stale_review_already_resolved"))
+
+
 def test_decide_cm1_successful_commit_continues() -> None:
     cfg = ConfigSnapshot(3, True, True, "fail", True)
     acc = LoopAccumulator(pending_check_failures="")
     event = CommitDone(status="committed")
 
     action = decide(cfg, acc, event)
+
+    assert action == Continue()
+
+
+def test_decide_cm1_stale_review_resolved_commit_fails_invariant() -> None:
+    cfg = ConfigSnapshot(3, True, True, "fail", True)
+    acc = LoopAccumulator(pending_check_failures="", stale_review_resolved=True)
+    event = CommitDone(status="committed")
+
+    action = decide(cfg, acc, event)
+
+    assert action == Stop(
+        OutcomeFailed(
+            reason="stale_validation_failed",
+            error=(
+                "stale review validation emitted resolved marker but produced changes to commit"
+            ),
+        )
+    )
+
+
+def test_decide_ck_retry_inner_check_failure_before_next_review() -> None:
+    cfg = ConfigSnapshot(3, True, True, "fail", True, inner_check_retries=1)
+    acc = LoopAccumulator(pending_check_failures="ruff failed")
+
+    action = decide(cfg, acc, ChecksDone(), iteration=1)
+
+    assert action == RetryViaChecks()
+
+
+def test_decide_ck_stale_review_resolved_exits_clear_without_next_review() -> None:
+    """Stale-review validation that emits the resolved marker must short-circuit
+    the checks phase and return ``stale_review_already_resolved`` before
+    ``_next_review_action`` is reached. The previous behaviour fell through to
+    the next review action, which produced ``max_iterations_reached`` for
+    ``--no-final-review`` runs and triggered a redundant provider call for
+    final-review runs.
+    """
+    cfg = ConfigSnapshot(
+        max_iterations=3,
+        triage_enabled=True,
+        commit_after_remediation=False,
+        commit_on_hook_failure="fail",
+        final_review=False,
+    )
+    acc = LoopAccumulator(pending_check_failures="", stale_review_resolved=True)
+
+    action = decide(cfg, acc, ChecksDone(), iteration=1)
+
+    assert action == Stop(OutcomeClear(reason="stale_review_already_resolved"))
+
+
+def test_decide_ck_stale_review_resolved_with_pending_check_failures_fails() -> None:
+    """A resolved stale review is clear only when verification also passes."""
+    cfg = ConfigSnapshot(
+        max_iterations=3,
+        triage_enabled=True,
+        commit_after_remediation=False,
+        commit_on_hook_failure="fail",
+        final_review=True,
+    )
+    acc = LoopAccumulator(
+        pending_check_failures="untracked non-artifact files remain",
+        stale_review_resolved=True,
+    )
+
+    action = decide(cfg, acc, ChecksDone(), iteration=2)
+
+    assert action == Stop(
+        OutcomeFailed(
+            reason="stale_validation_failed",
+            error=(
+                "stale review validation emitted resolved marker but verification checks failed"
+            ),
+            check_failures=True,
+        )
+    )
+
+
+def test_decide_ck_stale_review_resolved_with_dirty_status_fails() -> None:
+    cfg = ConfigSnapshot(
+        max_iterations=3,
+        triage_enabled=True,
+        commit_after_remediation=False,
+        commit_on_hook_failure="fail",
+        final_review=True,
+    )
+    acc = LoopAccumulator(
+        pending_check_failures="",
+        stale_review_resolved=True,
+        stale_review_dirty="stale review validation changed non-artifact git status",
+    )
+
+    action = decide(cfg, acc, ChecksDone(), iteration=2)
+
+    assert action == Stop(
+        OutcomeFailed(
+            reason="stale_validation_failed",
+            error="stale review validation changed non-artifact git status",
+        )
+    )
+
+
+def test_decide_ck_stale_review_resolved_exits_before_commit() -> None:
+    """Even with auto-commit enabled, a resolved stale review must not reach
+    the commit phase. The commit adapter would never see a
+    ``CommitDone(status="committed")`` event in this flow because
+    ``_decide_checks`` returns the resolved state first.
+    """
+    cfg = ConfigSnapshot(
+        max_iterations=3,
+        triage_enabled=True,
+        commit_after_remediation=True,
+        commit_on_hook_failure="fail",
+        final_review=True,
+    )
+    acc = LoopAccumulator(pending_check_failures="", stale_review_resolved=True)
+
+    action = decide(cfg, acc, ChecksDone(), iteration=1)
+
+    assert action == Stop(OutcomeClear(reason="stale_review_already_resolved"))
+
+
+def test_decide_ck_inner_check_retry_exhausted_continues_outer_loop() -> None:
+    cfg = ConfigSnapshot(3, True, True, "fail", True, inner_check_retries=1)
+    acc = LoopAccumulator(
+        pending_check_failures="ruff failed",
+        inner_check_retry_count=1,
+    )
+
+    action = decide(cfg, acc, ChecksDone(), iteration=1)
 
     assert action == Continue()
 
@@ -311,7 +468,13 @@ def test_decide_t4_triage_clear_with_pending_check_failures_continues() -> None:
 
 def test_decide_cm3_hook_failure_at_max_iterations_does_not_retry() -> None:
     """Retryable hook failure on the last iteration must not retry (CM4, not CM3)."""
-    cfg = ConfigSnapshot(max_iterations=3, triage_enabled=True, commit_after_remediation=True, commit_on_hook_failure="remediate", final_review=True)
+    cfg = ConfigSnapshot(
+        max_iterations=3,
+        triage_enabled=True,
+        commit_after_remediation=True,
+        commit_on_hook_failure="remediate",
+        final_review=True,
+    )
     acc = LoopAccumulator(pending_check_failures="")
     event = CommitDone(status=None, commit_failed=_FakeCommitFailed("hook_failed"))
 
@@ -329,7 +492,13 @@ def test_decide_cm3_hook_failure_at_max_iterations_does_not_retry() -> None:
 
 def test_decide_cm3_no_verify_hook_failure_retries() -> None:
     """commit_on_hook_failure='no-verify' also triggers the retry path (CM3)."""
-    cfg = ConfigSnapshot(max_iterations=3, triage_enabled=True, commit_after_remediation=True, commit_on_hook_failure="no-verify", final_review=True)
+    cfg = ConfigSnapshot(
+        max_iterations=3,
+        triage_enabled=True,
+        commit_after_remediation=True,
+        commit_on_hook_failure="no-verify",
+        final_review=True,
+    )
     acc = LoopAccumulator(pending_check_failures="")
     event = CommitDone(status=None, commit_failed=_FakeCommitFailed("hook_failed"))
 

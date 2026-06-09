@@ -13,7 +13,10 @@ from code_review_loop import budgets, events, reporting
 from code_review_loop import resume as resume_mod
 from code_review_loop.adapters import git as git_adapter
 from code_review_loop.adapters import phase_support
-from code_review_loop.cli.config_support import resolve_initial_review_file
+from code_review_loop.cli.config_support import (
+    find_pending_review_candidate,
+    resolve_initial_review_file,
+)
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.outcome import OutcomeFailed
 from code_review_loop.core.ports import CommandResult
@@ -35,7 +38,9 @@ def test_summary_records_git_state_for_resume(tmp_path, monkeypatch):
         return CommandResult(["git", *args], 1, stderr="unexpected")
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
-        return CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+        return CommandResult(
+            list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n"
+        )
 
     monkeypatch.setattr(git_adapter, "run_git_preflight", fake_run_git_preflight)
 
@@ -59,6 +64,40 @@ def test_summary_records_git_state_for_resume(tmp_path, monkeypatch):
     }
 
 
+def test_summary_refreshes_git_state_at_terminal_stop(tmp_path, monkeypatch):
+    monkeypatch.setattr(phase_support, "lexical_git_repo_root", lambda _cwd: tmp_path)
+    heads = iter(["head-before", "head-after"])
+
+    def fake_run_git_preflight(cwd, args):
+        if list(args) == ["rev-parse", "HEAD"]:
+            return CommandResult(["git", *args], 0, stdout=f"{next(heads)}\n")
+        if list(args) == ["rev-parse", "--verify", "main^{commit}"]:
+            return CommandResult(["git", *args], 0, stdout="base-sha\n")
+        if list(args) == ["merge-base", "HEAD", "main"]:
+            return CommandResult(["git", *args], 0, stdout="merge-sha\n")
+        return CommandResult(["git", *args], 1, stderr="unexpected")
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        return CommandResult(
+            list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n"
+        )
+
+    monkeypatch.setattr(git_adapter, "run_git_preflight", fake_run_git_preflight)
+
+    summary = runner_mod.run_loop(
+        LoopConfig(
+            base="main",
+            max_iterations=1,
+            codex_bin="codex",
+            cwd=tmp_path,
+            artifact_dir=tmp_path / "artifacts",
+        ),
+        runner,
+    ).to_dict()
+
+    assert summary["git_state"]["head"] == "head-after"
+
+
 def test_resume_payload_preserves_full_auto_and_budget_limits(tmp_path, monkeypatch):
     monkeypatch.setattr(phase_support, "lexical_git_repo_root", lambda _cwd: tmp_path)
 
@@ -72,7 +111,9 @@ def test_resume_payload_preserves_full_auto_and_budget_limits(tmp_path, monkeypa
         return CommandResult(["git", *args], 1, stderr="unexpected")
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
-        return CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+        return CommandResult(
+            list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n"
+        )
 
     monkeypatch.setattr(git_adapter, "run_git_preflight", fake_run_git_preflight)
 
@@ -184,7 +225,9 @@ def test_resume_loop_config_rejects_float_max_usd(tmp_path):
         "artifact_paths": {"reviews": [str(review_path)]},
     }
 
-    with pytest.raises(ValueError, match="resume_config.max_usd must be a decimal string, not float"):
+    with pytest.raises(
+        ValueError, match="resume_config.max_usd must be a decimal string, not float"
+    ):
         resume_mod.resume_loop_config(summary, run_dir=tmp_path)
 
 
@@ -192,7 +235,9 @@ def test_summary_records_unavailable_git_state_outside_git(tmp_path, monkeypatch
     monkeypatch.setattr(phase_support, "lexical_git_repo_root", lambda _cwd: None)
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
-        return CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+        return CommandResult(
+            list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n"
+        )
 
     summary = runner_mod.run_loop(
         LoopConfig(
@@ -280,7 +325,9 @@ def test_loop_writes_failure_summary_when_final_review_invocation_fails(tmp_path
         if args[1] == "review":
             review_calls += 1
             if review_calls == 1:
-                return CommandResult(list(args), 0, stdout="Still failing.\nREVIEW_STATUS: findings\n")
+                return CommandResult(
+                    list(args), 0, stdout="Still failing.\nREVIEW_STATUS: findings\n"
+                )
             return CommandResult(list(args), 1, stderr="Error: failed to create session\n")
         return CommandResult(list(args), 0, stdout="attempted remediation\n")
 
@@ -303,7 +350,18 @@ def test_loop_writes_failure_summary_when_final_review_invocation_fails(tmp_path
     assert summary["stopped_reason"] == "review_failed"
     assert summary["error"].startswith("codex review failed for review-final; see ")
     assert summary["iterations"] == [
-        {"iteration": 1, "review_status": "findings", "check_failures": 0},
+        {
+            "iteration": 1,
+            "review_status": "findings",
+            "check_failures": 0,
+            "checks": [
+                {
+                    "artifact": "check-1-1.txt",
+                    "command": "git status -z --porcelain=v1 --untracked-files=all",
+                    "status": "passed",
+                }
+            ],
+        },
         {"iteration": "final", "review_failed": True},
     ]
     assert summary["artifact_paths"]["reviews"] == [
@@ -323,7 +381,11 @@ def test_append_run_history_preserves_budget_totals(tmp_path, monkeypatch):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
             return CommandResult(
-                list(args), 0, stdout="No findings.\nREVIEW_STATUS: clear\n", tokens=500, usd=Decimal("0.03")
+                list(args),
+                0,
+                stdout="No findings.\nREVIEW_STATUS: clear\n",
+                tokens=500,
+                usd=Decimal("0.03"),
             )
         return CommandResult(list(args), 0, stdout="ok\n")
 
@@ -336,13 +398,17 @@ def test_append_run_history_preserves_budget_totals(tmp_path, monkeypatch):
     )
 
     summary = runner_mod.run_loop(config, runner).to_dict()
-    budgets_before = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))["budgets"]
+    budgets_before = json.loads(
+        (tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8")
+    )["budgets"]
 
     assert budgets_before["tokens"] == 500
     assert budgets_before["usd"] == "0.03"
 
     history_path = reporting.append_run_history(summary, config)
-    budgets_after = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))["budgets"]
+    budgets_after = json.loads(
+        (tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8")
+    )["budgets"]
 
     assert history_path == home / ".local" / "share" / "revrem" / "runs.jsonl"
     assert budgets_after["tokens"] == budgets_before["tokens"]
@@ -359,7 +425,10 @@ def test_budget_exceeded_propagates_through_triage(tmp_path, monkeypatch):
 
     # B2e: patch TriageAdapter.execute instead of the legacy run_triage shim
     import code_review_loop.adapters.triage as _triage_mod
-    monkeypatch.setattr(_triage_mod.TriageAdapter, "execute", lambda *a, **kw: (_ for _ in ()).throw(exc))
+
+    monkeypatch.setattr(
+        _triage_mod.TriageAdapter, "execute", lambda *a, **kw: (_ for _ in ()).throw(exc)
+    )
 
     config = LoopConfig(
         base="main",
@@ -386,7 +455,10 @@ def test_budget_exceeded_propagates_through_remediation(tmp_path, monkeypatch):
 
     # B2d: patch RemediationAdapter.execute instead of the legacy run_remediation shim
     import code_review_loop.adapters.remediation as _rem_mod
-    monkeypatch.setattr(_rem_mod.RemediationAdapter, "execute", lambda *a, **kw: (_ for _ in ()).throw(exc))
+
+    monkeypatch.setattr(
+        _rem_mod.RemediationAdapter, "execute", lambda *a, **kw: (_ for _ in ()).throw(exc)
+    )
 
     config = LoopConfig(
         base="main",
@@ -414,7 +486,10 @@ def test_budget_exceeded_propagates_through_commit(tmp_path, monkeypatch):
 
     # B2c: patch CommitAdapter.execute instead of the legacy run_commit shim
     import code_review_loop.adapters.commit as _commit_mod
-    monkeypatch.setattr(_commit_mod.CommitAdapter, "execute", lambda *a, **kw: (_ for _ in ()).throw(exc))
+
+    monkeypatch.setattr(
+        _commit_mod.CommitAdapter, "execute", lambda *a, **kw: (_ for _ in ()).throw(exc)
+    )
 
     config = LoopConfig(
         base="main",
@@ -463,6 +538,7 @@ def test_run_loop_preserves_existing_events_on_resume(tmp_path):
     assert new_events.is_file()
     new_first = json.loads(new_events.read_text(encoding="utf-8").splitlines()[0])
     assert new_first["run_id"] != "original-run"
+
 
 def test_loop_can_start_from_initial_review_file(tmp_path):
     calls = []
@@ -543,7 +619,9 @@ def test_loop_writes_structured_triage_source_for_initial_review_file(tmp_path):
 
     triage_json = json.loads((tmp_path / "artifacts" / "triage-1.json").read_text(encoding="utf-8"))
     assert triage_json["source_review_artifact"] == "review-initial.txt"
-    assert summary["artifact_paths"]["reviews"] == [str(tmp_path / "artifacts" / "review-initial.txt")]
+    assert summary["artifact_paths"]["reviews"] == [
+        str(tmp_path / "artifacts" / "review-initial.txt")
+    ]
     assert (tmp_path / "artifacts" / "review-initial.txt").exists()
     assert "Structured triage handoff" in (calls[1][1] or "")
 
@@ -579,7 +657,38 @@ def test_resolve_initial_review_file_latest_returns_none_when_newest_run_is_clea
         encoding="utf-8",
     )
     os.utime(unresolved_review, (1, 1))
+    os.utime(unresolved_run / "summary.json", (1, 1))
+    os.utime(unresolved_run, (1, 1))
+    os.utime(clean_run / "summary.json", (2, 2))
+    os.utime(clean_run, (2, 2))
     os.utime(clean_review, (2, 2))
+
+    assert resolve_initial_review_file("latest", tmp_path) is None
+
+
+def test_resolve_initial_review_file_latest_uses_sort_time_for_clean_runs(tmp_path):
+    clean_run = tmp_path / "20260428T010000Z"
+    unresolved_run = tmp_path / "20260428T020000Z"
+    clean_run.mkdir()
+    unresolved_run.mkdir()
+    clean_review = clean_run / "review-final.txt"
+    unresolved_review = unresolved_run / "review-final.txt"
+    clean_review.write_text("clean", encoding="utf-8")
+    unresolved_review.write_text("findings", encoding="utf-8")
+    (clean_run / "summary.json").write_text(
+        json.dumps({"final_status": "clear", "stopped_reason": "review_clear"}),
+        encoding="utf-8",
+    )
+    (unresolved_run / "summary.json").write_text(
+        json.dumps({"final_status": "findings", "stopped_reason": "max_iterations_reached"}),
+        encoding="utf-8",
+    )
+    os.utime(unresolved_review, (1, 1))
+    os.utime(unresolved_run / "summary.json", (1, 1))
+    os.utime(unresolved_run, (1, 1))
+    os.utime(clean_run / "summary.json", (3, 3))
+    os.utime(clean_run, (3, 3))
+    os.utime(clean_review, (3, 3))
 
     assert resolve_initial_review_file("latest", tmp_path) is None
 
@@ -624,3 +733,215 @@ def test_resolve_initial_review_file_latest_skips_dry_run_review_stubs(tmp_path)
     os.utime(dry_review, (2, 2))
 
     assert resolve_initial_review_file("latest", tmp_path) == unresolved_review
+
+
+def test_resolve_initial_review_file_latest_uses_newer_iteration_review(tmp_path):
+    older = tmp_path / "20260428T010000Z"
+    newer = tmp_path / "20260428T020000Z"
+    older.mkdir()
+    newer.mkdir()
+    older_review = older / "review-final.txt"
+    newer_review = newer / "review-2.txt"
+    older_review.write_text("stale final findings", encoding="utf-8")
+    newer_review.write_text("newer iteration findings", encoding="utf-8")
+    (newer / "summary.json").write_text(
+        json.dumps(
+            {
+                "final_status": "error",
+                "stopped_reason": "remediation_failed",
+                "artifact_paths": {"reviews": [str(newer_review)]},
+            }
+        ),
+        encoding="utf-8",
+    )
+    os.utime(older_review, (1, 1))
+    os.utime(newer_review, (2, 2))
+
+    assert resolve_initial_review_file("latest", tmp_path) == newer_review
+
+
+def test_resolve_initial_review_file_latest_skips_retry_attempt_artifacts(tmp_path):
+    run = tmp_path / "20260428T020000Z"
+    run.mkdir()
+    review = run / "review-1.txt"
+    attempt = run / "review-1-attempt-1.txt"
+    review.write_text("real findings", encoding="utf-8")
+    attempt.write_text("provider transient failure", encoding="utf-8")
+    os.utime(review, (1, 1))
+    os.utime(attempt, (2, 2))
+
+    assert resolve_initial_review_file("latest", tmp_path) == review
+
+
+def test_resolve_initial_review_file_latest_skips_summary_retry_attempt_artifacts(
+    tmp_path,
+):
+    run = tmp_path / "20260428T020000Z"
+    run.mkdir()
+    review = run / "review-1.txt"
+    attempt = run / "review-1-attempt-1.txt"
+    review.write_text("real findings", encoding="utf-8")
+    attempt.write_text("provider transient failure", encoding="utf-8")
+    (run / "summary.json").write_text(
+        json.dumps(
+            {
+                "final_status": "findings",
+                "artifact_paths": {"reviews": [str(review), str(attempt)]},
+            }
+        ),
+        encoding="utf-8",
+    )
+    os.utime(review, (1, 1))
+    os.utime(attempt, (2, 2))
+
+    assert resolve_initial_review_file("latest", tmp_path) == review
+
+
+def test_find_pending_review_candidate_reports_metadata(tmp_path):
+    run = tmp_path / "20260428T020000Z"
+    run.mkdir()
+    review = run / "review-1.txt"
+    review.write_text("Full review comments:\n\n- [P2] Fix restart path\n", encoding="utf-8")
+    (run / "summary.json").write_text(
+        json.dumps(
+            {
+                "final_status": "error",
+                "stopped_reason": "triage_failed",
+                "error": "fragment missing",
+                "artifact_paths": {"reviews": [str(review)]},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    candidate = find_pending_review_candidate(tmp_path)
+
+    assert candidate is not None
+    assert candidate.path == review
+    assert candidate.run_dir == run
+    assert candidate.final_status == "error"
+    assert candidate.stopped_reason == "triage_failed"
+    assert candidate.error == "fragment missing"
+    assert "Fix restart path" in candidate.excerpt
+
+
+def test_find_pending_review_candidate_returns_none_after_newer_clear_run(tmp_path):
+    unresolved = tmp_path / "20260428T010000Z"
+    clear = tmp_path / "20260428T020000Z"
+    unresolved.mkdir()
+    clear.mkdir()
+    unresolved_review = unresolved / "review-1.txt"
+    clear_review = clear / "review-final.txt"
+    unresolved_review.write_text("findings", encoding="utf-8")
+    clear_review.write_text("clear", encoding="utf-8")
+    (unresolved / "summary.json").write_text(
+        json.dumps({"final_status": "findings"}),
+        encoding="utf-8",
+    )
+    (clear / "summary.json").write_text(
+        json.dumps({"final_status": "clear"}),
+        encoding="utf-8",
+    )
+    os.utime(unresolved_review, (1, 1))
+    os.utime(unresolved / "summary.json", (1, 1))
+    os.utime(clear_review, (2, 2))
+    os.utime(clear / "summary.json", (2, 2))
+
+    assert find_pending_review_candidate(tmp_path) is None
+
+
+def test_resolve_initial_review_file_latest_skips_imported_initial_review(tmp_path):
+    older = tmp_path / "20260428T010000Z"
+    restart = tmp_path / "20260428T020000Z"
+    older.mkdir()
+    restart.mkdir()
+    older_review = older / "review-final.txt"
+    imported_review = restart / "review-initial.txt"
+    older_review.write_text("older unresolved findings", encoding="utf-8")
+    imported_review.write_text("imported stale findings", encoding="utf-8")
+    (restart / "summary.json").write_text(
+        json.dumps(
+            {
+                "final_status": "error",
+                "stopped_reason": "remediation_failed",
+                "artifact_paths": {"reviews": [str(imported_review)]},
+            }
+        ),
+        encoding="utf-8",
+    )
+    os.utime(older_review, (1, 1))
+    os.utime(imported_review, (2, 2))
+
+    assert resolve_initial_review_file("latest", tmp_path) == older_review
+
+
+def test_resolve_initial_review_file_latest_skips_git_incompatible_runs(tmp_path):
+    stale = tmp_path / "20260428T010000Z"
+    current = tmp_path / "20260428T020000Z"
+    stale.mkdir()
+    current.mkdir()
+    stale_review = stale / "review-final.txt"
+    current_review = current / "review-final.txt"
+    stale_review.write_text("stale findings", encoding="utf-8")
+    current_review.write_text("current findings", encoding="utf-8")
+    for run, head in ((stale, "old-head"), (current, "current-head")):
+        (run / "summary.json").write_text(
+            json.dumps(
+                {
+                    "final_status": "findings",
+                    "git_state": {
+                        "available": True,
+                        "head": head,
+                        "base": "main",
+                        "base_commit": "base-sha",
+                        "merge_base": "base-sha",
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+    os.utime(current_review, (1, 1))
+    os.utime(stale_review, (2, 2))
+
+    assert (
+        resolve_initial_review_file(
+            "latest",
+            tmp_path,
+            current_git_state={
+                "available": True,
+                "head": "current-head",
+                "base": "main",
+                "base_commit": "base-sha",
+                "merge_base": "base-sha",
+            },
+        )
+        == current_review
+    )
+
+
+def test_resolve_initial_review_file_latest_skips_runs_without_git_state_when_current_available(
+    tmp_path,
+):
+    stale = tmp_path / "20260428T010000Z"
+    stale.mkdir()
+    stale_review = stale / "review-final.txt"
+    stale_review.write_text("stale findings", encoding="utf-8")
+    (stale / "summary.json").write_text(
+        json.dumps({"final_status": "findings"}),
+        encoding="utf-8",
+    )
+
+    assert (
+        resolve_initial_review_file(
+            "latest",
+            tmp_path,
+            current_git_state={
+                "available": True,
+                "head": "current-head",
+                "base": "main",
+                "base_commit": "base-sha",
+                "merge_base": "base-sha",
+            },
+        )
+        is None
+    )

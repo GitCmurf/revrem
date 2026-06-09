@@ -3,8 +3,8 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.16'
-last_updated: '2026-05-30'
+version: '1.46'
+last_updated: '2026-06-07'
 owner: GitCmurf
 docops_version: '2.0'
 area: devex
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.16
-> **Last Updated:** 2026-05-30
+> **Version:** 1.46
+> **Last Updated:** 2026-06-07
 > **Type:** DEVEX
 > **Area:** devex
 > **Description:** Operator guide for the code-review-loop utility
@@ -228,6 +228,52 @@ project/test surface. A stray helper `.py` file is not enough to keep pytest
 active. In that case pytest is recorded as a skipped adaptive check instead of
 blocking a clear review because pytest returned `2`, `4`, or `5`.
 
+Every post-remediation checks phase starts with a built-in worktree
+cleanliness check:
+
+```bash
+git status -z --untracked-files=all
+```
+
+When `--commit-after-remediation` is enabled, RevRem first refuses to start
+from a dirty worktree, including pre-existing untracked files, before making
+any provider call. Given that clean-start invariant, non-artifact `??` paths
+that appear after remediation are treated as intentional remediation output:
+the cleanliness check marks them with `git add --intent-to-add` so the upcoming
+`git add -A` in the commit phase picks them up. The auto-staged paths are
+recorded in the check artifact (`check-N-1.txt`) for visibility.
+
+RevRem also re-checks `HEAD` and non-artifact worktree status before the first
+remediation attempt for each reviewed finding. If another process edits the
+worktree or advances `HEAD` while review/triage is running, RevRem stops before
+remediation, leaving the review artifact available for `--initial-review-file`
+or pending-review reuse. This guard intentionally does not run for inner
+check retries or commit-hook retries, where the worktree is already expected
+to contain remediation changes.
+
+When `--commit-after-remediation` is disabled, the cleanliness check is
+non-mutating: it does not run `git add --intent-to-add` and does not re-run
+`git status`. If remediation left untracked non-artifact paths behind, the
+check fails and lists those paths in the check artifact so the operator or
+model must account for them before the loop can report clear. The operator can
+clean up scratch files, add legitimate new files explicitly, or re-run with
+`--commit` to let RevRem stage them. The operator's git index is not changed by
+the check.
+
+Known generated output and temporary directories should be covered by
+`.gitignore` or placed under `--artifact-dir`; files inside `--artifact-dir`
+remain exempt from the cleanliness check. Secrets and policy violations should
+be caught by configured verification commands or commit hooks. If
+`git add --intent-to-add` itself fails for any path, the check fails with the
+underlying git error so the operator can clean up by hand. Configured checks
+then run after that synthetic check, so their progress labels start at `.2` and
+their artifacts are named accordingly (`check-1-2.txt`, `check-1-3.txt`, and so
+on).
+
+Artifact exemptions are path-boundary exact. A custom artifact directory named
+`artifacts` exempts `artifacts` and `artifacts/...`, but not sibling paths such
+as `artifacts2/...` or `artifacts-old/...`.
+
 ### Continuation after findings
 
 The loop writes artifacts under `.revrem/runs/<timestamp>-<suffix>/` by default. On the
@@ -252,10 +298,76 @@ revrem \
 Use `--initial-review-file latest` with the effective artifact directory. When
 `--artifact-dir` or a profile sets `output.artifact_dir`, `latest` resolves
 under that directory instead of the default workspace-local tree. `latest`
-uses the newest `review-final.txt` only when that run is still non-clear. If
-the newest run's `summary.json` reports `final_status = "clear"`, or there is
-no previous final review, RevRem starts with a fresh review instead of reviving
-older feedback.
+orders compatible candidates by run/review modification time, then uses the
+newest compatible usable generated review artifact from a non-clear run,
+including interrupted runs that have `review-1.txt`, `review-2.txt`, or later
+iteration reviews but no `review-final.txt`. Retry-attempt transcripts such as
+`review-1-attempt-1.txt` are ignored because they contain provider failure
+diagnostics rather than review findings. Imported `review-initial.txt` artifacts
+are also ignored so a restart does not keep reusing stale carried-in feedback.
+When run summaries include git state, `latest` skips artifacts from a different
+current `HEAD` or base. When RevRem can identify the current `HEAD`/base,
+historical summaries that do not record git state are not treated as compatible
+`latest` candidates. If the newest compatible run's
+`summary.json` reports `final_status = "clear"`, or there is no previous
+generated review, RevRem starts with a fresh review instead of reviving older
+feedback.
+
+If `--initial-review-file` is omitted, interactive terminal runs also check for
+pending review feedback before making a fresh review provider call. When found,
+RevRem asks whether to use or validate the review, show more detail, start
+fresh, or cancel.
+If the only pending review is from a different `HEAD`/base, the interactive
+prompt offers validation, not ordinary reuse, and labels the mismatch clearly
+so the operator can decide whether that older finding is still relevant.
+Non-interactive runs do not prompt and start fresh by default. Use
+`--pending-review auto` to reuse the detected compatible review without
+prompting, or `--pending-review ignore` to suppress the startup check. `auto`
+never prompts for incompatible older reviews. An explicit
+`--initial-review-file` path or `latest` always takes precedence over the
+pending-review prompt.
+
+When an operator intentionally uses a pending review from a different
+`HEAD`/base, RevRem treats it as stale-review validation instead of ordinary
+remediation. RevRem first runs a read-only stale-validation provider pass using
+the configured review harness/model. That pass decides whether the finding
+still applies to the current checkout before any write-capable remediation
+provider is invoked. If the finding is already resolved, the validator must make
+no edits and include
+`STALE_REVIEW_VALIDATION:` evidence ending with
+`REVREM_STALE_REVIEW_STATUS: resolved` in its response. When checks pass and
+the non-artifact Git status snapshot remains unchanged, RevRem stops as
+`clear (stale_review_already_resolved)`, exits `0`, and surfaces only the
+compact validation output instead of continuing to report the old stale
+finding. If validation returns `REVREM_STALE_REVIEW_STATUS: still_applies`,
+RevRem proceeds to normal remediation. If validation returns `unknown` or the
+read-only validation provider fails, RevRem stops before remediation. RevRem
+parses only the first `STALE_REVIEW_VALIDATION:` block in provider stdout before
+any `[stderr]` transcript, so echoed prompt templates or review context cannot
+override the validator's status. If the block's `status:` line and
+`REVREM_STALE_REVIEW_STATUS:` marker disagree, RevRem treats validation as
+`unknown` and fails closed. If the
+model emits the resolved marker but produces changes that would be committed,
+or if checks leave non-artifact status changes behind, RevRem fails the run
+rather than accepting a contradictory validation. The resolved marker is only
+interpreted in stale-review validation mode; ordinary remediation output can quote
+`REVREM_STALE_REVIEW_STATUS: resolved` while fixing stale-review-related code
+without changing the loop outcome. RevRem enforces the no-edits invariant with
+a non-artifact `git status --porcelain=v1 -z --untracked-files=all` snapshot
+before validation and again before returning clear, so resolved stale
+validation cannot hide tracked edits, untracked files, or check-time side
+effects.
+
+Commit-message drafting is treated as read-only even when an external harness
+tries to write a helper file. If drafting creates a new non-artifact file,
+RevRem removes that file, records `commit-N-message-side-effects.json`, and
+uses the deterministic fallback subject. If drafting modifies an existing or
+tracked path, RevRem aborts the commit phase instead of committing contaminated
+state. If the commit-message harness commits the staged patch itself and leaves
+the repository clean, RevRem adopts that commit, records the side-effect
+artifact in `summary.json` under `commit_message_side_effects`, and prints a
+warning that the model/harness is unsuitable for commit-message drafting until
+fixed. Partial HEAD/index mutations remain errors.
 
 ### Profile-based usage
 
@@ -341,6 +453,25 @@ remain sufficient for local dogfood:
   --routing
 ```
 
+To dogfood Gemini deliberately instead of waiting for routing policy to select
+it, force the profile's Gemini route from the CLI:
+
+```bash
+GEMINI_CLI_TRUST_WORKSPACE=true \
+./.venv/bin/revrem \
+  --profile dogfood \
+  --base main \
+  --max-iterations 3 \
+  --harness-bin gemini=gemini \
+  --routing \
+  --routing-strict \
+  --route gemini-pro
+```
+
+That command verifies the route machinery calls Gemini for routed remediation,
+passes the same triage-prescribed prompt context that Codex would receive, and
+records the selected harness in `routing-N.json` and `phase_config`.
+
 Dogfood summaries include a `phase_config` object for review, triage,
 remediation, commit-message drafting, and checks. Each phase records the
 resolved harness, model, effort, timeout, sandbox where relevant, and whether
@@ -375,6 +506,31 @@ commit-message path:
 ```bash
 REVREM_LIVE_CODEX=1 ./.venv/bin/pytest -q tests/test_live_codex_commit_message.py
 ```
+
+Credentialed environments can also smoke-test the secondary harness adapters.
+These tests are skipped by default and run only when the provider-specific
+opt-in is set:
+
+```bash
+./.venv/bin/pytest -q tests/test_live_secondary_harnesses.py
+
+REVREM_LIVE_GEMINI=1 ./.venv/bin/pytest -q tests/test_live_secondary_harnesses.py
+REVREM_LIVE_CLAUDE=1 ./.venv/bin/pytest -q tests/test_live_secondary_harnesses.py
+REVREM_LIVE_OPENCODE=1 ./.venv/bin/pytest -q tests/test_live_secondary_harnesses.py
+REVREM_LIVE_KILO=1 ./.venv/bin/pytest -q tests/test_live_secondary_harnesses.py
+```
+
+Use `REVREM_LIVE_<PROVIDER>_MODEL` to override the CLI's default model and
+`REVREM_LIVE_<PROVIDER>_BIN` when the executable is not on `PATH`, for example
+`REVREM_LIVE_GEMINI_MODEL=gemini-3-flash` or
+`REVREM_LIVE_CLAUDE_BIN=/opt/claude/bin/claude`. The routed live smoke defaults
+to Gemini; set `REVREM_LIVE_ROUTED_PROVIDER=claude`, `opencode`, or `kilo` to
+exercise another secondary provider. The routed smoke uses a temporary
+workspace, a fake review/triage front half, and the selected live provider only
+for routed remediation. The Gemini live smoke sets
+`GEMINI_CLI_TRUST_WORKSPACE=true` for the pytest process because Gemini refuses
+headless execution from pytest temporary directories unless the workspace is
+trusted.
 
 To capture a one-off command as a project-local profile, add
 `--save-profile NAME`. RevRem writes the effective configuration to
@@ -592,15 +748,20 @@ read-only model call that drafts the commit subject. If no explicit
 CLI value is supplied, the profile value is used; the built-in profile default
 is `gpt-5.3-codex-spark`. With the default
 prompt, RevRem normalizes the final subject to Conventional Commit syntax and
-appends `(RevRem)`. Passing `--commit-message-prompt` intentionally disables
-that default subject policy so special-purpose commit formats can be tested
-without fighting the normalizer. If a verified remediation pass produces no
-staged changes, RevRem stops the loop immediately; in that no-op path an
-`unknown` review status remains `final_status: "unknown"` with
-`stopped_reason: "no_changes_after_remediation"`, and the unexpected-status
-bug-report artifact is still recorded for operator follow-up. Auto-commit also
-requires a clean worktree before the loop starts so unrelated local edits
-cannot be staged by the broad `git add -A` step.
+appends `(RevRem)`. If the commit-message model returns explanatory prose
+instead of a subject, RevRem records `commit-N-message-fallback.json` with
+`reason: "model_drafting_invalid"` and uses the deterministic fallback subject
+instead of committing the prose. Passing
+`--commit-message-prompt` intentionally disables that default subject policy so
+special-purpose commit formats can be tested without fighting the normalizer.
+If a verified remediation pass produces no staged changes after checks pass,
+RevRem stops the loop immediately with
+`final_status: "clear"` and
+`stopped_reason: "no_changes_after_remediation"`; the passing checks plus zero
+staged diff are treated as deterministic clear evidence when the preceding
+review status was still `unknown`. Auto-commit also requires a clean worktree
+before the loop starts so unrelated local edits cannot be staged by the broad
+`git add -A` step.
 
 Commit hooks are part of the commit phase, not an afterthought. When `git
 commit` appears to fail inside hooks, RevRem defaults to `commit.on_hook_failure
@@ -656,6 +817,38 @@ the remediation prompt. Invalid structured triage writes `diagnostics.json` with
 fails safe by ignoring invalid triage guidance; set `triage.on_invalid = "stop"`
 when a workflow should halt on malformed triage output.
 
+For v2 triage, RevRem performs narrow pre-validation repairs for common review
+model drift: review priority labels such as `P2` are translated to schema
+severities, and `needs_more_info.info_requested` arrays of strings are joined
+into a single newline-delimited string. Mixed arrays and non-string values still
+fail validation. The v2 prompt tells models to preserve `f1:` fingerprints when
+present and to use `review-comment:<1-based-order>` with a parsing warning for
+uniquely identifiable review comments that lack a stable finding ID.
+
+`runtime.inner_check_retries` / `--inner-check-retries` can run a bounded
+remediation-check retry inside the same outer iteration. When post-remediation
+checks fail and retries remain, RevRem feeds the check output directly back to
+remediation, writes retry artifacts such as `remediation-1-retry-1.txt` and
+`check-1-retry-1-2.txt`, and reruns checks before spending another full review
+pass. The dogfood profile sets this to `1`; the default for other profiles is
+`0`, preserving the older review-remediation-check-review rhythm. If every
+failed check is a RevRem-enforced timeout (`Command timed out after ...` in the
+check artifact), RevRem does not spend the inner remediation retry. It keeps
+the check failure pending and emits a warning so the operator can increase
+`--timeout-seconds`, narrow the checks, or rerun locally after investigating
+the slow command.
+
+The on-disk artifact stems keep the operator-friendly `-retry-N` suffix,
+but the `iteration` field on `phase_start` and `phase_result` events uses
+a schema-compatible dotted label instead. A first retry of iteration 1
+appears on disk as `remediation-1-retry-1.txt` while the corresponding
+`phase_start` / `phase_result` events carry `"iteration": "1.1"`; checks
+that run under that retry extend the sub-index to `"1.1.1"`, `"1.1.2"`,
+etc. Both forms fit the `events-v1` schema's `iteration` pattern, so
+`events.jsonl` produced by a run that actually triggers an inner-check
+retry validates against `docs/52-api/schemas/events-v1.schema.json` end
+to end.
+
 For routing, use `triage.contract = "v2"` plus
 `triage.routing.enabled = true`. RevRem validates `triage-v2`, resolves the
 effective route through profile policy, writes `routing-N.json`,
@@ -702,6 +895,15 @@ reasoning_effort = "medium"
 timeout_seconds = 900
 sandbox = "workspace-write"
 ```
+
+Configured `then.prompt_fragments` are trusted operator policy. If a configured
+fragment cannot be resolved, RevRem fails before remediation so the profile can
+be fixed. Triage v2 output can also suggest `prompt_requirements.required_fragments`,
+but those names are model-generated guidance: unresolved triage-suggested names
+are ignored with a visible remediation-prompt warning instead of aborting the
+loop. Built-in fragment names are `architecture-checklist`, `atomic-task-list`,
+`definition-of-done`, `engineering-principles`, `regression-test-checklist`, and
+`security-checklist`.
 
 Multi-harness routing profile:
 
@@ -755,19 +957,29 @@ Use `revrem policy lint --profile multi` to verify rule and fallback chains,
 `revrem triage explain <run-dir>` to inspect one routing decision, and
 `revrem policy review --artifact-dir <run-dir>` to summarize route outcomes
 without printing full prompts.
+For live routed smoke tests, inspect the temporary run directory reported by
+pytest on failure or rerun with `-s` while debugging. A successful routed smoke
+writes `summary.json`, `events.jsonl`, `routing-1.json`,
+`remediation-1-prompt.txt`, `remediation-1.txt`, and
+`routing-outcome-1.json`; `routing-1.json.effective_route.harness` identifies
+the selected secondary provider.
 
 For one-off dogfood runs, CLI flags can override the profile's triage and
 routing controls without editing `.revrem.toml`:
 
 ```bash
 revrem --profile dogfood --triage --triage-contract v2 --routing
+revrem --profile dogfood --routing --route gemini-pro
 revrem --profile dogfood --no-triage --no-routing --dry-run --summary-format json
 revrem --profile dogfood --no-allow-model-escalation
 ```
 
-Use `--triage-model`, `--triage-harness`, and `--triage-timeout-seconds` to
-override the triage phase. Use `--routing-strict` or `--no-routing-strict` to
-control whether an unavailable selected route is a hard failure. When strict
+Use `--review-harness`, `--triage-harness`, `--remediation-harness`, and
+`--commit-harness` to override the per-phase harnesses. Use `--triage-model`,
+`--triage-timeout-seconds`, and the phase-specific model/effort flags to
+override model context. Use `--route` to force an existing route from the
+selected profile for one run, and `--routing-strict` or `--no-routing-strict`
+to control whether an unavailable selected route is a hard failure. When strict
 routing is enabled, RevRem stops on the selected route's capability or budget
 failure even if that route names a fallback. Disabled routing may carry draft
 routes during normal runs, but references inside the route table are still
@@ -863,6 +1075,88 @@ review/remediation harnesses through the shared adapter boundary. Their CLIs
 must be installed and discoverable through `PATH`,
 `runtime.harness_executables`, or `--harness-bin`. Reserved harness names
 remain valid management syntax but fail fast on executable runs.
+
+External review harnesses do not have Codex's native `codex review --base`
+command, so RevRem supplies a review prompt that includes base/working-directory
+metadata plus a generated read-only context bundle: `git status --short`,
+`git diff --stat <base>...HEAD`, `git diff --name-status <base>...HEAD`,
+`git diff <base>...HEAD`, `git diff --cached`, and `git diff`. This lets Gemini
+and other prompted providers review the actual patch even when their headless
+read-only mode denies shell tools. External review harnesses must return an
+explicit `REVIEW_STATUS` line; Codex native review remains classified through
+its finding markers and conservative clear-prose examples because RevRem does
+not control the native review prompt. Review is always invoked in read-only
+mode; for Gemini this means `--approval-mode plan`. Gemini remediation still
+uses `--approval-mode auto_edit` when workspace writes are allowed. Review
+prompt and full generated context artifacts are listed under
+`summary.artifact_paths.prompts` and `summary.artifact_paths.contexts`; the
+review transcript itself remains under `summary.artifact_paths.reviews`. The
+provider-facing external review prompt is bounded by
+`runtime.external_review_input_chars` / `--external-review-input-chars`; RevRem
+trims by character count with an omission marker rather than attempting
+provider-specific token accounting. When no CLI/profile cap is set, prompted
+review harnesses use the conservative `80000` character default, while Gemini
+Pro review models use a `95000` character model-aware default that still stays
+under the current Gemini `--prompt` delivery guard. Phase-start progress and
+events report whether the generated review context was supplied in full or
+truncated. Gemini CLI is currently invoked with
+`--prompt` for prompt-bearing phases because direct `gemini --prompt` probes
+succeed while
+large stdin review dogfood runs have repeatedly timed out with no provider
+output. RevRem refuses Gemini `--prompt` delivery above its current `100000`
+byte CLI-delivery guard, which stays below common Linux per-argument limits;
+lower `--external-review-input-chars`, use a smaller diff, or use a different
+review harness when the generated prompt is larger. This cap is a CLI delivery
+guard, not a claim about the Gemini model's API context window.
+If an external review or remediation subprocess fails with a known transient
+provider-side error, such as an OpenCode server error or a temporary rate-limit
+response, RevRem records `review-N-attempt-1.txt` or
+`remediation-N-attempt-1.txt`, emits a retry progress event, waits
+`runtime.provider_retry_backoff_seconds`, and retries up to
+`runtime.provider_retry_attempts` total attempts. Defaults stay conservative at
+two attempts and one second of backoff; the project-local dogfood profile uses
+three attempts and five seconds of backoff for watched, expensive loop runs.
+CLI contract errors, auth/setup failures, quota exhaustion, RevRem-enforced
+subprocess timeouts, unavailable provider models, and Codex native review
+failures are not retried.
+
+Progress output intentionally summarizes prompt-bearing commands. Phase start
+lines show the executable role, model, effort, timeout, sandbox, prompt size,
+delivery mode, and config source without repeating raw CLI syntax. For example:
+`opencode run · opencode/minimax-m3-free · n/a effort · timeout=0 · sandbox
+read-only · prompt=80.0k file · source=profile+cli`. Exact argv and prompt
+artifacts remain in `events.jsonl` and the run artifact directory. OpenCode
+receives prompt-bearing phases through `opencode run --file <prompt-artifact>`,
+plus a short positional instruction, not through stdin, so large RevRem prompts
+stay out of process listings and match OpenCode's headless CLI contract.
+Gemini receives prompt-bearing phases through `gemini --prompt <prompt>`;
+phase-start event `command` metadata redacts the prompt value while preserving
+prompt delivery, character count, byte count, and the saved prompt artifact.
+Long-running
+model subprocesses emit `waiting` progress every five minutes without changing
+timeout behavior; `timeout=0` still means RevRem does not enforce a subprocess
+deadline. For prompted review harnesses, waiting messages add a stronger
+diagnostic after `runtime.external_review_warning_seconds` /
+`--external-review-warning-seconds` elapses, explaining that provider output is
+not available until the subprocess exits. If the host is suspended while a
+provider subprocess is running, terminal wall-clock timestamps may jump even
+though the elapsed provider-wait counter advances from monotonic/runtime time;
+interpret those gaps as host sleep unless other provider failure evidence is
+present. Set
+`REVREM_OPENCODE_DEBUG=1` to add OpenCode provider logs
+(`--print-logs --log-level INFO`) to OpenCode phase commands during local
+diagnosis. When a review reports `findings` without Codex-style `[P1]` finding
+bullets, RevRem prints the leading review line before the status so operators
+can see the context being passed to triage/remediation. Prompted-harness
+`status-debug` output treats explicit `REVIEW_STATUS` as authoritative and
+labels Codex-style bullet counts separately as `codex_bullets`; `tool_denial`
+is reserved for provider-control denial evidence, not denial text echoed inside
+reviewed diffs or test fixtures. Remediation failures
+name the active harness, for example `gemini remediation failed`, and point to
+the remediation artifact. Known provider-state failures are called out in the
+same error; Gemini CLI quota exhaustion is reported as `provider quota
+exhausted`, OpenCode server-side failures include the provider reference when
+one is present, and the full CLI stderr remains in the phase artifact.
 
 ### Exit codes
 
@@ -985,6 +1279,36 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.46 | 2026-06-07 | Codex | Documented block-local stale-validation status parsing and fail-closed ambiguous validation |
+| 1.45 | 2026-06-07 | Codex | Documented read-only stale validation preflight and non-retryable provider model availability failures |
+| 1.44 | 2026-06-07 | Codex | Documented deterministic stale-validation no-edits guard and configurable provider retries |
+| 1.43 | 2026-06-07 | Codex | Documented stale-review marker scoping and check-only untracked cleanliness failure |
+| 1.42 | 2026-06-07 | Codex | Documented triage v2 info-request normalization, fallback review-comment fingerprints, and Gemini Pro prompt-cap default |
+| 1.41 | 2026-06-07 | Codex | Documented commit-message self-commit adoption, side-effect summary artifacts, and operator warning |
+| 1.40 | 2026-06-06 | Codex | Documented clear stale-review validation status, compact validation evidence, and resolved-marker no-edit invariant |
+| 1.39 | 2026-06-06 | Codex | Documented prompt, path-boundary, subdirectory HEAD refresh, and commit-message side-effect hardening |
+| 1.38 | 2026-06-06 | Codex | Documented stale pending-review validation and resolved no-op handling |
+| 1.37 | 2026-06-06 | Codex | Documented in-run auto-commit guard before first remediation |
+| 1.36 | 2026-06-06 | Codex | Documented enforced auto-commit clean-start preflight before provider calls |
+| 1.35 | 2026-06-06 | Codex | Documented startup pending-review detection and --pending-review modes |
+| 1.34 | 2026-06-06 | Codex | Documented retry-attempt exclusion from latest review selection and triage fragment trust policy |
+| 1.33 | 2026-06-06 | Codex | Documented worktree cleanliness clean-start and auto-staging policy |
+| 1.32 | 2026-06-06 | Codex | Documented worktree cleanliness auto-staging of legitimate new files |
+| 1.31 | 2026-06-05 | Codex | Documented timeout-only check retry suppression and latest-review ordering |
+| 1.30 | 2026-06-05 | Codex | Documented bounded inner check retries and worktree cleanliness checks |
+| 1.29 | 2026-06-05 | Codex | Documented Gemini argv prompt delivery guard and non-retryable provider timeouts |
+| 1.28 | 2026-06-05 | Codex | Documented system-suspend wait interpretation and prompted-harness status diagnostics |
+| 1.27 | 2026-06-03 | Codex | Documented OpenCode file attachment plus positional message invocation |
+| 1.26 | 2026-06-03 | Codex | Documented Gemini review context cap and external review quiet-run diagnostics |
+| 1.25 | 2026-06-03 | Codex | Documented provider-failure review retry and commit-message prose rejection |
+| 1.24 | 2026-06-02 | Codex | Documented OpenCode prompt-file delivery and waiting progress diagnostics |
+| 1.23 | 2026-06-02 | Codex | Documented compact phase-start progress, OpenCode debug logs, and dedicated external review prompt cap |
+| 1.22 | 2026-06-02 | Codex | Documented prompt-size bounds, progress prompt summaries, and provider-specific remediation failure wording |
+| 1.21 | 2026-06-02 | Codex | Documented external review diff-context artifacts and no-diff clear evidence |
+| 1.20 | 2026-06-01 | Codex | Documented external review prompts and Gemini read-only review invocation |
+| 1.19 | 2026-06-01 | Codex | Documented per-phase harness CLI parity and forced Gemini dogfood route selection |
+| 1.18 | 2026-06-01 | Codex | Documented Gemini workspace trust and live secondary auth prerequisite behavior |
+| 1.17 | 2026-05-31 | Codex | Documented credential-gated secondary harness live smoke tests and routed artifact expectations |
 | 1.16 | 2026-05-30 | Codex | Documented model-specific commit-effort promotion and the credential-gated live Codex smoke |
 | 1.15 | 2026-05-30 | Codex | Documented repository-generic fallback subjects, visible commit-effort promotion, and broader command-line redaction |
 | 1.14 | 2026-05-29 | Codex | Documented resume override fidelity, wrapped progress prefix behavior, and temp-root ancestor exclusion |

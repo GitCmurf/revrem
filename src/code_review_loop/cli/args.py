@@ -26,6 +26,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         epilog=(
             "Triage/routing examples:\n"
             "  revrem --profile dogfood --triage --triage-contract v2 --routing\n"
+            "  revrem --profile dogfood --routing --route gemini-pro\n"
             "  revrem --profile dogfood --no-triage --no-routing --dry-run --summary-format json\n"
             "  revrem --profile dogfood --no-allow-model-escalation\n"
         ),
@@ -47,14 +48,45 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         metavar="HARNESS=EXECUTABLE",
         help="Override an executable for a named harness, for example claude=/opt/bin/claude.",
     )
-    parser.add_argument("--model", default=None, help="Optional model passed to both Codex review and remediation.")
-    parser.add_argument("--review-model", default=None, help="Optional model override for codex review only.")
-    parser.add_argument("--triage-model", default=None, help="Optional model override for triage only.")
-    parser.add_argument("--triage-harness", default=None, help="Optional harness override for triage only.")
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="Optional model passed to both Codex review and remediation.",
+    )
+    parser.add_argument(
+        "--review-harness",
+        default=None,
+        help="Optional harness override for review only.",
+    )
+    parser.add_argument(
+        "--review-model",
+        default=None,
+        help="Optional model override for codex review only.",
+    )
+    parser.add_argument(
+        "--triage-model", default=None, help="Optional model override for triage only."
+    )
+    parser.add_argument(
+        "--triage-harness",
+        default=None,
+        help="Optional harness override for triage only.",
+    )
     parser.add_argument(
         "--commit-message-harness",
+        "--commit-harness",
+        dest="commit_message_harness",
         default=None,
-        help="Optional harness override for read-only commit-message drafting.",
+        help=(
+            "Optional harness override for read-only commit-message drafting. "
+            "Alias: --commit-harness."
+        ),
+    )
+    parser.add_argument(
+        "--remediation-harness",
+        "--remediate-harness",
+        dest="remediation_harness",
+        default=None,
+        help=("Optional harness override for remediation only. Alias: --remediate-harness."),
     )
     parser.add_argument(
         "--remediation-model",
@@ -87,7 +119,10 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         "--remediate-reasoning-effort",
         choices=REASONING_EFFORT_CHOICES,
         default=None,
-        help="Optional Codex model_reasoning_effort override for remediation only.",
+        help=(
+            "Optional Codex model_reasoning_effort override for remediation only. "
+            "Alias: --remediate-reasoning-effort."
+        ),
     )
     parser.add_argument(
         "--commit-reasoning-effort",
@@ -166,6 +201,16 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         action="store_false",
         default=None,
         help="Reject model-proposed v2 routing escalation above the policy route.",
+    )
+    parser.add_argument(
+        "--routing-default-route",
+        "--route",
+        dest="routing_default_route",
+        default=None,
+        help=(
+            "Force v2 routing to use an existing route name from the selected profile. "
+            "Alias: --route."
+        ),
     )
     parser.add_argument(
         "--exec-sandbox",
@@ -285,7 +330,11 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         default=None,
         help="Explicitly trust repo-local prompt fragments.",
     )
-    parser.add_argument("--dry-run", action="store_true", help="Print the loop shape without running Codex.")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the loop shape without running Codex.",
+    )
     final_review_group = parser.add_mutually_exclusive_group()
     final_review_group.add_argument(
         "--final-review",
@@ -306,6 +355,48 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         type=int,
         default=None,
         help="Maximum review/check text characters passed into each remediation prompt.",
+    )
+    parser.add_argument(
+        "--inner-check-retries",
+        type=int,
+        default=None,
+        help=(
+            "Retry remediation/checks inside the same iteration after failed "
+            "post-remediation checks. Defaults to profile value or 0."
+        ),
+    )
+    parser.add_argument(
+        "--provider-retry-attempts",
+        type=int,
+        default=None,
+        help=(
+            "Attempts for transient non-Codex provider review/remediation failures. "
+            "Includes the initial attempt. Defaults to profile value or 2."
+        ),
+    )
+    parser.add_argument(
+        "--provider-retry-backoff-seconds",
+        type=float,
+        default=None,
+        help=(
+            "Seconds to wait between transient non-Codex provider retry attempts. "
+            "Defaults to profile value or 1.0."
+        ),
+    )
+    parser.add_argument(
+        "--external-review-input-chars",
+        type=int,
+        default=None,
+        help="Maximum characters passed to prompted non-Codex review harnesses.",
+    )
+    parser.add_argument(
+        "--external-review-warning-seconds",
+        type=float,
+        default=None,
+        help=(
+            "Elapsed seconds before long-running prompted review waiting "
+            "messages include stronger diagnostics; 0 disables the warning."
+        ),
     )
     parser.add_argument(
         "--terminal-excerpt-chars",
@@ -408,7 +499,17 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         default=None,
         help=(
             "Start by remediating a previous review artifact. Use 'latest' for the newest "
-            "usable non-clear review-final.txt; if none exists, start with a fresh review."
+            "compatible usable non-clear generated review; if none exists, start with a fresh review."
+        ),
+    )
+    parser.add_argument(
+        "--pending-review",
+        choices=("prompt", "ignore", "auto"),
+        default=None,
+        help=(
+            "What to do when startup discovers compatible pending review feedback and "
+            "--initial-review-file was not supplied. Default: prompt in interactive "
+            "terminals, ignore in non-interactive runs."
         ),
     )
     parser.add_argument(
@@ -521,12 +622,21 @@ def parse_doctor_args(argv: Sequence[str]) -> argparse.Namespace:
         description="Run local RevRem setup diagnostics without invoking a model.",
     )
     parser.add_argument("--format", choices=("text", "json"), default=None)
-    parser.add_argument("--strict", action="store_true", help="Exit non-zero when warnings are present.")
+    parser.add_argument(
+        "--strict", action="store_true", help="Exit non-zero when warnings are present."
+    )
     parser.add_argument("--profile", default=None, help="Resolve defaults from a named profile.")
-    parser.add_argument("--base", default=None, help="Base ref to validate. Defaults to profile/main.")
+    parser.add_argument(
+        "--base", default=None, help="Base ref to validate. Defaults to profile/main."
+    )
     parser.add_argument("--codex-bin", default=None, help="Codex executable path/name to validate.")
     parser.add_argument("--artifact-dir", default=None, help="Artifact directory to validate.")
-    parser.add_argument("--check", action="append", default=None, help="Check command to validate. Repeatable.")
+    parser.add_argument(
+        "--check",
+        action="append",
+        default=None,
+        help="Check command to validate. Repeatable.",
+    )
     parser.add_argument(
         "--validate-routes",
         action="store_true",
@@ -633,7 +743,9 @@ def parse_triage_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--format", choices=("text", "json"), default=None)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    explain = subparsers.add_parser("explain", help="Explain the routing decision for a run iteration.")
+    explain = subparsers.add_parser(
+        "explain", help="Explain the routing decision for a run iteration."
+    )
     explain.add_argument("run_dir")
     explain.add_argument("--iteration", type=int, default=1)
     explain.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)

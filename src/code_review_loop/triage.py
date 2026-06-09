@@ -29,7 +29,9 @@ _REVIEW_PRIORITY_SEVERITIES = {
     "P4": "info",
 }
 
-RoutingContextCache: TypeAlias = dict[tuple[Path, int, int], tuple[tuple[str, ...], tuple[str, ...]]]
+RoutingContextCache: TypeAlias = dict[
+    tuple[Path, int, int], tuple[tuple[str, ...], tuple[str, ...]]
+]
 
 
 class TriageValidationError(ValueError):
@@ -87,8 +89,9 @@ def parse_triage_payload(
 
 def _normalize_review_priority_severities(payload: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(payload)
-    warnings = list(normalized.get("parsing_warnings") or [])
-    changed = False
+    raw_warnings = normalized.get("parsing_warnings")
+    warnings_can_update = raw_warnings is None or isinstance(raw_warnings, list)
+    warnings, changed = _normalize_parsing_warnings(raw_warnings or [])
     for collection_name in ("confirmed_findings", "rejected_findings", "needs_more_info"):
         collection = normalized.get(collection_name)
         if not isinstance(collection, list):
@@ -104,15 +107,45 @@ def _normalize_review_priority_severities(payload: dict[str, Any]) -> dict[str, 
                 mapped = _REVIEW_PRIORITY_SEVERITIES.get(raw_severity.strip().upper())
                 if mapped is not None:
                     normalized_item["severity"] = mapped
-                    warnings.append(
-                        f"Normalized {collection_name} severity {raw_severity!r} to {mapped!r}."
-                    )
+                    if warnings_can_update:
+                        warnings.append(
+                            f"Normalized {collection_name} severity {raw_severity!r} to {mapped!r}."
+                        )
                     changed = True
+            raw_info_requested = normalized_item.get("info_requested")
+            if (
+                collection_name == "needs_more_info"
+                and isinstance(raw_info_requested, list)
+                and all(isinstance(part, str) for part in raw_info_requested)
+            ):
+                normalized_item["info_requested"] = "\n".join(raw_info_requested)
+                if warnings_can_update:
+                    warnings.append(
+                        "Normalized needs_more_info info_requested list to a newline-delimited string."
+                    )
+                changed = True
             normalized_collection.append(normalized_item)
         normalized[collection_name] = normalized_collection
-    if changed:
+    if changed and warnings_can_update:
         normalized["parsing_warnings"] = warnings
     return normalized
+
+
+def _normalize_parsing_warnings(raw_warnings: Any) -> tuple[list[Any], bool]:
+    if not isinstance(raw_warnings, list):
+        return [], False
+    normalized: list[Any] = []
+    changed = False
+    for warning in raw_warnings:
+        if isinstance(warning, str):
+            normalized.append(warning)
+            continue
+        if isinstance(warning, dict) and isinstance(warning.get("message"), str):
+            normalized.append(warning["message"])
+            changed = True
+            continue
+        normalized.append(warning)
+    return normalized, changed
 
 
 def write_triage_artifact(run_dir: Path, iteration: int, payload: dict[str, Any]) -> Path:
@@ -142,7 +175,9 @@ def invalid_triage_issue(error: Exception, *, iteration: int) -> diagnostics.Dia
     )
 
 
-def command_failed_issue(*, iteration: int, returncode: int, artifact: str) -> diagnostics.DiagnosticIssue:
+def command_failed_issue(
+    *, iteration: int, returncode: int, artifact: str
+) -> diagnostics.DiagnosticIssue:
     return diagnostics.DiagnosticIssue(
         code="revrem.triage.command_failed",
         severity="blocking",
@@ -166,7 +201,9 @@ def format_structured_handoff(payload: dict[str, Any], original_review: str) -> 
     if confirmed:
         parts.append("\nConfirmed Actionable Findings:")
         for f in confirmed:
-            parts.append(f"- [{f['severity'].upper()}] {f['summary']} (Fingerprint: {f['fingerprint']})")
+            parts.append(
+                f"- [{f['severity'].upper()}] {f['summary']} (Fingerprint: {f['fingerprint']})"
+            )
             parts.append(f"  Rationale: {f['rationale']}")
             if f.get("affected_paths"):
                 parts.append(f"  Files: {', '.join(f['affected_paths'])}")

@@ -58,7 +58,9 @@ def test_tui_reports_unknown_initial_profile(monkeypatch, tmp_path, capsys):
     widgets_module.Static = object
     monkeypatch.setitem(sys.modules, "textual.app", app_module)
     monkeypatch.setitem(sys.modules, "textual.widgets", widgets_module)
-    monkeypatch.setattr(tui.importlib.util, "find_spec", lambda name: object() if name == "textual" else None)
+    monkeypatch.setattr(
+        tui.importlib.util, "find_spec", lambda name: object() if name == "textual" else None
+    )
     monkeypatch.setattr(tui.Path, "cwd", lambda: tmp_path)
 
     assert cli_main(["ui", "--profile", "missing"]) == 1
@@ -90,7 +92,9 @@ def test_tui_launches_textual_app_with_home_snapshot(monkeypatch, tmp_path):
     widgets_module.Static = FakeWidget
     monkeypatch.setitem(sys.modules, "textual.app", app_module)
     monkeypatch.setitem(sys.modules, "textual.widgets", widgets_module)
-    monkeypatch.setattr(tui.importlib.util, "find_spec", lambda name: object() if name == "textual" else None)
+    monkeypatch.setattr(
+        tui.importlib.util, "find_spec", lambda name: object() if name == "textual" else None
+    )
     monkeypatch.setattr(tui.Path, "cwd", lambda: tmp_path)
 
     assert cli_main(["ui"]) == 0
@@ -146,7 +150,9 @@ checks = ["git diff --check"]
     widgets_module.Static = FakeWidget
     monkeypatch.setitem(sys.modules, "textual.app", app_module)
     monkeypatch.setitem(sys.modules, "textual.widgets", widgets_module)
-    monkeypatch.setattr(tui.importlib.util, "find_spec", lambda name: object() if name == "textual" else None)
+    monkeypatch.setattr(
+        tui.importlib.util, "find_spec", lambda name: object() if name == "textual" else None
+    )
     monkeypatch.setattr(tui.Path, "cwd", lambda: tmp_path)
 
     def fake_run_launch_plan(plan, *, cwd):
@@ -169,7 +175,7 @@ def test_tui_edit_action_launches_profile_editor_with_suspended_app(monkeypatch,
 
     config_path = tmp_path / "home" / ".config" / "revrem" / "profiles.toml"
     config_path.parent.mkdir(parents=True)
-    config_path.write_text("[profiles.final-pr]\ndescription = \"Final PR\"\n", encoding="utf-8")
+    config_path.write_text('[profiles.final-pr]\ndescription = "Final PR"\n', encoding="utf-8")
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
 
     class FakeSuspend:
@@ -204,7 +210,9 @@ def test_tui_edit_action_launches_profile_editor_with_suspended_app(monkeypatch,
     widgets_module.Static = FakeWidget
     monkeypatch.setitem(sys.modules, "textual.app", app_module)
     monkeypatch.setitem(sys.modules, "textual.widgets", widgets_module)
-    monkeypatch.setattr(tui.importlib.util, "find_spec", lambda name: object() if name == "textual" else None)
+    monkeypatch.setattr(
+        tui.importlib.util, "find_spec", lambda name: object() if name == "textual" else None
+    )
     monkeypatch.setattr(tui.Path, "cwd", lambda: tmp_path)
 
     def fake_run_launch_plan(plan, *, cwd, capture_output=True):
@@ -230,7 +238,7 @@ def test_tui_profile_lifecycle_actions_use_config_commands(monkeypatch, tmp_path
 
     config_path = tmp_path / "home" / ".config" / "revrem" / "profiles.toml"
     config_path.parent.mkdir(parents=True)
-    config_path.write_text("[profiles.final-pr]\ndescription = \"Final PR\"\n", encoding="utf-8")
+    config_path.write_text('[profiles.final-pr]\ndescription = "Final PR"\n', encoding="utf-8")
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
 
     class FakeInput:
@@ -263,7 +271,9 @@ def test_tui_profile_lifecycle_actions_use_config_commands(monkeypatch, tmp_path
     widgets_module.Static = FakeWidget
     monkeypatch.setitem(sys.modules, "textual.app", app_module)
     monkeypatch.setitem(sys.modules, "textual.widgets", widgets_module)
-    monkeypatch.setattr(tui.importlib.util, "find_spec", lambda name: object() if name == "textual" else None)
+    monkeypatch.setattr(
+        tui.importlib.util, "find_spec", lambda name: object() if name == "textual" else None
+    )
     monkeypatch.setattr(tui.Path, "cwd", lambda: tmp_path)
 
     def fake_run_launch_plan(plan, *, cwd, capture_output=True):
@@ -311,7 +321,9 @@ def test_run_launch_plan_uses_current_dev_entrypoint(tmp_path, monkeypatch):
     assert calls[0][1]["cwd"] == tmp_path
 
 
-def test_run_launch_plan_uses_module_entrypoint_when_console_script_is_missing(tmp_path, monkeypatch):
+def test_run_launch_plan_uses_module_entrypoint_when_console_script_is_missing(
+    tmp_path, monkeypatch
+):
     package_main = tmp_path / "src" / "code_review_loop" / "__main__.py"
     package_main.parent.mkdir(parents=True)
     package_main.write_text("# module entrypoint\n", encoding="utf-8")

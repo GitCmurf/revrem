@@ -46,6 +46,7 @@ from code_review_loop.budgets import BudgetState
 from code_review_loop.clock import Clock
 from code_review_loop.core.routing_types import ResolvedRoute
 from code_review_loop.events import EventSink
+from code_review_loop.git_context_cache import GitContextCache
 from code_review_loop.identity import RunIdentity
 
 ReviewStatus = Literal["clear", "findings", "unknown"]
@@ -93,11 +94,14 @@ class ProcessRunner(Protocol):
 # B2a — per-phase request / outcome value types
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class ChecksRequest:
     """Inputs for one checks phase invocation."""
 
     iteration: int
+    artifact_label: str | None = None
+    display_label: str | None = None
 
 
 @dataclass(frozen=True)
@@ -130,6 +134,8 @@ class RemediationRequest:
     iteration: int
     remediation_input: str
     resolved_route: ResolvedRoute | None = None
+    artifact_label: str | None = None
+    display_label: str | None = None
 
 
 @dataclass(frozen=True)
@@ -179,6 +185,7 @@ class ReviewOutcome:
 # Per-phase harness Protocols. Each adapter closes over LoopConfig in
 # __init__; request types carry only per-call variance.
 # ---------------------------------------------------------------------------
+
 
 class ChecksHarness(Protocol):
     """Executes the checks phase."""
@@ -233,6 +240,8 @@ class RunContext:
     event_sink: EventSink | None = None
     budget_state: BudgetState | None = None
     progress_reporter: ProgressReporter | None = None
+    git_context_cache: GitContextCache | None = None
+    git_head_at_start: str | None = None
 
 
 @dataclass(frozen=True)

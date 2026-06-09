@@ -88,7 +88,18 @@ class RecordingEngineExecutor:
 
     def _next_event(self) -> PhaseEvent:
         event = self.events.pop(0)
-        if isinstance(event, (LoopStarted, ReviewDone, TriageDone, RemediationDone, ChecksDone, CommitDone, NoFinalReview)):
+        if isinstance(
+            event,
+            (
+                LoopStarted,
+                ReviewDone,
+                TriageDone,
+                RemediationDone,
+                ChecksDone,
+                CommitDone,
+                NoFinalReview,
+            ),
+        ):
             return event
         raise AssertionError(f"unexpected event: {event!r}")
 

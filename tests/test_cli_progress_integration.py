@@ -50,8 +50,14 @@ def test_progress_logs_review_and_finding_summaries(tmp_path, capsys):
     runner_mod.run_loop(config, runner)
     captured = capsys.readouterr()
 
-    assert re.search(r"\d{2}:\d{2}:\d{2}\|rev\|1\s{3}\|start: codex review --base main", captured.err)
-    assert re.search(r"\d{2}:\d{2}:\d{2}\|rev\|1\s{3}\|issue: The query surfaces disagree\.", captured.err)
+    assert re.search(
+        r"\d{2}:\d{2}:\d{2}\|rev\|1\s{3}\|start: codex review · sandbox read-only",
+        captured.err,
+    )
+    assert re.search(
+        r"\d{2}:\d{2}:\d{2}\|rev\|1\s{3}\|issue: The query surfaces disagree\.",
+        captured.err,
+    )
     assert "findings-summary" not in captured.err
     assert "|rev|1   |[P2]   Fix queue parity" in captured.err
     assert "|rem|1   |done" in captured.err
@@ -100,7 +106,9 @@ def test_rich_progress_renderer_is_used_when_available(tmp_path, capsys, monkeyp
     monkeypatch.setattr(
         progress,
         "print_rich_event",
-        lambda phase, label, status, detail="": calls.append((phase, label, status, detail)) or True,
+        lambda phase, label, status, detail="": (
+            calls.append((phase, label, status, detail)) or True
+        ),
     )
     config = LoopConfig(
         base="main",
@@ -179,7 +187,9 @@ def test_progress_logs_finding_detail_lines(tmp_path, capsys):
     captured = capsys.readouterr()
 
     assert "This is the important detail." in captured.err
-    assert re.search(r"\n\d\d:\d\d:\d\d\|rev\|1\s+\|\s+This is the important detail\.", captured.err)
+    assert re.search(
+        r"\n\d\d:\d\d:\d\d\|rev\|1\s+\|\s+This is the important detail\.", captured.err
+    )
 
 
 def test_compact_progress_repeats_prefix_on_every_wrapped_line(monkeypatch):
@@ -194,6 +204,129 @@ def test_compact_progress_repeats_prefix_on_every_wrapped_line(monkeypatch):
     assert len(lines) > 1
     assert all(line.startswith("12:34:56|tri|1   |") for line in lines)
     assert "source=mixed" in " ".join(lines)
+
+
+def test_resolved_phase_detail_summarizes_prompt_arguments():
+    detail = phase_support.resolved_phase_detail(
+        [
+            "gemini",
+            "--approval-mode",
+            "plan",
+            "--prompt",
+            "first line\n\nsecond line with much more detail",
+        ],
+        harness="gemini",
+        model="gemini-3.1-pro-preview",
+        reasoning_effort=None,
+        timeout_seconds=0,
+        prompt_chars=1234,
+        prompt_delivery="stdin",
+    )
+
+    assert detail.startswith("gemini · gemini-3.1-pro-preview")
+    assert "\\n" not in detail
+    assert "prompt=1.2k stdin" in detail
+    assert "first line second line" not in detail
+
+
+def test_command_for_progress_redacts_prompt_argument():
+    command = [
+        "gemini",
+        "--approval-mode",
+        "plan",
+        "--prompt",
+        "secret prompt\nwith many details",
+    ]
+
+    assert phase_support.command_for_progress(command) == [
+        "gemini",
+        "--approval-mode",
+        "plan",
+        "--prompt",
+        "<prompt chars=31>",
+    ]
+
+
+def test_resolved_phase_detail_summarizes_opencode_without_repetition():
+    detail = phase_support.resolved_phase_detail(
+        ["opencode", "run", "--model", "opencode/minimax-m3-free"],
+        harness="opencode",
+        model="opencode/minimax-m3-free",
+        reasoning_effort="low",
+        timeout_seconds=0,
+        sandbox="read-only",
+        source="mixed",
+        prompt_chars=126_668,
+        prompt_delivery="file",
+    )
+
+    assert detail == (
+        "opencode run · opencode/minimax-m3-free · n/a effort · timeout=0 · "
+        "sandbox read-only · prompt=126.7k file · source=profile+cli"
+    )
+    assert "--model" not in detail
+    assert detail.count("opencode/minimax-m3-free") == 1
+
+
+def test_resolved_phase_detail_shows_external_review_truncation_status():
+    truncated = phase_support.resolved_phase_detail(
+        ["gemini", "--model", "gemini-3.1-pro-preview"],
+        harness="gemini",
+        model="gemini-3.1-pro-preview",
+        reasoning_effort="low",
+        timeout_seconds=0,
+        sandbox="read-only",
+        source="mixed",
+        prompt_chars=80_000,
+        prompt_delivery="stdin",
+        prompt_context_chars=466_882,
+        prompt_truncated=True,
+    )
+    full = phase_support.resolved_phase_detail(
+        ["gemini", "--model", "gemini-3.1-pro-preview"],
+        harness="gemini",
+        model="gemini-3.1-pro-preview",
+        reasoning_effort="low",
+        timeout_seconds=0,
+        sandbox="read-only",
+        source="mixed",
+        prompt_chars=466_882,
+        prompt_delivery="stdin",
+        prompt_context_chars=466_882,
+        prompt_truncated=False,
+    )
+
+    assert "prompt=80.0k/466.9k stdin truncated" in truncated
+    assert "prompt=466.9k stdin full" in full
+
+
+def test_progress_logs_unstructured_review_finding_summary(tmp_path, capsys):
+    review_outputs = iter(
+        [
+            "The review model reported a regression in the route selection.\n"
+            "REVIEW_STATUS: findings\n",
+            "No findings.\nREVIEW_STATUS: clear\n",
+        ]
+    )
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[1] == "review":
+            return CommandResult(list(args), 0, stdout=next(review_outputs))
+        return CommandResult(list(args), 0, stdout="fixed\n")
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+    )
+
+    runner_mod.run_loop(config, runner)
+    captured = capsys.readouterr()
+
+    assert "review: The review model reported a regression" in captured.err
+    assert re.search(r"\n\d\d:\d\d:\d\d\|rev\|1\s+\|findings", captured.err)
 
 
 def test_quiet_progress_suppresses_progress_logs(tmp_path, capsys):
@@ -317,7 +450,11 @@ def test_terminal_title_is_suppressed_in_rich_mode_to_avoid_escape_leaks(tmp_pat
     stderr = TtyBuffer()
     tty_sequences = []
     monkeypatch.setattr(terminal_mod.sys, "stderr", stderr)
-    monkeypatch.setattr(terminal_mod, "write_terminal_control_to_tty", lambda sequence: tty_sequences.append(sequence) or True)
+    monkeypatch.setattr(
+        terminal_mod,
+        "write_terminal_control_to_tty",
+        lambda sequence: tty_sequences.append(sequence) or True,
+    )
     config = LoopConfig(
         base="main",
         max_iterations=1,
@@ -334,9 +471,9 @@ def test_terminal_title_is_suppressed_in_rich_mode_to_avoid_escape_leaks(tmp_pat
 
     assert stderr.getvalue() == "".join(
         (
-        terminal_mod.TERMINAL_TITLE_SAVE,
-        terminal_mod.CURSOR_SHOW,
-        terminal_mod.TERMINAL_TITLE_RESTORE,
+            terminal_mod.TERMINAL_TITLE_SAVE,
+            terminal_mod.CURSOR_SHOW,
+            terminal_mod.TERMINAL_TITLE_RESTORE,
         )
     )
     assert tty_sequences == []

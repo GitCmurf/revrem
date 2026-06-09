@@ -30,7 +30,10 @@ def test_suppression_add_list_remove_and_audit_round_trip(tmp_path, monkeypatch)
     suppressions.add_entry(path, entry, audit_path=audit)
 
     assert suppressions.load_entries(path) == [entry]
-    assert tomllib.loads(path.read_text(encoding="utf-8"))["suppressions"][0]["fingerprint"] == "f1:abc123"
+    assert (
+        tomllib.loads(path.read_text(encoding="utf-8"))["suppressions"][0]["fingerprint"]
+        == "f1:abc123"
+    )
     audit_records = [json.loads(line) for line in audit.read_text(encoding="utf-8").splitlines()]
     assert audit_records[0]["action"] == "add"
     assert audit_records[0]["actor"] == "tester"
@@ -131,7 +134,9 @@ def test_effective_suppressions_ignore_expired_and_repo_overrides_user(tmp_path)
         created_at="2026-04-01T00:00:00Z",
     )
     suppressions.write_entries(suppressions.user_suppressions_path(home), [user_entry])
-    suppressions.write_entries(suppressions.repo_suppressions_path(cwd), [repo_entry, expired_entry])
+    suppressions.write_entries(
+        suppressions.repo_suppressions_path(cwd), [repo_entry, expired_entry]
+    )
 
     effective = suppressions.load_effective_suppressions(cwd, home=home, now=now)
 

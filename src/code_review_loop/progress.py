@@ -12,6 +12,19 @@ _ACTIVE_LIVE: Any | None = None
 _ACTIVE_LIVE_LINES: deque[Any] | None = None
 RICH_LIVE_MAX_LINES = 7
 RICH_TEXT_MAX_CHARS = 140
+#: Rich style applied to each " · "-separated value in a structured start
+#: detail line. Index ``i`` styles value ``i``. Indices past the end render
+#: unstyled, so adding fields (e.g. a new ``route=`` segment) does not drop
+#: styling on the existing values.
+RICH_DETAIL_STYLES: tuple[str | None, ...] = (
+    "bold",
+    "magenta",
+    "cyan",
+    "yellow",
+    "yellow",
+    "blue",
+    "dim",
+)
 
 
 def rich_available() -> bool:
@@ -90,6 +103,7 @@ def _update_live(text: Any) -> bool:
 
 
 def _clip(value: str) -> str:
+    value = " ".join(value.split())
     if len(value) <= RICH_TEXT_MAX_CHARS:
         return value
     return f"{value[: RICH_TEXT_MAX_CHARS - 1]}…"
@@ -97,6 +111,22 @@ def _clip(value: str) -> str:
 
 def _timestamp_part() -> tuple[str, str]:
     return datetime.now().strftime("%H:%M:%S"), "dim"
+
+
+def _detail_parts(status: str, detail: str) -> list[tuple[str, str | None]]:
+    if not detail:
+        return []
+    clipped = _clip(detail)
+    if status != "start" or " · " not in clipped:
+        return [(f": {clipped}", None)]
+    values = clipped.split(" · ")
+    parts: list[tuple[str, str | None]] = [(": ", None)]
+    for index, value in enumerate(values):
+        if index:
+            parts.append((" · ", "dim"))
+        style = RICH_DETAIL_STYLES[index] if index < len(RICH_DETAIL_STYLES) else None
+        parts.append((value, style))
+    return parts
 
 
 def print_rich_event(phase: str, label: str, status: str, detail: str = "") -> bool:
@@ -108,7 +138,7 @@ def print_rich_event(phase: str, label: str, status: str, detail: str = "") -> b
         (label, "cyan"),
         (" ", None),
         (status, "green"),
-        (f": {_clip(detail)}" if detail else "", None),
+        *_detail_parts(status, detail),
     )
     if rendered is None:
         return False

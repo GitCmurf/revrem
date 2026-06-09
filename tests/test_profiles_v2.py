@@ -229,18 +229,16 @@ def test_to_toml_preserves_routing(tmp_path):
                     ),
                 ),
             ),
-            routes={
-                "f": profiles.TriageRouteConfig(model="m")
-            }
-        )
+            routes={"f": profiles.TriageRouteConfig(model="m")},
+        ),
     )
 
     toml_str = profiles.profile_to_toml(profile)
     assert 'contract = "v2"' in toml_str
-    assert '[triage.routing]' in toml_str
-    assert 'enabled = true' in toml_str
+    assert "[triage.routing]" in toml_str
+    assert "enabled = true" in toml_str
     assert 'id = "r1"' in toml_str
     assert 'domain_tags_any = ["a"]' in toml_str
     assert 'route = "f"' in toml_str
-    assert '[triage.routes.f]' in toml_str
+    assert "[triage.routes.f]" in toml_str
     assert 'model = "m"' in toml_str

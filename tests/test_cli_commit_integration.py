@@ -51,7 +51,7 @@ def test_loop_commits_after_passing_checks(tmp_path):
         calls.append((list(args), input_text, timeout_seconds))
         if (result := git_repo_root_result(args, cwd, repo_root)) is not None:
             return result
-        if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+        if args[:5] == ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"]:
             return CommandResult(list(args), 0, stdout="")
         if args[0] == "codex" and "review" in args:
             return CommandResult(list(args), 0, stdout=next(review_outputs))
@@ -70,7 +70,11 @@ def test_loop_commits_after_passing_checks(tmp_path):
         if args[0:2] == ["codex", "exec"] and "--sandbox" in args:
             return CommandResult(list(args), 0, stdout="fix(cli): harden RevRem commit flow\n")
         if args[:3] == ["git", "commit", "-m"]:
-            return CommandResult(list(args), 0, stdout="[branch abc] fix(cli): harden RevRem commit flow\n")
+            return CommandResult(
+                list(args),
+                0,
+                stdout="[branch abc] fix(cli): harden RevRem commit flow\n",
+            )
         return CommandResult(list(args), 0, stdout="remediated\n")
 
     config = LoopConfig(
@@ -89,10 +93,24 @@ def test_loop_commits_after_passing_checks(tmp_path):
     commands = [call[0] for call in calls]
     assert ["git", "add", "-A"] in commands
     assert ["git", "-C", str(repo_root), "reset", "--", "artifacts"] in commands
-    assert ["git", "commit", "-m", "fix(cli): harden RevRem commit flow (RevRem)"] in commands
+    assert [
+        "git",
+        "commit",
+        "-m",
+        "fix(cli): harden RevRem commit flow (RevRem)",
+    ] in commands
     assert any(
         command[:8]
-        == ["codex", "exec", "-c", 'web_search="disabled"', "--sandbox", "read-only", "--color", "never"]
+        == [
+            "codex",
+            "exec",
+            "-c",
+            'web_search="disabled"',
+            "--sandbox",
+            "read-only",
+            "--color",
+            "never",
+        ]
         for command in commands
     )
     assert summary["iterations"][0]["commit_status"] == "committed"
@@ -107,7 +125,16 @@ def test_loop_commits_after_passing_checks(tmp_path):
         input_text
         for command, input_text, _timeout in calls
         if command[:8]
-        == ["codex", "exec", "-c", 'web_search="disabled"', "--sandbox", "read-only", "--color", "never"]
+        == [
+            "codex",
+            "exec",
+            "-c",
+            'web_search="disabled"',
+            "--sandbox",
+            "read-only",
+            "--color",
+            "never",
+        ]
     )
     assert commit_prompt is not None and "Files:" in commit_prompt
     assert "Conventional Commit" in commit_prompt
@@ -192,7 +219,7 @@ def test_loop_skips_commit_when_checks_fail(tmp_path):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
-        if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+        if args[:5] == ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"]:
             return CommandResult(list(args), 0, stdout="")
         if args[0] == "codex" and "review" in args:
             return CommandResult(list(args), 0, stdout=next(review_outputs))
@@ -215,9 +242,8 @@ def test_loop_skips_commit_when_checks_fail(tmp_path):
 
     assert summary["iterations"][0]["check_failures"] == 1
     assert "commit_status" not in summary["iterations"][0]
-    assert [command for command, _input_text, _timeout in calls if command[0] == "git"] == [
-        ["git", "status", "--porcelain=v1", "--untracked-files=all"]
-    ]
+    git_calls = [command for command, _input_text, _timeout in calls if command[0] == "git"]
+    assert git_calls == [["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"]]
 
 
 def test_pytest_check_is_skipped_for_typescript_repo_without_python_surface(tmp_path):
@@ -240,15 +266,17 @@ def test_pytest_check_is_skipped_for_typescript_repo_without_python_surface(tmp_
     results, _failed = checks_impl.run_checks(config, runner, 1, make_run_context(runner))
 
     assert calls == []
-    assert results[0].returncode == 0
+    assert results[1].returncode == 0
 
-    assert "appears to be non-Python" in results[0].stdout
-    assert "SKIPPED adaptive check" in (tmp_path / "artifacts" / "check-1-1.txt").read_text(
+    assert "appears to be non-Python" in results[1].stdout
+    assert "SKIPPED adaptive check" in (tmp_path / "artifacts" / "check-1-2.txt").read_text(
         encoding="utf-8"
     )
 
 
-def test_pytest_check_is_skipped_for_typescript_repo_with_incidental_python_file(tmp_path):
+def test_pytest_check_is_skipped_for_typescript_repo_with_incidental_python_file(
+    tmp_path,
+):
     (tmp_path / "package.json").write_text('{"scripts":{"test":"vitest"}}\n', encoding="utf-8")
     (tmp_path / "helper.py").write_text("print('helper')\n", encoding="utf-8")
     calls = []
@@ -269,9 +297,9 @@ def test_pytest_check_is_skipped_for_typescript_repo_with_incidental_python_file
     results, _failed = checks_impl.run_checks(config, runner, 1, make_run_context(runner))
 
     assert calls == []
-    assert results[0].returncode == 0
+    assert results[1].returncode == 0
 
-    assert "appears to be non-Python" in results[0].stdout
+    assert "appears to be non-Python" in results[1].stdout
 
 
 @pytest.mark.parametrize("returncode", [4, 5])
@@ -313,11 +341,11 @@ def test_loop_refuses_to_auto_commit_from_dirty_worktree(tmp_path):
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
-        if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+        if args[:5] == ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"]:
             return CommandResult(
                 list(args),
                 0,
-                stdout=" M src/other.py\n?? notes.txt\n",
+                stdout=" M src/other.py\x00?? notes.txt\x00",
             )
         raise AssertionError(f"unexpected command: {args!r}")
 
@@ -337,17 +365,19 @@ def test_loop_refuses_to_auto_commit_from_dirty_worktree(tmp_path):
     assert "src/other.py" in str(excinfo.value)
     assert "notes.txt" in str(excinfo.value)
     assert [command for command, _input_text, _timeout in calls] == [
-        ["git", "status", "--porcelain=v1", "--untracked-files=all"]
+        ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"]
     ]
 
 
-def test_loop_stops_after_unknown_review_when_remediation_has_no_staged_changes(tmp_path):
+def test_loop_stops_after_unknown_review_before_remediation_or_commit(
+    tmp_path,
+):
     calls = []
     repo_root, cwd = make_git_worktree(tmp_path)
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
-        if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+        if args[:5] == ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"]:
             return CommandResult(list(args), 0, stdout="")
         if args[0] == "codex" and "review" in args:
             return CommandResult(list(args), 0, stdout="The implementation appears sound.\n")
@@ -373,12 +403,23 @@ def test_loop_stops_after_unknown_review_when_remediation_has_no_staged_changes(
 
     summary = runner_mod.run_loop(config, runner).to_dict()
 
-    review_calls = [command for command, _input_text, _timeout in calls if command[0] == "codex" and "review" in command]
+    review_calls = [
+        command
+        for command, _input_text, _timeout in calls
+        if command[0] == "codex" and "review" in command
+    ]
+    commit_calls = [
+        command
+        for command, _input_text, _timeout in calls
+        if command[:3] == ["git", "add", "-A"]
+        or (command[:3] == ["git", "diff", "--cached"] and "--quiet" in command)
+    ]
     assert len(review_calls) == 1
+    assert commit_calls == []
     assert summary["final_status"] == "unknown"
-    assert summary["stopped_reason"] == "no_changes_after_remediation"
+    assert summary["stopped_reason"] == "review_unknown"
     assert summary["iterations"][0]["review_status"] == "unknown"
-    assert summary["iterations"][0]["commit_status"] == "skipped_no_changes"
+    assert "commit_status" not in summary["iterations"][0]
 
 
 def test_loop_writes_failure_summary_when_commit_fails(tmp_path):
@@ -388,7 +429,7 @@ def test_loop_writes_failure_summary_when_commit_fails(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if (result := git_repo_root_result(args, cwd, repo_root)) is not None:
             return result
-        if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+        if args[:5] == ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"]:
             return CommandResult(list(args), 0, stdout="")
         if args[0] == "codex" and "review" in args:
             return CommandResult(list(args), 0, stdout=next(review_outputs))
@@ -441,7 +482,7 @@ def test_loop_remediates_commit_hook_failure_by_default(tmp_path):
         calls.append((list(args), input_text, timeout_seconds))
         if (result := git_repo_root_result(args, cwd, repo_root)) is not None:
             return result
-        if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+        if args[:5] == ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"]:
             return CommandResult(list(args), 0, stdout="")
         if args[0] == "codex" and "review" in args:
             return CommandResult(list(args), 0, stdout=next(review_outputs))
@@ -502,7 +543,7 @@ def test_loop_stops_on_commit_hook_failure_when_policy_is_stop(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if (result := git_repo_root_result(args, cwd, repo_root)) is not None:
             return result
-        if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+        if args[:5] == ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"]:
             return CommandResult(list(args), 0, stdout="")
         if args[0] == "codex" and "review" in args:
             return CommandResult(list(args), 0, stdout=next(review_outputs))
@@ -576,8 +617,23 @@ def test_run_commit_uses_no_verify_only_on_retry(tmp_path):
 
     assert commit_impl.run_commit(config, runner, 1, ctx=make_run_context(runner)) == "committed"
     assert ["git", "commit", "-m", "chore(code): update code in src (RevRem)"] in calls
-    assert ["git", "commit", "--no-verify", "-m", "chore(code): update code in src (RevRem)"] not in calls
+    assert [
+        "git",
+        "commit",
+        "--no-verify",
+        "-m",
+        "chore(code): update code in src (RevRem)",
+    ] not in calls
 
     calls.clear()
-    assert commit_impl.run_commit(config, runner, 1, ctx=make_run_context(runner), retrying=True) == "committed"
-    assert ["git", "commit", "--no-verify", "-m", "chore(code): update code in src (RevRem)"] in calls
+    assert (
+        commit_impl.run_commit(config, runner, 1, ctx=make_run_context(runner), retrying=True)
+        == "committed"
+    )
+    assert [
+        "git",
+        "commit",
+        "--no-verify",
+        "-m",
+        "chore(code): update code in src (RevRem)",
+    ] in calls

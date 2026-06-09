@@ -29,6 +29,7 @@ class RunState:
     commit_on_hook_failure: str
     budgets: dict[str, object]
     initial_review_file: str | None
+    initial_review_mode: str
     iterations: list[dict[str, object]]
     final_status: str = "unknown"
     pending_check_failures: bool = False
@@ -53,6 +54,7 @@ class RunState:
         commit_on_hook_failure: str,
         budgets: dict[str, object],
         initial_review_file: str | None,
+        initial_review_mode: str,
     ) -> RunState:
         """Build the initial run state."""
         return cls(
@@ -67,6 +69,7 @@ class RunState:
             commit_on_hook_failure=commit_on_hook_failure,
             budgets=budgets,
             initial_review_file=initial_review_file,
+            initial_review_mode=initial_review_mode,
             iterations=[],
         )
 
@@ -87,6 +90,7 @@ class RunState:
             "budgets": dict(self.budgets),
             "final_status": self.final_status,
             "initial_review_file": self.initial_review_file,
+            "initial_review_mode": self.initial_review_mode,
             "pending_check_failures": self.pending_check_failures,
             "stopped_reason": self.stopped_reason,
         }
@@ -117,7 +121,9 @@ class RunState:
             self.latest_review_excerpt = outcome.excerpt
 
         if isinstance(outcome, OutcomeClear):
-            self.mark_clear(outcome.reason, suppressed_findings_count=outcome.suppressed_findings_count)
+            self.mark_clear(
+                outcome.reason, suppressed_findings_count=outcome.suppressed_findings_count
+            )
             return
         if isinstance(outcome, OutcomeFailed):
             self.mark_failed(

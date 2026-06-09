@@ -28,7 +28,7 @@
           "type": "integer"
         },
         {
-          "pattern": "^(final|[0-9]+)$",
+          "pattern": "^(final|[0-9]+(?:\\.[0-9]+){0,2})$",
           "type": "string"
         },
         {

@@ -63,7 +63,9 @@ class ReviewLoopResult:
 
 
 def _load_default_process_runner() -> ProcessRunner:
-    return cast(ProcessRunner, import_module("code_review_loop.adapters.subprocess_runner").default_runner)
+    return cast(
+        ProcessRunner, import_module("code_review_loop.adapters.subprocess_runner").default_runner
+    )
 
 
 def run_review_loop(

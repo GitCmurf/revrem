@@ -36,9 +36,7 @@ def test_resolve_routing_allows_external_timeout_on_non_codex_harness():
         name="test",
         triage=profiles.TriageConfig(
             contract="v2",
-            routing=profiles.TriageRoutingConfig(
-                enabled=True, default_route="frontier-thinking"
-            ),
+            routing=profiles.TriageRoutingConfig(enabled=True, default_route="frontier-thinking"),
             routes={
                 "frontier-thinking": profiles.TriageRouteConfig(
                     harness="claude",
@@ -69,18 +67,14 @@ def test_resolve_routing_model_escalation_canonical_tier_names():
         name="test",
         triage=profiles.TriageConfig(
             contract="v2",
-            routing=profiles.TriageRoutingConfig(
-                enabled=True, default_route="midtier-coder"
-            ),
+            routing=profiles.TriageRoutingConfig(enabled=True, default_route="midtier-coder"),
             routes={
                 "midtier-coder": profiles.TriageRouteConfig(harness="codex", model="m1"),
                 "frontier-thinking": profiles.TriageRouteConfig(harness="codex", model="m2"),
             },
         ),
     )
-    resolved = policy.resolve_routing(
-        profile, _ctx(), model_proposal_tier="frontier-thinking"
-    )
+    resolved = policy.resolve_routing(profile, _ctx(), model_proposal_tier="frontier-thinking")
     assert resolved.route_tier == "frontier-thinking"
 
 
@@ -89,18 +83,14 @@ def test_resolve_routing_security_specialist_outranks_default():
         name="test",
         triage=profiles.TriageConfig(
             contract="v2",
-            routing=profiles.TriageRoutingConfig(
-                enabled=True, default_route="midtier-coder"
-            ),
+            routing=profiles.TriageRoutingConfig(enabled=True, default_route="midtier-coder"),
             routes={
                 "midtier-coder": profiles.TriageRouteConfig(harness="codex", model="m1"),
                 "security-specialist": profiles.TriageRouteConfig(harness="codex", model="m2"),
             },
         ),
     )
-    resolved = policy.resolve_routing(
-        profile, _ctx(), model_proposal_tier="security-specialist"
-    )
+    resolved = policy.resolve_routing(profile, _ctx(), model_proposal_tier="security-specialist")
     assert resolved.route_tier == "security-specialist"
 
 
@@ -122,9 +112,7 @@ def test_resolve_routing_escalation_blocked_when_disallowed():
             },
         ),
     )
-    resolved = policy.resolve_routing(
-        profile, _ctx(), model_proposal_tier="frontier-thinking"
-    )
+    resolved = policy.resolve_routing(profile, _ctx(), model_proposal_tier="frontier-thinking")
     assert resolved.route_tier == "midtier-coder"
 
 
@@ -135,18 +123,14 @@ def test_resolve_routing_indeterminate_tier_keeps_policy_route():
         name="test",
         triage=profiles.TriageConfig(
             contract="v2",
-            routing=profiles.TriageRoutingConfig(
-                enabled=True, default_route="midtier-coder"
-            ),
+            routing=profiles.TriageRoutingConfig(enabled=True, default_route="midtier-coder"),
             routes={
                 "midtier-coder": profiles.TriageRouteConfig(harness="codex", model="m1"),
                 "house-special": profiles.TriageRouteConfig(harness="codex", model="m2"),
             },
         ),
     )
-    resolved = policy.resolve_routing(
-        profile, _ctx(), model_proposal_tier="house-special"
-    )
+    resolved = policy.resolve_routing(profile, _ctx(), model_proposal_tier="house-special")
     assert resolved.route_tier == "midtier-coder"
 
 
@@ -190,7 +174,13 @@ def test_deterministic_detection_escalates_domain_tags_any_rule(tmp_path):
 
     payload = {
         "confirmed_findings": [
-            {"affected_paths": ["auth.py"], "fingerprint": "f1", "summary": "s", "severity": "high", "rationale": "r"}
+            {
+                "affected_paths": ["auth.py"],
+                "fingerprint": "f1",
+                "summary": "s",
+                "severity": "high",
+                "rationale": "r",
+            }
         ],
         "classification": {
             "domain_tags": ["docs"],  # model omits any security tag

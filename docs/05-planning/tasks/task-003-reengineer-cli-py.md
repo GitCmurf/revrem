@@ -2,9 +2,9 @@
 document_id: REVREM-TASK-003
 type: TASK
 title: Re-engineer cli.py from God object into a hexagonal review-loop core
-status: Draft
-version: '0.2'
-last_updated: '2026-05-26'
+status: Approved
+version: '0.3'
+last_updated: '2026-05-31'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -1778,6 +1778,26 @@ subprocess execution, terminal title/control, resume Git snapshots, or resume
 payload construction. The production runner uses `core.engine.run()` directly,
 does not call `decide()` directly, and does not use a one-step
 `run(max_steps=1)` capture bridge to obtain actions.
+
+## Completion Audit Snapshot
+
+This task is complete and closed. The previous `Draft` status was stale: the
+architecture described here is now the implemented shape of the repository.
+
+| Exit criterion | Current evidence inspected on 2026-05-31 | Audit status |
+|---|---|---|
+| Core is dependency-free | `src/code_review_loop/core/` exists; `pyproject.toml` import-linter contract forbids core imports of adapters, CLI, runner, profiles, terminal/TUI, and `argparse`. | Completed |
+| Engine is drivable without CLI | `tests/test_engine_run.py`, `tests/test_engine_decide.py`, and `src/code_review_loop/core/engine.py` exercise the dependency-free engine with injected executors. | Completed |
+| Non-CLI application boundary exists | `src/code_review_loop/application.py` exposes the supported headless boundary; `tests/test_application_api.py` and `tests/test_application_headless_integration.py` cover it. | Completed |
+| CLI front-end is thin and extensible | `src/code_review_loop/cli/` contains command modules and registry dispatch; `tests/test_cli_dispatch.py`, `tests/test_cli_commands_outcome_gate.py`, and `tests/test_wave_d_architecture.py` guard the surface. | Completed |
+| Phase executors moved behind adapters | `src/code_review_loop/adapters/` contains review, triage, remediation, commit, checks, git, subprocess, and terminal adapters; dedicated adapter tests cover each phase family. | Completed |
+| State/outcome types replace stringly loop exits | `src/code_review_loop/core/state.py`, `src/code_review_loop/core/outcome.py`, `src/code_review_loop/cli/outcome.py`, and `tests/test_outcome_exit_code.py` guard typed outcomes and exit mapping. | Completed |
+| Determinism seams exist | `src/code_review_loop/clock.py`, `src/code_review_loop/identity.py`, `tests/test_clock_identity_seam.py`, and `tests/test_determinism_gate.py` guard raw time/id access. | Completed |
+| Test monolith decomposed | The current suite is split across focused CLI, core, adapter, application, routing, schema, replay, and support modules; `tests/test_monkeypatch_ratchet.py` keeps the reach-in count ratcheted. | Completed |
+| Machine-contract changes are ledgered | `docs/05-planning/behaviour-ledger-task-003.md` records TASK-003 output-contract deltas and later dogfood hardening deltas that affected projections. | Completed |
+
+The follow-on dogfood work is tracked separately in `REVREM-TASK-004`; it does
+not reopen TASK-003.
 
 ## Adversarial-Review Anticipation
 

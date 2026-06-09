@@ -27,7 +27,9 @@ def test_renderer_sink_dispatches_events_to_callback():
     rendered: list[events.Event] = []
     sink = events.RendererSink("run-1", rendered.append)
 
-    emitted = sink.emit("phase_start", phase="review", iteration=1, payload={"command": "codex review"})
+    emitted = sink.emit(
+        "phase_start", phase="review", iteration=1, payload={"command": "codex review"}
+    )
     sink.emit("phase_result", phase="review", iteration=1, payload={"status": "clear"})
     sink.close()
 
@@ -70,7 +72,9 @@ def test_jsonl_sink_writes_schema_valid_events(tmp_path):
     sink.emit("phase_start", phase="review", iteration=1, payload={"command": "codex review"})
     sink.emit("phase_result", phase="review", iteration=1, payload={"status": "clear"})
     sink.close()
-    schema = json.loads((ROOT / "docs/52-api/schemas/events-v1.schema.json").read_text(encoding="utf-8"))
+    schema = json.loads(
+        (ROOT / "docs/52-api/schemas/events-v1.schema.json").read_text(encoding="utf-8")
+    )
 
     lines = (tmp_path / "events.jsonl").read_text(encoding="utf-8").splitlines()
 

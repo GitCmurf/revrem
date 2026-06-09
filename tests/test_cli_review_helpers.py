@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 from importlib import import_module
 from pathlib import Path
 
+import pytest
+
 import tests.support.application_runner as runner_mod
-from code_review_loop import application, events
+from code_review_loop import application, events, waiting_progress
 from code_review_loop.adapters import remediation as remediation_impl
 from code_review_loop.adapters import review as review_impl
 from code_review_loop.adapters import triage as triage_impl
@@ -15,9 +18,11 @@ from code_review_loop.adapters.commit import (
     deterministic_commit_message,
 )
 from code_review_loop.adapters.phase_support import (
+    DEFAULT_COMMIT_MESSAGE_PROMPT,
     build_commit_message_command,
     normalize_revrem_conventional_subject,
     progress_event,
+    run_with_waiting_progress,
     sanitize_commit_message,
 )
 from code_review_loop.adapters.review import review_failed_to_run
@@ -88,12 +93,20 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
     assert detect_review_status("No findings.\n") == "clear"
     assert detect_review_status("summary\nNo actionable findings\n") == "clear"
     assert (
-        detect_review_status("I did not find any discrete, actionable bugs in the diff.")
-        == "clear"
+        detect_review_status("I did not find any discrete, actionable bugs in the diff.") == "clear"
     )
     assert (
         detect_review_status(
             "I did not find any discrete, actionable correctness issues in the changes."
+        )
+        == "clear"
+    )
+    assert (
+        detect_review_status(
+            "I did not identify any introduced, actionable correctness issues in "
+            "the changed code. A local full pytest run had one subprocess import "
+            "failure in an existing test/tool path, but it does not appear tied "
+            "to the diff under review."
         )
         == "clear"
     )
@@ -181,14 +194,18 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
         == "clear"
     )
     assert (
+        detect_review_status("I did not find any new regressions in the changed paths.") == "clear"
+    )
+    assert (
         detect_review_status(
-            "I did not find any new regressions in the changed paths."
+            "I did not find any actionable bugs introduced by the reviewed diff. "
+            "The full test suite has one failure in an unchanged test path that appears "
+            "to be a local environment/PYTHONPATH issue rather than a regression in "
+            "the proposed changes."
         )
         == "clear"
     )
-    assert (
-        detect_review_status("This would warrant an inline finding.") == "unknown"
-    )
+    assert detect_review_status("This would warrant an inline finding.") == "unknown"
     assert (
         detect_review_status(
             "The changes add the alias and tests without any clear regressions or actionable bugs."
@@ -197,18 +214,16 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
     )
     assert (
         detect_review_status(
-            '{\n'
+            "{\n"
             '  "findings": [],\n'
             '  "explanation": "I did not identify any discrete introduced bugs that should '
             'block the patch."\n'
-            '}\n'
+            "}\n"
         )
         == "clear"
     )
     assert (
-        detect_review_status(
-            '{"findings": [], "overall_correctness": "patch is correct"}\n'
-        )
+        detect_review_status('{"findings": [], "overall_correctness": "patch is correct"}\n')
         == "clear"
     )
 
@@ -236,6 +251,87 @@ def test_detect_review_status_does_not_generalize_negated_clear_with_findings():
         )
         == "findings"
     )
+
+
+def test_prompted_review_harness_requires_explicit_status_for_clear_prose():
+    output = (
+        "I did not find any actionable bugs introduced by the reviewed diff. "
+        "No remediation is needed."
+    )
+
+    assert detect_review_status(output, harness="gemini") == "unknown"
+    diagnostics = review_status_diagnostics(output, harness="gemini")
+    assert diagnostics["explicit_status_required"] is True
+    assert diagnostics["status_source"] == "none"
+
+
+def test_prompted_review_harness_accepts_explicit_status_and_records_tool_denial():
+    output = (
+        "The supplied diff has no actionable findings.\n"
+        "REVIEW_STATUS: clear\n\n"
+        "[stderr]\n"
+        "Error executing tool run_shell_command: Tool execution denied by policy.\n"
+    )
+
+    assert detect_review_status(output, harness="gemini") == "clear"
+    diagnostics = review_status_diagnostics(output, harness="gemini")
+    assert diagnostics["status_source"] == "explicit_status"
+    assert diagnostics["tool_denial_present"] is True
+    assert diagnostics["tool_denial_source"] == "stderr_control"
+    assert (
+        diagnostics["tool_denial_evidence"]
+        == "Error executing tool run_shell_command: Tool execution denied by policy."
+    )
+
+
+def test_review_status_diagnostics_ignores_tool_denial_text_outside_stderr():
+    output = (
+        "The reviewed tests include this literal fixture text:\n"
+        "Error executing tool run_shell_command: Tool execution denied by policy.\n"
+        "REVIEW_STATUS: clear\n\n"
+        "[stderr]\n"
+        "Provider emitted non-fatal progress logs.\n"
+    )
+
+    diagnostics = review_status_diagnostics(output, harness="opencode")
+
+    assert diagnostics["status"] == "clear"
+    assert diagnostics["stderr_present"] is True
+    assert diagnostics["tool_denial_present"] is False
+    assert diagnostics["tool_denial_source"] is None
+    assert diagnostics["tool_denial_evidence"] is None
+
+
+def test_review_status_diagnostics_ignores_tool_denial_in_stderr_diff_transcript():
+    output = (
+        "The supplied diff has no actionable findings.\n"
+        "REVIEW_STATUS: clear\n\n"
+        "[stderr]\n"
+        "\x1b[0m$ git diff main...HEAD tests/test_cli_review_helpers.py\n"
+        '+        "Error executing tool run_shell_command: Tool execution denied by policy.\\n"\n'
+        'tests/test_cli_review_helpers.py:4040:+        "Tool execution denied by policy.\\n"\n'
+    )
+
+    diagnostics = review_status_diagnostics(output, harness="opencode")
+
+    assert diagnostics["status"] == "clear"
+    assert diagnostics["stderr_present"] is True
+    assert diagnostics["tool_denial_present"] is False
+    assert diagnostics["tool_denial_evidence"] is None
+
+
+def test_status_debug_detail_names_codex_bullets_for_prompted_harnesses():
+    diagnostics = review_status_diagnostics(
+        "## Findings\n\n1. Fix the issue.\nREVIEW_STATUS: findings\n",
+        harness="opencode",
+    )
+
+    detail = review_impl._status_debug_detail(diagnostics)
+
+    assert "status=findings" in detail
+    assert "explicit=findings" in detail
+    assert "codex_bullets=0" in detail
+    assert "findings=0" not in detail
 
 
 def test_run_loop_treats_structured_empty_findings_review_as_clear(tmp_path):
@@ -306,7 +402,7 @@ def test_run_loop_writes_replayable_events_jsonl(tmp_path, capsys):
         "reviews",
     ]
     assert capsys.readouterr().out == (
-        "0001|review|1|phase_start: codex review --base main [harness=codex sandbox=read-only source=direct-config]\n"
+        "0001|review|1|phase_start: codex review · sandbox read-only · source=direct-config\n"
         "0002|review|1|phase_result: clear\n"
         f"0003|artifacts|artifact_write: {tmp_path / 'artifacts' / 'summary.json'}\n"
         f"0004|artifacts|artifact_write: {tmp_path / 'artifacts' / 'review-1.txt'}\n"
@@ -340,9 +436,7 @@ def test_progress_warning_status_emits_warning_event(tmp_path):
 
 def test_detect_review_status_does_not_treat_scoped_clear_prose_as_clear_when_issue_follows():
     assert (
-        detect_review_status(
-            "I did not find any issue in the docs, but there is a bug in the CLI."
-        )
+        detect_review_status("I did not find any issue in the docs, but there is a bug in the CLI.")
         == "unknown"
     )
     assert (
@@ -360,8 +454,7 @@ def test_detect_review_status_does_not_treat_scoped_clear_prose_as_clear_when_is
     )
     assert (
         detect_review_status(
-            "I did not find any actionable bugs.\n\n"
-            "No validation prevents this regression."
+            "I did not find any actionable bugs.\n\nNo validation prevents this regression."
         )
         == "unknown"
     )
@@ -530,16 +623,21 @@ def test_non_codex_review_receives_explicit_review_prompt(tmp_path):
         "claude",
         "--print",
         "--permission-mode",
-        "auto",
+        "plan",
         "--model",
         "sonnet",
     ]
     assert calls[0][1] is not None
     assert "Review the current repository changes" in calls[0][1]
+    assert "Treat the working tree as read-only" in calls[0][1]
+    assert "git diff <base>...HEAD" in calls[0][1]
+    assert "Base branch: main" in calls[0][1]
+    assert f"Working directory: {tmp_path}" in calls[0][1]
     assert "REVIEW_STATUS: findings" in calls[0][1]
+    assert "REVIEW_STATUS: clear" in calls[0][1]
 
 
-def test_opencode_review_prompt_is_passed_as_message_argument(tmp_path):
+def test_opencode_review_prompt_is_attached_as_file(tmp_path):
     calls: list[tuple[list[str], str | None]] = []
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
@@ -557,15 +655,328 @@ def test_opencode_review_prompt_is_passed_as_message_argument(tmp_path):
 
     runner_mod.run_loop(config, runner)
 
-    assert calls[0][0][:5] == [
+    assert calls[0][0][:4] == [
         "opencode",
         "run",
-        "--dangerously-skip-permissions",
         "--model",
         "provider/model",
     ]
-    assert "Review the current repository changes" in calls[0][0][-1]
+    assert "--dangerously-skip-permissions" not in calls[0][0]
     assert calls[0][1] is None
+    assert "--file" in calls[0][0]
+    file_index = calls[0][0].index("--file")
+    assert calls[0][0][file_index - 1] == "Follow the attached RevRem prompt exactly."
+    prompt_path = Path(calls[0][0][file_index + 1])
+    assert prompt_path.name == "review-1-prompt.txt"
+    prompt = prompt_path.read_text(encoding="utf-8")
+    assert "Review the current repository changes" in prompt
+
+
+def test_opencode_review_failure_names_opencode_harness(tmp_path):
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        return CommandResult(list(args), 1, stderr="Error: provider failed\n")
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="opencode",
+        review_model="provider/model",
+    )
+
+    with pytest.raises(RuntimeError, match="opencode review failed for review-1"):
+        runner_mod.run_loop(config, runner)
+
+
+def test_opencode_review_retries_once_on_transient_provider_failure(tmp_path):
+    calls: list[list[str]] = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append(list(args))
+        if len(calls) == 1:
+            return CommandResult(
+                list(args),
+                1,
+                stderr=(
+                    "Error: {"
+                    '"name":"UnknownError",'
+                    '"data":{"message":"Unexpected server error","ref":"err_3151eb39"}'
+                    "}\n"
+                ),
+            )
+        return CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="opencode",
+        review_model="provider/model",
+    )
+
+    summary = runner_mod.run_loop(config, runner).to_dict()
+
+    assert summary["final_status"] == "clear"
+    assert len(calls) == 2
+    attempt_artifact = tmp_path / "artifacts" / "review-1-attempt-1.txt"
+    assert "err_3151eb39" in attempt_artifact.read_text(encoding="utf-8")
+
+
+def test_opencode_review_does_not_retry_provider_cli_contract_error(tmp_path):
+    calls: list[list[str]] = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append(list(args))
+        return CommandResult(
+            list(args),
+            1,
+            stderr="Error: File not found: Follow the attached RevRem prompt exactly.\n",
+        )
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="opencode",
+        review_model="provider/model",
+    )
+
+    with pytest.raises(RuntimeError, match="provider CLI contract error"):
+        runner_mod.run_loop(config, runner)
+    assert len(calls) == 1
+
+
+def test_gemini_review_runs_in_plan_mode_with_prompt_via_prompt_arg(tmp_path):
+    calls: list[tuple[list[str], str | None]] = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text))
+        return CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="gemini",
+        review_model="gemini-3.1-pro-preview",
+    )
+
+    runner_mod.run_loop(config, runner)
+
+    assert calls[0][0][:5] == [
+        "gemini",
+        "--approval-mode",
+        "plan",
+        "--model",
+        "gemini-3.1-pro-preview",
+    ]
+    prompt = calls[0][0][calls[0][0].index("--prompt") + 1]
+    assert calls[0][1] is None
+    assert "Treat the working tree as read-only" in prompt
+    assert "Base branch: main" in prompt
+
+
+def test_gemini_review_prompt_includes_revrem_diff_context(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test User"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    (repo / "sample.py").write_text("VALUE = 1\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "checkout", "-b", "feature"], cwd=repo, check=True, capture_output=True)
+    (repo / "sample.py").write_text("VALUE = 2\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "commit", "-am", "change value"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    calls: list[tuple[list[str], str | None]] = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text))
+        return CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        cwd=repo,
+        artifact_dir=repo / "artifacts",
+        review_harness="gemini",
+        review_model="gemini-3.1-pro-preview",
+    )
+
+    summary = runner_mod.run_loop(config, runner).to_dict()
+
+    prompt = calls[0][0][calls[0][0].index("--prompt") + 1]
+    assert calls[0][1] is None
+    context = (repo / "artifacts" / "review-1-context.txt").read_text(encoding="utf-8")
+    artifact_paths = summary["artifact_paths"]
+    assert "Use the supplied diff context as the authoritative patch input" in prompt
+    assert "git diff --stat main...HEAD" in prompt
+    assert "git diff main...HEAD" in prompt
+    assert "+VALUE = 2" in prompt
+    assert context in prompt
+    assert (repo / "artifacts" / "review-1-prompt.txt").is_file()
+    assert artifact_paths["reviews"] == [str(repo / "artifacts" / "review-1.txt")]
+    assert str(repo / "artifacts" / "review-1-prompt.txt") in artifact_paths["prompts"]
+    assert str(repo / "artifacts" / "review-1-context.txt") in artifact_paths["contexts"]
+
+
+def test_gemini_review_prompt_respects_configured_char_limit(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test User"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    (repo / "sample.txt").write_text("base\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "checkout", "-b", "feature"], cwd=repo, check=True, capture_output=True)
+    (repo / "sample.txt").write_text("change\n" + ("x" * 5000) + "\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "commit", "-am", "large change"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    calls: list[tuple[list[str], str | None]] = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text))
+        return CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        cwd=repo,
+        artifact_dir=repo / "artifacts",
+        review_harness="gemini",
+        review_model="gemini-3.1-pro-preview",
+        external_review_input_chars=1500,
+    )
+
+    runner_mod.run_loop(config, runner)
+
+    prompt = calls[0][0][calls[0][0].index("--prompt") + 1]
+    assert calls[0][1] is None
+    assert len(prompt) <= 1500
+    assert "omitted" in prompt
+    context = (repo / "artifacts" / "review-1-context.txt").read_text(encoding="utf-8")
+    assert "x" * 1000 in context
+    assert context not in prompt
+    phase_start = next(
+        json.loads(line)
+        for line in (repo / "artifacts" / "events.jsonl").read_text(encoding="utf-8").splitlines()
+        if json.loads(line)["kind"] == "phase_start"
+    )
+    assert phase_start["payload"]["review_context_chars"] > 1500
+    assert phase_start["payload"]["external_review_input_chars"] == 1500
+    assert phase_start["payload"]["prompt_truncated"] is True
+    assert phase_start["payload"]["prompt_delivery"] == "argv-prompt"
+    assert phase_start["payload"]["prompt_chars"] == len(prompt)
+    assert (
+        phase_start["payload"]["command"][phase_start["payload"]["command"].index("--prompt") + 1]
+        == f"<prompt chars={len(prompt)}>"
+    )
+    assert prompt not in json.dumps(phase_start["payload"]["command"])
+
+
+def test_external_review_prompt_ignores_remediation_input_cap(tmp_path):
+    calls: list[tuple[list[str], str | None]] = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text))
+        return CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="opencode",
+        review_model="provider/model",
+        max_remediation_input_chars=200,
+        external_review_input_chars=1200,
+    )
+
+    runner_mod.run_loop(config, runner)
+
+    assert calls[0][1] is None
+    prompt_path = Path(calls[0][0][calls[0][0].index("--file") + 1])
+    prompt = prompt_path.read_text(encoding="utf-8")
+    assert len(prompt) > 200
+    assert len(prompt) <= 1200
+
+
+def test_external_review_waiting_progress_warns_after_quiet_threshold(tmp_path):
+    sink = events.InMemorySink("run1")
+    config = LoopConfig(
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="gemini",
+        external_review_warning_seconds=10,
+    )
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        reporter = waiting_progress.current_reporter()
+        assert reporter is not None
+        reporter(5)
+        reporter(10)
+        return CommandResult(list(args), 0, stdout="done\n")
+
+    result = run_with_waiting_progress(
+        config,
+        runner,
+        ["gemini"],
+        tmp_path,
+        "prompt",
+        None,
+        phase="review",
+        label="1",
+        ctx=RunContext(
+            runner=runner,
+            clock=FakeClock(),
+            identity=FakeRunIdentity(),
+            event_sink=sink,
+            **phase_harness_kwargs(),
+        ),
+        prompt_artifact=tmp_path / "artifacts" / "review-1-prompt.txt",
+    )
+
+    assert result.returncode == 0
+    waiting_events = [event for event in sink.events if event.payload.get("summary") == "waiting"]
+    assert waiting_events[0].payload.get("quiet_warning") is None
+    assert waiting_events[1].payload["quiet_warning"] is True
+    assert "no provider output is available until the process exits" in str(
+        waiting_events[1].payload["message"]
+    )
 
 
 def test_harness_bin_override_controls_non_codex_executable(tmp_path, monkeypatch):
@@ -582,7 +993,10 @@ model = "sonnet"
 
     def fake_run_loop(config, **_kwargs):
         captured.append(config)
-        return application.ReviewLoopResult(summary={"final_status": "clear", "stopped_reason": "review_clear"}, outcome=OutcomeClear(reason="review_clear"))
+        return application.ReviewLoopResult(
+            summary={"final_status": "clear", "stopped_reason": "review_clear"},
+            outcome=OutcomeClear(reason="review_clear"),
+        )
 
     monkeypatch.setattr(application, "run_review_loop", fake_run_loop)
 
@@ -719,7 +1133,7 @@ def test_remediation_command_does_not_disable_web_search(tmp_path):
     assert 'web_search="disabled"' not in command
 
 
-def test_sanitize_commit_message_uses_first_plain_subject():
+def test_sanitize_commit_message_extracts_subject_without_meta_prose():
     assert (
         sanitize_commit_message(
             'Commit message: "Harden RevRem commit flow"\n\nExplanation...',
@@ -734,12 +1148,42 @@ def test_sanitize_commit_message_uses_first_plain_subject():
     assert sanitize_commit_message("", fallback="fallback") == "chore: fallback (RevRem)"
     assert (
         sanitize_commit_message(
+            "Looking at the staged changes and review findings, I need to write a concise "
+            "Conventional Commit subject.\n"
+            "\n"
+            "The main changes include:\n"
+            "- improved OpenCode integration\n"
+            "\n"
+            "Commit subject: fix(review): harden provider diagnostics\n",
+            fallback="fallback",
+        )
+        == "fix(review): harden provider diagnostics (RevRem)"
+    )
+    assert (
+        sanitize_commit_message(
+            "Looking at the staged changes and review findings, I need to write a concise "
+            "Conventional Commit subject.\n"
+            "The main changes include:\n"
+            "- improved OpenCode integration\n",
+            fallback="fallback",
+        )
+        == "chore: fallback (RevRem)"
+    )
+    assert (
+        sanitize_commit_message(
             "Use custom format",
             fallback="fallback",
             enforce_revrem_conventional=False,
         )
         == "Use custom format"
     )
+
+
+def test_default_commit_message_prompt_rejects_meta_prose():
+    assert "Output exactly one line" in DEFAULT_COMMIT_MESSAGE_PROMPT
+    assert "Do not explain your reasoning" in DEFAULT_COMMIT_MESSAGE_PROMPT
+    assert "fix(cli): stop after no-op remediation (RevRem)" in DEFAULT_COMMIT_MESSAGE_PROMPT
+    assert "Looking at the staged changes" in DEFAULT_COMMIT_MESSAGE_PROMPT
 
 
 def test_commit_message_for_staged_changes_respects_profile_prompt_override(tmp_path):
@@ -774,7 +1218,9 @@ def test_commit_message_for_staged_changes_respects_profile_prompt_override(tmp_
     )
 
 
-def test_commit_message_for_staged_changes_uses_specific_fallback_on_model_failure(tmp_path):
+def test_commit_message_for_staged_changes_uses_specific_fallback_on_model_failure(
+    tmp_path,
+):
     config = LoopConfig(
         base="main",
         max_iterations=1,
@@ -803,6 +1249,192 @@ def test_commit_message_for_staged_changes_uses_specific_fallback_on_model_failu
         expected_terms=("foo",),
     )
     assert (tmp_path / "artifacts" / "commit-2-message-fallback.json").is_file()
+
+
+def test_commit_message_for_staged_changes_parses_conventional_subject_from_model_output(
+    tmp_path,
+):
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        commit_message_model="gpt-test-commit",
+        timeout_seconds=30,
+    )
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[:4] == ["git", "diff", "--cached", "--stat"]:
+            return CommandResult(list(args), 0, stdout=" src/code_review_loop/review.py | 2 +-\n")
+        if args[:4] == ["git", "diff", "--cached", "--name-only"]:
+            return CommandResult(list(args), 0, stdout="src/code_review_loop/review.py\n")
+        if args[:2] == ["codex", "exec"]:
+            return CommandResult(
+                list(args),
+                0,
+                stdout=(
+                    "Looking at the staged changes, I need to write a concise subject.\n"
+                    "fix(review): harden provider diagnostics (RevRem)\n"
+                ),
+            )
+        raise AssertionError(f"unexpected command: {args!r}")
+
+    message = commit_message_for_staged_changes(config, runner, 8, make_run_context(runner))
+
+    assert message == "fix(review): harden provider diagnostics (RevRem)"
+
+
+def test_commit_message_for_staged_changes_falls_back_on_invalid_model_prose(
+    tmp_path,
+):
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        commit_message_model="gpt-test-commit",
+        timeout_seconds=30,
+    )
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[:4] == ["git", "diff", "--cached", "--stat"]:
+            return CommandResult(list(args), 0, stdout=" src/code_review_loop/review.py | 2 +-\n")
+        if args[:4] == ["git", "diff", "--cached", "--name-only"]:
+            return CommandResult(list(args), 0, stdout="src/code_review_loop/review.py\n")
+        if args[:2] == ["codex", "exec"]:
+            return CommandResult(
+                list(args),
+                0,
+                stdout=(
+                    "Looking at the staged changes, I need to write a concise subject.\n"
+                    "The main changes include:\n"
+                    "- provider diagnostics\n"
+                ),
+            )
+        raise AssertionError(f"unexpected command: {args!r}")
+
+    message = commit_message_for_staged_changes(config, runner, 9, make_run_context(runner))
+    fallback_path = tmp_path / "artifacts" / "commit-9-message-fallback.json"
+    fallback = json.loads(fallback_path.read_text(encoding="utf-8"))
+
+    assert_professional_fallback_subject(
+        message,
+        expected_type="chore",
+        expected_scope="review",
+        expected_terms=("review",),
+    )
+    assert fallback["reason"] == "model_drafting_invalid"
+    assert "Looking at" not in message
+    assert "The main changes include" not in message
+
+
+def test_commit_message_for_staged_changes_removes_created_side_effect_file(
+    tmp_path,
+):
+    (tmp_path / ".git").mkdir()
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        commit_message_model="gpt-test-commit",
+        timeout_seconds=30,
+    )
+    status_outputs = iter(["", "?? commit-subject.txt\x00"])
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[:4] == ["git", "diff", "--cached", "--stat"]:
+            return CommandResult(list(args), 0, stdout=" src/code_review_loop/review.py | 2 +-\n")
+        if args[:4] == ["git", "diff", "--cached", "--name-only"]:
+            return CommandResult(list(args), 0, stdout="src/code_review_loop/review.py\n")
+        if args == ["git", "rev-parse", "HEAD"]:
+            return CommandResult(list(args), 0, stdout="same-head\n")
+        if args == ["git", "diff", "--cached", "--raw"]:
+            return CommandResult(
+                list(args), 0, stdout=":100644 100644 old new M\tsrc/code_review_loop/review.py\n"
+            )
+        if args[:5] == ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"]:
+            return CommandResult(list(args), 0, stdout=next(status_outputs))
+        if args[:2] == ["codex", "exec"]:
+            (tmp_path / "commit-subject.txt").write_text(
+                "fix(review): harden provider diagnostics (RevRem)",
+                encoding="utf-8",
+            )
+            return CommandResult(
+                list(args),
+                0,
+                stdout="I wrote commit-subject.txt with the subject.\n",
+            )
+        raise AssertionError(f"unexpected command: {args!r}")
+
+    message = commit_message_for_staged_changes(config, runner, 9, make_run_context(runner))
+    side_effect_path = tmp_path / "artifacts" / "commit-9-message-side-effects.json"
+    side_effects = json.loads(side_effect_path.read_text(encoding="utf-8"))
+
+    assert not (tmp_path / "commit-subject.txt").exists()
+    assert_professional_fallback_subject(
+        message,
+        expected_type="chore",
+        expected_scope="review",
+        expected_terms=("review",),
+    )
+    assert side_effects["created_paths_removed"] == ["commit-subject.txt"]
+    assert side_effects["unsafe_status_lines"] == []
+    assert (
+        json.loads(
+            (tmp_path / "artifacts" / "commit-9-message-fallback.json").read_text(encoding="utf-8")
+        )["reason"]
+        == "model_drafting_side_effects"
+    )
+
+
+def test_commit_message_for_staged_changes_aborts_on_tracked_side_effect(
+    tmp_path,
+):
+    (tmp_path / ".git").mkdir()
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        commit_message_model="gpt-test-commit",
+        timeout_seconds=30,
+    )
+    status_outputs = iter(["", " M src/code_review_loop/review.py\x00"])
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[:4] == ["git", "diff", "--cached", "--stat"]:
+            return CommandResult(list(args), 0, stdout=" src/code_review_loop/review.py | 2 +-\n")
+        if args[:4] == ["git", "diff", "--cached", "--name-only"]:
+            return CommandResult(list(args), 0, stdout="src/code_review_loop/review.py\n")
+        if args == ["git", "rev-parse", "HEAD"]:
+            return CommandResult(list(args), 0, stdout="same-head\n")
+        if args == ["git", "diff", "--cached", "--raw"]:
+            return CommandResult(
+                list(args), 0, stdout=":100644 100644 old new M\tsrc/code_review_loop/review.py\n"
+            )
+        if args[:5] == ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"]:
+            return CommandResult(list(args), 0, stdout=next(status_outputs))
+        if args[:2] == ["codex", "exec"]:
+            return CommandResult(
+                list(args),
+                0,
+                stdout="fix(review): harden provider diagnostics (RevRem)\n",
+            )
+        raise AssertionError(f"unexpected command: {args!r}")
+
+    with pytest.raises(RuntimeError, match="commit-message drafting modified"):
+        commit_message_for_staged_changes(config, runner, 9, make_run_context(runner))
+
+    side_effects = json.loads(
+        (tmp_path / "artifacts" / "commit-9-message-side-effects.json").read_text(encoding="utf-8")
+    )
+    assert side_effects["created_paths_removed"] == []
+    assert side_effects["unsafe_status_lines"] == [" M src/code_review_loop/review.py"]
 
 
 def test_commit_message_fallback_uses_review_context_for_feature_type(tmp_path):
@@ -859,7 +1491,9 @@ def test_commit_message_fallback_uses_remediation_context_for_refactor_type(tmp_
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[:4] == ["git", "diff", "--cached", "--stat"]:
-            return CommandResult(list(args), 0, stdout=" src/code_review_loop/runner_setup.py | 2 +-\n")
+            return CommandResult(
+                list(args), 0, stdout=" src/code_review_loop/runner_setup.py | 2 +-\n"
+            )
         if args[:4] == ["git", "diff", "--cached", "--name-only"]:
             return CommandResult(list(args), 0, stdout="src/code_review_loop/runner_setup.py\n")
         raise AssertionError(f"unexpected command: {args!r}")
@@ -944,7 +1578,9 @@ def test_commit_message_effort_adjustment_emits_operator_event(tmp_path):
     )
 
     adjustment_events = [
-        event for event in sink.events if event.phase == "commit-message" and event.payload.get("summary") == "config-adjusted"
+        event
+        for event in sink.events
+        if event.phase == "commit-message" and event.payload.get("summary") == "config-adjusted"
     ]
     assert adjustment_events
     assert "minimal->low" in adjustment_events[0].payload["message"]
@@ -1149,6 +1785,7 @@ def test_normalize_revrem_conventional_subject_preserves_suffix_when_truncated()
     assert len(normalized) == 120
     assert normalized.startswith("fix(cli): ")
 
+
 def test_detect_review_status_requires_explicit_status_line():
     """Fuzzy patterns must not flip ambiguous output to clear."""
     assert detect_review_status("no findings about style, but several about logic") == "unknown"
@@ -1158,26 +1795,27 @@ def test_detect_review_status_requires_explicit_status_line():
 
 def test_review_failure_detection_allows_nonzero_findings_without_stderr():
     assert (
-        review_failed_to_run(
-            CommandResult(["codex", "review"], -9, stdout="", stderr="")
-        )
+        review_failed_to_run(CommandResult(["codex", "review"], -9, stdout="", stderr=""), "codex")
         is True
     )
     assert (
         review_failed_to_run(
-            CommandResult(["codex", "review"], 1, stdout="Finding\n", stderr="")
+            CommandResult(["codex", "review"], 1, stdout="Finding\n", stderr=""),
+            "codex",
         )
         is False
     )
     assert (
         review_failed_to_run(
-            CommandResult(["codex", "review"], 1, stdout="", stderr="Error: thread/start failed")
+            CommandResult(["codex", "review"], 1, stdout="", stderr="Error: thread/start failed"),
+            "codex",
         )
         is True
     )
     assert (
         review_failed_to_run(
-            CommandResult(["codex", "review"], 2, stdout="", stderr="error: bad args")
+            CommandResult(["codex", "review"], 2, stdout="", stderr="error: bad args"),
+            "codex",
         )
         is True
     )
@@ -1195,7 +1833,9 @@ def run_git(cwd: Path, *args: str) -> None:
 
 
 def test_actionable_review_output_drops_verbose_stderr_transcript():
-    output = "Full review comments:\n\n- [P1] Fix the bug\n\n[stderr]\n" + ("diff --git a/x b/x\n" * 100)
+    output = "Full review comments:\n\n- [P1] Fix the bug\n\n[stderr]\n" + (
+        "diff --git a/x b/x\n" * 100
+    )
 
     assert actionable_review_output(output) == "Full review comments:\n\n- [P1] Fix the bug"
 

@@ -58,8 +58,12 @@ def test_loop_finishes_clear_when_final_review_goes_green(tmp_path):
         calls.append((list(args), input_text))
         if args[1] == "review":
             if len([call for call in calls if call[0][1] == "review"]) == 1:
-                return CommandResult(list(args), 0, stdout="Still failing.\nREVIEW_STATUS: findings\n")
-            return CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+                return CommandResult(
+                    list(args), 0, stdout="Still failing.\nREVIEW_STATUS: findings\n"
+                )
+            return CommandResult(
+                list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n"
+            )
         return CommandResult(list(args), 0, stdout="attempted remediation\n")
 
     config = LoopConfig(
@@ -81,11 +85,13 @@ def test_loop_continues_after_check_failure_and_feeds_output_into_next_pass(tmp_
     """A failing --check must not abort the loop; its output is fed into the next remediation."""
     calls: list[tuple[list[str], str | None]] = []
     # review-1 → findings; review-2 → findings (triggers iter-2 exec); review-final → clear
-    review_outputs = iter([
-        "Missing coverage.\nREVIEW_STATUS: findings\n",
-        "Still some gaps.\nREVIEW_STATUS: findings\n",
-        "All good.\nREVIEW_STATUS: clear\n",
-    ])
+    review_outputs = iter(
+        [
+            "Missing coverage.\nREVIEW_STATUS: findings\n",
+            "Still some gaps.\nREVIEW_STATUS: findings\n",
+            "All good.\nREVIEW_STATUS: clear\n",
+        ]
+    )
     # check fails after iter-1, passes after iter-2
     check_outputs = iter([(1, "1 FAILED\n"), (0, "1 passed\n")])
 
@@ -119,21 +125,27 @@ def test_loop_continues_after_check_failure_and_feeds_output_into_next_pass(tmp_
     second_prompt = exec_calls[1][1]
     assert second_prompt is not None and "1 FAILED" in second_prompt
     records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
-    check_events = [event for event in records if event.kind == "check_result"]
+    check_events = [
+        event
+        for event in records
+        if event.kind == "check_result" and event.payload["command"] == "pytest tests/"
+    ]
     assert truncated is False
     assert [event.payload["status"] for event in check_events] == ["failed", "passed"]
     assert check_events[0].payload["command"] == "pytest tests/"
-    assert check_events[0].payload["artifact"] == "check-1-1.txt"
+    assert check_events[0].payload["artifact"] == "check-1-2.txt"
 
 
 def test_pending_check_failure_blocks_early_clear_status(tmp_path):
     """A clear review cannot finish the loop while a previous --check failure is pending."""
     calls: list[tuple[list[str], str | None]] = []
-    review_outputs = iter([
-        "Missing coverage.\nREVIEW_STATUS: findings\n",
-        "All good.\nREVIEW_STATUS: clear\n",
-        "All good.\nREVIEW_STATUS: clear\n",
-    ])
+    review_outputs = iter(
+        [
+            "Missing coverage.\nREVIEW_STATUS: findings\n",
+            "All good.\nREVIEW_STATUS: clear\n",
+            "All good.\nREVIEW_STATUS: clear\n",
+        ]
+    )
     check_outputs = iter([(1, "1 FAILED\n"), (1, "still failing\n")])
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
@@ -165,8 +177,56 @@ def test_pending_check_failure_blocks_early_clear_status(tmp_path):
     assert exec_calls[1][1] is not None and "1 FAILED" in exec_calls[1][1]
 
 
+def test_timeout_only_check_failure_skips_inner_remediation_retry(tmp_path):
+    calls: list[tuple[list[str], str | None]] = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text))
+        if args[0] == "codex" and args[1] == "review":
+            return CommandResult(list(args), 0, stdout="Fix it.\nREVIEW_STATUS: findings\n")
+        if args[0] == "pytest":
+            return CommandResult(
+                list(args),
+                -1,
+                stderr="Command timed out after 300 seconds\n",
+            )
+        return CommandResult(list(args), 0, stdout="remediated\n")
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        check_commands=("pytest -q",),
+        final_review=False,
+        inner_check_retries=1,
+    )
+
+    summary = runner_mod.run_loop(config, runner).to_dict()
+
+    assert summary["final_status"] == "unknown"
+    assert summary["pending_check_failures"] is True
+    assert summary["stopped_reason"] == "max_iterations_reached"
+
+    exec_calls = [c for c in calls if c[0][0] == "codex" and c[0][1] == "exec"]
+    assert len(exec_calls) == 1
+    assert not (tmp_path / "artifacts" / "remediation-1-retry-1.txt").exists()
+
+    records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
+    assert truncated is False
+    assert any(
+        event.kind == "warning"
+        and event.phase == "check"
+        and event.payload.get("message")
+        == "check failures are timeout-only; skipping remediation retry"
+        for event in records
+    )
+
+
 def test_skip_final_review_reports_unknown_status(tmp_path):
     """With --skip-final-review the loop must not report a stale pre-remediation status."""
+
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
             return CommandResult(list(args), 0, stdout="Issues found.\nREVIEW_STATUS: findings\n")
@@ -220,6 +280,7 @@ def test_final_check_failure_prevents_clear_status(tmp_path):
     assert summary["pending_check_failures"] is True
     assert summary["stopped_reason"] == "max_iterations_reached_with_check_failures"
 
+
 def test_loop_writes_failure_summary_when_remediation_fails(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
@@ -271,7 +332,9 @@ def test_loop_stops_before_model_call_when_wall_budget_exceeded(tmp_path):
     )
 
     with pytest.raises(RunLoopFailed) as excinfo:
-        runner_mod.run_loop(config, runner, budget_state=budgets.BudgetState(started_at_monotonic=0))
+        runner_mod.run_loop(
+            config, runner, budget_state=budgets.BudgetState(started_at_monotonic=0)
+        )
 
     summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
     records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
@@ -284,7 +347,9 @@ def test_loop_stops_before_model_call_when_wall_budget_exceeded(tmp_path):
     assert summary["budgets"]["tokens"] is None
     assert summary["budgets"]["usd"] is None
     assert truncated is False
-    assert any(event.kind == "cost_ceiling_hit" and event.payload["ceiling"] == "wall" for event in records)
+    assert any(
+        event.kind == "cost_ceiling_hit" and event.payload["ceiling"] == "wall" for event in records
+    )
 
 
 def test_loop_emits_budget_soft_warning_before_model_call(tmp_path):
@@ -300,7 +365,9 @@ def test_loop_emits_budget_soft_warning_before_model_call(tmp_path):
         budget_config=budgets.BudgetConfig(max_wall_seconds=100, soft_warn_fraction=0.5),
     )
 
-    runner_mod.run_loop(config, runner, budget_state=budgets.BudgetState(started_at_monotonic=time.monotonic() - 60))
+    runner_mod.run_loop(
+        config, runner, budget_state=budgets.BudgetState(started_at_monotonic=time.monotonic() - 60)
+    )
 
     records, truncated = events.read_events(tmp_path / "artifacts" / "events.jsonl")
 
@@ -337,10 +404,15 @@ def test_loop_records_token_charge_and_stops_before_next_model_call(tmp_path):
     assert excinfo.value.summary["stopped_reason"] == "budget_ceiling_hit"
     assert summary["budgets"]["tokens"] == 10
     assert summary["budgets"]["usd"] is None
-    assert (tmp_path / "artifacts" / "review-1.txt").read_text(encoding="utf-8") == "REVIEW_STATUS: findings\n"
+    assert (tmp_path / "artifacts" / "review-1.txt").read_text(
+        encoding="utf-8"
+    ) == "REVIEW_STATUS: findings\n"
     assert truncated is False
     assert any(event.kind == "cost_charge" and event.payload["tokens"] == 10 for event in records)
-    assert any(event.kind == "cost_ceiling_hit" and event.payload["ceiling"] == "tokens" for event in records)
+    assert any(
+        event.kind == "cost_ceiling_hit" and event.payload["ceiling"] == "tokens"
+        for event in records
+    )
 
 
 def test_loop_records_usd_charge_and_stops_before_next_model_call(tmp_path):
@@ -370,7 +442,9 @@ def test_loop_records_usd_charge_and_stops_before_next_model_call(tmp_path):
     assert summary["budgets"]["tokens"] is None
     assert summary["budgets"]["usd"] == "1.25"
     assert any(event.kind == "cost_charge" and event.payload["usd"] == "1.25" for event in records)
-    assert any(event.kind == "cost_ceiling_hit" and event.payload["ceiling"] == "usd" for event in records)
+    assert any(
+        event.kind == "cost_ceiling_hit" and event.payload["ceiling"] == "usd" for event in records
+    )
 
 
 def test_main_returns_exit_code_3_for_budget_ceiling(tmp_path, monkeypatch, capsys):
@@ -423,11 +497,15 @@ def test_loop_writes_cancellation_summary_when_interrupted(tmp_path):
     assert summary["stopped_reason"] == "cancelled"
     assert summary["error"] == "cancelled by operator"
     assert summary["artifact_paths"]["summary"] == str(tmp_path / "artifacts" / "summary.json")
-    assert summary["artifact_paths"]["diagnostics"] == [str(tmp_path / "artifacts" / "diagnostics.json")]
+    assert summary["artifact_paths"]["diagnostics"] == [
+        str(tmp_path / "artifacts" / "diagnostics.json")
+    ]
     assert diagnostics_payload["issues"][0]["code"] == "revrem.run.cancelled"
     assert truncated is False
     assert any(
         event.kind == "cancellation" and event.payload.get("reason") == "operator_interrupt"
         for event in records
     )
-    assert any(event.kind == "summary" and event.payload.get("summary") == "cancelled" for event in records)
+    assert any(
+        event.kind == "summary" and event.payload.get("summary") == "cancelled" for event in records
+    )

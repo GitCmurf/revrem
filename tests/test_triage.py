@@ -28,7 +28,11 @@ def test_parse_triage_payload_validates_fixture_against_schema():
 
     validate(
         payload,
-        json.loads(files("code_review_loop").joinpath(triage.TRIAGE_V1_SCHEMA_RESOURCE).read_text(encoding="utf-8")),
+        json.loads(
+            files("code_review_loop")
+            .joinpath(triage.TRIAGE_V1_SCHEMA_RESOURCE)
+            .read_text(encoding="utf-8")
+        ),
     )
     assert payload["schema_version"] == "1.0"
     assert payload["prompt_version"] == "triage-v1"
@@ -89,7 +93,9 @@ def test_labelled_triage_fixture_precision_meets_plan_target():
 
 def test_packaged_triage_schema_matches_reference_copy():
     packaged_schema = json.loads(
-        files("code_review_loop").joinpath("schemas/triage-v1.schema.json").read_text(encoding="utf-8")
+        files("code_review_loop")
+        .joinpath("schemas/triage-v1.schema.json")
+        .read_text(encoding="utf-8")
     )
     reference_schema = json.loads(
         (ROOT / "docs" / "52-api" / "schemas" / "triage-v1.schema.json").read_text(encoding="utf-8")

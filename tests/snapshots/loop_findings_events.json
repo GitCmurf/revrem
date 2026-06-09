@@ -3,7 +3,16 @@
     "iteration": "1",
     "kind": "phase_start",
     "payload": {
-      "message": "codex review --base main [harness=codex sandbox=read-only source=direct-config]",
+      "command": [
+        "codex",
+        "review",
+        "--base",
+        "main"
+      ],
+      "harness": "codex",
+      "message": "codex review · sandbox read-only · source=direct-config",
+      "payload_schema_version": "1.1",
+      "prompt_delivery": "none",
       "summary": "start"
     },
     "phase": "review",
@@ -28,7 +37,24 @@
     "iteration": "1",
     "kind": "phase_start",
     "payload": {
-      "message": "codex exec --full-auto --sandbox workspace-write --color never --output-last-message <RUN_DIR>/artifacts/remediation-1-last-message.txt - [harness=codex sandbox=workspace-write source=direct-config]",
+      "command": [
+        "codex",
+        "exec",
+        "--full-auto",
+        "--sandbox",
+        "workspace-write",
+        "--color",
+        "never",
+        "--output-last-message",
+        "<RUN_DIR>/artifacts/remediation-1-last-message.txt",
+        "-"
+      ],
+      "harness": "codex",
+      "message": "codex exec · sandbox workspace-write · prompt=1.0k stdin · source=direct-config",
+      "payload_schema_version": "1.1",
+      "prompt_bytes": 1035,
+      "prompt_chars": 1035,
+      "prompt_delivery": "stdin",
       "summary": "start"
     },
     "phase": "remediate",
@@ -50,6 +76,47 @@
     "ts": "2026-01-02T03:04:05Z"
   },
   {
+    "iteration": "1.1",
+    "kind": "phase_start",
+    "payload": {
+      "message": "git status -z --porcelain=v1 --untracked-files=all",
+      "payload_schema_version": "1.1",
+      "summary": "start"
+    },
+    "phase": "check",
+    "run_id": "deadbeefcafe0000deadbeefcafe0000",
+    "schema_version": "1.0",
+    "seq": 5,
+    "ts": "2026-01-02T03:04:05Z"
+  },
+  {
+    "iteration": "1.1",
+    "kind": "check_result",
+    "payload": {
+      "artifact": "check-1-1.txt",
+      "command": "git status -z --porcelain=v1 --untracked-files=all",
+      "returncode": 0,
+      "status": "passed"
+    },
+    "phase": "check",
+    "run_id": "deadbeefcafe0000deadbeefcafe0000",
+    "schema_version": "1.0",
+    "seq": 6,
+    "ts": "2026-01-02T03:04:05Z"
+  },
+  {
+    "iteration": "1.1",
+    "kind": "phase_result",
+    "payload": {
+      "summary": "passed"
+    },
+    "phase": "check",
+    "run_id": "deadbeefcafe0000deadbeefcafe0000",
+    "schema_version": "1.0",
+    "seq": 7,
+    "ts": "2026-01-02T03:04:05Z"
+  },
+  {
     "iteration": null,
     "kind": "artifact_write",
     "payload": {
@@ -59,7 +126,7 @@
     "phase": "artifacts",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
     "schema_version": "1.0",
-    "seq": 5,
+    "seq": 8,
     "ts": "2026-01-02T03:04:05Z"
   },
   {
@@ -73,7 +140,7 @@
     "phase": "artifacts",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
     "schema_version": "1.0",
-    "seq": 6,
+    "seq": 9,
     "ts": "2026-01-02T03:04:05Z"
   },
   {
@@ -87,7 +154,35 @@
     "phase": "artifacts",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
     "schema_version": "1.0",
-    "seq": 7,
+    "seq": 10,
+    "ts": "2026-01-02T03:04:05Z"
+  },
+  {
+    "iteration": null,
+    "kind": "artifact_write",
+    "payload": {
+      "bytes": 1035,
+      "kind": "prompts",
+      "path": "<RUN_DIR>/artifacts/remediation-1-prompt.txt"
+    },
+    "phase": "artifacts",
+    "run_id": "deadbeefcafe0000deadbeefcafe0000",
+    "schema_version": "1.0",
+    "seq": 11,
+    "ts": "2026-01-02T03:04:05Z"
+  },
+  {
+    "iteration": null,
+    "kind": "artifact_write",
+    "payload": {
+      "bytes": 57,
+      "kind": "checks",
+      "path": "<RUN_DIR>/artifacts/check-1-1.txt"
+    },
+    "phase": "artifacts",
+    "run_id": "deadbeefcafe0000deadbeefcafe0000",
+    "schema_version": "1.0",
+    "seq": 12,
     "ts": "2026-01-02T03:04:05Z"
   },
   {
@@ -99,7 +194,7 @@
     "phase": null,
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
     "schema_version": "1.0",
-    "seq": 8,
+    "seq": 13,
     "ts": "2026-01-02T03:04:05Z"
   }
 ]

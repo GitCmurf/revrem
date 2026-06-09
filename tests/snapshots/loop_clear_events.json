@@ -3,7 +3,16 @@
     "iteration": "1",
     "kind": "phase_start",
     "payload": {
-      "message": "codex review --base main [harness=codex sandbox=read-only source=direct-config]",
+      "command": [
+        "codex",
+        "review",
+        "--base",
+        "main"
+      ],
+      "harness": "codex",
+      "message": "codex review · sandbox read-only · source=direct-config",
+      "payload_schema_version": "1.1",
+      "prompt_delivery": "none",
       "summary": "start"
     },
     "phase": "review",

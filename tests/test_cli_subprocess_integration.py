@@ -10,12 +10,13 @@ from importlib import import_module
 import pytest
 
 import tests.support.application_runner as runner_mod
-from code_review_loop import application
+from code_review_loop import application, waiting_progress
 from code_review_loop.adapters import subprocess_runner as subprocess_runner_mod
 from code_review_loop.adapters import terminal as terminal_mod
 from code_review_loop.cli import config_builder
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.ports import CommandResult
+from code_review_loop.runner_finish import _latest_prompt_evidence
 
 cli_main = import_module("code_review_loop.cli.main")
 
@@ -230,6 +231,45 @@ def test_kill_process_tree_targets_child_process_group(monkeypatch):
     assert calls == [("killpg", 12345, signal.SIGKILL)]
 
 
+def test_latest_prompt_evidence_reports_cancelled_review_prompt(tmp_path):
+    artifact_dir = tmp_path / "artifacts"
+    artifact_dir.mkdir()
+    (artifact_dir / "review-1-context.txt").write_text("context", encoding="utf-8")
+    (artifact_dir / "review-1-prompt.txt").write_text("prompt text", encoding="utf-8")
+
+    evidence = _latest_prompt_evidence(artifact_dir)
+
+    assert evidence["latest_prompt_artifact"] == "review-1-prompt.txt"
+    assert evidence["latest_prompt_phase"] == "review"
+    assert evidence["latest_prompt_iteration"] == "1"
+    assert evidence["latest_prompt_bytes"] == len("prompt text")
+    assert evidence["latest_context_artifact"] == "review-1-context.txt"
+
+
+def test_latest_prompt_evidence_handles_three_segment_commit_prompt(tmp_path):
+    artifact_dir = tmp_path / "artifacts"
+    artifact_dir.mkdir()
+    (artifact_dir / "commit-1-message-prompt.txt").write_text("commit prompt", encoding="utf-8")
+
+    evidence = _latest_prompt_evidence(artifact_dir)
+
+    assert evidence["latest_prompt_artifact"] == "commit-1-message-prompt.txt"
+    assert evidence["latest_prompt_phase"] == "commit"
+    assert evidence["latest_prompt_iteration"] == "1"
+
+
+def test_latest_prompt_evidence_drops_phase_for_unknown_artifact_name(tmp_path):
+    artifact_dir = tmp_path / "artifacts"
+    artifact_dir.mkdir()
+    (artifact_dir / "diagnostic-1-prompt.txt").write_text("noise", encoding="utf-8")
+
+    evidence = _latest_prompt_evidence(artifact_dir)
+
+    assert evidence["latest_prompt_artifact"] == "diagnostic-1-prompt.txt"
+    assert "latest_prompt_phase" not in evidence
+    assert "latest_prompt_iteration" not in evidence
+
+
 def test_subprocess_refresh_loop_does_not_resend_input_after_timeout(tmp_path, monkeypatch):
     refresh_calls = []
 
@@ -313,6 +353,7 @@ def test_main_handles_keyboard_interrupt_without_traceback(tmp_path, monkeypatch
 
     assert exit_code == 5
     assert capsys.readouterr().err == "Cancelled by user.\n"
+
 
 class TtyBuffer(io.StringIO):
     def isatty(self):
@@ -446,6 +487,58 @@ def test_subprocess_refresh_loop_stops_resending_stdin_after_timeout(tmp_path, m
     assert len(refresh_calls) == 2
 
 
+def test_subprocess_runner_emits_waiting_progress_while_child_is_running(tmp_path, monkeypatch):
+    reports: list[float] = []
+    monotonic_values = iter([0.0, 1.0, 6.0])
+
+    class FakeProcess:
+        returncode = 0
+
+        def __init__(self):
+            self.communicate_calls = 0
+
+        def communicate(self, input=None, timeout=None):
+            self.communicate_calls += 1
+            if self.communicate_calls == 1:
+                raise subprocess_runner_mod.subprocess.TimeoutExpired(["opencode", "run"], timeout)
+            return ("stdout", "stderr")
+
+        def poll(self):
+            return None
+
+        def kill(self):
+            raise AssertionError("process should not be killed")
+
+    fake_process = FakeProcess()
+
+    monkeypatch.setattr(
+        subprocess_runner_mod.subprocess,
+        "Popen",
+        lambda *args, **kwargs: fake_process,
+    )
+    monkeypatch.setattr(
+        subprocess_runner_mod.time,
+        "monotonic",
+        lambda: next(monotonic_values),
+    )
+    monkeypatch.setattr(
+        waiting_progress,
+        "WAITING_PROGRESS_INTERVAL_SECONDS",
+        5.0,
+    )
+
+    with waiting_progress.subprocess_waiting_reporter(reports.append):
+        result = subprocess_runner_mod.run_subprocess_with_terminal_title_refresh(
+            ["opencode", "run"],
+            cwd=tmp_path,
+            input=None,
+            timeout=None,
+        )
+
+    assert result.stdout == "stdout"
+    assert reports == [6.0]
+
+
 def test_default_runner_timeout_records_command_cwd_and_partial_output(tmp_path, monkeypatch):
     def fake_run_subprocess(*args, **kwargs):
         raise subprocess_runner_mod.subprocess.TimeoutExpired(
@@ -455,7 +548,9 @@ def test_default_runner_timeout_records_command_cwd_and_partial_output(tmp_path,
             stderr="partial stderr\n",
         )
 
-    monkeypatch.setattr(subprocess_runner_mod, "run_subprocess_with_terminal_title_refresh", fake_run_subprocess)
+    monkeypatch.setattr(
+        subprocess_runner_mod, "run_subprocess_with_terminal_title_refresh", fake_run_subprocess
+    )
 
     result = subprocess_runner_mod.default_runner(["codex", "exec"], tmp_path, "prompt", 12)
 

@@ -21,8 +21,7 @@ def base_profile():
                         id="security-rule",
                         when=profiles.TriageRoutingRuleWhen(domain_tags_any=("security",)),
                         then=profiles.TriageRoutingRuleThen(
-                            route="frontier-thinking",
-                            allow_model_deescalation=False
+                            route="frontier-thinking", allow_model_deescalation=False
                         ),
                     ),
                 ),
@@ -31,8 +30,8 @@ def base_profile():
                 "midtier-coder": profiles.TriageRouteConfig(harness="codex", model="m1"),
                 "frontier-thinking": profiles.TriageRouteConfig(harness="codex", model="m2"),
                 "efficient-coder": profiles.TriageRouteConfig(harness="codex", model="m3"),
-            }
-        )
+            },
+        ),
     )
 
 
@@ -111,9 +110,7 @@ def test_resolve_routing_model_escalation():
     )
 
     # Model proposes frontier-thinking (higher than midtier-coder)
-    resolved = policy.resolve_routing(
-        profile, context, model_proposal_tier="frontier-thinking"
-    )
+    resolved = policy.resolve_routing(profile, context, model_proposal_tier="frontier-thinking")
     assert resolved.route_tier == "frontier-thinking"
 
 
@@ -129,9 +126,7 @@ def test_resolve_routing_model_deescalation_forbidden(base_profile):
 
     # Rule matched frontier-thinking and has allow_model_deescalation=False
     # Model proposes efficient-coder (lower)
-    resolved = policy.resolve_routing(
-        base_profile, context, model_proposal_tier="efficient-coder"
-    )
+    resolved = policy.resolve_routing(base_profile, context, model_proposal_tier="efficient-coder")
     assert resolved.route_tier == "frontier-thinking"
 
 
@@ -147,8 +142,8 @@ def test_resolve_routing_model_deescalation_allowed(base_profile):
             routes={
                 "midtier-coder": profiles.TriageRouteConfig(harness="codex", model="m1"),
                 "efficient-coder": profiles.TriageRouteConfig(harness="codex", model="m3"),
-            }
-        )
+            },
+        ),
     )
     context = policy.RoutingContext(
         domain_tags=("docs",),
@@ -160,9 +155,7 @@ def test_resolve_routing_model_deescalation_allowed(base_profile):
     )
 
     # Default route allows de-escalation by default (allow_model_deescalation=True)
-    resolved = policy.resolve_routing(
-        profile, context, model_proposal_tier="efficient-coder"
-    )
+    resolved = policy.resolve_routing(profile, context, model_proposal_tier="efficient-coder")
     assert resolved.route_tier == "efficient-coder"
 
 

@@ -69,7 +69,9 @@ def test_production_modules_do_not_hide_dead_imports_with_self_aliases() -> None
                 continue
             for alias in node.names:
                 if alias.asname == alias.name:
-                    offenders.append(f"{path.relative_to(ROOT)}:{node.lineno}: {alias.name} as {alias.asname}")
+                    offenders.append(
+                        f"{path.relative_to(ROOT)}:{node.lineno}: {alias.name} as {alias.asname}"
+                    )
 
     assert offenders == []
 
@@ -85,11 +87,14 @@ def test_phase_adapters_do_not_alias_support_as_cli() -> None:
 
 
 def test_wave_d_evidence_does_not_claim_deleted_test_cli_exists() -> None:
-    task_doc = (ROOT / "docs" / "05-planning" / "tasks" / "task-003-reengineer-cli-py.md").read_text(
-        encoding="utf-8"
-    )
+    task_doc = (
+        ROOT / "docs" / "05-planning" / "tasks" / "task-003-reengineer-cli-py.md"
+    ).read_text(encoding="utf-8")
     adr = (
-        ROOT / "docs" / "45-adr" / "adr-012-review-loop-application-boundary-and-engine-ownership.md"
+        ROOT
+        / "docs"
+        / "45-adr"
+        / "adr-012-review-loop-application-boundary-and-engine-ownership.md"
     ).read_text(encoding="utf-8")
 
     assert not (ROOT / "tests" / "test_cli.py").exists()

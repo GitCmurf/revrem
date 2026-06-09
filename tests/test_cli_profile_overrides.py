@@ -19,7 +19,9 @@ suppress_command = import_module("code_review_loop.cli.commands.suppress")
 
 
 def _clear_result(summary: dict[str, object]) -> application_mod.ReviewLoopResult:
-    return application_mod.ReviewLoopResult(summary=summary, outcome=OutcomeClear(reason="review_clear"))
+    return application_mod.ReviewLoopResult(
+        summary=summary, outcome=OutcomeClear(reason="review_clear")
+    )
 
 
 def test_main_cli_boolean_negations_override_profile_enabled_values(tmp_path, monkeypatch):
@@ -45,12 +47,14 @@ terminal_title = true
 
     def fake_run_loop(config):
         captured_configs.append(config)
-        return _clear_result({
-            "artifact_dir": str(config.artifact_dir),
-            "final_status": "clear",
-            "stopped_reason": "review_clear",
-            "iterations": [],
-        })
+        return _clear_result(
+            {
+                "artifact_dir": str(config.artifact_dir),
+                "final_status": "clear",
+                "stopped_reason": "review_clear",
+                "iterations": [],
+            }
+        )
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
@@ -99,6 +103,52 @@ def test_main_uses_profile_commit_message_harness(tmp_path, monkeypatch):
     assert config.commit_timeout_seconds == 0
 
 
+def test_phase_config_payload_marks_unsupported_provider_reasoning_effort():
+    config = LoopConfig(
+        review_harness="opencode",
+        review_reasoning_effort="low",
+        triage_harness="opencode",
+        triage_reasoning_effort="low",
+        remediation_harness="opencode",
+        remediation_reasoning_effort="medium",
+        commit_message_harness="opencode",
+        commit_reasoning_effort="low",
+    )
+
+    phase_config = reporting.phase_config_payload(config)
+
+    assert phase_config["review"]["reasoning_effort"] == "low"
+    assert phase_config["review"]["reasoning_effort_supported"] is False
+    assert phase_config["review"]["provider_reasoning_effort"] is None
+    assert phase_config["remediation"]["reasoning_effort"] == "medium"
+    assert phase_config["remediation"]["reasoning_effort_supported"] is False
+    assert phase_config["remediation"]["provider_reasoning_effort"] is None
+    assert phase_config["commit_message"]["reasoning_effort_supported"] is False
+    assert phase_config["commit_message"]["provider_reasoning_effort"] is None
+
+
+def test_phase_config_payload_records_codex_provider_reasoning_effort():
+    config = LoopConfig(
+        review_harness="codex",
+        review_reasoning_effort="high",
+        triage_harness="codex",
+        triage_reasoning_effort="low",
+        remediation_harness="codex",
+        remediation_reasoning_effort="medium",
+        commit_message_harness="codex",
+        commit_reasoning_effort="minimal",
+    )
+
+    phase_config = reporting.phase_config_payload(config)
+
+    assert phase_config["review"]["reasoning_effort_supported"] is True
+    assert phase_config["review"]["provider_reasoning_effort"] == "high"
+    assert phase_config["triage"]["reasoning_effort_supported"] is True
+    assert phase_config["triage"]["provider_reasoning_effort"] == "low"
+    assert phase_config["commit_message"]["reasoning_effort_supported"] is True
+    assert phase_config["commit_message"]["provider_reasoning_effort"] == "minimal"
+
+
 def test_cli_commit_message_harness_overrides_profile_commit_harness(tmp_path, monkeypatch):
     monkeypatch.setattr(
         config_builder,
@@ -112,19 +162,214 @@ def test_cli_commit_message_harness_overrides_profile_commit_harness(tmp_path, m
             ),
         ),
     )
-    args = cli_args.parse_args([
-        "--profile",
-        "final-pr",
-        "--commit-message-harness",
-        "claude",
-        "--dry-run",
-    ])
+    args = cli_args.parse_args(
+        [
+            "--profile",
+            "final-pr",
+            "--commit-message-harness",
+            "claude",
+            "--dry-run",
+        ]
+    )
 
     config, _summary_format = config_builder.build_loop_config(args, tmp_path)
 
     assert config.commit_message_harness == "claude"
     assert config.phase_config_sources["commit_message"] == "mixed"
     assert config.phase_config_field_sources["commit_message"]["harness"] == "cli"
+
+
+def test_cli_commit_harness_alias_overrides_profile_commit_harness(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        config_builder,
+        "profile_or_default",
+        lambda name, cwd: profiles.Profile(
+            name="final-pr",
+            commit=profiles.CommitConfig(enabled=True, harness="codex"),
+        ),
+    )
+    args = cli_args.parse_args(
+        [
+            "--profile",
+            "final-pr",
+            "--commit-harness",
+            "gemini",
+            "--dry-run",
+        ]
+    )
+
+    config, _summary_format = config_builder.build_loop_config(args, tmp_path)
+
+    assert config.commit_message_harness == "gemini"
+    assert config.phase_config_field_sources["commit_message"]["harness"] == "cli"
+
+
+def test_cli_remediation_harness_dest_binds_to_remediation_harness_attr() -> None:
+    """Pin the bound attribute name for --remediation-harness / --remediate-harness.
+
+    Regression guard: argparse auto-derives the dest from the first option string,
+    so adding `dest="remediation_harness"` is a future-proofing contract, not a
+    behavioral change today. The alias path (--remediate-harness) must also bind
+    to `args.remediation_harness` rather than `args.remediate_harness`.
+    """
+    args_primary = cli_args.parse_args(["--remediation-harness", "opencode"])
+    assert hasattr(args_primary, "remediation_harness")
+    assert args_primary.remediation_harness == "opencode"
+    assert not hasattr(args_primary, "remediate_harness")
+
+    args_alias = cli_args.parse_args(["--remediate-harness", "opencode"])
+    assert hasattr(args_alias, "remediation_harness")
+    assert args_alias.remediation_harness == "opencode"
+    assert not hasattr(args_alias, "remediate_harness")
+
+    args_default = cli_args.parse_args([])
+    assert args_default.remediation_harness is None
+
+
+def test_cli_review_and_remediation_harnesses_override_profile(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        config_builder,
+        "profile_or_default",
+        lambda name, cwd: profiles.Profile(
+            name="final-pr",
+            review=profiles.PhaseConfig(harness="codex", model="review-profile"),
+            remediation=profiles.PhaseConfig(
+                harness="codex",
+                model="remediation-profile",
+            ),
+        ),
+    )
+    args = cli_args.parse_args(
+        [
+            "--profile",
+            "final-pr",
+            "--review-harness",
+            "gemini",
+            "--remediation-harness",
+            "opencode",
+            "--dry-run",
+        ]
+    )
+
+    config, _summary_format = config_builder.build_loop_config(args, tmp_path)
+
+    assert config.review_harness == "gemini"
+    assert config.remediation_harness == "opencode"
+    assert config.phase_config_field_sources["review"]["harness"] == "cli"
+    assert config.phase_config_field_sources["remediation"]["harness"] == "cli"
+    saved = config_builder.profile_from_loop_config(
+        "saved",
+        config,
+        summary_format="json",
+    )
+    assert saved.review.harness == "gemini"
+    assert saved.remediation.harness == "opencode"
+
+
+def test_gemini_pro_review_uses_large_context_default_when_cap_omitted(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.gemini-review.review]
+harness = "gemini"
+model = "gemini-3.1-pro-preview"
+""",
+        encoding="utf-8",
+    )
+
+    args = cli_args.parse_args(["--profile", "gemini-review", "--dry-run"])
+    config, _summary_format = config_builder.build_loop_config(args, tmp_path)
+
+    from code_review_loop.config import (
+        DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS,
+        DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS,
+    )
+    from code_review_loop.harnesses import GEMINI_ARGV_PROMPT_MAX_BYTES
+
+    assert config.external_review_input_chars == DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS
+    assert (
+        config.phase_config_field_sources["runtime"]["external_review_input_chars"]
+        == "model-default"
+    )
+    assert DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS > DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS
+    assert DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS < GEMINI_ARGV_PROMPT_MAX_BYTES
+
+
+def test_explicit_external_review_cap_overrides_gemini_model_default(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.gemini-review.review]
+harness = "gemini"
+model = "gemini-3.1-pro-preview"
+
+[profiles.gemini-review.runtime]
+external_review_input_chars = 80000
+""",
+        encoding="utf-8",
+    )
+
+    args = cli_args.parse_args(
+        [
+            "--profile",
+            "gemini-review",
+            "--external-review-input-chars",
+            "1234",
+            "--dry-run",
+        ]
+    )
+    config, _summary_format = config_builder.build_loop_config(args, tmp_path)
+
+    assert config.external_review_input_chars == 1234
+    assert config.phase_config_field_sources["runtime"]["external_review_input_chars"] == "cli"
+
+    args = cli_args.parse_args(["--profile", "gemini-review", "--dry-run"])
+    config, _summary_format = config_builder.build_loop_config(args, tmp_path)
+
+    assert config.external_review_input_chars == 80_000
+    assert (
+        config.phase_config_field_sources["runtime"]["external_review_input_chars"]
+        == "profile:gemini-review"
+    )
+
+
+def test_provider_retry_cli_overrides_profile_runtime(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.retry.runtime]
+provider_retry_attempts = 3
+provider_retry_backoff_seconds = 5.0
+""",
+        encoding="utf-8",
+    )
+
+    args = cli_args.parse_args(
+        [
+            "--profile",
+            "retry",
+            "--provider-retry-attempts",
+            "4",
+            "--provider-retry-backoff-seconds",
+            "2.5",
+            "--dry-run",
+        ]
+    )
+    config, _summary_format = config_builder.build_loop_config(args, tmp_path)
+
+    assert config.provider_retry_attempts == 4
+    assert config.provider_retry_backoff_seconds == 2.5
+    assert config.phase_config_field_sources["runtime"]["provider_retry_attempts"] == "cli"
+    assert config.phase_config_field_sources["runtime"]["provider_retry_backoff_seconds"] == "cli"
 
 
 def test_cli_commit_reasoning_effort_overrides_profile_commit_effort(tmp_path, monkeypatch):
@@ -140,13 +385,15 @@ def test_cli_commit_reasoning_effort_overrides_profile_commit_effort(tmp_path, m
             ),
         ),
     )
-    args = cli_args.parse_args([
-        "--profile",
-        "final-pr",
-        "--dry-run",
-        "--commit-reasoning-effort",
-        "high",
-    ])
+    args = cli_args.parse_args(
+        [
+            "--profile",
+            "final-pr",
+            "--dry-run",
+            "--commit-reasoning-effort",
+            "high",
+        ]
+    )
 
     config, _summary_format = config_builder.build_loop_config(args, tmp_path)
 
@@ -168,13 +415,15 @@ def test_codex_commit_reasoning_effort_promotes_minimal_to_low(tmp_path, monkeyp
             ),
         ),
     )
-    args = cli_args.parse_args([
-        "--profile",
-        "final-pr",
-        "--dry-run",
-        "--commit-reasoning-effort",
-        "minimal",
-    ])
+    args = cli_args.parse_args(
+        [
+            "--profile",
+            "final-pr",
+            "--dry-run",
+            "--commit-reasoning-effort",
+            "minimal",
+        ]
+    )
 
     config, _summary_format = config_builder.build_loop_config(args, tmp_path)
 
@@ -204,22 +453,21 @@ def test_codex_commit_reasoning_effort_keeps_minimal_for_unknown_model(tmp_path,
             ),
         ),
     )
-    args = cli_args.parse_args([
-        "--profile",
-        "future",
-        "--dry-run",
-        "--commit-reasoning-effort",
-        "minimal",
-    ])
+    args = cli_args.parse_args(
+        [
+            "--profile",
+            "future",
+            "--dry-run",
+            "--commit-reasoning-effort",
+            "minimal",
+        ]
+    )
 
     config, _summary_format = config_builder.build_loop_config(args, tmp_path)
 
     assert config.commit_reasoning_effort == "minimal"
     assert config.commit_reasoning_effort_requested == "minimal"
     assert config.commit_reasoning_effort_adjustment is None
-
-
-
 
 
 def test_run_loop_skips_commit_cleanliness_check_during_dry_run(tmp_path):
@@ -270,12 +518,14 @@ output_last_message = false
 
     def fake_run_loop(config):
         captured_configs.append(config)
-        return _clear_result({
-            "artifact_dir": str(config.artifact_dir),
-            "final_status": "clear",
-            "stopped_reason": "review_clear",
-            "iterations": [],
-        })
+        return _clear_result(
+            {
+                "artifact_dir": str(config.artifact_dir),
+                "final_status": "clear",
+                "stopped_reason": "review_clear",
+                "iterations": [],
+            }
+        )
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
@@ -315,12 +565,14 @@ enabled = true
 
     def fake_run_loop(config):
         captured_configs.append(config)
-        return _clear_result({
-            "artifact_dir": str(config.artifact_dir),
-            "final_status": "clear",
-            "stopped_reason": "review_clear",
-            "iterations": [],
-        })
+        return _clear_result(
+            {
+                "artifact_dir": str(config.artifact_dir),
+                "final_status": "clear",
+                "stopped_reason": "review_clear",
+                "iterations": [],
+            }
+        )
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
@@ -357,12 +609,14 @@ message_model = "gpt-5.3-codex-spark"
 
     def fake_run_loop(config):
         captured_configs.append(config)
-        return _clear_result({
-            "artifact_dir": str(config.artifact_dir),
-            "final_status": "clear",
-            "stopped_reason": "review_clear",
-            "iterations": [],
-        })
+        return _clear_result(
+            {
+                "artifact_dir": str(config.artifact_dir),
+                "final_status": "clear",
+                "stopped_reason": "review_clear",
+                "iterations": [],
+            }
+        )
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
@@ -408,16 +662,26 @@ message_prompt = "Write a custom subject."
 
     def fake_run_loop(config):
         captured_configs.append(config)
-        return _clear_result({
-            "artifact_dir": str(config.artifact_dir),
-            "final_status": "clear",
-            "stopped_reason": "review_clear",
-            "iterations": [],
-        })
+        return _clear_result(
+            {
+                "artifact_dir": str(config.artifact_dir),
+                "final_status": "clear",
+                "stopped_reason": "review_clear",
+                "iterations": [],
+            }
+        )
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
-    exit_code = cli_main.main(["--profile", "final-pr", "--commit-message-model", "gpt-test-commit", "--dry-run"])
+    exit_code = cli_main.main(
+        [
+            "--profile",
+            "final-pr",
+            "--commit-message-model",
+            "gpt-test-commit",
+            "--dry-run",
+        ]
+    )
 
     assert exit_code == 0
     assert captured_configs[0].commit_message_prompt == "Write a custom subject."
@@ -456,18 +720,18 @@ timeout_seconds = 30
 
     def fake_run_loop(config):
         captured_configs.append(config)
-        return _clear_result({
-            "artifact_dir": str(config.artifact_dir),
-            "final_status": "clear",
-            "stopped_reason": "review_clear",
-            "iterations": [],
-        })
+        return _clear_result(
+            {
+                "artifact_dir": str(config.artifact_dir),
+                "final_status": "clear",
+                "stopped_reason": "review_clear",
+                "iterations": [],
+            }
+        )
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
-    exit_code = cli_main.main(
-        ["--profile", "final-pr", "--reasoning-effort", "high", "--dry-run"]
-    )
+    exit_code = cli_main.main(["--profile", "final-pr", "--reasoning-effort", "high", "--dry-run"])
 
     assert exit_code == 0
     config = captured_configs[0]
@@ -501,12 +765,14 @@ reasoning_effort = "low"
 
     def fake_run_loop(config):
         captured_configs.append(config)
-        return _clear_result({
-            "artifact_dir": str(config.artifact_dir),
-            "final_status": "clear",
-            "stopped_reason": "review_clear",
-            "iterations": [],
-        })
+        return _clear_result(
+            {
+                "artifact_dir": str(config.artifact_dir),
+                "final_status": "clear",
+                "stopped_reason": "review_clear",
+                "iterations": [],
+            }
+        )
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
@@ -553,7 +819,11 @@ model = "profile-triage"
 
 [profiles.final-pr.triage.routing]
 enabled = false
+default_route = "midtier-coder"
 strict_on_unavailable_route = true
+
+[profiles.final-pr.triage.routes.midtier-coder]
+harness = "codex"
 """,
         encoding="utf-8",
     )
@@ -561,12 +831,14 @@ strict_on_unavailable_route = true
 
     def fake_run_loop(config):
         captured_configs.append(config)
-        return _clear_result({
-            "artifact_dir": str(config.artifact_dir),
-            "final_status": "clear",
-            "stopped_reason": "review_clear",
-            "iterations": [],
-        })
+        return _clear_result(
+            {
+                "artifact_dir": str(config.artifact_dir),
+                "final_status": "clear",
+                "stopped_reason": "review_clear",
+                "iterations": [],
+            }
+        )
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
@@ -607,6 +879,7 @@ strict_on_unavailable_route = true
         "contract": "cli",
         "routing_enabled": "cli",
         "routing_strict": "cli",
+        "routing_default_route": "profile:final-pr",
         "allow_model_escalation": "profile:final-pr",
     }
     assert config.profile_v2 is not None
@@ -621,7 +894,11 @@ strict_on_unavailable_route = true
             "artifact_paths": {"reviews": ["tmp/run/review-final.txt"]},
             "base": "main",
             "max_iterations": 1,
-            "resume_config": {"base": "main", "max_iterations": 1, "routing_strict": False},
+            "resume_config": {
+                "base": "main",
+                "max_iterations": 1,
+                "routing_strict": False,
+            },
             "phase_config": reporting.phase_config_payload(config),
         }
     )
@@ -654,12 +931,14 @@ harness = "codex"
 
     def fake_run_loop(config):
         captured_configs.append(config)
-        return _clear_result({
-            "artifact_dir": str(config.artifact_dir),
-            "final_status": "clear",
-            "stopped_reason": "review_clear",
-            "iterations": [],
-        })
+        return _clear_result(
+            {
+                "artifact_dir": str(config.artifact_dir),
+                "final_status": "clear",
+                "stopped_reason": "review_clear",
+                "iterations": [],
+            }
+        )
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
@@ -699,27 +978,128 @@ harness = "codex"
 
     def fake_run_loop(config):
         captured_configs.append(config)
-        return _clear_result({
-            "artifact_dir": str(config.artifact_dir),
-            "final_status": "clear",
-            "stopped_reason": "review_clear",
-            "iterations": [],
-        })
+        return _clear_result(
+            {
+                "artifact_dir": str(config.artifact_dir),
+                "final_status": "clear",
+                "stopped_reason": "review_clear",
+                "iterations": [],
+            }
+        )
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
-    exit_code = cli_main.main([
-        "--profile",
-        "final-pr",
-        "--no-allow-model-escalation",
-        "--dry-run",
-    ])
+    exit_code = cli_main.main(
+        [
+            "--profile",
+            "final-pr",
+            "--no-allow-model-escalation",
+            "--dry-run",
+        ]
+    )
 
     assert exit_code == 0
     config = captured_configs[0]
     assert config.profile_v2 is not None
     assert config.profile_v2.triage.routing.allow_model_escalation is False
     assert config.phase_config_field_sources["triage"]["allow_model_escalation"] == "cli"
+
+
+def test_main_route_cli_override_forces_existing_profile_route(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    config_path = home / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.final-pr.triage]
+enabled = true
+contract = "v2"
+
+[profiles.final-pr.triage.routing]
+enabled = true
+default_route = "midtier-coder"
+
+[profiles.final-pr.triage.routes.midtier-coder]
+harness = "codex"
+
+[profiles.final-pr.triage.routes.gemini-pro]
+harness = "gemini"
+model = "gemini-2.5-pro"
+reasoning_effort = "high"
+""",
+        encoding="utf-8",
+    )
+    captured_configs = []
+
+    def fake_run_loop(config):
+        captured_configs.append(config)
+        return _clear_result(
+            {
+                "artifact_dir": str(config.artifact_dir),
+                "final_status": "clear",
+                "stopped_reason": "review_clear",
+                "iterations": [],
+            }
+        )
+
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
+
+    exit_code = cli_main.main(
+        [
+            "--profile",
+            "final-pr",
+            "--route",
+            "gemini-pro",
+            "--dry-run",
+        ]
+    )
+
+    assert exit_code == 0
+    config = captured_configs[0]
+    assert config.profile_v2 is not None
+    assert config.profile_v2.triage.routing.default_route == "gemini-pro"
+    assert config.phase_config_field_sources["triage"]["routing_default_route"] == "cli"
+    saved = config_builder.profile_from_loop_config(
+        "saved",
+        config,
+        summary_format="json",
+    )
+    assert saved.triage.routing.default_route == "gemini-pro"
+
+
+def test_main_route_cli_override_rejects_unknown_route(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    config_path = home / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.final-pr.triage]
+enabled = true
+contract = "v2"
+
+[profiles.final-pr.triage.routes.midtier-coder]
+harness = "codex"
+""",
+        encoding="utf-8",
+    )
+
+    exit_code = cli_main.main(
+        [
+            "--profile",
+            "final-pr",
+            "--route",
+            "gemini-pro",
+            "--dry-run",
+        ]
+    )
+
+    assert exit_code == 1
 
 
 def test_routing_override_requires_v2_contract(tmp_path, monkeypatch):

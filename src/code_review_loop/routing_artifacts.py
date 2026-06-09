@@ -256,12 +256,14 @@ def _policy_decision(
             fields = ", ".join(proposal_overrides)
             return (
                 "policy_override",
-                "Policy selected the proposed tier but overrode "
-                f"proposal field(s): {fields}.",
+                f"Policy selected the proposed tier but overrode proposal field(s): {fields}.",
             )
         return "policy_override", "Policy overrode the model route proposal."
     if resolved_route.rule_id == "default":
-        return "default_route_applied", "No model route proposal or rule match; applied default route."
+        return (
+            "default_route_applied",
+            "No model route proposal or rule match; applied default route.",
+        )
     return "policy_override", "Applied policy based on classification."
 
 
@@ -290,11 +292,15 @@ def _validate_and_write_routing_payload(
             f"routing payload schema validation failed: {exc}",
             ctx=ctx,
         )
-        raise RuntimeError(f"invalid routing decision artifact for iteration {iteration}: {exc}") from exc
+        raise RuntimeError(
+            f"invalid routing decision artifact for iteration {iteration}: {exc}"
+        ) from exc
 
     triage.write_routing_artifact(config.artifact_dir, iteration, routing_payload)
     if ctx.event_sink:
-        ctx.event_sink.emit("routing_decision", phase="triage", iteration=iteration, payload=routing_payload)
+        ctx.event_sink.emit(
+            "routing_decision", phase="triage", iteration=iteration, payload=routing_payload
+        )
     write_artifact(config.artifact_dir / f"remediation-{iteration}-prompt.txt", remediation_input)
 
 
@@ -321,4 +327,6 @@ def record_routing_outcome(
     }
     triage.write_routing_outcome_artifact(config.artifact_dir, iteration, outcome_payload)
     if ctx.event_sink:
-        ctx.event_sink.emit("routing_outcome", phase="remediate", iteration=iteration, payload=outcome_payload)
+        ctx.event_sink.emit(
+            "routing_outcome", phase="remediate", iteration=iteration, payload=outcome_payload
+        )

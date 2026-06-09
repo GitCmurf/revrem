@@ -2,9 +2,9 @@
 document_id: REVREM-LEDGER-003
 type: LEDGER
 title: Behaviour ledger for the cli.py re-engineering (REVREM-TASK-003)
-status: Draft
-version: '0.6'
-last_updated: '2026-05-30'
+status: Approved
+version: '1.4'
+last_updated: '2026-06-07'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -55,6 +55,698 @@ There is no silent third option.
 ```
 
 ## Entries
+
+### 2026-06-07 — Block-local stale-validation status parsing
+
+- **Contract:** machine + human
+- **What changed:** stale-validation status is read only from the first
+  `STALE_REVIEW_VALIDATION:` block in provider stdout before any `[stderr]`
+  transcript. Echoed prompt templates or original review text outside that
+  block cannot override the validator's status; conflicting `status:` and
+  `REVREM_STALE_REVIEW_STATUS:` values are treated as `unknown`.
+- **Why:** Dogfood showed a validator correctly emitted `still_applies`, but
+  RevRem scanned the combined stdout/stderr transcript, found an echoed
+  `REVREM_STALE_REVIEW_STATUS: resolved` template in stderr, and incorrectly
+  reported `stale_review_already_resolved`.
+- **Before / After:** before, any marker anywhere in the transcript could win.
+  After, only the validation block controls the outcome, and ambiguity fails
+  closed before remediation or clear.
+- **schema_version impact:** none.
+- **CHANGELOG:** Unreleased / Added.
+
+### 2026-06-07 — Read-only stale validation and model-unavailable fail-fast
+
+- **Contract:** machine + human
+- **What changed:** stale pending-review validation now runs a read-only
+  provider pass before any write-capable remediation. `resolved` skips
+  remediation and proceeds to checks, `still_applies` proceeds to normal
+  remediation, and `unknown` or validation failure stops before remediation.
+  Provider model availability failures such as `Model not found` are classified
+  as non-transient before generic server-error wrappers.
+- **Why:** Dogfood showed that a stale finding already fixed in the current
+  checkout could still burn remediation calls and fail on an unavailable
+  remediation model. The OpenCode error included both `Model not found` and an
+  `UnknownError` envelope, so generic server-error retrying was too broad.
+- **Before / After:** before, validating an older review always invoked the
+  remediation harness, and model-unavailable output could be retried as a
+  transient server error. After, resolved stale findings avoid remediation
+  entirely, and unavailable models fail fast with a setup/config signal.
+- **schema_version impact:** none. New artifacts and summary fields are
+  additive.
+- **CHANGELOG:** Unreleased / Added.
+
+### 2026-06-07 — Stale-validation no-edits guard and dogfood provider retry policy
+
+- **Contract:** machine + human
+- **What changed:** resolved stale-review validation now snapshots
+  non-artifact `git status --porcelain=v1 -z --untracked-files=all` entries
+  before validation and before returning clear. If remediation or checks change
+  tracked or untracked non-artifact paths, RevRem fails instead of reporting
+  `stale_review_already_resolved`. Runtime config now includes
+  `provider_retry_attempts` and `provider_retry_backoff_seconds`; the dogfood
+  profile sets them to `3` and `5.0`.
+- **Why:** Dogfood showed that stopping immediately after a resolved marker
+  could bypass the no-edits invariant and that watched OpenCode remediation
+  loops benefit from a stronger retry policy without changing defaults for all
+  users.
+- **Before / After:** before, a resolved marker could clear even if the model
+  edited files or checks left new non-artifact changes. After, the resolved
+  marker clears only with passing checks and unchanged non-artifact status.
+  Before, retry attempts/backoff were hard-coded. After, they are runtime
+  settings preserved in summaries, resume config, and continuation commands.
+- **schema_version impact:** none. Summary schema version is unchanged; retry
+  settings are additive runtime/resume fields.
+- **CHANGELOG:** Unreleased / Added.
+
+### 2026-06-07 — Stale-review resolved marker scoped to validation mode
+
+- **Contract:** machine + human
+- **What changed:** remediation output is now scanned for
+  `REVREM_STALE_REVIEW_STATUS: resolved` only when the current run is actually
+  validating intentionally reused stale review feedback. Normal remediation
+  runs that quote that marker while fixing stale-review code no longer set
+  `stale_review_resolved` or trigger the contradictory "resolved marker but
+  produced changes to commit" invariant.
+- **Why:** Dogfood remediation of stale-review logic included the marker text
+  in ordinary remediation output. Because marker detection was not scoped to
+  stale-validation mode, a successful normal commit was followed by a false
+  `remediation_failed` outcome.
+- **Before / After:** before, any remediation transcript containing the marker
+  could make a normal commit fail after it had already been created. After,
+  the marker is meaningful only for `initial_review_mode = "stale"` validation
+  runs; normal remediation proceeds to commit/review as usual.
+- **schema_version impact:** none. Summary/event schemas are unchanged; this
+  narrows when an existing state flag is set.
+- **CHANGELOG:** Unreleased / Added.
+
+### 2026-06-07 — Triage v2 info-request normalization and Gemini prompt-cap safety
+
+- **Contract:** machine + human
+- **What changed:** structured triage parsing now normalizes
+  `needs_more_info.info_requested` values that arrive as arrays of strings into
+  one newline-delimited string before schema validation, recording a parsing
+  warning. The triage v2 prompt now explicitly requires a single string and
+  tells models to use `review-comment:<1-based-order>` for uniquely identifiable
+  review comments without stable `f1:` IDs. Gemini Pro prompted review defaults
+  now use a 95k character cap when no CLI/profile override is supplied.
+- **Why:** Dogfood with a weaker triage model showed it could emit multiple
+  information requests as a JSON array despite the schema requiring a string,
+  wasting remediation flow on an avoidable invalid-triage warning. A subsequent
+  review also showed that raising Gemini Pro's default above the current
+  `--prompt` delivery guard would abort locally before invoking Gemini.
+- **Before / After:** before, `info_requested: ["a", "b"]` failed the v2
+  schema and was ignored under `triage.on_invalid = "continue"`; after, it is
+  accepted as `"a\nb"` with a parsing warning, while mixed arrays still fail.
+  Before, Gemini Pro model-aware defaults could be configured above the 100k
+  argv-delivery guard; after, the default remains larger than the normal 80k
+  cap but below the guard.
+- **schema_version impact:** none. The triage v2 schema is unchanged; this is a
+  parser normalization and prompt/default hardening.
+- **CHANGELOG:** Unreleased / Added.
+
+### 2026-06-06 — Auto-commit clean-start/in-run guards and triage suppression schema
+
+- **Contract:** machine + human
+- **What changed:** auto-commit runs now inspect `git status --porcelain
+  --untracked-files=all` before any provider call and exit with a preflight
+  error when non-artifact worktree changes already exist. They also re-check
+  `HEAD` and non-artifact worktree status before the first remediation attempt
+  for each review finding, stopping before remediation if the checkout changed
+  during review/triage. Triage v2 schemas now allow the optional
+  `suppressed_findings` array that RevRem writes after applying suppressions.
+- **Why:** Dogfood showed that the post-remediation cleanliness check could
+  pass while later `git add -A` swept unrelated pre-existing edits into a
+  remediation commit. Operator discussion then highlighted the adjacent
+  expensive-run case: a human or another agent might change the checkout while
+  RevRem is reviewing, making the subsequent remediation stale. The same run
+  also showed valid v2 triage artifacts with suppression metadata failing
+  schema validation because the public and packaged schemas lagged the emitted
+  artifact shape.
+- **Before / After:** before, a dirty worktree could reach review/remediation
+  and be staged by the commit phase; after, auto-commit mode fails before
+  provider spend unless the initial non-artifact worktree is clean. Before, a
+  concurrent edit or commit during review could still enter remediation; after,
+  RevRem stops after preserving the review output and before remediation. Before
+  `triage-v2.schema.json` rejected `suppressed_findings`; after, it validates
+  artifacts that include an empty or populated suppression array.
+- **schema_version impact:** none. The triage v2 schema was widened
+  additively; `summary.json` and `events.jsonl` versions are unchanged.
+- **CHANGELOG:** Unreleased / Fixed.
+
+### 2026-06-06 — Startup pending-review choice
+
+- **Contract:** human
+- **What changed:** when no explicit `--initial-review-file` is supplied,
+  interactive TTY runs now check for non-clear review feedback before starting a
+  fresh provider review. If a compatible candidate exists, RevRem offers to use
+  it, show more detail, start fresh, or cancel. If only a candidate from a
+  different `HEAD`/base exists, RevRem still offers it but warns about the
+  mismatch. Non-interactive runs ignore the candidate unless
+  `--pending-review auto` is supplied; `auto` uses only compatible candidates
+  and `--pending-review ignore` always starts fresh.
+- **Why:** Dogfood showed a run could produce useful review output and then fail
+  during triage/remediation setup, leaving an expensive review unremediated.
+  A watched local operator should be able to reuse that review without
+  remembering `--initial-review-file latest`, while automation must not block
+  on stdin.
+- **Before / After:** before, a restart without `--initial-review-file latest`
+  always spent a new review call. After, TTY restarts offer pending review
+  feedback first, warning when it comes from a different checkout state, while
+  explicit/non-interactive modes remain deterministic.
+- **schema_version impact:** none.
+- **CHANGELOG:** Unreleased / Added.
+
+### 2026-06-06 — Stale pending-review validation
+
+- **Contract:** human
+- **What changed:** when an interactive operator chooses pending review
+  feedback from a different `HEAD`/base, RevRem records that choice as stale
+  review validation. The remediation prompt now asks the model to first decide
+  whether the finding still applies to the current checkout and to make no
+  edits plus emit a compact `STALE_REVIEW_VALIDATION:` evidence block ending in
+  `REVREM_STALE_REVIEW_STATUS: resolved` when it is already fixed. If checks
+  pass and the commit phase finds no changes, the loop exits successfully as
+  `clear (stale_review_already_resolved)` and the terminal summary shows the
+  validation output rather than repeating the old review comment. If the model
+  emits the resolved marker but produces changes that would be committed, the
+  loop fails instead of accepting a contradictory validation.
+- **Why:** Dogfood showed that reusing an incompatible pending review could
+  spend triage/remediation/checks, prove the finding no longer applied, and
+  still end as `findings (no_changes_after_remediation)` with the stale review
+  excerpt. That made the useful validation look like an unresolved failure.
+- **Before / After:** before, every no-change remediation from a reused review
+  was reported as unresolved findings, then briefly as an unknown resolved
+  state. After, stale-review reuse has an explicit clear no-op resolved path,
+  while compatible and explicitly supplied review files keep the existing
+  no-change findings behavior unless they opt into the stale prompt path.
+- **schema_version impact:** none. The stopped reason remains
+  `stale_review_already_resolved`; the final status for that reason is now
+  `clear` instead of `unknown`.
+- **CHANGELOG:** Unreleased / Fixed.
+
+### 2026-06-06 — Git guard and commit-message side-effect hardening
+
+- **Contract:** machine + human
+- **What changed:** artifact dirty-path filtering now matches only exact path
+  boundaries, so `artifacts2/...` and `artifacts-old/...` are no longer treated
+  as children of `artifacts`. Successful commits refresh the expected `HEAD`
+  even when RevRem runs from a repository subdirectory or linked-worktree-style
+  checkout without a `.git` marker at `cwd`. Older pending-review prompts now
+  display validation language. Commit-message drafting records and removes
+  newly created non-artifact helper files, falls back to the deterministic
+  subject, and aborts if the read-only phase modifies existing paths. If the
+  commit-message harness commits the already-staged patch itself and leaves the
+  repository clean, RevRem adopts that commit, records the side-effect artifact,
+  and warns that the model/harness is unsuitable for future commit-message
+  drafting; unsafe HEAD/index mutations still fail.
+- **Why:** Dogfood with Gemini remediation showed two remaining auto-commit
+  safety gaps, a confusing stale-review prompt, and an OpenCode commit-message
+  draft that wrote `commit-subject.txt` despite the read-only contract.
+- **Before / After:** before, sibling artifact-like paths could be ignored by
+  dirty-worktree guards, subdirectory commits could leave `expected_head`
+  stale, older-review prompts said "use", and a commit-message helper file
+  could leak into the worktree. After, artifact exemptions are boundary exact,
+  commit HEAD tracking works from supported cwd layouts, stale prompts say
+  "validate", read-only commit-message helper files are diagnosed before
+  committing, and clean self-commits are adopted with a prominent warning
+  instead of turning into a misleading `git commit failed` error.
+- **schema_version impact:** none. The side-effect diagnostic is an additive
+  artifact and the summary gains an additive `commit_message_side_effects`
+  collection.
+- **CHANGELOG:** Unreleased / Fixed.
+
+### 2026-06-06 — Latest-review retry artifact and fragment trust hardening
+
+- **Contract:** machine + human
+- **What changed:** `--initial-review-file latest` now accepts only canonical
+  generated review outputs (`review-N.txt` and `review-final.txt`) and ignores
+  retry-attempt transcripts such as `review-1-attempt-1.txt`, even when
+  `summary.json` lists them. Remediation prompt composition still fails hard
+  for unresolved route/profile fragments, but unresolved
+  triage-generated `required_fragments` are ignored and recorded as a visible
+  warning in the remediation prompt.
+- **Why:** Dogfood showed that `latest` could select provider retry output
+  instead of review findings, and that a weaker triage model could invent a
+  fragment name (`bounded-execution`) that aborted remediation before the
+  finding was attempted.
+- **Before / After:** before, a newer `review-*-attempt-*.txt` could seed a
+  restart and any unresolved triage fragment could raise. After, retry
+  transcripts are never usable latest-review candidates; model-invented
+  fragments are advisory and dropped while trusted configured fragments remain
+  strict.
+- **schema_version impact:** none.
+- **CHANGELOG:** Unreleased / Added.
+
+### 2026-06-06 — Provider timeout and secondary-prompt hardening
+
+- **Contract:** machine + human
+- **What changed:** `classify_provider_failure` now treats RevRem-enforced
+  subprocess timeouts as non-transient when `returncode == -1` and the combined
+  output contains `Command timed out after ...`, even if partial provider stdout
+  precedes the timeout marker. The triage v2 prompt now gives exact
+  `estimated_blast_radius` key names (`finding_count`, `module_count`) and
+  minimal valid JSON examples. The commit-message prompt now explicitly asks for
+  exactly one output line and includes good/bad examples to discourage
+  explanatory prose.
+- **Why:** Dogfood showed that local timeouts could be misclassified as
+  retryable provider-transient failures when stdout came before stderr; it also
+  showed secondary models using invalid triage key names and explaining commit
+  subjects instead of outputting only the subject.
+- **Before / After:** before, a local timeout with partial stdout could trigger
+  provider retry logic; after, it is non-transient timeout evidence. Before,
+  weaker triage/commit-message models had only prose instructions; after, they
+  also receive concrete examples of valid and invalid output shapes.
+- **schema_version impact:** none.
+- **CHANGELOG:** Unreleased / Fixed and Changed.
+
+### 2026-06-06 — Cleanliness check auto-stages remediation-created files
+
+- **Contract:** machine + human
+- **What changed:** The post-remediation cleanliness check no longer fails
+  merely because remediation created a new non-artifact file. RevRem already
+  refuses to enter `--commit-after-remediation` from a dirty worktree, including
+  pre-existing untracked files. Given that clean-start invariant, `??` files
+  that appear after remediation are treated as intentional remediation output
+  and marked with `git add --intent-to-add`; the later commit phase's
+  `git add -A` stages their contents. Files under `--artifact-dir` remain
+  exempt.
+- **Why:** Legitimate fixes often add tests, modules, or documentation. Blocking
+  every post-remediation `??` path forced models to stage files during
+  remediation or made valid fixes impossible. Known generated paths should be
+  covered by `.gitignore` or `--artifact-dir`, while secrets and policy issues
+  are the responsibility of configured verification/commit hooks.
+- **Before / After:** before, a remediation that added `tests/test_new.py`
+  failed the synthetic cleanliness check before `pytest`, `ruff`, or commit
+  staging could run. After, the check runs `git add --intent-to-add --`
+  for `tests/test_new.py`, records the auto-staged path in `check-N-1.txt`, and
+  proceeds to the configured checks. If `git add --intent-to-add` fails, the
+  check fails with the underlying git output.
+- **schema_version impact:** none. Check artifact stdout can include an
+  auto-staged path summary, but artifact names and summary structure are
+  unchanged.
+- **CHANGELOG:** Unreleased / Fixed.
+
+### 2026-06-06 — Cleanliness check auto-stages legitimate new files
+
+- **Contract:** machine + human
+- **What changed:** `run_worktree_cleanliness_check` now marks untracked
+  non-artifact files with `git add --intent-to-add` instead of failing the
+  check. The check still excludes files in the configured artifact directory,
+  and any `git add -N` error surfaces the underlying git output. After the
+  intent-to-add pass, the check re-runs `git status --porcelain`; if any
+  untracked non-artifact files remain (e.g. the intent-to-add step ran but
+  could not register a file), the check still fails with a list of the
+  remaining paths. The successful summary now lists the auto-staged paths in
+  `check-N-1.txt` for operator visibility.
+- **Why:** Earlier revisions of the cleanup gate failed the loop before the
+  commit phase could run `git add -A`, so any remediation that legitimately
+  added a new file (a new test, module, or doc) had no way to pass checks
+  without the model staging the file itself. Auto-staging with
+  `--intent-to-add` is git-idiomatic: it registers the file with the index
+  without writing content, so `git add -A` in the commit phase stages the
+  full content normally, and the `??` flag that triggered the failure is
+  removed.
+- **Before / After:** before, a remediation patch that added
+  `src/new_module.py` failed the worktree cleanliness check because the file
+  showed as `?? src/new_module.py`. After, the cleanliness check runs
+  `git add --intent-to-add -- src/new_module.py`, the re-check shows
+  `A  src/new_module.py`, and the check records the auto-staged path in the
+  artifact before passing. A `git add -N` failure (e.g. permission error)
+  still fails the check with the underlying git error, so genuine scratch
+  files that the operator must clean up by hand remain visible.
+- **schema_version impact:** none. The check artifact gains an
+  auto-staged-paths summary line, but its contract was previously
+  "passes/fails with stdout body"; the additional line is purely additive
+  and the surrounding event payload is unchanged.
+- **CHANGELOG:** Unreleased / Fixed.
+
+### 2026-06-07 — CM2 preserves unknown review outcome on no-op remediation
+
+- **Contract:** machine
+- **What changed:** `core.engine._decide_commit` CM2 no longer collapses an
+  `unknown` last review status into `OutcomeClear` when the commit phase
+  reports `skipped_no_changes`. The branch now returns
+  `Stop(OutcomeUnknown(reason="no_changes_after_remediation"))`, mapping to
+  exit code 2, matching the prior behaviour and the post-loop `unknown`
+  outcomes (F6, NF1). `clear` and `findings` mappings are unchanged. The
+  unit test was renamed from
+  `test_decide_cm2_unknown_skipped_no_changes_exits_clear` back to
+  `..._exits_unknown` and its assertion updated; the
+  `test_loop_stops_after_unknown_review_when_remediation_has_no_staged_changes`
+  CLI commit integration test now expects `final_status: "unknown"`.
+- **Why:** A bounded review-remediation loop that ends with an unknown
+  review status has not received a clear review signal. Mapping that
+  no-op commit back to `OutcomeClear` (exit code 0) marked an
+  inconclusive review/remediation cycle as successful and broke operator
+  intent for review harnesses that legitimately return `unknown` (e.g.
+  harness timeouts or pre-loop stale review validation paths).
+- **Before / After:** before, an unknown review followed by a no-op
+  remediation exited 0 with `final_status: "clear"` and
+  `stopped_reason: "no_changes_after_remediation"`; after, the same run
+  exits 2 with `final_status: "unknown"` and the same
+  `stopped_reason`. The 2026-06-03 entry below is superseded.
+- **schema_version impact:** none; the JSON summary shape is unchanged
+  (the `stopped_reason` value is unchanged; only the typed
+  `final_status`/`OutcomeUnknown` mapping changes). The
+  `stopped_reason` × `final_status` cross-reference table now lists
+  `unknown` as a valid final status for `no_changes_after_remediation`.
+- **CHANGELOG:** Unreleased / Fixed.
+
+### 2026-06-07 — Stale-resolved short-circuit and check-only cleanliness failure
+
+- **Contract:** machine + human
+- **What changed:** Two control-flow / check-semantics fixes in the
+  post-remediation path:
+  1. `core.engine._decide_checks` now short-circuits to
+     `Stop(OutcomeClear(reason="stale_review_already_resolved"))` when
+     `acc.stale_review_resolved` is True, before evaluating
+     `_next_review_action`. The previous behaviour fell through to the
+     next review action, which made `--no-final-review` runs end at
+     `max_iterations_reached` and final-review runs issue a redundant
+     provider call that masked the resolved state with a generic
+     `review_clear`. The check is taken before commit and takes
+     precedence over any pending check failures reported by the just-
+     completed checks phase.
+  2. `adapters.checks._cleanliness_check_untracked_no_commit` now
+     returns `CommandResult(command, 1, ...)` when untracked non-artifact
+     files remain in the worktree. The previous behaviour reported the
+     untracked paths in the check stdout and returned exit code 0, which
+     let the loop finish clear while leaving new files outside the
+     reviewed `git diff` patch. The new output explicitly says
+     `Worktree cleanliness check FAILED`, lists the untracked paths,
+     and tells the operator to remove scratch files, stage legitimate
+     files explicitly, or re-run with `--commit`.
+- **Why:** Dogfood with stale-review validation showed that the
+  no-commit resolved path could end with `max_iterations_reached`
+  (because the checks branch returned to `_next_review_action` and the
+  loop exhausted iterations before any `NoFinalReview` event was
+  emitted), and that `--final-review` runs re-paid for a final review
+  call after remediation had already proven the finding resolved.
+  Separately, a non-auto-commit run that left an untracked helper file
+  reported `check_failures: 0` while subsequent `git diff`-based
+  review context silently omitted the file, allowing the loop to
+  report clear with a new file outside the reviewed patch. Both gaps
+  are correctness regressions introduced when the resolved/no-commit
+  paths were wired in.
+- **Before / After:** before, a stale-review-resolved run in
+  `--no-final-review` mode returned `OutcomeUnknown(reason="max_iterations_reached")`,
+  and the same run in final-review mode returned
+  `OutcomeClear(reason="review_clear")` after a redundant review call.
+  A non-auto-commit run that created an untracked helper file reported
+  cleanliness as passed (exit 0). After, the resolved path returns
+  `OutcomeClear(reason="stale_review_already_resolved")` without
+  spending a final review call, and the cleanliness check fails with
+  exit 1 and a list of the untracked paths. The
+  `test_runner_shell_fails_if_stale_review_resolved_marker_commits_changes`
+  acceptance test was rewritten as
+  `test_runner_shell_skips_commit_when_stale_review_resolved` to
+  document that the commit phase is no longer reached in this flow.
+- **schema_version impact:** none. The stopped reason
+  `stale_review_already_resolved` is unchanged; the change only
+  re-routes the resolved state to an earlier short-circuit. The
+  cleanliness check artifact gains a `FAILED` prefix in non-auto-commit
+  mode; the surrounding event payload is unchanged.
+- **CHANGELOG:** Unreleased / Fixed.
+
+### 2026-06-05 — Bounded remediation-check inner retry and cleanup gate
+
+- **Contract:** machine + human
+- **What changed:** `ConfigSnapshot` now carries `inner_check_retries`, and
+  `ChecksDone` with pending failures can produce a bounded
+  `RetryViaChecks` action before the normal outer review loop continues. Retry
+  artifacts use suffixed labels such as `remediation-1-retry-1.txt` and
+  `check-1-retry-1-2.txt` while preserving the outer iteration number. Every
+  checks phase now starts with a synthetic
+  `git status --porcelain --untracked-files=all` cleanliness check whose
+  result is written as `check-N-1.txt`; configured checks start at `.2`.
+  `resume_config` and continue commands preserve `inner_check_retries`.
+  Check progress renders captured RevRem timeout evidence as `timeout after
+  Ns` instead of only showing negative signal return codes. If every failed
+  check contains RevRem's own `Command timed out after ...` marker, the inner
+  remediation retry is suppressed, the pending check failure remains, and a
+  warning event records that the retry was skipped because the failure is a
+  runtime budget issue rather than actionable code feedback.
+- **Why:** Gemini and OpenCode dogfood showed that secondary remediation can
+  repair review findings but leave check failures or scratch files behind.
+  Feeding check output back to remediation once is cheaper and more targeted
+  than forcing another full review pass, while the explicit cleanup check makes
+  repository scratch files visible before commit staging.
+- **Before / After:** before, remediation failure of `pytest`/`ruff` always
+  advanced to the next review/final-review path. With
+  `inner_check_retries = 1`, the first failed checks phase in an iteration
+  emits a retry progress line and reruns remediation with the check output
+  included; a second failed checks phase falls back to the existing outer loop.
+  Before, a timeout artifact could display as `exit -1 (SIGHUP)`; now timeout
+  marker text displays as `timeout after 300s`, and timeout-only check failures
+  do not spend the configured inner remediation retry.
+- **schema_version impact:** none. Summary/event fields are additive within
+  existing runtime/check payloads, and artifact naming changes are recorded in
+  `artifact_paths` as usual.
+- **CHANGELOG:** Unreleased / Added and Changed.
+
+### 2026-06-05 — Latest initial review compatibility guard
+
+- **Contract:** machine + human
+- **What changed:** `--initial-review-file latest` resolves candidates by
+  run/review modification time and preserves the existing rule that a newer
+  compatible clear run starts a fresh review instead of reviving older
+  findings. When the current checkout's git state is available, historical run
+  summaries without recorded git state are not treated as compatible latest
+  candidates.
+- **Why:** Dogfood showed that a stale carried-in review from an older codebase
+  can trigger unnecessary triage/remediation and quota spend. A previous run
+  that cannot prove it matches the current `HEAD`/base is safer to ignore than
+  to remediate.
+- **Before / After:** before, old runs without git-state metadata could be
+  selected by `latest` and fed to remediation. After, `latest` starts fresh
+  unless the newest unresolved candidate can prove git compatibility or the
+  caller has no current git state to compare against.
+- **schema_version impact:** none.
+- **CHANGELOG:** Unreleased / Added.
+
+### 2026-06-05 — Gemini argv prompt delivery and timeout classification
+
+- **Contract:** machine + human
+- **What changed:** Gemini prompt-bearing phases now deliver bounded prompts
+  with Gemini CLI's `--prompt` option and report
+  `prompt_delivery == "argv-prompt"` in phase-start metadata. Phase-start
+  `command` metadata redacts the prompt value as `<prompt chars=N>` while
+  preserving command shape, prompt size, and prompt artifacts. RevRem refuses
+  Gemini prompt delivery above the current `100000` byte CLI-delivery cap
+  before launching the provider. Review subprocess stderr beginning with
+  `Command timed out after ...` is classified as
+  `provider_timeout` / non-transient, so `run_review_with_retry` does not spend
+  a second full timeout retrying RevRem's own timeout kill.
+- **Why:** Gemini dogfood showed direct `gemini --prompt` probes succeeded,
+  but large stdin review invocations could run until the configured timeout
+  with no provider output. The prior timeout path was also mislabeled as a
+  transient provider interruption and retried once, doubling the wall-clock
+  failure. The redaction keeps event metadata useful without duplicating large
+  prompts into command arrays.
+- **Before / After:** `gemini ... prompt=80.0k stdin truncated` becomes
+  `gemini ... prompt=80.0k argv-prompt truncated`; timeout failures report
+  provider timeout and fail after one configured deadline instead of retrying.
+  Event `command` values store `--prompt <prompt chars=N>`, not the prompt
+  body.
+- **schema_version impact:** none; `prompt_delivery` values are additive within
+  the existing phase-start payload schema, and command redaction preserves the
+  existing field while reducing payload size.
+- **CHANGELOG:** Unreleased / Added.
+
+### 2026-06-05 — Prompted review status-debug tightened
+
+- **Contract:** machine + human
+- **What changed:** review status diagnostics now report tool-denial evidence
+  only when a provider-control stderr line itself begins with a denial marker.
+  OpenCode shell transcripts written to stderr may contain reviewed diff lines
+  or test fixtures mentioning `denied by policy`; those no longer set
+  `tool_denial_present`. Prompted harness status-debug output also labels
+  Codex-style finding bullets as `codex_bullets` and reports the explicit
+  `REVIEW_STATUS` token, avoiding the misleading `findings=0` display.
+- **Why:** OpenCode dogfood showed correct loop status interpretation but
+  misleading diagnostics when stderr contained `git diff` output with denial
+  fixture text. Explicit `REVIEW_STATUS` remains the loop-control authority.
+- **Before / After:** `tool_denial_present=true` from a stderr diff transcript
+  becomes `false`; a real provider-control denial includes
+  `tool_denial_source="stderr_control"` and a short `tool_denial_evidence`
+  string. `status-debug` for OpenCode/Gemini shows
+  `explicit=findings codex_bullets=0` rather than `findings=0`.
+- **schema_version impact:** none; diagnostic fields are additive and
+  status-debug wording is human presentation.
+
+### 2026-06-04 — Provider effort and denial diagnostics clarified
+
+- **Contract:** machine + human
+- **What changed:** phase config summaries now distinguish configured
+  `reasoning_effort` from provider-enforced `provider_reasoning_effort`.
+  Human summaries and TUI phase displays show `effort=n/a` for harnesses where
+  RevRem cannot currently pass an effort control. Review diagnostics now set
+  `tool_denial_present` only when the provider stderr/control section contains
+  a denial marker, not when reviewed source or tests mention denial text.
+- **Why:** dogfood runs with OpenCode/Gemini showed two misleading signals:
+  non-Codex phases looked as if RevRem had set a thinking level, and denial
+  fixtures in the reviewed diff could make a successful review look tool-blocked.
+- **Before / After:** `phase_config.review.reasoning_effort = "low"` remains
+  the configured intent; `phase_config.review.provider_reasoning_effort = null`
+  and `reasoning_effort_supported = false` now describe provider reality for
+  OpenCode/Gemini. Terminal/TUI output changes from `effort=low` to
+  `effort=n/a` for those harnesses.
+- **schema_version impact:** none; JSON fields are additive and existing
+  configured-effort fields are preserved.
+
+### 2026-06-03 — OpenCode file attachment requires a message
+
+- **Contract:** machine
+- **What changed:** OpenCode prompt-bearing commands now include the positional
+  message `Follow the attached RevRem prompt exactly.` before
+  `--file <prompt-artifact>`. Provider failure classification also treats
+  OpenCode's `You must provide a message or a command` stderr as a CLI contract
+  error.
+- **Why:** live OpenCode review failed immediately because `opencode run --file
+  <prompt>` attaches a file but does not provide a message. The installed CLI
+  requires either positional `message` text or `--command`.
+- **schema_version impact:** none; command argv and failure classification
+  details are additive/behavioral within the existing v1 event envelope.
+- **CHANGELOG:** Unreleased / Added.
+
+### 2026-06-03 — Gemini review context cap and quiet-run diagnostics
+
+- **Contract:** machine
+- **What changed:** the resolved runtime config briefly chose a larger
+  Gemini Pro review-model cap when no CLI/profile cap was set; the later
+  2026-06-05 Gemini argv prompt entry above supersedes that default and returns
+  Gemini to the conservative prompted-review default. Review phase-start events add
+  `review_context_chars`, `external_review_input_chars`, and
+  `prompt_truncated`. Runtime summaries include
+  `external_review_warning_seconds`, and external review waiting events add
+  `quiet_warning` metadata after the configured non-terminating warning
+  threshold.
+- **Why:** Gemini dogfood showed the default `80k` character prompt cap could
+  truncate a larger generated diff context, and long-running provider calls
+  needed clearer diagnostics without changing `timeout=0` behavior.
+- **schema_version impact:** none; additive runtime fields and event payload
+  fields in the existing v1 envelopes.
+- **CHANGELOG:** Unreleased / Added.
+
+### 2026-06-03 — Provider retry and commit-message subject fallback
+
+- **Contract:** machine
+- **What changed:** external review harnesses now classify common provider
+  subprocess failures. Transient review failures emit a `review retry` progress
+  event with `reason` and `attempt` metadata, write `review-N-attempt-1.txt`,
+  and retry once before final failure. Non-transient provider failures surface
+  provider-specific detail in the phase error without retrying. The
+  commit-message phase now records `commit-N-message-fallback.json` with
+  `reason: "model_drafting_invalid"` when a model returns explanatory prose
+  instead of a subject, and it may consume `commit-N-message-subject.txt` as a
+  subject sidecar when a harness extracts one.
+- **Why:** OpenCode dogfood exposed provider server errors that should get one
+  bounded retry, CLI-contract failures that should fail fast, and model
+  commit-message prose that produced unusable committed subjects.
+- **schema_version impact:** none; additive artifact/event details in the
+  existing v1 envelopes.
+- **CHANGELOG:** Unreleased / Added.
+
+### 2026-06-02 — Kilo prompt delivery switched from argv to stdin
+
+- **Contract:** machine
+- **What changed:** `prepare_prompt_invocation` no longer keeps kilo on a
+  positional argv prompt path. Kilo now falls through to the same stdin branch
+  Claude already uses. The phase-start event payload records
+  `prompt_delivery == "stdin"` for kilo calls, and the saved remediation prompt
+  is no longer embedded in argv when Kilo is selected. The deleted
+  `test_prompt_invocation_passes_prompt_as_argument_for_argv_harnesses`
+  coverage is superseded by
+  `test_prompt_invocation_passes_prompt_via_stdin_for_kilo` and the
+  parametrised `test_full_noninteractive_invocation_matches_real_cli_contract`
+  (which asserts `expects_stdin=True` for Kilo).
+- **Why:** Kilo's non-interactive CLI accepts the prompt from stdin in the same
+  way Claude's does. Keeping a separate positional argv path for Kilo was
+  duplicating the Codex-style behaviour that we no longer
+  want for that harness, and it left Kilo with a contract that no hermetic test
+  could verify. Gemini was initially moved along the same path, but the
+  2026-06-05 Gemini dogfood entry above supersedes that part of the decision:
+  Gemini now uses its documented `--prompt` option for bounded prompts because
+  large stdin review invocations proved unreliable.
+- **schema_version impact:** none; `prompt_delivery` is a new field on
+  `phase_start` events introduced alongside the other prompt diagnostics in
+  this release, and Kilo now populates it with `"stdin"` on first introduction
+  (the argv positional prompt for this harness was an internal branch in
+  `prepare_prompt_invocation` that is being removed at the same time, so no
+  prior schema value is preserved).
+- **CHANGELOG:** Unreleased / Added (Kilo stdin and Gemini `--prompt` delivery
+  line supersedes the original combined wording).
+- **Residual operator-side risk:** the kilo CLI's acceptance of prompts on
+  stdin in non-interactive mode is only confirmed by the live smoke at
+  `tests/test_live_secondary_harnesses.py::test_live_secondary_provider_direct_smoke`
+  when `REVREM_LIVE_KILO=1`. Operators must run that live smoke at least
+  once per kilo upgrade; if kilo ever changes its non-interactive contract
+  to require a positional argument, every live kilo run will fail with
+  empty input until the harness adapter is updated.
+
+### 2026-06-02 — External harness progress and prompt diagnostics
+
+- **Contract:** machine
+- **What changed:** phase-start events now include the exact command argv,
+  harness, prompt delivery mode, and prompt character/byte counts when a prompt
+  is supplied. Resume summaries now include `external_review_input_chars`, and
+  operator-cancellation diagnostics include the latest prompt/context artifact
+  names and sizes when available. Human progress lines now render compact
+  provider summaries such as `opencode run · model · n/a effort · timeout=0 ·
+  sandbox read-only · prompt=80.0k file`. OpenCode prompt-bearing phases now
+  attach the prompt artifact with `opencode run --file` instead of passing the
+  prompt on stdin, and long-running model subprocesses emit additive `waiting`
+  progress every five minutes.
+- **Why:** OpenCode dogfood showed that long external-review calls could appear
+  stuck with no visible evidence of prompt size, delivery mode, or exact phase
+  invocation. The new fields make the saved artifacts useful for debugging
+  provider hangs while keeping the terminal line readable.
+- **schema_version impact:** none; additive fields within the existing v1 event
+  and summary envelopes.
+- **CHANGELOG:** Unreleased / Added.
+
+### 2026-06-02 — Gemini dogfood progress and failure wording hardening
+
+- **Contract:** human
+- **What changed:** prompt-bearing phase-start commands now render a compact
+  `<prompt chars=... first='...'>` summary instead of printing embedded prompt
+  newlines into rich/compact progress. Unstructured review findings now show a
+  first-line review summary before the `findings` status line. Remediation
+  failures name the selected harness, for example `gemini remediation failed`,
+  instead of the legacy `codex exec remediation failed` wording.
+- **Why:** the first pure-Gemini dogfood run exposed confusing rich-panel
+  wrapping, missing review-output context before triage/remediation, and a
+  misleading provider label on Gemini remediation failure.
+- **schema_version impact:** none.
+
+### 2026-06-03 — CM2 unknown→clear mapping is also signalled by the test rename
+
+- **Contract:** machine (test-name change is a leading indicator only)
+- **What changed:** Nothing operational. The unit test that pins the
+  commit-skip path's `final_status` was renamed from
+  `test_decide_cm2_unknown_skipped_no_changes_exits_unknown` to
+  `..._exits_clear` so a grep over test names reflects the new mapping.
+- **Why:** `revrem.engine` CM2 now maps `skipped_no_changes` after an
+  `unknown` review to `final_status: "clear"` (see the 2026-05-31 entry
+  above). Renaming the test name is the cheapest way to make a future
+  regression visible in the diff history without adding a new assertion.
+- **schema_version impact:** none.
+- **CHANGELOG:** Unreleased / Changed (CM2 row above already covers the
+  behavioural change; this entry exists only to point at the test rename).
+- **Superseded by:** 2026-06-07 entry above — the unknown→clear mapping was
+  reverted; the renamed test is renamed back and the unknown case now exits
+  unknown.
+
+### 2026-05-31 — TASK-003 ledger closed
+
+- **Contract:** none
+- **What changed:** no runtime behavior changed. This entry records that
+  `REVREM-TASK-003` is complete and the ledger is now the historical audit
+  record for that task rather than an active work queue.
+- **Why:** the task status was corrected to `Approved` with completion evidence
+  on 2026-05-31. Future machine-contract changes should create new ledger
+  entries under their owning task or plan rather than treating TASK-003 as open.
+- **schema_version impact:** none.
 
 ### 2026-05-30 — Structured triage accepts review priority labels
 
@@ -415,7 +1107,7 @@ an unledgered transition.
 | # | Branch condition | State mutation | Outcome |
 |---|---|---|---|
 | CM1 | commit succeeds | `iterations[-1]["commit_status"]=status` | loop continues (or returns on `skipped_no_changes`) |
-| CM2 | `commit_status == "skipped_no_changes"` | `final_status=status` (last review status), `stopped_reason=no_changes_after_remediation`, `latest_review_excerpt=…` | `return summary` |
+| CM2 | `commit_status == "skipped_no_changes"` | `final_status=clear` when last review status is `clear`; `final_status=unknown` when the last review was indeterminate; `final_status=findings` only when the last review explicitly found findings. `stopped_reason=no_changes_after_remediation`, `latest_review_excerpt=…` | `return summary` |
 | CM3 | `CommitFailed(kind="hook_failed")` and `commit_on_hook_failure in {remediate, no-verify}` and `iteration < max_iterations` | `iterations[-1]["commit_status"]=hook_failed`, `_commit_retry=True`, `pending_check_failures=hook output`, `state.set_pending_check_failures(True)` | `continue` (next iteration, retrying with hook output as remediation input) |
 | CM4 | `CommitFailed(kind="hook_failed")` (non-retryable) | `final_status=error`, `stopped_reason=commit_hook_failed`, `error=str(exc)`, `staged_changes_left=True`, `pending_check_failures=True` | `raise RunLoopFailed` (summary written) |
 | CM5 | `CommitFailed` other kind | `final_status=error`, `stopped_reason=commit_failed`, `error=str(exc)` | `raise RunLoopFailed` (summary written) |
@@ -466,7 +1158,7 @@ an unledgered transition.
 | `all_findings_suppressed` | `clear` | T2 |
 | `triage_failed` | `error` | T6 |
 | `remediation_failed` | `error` | M3 |
-| `no_changes_after_remediation` | *(last review status)* | CM2 |
+| `no_changes_after_remediation` | `clear` \| `findings` \| `unknown` | CM2 |
 | `commit_hook_failed` | `error` | CM4 |
 | `commit_failed` | `error` | CM5, CM7 |
 | `max_iterations_reached_with_check_failures` | `findings` | F3 |

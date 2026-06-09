@@ -131,8 +131,7 @@ class SequencedChecksHarness:
         self.calls.append(request)
         failed = self.failed_commands.pop(0) if self.failed_commands else ()
         results = tuple(
-            CommandResult(command.split(), 1, stdout=f"{command} failed\n")
-            for command in failed
+            CommandResult(command.split(), 1, stdout=f"{command} failed\n") for command in failed
         )
         return ChecksOutcome(results=results, failed_commands=failed)
 
@@ -154,7 +153,9 @@ class HeadlessRun:
     clock: FakeClock = field(default_factory=FakeClock)
     identity: FakeRunIdentity = field(default_factory=FakeRunIdentity)
     budget_state: budgets.BudgetState | None = None
-    review: SequencedReviewHarness = field(default_factory=lambda: SequencedReviewHarness(["clear"]))
+    review: SequencedReviewHarness = field(
+        default_factory=lambda: SequencedReviewHarness(["clear"])
+    )
     triage: StaticTriageHarness = field(default_factory=StaticTriageHarness)
     remediation: RecordingRemediationHarness = field(default_factory=RecordingRemediationHarness)
     checks: SequencedChecksHarness = field(default_factory=SequencedChecksHarness)

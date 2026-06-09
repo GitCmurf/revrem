@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
 from typing import NoReturn, assert_never
 
 from code_review_loop import artifacts, budgets, diagnostics, prompts_composer
+from code_review_loop.adapters.git import git_state_for_resume
 from code_review_loop.adapters.phase_support import emit_loop_failure_event
 from code_review_loop.clock import Clock
 from code_review_loop.config import LoopConfig
@@ -48,6 +51,7 @@ def execute_stop(
         else ""
     )
     state.mark_outcome(outcome, excerpt=excerpt)
+    state.git_state = git_state_for_resume(config)
     summary.clear()
     summary.update(state.to_dict())
     write_summary(
@@ -90,9 +94,7 @@ def run_preflight(
             triage_harness=config.triage_harness,
             commit_message_harness=config.commit_message_harness,
             routed_harnesses=(
-                profile_routed_harnesses(config.profile_v2)
-                if config.profile_v2 is not None
-                else ()
+                profile_routed_harnesses(config.profile_v2) if config.profile_v2 is not None else ()
             ),
             harness_executables=config.harness_executables,
             check_commands=config.check_commands,
@@ -137,6 +139,8 @@ def finish_cancelled(
     clock: Clock,
     ctx: RunContext,
 ) -> NoReturn:
+    evidence: dict[str, object] = {"reason": "operator_interrupt"}
+    evidence.update(_latest_prompt_evidence(config.artifact_dir))
     artifacts.write_json_artifact(
         config.artifact_dir,
         "diagnostics.json",
@@ -147,7 +151,7 @@ def finish_cancelled(
                     severity="blocking",
                     message="RevRem run was cancelled by the operator.",
                     hint="Inspect summary.json and events.jsonl to determine the last completed phase before resuming or rerunning.",
-                    evidence={"reason": "operator_interrupt"},
+                    evidence=evidence,
                 )
             ]
         ),
@@ -171,6 +175,58 @@ def finish_cancelled(
         cause=exc,
     )
     raise AssertionError("unreachable")
+
+
+def _safe_mtime(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def _latest_prompt_evidence(artifact_dir: Path) -> dict[str, object]:
+    prompt_paths = sorted(
+        artifact_dir.glob("*-prompt.txt"),
+        key=_safe_mtime,
+    )
+    if not prompt_paths:
+        return {}
+    prompt_path = prompt_paths[-1]
+    try:
+        size = prompt_path.stat().st_size
+    except OSError:
+        size = 0
+    evidence: dict[str, object] = {
+        "latest_prompt_artifact": prompt_path.name,
+        "latest_prompt_bytes": size,
+    }
+    # The artifact filename convention is ``<phase>-<iteration>[-<suffix>]-prompt.txt``
+    # (e.g. ``review-1-prompt.txt`` or ``commit-1-message-prompt.txt``). The
+    # regex below pins the phase to a known value and the iteration to digits;
+    # the optional middle segment is dropped silently so existing 3-segment
+    # names still resolve, but a future unknown suffix is left out of the
+    # evidence rather than mis-parsed. Update the producer side in
+    # ``adapters/review.py``, ``adapters/commit.py`` etc. before introducing
+    # a new suffix.
+    match = re.fullmatch(
+        r"(?P<phase>review|remediate|remediation|triage|commit-message|commit)"
+        r"-(?P<iteration>\d+)"
+        r"(-[A-Za-z0-9_-]+)?"
+        r"-prompt",
+        prompt_path.stem,
+    )
+    if match is not None:
+        evidence["latest_prompt_phase"] = match.group("phase")
+        evidence["latest_prompt_iteration"] = match.group("iteration")
+    context_path = prompt_path.with_name(prompt_path.name.replace("-prompt.txt", "-context.txt"))
+    if context_path.is_file():
+        try:
+            size = context_path.stat().st_size
+            evidence["latest_context_artifact"] = context_path.name
+            evidence["latest_context_bytes"] = size
+        except OSError:
+            pass
+    return evidence
 
 
 def finish_budget_exceeded(

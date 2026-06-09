@@ -15,18 +15,38 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
 from code_review_loop import artifacts, harnesses, prompts_composer
 from code_review_loop.adapters import phase_support
-from code_review_loop.core.ports import CommandResult, CommitOutcome, CommitRequest, RunContext
+from code_review_loop.core.ports import (
+    CommandResult,
+    CommitOutcome,
+    CommitRequest,
+    RunContext,
+)
 from code_review_loop.core.review_interpretation import actionable_review_output
+from code_review_loop.git_status import non_artifact_status_entries_from_status_z
+from code_review_loop.repo_roots import lexical_git_repo_root
 
 if TYPE_CHECKING:
     from code_review_loop.config import LoopConfig
 
 Runner = Callable[[Sequence[str], Path, str | None, float | None], CommandResult]
+
+COMMIT_MESSAGE_SIDE_EFFECT_WARNING = (
+    "commit-message harness mutated repository state; this model/harness is "
+    "unsuitable for commit-message drafting until fixed"
+)
+
+
+@dataclass(frozen=True)
+class _AdoptedCommit:
+    head_before: str
+    head_after: str
+    artifact: str
 
 
 def git_add_command_for_commit(_config: LoopConfig) -> list[str]:
@@ -34,7 +54,7 @@ def git_add_command_for_commit(_config: LoopConfig) -> list[str]:
 
 
 def git_worktree_status_command_for_commit(_config: LoopConfig) -> list[str]:
-    return ["git", "status", "--porcelain=v1", "--untracked-files=all"]
+    return ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"]
 
 
 def git_repo_root(config: LoopConfig, runner: Runner) -> Path | None:
@@ -73,7 +93,9 @@ def reject_artifact_dir_at_repo_root(config: LoopConfig, repo_root: Path) -> Non
     commit_artifact_relative_path(config, repo_root)
 
 
-def git_reset_artifact_command_for_commit(config: LoopConfig, repo_root: Path | None) -> list[str] | None:
+def git_reset_artifact_command_for_commit(
+    config: LoopConfig, repo_root: Path | None
+) -> list[str] | None:
     if repo_root is None:
         return None
     artifact_rel = commit_artifact_relative_path(config, repo_root)
@@ -98,7 +120,14 @@ def classify_commit_failure(result: CommandResult) -> str:
     return "hook_failed" if phase_support.COMMIT_HOOK_FAILURE_RE.search(output) else "commit_failed"
 
 
-def run_commit(config: LoopConfig, runner: Runner, iteration: int, *, ctx: RunContext, retrying: bool = False) -> str:
+def run_commit(
+    config: LoopConfig,
+    runner: Runner,
+    iteration: int,
+    *,
+    ctx: RunContext,
+    retrying: bool = False,
+) -> str:
     phase_support.progress_event(
         config,
         "commit",
@@ -114,8 +143,12 @@ def run_commit(config: LoopConfig, runner: Runner, iteration: int, *, ctx: RunCo
         ctx=ctx,
     )
     if config.dry_run:
-        phase_support.write_artifact(config.artifact_dir / f"commit-{iteration}.txt", "DRY_RUN commit skipped\n")
-        phase_support.progress_event(config, "commit", str(iteration), "skipped", "dry-run", ctx=ctx)
+        phase_support.write_artifact(
+            config.artifact_dir / f"commit-{iteration}.txt", "DRY_RUN commit skipped\n"
+        )
+        phase_support.progress_event(
+            config, "commit", str(iteration), "skipped", "dry-run", ctx=ctx
+        )
         return "skipped"
 
     repo_root = git_repo_root(config, runner)
@@ -127,9 +160,14 @@ def run_commit(config: LoopConfig, runner: Runner, iteration: int, *, ctx: RunCo
         None,
         phase_support.phase_timeout_seconds(config, config.timeout_seconds),
     )
-    phase_support.write_artifact(config.artifact_dir / f"commit-{iteration}-add.txt", phase_support._combined_output(add_result))
+    phase_support.write_artifact(
+        config.artifact_dir / f"commit-{iteration}-add.txt",
+        phase_support._combined_output(add_result),
+    )
     if add_result.returncode != 0:
-        phase_support.progress_event(config, "commit", str(iteration), "failed", "git add failed", ctx=ctx)
+        phase_support.progress_event(
+            config, "commit", str(iteration), "failed", "git add failed", ctx=ctx
+        )
         raise RuntimeError(
             f"git add failed for iteration {iteration}; "
             f"see {config.artifact_dir / f'commit-{iteration}-add.txt'}"
@@ -143,9 +181,19 @@ def run_commit(config: LoopConfig, runner: Runner, iteration: int, *, ctx: RunCo
             None,
             phase_support.phase_timeout_seconds(config, config.timeout_seconds),
         )
-        phase_support.write_artifact(config.artifact_dir / f"commit-{iteration}-reset-artifacts.txt", phase_support._combined_output(reset_result))
+        phase_support.write_artifact(
+            config.artifact_dir / f"commit-{iteration}-reset-artifacts.txt",
+            phase_support._combined_output(reset_result),
+        )
         if reset_result.returncode != 0:
-            phase_support.progress_event(config, "commit", str(iteration), "failed", "git reset artifacts failed", ctx=ctx)
+            phase_support.progress_event(
+                config,
+                "commit",
+                str(iteration),
+                "failed",
+                "git reset artifacts failed",
+                ctx=ctx,
+            )
             raise RuntimeError(
                 f"git reset artifacts failed for iteration {iteration}; "
                 f"see {config.artifact_dir / f'commit-{iteration}-reset-artifacts.txt'}"
@@ -158,15 +206,50 @@ def run_commit(config: LoopConfig, runner: Runner, iteration: int, *, ctx: RunCo
         phase_support.phase_timeout_seconds(config, config.timeout_seconds),
     )
     if diff_quiet.returncode == 0:
-        phase_support.write_artifact(config.artifact_dir / f"commit-{iteration}.txt", "No staged changes to commit.\n")
-        phase_support.progress_event(config, "commit", str(iteration), "skipped", "no staged changes", ctx=ctx)
+        phase_support.write_artifact(
+            config.artifact_dir / f"commit-{iteration}.txt",
+            "No staged changes to commit.\n",
+        )
+        phase_support.progress_event(
+            config, "commit", str(iteration), "skipped", "no staged changes", ctx=ctx
+        )
         return "skipped_no_changes"
     if diff_quiet.returncode != 1:
-        phase_support.write_artifact(config.artifact_dir / f"commit-{iteration}.txt", phase_support._combined_output(diff_quiet))
-        phase_support.progress_event(config, "commit", str(iteration), "failed", "git diff --cached --quiet failed", ctx=ctx)
+        phase_support.write_artifact(
+            config.artifact_dir / f"commit-{iteration}.txt",
+            phase_support._combined_output(diff_quiet),
+        )
+        phase_support.progress_event(
+            config,
+            "commit",
+            str(iteration),
+            "failed",
+            "git diff --cached --quiet failed",
+            ctx=ctx,
+        )
         raise RuntimeError(f"git staged-diff check failed for iteration {iteration}")
 
     message = commit_message_for_staged_changes(config, runner, iteration, ctx=ctx)
+    if isinstance(message, _AdoptedCommit):
+        phase_support.write_artifact(
+            config.artifact_dir / f"commit-{iteration}.txt",
+            (
+                "Commit-message harness already committed the staged changes.\n"
+                f"{COMMIT_MESSAGE_SIDE_EFFECT_WARNING}.\n"
+                f"HEAD before: {message.head_before}\n"
+                f"HEAD after: {message.head_after}\n"
+                f"Diagnostic: {message.artifact}\n"
+            ),
+        )
+        phase_support.progress_event(
+            config,
+            "commit",
+            str(iteration),
+            "committed",
+            f"adopted commit-message side-effect commit; {COMMIT_MESSAGE_SIDE_EFFECT_WARNING}",
+            ctx=ctx,
+        )
+        return "committed"
     commit_result = runner(
         commit_command_for_message(
             message,
@@ -189,15 +272,17 @@ def run_commit(config: LoopConfig, runner: Runner, iteration: int, *, ctx: RunCo
             artifact_path=commit_artifact_path,
             output=commit_output,
         )
-    phase_support.write_artifact(config.artifact_dir / f"commit-{iteration}-message.txt", message + "\n")
+    phase_support.write_artifact(
+        config.artifact_dir / f"commit-{iteration}-message.txt", message + "\n"
+    )
     phase_support.progress_event(config, "commit", str(iteration), "committed", message, ctx=ctx)
     return "committed"
 
 
-def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iteration: int, ctx: RunContext) -> str:
-    timeout_seconds = phase_support.phase_timeout_seconds(
-        config, config.commit_timeout_seconds
-    )
+def commit_message_for_staged_changes(
+    config: LoopConfig, runner: Runner, iteration: int, ctx: RunContext
+) -> str | _AdoptedCommit:
+    timeout_seconds = phase_support.phase_timeout_seconds(config, config.commit_timeout_seconds)
     stat = runner(["git", "diff", "--cached", "--stat"], config.cwd, None, timeout_seconds)
     names = runner(["git", "diff", "--cached", "--name-only"], config.cwd, None, timeout_seconds)
     stat_stdout = stat.stdout or ""
@@ -224,14 +309,28 @@ def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iterat
     )
     if not config.commit_message_model:
         return fallback
+    before_head = _commit_message_head(config, runner, timeout_seconds=timeout_seconds)
+    before_cached_raw = _commit_message_cached_raw(config, runner, timeout_seconds=timeout_seconds)
     command = phase_support.build_commit_message_command(config)
     prompt_root = config.commit_message_prompt or phase_support.DEFAULT_COMMIT_MESSAGE_PROMPT
+    prompt_root = (
+        f"{prompt_root.rstrip()}\n"
+        "Do not edit, write, stage, or commit files. Do not run git add or "
+        "git commit. Print only the subject; repository mutations are detected "
+        "and recorded as commit-message side effects.\n"
+    )
     prompt = f"{prompt_root}\n{prompts_composer.trim_for_prompt(context, config.max_remediation_input_chars)}"
-    command, prompt_input = harnesses.prepare_prompt_invocation(
+    prompt_artifact_path = config.artifact_dir / f"commit-{iteration}-message-prompt.txt"
+    phase_support.write_artifact(prompt_artifact_path, prompt)
+    invocation = harnesses.prepare_prompt_invocation(
         config.commit_message_harness,
         command,
         prompt,
+        prompt_artifact_path=prompt_artifact_path,
     )
+    command = invocation.command
+    prompt_input = invocation.stdin
+    prompt_metadata = phase_support.prompt_invocation_metadata(invocation)
     phase_support.ensure_model_budget(config, phase="commit-message", iteration=iteration, ctx=ctx)
     if config.commit_reasoning_effort_adjustment:
         phase_support.progress_event(
@@ -259,12 +358,78 @@ def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iterat
             timeout_seconds=config.commit_timeout_seconds_display,
             sandbox="read-only",
             source=config.phase_config_sources.get("commit_message", "direct-config"),
+            prompt_chars=prompt_metadata.get("prompt_chars"),
+            prompt_delivery=prompt_metadata["prompt_delivery"],
         ),
         ctx=ctx,
+        metadata={
+            "command": phase_support.command_for_progress(list(command)),
+            "harness": config.commit_message_harness,
+            **prompt_metadata,
+        },
     )
-    result = runner(command, config.cwd, prompt_input, timeout_seconds)
-    phase_support.write_artifact(config.artifact_dir / f"commit-{iteration}-message-draft.txt", phase_support._combined_output(result))
-    phase_support.record_model_charge(config, result, phase="commit-message", iteration=iteration, ctx=ctx)
+    before_status = _commit_message_worktree_status(
+        config,
+        runner,
+        timeout_seconds=timeout_seconds,
+    )
+    result = phase_support.run_with_waiting_progress(
+        config,
+        runner,
+        command,
+        config.cwd,
+        prompt_input,
+        timeout_seconds,
+        phase="commit-message",
+        label=str(iteration),
+        ctx=ctx,
+        prompt_artifact=invocation.prompt_artifact,
+    )
+    phase_support.write_artifact(
+        config.artifact_dir / f"commit-{iteration}-message-draft.txt",
+        phase_support._combined_output(result),
+    )
+    phase_support.record_model_charge(
+        config, result, phase="commit-message", iteration=iteration, ctx=ctx
+    )
+    side_effect_status, prior_created_paths = _handle_commit_message_side_effects(
+        config,
+        runner,
+        iteration,
+        before_status=before_status,
+        timeout_seconds=timeout_seconds,
+    )
+    repo_mutation = _handle_commit_message_repo_mutation(
+        config,
+        runner,
+        iteration,
+        before_head=before_head,
+        before_cached_raw=before_cached_raw,
+        timeout_seconds=timeout_seconds,
+        prior_created_paths=prior_created_paths,
+    )
+    if repo_mutation is not None:
+        return repo_mutation
+    if side_effect_status == "fallback":
+        artifacts.write_json_artifact(
+            config.artifact_dir,
+            f"commit-{iteration}-message-fallback.json",
+            {
+                "iteration": iteration,
+                "reason": "model_drafting_side_effects",
+                "subject": fallback,
+                "draft_artifact": f"commit-{iteration}-message-draft.txt",
+            },
+        )
+        phase_support.progress_event(
+            config,
+            "commit-message",
+            str(iteration),
+            "fallback",
+            f"model drafting wrote files; using deterministic subject: {fallback}",
+            ctx=ctx,
+        )
+        return fallback
     if result.returncode != 0:
         artifacts.write_json_artifact(
             config.artifact_dir,
@@ -285,10 +450,262 @@ def commit_message_for_staged_changes(config: LoopConfig, runner: Runner, iterat
             ctx=ctx,
         )
         return fallback
-    return phase_support.sanitize_commit_message(
-        actionable_review_output(phase_support._combined_output(result)),
-        fallback=fallback,
+    subject = model_commit_message_subject(
+        phase_support._combined_output(result),
         enforce_revrem_conventional=not config.commit_message_prompt_overridden,
+    )
+    if subject is not None:
+        return subject
+    artifacts.write_json_artifact(
+        config.artifact_dir,
+        f"commit-{iteration}-message-fallback.json",
+        {
+            "iteration": iteration,
+            "reason": "model_drafting_invalid",
+            "subject": fallback,
+            "draft_artifact": f"commit-{iteration}-message-draft.txt",
+        },
+    )
+    phase_support.progress_event(
+        config,
+        "commit-message",
+        str(iteration),
+        "fallback",
+        f"model drafting invalid; using deterministic subject: {fallback}",
+        ctx=ctx,
+    )
+    return fallback
+
+
+def _commit_message_worktree_status(
+    config: LoopConfig,
+    runner: Runner,
+    *,
+    timeout_seconds: float | None = None,
+) -> set[str] | None:
+    if lexical_git_repo_root(config.cwd) is None:
+        return None
+    result = runner(
+        git_worktree_status_command_for_commit(config),
+        config.cwd,
+        None,
+        timeout_seconds,
+    )
+    if result.returncode != 0:
+        return None
+    return set(non_artifact_status_entries_from_status_z(config, result.stdout))
+
+
+def _commit_message_head(
+    config: LoopConfig,
+    runner: Runner,
+    *,
+    timeout_seconds: float | None,
+) -> str | None:
+    if lexical_git_repo_root(config.cwd) is None:
+        return None
+    result = runner(["git", "rev-parse", "HEAD"], config.cwd, None, timeout_seconds)
+    if result.returncode != 0:
+        return None
+    head = result.stdout.strip()
+    return head or None
+
+
+def _commit_message_cached_raw(
+    config: LoopConfig,
+    runner: Runner,
+    *,
+    timeout_seconds: float | None,
+) -> str | None:
+    if lexical_git_repo_root(config.cwd) is None:
+        return None
+    result = runner(["git", "diff", "--cached", "--raw"], config.cwd, None, timeout_seconds)
+    if result.returncode != 0:
+        return None
+    return result.stdout
+
+
+def _commit_message_cached_is_empty(
+    config: LoopConfig,
+    runner: Runner,
+    *,
+    timeout_seconds: float | None,
+) -> bool:
+    result = runner(
+        ["git", "diff", "--cached", "--quiet"],
+        config.cwd,
+        None,
+        timeout_seconds,
+    )
+    return result.returncode == 0
+
+
+def _handle_commit_message_repo_mutation(
+    config: LoopConfig,
+    runner: Runner,
+    iteration: int,
+    *,
+    before_head: str | None,
+    before_cached_raw: str | None,
+    timeout_seconds: float | None,
+    prior_created_paths: list[str] | None = None,
+) -> _AdoptedCommit | None:
+    if before_head is None and before_cached_raw is None:
+        return None
+    after_head = _commit_message_head(config, runner, timeout_seconds=timeout_seconds)
+    after_cached_raw = _commit_message_cached_raw(config, runner, timeout_seconds=timeout_seconds)
+    head_changed = bool(before_head and after_head and before_head != after_head)
+    cached_changed = (
+        before_cached_raw is not None
+        and after_cached_raw is not None
+        and before_cached_raw != after_cached_raw
+    )
+    if not head_changed and not cached_changed:
+        return None
+    clean_status = _commit_message_worktree_status(config, runner, timeout_seconds=timeout_seconds)
+    cached_empty = _commit_message_cached_is_empty(config, runner, timeout_seconds=timeout_seconds)
+    artifact = _write_commit_message_side_effect_artifact(
+        config.artifact_dir,
+        iteration,
+        kind=(
+            "self_commit_adopted"
+            if head_changed and clean_status == set() and cached_empty
+            else "unsafe_repo_mutation"
+        ),
+        severity=(
+            "warning" if head_changed and clean_status == set() and cached_empty else "error"
+        ),
+        head_before=before_head,
+        head_after=after_head,
+        cached_diff_changed=cached_changed,
+        cached_diff_empty=cached_empty,
+        non_artifact_status_lines=sorted(clean_status or []),
+        created_paths_removed=prior_created_paths or [],
+        warning=COMMIT_MESSAGE_SIDE_EFFECT_WARNING,
+    )
+    if head_changed and clean_status == set() and cached_empty and after_head:
+        return _AdoptedCommit(
+            head_before=before_head or "",
+            head_after=after_head,
+            artifact=str(artifact),
+        )
+    raise RuntimeError(
+        f"commit-message drafting mutated repository HEAD or staged changes; see {artifact}"
+    )
+
+
+def _handle_commit_message_side_effects(
+    config: LoopConfig,
+    runner: Runner,
+    iteration: int,
+    *,
+    before_status: set[str] | None,
+    timeout_seconds: float | None,
+) -> tuple[Literal["clean", "fallback"], list[str]]:
+    if before_status is None:
+        return "clean", []
+    after_status = _commit_message_worktree_status(
+        config,
+        runner,
+        timeout_seconds=timeout_seconds,
+    )
+    if after_status is None:
+        return "clean", []
+    new_lines = sorted(after_status - before_status)
+    if not new_lines:
+        return "clean", []
+    # ``git status --porcelain`` reports paths relative to the repository root
+    # even when RevRem is launched from a subdirectory, so resolve any new
+    # ``??`` paths from the lexical git root (falling back to ``config.cwd``
+    # outside a worktree) before deciding whether the path is safe to remove.
+    # Otherwise a root-level helper file created by the model is treated as
+    # missing/unsafe and the commit phase aborts instead of falling back.
+    status_root = lexical_git_repo_root(config.cwd) or config.cwd.resolve()
+    created_paths: list[str] = []
+    unsafe_lines: list[str] = []
+    for line in new_lines:
+        if not line.startswith("?? "):
+            unsafe_lines.append(line)
+            continue
+        path_text = line[3:].strip()
+        if not path_text:
+            unsafe_lines.append(line)
+            continue
+        target = (status_root / path_text).resolve()
+        try:
+            target.relative_to(status_root)
+        except ValueError:
+            unsafe_lines.append(line)
+            continue
+        if not target.exists() or target.is_dir():
+            unsafe_lines.append(line)
+            continue
+        try:
+            target.unlink()
+            created_paths.append(path_text)
+        except OSError:
+            unsafe_lines.append(line)
+    kind = "helper_files_removed" if created_paths else "unsafe_worktree_paths"
+    _write_commit_message_side_effect_artifact(
+        config.artifact_dir,
+        iteration,
+        kind=kind,
+        severity="warning" if created_paths and not unsafe_lines else "error",
+        created_paths_removed=created_paths,
+        unsafe_status_lines=unsafe_lines,
+        warning=COMMIT_MESSAGE_SIDE_EFFECT_WARNING,
+    )
+    if unsafe_lines:
+        raise RuntimeError(
+            "commit-message drafting modified existing or unsafe worktree paths; "
+            f"see {config.artifact_dir / f'commit-{iteration}-message-side-effects.json'}"
+        )
+    return ("fallback", created_paths) if created_paths else ("clean", [])
+
+
+def _write_commit_message_side_effect_artifact(
+    artifact_dir: Path,
+    iteration: int,
+    *,
+    kind: str,
+    severity: str,
+    warning: str,
+    created_paths_removed: list[str] | None = None,
+    unsafe_status_lines: list[str] | None = None,
+    head_before: str | None = None,
+    head_after: str | None = None,
+    cached_diff_changed: bool | None = None,
+    cached_diff_empty: bool | None = None,
+    non_artifact_status_lines: list[str] | None = None,
+) -> Path:
+    return artifacts.write_json_artifact(
+        artifact_dir,
+        f"commit-{iteration}-message-side-effects.json",
+        {
+            "schema_version": "1.0",
+            "iteration": iteration,
+            "kind": kind,
+            "severity": severity,
+            "warning": warning,
+            "created_paths_removed": created_paths_removed or [],
+            "unsafe_status_lines": unsafe_status_lines or [],
+            "head_before": head_before,
+            "head_after": head_after,
+            "cached_diff_changed": cached_diff_changed,
+            "cached_diff_empty": cached_diff_empty,
+            "non_artifact_status_lines": non_artifact_status_lines or [],
+        },
+    )
+
+
+def model_commit_message_subject(
+    draft_output: str,
+    *,
+    enforce_revrem_conventional: bool,
+) -> str | None:
+    return phase_support.extract_commit_message_subject(
+        actionable_review_output(draft_output),
+        enforce_revrem_conventional=enforce_revrem_conventional,
     )
 
 
@@ -363,9 +780,7 @@ def _src_scope(paths: list[str]) -> str:
             continue
         if len(path.parts) >= 4 and path.parts[1] == "code_review_loop":
             candidates.append(path.parts[2])
-        elif len(path.parts) == 2 or (
-            len(path.parts) == 3 and path.parts[1] == "code_review_loop"
-        ):
+        elif len(path.parts) == 2 or (len(path.parts) == 3 and path.parts[1] == "code_review_loop"):
             candidates.append(path.stem)
         elif len(path.parts) > 2:
             candidates.append(path.parts[1])
@@ -399,16 +814,37 @@ def _commit_type(paths: list[str], *, context: str = "") -> str:
         ),
     ):
         return "fix"
-    if _contains_any(leading_context, (r"\bperformance\b", r"\bcach(?:e|ing)\b", r"\bfaster\b", r"\bspeed\b", r"\blatency\b")):
+    if _contains_any(
+        leading_context,
+        (
+            r"\bperformance\b",
+            r"\bcach(?:e|ing)\b",
+            r"\bfaster\b",
+            r"\bspeed\b",
+            r"\blatency\b",
+        ),
+    ):
         return "perf"
     if _contains_any(
         leading_context,
-        (r"\brefactor(?:s|ed)?\b", r"\bextract(?:s|ed)?\b", r"\bsplit(?:s)?\b", r"\brestructure(?:s|d)?\b", r"\bdecompose(?:s|d)?\b"),
+        (
+            r"\brefactor(?:s|ed)?\b",
+            r"\bextract(?:s|ed)?\b",
+            r"\bsplit(?:s)?\b",
+            r"\brestructure(?:s|d)?\b",
+            r"\bdecompose(?:s|d)?\b",
+        ),
     ):
         return "refactor"
     if _contains_any(
         leading_context,
-        (r"\badd(?:s|ed)?\b", r"\benable(?:s|d)?\b", r"\bsupport(?:s|ed)?\b", r"\bnew\b", r"\bfeature(?:s)?\b"),
+        (
+            r"\badd(?:s|ed)?\b",
+            r"\benable(?:s|d)?\b",
+            r"\bsupport(?:s|ed)?\b",
+            r"\bnew\b",
+            r"\bfeature(?:s)?\b",
+        ),
     ):
         return "feat"
     return "chore"
@@ -553,12 +989,72 @@ def _is_low_signal_scope(scope: str, *, change_type: str) -> bool:
 
 def _summary_trigger_words(verb: str) -> set[str]:
     return {
-        "add": {"add", "adds", "added", "enable", "enables", "enabled", "support", "supports", "supported", "new"},
-        "cover": {"add", "adds", "added", "coverage", "cover", "covers", "covered", "test", "tests"},
+        "add": {
+            "add",
+            "adds",
+            "added",
+            "enable",
+            "enables",
+            "enabled",
+            "support",
+            "supports",
+            "supported",
+            "new",
+        },
+        "cover": {
+            "add",
+            "adds",
+            "added",
+            "coverage",
+            "cover",
+            "covers",
+            "covered",
+            "test",
+            "tests",
+        },
         "document": {"document", "documents", "documented", "docs", "new"},
-        "fix": {"fix", "fixes", "fixed", "preserve", "preserves", "preserved", "avoid", "avoids", "avoided", "prevent", "prevents", "prevented", "restore", "restores", "restored"},
-        "improve": {"improve", "improves", "improved", "performance", "faster", "speed", "latency"},
-        "refactor": {"refactor", "refactors", "refactored", "extract", "extracts", "extracted", "split", "splits", "restructure", "restructures", "restructured", "decompose", "decomposes", "decomposed"},
+        "fix": {
+            "fix",
+            "fixes",
+            "fixed",
+            "preserve",
+            "preserves",
+            "preserved",
+            "avoid",
+            "avoids",
+            "avoided",
+            "prevent",
+            "prevents",
+            "prevented",
+            "restore",
+            "restores",
+            "restored",
+        },
+        "improve": {
+            "improve",
+            "improves",
+            "improved",
+            "performance",
+            "faster",
+            "speed",
+            "latency",
+        },
+        "refactor": {
+            "refactor",
+            "refactors",
+            "refactored",
+            "extract",
+            "extracts",
+            "extracted",
+            "split",
+            "splits",
+            "restructure",
+            "restructures",
+            "restructured",
+            "decompose",
+            "decomposes",
+            "decomposed",
+        },
         "update": {"update", "updates", "updated"},
     }.get(verb, {verb})
 
@@ -605,4 +1101,6 @@ class CommitAdapter:
             retrying=request.retrying,
             ctx=ctx,
         )
-        return CommitOutcome(status=cast(Literal["committed", "skipped", "skipped_no_changes"], status))
+        return CommitOutcome(
+            status=cast(Literal["committed", "skipped", "skipped_no_changes"], status)
+        )

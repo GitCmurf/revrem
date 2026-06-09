@@ -47,9 +47,7 @@ def history_record(summary: dict[str, Any], *, cwd: Path) -> dict[str, Any]:
         "pending_check_failures": bool(summary.get("pending_check_failures")),
         "artifact_dir": summary.get("artifact_dir"),
         "summary_path": (
-            artifact_paths.get("summary")
-            if isinstance(artifact_paths, dict)
-            else None
+            artifact_paths.get("summary") if isinstance(artifact_paths, dict) else None
         ),
         "artifact_paths": dict(artifact_paths) if isinstance(artifact_paths, dict) else None,
     }

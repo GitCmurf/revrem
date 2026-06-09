@@ -29,6 +29,7 @@ def _state() -> RunState:
         commit_on_hook_failure="fail",
         budgets={},
         initial_review_file=None,
+        initial_review_mode="none",
     )
 
 

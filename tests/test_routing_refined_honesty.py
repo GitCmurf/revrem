@@ -27,9 +27,7 @@ def _init_git_repo(path):
     subprocess.run(["git", "commit", "-m", "initial"], cwd=path, check=True)
 
 
-def test_default_route_artifact_honesty_uses_production_loop(
-    fake_harness, tmp_path, monkeypatch
-):
+def test_default_route_artifact_honesty_uses_production_loop(fake_harness, tmp_path, monkeypatch):
     findings_dir = fake_harness / "fake-findings"
     findings_dir.mkdir()
     (findings_dir / "review.txt").write_text(

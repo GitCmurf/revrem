@@ -21,14 +21,25 @@ def fake_harness(monkeypatch, tmp_path):
     monkeypatch.setenv(harnesses.FAKE_HARNESS_FIXTURE_ENV, str(fixture_dir))
     return fixture_dir
 
+
 def test_loop_generates_schema_compliant_routing_artifact(fake_harness, tmp_path, monkeypatch):
     # Setup mock fixtures
     findings_dir = fake_harness / "fake-findings"
     findings_dir.mkdir()
-    (findings_dir / "review.txt").write_text("Finding: f1\nREVIEW_STATUS: findings\n", encoding="utf-8")
+    (findings_dir / "review.txt").write_text(
+        "Finding: f1\nREVIEW_STATUS: findings\n", encoding="utf-8"
+    )
 
     triage_payload = {
-        "confirmed_findings": [{"fingerprint": "f1", "summary": "s", "severity": "high", "affected_paths": ["a.py"], "rationale": "r"}],
+        "confirmed_findings": [
+            {
+                "fingerprint": "f1",
+                "summary": "s",
+                "severity": "high",
+                "affected_paths": ["a.py"],
+                "rationale": "r",
+            }
+        ],
         "rejected_findings": [],
         "needs_more_info": [],
         "implementation_order": ["f1"],
@@ -41,7 +52,7 @@ def test_loop_generates_schema_compliant_routing_artifact(fake_harness, tmp_path
             "affected_modules": ["auth"],
             "estimated_blast_radius": {"module_count": 1, "finding_count": 1},
             "safety_signals": [],
-            "failed_check_signals": []
+            "failed_check_signals": [],
         },
         "route_proposal": {
             "route_tier": "frontier-thinking",
@@ -50,13 +61,13 @@ def test_loop_generates_schema_compliant_routing_artifact(fake_harness, tmp_path
             "reasoning_effort": "high",
             "sandbox": "workspace-write",
             "timeout_seconds": 60,
-            "rationale": "proposing frontier"
+            "rationale": "proposing frontier",
         },
         "prompt_requirements": {
             "required_fragments": [],
             "definition_of_done": ["DONE"],
-            "triage_prompt_draft": "FIX IT"
-        }
+            "triage_prompt_draft": "FIX IT",
+        },
     }
     (findings_dir / "triage.txt").write_text(json.dumps(triage_payload), encoding="utf-8")
 
@@ -67,6 +78,7 @@ def test_loop_generates_schema_compliant_routing_artifact(fake_harness, tmp_path
 
     # Init git repo for preflight
     import subprocess
+
     subprocess.run(["git", "init", "-b", "main"], cwd=tmp_path, check=True)
     subprocess.run(["git", "config", "user.email", "t@e.com"], cwd=tmp_path, check=True)
     subprocess.run(["git", "config", "user.name", "T"], cwd=tmp_path, check=True)
@@ -96,7 +108,18 @@ model = "fake-clear"
     (tmp_path / ".revrem.toml").write_text(toml, encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
-    exit_code = cli_main(["--profile", "test", "--review-model", "fake-findings", "--max-iterations", "1", "--skip-final-review", "--trusted-repo"])
+    exit_code = cli_main(
+        [
+            "--profile",
+            "test",
+            "--review-model",
+            "fake-findings",
+            "--max-iterations",
+            "1",
+            "--skip-final-review",
+            "--trusted-repo",
+        ]
+    )
     assert exit_code == 2
 
     routing_path = tmp_path / ".revrem/runs"
@@ -105,8 +128,13 @@ model = "fake-clear"
     assert routing_file.is_file()
 
     routing_data = json.loads(routing_file.read_text())
-    schema = json.loads(files("code_review_loop").joinpath("schemas/routing-v1.schema.json").read_text(encoding="utf-8"))
+    schema = json.loads(
+        files("code_review_loop")
+        .joinpath("schemas/routing-v1.schema.json")
+        .read_text(encoding="utf-8")
+    )
     validate(routing_data, schema)
+
 
 def test_build_remediation_command_uses_harness_executable(monkeypatch):
     monkeypatch.setenv(harnesses.FAKE_HARNESS_ENV, "1")
@@ -116,7 +144,7 @@ def test_build_remediation_command_uses_harness_executable(monkeypatch):
         artifact_dir=Path("/tmp"),
         base="main",
         max_iterations=1,
-        cwd=Path("/tmp")
+        cwd=Path("/tmp"),
     )
     # Default (Codex)
     cmd = remediation_impl.build_remediation_command(config)
@@ -124,11 +152,18 @@ def test_build_remediation_command_uses_harness_executable(monkeypatch):
 
     # Routed to fake
     resolved = policy.ResolvedRoute(
-        route_tier="f", harness="fake", model="m", reasoning_effort="l", timeout_seconds=1,
-        sandbox="s", prompt_fragments=(), allow_model_deescalation=True
+        route_tier="f",
+        harness="fake",
+        model="m",
+        reasoning_effort="l",
+        timeout_seconds=1,
+        sandbox="s",
+        prompt_fragments=(),
+        allow_model_deescalation=True,
     )
     cmd = remediation_impl.build_remediation_command(config, resolved_route=resolved)
     assert cmd[0] == harnesses.FAKE_HARNESS_COMMAND
+
 
 def test_deterministic_safety_signal_escalation():
     profile = profiles.Profile(
@@ -137,45 +172,61 @@ def test_deterministic_safety_signal_escalation():
             contract="v2",
             routing=profiles.TriageRoutingConfig(
                 enabled=True,
-                rule=(profiles.TriageRoutingRule(
-                    id="sec",
-                    when=profiles.TriageRoutingRuleWhen(safety_signals_any=("sensitive-domain:auth",)),
-                    then=profiles.TriageRoutingRuleThen(route="high-tier")
-                ),),
-                default_route="low-tier"
+                rule=(
+                    profiles.TriageRoutingRule(
+                        id="sec",
+                        when=profiles.TriageRoutingRuleWhen(
+                            safety_signals_any=("sensitive-domain:auth",)
+                        ),
+                        then=profiles.TriageRoutingRuleThen(route="high-tier"),
+                    ),
+                ),
+                default_route="low-tier",
             ),
             routes={
                 "low-tier": profiles.TriageRouteConfig(harness="codex"),
-                "high-tier": profiles.TriageRouteConfig(harness="codex")
-            }
-        )
+                "high-tier": profiles.TriageRouteConfig(harness="codex"),
+            },
+        ),
     )
     context = policy.RoutingContext(
-        domain_tags=(), risk_level="low", refactor_depth="atomic", module_count=1,
-        failed_checks=(), safety_signals=("sensitive-domain:auth",)
+        domain_tags=(),
+        risk_level="low",
+        refactor_depth="atomic",
+        module_count=1,
+        failed_checks=(),
+        safety_signals=("sensitive-domain:auth",),
     )
     resolved = policy.resolve_routing(profile, context)
     assert resolved.route_tier == "high-tier"
 
+
 def test_prompt_safety_truncation_protection(tmp_path):
     triage_payload = {
         "classification": {"risk_level": "critical", "refactor_depth": "architectural"},
-        "prompt_requirements": {"definition_of_done": ["MUST_NOT_BE_TRUNCATED"]}
+        "prompt_requirements": {"definition_of_done": ["MUST_NOT_BE_TRUNCATED"]},
     }
     resolved = policy.ResolvedRoute(
-        route_tier="f", harness="h", model="m", reasoning_effort="h", timeout_seconds=1,
-        sandbox="s", prompt_fragments=(), allow_model_deescalation=False, rule_id="sec-rule"
+        route_tier="f",
+        harness="h",
+        model="m",
+        reasoning_effort="h",
+        timeout_seconds=1,
+        sandbox="s",
+        prompt_fragments=(),
+        allow_model_deescalation=False,
+        rule_id="sec-rule",
     )
     original_review = "REALLY_LONG_REVIEW" * 1000
 
     # Header should remain. Review should be truncated.
     prompt = prompts_composer.compose_remediation_prompt(
-        tmp_path, triage_payload, resolved, original_review, max_chars=1000
+        tmp_path, triage_payload, resolved, original_review, max_chars=1200
     )
     assert "MUST_NOT_BE_TRUNCATED" in prompt
     assert "sec-rule" in prompt
     assert "[... omitted" in prompt
-    assert len(prompt) <= 1000
+    assert len(prompt) <= 1200
 
     # If limit is too small for header, it must fail
     with pytest.raises(ValueError, match="mandatory prompt header"):

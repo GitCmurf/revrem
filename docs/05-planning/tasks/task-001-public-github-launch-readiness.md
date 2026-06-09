@@ -3,8 +3,8 @@ document_id: REVREM-TASK-001
 type: TASK
 title: Public GitHub launch readiness
 status: Approved
-version: '0.4'
-last_updated: '2026-05-07'
+version: '0.5'
+last_updated: '2026-05-31'
 owner: GitCmurf
 docops_version: '2.0'
 area: release
@@ -24,8 +24,8 @@ related_ids:
 > **Document ID:** REVREM-TASK-001
 > **Owner:** GitCmurf
 > **Status:** Approved
-> **Version:** 0.4
-> **Last Updated:** 2026-05-07
+> **Version:** 0.5
+> **Last Updated:** 2026-05-31
 > **Type:** TASK
 > **Area:** release
 > **Description:** Task list for preparing code-review-loop for first public GitHub repository publication
@@ -810,3 +810,20 @@ The launch is considered successful when, within 30 days of the PR merging to
 - `./scripts/dev-check`, `meminit check --format json`,
   `git ls-files -z | xargs -0 detect-secrets-hook --baseline .secrets.baseline`,
   `pre-commit run --all-files`, and `git diff --check` all exit 0.
+
+### Completion Audit Snapshot
+
+This task is complete and closed. The original `Approved` status was stale as a
+progress marker: the public launch work has landed on `main`.
+
+| Requirement | Evidence inspected on 2026-05-31 | Audit status |
+|---|---|---|
+| Public repository baseline exists | `origin` is `git@github.com:GitCmurf/revrem.git`; `main` and `origin/main` point at `aaf73bc`; the launch baseline and PR sequence are visible in history (`092a472`, `d1309d1`). | Completed |
+| Safety point exists | Local tag `pre-public-audit-2026-05-07` exists. | Completed |
+| Launch PR landed | `Prepare revrem for public launch (#6)` is merged on `main` as `d1309d1`. | Completed |
+| Release/publication follow-through exists | `v0.3.1`, `v0.3.2`, and later dependency-update PRs are present in history; `v0.3.2` is the published release recorded by `REVREM-TASK-002`. | Completed |
+| DocOps remains green | `meminit check --format json` passed on 2026-05-31 with `success:true`, 29/29 files checked. | Completed |
+
+Post-launch operator/security settings that live in GitHub are not re-asserted
+from this file. They remain governed by the repository settings, CI workflows,
+and release runbook rather than this launch task.

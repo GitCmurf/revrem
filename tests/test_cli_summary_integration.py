@@ -52,12 +52,14 @@ def test_command_line_redacts_prompt_values():
 
 def test_command_line_redacts_secret_like_tokens(monkeypatch):
     monkeypatch.setenv("HOME", "/home/example-user")
-    assert _redacted_argv([
-        "--api-token",
-        "ghp_abcdefghijklmnopqrstuvwxyz123456",  # pragma: allowlist secret
-        "--path=/home/example-user/project",
-        "--opaque=0123456789abcdef0123456789abcdef",  # pragma: allowlist secret
-    ]) == (
+    assert _redacted_argv(
+        [
+            "--api-token",
+            "ghp_abcdefghijklmnopqrstuvwxyz123456",  # pragma: allowlist secret
+            "--path=/home/example-user/project",
+            "--opaque=0123456789abcdef0123456789abcdef",  # pragma: allowlist secret
+        ]
+    ) == (
         "--api-token",
         "[REDACTED:github-token]",
         "--path=[REDACTED:home]/project",
@@ -70,7 +72,11 @@ def test_summary_collects_commit_message_fallback_artifacts(tmp_path):
     artifacts.write_json_artifact(
         artifact_dir,
         "commit-2-message-fallback.json",
-        {"iteration": 2, "reason": "model_drafting_failed", "subject": "fix(core): x (RevRem)"},
+        {
+            "iteration": 2,
+            "reason": "model_drafting_failed",
+            "subject": "fix(core): x (RevRem)",
+        },
     )
     summary: dict[str, object] = {}
 
@@ -82,6 +88,33 @@ def test_summary_collects_commit_message_fallback_artifacts(tmp_path):
         "subject": "fix(core): x (RevRem)",
         "schema_version": "1.0",
         "artifact": str(artifact_dir / "commit-2-message-fallback.json"),
+    }
+
+
+def test_summary_collects_commit_message_side_effect_artifacts(tmp_path):
+    artifact_dir = tmp_path / "artifacts"
+    artifacts.write_json_artifact(
+        artifact_dir,
+        "commit-2-message-side-effects.json",
+        {
+            "schema_version": "1.0",
+            "iteration": 2,
+            "kind": "self_commit_adopted",
+            "severity": "warning",
+            "warning": "commit-message harness mutated repository state",
+        },
+    )
+    summary: dict[str, object] = {}
+
+    reporting.add_artifact_paths(summary, LoopConfig(artifact_dir=artifact_dir))
+
+    assert summary["commit_message_side_effects"][0] == {
+        "schema_version": "1.0",
+        "iteration": 2,
+        "kind": "self_commit_adopted",
+        "severity": "warning",
+        "warning": "commit-message harness mutated repository state",
+        "artifact": str(artifact_dir / "commit-2-message-side-effects.json"),
     }
 
 
@@ -184,7 +217,11 @@ def test_terminal_summary_surfaces_latest_findings_and_paths():
                 "model": "spark",
                 "reasoning_effort": "minimal",
                 "source": "cli",
-                "sources": {"harness": "cli", "model": "cli", "reasoning_effort": "cli"},
+                "sources": {
+                    "harness": "cli",
+                    "model": "cli",
+                    "reasoning_effort": "cli",
+                },
             },
         },
         "latest_review_excerpt": "Full review comments:\n\n- [P2] Fix summary counts",
@@ -215,6 +252,148 @@ def test_terminal_summary_surfaces_latest_findings_and_paths():
     assert "source=cli" in text
 
 
+def test_terminal_summary_resume_command_preserves_forced_route():
+    text = format_terminal_summary(
+        {
+            "artifact_dir": "tmp/run",
+            "final_status": "findings",
+            "stopped_reason": "max_iterations_reached",
+            "artifact_paths": {"reviews": ["tmp/run/review-final.txt"]},
+            "base": "main",
+            "max_iterations": 1,
+            "resume_config": {
+                "base": "main",
+                "max_iterations": 1,
+                "routing_default_route": "gemini-pro",
+            },
+            "phase_config": {
+                "triage": {
+                    "sources": {"routing_default_route": "cli"},
+                },
+            },
+        }
+    )
+
+    assert "--route gemini-pro" in text
+
+
+def test_terminal_summary_marks_unsupported_reasoning_effort_as_na():
+    text = format_terminal_summary(
+        {
+            "artifact_dir": "tmp/run",
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+            "phase_config": {
+                "review": {
+                    "harness": "opencode",
+                    "model": "opencode/minimax-m3-free",
+                    "reasoning_effort": "low",
+                    "reasoning_effort_supported": False,
+                    "provider_reasoning_effort": None,
+                    "timeout_seconds": 0,
+                    "source": "mixed",
+                    "sources": {"model": "cli", "timeout_seconds": "profile:dogfood"},
+                }
+            },
+        }
+    )
+
+    assert (
+        "review(opencode, opencode/minimax-m3-free, effort=n/a, timeout=0, source=profile+cli)"
+    ) in text
+
+
+def test_terminal_summary_resume_command_preserves_external_review_overrides():
+    text = format_terminal_summary(
+        {
+            "artifact_dir": "tmp/run",
+            "final_status": "findings",
+            "stopped_reason": "max_iterations_reached",
+            "artifact_paths": {"reviews": ["tmp/run/review-final.txt"]},
+            "base": "main",
+            "max_iterations": 1,
+            "resume_config": {
+                "base": "main",
+                "max_iterations": 1,
+                "external_review_input_chars": 600_000,
+                "external_review_warning_seconds": 600,
+            },
+            "phase_config": {
+                "runtime": {
+                    "sources": {
+                        "external_review_input_chars": "cli",
+                        "external_review_warning_seconds": "cli",
+                    },
+                },
+            },
+        }
+    )
+
+    assert "--external-review-input-chars 600000" in text
+    assert "--external-review-warning-seconds 600" in text
+
+
+def test_terminal_summary_resume_command_preserves_non_default_harnesses():
+    text = format_terminal_summary(
+        {
+            "artifact_dir": "tmp/run",
+            "final_status": "findings",
+            "stopped_reason": "max_iterations_reached",
+            "artifact_paths": {"reviews": ["tmp/run/review-final.txt"]},
+            "base": "main",
+            "max_iterations": 1,
+            "resume_config": {
+                "base": "main",
+                "max_iterations": 1,
+                "review_harness": "opencode",
+                "remediation_harness": "kilo",
+            },
+            "phase_config": {
+                "review": {"harness": "opencode", "source": "cli"},
+                "remediation": {"harness": "kilo", "source": "cli"},
+            },
+        }
+    )
+
+    assert "--review-harness opencode" in text
+    assert "--remediation-harness kilo" in text
+
+
+def test_resume_config_payload_persists_routing_default_route_when_profile_v2_set(tmp_path):
+    from code_review_loop.config import LoopConfig
+    from code_review_loop.profiles import Profile, parse_triage
+    from code_review_loop.resume import resume_config_payload
+
+    triage_payload = {
+        "enabled": True,
+        "harness": "codex",
+        "model": None,
+        "reasoning_effort": None,
+        "timeout_seconds": 60,
+        "contract": "v2",
+        "routes": {"gemini-pro": {"harness": "gemini", "model": "gemini-3.1-pro-preview"}},
+        "routing": {
+            "enabled": True,
+            "strict_on_unavailable_route": True,
+            "default_route": "gemini-pro",
+            "allow_model_escalation": True,
+        },
+    }
+    profile_v2 = Profile(name="test", triage=parse_triage(triage_payload, "test"), source="test")
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path,
+        profile_v2=profile_v2,
+    )
+
+    payload = resume_config_payload(config)
+
+    assert payload["routing_default_route"] == "gemini-pro"
+
+
 def test_terminal_summary_falls_back_to_accurate_check_artifact_label():
     text = format_terminal_summary(
         {
@@ -240,7 +419,11 @@ def test_terminal_summary_parse_miss_lists_all_check_artifacts():
             "stopped_reason": "max_iterations_reached",
             "iterations": [{"iteration": 1, "review_status": "findings", "check_failures": 0}],
             "artifact_paths": {
-                "checks": ["tmp/run/ruff.txt", "tmp/run/mypy.txt", "tmp/run/pytest.txt"],
+                "checks": [
+                    "tmp/run/ruff.txt",
+                    "tmp/run/mypy.txt",
+                    "tmp/run/pytest.txt",
+                ],
             },
         }
     )
@@ -273,13 +456,41 @@ def test_terminal_summary_omits_latest_review_excerpt_when_clear():
     assert "discrete, actionable bugs" not in text
 
 
+def test_terminal_summary_labels_stale_review_validation_output():
+    text = format_terminal_summary(
+        {
+            "artifact_dir": "tmp/run",
+            "final_status": "clear",
+            "stopped_reason": "stale_review_already_resolved",
+            "artifact_paths": {
+                "reviews": ["tmp/run/review-initial.txt"],
+                "summary": "tmp/run/summary.json",
+            },
+            "latest_review_excerpt": (
+                "REVREM_STALE_REVIEW_STATUS: resolved\n"
+                "The cited whitespace finding no longer applies."
+            ),
+        }
+    )
+
+    assert "Review-remediation loop: clear (stale_review_already_resolved)" in text
+    assert "Stale review validation output:" in text
+    assert "Latest actionable review output:" not in text
+    assert "The cited whitespace finding no longer applies." in text
+
+
 def test_terminal_summary_prefers_commit_output_artifact():
     summary = {
         "artifact_dir": "tmp/run",
         "final_status": "findings",
         "stopped_reason": "max_iterations_reached",
         "iterations": [
-            {"iteration": 1, "review_status": "findings", "check_failures": 0, "commit_status": "committed"},
+            {
+                "iteration": 1,
+                "review_status": "findings",
+                "check_failures": 0,
+                "commit_status": "committed",
+            },
         ],
         "artifact_paths": {
             "reviews": ["tmp/run/review-1.txt"],
@@ -320,7 +531,38 @@ def test_terminal_summary_finds_commit_output_artifact_with_windows_separators()
     assert r"Latest commit artifact: C:\tmp\run\commit-1.txt" in text
 
 
-def test_summary_records_unknown_review_warning_and_bug_report(tmp_path):
+def test_terminal_summary_warns_for_commit_message_side_effects():
+    summary = {
+        "artifact_dir": "tmp/run",
+        "final_status": "clear",
+        "stopped_reason": "review_clear",
+        "iterations": [
+            {
+                "iteration": 1,
+                "review_status": "clear",
+                "check_failures": 0,
+                "commit_status": "committed",
+            }
+        ],
+        "artifact_paths": {
+            "reviews": ["tmp/run/review-1.txt"],
+            "summary": "tmp/run/summary.json",
+        },
+        "commit_message_side_effects": [
+            {
+                "kind": "self_commit_adopted",
+                "severity": "warning",
+            }
+        ],
+    }
+
+    text = format_terminal_summary(summary)
+
+    assert "WARNING: commit-message harness mutated repository state" in text
+    assert "unsuitable for commit-message drafting" in text
+
+
+def test_summary_records_terminal_unknown_review_warning_and_bug_report(tmp_path):
     review_outputs = iter(
         [
             "This review output is ambiguous.\n",
@@ -346,7 +588,8 @@ def test_summary_records_unknown_review_warning_and_bug_report(tmp_path):
     text = format_terminal_summary(summary)
     report_path = tmp_path / "artifacts" / "unexpected-behavior-report.txt"
 
-    assert summary["final_status"] == "clear"
+    assert summary["final_status"] == "unknown"
+    assert summary["stopped_reason"] == "review_unknown"
     assert summary["unexpected_behaviors"] == [
         {
             "kind": "unknown_review_status",
@@ -358,6 +601,7 @@ def test_summary_records_unknown_review_warning_and_bug_report(tmp_path):
     assert summary["bug_report_path"] == str(report_path)
     assert report_path.is_file()
     assert "iteration 1" in report_path.read_text(encoding="utf-8")
+    assert "Review-remediation loop: unknown (review_unknown)" in text
     assert "WARNING: unexpected loop behavior detected." in text
     assert f"Bug report details: {report_path}" in text
 

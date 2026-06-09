@@ -86,6 +86,79 @@ def test_rich_event_uses_text_objects_so_markup_in_output_is_literal(monkeypatch
     assert (": bad [/]", None) in rendered.parts
 
 
+def test_rich_event_collapses_multiline_detail(monkeypatch):
+    install_fake_rich(monkeypatch)
+
+    assert progress.print_rich_event("triage", "1", "start", "first\n\nsecond")
+
+    rendered = FakeConsole.printed[0]
+    assert isinstance(rendered, FakeText)
+    assert (": first second", None) in rendered.parts
+
+
+def test_rich_event_styles_structured_start_detail(monkeypatch):
+    install_fake_rich(monkeypatch)
+
+    assert progress.print_rich_event(
+        "review",
+        "1",
+        "start",
+        (
+            "opencode run · opencode/minimax-m3-free · n/a effort · "
+            "timeout=0 · sandbox read-only · prompt=126.7k file · source=profile+cli"
+        ),
+    )
+
+    rendered = FakeConsole.printed[0]
+    assert isinstance(rendered, FakeText)
+    assert ("review", "bold green") in rendered.parts
+    assert ("start", "green") in rendered.parts
+    assert ("opencode run", "bold") in rendered.parts
+    assert ("opencode/minimax-m3-free", "magenta") in rendered.parts
+    assert ("prompt=126.7k file", "blue") in rendered.parts
+
+
+def test_rich_event_keeps_styling_when_detail_grows_past_seven_segments(monkeypatch):
+    install_fake_rich(monkeypatch)
+
+    detail = " · ".join(
+        [
+            "opencode run",
+            "opencode/minimax-m3-free",
+            "n/a effort",
+            "timeout=0",
+            "sandbox read-only",
+            "prompt=126.7k file",
+            "source=profile+cli",
+            "route=secondary",
+            "routing=fallback",
+        ]
+    )
+
+    assert progress.print_rich_event("review", "1", "start", detail)
+
+    rendered = FakeConsole.printed[0]
+    assert isinstance(rendered, FakeText)
+
+    style_by_value = {value: style for value, style in rendered.parts}
+    expected_first_seven = [
+        ("opencode run", "bold"),
+        ("opencode/minimax-m3-free", "magenta"),
+        ("n/a effort", "cyan"),
+        ("timeout=0", "yellow"),
+        ("sandbox read-only", "yellow"),
+        ("prompt=126.7k file", "blue"),
+        ("source=profile+cli", "dim"),
+    ]
+    for value, style in expected_first_seven:
+        assert style_by_value.get(value) == style, value
+
+    assert style_by_value.get("route=secondary") is None
+    assert style_by_value.get("routing=fallback") is None
+
+    assert len(progress.RICH_DETAIL_STYLES) == 7
+
+
 def test_rich_message_and_continuation_escape_markup_like_text(monkeypatch):
     install_fake_rich(monkeypatch)
 

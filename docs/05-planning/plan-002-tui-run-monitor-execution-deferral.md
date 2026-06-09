@@ -2,9 +2,9 @@
 document_id: REVREM-PLAN-002
 type: PLAN
 title: TUI run monitor execution deferral
-status: Draft
-version: '0.3'
-last_updated: '2026-05-12'
+status: Approved
+version: '0.4'
+last_updated: '2026-05-31'
 owner: GitCmurf
 docops_version: '2.0'
 area: product
@@ -118,3 +118,32 @@ and suppression scenarios and the live loop emits the same event stream.
 
 Revisit this debt after the `0.3.0` PR has landed and the profile/TUI control
 panel has been dogfooded from at least two non-`code-review-loop` repositories.
+
+### Current State Audit
+
+This plan is **not complete**; it is an approved deferral with specified future
+work remaining. The deferral itself was intentional and remains valid.
+
+What has changed since the original draft:
+
+- The old `run_loop()` execution owner has been replaced by the supported
+  application boundary `code_review_loop.application.run_review_loop()` and the
+  dependency-free `core.engine` introduced by `REVREM-TASK-003`.
+- `REVREM-TASK-002` and `REVREM-TASK-003` delivered the event stream, replay
+  foundations, headless application tests, and no-second-engine guardrails that
+  make future TUI execution safer.
+- The current TUI still acts as a control panel/profile shell and can launch
+  subprocess-backed dry runs. It does not yet own a real in-process
+  TUI-launched review/remediation run with live widgets and cancellation.
+
+Remaining work before this plan can be closed:
+
+- Start a real run from the TUI through `application.run_review_loop()` or an
+  equivalent non-CLI application boundary, without duplicating loop execution.
+- Stream `events.jsonl`/event-sink updates into live Textual widgets.
+- Add Textual Pilot coverage for launch, cancellation, and at least three
+  failure states.
+- Prove a TUI-launched run produces the same `summary.json`, artifact set,
+  history record, and terminal-status semantics as the equivalent CLI run.
+
+Until those are implemented, `REVREM-PLAN-002` remains open future work.

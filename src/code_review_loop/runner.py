@@ -42,6 +42,7 @@ likely false positives, implementation order, and verification commands.
 Review and check output:
 """
 
+
 def _config_snapshot(config: LoopConfig) -> ConfigSnapshot:
     return ConfigSnapshot(
         max_iterations=config.max_iterations,
@@ -49,6 +50,7 @@ def _config_snapshot(config: LoopConfig) -> ConfigSnapshot:
         commit_after_remediation=config.commit_after_remediation,
         commit_on_hook_failure=config.commit_on_hook_failure,
         final_review=config.final_review,
+        inner_check_retries=config.inner_check_retries,
     )
 
 
@@ -176,8 +178,12 @@ def _run_session(
             run_id=run_id,
         )
     except KeyboardInterrupt as exc:
-        return finish_cancelled(exc, config=config, state=state, summary=summary, clock=clock, ctx=ctx)
+        return finish_cancelled(
+            exc, config=config, state=state, summary=summary, clock=clock, ctx=ctx
+        )
     except budgets.BudgetExceeded as exc:
-        return finish_budget_exceeded(exc, config=config, state=state, summary=summary, clock=clock, ctx=ctx)
+        return finish_budget_exceeded(
+            exc, config=config, state=state, summary=summary, clock=clock, ctx=ctx
+        )
     finally:
         event_sink.close()

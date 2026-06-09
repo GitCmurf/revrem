@@ -249,7 +249,7 @@ def test_loop_does_not_clear_when_structured_triage_still_needs_more_info(tmp_pa
     assert summary["stopped_reason"] == "max_iterations_reached"
     assert summary["final_status"] == "unknown"
     assert "Structured triage handoff" in (calls[2][1] or "")
-    assert len(calls) == 3
+    assert len(calls) == 4
 
 
 def test_loop_skips_remediation_when_structured_triage_only_rejects_findings(tmp_path):
@@ -283,7 +283,9 @@ def test_loop_skips_remediation_when_structured_triage_only_rejects_findings(tmp
             )
         if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
             return CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
-        raise AssertionError(f"remediation/check should not run after rejected-only triage: {args!r}")
+        raise AssertionError(
+            f"remediation/check should not run after rejected-only triage: {args!r}"
+        )
 
     config = LoopConfig(
         base="main",
@@ -353,7 +355,7 @@ def test_loop_keeps_check_failure_gate_when_structured_triage_rejects_findings(t
     )
     check_attempts = 0
     (tmp_path / ".git").mkdir()
-    (tmp_path / "pyproject.toml").write_text("[project]\nname = \"fixture\"\n", encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "fixture"\n', encoding="utf-8")
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         nonlocal check_attempts
@@ -385,9 +387,10 @@ def test_loop_keeps_check_failure_gate_when_structured_triage_rejects_findings(t
     assert summary["final_status"] == "unknown"
     assert summary["stopped_reason"] == "max_iterations_reached"
     assert summary["pending_check_failures"] is False
-    assert len(calls) == 8
-    assert "Check failures from the previous iteration:" in (calls[6][1] or "")
-    assert "Structured triage handoff" not in (calls[6][1] or "")
+    assert len(calls) == 10
+    assert "Check failures from the previous iteration:" in (calls[7][1] or "")
+    assert "Structured triage handoff" not in (calls[7][1] or "")
+
 
 def test_loop_invalid_structured_triage_continues_with_original_review(tmp_path):
     calls = []
@@ -419,8 +422,12 @@ def test_loop_invalid_structured_triage_continues_with_original_review(tmp_path)
 
     runner_mod.run_loop(config, runner)
 
-    diagnostics_one = json.loads((tmp_path / "artifacts" / "diagnostics-1.json").read_text(encoding="utf-8"))
-    diagnostics_two = json.loads((tmp_path / "artifacts" / "diagnostics-2.json").read_text(encoding="utf-8"))
+    diagnostics_one = json.loads(
+        (tmp_path / "artifacts" / "diagnostics-1.json").read_text(encoding="utf-8")
+    )
+    diagnostics_two = json.loads(
+        (tmp_path / "artifacts" / "diagnostics-2.json").read_text(encoding="utf-8")
+    )
     assert diagnostics_one["issues"][0]["code"] == "revrem.triage.invalid_output"
     assert diagnostics_two["issues"][0]["code"] == "revrem.triage.invalid_output"
     assert triage_attempts == 2
@@ -429,8 +436,14 @@ def test_loop_invalid_structured_triage_continues_with_original_review(tmp_path)
     assert "diagnostics-1.json" in {Path(path).name for path in (tmp_path / "artifacts").iterdir()}
     assert "diagnostics-2.json" in {Path(path).name for path in (tmp_path / "artifacts").iterdir()}
     summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
-    assert str(tmp_path / "artifacts" / "diagnostics-1.json") in summary["artifact_paths"]["diagnostics"]
-    assert str(tmp_path / "artifacts" / "diagnostics-2.json") in summary["artifact_paths"]["diagnostics"]
+    assert (
+        str(tmp_path / "artifacts" / "diagnostics-1.json")
+        in summary["artifact_paths"]["diagnostics"]
+    )
+    assert (
+        str(tmp_path / "artifacts" / "diagnostics-2.json")
+        in summary["artifact_paths"]["diagnostics"]
+    )
 
 
 def test_loop_failed_triage_command_writes_diagnostics(tmp_path):
@@ -473,7 +486,10 @@ def test_loop_failed_triage_command_writes_diagnostics(tmp_path):
     assert diagnostics_payload["issues"][0]["code"] == "revrem.triage.command_failed"
     assert diagnostics_payload["issues"][0]["evidence"]["returncode"] == -1
     assert summary["stopped_reason"] == "triage_failed"
-    assert str(tmp_path / "artifacts" / "diagnostics-1.json") in summary["artifact_paths"]["diagnostics"]
+    assert (
+        str(tmp_path / "artifacts" / "diagnostics-1.json")
+        in summary["artifact_paths"]["diagnostics"]
+    )
     assert calls[1][2] == 1
 
 
@@ -481,7 +497,7 @@ def test_loop_malformed_suppressions_fail_open_for_structured_triage(tmp_path):
     repo_root, cwd = make_git_worktree(tmp_path)
     suppressions_path = suppressions.repo_suppressions_path(cwd)
     suppressions_path.parent.mkdir(parents=True, exist_ok=True)
-    suppressions_path.write_text("schema_version = \"1.0\"\nsuppressions = [\n", encoding="utf-8")
+    suppressions_path.write_text('schema_version = "1.0"\nsuppressions = [\n', encoding="utf-8")
 
     calls = []
     remediation_inputs = []
@@ -532,7 +548,9 @@ def test_loop_malformed_suppressions_fail_open_for_structured_triage(tmp_path):
         if args[:3] == ["git", "diff", "--cached"] and "--name-only" in args:
             return CommandResult(list(args), 0, stdout="src/code.py\n")
         if args[:3] == ["git", "commit", "-m"]:
-            return CommandResult(list(args), 0, stdout="[branch abc] fix(cli): harden RevRem commit flow\n")
+            return CommandResult(
+                list(args), 0, stdout="[branch abc] fix(cli): harden RevRem commit flow\n"
+            )
         return CommandResult(list(args), 0, stdout="passed\n")
 
     config = LoopConfig(
@@ -559,7 +577,9 @@ def test_loop_malformed_suppressions_fail_open_for_structured_triage(tmp_path):
 def test_loop_writes_failure_summary_when_triage_fails(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return CommandResult(list(args), 0, stdout="Full review comments:\n\n- [P2] Fix profile merge\n")
+            return CommandResult(
+                list(args), 0, stdout="Full review comments:\n\n- [P2] Fix profile merge\n"
+            )
         return CommandResult(list(args), 1, stderr="Error: triage failed\n")
 
     config = LoopConfig(

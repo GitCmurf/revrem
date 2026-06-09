@@ -11,7 +11,13 @@ from typing import TypeVar
 
 from code_review_loop import budgets, diagnostics, events, profiles, reporting
 from code_review_loop.adapters.git import git_preflight_stdout
-from code_review_loop.config import LoopConfig
+from code_review_loop.config import (
+    DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS,
+    DEFAULT_EXTERNAL_REVIEW_WARNING_SECONDS,
+    DEFAULT_PROVIDER_RETRY_ATTEMPTS,
+    DEFAULT_PROVIDER_RETRY_BACKOFF_SECONDS,
+    LoopConfig,
+)
 
 RESUMABLE_STOPPED_REASONS = frozenset(
     {
@@ -94,7 +100,12 @@ def resume_precondition_issues(run_dir: Path, *, cwd: Path) -> list[diagnostics.
                     evidence={"path": str(events_path)},
                 )
             )
-        if not records or records[-1].kind not in {"summary", "failure", "cancellation", "cost_ceiling_hit"}:
+        if not records or records[-1].kind not in {
+            "summary",
+            "failure",
+            "cancellation",
+            "cost_ceiling_hit",
+        }:
             issues.append(
                 diagnostics.DiagnosticIssue(
                     code="revrem.resume.unclean_event_boundary",
@@ -219,13 +230,17 @@ def resume_loop_config(
         triage_model=_resume_optional_str(resume_config, "triage_model"),
         reasoning_effort=_resume_optional_str(resume_config, "reasoning_effort"),
         review_reasoning_effort=_resume_optional_str(resume_config, "review_reasoning_effort"),
-        remediation_reasoning_effort=_resume_optional_str(resume_config, "remediation_reasoning_effort"),
+        remediation_reasoning_effort=_resume_optional_str(
+            resume_config, "remediation_reasoning_effort"
+        ),
         triage_reasoning_effort=_resume_optional_str(resume_config, "triage_reasoning_effort"),
         triage_enabled=_resume_bool(resume_config, "triage_enabled", False),
         final_review=_resume_bool(resume_config, "final_review", True),
         timeout_seconds=_resume_optional_float(resume_config, "timeout_seconds"),
         review_timeout_seconds=_resume_optional_float(resume_config, "review_timeout_seconds"),
-        remediation_timeout_seconds=_resume_optional_float(resume_config, "remediation_timeout_seconds"),
+        remediation_timeout_seconds=_resume_optional_float(
+            resume_config, "remediation_timeout_seconds"
+        ),
         triage_timeout_seconds=_resume_optional_float(resume_config, "triage_timeout_seconds"),
         timeout_seconds_display=_resume_phase_timeout(resume_config, "checks"),
         review_timeout_seconds_display=_resume_phase_timeout(resume_config, "review"),
@@ -234,7 +249,28 @@ def resume_loop_config(
         debug_status_detection=_resume_bool(resume_config, "debug_status_detection", False),
         progress_style=_resume_str(resume_config, "progress_style", "compact"),
         terminal_excerpt_chars=_resume_int(resume_config, "terminal_excerpt_chars", 4_000),
-        max_remediation_input_chars=_resume_int(resume_config, "max_remediation_input_chars", 200_000),
+        max_remediation_input_chars=_resume_int(
+            resume_config, "max_remediation_input_chars", 200_000
+        ),
+        inner_check_retries=_resume_int(resume_config, "inner_check_retries", 0),
+        provider_retry_attempts=_resume_int(
+            resume_config,
+            "provider_retry_attempts",
+            DEFAULT_PROVIDER_RETRY_ATTEMPTS,
+        ),
+        provider_retry_backoff_seconds=_resume_float(
+            resume_config,
+            "provider_retry_backoff_seconds",
+            DEFAULT_PROVIDER_RETRY_BACKOFF_SECONDS,
+        ),
+        external_review_input_chars=_resume_int(
+            resume_config, "external_review_input_chars", DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS
+        ),
+        external_review_warning_seconds=_resume_float(
+            resume_config,
+            "external_review_warning_seconds",
+            DEFAULT_EXTERNAL_REVIEW_WARNING_SECONDS,
+        ),
         check_commands=_resume_str_tuple(resume_config, "check_commands"),
         commit_after_remediation=_resume_bool(resume_config, "commit_after_remediation", False),
         commit_message_harness=_resume_str(resume_config, "commit_message_harness", "codex"),
@@ -261,9 +297,12 @@ def resume_loop_config(
         triage_prompt=_resume_optional_str(resume_config, "triage_prompt"),
         triage_on_invalid=_resume_str(resume_config, "triage_on_invalid", "continue"),
         triage_contract=triage_contract,
+        initial_review_mode=_resume_str(resume_config, "initial_review_mode", "none"),
         initial_review_file=review_path,
         profile_name=profile_name,
-        budget_config=_resume_budget_config(resume_config, budgets_payload if isinstance(budgets_payload, dict) else None),
+        budget_config=_resume_budget_config(
+            resume_config, budgets_payload if isinstance(budgets_payload, dict) else None
+        ),
         profile_v2=profile_v2,
         phase_config_sources=_resume_phase_sources(resume_config),
         phase_config_field_sources=_resume_phase_field_sources(resume_config),
@@ -295,6 +334,11 @@ def resume_config_payload(config: LoopConfig) -> dict[str, object]:
         "debug_status_detection": config.debug_status_detection,
         "terminal_excerpt_chars": config.terminal_excerpt_chars,
         "max_remediation_input_chars": config.max_remediation_input_chars,
+        "inner_check_retries": config.inner_check_retries,
+        "provider_retry_attempts": config.provider_retry_attempts,
+        "provider_retry_backoff_seconds": config.provider_retry_backoff_seconds,
+        "external_review_input_chars": config.external_review_input_chars,
+        "external_review_warning_seconds": config.external_review_warning_seconds,
         "commit_after_remediation": config.commit_after_remediation,
         "commit_on_hook_failure": config.commit_on_hook_failure,
         "exec_sandbox": config.exec_sandbox,
@@ -303,17 +347,26 @@ def resume_config_payload(config: LoopConfig) -> dict[str, object]:
         "full_auto": config.full_auto,
         "max_wall_seconds": config.budget_config.max_wall_seconds,
         "max_tokens": config.budget_config.max_tokens,
-        "max_usd": str(config.budget_config.max_usd) if config.budget_config.max_usd is not None else None,
+        "max_usd": str(config.budget_config.max_usd)
+        if config.budget_config.max_usd is not None
+        else None,
         "soft_warn_fraction": config.budget_config.soft_warn_fraction,
         "triage_prompt": config.triage_prompt,
         "triage_on_invalid": config.triage_on_invalid,
         "triage_contract": config.triage_contract,
         "profile_name": config.profile_name,
+        "initial_review_mode": config.initial_review_mode,
     }
     if config.profile_v2 is not None:
         payload["routing_enabled"] = config.profile_v2.triage.routing.enabled
         payload["routing_strict"] = config.profile_v2.triage.routing.strict_on_unavailable_route
         payload["allow_model_escalation"] = config.profile_v2.triage.routing.allow_model_escalation
+    _put_if_not_default(
+        payload,
+        "routing_default_route",
+        _routing_default_route_value(config),
+        "",
+    )
     _put_if_not_none(payload, "reasoning_effort", config.reasoning_effort)
     _put_if_not_none(payload, "review_reasoning_effort", config.review_reasoning_effort)
     _put_if_not_none(payload, "remediation_reasoning_effort", config.remediation_reasoning_effort)
@@ -329,8 +382,12 @@ def resume_config_payload(config: LoopConfig) -> dict[str, object]:
     )
     _put_if_not_default(payload, "trusted_repo", config.trusted_repo, False)
     _put_if_not_none(payload, "commit_reasoning_effort", config.commit_reasoning_effort)
-    _put_if_not_none(payload, "commit_reasoning_effort_requested", config.commit_reasoning_effort_requested)
-    _put_if_not_none(payload, "commit_reasoning_effort_adjustment", config.commit_reasoning_effort_adjustment)
+    _put_if_not_none(
+        payload, "commit_reasoning_effort_requested", config.commit_reasoning_effort_requested
+    )
+    _put_if_not_none(
+        payload, "commit_reasoning_effort_adjustment", config.commit_reasoning_effort_adjustment
+    )
     _put_if_not_none(payload, "commit_timeout_seconds", config.commit_timeout_seconds)
     _put_if_not_none(payload, "profile_v2", _resume_profile_snapshot(config))
     return payload
@@ -341,9 +398,18 @@ def _put_if_not_none(payload: dict[str, object], key: str, value: object | None)
         payload[key] = value
 
 
-def _put_if_not_default(payload: dict[str, object], key: str, value: object, default: object) -> None:
+def _put_if_not_default(
+    payload: dict[str, object], key: str, value: object, default: object
+) -> None:
     if value != default:
         payload[key] = value
+
+
+def _routing_default_route_value(config: LoopConfig) -> str:
+    """Return the effective routing default route from the resolved profile."""
+    if config.profile_v2 is None:
+        return ""
+    return config.profile_v2.triage.routing.default_route or ""
 
 
 def _resume_profile_snapshot(config: LoopConfig) -> dict[str, object] | None:
@@ -393,7 +459,9 @@ def latest_resume_review_path(summary: dict[str, object], *, run_dir: Path) -> P
     return None
 
 
-def resume_git_state_issues(summary: dict[str, object], *, cwd: Path) -> list[diagnostics.DiagnosticIssue]:
+def resume_git_state_issues(
+    summary: dict[str, object], *, cwd: Path
+) -> list[diagnostics.DiagnosticIssue]:
     git_state = summary.get("git_state")
     if not isinstance(git_state, dict) or not git_state.get("available"):
         return [
@@ -432,7 +500,11 @@ def resume_git_state_issues(summary: dict[str, object], *, cwd: Path) -> list[di
                 severity="blocking",
                 message="Current base commit does not match the original run.",
                 hint="Restore or fetch the original base ref before resuming.",
-                evidence={"base": expected_base, "expected": expected_base_commit, "actual": current_base_commit},
+                evidence={
+                    "base": expected_base,
+                    "expected": expected_base_commit,
+                    "actual": current_base_commit,
+                },
             )
         )
     return issues
@@ -463,6 +535,15 @@ def _resume_optional_int(payload: dict[object, object], key: str) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
+def _resume_float(payload: dict[object, object], key: str, fallback: float) -> float:
+    value = payload.get(key)
+    if isinstance(value, bool):
+        return fallback
+    if isinstance(value, int | float):
+        return float(value)
+    return fallback
+
+
 def _resume_optional_float(payload: dict[object, object], key: str) -> float | None:
     value = payload.get(key)
     if isinstance(value, bool) or value is None:
@@ -490,7 +571,7 @@ def _resume_phase_sources(payload: dict[object, object]) -> dict[str, str]:
     if not isinstance(phase_config, dict):
         return {}
     sources: dict[str, str] = {}
-    for phase in ("review", "triage", "remediation", "commit_message", "checks"):
+    for phase in ("review", "triage", "remediation", "commit_message", "checks", "runtime"):
         section = phase_config.get(phase)
         if not isinstance(section, dict):
             continue
@@ -505,7 +586,7 @@ def _resume_phase_field_sources(payload: dict[object, object]) -> dict[str, dict
     if not isinstance(phase_config, dict):
         return {}
     field_sources: dict[str, dict[str, str]] = {}
-    for phase in ("review", "triage", "remediation", "commit_message", "checks"):
+    for phase in ("review", "triage", "remediation", "commit_message", "checks", "runtime"):
         section = phase_config.get(phase)
         if not isinstance(section, dict):
             continue
@@ -513,9 +594,7 @@ def _resume_phase_field_sources(payload: dict[object, object]) -> dict[str, dict
         if not isinstance(sources, dict):
             continue
         field_sources[phase] = {
-            str(field): source
-            for field, source in sources.items()
-            if isinstance(source, str)
+            str(field): source for field, source in sources.items() if isinstance(source, str)
         }
     return field_sources
 
@@ -531,11 +610,7 @@ def _resume_str_dict(payload: dict[object, object], key: str) -> dict[str, str]:
     value = payload.get(key)
     if not isinstance(value, dict):
         return {}
-    return {
-        str(k): v
-        for k, v in value.items()
-        if isinstance(k, str) and isinstance(v, str)
-    }
+    return {str(k): v for k, v in value.items() if isinstance(k, str) and isinstance(v, str)}
 
 
 _T = TypeVar("_T")
@@ -633,9 +708,7 @@ def _resume_optional_decimal(payload: dict[object, object], key: str) -> Decimal
     if isinstance(value, bool) or value is None:
         return None
     if isinstance(value, float):
-        raise ValueError(
-            f"resume_config.{key} must be a decimal string, not float"
-        )
+        raise ValueError(f"resume_config.{key} must be a decimal string, not float")
     if isinstance(value, (str, int, Decimal)):
         return budgets.parse_usd(str(value))
     return None

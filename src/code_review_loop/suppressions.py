@@ -197,11 +197,15 @@ def remove_entry(path: Path, fingerprint: str, *, audit_path: Path | None = None
     if not removed:
         return False
     write_entries(path, [entry for entry in entries if entry.fingerprint != fingerprint])
-    append_audit(audit_path or default_audit_path_for(path), "remove", [asdict(item) for item in removed], [])
+    append_audit(
+        audit_path or default_audit_path_for(path), "remove", [asdict(item) for item in removed], []
+    )
     return True
 
 
-def expire_entries(path: Path, *, now: datetime | None = None, audit_path: Path | None = None) -> int:
+def expire_entries(
+    path: Path, *, now: datetime | None = None, audit_path: Path | None = None
+) -> int:
     entries = load_entries(path)
     expired: list[SuppressionEntry] = []
     kept: list[SuppressionEntry] = []
@@ -210,11 +214,15 @@ def expire_entries(path: Path, *, now: datetime | None = None, audit_path: Path 
     if not expired:
         return 0
     write_entries(path, kept)
-    append_audit(audit_path or default_audit_path_for(path), "expire", [asdict(item) for item in expired], [])
+    append_audit(
+        audit_path or default_audit_path_for(path), "expire", [asdict(item) for item in expired], []
+    )
     return len(expired)
 
 
-def stale_entries(path: Path, *, now: datetime | None = None) -> tuple[list[SuppressionEntry], list[SuppressionEntry]]:
+def stale_entries(
+    path: Path, *, now: datetime | None = None
+) -> tuple[list[SuppressionEntry], list[SuppressionEntry]]:
     expired: list[SuppressionEntry] = []
     unsupported: list[SuppressionEntry] = []
     for entry in load_entries(path):
@@ -248,7 +256,9 @@ def audit_summary(path: Path) -> dict[str, object] | None:
     return {"schema_version": SUPPRESSION_SCHEMA_VERSION, "total_records": total, "actions": counts}
 
 
-def append_audit(path: Path, action: str, before: list[dict[str, Any]], after: list[dict[str, Any]]) -> None:
+def append_audit(
+    path: Path, action: str, before: list[dict[str, Any]], after: list[dict[str, Any]]
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     record = {
         "schema_version": SUPPRESSION_SCHEMA_VERSION,
@@ -330,8 +340,7 @@ def apply_to_triage_payload(
             value
             for value in payload.get("implementation_order", [])
             if not any(
-                isinstance(item, dict) and item.get("fingerprint") == value
-                for item in suppressed
+                isinstance(item, dict) and item.get("fingerprint") == value for item in suppressed
             )
         ],
     }

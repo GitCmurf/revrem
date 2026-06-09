@@ -29,7 +29,11 @@ def test_parse_triage_payload_v2_validates_fixture_against_schema():
 
     validate(
         payload,
-        json.loads(files("code_review_loop").joinpath("schemas/triage-v2.schema.json").read_text(encoding="utf-8")),
+        json.loads(
+            files("code_review_loop")
+            .joinpath("schemas/triage-v2.schema.json")
+            .read_text(encoding="utf-8")
+        ),
     )
     assert payload["schema_version"] == "2.0"
     assert payload["prompt_version"] == "triage-v2"
@@ -59,7 +63,11 @@ def test_parse_triage_payload_v2_validates_policy_scenario_fixtures(fixture_name
 
     validate(
         payload,
-        json.loads(files("code_review_loop").joinpath("schemas/triage-v2.schema.json").read_text(encoding="utf-8")),
+        json.loads(
+            files("code_review_loop")
+            .joinpath("schemas/triage-v2.schema.json")
+            .read_text(encoding="utf-8")
+        ),
     )
     assert payload["confirmed_findings"]
     assert payload["classification"]["estimated_blast_radius"]["finding_count"] == 1
@@ -77,6 +85,25 @@ def test_parse_triage_payload_v2_accepts_minimal_reasoning_effort():
     )
 
     assert payload["route_proposal"]["reasoning_effort"] == "minimal"
+
+
+def test_triage_v2_packaged_schema_accepts_suppressed_findings_field():
+    payload = triage.parse_triage_payload(
+        _fixture("valid_v2"),
+        run_id="run-123",
+        source_review_artifact="review-1.txt",
+        contract="v2",
+    )
+    payload["suppressed_findings"] = []
+
+    validate(
+        payload,
+        json.loads(
+            files("code_review_loop")
+            .joinpath("schemas/triage-v2.schema.json")
+            .read_text(encoding="utf-8")
+        ),
+    )
 
 
 def test_parse_triage_payload_v2_normalizes_review_priority_severities():
@@ -105,6 +132,97 @@ def test_parse_triage_payload_v2_normalizes_review_priority_severities():
     assert len(payload["parsing_warnings"]) >= 2
 
 
+def test_parse_triage_payload_v2_normalizes_info_requested_string_lists():
+    fixture = json.loads(_fixture("valid_v2"))
+    fixture["confirmed_findings"] = []
+    fixture["needs_more_info"] = [
+        {
+            "fingerprint": "review-comment:1",
+            "summary": "Missing review context",
+            "severity": "medium",
+            "affected_paths": ["src/code_review_loop/core/engine.py"],
+            "rationale": "The finding cannot be mapped from the supplied review context.",
+            "info_requested": [
+                "Please provide the source review artifact.",
+                "Please provide the commit that introduced the behavior.",
+            ],
+        }
+    ]
+
+    payload = triage.parse_triage_payload(
+        json.dumps(fixture),
+        run_id="run-123",
+        source_review_artifact="review-1.txt",
+        contract="v2",
+    )
+
+    assert (
+        payload["needs_more_info"][0]["info_requested"]
+        == "Please provide the source review artifact.\n"
+        "Please provide the commit that introduced the behavior."
+    )
+    assert "Normalized needs_more_info info_requested list" in payload["parsing_warnings"][-1]
+
+
+def test_parse_triage_payload_v2_rejects_mixed_info_requested_lists():
+    fixture = json.loads(_fixture("valid_v2"))
+    fixture["confirmed_findings"] = []
+    fixture["needs_more_info"] = [
+        {
+            "fingerprint": "review-comment:1",
+            "summary": "Missing review context",
+            "severity": "medium",
+            "affected_paths": ["src/code_review_loop/core/engine.py"],
+            "rationale": "The finding cannot be mapped from the supplied review context.",
+            "info_requested": ["Please provide the source review artifact.", 2],
+        }
+    ]
+
+    with pytest.raises(triage.TriageValidationError):
+        triage.parse_triage_payload(
+            json.dumps(fixture),
+            run_id="run-123",
+            source_review_artifact="review-1.txt",
+            contract="v2",
+        )
+
+
+def test_parse_triage_payload_v2_normalizes_warning_message_objects():
+    fixture = json.loads(_fixture("valid_v2"))
+    fixture["parsing_warnings"] = [
+        {
+            "message": (
+                "The review comment did not include a stable f1 ID, so it was "
+                "keyed as review-comment:1."
+            )
+        }
+    ]
+
+    payload = triage.parse_triage_payload(
+        json.dumps(fixture),
+        run_id="run-123",
+        source_review_artifact="review-1.txt",
+        contract="v2",
+    )
+
+    assert payload["parsing_warnings"] == [
+        "The review comment did not include a stable f1 ID, so it was keyed as review-comment:1."
+    ]
+
+
+def test_parse_triage_payload_v2_rejects_warning_objects_without_string_message():
+    fixture = json.loads(_fixture("valid_v2"))
+    fixture["parsing_warnings"] = [{"message": 3}]
+
+    with pytest.raises(triage.TriageValidationError):
+        triage.parse_triage_payload(
+            json.dumps(fixture),
+            run_id="run-123",
+            source_review_artifact="review-1.txt",
+            contract="v2",
+        )
+
+
 def test_parse_triage_payload_v2_fails_on_v1_contract():
     # v1 fixture doesn't have classification/routing, so it should fail v2 schema
     with pytest.raises(triage.TriageValidationError):
@@ -123,6 +241,14 @@ def test_load_prompt_v2_includes_v2_fields():
     assert "route_proposal" in prompt
     assert "prompt_requirements" in prompt
     assert "triage-v2" in prompt
+    assert '"estimated_blast_radius": {"finding_count": 1, "module_count": 1}' in prompt
+    assert "Do not use `findings`, `modules`" in prompt
+    assert "Use `[]` unless one of RevRem's built-in fragment names" in prompt
+    assert "`engineering-principles`" in prompt
+    assert "Do not invent new names such as `bounded-execution`" in prompt
+    assert "`info_requested` must be a single string, not an array" in prompt
+    assert "`review-comment:<1-based-order>`" in prompt
+    assert "`parsing_warnings` must be an array of strings" in prompt
 
 
 def test_write_triage_artifact_preserves_payload_schema_version(tmp_path):

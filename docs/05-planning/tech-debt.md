@@ -2,9 +2,9 @@
 document_id: REVREM-LEDGER-004
 type: LEDGER
 title: Tech Debt Register
-status: Draft
-version: '0.1'
-last_updated: '2026-05-25'
+status: Approved
+version: '0.3'
+last_updated: '2026-06-04'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -22,6 +22,84 @@ related_ids:
 # Tech Debt
 
 Issues identified during code review and simplification passes that were deferred because they require larger refactors, are tied to a planned phase transition, or are acceptable at current scale.
+
+## Current State
+
+This register currently has one open item, TD-008. Earlier debt items TD-001
+through TD-007 are resolved and retained as historical context.
+
+---
+
+## TD-008 — External review prompt truncation can make prompted reviews incomplete (OPEN)
+
+**Location:** `src/code_review_loop/adapters/review.py`,
+`src/code_review_loop/cli/config_builder.py`, prompted review harnesses such as
+Gemini, Claude, OpenCode, and Kilo.
+
+**Problem:** Non-Codex review harnesses do not have Codex's native
+`codex review --base` command, so RevRem composes an explicit review prompt for
+them. That prompt includes a generated read-only context bundle containing the
+base branch, working directory, current `HEAD`, base commit, merge base,
+`git status --short`, `git diff --stat <base>...HEAD`,
+`git diff --name-status <base>...HEAD`, the full `git diff <base>...HEAD`,
+`git diff --cached`, and `git diff`. RevRem writes the full generated context
+and provider-facing prompt to artifacts so operators can inspect what was
+available.
+
+Before sending the prompt to a prompted provider, RevRem trims it by character
+count using `runtime.external_review_input_chars` /
+`--external-review-input-chars`. The conservative default is `80000`
+characters. Gemini uses the same `80000` character default because its
+headless CLI currently receives prompts through a single `--prompt` argument,
+which must stay below operating-system per-argument limits. Progress output
+and events report the sent prompt size, generated context size, delivery mode,
+and whether the prompt was truncated, for example
+`prompt=80.0k/511.2k argv-prompt truncated`.
+
+This bound is intentional. It avoids overflowing provider context windows,
+keeps very large dogfood runs from becoming unbounded in latency or cost, and
+does not require fragile provider-specific token accounting. For harnesses that
+support stdin or prompt files, it also lets RevRem keep large prompts out of
+argv/process listings; Gemini's current `--prompt` path instead relies on a
+smaller byte guard to avoid operating-system argument limits. However, the
+tradeoff is real: when the
+provider receives only the first bounded slice of a large generated context,
+its review can miss omitted files or late diff hunks. A `REVIEW_STATUS: clear`
+from a prompted harness is therefore a clear result over the supplied prompt,
+not necessarily over the full saved context when truncation occurred.
+
+The dogfood evidence is mixed. OpenCode/minimax produced useful findings even
+with an `80k` prompt cap on a `500k+` generated context, including the stale
+git-context-cache bug. That success does not eliminate the risk: a different
+patch could place the important regression outside the supplied prefix.
+Gemini Pro likely has enough context for larger prompts, but CLI behaviour,
+quota, latency, and non-API context limits still need provider-specific proof.
+
+**Possible remediations:**
+
+- Add harness/model capability metadata for safe review context size, and make
+  the cap a first-class capability rather than a mostly global runtime setting.
+- Use token-aware budgeting where providers expose reliable tokenizers, while
+  retaining conservative character-count fallback for unknown CLIs.
+- Replace prefix trimming with prioritized diff packing: file list and stats
+  first, then high-risk modules, changed tests, failed-check context, and only
+  then lower-signal hunks.
+- Add a chunked or multi-pass prompted review mode that reviews the full diff
+  in bounded sections and then asks for an aggregate status.
+- Make truncation policy configurable per profile: allow current best-effort
+  behaviour, warn loudly, or fail closed when the generated context exceeds the
+  send cap.
+- Record stronger summary metadata when truncation occurs, such as
+  `review_context_truncated=true`, so downstream scripts do not treat a clear
+  prompted review as equivalent to a full-context review.
+- Provide an operator shortcut to rerun the latest prompted review with a
+  larger cap or a specific harness/model chosen for large context.
+
+**Best practice:** Any bounded prompt sent to a reviewer should make its
+coverage boundary visible. If the model did not receive the whole generated
+review context, the run summary and operator output should preserve that fact
+clearly enough that humans and automation can decide whether a follow-up review
+is required.
 
 ---
 
@@ -43,7 +121,7 @@ Phase execution now goes through required `RunContext` ports and
 
 ---
 
-## TD-002 — `acc.iteration` is redundant state in `LoopAccumulator`
+## TD-002 — `acc.iteration` is redundant state in `LoopAccumulator` (RESOLVED 2026-05-25)
 
 **Location (historical):** `src/code_review_loop/cli.py:1975–1978`
 (`_run_loop`), later `src/code_review_loop/core/engine.py`
@@ -61,7 +139,7 @@ transition table needs it.
 
 ---
 
-## TD-003 — `_execute_stop` repeats the same tail pattern across four outcome branches
+## TD-003 — `_execute_stop` repeats the same tail pattern across four outcome branches (RESOLVED 2026-05-25)
 
 **Location (historical):** `src/code_review_loop/cli.py:1770–1815`
 (`_execute_stop`), now `src/code_review_loop/runner.py` (`_execute_stop`)
@@ -94,7 +172,7 @@ Each branch sets its `final_status` and any unique fields, then calls the helper
 
 ---
 
-## TD-005 — `OutcomeFailed.reason` is stringly-typed; `outcome_to_exit_code` dispatches on raw strings
+## TD-005 — `OutcomeFailed.reason` is stringly-typed; `outcome_to_exit_code` dispatches on raw strings (RESOLVED 2026-05-25)
 
 **Location:** `src/code_review_loop/core/outcome.py:55–80`
 

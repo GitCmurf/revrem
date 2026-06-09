@@ -7,17 +7,27 @@ These functions translate ``argparse.Namespace`` + profile defaults into a
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from collections.abc import Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from code_review_loop import budgets, harnesses, profiles
 from code_review_loop.cli.config_support import (
+    current_git_state_for_latest,
     resolve_initial_review_file,
 )
 from code_review_loop.clock import SYSTEM_CLOCK, Clock
-from code_review_loop.config import DEFAULT_TIMEOUT_SECONDS, LoopConfig
+from code_review_loop.config import (
+    DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS,
+    DEFAULT_EXTERNAL_REVIEW_WARNING_SECONDS,
+    DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS,
+    DEFAULT_PROVIDER_RETRY_ATTEMPTS,
+    DEFAULT_PROVIDER_RETRY_BACKOFF_SECONDS,
+    DEFAULT_TIMEOUT_SECONDS,
+    LoopConfig,
+)
 from code_review_loop.identity import SYSTEM_IDENTITY, RunIdentity
 
 
@@ -87,6 +97,80 @@ def resolve_optional_timeout_seconds(value: float | None, *, flag: str) -> float
     return value
 
 
+def resolve_external_review_warning_seconds(value: float) -> float:
+    if value < 0:
+        raise ValueError("--external-review-warning-seconds must be 0 or greater")
+    return value
+
+
+def resolve_external_review_input_chars(
+    *,
+    args: argparse.Namespace,
+    profile: profiles.Profile,
+    profile_name: str | None,
+    cwd: Path,
+    review_harness: str,
+    review_model: str | None,
+    profile_source: str,
+) -> tuple[int, str]:
+    """Return (chars_limit, source_label) together to avoid duplicating the three-branch decision."""
+    if args.external_review_input_chars is not None:
+        val = int(args.external_review_input_chars)
+        source = "cli"
+    elif profile_runtime_key_explicit(profile_name, cwd, "external_review_input_chars"):
+        val = profile.runtime.external_review_input_chars
+        source = profile_source
+    elif is_large_context_gemini_review_model(review_harness, review_model):
+        val = DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS
+        source = "model-default"
+    else:
+        val = DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS
+        source = "defaults"
+
+    if val is not None and val <= 0:
+        raise ValueError("external_review_input_chars must be greater than 0")
+    return val, source
+
+
+_GEMINI_PRO_MODEL_PATTERN = re.compile(r"^gemini-\d+(?:\.\d+)*-pro(?:-[a-z0-9]+)*$")
+# Multi-segment suffix scope: the optional ``(?:-[a-z0-9]+)*`` suffix
+# accepts zero or more dash-separated segments (e.g. ``-preview``,
+# ``-exp-03-25``, ``-exp-0827``). This ensures current and future Gemini
+# Pro model names with multi-segment suffixes receive the large-context cap.
+
+
+def is_large_context_gemini_review_model(
+    review_harness: str,
+    review_model: str | None,
+) -> bool:
+    model = (review_model or "").lower()
+    if review_harness != "gemini" or not model.startswith("gemini-"):
+        return False
+    return _GEMINI_PRO_MODEL_PATTERN.match(model) is not None
+
+
+def profile_runtime_key_explicit(
+    profile_name: str | None,
+    cwd: Path,
+    key: str,
+) -> bool:
+    try:
+        user_file, project_file = profiles.load_profile_files(cwd=cwd)
+    except (OSError, ValueError):
+        return False
+    raw_sections: list[dict[str, object]] = []
+    for profile_file in (user_file, project_file):
+        if profile_file.raw_defaults:
+            raw_sections.append(profile_file.raw_defaults)
+        if profile_name and profile_name in profile_file.raw_profiles:
+            raw_sections.append(profile_file.raw_profiles[profile_name])
+    for raw in raw_sections:
+        runtime = raw.get("runtime")
+        if isinstance(runtime, dict) and key in runtime:
+            return True
+    return False
+
+
 def profile_or_default(
     name: str | None,
     cwd: Path,
@@ -119,9 +203,59 @@ def _mixed_phase_source(field_sources: dict[str, str]) -> str:
     return "mixed"
 
 
+@dataclass(frozen=True)
+class ResolvedPhaseConfig:
+    harness: str
+    model: str | None
+    reasoning_effort: str | None
+    timeout_seconds: float | None
+    timeout_seconds_display: float | None
+    field_sources: dict[str, str]
+
+
+def _resolve_model_phase(
+    *,
+    phase_name: str,
+    profile_name: str | None,
+    profile_source: str,
+    phase: profiles.PhaseConfig,
+    harness_override: str | None,
+    model_override: str | None,
+    shared_model_override: str | None,
+    reasoning_effort_override: str | None,
+    shared_reasoning_effort_override: str | None,
+    timeout_seconds: float | None,
+    timeout_seconds_display: float | None,
+    timeout_source: str,
+) -> ResolvedPhaseConfig:
+    harness = harness_override or phase.harness
+    harnesses.validate_harness_name(harness, field=f"--{phase_name}-harness")
+    model = model_override or shared_model_override or phase.model
+    reasoning_effort = (
+        reasoning_effort_override or shared_reasoning_effort_override or phase.reasoning_effort
+    )
+    return ResolvedPhaseConfig(
+        harness=harness,
+        model=model,
+        reasoning_effort=reasoning_effort,
+        timeout_seconds=timeout_seconds,
+        timeout_seconds_display=timeout_seconds_display,
+        field_sources={
+            "harness": "cli" if harness_override else profile_source,
+            "model": _phase_source(profile_name, model_override or shared_model_override),
+            "reasoning_effort": _phase_source(
+                profile_name,
+                reasoning_effort_override or shared_reasoning_effort_override,
+            ),
+            "timeout_seconds": timeout_source,
+        },
+    )
+
+
 def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, str]:
     profile = profile_or_default(args.profile, cwd)
     profile_source = f"profile:{args.profile}" if args.profile else "defaults"
+    base = pick(args.base, profile.pipeline.base, "main")
     triage_enabled = pick(args.triage_enabled, profile.triage.enabled, False)
     triage_contract = pick(args.triage_contract, profile.triage.contract, "v1")
     routing_enabled = pick(args.routing_enabled, profile.triage.routing.enabled, False)
@@ -149,7 +283,9 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
     else:
         timeout_seconds = DEFAULT_TIMEOUT_SECONDS
         review_timeout_seconds = resolve_profile_timeout_seconds(profile.review.timeout_seconds)
-        remediation_timeout_seconds = resolve_profile_timeout_seconds(profile.remediation.timeout_seconds)
+        remediation_timeout_seconds = resolve_profile_timeout_seconds(
+            profile.remediation.timeout_seconds
+        )
         triage_timeout_seconds = (
             resolve_profile_timeout_seconds(profile.triage.timeout_seconds)
             if triage_enabled
@@ -162,11 +298,7 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         remediation_timeout_seconds_display = profile.remediation.timeout_seconds
         if remediation_timeout_seconds_display is None:
             remediation_timeout_seconds_display = DEFAULT_TIMEOUT_SECONDS
-        triage_timeout_seconds_display = (
-            profile.triage.timeout_seconds
-            if triage_enabled
-            else None
-        )
+        triage_timeout_seconds_display = profile.triage.timeout_seconds if triage_enabled else None
         if triage_enabled and triage_timeout_seconds_display is None:
             triage_timeout_seconds_display = DEFAULT_TIMEOUT_SECONDS
     if args.triage_timeout_seconds is not None:
@@ -183,23 +315,57 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
     artifact_dir_value = args.artifact_dir or profile.output.artifact_dir
     artifact_dir = Path(artifact_dir_value) if artifact_dir_value else default_artifact_dir()
     search_root = artifact_dir if artifact_dir_value else artifact_dir.parent
-    initial_review_file = resolve_initial_review_file(args.initial_review_file, search_root)
+    current_git_state = (
+        current_git_state_for_latest(cwd, base) if args.initial_review_file == "latest" else None
+    )
+    initial_review_file = resolve_initial_review_file(
+        args.initial_review_file,
+        search_root,
+        current_git_state=current_git_state,
+    )
+    initial_review_mode = "explicit" if initial_review_file is not None else "none"
     if initial_review_file is not None and not initial_review_file.is_file():
         raise FileNotFoundError(f"initial review file not found: {initial_review_file}")
     checks = tuple(args.check) if args.check is not None else profile.pipeline.checks
-    review_reasoning_effort = (
-        args.review_reasoning_effort
-        or args.reasoning_effort
-        or profile.review.reasoning_effort
+    review_phase = _resolve_model_phase(
+        phase_name="review",
+        profile_name=args.profile,
+        profile_source=profile_source,
+        phase=profile.review,
+        harness_override=args.review_harness,
+        model_override=args.review_model,
+        shared_model_override=args.model,
+        reasoning_effort_override=args.review_reasoning_effort,
+        shared_reasoning_effort_override=args.reasoning_effort,
+        timeout_seconds=review_timeout_seconds,
+        timeout_seconds_display=review_timeout_seconds_display,
+        timeout_source="cli" if args.timeout_seconds is not None else profile_source,
     )
-    remediation_reasoning_effort = (
-        args.remediation_reasoning_effort
-        or args.reasoning_effort
-        or profile.remediation.reasoning_effort
+    remediation_phase = _resolve_model_phase(
+        phase_name="remediation",
+        profile_name=args.profile,
+        profile_source=profile_source,
+        phase=profile.remediation,
+        harness_override=args.remediation_harness,
+        model_override=args.remediation_model,
+        shared_model_override=args.model,
+        reasoning_effort_override=args.remediation_reasoning_effort,
+        shared_reasoning_effort_override=args.reasoning_effort,
+        timeout_seconds=remediation_timeout_seconds,
+        timeout_seconds_display=remediation_timeout_seconds_display,
+        timeout_source="cli" if args.timeout_seconds is not None else profile_source,
     )
+    if not args.dry_run:
+        harnesses.require_implemented_harness(review_phase.harness, field="review.harness")
+        harnesses.require_implemented_harness(
+            remediation_phase.harness,
+            field="remediation.harness",
+        )
     triage_reasoning_effort = args.triage_reasoning_effort or profile.triage.reasoning_effort
     triage_harness = args.triage_harness or profile.triage.harness
     harnesses.validate_harness_name(triage_harness, field="--triage-harness")
+    if triage_enabled and not args.dry_run:
+        harnesses.require_implemented_harness(triage_harness, field="triage.harness")
     commit_message_harness = args.commit_message_harness or profile.commit.harness
     harnesses.validate_harness_name(commit_message_harness, field="--commit-message-harness")
     if commit_after_remediation and not args.dry_run:
@@ -208,16 +374,14 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
     commit_reasoning_effort = (
         args.commit_reasoning_effort
         or profile.commit.reasoning_effort
-        or remediation_reasoning_effort
+        or remediation_phase.reasoning_effort
     )
-    review_model = args.review_model or args.model or profile.review.model
-    remediation_model = args.remediation_model or args.model or profile.remediation.model
     commit_message_model = (
         args.commit_message_model
         or profile.commit.message_model
-        or remediation_model
+        or remediation_phase.model
         or args.model
-        or review_model
+        or review_phase.model
     )
     commit_effort_resolution = harnesses.resolve_commit_message_reasoning_effort(
         harness=commit_message_harness,
@@ -237,7 +401,9 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
     budget_config = budgets.BudgetConfig(
         max_wall_seconds=pick(args.max_wall_seconds, profile.budgets.max_wall_seconds, None),
         max_tokens=pick(args.max_tokens, profile.budgets.max_tokens, None),
-        max_usd=budgets.parse_usd(args.max_usd) if args.max_usd is not None else profile.budgets.max_usd,
+        max_usd=(
+            budgets.parse_usd(args.max_usd) if args.max_usd is not None else profile.budgets.max_usd
+        ),
         soft_warn_fraction=pick(args.soft_warn_fraction, profile.budgets.soft_warn_fraction, 0.8),
     )
     budgets.validate_config(budget_config)
@@ -252,6 +418,7 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         enabled=routing_enabled,
         strict_on_unavailable_route=routing_strict,
         allow_model_escalation=allow_model_escalation,
+        default_route=args.routing_default_route or profile.triage.routing.default_route,
     )
     effective_triage = replace(
         profile.triage,
@@ -263,57 +430,116 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         routing=routing,
     )
     profile_v2 = replace(profile, triage=effective_triage)
+    if (
+        args.routing_default_route is not None
+        and routing.default_route not in effective_triage.routes
+    ):
+        raise ValueError(f"--route refers to unknown route: {routing.default_route}")
+    if routing.enabled and routing.default_route not in effective_triage.routes:
+        raise ValueError(
+            f"triage.routing.default_route refers to unknown route: {routing.default_route}"
+        )
+    external_review_input_chars, external_review_input_chars_source = (
+        resolve_external_review_input_chars(
+            args=args,
+            profile=profile,
+            profile_name=args.profile,
+            cwd=cwd,
+            review_harness=review_phase.harness,
+            review_model=review_phase.model or args.model,
+            profile_source=profile_source,
+        )
+    )
+    external_review_warning_seconds_source = (
+        "cli" if args.external_review_warning_seconds is not None else profile_source
+    )
+    external_review_warning_seconds = resolve_external_review_warning_seconds(
+        pick(
+            args.external_review_warning_seconds,
+            profile.runtime.external_review_warning_seconds,
+            DEFAULT_EXTERNAL_REVIEW_WARNING_SECONDS,
+        )
+    )
+    inner_check_retries = int(
+        pick(args.inner_check_retries, profile.runtime.inner_check_retries, 0)
+    )
+    if inner_check_retries < 0:
+        raise ValueError("inner_check_retries must be 0 or greater")
+    provider_retry_attempts = int(
+        pick(
+            args.provider_retry_attempts,
+            profile.runtime.provider_retry_attempts,
+            DEFAULT_PROVIDER_RETRY_ATTEMPTS,
+        )
+    )
+    if provider_retry_attempts < 1:
+        raise ValueError("provider_retry_attempts must be at least 1")
+    provider_retry_backoff_seconds = float(
+        pick(
+            args.provider_retry_backoff_seconds,
+            profile.runtime.provider_retry_backoff_seconds,
+            DEFAULT_PROVIDER_RETRY_BACKOFF_SECONDS,
+        )
+    )
+    if provider_retry_backoff_seconds < 0:
+        raise ValueError("provider_retry_backoff_seconds must be 0 or greater")
     phase_config_field_sources = {
-        "review": {
-            "harness": profile_source,
-            "model": _phase_source(args.profile, args.review_model or args.model),
-            "reasoning_effort": _phase_source(
-                args.profile,
-                args.review_reasoning_effort or args.reasoning_effort,
-            ),
-            "timeout_seconds": "cli" if args.timeout_seconds is not None else profile_source,
-        },
+        "review": review_phase.field_sources,
         "triage": {
             "enabled": "cli" if args.triage_enabled is not None else profile_source,
             "harness": "cli" if args.triage_harness is not None else profile_source,
             "model": "cli" if args.triage_model is not None else profile_source,
-            "reasoning_effort": "cli" if args.triage_reasoning_effort is not None else profile_source,
+            "reasoning_effort": (
+                "cli" if args.triage_reasoning_effort is not None else profile_source
+            ),
             "timeout_seconds": (
                 "cli"
                 if args.timeout_seconds is not None or args.triage_timeout_seconds is not None
                 else profile_source
             ),
             "contract": "cli" if args.triage_contract is not None else profile_source,
-            "routing_enabled": "cli" if args.routing_enabled is not None else profile_source,
-            "routing_strict": "cli" if args.routing_strict is not None else profile_source,
+            "routing_enabled": ("cli" if args.routing_enabled is not None else profile_source),
+            "routing_strict": ("cli" if args.routing_strict is not None else profile_source),
+            "routing_default_route": (
+                "cli" if args.routing_default_route is not None else profile_source
+            ),
             "allow_model_escalation": (
                 "cli" if args.allow_model_escalation is not None else profile_source
             ),
         },
         "remediation": {
-            "harness": profile_source,
-            "model": _phase_source(args.profile, args.remediation_model or args.model),
-            "reasoning_effort": _phase_source(
-                args.profile,
-                args.remediation_reasoning_effort or args.reasoning_effort,
-            ),
-            "timeout_seconds": "cli" if args.timeout_seconds is not None else profile_source,
+            **remediation_phase.field_sources,
             "sandbox": "cli" if args.exec_sandbox is not None else profile_source,
         },
         "commit_message": {
-            "enabled": "cli" if args.commit_after_remediation is not None else profile_source,
-            "harness": "cli" if args.commit_message_harness is not None else profile_source,
+            "enabled": ("cli" if args.commit_after_remediation is not None else profile_source),
+            "harness": ("cli" if args.commit_message_harness is not None else profile_source),
             "model": _phase_source(args.profile, args.commit_message_model or args.model),
-            "reasoning_effort": "cli" if args.commit_reasoning_effort is not None else profile_source,
-            "timeout_seconds": "cli" if args.timeout_seconds is not None else profile_source,
+            "reasoning_effort": (
+                "cli" if args.commit_reasoning_effort is not None else profile_source
+            ),
+            "timeout_seconds": ("cli" if args.timeout_seconds is not None else profile_source),
         },
         "checks": {
             "commands": "cli" if args.check is not None else profile_source,
-            "timeout_seconds": "cli" if args.timeout_seconds is not None else profile_source,
+            "timeout_seconds": ("cli" if args.timeout_seconds is not None else profile_source),
+        },
+        "runtime": {
+            "inner_check_retries": (
+                "cli" if args.inner_check_retries is not None else profile_source
+            ),
+            "provider_retry_attempts": (
+                "cli" if args.provider_retry_attempts is not None else profile_source
+            ),
+            "provider_retry_backoff_seconds": (
+                "cli" if args.provider_retry_backoff_seconds is not None else profile_source
+            ),
+            "external_review_input_chars": external_review_input_chars_source,
+            "external_review_warning_seconds": external_review_warning_seconds_source,
         },
     }
     config = LoopConfig(
-        base=pick(args.base, profile.pipeline.base, "main"),
+        base=base,
         max_iterations=max_iterations,
         codex_bin=pick(args.codex_bin, profile.runtime.codex_bin, "codex"),
         harness_executables=harness_executables,
@@ -322,15 +548,15 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         preflight_enabled=True,
         artifact_dir_is_default=artifact_dir_value is None,
         model=args.model,
-        review_harness=profile.review.harness,
-        remediation_harness=profile.remediation.harness,
+        review_harness=review_phase.harness,
+        remediation_harness=remediation_phase.harness,
         triage_harness=triage_harness,
         commit_message_harness=commit_message_harness,
-        review_model=review_model,
-        remediation_model=remediation_model,
+        review_model=review_phase.model,
+        remediation_model=remediation_phase.model,
         reasoning_effort=args.reasoning_effort,
-        review_reasoning_effort=review_reasoning_effort,
-        remediation_reasoning_effort=remediation_reasoning_effort,
+        review_reasoning_effort=review_phase.reasoning_effort,
+        remediation_reasoning_effort=remediation_phase.reasoning_effort,
         commit_after_remediation=commit_after_remediation,
         commit_message_model=commit_message_model,
         commit_message_prompt=args.commit_message_prompt or profile.commit.message_prompt,
@@ -354,7 +580,9 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         exec_color=pick(args.exec_color, profile.runtime.exec_color, "never"),
         full_auto=pick(args.full_auto, profile.runtime.full_auto, True),
         exec_json=pick(args.exec_json, profile.runtime.exec_json, False),
-        output_last_message=pick(args.output_last_message, profile.runtime.output_last_message, True),
+        output_last_message=pick(
+            args.output_last_message, profile.runtime.output_last_message, True
+        ),
         dry_run=args.dry_run,
         final_review=pick(args.final_review, profile.pipeline.final_review, True),
         max_remediation_input_chars=pick(
@@ -362,17 +590,22 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
             profile.runtime.max_remediation_input_chars,
             200_000,
         ),
+        inner_check_retries=inner_check_retries,
+        provider_retry_attempts=provider_retry_attempts,
+        provider_retry_backoff_seconds=provider_retry_backoff_seconds,
+        external_review_input_chars=external_review_input_chars,
+        external_review_warning_seconds=external_review_warning_seconds,
         terminal_excerpt_chars=pick(
             args.terminal_excerpt_chars,
             profile.runtime.terminal_excerpt_chars,
             4_000,
         ),
         timeout_seconds=timeout_seconds,
-        review_timeout_seconds=review_timeout_seconds,
-        remediation_timeout_seconds=remediation_timeout_seconds,
+        review_timeout_seconds=review_phase.timeout_seconds,
+        remediation_timeout_seconds=remediation_phase.timeout_seconds,
         timeout_seconds_display=timeout_seconds_display,
-        review_timeout_seconds_display=review_timeout_seconds_display,
-        remediation_timeout_seconds_display=remediation_timeout_seconds_display,
+        review_timeout_seconds_display=review_phase.timeout_seconds_display,
+        remediation_timeout_seconds_display=remediation_phase.timeout_seconds_display,
         triage_timeout_seconds_display=triage_timeout_seconds_display,
         phase_config_sources={
             phase: _mixed_phase_source(sources)
@@ -388,6 +621,7 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         progress_style=pick(args.progress_style, profile.output.progress_style, "compact"),
         terminal_title=pick(args.terminal_title, profile.output.terminal_title, False),
         initial_review_file=initial_review_file,
+        initial_review_mode=initial_review_mode,
         check_commands=checks,
         profile_name=args.profile,
         budget_config=budget_config,
@@ -446,11 +680,7 @@ def profile_from_loop_config(
                 if config.profile_v2 is not None
                 else profiles.TriageRoutingConfig()
             ),
-            routes=(
-                dict(config.profile_v2.triage.routes)
-                if config.profile_v2 is not None
-                else {}
-            ),
+            routes=(dict(config.profile_v2.triage.routes) if config.profile_v2 is not None else {}),
         ),
         remediation=profiles.PhaseConfig(
             harness=config.remediation_harness,
@@ -484,6 +714,11 @@ def profile_from_loop_config(
             output_last_message=config.output_last_message,
             full_auto=config.full_auto,
             max_remediation_input_chars=config.max_remediation_input_chars,
+            inner_check_retries=config.inner_check_retries,
+            provider_retry_attempts=config.provider_retry_attempts,
+            provider_retry_backoff_seconds=config.provider_retry_backoff_seconds,
+            external_review_input_chars=config.external_review_input_chars,
+            external_review_warning_seconds=config.external_review_warning_seconds,
             terminal_excerpt_chars=config.terminal_excerpt_chars,
         ),
         budgets=profiles.BudgetConfig(

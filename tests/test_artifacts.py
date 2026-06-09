@@ -38,7 +38,9 @@ def test_write_json_artifact_round_trip_is_byte_identical(tmp_path):
 
     first = artifacts.write_json_artifact(run_dir, "events/summary.json", payload)
     first_bytes = first.read_bytes()
-    second = artifacts.write_json_artifact(run_dir, "events/summary.json", json.loads(first.read_text()))
+    second = artifacts.write_json_artifact(
+        run_dir, "events/summary.json", json.loads(first.read_text())
+    )
 
     assert second.read_bytes() == first_bytes
 

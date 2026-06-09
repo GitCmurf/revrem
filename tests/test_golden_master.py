@@ -51,7 +51,9 @@ def _drive_loop(config, runner, tmp_path):
     the return-vs-raise distinction.
     """
     try:
-        summary = runner_mod.run_loop(config, runner, clock=FakeClock(), identity=FakeRunIdentity()).to_dict()
+        summary = runner_mod.run_loop(
+            config, runner, clock=FakeClock(), identity=FakeRunIdentity()
+        ).to_dict()
     except RunLoopFailed as exc:
         summary = exc.summary
     records, _ = events.read_events(tmp_path / "artifacts" / "events.jsonl")
@@ -101,9 +103,7 @@ def test_loop_findings_path_events_match_golden(tmp_path):
 
 
 def _run_budget_path(tmp_path):
-    runner = FakeRunner(
-        {"review": CommandResult([], 0, stdout=FINDINGS_REVIEW_STDOUT, tokens=100)}
-    )
+    runner = FakeRunner({"review": CommandResult([], 0, stdout=FINDINGS_REVIEW_STDOUT, tokens=100)})
     config = _loop_config(tmp_path, budget_config=budgets.BudgetConfig(max_tokens=10))
     return _drive_loop(config, runner, tmp_path)
 

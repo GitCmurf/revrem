@@ -42,6 +42,7 @@ from code_review_loop.identity import RunIdentity
 # helpers
 # ---------------------------------------------------------------------------
 
+
 def _ctx(**kwargs: object) -> RunContext:
     return RunContext(
         clock=MagicMock(spec=Clock),
@@ -58,6 +59,7 @@ def _cr(returncode: int = 0) -> CommandResult:
 # ---------------------------------------------------------------------------
 # Request types
 # ---------------------------------------------------------------------------
+
 
 class TestChecksRequest:
     def test_fields(self) -> None:
@@ -120,6 +122,7 @@ class TestReviewRequest:
 # Outcome types
 # ---------------------------------------------------------------------------
 
+
 class TestChecksOutcome:
     def test_empty(self) -> None:
         o = ChecksOutcome(results=(), failed_commands=())
@@ -175,6 +178,7 @@ class TestReviewOutcome:
 # RunContext harness fields
 # ---------------------------------------------------------------------------
 
+
 class TestRunContextHarnessFields:
     def test_all_phase_harnesses_are_required(self) -> None:
         ctx = _ctx()
@@ -208,6 +212,7 @@ class TestRunContextHarnessFields:
 # Protocol duck-type compliance
 # ---------------------------------------------------------------------------
 
+
 class TestProtocolCompliance:
     """Concrete fakes can be injected and called through the RunContext."""
 
@@ -229,7 +234,9 @@ class TestProtocolCompliance:
 
     def test_triage_harness_callable(self) -> None:
         ctx = _ctx(phase_triage=FakeTriageHarness())
-        req = TriageRequest(iteration=1, run_id="r", source_review_artifact="a.txt", review_output="out")
+        req = TriageRequest(
+            iteration=1, run_id="r", source_review_artifact="a.txt", review_output="out"
+        )
         outcome = ctx.phase_triage.execute(req, ctx)
         assert outcome.is_clear is True
 

@@ -32,17 +32,28 @@ def compose_remediation_prompt(
         if frag_content:
             header_parts.append(f"--- Fragment: {frag_name} ---\n{frag_content}")
         else:
-            raise ValueError(f"Required prompt fragment {frag_name!r} could not be resolved or is untrusted.")
+            raise ValueError(
+                f"Required prompt fragment {frag_name!r} could not be resolved or is untrusted."
+            )
 
     triage_requirements = triage_payload.get("prompt_requirements", {})
     # Triage-prescribed Fragments
+    ignored_triage_fragments: list[str] = []
     for frag_name in triage_requirements.get("required_fragments", []):
         if frag_name not in resolved_route.prompt_fragments:
             frag_content = load_fragment(cwd, frag_name, trusted_repo=trusted_repo)
             if frag_content:
                 header_parts.append(f"--- Fragment: {frag_name} ---\n{frag_content}")
             else:
-                raise ValueError(f"Triage-prescribed prompt fragment {frag_name!r} could not be resolved or is untrusted.")
+                ignored_triage_fragments.append(str(frag_name))
+
+    if ignored_triage_fragments:
+        header_parts.append(
+            "Ignored unresolved triage-requested prompt fragments:\n"
+            f"{len(ignored_triage_fragments)} unresolved fragments omitted.\n"
+            "These names came from model-generated triage output, not trusted "
+            "routing policy. Continue with the trusted remediation rules above."
+        )
 
     # Definition of Done
     dod = triage_requirements.get("definition_of_done", [])
@@ -102,7 +113,12 @@ Rules:
 - Preserve existing user changes; do not revert unrelated work.
 - Maintain the repository's Code + Documentation + Tests atomic-unit rule.
 - Add or update tests for behavior changes.
-- Run the most relevant verification commands before finishing.
+- Do not create scratch files in the repository. If you create temporary files,
+  place them outside the repo or delete them before finishing.
+- Leave no untracked files behind unless they are intentional patch files and
+  the final response calls them out explicitly.
+- Run the most relevant verification commands before finishing, and only claim
+  verification that you actually ran or that is included in the prompt.
 - If a finding is invalid or impossible to fix safely, explain that in your final response.
 """
 
@@ -119,7 +135,11 @@ def load_fragment(cwd: Path, name: str, trusted_repo: bool = False) -> str | Non
 
     # Reject path traversal
     fragment_path = Path(name)
-    if fragment_path.is_absolute() or len(fragment_path.parts) != 1 or any(part == ".." for part in fragment_path.parts):
+    if (
+        fragment_path.is_absolute()
+        or len(fragment_path.parts) != 1
+        or any(part == ".." for part in fragment_path.parts)
+    ):
         return None
 
     candidates = [

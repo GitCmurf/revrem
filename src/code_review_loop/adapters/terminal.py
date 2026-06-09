@@ -4,6 +4,7 @@ Implements ProgressReporter via the progress module (rich) and compact
 text output. Only constructed when config.progress=True and style is
 'rich' or 'compact'; the verbose path stays in the cli layer.
 """
+
 from __future__ import annotations
 
 import atexit
@@ -75,7 +76,9 @@ def terminal_recovery_context() -> Iterator[None]:
     def handle_signal(signum: int, frame: object | None) -> None:
         restore_terminal_display()
         if signum in {signal.SIGINT, signal.SIGTERM}:
-            raise cancellation_interrupt_for_signal(signum, now=time.monotonic())  # det-exempt: real-time debounce of double Ctrl-C; faking breaks the cancellation semantic
+            raise cancellation_interrupt_for_signal(
+                signum, now=time.monotonic()
+            )  # det-exempt: real-time debounce of double Ctrl-C; faking breaks the cancellation semantic
         signal.signal(signum, signal.SIG_DFL)
         os.kill(os.getpid(), signum)
         if hasattr(signal, "SIGTSTP") and signum == signal.SIGTSTP:
@@ -97,7 +100,9 @@ def terminal_recovery_context() -> Iterator[None]:
 
 
 def terminal_title_supported(config: LoopConfig) -> bool:
-    return config.terminal_title and (sys.stderr.isatty() or (os.name != "nt" and Path("/dev/tty").exists()))
+    return config.terminal_title and (
+        sys.stderr.isatty() or (os.name != "nt" and Path("/dev/tty").exists())
+    )
 
 
 def sanitize_terminal_title(value: str) -> str:
@@ -183,7 +188,9 @@ def set_phase_terminal_title(config: LoopConfig, phase: str, label: str) -> None
         return
     from code_review_loop.adapters.phase_support import terminal_iteration_label
 
-    set_terminal_title(config, f"{prefix} {terminal_iteration_label(label, config.max_iterations)} RevRem")
+    set_terminal_title(
+        config, f"{prefix} {terminal_iteration_label(label, config.max_iterations)} RevRem"
+    )
 
 
 class TerminalProgressReporter:
@@ -205,13 +212,17 @@ class TerminalProgressReporter:
             if not self._warned:
                 self._warned = True
                 from code_review_loop.adapters.phase_support import print_compact_progress
-                print_compact_progress(phase, label, "rich progress unavailable; using compact output", head="warn: ")
+
+                print_compact_progress(
+                    phase, label, "rich progress unavailable; using compact output", head="warn: "
+                )
             self._print_compact(phase, label, status, detail)
             return
         self._print_compact(phase, label, status, detail)
 
     def _print_compact(self, phase: str, label: str, status: str, detail: str) -> None:
         from code_review_loop.adapters.phase_support import print_compact_progress
+
         if detail:
             print_compact_progress(phase, label, detail, head=f"{status}: ")
         else:

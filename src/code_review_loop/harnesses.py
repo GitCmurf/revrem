@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -11,6 +11,8 @@ from typing import Any, Protocol
 
 CODEX_MINIMAL_UNSUPPORTED_COMMIT_MODELS = frozenset({"gpt-5.3-codex-spark"})
 CODEX_MINIMAL_UNSUPPORTED_ADJUSTMENT = "codex_minimal_unsupported_by_model"
+REASONING_EFFORT_HARNESSES = frozenset({"codex"})
+GEMINI_ARGV_PROMPT_MAX_BYTES = 100_000
 
 
 @dataclass(frozen=True)
@@ -59,6 +61,21 @@ class ReasoningEffortResolution:
     adjustment: str | None = None
 
 
+@dataclass(frozen=True)
+class PromptInvocation:
+    command: list[str]
+    stdin: str | None
+    delivery: str
+    prompt_chars: int | None = None
+    prompt_bytes: int | None = None
+    prompt_artifact: Path | None = None
+
+    def __iter__(self) -> Iterator[object]:
+        # Preserve the historical `(command, stdin)` unpacking contract.
+        yield self.command
+        yield self.stdin
+
+
 class HarnessAdapter(Protocol):
     def command(self, request: PhaseCommandRequest) -> list[str]: ...
 
@@ -80,6 +97,31 @@ def resolve_commit_message_reasoning_effort(
             adjustment=CODEX_MINIMAL_UNSUPPORTED_ADJUSTMENT,
         )
     return ReasoningEffortResolution(effective=requested_effort, requested=requested_effort)
+
+
+def reasoning_effort_supported(harness: str) -> bool:
+    """Return whether RevRem can enforce reasoning effort for this harness.
+
+    The resolved phase config may carry a reasoning-effort value for every
+    harness, but only adapters that map it into their provider argv should show
+    it as an effective operator control.
+    """
+    return harness in REASONING_EFFORT_HARNESSES
+
+
+def phase_effort_text(harness: str | None, effort: str | None) -> str | None:
+    """Return the operator-facing effort text for a phase.
+
+    Mirrors the prior ``_phase_effort_text`` helpers in ``runtime.py`` and
+    ``tui_state.py``: unsupported harnesses are surfaced as ``"n/a"`` and a
+    missing effort is ``None``. Both call sites should use this helper so the
+    supported-harness set and the ``"n/a"`` literal stay in one place.
+    """
+    if not effort:
+        return None
+    if harness and not reasoning_effort_supported(harness):
+        return "n/a"
+    return effort
 
 
 class CodexHarnessAdapter(HarnessAdapter):
@@ -111,14 +153,10 @@ class CodexHarnessAdapter(HarnessAdapter):
             command.append("--json")
         if request.model:
             command.extend(["--model", request.model])
-        if (
-            request.role == "remediation"
-            and request.output_last_message_path is not None
-        ):
+        if request.role == "remediation" and request.output_last_message_path is not None:
             command.extend(["--output-last-message", str(request.output_last_message_path)])
         command.append("-")
         return command
-
 
 
 class ClaudeHarnessAdapter(HarnessAdapter):
@@ -132,20 +170,29 @@ class ClaudeHarnessAdapter(HarnessAdapter):
 
 class GeminiHarnessAdapter(HarnessAdapter):
     def command(self, request: PhaseCommandRequest) -> list[str]:
-        # The gemini CLI runs non-interactively with `-p/--prompt <text>`; the
-        # prompt is the flag's value (stdin is only appended). --prompt is kept
-        # last so prepare_prompt_invocation can supply the prompt as its value.
+        # Prompt delivery is adapted later by prepare_prompt_invocation.
         command = [request.executable]
         command.extend(_gemini_permission_args(request))
         if request.model:
             command.extend(["--model", request.model])
-        command.append("--prompt")
         return command
+
+
+OPENCODE_DEBUG_ENV = "REVREM_OPENCODE_DEBUG"
+OPENCODE_DEBUG_ARGV: tuple[str, ...] = ("--print-logs", "--log-level", "INFO")
 
 
 class OpenCodeHarnessAdapter(HarnessAdapter):
     def command(self, request: PhaseCommandRequest) -> list[str]:
         command = [request.executable, "run"]
+        if os.environ.get(OPENCODE_DEBUG_ENV) == "1":
+            # Best-effort operator aid. The argv values in
+            # ``OPENCODE_DEBUG_ARGV`` are confirmed-valid against
+            # ``opencode run --help`` and locked by
+            # ``test_opencode_debug_argv_is_well_formed``. If a future
+            # opencode release renames these flags, update the constant in
+            # one place and re-run the suite.
+            command.extend(OPENCODE_DEBUG_ARGV)
         command.extend(_opencode_permission_args(request))
         if request.model:
             command.extend(["--model", request.model])
@@ -160,8 +207,8 @@ class KiloHarnessAdapter(HarnessAdapter):
             command.extend(["--model", request.model])
         return command
 
-class ReservedHarnessAdapter(HarnessAdapter):
 
+class ReservedHarnessAdapter(HarnessAdapter):
     def __init__(self, name: str):
         self.name = name
 
@@ -411,20 +458,54 @@ def build_phase_command(request: PhaseCommandRequest) -> list[str]:
     return adapter.command(request)
 
 
-ARGV_PROMPT_HARNESSES = frozenset({"opencode", "kilo", "gemini"})
-
-
 def prepare_prompt_invocation(
     harness: str,
     command: list[str],
     prompt: str | None,
-) -> tuple[list[str], str | None]:
+    *,
+    prompt_artifact_path: Path | None = None,
+) -> PromptInvocation:
     """Adapt prompt delivery to each harness' non-interactive CLI contract."""
     if prompt is None:
-        return command, None
-    if harness in ARGV_PROMPT_HARNESSES:
-        return [*command, prompt], None
-    return command, prompt
+        return PromptInvocation(list(command), None, "none")
+    encoded = prompt.encode("utf-8")
+    if harness == "opencode":
+        if prompt_artifact_path is None:
+            raise ValueError("opencode prompt delivery requires a prompt artifact path")
+        adapted = list(command)
+        adapted.append("Follow the attached RevRem prompt exactly.")
+        adapted.extend(["--file", str(prompt_artifact_path)])
+        return PromptInvocation(
+            adapted,
+            None,
+            "file",
+            prompt_chars=len(prompt),
+            prompt_bytes=len(encoded),
+            prompt_artifact=prompt_artifact_path,
+        )
+    if harness == "gemini":
+        if len(encoded) > GEMINI_ARGV_PROMPT_MAX_BYTES:
+            raise ValueError(
+                "gemini prompt exceeds RevRem's current --prompt delivery cap "
+                f"({len(encoded)} > {GEMINI_ARGV_PROMPT_MAX_BYTES} bytes); lower "
+                "--external-review-input-chars or use another review harness"
+            )
+        adapted = list(command)
+        adapted.extend(["--prompt", prompt])
+        return PromptInvocation(
+            adapted,
+            None,
+            "argv-prompt",
+            prompt_chars=len(prompt),
+            prompt_bytes=len(encoded),
+        )
+    return PromptInvocation(
+        list(command),
+        prompt,
+        "stdin",
+        prompt_chars=len(prompt),
+        prompt_bytes=len(encoded),
+    )
 
 
 def harness_capabilities_payload(name: str) -> dict[str, Any]:
@@ -464,6 +545,17 @@ def harness_capabilities_payload(name: str) -> dict[str, Any]:
 
 
 def run_fake_harness_command(args: list[str] | tuple[str, ...]) -> tuple[int, str, str]:
+    """Run the deterministic ``revrem-fake-harness`` script for tests.
+
+    Note: the ``--scenario timeout`` branch returns ``(-1, "", ...)``.
+    ``classify_provider_failure`` maps any negative return code to the
+    ``provider_interrupted`` reason with ``transient=True`` (see
+    ``provider_failures.classify_provider_failure``), and ``run_review_with_retry``
+    treats that as a retryable signal. Operators wiring the fake harness into
+    retry-counter tests will see two fake-harness invocations for one
+    ``--scenario timeout`` call. Other scenarios (clear, findings,
+    remediation_partial, etc.) use return code 0 or 2 and are not retried.
+    """
     if not fake_harness_enabled():
         return 2, "", f"ERROR: fake harness disabled; set {FAKE_HARNESS_ENV}=1\n"
     if len(args) < 2:
@@ -479,7 +571,11 @@ def run_fake_harness_command(args: list[str] | tuple[str, ...]) -> tuple[int, st
     if scenario == "cancellation":
         raise KeyboardInterrupt()
     if scenario == "unsupported":
-        return 2, "", "REVREM_ALLOW_FAKE_HARNESS is enabled, but this scenario is unsupported\n"
+        return (
+            2,
+            "",
+            "REVREM_ALLOW_FAKE_HARNESS is enabled, but this scenario is unsupported\n",
+        )
 
     fixture_dir = os.environ.get(FAKE_HARNESS_FIXTURE_ENV)
     base = Path(fixture_dir) / scenario if fixture_dir else HARNESS_FIXTURES_DIR / scenario
