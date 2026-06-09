@@ -194,7 +194,7 @@ def _usable_run_review_paths(
         for path in paths
         if _is_generated_review_artifact(path) and review_final_is_usable(path)
     }
-    return sorted(usable, key=lambda path: (path.stat().st_mtime, path.name, str(path)))
+    return sorted(usable, key=lambda path: (_safe_mtime(path), path.name, str(path)))
 
 
 def _resolve_summary_path(value: str, run_dir: Path, search_root: Path) -> Path | None:
@@ -282,3 +282,9 @@ def review_final_is_usable(review_path: Path) -> bool:
     if not review_text:
         return False
     return not review_text.startswith("DRY_RUN")
+
+def _safe_mtime(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except FileNotFoundError:
+        return 0.0

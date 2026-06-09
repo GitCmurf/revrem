@@ -83,12 +83,12 @@ def non_artifact_status_entries_from_status_z(
             continue
         status = entry[:2]
         path = entry[3:] if len(entry) >= 3 else ""
-        paths = [path] if path else []
         if (status[:1] in {"R", "C"} or status[1:2] in {"R", "C"}) and index < len(parts):
             old_path = parts[index]
             index += 1
-            if old_path:
-                paths.append(old_path)
+            paths = [old_path, path] if old_path and path else ([path] if path else [])
+        else:
+            paths = [path] if path else []
         if paths and all(is_artifact_path(config, part) for part in paths):
             continue
         rendered = f"{status} {' -> '.join(paths)}" if paths else status

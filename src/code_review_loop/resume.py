@@ -286,6 +286,7 @@ def resume_loop_config(
         triage_prompt=_resume_optional_str(resume_config, "triage_prompt"),
         triage_on_invalid=_resume_str(resume_config, "triage_on_invalid", "continue"),
         triage_contract=triage_contract,
+        initial_review_mode=_resume_str(resume_config, "initial_review_mode", "none"),
         initial_review_file=review_path,
         profile_name=profile_name,
         budget_config=_resume_budget_config(resume_config, budgets_payload if isinstance(budgets_payload, dict) else None),

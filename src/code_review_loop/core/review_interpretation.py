@@ -416,6 +416,21 @@ def review_status_diagnostics(
         and not has_affirmative_issue_prose(actionable_output)
     ):
         status_source = "codex_clear_prose"
+    elif any(marker in normalized for marker in (
+        "review comment:",
+        "review comments:",
+        "full review comments:",
+    )):
+        status_source = "finding_markers"
+    elif any(line in {
+        "no findings.",
+        "no findings",
+        "no issues found.",
+        "no issues found",
+        "no actionable findings.",
+        "no actionable findings",
+    } for line in [l.strip().lower() for l in actionable_output.splitlines()]):
+        status_source = "clear_lines"
     else:
         status_source = "none"
     return {

@@ -198,7 +198,7 @@ def test_non_artifact_status_entries_from_status_z_handles_renames(tmp_path):
         "R  artifacts/new.txt\0artifacts/old.txt\0",
     )
 
-    assert entries == ("R  src/new.py -> src/old.py",)
+    assert entries == ("R  src/old.py -> src/new.py",)
 
 
 def test_is_artifact_path_matches_revrem_and_explicit_artifact_dir(tmp_path) -> None:
