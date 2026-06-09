@@ -418,7 +418,7 @@ def commit_message_for_staged_changes(
     phase_support.record_model_charge(
         config, result, phase="commit-message", iteration=iteration, ctx=ctx
     )
-    side_effect_status = _handle_commit_message_side_effects(
+    side_effect_status, prior_created_paths = _handle_commit_message_side_effects(
         config,
         runner,
         iteration,
@@ -432,6 +432,7 @@ def commit_message_for_staged_changes(
         before_head=before_head,
         before_cached_raw=before_cached_raw,
         timeout_seconds=timeout_seconds,
+        prior_created_paths=prior_created_paths,
     )
     if repo_mutation is not None:
         return repo_mutation
@@ -573,6 +574,7 @@ def _handle_commit_message_repo_mutation(
     before_head: str | None,
     before_cached_raw: str | None,
     timeout_seconds: float | None,
+    prior_created_paths: list[str] | None = None,
 ) -> _AdoptedCommit | None:
     if before_head is None and before_cached_raw is None:
         return None
@@ -612,6 +614,7 @@ def _handle_commit_message_repo_mutation(
         cached_diff_changed=cached_changed,
         cached_diff_empty=cached_empty,
         non_artifact_status_lines=sorted(clean_status or []),
+        created_paths_removed=prior_created_paths or [],
         warning=COMMIT_MESSAGE_SIDE_EFFECT_WARNING,
     )
     if head_changed and clean_status == set() and cached_empty and after_head:
@@ -633,19 +636,19 @@ def _handle_commit_message_side_effects(
     *,
     before_status: set[str] | None,
     timeout_seconds: float | None,
-) -> Literal["clean", "fallback"]:
+) -> tuple[Literal["clean", "fallback"], list[str]]:
     if before_status is None:
-        return "clean"
+        return "clean", []
     after_status = _commit_message_worktree_status(
         config,
         runner,
         timeout_seconds=timeout_seconds,
     )
     if after_status is None:
-        return "clean"
+        return "clean", []
     new_lines = sorted(after_status - before_status)
     if not new_lines:
-        return "clean"
+        return "clean", []
     # ``git status --porcelain`` reports paths relative to the repository root
     # even when RevRem is launched from a subdirectory, so resolve any new
     # ``??`` paths from the lexical git root (falling back to ``config.cwd``
@@ -692,7 +695,7 @@ def _handle_commit_message_side_effects(
             "commit-message drafting modified existing or unsafe worktree paths; "
             f"see {config.artifact_dir / f'commit-{iteration}-message-side-effects.json'}"
         )
-    return "fallback" if created_paths else "clean"
+    return ("fallback", created_paths) if created_paths else ("clean", [])
 
 
 def _write_commit_message_side_effect_artifact(

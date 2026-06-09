@@ -733,7 +733,7 @@ There is no silent third option.
 - **schema_version impact:** none.
 - **CHANGELOG:** Unreleased / Changed (CM2 row above already covers the
   behavioural change; this entry exists only to point at the test rename).
-- **Superseded by:** 2026-06-07 entry below — the unknown→clear mapping was
+- **Superseded by:** 2026-06-07 entry above — the unknown→clear mapping was
   reverted; the renamed test is renamed back and the unknown case now exits
   unknown.
 

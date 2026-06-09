@@ -385,7 +385,7 @@ class TestCommitMessageSideEffects:
 
         before_status = _commit_message_worktree_status(config, runner)
         assert before_status == set()
-        outcome = _handle_commit_message_side_effects(
+        outcome, removed = _handle_commit_message_side_effects(
             config,
             runner,
             4,
@@ -394,6 +394,7 @@ class TestCommitMessageSideEffects:
         )
 
         assert outcome == "fallback"
+        assert removed == ["commit-subject.txt"]
         assert not helper_path.exists()
         side_effects = json.loads(
             (artifact_dir / "commit-4-message-side-effects.json").read_text(
@@ -438,7 +439,7 @@ class TestCommitMessageSideEffects:
             return CommandResult(list(args), 0)
 
         before_status = _commit_message_worktree_status(config, runner)
-        outcome = _handle_commit_message_side_effects(
+        outcome, removed = _handle_commit_message_side_effects(
             config,
             runner,
             5,
@@ -447,6 +448,7 @@ class TestCommitMessageSideEffects:
         )
 
         assert outcome == "fallback"
+        assert removed == ["commit-subject.txt"]
         assert not helper_path.exists()
         assert decoy.exists(), "decoy file under launch directory must be preserved"
         side_effects = json.loads(
