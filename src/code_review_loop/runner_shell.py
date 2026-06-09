@@ -272,12 +272,12 @@ class _RunnerEngineExecutor:
             engine_state,
             initial_review_output=self.initial_review_output,
         )
-        if validating_stale_review:
-            self.stale_review_status_before = stale_validation_status.non_artifact_status_snapshot(
-                self.config,
-                self.ctx,
-            )
         try:
+            if validating_stale_review:
+                self.stale_review_status_before = stale_validation_status.non_artifact_status_snapshot(
+                    self.config,
+                    self.ctx,
+                )
             assert_worktree_stable_before_remediation(
                 self.config,
                 self.ctx,

@@ -419,7 +419,7 @@ def _decide_commit(
     if acc.stale_review_resolved and event.status == "committed":
         return Stop(
             OutcomeFailed(
-                reason="remediation_failed",
+                reason="stale_validation_failed",
                 error=(
                     "stale review validation emitted resolved marker but "
                     "produced changes to commit"

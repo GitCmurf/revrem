@@ -329,7 +329,7 @@ def test_decide_cm1_stale_review_resolved_commit_fails_invariant() -> None:
 
     assert action == Stop(
         OutcomeFailed(
-            reason="remediation_failed",
+            reason="stale_validation_failed",
             error=(
                 "stale review validation emitted resolved marker but produced "
                 "changes to commit"
