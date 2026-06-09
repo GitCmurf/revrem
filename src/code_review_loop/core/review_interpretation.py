@@ -423,7 +423,7 @@ def review_status_diagnostics(
         "no issues found",
         "no actionable findings.",
         "no actionable findings",
-    } for line in [l.strip().lower() for l in actionable_output.splitlines()]):
+    } for line in [raw_line.strip().lower() for raw_line in actionable_output.splitlines()]):
         status_source = "clear_lines"
     elif (
         harness not in PROMPTED_REVIEW_HARNESSES
