@@ -38,7 +38,9 @@ def test_summary_records_git_state_for_resume(tmp_path, monkeypatch):
         return CommandResult(["git", *args], 1, stderr="unexpected")
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
-        return CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+        return CommandResult(
+            list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n"
+        )
 
     monkeypatch.setattr(git_adapter, "run_git_preflight", fake_run_git_preflight)
 
@@ -76,7 +78,9 @@ def test_summary_refreshes_git_state_at_terminal_stop(tmp_path, monkeypatch):
         return CommandResult(["git", *args], 1, stderr="unexpected")
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
-        return CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+        return CommandResult(
+            list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n"
+        )
 
     monkeypatch.setattr(git_adapter, "run_git_preflight", fake_run_git_preflight)
 
@@ -107,7 +111,9 @@ def test_resume_payload_preserves_full_auto_and_budget_limits(tmp_path, monkeypa
         return CommandResult(["git", *args], 1, stderr="unexpected")
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
-        return CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+        return CommandResult(
+            list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n"
+        )
 
     monkeypatch.setattr(git_adapter, "run_git_preflight", fake_run_git_preflight)
 
@@ -219,7 +225,9 @@ def test_resume_loop_config_rejects_float_max_usd(tmp_path):
         "artifact_paths": {"reviews": [str(review_path)]},
     }
 
-    with pytest.raises(ValueError, match="resume_config.max_usd must be a decimal string, not float"):
+    with pytest.raises(
+        ValueError, match="resume_config.max_usd must be a decimal string, not float"
+    ):
         resume_mod.resume_loop_config(summary, run_dir=tmp_path)
 
 
@@ -227,7 +235,9 @@ def test_summary_records_unavailable_git_state_outside_git(tmp_path, monkeypatch
     monkeypatch.setattr(phase_support, "lexical_git_repo_root", lambda _cwd: None)
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
-        return CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+        return CommandResult(
+            list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n"
+        )
 
     summary = runner_mod.run_loop(
         LoopConfig(
@@ -315,7 +325,9 @@ def test_loop_writes_failure_summary_when_final_review_invocation_fails(tmp_path
         if args[1] == "review":
             review_calls += 1
             if review_calls == 1:
-                return CommandResult(list(args), 0, stdout="Still failing.\nREVIEW_STATUS: findings\n")
+                return CommandResult(
+                    list(args), 0, stdout="Still failing.\nREVIEW_STATUS: findings\n"
+                )
             return CommandResult(list(args), 1, stderr="Error: failed to create session\n")
         return CommandResult(list(args), 0, stdout="attempted remediation\n")
 
@@ -369,7 +381,11 @@ def test_append_run_history_preserves_budget_totals(tmp_path, monkeypatch):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
             return CommandResult(
-                list(args), 0, stdout="No findings.\nREVIEW_STATUS: clear\n", tokens=500, usd=Decimal("0.03")
+                list(args),
+                0,
+                stdout="No findings.\nREVIEW_STATUS: clear\n",
+                tokens=500,
+                usd=Decimal("0.03"),
             )
         return CommandResult(list(args), 0, stdout="ok\n")
 
@@ -382,13 +398,17 @@ def test_append_run_history_preserves_budget_totals(tmp_path, monkeypatch):
     )
 
     summary = runner_mod.run_loop(config, runner).to_dict()
-    budgets_before = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))["budgets"]
+    budgets_before = json.loads(
+        (tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8")
+    )["budgets"]
 
     assert budgets_before["tokens"] == 500
     assert budgets_before["usd"] == "0.03"
 
     history_path = reporting.append_run_history(summary, config)
-    budgets_after = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))["budgets"]
+    budgets_after = json.loads(
+        (tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8")
+    )["budgets"]
 
     assert history_path == home / ".local" / "share" / "revrem" / "runs.jsonl"
     assert budgets_after["tokens"] == budgets_before["tokens"]
@@ -405,7 +425,10 @@ def test_budget_exceeded_propagates_through_triage(tmp_path, monkeypatch):
 
     # B2e: patch TriageAdapter.execute instead of the legacy run_triage shim
     import code_review_loop.adapters.triage as _triage_mod
-    monkeypatch.setattr(_triage_mod.TriageAdapter, "execute", lambda *a, **kw: (_ for _ in ()).throw(exc))
+
+    monkeypatch.setattr(
+        _triage_mod.TriageAdapter, "execute", lambda *a, **kw: (_ for _ in ()).throw(exc)
+    )
 
     config = LoopConfig(
         base="main",
@@ -432,7 +455,10 @@ def test_budget_exceeded_propagates_through_remediation(tmp_path, monkeypatch):
 
     # B2d: patch RemediationAdapter.execute instead of the legacy run_remediation shim
     import code_review_loop.adapters.remediation as _rem_mod
-    monkeypatch.setattr(_rem_mod.RemediationAdapter, "execute", lambda *a, **kw: (_ for _ in ()).throw(exc))
+
+    monkeypatch.setattr(
+        _rem_mod.RemediationAdapter, "execute", lambda *a, **kw: (_ for _ in ()).throw(exc)
+    )
 
     config = LoopConfig(
         base="main",
@@ -460,7 +486,10 @@ def test_budget_exceeded_propagates_through_commit(tmp_path, monkeypatch):
 
     # B2c: patch CommitAdapter.execute instead of the legacy run_commit shim
     import code_review_loop.adapters.commit as _commit_mod
-    monkeypatch.setattr(_commit_mod.CommitAdapter, "execute", lambda *a, **kw: (_ for _ in ()).throw(exc))
+
+    monkeypatch.setattr(
+        _commit_mod.CommitAdapter, "execute", lambda *a, **kw: (_ for _ in ()).throw(exc)
+    )
 
     config = LoopConfig(
         base="main",
@@ -509,6 +538,7 @@ def test_run_loop_preserves_existing_events_on_resume(tmp_path):
     assert new_events.is_file()
     new_first = json.loads(new_events.read_text(encoding="utf-8").splitlines()[0])
     assert new_first["run_id"] != "original-run"
+
 
 def test_loop_can_start_from_initial_review_file(tmp_path):
     calls = []
@@ -589,7 +619,9 @@ def test_loop_writes_structured_triage_source_for_initial_review_file(tmp_path):
 
     triage_json = json.loads((tmp_path / "artifacts" / "triage-1.json").read_text(encoding="utf-8"))
     assert triage_json["source_review_artifact"] == "review-initial.txt"
-    assert summary["artifact_paths"]["reviews"] == [str(tmp_path / "artifacts" / "review-initial.txt")]
+    assert summary["artifact_paths"]["reviews"] == [
+        str(tmp_path / "artifacts" / "review-initial.txt")
+    ]
     assert (tmp_path / "artifacts" / "review-initial.txt").exists()
     assert "Structured triage handoff" in (calls[1][1] or "")
 

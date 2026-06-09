@@ -77,7 +77,9 @@ def run_subprocess_with_terminal_title_refresh(
         text=True,
         start_new_session=True,
     )
-    deadline = None if timeout is None else time.monotonic() + timeout  # det-exempt: governs a real subprocess I/O timeout; faking breaks process killing
+    deadline = (
+        None if timeout is None else time.monotonic() + timeout
+    )  # det-exempt: governs a real subprocess I/O timeout; faking breaks process killing
     pending_input = input
     started_at = time.monotonic()  # det-exempt: progress heartbeat for real subprocesses
     next_waiting_progress_at = started_at + waiting_progress.WAITING_PROGRESS_INTERVAL_SECONDS
@@ -91,7 +93,9 @@ def run_subprocess_with_terminal_title_refresh(
                 next_waiting_progress_at = now + waiting_progress.WAITING_PROGRESS_INTERVAL_SECONDS
             wait = terminal_adapter.TERMINAL_TITLE_REFRESH_SECONDS
             if deadline is not None:
-                remaining = deadline - time.monotonic()  # det-exempt: governs a real subprocess I/O timeout; faking breaks process killing
+                remaining = (
+                    deadline - time.monotonic()
+                )  # det-exempt: governs a real subprocess I/O timeout; faking breaks process killing
                 if remaining <= 0:
                     kill_process_tree(process)
                     stdout, stderr = process.communicate()

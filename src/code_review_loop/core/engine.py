@@ -234,9 +234,7 @@ class EngineExecutor(Protocol):
         ...
 
 
-def run(
-    state: EngineState, ctx: EngineExecutor, *, max_steps: int | None = None
-) -> RunOutcome:
+def run(state: EngineState, ctx: EngineExecutor, *, max_steps: int | None = None) -> RunOutcome:
     """Drive the dependency-free engine until it reaches a terminal outcome.
 
     ``run`` is intentionally small: every pure branch decision remains in
@@ -305,9 +303,7 @@ def decide(
     assert_never(event)
 
 
-def _decide_review(
-    cfg: ConfigSnapshot, acc: LoopAccumulator, event: ReviewDone
-) -> Action:
+def _decide_review(cfg: ConfigSnapshot, acc: LoopAccumulator, event: ReviewDone) -> Action:
     if event.exc is not None:
         return Stop(OutcomeFailed(reason="review_failed", error=str(event.exc)))
     if not event.is_final:
@@ -404,9 +400,7 @@ def _decide_commit(
                     check_failures=True,
                 )
             )
-        return Stop(
-            OutcomeFailed(reason="commit_failed", error=str(event.commit_failed))
-        )
+        return Stop(OutcomeFailed(reason="commit_failed", error=str(event.commit_failed)))
     if event.status == "skipped_no_changes":
         if acc.stale_review_resolved:
             return Stop(OutcomeClear(reason="stale_review_already_resolved"))
@@ -421,8 +415,7 @@ def _decide_commit(
             OutcomeFailed(
                 reason="stale_validation_failed",
                 error=(
-                    "stale review validation emitted resolved marker but "
-                    "produced changes to commit"
+                    "stale review validation emitted resolved marker but produced changes to commit"
                 ),
             )
         )
@@ -438,9 +431,7 @@ def _decide_no_final_review(acc: LoopAccumulator) -> Action:
     )
 
 
-def _next_review_action(
-    cfg: ConfigSnapshot, acc: LoopAccumulator, iteration: int
-) -> Action:
+def _next_review_action(cfg: ConfigSnapshot, acc: LoopAccumulator, iteration: int) -> Action:
     if iteration < cfg.max_iterations:
         return Continue()
     if cfg.final_review:

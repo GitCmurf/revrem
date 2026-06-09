@@ -37,10 +37,7 @@ def test_validation_status_ignores_still_applies_marker_in_stderr_prompt_echo() 
 
 
 def test_validation_status_ignores_marker_outside_validation_block() -> None:
-    output = (
-        "Context mentions REVREM_STALE_REVIEW_STATUS: resolved\n\n"
-        + _block("still_applies")
-    )
+    output = "Context mentions REVREM_STALE_REVIEW_STATUS: resolved\n\n" + _block("still_applies")
 
     assert stale_review.validation_status(output) == "still_applies"
     assert stale_review.validation_summary(output) == _block("still_applies").strip()

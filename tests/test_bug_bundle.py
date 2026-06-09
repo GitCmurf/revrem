@@ -103,7 +103,9 @@ def test_create_bug_bundle_redacts_default_contents_and_excludes_raw_transcripts
     assert b"ghp_" not in bundle_bytes
     assert b"/home/cmf/private" not in bundle_bytes
     manifest = json.loads(members["bug-bundle.json"])
-    validate(manifest, json.loads((ROOT / "docs/52-api/schemas/bug-bundle-v1.schema.json").read_text()))
+    validate(
+        manifest, json.loads((ROOT / "docs/52-api/schemas/bug-bundle-v1.schema.json").read_text())
+    )
     assert "diagnostics-1.json" in manifest["files"]
     assert "review-1-status.json" in manifest["files"]
     assert manifest["include_raw_transcripts"] is False
@@ -112,7 +114,9 @@ def test_create_bug_bundle_redacts_default_contents_and_excludes_raw_transcripts
     assert manifest["redaction_counts"]["openai-key"] == 2
 
 
-def test_create_bug_bundle_uses_safe_default_output_path_for_untrusted_run_id(tmp_path, monkeypatch):
+def test_create_bug_bundle_uses_safe_default_output_path_for_untrusted_run_id(
+    tmp_path, monkeypatch
+):
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     (run_dir / "summary.json").write_text(

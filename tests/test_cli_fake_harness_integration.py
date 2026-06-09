@@ -98,9 +98,9 @@ def test_fake_harness_partial_remediation_surfaces_artifact(tmp_path, monkeypatc
         runner_mod.run_loop(config, subprocess_runner_mod.default_runner)
 
     assert excinfo.value.summary["stopped_reason"] == "remediation_failed"
-    assert "partial progress" in (
-        tmp_path / "artifacts" / "remediation-1.txt"
-    ).read_text(encoding="utf-8")
+    assert "partial progress" in (tmp_path / "artifacts" / "remediation-1.txt").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_fake_harness_can_drive_structured_triage(tmp_path, monkeypatch):
@@ -197,7 +197,9 @@ def test_fake_harness_v2_triage_without_routing_uses_direct_remediation(tmp_path
     triage_json = json.loads((run_dir / "triage-1.json").read_text(encoding="utf-8"))
     assert triage_json["schema_version"] == "2.0"
     assert triage_json["prompt_version"] == "triage-v2"
-    assert (run_dir / "remediation-1.txt").read_text(encoding="utf-8") == "Fake remediation completed.\n"
+    assert (run_dir / "remediation-1.txt").read_text(
+        encoding="utf-8"
+    ) == "Fake remediation completed.\n"
 
 
 def test_fake_and_codex_summary_shapes_are_structurally_equivalent(tmp_path, monkeypatch):
@@ -226,7 +228,9 @@ def test_fake_and_codex_summary_shapes_are_structurally_equivalent(tmp_path, mon
     )
 
     def codex_runner(args, cwd, input_text=None, timeout_seconds=None):
-        return CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+        return CommandResult(
+            list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n"
+        )
 
     fake_summary = runner_mod.run_loop(fake_config, subprocess_runner_mod.default_runner).to_dict()
     codex_summary = runner_mod.run_loop(codex_config, codex_runner).to_dict()
@@ -253,9 +257,9 @@ def test_fake_harness_timeout_surfaces_as_review_failure(tmp_path, monkeypatch):
         runner_mod.run_loop(config, subprocess_runner_mod.default_runner)
 
     assert excinfo.value.summary["stopped_reason"] == "review_failed"
-    assert "Fake harness timeout" in (
-        tmp_path / "artifacts" / "review-1.txt"
-    ).read_text(encoding="utf-8")
+    assert "Fake harness timeout" in (tmp_path / "artifacts" / "review-1.txt").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_fake_harness_cancellation_uses_controlled_cancellation_path(tmp_path, monkeypatch):
@@ -322,4 +326,7 @@ def test_fake_harness_token_charge_drives_budget_ceiling(tmp_path, monkeypatch):
     assert summary["budgets"]["usd"] is None
     assert truncated is False
     assert any(event.kind == "cost_charge" and event.payload["tokens"] == 10 for event in records)
-    assert any(event.kind == "cost_ceiling_hit" and event.payload["ceiling"] == "tokens" for event in records)
+    assert any(
+        event.kind == "cost_ceiling_hit" and event.payload["ceiling"] == "tokens"
+        for event in records
+    )

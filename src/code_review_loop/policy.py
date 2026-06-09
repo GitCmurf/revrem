@@ -30,9 +30,7 @@ def check_route_capabilities(route_cfg: TriageRouteConfig) -> list[str]:
     if not spec:
         return [f"Unknown harness: {route_cfg.harness}"]
     if not spec.implemented:
-        return [
-            f"Harness {route_cfg.harness!r} is valid syntax, but not yet implemented."
-        ]
+        return [f"Harness {route_cfg.harness!r} is valid syntax, but not yet implemented."]
     if not spec.capabilities:
         return [f"Harness {route_cfg.harness!r} has no capabilities defined."]
 
@@ -113,7 +111,11 @@ def resolve_routing(
 
     # 2. Consider model proposal
     effective_tier = route_tier
-    if model_proposal_tier and model_proposal_tier in profile.triage.routes and model_proposal_tier != route_tier:
+    if (
+        model_proposal_tier
+        and model_proposal_tier in profile.triage.routes
+        and model_proposal_tier != route_tier
+    ):
         # Apply the model proposal only when its direction relative to the policy
         # route is known and permitted. direction None (uncomparable tiers) or 0
         # (same rank) leaves the policy route in place.
@@ -229,10 +231,14 @@ def _match_rule(rule: TriageRoutingRule, context: RoutingContext) -> bool:
     if cond.domain_tags_any and not any(tag in cond.domain_tags_any for tag in context.domain_tags):
         return False
 
-    if cond.safety_signals_any and not any(s in cond.safety_signals_any for s in context.safety_signals):
+    if cond.safety_signals_any and not any(
+        s in cond.safety_signals_any for s in context.safety_signals
+    ):
         return False
 
-    return not cond.failed_checks_any or any(c in cond.failed_checks_any for c in context.failed_checks)
+    return not cond.failed_checks_any or any(
+        c in cond.failed_checks_any for c in context.failed_checks
+    )
 
 
 RISK_ORDER = {"trivial": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}

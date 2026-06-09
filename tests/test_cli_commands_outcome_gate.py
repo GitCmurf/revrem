@@ -44,6 +44,5 @@ def test_no_bare_return_int_in_command_modules(module_path: Path) -> None:
     assert not violations, (
         f"Bare integer return in {module_path.relative_to(_CLI_DIR.parent)} "
         f"(use CommandOk()/CommandFailed(exit_code=N).exit_code, or annotate "
-        f"'# outcome-exempt: <reason>'):\n"
-        + "\n".join(f"  L{n}: {text}" for n, text in violations)
+        f"'# outcome-exempt: <reason>'):\n" + "\n".join(f"  L{n}: {text}" for n, text in violations)
     )

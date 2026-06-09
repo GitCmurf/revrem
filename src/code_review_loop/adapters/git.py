@@ -62,7 +62,9 @@ def git_state_for_resume(config: LoopConfig) -> dict[str, object]:
             "available": False,
         }
     head = git_preflight_stdout(config.cwd, ["rev-parse", "HEAD"])
-    base_commit = git_preflight_stdout(config.cwd, ["rev-parse", "--verify", f"{config.base}^{{commit}}"])
+    base_commit = git_preflight_stdout(
+        config.cwd, ["rev-parse", "--verify", f"{config.base}^{{commit}}"]
+    )
     merge_base = (
         git_preflight_stdout(config.cwd, ["merge-base", "HEAD", config.base])
         if base_commit is not None

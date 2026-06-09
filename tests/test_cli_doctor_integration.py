@@ -97,7 +97,9 @@ def test_run_codex_review_fails_fast_when_base_has_no_merge_base(tmp_path):
     )
 
     with pytest.raises(RuntimeError, match="codex review failed for review-1"):
-        review_impl.run_codex_review(config, runner, "review-1", display_label="1", ctx=make_run_context(runner))
+        review_impl.run_codex_review(
+            config, runner, "review-1", display_label="1", ctx=make_run_context(runner)
+        )
 
     artifact_text = (repo / "artifacts" / "review-1.txt").read_text(encoding="utf-8")
     assert "Review base preflight failed" in artifact_text
@@ -148,13 +150,16 @@ def test_live_cli_preflight_blocks_before_review_invocation(tmp_path, monkeypatc
 
     # B2f: patch ReviewAdapter.execute instead of the legacy run_codex_review shim
     import code_review_loop.adapters.review as _review_mod
+
     monkeypatch.setattr(_review_mod.ReviewAdapter, "execute", fail_review)
 
     exit_code = cli_main.main(
         ["--base", "missing", "--codex-bin", "git", "--artifact-dir", "artifacts"]
     )
 
-    diagnostics_payload = json.loads((repo / "artifacts" / "diagnostics.json").read_text(encoding="utf-8"))
+    diagnostics_payload = json.loads(
+        (repo / "artifacts" / "diagnostics.json").read_text(encoding="utf-8")
+    )
     summary = json.loads((repo / "artifacts" / "summary.json").read_text(encoding="utf-8"))
 
     assert exit_code == 4
@@ -183,7 +188,9 @@ def test_doctor_json_reports_missing_git_as_blocking_issue(tmp_path, monkeypatch
 
     monkeypatch.setattr(diagnostics.subprocess, "run", fake_run)
 
-    exit_code = cli_main.main(["doctor", "--base", "main", "--codex-bin", "git", "--format", "json"])
+    exit_code = cli_main.main(
+        ["doctor", "--base", "main", "--codex-bin", "git", "--format", "json"]
+    )
 
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
@@ -204,7 +211,9 @@ def test_doctor_text_reports_ok_for_valid_repo(tmp_path, monkeypatch, capsys):
     run_git(repo, "commit", "-m", "initial")
     monkeypatch.chdir(repo)
 
-    exit_code = cli_main.main(["doctor", "--base", "main", "--codex-bin", "git", "--format", "text"])
+    exit_code = cli_main.main(
+        ["doctor", "--base", "main", "--codex-bin", "git", "--format", "text"]
+    )
 
     captured = capsys.readouterr()
     assert exit_code == 0
@@ -230,7 +239,9 @@ def test_doctor_validates_default_artifact_dir_when_unset(tmp_path, monkeypatch,
 
     monkeypatch.setattr(doctor_command, "default_artifact_dir", lambda: blocked_artifact_dir)
 
-    exit_code = cli_main.main(["doctor", "--base", "main", "--codex-bin", "git", "--format", "json"])
+    exit_code = cli_main.main(
+        ["doctor", "--base", "main", "--codex-bin", "git", "--format", "json"]
+    )
 
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
@@ -259,7 +270,9 @@ def test_doctor_does_not_create_default_artifact_dir_on_clean_repo(tmp_path, mon
 
     monkeypatch.setattr(doctor_command, "default_artifact_dir", lambda: default_artifact_dir)
 
-    exit_code = cli_main.main(["doctor", "--base", "main", "--codex-bin", "git", "--format", "json"])
+    exit_code = cli_main.main(
+        ["doctor", "--base", "main", "--codex-bin", "git", "--format", "json"]
+    )
 
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
@@ -348,7 +361,17 @@ artifact_dir = "."
     monkeypatch.chdir(repo)
 
     exit_code = cli_main.main(
-        ["doctor", "--profile", "commit-root", "--base", "main", "--codex-bin", "git", "--format", "json"]
+        [
+            "doctor",
+            "--profile",
+            "commit-root",
+            "--base",
+            "main",
+            "--codex-bin",
+            "git",
+            "--format",
+            "json",
+        ]
     )
 
     captured = capsys.readouterr()
@@ -362,7 +385,9 @@ artifact_dir = "."
     assert captured.err == ""
 
 
-def test_doctor_profile_allows_reserved_harnesses_without_profile_error(tmp_path, monkeypatch, capsys):
+def test_doctor_profile_allows_reserved_harnesses_without_profile_error(
+    tmp_path, monkeypatch, capsys
+):
     repo = tmp_path / "repo"
     home = tmp_path / "home"
     repo.mkdir()
@@ -466,9 +491,7 @@ harness = "gemini"
     assert captured.err == ""
 
 
-def test_doctor_validate_routes_checks_disabled_route_harnesses(
-    tmp_path, monkeypatch, capsys
-):
+def test_doctor_validate_routes_checks_disabled_route_harnesses(tmp_path, monkeypatch, capsys):
     repo = tmp_path / "repo"
     home = tmp_path / "home"
     repo.mkdir()
@@ -533,9 +556,7 @@ harness = "gemini"
     payload = json.loads(captured.out)
     assert exit_code == 4
     assert payload["status"] == "blocking"
-    assert "revrem.preflight.executable_not_found" in {
-        issue["code"] for issue in payload["issues"]
-    }
+    assert "revrem.preflight.executable_not_found" in {issue["code"] for issue in payload["issues"]}
     assert any(issue["evidence"].get("executable") == "gemini" for issue in payload["issues"])
     assert captured.err == ""
 

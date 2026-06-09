@@ -22,7 +22,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("RevRem TUI entry point is available.")
         return 0
     if importlib.util.find_spec("textual") is None:
-        print(f"ERROR: revrem ui requires the optional Textual dependency. {INSTALL_HINT}", file=sys.stderr)
+        print(
+            f"ERROR: revrem ui requires the optional Textual dependency. {INSTALL_HINT}",
+            file=sys.stderr,
+        )
         return 1
     try:
         run_textual_app(selected_profile_name=args.profile)
@@ -99,7 +102,9 @@ def run_textual_app(*, selected_profile_name: str | None = None) -> None:
                 with tabbed_content():
                     for screen in model.screens:
                         with tab_pane(screen.title):
-                            yield static(_screen_markup(screen), id=f"screen-{screen.name}", markup=True)
+                            yield static(
+                                _screen_markup(screen), id=f"screen-{screen.name}", markup=True
+                            )
                     with tab_pane("Controls"):
                         if input_widget is not None:
                             yield input_widget(
@@ -142,21 +147,29 @@ def run_textual_app(*, selected_profile_name: str | None = None) -> None:
             if profile_name is None:
                 _notify(self, "No profile is available to show.")
                 return
-            self._run_interactive(tui_state.show_plan_for_name(profile_name), success=f"Shown profile: {profile_name}")
+            self._run_interactive(
+                tui_state.show_plan_for_name(profile_name), success=f"Shown profile: {profile_name}"
+            )
 
         def action_edit_profile(self) -> None:
             profile_name = self._profile_name()
             if profile_name is None:
                 _notify(self, "No profile is available to edit.")
                 return
-            self._run_interactive(tui_state.edit_plan_for_name(profile_name), success=f"Edited profile: {profile_name}")
+            self._run_interactive(
+                tui_state.edit_plan_for_name(profile_name),
+                success=f"Edited profile: {profile_name}",
+            )
 
         def action_new_profile(self) -> None:
             profile_name = self._profile_name()
             if profile_name is None:
                 _notify(self, "Enter a profile name before creating a profile.")
                 return
-            self._run_captured(tui_state.new_plan_for_name(profile_name), success=f"Created profile: {profile_name}")
+            self._run_captured(
+                tui_state.new_plan_for_name(profile_name),
+                success=f"Created profile: {profile_name}",
+            )
 
         def action_clone_profile(self) -> None:
             source = model.selected_profile_name
@@ -196,7 +209,9 @@ def run_textual_app(*, selected_profile_name: str | None = None) -> None:
             if path is None:
                 _notify(self, "Enter an import path before importing profiles.")
                 return
-            self._run_captured(tui_state.import_plan_for_path(path), success=f"Imported profiles: {path}")
+            self._run_captured(
+                tui_state.import_plan_for_path(path), success=f"Imported profiles: {path}"
+            )
 
         def _run_interactive(self, plan: tui_state.LaunchPlan, *, success: str) -> None:
             result = self._run_plan(plan, capture_output=False)
@@ -222,7 +237,9 @@ def run_textual_app(*, selected_profile_name: str | None = None) -> None:
             if callable(suspend) and not capture_output:
                 with suspend():
                     return run_launch_plan(plan, cwd=Path(model.snapshot.cwd), capture_output=False)
-            return run_launch_plan(plan, cwd=Path(model.snapshot.cwd), capture_output=capture_output)
+            return run_launch_plan(
+                plan, cwd=Path(model.snapshot.cwd), capture_output=capture_output
+            )
 
         def _profile_name(self) -> str | None:
             value = _input_value(self, "#profile-name")
@@ -277,6 +294,7 @@ def _input_value(app: Any, selector: str) -> str | None:
         return None
     stripped = value.strip()
     return stripped or None
+
 
 def run_launch_plan(
     plan: tui_state.LaunchPlan,

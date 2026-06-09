@@ -38,9 +38,7 @@ class GitContextCache:
     merge_base: dict[tuple[str, str, str], str] = field(default_factory=dict)
     base_head_diff: dict[tuple[str, str, str], str] = field(default_factory=dict)
     base_head_diff_stat: dict[tuple[str, str, str], str] = field(default_factory=dict)
-    base_head_diff_name_status: dict[tuple[str, str, str], str] = field(
-        default_factory=dict
-    )
+    base_head_diff_name_status: dict[tuple[str, str, str], str] = field(default_factory=dict)
     head_sha: dict[str, str] = field(default_factory=dict)
 
     def invalidate_head_sha(self, cwd: str | None = None) -> None:

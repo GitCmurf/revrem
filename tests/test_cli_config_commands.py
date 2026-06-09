@@ -22,11 +22,15 @@ suppress_command = import_module("code_review_loop.cli.commands.suppress")
 
 
 def _clear_result(summary: dict[str, object]) -> application_mod.ReviewLoopResult:
-    return application_mod.ReviewLoopResult(summary=summary, outcome=OutcomeClear(reason="review_clear"))
+    return application_mod.ReviewLoopResult(
+        summary=summary, outcome=OutcomeClear(reason="review_clear")
+    )
 
 
 def test_config_unknown_command_reports_command_error(monkeypatch, capsys):
-    monkeypatch.setattr(config_command, "parse_config_args", lambda _argv: SimpleNamespace(command="wat"))
+    monkeypatch.setattr(
+        config_command, "parse_config_args", lambda _argv: SimpleNamespace(command="wat")
+    )
 
     assert config_command.main([]) == 1
     assert "unhandled config command: wat" in capsys.readouterr().err
@@ -72,12 +76,14 @@ reasoning_effort = "minimal"
 
     def fake_run_loop(config):
         captured_configs.append(config)
-        return _clear_result({
-            "artifact_dir": str(config.artifact_dir),
-            "final_status": "clear",
-            "stopped_reason": "review_clear",
-            "iterations": [],
-        })
+        return _clear_result(
+            {
+                "artifact_dir": str(config.artifact_dir),
+                "final_status": "clear",
+                "stopped_reason": "review_clear",
+                "iterations": [],
+            }
+        )
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
@@ -125,12 +131,14 @@ quiet_progress = true
 
     def fake_run_loop(config):
         captured_configs.append(config)
-        return _clear_result({
-            "artifact_dir": str(config.artifact_dir),
-            "final_status": "clear",
-            "stopped_reason": "review_clear",
-            "iterations": [],
-        })
+        return _clear_result(
+            {
+                "artifact_dir": str(config.artifact_dir),
+                "final_status": "clear",
+                "stopped_reason": "review_clear",
+                "iterations": [],
+            }
+        )
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
@@ -176,7 +184,9 @@ timeout_seconds = 1800
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         calls.append((list(args), input_text, timeout_seconds))
-        return CommandResult(list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n")
+        return CommandResult(
+            list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n"
+        )
 
     assert summary_format == "text"
     assert config.timeout_seconds == 300
@@ -213,9 +223,6 @@ timeout_seconds = -1
 
     with pytest.raises(ValueError, match="review.timeout_seconds must be 0 or greater"):
         config_builder.build_loop_config(args, tmp_path)
-
-
-
 
 
 def test_build_loop_config_rejects_non_positive_external_review_input_chars(tmp_path, monkeypatch):
@@ -262,12 +269,14 @@ timeout_seconds = 1800
 
     def fake_run_loop(config):
         captured_configs.append(config)
-        return _clear_result({
-            "artifact_dir": str(config.artifact_dir),
-            "final_status": "clear",
-            "stopped_reason": "review_clear",
-            "iterations": [],
-        })
+        return _clear_result(
+            {
+                "artifact_dir": str(config.artifact_dir),
+                "final_status": "clear",
+                "stopped_reason": "review_clear",
+                "iterations": [],
+            }
+        )
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
@@ -291,7 +300,7 @@ def test_config_commands_create_show_list_and_delete_profile(tmp_path, monkeypat
     editor = tmp_path / "editor.sh"
     editor.write_text(
         "#!/bin/sh\n"
-        "printf '%s\\n' \"$1\" > \"$EDITOR_LOG\"\n"
+        'printf \'%s\\n\' "$1" > "$EDITOR_LOG"\n'
         "python -c 'from pathlib import Path; import sys; "
         'path = Path(sys.argv[1]); text = path.read_text(encoding="utf-8"); '
         'path.write_text(text.replace("Smoke profile", "Edited profile"), encoding="utf-8")\' "$1"\n',
@@ -303,9 +312,16 @@ def test_config_commands_create_show_list_and_delete_profile(tmp_path, monkeypat
     monkeypatch.setenv("EDITOR_LOG", str(editor_log))
 
     assert cli_main.main(["config", "edit", "smoke"]) == 0
-    assert f"edited smoke in {home / '.config' / 'revrem' / 'profiles.toml'}" in capsys.readouterr().out
-    assert editor_log.read_text(encoding="utf-8").strip() == str(home / ".config" / "revrem" / "profiles.toml")
-    assert "Edited profile" in (home / ".config" / "revrem" / "profiles.toml").read_text(encoding="utf-8")
+    assert (
+        f"edited smoke in {home / '.config' / 'revrem' / 'profiles.toml'}"
+        in capsys.readouterr().out
+    )
+    assert editor_log.read_text(encoding="utf-8").strip() == str(
+        home / ".config" / "revrem" / "profiles.toml"
+    )
+    assert "Edited profile" in (home / ".config" / "revrem" / "profiles.toml").read_text(
+        encoding="utf-8"
+    )
     assert cli_main.main(["config", "show", "smoke", "--format", "json"]) == 0
     assert '"description": "Edited profile"' in capsys.readouterr().out
 
@@ -534,15 +550,9 @@ def test_editor_command_uses_windows_quoting_when_needed(monkeypatch):
 
 
 def test_is_large_context_gemini_review_model_accepts_canonical_pro_names():
-    assert config_builder.is_large_context_gemini_review_model(
-        "gemini", "gemini-3.1-pro-preview"
-    )
-    assert config_builder.is_large_context_gemini_review_model(
-        "gemini", "gemini-3-pro"
-    )
-    assert config_builder.is_large_context_gemini_review_model(
-        "gemini", "gemini-2.5-pro"
-    )
+    assert config_builder.is_large_context_gemini_review_model("gemini", "gemini-3.1-pro-preview")
+    assert config_builder.is_large_context_gemini_review_model("gemini", "gemini-3-pro")
+    assert config_builder.is_large_context_gemini_review_model("gemini", "gemini-2.5-pro")
 
 
 def test_is_large_context_gemini_review_model_rejects_pretend_pro_suffixes():
@@ -552,9 +562,7 @@ def test_is_large_context_gemini_review_model_rejects_pretend_pro_suffixes():
     assert not config_builder.is_large_context_gemini_review_model(
         "gemini", "gemini-2.5-prosomething-experimental"
     )
-    assert not config_builder.is_large_context_gemini_review_model(
-        "gemini", "gemini-2.5-pro-"
-    )
+    assert not config_builder.is_large_context_gemini_review_model("gemini", "gemini-2.5-pro-")
 
 
 def test_is_large_context_gemini_review_model_rejects_non_gemini_harness():
@@ -575,12 +583,8 @@ def test_is_large_context_gemini_review_model_accepts_multi_segment_pro_suffix()
     """Multi-segment Pro suffixes like ``-exp-03-25`` and ``-preview-09``
     are accepted and receive the large-context cap.
     """
-    assert config_builder.is_large_context_gemini_review_model(
-        "gemini", "gemini-2.5-pro-exp-03-25"
-    )
-    assert config_builder.is_large_context_gemini_review_model(
-        "gemini", "gemini-2.5-pro-exp-0827"
-    )
+    assert config_builder.is_large_context_gemini_review_model("gemini", "gemini-2.5-pro-exp-03-25")
+    assert config_builder.is_large_context_gemini_review_model("gemini", "gemini-2.5-pro-exp-0827")
     assert config_builder.is_large_context_gemini_review_model(
         "gemini", "gemini-3.1-pro-preview-09"
     )

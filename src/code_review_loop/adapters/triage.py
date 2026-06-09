@@ -59,9 +59,7 @@ def run_triage(
     ctx: RunContext,
 ) -> tuple[str, int, bool, dict[str, Any] | None]:
     command = build_triage_command(config)
-    prompt_root = config.triage_prompt or triage.load_prompt(
-        contract=config.triage_contract
-    )
+    prompt_root = config.triage_prompt or triage.load_prompt(contract=config.triage_contract)
     prompt = f"{prompt_root}\n{prompts_composer.trim_for_prompt(review_output, config.max_remediation_input_chars)}"
     prompt_artifact_path = config.artifact_dir / f"triage-{iteration}-prompt.txt"
     phase_support.write_artifact(prompt_artifact_path, prompt)
@@ -74,9 +72,7 @@ def run_triage(
     command = invocation.command
     prompt_input = invocation.stdin
     prompt_metadata = phase_support.prompt_invocation_metadata(invocation)
-    phase_support.ensure_model_budget(
-        config, phase="triage", iteration=iteration, ctx=ctx
-    )
+    phase_support.ensure_model_budget(config, phase="triage", iteration=iteration, ctx=ctx)
     phase_support.progress_event(
         config,
         "triage",
@@ -117,12 +113,8 @@ def run_triage(
             prompt_artifact=invocation.prompt_artifact,
         )
     triage_artifact = config.artifact_dir / f"triage-{iteration}.txt"
-    phase_support.write_artifact(
-        triage_artifact, phase_support._combined_output(result)
-    )
-    phase_support.record_model_charge(
-        config, result, phase="triage", iteration=iteration, ctx=ctx
-    )
+    phase_support.write_artifact(triage_artifact, phase_support._combined_output(result))
+    phase_support.record_model_charge(config, result, phase="triage", iteration=iteration, ctx=ctx)
     if result.returncode != 0:
         issue = triage.command_failed_issue(
             iteration=iteration,
@@ -143,8 +135,7 @@ def run_triage(
             ctx=ctx,
         )
         raise RuntimeError(
-            f"codex exec triage failed for iteration {iteration}; "
-            f"see {triage_artifact}"
+            f"codex exec triage failed for iteration {iteration}; see {triage_artifact}"
         )
     phase_support.progress_event(config, "triage", str(iteration), "done", ctx=ctx)
     triage_output = actionable_review_output(phase_support._combined_output(result))

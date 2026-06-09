@@ -36,6 +36,7 @@ from tests.support.phase_harnesses import phase_harness_kwargs
 # helpers
 # ---------------------------------------------------------------------------
 
+
 def _ctx(runner=None, **kwargs: object) -> RunContext:
     return RunContext(
         clock=MagicMock(spec=Clock),
@@ -78,6 +79,7 @@ def test_format_check_result_for_progress_names_timeouts() -> None:
 # ---------------------------------------------------------------------------
 # ChecksAdapter unit tests
 # ---------------------------------------------------------------------------
+
 
 class TestChecksAdapter:
     def test_returns_checks_outcome_on_success(self, tmp_path: Path) -> None:
@@ -183,6 +185,7 @@ class TestChecksAdapter:
         assert outcome.results[1].returncode == 0
         assert "SKIPPED adaptive check" in outcome.results[1].stdout
         runner.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # Worktree cleanliness check tests
@@ -310,7 +313,7 @@ class TestWorktreeCleanlinessCheck:
                         stdout=(
                             "?? src/has space.py\0"
                             "?? docs/back\\slash.md\0"
-                            "?? src/quote\"file.py\0"
+                            '?? src/quote"file.py\0'
                             "?? src/newline\nfile.py\0"
                         ),
                     )
@@ -327,7 +330,7 @@ class TestWorktreeCleanlinessCheck:
         assert added_paths == [
             "src/has space.py",
             "docs/back\\slash.md",
-            "src/quote\"file.py",
+            'src/quote"file.py',
             "src/newline\nfile.py",
         ]
         for path in added_paths:
@@ -355,9 +358,7 @@ class TestWorktreeCleanlinessCheck:
                         0,
                         stdout="?? artifacts/scratch.txt\0?? src/real.py\0",
                     )
-                return CommandResult(
-                    cmd, 0, stdout="?? artifacts/scratch.txt\0A  src/real.py\0"
-                )
+                return CommandResult(cmd, 0, stdout="?? artifacts/scratch.txt\0A  src/real.py\0")
             if cmd[:3] == ["git", "add", "--intent-to-add"]:
                 return CommandResult(cmd, 0)
             return CommandResult(cmd, 0, stdout="")
@@ -480,11 +481,9 @@ class TestWorktreeCleanlinessCheck:
 
         assert result.returncode == 1
         assert [c for c in calls if c[:3] == ["git", "add", "--intent-to-add"]] == []
-        assert [
-            c
-            for c in calls
-            if c[:2] == ["git", "status"] and "-z" in c
-        ] == [["git", "status", "-z", "--porcelain=v1", "--untracked-files=all"]]
+        assert [c for c in calls if c[:2] == ["git", "status"] and "-z" in c] == [
+            ["git", "status", "-z", "--porcelain=v1", "--untracked-files=all"]
+        ]
         assert "auto-commit is disabled" in result.stdout
         assert "FAILED" in result.stdout
         assert "src/new.py" in result.stdout
@@ -536,7 +535,10 @@ class TestWorktreeCleanlinessCheck:
         (tmp_path / "artifacts").mkdir()
         subprocess.run(["git", "init", "-b", "main"], cwd=tmp_path, check=True, capture_output=True)
         subprocess.run(
-            ["git", "config", "user.email", "t@e.com"], cwd=tmp_path, check=True, capture_output=True
+            ["git", "config", "user.email", "t@e.com"],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
         )
         subprocess.run(
             ["git", "config", "user.name", "T"], cwd=tmp_path, check=True, capture_output=True
@@ -567,7 +569,9 @@ class TestWorktreeCleanlinessCheck:
                 text=True,
                 timeout=timeout_seconds,
             )
-            return CommandResult(list(args), completed.returncode, stdout=completed.stdout, stderr=completed.stderr)
+            return CommandResult(
+                list(args), completed.returncode, stdout=completed.stdout, stderr=completed.stderr
+            )
 
         result = run_worktree_cleanliness_check(config, _real_runner)
 
@@ -663,14 +667,19 @@ class TestWorktreeCleanlinessCheck:
         (tmp_path / "artifacts").mkdir()
         subprocess.run(["git", "init", "-b", "main"], cwd=tmp_path, check=True, capture_output=True)
         subprocess.run(
-            ["git", "config", "user.email", "t@e.com"], cwd=tmp_path, check=True, capture_output=True
+            ["git", "config", "user.email", "t@e.com"],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
         )
         subprocess.run(
             ["git", "config", "user.name", "T"], cwd=tmp_path, check=True, capture_output=True
         )
         (tmp_path / "README").write_text("hi\n", encoding="utf-8")
         subprocess.run(["git", "add", "README"], cwd=tmp_path, check=True, capture_output=True)
-        subprocess.run(["git", "commit", "-m", "init"], cwd=tmp_path, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "init"], cwd=tmp_path, check=True, capture_output=True
+        )
         (tmp_path / "src").mkdir()
         (tmp_path / "src" / "new.py").write_text("print('hi')\n", encoding="utf-8")
 
@@ -750,7 +759,9 @@ class TestWorktreeCleanlinessCheck:
                 text=True,
                 timeout=timeout_seconds,
             )
-            return CommandResult(list(args), completed.returncode, stdout=completed.stdout, stderr=completed.stderr)
+            return CommandResult(
+                list(args), completed.returncode, stdout=completed.stdout, stderr=completed.stderr
+            )
 
         result = run_worktree_cleanliness_check(config, _real_runner)
 
@@ -788,7 +799,10 @@ class TestWorktreeCleanlinessCheck:
         (tmp_path / "artifacts").mkdir()
         subprocess.run(["git", "init", "-b", "main"], cwd=tmp_path, check=True, capture_output=True)
         subprocess.run(
-            ["git", "config", "user.email", "t@e.com"], cwd=tmp_path, check=True, capture_output=True
+            ["git", "config", "user.email", "t@e.com"],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
         )
         subprocess.run(
             ["git", "config", "user.name", "T"], cwd=tmp_path, check=True, capture_output=True
@@ -856,9 +870,11 @@ class TestWorktreeCleanlinessCheck:
                 f"longer untracked; got status output {status_text!r}"
             )
 
+
 # ---------------------------------------------------------------------------
 # Engine dispatch: ctx.phase_checks wired vs. absent
 # ---------------------------------------------------------------------------
+
 
 class TestEngineDispatch:
     """Verify the harness dispatch branch in _run_loop."""

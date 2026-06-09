@@ -14,8 +14,9 @@ suppress_command = import_module("code_review_loop.cli.commands.suppress")
 
 
 def _clear_result(summary: dict[str, object]) -> application_mod.ReviewLoopResult:
-    return application_mod.ReviewLoopResult(summary=summary, outcome=OutcomeClear(reason="review_clear"))
-
+    return application_mod.ReviewLoopResult(
+        summary=summary, outcome=OutcomeClear(reason="review_clear")
+    )
 
 
 def test_main_records_non_dry_run_history(tmp_path, monkeypatch, capsys):
@@ -25,19 +26,21 @@ def test_main_records_non_dry_run_history(tmp_path, monkeypatch, capsys):
     (tmp_path / ".git").mkdir()
 
     def fake_run_loop(config):
-        return _clear_result({
-            "run_id": "run-1",
-            "started_at": "2026-05-02T10:00:00Z",
-            "base": config.base,
-            "profile": config.profile_name,
-            "artifact_dir": str(config.artifact_dir),
-            "max_iterations": config.max_iterations,
-            "iterations": [{"iteration": 1, "review_status": "clear"}],
-            "final_status": "clear",
-            "stopped_reason": "review_clear",
-            "pending_check_failures": False,
-            "artifact_paths": {"summary": str(config.artifact_dir / "summary.json")},
-        })
+        return _clear_result(
+            {
+                "run_id": "run-1",
+                "started_at": "2026-05-02T10:00:00Z",
+                "base": config.base,
+                "profile": config.profile_name,
+                "artifact_dir": str(config.artifact_dir),
+                "max_iterations": config.max_iterations,
+                "iterations": [{"iteration": 1, "review_status": "clear"}],
+                "final_status": "clear",
+                "stopped_reason": "review_clear",
+                "pending_check_failures": False,
+                "artifact_paths": {"summary": str(config.artifact_dir / "summary.json")},
+            }
+        )
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
@@ -74,7 +77,9 @@ def test_main_records_failed_runs_in_history(tmp_path, monkeypatch, capsys):
         raise RunLoopFailed(
             summary,
             "codex exec triage failed for iteration 1",
-            outcome=OutcomeFailed(reason="triage_failed", error="codex exec triage failed for iteration 1"),
+            outcome=OutcomeFailed(
+                reason="triage_failed", error="codex exec triage failed for iteration 1"
+            ),
         )
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
@@ -100,16 +105,18 @@ def test_main_skips_history_for_dry_run_and_explicit_opt_out(tmp_path, monkeypat
     (tmp_path / ".git").mkdir()
 
     def fake_run_loop(config):
-        return _clear_result({
-            "run_id": "run-1",
-            "started_at": "2026-05-02T10:00:00Z",
-            "base": config.base,
-            "artifact_dir": str(config.artifact_dir),
-            "max_iterations": config.max_iterations,
-            "iterations": [],
-            "final_status": "clear",
-            "stopped_reason": "review_clear",
-        })
+        return _clear_result(
+            {
+                "run_id": "run-1",
+                "started_at": "2026-05-02T10:00:00Z",
+                "base": config.base,
+                "artifact_dir": str(config.artifact_dir),
+                "max_iterations": config.max_iterations,
+                "iterations": [],
+                "final_status": "clear",
+                "stopped_reason": "review_clear",
+            }
+        )
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
@@ -125,12 +132,14 @@ def test_main_skips_history_when_summary_has_no_run_id(tmp_path, monkeypatch):
     (tmp_path / ".git").mkdir()
 
     def fake_run_loop(config):
-        return _clear_result({
-            "artifact_dir": str(config.artifact_dir),
-            "iterations": [],
-            "final_status": "clear",
-            "stopped_reason": "review_clear",
-        })
+        return _clear_result(
+            {
+                "artifact_dir": str(config.artifact_dir),
+                "iterations": [],
+                "final_status": "clear",
+                "stopped_reason": "review_clear",
+            }
+        )
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
@@ -161,7 +170,9 @@ def test_history_list_command_outputs_recent_runs(tmp_path, monkeypatch, capsys)
 
 
 def test_history_unknown_command_reports_command_error(monkeypatch, capsys):
-    monkeypatch.setattr(history_command, "parse_history_args", lambda _argv: SimpleNamespace(command="wat"))
+    monkeypatch.setattr(
+        history_command, "parse_history_args", lambda _argv: SimpleNamespace(command="wat")
+    )
 
     assert history_command.main([]) == 1
     assert "unhandled history command: wat" in capsys.readouterr().err

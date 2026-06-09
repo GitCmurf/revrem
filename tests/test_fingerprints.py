@@ -52,7 +52,9 @@ def test_finding_fingerprint_preserves_path_case_and_severity_bucket():
     )
 
     assert fingerprints.finding_fingerprint(renamed_case) != fingerprints.finding_fingerprint(base)
-    assert fingerprints.finding_fingerprint(lower_severity) != fingerprints.finding_fingerprint(base)
+    assert fingerprints.finding_fingerprint(lower_severity) != fingerprints.finding_fingerprint(
+        base
+    )
 
 
 def test_finding_fingerprint_normalizes_paths_without_filesystem_case_rules():

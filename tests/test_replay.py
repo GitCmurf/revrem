@@ -18,8 +18,7 @@ def test_replay_renders_events_without_runner_or_harness(tmp_path, capsys):
 
     assert code == 0
     assert capsys.readouterr().out == (
-        "0001|review|1|phase_start: start\n"
-        "0002|review|1|phase_result: clear\n"
+        "0001|review|1|phase_start: start\n0002|review|1|phase_result: clear\n"
     )
 
 

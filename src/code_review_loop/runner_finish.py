@@ -94,9 +94,7 @@ def run_preflight(
             triage_harness=config.triage_harness,
             commit_message_harness=config.commit_message_harness,
             routed_harnesses=(
-                profile_routed_harnesses(config.profile_v2)
-                if config.profile_v2 is not None
-                else ()
+                profile_routed_harnesses(config.profile_v2) if config.profile_v2 is not None else ()
             ),
             harness_executables=config.harness_executables,
             check_commands=config.check_commands,
@@ -184,6 +182,7 @@ def _safe_mtime(path: Path) -> float:
         return path.stat().st_mtime
     except OSError:
         return 0.0
+
 
 def _latest_prompt_evidence(artifact_dir: Path) -> dict[str, object]:
     prompt_paths = sorted(

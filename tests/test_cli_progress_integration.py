@@ -106,10 +106,9 @@ def test_rich_progress_renderer_is_used_when_available(tmp_path, capsys, monkeyp
     monkeypatch.setattr(
         progress,
         "print_rich_event",
-        lambda phase, label, status, detail="": calls.append(
-            (phase, label, status, detail)
-        )
-        or True,
+        lambda phase, label, status, detail="": (
+            calls.append((phase, label, status, detail)) or True
+        ),
     )
     config = LoopConfig(
         base="main",
@@ -157,12 +156,8 @@ def test_compact_progress_wraps_to_terminal_width(tmp_path, capsys, monkeypatch)
     runner_mod.run_loop(config, runner)
     captured = capsys.readouterr()
 
-    assert re.search(
-        r"\n\d\d:\d\d:\d\d\|rev\|1\s+\|\s+onto another aligned line\.", captured.err
-    )
-    assert re.search(
-        r"\n\d\d:\d\d:\d\d\|rev\|1\s+\|\s+the same text column\.", captured.err
-    )
+    assert re.search(r"\n\d\d:\d\d:\d\d\|rev\|1\s+\|\s+onto another aligned line\.", captured.err)
+    assert re.search(r"\n\d\d:\d\d:\d\d\|rev\|1\s+\|\s+the same text column\.", captured.err)
 
 
 def test_progress_logs_finding_detail_lines(tmp_path, capsys):
@@ -393,9 +388,7 @@ def test_terminal_title_tracks_review_and_remediation_phases(tmp_path, monkeypat
     assert "\033]0;rev 1/2 RevRem\007\033]2;rev 1/2 RevRem\007" in output
     assert "\033]0;rem 1/2 RevRem\007\033]2;rem 1/2 RevRem\007" in output
     assert "\033]0;rev 2/2 RevRem\007\033]2;rev 2/2 RevRem\007" in output
-    assert output.endswith(
-        terminal_mod.TERMINAL_TITLE_RESTORE + terminal_mod.CURSOR_SHOW
-    )
+    assert output.endswith(terminal_mod.TERMINAL_TITLE_RESTORE + terminal_mod.CURSOR_SHOW)
 
 
 def test_terminal_title_restores_after_remediation_failure(tmp_path, monkeypatch):
@@ -404,9 +397,7 @@ def test_terminal_title_restores_after_remediation_failure(tmp_path, monkeypatch
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
-            return CommandResult(
-                list(args), 0, stdout="Needs work.\nREVIEW_STATUS: findings\n"
-            )
+            return CommandResult(list(args), 0, stdout="Needs work.\nREVIEW_STATUS: findings\n")
         return CommandResult(list(args), 1, stderr="failed\n")
 
     config = LoopConfig(
@@ -429,9 +420,7 @@ def test_terminal_title_restores_after_remediation_failure(tmp_path, monkeypatch
     output = stderr.getvalue()
     assert "\033]0;rev 1/1 RevRem\007\033]2;rev 1/1 RevRem\007" in output
     assert "\033]0;rem 1/1 RevRem\007\033]2;rem 1/1 RevRem\007" in output
-    assert output.endswith(
-        terminal_mod.TERMINAL_TITLE_RESTORE + terminal_mod.CURSOR_SHOW
-    )
+    assert output.endswith(terminal_mod.TERMINAL_TITLE_RESTORE + terminal_mod.CURSOR_SHOW)
 
 
 def test_terminal_title_never_writes_to_stdout(tmp_path, monkeypatch):
@@ -457,9 +446,7 @@ def test_terminal_title_never_writes_to_stdout(tmp_path, monkeypatch):
     assert stdout.getvalue() == ""
 
 
-def test_terminal_title_is_suppressed_in_rich_mode_to_avoid_escape_leaks(
-    tmp_path, monkeypatch
-):
+def test_terminal_title_is_suppressed_in_rich_mode_to_avoid_escape_leaks(tmp_path, monkeypatch):
     stderr = TtyBuffer()
     tty_sequences = []
     monkeypatch.setattr(terminal_mod.sys, "stderr", stderr)
@@ -499,9 +486,7 @@ def test_phase_terminal_title_skips_dev_tty_on_windows(tmp_path, monkeypatch):
     monkeypatch.setattr(
         phase_support.Path,
         "open",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            AssertionError("/dev/tty opened")
-        ),
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("/dev/tty opened")),
     )
     config = LoopConfig(
         base="main",

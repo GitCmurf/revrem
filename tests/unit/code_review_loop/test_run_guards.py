@@ -51,9 +51,7 @@ def test_raises_if_inside_work_tree_and_dirty(monkeypatch):
         lambda c, cx: [" M dirty.py"],
     )
 
-    with pytest.raises(
-        RuntimeError, match="worktree changed during run before remediation"
-    ):
+    with pytest.raises(RuntimeError, match="worktree changed during run before remediation"):
         run_guards.assert_worktree_stable_before_remediation(
             config, ctx, engine_state, expected_head="mock-head"
         )
@@ -72,9 +70,7 @@ def test_does_not_raise_if_inside_work_tree_and_clean(monkeypatch):
 
     monkeypatch.setattr(run_guards, "lexical_git_repo_root", lambda c: "/mock/repo")
     monkeypatch.setattr(run_guards, "current_head", lambda c, cx: "mock-head")
-    monkeypatch.setattr(
-        run_guards, "current_non_artifact_status_lines", lambda c, cx: []
-    )
+    monkeypatch.setattr(run_guards, "current_non_artifact_status_lines", lambda c, cx: [])
 
     run_guards.assert_worktree_stable_before_remediation(
         config, ctx, engine_state, expected_head="mock-head"

@@ -70,9 +70,7 @@ def test_run_doctor_does_not_require_codex_for_non_codex_harnesses(tmp_path, mon
     assert _issue_codes(issues) == {"revrem.preflight.ok"}
 
 
-def test_run_doctor_skips_fake_harness_binary_but_checks_routed_harnesses(
-    tmp_path, monkeypatch
-):
+def test_run_doctor_skips_fake_harness_binary_but_checks_routed_harnesses(tmp_path, monkeypatch):
     repo = _make_repo(tmp_path)
 
     def fake_which(executable: str):
@@ -233,7 +231,13 @@ def test_run_doctor_blocks_default_artifact_dir_when_parent_is_unwritable(tmp_pa
 
     original_write_text = Path.write_text
 
-    def fake_write_text(self: Path, data: str, encoding: str | None = None, errors: str | None = None, newline: str | None = None):
+    def fake_write_text(
+        self: Path,
+        data: str,
+        encoding: str | None = None,
+        errors: str | None = None,
+        newline: str | None = None,
+    ):
         if self.name == ".revrem-doctor-write-test":
             raise PermissionError("blocked")
         return original_write_text(self, data, encoding=encoding, errors=errors, newline=newline)
@@ -251,7 +255,9 @@ def test_run_doctor_blocks_default_artifact_dir_when_parent_is_unwritable(tmp_pa
     )
 
     assert _issue_codes(issues) == {"revrem.preflight.artifact_dir_not_writable"}
-    assert issues[0].evidence["resolved_artifact_dir"] == str(repo / ".revrem" / "runs" / "default-run")
+    assert issues[0].evidence["resolved_artifact_dir"] == str(
+        repo / ".revrem" / "runs" / "default-run"
+    )
     assert not (repo / ".revrem").exists()
 
 
@@ -275,7 +281,11 @@ def test_run_doctor_blocks_default_artifact_dir_when_path_component_is_file(tmp_
 
 
 def test_run_doctor_reports_missing_check_command(tmp_path, monkeypatch):
-    monkeypatch.setattr(diagnostics.shutil, "which", lambda cmd, **kwargs: None if cmd == "definitely-missing-revrem-check" else "mocked")
+    monkeypatch.setattr(
+        diagnostics.shutil,
+        "which",
+        lambda cmd, **kwargs: None if cmd == "definitely-missing-revrem-check" else "mocked",
+    )
     repo = _make_repo(tmp_path)
 
     issues = diagnostics.run_doctor(
@@ -362,7 +372,9 @@ def test_run_doctor_blocks_negative_timeout(tmp_path):
 def test_run_doctor_warns_on_non_utf8_locale(tmp_path, monkeypatch):
     repo = _make_repo(tmp_path)
     monkeypatch.setattr(diagnostics.sys, "getfilesystemencoding", lambda: "ascii")
-    monkeypatch.setattr(diagnostics.locale, "getpreferredencoding", lambda _do_setlocale=False: "ANSI_X3.4-1968")
+    monkeypatch.setattr(
+        diagnostics.locale, "getpreferredencoding", lambda _do_setlocale=False: "ANSI_X3.4-1968"
+    )
 
     issues = diagnostics.run_doctor(
         diagnostics.DoctorConfig(cwd=repo, base="main", codex_bin="git")

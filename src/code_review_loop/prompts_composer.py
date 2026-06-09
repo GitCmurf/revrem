@@ -32,7 +32,9 @@ def compose_remediation_prompt(
         if frag_content:
             header_parts.append(f"--- Fragment: {frag_name} ---\n{frag_content}")
         else:
-            raise ValueError(f"Required prompt fragment {frag_name!r} could not be resolved or is untrusted.")
+            raise ValueError(
+                f"Required prompt fragment {frag_name!r} could not be resolved or is untrusted."
+            )
 
     triage_requirements = triage_payload.get("prompt_requirements", {})
     # Triage-prescribed Fragments
@@ -133,7 +135,11 @@ def load_fragment(cwd: Path, name: str, trusted_repo: bool = False) -> str | Non
 
     # Reject path traversal
     fragment_path = Path(name)
-    if fragment_path.is_absolute() or len(fragment_path.parts) != 1 or any(part == ".." for part in fragment_path.parts):
+    if (
+        fragment_path.is_absolute()
+        or len(fragment_path.parts) != 1
+        or any(part == ".." for part in fragment_path.parts)
+    ):
         return None
 
     candidates = [

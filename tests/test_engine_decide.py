@@ -191,9 +191,7 @@ def test_decide_m3_remediation_exception_fails() -> None:
 
     action = decide(cfg, acc, event)
 
-    assert action == Stop(
-        OutcomeFailed(reason="remediation_failed", error="remediation boom")
-    )
+    assert action == Stop(OutcomeFailed(reason="remediation_failed", error="remediation boom"))
 
 
 def test_decide_m1_successful_remediation_continues() -> None:
@@ -246,15 +244,11 @@ def test_decide_cm4_non_retryable_hook_failure_fails_with_staged_changes() -> No
 def test_decide_cm5_non_hook_commit_failure_fails() -> None:
     cfg = ConfigSnapshot(3, True, True, "fail", True)
     acc = LoopAccumulator(pending_check_failures="")
-    event = CommitDone(
-        status=None, commit_failed=_FakeCommitFailed("nothing_to_commit")
-    )
+    event = CommitDone(status=None, commit_failed=_FakeCommitFailed("nothing_to_commit"))
 
     action = decide(cfg, acc, event)
 
-    assert action == Stop(
-        OutcomeFailed(reason="commit_failed", error="commit nothing_to_commit")
-    )
+    assert action == Stop(OutcomeFailed(reason="commit_failed", error="commit nothing_to_commit"))
 
 
 def test_decide_cm2_clear_skipped_no_changes_exits_clear() -> None:
@@ -331,8 +325,7 @@ def test_decide_cm1_stale_review_resolved_commit_fails_invariant() -> None:
         OutcomeFailed(
             reason="stale_validation_failed",
             error=(
-                "stale review validation emitted resolved marker but produced "
-                "changes to commit"
+                "stale review validation emitted resolved marker but produced changes to commit"
             ),
         )
     )
@@ -389,8 +382,7 @@ def test_decide_ck_stale_review_resolved_with_pending_check_failures_fails() -> 
         OutcomeFailed(
             reason="stale_validation_failed",
             error=(
-                "stale review validation emitted resolved marker but "
-                "verification checks failed"
+                "stale review validation emitted resolved marker but verification checks failed"
             ),
             check_failures=True,
         )
@@ -460,9 +452,7 @@ def test_decide_nf1_no_final_review_exits_unknown_with_check_failure_flag() -> N
 
     action = decide(cfg, acc, event)
 
-    assert action == Stop(
-        OutcomeUnknown(reason="max_iterations_reached", check_failures=True)
-    )
+    assert action == Stop(OutcomeUnknown(reason="max_iterations_reached", check_failures=True))
 
 
 def test_decide_t4_triage_clear_with_pending_check_failures_continues() -> None:

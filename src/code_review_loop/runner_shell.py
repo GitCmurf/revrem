@@ -406,11 +406,7 @@ class _RunnerEngineExecutor:
         )
         if acc.stale_review_resolved:
             try:
-                dirty = stale_validation_status.dirty_message(
-                    self.config,
-                    self.ctx,
-                    self.stale_review_status_before,
-                )
+                dirty = stale_validation_status.dirty_message(self.config, self.ctx, self.stale_review_status_before)
             except Exception as exc:
                 dirty = str(exc)
             if dirty:

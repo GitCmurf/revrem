@@ -64,16 +64,12 @@ def resolve_initial_review_file(
             continue
         review_paths = _usable_run_review_paths(run_dir, search_root, summary)
         if _run_is_resolved(summary):
-            candidates.append(
-                (_run_sort_time(run_dir, review_paths), run_dir.name, None)
-            )
+            candidates.append((_run_sort_time(run_dir, review_paths), run_dir.name, None))
             continue
         if not review_paths:
             continue
         latest_review = review_paths[-1]
-        candidates.append(
-            (_run_sort_time(run_dir, review_paths), run_dir.name, latest_review)
-        )
+        candidates.append((_run_sort_time(run_dir, review_paths), run_dir.name, latest_review))
     candidates.sort()
     if not candidates:
         return None
@@ -92,9 +88,7 @@ def find_pending_review_candidate(
             continue
         review_paths = _usable_run_review_paths(run_dir, search_root, summary)
         if _run_is_resolved(summary):
-            candidates.append(
-                (_run_sort_time(run_dir, review_paths), run_dir.name, None)
-            )
+            candidates.append((_run_sort_time(run_dir, review_paths), run_dir.name, None))
             continue
         if not review_paths:
             continue
@@ -124,11 +118,7 @@ def current_git_state_for_latest(cwd: Path, base: str) -> dict[str, object] | No
         return None
     head = _git_stdout(cwd, ["rev-parse", "HEAD"])
     base_commit = _git_stdout(cwd, ["rev-parse", "--verify", f"{base}^{{commit}}"])
-    merge_base = (
-        _git_stdout(cwd, ["merge-base", "HEAD", base])
-        if base_commit is not None
-        else None
-    )
+    merge_base = _git_stdout(cwd, ["merge-base", "HEAD", base]) if base_commit is not None else None
     return {
         "head": head,
         "base": base,
@@ -199,9 +189,7 @@ def _usable_run_review_paths(
 
 def _resolve_summary_path(value: str, run_dir: Path, search_root: Path) -> Path | None:
     path = Path(value)
-    candidates = (
-        [path] if path.is_absolute() else [run_dir / path, search_root / path, path]
-    )
+    candidates = [path] if path.is_absolute() else [run_dir / path, search_root / path, path]
     for candidate in candidates:
         if candidate.is_file():
             return candidate
@@ -282,6 +270,7 @@ def review_final_is_usable(review_path: Path) -> bool:
     if not review_text:
         return False
     return not review_text.startswith("DRY_RUN")
+
 
 def _safe_mtime(path: Path) -> float:
     try:

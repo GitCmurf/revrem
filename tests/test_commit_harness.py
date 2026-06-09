@@ -36,6 +36,7 @@ from code_review_loop.runtime import RunLoopFailed
 # helpers
 # ---------------------------------------------------------------------------
 
+
 def _ctx(runner=None, **kwargs: object) -> RunContext:
     return RunContext(
         clock=MagicMock(spec=Clock),
@@ -71,6 +72,7 @@ def _git_runner(*, staged: bool = True, commit_ok: bool = True, repo_root: Path 
 # ---------------------------------------------------------------------------
 # CommitAdapter unit tests
 # ---------------------------------------------------------------------------
+
 
 class TestCommitAdapter:
     def test_dry_run_returns_skipped(self, tmp_path: Path) -> None:
@@ -110,7 +112,9 @@ class TestCommitAdapter:
 
         assert outcome.status == "skipped_no_changes"
 
-    def test_no_staged_changes_without_repo_root_returns_skipped_no_changes(self, tmp_path: Path) -> None:
+    def test_no_staged_changes_without_repo_root_returns_skipped_no_changes(
+        self, tmp_path: Path
+    ) -> None:
         (tmp_path / "artifacts").mkdir()
         config = LoopConfig(
             base="main",
@@ -220,18 +224,16 @@ class TestCommitAdapter:
         assert outcome.status == "committed"
         assert commit_commands == []
         side_effects = json.loads(
-            (artifact_dir / "commit-7-message-side-effects.json").read_text(
-                encoding="utf-8"
-            )
+            (artifact_dir / "commit-7-message-side-effects.json").read_text(encoding="utf-8")
         )
         assert side_effects["kind"] == "self_commit_adopted"
         assert side_effects["severity"] == "warning"
         assert side_effects["head_before"] == "before"
         assert side_effects["head_after"] == "after"
         assert side_effects["warning"] == COMMIT_MESSAGE_SIDE_EFFECT_WARNING
-        assert COMMIT_MESSAGE_SIDE_EFFECT_WARNING in (
-            artifact_dir / "commit-7.txt"
-        ).read_text(encoding="utf-8")
+        assert COMMIT_MESSAGE_SIDE_EFFECT_WARNING in (artifact_dir / "commit-7.txt").read_text(
+            encoding="utf-8"
+        )
 
     def test_rejects_commit_message_staged_diff_mutation_without_head_change(
         self, tmp_path: Path
@@ -281,9 +283,7 @@ class TestCommitAdapter:
             adapter.execute(CommitRequest(iteration=8), ctx)
 
         side_effects = json.loads(
-            (artifact_dir / "commit-8-message-side-effects.json").read_text(
-                encoding="utf-8"
-            )
+            (artifact_dir / "commit-8-message-side-effects.json").read_text(encoding="utf-8")
         )
         assert side_effects["kind"] == "unsafe_repo_mutation"
         assert side_effects["severity"] == "error"
@@ -293,6 +293,7 @@ class TestCommitAdapter:
 # ---------------------------------------------------------------------------
 # Engine dispatch: ctx.phase_commit wired vs. absent
 # ---------------------------------------------------------------------------
+
 
 class TestEngineDispatch:
     def test_harness_called_when_wired(self) -> None:
@@ -321,12 +322,16 @@ class TestEngineDispatch:
         from code_review_loop.budgets import BudgetExceeded
 
         exc = BudgetExceeded(ceiling="tokens", limit=100, actual=150)
-        monkeypatch.setattr(commit_mod.CommitAdapter, "execute", lambda *a, **kw: (_ for _ in ()).throw(exc))
+        monkeypatch.setattr(
+            commit_mod.CommitAdapter, "execute", lambda *a, **kw: (_ for _ in ()).throw(exc)
+        )
 
         def runner(args, cwd, input_text=None, timeout_seconds=None):
             if "status" in args:
                 return CommandResult(list(args), 0, stdout="")
-            return CommandResult(list(args), 0, stdout="## Finding\nbad code\nREVIEW_STATUS: findings\n")
+            return CommandResult(
+                list(args), 0, stdout="## Finding\nbad code\nREVIEW_STATUS: findings\n"
+            )
 
         config = LoopConfig(
             base="main",
@@ -397,16 +402,12 @@ class TestCommitMessageSideEffects:
         assert removed == ["commit-subject.txt"]
         assert not helper_path.exists()
         side_effects = json.loads(
-            (artifact_dir / "commit-4-message-side-effects.json").read_text(
-                encoding="utf-8"
-            )
+            (artifact_dir / "commit-4-message-side-effects.json").read_text(encoding="utf-8")
         )
         assert side_effects["created_paths_removed"] == ["commit-subject.txt"]
         assert side_effects["unsafe_status_lines"] == []
 
-    def test_does_not_target_subdirectory_path_for_root_level_helper(
-        self, tmp_path: Path
-    ) -> None:
+    def test_does_not_target_subdirectory_path_for_root_level_helper(self, tmp_path: Path) -> None:
         """When RevRem is launched from a subdirectory and the commit-message
         model writes a root-level helper file, the cleanup must remove the
         root-level file and leave a same-named file under the launch
@@ -452,9 +453,7 @@ class TestCommitMessageSideEffects:
         assert not helper_path.exists()
         assert decoy.exists(), "decoy file under launch directory must be preserved"
         side_effects = json.loads(
-            (artifact_dir / "commit-5-message-side-effects.json").read_text(
-                encoding="utf-8"
-            )
+            (artifact_dir / "commit-5-message-side-effects.json").read_text(encoding="utf-8")
         )
         assert side_effects["created_paths_removed"] == ["commit-subject.txt"]
         assert side_effects["unsafe_status_lines"] == []
@@ -496,9 +495,7 @@ class TestCommitMessageSideEffects:
             )
 
         side_effects = json.loads(
-            (artifact_dir / "commit-6-message-side-effects.json").read_text(
-                encoding="utf-8"
-            )
+            (artifact_dir / "commit-6-message-side-effects.json").read_text(encoding="utf-8")
         )
         assert side_effects["created_paths_removed"] == []
         assert side_effects["unsafe_status_lines"] == ["?? ../escape.txt"]

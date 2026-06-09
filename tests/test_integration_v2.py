@@ -22,15 +22,27 @@ def test_loop_with_v2_triage_routing(fake_harness, tmp_path, monkeypatch):
     # review_clear scenario
     clear_dir = fake_harness / "review_clear"
     clear_dir.mkdir()
-    (clear_dir / "review.txt").write_text("No actionable findings.\nREVIEW_STATUS: clear\n", encoding="utf-8")
+    (clear_dir / "review.txt").write_text(
+        "No actionable findings.\nREVIEW_STATUS: clear\n", encoding="utf-8"
+    )
 
     # findings scenario
     findings_dir = fake_harness / "fake-findings"
     findings_dir.mkdir()
-    (findings_dir / "review.txt").write_text("Finding: f1\nREVIEW_STATUS: findings\n", encoding="utf-8")
+    (findings_dir / "review.txt").write_text(
+        "Finding: f1\nREVIEW_STATUS: findings\n", encoding="utf-8"
+    )
     # Triage v2 output
     triage_payload = {
-        "confirmed_findings": [{"fingerprint": "f1", "summary": "s", "severity": "high", "affected_paths": ["a.py"], "rationale": "r"}],
+        "confirmed_findings": [
+            {
+                "fingerprint": "f1",
+                "summary": "s",
+                "severity": "high",
+                "affected_paths": ["a.py"],
+                "rationale": "r",
+            }
+        ],
         "rejected_findings": [],
         "needs_more_info": [],
         "implementation_order": ["f1"],
@@ -43,7 +55,7 @@ def test_loop_with_v2_triage_routing(fake_harness, tmp_path, monkeypatch):
             "affected_modules": ["auth"],
             "estimated_blast_radius": {"module_count": 1, "finding_count": 1},
             "safety_signals": [],
-            "failed_check_signals": []
+            "failed_check_signals": [],
         },
         "route_proposal": {
             "route_tier": "frontier",
@@ -52,18 +64,19 @@ def test_loop_with_v2_triage_routing(fake_harness, tmp_path, monkeypatch):
             "reasoning_effort": "high",
             "sandbox": "workspace-write",
             "timeout_seconds": 0,
-            "rationale": "proposing frontier"
+            "rationale": "proposing frontier",
         },
         "prompt_requirements": {
             "required_fragments": ["custom-principles"],
             "definition_of_done": ["DONE"],
-            "triage_prompt_draft": "FIX IT"
-        }
+            "triage_prompt_draft": "FIX IT",
+        },
     }
     (findings_dir / "triage.txt").write_text(json.dumps(triage_payload), encoding="utf-8")
 
     # 2. Setup profile with routing
     import subprocess
+
     subprocess.run(["git", "init", "-b", "main"], cwd=tmp_path, check=True)
     subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
     subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True)
@@ -120,14 +133,20 @@ timeout_seconds = 0
         "Remediation: proposed model\n", encoding="utf-8"
     )
 
-    exit_code = cli_main([
-        "--profile", "test",
-        "--review-model", "fake-findings",
-        "--artifact-dir", "run1",
-        "--max-iterations", "1",
-        "--skip-final-review",
-        "--trusted-repo"
-    ])
+    exit_code = cli_main(
+        [
+            "--profile",
+            "test",
+            "--review-model",
+            "fake-findings",
+            "--artifact-dir",
+            "run1",
+            "--max-iterations",
+            "1",
+            "--skip-final-review",
+            "--trusted-repo",
+        ]
+    )
 
     run_dir = tmp_path / "run1"
     if exit_code != 2:

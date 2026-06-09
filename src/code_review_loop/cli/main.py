@@ -125,7 +125,9 @@ def _apply_pending_review_choice(config, args):
 
 
 def _pending_review_candidate(config) -> PendingReviewCandidate | None:
-    search_root = config.artifact_dir.parent if config.artifact_dir_is_default else config.artifact_dir
+    search_root = (
+        config.artifact_dir.parent if config.artifact_dir_is_default else config.artifact_dir
+    )
     return find_pending_review_candidate(
         search_root,
         current_git_state=current_git_state_for_latest(config.cwd, config.base),
@@ -133,7 +135,9 @@ def _pending_review_candidate(config) -> PendingReviewCandidate | None:
 
 
 def _pending_review_candidate_ignoring_git(config) -> PendingReviewCandidate | None:
-    search_root = config.artifact_dir.parent if config.artifact_dir_is_default else config.artifact_dir
+    search_root = (
+        config.artifact_dir.parent if config.artifact_dir_is_default else config.artifact_dir
+    )
     return find_pending_review_candidate(search_root, current_git_state=None)
 
 
@@ -184,9 +188,7 @@ def _print_pending_review_summary(
     compatible: bool,
 ) -> str:
     status_parts = [
-        part
-        for part in (candidate.final_status, candidate.stopped_reason, candidate.error)
-        if part
+        part for part in (candidate.final_status, candidate.stopped_reason, candidate.error) if part
     ]
     status = " · ".join(status_parts) if status_parts else "previous non-clear run"
     excerpt = trim_for_prompt(candidate.excerpt, 500).replace("\n", " ").strip()
@@ -229,9 +231,8 @@ def _auto_commit_clean_start_error(config) -> str | None:
     if result.returncode != 0:
         if "not a git repository" in combined:
             return None
-        return (
-            "could not inspect git worktree before auto-commit run: "
-            + (result.stderr.strip() or f"git status exited {result.returncode}")
+        return "could not inspect git worktree before auto-commit run: " + (
+            result.stderr.strip() or f"git status exited {result.returncode}"
         )
     dirty = non_artifact_status_entries_from_status_z(config, result.stdout)
     if not dirty:
@@ -243,6 +244,7 @@ def _auto_commit_clean_start_error(config) -> str | None:
         "Commit, stash, ignore, or remove existing non-artifact changes first:\n"
         f"{shown}{more}"
     )
+
 
 def _redacted_argv(argv: Sequence[str]) -> tuple[str, ...]:
     redacted: list[str] = []

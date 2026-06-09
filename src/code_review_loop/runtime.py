@@ -74,7 +74,9 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
             iteration = item.get("iteration")
             review_status = item.get("review_status", "unknown")
             check_failures = item.get("check_failures")
-            check_text = "checks not run" if check_failures is None else f"check failures: {check_failures}"
+            check_text = (
+                "checks not run" if check_failures is None else f"check failures: {check_failures}"
+            )
             failed = " remediation failed" if item.get("remediation_failed") else ""
             commit_status = item.get("commit_status")
             commit_text = f", commit={commit_status}" if commit_status else ""
@@ -162,9 +164,7 @@ def _phase_config_summary(phase_config: dict[object, object]) -> str:
             continue
         source_text = _phase_source_text(value)
         if value.get("enabled") is False:
-            parts.append(
-                f"{phase}=disabled({source_text})" if source_text else f"{phase}=disabled"
-            )
+            parts.append(f"{phase}=disabled({source_text})" if source_text else f"{phase}=disabled")
             continue
         effort = _phase_effort_text(value)
         details = [
@@ -207,13 +207,9 @@ def _phase_source_text(value: dict[object, object]) -> str | None:
         sources = value.get("sources")
         if isinstance(sources, dict):
             source_values = {
-                str(item)
-                for item in sources.values()
-                if isinstance(item, str) and item
+                str(item) for item in sources.values() if isinstance(item, str) and item
             }
-            if "cli" in source_values and any(
-                item.startswith("profile") for item in source_values
-            ):
+            if "cli" in source_values and any(item.startswith("profile") for item in source_values):
                 return "source=profile+cli"
     return f"source={source}" if isinstance(source, str) and source else None
 
@@ -241,7 +237,9 @@ def _resume_command(summary: dict[str, object], review_path: str) -> str:
     _append_phase_resume_overrides(command, config, summary)
     commit_after = config.get("commit_after_remediation")
     if isinstance(commit_after, bool):
-        command.append("--commit-after-remediation" if commit_after else "--no-commit-after-remediation")
+        command.append(
+            "--commit-after-remediation" if commit_after else "--no-commit-after-remediation"
+        )
     command.extend(["--initial-review-file", review_path])
     hook_policy = config.get("commit_on_hook_failure") or summary.get("commit_on_hook_failure")
     if isinstance(hook_policy, str) and hook_policy:
@@ -418,9 +416,7 @@ def _append_phase_resume_overrides(
         "--provider-retry-backoff-seconds",
         config.get("provider_retry_backoff_seconds"),
         profile_selected=profile_selected,
-        source=_phase_field_source(
-            phase_config_map, "runtime", "provider_retry_backoff_seconds"
-        ),
+        source=_phase_field_source(phase_config_map, "runtime", "provider_retry_backoff_seconds"),
     )
     _append_number_override(
         command,
@@ -434,13 +430,13 @@ def _append_phase_resume_overrides(
         "--external-review-warning-seconds",
         config.get("external_review_warning_seconds"),
         profile_selected=profile_selected,
-        source=_phase_field_source(
-            phase_config_map, "runtime", "external_review_warning_seconds"
-        ),
+        source=_phase_field_source(phase_config_map, "runtime", "external_review_warning_seconds"),
     )
 
 
-def _phase_field_source(phase_config: Mapping[object, object], phase: str, field: str) -> str | None:
+def _phase_field_source(
+    phase_config: Mapping[object, object], phase: str, field: str
+) -> str | None:
     value = phase_config.get(phase)
     if not isinstance(value, dict):
         return None
@@ -478,11 +474,15 @@ def _append_string_override(
     source: str | None,
     default: object = None,
 ) -> None:
-    if isinstance(value, str) and value and _should_emit_resume_override(
-        value,
-        profile_selected=profile_selected,
-        source=source,
-        default=default,
+    if (
+        isinstance(value, str)
+        and value
+        and _should_emit_resume_override(
+            value,
+            profile_selected=profile_selected,
+            source=source,
+            default=default,
+        )
     ):
         command.extend([flag, value])
 
@@ -541,11 +541,20 @@ def _latest_iteration_checks(paths: list[str]) -> list[str]:
     return [path for iteration, path in parsed if iteration == latest_iteration]
 
 
-def _latest_check_rows(summary: dict[str, object], latest_paths: list[str]) -> list[dict[str, object]]:
+def _latest_check_rows(
+    summary: dict[str, object], latest_paths: list[str]
+) -> list[dict[str, object]]:
     iterations = summary.get("iterations")
     if not isinstance(iterations, list) or not iterations:
         return []
-    latest = next((item for item in reversed(iterations) if isinstance(item, dict) and isinstance(item.get("checks"), list)), None)
+    latest = next(
+        (
+            item
+            for item in reversed(iterations)
+            if isinstance(item, dict) and isinstance(item.get("checks"), list)
+        ),
+        None,
+    )
     if not isinstance(latest, dict):
         return []
     checks = latest.get("checks")

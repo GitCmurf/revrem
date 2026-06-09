@@ -112,10 +112,21 @@ def test_policy_main_rejects_unhandled_internal_command(monkeypatch, capsys):
 
 def test_triage_explain_json(tmp_path):
     routing = {
-        "policy_decision": {"decision": "proposal_accepted", "rationale": "ok", "matched_rule_ids": []},
-        "effective_route": {"route_tier": "t1", "harness": "h1", "model": "m1", "reasoning_effort": "low", "sandbox": "s1", "timeout_seconds": 60},
+        "policy_decision": {
+            "decision": "proposal_accepted",
+            "rationale": "ok",
+            "matched_rule_ids": [],
+        },
+        "effective_route": {
+            "route_tier": "t1",
+            "harness": "h1",
+            "model": "m1",
+            "reasoning_effort": "low",
+            "sandbox": "s1",
+            "timeout_seconds": 60,
+        },
         "model_proposal": {"route_tier": "t1", "harness": "h1", "model": "m1", "rationale": "ok"},
-        "prompt": {"path": "p.txt", "sha256": "abc", "bytes": 100, "fragments": []}
+        "prompt": {"path": "p.txt", "sha256": "abc", "bytes": 100, "fragments": []},
     }
     (tmp_path / "routing-1.json").write_text(json.dumps(routing), encoding="utf-8")
 
@@ -153,7 +164,11 @@ def test_triage_explain_rejects_invalid_json(tmp_path, capsys):
 
 def test_triage_explain_rejects_non_string_matched_rules(tmp_path, capsys):
     routing = {
-        "policy_decision": {"decision": "proposal_accepted", "rationale": "ok", "matched_rule_ids": [1]},
+        "policy_decision": {
+            "decision": "proposal_accepted",
+            "rationale": "ok",
+            "matched_rule_ids": [1],
+        },
         "effective_route": {
             "route_tier": "t1",
             "harness": "h1",

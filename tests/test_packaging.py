@@ -16,7 +16,9 @@ def _prepare_temp_repo(tmp_path: Path) -> Path:
     script_dir.mkdir(parents=True)
 
     install_dev = script_dir / "install-dev"
-    install_dev.write_text((ROOT / "scripts/install-dev").read_text(encoding="utf-8"), encoding="utf-8")
+    install_dev.write_text(
+        (ROOT / "scripts/install-dev").read_text(encoding="utf-8"), encoding="utf-8"
+    )
     install_dev.chmod(0o755)
 
     return repo
@@ -63,7 +65,7 @@ def test_ci_builds_and_smokes_revrem_wheel():
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 
     assert "package-smoke:" in workflow
-    assert 'os: [ubuntu-latest, macos-latest]' in workflow
+    assert "os: [ubuntu-latest, macos-latest]" in workflow
     assert 'python-version: ["3.11", "3.12"]' in workflow
     assert "python -m build --sdist --wheel" in workflow
     assert "python -m twine check dist/*" in workflow
@@ -73,7 +75,10 @@ def test_ci_builds_and_smokes_revrem_wheel():
     assert ".pkg-smoke/bin/code-review-loop --version" in workflow
     assert "git -C tests/fixtures/reference-repo init" in workflow
     assert "cd tests/fixtures/reference-repo" in workflow
-    assert '"$GITHUB_WORKSPACE/.pkg-smoke/bin/revrem" doctor --format json --base main --codex-bin git' in workflow
+    assert (
+        '"$GITHUB_WORKSPACE/.pkg-smoke/bin/revrem" doctor --format json --base main --codex-bin git'
+        in workflow
+    )
 
 
 def test_release_workflow_uses_trusted_publishing_and_dry_run():
@@ -101,9 +106,7 @@ def test_release_runbook_documents_rollback_and_provenance():
     runbook = (ROOT / "docs/60-runbooks/runbook-001-release-and-rollback.md").read_text(
         encoding="utf-8"
     )
-    adr = (ROOT / "docs/45-adr/adr-011-release-trust-and-rollback.md").read_text(
-        encoding="utf-8"
-    )
+    adr = (ROOT / "docs/45-adr/adr-011-release-trust-and-rollback.md").read_text(encoding="utf-8")
 
     for text in (runbook, adr):
         assert "Trusted Publishing" in text
@@ -166,7 +169,9 @@ def test_dev_extra_exercises_rich_and_textual_paths():
     dev_extra = pyproject["project"]["optional-dependencies"]["dev"]
     redaction_extra = pyproject["project"]["optional-dependencies"]["redaction"]
 
-    assert any(dependency.startswith("jsonschema>=") for dependency in pyproject["project"]["dependencies"])
+    assert any(
+        dependency.startswith("jsonschema>=") for dependency in pyproject["project"]["dependencies"]
+    )
     assert any(dependency.startswith("detect-secrets>=") for dependency in redaction_extra)
     assert any(dependency.startswith("rich>=") for dependency in dev_extra)
     assert any(dependency.startswith("textual>=") for dependency in dev_extra)
@@ -209,9 +214,9 @@ def test_promote_stable_uses_home_local_stable_install_boundary():
 
     assert 'STABLE_HOME=${REVREM_STABLE_HOME:-"$HOME/.local/share/revrem"}' in script
     assert 'BIN_DIR=${REVREM_BIN_DIR:-"$HOME/.local/bin"}' in script
-    assert 'RELEASES_DIR=$STABLE_HOME/releases' in script
+    assert "RELEASES_DIR=$STABLE_HOME/releases" in script
     assert 'mkdir -p "$RELEASES_DIR" "$BIN_DIR"' in script
-    assert 'RELEASE_SUFFIX=0' in script
+    assert "RELEASE_SUFFIX=0" in script
     assert 'if mkdir "$RELEASE_DIR"; then' in script
     assert 'if [ -d "$RELEASE_DIR" ]; then' in script
     assert 'cp -R "$REPO_ROOT/src" "$RELEASE_DIR/src"' in script

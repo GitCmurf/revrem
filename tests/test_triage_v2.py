@@ -29,7 +29,11 @@ def test_parse_triage_payload_v2_validates_fixture_against_schema():
 
     validate(
         payload,
-        json.loads(files("code_review_loop").joinpath("schemas/triage-v2.schema.json").read_text(encoding="utf-8")),
+        json.loads(
+            files("code_review_loop")
+            .joinpath("schemas/triage-v2.schema.json")
+            .read_text(encoding="utf-8")
+        ),
     )
     assert payload["schema_version"] == "2.0"
     assert payload["prompt_version"] == "triage-v2"
@@ -59,7 +63,11 @@ def test_parse_triage_payload_v2_validates_policy_scenario_fixtures(fixture_name
 
     validate(
         payload,
-        json.loads(files("code_review_loop").joinpath("schemas/triage-v2.schema.json").read_text(encoding="utf-8")),
+        json.loads(
+            files("code_review_loop")
+            .joinpath("schemas/triage-v2.schema.json")
+            .read_text(encoding="utf-8")
+        ),
     )
     assert payload["confirmed_findings"]
     assert payload["classification"]["estimated_blast_radius"]["finding_count"] == 1
@@ -90,7 +98,11 @@ def test_triage_v2_packaged_schema_accepts_suppressed_findings_field():
 
     validate(
         payload,
-        json.loads(files("code_review_loop").joinpath("schemas/triage-v2.schema.json").read_text(encoding="utf-8")),
+        json.loads(
+            files("code_review_loop")
+            .joinpath("schemas/triage-v2.schema.json")
+            .read_text(encoding="utf-8")
+        ),
     )
 
 

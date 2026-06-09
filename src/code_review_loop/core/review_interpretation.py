@@ -18,9 +18,7 @@ import re
 # Regex constants
 # ---------------------------------------------------------------------------
 
-STATUS_RE = re.compile(
-    r"^\s*REVIEW_STATUS:\s*(clear|findings)\s*$", re.IGNORECASE | re.MULTILINE
-)
+STATUS_RE = re.compile(r"^\s*REVIEW_STATUS:\s*(clear|findings)\s*$", re.IGNORECASE | re.MULTILINE)
 CODEX_FINDING_RE = re.compile(r"^\s*-\s*\[P[0-3]\]\s+", re.MULTILINE)
 CODEX_FINDING_LINE_RE = re.compile(r"^\s*-\s*(\[P[0-3]\]\s+.+)$")
 REVIEW_COMMENTS_HEADING_RE = re.compile(
@@ -74,9 +72,7 @@ UNRELATED_KEYWORD_RE = re.compile(
 _UNRELATED_PROXIMITY_CHARS = 80
 
 NEGATED_ISSUE_PREFIX_RE = r"(?:clear|discrete|actionable|introduced|known|new|obvious|blocking|material|major|serious|outstanding|significant|additional|further|remaining|open|critical|severe|real|actual|genuine|substantive|meaningful|correctness|security|maintainability)"
-NEGATED_ISSUE_PREFIX_CHAIN_RE = (
-    rf"{NEGATED_ISSUE_PREFIX_RE}(?:[\s,;:-]+{NEGATED_ISSUE_PREFIX_RE})*"
-)
+NEGATED_ISSUE_PREFIX_CHAIN_RE = rf"{NEGATED_ISSUE_PREFIX_RE}(?:[\s,;:-]+{NEGATED_ISSUE_PREFIX_RE})*"
 NEGATED_ISSUE_WORD_RE = r"(?:bug|bugs|issue|issues|regression|regressions|defect|defects|problem|problems|failure|failures|finding|findings)"
 NEGATED_ISSUE_PROSE_RE = re.compile(
     rf"\b(?:"
@@ -368,13 +364,13 @@ def _detect_review_status_from_actionable(actionable_output: str) -> str:
     }
     if any(line in clear_lines for line in normalized_lines):
         return "clear"
-    if has_negated_clear_review_statement(
-        normalized
-    ) and not has_affirmative_issue_prose(actionable_output):
+    if has_negated_clear_review_statement(normalized) and not has_affirmative_issue_prose(
+        actionable_output
+    ):
         return "clear"
-    if any(
-        phrase in normalized for phrase in CLEAR_PHRASES
-    ) and not has_affirmative_issue_prose(actionable_output):
+    if any(phrase in normalized for phrase in CLEAR_PHRASES) and not has_affirmative_issue_prose(
+        actionable_output
+    ):
         return "clear"
     return "unknown"
 
@@ -384,9 +380,7 @@ def _detect_review_status_from_actionable(actionable_output: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def review_status_diagnostics(
-    output: str, *, harness: str = "codex"
-) -> dict[str, object]:
+def review_status_diagnostics(output: str, *, harness: str = "codex") -> dict[str, object]:
     """Return compact, targeted diagnostics for review-status classification."""
     actionable_output = actionable_review_output(output)
     stderr_output = stderr_review_output(output)
@@ -399,9 +393,8 @@ def review_status_diagnostics(
         (phrase for phrase in CLEAR_PHRASES if phrase in normalized),
         None,
     )
-    clear_phrase_present = (
-        matched_clear_phrase is not None
-        or has_negated_clear_review_statement(normalized)
+    clear_phrase_present = matched_clear_phrase is not None or has_negated_clear_review_statement(
+        normalized
     )
     structured_status = structured_review_status(actionable_output)
     if explicit_status:
@@ -410,20 +403,27 @@ def review_status_diagnostics(
         status_source = "structured_findings"
     elif finding_lines:
         status_source = "codex_finding_bullet"
-    elif any(marker in normalized for marker in (
-        "review comment:",
-        "review comments:",
-        "full review comments:",
-    )):
+    elif any(
+        marker in normalized
+        for marker in (
+            "review comment:",
+            "review comments:",
+            "full review comments:",
+        )
+    ):
         status_source = "finding_markers"
-    elif any(line in {
-        "no findings.",
-        "no findings",
-        "no issues found.",
-        "no issues found",
-        "no actionable findings.",
-        "no actionable findings",
-    } for line in [raw_line.strip().lower() for raw_line in actionable_output.splitlines()]):
+    elif any(
+        line
+        in {
+            "no findings.",
+            "no findings",
+            "no issues found.",
+            "no issues found",
+            "no actionable findings.",
+            "no actionable findings",
+        }
+        for line in [raw_line.strip().lower() for raw_line in actionable_output.splitlines()]
+    ):
         status_source = "clear_lines"
     elif (
         harness not in PROMPTED_REVIEW_HARNESSES
@@ -438,9 +438,7 @@ def review_status_diagnostics(
         "status_source": status_source,
         "actionable_chars": len(actionable_output),
         "stderr_present": stderr_present,
-        "explicit_status": (
-            explicit_status.group(1).lower() if explicit_status else None
-        ),
+        "explicit_status": (explicit_status.group(1).lower() if explicit_status else None),
         "finding_line_count": len(finding_lines),
         "clear_phrase_present": clear_phrase_present,
         "matched_clear_phrase": matched_clear_phrase,
@@ -469,9 +467,7 @@ def extract_finding_summaries(output: str, limit: int = 5) -> list[str]:
     return summaries
 
 
-def extract_finding_blocks(
-    output: str, limit: int = 5, detail_lines: int = 2
-) -> list[list[str]]:
+def extract_finding_blocks(output: str, limit: int = 5, detail_lines: int = 2) -> list[list[str]]:
     blocks: list[list[str]] = []
     current: list[str] | None = None
     current_details = 0

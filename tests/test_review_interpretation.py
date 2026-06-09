@@ -99,8 +99,7 @@ def test_detect_review_status_accepts_exact_clear_review_lines() -> None:
     assert detect_review_status("No findings.\n") == "clear"
     assert detect_review_status("summary\nNo actionable findings\n") == "clear"
     assert (
-        detect_review_status("I did not find any discrete, actionable bugs in the diff.")
-        == "clear"
+        detect_review_status("I did not find any discrete, actionable bugs in the diff.") == "clear"
     )
     assert (
         detect_review_status(
@@ -118,9 +117,7 @@ def test_detect_review_status_accepts_exact_clear_review_lines() -> None:
         )
         == "clear"
     )
-    assert (
-        detect_review_status("This would warrant an inline finding.") == "unknown"
-    )
+    assert detect_review_status("This would warrant an inline finding.") == "unknown"
 
 
 def test_detect_review_status_does_not_generalize_negated_clear_with_findings() -> None:
@@ -150,9 +147,7 @@ def test_has_affirmative_issue_prose_keeps_real_finding_after_unrelated_clause()
     environment issue must still be reported as affirmative issue prose.
     The previous whole-sentence skip over-filtered such sentences.
     """
-    output = (
-        "I found a real bug here, and an unrelated environment issue I will set aside."
-    )
+    output = "I found a real bug here, and an unrelated environment issue I will set aside."
     assert has_affirmative_issue_prose(output) is True
 
 
@@ -175,9 +170,8 @@ def test_has_affirmative_issue_prose_keeps_bug_in_separate_sentence_from_unrelat
 
 
 def test_actionable_review_output_drops_verbose_stderr_transcript() -> None:
-    output = (
-        "Full review comments:\n\n- [P1] Fix the bug\n\n[stderr]\n"
-        + ("diff --git a/x b/x\n" * 100)
+    output = "Full review comments:\n\n- [P1] Fix the bug\n\n[stderr]\n" + (
+        "diff --git a/x b/x\n" * 100
     )
     assert actionable_review_output(output) == "Full review comments:\n\n- [P1] Fix the bug"
 

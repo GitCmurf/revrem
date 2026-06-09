@@ -132,9 +132,7 @@ def test_classify_provider_failure_reason_and_transient(
 
 def test_classify_provider_failure_returns_none_for_success() -> None:
     assert (
-        provider_failures.classify_provider_failure(
-            _result(0, stdout="ok\n"), harness="harness"
-        )
+        provider_failures.classify_provider_failure(_result(0, stdout="ok\n"), harness="harness")
         is None
     )
 
@@ -156,7 +154,9 @@ def test_classify_provider_failure_detects_timeout_after_partial_stdout() -> Non
     assert failure.transient is False
 
 
-def test_classify_provider_failure_does_not_treat_textual_timeout_finding_as_local_timeout() -> None:
+def test_classify_provider_failure_does_not_treat_textual_timeout_finding_as_local_timeout() -> (
+    None
+):
     result = _result(
         1,
         stdout="Finding: provider timeout handling is incorrect\n",
@@ -172,9 +172,7 @@ def test_classify_provider_failure_does_not_treat_textual_timeout_finding_as_loc
 
 def test_classify_provider_failure_returns_none_for_unrecognised_output() -> None:
     result = _result(1, stderr="some unrelated non-fatal log line")
-    assert (
-        provider_failures.classify_provider_failure(result, harness="harness") is None
-    )
+    assert provider_failures.classify_provider_failure(result, harness="harness") is None
 
 
 def test_classify_provider_failure_ignores_help_text_api_key_mention() -> None:
@@ -182,29 +180,21 @@ def test_classify_provider_failure_ignores_help_text_api_key_mention() -> None:
     a provider authentication failure (no space between ``api`` and ``key``).
     """
     result = _result(1, stderr="Usage: opencode review --api-key YOUR_KEY [opts]")
-    assert (
-        provider_failures.classify_provider_failure(result, harness="harness") is None
-    )
+    assert provider_failures.classify_provider_failure(result, harness="harness") is None
 
 
 def test_classify_provider_failure_ignores_unknownerrors_substring() -> None:
     """``unknownerrors`` (no word boundary) must not match the
     ``UnknownError`` JSON envelope signal."""
     result = _result(1, stderr="recent unknownerrors: 3")
-    assert (
-        provider_failures.classify_provider_failure(result, harness="harness") is None
-    )
+    assert provider_failures.classify_provider_failure(result, harness="harness") is None
 
 
-def test_classify_provider_failure_ignores_temporarily_unavailable_in_cache_message() -> (
-    None
-):
+def test_classify_provider_failure_ignores_temporarily_unavailable_in_cache_message() -> None:
     """Cache messages that mention ``temporarily unavailable`` must not
     trigger the transient failure path on their own."""
     result = _result(1, stderr="cache entry temporarily unavailable, retry later")
-    assert (
-        provider_failures.classify_provider_failure(result, harness="harness") is None
-    )
+    assert provider_failures.classify_provider_failure(result, harness="harness") is None
 
 
 def test_review_failed_to_run_flags_provider_auth_required(tmp_path: Path) -> None:
@@ -235,9 +225,7 @@ def test_review_failed_to_run_preserves_returncode_one_findings_with_provider_ke
     "harness",
     ["", "opencode", "gemini", "kilo", "codex", "claude"],
 )
-def test_classify_provider_failure_is_harness_agnostic(
-    harness: str, tmp_path: Path
-) -> None:
+def test_classify_provider_failure_is_harness_agnostic(harness: str, tmp_path: Path) -> None:
     """The ``harness`` argument is a forward-compat hook: it must not
     affect the classification outcome until a harness-specific rule is
     introduced deliberately.
@@ -598,9 +586,7 @@ def test_remediation_adapter_retries_transient_failure(
     def recording_sleep(seconds: float) -> None:
         real_sleep_calls.append(seconds)
 
-    monkeypatch.setattr(
-        "code_review_loop.adapters.remediation.time.sleep", recording_sleep
-    )
+    monkeypatch.setattr("code_review_loop.adapters.remediation.time.sleep", recording_sleep)
 
     config = LoopConfig(
         base="main",
@@ -742,9 +728,7 @@ def test_remediation_retry_persists_failed_attempt_artifact(
             return CommandResult(list(args), 1, stderr="Error: 429 rate limit exceeded")
         return CommandResult(list(args), 0, stdout="ok\n")
 
-    monkeypatch.setattr(
-        "code_review_loop.adapters.remediation.time.sleep", lambda _s: None
-    )
+    monkeypatch.setattr("code_review_loop.adapters.remediation.time.sleep", lambda _s: None)
 
     config = LoopConfig(
         base="main",
@@ -797,9 +781,7 @@ def test_remediation_adapter_does_not_retry_auth_required_repeatedly(
     def recording_sleep(seconds: float) -> None:
         sleep_calls.append(seconds)
 
-    monkeypatch.setattr(
-        "code_review_loop.adapters.remediation.time.sleep", recording_sleep
-    )
+    monkeypatch.setattr("code_review_loop.adapters.remediation.time.sleep", recording_sleep)
 
     config = LoopConfig(
         base="main",

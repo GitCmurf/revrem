@@ -63,7 +63,9 @@ def main(argv: Sequence[str]) -> int:
             else:
                 for entry in entries:
                     expires = f" expires={entry.expires_at}" if entry.expires_at else ""
-                    print(f"{entry.fingerprint} {entry.severity_at_suppression} {entry.summary}{expires}")
+                    print(
+                        f"{entry.fingerprint} {entry.severity_at_suppression} {entry.summary}{expires}"
+                    )
             return CommandOk().exit_code
         raise ValueError(f"unhandled suppress command: {args.command}")
     except (OSError, ValueError, json.JSONDecodeError) as exc:

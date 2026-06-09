@@ -120,7 +120,9 @@ class TestEngineDispatch:
         assert SentinelHarness.calls[0].artifact_label == "review-1"
         assert SentinelHarness.calls[0].display_label == "1"
 
-    def test_preflight_blocks_before_review_adapter_called(self, tmp_path: Path, monkeypatch) -> None:
+    def test_preflight_blocks_before_review_adapter_called(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
         """Preflight errors stop execution before ReviewAdapter.execute is called."""
         import code_review_loop.adapters.review as _review_mod
 
@@ -131,10 +133,13 @@ class TestEngineDispatch:
 
         # Set up a proper git repo with an invalid base
         import subprocess
+
         repo = tmp_path / "repo"
         repo.mkdir()
         subprocess.run(["git", "init", "-b", "main"], cwd=repo, capture_output=True)
-        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@example.com"], cwd=repo, capture_output=True
+        )
         subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, capture_output=True)
         (repo / "README.md").write_text("hello\n", encoding="utf-8")
         subprocess.run(["git", "add", "."], cwd=repo, capture_output=True)

@@ -22,7 +22,12 @@ def test_resolved_stale_review_exits_0() -> None:
 
 
 def test_clear_with_suppressed_findings_exits_0() -> None:
-    assert outcome_to_exit_code(OutcomeClear(reason="all_findings_suppressed", suppressed_findings_count=3)) == 0
+    assert (
+        outcome_to_exit_code(
+            OutcomeClear(reason="all_findings_suppressed", suppressed_findings_count=3)
+        )
+        == 0
+    )
 
 
 def test_failed_default_exits_1() -> None:
@@ -50,7 +55,9 @@ def test_failed_engine_step_limit_exits_1() -> None:
 
 
 def test_failed_budget_ceiling_exits_3() -> None:
-    assert outcome_to_exit_code(OutcomeFailed(reason="budget_ceiling_hit", error="over budget")) == 3
+    assert (
+        outcome_to_exit_code(OutcomeFailed(reason="budget_ceiling_hit", error="over budget")) == 3
+    )
 
 
 def test_failed_setup_exits_4() -> None:
@@ -66,7 +73,14 @@ def test_findings_exits_2() -> None:
 
 
 def test_findings_with_check_failures_exits_2() -> None:
-    assert outcome_to_exit_code(OutcomeFindings(reason="max_iterations_reached_with_check_failures", check_failures=True)) == 2
+    assert (
+        outcome_to_exit_code(
+            OutcomeFindings(
+                reason="max_iterations_reached_with_check_failures", check_failures=True
+            )
+        )
+        == 2
+    )
 
 
 def test_unknown_exits_2() -> None:
@@ -74,22 +88,30 @@ def test_unknown_exits_2() -> None:
 
 
 def test_unknown_with_check_failures_exits_2() -> None:
-    assert outcome_to_exit_code(OutcomeUnknown(reason="max_iterations_reached", check_failures=True)) == 2
+    assert (
+        outcome_to_exit_code(OutcomeUnknown(reason="max_iterations_reached", check_failures=True))
+        == 2
+    )
 
 
-@pytest.mark.parametrize("code,outcome", [
-    (0, OutcomeClear(reason="review_clear")),
-    (1, OutcomeFailed(reason="review_failed", error="x")),
-    (1, OutcomeFailed(reason="triage_failed", error="x")),
-    (1, OutcomeFailed(reason="remediation_failed", error="x")),
-    (1, OutcomeFailed(reason="commit_failed", error="x")),
-    (1, OutcomeFailed(reason="commit_hook_failed", error="x")),
-    (1, OutcomeFailed(reason="engine_step_limit_exceeded", error="x")),
-    (2, OutcomeFindings(reason="max_iterations_reached")),
-    (2, OutcomeUnknown(reason="max_iterations_reached")),
-    (3, OutcomeFailed(reason="budget_ceiling_hit", error="x")),
-    (4, OutcomeFailed(reason="setup_failed", error="x")),
-    (5, OutcomeFailed(reason="cancelled", error="x")),
-])
-def test_parametrized_all_codes_reachable(code: int, outcome: OutcomeClear | OutcomeFailed | OutcomeFindings | OutcomeUnknown) -> None:
+@pytest.mark.parametrize(
+    "code,outcome",
+    [
+        (0, OutcomeClear(reason="review_clear")),
+        (1, OutcomeFailed(reason="review_failed", error="x")),
+        (1, OutcomeFailed(reason="triage_failed", error="x")),
+        (1, OutcomeFailed(reason="remediation_failed", error="x")),
+        (1, OutcomeFailed(reason="commit_failed", error="x")),
+        (1, OutcomeFailed(reason="commit_hook_failed", error="x")),
+        (1, OutcomeFailed(reason="engine_step_limit_exceeded", error="x")),
+        (2, OutcomeFindings(reason="max_iterations_reached")),
+        (2, OutcomeUnknown(reason="max_iterations_reached")),
+        (3, OutcomeFailed(reason="budget_ceiling_hit", error="x")),
+        (4, OutcomeFailed(reason="setup_failed", error="x")),
+        (5, OutcomeFailed(reason="cancelled", error="x")),
+    ],
+)
+def test_parametrized_all_codes_reachable(
+    code: int, outcome: OutcomeClear | OutcomeFailed | OutcomeFindings | OutcomeUnknown
+) -> None:
     assert outcome_to_exit_code(outcome) == code

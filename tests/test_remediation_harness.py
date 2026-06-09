@@ -75,9 +75,7 @@ class TestRemediationAdapter:
         with patch("code_review_loop.adapters.remediation.run_remediation") as mock_rem:
             mock_rem.return_value = CommandResult(["codex"], 0)
             outcome = adapter.execute(
-                RemediationRequest(
-                    iteration=2, remediation_input="prompt", resolved_route=route
-                ),
+                RemediationRequest(iteration=2, remediation_input="prompt", resolved_route=route),
                 ctx,
             )
 
@@ -123,9 +121,7 @@ class TestRemediationAdapter:
                 ctx,
             )
 
-    def test_runtime_error_classifies_gemini_quota_exhaustion(
-        self, tmp_path: Path
-    ) -> None:
+    def test_runtime_error_classifies_gemini_quota_exhaustion(self, tmp_path: Path) -> None:
         (tmp_path / "artifacts").mkdir()
         config = LoopConfig(
             base="main",
@@ -156,9 +152,7 @@ class TestRemediationAdapter:
                 ctx,
             )
 
-    def test_runtime_error_classifies_opencode_server_error(
-        self, tmp_path: Path
-    ) -> None:
+    def test_runtime_error_classifies_opencode_server_error(self, tmp_path: Path) -> None:
         (tmp_path / "artifacts").mkdir()
         config = LoopConfig(
             base="main",
@@ -199,9 +193,7 @@ class TestEngineDispatch:
         class SentinelHarness:
             calls: list[RemediationRequest] = []
 
-            def execute(
-                self, request: RemediationRequest, ctx: RunContext
-            ) -> RemediationOutcome:
+            def execute(self, request: RemediationRequest, ctx: RunContext) -> RemediationOutcome:
                 SentinelHarness.calls.append(request)
                 return fake_outcome
 

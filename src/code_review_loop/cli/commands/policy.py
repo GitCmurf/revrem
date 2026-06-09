@@ -23,10 +23,20 @@ def main(argv: Sequence[str]) -> int:
                 output_format=getattr(args, "format", None),
                 executable_routes=args.executable_routes,
             )
-            return CommandOk(exit_code=code).exit_code if code == 0 else CommandFailed(exit_code=code).exit_code
+            return (
+                CommandOk(exit_code=code).exit_code
+                if code == 0
+                else CommandFailed(exit_code=code).exit_code
+            )
         if args.command == "review":
-            code = policy_review(Path(args.artifact_dir), output_format=getattr(args, "format", None))
-            return CommandOk(exit_code=code).exit_code if code == 0 else CommandFailed(exit_code=code).exit_code
+            code = policy_review(
+                Path(args.artifact_dir), output_format=getattr(args, "format", None)
+            )
+            return (
+                CommandOk(exit_code=code).exit_code
+                if code == 0
+                else CommandFailed(exit_code=code).exit_code
+            )
         raise ValueError(f"unhandled policy command: {args.command}")
     except (OSError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
@@ -113,8 +123,6 @@ def policy_review(artifact_dir: Path, output_format: str | None = None) -> int:
     for decision in decisions:
         print(
             "iteration={iteration} decision={decision} route={route_tier} "
-            "harness={harness} model={model} checks_passed={checks_passed}".format(
-                **decision
-            )
+            "harness={harness} model={model} checks_passed={checks_passed}".format(**decision)
         )
     return CommandOk().exit_code

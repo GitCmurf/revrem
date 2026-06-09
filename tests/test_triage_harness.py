@@ -44,7 +44,12 @@ class TestTriageAdapter:
         adapter = TriageAdapter(config)
 
         outcome = adapter.execute(
-            TriageRequest(iteration=1, run_id="r1", source_review_artifact="review-1.txt", review_output="findings"),
+            TriageRequest(
+                iteration=1,
+                run_id="r1",
+                source_review_artifact="review-1.txt",
+                review_output="findings",
+            ),
             ctx,
         )
 
@@ -104,7 +109,9 @@ class TestTriageAdapter:
         with patch("code_review_loop.adapters.triage.run_triage") as mock_triage:
             mock_triage.return_value = ("", 3, True, {"confirmed_findings": []})
             outcome = adapter.execute(
-                TriageRequest(iteration=1, run_id="r", source_review_artifact="a.txt", review_output="ok"),
+                TriageRequest(
+                    iteration=1, run_id="r", source_review_artifact="a.txt", review_output="ok"
+                ),
                 ctx,
             )
 
@@ -115,7 +122,9 @@ class TestTriageAdapter:
 
 class TestEngineDispatch:
     def test_harness_called_when_wired(self) -> None:
-        fake_outcome = TriageOutcome(handoff="triage text", suppressed_count=0, is_clear=False, payload=None)
+        fake_outcome = TriageOutcome(
+            handoff="triage text", suppressed_count=0, is_clear=False, payload=None
+        )
 
         class SentinelHarness:
             calls: list[TriageRequest] = []
@@ -126,7 +135,9 @@ class TestEngineDispatch:
 
         sentinel = SentinelHarness()
         ctx = _ctx(phase_triage=sentinel)
-        request = TriageRequest(iteration=1, run_id="r", source_review_artifact="a.txt", review_output="x")
+        request = TriageRequest(
+            iteration=1, run_id="r", source_review_artifact="a.txt", review_output="x"
+        )
 
         outcome = ctx.phase_triage.execute(request, ctx)
 

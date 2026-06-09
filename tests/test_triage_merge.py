@@ -12,15 +12,21 @@ def test_extract_routing_context_with_safety_signals(tmp_path):
 
     payload = {
         "confirmed_findings": [
-            {"affected_paths": ["auth.py"], "fingerprint": "f1", "summary": "s", "severity": "h", "rationale": "r"}
+            {
+                "affected_paths": ["auth.py"],
+                "fingerprint": "f1",
+                "summary": "s",
+                "severity": "h",
+                "rationale": "r",
+            }
         ],
         "classification": {
             "domain_tags": ["api"],
             "risk_level": "medium",
             "refactor_depth": "atomic",
             "estimated_blast_radius": {"module_count": 1, "finding_count": 1},
-            "safety_signals": ["low-confidence-signal"]
-        }
+            "safety_signals": ["low-confidence-signal"],
+        },
     }
 
     context = triage.extract_routing_context(payload, tmp_path)
@@ -42,7 +48,13 @@ def test_extract_routing_context_folds_deterministic_domain_into_tags(tmp_path):
 
     payload = {
         "confirmed_findings": [
-            {"affected_paths": ["auth.py"], "fingerprint": "f1", "summary": "s", "severity": "h", "rationale": "r"}
+            {
+                "affected_paths": ["auth.py"],
+                "fingerprint": "f1",
+                "summary": "s",
+                "severity": "h",
+                "rationale": "r",
+            }
         ],
         "classification": {
             "domain_tags": ["docs"],

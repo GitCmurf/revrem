@@ -102,9 +102,7 @@ def test_cached_diff_base_head_separates_stat_and_name_status_buckets(tmp_path, 
 
     git_adapter.cached_diff_base_head(cache, tmp_path, "head-a", "main")
     git_adapter.cached_diff_base_head(cache, tmp_path, "head-a", "main", stat=True)
-    git_adapter.cached_diff_base_head(
-        cache, tmp_path, "head-a", "main", name_status=True
-    )
+    git_adapter.cached_diff_base_head(cache, tmp_path, "head-a", "main", name_status=True)
     git_adapter.cached_diff_base_head(cache, tmp_path, "head-a", "main")
     git_adapter.cached_diff_base_head(cache, tmp_path, "head-a", "main", stat=True)
 
@@ -207,16 +205,12 @@ def test_head_rev_is_never_cached_across_iterations(tmp_path, monkeypatch):
     cache = GitContextCache()
     config = LoopConfig(base="main", cwd=tmp_path, artifact_dir=tmp_path)
 
-    first_text = review_adapter.build_external_review_context(
-        config, git_context_cache=cache
-    )
+    first_text = review_adapter.build_external_review_context(config, git_context_cache=cache)
     # Simulate a phase boundary: invalidate the per-phase HEAD cache so
     # the next phase picks up the live SHA (e.g. after a remediation
     # commit advances HEAD).
     cache.invalidate_head_sha(str(tmp_path))
-    second_text = review_adapter.build_external_review_context(
-        config, git_context_cache=cache
-    )
+    second_text = review_adapter.build_external_review_context(config, git_context_cache=cache)
 
     assert "head-1" in first_text
     assert "diff-for-head-1" in first_text

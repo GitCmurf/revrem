@@ -59,9 +59,7 @@ def current_head(config: LoopConfig, ctx: RunContext) -> str | None:
     return head or None
 
 
-def current_non_artifact_status_lines(
-    config: LoopConfig, ctx: RunContext
-) -> list[str]:
+def current_non_artifact_status_lines(config: LoopConfig, ctx: RunContext) -> list[str]:
     result = ctx.runner(
         git_worktree_status_command_for_commit(config),
         config.cwd,

@@ -39,9 +39,7 @@ def test_summary_includes_latest_review_excerpt_and_artifact_paths(tmp_path):
 
 
 def test_command_line_redacts_prompt_values():
-    assert _redacted_argv(
-        ["--commit-message-prompt", "secret prompt", "--base", "main"]
-    ) == (
+    assert _redacted_argv(["--commit-message-prompt", "secret prompt", "--base", "main"]) == (
         "--commit-message-prompt",
         "<redacted>",
         "--base",
@@ -301,8 +299,7 @@ def test_terminal_summary_marks_unsupported_reasoning_effort_as_na():
     )
 
     assert (
-        "review(opencode, opencode/minimax-m3-free, effort=n/a, timeout=0, "
-        "source=profile+cli)"
+        "review(opencode, opencode/minimax-m3-free, effort=n/a, timeout=0, source=profile+cli)"
     ) in text
 
 
@@ -374,9 +371,7 @@ def test_resume_config_payload_persists_routing_default_route_when_profile_v2_se
         "reasoning_effort": None,
         "timeout_seconds": 60,
         "contract": "v2",
-        "routes": {
-            "gemini-pro": {"harness": "gemini", "model": "gemini-3.1-pro-preview"}
-        },
+        "routes": {"gemini-pro": {"harness": "gemini", "model": "gemini-3.1-pro-preview"}},
         "routing": {
             "enabled": True,
             "strict_on_unavailable_route": True,
@@ -384,9 +379,7 @@ def test_resume_config_payload_persists_routing_default_route_when_profile_v2_se
             "allow_model_escalation": True,
         },
     }
-    profile_v2 = Profile(
-        name="test", triage=parse_triage(triage_payload, "test"), source="test"
-    )
+    profile_v2 = Profile(name="test", triage=parse_triage(triage_payload, "test"), source="test")
     config = LoopConfig(
         base="main",
         max_iterations=1,
@@ -407,9 +400,7 @@ def test_terminal_summary_falls_back_to_accurate_check_artifact_label():
             "artifact_dir": "tmp/run",
             "final_status": "findings",
             "stopped_reason": "max_iterations_reached",
-            "iterations": [
-                {"iteration": 1, "review_status": "findings", "check_failures": 0}
-            ],
+            "iterations": [{"iteration": 1, "review_status": "findings", "check_failures": 0}],
             "artifact_paths": {
                 "checks": ["tmp/run/check-1-1.txt", "tmp/run/check-1-2.txt"],
                 "summary": "tmp/run/summary.json",
@@ -426,9 +417,7 @@ def test_terminal_summary_parse_miss_lists_all_check_artifacts():
             "artifact_dir": "tmp/run",
             "final_status": "findings",
             "stopped_reason": "max_iterations_reached",
-            "iterations": [
-                {"iteration": 1, "review_status": "findings", "check_failures": 0}
-            ],
+            "iterations": [{"iteration": 1, "review_status": "findings", "check_failures": 0}],
             "artifact_paths": {
                 "checks": [
                     "tmp/run/ruff.txt",
@@ -606,9 +595,7 @@ def test_summary_records_terminal_unknown_review_warning_and_bug_report(tmp_path
             "kind": "unknown_review_status",
             "iteration": 1,
             "review_path": str(tmp_path / "artifacts" / "review-1.txt"),
-            "status_diagnostics_path": str(
-                tmp_path / "artifacts" / "review-1-status.json"
-            ),
+            "status_diagnostics_path": str(tmp_path / "artifacts" / "review-1-status.json"),
         }
     ]
     assert summary["bug_report_path"] == str(report_path)

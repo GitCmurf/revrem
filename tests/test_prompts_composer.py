@@ -16,8 +16,8 @@ def test_compose_remediation_prompt_includes_fragments(tmp_path):
         "prompt_requirements": {
             "required_fragments": ["custom"],
             "triage_prompt_draft": "FIX IT",
-            "definition_of_done": ["DONE"]
-        }
+            "definition_of_done": ["DONE"],
+        },
     }
 
     resolved_route = policy.ResolvedRoute(
@@ -28,7 +28,7 @@ def test_compose_remediation_prompt_includes_fragments(tmp_path):
         timeout_seconds=60,
         sandbox="s1",
         prompt_fragments=(),
-        allow_model_deescalation=True
+        allow_model_deescalation=True,
     )
 
     # Must set trusted_repo=True to load from tmp_path

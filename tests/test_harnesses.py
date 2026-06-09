@@ -102,7 +102,9 @@ def test_unknown_harness_raises_value_error():
 
 def test_codex_capabilities_validate_against_schema():
     schema = json.loads(
-        (ROOT / "docs/52-api/schemas/harness-capabilities-v1.schema.json").read_text(encoding="utf-8")
+        (ROOT / "docs/52-api/schemas/harness-capabilities-v1.schema.json").read_text(
+            encoding="utf-8"
+        )
     )
     payload = harnesses.harness_capabilities_payload("codex")
 
@@ -246,8 +248,16 @@ def test_fake_harness_can_report_deterministic_token_charge():
         )
         is None
     )
-    assert harnesses.fake_harness_token_charge(["revrem-fake-harness", "review", "--scenario=cost_ceiling"]) == 10
-    assert harnesses.fake_harness_token_charge(["revrem-fake-harness", "review", "--model", "x"]) is None
+    assert (
+        harnesses.fake_harness_token_charge(
+            ["revrem-fake-harness", "review", "--scenario=cost_ceiling"]
+        )
+        == 10
+    )
+    assert (
+        harnesses.fake_harness_token_charge(["revrem-fake-harness", "review", "--model", "x"])
+        is None
+    )
 
 
 @pytest.mark.parametrize(

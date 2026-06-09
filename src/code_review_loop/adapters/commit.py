@@ -107,9 +107,7 @@ def git_reset_artifact_command_for_commit(
     return ["git", "-C", str(repo_root), "reset", "--", artifact_rel.as_posix()]
 
 
-def commit_command_for_message(
-    message: str, *, allow_no_verify: bool = False
-) -> list[str]:
+def commit_command_for_message(message: str, *, allow_no_verify: bool = False) -> list[str]:
     command = ["git", "commit"]
     if allow_no_verify:
         command.append("--no-verify")
@@ -119,11 +117,7 @@ def commit_command_for_message(
 
 def classify_commit_failure(result: CommandResult) -> str:
     output = phase_support._combined_output(result)
-    return (
-        "hook_failed"
-        if phase_support.COMMIT_HOOK_FAILURE_RE.search(output)
-        else "commit_failed"
-    )
+    return "hook_failed" if phase_support.COMMIT_HOOK_FAILURE_RE.search(output) else "commit_failed"
 
 
 def run_commit(
@@ -270,12 +264,8 @@ def run_commit(
     phase_support.write_artifact(commit_artifact_path, commit_output)
     if commit_result.returncode != 0:
         kind = classify_commit_failure(commit_result)
-        detail = (
-            "git commit hook failed" if kind == "hook_failed" else "git commit failed"
-        )
-        phase_support.progress_event(
-            config, "commit", str(iteration), "failed", detail, ctx=ctx
-        )
+        detail = "git commit hook failed" if kind == "hook_failed" else "git commit failed"
+        phase_support.progress_event(config, "commit", str(iteration), "failed", detail, ctx=ctx)
         raise phase_support.CommitFailed(
             iteration=iteration,
             kind=kind,
@@ -285,24 +275,16 @@ def run_commit(
     phase_support.write_artifact(
         config.artifact_dir / f"commit-{iteration}-message.txt", message + "\n"
     )
-    phase_support.progress_event(
-        config, "commit", str(iteration), "committed", message, ctx=ctx
-    )
+    phase_support.progress_event(config, "commit", str(iteration), "committed", message, ctx=ctx)
     return "committed"
 
 
 def commit_message_for_staged_changes(
     config: LoopConfig, runner: Runner, iteration: int, ctx: RunContext
 ) -> str | _AdoptedCommit:
-    timeout_seconds = phase_support.phase_timeout_seconds(
-        config, config.commit_timeout_seconds
-    )
-    stat = runner(
-        ["git", "diff", "--cached", "--stat"], config.cwd, None, timeout_seconds
-    )
-    names = runner(
-        ["git", "diff", "--cached", "--name-only"], config.cwd, None, timeout_seconds
-    )
+    timeout_seconds = phase_support.phase_timeout_seconds(config, config.commit_timeout_seconds)
+    stat = runner(["git", "diff", "--cached", "--stat"], config.cwd, None, timeout_seconds)
+    names = runner(["git", "diff", "--cached", "--name-only"], config.cwd, None, timeout_seconds)
     stat_stdout = stat.stdout or ""
     names_stdout = names.stdout or ""
     staged_paths = [line.strip() for line in names_stdout.splitlines() if line.strip()]
@@ -328,13 +310,9 @@ def commit_message_for_staged_changes(
     if not config.commit_message_model:
         return fallback
     before_head = _commit_message_head(config, runner, timeout_seconds=timeout_seconds)
-    before_cached_raw = _commit_message_cached_raw(
-        config, runner, timeout_seconds=timeout_seconds
-    )
+    before_cached_raw = _commit_message_cached_raw(config, runner, timeout_seconds=timeout_seconds)
     command = phase_support.build_commit_message_command(config)
-    prompt_root = (
-        config.commit_message_prompt or phase_support.DEFAULT_COMMIT_MESSAGE_PROMPT
-    )
+    prompt_root = config.commit_message_prompt or phase_support.DEFAULT_COMMIT_MESSAGE_PROMPT
     prompt_root = (
         f"{prompt_root.rstrip()}\n"
         "Do not edit, write, stage, or commit files. Do not run git add or "
@@ -342,9 +320,7 @@ def commit_message_for_staged_changes(
         "and recorded as commit-message side effects.\n"
     )
     prompt = f"{prompt_root}\n{prompts_composer.trim_for_prompt(context, config.max_remediation_input_chars)}"
-    prompt_artifact_path = (
-        config.artifact_dir / f"commit-{iteration}-message-prompt.txt"
-    )
+    prompt_artifact_path = config.artifact_dir / f"commit-{iteration}-message-prompt.txt"
     phase_support.write_artifact(prompt_artifact_path, prompt)
     invocation = harnesses.prepare_prompt_invocation(
         config.commit_message_harness,
@@ -355,9 +331,7 @@ def commit_message_for_staged_changes(
     command = invocation.command
     prompt_input = invocation.stdin
     prompt_metadata = phase_support.prompt_invocation_metadata(invocation)
-    phase_support.ensure_model_budget(
-        config, phase="commit-message", iteration=iteration, ctx=ctx
-    )
+    phase_support.ensure_model_budget(config, phase="commit-message", iteration=iteration, ctx=ctx)
     if config.commit_reasoning_effort_adjustment:
         phase_support.progress_event(
             config,
@@ -579,9 +553,7 @@ def _handle_commit_message_repo_mutation(
     if before_head is None and before_cached_raw is None:
         return None
     after_head = _commit_message_head(config, runner, timeout_seconds=timeout_seconds)
-    after_cached_raw = _commit_message_cached_raw(
-        config, runner, timeout_seconds=timeout_seconds
-    )
+    after_cached_raw = _commit_message_cached_raw(config, runner, timeout_seconds=timeout_seconds)
     head_changed = bool(before_head and after_head and before_head != after_head)
     cached_changed = (
         before_cached_raw is not None
@@ -590,12 +562,8 @@ def _handle_commit_message_repo_mutation(
     )
     if not head_changed and not cached_changed:
         return None
-    clean_status = _commit_message_worktree_status(
-        config, runner, timeout_seconds=timeout_seconds
-    )
-    cached_empty = _commit_message_cached_is_empty(
-        config, runner, timeout_seconds=timeout_seconds
-    )
+    clean_status = _commit_message_worktree_status(config, runner, timeout_seconds=timeout_seconds)
+    cached_empty = _commit_message_cached_is_empty(config, runner, timeout_seconds=timeout_seconds)
     artifact = _write_commit_message_side_effect_artifact(
         config.artifact_dir,
         iteration,
@@ -605,9 +573,7 @@ def _handle_commit_message_repo_mutation(
             else "unsafe_repo_mutation"
         ),
         severity=(
-            "warning"
-            if head_changed and clean_status == set() and cached_empty
-            else "error"
+            "warning" if head_changed and clean_status == set() and cached_empty else "error"
         ),
         head_before=before_head,
         head_after=after_head,
@@ -624,8 +590,7 @@ def _handle_commit_message_repo_mutation(
             artifact=str(artifact),
         )
     raise RuntimeError(
-        "commit-message drafting mutated repository HEAD or staged changes; "
-        f"see {artifact}"
+        f"commit-message drafting mutated repository HEAD or staged changes; see {artifact}"
     )
 
 
@@ -815,9 +780,7 @@ def _src_scope(paths: list[str]) -> str:
             continue
         if len(path.parts) >= 4 and path.parts[1] == "code_review_loop":
             candidates.append(path.parts[2])
-        elif len(path.parts) == 2 or (
-            len(path.parts) == 3 and path.parts[1] == "code_review_loop"
-        ):
+        elif len(path.parts) == 2 or (len(path.parts) == 3 and path.parts[1] == "code_review_loop"):
             candidates.append(path.stem)
         elif len(path.parts) > 2:
             candidates.append(path.parts[1])
@@ -830,9 +793,7 @@ def _src_scope(paths: list[str]) -> str:
 
 
 def _commit_type(paths: list[str], *, context: str = "") -> str:
-    if paths and all(
-        path.startswith("docs/") or path.endswith(".md") for path in paths
-    ):
+    if paths and all(path.startswith("docs/") or path.endswith(".md") for path in paths):
         return "docs"
     if paths and all(path.startswith("tests/") for path in paths):
         return "test"
@@ -1003,11 +964,7 @@ def _path_noun(paths: list[str]) -> str:
     dominant_str = max(counts, key=lambda path_str: (counts[path_str], path_str))
     path = Path(dominant_str)
     stem = path.stem.replace("_", " ").replace("-", " ")
-    if (
-        len(path.parts) >= 3
-        and path.parts[0] == "src"
-        and path.parts[1] == "code_review_loop"
-    ):
+    if len(path.parts) >= 3 and path.parts[0] == "src" and path.parts[1] == "code_review_loop":
         if len(path.parts) == 3:
             return stem
         package_part = path.parts[2].replace("_", " ").replace("-", " ")

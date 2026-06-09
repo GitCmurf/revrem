@@ -889,7 +889,7 @@ base = "trunk"
     rendered = config_path.read_text(encoding="utf-8")
     assert 'model = "gpt-5.5"' in rendered
     assert 'reasoning_effort = "medium"' in rendered
-    assert 'max_iterations = 5' in rendered
+    assert "max_iterations = 5" in rendered
 
     resolved = profiles.resolve_profile("imported", cwd=tmp_path, home=home)
     assert resolved.review.model == "gpt-5.5"
@@ -1026,7 +1026,7 @@ description = "Keep me"
     profiles.write_user_profile(profiles.minimal_profile("smoke"), home=home)
 
     rendered = config_path.read_text(encoding="utf-8")
-    assert '[profiles.main.pipeline]' in rendered
+    assert "[profiles.main.pipeline]" in rendered
     assert 'base = "main"' in rendered
     assert profiles.resolve_profile("main", cwd=tmp_path, home=home).pipeline.base == "main"
 
@@ -1051,7 +1051,9 @@ description = "Existing profile"
     rendered = config_path.read_text(encoding="utf-8")
     assert "[profiles.existing.output]" not in rendered
     assert "terminal_title = false" not in rendered
-    assert profiles.resolve_profile("existing", cwd=tmp_path, home=home).output.terminal_title is True
+    assert (
+        profiles.resolve_profile("existing", cwd=tmp_path, home=home).output.terminal_title is True
+    )
 
 
 def test_write_user_profile_quotes_profile_names_and_round_trips(tmp_path):
@@ -1063,7 +1065,10 @@ def test_write_user_profile_quotes_profile_names_and_round_trips(tmp_path):
 
     assert '[profiles."foo.bar baz"]' in rendered
     assert '[profiles."foo.bar baz".review]' not in rendered
-    assert profiles.resolve_profile("foo.bar baz", cwd=tmp_path, home=home).description == "Quoted profile"
+    assert (
+        profiles.resolve_profile("foo.bar baz", cwd=tmp_path, home=home).description
+        == "Quoted profile"
+    )
 
 
 def test_write_user_profile_quotes_non_ascii_profile_names(tmp_path):
@@ -1075,7 +1080,9 @@ def test_write_user_profile_quotes_non_ascii_profile_names(tmp_path):
 
     assert '[profiles."démo"]' in rendered
     assert "[profiles.démo]" not in rendered
-    assert profiles.resolve_profile("démo", cwd=tmp_path, home=home).description == "Non-ASCII profile"
+    assert (
+        profiles.resolve_profile("démo", cwd=tmp_path, home=home).description == "Non-ASCII profile"
+    )
 
 
 def test_profile_json_is_stable():

@@ -98,11 +98,7 @@ def _update_live(text: Any) -> bool:
         return False
     live, panel_type, group_type = _ACTIVE_LIVE
     _ACTIVE_LIVE_LINES.append(text)
-    live.update(
-        panel_type(
-            group_type(*_ACTIVE_LIVE_LINES), title="RevRem", border_style="green"
-        )
-    )
+    live.update(panel_type(group_type(*_ACTIVE_LIVE_LINES), title="RevRem", border_style="green"))
     return True
 
 
@@ -128,9 +124,7 @@ def _detail_parts(status: str, detail: str) -> list[tuple[str, str | None]]:
     for index, value in enumerate(values):
         if index:
             parts.append((" · ", "dim"))
-        style = (
-            RICH_DETAIL_STYLES[index] if index < len(RICH_DETAIL_STYLES) else None
-        )
+        style = RICH_DETAIL_STYLES[index] if index < len(RICH_DETAIL_STYLES) else None
         parts.append((value, style))
     return parts
 
@@ -175,9 +169,7 @@ def print_rich_message(phase: str, label: str, text: str, *, head: str = "") -> 
     return True
 
 
-def print_rich_continuation(
-    phase: str, label: str, text: str, *, indent: int = 2
-) -> bool:
+def print_rich_continuation(phase: str, label: str, text: str, *, indent: int = 2) -> bool:
     rendered = _styled_text(
         _timestamp_part(),
         (" ", None),

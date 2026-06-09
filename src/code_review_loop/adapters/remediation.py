@@ -88,12 +88,8 @@ def run_remediation(
         if config.output_last_message
         else None
     )
-    command = build_remediation_command(
-        config, last_message_path, resolved_route=resolved_route
-    )
-    remediation_harness = (
-        resolved_route.harness if resolved_route else config.remediation_harness
-    )
+    command = build_remediation_command(config, last_message_path, resolved_route=resolved_route)
+    remediation_harness = resolved_route.harness if resolved_route else config.remediation_harness
 
     if resolved_route:
         prompt = remediation_input
@@ -114,9 +110,7 @@ def run_remediation(
     prompt_metadata = phase_support.prompt_invocation_metadata(invocation)
 
     phase_support.set_phase_terminal_title(config, "remediate", label)
-    phase_support.ensure_model_budget(
-        config, phase="remediate", iteration=iteration, ctx=ctx
-    )
+    phase_support.ensure_model_budget(config, phase="remediate", iteration=iteration, ctx=ctx)
     phase_support.progress_event(
         config,
         "remediate",
@@ -128,9 +122,7 @@ def run_remediation(
             model=(resolved_route.model if resolved_route else None)
             or config.remediation_model
             or config.model,
-            reasoning_effort=(
-                resolved_route.reasoning_effort if resolved_route else None
-            )
+            reasoning_effort=(resolved_route.reasoning_effort if resolved_route else None)
             or config.remediation_reasoning_effort
             or config.reasoning_effort,
             timeout_seconds=(
@@ -176,9 +168,7 @@ def run_remediation(
         config, result, phase="remediate", iteration=iteration, ctx=ctx
     )
     if result.returncode != 0:
-        failure = provider_failures.classify_provider_failure(
-            result, harness=remediation_harness
-        )
+        failure = provider_failures.classify_provider_failure(result, harness=remediation_harness)
         failure_detail = f": {failure.detail}" if failure else ""
         phase_support.progress_event(
             config,
@@ -260,9 +250,7 @@ class RemediationAdapter:
     def __init__(self, config: LoopConfig) -> None:
         self._config = config
 
-    def execute(
-        self, request: RemediationRequest, ctx: RunContext
-    ) -> RemediationOutcome:
+    def execute(self, request: RemediationRequest, ctx: RunContext) -> RemediationOutcome:
         result = run_remediation(
             self._config,
             ctx.runner,

@@ -82,7 +82,9 @@ def test_artifact_scenario_fixtures_validate_against_schemas():
         "diagnostics.json": _load_schema("diagnostics-v1.schema.json"),
     }
 
-    assert {path.name for path in ARTIFACT_FIXTURE_DIR.iterdir() if path.is_dir()} == expected_scenarios
+    assert {
+        path.name for path in ARTIFACT_FIXTURE_DIR.iterdir() if path.is_dir()
+    } == expected_scenarios
     for scenario_dir in sorted(path for path in ARTIFACT_FIXTURE_DIR.iterdir() if path.is_dir()):
         assert (scenario_dir / "summary.json").is_file(), scenario_dir
         for path in sorted(scenario_dir.glob("*.json")):
@@ -357,6 +359,12 @@ def test_routing_outcome_schema_rejects_negative_metrics():
     errors = list(Draft202012Validator(schema).iter_errors(payload))
 
     paths = _validation_error_paths(errors)
-    assert ["wall_time_seconds"] in paths or any(".wall_time_seconds" in path for path in paths if isinstance(path, str))
-    assert ["cost_usd"] in paths or any(".cost_usd" in path for path in paths if isinstance(path, str))
-    assert ["tokens_consumed"] in paths or any(".tokens_consumed" in path for path in paths if isinstance(path, str))
+    assert ["wall_time_seconds"] in paths or any(
+        ".wall_time_seconds" in path for path in paths if isinstance(path, str)
+    )
+    assert ["cost_usd"] in paths or any(
+        ".cost_usd" in path for path in paths if isinstance(path, str)
+    )
+    assert ["tokens_consumed"] in paths or any(
+        ".tokens_consumed" in path for path in paths if isinstance(path, str)
+    )

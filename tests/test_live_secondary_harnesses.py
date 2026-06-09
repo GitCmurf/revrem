@@ -89,16 +89,12 @@ def _configure_live_provider_environment(
 
 def _resolve_live_provider(provider: LiveProvider) -> LiveProviderRuntime:
     if os.environ.get(provider.enable_env) != "1":
-        pytest.skip(
-            f"set {provider.enable_env}=1 to run {provider.name} live smoke tests"
-        )
+        pytest.skip(f"set {provider.enable_env}=1 to run {provider.name} live smoke tests")
 
     configured_executable = os.environ.get(provider.bin_env)
     executable = configured_executable or shutil.which(provider.executable)
     if executable is None:
-        pytest.skip(
-            f"{provider.executable!r} executable is not on PATH; set {provider.bin_env}"
-        )
+        pytest.skip(f"{provider.executable!r} executable is not on PATH; set {provider.bin_env}")
     if configured_executable:
         resolved = shutil.which(configured_executable)
         if resolved is not None:
@@ -118,9 +114,7 @@ def _resolve_live_provider(provider: LiveProvider) -> LiveProviderRuntime:
 def _skip_if_provider_setup_missing(provider: LiveProvider, output: str) -> None:
     normalized = output.lower()
     if any(marker in normalized for marker in AUTH_SETUP_MARKERS):
-        pytest.skip(
-            f"{provider.name} live smoke requires an authenticated non-interactive CLI"
-        )
+        pytest.skip(f"{provider.name} live smoke requires an authenticated non-interactive CLI")
 
 
 @pytest.mark.parametrize("provider", LIVE_PROVIDERS.values(), ids=LIVE_PROVIDERS)
@@ -198,8 +192,7 @@ def test_live_kilo_stdin_contract_is_not_immediately_rejected() -> None:
             executable = resolved
         elif not Path(configured).is_file():
             pytest.skip(
-                f"REVREM_LIVE_KILO_BIN={configured!r} is not executable on PATH "
-                "or an existing file"
+                f"REVREM_LIVE_KILO_BIN={configured!r} is not executable on PATH or an existing file"
             )
 
     help_result = default_runner(
@@ -359,12 +352,8 @@ def test_live_routed_secondary_provider_smoke(
                 remediation_artifact.read_text(encoding="utf-8"),
             )
         raise
-    routing = json.loads(
-        (config.artifact_dir / "routing-1.json").read_text(encoding="utf-8")
-    )
-    remediation_output = (config.artifact_dir / "remediation-1.txt").read_text(
-        encoding="utf-8"
-    )
+    routing = json.loads((config.artifact_dir / "routing-1.json").read_text(encoding="utf-8"))
+    remediation_output = (config.artifact_dir / "remediation-1.txt").read_text(encoding="utf-8")
 
     assert summary["final_status"] == "clear"
     assert routing["effective_route"]["harness"] == provider.name

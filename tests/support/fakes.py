@@ -67,7 +67,9 @@ class FakeRunner:
         try:
             template = self._responses[phase]
         except KeyError:
-            raise AssertionError(f"FakeRunner: no response for phase {phase!r} (args={argv})") from None
+            raise AssertionError(
+                f"FakeRunner: no response for phase {phase!r} (args={argv})"
+            ) from None
         if isinstance(template, BaseException):
             raise template
         # Rebuild with the real call args so artifacts/events reflect the actual invocation.

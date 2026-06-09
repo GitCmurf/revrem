@@ -48,12 +48,17 @@ def triage_explain(run_dir: Path, iteration: int, output_format: str | None = No
         print(f"Routing Explanation for {run_dir.name} iteration {iteration}:")
         decision = routing.get("policy_decision", {})
         if not isinstance(decision, dict):
-            print(f"ERROR: routing artifact policy_decision must be an object: {routing_path}", file=sys.stderr)
+            print(
+                f"ERROR: routing artifact policy_decision must be an object: {routing_path}",
+                file=sys.stderr,
+            )
             return CommandFailed(exit_code=1).exit_code
         print(f"  Decision: {decision.get('decision')}")
         print(f"  Rationale: {decision.get('rationale')}")
         matched_rules = decision.get("matched_rule_ids", [])
-        if not isinstance(matched_rules, list) or not all(isinstance(rule, str) for rule in matched_rules):
+        if not isinstance(matched_rules, list) or not all(
+            isinstance(rule, str) for rule in matched_rules
+        ):
             print(
                 f"ERROR: routing artifact policy_decision.matched_rule_ids must be a string array: {routing_path}",
                 file=sys.stderr,
@@ -63,7 +68,10 @@ def triage_explain(run_dir: Path, iteration: int, output_format: str | None = No
 
         effective = routing.get("effective_route", {})
         if not isinstance(effective, dict):
-            print(f"ERROR: routing artifact effective_route must be an object: {routing_path}", file=sys.stderr)
+            print(
+                f"ERROR: routing artifact effective_route must be an object: {routing_path}",
+                file=sys.stderr,
+            )
             return CommandFailed(exit_code=1).exit_code
         print(f"  Effective Route: {effective.get('route_tier')}")
         print(f"    Harness: {effective.get('harness')}")
@@ -71,14 +79,19 @@ def triage_explain(run_dir: Path, iteration: int, output_format: str | None = No
 
         proposal = routing.get("model_proposal", {})
         if not isinstance(proposal, dict):
-            print(f"ERROR: routing artifact model_proposal must be an object: {routing_path}", file=sys.stderr)
+            print(
+                f"ERROR: routing artifact model_proposal must be an object: {routing_path}",
+                file=sys.stderr,
+            )
             return CommandFailed(exit_code=1).exit_code
         print(f"  Model Proposal: {proposal.get('route_tier')}")
         print(f"    Rationale: {proposal.get('rationale')}")
 
         prompt = routing.get("prompt", {})
         if not isinstance(prompt, dict):
-            print(f"ERROR: routing artifact prompt must be an object: {routing_path}", file=sys.stderr)
+            print(
+                f"ERROR: routing artifact prompt must be an object: {routing_path}", file=sys.stderr
+            )
             return CommandFailed(exit_code=1).exit_code
         print(f"  Prompt Artifact: {prompt.get('path')}")
         print(f"  Prompt Hash: {prompt.get('sha256')}")

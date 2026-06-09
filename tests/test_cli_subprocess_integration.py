@@ -249,9 +249,7 @@ def test_latest_prompt_evidence_reports_cancelled_review_prompt(tmp_path):
 def test_latest_prompt_evidence_handles_three_segment_commit_prompt(tmp_path):
     artifact_dir = tmp_path / "artifacts"
     artifact_dir.mkdir()
-    (artifact_dir / "commit-1-message-prompt.txt").write_text(
-        "commit prompt", encoding="utf-8"
-    )
+    (artifact_dir / "commit-1-message-prompt.txt").write_text("commit prompt", encoding="utf-8")
 
     evidence = _latest_prompt_evidence(artifact_dir)
 
@@ -355,6 +353,7 @@ def test_main_handles_keyboard_interrupt_without_traceback(tmp_path, monkeypatch
 
     assert exit_code == 5
     assert capsys.readouterr().err == "Cancelled by user.\n"
+
 
 class TtyBuffer(io.StringIO):
     def isatty(self):
@@ -488,9 +487,7 @@ def test_subprocess_refresh_loop_stops_resending_stdin_after_timeout(tmp_path, m
     assert len(refresh_calls) == 2
 
 
-def test_subprocess_runner_emits_waiting_progress_while_child_is_running(
-    tmp_path, monkeypatch
-):
+def test_subprocess_runner_emits_waiting_progress_while_child_is_running(tmp_path, monkeypatch):
     reports: list[float] = []
     monotonic_values = iter([0.0, 1.0, 6.0])
 
@@ -503,9 +500,7 @@ def test_subprocess_runner_emits_waiting_progress_while_child_is_running(
         def communicate(self, input=None, timeout=None):
             self.communicate_calls += 1
             if self.communicate_calls == 1:
-                raise subprocess_runner_mod.subprocess.TimeoutExpired(
-                    ["opencode", "run"], timeout
-                )
+                raise subprocess_runner_mod.subprocess.TimeoutExpired(["opencode", "run"], timeout)
             return ("stdout", "stderr")
 
         def poll(self):
@@ -553,7 +548,9 @@ def test_default_runner_timeout_records_command_cwd_and_partial_output(tmp_path,
             stderr="partial stderr\n",
         )
 
-    monkeypatch.setattr(subprocess_runner_mod, "run_subprocess_with_terminal_title_refresh", fake_run_subprocess)
+    monkeypatch.setattr(
+        subprocess_runner_mod, "run_subprocess_with_terminal_title_refresh", fake_run_subprocess
+    )
 
     result = subprocess_runner_mod.default_runner(["codex", "exec"], tmp_path, "prompt", 12)
 

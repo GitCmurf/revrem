@@ -29,7 +29,9 @@ _REVIEW_PRIORITY_SEVERITIES = {
     "P4": "info",
 }
 
-RoutingContextCache: TypeAlias = dict[tuple[Path, int, int], tuple[tuple[str, ...], tuple[str, ...]]]
+RoutingContextCache: TypeAlias = dict[
+    tuple[Path, int, int], tuple[tuple[str, ...], tuple[str, ...]]
+]
 
 
 class TriageValidationError(ValueError):
@@ -173,7 +175,9 @@ def invalid_triage_issue(error: Exception, *, iteration: int) -> diagnostics.Dia
     )
 
 
-def command_failed_issue(*, iteration: int, returncode: int, artifact: str) -> diagnostics.DiagnosticIssue:
+def command_failed_issue(
+    *, iteration: int, returncode: int, artifact: str
+) -> diagnostics.DiagnosticIssue:
     return diagnostics.DiagnosticIssue(
         code="revrem.triage.command_failed",
         severity="blocking",
@@ -197,7 +201,9 @@ def format_structured_handoff(payload: dict[str, Any], original_review: str) -> 
     if confirmed:
         parts.append("\nConfirmed Actionable Findings:")
         for f in confirmed:
-            parts.append(f"- [{f['severity'].upper()}] {f['summary']} (Fingerprint: {f['fingerprint']})")
+            parts.append(
+                f"- [{f['severity'].upper()}] {f['summary']} (Fingerprint: {f['fingerprint']})"
+            )
             parts.append(f"  Rationale: {f['rationale']}")
             if f.get("affected_paths"):
                 parts.append(f"  Files: {', '.join(f['affected_paths'])}")

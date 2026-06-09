@@ -36,41 +36,25 @@ def classify_provider_failure(
     normalized = output.lower()
 
     if result.returncode == -1 and "command timed out after" in normalized:
-        return ProviderFailure(
-            "provider_timeout", "provider subprocess timed out", False
-        )
+        return ProviderFailure("provider_timeout", "provider subprocess timed out", False)
     if _matches_any(normalized, AUTH_PATTERNS):
-        return ProviderFailure(
-            "provider_auth_required", "provider auth/setup required", False
-        )
+        return ProviderFailure("provider_auth_required", "provider auth/setup required", False)
     if _matches_any(normalized, CLI_CONTRACT_PATTERNS):
-        return ProviderFailure(
-            "provider_cli_contract_error", "provider CLI contract error", False
-        )
+        return ProviderFailure("provider_cli_contract_error", "provider CLI contract error", False)
     if _matches_any(normalized, QUOTA_PATTERNS):
-        return ProviderFailure(
-            "provider_quota_exhausted", "provider quota exhausted", False
-        )
+        return ProviderFailure("provider_quota_exhausted", "provider quota exhausted", False)
     if _matches_any(normalized, MODEL_UNAVAILABLE_PATTERNS):
-        return ProviderFailure(
-            "provider_model_unavailable", "provider model unavailable", False
-        )
+        return ProviderFailure("provider_model_unavailable", "provider model unavailable", False)
     if _matches_any(normalized, SERVER_ERROR_PATTERNS):
         ref = _extract_error_ref(output)
         suffix = f" ref={ref}" if ref else ""
-        return ProviderFailure(
-            "provider_server_error", f"provider server error{suffix}", True
-        )
+        return ProviderFailure("provider_server_error", f"provider server error{suffix}", True)
     if _matches_any(normalized, TRANSIENT_PATTERNS):
-        return ProviderFailure(
-            "provider_transient_error", "provider transient error", True
-        )
+        return ProviderFailure("provider_transient_error", "provider transient error", True)
     if _matches_any(normalized, RATE_LIMIT_PATTERNS):
         return ProviderFailure("provider_rate_limited", "provider rate limited", True)
     if result.returncode < 0:
-        return ProviderFailure(
-            "provider_interrupted", "provider subprocess interrupted", True
-        )
+        return ProviderFailure("provider_interrupted", "provider subprocess interrupted", True)
     return None
 
 

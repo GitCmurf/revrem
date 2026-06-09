@@ -135,9 +135,10 @@ def test_untracked_paths_from_status_z_returns_paths_verbatim() -> None:
     from ``--porcelain`` to ``-z`` for the cleanliness check.
     """
     assert untracked_paths_from_status_z("") == []
-    assert untracked_paths_from_status_z(
-        "?? src/new.py\0?? tests/test_new.py\0"
-    ) == ["src/new.py", "tests/test_new.py"]
+    assert untracked_paths_from_status_z("?? src/new.py\0?? tests/test_new.py\0") == [
+        "src/new.py",
+        "tests/test_new.py",
+    ]
     assert untracked_paths_from_status_z("?? a b\0") == ["a b"]
     assert untracked_paths_from_status_z("?? back\\slash\0") == ["back\\slash"]
     assert untracked_paths_from_status_z('?? quote"file\0') == ['quote"file']
@@ -157,11 +158,11 @@ def test_untracked_paths_from_status_z_ignores_non_untracked_entries() -> None:
     even when they appear between untracked entries.
     """
     stdout = (
-        " M src/existing.py\0"      # modified, not untracked
-        "?? src/added.py\0"          # untracked
-        "D  src/removed.py\0"        # deleted, not untracked
-        "?? docs/note.md\0"          # untracked
-        "R  old.txt\0new.txt\0"      # renamed (3-part entry)
+        " M src/existing.py\0"  # modified, not untracked
+        "?? src/added.py\0"  # untracked
+        "D  src/removed.py\0"  # deleted, not untracked
+        "?? docs/note.md\0"  # untracked
+        "R  old.txt\0new.txt\0"  # renamed (3-part entry)
     )
     assert untracked_paths_from_status_z(stdout) == [
         "src/added.py",
@@ -181,9 +182,7 @@ def test_non_artifact_status_entries_from_status_z_filters_artifacts(tmp_path):
 
     entries = non_artifact_status_entries_from_status_z(
         config,
-        " M src/changed.py\0"
-        "?? .revrem/runs/r1/review-1.txt\0"
-        "?? docs/new note.md\0",
+        " M src/changed.py\0?? .revrem/runs/r1/review-1.txt\0?? docs/new note.md\0",
     )
 
     assert entries == (" M src/changed.py", "?? docs/new note.md")
@@ -194,8 +193,7 @@ def test_non_artifact_status_entries_from_status_z_handles_renames(tmp_path):
 
     entries = non_artifact_status_entries_from_status_z(
         config,
-        "R  src/new.py\0src/old.py\0"
-        "R  artifacts/new.txt\0artifacts/old.txt\0",
+        "R  src/new.py\0src/old.py\0R  artifacts/new.txt\0artifacts/old.txt\0",
     )
 
     assert entries == ("R  src/old.py -> src/new.py",)

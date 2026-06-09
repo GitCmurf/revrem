@@ -30,7 +30,14 @@ def test_command_result_is_homed_in_core_ports():
 
 
 def test_ports_surface_exposes_the_declared_protocols():
-    for name in ("Clock", "RunIdentity", "ProcessRunner", "EventSink", "RunContext", "ProgressReporter"):
+    for name in (
+        "Clock",
+        "RunIdentity",
+        "ProcessRunner",
+        "EventSink",
+        "RunContext",
+        "ProgressReporter",
+    ):
         assert hasattr(ports, name), f"core.ports missing {name}"
 
 
@@ -81,31 +88,52 @@ def test_protocols_are_runtime_importable_types():
 
 def test_b2a_harness_protocols_exported():
     for name in (
-        "ChecksHarness", "CommitHarness", "RemediationHarness", "TriageHarness", "ReviewHarness",
+        "ChecksHarness",
+        "CommitHarness",
+        "RemediationHarness",
+        "TriageHarness",
+        "ReviewHarness",
     ):
         assert hasattr(ports, name), f"core.ports missing B2a {name}"
 
 
 def test_b2a_phase_types_exported():
     for name in (
-        "ChecksRequest", "ChecksOutcome",
-        "CommitRequest", "CommitOutcome",
-        "RemediationRequest", "RemediationOutcome",
-        "TriageRequest", "TriageOutcome",
-        "ReviewRequest", "ReviewOutcome",
+        "ChecksRequest",
+        "ChecksOutcome",
+        "CommitRequest",
+        "CommitOutcome",
+        "RemediationRequest",
+        "RemediationOutcome",
+        "TriageRequest",
+        "TriageOutcome",
+        "ReviewRequest",
+        "ReviewOutcome",
     ):
         assert hasattr(ports, name), f"core.ports missing B2a {name}"
 
 
 def test_b2a_run_context_has_harness_fields():
     class _Clock:
-        def now(self): raise NotImplementedError
-        def monotonic(self): return 0.0
+        def now(self):
+            raise NotImplementedError
+
+        def monotonic(self):
+            return 0.0
+
     class _Identity:
-        def new_run_id(self): return "id"
+        def new_run_id(self):
+            return "id"
+
     def _runner(args, cwd, input_text=None, timeout_seconds=None):
         return CommandResult(list(args), 0)
 
     ctx = RunContext(clock=_Clock(), identity=_Identity(), runner=_runner, **phase_harness_kwargs())
-    for field in ("phase_checks", "phase_commit", "phase_remediation", "phase_triage", "phase_review"):
+    for field in (
+        "phase_checks",
+        "phase_commit",
+        "phase_remediation",
+        "phase_triage",
+        "phase_review",
+    ):
         assert getattr(ctx, field) is not None, f"RunContext.{field} should be required"

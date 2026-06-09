@@ -122,18 +122,16 @@ def test_opencode_debug_argv_is_well_formed(monkeypatch):
         )
     )
 
-    assert tuple(cmd[2 : 2 + len(harnesses.OPENCODE_DEBUG_ARGV)]) == (
-        harnesses.OPENCODE_DEBUG_ARGV
-    )
+    assert tuple(cmd[2 : 2 + len(harnesses.OPENCODE_DEBUG_ARGV)]) == (harnesses.OPENCODE_DEBUG_ARGV)
     argv = harnesses.OPENCODE_DEBUG_ARGV
     assert len(argv) >= 2, "OPENCODE_DEBUG_ARGV must contain at least one flag/value"
     for index, token in enumerate(argv[:-1]):
-        assert token.startswith(
-            "--"
-        ), f"OPENCODE_DEBUG_ARGV[{index}]={token!r} must be a long option"
-    assert not argv[-1].startswith(
-        "--"
-    ), f"OPENCODE_DEBUG_ARGV terminal value {argv[-1]!r} must be a bare token"
+        assert token.startswith("--"), (
+            f"OPENCODE_DEBUG_ARGV[{index}]={token!r} must be a long option"
+        )
+    assert not argv[-1].startswith("--"), (
+        f"OPENCODE_DEBUG_ARGV terminal value {argv[-1]!r} must be a bare token"
+    )
     assert harnesses.OPENCODE_DEBUG_ENV == "REVREM_OPENCODE_DEBUG"
 
 
@@ -189,9 +187,9 @@ def test_kilo_adapter_omits_auto_for_unsupported_full_auto_sandbox_combos():
         cmd = adapter.command(req)
         assert cmd[0] == "kilo"
         assert "run" in cmd
-        assert (
-            "--auto" not in cmd
-        ), f"--auto must be absent for full_auto={full_auto} sandbox={sandbox}"
+        assert "--auto" not in cmd, (
+            f"--auto must be absent for full_auto={full_auto} sandbox={sandbox}"
+        )
 
 
 def test_prompt_invocation_uses_stdin_for_claude():

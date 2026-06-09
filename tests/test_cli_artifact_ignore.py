@@ -16,6 +16,7 @@ config_command = import_module("code_review_loop.cli.commands.config")
 history_command = import_module("code_review_loop.cli.commands.history")
 suppress_command = import_module("code_review_loop.cli.commands.suppress")
 
+
 def test_default_artifact_dir_uses_revrem_namespace():
     artifact_dir = config_builder.default_artifact_dir()
 
@@ -232,5 +233,7 @@ def test_run_loop_falls_back_to_workspace_gitignore_for_symlinked_default_artifa
 
     runner_mod.run_loop(config, runner)
 
-    assert (workspace / "linked" / ".revrem" / ".gitignore").read_text(encoding="utf-8") == "runs/\n"
+    assert (workspace / "linked" / ".revrem" / ".gitignore").read_text(
+        encoding="utf-8"
+    ) == "runs/\n"
     assert (repo_git_info / "exclude").read_text(encoding="utf-8") == "# local excludes\n"

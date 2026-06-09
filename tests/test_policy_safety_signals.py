@@ -15,7 +15,9 @@ def test_deterministic_safety_signal_triggers_security_routing():
                 rule=(
                     profiles.TriageRoutingRule(
                         id="security-policy",
-                        when=profiles.TriageRoutingRuleWhen(safety_signals_any=("sensitive-domain:auth",)),
+                        when=profiles.TriageRoutingRuleWhen(
+                            safety_signals_any=("sensitive-domain:auth",)
+                        ),
                         then=profiles.TriageRoutingRuleThen(route="frontier"),
                     ),
                 ),
@@ -23,8 +25,8 @@ def test_deterministic_safety_signal_triggers_security_routing():
             routes={
                 "midtier": profiles.TriageRouteConfig(harness="codex", model="m1"),
                 "frontier": profiles.TriageRouteConfig(harness="codex", model="m2"),
-            }
-        )
+            },
+        ),
     )
 
     # Context with no security domain tags, but a deterministic safety signal
@@ -61,8 +63,8 @@ def test_failed_check_triggers_routing():
             routes={
                 "midtier": profiles.TriageRouteConfig(harness="codex", model="m1"),
                 "frontier": profiles.TriageRouteConfig(harness="codex", model="m2"),
-            }
-        )
+            },
+        ),
     )
 
     context = policy.RoutingContext(

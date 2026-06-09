@@ -1,4 +1,5 @@
 """Tests for ProgressReporter protocol and TerminalProgressReporter adapter (B4)."""
+
 from __future__ import annotations
 
 from support.fakes import FakeClock, FakeRunIdentity  # noqa: E402
@@ -46,6 +47,7 @@ def _make_config(tmp_path, *, progress: bool = True, progress_style: str = "comp
 # 1. RecordingReporter captures phase calls
 # ---------------------------------------------------------------------------
 
+
 def test_recording_reporter_captures_phase_calls():
     reporter = RecordingReporter()
     reporter.phase("review", "1", "start", "some detail")
@@ -59,6 +61,7 @@ def test_recording_reporter_captures_phase_calls():
 # ---------------------------------------------------------------------------
 # 2. progress_event delegates to reporter when injected
 # ---------------------------------------------------------------------------
+
 
 def test_progress_event_delegates_to_reporter_when_injected(tmp_path, capsys):
     reporter = RecordingReporter()
@@ -76,6 +79,7 @@ def test_progress_event_delegates_to_reporter_when_injected(tmp_path, capsys):
 # 3. progress_event falls back to legacy when ctx.progress_reporter is None
 # ---------------------------------------------------------------------------
 
+
 def test_progress_event_skips_reporter_when_none(tmp_path, capsys):
     ctx = _make_ctx(None)
     config = _make_config(tmp_path, progress=True, progress_style="compact")
@@ -90,6 +94,7 @@ def test_progress_event_skips_reporter_when_none(tmp_path, capsys):
 # ---------------------------------------------------------------------------
 # 4. TerminalProgressReporter compact style writes to stderr
 # ---------------------------------------------------------------------------
+
 
 def test_terminal_reporter_compact_style(tmp_path, capsys):
     reporter = TerminalProgressReporter("compact")
@@ -109,8 +114,10 @@ def test_terminal_reporter_compact_style_with_detail(tmp_path, capsys):
 # 5. TerminalProgressReporter rich style warns once per instance when unavailable
 # ---------------------------------------------------------------------------
 
+
 def test_terminal_reporter_rich_fallback_warns_once(monkeypatch, capsys):
     import code_review_loop.progress as prog
+
     monkeypatch.setattr(prog, "print_rich_event", lambda *a, **k: False)
 
     reporter = TerminalProgressReporter("rich")
@@ -125,8 +132,10 @@ def test_terminal_reporter_rich_fallback_warns_once(monkeypatch, capsys):
 # 6. Two separate instances each warn once independently
 # ---------------------------------------------------------------------------
 
+
 def test_terminal_reporter_rich_fallback_instance_isolation(monkeypatch, capsys):
     import code_review_loop.progress as prog
+
     monkeypatch.setattr(prog, "print_rich_event", lambda *a, **k: False)
 
     r1 = TerminalProgressReporter("rich")

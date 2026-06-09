@@ -15,9 +15,7 @@ from tests.support.fakes import FakeClock, FakeRunIdentity
 from tests.support.phase_harnesses import phase_harness_kwargs
 
 
-def make_git_worktree(
-    tmp_path: Path, cwd_rel: str | None = "work"
-) -> tuple[Path, Path]:
+def make_git_worktree(tmp_path: Path, cwd_rel: str | None = "work") -> tuple[Path, Path]:
     (tmp_path / ".git").mkdir(exist_ok=True)
     cwd = tmp_path if cwd_rel is None else tmp_path / cwd_rel
     cwd.mkdir(parents=True, exist_ok=True)
@@ -70,9 +68,7 @@ def test_loop_commits_after_passing_checks(tmp_path):
         if args[:3] == ["git", "diff", "--cached"] and "--name-only" in args:
             return CommandResult(list(args), 0, stdout="src/code.py\n")
         if args[0:2] == ["codex", "exec"] and "--sandbox" in args:
-            return CommandResult(
-                list(args), 0, stdout="fix(cli): harden RevRem commit flow\n"
-            )
+            return CommandResult(list(args), 0, stdout="fix(cli): harden RevRem commit flow\n")
         if args[:3] == ["git", "commit", "-m"]:
             return CommandResult(
                 list(args),
@@ -200,9 +196,7 @@ def test_run_commit_refuses_repo_root_artifact_dir_before_staging(tmp_path):
         commit_after_remediation=True,
     )
 
-    with pytest.raises(
-        RuntimeError, match="artifact-dir resolves to the repository root"
-    ):
+    with pytest.raises(RuntimeError, match="artifact-dir resolves to the repository root"):
         commit_impl.run_commit(config, runner, 1, ctx=make_run_context(runner))
 
     assert calls == [
@@ -248,16 +242,12 @@ def test_loop_skips_commit_when_checks_fail(tmp_path):
 
     assert summary["iterations"][0]["check_failures"] == 1
     assert "commit_status" not in summary["iterations"][0]
-    git_calls = [
-        command for command, _input_text, _timeout in calls if command[0] == "git"
-    ]
+    git_calls = [command for command, _input_text, _timeout in calls if command[0] == "git"]
     assert git_calls == [["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"]]
 
 
 def test_pytest_check_is_skipped_for_typescript_repo_without_python_surface(tmp_path):
-    (tmp_path / "package.json").write_text(
-        '{"scripts":{"test":"vitest"}}\n', encoding="utf-8"
-    )
+    (tmp_path / "package.json").write_text('{"scripts":{"test":"vitest"}}\n', encoding="utf-8")
     calls = []
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
@@ -273,25 +263,21 @@ def test_pytest_check_is_skipped_for_typescript_repo_without_python_surface(tmp_
         check_commands=("pytest -q",),
     )
 
-    results, _failed = checks_impl.run_checks(
-        config, runner, 1, make_run_context(runner)
-    )
+    results, _failed = checks_impl.run_checks(config, runner, 1, make_run_context(runner))
 
     assert calls == []
     assert results[1].returncode == 0
 
     assert "appears to be non-Python" in results[1].stdout
-    assert "SKIPPED adaptive check" in (
-        tmp_path / "artifacts" / "check-1-2.txt"
-    ).read_text(encoding="utf-8")
+    assert "SKIPPED adaptive check" in (tmp_path / "artifacts" / "check-1-2.txt").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_pytest_check_is_skipped_for_typescript_repo_with_incidental_python_file(
     tmp_path,
 ):
-    (tmp_path / "package.json").write_text(
-        '{"scripts":{"test":"vitest"}}\n', encoding="utf-8"
-    )
+    (tmp_path / "package.json").write_text('{"scripts":{"test":"vitest"}}\n', encoding="utf-8")
     (tmp_path / "helper.py").write_text("print('helper')\n", encoding="utf-8")
     calls = []
 
@@ -308,9 +294,7 @@ def test_pytest_check_is_skipped_for_typescript_repo_with_incidental_python_file
         check_commands=("pytest -q",),
     )
 
-    results, _failed = checks_impl.run_checks(
-        config, runner, 1, make_run_context(runner)
-    )
+    results, _failed = checks_impl.run_checks(config, runner, 1, make_run_context(runner))
 
     assert calls == []
     assert results[1].returncode == 0
@@ -323,13 +307,9 @@ def test_pytest_in_typescript_repo_is_normalized_when_subprocess_returns_non_pyt
     tmp_path,
     returncode,
 ):
-    (tmp_path / "package.json").write_text(
-        '{"scripts":{"test":"vitest"}}\n', encoding="utf-8"
-    )
+    (tmp_path / "package.json").write_text('{"scripts":{"test":"vitest"}}\n', encoding="utf-8")
     command = ["pytest", "-q"]
-    result = CommandResult(
-        command, returncode, stdout="pytest output\n", stderr="pytest error\n"
-    )
+    result = CommandResult(command, returncode, stdout="pytest output\n", stderr="pytest error\n")
 
     normalized = checks_impl.normalize_adaptive_check_result(command, tmp_path, result)
 
@@ -340,28 +320,20 @@ def test_pytest_in_typescript_repo_is_normalized_when_subprocess_returns_non_pyt
 
 
 def test_pytest_interrupt_is_preserved_for_typescript_repo(tmp_path):
-    (tmp_path / "package.json").write_text(
-        '{"scripts":{"test":"vitest"}}\n', encoding="utf-8"
-    )
+    (tmp_path / "package.json").write_text('{"scripts":{"test":"vitest"}}\n', encoding="utf-8")
     command = ["pytest", "-q"]
     result = CommandResult(command, 2, stdout="interrupted\n")
 
-    assert (
-        checks_impl.normalize_adaptive_check_result(command, tmp_path, result) is result
-    )
+    assert checks_impl.normalize_adaptive_check_result(command, tmp_path, result) is result
 
 
 def test_pytest_failure_is_preserved_for_python_repo(tmp_path):
-    (tmp_path / "pyproject.toml").write_text(
-        "[project]\nname='demo'\n", encoding="utf-8"
-    )
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='demo'\n", encoding="utf-8")
     command = ["pytest", "-q"]
     result = CommandResult(command, 5, stdout="no tests ran\n")
 
     assert checks_impl.adaptive_check_skip_reason(command, tmp_path) is None
-    assert (
-        checks_impl.normalize_adaptive_check_result(command, tmp_path, result) is result
-    )
+    assert checks_impl.normalize_adaptive_check_result(command, tmp_path, result) is result
 
 
 def test_loop_refuses_to_auto_commit_from_dirty_worktree(tmp_path):
@@ -408,9 +380,7 @@ def test_loop_stops_after_unknown_review_before_remediation_or_commit(
         if args[:5] == ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"]:
             return CommandResult(list(args), 0, stdout="")
         if args[0] == "codex" and "review" in args:
-            return CommandResult(
-                list(args), 0, stdout="The implementation appears sound.\n"
-            )
+            return CommandResult(list(args), 0, stdout="The implementation appears sound.\n")
         if args[0] == "pytest":
             return CommandResult(list(args), 0, stdout="1 passed\n")
         if args[:3] == ["git", "add", "-A"]:
@@ -488,16 +458,11 @@ def test_loop_writes_failure_summary_when_commit_fails(tmp_path):
     with pytest.raises(RunLoopFailed):
         runner_mod.run_loop(config, runner)
 
-    summary = json.loads(
-        (tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8")
-    )
+    summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
     assert summary["final_status"] == "error"
     assert summary["stopped_reason"] == "commit_failed"
     assert summary["iterations"][0]["commit_failed"] is True
-    assert (
-        str(tmp_path / "artifacts" / "commit-1.txt")
-        in summary["artifact_paths"]["commits"]
-    )
+    assert str(tmp_path / "artifacts" / "commit-1.txt") in summary["artifact_paths"]["commits"]
 
 
 def test_loop_remediates_commit_hook_failure_by_default(tmp_path):
@@ -568,10 +533,7 @@ def test_loop_remediates_commit_hook_failure_by_default(tmp_path):
     assert summary["commit_no_verify"] is False
     assert "Commit hook failure" in remediation_prompts[1]
     assert "Running mypy on staged Python files" in remediation_prompts[1]
-    assert (
-        str(tmp_path / "artifacts" / "commit-1.txt")
-        in summary["artifact_paths"]["commits"]
-    )
+    assert str(tmp_path / "artifacts" / "commit-1.txt") in summary["artifact_paths"]["commits"]
 
 
 def test_loop_stops_on_commit_hook_failure_when_policy_is_stop(tmp_path):
@@ -615,9 +577,7 @@ def test_loop_stops_on_commit_hook_failure_when_policy_is_stop(tmp_path):
     with pytest.raises(RunLoopFailed):
         runner_mod.run_loop(config, runner)
 
-    summary = json.loads(
-        (tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8")
-    )
+    summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
     assert summary["stopped_reason"] == "commit_hook_failed"
     assert summary["staged_changes_left"] is True
     assert summary["pending_check_failures"] is True
@@ -655,10 +615,7 @@ def test_run_commit_uses_no_verify_only_on_retry(tmp_path):
         commit_on_hook_failure="no-verify",
     )
 
-    assert (
-        commit_impl.run_commit(config, runner, 1, ctx=make_run_context(runner))
-        == "committed"
-    )
+    assert commit_impl.run_commit(config, runner, 1, ctx=make_run_context(runner)) == "committed"
     assert ["git", "commit", "-m", "chore(code): update code in src (RevRem)"] in calls
     assert [
         "git",
@@ -670,9 +627,7 @@ def test_run_commit_uses_no_verify_only_on_retry(tmp_path):
 
     calls.clear()
     assert (
-        commit_impl.run_commit(
-            config, runner, 1, ctx=make_run_context(runner), retrying=True
-        )
+        commit_impl.run_commit(config, runner, 1, ctx=make_run_context(runner), retrying=True)
         == "committed"
     )
     assert [

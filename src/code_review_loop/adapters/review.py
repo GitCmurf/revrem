@@ -123,9 +123,7 @@ def run_codex_review(
             raise RuntimeError(str(exc)) from exc
     prompt_metadata = phase_support.prompt_invocation_metadata(invocation)
     phase_support.set_phase_terminal_title(config, "review", display_label)
-    phase_support.ensure_model_budget(
-        config, phase="review", iteration=display_label, ctx=ctx
-    )
+    phase_support.ensure_model_budget(config, phase="review", iteration=display_label, ctx=ctx)
     phase_support.progress_event(
         config,
         "review",
@@ -144,9 +142,7 @@ def run_codex_review(
             prompt_context_chars=(
                 external_prompt.context_chars if external_prompt is not None else None
             ),
-            prompt_truncated=(
-                external_prompt.truncated if external_prompt is not None else None
-            ),
+            prompt_truncated=(external_prompt.truncated if external_prompt is not None else None),
         ),
         ctx=ctx,
         metadata={
@@ -186,9 +182,7 @@ def run_codex_review(
         config, result, phase="review", iteration=display_label, ctx=ctx
     )
     if review_failed_to_run(result, config.review_harness):
-        failure = provider_failures.classify_provider_failure(
-            result, harness=config.review_harness
-        )
+        failure = provider_failures.classify_provider_failure(result, harness=config.review_harness)
         failure_detail = f": {failure.detail}" if failure else ""
         phase_support.progress_event(
             config,
@@ -222,9 +216,7 @@ def run_codex_review(
     ):
         return status, result
     if status == "findings":
-        phase_support.log_review_summary_line(
-            config, display_label, combined, head="review: "
-        )
+        phase_support.log_review_summary_line(config, display_label, combined, head="review: ")
         phase_support.progress_event(config, "review", display_label, status, ctx=ctx)
     else:
         phase_support.progress_event(config, "review", display_label, status, ctx=ctx)
@@ -263,9 +255,7 @@ def run_review_with_retry(
     ctx: RunContext,
 ) -> CommandResult:
     attempts = (
-        config.provider_retry_attempts
-        if config.review_harness not in {"codex", "fake"}
-        else 1
+        config.provider_retry_attempts if config.review_harness not in {"codex", "fake"} else 1
     )
     last_result: CommandResult | None = None
     for attempt in range(1, attempts + 1):
@@ -282,9 +272,7 @@ def run_review_with_retry(
             prompt_artifact=prompt_artifact,
         )
         last_result = result
-        failure = provider_failures.classify_provider_failure(
-            result, harness=config.review_harness
-        )
+        failure = provider_failures.classify_provider_failure(result, harness=config.review_harness)
         if (
             not review_failed_to_run(result, config.review_harness)
             or failure is None
@@ -362,7 +350,9 @@ def compose_external_review_prompt(
     prompt_head = f"{phase_support.DEFAULT_REVIEW_PROMPT}\n\n"
     prompt_tail = f"\n\n{EXTERNAL_REVIEW_PROMPT_TAIL}"
     if config.external_review_input_chars < len(prompt_head) + len(prompt_tail):
-        raise ValueError(f"external_review_input_chars ({config.external_review_input_chars}) is too small for mandatory prompt scaffolding ({len(prompt_head) + len(prompt_tail)} chars).")
+        raise ValueError(
+            f"external_review_input_chars ({config.external_review_input_chars}) is too small for mandatory prompt scaffolding ({len(prompt_head) + len(prompt_tail)} chars)."
+        )
     original_prompt_chars = len(prompt_head) + len(review_context) + len(prompt_tail)
     available_context_chars = (
         config.external_review_input_chars - len(prompt_head) - len(prompt_tail)
@@ -373,9 +363,7 @@ def compose_external_review_prompt(
     )
     prompt = f"{prompt_head}{trimmed_context}{prompt_tail}"
     if len(prompt) > config.external_review_input_chars:
-        prompt = prompts_composer.trim_for_prompt(
-            prompt, config.external_review_input_chars
-        )
+        prompt = prompts_composer.trim_for_prompt(prompt, config.external_review_input_chars)
         actual_head_len = _leading_match_length(prompt, prompt_head)
         actual_tail_len = _trailing_match_length(prompt, prompt_tail)
         if actual_head_len + actual_tail_len <= len(prompt):
@@ -435,13 +423,9 @@ def build_external_review_context(
         diff_name_status = cached_diff_base_head(
             git_context_cache, config.cwd, head_sha, config.base, name_status=True
         )
-        diff_full = cached_diff_base_head(
-            git_context_cache, config.cwd, head_sha, config.base
-        )
+        diff_full = cached_diff_base_head(git_context_cache, config.cwd, head_sha, config.base)
     else:
-        diff_stat = run_git_preflight(
-            config.cwd, ["diff", "--stat", f"{config.base}...HEAD"]
-        )
+        diff_stat = run_git_preflight(config.cwd, ["diff", "--stat", f"{config.base}...HEAD"])
         diff_name_status = run_git_preflight(
             config.cwd, ["diff", "--name-status", f"{config.base}...HEAD"]
         )
@@ -568,9 +552,7 @@ def review_base_hint(config: LoopConfig, base: str) -> str:
         ["rev-parse", "--verify", f"{remote_base}^{{commit}}"],
     )
     if remote_base_result.returncode == 0:
-        remote_merge_base = run_git_preflight(
-            config.cwd, ["merge-base", "HEAD", remote_base]
-        )
+        remote_merge_base = run_git_preflight(config.cwd, ["merge-base", "HEAD", remote_base])
         if remote_merge_base.returncode == 0:
             return (
                 f"Hint: {remote_base!r} does share history with HEAD. "
@@ -598,9 +580,10 @@ def review_failed_to_run(result: CommandResult, harness: str) -> bool:
         return True
     if result.returncode >= 2:
         return True
-    if detect_review_status(
-        phase_support._combined_output(result), harness=harness
-    ) in {"clear", "findings"}:
+    if detect_review_status(phase_support._combined_output(result), harness=harness) in {
+        "clear",
+        "findings",
+    }:
         return False
     if provider_failures.classify_provider_failure(result, harness=harness) is not None:
         return True

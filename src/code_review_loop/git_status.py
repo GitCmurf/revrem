@@ -30,8 +30,7 @@ def is_artifact_status_line(config: LoopConfig, line: str) -> bool:
         return True
     artifact_roots = _artifact_roots(config)
     return all(
-        any(_is_under_path_root(part, root) for root in artifact_roots)
-        for part in path_parts
+        any(_is_under_path_root(part, root) for root in artifact_roots) for part in path_parts
     )
 
 

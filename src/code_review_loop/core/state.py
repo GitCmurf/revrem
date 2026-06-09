@@ -121,7 +121,9 @@ class RunState:
             self.latest_review_excerpt = outcome.excerpt
 
         if isinstance(outcome, OutcomeClear):
-            self.mark_clear(outcome.reason, suppressed_findings_count=outcome.suppressed_findings_count)
+            self.mark_clear(
+                outcome.reason, suppressed_findings_count=outcome.suppressed_findings_count
+            )
             return
         if isinstance(outcome, OutcomeFailed):
             self.mark_failed(

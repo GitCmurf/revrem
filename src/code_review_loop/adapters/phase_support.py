@@ -134,9 +134,7 @@ class CommitFailed(RuntimeError):
         artifact_path: Path,
         output: str,
     ):
-        super().__init__(
-            f"git commit failed for iteration {iteration}; see {artifact_path}"
-        )
+        super().__init__(f"git commit failed for iteration {iteration}; see {artifact_path}")
         self.iteration = iteration
         self.kind = kind
         self.artifact_path = artifact_path
@@ -165,9 +163,7 @@ def write_artifact(path: Path, content: str) -> None:
 
 
 def _resolve_executable(harness: str, config: LoopConfig) -> str:
-    return harnesses.resolve_executable(
-        harness, config.harness_executables, config.codex_bin
-    )
+    return harnesses.resolve_executable(harness, config.harness_executables, config.codex_bin)
 
 
 def build_commit_message_command(config: LoopConfig) -> list[str]:
@@ -198,9 +194,7 @@ def ensure_model_budget(
 ) -> None:
     if ctx.budget_state is None:
         return
-    warning_due, elapsed = budgets.wall_warning_due(
-        config.budget_config, ctx.budget_state
-    )
+    warning_due, elapsed = budgets.wall_warning_due(config.budget_config, ctx.budget_state)
     if warning_due:
         ctx.budget_state.wall_warning_emitted = True
         if ctx.event_sink is not None:
@@ -257,9 +251,7 @@ def record_model_charge(
         "usd": str(result.usd) if result.usd is not None else None,
     }
     if ctx.event_sink is not None:
-        ctx.event_sink.emit(
-            "cost_charge", phase=phase, iteration=iteration, payload=payload
-        )
+        ctx.event_sink.emit("cost_charge", phase=phase, iteration=iteration, payload=payload)
     try:
         budgets.record_charge(
             config.budget_config,
@@ -294,9 +286,7 @@ def compact_progress_label(label: str) -> str:
 
 
 def compact_progress_prefix(phase: str, label: str) -> str:
-    timestamp = datetime.now().strftime(
-        "%H:%M:%S"
-    )  # det-exempt: human-display timestamp
+    timestamp = datetime.now().strftime("%H:%M:%S")  # det-exempt: human-display timestamp
     phase_code = PROGRESS_PHASE_CODES.get(phase, phase[:3])
     return f"{timestamp}|{phase_code:<3}|{compact_progress_label(label):<4}|"
 
@@ -343,9 +333,7 @@ def wrap_progress_text(
     return lines
 
 
-def print_compact_progress(
-    phase: str, label: str, text: str, *, head: str = ""
-) -> None:
+def print_compact_progress(phase: str, label: str, text: str, *, head: str = "") -> None:
     prefix = compact_progress_prefix(phase, label)
     for line in wrap_progress_text(prefix, text, head=head):
         print(line, file=sys.stderr, flush=True)
@@ -456,9 +444,7 @@ def progress_event(
             return
         warn_rich_unavailable(phase, label)
         if detail:
-            print_compact_progress(
-                phase, label, one_line_progress_text(detail), head=f"{status}: "
-            )
+            print_compact_progress(phase, label, one_line_progress_text(detail), head=f"{status}: ")
         else:
             print_compact_progress(phase, label, status)
         return
@@ -467,9 +453,7 @@ def progress_event(
         progress_log(config, f"{phase} {label}: {status}{suffix}")
         return
     if detail:
-        print_compact_progress(
-            phase, label, one_line_progress_text(detail), head=f"{status}: "
-        )
+        print_compact_progress(phase, label, one_line_progress_text(detail), head=f"{status}: ")
     else:
         print_compact_progress(phase, label, status)
 
@@ -493,9 +477,7 @@ def resolved_phase_detail(
     if model:
         fields.append(model)
     if reasoning_effort:
-        effort = (
-            reasoning_effort if harnesses.reasoning_effort_supported(harness) else "n/a"
-        )
+        effort = reasoning_effort if harnesses.reasoning_effort_supported(harness) else "n/a"
         fields.append(f"{effort} effort")
     if timeout_seconds is not None:
         fields.append(f"timeout={timeout_seconds:g}")
@@ -507,8 +489,7 @@ def resolved_phase_detail(
         prompt_field = "prompt="
         if prompt_truncated and prompt_context_chars is not None:
             prompt_field += (
-                f"{format_char_count(prompt_chars)}/"
-                f"{format_char_count(prompt_context_chars)}"
+                f"{format_char_count(prompt_chars)}/{format_char_count(prompt_context_chars)}"
             )
         else:
             prompt_field += format_char_count(prompt_chars)
@@ -590,9 +571,7 @@ def run_with_waiting_progress(
     ctx: RunContext,
     prompt_artifact: Path | None = None,
 ) -> CommandResult:
-    prompt_detail = (
-        f" · prompt={prompt_artifact.name}" if prompt_artifact is not None else ""
-    )
+    prompt_detail = f" · prompt={prompt_artifact.name}" if prompt_artifact is not None else ""
 
     def report(elapsed_seconds: float) -> None:
         metadata: dict[str, Any] = {"elapsed_seconds": round(elapsed_seconds, 3)}
@@ -712,9 +691,7 @@ def log_review_summary_line(
     return True
 
 
-def log_review_findings(
-    config: LoopConfig, label: str, output: str, ctx: RunContext
-) -> bool:
+def log_review_findings(config: LoopConfig, label: str, output: str, ctx: RunContext) -> bool:
     blocks = extract_finding_blocks(output)
     if not blocks:
         return False
@@ -727,9 +704,7 @@ def log_review_findings(
         else:
             log_review_summary_line(config, label, output, head="issue: ")
     else:
-        progress_event(
-            config, "review", label, f"findings-summary ({len(blocks)})", ctx=ctx
-        )
+        progress_event(config, "review", label, f"findings-summary ({len(blocks)})", ctx=ctx)
     for block in blocks:
         priority, title = strip_finding_priority(block[0])
         print_progress_message(config, "review", label, title, head=f"{priority:<7}")
@@ -769,9 +744,7 @@ def sanitize_commit_message(
     if subject:
         return subject
     return (
-        normalize_revrem_conventional_subject(fallback)
-        if enforce_revrem_conventional
-        else fallback
+        normalize_revrem_conventional_subject(fallback) if enforce_revrem_conventional else fallback
     )
 
 

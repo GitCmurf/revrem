@@ -70,7 +70,7 @@ def test_read_history_skips_malformed_lines(tmp_path):
         "\n".join(
             [
                 json.dumps({"run_id": "old"}),
-                "{\"run_id\":",
+                '{"run_id":',
                 json.dumps({"run_id": "new"}),
             ]
         )

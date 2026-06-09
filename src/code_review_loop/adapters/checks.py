@@ -120,7 +120,9 @@ def all_failed_checks_are_revrem_timeouts(results: Sequence[CommandResult]) -> b
     failed = [result for result in results if result.returncode != 0]
     if not failed:
         return False
-    return all("Command timed out after " in phase_support._combined_output(result) for result in failed)
+    return all(
+        "Command timed out after " in phase_support._combined_output(result) for result in failed
+    )
 
 
 def run_worktree_cleanliness_check(
@@ -255,9 +257,7 @@ def _cleanliness_check_untracked_no_commit(
         "context is built from ``git diff`` so these paths would be omitted "
         "from the reviewed patch. Remove scratch files, explicitly stage "
         "legitimate new files, or re-run with ``--commit`` to let RevRem "
-        "stage them. The following untracked paths must be accounted for:\n"
-        + listed
-        + "\n"
+        "stage them. The following untracked paths must be accounted for:\n" + listed + "\n"
     )
     return CommandResult(command, 1, stdout=summary, stderr=stderr)
 
@@ -399,7 +399,9 @@ def run_checks(
 
     for index, check in enumerate(config.check_commands, start=2):
         command = shlex.split(check)
-        phase_support.progress_event(config, "check", f"{display_prefix}.{index}", "start", check, ctx=ctx)
+        phase_support.progress_event(
+            config, "check", f"{display_prefix}.{index}", "start", check, ctx=ctx
+        )
         adaptive_skip = adaptive_check_skip_reason(command, config.cwd)
         if adaptive_skip:
             result = CommandResult(
@@ -414,7 +416,10 @@ def run_checks(
             # remediation-specific timeout, so remediation tuning does not make
             # verification commands spuriously fail or run forever.
             result = runner(
-                command, config.cwd, None, phase_support.phase_timeout_seconds(config, config.timeout_seconds)
+                command,
+                config.cwd,
+                None,
+                phase_support.phase_timeout_seconds(config, config.timeout_seconds),
             )
             result = normalize_adaptive_check_result(command, config.cwd, result)
         results.append(result)
@@ -436,10 +441,17 @@ def run_checks(
             )
         if result.returncode == 0 and result.stdout.startswith("SKIPPED adaptive check:"):
             phase_support.progress_event(
-                config, "check", f"{display_prefix}.{index}", "skipped", result.stdout.strip(), ctx=ctx
+                config,
+                "check",
+                f"{display_prefix}.{index}",
+                "skipped",
+                result.stdout.strip(),
+                ctx=ctx,
             )
         elif result.returncode == 0:
-            phase_support.progress_event(config, "check", f"{display_prefix}.{index}", "passed", ctx=ctx)
+            phase_support.progress_event(
+                config, "check", f"{display_prefix}.{index}", "passed", ctx=ctx
+            )
         else:
             phase_support.progress_event(
                 config,
@@ -450,9 +462,7 @@ def run_checks(
                 ctx=ctx,
             )
     command_names = (cleanliness_check, *config.check_commands)
-    failed_commands = [
-        command_names[i] for i, r in enumerate(results) if r.returncode != 0
-    ]
+    failed_commands = [command_names[i] for i, r in enumerate(results) if r.returncode != 0]
     return results, failed_commands
 
 

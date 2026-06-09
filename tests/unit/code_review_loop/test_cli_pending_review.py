@@ -41,7 +41,9 @@ def test_apply_pending_review_choice_prompt(monkeypatch):
     # Simulate an incompatible candidate
     monkeypatch.setattr(cli_main, "_pending_review_candidate", lambda c: None)
     incompatible_candidate = MagicMock()
-    monkeypatch.setattr(cli_main, "_pending_review_candidate_ignoring_git", lambda c: incompatible_candidate)
+    monkeypatch.setattr(
+        cli_main, "_pending_review_candidate_ignoring_git", lambda c: incompatible_candidate
+    )
 
     # Ensure sys.stdin.isatty and sys.stdout.isatty return True (interactive)
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)

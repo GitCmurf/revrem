@@ -7,7 +7,10 @@ from code_review_loop.core import engine
 
 def test_behaviour_ledger_covers_current_engine_adt() -> None:
     ledger = (
-        Path(__file__).resolve().parents[1] / "docs" / "05-planning" / "behaviour-ledger-task-003.md"
+        Path(__file__).resolve().parents[1]
+        / "docs"
+        / "05-planning"
+        / "behaviour-ledger-task-003.md"
     ).read_text(encoding="utf-8")
 
     expected_names = (

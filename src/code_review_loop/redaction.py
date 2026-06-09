@@ -139,9 +139,12 @@ def _redact_detect_secrets_findings(text: str) -> tuple[str, int]:
                 continue
             if not secret_value or secret_value.startswith("[REDACTED:"):
                 continue
-            redacted, replacements = redacted.replace(
-                secret_value,
-                "[REDACTED:detect-secrets]",
-            ), redacted.count(secret_value)
+            redacted, replacements = (
+                redacted.replace(
+                    secret_value,
+                    "[REDACTED:detect-secrets]",
+                ),
+                redacted.count(secret_value),
+            )
             count += replacements
     return redacted, count

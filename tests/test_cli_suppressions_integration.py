@@ -26,19 +26,22 @@ def test_suppress_cli_add_check_remove_round_trip(tmp_path, monkeypatch, capsys)
     (tmp_path / ".git").mkdir()
     monkeypatch.setenv("REVREM_SUPPRESSION_ACTOR", "tester")
 
-    assert cli_main.main(
-        [
-            "suppress",
-            "add",
-            "f1:abc123",
-            "--summary",
-            "Accepted finding",
-            "--rationale",
-            "Tracked in issue 123.",
-            "--severity",
-            "medium",
-        ]
-    ) == 0
+    assert (
+        cli_main.main(
+            [
+                "suppress",
+                "add",
+                "f1:abc123",
+                "--summary",
+                "Accepted finding",
+                "--rationale",
+                "Tracked in issue 123.",
+                "--severity",
+                "medium",
+            ]
+        )
+        == 0
+    )
     assert cli_main.main(["suppress", "check", "f1:abc123"]) == 0
     assert cli_main.main(["suppress", "remove", "f1:abc123"]) == 0
     assert cli_main.main(["suppress", "check", "f1:abc123"]) == 2
@@ -82,9 +85,7 @@ def test_doctor_warns_about_expired_and_unsupported_suppressions(tmp_path, monke
     assert "revrem.suppressions.unsupported_fingerprint_version" in output
 
 
-def test_doctor_warns_about_unreadable_optional_suppression_state(
-    tmp_path, monkeypatch, capsys
-):
+def test_doctor_warns_about_unreadable_optional_suppression_state(tmp_path, monkeypatch, capsys):
     repo = tmp_path / "repo"
     repo.mkdir()
     run_git(repo, "init", "-b", "main")
@@ -106,7 +107,9 @@ def test_doctor_warns_about_unreadable_optional_suppression_state(
 
     monkeypatch.setattr(suppressions, "stale_entries", fake_stale_entries)
 
-    exit_code = cli_main.main(["doctor", "--base", "HEAD", "--codex-bin", "git", "--format", "json"])
+    exit_code = cli_main.main(
+        ["doctor", "--base", "HEAD", "--codex-bin", "git", "--format", "json"]
+    )
 
     captured = capsys.readouterr()
     payload = json.loads(captured.out)

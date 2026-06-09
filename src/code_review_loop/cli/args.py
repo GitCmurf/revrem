@@ -31,15 +31,9 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
             "  revrem --profile dogfood --no-allow-model-escalation\n"
         ),
     )
-    parser.add_argument(
-        "--version", action="version", version=f"%(prog)s {__version__}"
-    )
-    parser.add_argument(
-        "--profile", default=None, help="Named profile from RevRem TOML config."
-    )
-    parser.add_argument(
-        "--base", default=None, help="Base branch passed to codex review."
-    )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument("--profile", default=None, help="Named profile from RevRem TOML config.")
+    parser.add_argument("--base", default=None, help="Base branch passed to codex review.")
     parser.add_argument(
         "--max-iterations",
         type=int,
@@ -92,10 +86,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         "--remediate-harness",
         dest="remediation_harness",
         default=None,
-        help=(
-            "Optional harness override for remediation only. "
-            "Alias: --remediate-harness."
-        ),
+        help=("Optional harness override for remediation only. Alias: --remediate-harness."),
     )
     parser.add_argument(
         "--remediation-model",
@@ -551,9 +542,7 @@ def parse_config_args(argv: Sequence[str]) -> argparse.Namespace:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     list_parser = subparsers.add_parser("list", help="List available profiles.")
-    list_parser.add_argument(
-        "--format", choices=("text", "json"), default=argparse.SUPPRESS
-    )
+    list_parser.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)
     show = subparsers.add_parser("show", help="Show a resolved profile.")
     show.add_argument("name")
     show.add_argument("--format", choices=("toml", "json"), default=argparse.SUPPRESS)
@@ -583,9 +572,7 @@ def parse_config_args(argv: Sequence[str]) -> argparse.Namespace:
     edit = subparsers.add_parser("edit", help="Open the owning config file in $EDITOR.")
     edit.add_argument("name")
 
-    clone = subparsers.add_parser(
-        "clone", help="Clone a resolved profile into the user config."
-    )
+    clone = subparsers.add_parser("clone", help="Clone a resolved profile into the user config.")
     clone.add_argument("source")
     clone.add_argument("target")
     clone.add_argument("--force", action="store_true")
@@ -609,9 +596,7 @@ def parse_config_args(argv: Sequence[str]) -> argparse.Namespace:
     import_parser.add_argument("path")
     import_parser.add_argument("--force", action="store_true")
 
-    doctor = subparsers.add_parser(
-        "doctor", help="Show config paths and merge diagnostics."
-    )
+    doctor = subparsers.add_parser("doctor", help="Show config paths and merge diagnostics.")
     doctor.add_argument("--profile", default=None)
     doctor.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)
     return parser.parse_args(argv)
@@ -627,9 +612,7 @@ def parse_history_args(argv: Sequence[str]) -> argparse.Namespace:
 
     list_parser = subparsers.add_parser("list", help="List recent runs.")
     list_parser.add_argument("--limit", type=int, default=10)
-    list_parser.add_argument(
-        "--format", choices=("text", "json"), default=argparse.SUPPRESS
-    )
+    list_parser.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)
     return parser.parse_args(argv)
 
 
@@ -642,18 +625,12 @@ def parse_doctor_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument(
         "--strict", action="store_true", help="Exit non-zero when warnings are present."
     )
-    parser.add_argument(
-        "--profile", default=None, help="Resolve defaults from a named profile."
-    )
+    parser.add_argument("--profile", default=None, help="Resolve defaults from a named profile.")
     parser.add_argument(
         "--base", default=None, help="Base ref to validate. Defaults to profile/main."
     )
-    parser.add_argument(
-        "--codex-bin", default=None, help="Codex executable path/name to validate."
-    )
-    parser.add_argument(
-        "--artifact-dir", default=None, help="Artifact directory to validate."
-    )
+    parser.add_argument("--codex-bin", default=None, help="Codex executable path/name to validate.")
+    parser.add_argument("--artifact-dir", default=None, help="Artifact directory to validate.")
     parser.add_argument(
         "--check",
         action="append",
@@ -692,9 +669,7 @@ def parse_resume_args(argv: Sequence[str]) -> argparse.Namespace:
         prog="revrem resume",
         description="Validate whether a previous RevRem run is safe to resume.",
     )
-    parser.add_argument(
-        "run_dir", help="Run directory containing summary.json and events.jsonl."
-    )
+    parser.add_argument("run_dir", help="Run directory containing summary.json and events.jsonl.")
     parser.add_argument("--format", choices=("text", "json"), default="text")
     return parser.parse_args(argv)
 
@@ -720,9 +695,7 @@ def parse_suppress_args(argv: Sequence[str]) -> argparse.Namespace:
     remove = subparsers.add_parser("remove", help="Remove a suppression.")
     remove.add_argument("fingerprint")
 
-    check = subparsers.add_parser(
-        "check", help="Exit 0 when a fingerprint is suppressed."
-    )
+    check = subparsers.add_parser("check", help="Exit 0 when a fingerprint is suppressed.")
     check.add_argument("fingerprint")
 
     subparsers.add_parser("list", help="List suppressions.")
@@ -748,9 +721,7 @@ def parse_policy_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--format", choices=("text", "json"), default=None)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    lint = subparsers.add_parser(
-        "lint", help="Lint routing rules and routes in a profile."
-    )
+    lint = subparsers.add_parser("lint", help="Lint routing rules and routes in a profile.")
     lint.add_argument("--profile", required=True)
     lint.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)
     lint.add_argument(
@@ -758,9 +729,7 @@ def parse_policy_args(argv: Sequence[str]) -> argparse.Namespace:
         action="store_true",
         help="Validate route fallback chains for implemented harness support even when routing is disabled.",
     )
-    review = subparsers.add_parser(
-        "review", help="Summarize routing outcomes from run artifacts."
-    )
+    review = subparsers.add_parser("review", help="Summarize routing outcomes from run artifacts.")
     review.add_argument("--artifact-dir", required=True)
     review.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)
     return parser.parse_args(argv)
@@ -779,7 +748,5 @@ def parse_triage_args(argv: Sequence[str]) -> argparse.Namespace:
     )
     explain.add_argument("run_dir")
     explain.add_argument("--iteration", type=int, default=1)
-    explain.add_argument(
-        "--format", choices=("text", "json"), default=argparse.SUPPRESS
-    )
+    explain.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)
     return parser.parse_args(argv)

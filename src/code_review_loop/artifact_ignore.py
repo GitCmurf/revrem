@@ -58,7 +58,11 @@ def _exclusive_lock_file(path: Path, *, timeout_seconds: float = 5.0) -> Iterato
 
 
 def ensure_default_artifact_ignore(config: LoopConfig) -> None:
-    artifact_dir = config.artifact_dir if config.artifact_dir.is_absolute() else config.cwd / config.artifact_dir
+    artifact_dir = (
+        config.artifact_dir
+        if config.artifact_dir.is_absolute()
+        else config.cwd / config.artifact_dir
+    )
     default_runs_dir = config.cwd / ".revrem" / "runs"
     try:
         artifact_dir.relative_to(default_runs_dir)

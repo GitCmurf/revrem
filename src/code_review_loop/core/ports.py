@@ -94,6 +94,7 @@ class ProcessRunner(Protocol):
 # B2a — per-phase request / outcome value types
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class ChecksRequest:
     """Inputs for one checks phase invocation."""
@@ -184,6 +185,7 @@ class ReviewOutcome:
 # Per-phase harness Protocols. Each adapter closes over LoopConfig in
 # __init__; request types carry only per-call variance.
 # ---------------------------------------------------------------------------
+
 
 class ChecksHarness(Protocol):
     """Executes the checks phase."""

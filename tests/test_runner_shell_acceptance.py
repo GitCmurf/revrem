@@ -247,7 +247,9 @@ def test_runner_shell_dense_commit_hook_retry_path_fits_step_budget(tmp_path: Pa
     remediation = RecordingRemediationHarness()
     checks = SequencedChecksHarness([(), ()])
     commit = HookRetryCommitHarness(config.artifact_dir / "commit-1.txt")
-    ctx, sink = _context(config, review=review, remediation=remediation, checks=checks, commit=commit)
+    ctx, sink = _context(
+        config, review=review, remediation=remediation, checks=checks, commit=commit
+    )
     clock = ctx.clock
     try:
         state = _state(config)
@@ -271,7 +273,10 @@ def test_runner_shell_dense_commit_hook_retry_path_fits_step_budget(tmp_path: Pa
     assert len(remediation.calls) == 2
     assert "Commit hook failure" in remediation.calls[1].remediation_input
     assert "Running mypy" in remediation.calls[1].remediation_input
-    assert [iteration["commit_status"] for iteration in state.iterations] == ["hook_failed", "committed"]
+    assert [iteration["commit_status"] for iteration in state.iterations] == [
+        "hook_failed",
+        "committed",
+    ]
 
 
 def test_runner_shell_stops_before_remediation_when_worktree_changes_during_review(

@@ -65,7 +65,10 @@ def run_stale_validation(
     import time
 
     from code_review_loop.adapters.review import review_failed_to_run
-    attempts = config.provider_retry_attempts if config.review_harness not in {"codex", "fake"} else 1
+
+    attempts = (
+        config.provider_retry_attempts if config.review_harness not in {"codex", "fake"} else 1
+    )
     last_result = None
     for attempt in range(1, attempts + 1):
         result = phase_support.run_with_waiting_progress(
@@ -82,7 +85,11 @@ def run_stale_validation(
         )
         last_result = result
         failure = provider_failures.classify_provider_failure(result, harness=config.review_harness)
-        if not review_failed_to_run(result, config.review_harness) or failure is None or not failure.transient:
+        if (
+            not review_failed_to_run(result, config.review_harness)
+            or failure is None
+            or not failure.transient
+        ):
             break
         phase_support.write_artifact(
             config.artifact_dir / f"stale-validation-{iteration}-attempt-{attempt}.txt",
@@ -109,9 +116,7 @@ def run_stale_validation(
     )
     status = cast(StaleValidationStatus, stale_review.validation_status(combined))
     if result.returncode != 0:
-        failure = provider_failures.classify_provider_failure(
-            result, harness=config.review_harness
-        )
+        failure = provider_failures.classify_provider_failure(result, harness=config.review_harness)
         failure_detail = f": {failure.detail}" if failure else ""
         phase_support.progress_event(
             config,
@@ -134,10 +139,7 @@ def run_stale_validation(
             "missing or unknown stale-review status",
             ctx=ctx,
         )
-        raise RuntimeError(
-            "stale review validation returned unknown status; "
-            f"see {artifact_path}"
-        )
+        raise RuntimeError(f"stale review validation returned unknown status; see {artifact_path}")
     phase_support.progress_event(
         config,
         "stale-validation",

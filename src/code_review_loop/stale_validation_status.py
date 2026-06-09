@@ -39,9 +39,7 @@ def dirty_message(
     after_set = set(after)
     added = sorted(after_set - before_set)
     removed = sorted(before_set - after_set)
-    lines = [
-        "stale review validation emitted resolved marker but changed non-artifact git status"
-    ]
+    lines = ["stale review validation emitted resolved marker but changed non-artifact git status"]
     if added:
         lines.append("Added/changed status entries:")
         lines.extend(f"  + {entry}" for entry in added)

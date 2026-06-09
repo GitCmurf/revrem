@@ -17,7 +17,9 @@ from code_review_loop.core.ports import RunContext
 from code_review_loop.core.state import RunState
 
 
-def retry_after_checks(config: LoopConfig, ctx: RunContext, engine_state: EngineState) -> EngineState:
+def retry_after_checks(
+    config: LoopConfig, ctx: RunContext, engine_state: EngineState
+) -> EngineState:
     retry_count = engine_state.acc.inner_check_retry_count + 1
     progress_event(
         config,
@@ -30,7 +32,9 @@ def retry_after_checks(config: LoopConfig, ctx: RunContext, engine_state: Engine
     acc = replace(
         engine_state.acc,
         inner_check_retry_count=retry_count,
-        remediation_input=engine_state.acc.pending_check_failures + "\n\n" + engine_state.acc.remediation_input,
+        remediation_input=engine_state.acc.pending_check_failures
+        + "\n\n"
+        + engine_state.acc.remediation_input,
     )
     return replace(engine_state, acc=acc)
 
@@ -43,7 +47,9 @@ def retry_after_commit_hook(
     engine_state: EngineState,
     action: RetryViaCommitHook,
 ) -> EngineState:
-    commit_failed = engine_state.event.commit_failed if isinstance(engine_state.event, CommitDone) else None
+    commit_failed = (
+        engine_state.event.commit_failed if isinstance(engine_state.event, CommitDone) else None
+    )
     if not isinstance(commit_failed, CommitFailed):
         raise RuntimeError(action.hook_output)
     pending_check_failures = format_commit_hook_failure_for_remediation(commit_failed)
@@ -56,5 +62,7 @@ def retry_after_commit_hook(
         "hook output will feed next remediation",
         ctx=ctx,
     )
-    acc = replace(engine_state.acc, commit_retry=True, pending_check_failures=pending_check_failures)
+    acc = replace(
+        engine_state.acc, commit_retry=True, pending_check_failures=pending_check_failures
+    )
     return replace(engine_state, acc=acc, event=LoopStarted(), iteration=engine_state.iteration + 1)

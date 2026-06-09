@@ -177,7 +177,9 @@ def profile_routed_harnesses(profile: profiles.Profile) -> tuple[str, ...]:
 def load_initial_review(config: LoopConfig, ctx: RunContext) -> str:
     if config.initial_review_file is None:
         return ""
-    initial_review_output = actionable_review_output(config.initial_review_file.read_text(encoding="utf-8"))
+    initial_review_output = actionable_review_output(
+        config.initial_review_file.read_text(encoding="utf-8")
+    )
     write_artifact(config.artifact_dir / "review-initial.txt", initial_review_output + "\n")
     progress_event(config, "review", "initial", "loaded", str(config.initial_review_file), ctx=ctx)
     log_review_findings(config, "initial", initial_review_output, ctx=ctx)
