@@ -410,12 +410,6 @@ def review_status_diagnostics(
         status_source = "structured_findings"
     elif finding_lines:
         status_source = "codex_finding_bullet"
-    elif (
-        harness not in PROMPTED_REVIEW_HARNESSES
-        and clear_phrase_present
-        and not has_affirmative_issue_prose(actionable_output)
-    ):
-        status_source = "codex_clear_prose"
     elif any(marker in normalized for marker in (
         "review comment:",
         "review comments:",
@@ -431,6 +425,12 @@ def review_status_diagnostics(
         "no actionable findings",
     } for line in [l.strip().lower() for l in actionable_output.splitlines()]):
         status_source = "clear_lines"
+    elif (
+        harness not in PROMPTED_REVIEW_HARNESSES
+        and clear_phrase_present
+        and not has_affirmative_issue_prose(actionable_output)
+    ):
+        status_source = "codex_clear_prose"
     else:
         status_source = "none"
     return {
