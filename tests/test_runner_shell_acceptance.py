@@ -288,9 +288,9 @@ def test_runner_shell_stops_before_remediation_when_worktree_changes_during_revi
         {
             "rev-parse": CommandResult(["git", "rev-parse", "HEAD"], 0, stdout="start-head\n"),
             "status": CommandResult(
-                ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+                ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
                 0,
-                stdout=" M src/concurrent.py\n",
+                stdout=" M src/concurrent.py\x00",
             ),
         }
     )
@@ -337,7 +337,7 @@ def test_runner_shell_stops_before_remediation_when_head_moves_during_review(
         {
             "rev-parse": CommandResult(["git", "rev-parse", "HEAD"], 0, stdout="new-head\n"),
             "status": CommandResult(
-                ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+                ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
                 0,
                 stdout="",
             ),

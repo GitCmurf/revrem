@@ -203,7 +203,7 @@ class TestCommitAdapter:
                 return CommandResult(argv, 0, stdout=f"{head['value']}\n")
             if argv == ["git", "diff", "--cached", "--raw"]:
                 return CommandResult(argv, 0, stdout=cached_raw["value"])
-            if argv == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+            if argv == ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"]:
                 return CommandResult(argv, 0, stdout="")
             if argv[:2] == ["git", "commit"]:
                 commit_commands.append(argv)
@@ -269,7 +269,7 @@ class TestCommitAdapter:
                 return CommandResult(argv, 0, stdout="same-head\n")
             if argv == ["git", "diff", "--cached", "--raw"]:
                 return CommandResult(argv, 0, stdout=cached_raw["value"])
-            if argv == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+            if argv == ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"]:
                 return CommandResult(argv, 0, stdout="")
             cached_raw["value"] = ""
             return CommandResult(argv, 0, stdout="fix(core): invalid mutation (RevRem)\n")
@@ -376,10 +376,10 @@ class TestCommitMessageSideEffects:
         helper_path = repo / "commit-subject.txt"
         helper_path.write_text("fix(review): cleanup from subdir (RevRem)\n", encoding="utf-8")
 
-        status_outputs = iter(["", "?? commit-subject.txt\n"])
+        status_outputs = iter(["", "?? commit-subject.txt\x00"])
 
         def runner(args, cwd, input_text=None, timeout_seconds=None):
-            if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+            if args[:5] == ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"]:
                 return CommandResult(list(args), 0, stdout=next(status_outputs))
             return CommandResult(list(args), 0)
 
@@ -430,10 +430,10 @@ class TestCommitMessageSideEffects:
         decoy = subdir / "commit-subject.txt"
         decoy.write_text("decoy under subdir should be preserved\n", encoding="utf-8")
 
-        status_outputs = iter(["", "?? commit-subject.txt\n"])
+        status_outputs = iter(["", "?? commit-subject.txt\x00"])
 
         def runner(args, cwd, input_text=None, timeout_seconds=None):
-            if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+            if args[:5] == ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"]:
                 return CommandResult(list(args), 0, stdout=next(status_outputs))
             return CommandResult(list(args), 0)
 
@@ -476,10 +476,10 @@ class TestCommitMessageSideEffects:
             artifact_dir=artifact_dir,
         )
 
-        status_outputs = iter(["", "?? ../escape.txt\n"])
+        status_outputs = iter(["", "?? ../escape.txt\x00"])
 
         def runner(args, cwd, input_text=None, timeout_seconds=None):
-            if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+            if args[:5] == ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"]:
                 return CommandResult(list(args), 0, stdout=next(status_outputs))
             return CommandResult(list(args), 0)
 

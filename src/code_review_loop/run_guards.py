@@ -6,7 +6,7 @@ from code_review_loop.adapters.commit import git_worktree_status_command_for_com
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.engine import EngineState
 from code_review_loop.core.ports import RunContext
-from code_review_loop.git_status import non_artifact_status_lines
+from code_review_loop.git_status import non_artifact_status_entries_from_status_z
 from code_review_loop.repo_roots import lexical_git_repo_root
 
 
@@ -70,4 +70,4 @@ def current_non_artifact_status_lines(
     )
     if result.returncode != 0:
         raise RuntimeError("git worktree status check failed before remediation could start")
-    return non_artifact_status_lines(config, result.stdout)
+    return list(non_artifact_status_entries_from_status_z(config, result.stdout))

@@ -28,7 +28,7 @@ from code_review_loop.core.ports import (
     RunContext,
 )
 from code_review_loop.core.review_interpretation import actionable_review_output
-from code_review_loop.git_status import non_artifact_status_lines
+from code_review_loop.git_status import non_artifact_status_entries_from_status_z
 from code_review_loop.repo_roots import lexical_git_repo_root
 
 if TYPE_CHECKING:
@@ -54,7 +54,7 @@ def git_add_command_for_commit(_config: LoopConfig) -> list[str]:
 
 
 def git_worktree_status_command_for_commit(_config: LoopConfig) -> list[str]:
-    return ["git", "status", "--porcelain=v1", "--untracked-files=all"]
+    return ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"]
 
 
 def git_repo_root(config: LoopConfig, runner: Runner) -> Path | None:
@@ -518,7 +518,7 @@ def _commit_message_worktree_status(
     )
     if result.returncode != 0:
         return None
-    return set(non_artifact_status_lines(config, result.stdout))
+    return set(non_artifact_status_entries_from_status_z(config, result.stdout))
 
 
 def _commit_message_head(

@@ -1402,7 +1402,7 @@ def test_commit_message_for_staged_changes_removes_created_side_effect_file(
         commit_message_model="gpt-test-commit",
         timeout_seconds=30,
     )
-    status_outputs = iter(["", "?? commit-subject.txt\n"])
+    status_outputs = iter(["", "?? commit-subject.txt\x00"])
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[:4] == ["git", "diff", "--cached", "--stat"]:
@@ -1419,7 +1419,7 @@ def test_commit_message_for_staged_changes_removes_created_side_effect_file(
             return CommandResult(
                 list(args), 0, stdout=":100644 100644 old new M\tsrc/code_review_loop/review.py\n"
             )
-        if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+        if args[:5] == ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"]:
             return CommandResult(list(args), 0, stdout=next(status_outputs))
         if args[:2] == ["codex", "exec"]:
             (tmp_path / "commit-subject.txt").write_text(
@@ -1468,7 +1468,7 @@ def test_commit_message_for_staged_changes_aborts_on_tracked_side_effect(
         commit_message_model="gpt-test-commit",
         timeout_seconds=30,
     )
-    status_outputs = iter(["", " M src/code_review_loop/review.py\n"])
+    status_outputs = iter(["", " M src/code_review_loop/review.py\x00"])
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[:4] == ["git", "diff", "--cached", "--stat"]:
@@ -1485,7 +1485,7 @@ def test_commit_message_for_staged_changes_aborts_on_tracked_side_effect(
             return CommandResult(
                 list(args), 0, stdout=":100644 100644 old new M\tsrc/code_review_loop/review.py\n"
             )
-        if args[:4] == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+        if args[:5] == ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"]:
             return CommandResult(list(args), 0, stdout=next(status_outputs))
         if args[:2] == ["codex", "exec"]:
             return CommandResult(

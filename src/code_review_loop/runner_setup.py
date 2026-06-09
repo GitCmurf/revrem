@@ -33,7 +33,7 @@ from code_review_loop.core.ports import (
 from code_review_loop.core.review_interpretation import actionable_review_output
 from code_review_loop.core.state import RunState
 from code_review_loop.git_context_cache import GitContextCache
-from code_review_loop.git_status import non_artifact_status_lines
+from code_review_loop.git_status import non_artifact_status_entries_from_status_z
 from code_review_loop.identity import RunIdentity
 from code_review_loop.reporting import summary_budget_payload
 from code_review_loop.resume import resume_config_payload
@@ -59,7 +59,7 @@ def check_commit_cleanliness(config: LoopConfig, runner: Runner) -> None:
     )
     if status_result.returncode != 0:
         raise RuntimeError("git worktree status check failed before auto-commit could start")
-    dirty_lines = non_artifact_status_lines(config, status_result.stdout)
+    dirty_lines = list(non_artifact_status_entries_from_status_z(config, status_result.stdout))
     if dirty_lines:
         dirty_worktree = "\n".join(dirty_lines)
         raise RuntimeError(
