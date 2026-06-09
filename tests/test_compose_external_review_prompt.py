@@ -19,10 +19,9 @@ from code_review_loop.adapters.review import (
     EXTERNAL_REVIEW_PROMPT_TAIL,
     compose_external_review_prompt,
 )
-from code_review_loop.adapters import phase_support
-BASE_LEN = len(phase_support.DEFAULT_REVIEW_PROMPT) + len(EXTERNAL_REVIEW_PROMPT_TAIL) + 4
-
 from code_review_loop.config import LoopConfig
+
+BASE_LEN = len(phase_support.DEFAULT_REVIEW_PROMPT) + len(EXTERNAL_REVIEW_PROMPT_TAIL) + 4
 
 
 def _config(external_review_input_chars: int) -> LoopConfig:

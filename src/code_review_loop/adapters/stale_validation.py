@@ -63,6 +63,7 @@ def run_stale_validation(
         },
     )
     import time
+
     from code_review_loop.adapters.review import review_failed_to_run
     attempts = config.provider_retry_attempts if config.review_harness not in {"codex", "fake"} else 1
     last_result = None
