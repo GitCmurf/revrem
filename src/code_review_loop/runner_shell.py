@@ -272,8 +272,9 @@ class _RunnerEngineExecutor:
             engine_state,
             initial_review_output=self.initial_review_output,
         )
+        in_stale_preflight = validating_stale_review
         try:
-            if validating_stale_review:
+            if in_stale_preflight:
                 self.stale_review_status_before = stale_validation_status.non_artifact_status_snapshot(
                     self.config,
                     self.ctx,
@@ -285,7 +286,7 @@ class _RunnerEngineExecutor:
                 expected_head=self.expected_head,
             )
             rem_start_time = self.clock.monotonic()
-            if validating_stale_review:
+            if in_stale_preflight:
                 preflight = run_stale_preflight(
                     config=self.config,
                     ctx=self.ctx,
@@ -301,6 +302,7 @@ class _RunnerEngineExecutor:
                     self.state.iterations[-1]["stale_review_resolved"] = True
                     return replace(engine_state, acc=preflight.acc, event=RemediationDone())
                 self.state.iterations[-1]["stale_review_still_applies"] = True
+                in_stale_preflight = False
             rem_outcome = self.ctx.phase_remediation.execute(
                 RemediationRequest(
                     iteration=iteration,
@@ -337,12 +339,12 @@ class _RunnerEngineExecutor:
         except Exception as exc:
             self.cause = exc
             failure_reason: Literal["stale_validation_failed", "remediation_failed"] = (
-                "stale_validation_failed" if validating_stale_review else "remediation_failed"
+                "stale_validation_failed" if in_stale_preflight else "remediation_failed"
             )
             self.state.iterations[-1][failure_reason] = True
             emit_loop_failure_event(
                 self.config,
-                phase="stale-validation" if validating_stale_review else "remediate",
+                phase="stale-validation" if in_stale_preflight else "remediate",
                 iteration=iteration,
                 reason=failure_reason,
                 error=str(exc),
