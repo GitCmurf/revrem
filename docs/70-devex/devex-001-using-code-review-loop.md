@@ -3,8 +3,8 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.46'
-last_updated: '2026-06-07'
+version: '1.47'
+last_updated: '2026-06-10'
 owner: GitCmurf
 docops_version: '2.0'
 area: devex
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.46
-> **Last Updated:** 2026-06-07
+> **Version:** 1.47
+> **Last Updated:** 2026-06-10
 > **Type:** DEVEX
 > **Area:** devex
 > **Description:** Operator guide for the code-review-loop utility
@@ -49,6 +49,26 @@ automation, and backwards-compatible documentation.
 ## Content
 
 ### Install for local development
+
+For normal external use, install the published package:
+
+```bash
+pipx install revrem
+revrem --version
+```
+
+The PyPI package path was smoke-tested on 2026-06-10 by installing
+`revrem 0.3.2` into a clean temporary virtualenv and running `revrem --version`
+plus `revrem doctor --format json` in a clean temporary Git repository.
+
+If `pipx` is not available, use a managed Python environment:
+
+```bash
+python -m pip install revrem
+revrem --version
+```
+
+Use the source checkout workflow only when developing RevRem itself.
 
 From this repository:
 
@@ -220,6 +240,19 @@ the repository's native checks, for example:
 --check "pnpm run typecheck"
 --check "pnpm run lint"
 ```
+
+To inspect a target repository before writing a profile, use the read-only
+check suggestion command:
+
+```bash
+revrem checks suggest --format json
+```
+
+The command does not execute checks or edit profiles. It inspects repository
+markers such as `package.json`, Python project files, `.pre-commit-config.yaml`,
+`tox.ini`, `noxfile.py`, `Cargo.toml`, `go.mod`, and executable Git hooks, then
+returns suggested commands with source, phase, confidence, network/setup notes,
+and a short rationale.
 
 As a guardrail for shared profiles, RevRem treats a configured pytest command as
 not applicable when the target repository has Node/TypeScript project markers
@@ -1255,9 +1288,8 @@ The wrapper runs tests, `ruff check .`, `mypy src`, and DocOps checks when
 
 ## Release Dry Runs And Rollback
 
-RevRem is not published on PyPI until the release workflow has successfully
-completed the Trusted Publishing path. Maintainers validate the package path in
-three stages:
+RevRem is published on PyPI as `revrem`. Maintainers validate each future
+package release in three stages:
 
 1. `workflow_dispatch` dry run builds, checks, signs, attests, and uploads
    artifacts without publishing.
@@ -1285,6 +1317,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.47 | 2026-06-10 | Codex | Documented PyPI install smoke evidence and read-only check suggestions |
 | 1.46 | 2026-06-07 | Codex | Documented block-local stale-validation status parsing and fail-closed ambiguous validation |
 | 1.45 | 2026-06-07 | Codex | Documented read-only stale validation preflight and non-retryable provider model availability failures |
 | 1.44 | 2026-06-07 | Codex | Documented deterministic stale-validation no-edits guard and configurable provider retries |

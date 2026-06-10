@@ -19,6 +19,7 @@ cli_registry = import_module("code_review_loop.cli.commands.registry")
 
 _EXPECTED_SUBCOMMANDS = {
     "bundle-bug-report",
+    "checks",
     "config",
     "doctor",
     "history",
@@ -41,6 +42,7 @@ def test_registry_keys_match_documented_subcommands() -> None:
     ("name", "module_attr"),
     [
         ("bundle-bug-report", "bundle"),
+        ("checks", "checks"),
         ("config", "config"),
         ("doctor", "doctor"),
         ("history", "history"),

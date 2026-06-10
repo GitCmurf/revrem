@@ -14,6 +14,7 @@ def build_subcommand_registry() -> dict[str, Callable[[Sequence[str]], int]]:
     from code_review_loop import tui as _tui
     from code_review_loop.cli.commands import (
         bundle,
+        checks,
         config,
         doctor,
         history,
@@ -26,6 +27,7 @@ def build_subcommand_registry() -> dict[str, Callable[[Sequence[str]], int]]:
 
     return {
         "bundle-bug-report": bundle.main,
+        "checks": checks.main,
         "config": config.main,
         "doctor": doctor.main,
         "history": history.main,

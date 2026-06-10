@@ -55,6 +55,9 @@ This project follows Semantic Versioning once public releases begin.
   set `--external-review-truncation-policy fail` or
   `runtime.external_review_truncation_policy = "fail"` to stop before a
   non-Codex review provider receives a truncated review prompt.
+- `revrem checks suggest` now inspects repository markers without executing
+  commands and returns structured check suggestions for profile authoring,
+  including source, phase, confidence, and network/setup notes.
 - Remediation/check hardening now supports bounded inner remediation-check
   retries via `runtime.inner_check_retries` / `--inner-check-retries`. The
   dogfood profile enables one retry so post-remediation check failures can be

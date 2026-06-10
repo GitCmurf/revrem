@@ -627,6 +627,21 @@ def parse_history_args(argv: Sequence[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def parse_checks_args(argv: Sequence[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="revrem checks",
+        description="Suggest repository verification commands without executing them.",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    suggest = subparsers.add_parser(
+        "suggest",
+        help="Inspect repository markers and suggest verification commands.",
+    )
+    suggest.add_argument("--format", choices=("text", "json"), default=None)
+    suggest.add_argument("--cwd", default=None, help="Repository directory to inspect.")
+    return parser.parse_args(argv)
+
+
 def parse_doctor_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="revrem doctor",

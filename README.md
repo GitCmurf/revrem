@@ -34,7 +34,21 @@ JSON summary: .revrem/runs/20260509T120823Z/summary.json
 
 ## Install
 
-RevRem is not published on PyPI yet. Install it from a checkout:
+For normal use, install RevRem from PyPI:
+
+```bash
+pipx install revrem
+revrem --version
+```
+
+If you do not use `pipx`, install into a managed virtual environment:
+
+```bash
+python -m pip install revrem
+revrem --version
+```
+
+For source development, install it from a checkout:
 
 ```bash
 git clone https://github.com/GitCmurf/revrem.git
