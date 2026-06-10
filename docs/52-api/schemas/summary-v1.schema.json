@@ -57,6 +57,55 @@
         "error"
       ]
     },
+    "external_review_coverage": {
+      "additionalProperties": true,
+      "properties": {
+        "external_review_input_chars": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "external_review_truncation_policy": {
+          "enum": [
+            "warn",
+            "fail",
+            null
+          ]
+        },
+        "prompt_chars": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "prompt_delivery": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "prompt_truncated": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "review_context_chars": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "review_context_supplied_in_full": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "harness": {
       "type": "string"
     },

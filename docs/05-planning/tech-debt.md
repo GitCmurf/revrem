@@ -3,8 +3,8 @@ document_id: REVREM-LEDGER-004
 type: LEDGER
 title: Tech Debt Register
 status: Approved
-version: '0.3'
-last_updated: '2026-06-04'
+version: '0.4'
+last_updated: '2026-06-10'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -25,8 +25,9 @@ Issues identified during code review and simplification passes that were deferre
 
 ## Current State
 
-This register currently has one open item, TD-008. Earlier debt items TD-001
-through TD-007 are resolved and retained as historical context.
+This register currently has one partially mitigated open item, TD-008. Earlier
+debt items TD-001 through TD-007 are resolved and retained as historical
+context.
 
 ---
 
@@ -51,9 +52,10 @@ count using `runtime.external_review_input_chars` /
 `--external-review-input-chars`. The conservative default is `80000`
 characters. Gemini uses the same `80000` character default because its
 headless CLI currently receives prompts through a single `--prompt` argument,
-which must stay below operating-system per-argument limits. Progress output
-and events report the sent prompt size, generated context size, delivery mode,
-and whether the prompt was truncated, for example
+which must stay below operating-system per-argument limits. Progress output,
+events, and `summary.external_review_coverage` report the sent prompt size,
+generated context size, delivery mode, truncation policy, and whether the
+prompt was truncated, for example
 `prompt=80.0k/511.2k argv-prompt truncated`.
 
 This bound is intentional. It avoids overflowing provider context windows,
@@ -66,7 +68,10 @@ tradeoff is real: when the
 provider receives only the first bounded slice of a large generated context,
 its review can miss omitted files or late diff hunks. A `REVIEW_STATUS: clear`
 from a prompted harness is therefore a clear result over the supplied prompt,
-not necessarily over the full saved context when truncation occurred.
+not necessarily over the full saved context when truncation occurred. Operators
+can now set `external_review_truncation_policy = "fail"` or pass
+`--external-review-truncation-policy fail` to stop before provider execution
+when the generated review context would be truncated.
 
 The dogfood evidence is mixed. OpenCode/minimax produced useful findings even
 with an `80k` prompt cap on a `500k+` generated context, including the stale
@@ -86,12 +91,9 @@ quota, latency, and non-API context limits still need provider-specific proof.
   then lower-signal hunks.
 - Add a chunked or multi-pass prompted review mode that reviews the full diff
   in bounded sections and then asks for an aggregate status.
-- Make truncation policy configurable per profile: allow current best-effort
-  behaviour, warn loudly, or fail closed when the generated context exceeds the
-  send cap.
-- Record stronger summary metadata when truncation occurs, such as
-  `review_context_truncated=true`, so downstream scripts do not treat a clear
-  prompted review as equivalent to a full-context review.
+- Add harness/model capability metadata for the default truncation policy, so
+  large-context models can opt into higher caps or fail-closed defaults with
+  provider-specific evidence.
 - Provide an operator shortcut to rerun the latest prompted review with a
   larger cap or a specific harness/model chosen for large context.
 

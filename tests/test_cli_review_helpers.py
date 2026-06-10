@@ -899,6 +899,8 @@ def test_gemini_review_prompt_respects_configured_char_limit(tmp_path):
     assert phase_start["payload"]["review_context_chars"] > 1500
     assert phase_start["payload"]["external_review_input_chars"] == 1500
     assert phase_start["payload"]["prompt_truncated"] is True
+    assert phase_start["payload"]["review_context_supplied_in_full"] is False
+    assert phase_start["payload"]["external_review_truncation_policy"] == "warn"
     assert phase_start["payload"]["prompt_delivery"] == "argv-prompt"
     assert phase_start["payload"]["prompt_chars"] == len(prompt)
     assert (
@@ -906,6 +908,62 @@ def test_gemini_review_prompt_respects_configured_char_limit(tmp_path):
         == f"<prompt chars={len(prompt)}>"
     )
     assert prompt not in json.dumps(phase_start["payload"]["command"])
+    summary = json.loads((repo / "artifacts" / "summary.json").read_text(encoding="utf-8"))
+    assert summary["external_review_coverage"]["prompt_truncated"] is True
+    assert summary["external_review_coverage"]["review_context_supplied_in_full"] is False
+    assert summary["external_review_coverage"]["external_review_truncation_policy"] == "warn"
+
+
+def test_external_review_truncation_fail_policy_stops_before_provider_call(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test User"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    (repo / "sample.txt").write_text("base\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "checkout", "-b", "feature"], cwd=repo, check=True, capture_output=True)
+    (repo / "sample.txt").write_text("change\n" + ("x" * 5000) + "\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "commit", "-am", "large change"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    calls: list[tuple[list[str], str | None]] = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text))
+        return CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        cwd=repo,
+        artifact_dir=repo / "artifacts",
+        review_harness="gemini",
+        review_model="gemini-3.1-pro-preview",
+        external_review_input_chars=1500,
+        external_review_truncation_policy="fail",
+    )
+
+    with pytest.raises(RuntimeError, match="external_review_truncation_policy=fail"):
+        runner_mod.run_loop(config, runner)
+
+    assert calls == []
+    assert (repo / "artifacts" / "review-1-context.txt").is_file()
+    assert not (repo / "artifacts" / "review-1-prompt.txt").exists()
 
 
 def test_external_review_prompt_ignores_remediation_input_cap(tmp_path):

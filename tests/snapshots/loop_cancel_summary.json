@@ -92,6 +92,7 @@
     },
     "runtime": {
       "external_review_input_chars": 80000,
+      "external_review_truncation_policy": "warn",
       "external_review_warning_seconds": 1800,
       "inner_check_retries": 0,
       "provider_retry_attempts": 2,
@@ -132,6 +133,7 @@
     "exec_json": false,
     "exec_sandbox": "workspace-write",
     "external_review_input_chars": 80000,
+    "external_review_truncation_policy": "warn",
     "external_review_warning_seconds": 1800,
     "final_review": false,
     "full_auto": true,
@@ -189,6 +191,7 @@
       },
       "runtime": {
         "external_review_input_chars": 80000,
+        "external_review_truncation_policy": "warn",
         "external_review_warning_seconds": 1800,
         "inner_check_retries": 0,
         "provider_retry_attempts": 2,

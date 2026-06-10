@@ -317,12 +317,14 @@ def test_terminal_summary_resume_command_preserves_external_review_overrides():
                 "max_iterations": 1,
                 "external_review_input_chars": 600_000,
                 "external_review_warning_seconds": 600,
+                "external_review_truncation_policy": "fail",
             },
             "phase_config": {
                 "runtime": {
                     "sources": {
                         "external_review_input_chars": "cli",
                         "external_review_warning_seconds": "cli",
+                        "external_review_truncation_policy": "cli",
                     },
                 },
             },
@@ -331,6 +333,7 @@ def test_terminal_summary_resume_command_preserves_external_review_overrides():
 
     assert "--external-review-input-chars 600000" in text
     assert "--external-review-warning-seconds 600" in text
+    assert "--external-review-truncation-policy fail" in text
 
 
 def test_terminal_summary_resume_command_preserves_non_default_harnesses():

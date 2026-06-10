@@ -21,6 +21,7 @@ from code_review_loop.cli.config_support import (
 from code_review_loop.clock import SYSTEM_CLOCK, Clock
 from code_review_loop.config import (
     DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS,
+    DEFAULT_EXTERNAL_REVIEW_TRUNCATION_POLICY,
     DEFAULT_EXTERNAL_REVIEW_WARNING_SECONDS,
     DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS,
     DEFAULT_PROVIDER_RETRY_ATTEMPTS,
@@ -460,6 +461,14 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
             DEFAULT_EXTERNAL_REVIEW_WARNING_SECONDS,
         )
     )
+    external_review_truncation_policy = pick(
+        args.external_review_truncation_policy,
+        profile.runtime.external_review_truncation_policy,
+        DEFAULT_EXTERNAL_REVIEW_TRUNCATION_POLICY,
+    )
+    external_review_truncation_policy_source = (
+        "cli" if args.external_review_truncation_policy is not None else profile_source
+    )
     inner_check_retries = int(
         pick(args.inner_check_retries, profile.runtime.inner_check_retries, 0)
     )
@@ -536,6 +545,7 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
             ),
             "external_review_input_chars": external_review_input_chars_source,
             "external_review_warning_seconds": external_review_warning_seconds_source,
+            "external_review_truncation_policy": external_review_truncation_policy_source,
         },
     }
     config = LoopConfig(
@@ -595,6 +605,7 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         provider_retry_backoff_seconds=provider_retry_backoff_seconds,
         external_review_input_chars=external_review_input_chars,
         external_review_warning_seconds=external_review_warning_seconds,
+        external_review_truncation_policy=external_review_truncation_policy,
         terminal_excerpt_chars=pick(
             args.terminal_excerpt_chars,
             profile.runtime.terminal_excerpt_chars,

@@ -92,11 +92,21 @@ def run_codex_review(
         )
         try:
             external_prompt = compose_external_review_prompt(config, review_context)
-            review_prompt = external_prompt.prompt
             phase_support.write_artifact(
                 config.artifact_dir / f"{artifact_label}-context.txt",
                 review_context,
             )
+            if (
+                external_prompt.truncated
+                and config.external_review_truncation_policy == "fail"
+            ):
+                raise RuntimeError(
+                    "prompted review context exceeds external_review_input_chars "
+                    f"({external_prompt.context_chars} context chars; cap "
+                    f"{external_prompt.input_cap_chars}) and "
+                    "external_review_truncation_policy=fail"
+                )
+            review_prompt = external_prompt.prompt
             phase_support.write_artifact(
                 config.artifact_dir / f"{artifact_label}-prompt.txt",
                 review_prompt,
@@ -149,7 +159,7 @@ def run_codex_review(
             "command": phase_support.command_for_progress(list(command)),
             "harness": config.review_harness,
             **prompt_metadata,
-            **external_review_prompt_metadata(external_prompt),
+            **external_review_prompt_metadata(external_prompt, config=config),
         },
     )
     if config.dry_run:
@@ -300,6 +310,8 @@ def run_review_with_retry(
 
 def external_review_prompt_metadata(
     prompt: ExternalReviewPrompt | None,
+    *,
+    config: LoopConfig,
 ) -> dict[str, object]:
     if prompt is None:
         return {}
@@ -307,6 +319,8 @@ def external_review_prompt_metadata(
         "review_context_chars": prompt.context_chars,
         "external_review_input_chars": prompt.input_cap_chars,
         "prompt_truncated": prompt.truncated,
+        "review_context_supplied_in_full": not prompt.truncated,
+        "external_review_truncation_policy": config.external_review_truncation_policy,
     }
 
 

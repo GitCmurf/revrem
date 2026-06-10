@@ -3,8 +3,8 @@ document_id: REVREM-LEDGER-003
 type: LEDGER
 title: Behaviour ledger for the cli.py re-engineering (REVREM-TASK-003)
 status: Approved
-version: '1.4'
-last_updated: '2026-06-07'
+version: '1.5'
+last_updated: '2026-06-10'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -55,6 +55,28 @@ There is no silent third option.
 ```
 
 ## Entries
+
+### 2026-06-10 — Prompted-review truncation coverage policy
+
+- **Contract:** machine
+- **What changed:** summaries now include the runtime
+  `external_review_truncation_policy` in `phase_config.runtime` and
+  `resume_config`. Prompted review runs also add
+  `external_review_coverage` with generated context size, sent prompt size,
+  delivery mode, truncation state, whether the generated context was supplied
+  in full, and the effective truncation policy.
+- **Why:** A clear result from a prompted non-Codex review harness can only be
+  interpreted correctly if operators and automation know whether the provider
+  received the whole generated review context. High-trust runs also need a
+  profile/CLI policy that fails before provider execution when RevRem would
+  otherwise send a truncated review prompt.
+- **Before / After:** before, prompt coverage was visible mainly in
+  phase-start events and progress text. After, the effective policy is part of
+  the resumable phase plan and completed summaries surface the latest
+  prompted-review coverage boundary directly.
+- **schema_version impact:** none. The summary schema already permits additive
+  fields; the public schema now documents `external_review_coverage`.
+- **CHANGELOG:** Unreleased / Added.
 
 ### 2026-06-07 — Block-local stale-validation status parsing
 

@@ -1099,7 +1099,13 @@ review harnesses use the conservative `80000` character default, while Gemini
 Pro review models use a `95000` character model-aware default that still stays
 under the current Gemini `--prompt` delivery guard. Phase-start progress and
 events report whether the generated review context was supplied in full or
-truncated. Gemini CLI is currently invoked with
+truncated, and completed summaries copy the latest prompted-review boundary into
+`summary.external_review_coverage`. The default truncation policy is `warn`,
+which sends the bounded prompt and records that the result covered only the
+supplied prompt. Use `--external-review-truncation-policy fail` or
+`runtime.external_review_truncation_policy = "fail"` for high-trust runs that
+must stop rather than accept a truncated prompted review as clear. Gemini CLI is
+currently invoked with
 `--prompt` for prompt-bearing phases because direct `gemini --prompt` probes
 succeed while
 large stdin review dogfood runs have repeatedly timed out with no provider

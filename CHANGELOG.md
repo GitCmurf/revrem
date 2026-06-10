@@ -49,6 +49,12 @@ This project follows Semantic Versioning once public releases begin.
   when the model output is not a usable subject. RevRem-enforced subprocess
   timeouts are classified as non-transient provider timeouts and are not
   retried.
+- Prompted external review coverage is now recorded in `summary.json` as
+  `external_review_coverage`, including generated context size, sent prompt
+  size, delivery mode, truncation state, and truncation policy. Operators can
+  set `--external-review-truncation-policy fail` or
+  `runtime.external_review_truncation_policy = "fail"` to stop before a
+  non-Codex review provider receives a truncated review prompt.
 - Remediation/check hardening now supports bounded inner remediation-check
   retries via `runtime.inner_check_retries` / `--inner-check-retries`. The
   dogfood profile enables one retry so post-remediation check failures can be

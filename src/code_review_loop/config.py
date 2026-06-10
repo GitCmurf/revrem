@@ -11,6 +11,8 @@ DEFAULT_TIMEOUT_SECONDS = 300
 DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS = 80_000
 DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS = 95_000
 DEFAULT_EXTERNAL_REVIEW_WARNING_SECONDS = 1_800
+EXTERNAL_REVIEW_TRUNCATION_POLICIES = ("warn", "fail")
+DEFAULT_EXTERNAL_REVIEW_TRUNCATION_POLICY = "warn"
 DEFAULT_PROVIDER_RETRY_ATTEMPTS = 2
 DEFAULT_PROVIDER_RETRY_BACKOFF_SECONDS = 1.0
 
@@ -64,6 +66,7 @@ class LoopConfig:
     provider_retry_backoff_seconds: float = DEFAULT_PROVIDER_RETRY_BACKOFF_SECONDS
     external_review_input_chars: int = DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS
     external_review_warning_seconds: float = DEFAULT_EXTERNAL_REVIEW_WARNING_SECONDS
+    external_review_truncation_policy: str = DEFAULT_EXTERNAL_REVIEW_TRUNCATION_POLICY
     terminal_excerpt_chars: int = 4_000
     timeout_seconds: float | None = DEFAULT_TIMEOUT_SECONDS
     review_timeout_seconds: float | None = None

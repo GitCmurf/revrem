@@ -208,6 +208,9 @@ def add_summary_contract_fields(
     summary.setdefault("harness_version", None)
     summary.setdefault("command_line", list(config.command_line) if config.command_line else None)
     summary.setdefault("phase_config", phase_config_payload(config))
+    coverage = external_review_coverage_payload(config.artifact_dir)
+    if coverage:
+        summary.setdefault("external_review_coverage", coverage)
     summary.setdefault("tokens", None)
     summary.setdefault("usd", None)
     iterations = summary.get("iterations")
@@ -221,6 +224,56 @@ def add_summary_contract_fields(
     )
     summary.setdefault("finished_at", utc_iso(clock.now()))
     summary.setdefault("duration_seconds", _summary_duration_seconds(summary))
+
+
+def external_review_coverage_payload(artifact_dir: Path) -> dict[str, object]:
+    """Return prompted-review coverage metadata from recorded phase-start events."""
+    events_path = artifact_dir / "events.jsonl"
+    if not events_path.is_file():
+        return {}
+    try:
+        lines = events_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return {}
+
+    latest: dict[str, object] | None = None
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        if event.get("kind") != "phase_start" or event.get("phase") != "review":
+            continue
+        payload = event.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        if "review_context_chars" in payload:
+            latest = payload
+    if latest is None:
+        return {}
+
+    context_chars = latest.get("review_context_chars")
+    input_cap_chars = latest.get("external_review_input_chars")
+    prompt_chars = latest.get("prompt_chars")
+    truncated = latest.get("prompt_truncated")
+    supplied_in_full = latest.get("review_context_supplied_in_full")
+    delivery = latest.get("prompt_delivery")
+    policy = latest.get("external_review_truncation_policy")
+    return {
+        "review_context_chars": context_chars if isinstance(context_chars, int) else None,
+        "external_review_input_chars": input_cap_chars
+        if isinstance(input_cap_chars, int)
+        else None,
+        "prompt_chars": prompt_chars if isinstance(prompt_chars, int) else None,
+        "prompt_truncated": truncated if isinstance(truncated, bool) else None,
+        "review_context_supplied_in_full": supplied_in_full
+        if isinstance(supplied_in_full, bool)
+        else None,
+        "prompt_delivery": delivery if isinstance(delivery, str) else None,
+        "external_review_truncation_policy": policy if isinstance(policy, str) else None,
+    }
 
 
 def phase_config_payload(config: LoopConfig) -> dict[str, object]:
@@ -304,6 +357,7 @@ def phase_config_payload(config: LoopConfig) -> dict[str, object]:
             "provider_retry_backoff_seconds": config.provider_retry_backoff_seconds,
             "external_review_input_chars": config.external_review_input_chars,
             "external_review_warning_seconds": config.external_review_warning_seconds,
+            "external_review_truncation_policy": config.external_review_truncation_policy,
             "source": config.phase_config_sources.get("runtime", "direct-config"),
             "sources": field_sources.get("runtime", {}),
         },

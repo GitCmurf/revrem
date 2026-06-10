@@ -339,6 +339,40 @@ external_review_input_chars = 80000
     )
 
 
+def test_external_review_truncation_policy_cli_overrides_profile(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.gemini-review.runtime]
+external_review_truncation_policy = "warn"
+""",
+        encoding="utf-8",
+    )
+
+    args = cli_args.parse_args(
+        [
+            "--profile",
+            "gemini-review",
+            "--base",
+            "main",
+            "--external-review-truncation-policy",
+            "fail",
+            "--dry-run",
+        ]
+    )
+    config, _summary_format = config_builder.build_loop_config(args, tmp_path)
+    phase_config = reporting.phase_config_payload(config)
+
+    assert config.external_review_truncation_policy == "fail"
+    assert phase_config["runtime"]["external_review_truncation_policy"] == "fail"
+    assert (
+        phase_config["runtime"]["sources"]["external_review_truncation_policy"] == "cli"
+    )
+
+
 def test_provider_retry_cli_overrides_profile_runtime(tmp_path, monkeypatch):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))

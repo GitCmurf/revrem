@@ -10,6 +10,7 @@ import argparse
 from collections.abc import Sequence
 
 from code_review_loop import __version__, profiles, suppressions
+from code_review_loop.config import EXTERNAL_REVIEW_TRUNCATION_POLICIES
 
 # Argparse choice tuples shared across parsers. Single source of truth so the
 # parent ``cli`` package re-exports them rather than maintaining duplicates.
@@ -396,6 +397,16 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         help=(
             "Elapsed seconds before long-running prompted review waiting "
             "messages include stronger diagnostics; 0 disables the warning."
+        ),
+    )
+    parser.add_argument(
+        "--external-review-truncation-policy",
+        choices=EXTERNAL_REVIEW_TRUNCATION_POLICIES,
+        default=None,
+        help=(
+            "How prompted non-Codex reviews handle oversized generated context: "
+            "'warn' sends a bounded prompt and records coverage; 'fail' stops before "
+            "accepting a truncated review."
         ),
     )
     parser.add_argument(

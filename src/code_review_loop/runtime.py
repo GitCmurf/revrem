@@ -432,6 +432,15 @@ def _append_phase_resume_overrides(
         profile_selected=profile_selected,
         source=_phase_field_source(phase_config_map, "runtime", "external_review_warning_seconds"),
     )
+    _append_string_override(
+        command,
+        "--external-review-truncation-policy",
+        config.get("external_review_truncation_policy"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(
+            phase_config_map, "runtime", "external_review_truncation_policy"
+        ),
+    )
 
 
 def _phase_field_source(
