@@ -1202,10 +1202,14 @@ review harness when the generated prompt is larger. This cap is a CLI delivery
 guard, not a claim about the Gemini model's API context window.
 
 Native Codex review diagnostics are captured when the transcript contains
-meaningful provider evidence, such as the Codex startup banner, raw provider
-finding events, configuration mismatches, or a subprocess failure. RevRem writes
-`diagnostics-review-*-observation.json` and mirrors those entries into
-`summary.phase_observations`. Failed review phases also write
+meaningful provider evidence, such as the bounded Codex startup banner, raw
+provider finding JSON events, configuration mismatches, or a subprocess failure.
+RevRem writes `diagnostics-review-*-observation.json` and mirrors those entries
+into `summary.phase_observations`. Banner parsing is scoped to the `OpenAI
+Codex v...` startup block so reviewed source snippets such as `model: ...` or
+`sandbox: ...` are not treated as provider configuration. Raw provider finding
+events are retained as artifact context and do not create terminal warnings by
+themselves. Failed review phases also write
 `diagnostics-review-*-failure.json`, mirrored under `summary.phase_failures`,
 with the classified provider failure, transcript sizes, and a redirected
 low-effort retry command. When the final review fails after remediation and all

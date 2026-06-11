@@ -289,11 +289,12 @@ def _provider_observation_is_meaningful(
     observation: dict[str, object],
     result: CommandResult,
 ) -> bool:
-    return (
-        result.returncode != 0
-        or bool(observation.get("observed"))
-        or bool(observation.get("warnings"))
-        or bool(observation.get("raw_provider_finding_count"))
+    return bool(
+        observation.get("banner_detected")
+        or observation.get("observed")
+        or observation.get("warnings")
+        or observation.get("raw_provider_finding_count")
+        or observation.get("reported_command")
     )
 
 

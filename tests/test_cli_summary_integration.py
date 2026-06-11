@@ -294,6 +294,30 @@ def test_terminal_summary_surfaces_final_review_failure_after_checks():
     assert "Provider observed reasoning_effort='xhigh'" in text
 
 
+def test_terminal_summary_keeps_raw_provider_finding_context_quiet():
+    text = format_terminal_summary(
+        {
+            "artifact_dir": "tmp/run",
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+            "iterations": [{"iteration": 1, "review_status": "clear"}],
+            "phase_observations": [
+                {
+                    "phase": "review",
+                    "iteration": "1",
+                    "provider": "codex",
+                    "banner_detected": False,
+                    "observed": {},
+                    "raw_provider_finding_count": 1,
+                    "warnings": [],
+                }
+            ],
+        }
+    )
+
+    assert "WARNING: provider observations need attention." not in text
+
+
 def test_terminal_summary_surfaces_latest_findings_and_paths():
     summary = {
         "artifact_dir": "tmp/run",

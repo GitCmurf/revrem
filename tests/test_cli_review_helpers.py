@@ -37,6 +37,7 @@ from code_review_loop.core.review_interpretation import (
     extract_review_summary,
     review_status_diagnostics,
 )
+from code_review_loop.runtime import RunLoopFailed
 from tests.support.fakes import FakeClock, FakeRunIdentity
 from tests.support.phase_harnesses import phase_harness_kwargs
 
@@ -967,12 +968,19 @@ def test_external_review_truncation_fail_policy_stops_before_provider_call(tmp_p
         external_review_truncation_policy="fail",
     )
 
-    with pytest.raises(RuntimeError, match="external_review_truncation_policy=fail"):
+    with pytest.raises(RunLoopFailed) as excinfo:
         runner_mod.run_loop(config, runner)
 
     assert calls == []
     assert (repo / "artifacts" / "review-1-context.txt").is_file()
     assert not (repo / "artifacts" / "review-1-prompt.txt").exists()
+    assert excinfo.value.summary["final_status"] == "error"
+    assert excinfo.value.summary["stopped_reason"] == "review_failed"
+    assert excinfo.value.summary["error"].startswith(
+        "prompted review context exceeds external_review_input_chars ("
+    )
+    assert excinfo.value.summary["error"].endswith("external_review_truncation_policy=fail")
+    assert excinfo.value.outcome.reason == "review_failed"
 
 
 def test_external_review_prompt_ignores_remediation_input_cap(tmp_path):
