@@ -134,10 +134,12 @@ class CodexHarnessAdapter(HarnessAdapter):
 
     def _review_command(self, request: PhaseCommandRequest) -> list[str]:
         command = [request.executable]
-        command.extend(_codex_config_args(request.reasoning_effort))
         if request.model:
             command.extend(["--model", request.model])
-        command.extend(["review", "--base", request.base])
+        command.extend(["review"])
+        command.extend(_codex_config_args(request.reasoning_effort))
+        command.extend(_codex_sandbox_config_args(request.sandbox))
+        command.extend(["--base", request.base])
         return command
 
     def _exec_command(self, request: PhaseCommandRequest) -> list[str]:
@@ -380,7 +382,17 @@ HARNESS_FIXTURES_DIR = ROOT / "tests" / "fixtures" / "harnesses"
 def _codex_config_args(reasoning_effort: str | None) -> list[str]:
     if reasoning_effort is None:
         return []
-    return ["-c", f'model_reasoning_effort="{reasoning_effort}"']
+    return _codex_toml_string_config_args("model_reasoning_effort", reasoning_effort)
+
+
+def _codex_sandbox_config_args(sandbox: str | None) -> list[str]:
+    if sandbox is None:
+        return []
+    return _codex_toml_string_config_args("sandbox_mode", sandbox)
+
+
+def _codex_toml_string_config_args(key: str, value: str) -> list[str]:
+    return ["-c", f'{key}="{value}"']
 
 
 def _claude_permission_args(request: PhaseCommandRequest) -> list[str]:

@@ -91,3 +91,4 @@ class LoopConfig:
     trusted_repo: bool = False
     triage_contract: str = "v1"
     command_line: tuple[str, ...] = field(default_factory=tuple)
+    invocation: dict[str, object] = field(default_factory=dict)

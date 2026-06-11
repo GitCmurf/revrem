@@ -7,10 +7,15 @@ import argparse
 import sys
 from pathlib import Path
 
-from code_review_loop import triage
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
 
 
 def main(argv: list[str] | None = None) -> int:
+    from code_review_loop import triage
+
     parser = argparse.ArgumentParser(
         description="Parse a captured triage artifact and report normalized severities."
     )

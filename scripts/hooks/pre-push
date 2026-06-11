@@ -1,0 +1,21 @@
+#!/bin/sh
+# REVREM_MANAGED_HOOK: begin
+# Example RevRem pre-push hook. Install with `revrem install-hooks --type pre-push`.
+set -eu
+
+REVREM_BIN="${REVREM_BIN:-revrem}"
+REVREM_BASE="${REVREM_BASE:-main}"
+REVREM_MAX_ITERATIONS="${REVREM_MAX_ITERATIONS:-1}"
+REVREM_MAX_WALL_SECONDS="${REVREM_MAX_WALL_SECONDS:-900}"
+REVREM_MAX_TOKENS="${REVREM_MAX_TOKENS:-200000}"
+REVREM_MAX_USD="${REVREM_MAX_USD:-1.00}"
+
+export REVREM_HOOK_TYPE="pre-push"
+exec "$REVREM_BIN" \
+  --base "$REVREM_BASE" \
+  --max-iterations "$REVREM_MAX_ITERATIONS" \
+  --max-wall-seconds "$REVREM_MAX_WALL_SECONDS" \
+  --max-tokens "$REVREM_MAX_TOKENS" \
+  --max-usd "$REVREM_MAX_USD" \
+  --summary-format text
+# REVREM_MANAGED_HOOK: end

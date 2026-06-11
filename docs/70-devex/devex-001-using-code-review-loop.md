@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.47'
+version: '1.52'
 last_updated: '2026-06-10'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.47
+> **Version:** 1.52
 > **Last Updated:** 2026-06-10
 > **Type:** DEVEX
 > **Area:** devex
@@ -188,10 +188,18 @@ so auth, timeout, and startup errors remain inspectable.
 Each `summary.json` also records `git_state` for resume safety: current `HEAD`,
 configured base ref, resolved base commit, merge base, and whether those values
 were available. Repositories without a Git worktree record explicit `null`
-values instead of pretending a resume precondition was checked.
+values instead of pretending a resume precondition was checked. New runs also
+write `invocation.json` and mirror it under `summary.invocation`, preserving the
+redacted process argv, normalized RevRem command line, cwd, and redacted
+`REVREM_*` environment overrides that affected the run. Shell aliases and
+literal inline shell syntax cannot be reconstructed after process startup.
 When `--max-wall-seconds` is set, the summary also stores the cumulative wall
 seconds already spent so a resumed run continues against the same total wall
 budget instead of starting a fresh ceiling.
+If triage produces invalid structured output or RevRem recovers a narrow
+contract-adjacent model mistake, the run summary records
+`triage_diagnostics` and the terminal summary prints a warning with the
+diagnostic code and artifact path.
 `revrem resume <run-dir>` validates the resume preconditions and returns code
 `4` when the summary, event stream, `HEAD`, or base commit do not match. When
 the checks pass, it rebuilds the loop config from `resume_config`, starts from
@@ -246,13 +254,35 @@ check suggestion command:
 
 ```bash
 revrem checks suggest --format json
+revrem doctor checks --format json
 ```
 
 The command does not execute checks or edit profiles. It inspects repository
 markers such as `package.json`, Python project files, `.pre-commit-config.yaml`,
-`tox.ini`, `noxfile.py`, `Cargo.toml`, `go.mod`, and executable Git hooks, then
-returns suggested commands with source, phase, confidence, network/setup notes,
-and a short rationale.
+`tox.ini`, `noxfile.py`, `Cargo.toml`, `go.mod`, `.githooks/`, configured Git
+hook paths, and executable Git hooks, then returns suggested commands with
+source, phase, confidence, network/setup notes, estimated cost class, and a
+short rationale. Git hook discovery uses Git's resolved hook paths, so linked
+worktrees and submodules with `.git` files are covered.
+
+To install bounded example Git hooks into a target repository:
+
+```bash
+revrem install-hooks
+revrem install-hooks --type pre-push
+revrem install-hooks --uninstall
+```
+
+The installer writes only RevRem-managed hooks to Git's resolved hook path, so
+normal repositories and `.git` file worktrees/submodules use the same code path.
+It refuses to replace an existing unmanaged hook unless `--force` is passed, in
+which case the old hook is preserved next to the hook as `*.revrem-backup`. The
+installed hooks use conservative defaults and can be tuned through
+`REVREM_BIN`, `REVREM_BASE`, `REVREM_MAX_ITERATIONS`,
+`REVREM_MAX_WALL_SECONDS`, `REVREM_MAX_TOKENS`, and `REVREM_MAX_USD`.
+Hook symlinks are treated as unmanaged hook paths even when their targets
+contain RevRem managed markers, so install/uninstall never follows a symlink to
+decide whether a hook is safe to overwrite.
 
 As a guardrail for shared profiles, RevRem treats a configured pytest command as
 not applicable when the target repository has Node/TypeScript project markers
@@ -565,16 +595,25 @@ for routed remediation. The Gemini live smoke sets
 headless execution from pytest temporary directories unless the workspace is
 trusted.
 
+KiloCode is an opencode fork, but RevRem does not treat it as an opencode
+alias. The adapter depends only on the verified `kilo run` surface: prompts are
+sent on stdin, full-auto workspace-write runs use Kilo's `--auto` flag, and
+opencode's `--dangerously-skip-permissions` / prompt-file path is not used for
+Kilo.
+
 To capture a one-off command as a project-local profile, add
 `--save-profile NAME`. RevRem writes the effective configuration to
 `.revrem.toml` at the repository root and exits without running the loop. This
 is non-destructive by default; pass `--save-profile-force` only when replacing
 an existing project profile intentionally. Explicit `--timeout-seconds 0`
 settings are written back as `timeout_seconds = 0` so a saved profile keeps the
-no-timeout behavior. When the source profile uses v2 triage routing,
-`--save-profile` preserves the triage contract, routing rules, route table, and
-effective `runtime.harness_executables` map, including any one-off
-`--harness-bin HARNESS=EXECUTABLE` overrides supplied on the same command.
+no-timeout behavior. Explicit
+`--external-review-truncation-policy fail` is also written back so a saved
+profile keeps fail-closed prompted-review behavior. When the source profile
+uses v2 triage routing, `--save-profile` preserves the triage contract, routing
+rules, route table, and effective `runtime.harness_executables` map, including
+any one-off `--harness-bin HARNESS=EXECUTABLE` overrides supplied on the same
+command.
 
 Project profile discovery intentionally ignores system temp roots and their
 ancestors when walking for `.git`. This prevents an ambient `/tmp/.git` marker
@@ -695,9 +734,9 @@ in the current working directory. The run-id component is reduced to a safe
 basename and falls back to the run directory name when necessary.
 
 The bundle is deterministic and redacted by default. It includes the manifest,
-`summary.json`, diagnostics/event JSON when present, sanitized check output,
-status diagnostics, and sanitized profile/preflight snapshots when the run
-recorded them.
+`summary.json`, `invocation.json`, diagnostics/event JSON when present,
+sanitized check output, status diagnostics, and sanitized profile/preflight
+snapshots when the run recorded them.
 Raw text transcripts such as review and remediation artifacts are excluded
 unless `--include-raw-transcripts` is passed. Disabling redaction requires both
 `--no-redact` and `--i-understand-the-risks`.
@@ -852,11 +891,16 @@ when a workflow should halt on malformed triage output.
 
 For v2 triage, RevRem performs narrow pre-validation repairs for common review
 model drift: review priority labels such as `P2` are translated to schema
-severities, and `needs_more_info.info_requested` arrays of strings are joined
-into a single newline-delimited string. Mixed arrays and non-string values still
-fail validation. The v2 prompt tells models to preserve `f1:` fingerprints when
-present and to use `review-comment:<1-based-order>` with a parsing warning for
-uniquely identifiable review comments that lack a stable finding ID.
+severities, `needs_more_info.info_requested` arrays of strings are joined into
+a single newline-delimited string, and misplaced per-finding
+`definition_of_done` string lists are moved into
+`prompt_requirements.definition_of_done`. Mixed arrays and non-string values
+still fail validation. Recovered repairs are recorded in
+`triage-N.json.parsing_warnings` and mirrored into
+`summary.triage_diagnostics`, so routing can continue without hiding the model
+drift from operators. The v2 prompt tells models to preserve `f1:` fingerprints
+when present and to use `review-comment:<1-based-order>` with a parsing warning
+for uniquely identifiable review comments that lack a stable finding ID.
 
 `runtime.inner_check_retries` / `--inner-check-retries` can run a bounded
 remediation-check retry inside the same outer iteration. When post-remediation
@@ -870,6 +914,10 @@ check artifact), RevRem does not spend the inner remediation retry. It keeps
 the check failure pending and emits a warning so the operator can increase
 `--timeout-seconds`, narrow the checks, or rerun locally after investigating
 the slow command.
+Each iteration keeps the latest `checks` list for compatibility and also
+records `check_attempts` so operators can see earlier failed attempts that were
+fixed by an inner retry. The terminal summary prints a compact retry note with
+the first failed command and the latest retry status.
 
 The on-disk artifact stems keep the operator-friendly `-retry-N` suffix,
 but the `iteration` field on `phase_start` and `phase_result` events uses
@@ -892,7 +940,10 @@ routing artifacts are also listed under `summary.artifact_paths.prompts` and
 sensitive transcript-like local data. In `routing-N.json`, `prompt.bytes` is
 the UTF-8 byte size of the written prompt artifact, and
 `effective_route.timeout_seconds` records the timeout RevRem will pass to
-remediation execution after inheritance; `0` means unbounded.
+remediation execution after inheritance and CLI caps. An explicit CLI
+`--timeout-seconds` is treated as an upper bound for routed remediation, so a
+route saved with `timeout_seconds = 0` remains unbounded only when the operator
+does not supply a CLI cap; `0` in the routing artifact means unbounded.
 
 Codex-only routing profile:
 
@@ -1119,9 +1170,11 @@ read-only mode denies shell tools. External review harnesses must return an
 explicit `REVIEW_STATUS` line; Codex native review remains classified through
 its finding markers and conservative clear-prose examples because RevRem does
 not control the native review prompt. Review is always invoked in read-only
-mode; for Gemini this means `--approval-mode plan`. Gemini remediation still
-uses `--approval-mode auto_edit` when workspace writes are allowed. Review
-prompt and full generated context artifacts are listed under
+mode; for native Codex review this is enforced with
+`codex review -c sandbox_mode="read-only"` because that subcommand does not
+offer a `--sandbox` flag. For Gemini this means `--approval-mode plan`.
+Gemini remediation still uses `--approval-mode auto_edit` when workspace writes
+are allowed. Review prompt and full generated context artifacts are listed under
 `summary.artifact_paths.prompts` and `summary.artifact_paths.contexts`; the
 review transcript itself remains under `summary.artifact_paths.reviews`. The
 provider-facing external review prompt is bounded by
@@ -1147,6 +1200,18 @@ byte CLI-delivery guard, which stays below common Linux per-argument limits;
 lower `--external-review-input-chars`, use a smaller diff, or use a different
 review harness when the generated prompt is larger. This cap is a CLI delivery
 guard, not a claim about the Gemini model's API context window.
+
+Native Codex review diagnostics are captured when the transcript contains
+meaningful provider evidence, such as the Codex startup banner, raw provider
+finding events, configuration mismatches, or a subprocess failure. RevRem writes
+`diagnostics-review-*-observation.json` and mirrors those entries into
+`summary.phase_observations`. Failed review phases also write
+`diagnostics-review-*-failure.json`, mirrored under `summary.phase_failures`,
+with the classified provider failure, transcript sizes, and a redirected
+low-effort retry command. When the final review fails after remediation and all
+checks passed, the terminal summary says so explicitly so operators can
+distinguish product-code/check success from reviewer subprocess failure.
+
 If an external review or remediation subprocess fails with a known transient
 provider-side error, such as an OpenCode server error or a temporary rate-limit
 response, RevRem records `review-N-attempt-1.txt` or
@@ -1317,6 +1382,11 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.52 | 2026-06-11 | Codex | Documented native Codex provider observations and final-review failure diagnostics |
+| 1.51 | 2026-06-11 | Codex | Documented native Codex review sandbox enforcement through config |
+| 1.50 | 2026-06-10 | Codex | Documented recoverable triage diagnostics, check retry history, and symlink-safe hook handling |
+| 1.49 | 2026-06-10 | Codex | Documented saved truncation-policy persistence and routed timeout caps |
+| 1.48 | 2026-06-10 | Codex | Documented doctor check suggestions, hook installation, and Kilo run-contract boundaries |
 | 1.47 | 2026-06-10 | Codex | Documented PyPI install smoke evidence and read-only check suggestions |
 | 1.46 | 2026-06-07 | Codex | Documented block-local stale-validation status parsing and fail-closed ambiguous validation |
 | 1.45 | 2026-06-07 | Codex | Documented read-only stale validation preflight and non-retryable provider model availability failures |

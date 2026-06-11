@@ -371,6 +371,12 @@ external_review_truncation_policy = "warn"
     assert (
         phase_config["runtime"]["sources"]["external_review_truncation_policy"] == "cli"
     )
+    saved = config_builder.profile_from_loop_config(
+        "saved",
+        config,
+        summary_format="json",
+    )
+    assert saved.runtime.external_review_truncation_policy == "fail"
 
 
 def test_provider_retry_cli_overrides_profile_runtime(tmp_path, monkeypatch):

@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import configparser
 import json
 import os
 import tomllib
 from dataclasses import asdict, dataclass
 from pathlib import Path
+
+from code_review_loop import git_hooks
 
 
 @dataclass(frozen=True)
@@ -17,6 +18,7 @@ class CheckSuggestion:
     phase: str
     confidence: str
     requires_network: bool
+    estimated_cost: str
     notes: str
 
     def to_dict(self) -> dict[str, object]:
@@ -91,6 +93,7 @@ def _package_json_suggestions(root: Path) -> list[CheckSuggestion]:
                     phase=phase,
                     confidence="high",
                     requires_network=False,
+                    estimated_cost="local",
                     notes=f"package.json defines scripts.{script}",
                 )
             )
@@ -133,6 +136,7 @@ def _python_suggestions(root: Path) -> list[CheckSuggestion]:
                 phase="test",
                 confidence="high" if has_pytest_config or has_pytest_file else "medium",
                 requires_network=False,
+                estimated_cost="local",
                 notes="Python test surface detected.",
             )
         )
@@ -144,6 +148,7 @@ def _python_suggestions(root: Path) -> list[CheckSuggestion]:
                 phase="lint",
                 confidence="high",
                 requires_network=False,
+                estimated_cost="local",
                 notes="pyproject.toml contains Ruff configuration.",
             )
         )
@@ -169,6 +174,7 @@ def _pre_commit_suggestions(root: Path) -> list[CheckSuggestion]:
             phase="pre-commit",
             confidence="high",
             requires_network=True,
+            estimated_cost="network_setup",
             notes="First run may install hook environments.",
         )
     ]
@@ -184,6 +190,7 @@ def _tox_nox_suggestions(root: Path) -> list[CheckSuggestion]:
                 phase="test",
                 confidence="high",
                 requires_network=True,
+                estimated_cost="network_setup",
                 notes="tox may create or update isolated environments.",
             )
         )
@@ -195,6 +202,7 @@ def _tox_nox_suggestions(root: Path) -> list[CheckSuggestion]:
                 phase="test",
                 confidence="high",
                 requires_network=True,
+                estimated_cost="network_setup",
                 notes="nox may create or update isolated environments.",
             )
         )
@@ -211,6 +219,7 @@ def _rust_suggestions(root: Path) -> list[CheckSuggestion]:
             phase="test",
             confidence="high",
             requires_network=True,
+            estimated_cost="network_setup",
             notes="Cargo may fetch crates when dependencies are missing.",
         )
     ]
@@ -226,18 +235,23 @@ def _go_suggestions(root: Path) -> list[CheckSuggestion]:
             phase="test",
             confidence="high",
             requires_network=True,
+            estimated_cost="network_setup",
             notes="Go may download modules when the module cache is cold.",
         )
     ]
 
 
 def _git_hook_suggestions(root: Path) -> list[CheckSuggestion]:
-    hooks_dirs = [root / ".git" / "hooks"]
-    configured = _core_hooks_path(root)
+    hooks_dirs = [root / ".githooks"]
+    configured = git_hooks.configured_hooks_path(root)
     if configured is not None:
-        hooks_dirs.insert(0, configured if configured.is_absolute() else root / configured)
+        hooks_dirs.append(configured)
+    default_hooks = git_hooks.default_hooks_dir(root)
+    if default_hooks is not None:
+        hooks_dirs.append(default_hooks)
+    hooks_dirs.append(root / ".git" / "hooks")
     suggestions: list[CheckSuggestion] = []
-    for hooks_dir in hooks_dirs:
+    for hooks_dir in _dedupe_paths(hooks_dirs):
         for hook_name, phase in (("pre-commit", "pre-commit"), ("pre-push", "pre-push")):
             hook = hooks_dir / hook_name
             if hook.is_file() and os.access(hook, os.X_OK):
@@ -248,24 +262,26 @@ def _git_hook_suggestions(root: Path) -> list[CheckSuggestion]:
                         phase=phase,
                         confidence="medium",
                         requires_network=False,
+                        estimated_cost="unknown",
                         notes="Executable Git hook detected; inspect before using as a RevRem check.",
                     )
                 )
     return suggestions
 
 
-def _core_hooks_path(root: Path) -> Path | None:
-    git_config = root / ".git" / "config"
-    if not git_config.is_file():
-        return None
-    parser = configparser.ConfigParser()
-    try:
-        parser.read(git_config, encoding="utf-8")
-    except configparser.Error:
-        return None
-    if not parser.has_section("core") or not parser.has_option("core", "hookspath"):
-        return None
-    return Path(parser.get("core", "hookspath"))
+def _dedupe_paths(paths: list[Path]) -> list[Path]:
+    seen: set[Path] = set()
+    result: list[Path] = []
+    for path in paths:
+        try:
+            key = path.resolve()
+        except OSError:
+            key = path
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(path)
+    return result
 
 
 def _dedupe_suggestions(suggestions: list[CheckSuggestion]) -> list[CheckSuggestion]:

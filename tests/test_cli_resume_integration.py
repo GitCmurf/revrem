@@ -328,7 +328,23 @@ def test_loop_writes_failure_summary_when_final_review_invocation_fails(tmp_path
                 return CommandResult(
                     list(args), 0, stdout="Still failing.\nREVIEW_STATUS: findings\n"
                 )
-            return CommandResult(list(args), 1, stderr="Error: failed to create session\n")
+            return CommandResult(
+                list(args),
+                -1,
+                stdout=(
+                    "OpenAI Codex v0.139.0\n"
+                    "--------\n"
+                    "model: gpt-5.5\n"
+                    "provider: openai\n"
+                    "sandbox: read-only\n"
+                    "reasoning effort: xhigh\n"
+                ),
+                stderr=(
+                    "Command timed out after 300.0 seconds\n"
+                    'Command: codex --model gpt-5.5 review -c '
+                    '\'model_reasoning_effort="low"\' --base main\n'
+                ),
+            )
         return CommandResult(list(args), 0, stdout="attempted remediation\n")
 
     config = LoopConfig(
@@ -348,7 +364,9 @@ def test_loop_writes_failure_summary_when_final_review_invocation_fails(tmp_path
     assert "review-final" in str(excinfo.value)
     assert summary["final_status"] == "error"
     assert summary["stopped_reason"] == "review_failed"
-    assert summary["error"].startswith("codex review failed for review-final; see ")
+    assert summary["error"].startswith(
+        "codex review failed for review-final: provider subprocess timed out; see "
+    )
     assert summary["iterations"] == [
         {
             "iteration": 1,
@@ -368,6 +386,15 @@ def test_loop_writes_failure_summary_when_final_review_invocation_fails(tmp_path
         str(tmp_path / "artifacts" / "review-1.txt"),
         str(review_path),
     ]
+    final_observation = next(
+        item for item in summary["phase_observations"] if item["iteration"] == "final"
+    )
+    assert final_observation["observed"]["reasoning_effort"] == "xhigh"
+    assert summary["phase_failures"][0]["failure"]["reason"] == "provider_timeout"
+    assert summary["phase_failures"][0]["redirected_retry_command"].startswith(
+        'codex review -c \'model_reasoning_effort="low"\' '
+        '-c \'sandbox_mode="read-only"\' --base main'
+    )
     assert review_path.is_file()
 
 

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 import tests.support.application_runner as runner_mod
-from code_review_loop import suppressions
+from code_review_loop import profiles, suppressions
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.ports import CommandResult
 from code_review_loop.runtime import RunLoopFailed
@@ -444,6 +444,118 @@ def test_loop_invalid_structured_triage_continues_with_original_review(tmp_path)
         str(tmp_path / "artifacts" / "diagnostics-2.json")
         in summary["artifact_paths"]["diagnostics"]
     )
+
+
+def test_loop_recovers_misplaced_definition_of_done_and_routes(tmp_path):
+    calls = []
+    triage_payload = {
+        "confirmed_findings": [
+            {
+                "fingerprint": "review-comment:1",
+                "summary": "Avoid writing hook symlinks",
+                "severity": "medium",
+                "affected_paths": [
+                    "src/code_review_loop/cli/commands/install_hooks.py",
+                ],
+                "rationale": "Hook installation should not follow hook symlinks.",
+                "definition_of_done": [
+                    "Hook symlinks are refused or backed up before replacement.",
+                ],
+            }
+        ],
+        "rejected_findings": [],
+        "needs_more_info": [],
+        "implementation_order": ["review-comment:1"],
+        "verification_commands": ["pytest -q tests/test_install_hooks.py"],
+        "parsing_warnings": [],
+        "classification": {
+            "domain_tags": ["filesystem", "cli"],
+            "risk_level": "medium",
+            "refactor_depth": "localised",
+            "affected_modules": ["code_review_loop.cli"],
+            "estimated_blast_radius": {"finding_count": 1, "module_count": 1},
+            "safety_signals": ["filesystem-write-safety:hooks"],
+            "failed_check_signals": [],
+        },
+        "prompt_requirements": {
+            "required_fragments": ["regression-test-checklist"],
+            "definition_of_done": [
+                "Run the focused hook installer tests.",
+            ],
+            "triage_prompt_draft": "Fix hook symlink handling without creating scratch files.",
+        },
+        "route_proposal": {
+            "route_tier": "codex-midi",
+            "harness": "codex",
+            "model": "gpt-test",
+            "reasoning_effort": "medium",
+            "sandbox": "workspace-write",
+            "timeout_seconds": 60,
+            "rationale": "Local filesystem fix.",
+        },
+    }
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[1] == "review":
+            return CommandResult(
+                list(args),
+                0,
+                stdout="Full review comments:\n\n- [P2] Avoid writing hook symlinks\n",
+            )
+        if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
+            return CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
+        return CommandResult(list(args), 0, stdout="remediated\n")
+
+    profile = profiles.Profile(
+        name="dogfood-test",
+        triage=profiles.TriageConfig(
+            contract="v2",
+            enabled=True,
+            routing=profiles.TriageRoutingConfig(enabled=True, default_route="codex-midi"),
+            routes={
+                "codex-midi": profiles.TriageRouteConfig(
+                    harness="codex",
+                    model="gpt-test",
+                    reasoning_effort="medium",
+                    sandbox="workspace-write",
+                    timeout_seconds=60,
+                )
+            },
+        ),
+    )
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        triage_enabled=True,
+        triage_contract="v2",
+        profile_v2=profile,
+        final_review=False,
+    )
+
+    summary = runner_mod.run_loop(config, runner).to_dict()
+
+    triage_json = json.loads((tmp_path / "artifacts" / "triage-1.json").read_text())
+    routing_json = json.loads((tmp_path / "artifacts" / "routing-1.json").read_text())
+    assert "definition_of_done" not in triage_json["confirmed_findings"][0]
+    assert triage_json["prompt_requirements"]["definition_of_done"] == [
+        "Run the focused hook installer tests.",
+        "Hook symlinks are refused or backed up before replacement.",
+    ]
+    assert any(
+        "Moved misplaced finding definition_of_done entries" in warning
+        for warning in triage_json["parsing_warnings"]
+    )
+    assert routing_json["effective_route"]["route_tier"] == "codex-midi"
+    assert (tmp_path / "artifacts" / "routing-outcome-1.json").is_file()
+    assert any(
+        item["code"] == "revrem.triage.parsing_warning"
+        for item in summary["triage_diagnostics"]
+    )
+    assert not (tmp_path / "artifacts" / "diagnostics-1.json").exists()
 
 
 def test_loop_failed_triage_command_writes_diagnostics(tmp_path):

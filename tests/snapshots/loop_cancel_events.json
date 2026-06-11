@@ -6,6 +6,8 @@
       "command": [
         "codex",
         "review",
+        "-c",
+        "sandbox_mode=\"read-only\"",
         "--base",
         "main"
       ],

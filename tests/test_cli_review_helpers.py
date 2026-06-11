@@ -597,8 +597,17 @@ def test_review_model_is_top_level_codex_option(tmp_path):
 
     command = review_impl.build_review_command(config)
 
-    assert command[:5] == ["codex", "--model", "gpt-test", "review", "--base"]
-    assert command == ["codex", "--model", "gpt-test", "review", "--base", "main"]
+    assert command[:4] == ["codex", "--model", "gpt-test", "review"]
+    assert command == [
+        "codex",
+        "--model",
+        "gpt-test",
+        "review",
+        "-c",
+        'sandbox_mode="read-only"',
+        "--base",
+        "main",
+    ]
 
 
 def test_non_codex_review_receives_explicit_review_prompt(tmp_path):
@@ -1090,12 +1099,17 @@ def test_model_overrides_and_reasoning_effort_are_passed_to_codex(tmp_path):
     review_command = review_impl.build_review_command(config)
     remediation_command = remediation_impl.build_remediation_command(config)
 
-    assert review_command[:5] == [
+    assert review_command[:4] == [
         "codex",
-        "-c",
-        'model_reasoning_effort="medium"',
         "--model",
         "gpt-5.5",
+        "review",
+    ]
+    assert review_command[review_command.index("review") + 1 : review_command.index("--base")] == [
+        "-c",
+        'model_reasoning_effort="medium"',
+        "-c",
+        'sandbox_mode="read-only"',
     ]
     assert remediation_command[:5] == [
         "codex",

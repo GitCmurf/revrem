@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import tarfile
 from importlib import import_module
 from pathlib import Path
 
@@ -161,6 +162,8 @@ def test_live_cli_preflight_blocks_before_review_invocation(tmp_path, monkeypatc
         (repo / "artifacts" / "diagnostics.json").read_text(encoding="utf-8")
     )
     summary = json.loads((repo / "artifacts" / "summary.json").read_text(encoding="utf-8"))
+    invocation_path = repo / "artifacts" / "invocation.json"
+    invocation = json.loads(invocation_path.read_text(encoding="utf-8"))
 
     assert exit_code == 4
     assert diagnostics_payload["status"] == "blocking"
@@ -168,6 +171,27 @@ def test_live_cli_preflight_blocks_before_review_invocation(tmp_path, monkeypatc
         "revrem.preflight.invalid_base"
     }
     assert diagnostics_payload["issues"][0]["fingerprint"].startswith("f1:")
+    assert invocation["argv"] == [
+        "revrem",
+        "--base",
+        "missing",
+        "--codex-bin",
+        "git",
+        "--artifact-dir",
+        "artifacts",
+    ]
+    assert invocation["command_line"] == [
+        "revrem",
+        "--base",
+        "missing",
+        "--codex-bin",
+        "git",
+        "--artifact-dir",
+        "artifacts",
+    ]
+    assert invocation["cwd"] == str(repo)
+    assert summary["artifact_paths"]["invocation"] == "artifacts/invocation.json"
+    assert summary["invocation"] == invocation
     assert summary["stopped_reason"] == "setup_failed"
     assert "preflight diagnostics found blocking issue" in capsys.readouterr().err
 
@@ -330,6 +354,64 @@ timeout_seconds = 0
         "revrem.preflight.timeout_disabled",
     }
     assert captured.err == ""
+
+
+def test_doctor_warns_for_disabled_route_timeout(tmp_path, monkeypatch, capsys):
+    repo = tmp_path / "repo"
+    home = tmp_path / "home"
+    repo.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "config", "user.email", "test@example.com")
+    run_git(repo, "config", "user.name", "Test User")
+    (repo / "README.md").write_text("# Fixture\n", encoding="utf-8")
+    run_git(repo, "add", "README.md")
+    run_git(repo, "commit", "-m", "initial")
+    config_path = profiles.user_config_path(home)
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.routed.triage]
+enabled = true
+contract = "v2"
+
+[profiles.routed.triage.routing]
+enabled = true
+default_route = "codex-midi"
+
+[profiles.routed.triage.routes.codex-midi]
+harness = "codex"
+timeout_seconds = 0
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(repo)
+
+    exit_code = cli_main.main(
+        [
+            "doctor",
+            "--profile",
+            "routed",
+            "--base",
+            "main",
+            "--codex-bin",
+            "git",
+            "--format",
+            "json",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert exit_code == 0
+    assert payload["status"] == "ok"
+    assert {
+        issue["code"] for issue in payload["issues"]
+    } == {"revrem.preflight.route_timeout_disabled"}
+    assert payload["issues"][0]["evidence"] == {
+        "route": "codex-midi",
+        "timeout_seconds": 0,
+    }
 
 
 def test_doctor_profile_blocks_repo_root_artifact_dir_in_commit_mode(tmp_path, monkeypatch, capsys):
@@ -580,6 +662,10 @@ def test_bundle_bug_report_cli_writes_output_path(tmp_path, capsys):
         encoding="utf-8",
     )
     (run_dir / "check-1.txt").write_text("Authorization: Bearer secret-token\n", encoding="utf-8")
+    (run_dir / "invocation.json").write_text(
+        '{"argv":["revrem","--base","main"],"schema_version":"1.0"}\n',
+        encoding="utf-8",
+    )
     output = tmp_path / "bundle.tar.gz"
 
     exit_code = cli_main.main(["bundle-bug-report", str(run_dir), "--output", str(output)])
@@ -588,3 +674,5 @@ def test_bundle_bug_report_cli_writes_output_path(tmp_path, capsys):
     assert exit_code == 0
     assert captured.out.strip() == str(output.resolve())
     assert output.is_file()
+    with tarfile.open(output, "r:gz") as archive:
+        assert "invocation.json" in archive.getnames()

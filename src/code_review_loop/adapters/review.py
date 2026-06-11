@@ -9,13 +9,20 @@ does not import the runner or CLI edge.
 from __future__ import annotations
 
 import json
+import shlex
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
-from code_review_loop import harnesses, prompts_composer, provider_failures
+from code_review_loop import (
+    artifacts,
+    harnesses,
+    prompts_composer,
+    provider_failures,
+    provider_observations,
+)
 from code_review_loop.adapters import phase_support
 from code_review_loop.adapters.git import (
     GitContextCache,
@@ -188,11 +195,27 @@ def run_codex_review(
     combined = phase_support._combined_output(result)
     artifact_path = config.artifact_dir / f"{artifact_label}.txt"
     phase_support.write_artifact(artifact_path, combined)
+    observation = _write_provider_observation(
+        config,
+        result,
+        artifact_label=artifact_label,
+        display_label=display_label,
+    )
     phase_support.record_model_charge(
         config, result, phase="review", iteration=display_label, ctx=ctx
     )
     if review_failed_to_run(result, config.review_harness):
         failure = provider_failures.classify_provider_failure(result, harness=config.review_harness)
+        _write_review_failure_diagnostic(
+            config,
+            result,
+            artifact_label=artifact_label,
+            display_label=display_label,
+            artifact_path=artifact_path,
+            command=command,
+            failure=failure,
+            observation=observation,
+        )
         failure_detail = f": {failure.detail}" if failure else ""
         phase_support.progress_event(
             config,
@@ -231,6 +254,113 @@ def run_codex_review(
     else:
         phase_support.progress_event(config, "review", display_label, status, ctx=ctx)
     return status, result
+
+
+def _write_provider_observation(
+    config: LoopConfig,
+    result: CommandResult,
+    *,
+    artifact_label: str,
+    display_label: str,
+) -> dict[str, object] | None:
+    if config.review_harness != "codex":
+        return None
+    observation = provider_observations.codex_observation(
+        result,
+        phase="review",
+        iteration=display_label,
+        requested={
+            "model": config.review_model or config.model,
+            "reasoning_effort": config.review_reasoning_effort or config.reasoning_effort,
+            "sandbox": "read-only",
+        },
+    )
+    if not _provider_observation_is_meaningful(observation, result):
+        return None
+    artifacts.write_json_artifact(
+        config.artifact_dir,
+        f"diagnostics-{artifact_label}-observation.json",
+        observation,
+    )
+    return observation
+
+
+def _provider_observation_is_meaningful(
+    observation: dict[str, object],
+    result: CommandResult,
+) -> bool:
+    return (
+        result.returncode != 0
+        or bool(observation.get("observed"))
+        or bool(observation.get("warnings"))
+        or bool(observation.get("raw_provider_finding_count"))
+    )
+
+
+def _write_review_failure_diagnostic(
+    config: LoopConfig,
+    result: CommandResult,
+    *,
+    artifact_label: str,
+    display_label: str,
+    artifact_path: Path,
+    command: Sequence[str],
+    failure: provider_failures.ProviderFailure | None,
+    observation: dict[str, object] | None,
+) -> None:
+    payload: dict[str, object] = {
+        "phase": "review",
+        "iteration": display_label,
+        "artifact": str(artifact_path),
+        "command": list(command),
+        "returncode": result.returncode,
+        "timeout_seconds": phase_support.phase_timeout_seconds(
+            config, config.review_timeout_seconds
+        ),
+        "stdout_chars": len(result.stdout or ""),
+        "stderr_chars": len(result.stderr or ""),
+        "combined_chars": len(phase_support._combined_output(result)),
+    }
+    if failure is not None:
+        payload["failure"] = {
+            "reason": failure.reason,
+            "detail": failure.detail,
+            "transient": failure.transient,
+        }
+    if observation is not None:
+        payload["provider_observation"] = observation
+    retry_command = _codex_review_retry_command(config)
+    if retry_command is not None:
+        payload["retry_command"] = retry_command
+        payload["redirected_retry_command"] = (
+            f"{shlex.join(retry_command)} > /tmp/revrem-review.txt 2>&1"
+        )
+    artifacts.write_json_artifact(
+        config.artifact_dir,
+        f"diagnostics-{artifact_label}-failure.json",
+        payload,
+    )
+
+
+def _codex_review_retry_command(config: LoopConfig) -> list[str] | None:
+    if config.review_harness != "codex":
+        return None
+    command = [phase_support._resolve_executable("codex", config)]
+    model = config.review_model or config.model
+    if model:
+        command.extend(["--model", model])
+    command.extend(
+        [
+            "review",
+            "-c",
+            'model_reasoning_effort="low"',
+            "-c",
+            'sandbox_mode="read-only"',
+            "--base",
+            config.base,
+        ]
+    )
+    return command
 
 
 def _status_debug_detail(diagnostics: dict[str, object]) -> str:

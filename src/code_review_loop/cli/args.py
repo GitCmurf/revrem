@@ -642,6 +642,16 @@ def parse_checks_args(argv: Sequence[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def parse_doctor_checks_args(argv: Sequence[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="revrem doctor checks",
+        description="Suggest repository verification commands without executing them.",
+    )
+    parser.add_argument("--format", choices=("text", "json"), default=None)
+    parser.add_argument("--cwd", default=None, help="Repository directory to inspect.")
+    return parser.parse_args(argv)
+
+
 def parse_doctor_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="revrem doctor",
@@ -674,6 +684,32 @@ def parse_doctor_args(argv: Sequence[str]) -> argparse.Namespace:
         default=None,
         help="Validate commit-mode preconditions such as a clean worktree and a non-root artifact directory.",
     )
+    return parser.parse_args(argv)
+
+
+def parse_install_hooks_args(argv: Sequence[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="revrem install-hooks",
+        description="Install or remove RevRem-managed Git hook examples.",
+    )
+    parser.add_argument(
+        "--type",
+        choices=("pre-commit", "pre-push", "all"),
+        default="all",
+        help="Hook type to manage. Defaults to all.",
+    )
+    parser.add_argument("--cwd", default=None, help="Repository directory to manage.")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Back up and replace an existing unmanaged hook.",
+    )
+    parser.add_argument(
+        "--uninstall",
+        action="store_true",
+        help="Remove RevRem-managed hooks without touching unmanaged hooks.",
+    )
+    parser.add_argument("--format", choices=("text", "json"), default=None)
     return parser.parse_args(argv)
 
 

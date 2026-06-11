@@ -54,10 +54,32 @@ This project follows Semantic Versioning once public releases begin.
   size, delivery mode, truncation state, and truncation policy. Operators can
   set `--external-review-truncation-policy fail` or
   `runtime.external_review_truncation_policy = "fail"` to stop before a
-  non-Codex review provider receives a truncated review prompt.
+  non-Codex review provider receives a truncated review prompt, and
+  `--save-profile` preserves that fail-closed setting.
 - `revrem checks suggest` now inspects repository markers without executing
   commands and returns structured check suggestions for profile authoring,
-  including source, phase, confidence, and network/setup notes.
+  including source, phase, confidence, estimated cost class, and network/setup
+  notes. The same advisory output is available through `revrem doctor checks`,
+  and Git hook suggestions now resolve hooks in linked worktrees and `.git`
+  file layouts.
+- `revrem install-hooks` installs and removes bounded RevRem-managed
+  pre-commit/pre-push hook examples, refusing to overwrite unmanaged hooks
+  unless `--force` preserves a backup. Hook installation now resolves Git's
+  hook path so linked worktrees and `.git` file layouts are supported, and
+  never treats symlink targets as RevRem-managed hooks to overwrite.
+- Run artifacts now include `invocation.json`, mirrored under
+  `summary.invocation`, so operators can inspect the redacted argv, cwd, and
+  RevRem environment overrides that launched a saved run.
+- Native Codex review now enforces RevRem's read-only review contract by
+  passing `sandbox_mode="read-only"` through `codex review` config, keeping the
+  saved argv aligned with progress and summary sandbox metadata.
+- Triage v2 now recovers misplaced per-finding `definition_of_done` string
+  lists by moving them into `prompt_requirements.definition_of_done`, recording
+  the repair in parsing warnings and `summary.triage_diagnostics` so routing
+  artifacts are preserved for recoverable model drift.
+- Routed remediation now treats an explicit CLI `--timeout-seconds` value as
+  an upper bound for route timeouts, including routes saved with
+  `timeout_seconds = 0`, and `revrem doctor` warns on disabled route timeouts.
 - Remediation/check hardening now supports bounded inner remediation-check
   retries via `runtime.inner_check_retries` / `--inner-check-retries`. The
   dogfood profile enables one retry so post-remediation check failures can be
@@ -65,7 +87,9 @@ This project follows Semantic Versioning once public releases begin.
   The checks phase also starts with a worktree cleanliness check that fails on
   untracked non-artifact files left by remediation, and check timeout progress
   now reports timeout evidence instead of misleading signal names when the
-  captured artifact contains RevRem's timeout marker. Timeout-only check
+  captured artifact contains RevRem's timeout marker. Summaries retain
+  per-attempt check history under `iterations[].check_attempts` while keeping
+  `iterations[].checks` as the latest attempt. Timeout-only check
   failures do not trigger the inner remediation retry, preventing provider
   quota spend on test-runtime budget issues that need an operator rerun or a
   larger check timeout instead of another model edit.

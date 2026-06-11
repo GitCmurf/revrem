@@ -115,6 +115,38 @@
         "null"
       ]
     },
+    "invocation": {
+      "additionalProperties": true,
+      "properties": {
+        "argv": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "command_line": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "environment": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "schema_version": {
+          "enum": [
+            "1.0"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "iterations": {
       "items": {
         "additionalProperties": true,
@@ -140,6 +172,76 @@
         "type": "object"
       },
       "type": "object"
+    },
+    "phase_failures": {
+      "items": {
+        "additionalProperties": true,
+        "properties": {
+          "diagnostic_artifact": {
+            "type": "string"
+          },
+          "failure": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "iteration": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "redirected_retry_command": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "phase",
+          "iteration"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "phase_observations": {
+      "items": {
+        "additionalProperties": true,
+        "properties": {
+          "diagnostic_artifact": {
+            "type": "string"
+          },
+          "iteration": {
+            "type": "string"
+          },
+          "observed": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "requested": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "warnings": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "phase",
+          "iteration",
+          "provider"
+        ],
+        "type": "object"
+      },
+      "type": "array"
     },
     "profile": {
       "type": [
@@ -179,6 +281,30 @@
         "object",
         "null"
       ]
+    },
+    "triage_diagnostics": {
+      "items": {
+        "additionalProperties": true,
+        "properties": {
+          "artifact": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
     },
     "usd": {
       "type": [

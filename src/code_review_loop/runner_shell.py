@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shlex
 from dataclasses import dataclass, replace
 from typing import Literal, cast
 
@@ -60,6 +59,7 @@ from code_review_loop.core.state import RunState
 from code_review_loop.iteration_labels import artifact_label, event_iteration_label
 from code_review_loop.routing_artifacts import record_routing_outcome
 from code_review_loop.run_guards import assert_worktree_stable_before_remediation
+from code_review_loop.runner_check_attempts import record_check_attempt
 from code_review_loop.runner_commit_phase import execute_commit_phase
 from code_review_loop.runner_retry_phase import retry_after_checks, retry_after_commit_hook
 from code_review_loop.runner_routing_phase import resolve_routing_accumulator
@@ -374,15 +374,14 @@ class _RunnerEngineExecutor:
         timeout_only_failures = bool(pending_check_failures) and _all_failed_checks_are_revrem_timeouts(check_results)
         self.state.set_pending_check_failures(bool(pending_check_failures))
         self.state.iterations[-1]["check_failures"] = len(checks_outcome.failed_commands)
-        if check_results:
-            self.state.iterations[-1]["checks"] = [
-                {
-                    "command": shlex.join(result.args),
-                    "status": "passed" if result.returncode == 0 else "failed",
-                    "artifact": f"check-{artifact_stem}-{index}.txt",
-                }
-                for index, result in enumerate(check_results, start=1)
-            ]
+        record_check_attempt(
+            self.state.iterations[-1],
+            retry_count=retry_count,
+            artifact_stem=artifact_stem,
+            display_label=display_label,
+            failed_commands=tuple(checks_outcome.failed_commands),
+            check_results=check_results,
+        )
         if engine_state.acc.resolved_route and engine_state.acc.remediation_result_returncode is not None:
             record_routing_outcome(
                 config=self.config,

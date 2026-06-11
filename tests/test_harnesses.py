@@ -20,16 +20,19 @@ def test_codex_adapter_builds_review_command():
             base="main",
             model="gpt-5.5",
             reasoning_effort="medium",
+            sandbox="read-only",
         )
     )
 
     assert command == [
         "codex",
-        "-c",
-        'model_reasoning_effort="medium"',
         "--model",
         "gpt-5.5",
         "review",
+        "-c",
+        'model_reasoning_effort="medium"',
+        "-c",
+        'sandbox_mode="read-only"',
         "--base",
         "main",
     ]

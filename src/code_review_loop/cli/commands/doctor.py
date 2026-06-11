@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from code_review_loop import diagnostics, profiles, suppressions
-from code_review_loop.cli.args import parse_doctor_args
+from code_review_loop import check_suggestions, diagnostics, profiles, suppressions
+from code_review_loop.cli.args import parse_doctor_args, parse_doctor_checks_args
 from code_review_loop.cli.config_builder import default_artifact_dir, profile_or_default
 
 from ..outcome import CommandFailed, CommandOk
 
 
 def main(argv: Sequence[str]) -> int:
+    if argv and argv[0] == "checks":
+        return _checks_main(argv[1:])
     args = parse_doctor_args(argv)
     try:
         profile = profile_or_default(args.profile, Path.cwd(), require_implemented=False)
@@ -64,7 +67,9 @@ def main(argv: Sequence[str]) -> int:
                 ),
             )
         )
+        issues.extend(_route_timeout_issues(profile, include_disabled_routes=args.validate_routes))
         issues.extend(_suppression_doctor_issues(Path.cwd()))
+        issues = _drop_ok_if_other_issues(issues)
     output_format = args.format or ("text" if sys.stdout.isatty() else "json")
     if output_format == "json":
         print(diagnostics.doctor_json(issues), end="")
@@ -74,6 +79,17 @@ def main(argv: Sequence[str]) -> int:
         return CommandFailed(exit_code=4).exit_code
     if args.strict and diagnostics.has_warning_issue(issues):
         return CommandFailed(exit_code=6).exit_code
+    return CommandOk().exit_code
+
+
+def _checks_main(argv: Sequence[str]) -> int:
+    args = parse_doctor_checks_args(argv)
+    cwd = Path(args.cwd) if args.cwd is not None else Path.cwd()
+    output_format = args.format or ("text" if sys.stdout.isatty() else "json")
+    if output_format == "json":
+        print(json.dumps(check_suggestions.suggestions_payload(cwd), indent=2, sort_keys=True))
+    else:
+        print(check_suggestions.render_suggestions_text(cwd), end="")
     return CommandOk().exit_code
 
 
@@ -96,6 +112,42 @@ def profile_routed_harnesses(
     ):
         return ()
     return tuple(route.harness for route in profile.triage.routes.values())
+
+
+def _route_timeout_issues(
+    profile: profiles.Profile,
+    *,
+    include_disabled_routes: bool = False,
+) -> list[diagnostics.DiagnosticIssue]:
+    if not include_disabled_routes and (
+        not profile.triage.enabled or not profile.triage.routing.enabled
+    ):
+        return []
+    issues: list[diagnostics.DiagnosticIssue] = []
+    for route_name, route in sorted(profile.triage.routes.items()):
+        if route.timeout_seconds != 0:
+            continue
+        issues.append(
+            diagnostics.DiagnosticIssue(
+                code="revrem.preflight.route_timeout_disabled",
+                severity="warn",
+                message=f"Route {route_name!r} remediation timeout is disabled.",
+                hint=(
+                    "Prefer bounded route timeouts for unattended runs; CLI "
+                    "--timeout-seconds can cap routed remediation for watched runs."
+                ),
+                evidence={"route": route_name, "timeout_seconds": route.timeout_seconds},
+            )
+        )
+    return issues
+
+
+def _drop_ok_if_other_issues(
+    issues: list[diagnostics.DiagnosticIssue],
+) -> list[diagnostics.DiagnosticIssue]:
+    if len(issues) <= 1:
+        return issues
+    return [issue for issue in issues if issue.code != "revrem.preflight.ok"]
 
 
 def _suppression_doctor_issues(cwd: Path) -> list[diagnostics.DiagnosticIssue]:

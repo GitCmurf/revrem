@@ -78,6 +78,9 @@ def add_artifact_paths(summary: dict[str, object], config: LoopConfig) -> None:
     }
     if context_paths:
         artifact_paths["contexts"] = context_paths
+    invocation_path = artifact_dir / "invocation.json"
+    if invocation_path.is_file():
+        artifact_paths["invocation"] = str(invocation_path)
     summary["artifact_paths"] = artifact_paths
     fallbacks = commit_message_fallbacks(config.artifact_dir)
     if fallbacks:
@@ -135,14 +138,31 @@ def write_summary(
 ) -> None:
     update_unexpected_behaviors(config, summary)
     add_summary_contract_fields(config, summary, clock=clock)
+    write_invocation_artifact(config, summary)
     add_artifact_paths(summary, config)
+    add_triage_diagnostics(summary, config.artifact_dir)
+    add_phase_diagnostics(summary, config.artifact_dir)
     if budget_state is not None or "budgets" not in summary:
         summary["budgets"] = summary_budget_payload(config, budget_state=budget_state)
+    add_timing_warnings(summary)
     if event_sink is not None:
         emit_artifact_write_events(config, summary, event_sink=event_sink)
         summary_detail = summary.get("stopped_reason") or summary.get("final_status") or "summary"
         event_sink.emit("summary", payload={"summary": str(summary_detail)})
     artifacts.write_json_artifact(config.artifact_dir, "summary.json", summary)
+
+
+def write_invocation_artifact(config: LoopConfig, summary: dict[str, object]) -> None:
+    if not config.invocation:
+        return
+    invocation = dict(config.invocation)
+    summary.setdefault("invocation", invocation)
+    artifacts.write_json_artifact(
+        config.artifact_dir,
+        "invocation.json",
+        invocation,
+        schema_version=str(invocation.get("schema_version") or "1.0"),
+    )
 
 
 def summary_budget_payload(
@@ -170,6 +190,119 @@ def summary_budget_payload(
         "tokens": tokens,
         "usd": usd,
     }
+
+
+def add_timing_warnings(summary: dict[str, object]) -> None:
+    duration = summary.get("duration_seconds")
+    budgets_payload = summary.get("budgets")
+    if not isinstance(duration, int | float) or not isinstance(budgets_payload, dict):
+        summary.pop("timing_warnings", None)
+        return
+    active_elapsed = budgets_payload.get("wall_elapsed_seconds")
+    if not isinstance(active_elapsed, int | float) or active_elapsed <= 0:
+        summary.pop("timing_warnings", None)
+        return
+    gap = float(duration) - float(active_elapsed)
+    if gap < 300 or float(duration) < float(active_elapsed) * 1.5:
+        summary.pop("timing_warnings", None)
+        return
+    summary["timing_warnings"] = [
+        {
+            "kind": "wall_clock_exceeds_active_elapsed",
+            "duration_seconds": float(duration),
+            "active_elapsed_seconds": float(active_elapsed),
+            "gap_seconds": gap,
+            "message": (
+                "Wall-clock duration substantially exceeds active elapsed time; "
+                "the host may have slept, suspended, or delayed process scheduling."
+            ),
+        }
+    ]
+
+
+def add_triage_diagnostics(summary: dict[str, object], artifact_dir: Path) -> None:
+    diagnostics_payload = triage_diagnostics(artifact_dir)
+    if diagnostics_payload:
+        summary["triage_diagnostics"] = diagnostics_payload
+    else:
+        summary.pop("triage_diagnostics", None)
+
+
+def triage_diagnostics(artifact_dir: Path) -> list[dict[str, object]]:
+    items: list[dict[str, object]] = []
+    for path in sorted(artifact_dir.glob("diagnostics*.json"), key=artifact_sort_key):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        issues = payload.get("issues")
+        if not isinstance(issues, list):
+            continue
+        for issue in issues:
+            if not isinstance(issue, dict):
+                continue
+            code = issue.get("code")
+            if not isinstance(code, str) or not code.startswith("revrem.triage."):
+                continue
+            items.append(
+                {
+                    "kind": "issue",
+                    "code": code,
+                    "severity": issue.get("severity", "warn"),
+                    "message": issue.get("message", code),
+                    "artifact": str(path),
+                }
+            )
+    for path in sorted(artifact_dir.glob("triage-*.json"), key=artifact_sort_key):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        warnings = payload.get("parsing_warnings")
+        if not isinstance(warnings, list):
+            continue
+        for warning in warnings:
+            if not isinstance(warning, str) or not warning:
+                continue
+            items.append(
+                {
+                    "kind": "parsing_warning",
+                    "code": "revrem.triage.parsing_warning",
+                    "severity": "warn",
+                    "message": warning,
+                    "artifact": str(path),
+                }
+            )
+    return items
+
+
+def add_phase_diagnostics(summary: dict[str, object], artifact_dir: Path) -> None:
+    observations = _diagnostic_payloads(artifact_dir, "*-observation.json")
+    failures = _diagnostic_payloads(artifact_dir, "*-failure.json")
+    if observations:
+        summary["phase_observations"] = observations
+    else:
+        summary.pop("phase_observations", None)
+    if failures:
+        summary["phase_failures"] = failures
+    else:
+        summary.pop("phase_failures", None)
+
+
+def _diagnostic_payloads(artifact_dir: Path, pattern: str) -> list[dict[str, object]]:
+    items: list[dict[str, object]] = []
+    for path in sorted(artifact_dir.glob(pattern), key=artifact_sort_key):
+        with suppress(OSError, json.JSONDecodeError):
+            value = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(value, dict):
+                item = dict(value)
+                item.setdefault("diagnostic_artifact", str(path))
+                items.append(item)
+    return items
 
 
 def emit_artifact_write_events(

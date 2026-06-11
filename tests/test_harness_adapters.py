@@ -167,6 +167,7 @@ def test_kilo_adapter_commands():
         assert "--auto" in cmd
         assert "--model" in cmd
         assert "m3" in cmd
+        assert "--dangerously-skip-permissions" not in cmd
 
 
 def test_kilo_adapter_omits_auto_for_unsupported_full_auto_sandbox_combos():
@@ -190,6 +191,30 @@ def test_kilo_adapter_omits_auto_for_unsupported_full_auto_sandbox_combos():
         assert "--auto" not in cmd, (
             f"--auto must be absent for full_auto={full_auto} sandbox={sandbox}"
         )
+
+
+def test_kilo_adapter_pins_verified_run_subcommand_contract():
+    """Kilo is an opencode fork, but its top-level commands are not identical.
+
+    RevRem only depends on the verified ``kilo run`` surface: ``--auto`` is
+    accepted by ``kilo run --help`` for autonomous execution, while prompt
+    delivery remains stdin instead of opencode's file-attachment path.
+    """
+    base_command = harnesses.build_phase_command(
+        harnesses.PhaseCommandRequest(
+            harness="kilo",
+            role="remediation",
+            executable="kilo",
+            model="provider/model",
+            sandbox="workspace-write",
+            full_auto=True,
+        )
+    )
+    command, stdin = harnesses.prepare_prompt_invocation("kilo", base_command, "PROMPT")
+
+    assert command == ["kilo", "run", "--auto", "--model", "provider/model"]
+    assert stdin == "PROMPT"
+    assert "--file" not in command
 
 
 def test_prompt_invocation_uses_stdin_for_claude():

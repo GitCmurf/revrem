@@ -730,6 +730,7 @@ def profile_from_loop_config(
             provider_retry_backoff_seconds=config.provider_retry_backoff_seconds,
             external_review_input_chars=config.external_review_input_chars,
             external_review_warning_seconds=config.external_review_warning_seconds,
+            external_review_truncation_policy=config.external_review_truncation_policy,
             terminal_excerpt_chars=config.terminal_excerpt_chars,
         ),
         budgets=profiles.BudgetConfig(
