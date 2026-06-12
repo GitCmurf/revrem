@@ -160,13 +160,10 @@ def _normalize_v2_definition_of_done_placement(payload: dict[str, Any]) -> dict[
     normalized = dict(payload)
     normalized_prompt_requirements = dict(prompt_requirements)
     raw_dod = normalized_prompt_requirements.get("definition_of_done")
-    if not isinstance(raw_dod, list):
-        return payload
-
     raw_warnings = normalized.get("parsing_warnings")
     warnings_can_update = raw_warnings is None or isinstance(raw_warnings, list)
     warnings, _ = _normalize_parsing_warnings(raw_warnings or [])
-    merged_dod = list(raw_dod)
+    merged_dod = list(raw_dod) if isinstance(raw_dod, list) else []
     changed = False
 
     for collection_name in ("confirmed_findings", "needs_more_info", "rejected_findings"):

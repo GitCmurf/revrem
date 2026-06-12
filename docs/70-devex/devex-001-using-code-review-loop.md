@@ -4,7 +4,7 @@ type: DEVEX
 title: Using code-review-loop
 status: Draft
 version: '1.52'
-last_updated: '2026-06-10'
+last_updated: '2026-06-11'
 owner: GitCmurf
 docops_version: '2.0'
 area: devex
@@ -19,7 +19,7 @@ keywords:
 > **Owner:** GitCmurf
 > **Status:** Draft
 > **Version:** 1.52
-> **Last Updated:** 2026-06-10
+> **Last Updated:** 2026-06-11
 > **Type:** DEVEX
 > **Area:** devex
 > **Description:** Operator guide for the code-review-loop utility

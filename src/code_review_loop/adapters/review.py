@@ -9,7 +9,6 @@ does not import the runner or CLI edge.
 from __future__ import annotations
 
 import json
-import shlex
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -358,9 +357,10 @@ def _write_review_failure_diagnostic(
     retry_command = _codex_review_retry_command(config)
     if retry_command is not None:
         payload["retry_command"] = retry_command
-        payload["redirected_retry_command"] = (
-            f"{shlex.join(retry_command)} > /tmp/revrem-review.txt 2>&1"
-        )
+        payload["redirected_retry_command"] = {
+            "command": retry_command,
+            "capture_hint": "capture stdout/stderr to a log file",
+        }
     artifacts.write_json_artifact(
         config.artifact_dir,
         f"diagnostics-{artifact_label}-failure.json",
@@ -376,11 +376,11 @@ def _codex_review_retry_command(config: LoopConfig) -> list[str] | None:
     reasoning_effort = config.review_reasoning_effort or config.reasoning_effort
     if model:
         command.extend(["--model", model])
+    command.append("review")
+    if reasoning_effort:
+        command.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])
     command.extend(
         [
-            "review",
-            "-c",
-            f'model_reasoning_effort="{reasoning_effort or "low"}"',
             "-c",
             'sandbox_mode="read-only"',
             "--base",

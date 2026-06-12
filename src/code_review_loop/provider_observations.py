@@ -94,7 +94,7 @@ def _collect_banner_metadata_lines(lines: list[str]) -> list[str]:
         if not sep:
             break
         if key.strip().lower() not in CODEX_BANNER_KEYS:
-            break
+            continue
         metadata.append(line)
     return metadata
 

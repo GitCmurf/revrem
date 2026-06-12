@@ -452,7 +452,9 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         )
     )
     external_review_warning_seconds_source = (
-        "cli" if args.external_review_warning_seconds is not None else profile_source
+        "cli" if args.external_review_warning_seconds is not None
+        else "profile" if profile.runtime.external_review_warning_seconds is not None
+        else "default"
     )
     external_review_warning_seconds = resolve_external_review_warning_seconds(
         pick(
@@ -467,7 +469,9 @@ def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, 
         DEFAULT_EXTERNAL_REVIEW_TRUNCATION_POLICY,
     )
     external_review_truncation_policy_source = (
-        "cli" if args.external_review_truncation_policy is not None else profile_source
+        "cli" if args.external_review_truncation_policy is not None
+        else "profile" if profile.runtime.external_review_truncation_policy is not None
+        else "default"
     )
     inner_check_retries = int(
         pick(args.inner_check_retries, profile.runtime.inner_check_retries, 0)

@@ -80,6 +80,8 @@ def _package_json_suggestions(root: Path) -> list[CheckSuggestion]:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return []
+    if not isinstance(raw, dict):
+        return []
     scripts = raw.get("scripts")
     if not isinstance(scripts, dict):
         return []
@@ -120,10 +122,11 @@ def _python_suggestions(root: Path) -> list[CheckSuggestion]:
     suggestions: list[CheckSuggestion] = []
     pyproject = root / "pyproject.toml"
     has_pytest_config = False
+    raw: dict[str, object] = {}
     if pyproject.is_file():
         try:
             raw = tomllib.loads(pyproject.read_text(encoding="utf-8"))
-        except (OSError, tomllib.TOMLDecodeError):
+        except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError):
             raw = {}
         tool = raw.get("tool")
         has_pytest_config = isinstance(tool, dict) and isinstance(
@@ -148,7 +151,7 @@ def _python_suggestions(root: Path) -> list[CheckSuggestion]:
                 notes="Python test surface detected.",
             )
         )
-    if pyproject.is_file() and _pyproject_has_ruff(pyproject):
+    if pyproject.is_file() and isinstance(raw.get("tool"), dict) and "ruff" in raw["tool"]:  # type: ignore[operator]
         suggestions.append(
             CheckSuggestion(
                 command="ruff check .",
@@ -161,15 +164,6 @@ def _python_suggestions(root: Path) -> list[CheckSuggestion]:
             )
         )
     return suggestions
-
-
-def _pyproject_has_ruff(path: Path) -> bool:
-    try:
-        raw = tomllib.loads(path.read_text(encoding="utf-8"))
-    except (OSError, tomllib.TOMLDecodeError):
-        return False
-    tool = raw.get("tool")
-    return isinstance(tool, dict) and "ruff" in tool
 
 
 def _pre_commit_suggestions(root: Path) -> list[CheckSuggestion]:
@@ -273,7 +267,7 @@ def _git_hook_suggestions(root: Path) -> list[CheckSuggestion]:
                     CheckSuggestion(
                         command=str(hook),
                         source=(
-                            str(hook.relative_to(root))
+                            str(hook.resolve().relative_to(root.resolve()))
                             if _is_relative_to(hook, root)
                             else str(hook)
                         ),

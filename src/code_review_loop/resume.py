@@ -272,10 +272,19 @@ def resume_loop_config(
             "external_review_warning_seconds",
             DEFAULT_EXTERNAL_REVIEW_WARNING_SECONDS,
         ),
-        external_review_truncation_policy=_resume_str(
-            resume_config,
-            "external_review_truncation_policy",
-            DEFAULT_EXTERNAL_REVIEW_TRUNCATION_POLICY,
+        external_review_truncation_policy=(
+            _resume_str(
+                resume_config,
+                "external_review_truncation_policy",
+                DEFAULT_EXTERNAL_REVIEW_TRUNCATION_POLICY,
+            )
+            if _resume_str(
+                resume_config,
+                "external_review_truncation_policy",
+                DEFAULT_EXTERNAL_REVIEW_TRUNCATION_POLICY,
+            )
+            in {"warn", "fail"}
+            else DEFAULT_EXTERNAL_REVIEW_TRUNCATION_POLICY
         ),
         check_commands=_resume_str_tuple(resume_config, "check_commands"),
         commit_after_remediation=_resume_bool(resume_config, "commit_after_remediation", False),

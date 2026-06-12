@@ -87,7 +87,7 @@ def test_invocation_payload_preserves_argv_and_redacts_environment(monkeypatch):
         command_line=("revrem", "--profile", "dogfood"),
         environ={
             "OTHER_TOOL": "ignored",
-            "REVREM_API_KEY": "small-secret",
+            "REVREM_API_KEY": "placeholder_revrem_api_key",
             "REVREM_FAKE_HARNESS_FIXTURE_DIR": "/home/example-user/fixtures",
             "REVREM_LIVE_KILO": "1",
         },

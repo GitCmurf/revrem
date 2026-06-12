@@ -130,7 +130,7 @@ def _is_managed(path: Path) -> bool:
         return False
     try:
         text = path.read_text(encoding="utf-8")
-    except FileNotFoundError:
+    except OSError:
         return False
     except UnicodeDecodeError:
         return False

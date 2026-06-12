@@ -185,7 +185,7 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
     if isinstance(triage_diagnostics, list) and triage_diagnostics:
         visible_items = [item for item in triage_diagnostics if isinstance(item, dict)]
         has_warning = any(
-            str(item.get("severity") or "warn").lower() in {"warn", "warning", "error"}
+            str(item.get("severity") or "warn").lower() in {"warn", "warning", "error", "blocking"}
             for item in visible_items
         )
         lines.append("")
@@ -258,11 +258,11 @@ def _phase_observation_warnings(
     return warnings
 
 
-def _check_retry_summary(iteration: Mapping[object, object]) -> str:
+def _check_retry_summary(iteration: Mapping[str, object]) -> str:
     attempts = iteration.get("check_attempts")
     if not isinstance(attempts, list) or len(attempts) < 2:
         return ""
-    first_failed: Mapping[object, object] | None = None
+    first_failed: Mapping[str, object] | None = None
     for attempt in attempts:
         if not isinstance(attempt, dict):
             continue
@@ -284,7 +284,7 @@ def _check_retry_summary(iteration: Mapping[object, object]) -> str:
     return f", check retry: first failed {first_failed.get('check_failures')}{command_text}"
 
 
-def _first_failed_check_command(attempt: Mapping[object, object]) -> str | None:
+def _first_failed_check_command(attempt: Mapping[str, object]) -> str | None:
     checks = attempt.get("checks")
     if not isinstance(checks, list):
         return None

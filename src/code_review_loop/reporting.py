@@ -313,12 +313,14 @@ def add_phase_diagnostics(summary: dict[str, object], artifact_dir: Path) -> Non
 def _diagnostic_payloads(artifact_dir: Path, pattern: str) -> list[dict[str, object]]:
     items: list[dict[str, object]] = []
     for path in sorted(artifact_dir.glob(pattern), key=artifact_sort_key):
-        with suppress(OSError, json.JSONDecodeError):
+        try:
             value = json.loads(path.read_text(encoding="utf-8"))
             if isinstance(value, dict):
                 item = dict(value)
                 item.setdefault("diagnostic_artifact", str(path))
                 items.append(item)
+        except (OSError, json.JSONDecodeError):
+            pass
     return items
 
 
