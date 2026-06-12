@@ -14,6 +14,8 @@ from importlib import import_module
 
 import pytest
 
+from code_review_loop.cli import args as cli_args
+
 cli_main = import_module("code_review_loop.cli.main")
 cli_registry = import_module("code_review_loop.cli.commands.registry")
 
@@ -104,3 +106,47 @@ def test_main_falls_through_when_no_subcommand_matches(
         cli_main.main(["definitely-not-a-subcommand", "--whatever"])
     assert excinfo.value.code == 99
     assert called["argv"] == ["definitely-not-a-subcommand", "--whatever"]
+
+
+def test_main_parser_rejects_truncated_long_option(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        cli_args.parse_args(["--no-commit-after-"])
+
+    assert excinfo.value.code == 2
+    assert "unrecognized arguments: --no-commit-after-" in capsys.readouterr().err
+
+
+def test_main_parser_rejects_truncated_reasoning_option(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        cli_args.parse_args(["--remediation-reasoning-ef", "low"])
+
+    assert excinfo.value.code == 2
+    assert "unrecognized arguments: --remediation-reasoning-ef" in capsys.readouterr().err
+
+
+def test_main_parser_accepts_fully_spelled_long_options() -> None:
+    parsed = cli_args.parse_args(
+        [
+            "--no-commit-after-remediation",
+            "--remediation-reasoning-effort",
+            "low",
+            "--pending-review",
+            "ignore",
+        ]
+    )
+
+    assert parsed.commit_after_remediation is False
+    assert parsed.remediation_reasoning_effort == "low"
+    assert parsed.pending_review == "ignore"
+
+
+def test_subcommand_parser_rejects_truncated_long_option(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        cli_args.parse_install_hooks_args(["--uninst"])
+
+    assert excinfo.value.code == 2
+    assert "unrecognized arguments: --uninst" in capsys.readouterr().err

@@ -19,8 +19,25 @@ PROGRESS_STYLE_CHOICES = ("compact", "verbose", "rich")
 COMMIT_ON_HOOK_FAILURE_CHOICES = profiles.COMMIT_ON_HOOK_FAILURE_CHOICES
 
 
+class RevRemArgumentParser(argparse.ArgumentParser):
+    """ArgumentParser with long-option abbreviation disabled by default."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        kwargs.setdefault("allow_abbrev", False)
+        super().__init__(*args, **kwargs)
+
+
+def _argument_parser(*args, **kwargs) -> RevRemArgumentParser:
+    return RevRemArgumentParser(*args, **kwargs)
+
+
+def _subparsers(parser: argparse.ArgumentParser, **kwargs):
+    kwargs.setdefault("parser_class", RevRemArgumentParser)
+    return parser.add_subparsers(**kwargs)
+
+
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
+    parser = _argument_parser(
         prog="revrem",
         description="Run a bounded Codex review/remediation loop against a base branch.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -545,12 +562,12 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
 
 
 def parse_config_args(argv: Sequence[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
+    parser = _argument_parser(
         prog="revrem config",
         description="Manage RevRem TOML profiles.",
     )
     parser.add_argument("--format", choices=("text", "json"), default=None)
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers = _subparsers(parser, dest="command", required=True)
 
     list_parser = subparsers.add_parser("list", help="List available profiles.")
     list_parser.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)
@@ -614,12 +631,12 @@ def parse_config_args(argv: Sequence[str]) -> argparse.Namespace:
 
 
 def parse_history_args(argv: Sequence[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
+    parser = _argument_parser(
         prog="revrem history",
         description="Inspect local RevRem run history.",
     )
     parser.add_argument("--format", choices=("text", "json"), default=None)
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers = _subparsers(parser, dest="command", required=True)
 
     list_parser = subparsers.add_parser("list", help="List recent runs.")
     list_parser.add_argument("--limit", type=int, default=10)
@@ -628,11 +645,11 @@ def parse_history_args(argv: Sequence[str]) -> argparse.Namespace:
 
 
 def parse_checks_args(argv: Sequence[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
+    parser = _argument_parser(
         prog="revrem checks",
         description="Suggest repository verification commands without executing them.",
     )
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers = _subparsers(parser, dest="command", required=True)
     suggest = subparsers.add_parser(
         "suggest",
         help="Inspect repository markers and suggest verification commands.",
@@ -643,7 +660,7 @@ def parse_checks_args(argv: Sequence[str]) -> argparse.Namespace:
 
 
 def parse_doctor_checks_args(argv: Sequence[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
+    parser = _argument_parser(
         prog="revrem doctor checks",
         description="Suggest repository verification commands without executing them.",
     )
@@ -653,7 +670,7 @@ def parse_doctor_checks_args(argv: Sequence[str]) -> argparse.Namespace:
 
 
 def parse_doctor_args(argv: Sequence[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
+    parser = _argument_parser(
         prog="revrem doctor",
         description="Run local RevRem setup diagnostics without invoking a model.",
     )
@@ -688,7 +705,7 @@ def parse_doctor_args(argv: Sequence[str]) -> argparse.Namespace:
 
 
 def parse_install_hooks_args(argv: Sequence[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
+    parser = _argument_parser(
         prog="revrem install-hooks",
         description="Install or remove RevRem-managed Git hook examples.",
     )
@@ -714,7 +731,7 @@ def parse_install_hooks_args(argv: Sequence[str]) -> argparse.Namespace:
 
 
 def parse_bundle_bug_report_args(argv: Sequence[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
+    parser = _argument_parser(
         prog="revrem bundle-bug-report",
         description="Create a redacted, deterministic bug-report bundle from a RevRem run directory.",
     )
@@ -727,7 +744,7 @@ def parse_bundle_bug_report_args(argv: Sequence[str]) -> argparse.Namespace:
 
 
 def parse_resume_args(argv: Sequence[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
+    parser = _argument_parser(
         prog="revrem resume",
         description="Validate whether a previous RevRem run is safe to resume.",
     )
@@ -737,13 +754,13 @@ def parse_resume_args(argv: Sequence[str]) -> argparse.Namespace:
 
 
 def parse_suppress_args(argv: Sequence[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
+    parser = _argument_parser(
         prog="revrem suppress",
         description="Manage explicit finding suppressions.",
     )
     parser.add_argument("--scope", choices=suppressions.SCOPES, default="repo")
     parser.add_argument("--format", choices=("text", "json"), default="text")
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers = _subparsers(parser, dest="command", required=True)
 
     add = subparsers.add_parser("add", help="Add or replace a suppression.")
     add.add_argument("fingerprint")
@@ -766,7 +783,7 @@ def parse_suppress_args(argv: Sequence[str]) -> argparse.Namespace:
 
 
 def parse_replay_args(argv: Sequence[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
+    parser = _argument_parser(
         prog="revrem replay",
         description="Replay a RevRem run from events.jsonl without invoking a model.",
     )
@@ -776,12 +793,12 @@ def parse_replay_args(argv: Sequence[str]) -> argparse.Namespace:
 
 
 def parse_policy_args(argv: Sequence[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
+    parser = _argument_parser(
         prog="revrem policy",
         description="Inspect and lint routing policy.",
     )
     parser.add_argument("--format", choices=("text", "json"), default=None)
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers = _subparsers(parser, dest="command", required=True)
 
     lint = subparsers.add_parser("lint", help="Lint routing rules and routes in a profile.")
     lint.add_argument("--profile", required=True)
@@ -798,12 +815,12 @@ def parse_policy_args(argv: Sequence[str]) -> argparse.Namespace:
 
 
 def parse_triage_args(argv: Sequence[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
+    parser = _argument_parser(
         prog="revrem triage",
         description="Inspect triage and routing artifacts.",
     )
     parser.add_argument("--format", choices=("text", "json"), default=None)
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers = _subparsers(parser, dest="command", required=True)
 
     explain = subparsers.add_parser(
         "explain", help="Explain the routing decision for a run iteration."
