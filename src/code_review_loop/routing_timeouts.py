@@ -39,4 +39,4 @@ def explicit_cli_remediation_timeout_cap(config: LoopConfig) -> float | None:
     source = config.phase_config_field_sources.get("remediation", {}).get("timeout_seconds")
     if source != "cli":
         return None
-    return config.remediation_timeout_seconds
+    return phase_timeout_seconds(config, config.remediation_timeout_seconds)

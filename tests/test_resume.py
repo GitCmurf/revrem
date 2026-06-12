@@ -7,13 +7,14 @@ from pathlib import Path
 import pytest
 
 import tests.support.application_runner as runner_mod
-from code_review_loop import budgets, events, harnesses
+from code_review_loop import budgets, events, harnesses, routing_timeouts
 from code_review_loop import resume as resume_mod
 from code_review_loop.adapters import git as git_adapter
 from code_review_loop.adapters import phase_support
 from code_review_loop.adapters import subprocess_runner as subprocess_runner_mod
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.ports import CommandResult
+from code_review_loop.core.routing_types import ResolvedRoute
 
 cli_main = import_module("code_review_loop.cli.main")
 
@@ -561,6 +562,49 @@ def test_resume_config_payload_and_loop_config_restore_external_review_settings(
     assert resumed.provider_retry_backoff_seconds == 2.5
     assert resumed.external_review_input_chars == 600_000
     assert resumed.external_review_warning_seconds == 600.5
+
+
+def test_resume_configured_cli_timeout_zero_does_not_cap_routed_timeout(tmp_path):
+    run_dir = tmp_path / "run"
+    write_resume_run(
+        run_dir,
+        resume_config={
+            "base": "main",
+            "max_iterations": 1,
+            "codex_bin": "codex",
+            "review_harness": "codex",
+            "remediation_harness": "codex",
+            "timeout_seconds": 0,
+            "review_timeout_seconds": 0,
+            "remediation_timeout_seconds": 0,
+            "triage_timeout_seconds": 0,
+            "phase_config": {
+                "remediation": {
+                    "sources": {"timeout_seconds": "cli"},
+                }
+            },
+            "check_commands": [],
+        },
+    )
+
+    resumed, _budget_state = resume_mod.resume_loop_config(
+        json.loads((run_dir / "summary.json").read_text(encoding="utf-8")),
+        run_dir=run_dir,
+    )
+    route = ResolvedRoute(
+        route_tier="codex-midi",
+        harness="codex",
+        model="gpt-5.4-mini",
+        reasoning_effort="medium",
+        timeout_seconds=300,
+        sandbox="workspace-write",
+        prompt_fragments=(),
+        allow_model_deescalation=True,
+    )
+
+    assert resumed.remediation_timeout_seconds == 0
+    assert resumed.phase_config_field_sources["remediation"]["timeout_seconds"] == "cli"
+    assert routing_timeouts.effective_route_timeout_seconds(resumed, route) == 300
 
 
 def test_resume_preconditions_block_head_mismatch(tmp_path, monkeypatch):
