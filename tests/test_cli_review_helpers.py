@@ -1129,6 +1129,34 @@ def test_model_overrides_and_reasoning_effort_are_passed_to_codex(tmp_path):
     assert remediation_command[remediation_command.index("--model") + 1] == "gpt-5.4-mini"
 
 
+def test_codex_review_retry_command_uses_effective_review_reasoning_effort(tmp_path):
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="codex",
+        review_model="gpt-5.5",
+        review_reasoning_effort="high",
+    )
+
+    command = review_impl._codex_review_retry_command(config)
+
+    assert command == [
+        "codex",
+        "--model",
+        "gpt-5.5",
+        "review",
+        "-c",
+        'model_reasoning_effort="high"',
+        "-c",
+        'sandbox_mode="read-only"',
+        "--base",
+        "main",
+    ]
+
+
 def test_remediation_command_uses_deterministic_output_options(tmp_path):
     config = LoopConfig(
         base="main",

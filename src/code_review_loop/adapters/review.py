@@ -348,13 +348,14 @@ def _codex_review_retry_command(config: LoopConfig) -> list[str] | None:
         return None
     command = [phase_support._resolve_executable("codex", config)]
     model = config.review_model or config.model
+    reasoning_effort = config.review_reasoning_effort or config.reasoning_effort
     if model:
         command.extend(["--model", model])
     command.extend(
         [
             "review",
             "-c",
-            'model_reasoning_effort="low"',
+            f'model_reasoning_effort="{reasoning_effort or "low"}"',
             "-c",
             'sandbox_mode="read-only"',
             "--base",

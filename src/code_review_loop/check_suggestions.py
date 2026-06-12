@@ -9,6 +9,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from code_review_loop import git_hooks
+from code_review_loop.cli.commands.install_hooks import MANAGED_BEGIN, MANAGED_END
 
 
 @dataclass(frozen=True)
@@ -254,11 +255,21 @@ def _git_hook_suggestions(root: Path) -> list[CheckSuggestion]:
     for hooks_dir in _dedupe_paths(hooks_dirs):
         for hook_name, phase in (("pre-commit", "pre-commit"), ("pre-push", "pre-push")):
             hook = hooks_dir / hook_name
-            if hook.is_file() and os.access(hook, os.X_OK):
+            # RevRem-managed hooks call back into ``revrem``; suggest only
+            # unmanaged executable hooks to avoid recursive execution.
+            if (
+                hook.is_file()
+                and os.access(hook, os.X_OK)
+                and not _is_revrem_managed_hook(hook)
+            ):
                 suggestions.append(
                     CheckSuggestion(
                         command=str(hook),
-                        source=str(hook.relative_to(root)) if _is_relative_to(hook, root) else str(hook),
+                        source=(
+                            str(hook.relative_to(root))
+                            if _is_relative_to(hook, root)
+                            else str(hook)
+                        ),
                         phase=phase,
                         confidence="medium",
                         requires_network=False,
@@ -267,6 +278,14 @@ def _git_hook_suggestions(root: Path) -> list[CheckSuggestion]:
                     )
                 )
     return suggestions
+
+
+def _is_revrem_managed_hook(path: Path) -> bool:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return False
+    return MANAGED_BEGIN in text and MANAGED_END in text
 
 
 def _dedupe_paths(paths: list[Path]) -> list[Path]:

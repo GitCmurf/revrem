@@ -102,6 +102,21 @@ def test_suggest_checks_detects_executable_git_hooks(tmp_path):
     assert any(item.phase == "pre-push" and item.command.endswith("pre-push") for item in suggestions)
 
 
+def test_suggest_checks_skips_revrem_managed_git_hooks(tmp_path):
+    hooks = tmp_path / ".git" / "hooks"
+    hooks.mkdir(parents=True)
+    hook = hooks / "pre-commit"
+    hook.write_text(
+        "#!/bin/sh\n# REVREM_MANAGED_HOOK: begin\nexec revrem --base main\n# REVREM_MANAGED_HOOK: end\n",
+        encoding="utf-8",
+    )
+    hook.chmod(hook.stat().st_mode | 0o111)
+
+    suggestions = check_suggestions.suggest_checks(tmp_path)
+
+    assert all(item.command != str(hook) for item in suggestions)
+
+
 def test_suggest_checks_detects_githooks_directory(tmp_path):
     hooks = tmp_path / ".githooks"
     hooks.mkdir()
