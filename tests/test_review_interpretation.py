@@ -117,6 +117,13 @@ def test_detect_review_status_accepts_exact_clear_review_lines() -> None:
         )
         == "clear"
     )
+    assert (
+        detect_review_status(
+            "I did not identify any discrete, actionable bugs in the diff relative "
+            "to the requested base commit. CodeRabbit also completed with zero findings."
+        )
+        == "clear"
+    )
     assert detect_review_status("This would warrant an inline finding.") == "unknown"
 
 

@@ -268,16 +268,33 @@ def triage_diagnostics(artifact_dir: Path) -> list[dict[str, object]]:
         for warning in warnings:
             if not isinstance(warning, str) or not warning:
                 continue
-            items.append(
-                {
-                    "kind": "parsing_warning",
-                    "code": "revrem.triage.parsing_warning",
-                    "severity": "warn",
-                    "message": warning,
-                    "artifact": str(path),
-                }
-            )
+            diagnostic = triage_parsing_warning_diagnostic(warning)
+            diagnostic["artifact"] = str(path)
+            items.append(diagnostic)
     return items
+
+
+def triage_parsing_warning_diagnostic(message: str) -> dict[str, object]:
+    if _is_fallback_fingerprint_warning(message):
+        return {
+            "kind": "parsing_note",
+            "code": "revrem.triage.fallback_fingerprint",
+            "severity": "info",
+            "message": message,
+        }
+    return {
+        "kind": "parsing_warning",
+        "code": "revrem.triage.parsing_warning",
+        "severity": "warn",
+        "message": message,
+    }
+
+
+def _is_fallback_fingerprint_warning(message: str) -> bool:
+    normalized = message.lower()
+    return (
+        "f1:" in normalized or "f1 " in normalized
+    ) and "review-comment:" in normalized
 
 
 def add_phase_diagnostics(summary: dict[str, object], artifact_dir: Path) -> None:

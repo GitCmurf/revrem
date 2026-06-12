@@ -50,6 +50,30 @@ def test_install_hooks_uses_configured_hooks_path(tmp_path, capsys):
     assert not (tmp_path / ".git" / "hooks" / "pre-commit").exists()
 
 
+def test_install_hooks_rejects_non_repo_cwd_even_with_global_hooks_path(
+    tmp_path, capsys, monkeypatch
+):
+    home = tmp_path / "home"
+    config_home = home / ".config"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
+    subprocess.run(
+        ["git", "config", "--global", "core.hooksPath", ".global-hooks"],
+        check=True,
+        capture_output=True,
+    )
+    cwd = tmp_path / "not-a-repo"
+    cwd.mkdir()
+
+    rc = cli_main(["install-hooks", "--cwd", str(cwd), "--type", "pre-commit"])
+
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "not a Git repository" in captured.err
+    assert not (cwd / ".global-hooks" / "pre-commit").exists()
+
+
 def test_install_hooks_refuses_unmanaged_hook_without_force(tmp_path, capsys):
     _init_repo(tmp_path)
     hooks = tmp_path / ".git" / "hooks"

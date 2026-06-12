@@ -16,14 +16,20 @@ def default_hooks_dir(cwd: Path) -> Path | None:
 
 
 def configured_hooks_path(cwd: Path) -> Path | None:
-    """Return ``core.hooksPath`` resolved relative to the worktree root."""
+    """Return ``core.hooksPath`` resolved relative to a Git worktree root.
+
+    Non-repository directories do not get a configured hooks path, even if a
+    global Git config defines one.
+    """
+    root = worktree_root(cwd)
+    if root is None:
+        return None
     raw = _git_config_path(cwd, "core.hooksPath")
     if raw is None:
         return None
     path = Path(raw)
     if path.is_absolute():
         return path
-    root = worktree_root(cwd) or cwd.resolve()
     return root / path
 
 

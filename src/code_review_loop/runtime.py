@@ -183,11 +183,18 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
 
     triage_diagnostics = summary.get("triage_diagnostics")
     if isinstance(triage_diagnostics, list) and triage_diagnostics:
+        visible_items = [item for item in triage_diagnostics if isinstance(item, dict)]
+        has_warning = any(
+            str(item.get("severity") or "warn").lower() in {"warn", "warning", "error"}
+            for item in visible_items
+        )
         lines.append("")
-        lines.append("WARNING: triage diagnostics were recorded.")
-        for item in triage_diagnostics[:3]:
-            if not isinstance(item, dict):
-                continue
+        lines.append(
+            "WARNING: triage diagnostics were recorded."
+            if has_warning
+            else "Triage notes were recorded."
+        )
+        for item in visible_items[:3]:
             code = item.get("code") or "revrem.triage"
             message = item.get("message") or "see triage diagnostics artifact"
             artifact = item.get("artifact")

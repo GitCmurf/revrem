@@ -176,6 +176,29 @@ def test_suggest_checks_detects_configured_hooks_path_in_linked_worktree(tmp_pat
     )
 
 
+def test_suggest_checks_discovers_root_markers_from_nested_subdirectory(tmp_path):
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    (repo / "package.json").write_text(
+        json.dumps({"scripts": {"test": "vitest"}}),
+        encoding="utf-8",
+    )
+    nested = repo / "nested" / "deeper"
+    nested.mkdir(parents=True)
+
+    suggestions = check_suggestions.suggest_checks(nested)
+
+    assert [item.command for item in suggestions] == ["npm run test"]
+
+
+def test_marker_root_falls_back_to_resolved_cwd_outside_git(tmp_path, monkeypatch):
+    nested = tmp_path / "outside" / "repo"
+    nested.mkdir(parents=True)
+    monkeypatch.setattr(check_suggestions.git_hooks, "worktree_root", lambda _cwd: None)
+
+    assert check_suggestions._marker_root(nested) == nested.resolve()
+
+
 def test_checks_suggest_json_cli(tmp_path, capsys):
     (tmp_path / "go.mod").write_text("module example.test/repo\n", encoding="utf-8")
 

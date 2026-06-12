@@ -789,6 +789,11 @@ def test_summary_collects_triage_diagnostics_from_artifacts(tmp_path):
             "schema_version": "2.0",
             "parsing_warnings": [
                 "Moved misplaced finding definition_of_done entries into prompt requirements.",
+                (
+                    "Review comment did not include an f1: fingerprint, so fingerprint "
+                    "fell back to review-comment:1 based on the single supplied review "
+                    "comment."
+                ),
             ],
         },
     )
@@ -810,6 +815,17 @@ def test_summary_collects_triage_diagnostics_from_artifacts(tmp_path):
             "severity": "warn",
             "message": (
                 "Moved misplaced finding definition_of_done entries into prompt requirements."
+            ),
+            "artifact": str(artifact_dir / "triage-2.json"),
+        },
+        {
+            "kind": "parsing_note",
+            "code": "revrem.triage.fallback_fingerprint",
+            "severity": "info",
+            "message": (
+                "Review comment did not include an f1: fingerprint, so fingerprint "
+                "fell back to review-comment:1 based on the single supplied review "
+                "comment."
             ),
             "artifact": str(artifact_dir / "triage-2.json"),
         },
@@ -835,6 +851,30 @@ def test_terminal_summary_surfaces_triage_diagnostics():
 
     assert "WARNING: triage diagnostics were recorded." in text
     assert "revrem.triage.parsing_warning" in text
+    assert "tmp/run/triage-1.json" in text
+
+
+def test_terminal_summary_reports_info_only_triage_diagnostics_as_notes():
+    text = format_terminal_summary(
+        {
+            "artifact_dir": "tmp/run",
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+            "iterations": [],
+            "triage_diagnostics": [
+                {
+                    "code": "revrem.triage.fallback_fingerprint",
+                    "severity": "info",
+                    "message": "Review comment fell back to review-comment:1.",
+                    "artifact": "tmp/run/triage-1.json",
+                }
+            ],
+        }
+    )
+
+    assert "WARNING: triage diagnostics were recorded." not in text
+    assert "Triage notes were recorded." in text
+    assert "revrem.triage.fallback_fingerprint" in text
     assert "tmp/run/triage-1.json" in text
 
 

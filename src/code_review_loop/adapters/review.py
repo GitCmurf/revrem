@@ -107,6 +107,31 @@ def run_codex_review(
                 external_prompt.truncated
                 and config.external_review_truncation_policy == "fail"
             ):
+                phase_support.progress_event(
+                    config,
+                    "review",
+                    display_label,
+                    "start",
+                    phase_support.resolved_phase_detail(
+                        command,
+                        harness=config.review_harness,
+                        model=config.review_model or config.model,
+                        reasoning_effort=config.review_reasoning_effort or config.reasoning_effort,
+                        timeout_seconds=config.review_timeout_seconds_display,
+                        sandbox="read-only",
+                        source=config.phase_config_sources.get("review", "direct-config"),
+                        prompt_chars=None,
+                        prompt_delivery=None,
+                        prompt_context_chars=external_prompt.context_chars,
+                        prompt_truncated=external_prompt.truncated,
+                    ),
+                    ctx=ctx,
+                    metadata={
+                        "command": phase_support.command_for_progress(list(command)),
+                        "harness": config.review_harness,
+                        **external_review_prompt_metadata(external_prompt, config=config),
+                    },
+                )
                 raise RuntimeError(
                     "prompted review context exceeds external_review_input_chars "
                     f"({external_prompt.context_chars} context chars; cap "

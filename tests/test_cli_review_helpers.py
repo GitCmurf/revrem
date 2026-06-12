@@ -113,6 +113,13 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
     )
     assert (
         detect_review_status(
+            "I did not identify any discrete, actionable bugs in the diff relative "
+            "to the requested base commit. CodeRabbit also completed with zero findings."
+        )
+        == "clear"
+    )
+    assert (
+        detect_review_status(
             "I did not find any discrete introduced bug that would break existing behavior."
         )
         == "clear"
@@ -981,6 +988,13 @@ def test_external_review_truncation_fail_policy_stops_before_provider_call(tmp_p
     )
     assert excinfo.value.summary["error"].endswith("external_review_truncation_policy=fail")
     assert excinfo.value.outcome.reason == "review_failed"
+    
+    summary = json.loads((repo / "artifacts" / "summary.json").read_text(encoding="utf-8"))
+    assert summary["external_review_coverage"]["prompt_truncated"] is True
+    assert summary["external_review_coverage"]["review_context_supplied_in_full"] is False
+    assert summary["external_review_coverage"]["external_review_truncation_policy"] == "fail"
+    assert summary["external_review_coverage"]["external_review_input_chars"] == 1500
+    assert summary["external_review_coverage"]["review_context_chars"] > 1500
 
 
 def test_external_review_prompt_ignores_remediation_input_cap(tmp_path):

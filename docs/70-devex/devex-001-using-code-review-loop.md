@@ -198,8 +198,10 @@ seconds already spent so a resumed run continues against the same total wall
 budget instead of starting a fresh ceiling.
 If triage produces invalid structured output or RevRem recovers a narrow
 contract-adjacent model mistake, the run summary records
-`triage_diagnostics` and the terminal summary prints a warning with the
-diagnostic code and artifact path.
+`triage_diagnostics` and the terminal summary prints the diagnostic code and
+artifact path. Warning-level diagnostics use a `WARNING` heading; expected
+compatibility notes, such as deterministic fallback fingerprints for review
+providers that omit stable IDs, use a non-alarming notes heading.
 `revrem resume <run-dir>` validates the resume preconditions and returns code
 `4` when the summary, event stream, `HEAD`, or base commit do not match. When
 the checks pass, it rebuilds the loop config from `resume_config`, starts from
@@ -900,7 +902,10 @@ still fail validation. Recovered repairs are recorded in
 `summary.triage_diagnostics`, so routing can continue without hiding the model
 drift from operators. The v2 prompt tells models to preserve `f1:` fingerprints
 when present and to use `review-comment:<1-based-order>` with a parsing warning
-for uniquely identifiable review comments that lack a stable finding ID.
+for uniquely identifiable review comments that lack a stable finding ID. RevRem
+classifies that deterministic fallback as an informational triage diagnostic
+rather than a warning because native review providers do not always emit stable
+`f1:` IDs.
 
 `runtime.inner_check_retries` / `--inner-check-retries` can run a bounded
 remediation-check retry inside the same outer iteration. When post-remediation

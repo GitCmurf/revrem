@@ -27,7 +27,7 @@ class CheckSuggestion:
 
 
 def suggest_checks(cwd: Path) -> list[CheckSuggestion]:
-    root = cwd.resolve()
+    root = _marker_root(cwd)
     suggestions: list[CheckSuggestion] = []
     suggestions.extend(_package_json_suggestions(root))
     suggestions.extend(_python_suggestions(root))
@@ -63,6 +63,13 @@ def render_suggestions_text(cwd: Path) -> str:
         if suggestion.notes:
             lines.append(f"  {suggestion.notes}")
     return "\n".join(lines) + "\n"
+
+
+def _marker_root(cwd: Path) -> Path:
+    root = git_hooks.worktree_root(cwd)
+    if root is not None:
+        return root
+    return cwd.resolve()
 
 
 def _package_json_suggestions(root: Path) -> list[CheckSuggestion]:
