@@ -44,6 +44,11 @@ and run history.
   TTYs; non-interactive invocations keep the existing default CLI behavior.
 - The wizard starts from resolved defaults or a named profile and emits a
   minimal command: accepted profile/default values are not repeated as flags.
+- The first screen distinguishes `no-profile` merged defaults from profiles
+  named `default`, shows compact config sources, and previews the default
+  command before asking for input.
+- Pressing Enter on the first screen selects the recommended command and
+  continues to normal confirmation; it does not start provider calls by itself.
 - Common prompts cover base branch, max iterations, checks, final review, and
   the final action: run, dry-run, save-profile, print, or cancel.
 - Advanced prompts cover structured triage, routing, model/effort overrides,
@@ -51,6 +56,10 @@ and run history.
   pending-review handling.
 - Generated commands are parsed and validated through the existing
   `parse_args` and `build_loop_config` path before the operator confirms them.
+- `Ctrl-C`, EOF, `q`, `quit`, and `cancel` exit cleanly before provider calls.
+- When Rich is installed and stderr is a color-capable TTY, headings, default
+  markers, and command previews use color; plain text remains the fallback and
+  `NO_COLOR` disables Rich styling.
 
 ### Acceptance Criteria
 
@@ -62,6 +71,9 @@ and run history.
 - Bare `revrem` dispatches to the wizard only in interactive terminals.
 - Cancellation exits before provider calls with the standard operator-cancel
   code.
+- The initial prompt output includes effective review, triage, remediation,
+  commit, check, and output settings so operators can see what a profile will
+  run before selecting it.
 - `README.md` documents the wizard beside profiles and the postponed optional
   TUI.
 

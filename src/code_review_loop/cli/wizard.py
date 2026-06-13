@@ -5,6 +5,7 @@ from __future__ import annotations
 import shlex
 import sys
 from dataclasses import dataclass
+from os import environ
 from pathlib import Path
 from typing import TextIO
 
@@ -51,7 +52,7 @@ def run_wizard(
     )
     try:
         return wizard.run()
-    except WizardCancelled:
+    except (KeyboardInterrupt, WizardCancelled):
         print("Cancelled before provider calls.", file=wizard.stderr)
         return None
 
@@ -62,9 +63,10 @@ class _Wizard:
         self.stdin = stdin
         self.stdout = stdout
         self.stderr = stderr
+        self.console = _rich_console(stderr)
 
     def run(self) -> WizardResult:
-        print("RevRem command wizard", file=self.stderr)
+        self._print_heading("RevRem command wizard")
         choice = self._choose_profile()
         argv: list[str] = []
         if choice.profile_name:
@@ -104,15 +106,27 @@ class _Wizard:
             profiles.resolve_profiles(cwd=self.cwd, require_implemented=False)
         )
         defaults = profiles.resolve_defaults(cwd=self.cwd, require_implemented=False)
-        options: list[tuple[str, str]] = [("defaults", "resolved repo/user defaults")]
+        options: list[tuple[str, str]] = [
+            (
+                "no-profile",
+                self._profile_option_label(None, defaults, "no profile (merged defaults)"),
+            )
+        ]
         options.extend(
-            (profile.name, _profile_label(profile))
+            (profile.name, self._profile_option_label(profile.name, profile, profile.name))
             for profile in resolved_profiles
             if profile.name
         )
-        default = resolved_profiles[0].name if resolved_profiles else "defaults"
-        selected = self._choice("Start from which configuration?", tuple(options), default=default)
-        if selected == "defaults":
+        default = resolved_profiles[0].name if resolved_profiles else "no-profile"
+        default_argv = _profile_command(default if default != "no-profile" else None)
+        self._print_key_value("Default command", shlex.join(default_argv))
+        selected = self._choice(
+            "Start from which configuration?",
+            tuple(options),
+            default=default,
+            help_text="Enter selects the recommended command; no provider calls run until you confirm.",
+        )
+        if selected == "no-profile":
             return WizardProfileChoice(profile_name=None, profile=defaults)
         for profile in resolved_profiles:
             if profile.name == selected:
@@ -143,7 +157,9 @@ class _Wizard:
                 # without adding a new top-level flag.
                 argv.extend(["--check", "true"])
 
-        final_review = self._yes_no("Run final review after remediation?", profile.pipeline.final_review)
+        final_review = self._yes_no(
+            "Run final review after remediation?", profile.pipeline.final_review
+        )
         if final_review != profile.pipeline.final_review:
             argv.append("--final-review" if final_review else "--skip-final-review")
 
@@ -162,7 +178,10 @@ class _Wizard:
                 if route_names:
                     route = self._choice(
                         "Routing default route",
-                        tuple((name, _route_label(profile.triage.routes[name])) for name in route_names),
+                        tuple(
+                            (name, _route_label(profile.triage.routes[name]))
+                            for name in route_names
+                        ),
                         default=profile.triage.routing.default_route
                         if profile.triage.routing.default_route in route_names
                         else route_names[0],
@@ -291,15 +310,17 @@ class _Wizard:
         options: tuple[tuple[str, str], ...],
         *,
         default: str,
+        help_text: str | None = None,
     ) -> str:
         values = {value for value, _description in options}
         if default not in values:
             default = options[0][0]
         while True:
-            print(f"\n{label}", file=self.stderr)
+            self._print_heading(label)
+            if help_text:
+                self._print_dim(help_text)
             for index, (value, description) in enumerate(options, start=1):
-                marker = " [default]" if value == default else ""
-                print(f"  {index}. {value}: {description}{marker}", file=self.stderr)
+                self._print_option(index, value, description, is_default=value == default)
             raw = self._read(f"Choice [{default}]: ").strip()
             if not raw:
                 return default
@@ -339,8 +360,11 @@ class _Wizard:
             print(error, file=self.stderr)
 
     def _read(self, prompt: str) -> str:
-        print(prompt, end="", file=self.stderr, flush=True)
-        line = self.stdin.readline()
+        self._print_prompt(prompt)
+        try:
+            line = self.stdin.readline()
+        except KeyboardInterrupt as exc:
+            raise WizardCancelled from exc
         if line == "":
             raise WizardCancelled
         value = line.rstrip("\n")
@@ -348,17 +372,165 @@ class _Wizard:
             raise WizardCancelled
         return value
 
+    def _profile_option_label(
+        self,
+        profile_name: str | None,
+        profile: profiles.Profile,
+        display_name: str,
+    ) -> str:
+        parts = [display_name] if profile_name is None else []
+        source = _display_source(profile.source, cwd=self.cwd)
+        if source:
+            parts.append(f"({source})")
+        if profile.description:
+            parts.append(_clip(profile.description, 90))
+        parts.append(_profile_summary(profile))
+        parts.append(f"command: {shlex.join(_profile_command(profile_name))}")
+        return "; ".join(parts)
 
-def _profile_label(profile: profiles.Profile) -> str:
-    parts = []
-    if profile.description:
-        parts.append(profile.description)
-    parts.append(f"base={profile.pipeline.base}")
-    if profile.pipeline.checks:
-        parts.append(f"checks={len(profile.pipeline.checks)}")
-    if profile.source:
-        parts.append(profile.source)
-    return ", ".join(parts)
+    def _print_heading(self, value: str) -> None:
+        print("", file=self.stderr)
+        if self.console is not None:
+            self.console.print(value, style="bold cyan")
+            return
+        print(value, file=self.stderr)
+
+    def _print_key_value(self, key: str, value: str) -> None:
+        if self.console is not None:
+            text = self._rich_text()
+            text.append(f"{key}: ", style="bold")
+            text.append(value, style="green")
+            self.console.print(text)
+            return
+        print(f"{key}: {value}", file=self.stderr)
+
+    def _print_dim(self, value: str) -> None:
+        if self.console is not None:
+            self.console.print(value, style="dim")
+            return
+        print(value, file=self.stderr)
+
+    def _print_option(
+        self,
+        index: int,
+        value: str,
+        description: str,
+        *,
+        is_default: bool,
+    ) -> None:
+        if self.console is not None:
+            text = self._rich_text()
+            text.append(f"  {index}. ", style="dim")
+            text.append(value, style="bold")
+            text.append(": ")
+            for segment_index, segment in enumerate(description.split("; ")):
+                if segment_index:
+                    text.append("; ", style="dim")
+                style = "green" if segment.startswith("command: ") else None
+                text.append(segment, style=style)
+            if is_default:
+                text.append(" [default]", style="yellow")
+            self.console.print(text)
+            return
+        marker = " [default]" if is_default else ""
+        print(f"  {index}. {value}: {description}{marker}", file=self.stderr)
+
+    def _print_prompt(self, prompt: str) -> None:
+        if self.console is not None:
+            text = self._rich_text()
+            text.append(prompt, style="bold")
+            self.console.print(text, end="")
+            return
+        print(prompt, end="", file=self.stderr, flush=True)
+
+    def _rich_text(self):
+        if self.console is None:
+            raise RuntimeError("Rich text requested without a Rich console")
+        from rich.text import Text  # type: ignore[import-not-found]
+
+        return Text()
+
+
+def _profile_command(profile_name: str | None) -> tuple[str, ...]:
+    if profile_name:
+        return ("revrem", "--profile", profile_name)
+    return ("revrem",)
+
+
+def _profile_summary(profile: profiles.Profile) -> str:
+    parts = [
+        f"base={profile.pipeline.base}",
+        f"max={profile.pipeline.max_iterations}",
+        f"checks={len(profile.pipeline.checks)}",
+        f"review={_phase_summary(profile.review)}",
+        f"triage={_triage_summary(profile)}",
+        f"remediate={_phase_summary(profile.remediation)}",
+        f"commit={'on' if profile.commit.enabled else 'off'}",
+        f"output={profile.output.summary_format}/{profile.output.progress_style}",
+    ]
+    return "; ".join(parts)
+
+
+def _phase_summary(phase: profiles.PhaseConfig) -> str:
+    parts = [phase.harness]
+    if phase.model:
+        parts.append(phase.model)
+    if phase.reasoning_effort:
+        parts.append(f"effort={phase.reasoning_effort}")
+    if phase.timeout_seconds is not None:
+        parts.append(f"timeout={phase.timeout_seconds:g}s")
+    return ",".join(parts)
+
+
+def _triage_summary(profile: profiles.Profile) -> str:
+    if not profile.triage.enabled:
+        return "off"
+    parts = [profile.triage.contract, profile.triage.harness]
+    if profile.triage.model:
+        parts.append(profile.triage.model)
+    if profile.triage.routing.enabled:
+        parts.append(f"routing={profile.triage.routing.default_route}")
+    return ",".join(parts)
+
+
+def _display_source(source: str | None, *, cwd: Path) -> str:
+    if not source:
+        return ""
+    path = Path(source)
+    try:
+        if path == profiles.project_config_path(cwd):
+            return "./.revrem.toml"
+        if path == profiles.user_config_path():
+            return "~/.config/revrem/profiles.toml"
+        if path.is_absolute():
+            try:
+                return f"./{path.relative_to(cwd)}"
+            except ValueError:
+                home = Path.home()
+                try:
+                    return f"~/{path.relative_to(home)}"
+                except ValueError:
+                    return str(path)
+    except OSError:
+        return source
+    return str(path)
+
+
+def _clip(value: str, max_chars: int) -> str:
+    value = " ".join(value.split())
+    if len(value) <= max_chars:
+        return value
+    return f"{value[: max_chars - 1]}…"
+
+
+def _rich_console(stderr: TextIO):
+    if not getattr(stderr, "isatty", lambda: False)() or environ.get("NO_COLOR"):
+        return None
+    try:
+        from rich.console import Console  # type: ignore[import-not-found]
+    except ImportError:
+        return None
+    return Console(file=stderr, force_terminal=True)
 
 
 def _route_label(route: profiles.TriageRouteConfig) -> str:

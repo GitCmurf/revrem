@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sys
+import types
 from importlib import import_module
 from io import StringIO
 from pathlib import Path
@@ -16,6 +18,42 @@ cli_main = import_module("code_review_loop.cli.main")
 class _TtyStringIO(StringIO):
     def isatty(self) -> bool:
         return True
+
+
+class _KeyboardInterruptInput(StringIO):
+    def readline(self, *args, **kwargs):
+        raise KeyboardInterrupt
+
+
+class _FakeText:
+    def __init__(self):
+        self.parts = []
+
+    def append(self, value, style=None):
+        self.parts.append((value, style))
+
+
+class _FakeConsole:
+    printed = []
+
+    def __init__(self, *args, **kwargs):
+        self.args = args
+        self.kwargs = kwargs
+
+    def print(self, value, *args, **kwargs):
+        self.printed.append((value, kwargs))
+
+
+def _install_fake_rich(monkeypatch):
+    _FakeConsole.printed = []
+    rich_module = types.ModuleType("rich")
+    console_module = types.ModuleType("rich.console")
+    text_module = types.ModuleType("rich.text")
+    console_module.Console = _FakeConsole
+    text_module.Text = _FakeText
+    monkeypatch.setitem(sys.modules, "rich", rich_module)
+    monkeypatch.setitem(sys.modules, "rich.console", console_module)
+    monkeypatch.setitem(sys.modules, "rich.text", text_module)
 
 
 def _write_profile(path: Path) -> None:
@@ -66,6 +104,49 @@ def test_wizard_keeps_profile_command_minimal_for_defaults(tmp_path, monkeypatch
     assert result.argv == ("--profile", "final-pr", "--dry-run")
     assert result.shell_command == "revrem --profile final-pr --dry-run"
     assert result.action == "dry-run"
+
+
+def test_wizard_first_screen_distinguishes_defaults_and_previews_commands(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    config_path = home / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[defaults.pipeline]
+base = "develop"
+
+[profiles.default]
+description = "Saved from CLI"
+
+[profiles.default.review]
+model = "gpt-5.5"
+reasoning_effort = "low"
+""",
+        encoding="utf-8",
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("q\n"), stderr=stderr)
+
+    assert result is None
+    rendered = stderr.getvalue()
+    assert "Default command: revrem --profile default" in rendered
+    assert "no profile (merged defaults)" in rendered
+    assert "default: (~/.config/revrem/profiles.toml)" in rendered
+    assert "final-pr: (./.revrem.toml)" in rendered
+    assert "command: revrem --profile default" in rendered
+    assert "command: revrem --profile final-pr" in rendered
+    assert "base=develop" in rendered
+    assert "review=codex,gpt-5.5,effort=low" in rendered
+    assert "triage=v2,codex,routing=midtier" in rendered
+    assert "remediate=codex" in rendered
+    assert "commit=off" in rendered
 
 
 def test_wizard_builds_common_overrides_and_quotes_checks(tmp_path, monkeypatch):
@@ -138,6 +219,54 @@ def test_wizard_cancel_returns_none(tmp_path):
     result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("q\n"), stderr=StringIO())
 
     assert result is None
+
+
+def test_wizard_keyboard_interrupt_returns_cancelled(tmp_path):
+    (tmp_path / ".git").mkdir()
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=_KeyboardInterruptInput(), stderr=stderr)
+
+    assert result is None
+    assert "Cancelled before provider calls." in stderr.getvalue()
+    assert "Traceback" not in stderr.getvalue()
+
+
+def test_wizard_uses_rich_when_available_and_terminal_supports_it(tmp_path, monkeypatch):
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    _install_fake_rich(monkeypatch)
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    stderr = _TtyStringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("q\n"), stderr=stderr)
+
+    assert result is None
+    printed_values = [value for value, _kwargs in _FakeConsole.printed]
+    assert any(isinstance(value, _FakeText) for value in printed_values)
+    flattened_parts = [
+        part
+        for value in printed_values
+        if isinstance(value, _FakeText)
+        for part in value.parts
+    ]
+    assert ("Default command: ", "bold") in flattened_parts
+    assert ("revrem --profile final-pr", "green") in flattened_parts
+    assert any(part == (" [default]", "yellow") for part in flattened_parts)
+
+
+def test_wizard_skips_rich_when_no_color_is_set(tmp_path, monkeypatch):
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    _install_fake_rich(monkeypatch)
+    monkeypatch.setenv("NO_COLOR", "1")
+    stderr = _TtyStringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("q\n"), stderr=stderr)
+
+    assert result is None
+    assert _FakeConsole.printed == []
+    assert "Default command: revrem --profile final-pr" in stderr.getvalue()
 
 
 def test_main_explicit_wizard_uses_generated_argv(tmp_path, monkeypatch, capsys):
@@ -231,3 +360,15 @@ def test_main_bare_revrem_uses_wizard_only_for_tty(tmp_path, monkeypatch):
         cli_main.main([])
     assert excinfo.value.code == 77
     assert captured["argv"] == []
+
+
+def test_main_explicit_wizard_keyboard_interrupt_exits_130(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+
+    def fake_wizard(*, cwd):
+        return None
+
+    monkeypatch.setattr(cli_main, "run_wizard", fake_wizard)
+
+    assert cli_main.main(["--wizard"]) == 130
