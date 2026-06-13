@@ -142,11 +142,29 @@ reasoning_effort = "low"
     assert "final-pr: (./.revrem.toml)" in rendered
     assert "command: revrem --profile default" in rendered
     assert "command: revrem --profile final-pr" in rendered
-    assert "base=develop" in rendered
-    assert "review=codex,gpt-5.5,effort=low" in rendered
-    assert "triage=v2,codex,routing=midtier" in rendered
-    assert "remediate=codex" in rendered
-    assert "commit=off" in rendered
+    assert "review=codex,gpt-5.5" not in rendered
+
+
+def test_wizard_run_shape_previews_models_routes_checks_and_command(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("\nq\n"), stderr=stderr)
+
+    assert result is None
+    rendered = stderr.getvalue()
+    assert "Run shape" in rendered
+    assert "command: revrem --profile final-pr" in rendered
+    assert "base: trunk" in rendered
+    assert "review: codex:default" in rendered
+    assert "-> triage: codex:default, contract=v2" in rendered
+    assert "routing policy: default midtier->codex:gpt-5.4-mini" in rendered
+    assert "-> loop: up to 2 remediation iteration(s)" in rendered
+    assert "remediate: codex:default" in rendered
+    assert "checks: 1 command(s)" in rendered
+    assert "1. pytest -q" in rendered
 
 
 def test_wizard_builds_common_overrides_and_quotes_checks(tmp_path, monkeypatch):
@@ -155,23 +173,25 @@ def test_wizard_builds_common_overrides_and_quotes_checks(tmp_path, monkeypatch)
     _write_profile(tmp_path / ".revrem.toml")
     stdin = StringIO(
         "final-pr\n"
+        "essentials\n"
         "main\n"
         "3\n"
-        "replace\n"
+        "custom\n"
         "pytest -q tests/unit\n"
         "git diff --check\n"
         "\n"
         "n\n"
-        "y\n"
+        "verbose\n"
+        "both\n"
+        "600\n"
+        "phases\n"
         "n\n"
         "gpt-test\n"
         "high\n"
         "0\n"
         "n\n"
-        "verbose\n"
-        "both\n"
-        "600\n"
         "ignore\n"
+        "\n"
         "print\n"
         "\n"
     )
@@ -211,6 +231,69 @@ def test_wizard_builds_common_overrides_and_quotes_checks(tmp_path, monkeypatch)
     assert "revrem --profile final-pr --base main --max-iterations 3" in result.shell_command
     assert "'pytest -q tests/unit'" in result.shell_command
     assert result.action == "print"
+
+
+def test_wizard_no_profile_cannot_enable_routing_without_routes(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    stderr = StringIO()
+    stdin = StringIO(
+        "\n"  # no-profile
+        "phases\n"
+        "y\n"
+        "\n"  # model
+        "\n"  # effort
+        "\n"  # timeout
+        "\n"  # commit
+        "\n"  # pending
+        "\n"  # accept
+        "dry-run\n"
+        "\n"
+    )
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=stderr)
+
+    assert result is not None
+    assert "--routing" not in result.argv
+    assert "--route" not in result.argv
+    assert "No profile routes are defined, so routing stays off." in stderr.getvalue()
+
+
+def test_wizard_detects_repo_check_presets(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "dev-check").write_text("#!/bin/sh\n", encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.ruff]\n[tool.mypy]\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "AGENTS.md").write_text("<!-- MEMINIT_PROTOCOL: begin -->", encoding="utf-8")
+    stdin = StringIO(
+        "no-profile\n"
+        "essentials\n"
+        "\n"
+        "\n"
+        "repo-gate\n"
+        "\n"
+            "\n"
+            "\n"
+            "\n"
+            "accept\n"
+            "print\n"
+            "\n"
+        )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=stderr)
+
+    assert result is not None
+    assert result.argv == ("--check", "./scripts/dev-check")
+    rendered = stderr.getvalue()
+    assert "repo gate: ./scripts/dev-check" in rendered
+    assert "Python fast: pytest -q" in rendered
+    assert "Python static: ruff check . && mypy src" in rendered
+    assert "Meminit DocOps: uv run --locked meminit check --format json" in rendered
 
 
 def test_wizard_cancel_returns_none(tmp_path):

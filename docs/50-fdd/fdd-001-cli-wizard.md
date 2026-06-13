@@ -49,11 +49,25 @@ and run history.
   command before asking for input.
 - Pressing Enter on the first screen selects the recommended command and
   continues to normal confirmation; it does not start provider calls by itself.
-- Common prompts cover base branch, max iterations, checks, final review, and
-  the final action: run, dry-run, save-profile, print, or cancel.
-- Advanced prompts cover structured triage, routing, model/effort overrides,
-  timeouts, auto-commit, progress style, summary format, wall-clock budget, and
-  pending-review handling.
+- After selecting a starting config, the wizard shows a line-oriented run-shape
+  preview with the generated command, base branch, review, triage, routing,
+  remediation loop, checks, final review, commit-message drafting, output, and
+  budgets.
+- Model-calling phases are shown as `harness:model(effort)` so cost/quota
+  choices are visible before the operator accepts the command.
+- The normal path accepts the preview. Edit screens cover essentials
+  (base branch, iterations, checks, final review, output, wall-clock budget)
+  and phase settings (triage, routing, model/effort overrides, timeouts,
+  auto-commit, pending-review handling).
+- Routing is presented as "use profile routing policy" only when the selected
+  config defines routes. The wizard does not offer routing for defaults with no
+  routes, preventing generated commands that fail on the built-in
+  `midtier-coder` default route.
+- Verification checks default to the selected profile when present. Otherwise
+  the wizard offers detected repo presets such as `./scripts/dev-check`,
+  Python pytest/static checks, Meminit DocOps checks, and `git diff --check`;
+  manual shell commands are available as an explicit custom option.
+- The final action is run, dry-run, save-profile, print, or cancel.
 - Generated commands are parsed and validated through the existing
   `parse_args` and `build_loop_config` path before the operator confirms them.
 - `Ctrl-C`, EOF, `q`, `quit`, and `cancel` exit cleanly before provider calls.
@@ -71,9 +85,12 @@ and run history.
 - Bare `revrem` dispatches to the wizard only in interactive terminals.
 - Cancellation exits before provider calls with the standard operator-cancel
   code.
-- The initial prompt output includes effective review, triage, remediation,
-  commit, check, and output settings so operators can see what a profile will
-  run before selecting it.
+- The run-shape preview includes effective review, triage, remediation,
+  routing, commit, check, and output settings so operators can see what a
+  profile will run before accepting it.
+- Scripted tests prove defaults without routes cannot enable routing through
+  the wizard.
+- Scripted tests prove repo check presets are detected and selectable.
 - `README.md` documents the wizard beside profiles and the postponed optional
   TUI.
 

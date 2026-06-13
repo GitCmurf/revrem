@@ -213,9 +213,17 @@ In an interactive terminal, bare `revrem` opens the wizard. `revrem --wizard`
 opens the wizard even when combined with other top-level options. In scripts
 and other non-interactive contexts, bare `revrem` keeps the normal CLI
 behavior. The wizard starts from repo defaults or a named profile, prompts for
-common choices and optional advanced overrides, then prints the exact
-`revrem ...` command it will run, dry-run, save as a project profile, or leave
-for copying.
+common choices, and shows a run-shape preview before provider calls can start.
+The preview lists each model-calling phase as `harness:model(effort)`, shows
+the remediation loop, checks, routing policy when a profile defines routes,
+commit-message drafting, output mode, and the exact `revrem ...` command it
+will run, dry-run, save as a project profile, or leave for copying.
+
+The normal wizard path keeps the profile values unless you choose an edit
+screen. Verification checks can be kept from the profile or selected from
+detected repo presets such as `./scripts/dev-check`, Python test/static checks,
+Meminit DocOps checks, and `git diff --check`; raw shell commands remain
+available under the custom option.
 
 Project-local profiles can be saved without running the loop:
 
