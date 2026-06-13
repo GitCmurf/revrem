@@ -202,6 +202,21 @@ revrem config show final-pr
 revrem --profile final-pr
 ```
 
+For a plain-terminal guided setup, use the CLI wizard:
+
+```bash
+revrem
+revrem --wizard
+```
+
+In an interactive terminal, bare `revrem` opens the wizard. `revrem --wizard`
+opens the wizard even when combined with other top-level options. In scripts
+and other non-interactive contexts, bare `revrem` keeps the normal CLI
+behavior. The wizard starts from repo defaults or a named profile, prompts for
+common choices and optional advanced overrides, then prints the exact
+`revrem ...` command it will run, dry-run, save as a project profile, or leave
+for copying.
+
 Project-local profiles can be saved without running the loop:
 
 ```bash

@@ -50,6 +50,11 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         ),
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument(
+        "--wizard",
+        action="store_true",
+        help="Launch the interactive command-building wizard.",
+    )
     parser.add_argument("--profile", default=None, help="Named profile from RevRem TOML config.")
     parser.add_argument("--base", default=None, help="Base branch passed to codex review.")
     parser.add_argument(
