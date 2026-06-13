@@ -134,6 +134,7 @@ class RuntimeConfig:
     provider_retry_backoff_seconds: float = 1.0
     external_review_input_chars: int = 80_000
     external_review_warning_seconds: float = 1_800
+    external_review_truncation_policy: str = "warn"
     terminal_excerpt_chars: int = 4_000
 
 

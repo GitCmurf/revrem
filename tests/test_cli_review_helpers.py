@@ -37,6 +37,7 @@ from code_review_loop.core.review_interpretation import (
     extract_review_summary,
     review_status_diagnostics,
 )
+from code_review_loop.runtime import RunLoopFailed
 from tests.support.fakes import FakeClock, FakeRunIdentity
 from tests.support.phase_harnesses import phase_harness_kwargs
 
@@ -107,6 +108,13 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
             "the changed code. A local full pytest run had one subprocess import "
             "failure in an existing test/tool path, but it does not appear tied "
             "to the diff under review."
+        )
+        == "clear"
+    )
+    assert (
+        detect_review_status(
+            "I did not identify any discrete, actionable bugs in the diff relative "
+            "to the requested base commit. CodeRabbit also completed with zero findings."
         )
         == "clear"
     )
@@ -597,8 +605,17 @@ def test_review_model_is_top_level_codex_option(tmp_path):
 
     command = review_impl.build_review_command(config)
 
-    assert command[:5] == ["codex", "--model", "gpt-test", "review", "--base"]
-    assert command == ["codex", "--model", "gpt-test", "review", "--base", "main"]
+    assert command[:4] == ["codex", "--model", "gpt-test", "review"]
+    assert command == [
+        "codex",
+        "--model",
+        "gpt-test",
+        "review",
+        "-c",
+        'sandbox_mode="read-only"',
+        "--base",
+        "main",
+    ]
 
 
 def test_non_codex_review_receives_explicit_review_prompt(tmp_path):
@@ -899,6 +916,8 @@ def test_gemini_review_prompt_respects_configured_char_limit(tmp_path):
     assert phase_start["payload"]["review_context_chars"] > 1500
     assert phase_start["payload"]["external_review_input_chars"] == 1500
     assert phase_start["payload"]["prompt_truncated"] is True
+    assert phase_start["payload"]["review_context_supplied_in_full"] is False
+    assert phase_start["payload"]["external_review_truncation_policy"] == "warn"
     assert phase_start["payload"]["prompt_delivery"] == "argv-prompt"
     assert phase_start["payload"]["prompt_chars"] == len(prompt)
     assert (
@@ -906,6 +925,76 @@ def test_gemini_review_prompt_respects_configured_char_limit(tmp_path):
         == f"<prompt chars={len(prompt)}>"
     )
     assert prompt not in json.dumps(phase_start["payload"]["command"])
+    summary = json.loads((repo / "artifacts" / "summary.json").read_text(encoding="utf-8"))
+    assert summary["external_review_coverage"]["prompt_truncated"] is True
+    assert summary["external_review_coverage"]["review_context_supplied_in_full"] is False
+    assert summary["external_review_coverage"]["external_review_truncation_policy"] == "warn"
+
+
+def test_external_review_truncation_fail_policy_stops_before_provider_call(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test User"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    (repo / "sample.txt").write_text("base\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "checkout", "-b", "feature"], cwd=repo, check=True, capture_output=True)
+    (repo / "sample.txt").write_text("change\n" + ("x" * 5000) + "\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "commit", "-am", "large change"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    calls: list[tuple[list[str], str | None]] = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text))
+        return CommandResult(list(args), 0, stdout="REVIEW_STATUS: clear\n")
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        cwd=repo,
+        artifact_dir=repo / "artifacts",
+        review_harness="gemini",
+        review_model="gemini-3.1-pro-preview",
+        external_review_input_chars=1500,
+        external_review_truncation_policy="fail",
+    )
+
+    with pytest.raises(RunLoopFailed) as excinfo:
+        runner_mod.run_loop(config, runner)
+
+    assert calls == []
+    assert (repo / "artifacts" / "review-1-context.txt").is_file()
+    assert not (repo / "artifacts" / "review-1-prompt.txt").exists()
+    assert excinfo.value.summary["final_status"] == "error"
+    assert excinfo.value.summary["stopped_reason"] == "review_failed"
+    assert excinfo.value.summary["error"].startswith(
+        "prompted review context exceeds external_review_input_chars ("
+    )
+    assert excinfo.value.summary["error"].endswith("external_review_truncation_policy=fail")
+    assert excinfo.value.outcome.reason == "review_failed"
+
+    summary = json.loads((repo / "artifacts" / "summary.json").read_text(encoding="utf-8"))
+    assert summary["external_review_coverage"]["prompt_truncated"] is True
+    assert summary["external_review_coverage"]["review_context_supplied_in_full"] is False
+    assert summary["external_review_coverage"]["external_review_truncation_policy"] == "fail"
+    assert summary["external_review_coverage"]["external_review_input_chars"] == 1500
+    assert summary["external_review_coverage"]["review_context_chars"] > 1500
 
 
 def test_external_review_prompt_ignores_remediation_input_cap(tmp_path):
@@ -1032,12 +1121,17 @@ def test_model_overrides_and_reasoning_effort_are_passed_to_codex(tmp_path):
     review_command = review_impl.build_review_command(config)
     remediation_command = remediation_impl.build_remediation_command(config)
 
-    assert review_command[:5] == [
+    assert review_command[:4] == [
         "codex",
-        "-c",
-        'model_reasoning_effort="medium"',
         "--model",
         "gpt-5.5",
+        "review",
+    ]
+    assert review_command[review_command.index("review") + 1 : review_command.index("--base")] == [
+        "-c",
+        'model_reasoning_effort="medium"',
+        "-c",
+        'sandbox_mode="read-only"',
     ]
     assert remediation_command[:5] == [
         "codex",
@@ -1047,6 +1141,34 @@ def test_model_overrides_and_reasoning_effort_are_passed_to_codex(tmp_path):
         "--full-auto",
     ]
     assert remediation_command[remediation_command.index("--model") + 1] == "gpt-5.4-mini"
+
+
+def test_codex_review_retry_command_uses_effective_review_reasoning_effort(tmp_path):
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="codex",
+        review_model="gpt-5.5",
+        review_reasoning_effort="high",
+    )
+
+    command = review_impl._codex_review_retry_command(config)
+
+    assert command == [
+        "codex",
+        "--model",
+        "gpt-5.5",
+        "review",
+        "-c",
+        'model_reasoning_effort="high"',
+        "-c",
+        'sandbox_mode="read-only"',
+        "--base",
+        "main",
+    ]
 
 
 def test_remediation_command_uses_deterministic_output_options(tmp_path):

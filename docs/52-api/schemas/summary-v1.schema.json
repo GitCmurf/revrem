@@ -57,6 +57,58 @@
         "error"
       ]
     },
+    "external_review_coverage": {
+      "additionalProperties": true,
+      "properties": {
+        "external_review_input_chars": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "external_review_truncation_policy": {
+          "enum": [
+            "warn",
+            "fail",
+            null
+          ]
+        },
+        "prompt_chars": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "prompt_delivery": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "prompt_truncated": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "review_context_chars": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "review_context_supplied_in_full": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "harness": {
       "type": "string"
     },
@@ -65,6 +117,41 @@
         "string",
         "null"
       ]
+    },
+    "invocation": {
+      "additionalProperties": true,
+      "properties": {
+        "argv": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "command_line": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "environment": {
+          "patternProperties": {
+            "^REVREM_[A-Z0-9_]+$": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "type": "object"
+        },
+        "schema_version": {
+          "enum": [
+            "1.0"
+          ]
+        }
+      },
+      "type": "object"
     },
     "iterations": {
       "items": {
@@ -91,6 +178,76 @@
         "type": "object"
       },
       "type": "object"
+    },
+    "phase_failures": {
+      "items": {
+        "additionalProperties": true,
+        "properties": {
+          "diagnostic_artifact": {
+            "type": "string"
+          },
+          "failure": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "iteration": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "redirected_retry_command": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "phase",
+          "iteration"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "phase_observations": {
+      "items": {
+        "additionalProperties": true,
+        "properties": {
+          "diagnostic_artifact": {
+            "type": "string"
+          },
+          "iteration": {
+            "type": "string"
+          },
+          "observed": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "requested": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "warnings": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "phase",
+          "iteration",
+          "provider"
+        ],
+        "type": "object"
+      },
+      "type": "array"
     },
     "profile": {
       "type": [
@@ -130,6 +287,30 @@
         "object",
         "null"
       ]
+    },
+    "triage_diagnostics": {
+      "items": {
+        "additionalProperties": true,
+        "properties": {
+          "artifact": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
     },
     "usd": {
       "type": [

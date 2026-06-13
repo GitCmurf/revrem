@@ -61,6 +61,10 @@ def test_runner_shell_has_no_reverse_runner_import() -> None:
     assert "class _RunnerEngineExecutor" not in runner_source
 
 
+def test_runner_shell_imports_cleanly() -> None:
+    import code_review_loop.runner_shell  # noqa: F401
+
+
 def test_runner_no_longer_owns_terminal_control() -> None:
     runner_source = (
         Path(__file__).resolve().parents[1] / "src" / "code_review_loop" / "runner.py"

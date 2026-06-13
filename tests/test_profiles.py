@@ -740,6 +740,23 @@ def test_profile_rejects_invalid_runtime_enum_values(tmp_path, setting, value, m
         profiles.load_profile_file(path)
 
 
+def test_profile_rejects_unknown_external_review_truncation_policy(tmp_path):
+    path = tmp_path / "profiles.toml"
+    path.write_text(
+        """
+[profiles.bad.runtime]
+external_review_truncation_policy = "truncate"
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="runtime.external_review_truncation_policy must be one of: warn, fail",
+    ):
+        profiles.load_profile_file(path)
+
+
 def test_profile_rejects_unknown_keys_in_profile_and_nested_sections(tmp_path):
     path = tmp_path / "profiles.toml"
     path.write_text(
@@ -918,6 +935,23 @@ external_review_warning_seconds = 0
 
     rendered = profiles.profile_to_toml(loaded.profiles["demo"])
     assert "external_review_warning_seconds = 0" in rendered
+
+
+def test_profile_accepts_external_review_truncation_policy_fail(tmp_path):
+    path = tmp_path / "profiles.toml"
+    path.write_text(
+        """
+[profiles.demo.runtime]
+external_review_truncation_policy = "fail"
+""",
+        encoding="utf-8",
+    )
+
+    loaded = profiles.load_profile_file(path)
+    assert loaded.profiles["demo"].runtime.external_review_truncation_policy == "fail"
+
+    rendered = profiles.profile_to_toml(loaded.profiles["demo"])
+    assert 'external_review_truncation_policy = "fail"' in rendered
 
 
 def test_clone_user_profile_writes_resolved_profile_to_user_config(tmp_path):

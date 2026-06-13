@@ -80,6 +80,8 @@ def parse_triage_payload(
         "source_review_artifact": source_review_artifact,
     }
     payload = _normalize_review_priority_severities(payload)
+    if contract == "v2":
+        payload = _normalize_v2_definition_of_done_placement(payload)
     validator = Draft202012Validator(_triage_schema(contract))
     errors = list(validator.iter_errors(payload))
     if errors:
@@ -146,6 +148,64 @@ def _normalize_parsing_warnings(raw_warnings: Any) -> tuple[list[Any], bool]:
             continue
         normalized.append(warning)
     return normalized, changed
+
+
+def _normalize_v2_definition_of_done_placement(payload: dict[str, Any]) -> dict[str, Any]:
+    """Move a common model mistake into the schema-sanctioned location."""
+
+    prompt_requirements = payload.get("prompt_requirements")
+    if not isinstance(prompt_requirements, dict):
+        return payload
+
+    normalized = dict(payload)
+    normalized_prompt_requirements = dict(prompt_requirements)
+    raw_dod = normalized_prompt_requirements.get("definition_of_done")
+    raw_warnings = normalized.get("parsing_warnings")
+    warnings_can_update = raw_warnings is None or isinstance(raw_warnings, list)
+    warnings, _ = _normalize_parsing_warnings(raw_warnings or [])
+    merged_dod = list(raw_dod) if isinstance(raw_dod, list) else []
+    changed = False
+
+    for collection_name in ("confirmed_findings", "needs_more_info", "rejected_findings"):
+        collection = normalized.get(collection_name)
+        if not isinstance(collection, list):
+            continue
+        normalized_collection: list[Any] = []
+        for item in collection:
+            if not isinstance(item, dict):
+                normalized_collection.append(item)
+                continue
+            misplaced = item.get("definition_of_done")
+            if misplaced is None:
+                normalized_collection.append(item)
+                continue
+            if not (
+                isinstance(misplaced, list)
+                and all(isinstance(part, str) for part in misplaced)
+            ):
+                normalized_collection.append(item)
+                continue
+            normalized_item = dict(item)
+            normalized_item.pop("definition_of_done")
+            merged_dod.extend(misplaced)
+            changed = True
+            if warnings_can_update:
+                fingerprint = normalized_item.get("fingerprint")
+                suffix = f" for {fingerprint}" if isinstance(fingerprint, str) else ""
+                warnings.append(
+                    "Moved misplaced finding definition_of_done entries into "
+                    f"prompt_requirements.definition_of_done{suffix}."
+                )
+            normalized_collection.append(normalized_item)
+        normalized[collection_name] = normalized_collection
+
+    if not changed:
+        return payload
+    normalized_prompt_requirements["definition_of_done"] = merged_dod
+    normalized["prompt_requirements"] = normalized_prompt_requirements
+    if warnings_can_update:
+        normalized["parsing_warnings"] = warnings
+    return normalized
 
 
 def write_triage_artifact(run_dir: Path, iteration: int, payload: dict[str, Any]) -> Path:

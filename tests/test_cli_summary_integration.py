@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import tests.support.application_runner as runner_mod
 from code_review_loop import artifacts, reporting
 from code_review_loop.cli.main import _redacted_argv
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.ports import CommandResult
+from code_review_loop.invocation import invocation_payload
 from code_review_loop.runtime import format_terminal_summary
 
 
@@ -67,6 +71,84 @@ def test_command_line_redacts_secret_like_tokens(monkeypatch):
     )
 
 
+def test_invocation_payload_preserves_argv_and_redacts_environment(monkeypatch):
+    monkeypatch.setenv("HOME", "/home/example-user")
+
+    payload = invocation_payload(
+        executable="./.venv/bin/revrem",
+        argv=[
+            "--profile",
+            "dogfood",
+            "--triage-prompt",
+            "secret prompt",
+            "--opaque=0123456789abcdef0123456789abcdef",  # pragma: allowlist secret
+        ],
+        cwd=Path("/home/example-user/project"),
+        command_line=("revrem", "--profile", "dogfood"),
+        environ={
+            "OTHER_TOOL": "ignored",
+            "REVREM_API_KEY": "placeholder_revrem_api_key",  # pragma: allowlist secret
+            "REVREM_FAKE_HARNESS_FIXTURE_DIR": "/home/example-user/fixtures",
+            "REVREM_LIVE_KILO": "1",
+        },
+    )
+
+    assert payload["argv"] == [
+        "./.venv/bin/revrem",
+        "--profile",
+        "dogfood",
+        "--triage-prompt",
+        "<redacted>",
+        "--opaque=[REDACTED:generic-token]",
+    ]
+    assert payload["cwd"] == "[REDACTED:home]/project"
+    assert payload["command_line"] == ["revrem", "--profile", "dogfood"]
+    assert payload["environment"] == {
+        "REVREM_API_KEY": "[REDACTED:env-value]",
+        "REVREM_FAKE_HARNESS_FIXTURE_DIR": "[REDACTED:home]/fixtures",
+        "REVREM_LIVE_KILO": "1",
+    }
+
+
+def test_summary_writes_invocation_artifact_and_path(tmp_path):
+    review_outputs = iter(
+        [
+            "Full review comments:\n\n- [P2] Fix init\n",
+            "No actionable findings.\nREVIEW_STATUS: clear\n",
+        ]
+    )
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[1] == "review":
+            return CommandResult(list(args), 0, stdout=next(review_outputs))
+        return CommandResult(list(args), 0, stdout="fixed\n")
+
+    invocation = {
+        "schema_version": "1.0",
+        "argv": ["./.venv/bin/revrem", "--base", "main"],
+        "command_line": ["revrem", "--base", "main"],
+        "cwd": str(tmp_path),
+        "environment": {"REVREM_LIVE_KILO": "1"},
+    }
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        command_line=("revrem", "--base", "main"),
+        invocation=invocation,
+    )
+
+    summary = runner_mod.run_loop(config, runner).to_dict()
+    invocation_path = tmp_path / "artifacts" / "invocation.json"
+    artifact_payload = json.loads(invocation_path.read_text(encoding="utf-8"))
+
+    assert artifact_payload == invocation
+    assert summary["invocation"] == invocation
+    assert summary["artifact_paths"]["invocation"] == str(invocation_path)
+
+
 def test_summary_collects_commit_message_fallback_artifacts(tmp_path):
     artifact_dir = tmp_path / "artifacts"
     artifacts.write_json_artifact(
@@ -116,6 +198,124 @@ def test_summary_collects_commit_message_side_effect_artifacts(tmp_path):
         "warning": "commit-message harness mutated repository state",
         "artifact": str(artifact_dir / "commit-2-message-side-effects.json"),
     }
+
+
+def test_summary_collects_phase_diagnostics_from_artifacts(tmp_path):
+    artifact_dir = tmp_path / "artifacts"
+    artifacts.write_json_artifact(
+        artifact_dir,
+        "diagnostics-review-final-observation.json",
+        {
+            "phase": "review",
+            "iteration": "final",
+            "warnings": [
+                {
+                    "kind": "provider_config_mismatch",
+                    "message": "Provider observed reasoning_effort='xhigh'.",
+                }
+            ],
+        },
+    )
+    artifacts.write_json_artifact(
+        artifact_dir,
+        "diagnostics-review-final-failure.json",
+        {
+            "phase": "review",
+            "iteration": "final",
+            "failure": {"reason": "provider_timeout"},
+            "redirected_retry_command": (
+                "codex --model gpt-5.5 review -c 'model_reasoning_effort=\"low\"' "
+                "> /tmp/revrem-review.txt 2>&1"
+            ),
+        },
+    )
+    summary: dict[str, object] = {}
+
+    reporting.add_phase_diagnostics(summary, artifact_dir)
+
+    assert summary["phase_observations"][0]["diagnostic_artifact"] == str(
+        artifact_dir / "diagnostics-review-final-observation.json"
+    )
+    assert summary["phase_failures"][0]["diagnostic_artifact"] == str(
+        artifact_dir / "diagnostics-review-final-failure.json"
+    )
+
+
+def test_terminal_summary_surfaces_final_review_failure_after_checks():
+    text = format_terminal_summary(
+        {
+            "artifact_dir": "tmp/run",
+            "final_status": "error",
+            "stopped_reason": "review_failed",
+            "error": "codex review failed for review-final: provider subprocess timed out",
+            "iterations": [
+                {
+                    "iteration": 1,
+                    "review_status": "findings",
+                    "check_failures": 0,
+                    "checks": [
+                        {"command": "ruff check .", "status": "passed"},
+                        {"command": "pytest -q", "status": "passed"},
+                    ],
+                },
+                {"iteration": "final", "review_failed": True},
+            ],
+            "phase_failures": [
+                {
+                    "phase": "review",
+                    "iteration": "final",
+                    "diagnostic_artifact": "tmp/run/diagnostics-review-final-failure.json",
+                    "redirected_retry_command": (
+                        "codex --model gpt-5.5 review -c "
+                        "'model_reasoning_effort=\"low\"' > /tmp/revrem-review.txt 2>&1"
+                    ),
+                }
+            ],
+            "phase_observations": [
+                {
+                    "warnings": [
+                        {
+                            "kind": "provider_config_mismatch",
+                            "message": (
+                                "Provider observed reasoning_effort='xhigh' "
+                                "but RevRem requested 'low'."
+                            ),
+                        }
+                    ]
+                }
+            ],
+        }
+    )
+
+    assert "Final review failed after remediation and checks passed." in text
+    assert "Failure diagnostics: tmp/run/diagnostics-review-final-failure.json" in text
+    assert "Retry final review: codex --model gpt-5.5 review" in text
+    assert "WARNING: provider observations need attention." in text
+    assert "Provider observed reasoning_effort='xhigh'" in text
+
+
+def test_terminal_summary_keeps_raw_provider_finding_context_quiet():
+    text = format_terminal_summary(
+        {
+            "artifact_dir": "tmp/run",
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+            "iterations": [{"iteration": 1, "review_status": "clear"}],
+            "phase_observations": [
+                {
+                    "phase": "review",
+                    "iteration": "1",
+                    "provider": "codex",
+                    "banner_detected": False,
+                    "observed": {},
+                    "raw_provider_finding_count": 1,
+                    "warnings": [],
+                }
+            ],
+        }
+    )
+
+    assert "WARNING: provider observations need attention." not in text
 
 
 def test_terminal_summary_surfaces_latest_findings_and_paths():
@@ -317,12 +517,14 @@ def test_terminal_summary_resume_command_preserves_external_review_overrides():
                 "max_iterations": 1,
                 "external_review_input_chars": 600_000,
                 "external_review_warning_seconds": 600,
+                "external_review_truncation_policy": "fail",
             },
             "phase_config": {
                 "runtime": {
                     "sources": {
                         "external_review_input_chars": "cli",
                         "external_review_warning_seconds": "cli",
+                        "external_review_truncation_policy": "cli",
                     },
                 },
             },
@@ -331,6 +533,7 @@ def test_terminal_summary_resume_command_preserves_external_review_overrides():
 
     assert "--external-review-input-chars 600000" in text
     assert "--external-review-warning-seconds 600" in text
+    assert "--external-review-truncation-policy fail" in text
 
 
 def test_terminal_summary_resume_command_preserves_non_default_harnesses():
@@ -560,6 +763,182 @@ def test_terminal_summary_warns_for_commit_message_side_effects():
 
     assert "WARNING: commit-message harness mutated repository state" in text
     assert "unsuitable for commit-message drafting" in text
+
+
+def test_summary_collects_triage_diagnostics_from_artifacts(tmp_path):
+    artifact_dir = tmp_path / "artifacts"
+    artifacts.write_json_artifact(
+        artifact_dir,
+        "diagnostics-1.json",
+        {
+            "schema_version": "1.0",
+            "status": "ok",
+            "issues": [
+                {
+                    "code": "revrem.triage.invalid_output",
+                    "severity": "warn",
+                    "message": "Triage output was invalid.",
+                }
+            ],
+        },
+    )
+    artifacts.write_json_artifact(
+        artifact_dir,
+        "triage-2.json",
+        {
+            "schema_version": "2.0",
+            "parsing_warnings": [
+                "Moved misplaced finding definition_of_done entries into prompt requirements.",
+                (
+                    "Review comment did not include an f1: fingerprint, so fingerprint "
+                    "fell back to review-comment:1 based on the single supplied review "
+                    "comment."
+                ),
+            ],
+        },
+    )
+    summary: dict[str, object] = {}
+
+    reporting.add_triage_diagnostics(summary, artifact_dir)
+
+    assert summary["triage_diagnostics"] == [
+        {
+            "kind": "issue",
+            "code": "revrem.triage.invalid_output",
+            "severity": "warn",
+            "message": "Triage output was invalid.",
+            "artifact": str(artifact_dir / "diagnostics-1.json"),
+        },
+        {
+            "kind": "parsing_warning",
+            "code": "revrem.triage.parsing_warning",
+            "severity": "warn",
+            "message": (
+                "Moved misplaced finding definition_of_done entries into prompt requirements."
+            ),
+            "artifact": str(artifact_dir / "triage-2.json"),
+        },
+        {
+            "kind": "parsing_note",
+            "code": "revrem.triage.fallback_fingerprint",
+            "severity": "info",
+            "message": (
+                "Review comment did not include an f1: fingerprint, so fingerprint "
+                "fell back to review-comment:1 based on the single supplied review "
+                "comment."
+            ),
+            "artifact": str(artifact_dir / "triage-2.json"),
+        },
+    ]
+
+
+def test_terminal_summary_surfaces_triage_diagnostics():
+    text = format_terminal_summary(
+        {
+            "artifact_dir": "tmp/run",
+            "final_status": "findings",
+            "stopped_reason": "max_iterations_reached",
+            "iterations": [],
+            "triage_diagnostics": [
+                {
+                    "code": "revrem.triage.parsing_warning",
+                    "message": "Moved misplaced finding definition_of_done entries.",
+                    "artifact": "tmp/run/triage-1.json",
+                }
+            ],
+        }
+    )
+
+    assert "WARNING: triage diagnostics were recorded." in text
+    assert "revrem.triage.parsing_warning" in text
+    assert "tmp/run/triage-1.json" in text
+
+
+def test_terminal_summary_reports_info_only_triage_diagnostics_as_notes():
+    text = format_terminal_summary(
+        {
+            "artifact_dir": "tmp/run",
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+            "iterations": [],
+            "triage_diagnostics": [
+                {
+                    "code": "revrem.triage.fallback_fingerprint",
+                    "severity": "info",
+                    "message": "Review comment fell back to review-comment:1.",
+                    "artifact": "tmp/run/triage-1.json",
+                }
+            ],
+        }
+    )
+
+    assert "WARNING: triage diagnostics were recorded." not in text
+    assert "Triage notes were recorded." in text
+    assert "revrem.triage.fallback_fingerprint" in text
+    assert "tmp/run/triage-1.json" in text
+
+
+def test_terminal_summary_surfaces_check_retry_history():
+    text = format_terminal_summary(
+        {
+            "artifact_dir": "tmp/run",
+            "final_status": "findings",
+            "stopped_reason": "max_iterations_reached",
+            "iterations": [
+                {
+                    "iteration": 1,
+                    "review_status": "findings",
+                    "check_failures": 0,
+                    "check_attempts": [
+                        {
+                            "retry": 0,
+                            "check_failures": 1,
+                            "checks": [
+                                {
+                                    "command": "git status -z --porcelain=v1 --untracked-files=all",
+                                    "status": "failed",
+                                }
+                            ],
+                        },
+                        {
+                            "retry": 1,
+                            "check_failures": 0,
+                            "checks": [
+                                {
+                                    "command": "git status -z --porcelain=v1 --untracked-files=all",
+                                    "status": "passed",
+                                }
+                            ],
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+
+    assert "check retry: first failed 1, latest failed 0" in text
+    assert "first failed: git status -z --porcelain=v1 --untracked-files=all" in text
+
+
+def test_terminal_summary_surfaces_timing_warning():
+    text = format_terminal_summary(
+        {
+            "artifact_dir": "tmp/run",
+            "final_status": "findings",
+            "stopped_reason": "max_iterations_reached",
+            "iterations": [],
+            "timing_warnings": [
+                {
+                    "message": (
+                        "Wall-clock duration substantially exceeds active elapsed time; "
+                        "the host may have slept, suspended, or delayed process scheduling."
+                    )
+                }
+            ],
+        }
+    )
+
+    assert "Wall-clock duration substantially exceeds active elapsed time" in text
 
 
 def test_summary_records_terminal_unknown_review_warning_and_bug_report(tmp_path):

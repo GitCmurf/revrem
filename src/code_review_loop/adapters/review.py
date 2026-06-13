@@ -15,7 +15,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
-from code_review_loop import harnesses, prompts_composer, provider_failures
+from code_review_loop import (
+    artifacts,
+    harnesses,
+    prompts_composer,
+    provider_failures,
+    provider_observations,
+)
 from code_review_loop.adapters import phase_support
 from code_review_loop.adapters.git import (
     GitContextCache,
@@ -92,11 +98,54 @@ def run_codex_review(
         )
         try:
             external_prompt = compose_external_review_prompt(config, review_context)
-            review_prompt = external_prompt.prompt
             phase_support.write_artifact(
                 config.artifact_dir / f"{artifact_label}-context.txt",
                 review_context,
             )
+            if (
+                external_prompt.truncated
+                and config.external_review_truncation_policy == "fail"
+            ):
+                phase_support.progress_event(
+                    config,
+                    "review",
+                    display_label,
+                    "start",
+                    phase_support.resolved_phase_detail(
+                        command,
+                        harness=config.review_harness,
+                        model=config.review_model or config.model,
+                        reasoning_effort=config.review_reasoning_effort or config.reasoning_effort,
+                        timeout_seconds=config.review_timeout_seconds_display,
+                        sandbox="read-only",
+                        source=config.phase_config_sources.get("review", "direct-config"),
+                        prompt_chars=None,
+                        prompt_delivery=None,
+                        prompt_context_chars=external_prompt.context_chars,
+                        prompt_truncated=external_prompt.truncated,
+                    ),
+                    ctx=ctx,
+                    metadata={
+                        "command": phase_support.command_for_progress(list(command)),
+                        "harness": config.review_harness,
+                        **external_review_prompt_metadata(external_prompt, config=config),
+                    },
+                )
+                phase_support.progress_event(
+                    config,
+                    "review",
+                    display_label,
+                    "fail",
+                    "aborted: context truncated and policy=fail",
+                    ctx=ctx,
+                )
+                raise RuntimeError(
+                    "prompted review context exceeds external_review_input_chars "
+                    f"({external_prompt.context_chars} context chars; cap "
+                    f"{external_prompt.input_cap_chars}) and "
+                    "external_review_truncation_policy=fail"
+                )
+            review_prompt = external_prompt.prompt
             phase_support.write_artifact(
                 config.artifact_dir / f"{artifact_label}-prompt.txt",
                 review_prompt,
@@ -149,7 +198,7 @@ def run_codex_review(
             "command": phase_support.command_for_progress(list(command)),
             "harness": config.review_harness,
             **prompt_metadata,
-            **external_review_prompt_metadata(external_prompt),
+            **external_review_prompt_metadata(external_prompt, config=config),
         },
     )
     if config.dry_run:
@@ -178,11 +227,27 @@ def run_codex_review(
     combined = phase_support._combined_output(result)
     artifact_path = config.artifact_dir / f"{artifact_label}.txt"
     phase_support.write_artifact(artifact_path, combined)
+    observation = _write_provider_observation(
+        config,
+        result,
+        artifact_label=artifact_label,
+        display_label=display_label,
+    )
     phase_support.record_model_charge(
         config, result, phase="review", iteration=display_label, ctx=ctx
     )
     if review_failed_to_run(result, config.review_harness):
         failure = provider_failures.classify_provider_failure(result, harness=config.review_harness)
+        _write_review_failure_diagnostic(
+            config,
+            result,
+            artifact_label=artifact_label,
+            display_label=display_label,
+            artifact_path=artifact_path,
+            command=command,
+            failure=failure,
+            observation=observation,
+        )
         failure_detail = f": {failure.detail}" if failure else ""
         phase_support.progress_event(
             config,
@@ -221,6 +286,116 @@ def run_codex_review(
     else:
         phase_support.progress_event(config, "review", display_label, status, ctx=ctx)
     return status, result
+
+
+def _write_provider_observation(
+    config: LoopConfig,
+    result: CommandResult,
+    *,
+    artifact_label: str,
+    display_label: str,
+) -> dict[str, object] | None:
+    if config.review_harness != "codex":
+        return None
+    observation = provider_observations.codex_observation(
+        result,
+        phase="review",
+        iteration=display_label,
+        requested={
+            "model": config.review_model or config.model,
+            "reasoning_effort": config.review_reasoning_effort or config.reasoning_effort,
+            "sandbox": "read-only",
+        },
+    )
+    if not _provider_observation_is_meaningful(observation, result):
+        return None
+    artifacts.write_json_artifact(
+        config.artifact_dir,
+        f"diagnostics-{artifact_label}-observation.json",
+        observation,
+    )
+    return observation
+
+
+def _provider_observation_is_meaningful(
+    observation: dict[str, object],
+    result: CommandResult,
+) -> bool:
+    return bool(
+        observation.get("banner_detected")
+        or observation.get("observed")
+        or observation.get("warnings")
+        or observation.get("raw_provider_finding_count")
+        or observation.get("reported_command")
+    )
+
+
+def _write_review_failure_diagnostic(
+    config: LoopConfig,
+    result: CommandResult,
+    *,
+    artifact_label: str,
+    display_label: str,
+    artifact_path: Path,
+    command: Sequence[str],
+    failure: provider_failures.ProviderFailure | None,
+    observation: dict[str, object] | None,
+) -> None:
+    payload: dict[str, object] = {
+        "phase": "review",
+        "iteration": display_label,
+        "artifact": str(artifact_path),
+        "command": list(command),
+        "returncode": result.returncode,
+        "timeout_seconds": phase_support.phase_timeout_seconds(
+            config, config.review_timeout_seconds
+        ),
+        "stdout_chars": len(result.stdout or ""),
+        "stderr_chars": len(result.stderr or ""),
+        "combined_chars": len(phase_support._combined_output(result)),
+    }
+    if failure is not None:
+        payload["failure"] = {
+            "reason": failure.reason,
+            "detail": failure.detail,
+            "transient": failure.transient,
+        }
+    if observation is not None:
+        payload["provider_observation"] = observation
+    retry_command = _codex_review_retry_command(config)
+    if retry_command is not None:
+        payload["retry_command"] = retry_command
+        payload["redirected_retry_command"] = {
+            "command": retry_command,
+            "capture_hint": "capture stdout/stderr to a log file",
+        }
+    artifacts.write_json_artifact(
+        config.artifact_dir,
+        f"diagnostics-{artifact_label}-failure.json",
+        payload,
+    )
+
+
+def _codex_review_retry_command(config: LoopConfig) -> list[str] | None:
+    if config.review_harness != "codex":
+        return None
+    command = [phase_support._resolve_executable("codex", config)]
+    model = config.review_model or config.model
+    reasoning_effort = config.review_reasoning_effort or config.reasoning_effort
+    if model:
+        command.extend(["--model", model])
+    command.append("review")
+    if reasoning_effort:
+        command.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])
+    command.extend(
+        [
+            "-c",
+            'sandbox_mode="read-only"',
+            "--base",
+            config.base,
+        ]
+    )
+    return command
 
 
 def _status_debug_detail(diagnostics: dict[str, object]) -> str:
@@ -300,6 +475,8 @@ def run_review_with_retry(
 
 def external_review_prompt_metadata(
     prompt: ExternalReviewPrompt | None,
+    *,
+    config: LoopConfig,
 ) -> dict[str, object]:
     if prompt is None:
         return {}
@@ -307,6 +484,8 @@ def external_review_prompt_metadata(
         "review_context_chars": prompt.context_chars,
         "external_review_input_chars": prompt.input_cap_chars,
         "prompt_truncated": prompt.truncated,
+        "review_context_supplied_in_full": not prompt.truncated,
+        "external_review_truncation_policy": config.external_review_truncation_policy,
     }
 
 

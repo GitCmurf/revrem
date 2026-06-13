@@ -27,6 +27,11 @@ AUTH_SETUP_MARKERS = (
     "please login",
     "please log in",
 )
+WRITABLE_RUNTIME_SETUP_MARKERS = (
+    "read-only file system",
+    "failed to run the query 'pragma journal_mode = wal'",
+    "failed to run the query `pragma journal_mode = wal`",
+)
 
 
 @dataclass(frozen=True)
@@ -114,7 +119,13 @@ def _resolve_live_provider(provider: LiveProvider) -> LiveProviderRuntime:
 def _skip_if_provider_setup_missing(provider: LiveProvider, output: str) -> None:
     normalized = output.lower()
     if any(marker in normalized for marker in AUTH_SETUP_MARKERS):
-        pytest.skip(f"{provider.name} live smoke requires an authenticated non-interactive CLI")
+        pytest.skip(
+            f"{provider.name} live smoke requires an authenticated non-interactive CLI"
+        )
+    if any(marker in normalized for marker in WRITABLE_RUNTIME_SETUP_MARKERS):
+        pytest.skip(
+            f"{provider.name} live smoke requires writable non-interactive CLI runtime state"
+        )
 
 
 @pytest.mark.parametrize("provider", LIVE_PROVIDERS.values(), ids=LIVE_PROVIDERS)
@@ -195,9 +206,7 @@ def test_live_kilo_stdin_contract_is_not_immediately_rejected() -> None:
                 f"REVREM_LIVE_KILO_BIN={configured!r} is not executable on PATH or an existing file"
             )
 
-    help_result = default_runner(
-        [executable, "run", "--help"], Path.cwd(), stdin=None, timeout_seconds=30
-    )
+    help_result = default_runner([executable, "run", "--help"], Path.cwd(), None, 30)
     assert help_result.returncode == 0, help_result.stdout + help_result.stderr
 
     stdin_probe = (
@@ -207,11 +216,10 @@ def test_live_kilo_stdin_contract_is_not_immediately_rejected() -> None:
     stdin_result = default_runner(
         [executable, "run"],
         Path.cwd(),
-        stdin=stdin_probe,
-        timeout_seconds=LIVE_TIMEOUT_SECONDS,
+        stdin_probe,
+        LIVE_TIMEOUT_SECONDS,
     )
     combined = (stdin_result.stdout or "") + (stdin_result.stderr or "")
-    assert "kilo-stdin-accepted" in combined, combined
     _skip_if_provider_setup_missing(
         LiveProvider(
             name="kilo",
@@ -222,6 +230,7 @@ def test_live_kilo_stdin_contract_is_not_immediately_rejected() -> None:
         ),
         combined,
     )
+    assert "kilo-stdin-accepted" in combined, combined
 
 
 def test_live_routed_secondary_provider_smoke(

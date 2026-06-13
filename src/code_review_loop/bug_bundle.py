@@ -18,6 +18,7 @@ DEFAULT_JSON_NAMES = {
     "summary.json",
     "diagnostics.json",
     "events.jsonl",
+    "invocation.json",
     "doctor.json",
     "preflight.json",
     "profile.json",

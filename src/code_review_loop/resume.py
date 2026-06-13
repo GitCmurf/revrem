@@ -13,6 +13,7 @@ from code_review_loop import budgets, diagnostics, events, profiles, reporting
 from code_review_loop.adapters.git import git_preflight_stdout
 from code_review_loop.config import (
     DEFAULT_EXTERNAL_REVIEW_INPUT_CHARS,
+    DEFAULT_EXTERNAL_REVIEW_TRUNCATION_POLICY,
     DEFAULT_EXTERNAL_REVIEW_WARNING_SECONDS,
     DEFAULT_PROVIDER_RETRY_ATTEMPTS,
     DEFAULT_PROVIDER_RETRY_BACKOFF_SECONDS,
@@ -271,6 +272,20 @@ def resume_loop_config(
             "external_review_warning_seconds",
             DEFAULT_EXTERNAL_REVIEW_WARNING_SECONDS,
         ),
+        external_review_truncation_policy=(
+            _resume_str(
+                resume_config,
+                "external_review_truncation_policy",
+                DEFAULT_EXTERNAL_REVIEW_TRUNCATION_POLICY,
+            )
+            if _resume_str(
+                resume_config,
+                "external_review_truncation_policy",
+                DEFAULT_EXTERNAL_REVIEW_TRUNCATION_POLICY,
+            )
+            in {"warn", "fail"}
+            else DEFAULT_EXTERNAL_REVIEW_TRUNCATION_POLICY
+        ),
         check_commands=_resume_str_tuple(resume_config, "check_commands"),
         commit_after_remediation=_resume_bool(resume_config, "commit_after_remediation", False),
         commit_message_harness=_resume_str(resume_config, "commit_message_harness", "codex"),
@@ -339,6 +354,7 @@ def resume_config_payload(config: LoopConfig) -> dict[str, object]:
         "provider_retry_backoff_seconds": config.provider_retry_backoff_seconds,
         "external_review_input_chars": config.external_review_input_chars,
         "external_review_warning_seconds": config.external_review_warning_seconds,
+        "external_review_truncation_policy": config.external_review_truncation_policy,
         "commit_after_remediation": config.commit_after_remediation,
         "commit_on_hook_failure": config.commit_on_hook_failure,
         "exec_sandbox": config.exec_sandbox,

@@ -34,7 +34,21 @@ JSON summary: .revrem/runs/20260509T120823Z/summary.json
 
 ## Install
 
-RevRem is not published on PyPI yet. Install it from a checkout:
+For normal use, install RevRem from PyPI:
+
+```bash
+pipx install revrem
+revrem --version
+```
+
+If you do not use `pipx`, install into a managed virtual environment:
+
+```bash
+python -m pip install revrem
+revrem --version
+```
+
+For source development, install it from a checkout:
 
 ```bash
 git clone https://github.com/GitCmurf/revrem.git
@@ -111,6 +125,23 @@ working directory. It warns when profile timeouts explicitly disable a phase
 timeout and when the current locale is not UTF-8 capable. Use `--format json`
 for automation.
 
+To discover likely verification commands without running them:
+
+```bash
+revrem checks suggest --format json
+revrem doctor checks --format json
+```
+
+To install bounded example Git hooks into the target repo:
+
+```bash
+revrem install-hooks
+revrem install-hooks --uninstall
+```
+
+`revrem install-hooks` writes into the repository's configured `core.hooksPath`
+when one is set, otherwise it falls back to Git's default hooks directory.
+
 To share a failed run safely, create a redacted bundle:
 
 ```bash
@@ -122,9 +153,9 @@ the current working directory, using a basename-derived component from the run
 metadata and falling back to the run directory name when needed.
 
 The bundle command ignores symlinked artifacts so the archive cannot follow
-links out of the run directory. It includes `summary.json`, diagnostics/event
-JSON, status diagnostics, check output, and sanitized profile/preflight snapshots
-when those files are present in the run directory.
+links out of the run directory. It includes `summary.json`, `invocation.json`,
+diagnostics/event JSON, status diagnostics, check output, and sanitized
+profile/preflight snapshots when those files are present in the run directory.
 
 Raw review/remediation transcripts are excluded by default. Use
 `--include-raw-transcripts` only when the extra context is necessary; contents

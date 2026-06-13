@@ -142,6 +142,7 @@ RUNTIME_KEYS = (
     "provider_retry_backoff_seconds",
     "external_review_input_chars",
     "external_review_warning_seconds",
+    "external_review_truncation_policy",
     "terminal_excerpt_chars",
     "harness_executables",
 )
@@ -514,6 +515,10 @@ def parse_runtime(raw: dict[str, Any]) -> RuntimeConfig:
         external_review_warning_seconds=_float(
             raw.get("external_review_warning_seconds", 1_800),
             "runtime.external_review_warning_seconds",
+        ),
+        external_review_truncation_policy=_str(
+            raw.get("external_review_truncation_policy", "warn"),
+            "runtime.external_review_truncation_policy",
         ),
         terminal_excerpt_chars=_int(
             raw.get("terminal_excerpt_chars", 4_000),
@@ -1130,6 +1135,8 @@ def validate_profile(profile: Profile, *, require_implemented: bool) -> None:
         raise ValueError("runtime.external_review_input_chars must be positive")
     if profile.runtime.external_review_warning_seconds < 0:
         raise ValueError("runtime.external_review_warning_seconds must be 0 or greater")
+    if profile.runtime.external_review_truncation_policy not in {"warn", "fail"}:
+        raise ValueError("runtime.external_review_truncation_policy must be one of: warn, fail")
     if profile.runtime.terminal_excerpt_chars < 1:
         raise ValueError("runtime.terminal_excerpt_chars must be positive")
 

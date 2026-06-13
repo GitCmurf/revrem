@@ -17,6 +17,7 @@ from code_review_loop import (
     policy,
     prompts_composer,
     provider_failures,
+    routing_timeouts,
 )
 from code_review_loop.adapters import phase_support
 from code_review_loop.core.ports import (
@@ -93,10 +94,12 @@ def run_remediation(
 
     if resolved_route:
         prompt = remediation_input
-        timeout = resolved_route.timeout_seconds
+        timeout = routing_timeouts.effective_route_timeout_seconds(config, resolved_route)
+        timeout_is_effective = True
     else:
         prompt = f"{phase_support.DEFAULT_REMEDIATION_PROMPT}\n{prompts_composer.trim_for_prompt(remediation_input, config.max_remediation_input_chars)}"
         timeout = config.remediation_timeout_seconds
+        timeout_is_effective = False
     prompt_artifact_path = config.artifact_dir / f"{artifact_stem}-prompt.txt"
     phase_support.write_artifact(prompt_artifact_path, prompt)
     invocation = harnesses.prepare_prompt_invocation(
@@ -126,7 +129,7 @@ def run_remediation(
             or config.remediation_reasoning_effort
             or config.reasoning_effort,
             timeout_seconds=(
-                resolved_route.timeout_seconds
+                routing_timeouts.effective_route_timeout_display(config, resolved_route)
                 if resolved_route
                 else config.remediation_timeout_seconds_display
             ),
@@ -159,6 +162,7 @@ def run_remediation(
             ctx=ctx,
             prompt_artifact=invocation.prompt_artifact,
             harness=remediation_harness,
+            timeout_is_effective=timeout_is_effective,
         )
     phase_support.write_artifact(
         config.artifact_dir / f"{artifact_stem}.txt",
@@ -198,6 +202,7 @@ def _run_remediation_with_retry(
     ctx: RunContext,
     prompt_artifact: Path | None,
     harness: str,
+    timeout_is_effective: bool = False,
 ) -> CommandResult:
     """Run the remediation subprocess with bounded transient retry.
 
@@ -208,6 +213,9 @@ def _run_remediation_with_retry(
     """
     attempts = 1 if harness in {"codex", "fake"} else max(1, config.provider_retry_attempts)
     last_result: CommandResult | None = None
+    effective_timeout = (
+        timeout if timeout_is_effective else phase_support.phase_timeout_seconds(config, timeout)
+    )
     for attempt in range(1, attempts + 1):
         result = phase_support.run_with_waiting_progress(
             config,
@@ -215,7 +223,7 @@ def _run_remediation_with_retry(
             command,
             config.cwd,
             prompt_input,
-            phase_support.phase_timeout_seconds(config, timeout),
+            effective_timeout,
             phase="remediate",
             label=label,
             ctx=ctx,

@@ -5,9 +5,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from code_review_loop import artifacts, diagnostics, policy, prompts_composer, triage
+from code_review_loop import (
+    artifacts,
+    diagnostics,
+    policy,
+    prompts_composer,
+    routing_timeouts,
+    triage,
+)
 from code_review_loop.adapters.phase_support import (
-    phase_timeout_seconds,
     progress_event,
     remaining_wall_budget_seconds,
     write_artifact,
@@ -211,8 +217,7 @@ def _effective_route(resolved_route: policy.ResolvedRoute, config: LoopConfig) -
 def _artifact_timeout_seconds(
     resolved_route: policy.ResolvedRoute, config: LoopConfig
 ) -> float | int | None:
-    effective_timeout = phase_timeout_seconds(config, resolved_route.timeout_seconds)
-    return effective_timeout
+    return routing_timeouts.effective_route_timeout_seconds(config, resolved_route)
 
 
 def _proposed_route_fields(triage_payload: dict[str, Any]) -> dict[str, Any]:

@@ -210,6 +210,43 @@ def test_parse_triage_payload_v2_normalizes_warning_message_objects():
     ]
 
 
+def test_parse_triage_payload_v2_moves_misplaced_definition_of_done():
+    fixture = json.loads(_fixture("valid_v2"))
+    misplaced_dod = [
+        "Treat symlink hook paths as existing before writing.",
+        "Cover symlink hook handling with a focused regression test.",
+    ]
+    fixture["confirmed_findings"][0]["definition_of_done"] = misplaced_dod
+    original_dod = list(fixture["prompt_requirements"]["definition_of_done"])
+
+    payload = triage.parse_triage_payload(
+        json.dumps(fixture),
+        run_id="run-123",
+        source_review_artifact="review-1.txt",
+        contract="v2",
+    )
+
+    assert "definition_of_done" not in payload["confirmed_findings"][0]
+    assert payload["prompt_requirements"]["definition_of_done"] == original_dod + misplaced_dod
+    assert any(
+        "Moved misplaced finding definition_of_done entries" in warning
+        for warning in payload["parsing_warnings"]
+    )
+
+
+def test_parse_triage_payload_v2_rejects_non_string_misplaced_definition_of_done():
+    fixture = json.loads(_fixture("valid_v2"))
+    fixture["confirmed_findings"][0]["definition_of_done"] = ["valid", 3]
+
+    with pytest.raises(triage.TriageValidationError):
+        triage.parse_triage_payload(
+            json.dumps(fixture),
+            run_id="run-123",
+            source_review_artifact="review-1.txt",
+            contract="v2",
+        )
+
+
 def test_parse_triage_payload_v2_rejects_warning_objects_without_string_message():
     fixture = json.loads(_fixture("valid_v2"))
     fixture["parsing_warnings"] = [{"message": 3}]

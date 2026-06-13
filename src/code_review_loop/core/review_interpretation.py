@@ -77,6 +77,7 @@ NEGATED_ISSUE_WORD_RE = r"(?:bug|bugs|issue|issues|regression|regressions|defect
 NEGATED_ISSUE_PROSE_RE = re.compile(
     rf"\b(?:"
     rf"no(?:\s+{NEGATED_ISSUE_PREFIX_CHAIN_RE})?\s+{NEGATED_ISSUE_WORD_RE}\b"
+    rf"|zero(?:\s+{NEGATED_ISSUE_PREFIX_CHAIN_RE})?\s+{NEGATED_ISSUE_WORD_RE}\b"
     rf"|without(?:\s+any)?(?:\s+{NEGATED_ISSUE_PREFIX_CHAIN_RE})?\s+{NEGATED_ISSUE_WORD_RE}\b"
     rf"|without\s+revealing(?:\s+any)?(?:\s+{NEGATED_ISSUE_PREFIX_CHAIN_RE})?\s+{NEGATED_ISSUE_WORD_RE}\b"
     rf"|(?:did|does|do)\s+not\s+"

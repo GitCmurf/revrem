@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 
-from code_review_loop import redaction
 from code_review_loop.cli.args import parse_args
 from code_review_loop.cli.commands.profile import save_profile_from_args
 from code_review_loop.cli.config_builder import build_loop_config
@@ -21,6 +21,7 @@ from code_review_loop.cli.config_support import (
 )
 from code_review_loop.cli.exit import map_application_call
 from code_review_loop.git_status import non_artifact_status_entries_from_status_z
+from code_review_loop.invocation import invocation_payload, redact_argv
 from code_review_loop.prompts_composer import trim_for_prompt
 
 
@@ -29,6 +30,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from code_review_loop.cli.commands.registry import dispatch_or_none
 
     raw_argv = list(sys.argv[1:] if argv is None else argv)
+    executable = sys.argv[0] if argv is None else "revrem"
     dispatch_result = dispatch_or_none(raw_argv)
     if dispatch_result is not None:
         return dispatch_result
@@ -36,7 +38,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(raw_argv)
     try:
         config, summary_format = build_loop_config(args, Path.cwd())
-        config = replace(config, command_line=("revrem", *_redacted_argv(raw_argv)))
+        command_line = ("revrem", *_redacted_argv(raw_argv))
+        config = replace(
+            config,
+            command_line=command_line,
+            invocation=invocation_payload(
+                executable=executable,
+                argv=raw_argv,
+                cwd=Path.cwd(),
+                command_line=command_line,
+                environ=os.environ,
+            ),
+        )
     except FileNotFoundError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1  # outcome-exempt: configuration failed before RunOutcome exists
@@ -247,21 +260,4 @@ def _auto_commit_clean_start_error(config) -> str | None:
 
 
 def _redacted_argv(argv: Sequence[str]) -> tuple[str, ...]:
-    redacted: list[str] = []
-    redact_next = False
-    sensitive_flags = {"--commit-message-prompt", "--triage-prompt"}
-    for item in argv:
-        if redact_next:
-            redacted.append("<redacted>")
-            redact_next = False
-            continue
-        if item in sensitive_flags:
-            redacted.append(item)
-            redact_next = True
-            continue
-        if any(item.startswith(f"{flag}=") for flag in sensitive_flags):
-            flag, _sep, _value = item.partition("=")
-            redacted.append(f"{flag}=<redacted>")
-            continue
-        redacted.append(redaction.redact_text(item).text)
-    return tuple(redacted)
+    return redact_argv(argv)

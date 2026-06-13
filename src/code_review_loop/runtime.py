@@ -81,9 +81,10 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
             commit_status = item.get("commit_status")
             commit_text = f", commit={commit_status}" if commit_status else ""
             commit_failed = " commit failed" if item.get("commit_failed") else ""
+            retry_text = _check_retry_summary(item)
             lines.append(
                 f"  {iteration}: review={review_status}, {check_text}{failed}"
-                f"{commit_text}{commit_failed}"
+                f"{commit_text}{commit_failed}{retry_text}"
             )
 
     artifact_paths = summary.get("artifact_paths")
@@ -136,6 +137,31 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
         lines.append("")
         lines.append(f"Error: {summary['error']}")
 
+    if _final_review_failed_after_successful_checks(summary):
+        lines.append("")
+        lines.append("Final review failed after remediation and checks passed.")
+        failure = _latest_phase_failure(summary, phase="review", iteration="final")
+        if failure:
+            diagnostic = failure.get("diagnostic_artifact")
+            if diagnostic:
+                lines.append(f"Failure diagnostics: {diagnostic}")
+            retry = failure.get("redirected_retry_command")
+            if isinstance(retry, dict):
+                cmd_list = retry.get("command")
+                if isinstance(cmd_list, list) and all(isinstance(x, str) for x in cmd_list):
+                    import shlex
+                    lines.append(f"Retry final review: {shlex.join(cmd_list)}")
+            elif isinstance(retry, str) and retry:
+                lines.append(f"Retry final review: {retry}")
+
+    observation_warnings = _phase_observation_warnings(summary)
+    if observation_warnings:
+        lines.append("")
+        lines.append("WARNING: provider observations need attention.")
+        for warning in observation_warnings[:3]:
+            message = warning.get("message") or warning.get("kind") or "provider observation"
+            lines.append(f"  - {message}")
+
     unexpected = summary.get("unexpected_behaviors")
     if isinstance(unexpected, list) and unexpected:
         lines.append("")
@@ -153,7 +179,129 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
             "model/harness is unsuitable for commit-message drafting until fixed."
         )
 
+    timing_warnings = summary.get("timing_warnings")
+    if isinstance(timing_warnings, list) and timing_warnings:
+        first = timing_warnings[0] if isinstance(timing_warnings[0], dict) else {}
+        message = first.get("message") if isinstance(first, dict) else None
+        lines.append("")
+        lines.append(f"WARNING: {message or 'run timing appears inconsistent.'}")
+
+    triage_diagnostics = summary.get("triage_diagnostics")
+    if isinstance(triage_diagnostics, list) and triage_diagnostics:
+        visible_items = [item for item in triage_diagnostics if isinstance(item, dict)]
+        has_warning = any(
+            str(item.get("severity") or "warn").lower() in {"warn", "warning", "error", "blocking"}
+            for item in visible_items
+        )
+        lines.append("")
+        lines.append(
+            "WARNING: triage diagnostics were recorded."
+            if has_warning
+            else "Triage notes were recorded."
+        )
+        for item in visible_items[:3]:
+            code = item.get("code") or "revrem.triage"
+            message = item.get("message") or "see triage diagnostics artifact"
+            artifact = item.get("artifact")
+            suffix = f" ({artifact})" if artifact else ""
+            lines.append(f"  - {code}: {message}{suffix}")
+
     return "\n".join(lines)
+
+
+def _final_review_failed_after_successful_checks(summary: Mapping[str, object]) -> bool:
+    iterations = summary.get("iterations")
+    if not isinstance(iterations, list) or len(iterations) < 2:
+        return False
+    final = iterations[-1]
+    previous = iterations[-2]
+    if not isinstance(final, dict) or not isinstance(previous, dict):
+        return False
+    if final.get("iteration") != "final" or final.get("review_failed") is not True:
+        return False
+    if previous.get("check_failures") != 0:
+        return False
+    checks = previous.get("checks")
+    if not isinstance(checks, list) or not checks:
+        return False
+    return all(isinstance(check, dict) and check.get("status") == "passed" for check in checks)
+
+
+def _latest_phase_failure(
+    summary: Mapping[str, object],
+    *,
+    phase: str,
+    iteration: str,
+) -> Mapping[str, object] | None:
+    failures = summary.get("phase_failures")
+    if not isinstance(failures, list):
+        return None
+    for failure in reversed(failures):
+        if not isinstance(failure, dict):
+            continue
+        if failure.get("phase") == phase and failure.get("iteration") == iteration:
+            return failure
+    return None
+
+
+def _phase_observation_warnings(
+    summary: Mapping[str, object],
+) -> list[Mapping[str, object]]:
+    observations = summary.get("phase_observations")
+    if not isinstance(observations, list):
+        return []
+    warnings: list[Mapping[str, object]] = []
+    for observation in observations:
+        if not isinstance(observation, dict):
+            continue
+        raw_warnings = observation.get("warnings")
+        if not isinstance(raw_warnings, list):
+            continue
+        for warning in raw_warnings:
+            if isinstance(warning, dict):
+                warnings.append(warning)
+    return warnings
+
+
+def _check_retry_summary(iteration: Mapping[str, object]) -> str:
+    attempts = iteration.get("check_attempts")
+    if not isinstance(attempts, list) or len(attempts) < 2:
+        return ""
+    first_failed: Mapping[str, object] | None = None
+    for attempt in attempts:
+        if not isinstance(attempt, dict):
+            continue
+        failures = attempt.get("check_failures")
+        if isinstance(failures, int) and failures > 0:
+            first_failed = attempt
+            break
+    if first_failed is None:
+        return ""
+    latest = next((attempt for attempt in reversed(attempts) if isinstance(attempt, dict)), None)
+    latest_failures = latest.get("check_failures") if isinstance(latest, dict) else None
+    command = _first_failed_check_command(first_failed)
+    command_text = f", first failed: {command}" if command else ""
+    if isinstance(latest_failures, int):
+        return (
+            f", check retry: first failed {first_failed.get('check_failures')}, "
+            f"latest failed {latest_failures}{command_text}"
+        )
+    return f", check retry: first failed {first_failed.get('check_failures')}{command_text}"
+
+
+def _first_failed_check_command(attempt: Mapping[str, object]) -> str | None:
+    checks = attempt.get("checks")
+    if not isinstance(checks, list):
+        return None
+    for check in checks:
+        if not isinstance(check, dict):
+            continue
+        if check.get("status") != "failed":
+            continue
+        command = check.get("command")
+        if isinstance(command, str):
+            return command
+    return None
 
 
 def _phase_config_summary(phase_config: dict[object, object]) -> str:
@@ -431,6 +579,15 @@ def _append_phase_resume_overrides(
         config.get("external_review_warning_seconds"),
         profile_selected=profile_selected,
         source=_phase_field_source(phase_config_map, "runtime", "external_review_warning_seconds"),
+    )
+    _append_string_override(
+        command,
+        "--external-review-truncation-policy",
+        config.get("external_review_truncation_policy"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(
+            phase_config_map, "runtime", "external_review_truncation_policy"
+        ),
     )
 
 

@@ -102,7 +102,7 @@ def test_inner_check_retry_emits_schema_valid_event_labels(tmp_path: Path) -> No
         final_review=False,
     )
 
-    application_runner.run_loop(config, runner)
+    summary = application_runner.run_loop(config, runner).to_dict()
 
     artifact_dir = config.artifact_dir
     assert (artifact_dir / "remediation-1.txt").exists()
@@ -110,6 +110,44 @@ def test_inner_check_retry_emits_schema_valid_event_labels(tmp_path: Path) -> No
     assert (artifact_dir / "check-1-2.txt").exists()
     assert (artifact_dir / "check-1-retry-1-2.txt").exists()
     assert not (artifact_dir / "remediation-1.1.txt").exists()
+    assert summary["iterations"][0]["check_attempts"] == [
+        {
+            "retry": 0,
+            "artifact_label": "1",
+            "display_label": "1",
+            "check_failures": 1,
+            "checks": [
+                {
+                    "command": "git status -z --porcelain=v1 --untracked-files=all",
+                    "status": "passed",
+                    "artifact": "check-1-1.txt",
+                },
+                {
+                    "command": "pytest -q",
+                    "status": "failed",
+                    "artifact": "check-1-2.txt",
+                }
+            ],
+        },
+        {
+            "retry": 1,
+            "artifact_label": "1-retry-1",
+            "display_label": "1.1",
+            "check_failures": 0,
+            "checks": [
+                {
+                    "command": "git status -z --porcelain=v1 --untracked-files=all",
+                    "status": "passed",
+                    "artifact": "check-1-retry-1-1.txt",
+                },
+                {
+                    "command": "pytest -q",
+                    "status": "passed",
+                    "artifact": "check-1-retry-1-2.txt",
+                }
+            ],
+        },
+    ]
 
     events_path = artifact_dir / "events.jsonl"
     assert events_path.is_file()

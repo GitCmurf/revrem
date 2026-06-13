@@ -27,6 +27,8 @@ remediator to inspect unrelated code.
 
 Every finding object must include:
 `fingerprint`, `summary`, `severity`, `affected_paths`, and `rationale`.
+Do not include `definition_of_done` inside individual finding objects; put it
+only under `prompt_requirements.definition_of_done`.
 `needs_more_info` entries must also include `info_requested`.
 `info_requested` must be a single string, not an array. If you have multiple
 questions, combine them into one newline-separated string.
