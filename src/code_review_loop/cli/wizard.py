@@ -4,14 +4,20 @@ from __future__ import annotations
 
 import shlex
 import sys
+import tomllib
 from dataclasses import dataclass
 from os import environ
 from pathlib import Path
 from typing import TextIO
 
 from code_review_loop import profiles
+from code_review_loop.adapters.commit import phase_support
+from code_review_loop.adapters.remediation import build_remediation_command
+from code_review_loop.adapters.review import build_review_command
+from code_review_loop.adapters.triage import build_triage_command
 from code_review_loop.cli import args as cli_args
 from code_review_loop.cli.config_builder import build_loop_config
+from code_review_loop.core.routing_types import ResolvedRoute
 
 
 @dataclass(frozen=True)
@@ -55,6 +61,42 @@ class CheckPreset:
     checks: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class PhasePreview:
+    label: str
+    harness: str
+    command: tuple[str, ...]
+    model: str | None
+    effort: str | None
+    timeout: float | int | str | None
+    source: str | None = None
+    unresolved_model: bool = False
+
+
+@dataclass(frozen=True)
+class RunPreview:
+    argv: tuple[str, ...]
+    shell_command: str
+    base: str
+    max_iterations: int
+    review: PhasePreview
+    triage: PhasePreview | None
+    remediation: PhasePreview
+    routes: tuple[PhasePreview, ...]
+    checks: tuple[str, ...]
+    final_review: bool
+    commit_message: PhasePreview | None
+    summary_format: str
+    progress_style: str
+    max_wall_seconds: str
+    pending_review: str
+
+    @property
+    def has_unresolved_models(self) -> bool:
+        phases = (self.review, self.triage, self.remediation, *self.routes, self.commit_message)
+        return any(phase is not None and phase.unresolved_model for phase in phases)
+
+
 class WizardCancelled(Exception):
     """Raised when the operator cancels before a command is selected."""
 
@@ -95,22 +137,24 @@ class _Wizard:
 
     def run(self) -> WizardResult:
         self._print_heading("RevRem command wizard")
-        choice = self._choose_profile()
+        choice = self._default_profile_choice()
         state = _initial_state(choice)
+        preview = _run_preview(state, self.cwd)
 
         while True:
-            self._print_run_preview(state)
+            preview = _run_preview(state, self.cwd)
+            self._print_run_preview(preview, state)
             next_step = self._choice(
-                "Next step",
+                "Use this run shape?",
                 (
-                    ("accept", "accept this run shape"),
-                    ("essentials", "edit base, loop count, checks, final review, output, budget"),
-                    ("phases", "edit model-calling phases and routing"),
-                    ("config", "choose a different starting config"),
+                    ("accept", "accept and choose run action"),
+                    ("essentials", "edit run settings"),
+                    ("phases", "edit models, harnesses, and routing"),
+                    ("config", "choose another profile"),
                     ("cancel", "exit without doing anything"),
                 ),
                 default="accept",
-                help_text="Model/quota-using phases are shown as harness:model(effort).",
+                help_text="Commands shown here are built by the same adapters used at runtime.",
             )
             if next_step == "cancel":
                 raise WizardCancelled
@@ -127,16 +171,26 @@ class _Wizard:
             break
 
         while True:
-            action = self._choice(
-                "What should the wizard do?",
+            action_options = (
                 (
+                    ("print", "print the command only"),
+                    ("cancel", "exit without doing anything"),
+                )
+                if preview.has_unresolved_models
+                else (
                     ("dry-run", "validate and print the loop shape"),
                     ("run", "start the real run"),
                     ("save-profile", "save these choices as a project profile"),
                     ("print", "print the command only"),
                     ("cancel", "exit without doing anything"),
-                ),
-                default="dry-run",
+                )
+            )
+            if preview.has_unresolved_models:
+                self._print_dim("Choose explicit models before run, dry-run, or save-profile.")
+            action = self._choice(
+                "What should the wizard do?",
+                action_options,
+                default="print" if preview.has_unresolved_models else "dry-run",
             )
             if action == "cancel":
                 raise WizardCancelled
@@ -151,6 +205,20 @@ class _Wizard:
             print(f"\nCommand: {result.shell_command}", file=self.stdout)
             if self._yes_no("Use this command?", default=True):
                 return result
+
+    def _default_profile_choice(self) -> WizardProfileChoice:
+        resolved_profiles = tuple(
+            profiles.resolve_profiles(cwd=self.cwd, require_implemented=False)
+        )
+        if resolved_profiles:
+            return WizardProfileChoice(
+                profile_name=resolved_profiles[0].name,
+                profile=resolved_profiles[0],
+            )
+        return WizardProfileChoice(
+            profile_name=None,
+            profile=profiles.resolve_defaults(cwd=self.cwd, require_implemented=False),
+        )
 
     def _choose_profile(self) -> WizardProfileChoice:
         resolved_profiles = tuple(
@@ -437,9 +505,14 @@ class _Wizard:
         parts.append(f"command: {shlex.join(_profile_command(profile_name))}")
         return "; ".join(parts)
 
-    def _print_run_preview(self, state: WizardState) -> None:
-        self._print_heading("Run shape")
-        for line in _run_preview_lines(state):
+    def _print_run_preview(self, preview: RunPreview, state: WizardState) -> None:
+        source = _display_source(state.profile.source, cwd=self.cwd)
+        name = state.profile_name or "no profile"
+        title = f"Run shape: {name}"
+        if source:
+            title += f" ({source})"
+        self._print_heading(title)
+        for line in _run_preview_lines(preview):
             print(line, file=self.stderr)
 
     def _print_heading(self, value: str) -> None:
@@ -579,100 +652,263 @@ def _argv_for_state(state: WizardState) -> list[str]:
     return argv
 
 
-def _run_preview_lines(state: WizardState) -> tuple[str, ...]:
-    profile = state.profile
-    command = shlex.join(("revrem", *_argv_for_state(state)))
-    lines = [
-        f"command: {command}",
-        f"base: {state.base}",
-        f"review: {_phase_call(profile.review, state)}",
-    ]
-    if state.triage_enabled:
-        triage_bits = [
-            _phase_call(profile.triage, state, shared_override=False),
-            f"contract={profile.triage.contract}",
-        ]
-        lines.append("  -> triage: " + ", ".join(bit for bit in triage_bits if bit))
-        if state.routing_enabled:
-            route = profile.triage.routes.get(state.routing_default_route)
-            route_text = _route_call(state.routing_default_route, route)
-            lines.append(f"     routing policy: default {route_text}")
-            route_names = ", ".join(
-                _route_call(name, route_cfg) for name, route_cfg in sorted(profile.triage.routes.items())
-            )
-            lines.append(f"     routes: {route_names}")
-        else:
-            lines.append("     routing policy: off")
-    else:
-        lines.append("  -> triage: off")
-    lines.append(f"  -> loop: up to {state.max_iterations} remediation iteration(s)")
-    lines.append(f"     remediate: {_phase_call(profile.remediation, state)}")
-    lines.extend(_check_preview_lines(state.checks))
-    if state.final_review:
-        lines.append(f"  -> final review: {_phase_call(profile.review, state)}")
-    else:
-        lines.append("  -> final review: off")
-    if state.commit_after_remediation:
-        lines.append(
-            "  -> commit message: "
-            f"{_phase_call(profile.commit, state, shared_override=False, model_attr='message_model')}"
+def _config_for_state(state: WizardState, cwd: Path):
+    parsed = cli_args.parse_args((*_argv_for_state(state), "--dry-run"))
+    config, _source = build_loop_config(parsed, cwd)
+    return config
+
+
+def _run_preview(state: WizardState, cwd: Path) -> RunPreview:
+    config = _config_for_state(state, cwd)
+    review = _phase_preview(
+        "review",
+        config.review_harness,
+        tuple(build_review_command(config)),
+        config.review_model or config.model,
+        config.review_reasoning_effort or config.reasoning_effort,
+        config.review_timeout_seconds_display,
+        cwd=cwd,
+    )
+    triage = (
+        _phase_preview(
+            "triage",
+            config.triage_harness,
+            tuple(build_triage_command(config)),
+            config.triage_model,
+            config.triage_reasoning_effort,
+            config.triage_timeout_seconds_display,
+            cwd=cwd,
         )
+        if config.triage_enabled
+        else None
+    )
+    remediation = _phase_preview(
+        "remediate",
+        config.remediation_harness,
+        tuple(build_remediation_command(config)),
+        config.remediation_model or config.model,
+        config.remediation_reasoning_effort or config.reasoning_effort,
+        config.remediation_timeout_seconds_display,
+        cwd=cwd,
+    )
+    routes: list[PhasePreview] = []
+    routing_enabled = (
+        config.profile_v2 is not None and config.profile_v2.triage.routing.enabled
+    )
+    if config.triage_enabled and routing_enabled and config.profile_v2 is not None:
+        for name, route in sorted(config.profile_v2.triage.routes.items()):
+            resolved_route = ResolvedRoute(
+                route_tier=name,
+                harness=route.harness,
+                model=route.model,
+                reasoning_effort=route.reasoning_effort,
+                timeout_seconds=route.timeout_seconds,
+                sandbox=route.sandbox,
+            )
+            model = route.model or config.remediation_model or config.model
+            effort = (
+                route.reasoning_effort
+                or config.remediation_reasoning_effort
+                or config.reasoning_effort
+            )
+            timeout = (
+                route.timeout_seconds
+                if route.timeout_seconds is not None
+                else config.remediation_timeout_seconds_display
+            )
+            routes.append(
+                _phase_preview(
+                    f"route {name}",
+                    route.harness,
+                    tuple(build_remediation_command(config, resolved_route=resolved_route)),
+                    model,
+                    effort,
+                    timeout,
+                    cwd=cwd,
+                    source=f"fallback={route.fallback}" if route.fallback else None,
+                )
+            )
+    commit_message = (
+        _phase_preview(
+            "commit message",
+            config.commit_message_harness,
+            tuple(phase_support.build_commit_message_command(config)),
+            config.commit_message_model,
+            config.commit_reasoning_effort,
+            config.commit_timeout_seconds_display,
+            cwd=cwd,
+        )
+        if config.commit_after_remediation
+        else None
+    )
+    argv = tuple(_argv_for_state(state))
+    return RunPreview(
+        argv=argv,
+        shell_command=shlex.join(("revrem", *argv)),
+        base=config.base,
+        max_iterations=config.max_iterations,
+        review=review,
+        triage=triage,
+        remediation=remediation,
+        routes=tuple(routes),
+        checks=tuple(config.check_commands),
+        final_review=config.final_review,
+        commit_message=commit_message,
+        summary_format=state.summary_format,
+        progress_style=config.progress_style,
+        max_wall_seconds=state.max_wall_seconds,
+        pending_review=state.pending_review,
+    )
+
+
+def _run_preview_lines(preview: RunPreview) -> tuple[str, ...]:
+    lines = [
+        f"RevRem command: {preview.shell_command}",
+        f"base: {preview.base}",
+        "",
+        f"+-- review: {_phase_summary_for_preview(preview.review)}",
+        f"|   command: {shlex.join(preview.review.command)}",
+    ]
+    if preview.triage is None:
+        lines.extend(("|", "+-- triage: none"))
     else:
-        lines.append("  -> commit: off")
-    lines.append(f"output: {state.summary_format}, {state.progress_style} progress")
-    if state.max_wall_seconds:
-        lines.append(f"budget: max wall {state.max_wall_seconds}s")
-    if state.pending_review != "profile":
-        lines.append(f"pending review: {state.pending_review}")
+        lines.extend(
+            (
+                "|",
+                f"+-- triage: {_phase_summary_for_preview(preview.triage)}",
+                f"|   command: {shlex.join(preview.triage.command)}",
+            )
+        )
+        if preview.routes:
+            lines.append("|   routes:")
+            for route in preview.routes:
+                lines.append(f"|   - {route.label}: {_phase_summary_for_preview(route)}")
+                lines.append(f"|     command: {shlex.join(route.command)}")
+    lines.extend(
+        (
+            "|",
+            f"+-- remediation loop: max {preview.max_iterations}",
+            f"|   +-- remediate: {_phase_summary_for_preview(preview.remediation)}",
+            f"|   |   command: {shlex.join(preview.remediation.command)}",
+        )
+    )
+    lines.extend(_check_preview_lines(preview.checks))
+    if preview.final_review:
+        lines.append("+-- final review: same as review")
+    else:
+        lines.append("+-- final review: off")
+    if preview.commit_message is None:
+        lines.append("+-- commit: off")
+    else:
+        lines.append(
+            f"+-- commit message: {_phase_summary_for_preview(preview.commit_message)}"
+        )
+        lines.append(f"    command: {shlex.join(preview.commit_message.command)}")
+    lines.append("")
+    lines.append(f"output: {preview.summary_format}, {preview.progress_style} progress")
+    if preview.max_wall_seconds:
+        lines.append(f"budget: max wall {preview.max_wall_seconds}s")
+    if preview.pending_review != "profile":
+        lines.append(f"pending review: {preview.pending_review}")
+    if preview.has_unresolved_models:
+        lines.append("status: model unresolved - edit models before running")
     return tuple(lines)
 
 
-def _phase_call(
-    phase: profiles.PhaseConfig | profiles.TriageConfig | profiles.CommitConfig,
-    state: WizardState,
+def _phase_preview(
+    label: str,
+    harness: str,
+    command: tuple[str, ...],
+    config_model: str | None,
+    config_effort: str | None,
+    timeout: float | int | str | None,
     *,
-    shared_override: bool = True,
-    model_attr: str = "model",
-) -> str:
-    harness = phase.harness
-    model_value = getattr(phase, model_attr)
-    model = state.shared_model if shared_override and state.shared_model else model_value
-    effort = (
-        state.shared_reasoning_effort
-        if shared_override and state.shared_reasoning_effort
-        else phase.reasoning_effort
+    cwd: Path,
+    source: str | None = None,
+) -> PhasePreview:
+    command_model = _command_option(command, "--model")
+    model = command_model or config_model
+    effort = _command_effort(command) or config_effort
+    default_source = source
+    if model is None:
+        provider_default = _provider_default(harness, cwd)
+        model = provider_default.model
+        effort = effort or provider_default.effort
+        default_source = provider_default.source or default_source
+    return PhasePreview(
+        label=label,
+        harness=harness,
+        command=command,
+        model=model,
+        effort=effort,
+        timeout=timeout,
+        source=default_source,
+        unresolved_model=model is None,
     )
-    timeout = state.timeout_seconds if shared_override and state.timeout_seconds else None
-    if timeout == "":
-        timeout = None
-    timeout_display = timeout if timeout is not None else phase.timeout_seconds
-    call = f"{harness}:{model or 'default'}"
-    if effort:
-        call += f"({effort})"
-    if timeout_display is not None:
-        call += f" timeout={_timeout_text(timeout_display)}"
-    return call
 
 
-def _route_call(name: str, route: profiles.TriageRouteConfig | None) -> str:
-    if route is None:
-        return f"{name} (missing)"
-    text = f"{name}->{route.harness}:{route.model or 'default'}"
-    if route.reasoning_effort:
-        text += f"({route.reasoning_effort})"
-    if route.fallback:
-        text += f" fallback={route.fallback}"
+def _phase_summary_for_preview(phase: PhasePreview) -> str:
+    model = phase.model or "model unresolved"
+    text = f"uses {phase.harness}:{model}"
+    if phase.effort:
+        text += f"({phase.effort})"
+    if phase.timeout is not None:
+        text += f", timeout {_timeout_text(phase.timeout)}"
+    if phase.source:
+        text += f" [{phase.source}]"
     return text
+
+
+@dataclass(frozen=True)
+class ProviderDefault:
+    model: str | None = None
+    effort: str | None = None
+    source: str | None = None
+
+
+def _provider_default(harness: str, cwd: Path) -> ProviderDefault:
+    if harness != "codex":
+        return ProviderDefault()
+    config_path = Path(environ.get("CODEX_HOME", Path.home() / ".codex")) / "config.toml"
+    try:
+        raw = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return ProviderDefault()
+    model = raw.get("model")
+    effort = raw.get("model_reasoning_effort")
+    source = _display_source(str(config_path), cwd=cwd)
+    return ProviderDefault(
+        model=model if isinstance(model, str) and model else None,
+        effort=effort if isinstance(effort, str) and effort else None,
+        source=source,
+    )
+
+
+def _command_option(command: tuple[str, ...], option: str) -> str | None:
+    for index, value in enumerate(command):
+        if value == option and index + 1 < len(command):
+            return command[index + 1]
+    return None
+
+
+def _command_effort(command: tuple[str, ...]) -> str | None:
+    for index, value in enumerate(command):
+        if value == "-c" and index + 1 < len(command):
+            config_value = command[index + 1]
+            prefix = 'model_reasoning_effort="'
+            if config_value.startswith(prefix) and config_value.endswith('"'):
+                return config_value[len(prefix) : -1]
+    return None
 
 
 def _check_preview_lines(checks: tuple[str, ...]) -> list[str]:
     if not checks:
-        return ["     checks: shell no-op"]
-    lines = [f"     checks: {len(checks)} command(s)"]
+        return ["|   +-- verify: none configured"]
+    lines = [f"|   +-- verify: {len(checks)} checks"]
     for index, command in enumerate(checks[:5], start=1):
-        lines.append(f"       {index}. {command}")
+        lines.append(f"|       {index}. {command}")
     if len(checks) > 5:
-        lines.append(f"       ... {len(checks) - 5} more")
+        lines.append(f"|       ... {len(checks) - 5} more")
     return lines
 
 

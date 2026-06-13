@@ -212,12 +212,18 @@ revrem --wizard
 In an interactive terminal, bare `revrem` opens the wizard. `revrem --wizard`
 opens the wizard even when combined with other top-level options. In scripts
 and other non-interactive contexts, bare `revrem` keeps the normal CLI
-behavior. The wizard starts from repo defaults or a named profile, prompts for
-common choices, and shows a run-shape preview before provider calls can start.
-The preview lists each model-calling phase as `harness:model(effort)`, shows
-the remediation loop, checks, routing policy when a profile defines routes,
-commit-message drafting, output mode, and the exact `revrem ...` command it
-will run, dry-run, save as a project profile, or leave for copying.
+behavior. The wizard opens on a recommended run-shape diagram before provider
+calls can start; choose "another profile" only when you want to switch away
+from that recommendation. The preview is built from the same phase command
+builders used at runtime, lists the exact provider CLI commands for review,
+triage, remediation, routed remediation, and commit-message drafting, and shows
+each model-calling phase as `harness:model(effort)`.
+
+If a provider command omits `--model`, the wizard resolves a trusted local
+provider default when RevRem knows how. Codex defaults are read from
+`$CODEX_HOME/config.toml` or `~/.codex/config.toml`. If the model still cannot
+be resolved, the diagram marks it as `model unresolved` and the wizard only
+allows printing or cancellation until you choose an explicit model.
 
 The normal wizard path keeps the profile values unless you choose an edit
 screen. Verification checks can be kept from the profile or selected from

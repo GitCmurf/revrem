@@ -56,6 +56,20 @@ def _install_fake_rich(monkeypatch):
     monkeypatch.setitem(sys.modules, "rich.text", text_module)
 
 
+@pytest.fixture(autouse=True)
+def _codex_home(tmp_path, monkeypatch):
+    home = tmp_path / "home-global"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
+    (codex_home / "config.toml").write_text(
+        'model = "gpt-5.5"\nmodel_reasoning_effort = "low"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+
+
 def _write_profile(path: Path) -> None:
     path.write_text(
         """
@@ -88,12 +102,7 @@ def test_wizard_keeps_profile_command_minimal_for_defaults(tmp_path, monkeypatch
     (tmp_path / ".git").mkdir()
     _write_profile(tmp_path / ".revrem.toml")
     stdin = StringIO(
-        "\n"  # selected profile
-        "\n"  # base
-        "\n"  # max iterations
-        "\n"  # checks
-        "\n"  # final review
-        "\n"  # no advanced
+        "\n"  # accept run shape
         "\n"  # dry-run action
         "\n"  # use command
     )
@@ -132,11 +141,10 @@ reasoning_effort = "low"
     )
     stderr = StringIO()
 
-    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("q\n"), stderr=stderr)
+    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("config\nq\n"), stderr=stderr)
 
     assert result is None
     rendered = stderr.getvalue()
-    assert "Default command: revrem --profile default" in rendered
     assert "no profile (merged defaults)" in rendered
     assert "default: (~/.config/revrem/profiles.toml)" in rendered
     assert "final-pr: (./.revrem.toml)" in rendered
@@ -151,20 +159,21 @@ def test_wizard_run_shape_previews_models_routes_checks_and_command(tmp_path, mo
     _write_profile(tmp_path / ".revrem.toml")
     stderr = StringIO()
 
-    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("\nq\n"), stderr=stderr)
+    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("q\n"), stderr=stderr)
 
     assert result is None
     rendered = stderr.getvalue()
-    assert "Run shape" in rendered
+    assert "Run shape: final-pr" in rendered
     assert "command: revrem --profile final-pr" in rendered
     assert "base: trunk" in rendered
-    assert "review: codex:default" in rendered
-    assert "-> triage: codex:default, contract=v2" in rendered
-    assert "routing policy: default midtier->codex:gpt-5.4-mini" in rendered
-    assert "-> loop: up to 2 remediation iteration(s)" in rendered
-    assert "remediate: codex:default" in rendered
-    assert "checks: 1 command(s)" in rendered
+    assert "+-- review: uses codex:gpt-5.5(low)" in rendered
+    assert "+-- triage: uses codex:gpt-5.5(low)" in rendered
+    assert "route midtier: uses codex:gpt-5.4-mini" in rendered
+    assert "+-- remediation loop: max 2" in rendered
+    assert "remediate: uses codex:gpt-5.5(low)" in rendered
+    assert "verify: 1 checks" in rendered
     assert "1. pytest -q" in rendered
+    assert "command: codex review" in rendered
 
 
 def test_wizard_builds_common_overrides_and_quotes_checks(tmp_path, monkeypatch):
@@ -172,7 +181,6 @@ def test_wizard_builds_common_overrides_and_quotes_checks(tmp_path, monkeypatch)
     (tmp_path / ".git").mkdir()
     _write_profile(tmp_path / ".revrem.toml")
     stdin = StringIO(
-        "final-pr\n"
         "essentials\n"
         "main\n"
         "3\n"
@@ -238,7 +246,8 @@ def test_wizard_no_profile_cannot_enable_routing_without_routes(tmp_path, monkey
     (tmp_path / ".git").mkdir()
     stderr = StringIO()
     stdin = StringIO(
-        "\n"  # no-profile
+        "config\n"
+        "no-profile\n"
         "phases\n"
         "y\n"
         "\n"  # model
@@ -270,7 +279,6 @@ def test_wizard_detects_repo_check_presets(tmp_path, monkeypatch):
     )
     (tmp_path / "AGENTS.md").write_text("<!-- MEMINIT_PROTOCOL: begin -->", encoding="utf-8")
     stdin = StringIO(
-        "no-profile\n"
         "essentials\n"
         "\n"
         "\n"
@@ -294,6 +302,34 @@ def test_wizard_detects_repo_check_presets(tmp_path, monkeypatch):
     assert "Python fast: pytest -q" in rendered
     assert "Python static: ruff check . && mypy src" in rendered
     assert "Meminit DocOps: uv run --locked meminit check --format json" in rendered
+
+
+def test_wizard_blocks_provider_actions_when_model_is_unresolved(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.claude-review]
+description = "Claude review without explicit model"
+
+[profiles.claude-review.review]
+harness = "claude"
+""",
+        encoding="utf-8",
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("\nq\n"), stderr=stderr)
+
+    assert result is None
+    rendered = stderr.getvalue()
+    assert "review: uses claude:model unresolved" in rendered
+    assert "status: model unresolved - edit models before running" in rendered
+    action_section = rendered.split("What should the wizard do?", maxsplit=1)[1]
+    assert "print: print the command only" in action_section
+    assert "dry-run" not in action_section
+    assert "run: start the real run" not in action_section
+    assert "save-profile" not in action_section
 
 
 def test_wizard_cancel_returns_none(tmp_path):
@@ -327,15 +363,7 @@ def test_wizard_uses_rich_when_available_and_terminal_supports_it(tmp_path, monk
     assert result is None
     printed_values = [value for value, _kwargs in _FakeConsole.printed]
     assert any(isinstance(value, _FakeText) for value in printed_values)
-    flattened_parts = [
-        part
-        for value in printed_values
-        if isinstance(value, _FakeText)
-        for part in value.parts
-    ]
-    assert ("Default command: ", "bold") in flattened_parts
-    assert ("revrem --profile final-pr", "green") in flattened_parts
-    assert any(part == (" [default]", "yellow") for part in flattened_parts)
+    assert "Run shape: final-pr (./.revrem.toml)" in printed_values
 
 
 def test_wizard_skips_rich_when_no_color_is_set(tmp_path, monkeypatch):
@@ -349,7 +377,7 @@ def test_wizard_skips_rich_when_no_color_is_set(tmp_path, monkeypatch):
 
     assert result is None
     assert _FakeConsole.printed == []
-    assert "Default command: revrem --profile final-pr" in stderr.getvalue()
+    assert "Run shape: final-pr" in stderr.getvalue()
 
 
 def test_main_explicit_wizard_uses_generated_argv(tmp_path, monkeypatch, capsys):

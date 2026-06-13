@@ -44,17 +44,22 @@ and run history.
   TTYs; non-interactive invocations keep the existing default CLI behavior.
 - The wizard starts from resolved defaults or a named profile and emits a
   minimal command: accepted profile/default values are not repeated as flags.
-- The first screen distinguishes `no-profile` merged defaults from profiles
-  named `default`, shows compact config sources, and previews the default
-  command before asking for input.
-- Pressing Enter on the first screen selects the recommended command and
-  continues to normal confirmation; it does not start provider calls by itself.
-- After selecting a starting config, the wizard shows a line-oriented run-shape
-  preview with the generated command, base branch, review, triage, routing,
-  remediation loop, checks, final review, commit-message drafting, output, and
-  budgets.
-- Model-calling phases are shown as `harness:model(effort)` so cost/quota
-  choices are visible before the operator accepts the command.
+- The first screen is the recommended run-shape diagram. Profile selection is
+  available from "choose another profile" and distinguishes `no-profile`
+  merged defaults from profiles named `default`.
+- The run-shape preview is built from the same phase command builders used at
+  runtime, including review, triage, remediation, routed remediation, and
+  commit-message drafting provider CLI commands.
+- Model-calling phases are shown as `harness:model(effort)`. If a command
+  omits `--model`, the wizard resolves trusted provider defaults when
+  available; Codex defaults come from `$CODEX_HOME/config.toml` or
+  `~/.codex/config.toml`.
+- If a model cannot be resolved, the preview marks `model unresolved` and the
+  wizard blocks run, dry-run, and save-profile actions until the operator
+  chooses an explicit model.
+- The preview includes the generated RevRem command, base branch, review,
+  triage, routing, remediation loop, checks, final review, commit-message
+  drafting, output, and budgets.
 - The normal path accepts the preview. Edit screens cover essentials
   (base branch, iterations, checks, final review, output, wall-clock budget)
   and phase settings (triage, routing, model/effort overrides, timeouts,
@@ -88,6 +93,10 @@ and run history.
 - The run-shape preview includes effective review, triage, remediation,
   routing, commit, check, and output settings so operators can see what a
   profile will run before accepting it.
+- Scripted tests prove command-builder-derived provider commands and models
+  appear in the run-shape preview.
+- Scripted tests prove unresolved non-Codex provider models block provider
+  actions.
 - Scripted tests prove defaults without routes cannot enable routing through
   the wizard.
 - Scripted tests prove repo check presets are detected and selectable.
