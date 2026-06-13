@@ -151,7 +151,8 @@ def _python_suggestions(root: Path) -> list[CheckSuggestion]:
                 notes="Python test surface detected.",
             )
         )
-    if pyproject.is_file() and isinstance(raw.get("tool"), dict) and "ruff" in raw["tool"]:  # type: ignore[operator]
+    tool_section = raw.get("tool")
+    if pyproject.is_file() and isinstance(tool_section, dict) and "ruff" in tool_section:
         suggestions.append(
             CheckSuggestion(
                 command="ruff check .",

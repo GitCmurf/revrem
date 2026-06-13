@@ -146,7 +146,12 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
             if diagnostic:
                 lines.append(f"Failure diagnostics: {diagnostic}")
             retry = failure.get("redirected_retry_command")
-            if isinstance(retry, str) and retry:
+            if isinstance(retry, dict):
+                cmd_list = retry.get("command")
+                if isinstance(cmd_list, list) and all(isinstance(x, str) for x in cmd_list):
+                    import shlex
+                    lines.append(f"Retry final review: {shlex.join(cmd_list)}")
+            elif isinstance(retry, str) and retry:
                 lines.append(f"Retry final review: {retry}")
 
     observation_warnings = _phase_observation_warnings(summary)

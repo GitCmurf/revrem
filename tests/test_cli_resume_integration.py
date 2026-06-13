@@ -393,6 +393,8 @@ def test_loop_writes_failure_summary_when_final_review_invocation_fails(tmp_path
     assert summary["phase_failures"][0]["failure"]["reason"] == "provider_timeout"
     retry_info = summary["phase_failures"][0]["redirected_retry_command"]
     assert retry_info["capture_hint"] == "capture stdout/stderr to a log file"
+    assert isinstance(retry_info["command"], list)
+    assert all(isinstance(x, str) for x in retry_info["command"])
     assert "review" in retry_info["command"]
     assert "--base" in retry_info["command"]
     assert review_path.is_file()
