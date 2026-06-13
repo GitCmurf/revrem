@@ -131,6 +131,14 @@ def run_codex_review(
                         **external_review_prompt_metadata(external_prompt, config=config),
                     },
                 )
+                phase_support.progress_event(
+                    config,
+                    "review",
+                    display_label,
+                    "fail",
+                    "aborted: context truncated and policy=fail",
+                    ctx=ctx,
+                )
                 raise RuntimeError(
                     "prompted review context exceeds external_review_input_chars "
                     f"({external_prompt.context_chars} context chars; cap "

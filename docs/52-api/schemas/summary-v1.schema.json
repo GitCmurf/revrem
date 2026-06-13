@@ -137,9 +137,12 @@
           "type": "string"
         },
         "environment": {
-          "additionalProperties": {
-            "type": "string"
+          "patternProperties": {
+            "^REVREM_[A-Z0-9_]+$": {
+              "type": "string"
+            }
           },
+          "additionalProperties": false,
           "type": "object"
         },
         "schema_version": {
