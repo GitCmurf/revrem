@@ -988,7 +988,7 @@ def test_external_review_truncation_fail_policy_stops_before_provider_call(tmp_p
     )
     assert excinfo.value.summary["error"].endswith("external_review_truncation_policy=fail")
     assert excinfo.value.outcome.reason == "review_failed"
-    
+
     summary = json.loads((repo / "artifacts" / "summary.json").read_text(encoding="utf-8"))
     assert summary["external_review_coverage"]["prompt_truncated"] is True
     assert summary["external_review_coverage"]["review_context_supplied_in_full"] is False
