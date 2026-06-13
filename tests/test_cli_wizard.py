@@ -166,14 +166,56 @@ def test_wizard_run_shape_previews_models_routes_checks_and_command(tmp_path, mo
     assert "Run shape: final-pr" in rendered
     assert "command: revrem --profile final-pr" in rendered
     assert "base: trunk" in rendered
+    assert "remediation passes: max 2" in rendered
+    assert "terminal output: text summary, compact progress" in rendered
     assert "+-- review: uses codex:gpt-5.5(low)" in rendered
     assert "+-- triage: uses codex:gpt-5.5(low)" in rendered
     assert "route midtier: uses codex:gpt-5.4-mini" in rendered
-    assert "+-- remediation loop: max 2" in rendered
+    assert "+-- remediation and verification" in rendered
     assert "remediate: uses codex:gpt-5.5(low)" in rendered
     assert "verify: 1 checks" in rendered
     assert "1. pytest -q" in rendered
-    assert "command: codex review" in rendered
+    assert "if verify fails: no inner retry" in rendered
+    assert "if verify passes: commit off" in rendered
+    assert "after pass limit: final review enabled" in rendered
+    assert "provider command: codex review" in rendered
+
+
+def test_wizard_dogfood_preview_shows_inner_check_retry_and_commit(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.dogfood]
+description = "Dogfood"
+
+[profiles.dogfood.pipeline]
+max_iterations = 3
+checks = ["pytest -q"]
+
+[profiles.dogfood.remediation]
+model = "gpt-5.4-mini"
+
+[profiles.dogfood.commit]
+enabled = true
+message_model = "gpt-5.3-codex-spark"
+
+[profiles.dogfood.runtime]
+inner_check_retries = 1
+""",
+        encoding="utf-8",
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("q\n"), stderr=stderr)
+
+    assert result is None
+    rendered = stderr.getvalue()
+    assert "remediation passes: max 3" in rendered
+    assert "if verify fails: retry remediation up to 1 time" in rendered
+    assert "+-- if verify passes: commit enabled" in rendered
+    assert "commit message: uses codex:gpt-5.3-codex-spark" in rendered
+    assert "provider command: codex exec" in rendered
 
 
 def test_wizard_builds_common_overrides_and_quotes_checks(tmp_path, monkeypatch):
@@ -181,7 +223,7 @@ def test_wizard_builds_common_overrides_and_quotes_checks(tmp_path, monkeypatch)
     (tmp_path / ".git").mkdir()
     _write_profile(tmp_path / ".revrem.toml")
     stdin = StringIO(
-        "essentials\n"
+        "settings\n"
         "main\n"
         "3\n"
         "custom\n"
@@ -192,7 +234,7 @@ def test_wizard_builds_common_overrides_and_quotes_checks(tmp_path, monkeypatch)
         "verbose\n"
         "both\n"
         "600\n"
-        "phases\n"
+        "models\n"
         "n\n"
         "gpt-test\n"
         "high\n"
@@ -248,7 +290,7 @@ def test_wizard_no_profile_cannot_enable_routing_without_routes(tmp_path, monkey
     stdin = StringIO(
         "config\n"
         "no-profile\n"
-        "phases\n"
+        "models\n"
         "y\n"
         "\n"  # model
         "\n"  # effort
@@ -279,7 +321,7 @@ def test_wizard_detects_repo_check_presets(tmp_path, monkeypatch):
     )
     (tmp_path / "AGENTS.md").write_text("<!-- MEMINIT_PROTOCOL: begin -->", encoding="utf-8")
     stdin = StringIO(
-        "essentials\n"
+        "settings\n"
         "\n"
         "\n"
         "repo-gate\n"

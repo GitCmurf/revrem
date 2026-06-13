@@ -79,6 +79,7 @@ class RunPreview:
     shell_command: str
     base: str
     max_iterations: int
+    inner_check_retries: int
     review: PhasePreview
     triage: PhasePreview | None
     remediation: PhasePreview
@@ -148,13 +149,16 @@ class _Wizard:
                 "Use this run shape?",
                 (
                     ("accept", "accept and choose run action"),
-                    ("essentials", "edit run settings"),
-                    ("phases", "edit models, harnesses, and routing"),
+                    ("settings", "base, pass limit, checks, final review, output, budget"),
+                    (
+                        "models",
+                        "harnesses, models, triage, routing, commits, timeouts",
+                    ),
                     ("config", "choose another profile"),
                     ("cancel", "exit without doing anything"),
                 ),
                 default="accept",
-                help_text="Commands shown here are built by the same adapters used at runtime.",
+                help_text="Provider commands shown are the commands RevRem will run.",
             )
             if next_step == "cancel":
                 raise WizardCancelled
@@ -162,10 +166,10 @@ class _Wizard:
                 choice = self._choose_profile()
                 state = _initial_state(choice)
                 continue
-            if next_step == "essentials":
+            if next_step == "settings":
                 self._common_options(state)
                 continue
-            if next_step == "phases":
+            if next_step == "models":
                 self._phase_options(state)
                 continue
             break
@@ -747,6 +751,7 @@ def _run_preview(state: WizardState, cwd: Path) -> RunPreview:
         shell_command=shlex.join(("revrem", *argv)),
         base=config.base,
         max_iterations=config.max_iterations,
+        inner_check_retries=config.inner_check_retries,
         review=review,
         triage=triage,
         remediation=remediation,
@@ -765,10 +770,21 @@ def _run_preview_lines(preview: RunPreview) -> tuple[str, ...]:
     lines = [
         f"RevRem command: {preview.shell_command}",
         f"base: {preview.base}",
-        "",
-        f"+-- review: {_phase_summary_for_preview(preview.review)}",
-        f"|   command: {shlex.join(preview.review.command)}",
+        f"remediation passes: max {preview.max_iterations}",
+        f"terminal output: {preview.summary_format} summary, {preview.progress_style} progress",
     ]
+    if preview.max_wall_seconds:
+        lines.append(f"budget: max wall {preview.max_wall_seconds}s")
+    if preview.pending_review != "profile":
+        lines.append(f"pending review: {preview.pending_review}")
+    lines.extend(
+        (
+            "",
+            "+-- each pass starts with review",
+            f"|   +-- review: {_phase_summary_for_preview(preview.review)}",
+            f"|   |   provider command: {shlex.join(preview.review.command)}",
+        )
+    )
     if preview.triage is None:
         lines.extend(("|", "+-- triage: none"))
     else:
@@ -776,43 +792,50 @@ def _run_preview_lines(preview: RunPreview) -> tuple[str, ...]:
             (
                 "|",
                 f"+-- triage: {_phase_summary_for_preview(preview.triage)}",
-                f"|   command: {shlex.join(preview.triage.command)}",
+                f"|   provider command: {shlex.join(preview.triage.command)}",
             )
         )
         if preview.routes:
             lines.append("|   routes:")
             for route in preview.routes:
                 lines.append(f"|   - {route.label}: {_phase_summary_for_preview(route)}")
-                lines.append(f"|     command: {shlex.join(route.command)}")
+                lines.append(f"|     provider command: {shlex.join(route.command)}")
     lines.extend(
         (
             "|",
-            f"+-- remediation loop: max {preview.max_iterations}",
+            "+-- remediation and verification",
             f"|   +-- remediate: {_phase_summary_for_preview(preview.remediation)}",
-            f"|   |   command: {shlex.join(preview.remediation.command)}",
+            f"|   |   provider command: {shlex.join(preview.remediation.command)}",
         )
     )
     lines.extend(_check_preview_lines(preview.checks))
-    if preview.final_review:
-        lines.append("+-- final review: same as review")
-    else:
-        lines.append("+-- final review: off")
+    lines.append(f"|   +-- if verify fails: {_inner_retry_text(preview.inner_check_retries)}")
     if preview.commit_message is None:
-        lines.append("+-- commit: off")
+        lines.extend(("|", "+-- if verify passes: commit off"))
     else:
-        lines.append(
-            f"+-- commit message: {_phase_summary_for_preview(preview.commit_message)}"
+        lines.extend(
+            (
+                "|",
+                "+-- if verify passes: commit enabled",
+                f"|   +-- commit message: {_phase_summary_for_preview(preview.commit_message)}",
+                f"|       provider command: {shlex.join(preview.commit_message.command)}",
+            )
         )
-        lines.append(f"    command: {shlex.join(preview.commit_message.command)}")
     lines.append("")
-    lines.append(f"output: {preview.summary_format}, {preview.progress_style} progress")
-    if preview.max_wall_seconds:
-        lines.append(f"budget: max wall {preview.max_wall_seconds}s")
-    if preview.pending_review != "profile":
-        lines.append(f"pending review: {preview.pending_review}")
+    if preview.final_review:
+        lines.append("+-- after pass limit: final review enabled")
+    else:
+        lines.append("+-- after pass limit: final review off")
     if preview.has_unresolved_models:
         lines.append("status: model unresolved - edit models before running")
     return tuple(lines)
+
+
+def _inner_retry_text(value: int) -> str:
+    if value <= 0:
+        return "no inner retry"
+    suffix = "time" if value == 1 else "times"
+    return f"retry remediation up to {value} {suffix}"
 
 
 def _phase_preview(

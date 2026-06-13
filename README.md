@@ -217,7 +217,9 @@ calls can start; choose "another profile" only when you want to switch away
 from that recommendation. The preview is built from the same phase command
 builders used at runtime, lists the exact provider CLI commands for review,
 triage, remediation, routed remediation, and commit-message drafting, and shows
-each model-calling phase as `harness:model(effort)`.
+each model-calling phase as `harness:model(effort)`. The diagram separates the
+outer remediation pass limit from the inner verify-failure retry limit, and
+shows commit-message drafting only under the "if verify passes" commit branch.
 
 If a provider command omits `--model`, the wizard resolves a trusted local
 provider default when RevRem knows how. Codex defaults are read from

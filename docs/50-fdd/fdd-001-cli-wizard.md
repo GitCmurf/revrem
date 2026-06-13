@@ -57,12 +57,13 @@ and run history.
 - If a model cannot be resolved, the preview marks `model unresolved` and the
   wizard blocks run, dry-run, and save-profile actions until the operator
   chooses an explicit model.
-- The preview includes the generated RevRem command, base branch, review,
-  triage, routing, remediation loop, checks, final review, commit-message
-  drafting, output, and budgets.
-- The normal path accepts the preview. Edit screens cover essentials
-  (base branch, iterations, checks, final review, output, wall-clock budget)
-  and phase settings (triage, routing, model/effort overrides, timeouts,
+- The preview includes the generated RevRem command, base branch, outer
+  remediation pass limit, terminal output mode, review, triage, routing,
+  remediation, verification checks, inner check retry policy, conditional
+  commit-message drafting, final-review behavior, and budgets.
+- The normal path accepts the preview. Edit screens cover run settings
+  (base branch, pass limit, checks, final review, output, wall-clock budget)
+  and model settings (triage, routing, model/effort overrides, timeouts,
   auto-commit, pending-review handling).
 - Routing is presented as "use profile routing policy" only when the selected
   config defines routes. The wizard does not offer routing for defaults with no
