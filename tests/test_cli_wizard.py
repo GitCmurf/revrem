@@ -76,7 +76,9 @@ def _write_profile(
     *,
     summary_format: str = "text",
     max_wall_seconds: int | float | None = None,
+    artifact_dir: str | None = None,
 ) -> None:
+    output_block = f'artifact_dir = "{artifact_dir}"\n' if artifact_dir is not None else ""
     budget_block = ""
     if max_wall_seconds is not None:
         budget_block = f"""
@@ -95,6 +97,7 @@ checks = ["pytest -q"]
 
 [profiles.final-pr.output]
 summary_format = "{summary_format}"
+{output_block}
 
 {budget_block}
 
@@ -196,6 +199,25 @@ def test_wizard_run_shape_previews_models_routes_checks_and_command(tmp_path, mo
     assert "if verify passes: commit off" in rendered
     assert "after pass limit: final review enabled" in rendered
     assert "provider command: codex review" in rendered
+
+
+def test_wizard_remediation_preview_includes_output_last_message(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(
+        tmp_path / ".revrem.toml",
+        artifact_dir=".revrem/runs/preview",
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("q\n"), stderr=stderr)
+
+    assert result is None
+    rendered = stderr.getvalue()
+    assert (
+        "--output-last-message .revrem/runs/preview/remediation-1-last-message.txt"
+        in rendered
+    )
 
 
 def test_wizard_run_shape_shows_profile_budget_ceiling(tmp_path, monkeypatch):

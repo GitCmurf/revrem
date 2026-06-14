@@ -976,6 +976,12 @@ def _config_for_state(state: WizardState, cwd: Path):
 
 def _run_preview(state: WizardState, cwd: Path) -> RunPreview:
     config = _config_for_state(state, cwd)
+    # Keep previewed remediation commands aligned with runtime remediation argv shaping.
+    remediation_output_last_message_path = (
+        config.artifact_dir / "remediation-1-last-message.txt"
+        if config.output_last_message
+        else None
+    )
     review_command, review_blocked_reason = _build_preview_command(
         lambda: build_review_command(config)
     )
@@ -1009,7 +1015,10 @@ def _run_preview(state: WizardState, cwd: Path) -> RunPreview:
         else None
     )
     remediation_command, remediation_blocked_reason = _build_preview_command(
-        lambda: build_remediation_command(config)
+        lambda: build_remediation_command(
+            config,
+            remediation_output_last_message_path,
+        )
     )
     remediation = _phase_preview(
         "remediate",
@@ -1064,6 +1073,7 @@ def _run_preview(state: WizardState, cwd: Path) -> RunPreview:
                 route_command, build_blocked_reason = _build_preview_command(
                     lambda route=resolved_route: build_remediation_command(
                         config,
+                        remediation_output_last_message_path,
                         resolved_route=route,
                     )
                 )
