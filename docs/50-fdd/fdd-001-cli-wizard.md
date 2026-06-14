@@ -69,9 +69,11 @@ and run history.
   (base branch, pass limit, checks, final review, output, wall-clock budget)
   and model settings. Model settings are presented as a phase table: review,
   triage, remediation, and commit-message drafting each expose their own
-  harness, model, and reasoning effort. Timeout remains a shared setting
-  because the CLI timeout flag is shared, but the table shows the effective
-  review/remediation timeout inherited from the profile/defaults.
+  harness, model, and reasoning effort.
+- Timeouts are edited from a separate main-menu option. The wizard uses the
+  existing shared `--timeout-seconds` flag for review, remediation,
+  commit-message drafting, and shell checks, and accepts `0` to disable those
+  subprocess timeouts.
 - Generated commands use phase-specific flags for phase-specific edits, for
   example `--review-reasoning-effort`,
   `--remediation-reasoning-effort`, `--triage-model`, and
@@ -82,6 +84,8 @@ and run history.
   profile routes exist.
 - Harness prompts are bounded to known RevRem harnesses so invalid input is
   rejected before preview rebuild.
+- Suspicious model names, including bare numbers and unknown-looking names,
+  require confirmation before they are stored.
 - Routing is presented as "use profile routing policy" only when the selected
   config defines routes. The wizard does not offer routing for defaults with no
   routes, preventing generated commands that fail on the built-in
@@ -110,8 +114,10 @@ and run history.
 - Scripted tests prove review, triage, remediation, and commit-message model
   settings can be changed independently.
 - Scripted tests prove last-run settings can be offered, disabled triage can
-  be enabled, effective timeouts appear in the model settings table, and
-  invalid harness input is reprompted without a traceback.
+  be enabled, shared timeout can be set to `0`, suspicious model input is
+  confirmed, and invalid harness input is reprompted without a traceback.
+- Scripted tests prove routed preview commands use runtime fallback resolution
+  instead of blocking profiles that can run through a configured fallback.
 - `revrem --wizard` feeds the generated argv back into the normal CLI path.
 - Bare `revrem` dispatches to the wizard only in interactive terminals.
 - Cancellation exits before provider calls with the standard operator-cancel

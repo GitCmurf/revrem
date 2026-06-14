@@ -253,8 +253,28 @@ def _resolve_model_phase(
     )
 
 
-def build_loop_config(args: argparse.Namespace, cwd: Path) -> tuple[LoopConfig, str]:
-    profile = profile_or_default(args.profile, cwd)
+def build_loop_config(
+    args: argparse.Namespace,
+    cwd: Path,
+    *,
+    require_implemented: bool = True,
+) -> tuple[LoopConfig, str]:
+    """Resolve a loop config from parsed CLI arguments.
+
+    The wizard uses ``require_implemented=False`` so it can preview draft
+    profiles without crashing on reserved harnesses.
+    """
+
+    try:
+        profile = profile_or_default(
+            args.profile,
+            cwd,
+            require_implemented=require_implemented,
+        )
+    except TypeError as exc:
+        if "require_implemented" not in str(exc):
+            raise
+        profile = profile_or_default(args.profile, cwd)
     profile_source = f"profile:{args.profile}" if args.profile else "defaults"
     base = pick(args.base, profile.pipeline.base, "main")
     triage_enabled = pick(args.triage_enabled, profile.triage.enabled, False)

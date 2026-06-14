@@ -243,9 +243,10 @@ phase flag such as `--review-reasoning-effort` or
 choice to every provider call. Disabled triage is shown as a setup action, and
 selecting it walks through enabling triage before routing choices. Harnesses
 are selected from known RevRem harnesses so mistyped names are caught inside
-the wizard. The timeout edit remains shared because the top-level CLI timeout
-flag is shared, but the model settings table shows the effective timeout values
-currently inherited from the profile/defaults.
+the wizard, and suspicious model names such as bare numbers require
+confirmation. Timeouts have their own main-menu editor for the existing shared
+`--timeout-seconds` flag; setting it to `0` disables review, remediation,
+commit-message drafting, and shell-check subprocess timeouts for that run.
 
 Project-local profiles can be saved without running the loop:
 

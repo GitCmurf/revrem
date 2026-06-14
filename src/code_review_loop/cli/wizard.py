@@ -6,12 +6,12 @@ import json
 import shlex
 import sys
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from os import environ
 from pathlib import Path
 from typing import TextIO
 
-from code_review_loop import profiles, run_history
+from code_review_loop import policy, profiles, run_history
 from code_review_loop.adapters.commit import phase_support
 from code_review_loop.adapters.remediation import build_remediation_command
 from code_review_loop.adapters.review import build_review_command
@@ -84,6 +84,7 @@ class PhasePreview:
     timeout: float | int | str | None
     source: str | None = None
     unresolved_model: bool = False
+    blocked_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -108,7 +109,10 @@ class RunPreview:
     @property
     def has_unresolved_models(self) -> bool:
         phases = (self.review, self.triage, self.remediation, *self.routes, self.commit_message)
-        return any(phase is not None and phase.unresolved_model for phase in phases)
+        return any(
+            phase is not None and (phase.unresolved_model or phase.blocked_reason is not None)
+            for phase in phases
+        )
 
 
 class WizardCancelled(Exception):
@@ -164,8 +168,9 @@ class _Wizard:
                     ("settings", "base, pass limit, checks, final review, output, budget"),
                     (
                         "models",
-                        "harnesses, models, triage, routing, commits, timeouts",
+                        "harnesses, models, reasoning effort, triage, routing, commits",
                     ),
+                    ("timeouts", "review/remediation/commit/check timeout"),
                     ("config", "choose another profile"),
                     ("cancel", "exit without doing anything"),
                 ),
@@ -183,6 +188,9 @@ class _Wizard:
                 continue
             if next_step == "models":
                 self._phase_options(state)
+                continue
+            if next_step == "timeouts":
+                self._timeout_options(state)
                 continue
             break
 
@@ -355,7 +363,6 @@ class _Wizard:
                     "routing",
                     self._routing_row(state),
                 ),
-                ("timeout", _timeout_row(preview, state)),
                 ("pending", f"pending review: {state.pending_review}"),
                 ("done", "return to run shape"),
             ]
@@ -384,13 +391,6 @@ class _Wizard:
                 self._edit_commit_phase(state)
             elif selected == "routing":
                 self._edit_routing(state)
-            elif selected == "timeout":
-                timeout = self._text(
-                    "Review/remediation timeout seconds (0 disables, blank keeps profile/default)",
-                    default=state.timeout_seconds,
-                    validator=_non_negative_float_or_blank,
-                )
-                state.timeout_seconds = timeout
             elif selected == "pending":
                 state.pending_review = self._choice(
                     "Pending review handling",
@@ -402,6 +402,20 @@ class _Wizard:
                     ),
                     default=state.pending_review,
                 )
+
+    def _timeout_options(self, state: WizardState) -> None:
+        preview = _run_preview(state, self.cwd)
+        self._print_heading("Timeouts")
+        self._print_dim(_timeout_row(preview, state))
+        self._print_dim(
+            "This sets the existing --timeout-seconds value for review, remediation, commit-message drafting, and shell checks."
+        )
+        timeout = self._text(
+            "Timeout seconds (0 disables, blank keeps profile/default)",
+            default=state.timeout_seconds,
+            validator=_non_negative_float_or_blank,
+        )
+        state.timeout_seconds = timeout
 
     def _phase_row(self, phase: PhasePreview) -> str:
         return _phase_summary_for_preview(phase).replace("uses ", "", 1)
@@ -424,16 +438,19 @@ class _Wizard:
         model_attr: str,
         effort_attr: str,
     ) -> None:
+        implemented_harnesses = tuple(
+            value for value, spec in profiles.HARNESS_REGISTRY.items() if spec.implemented
+        )
         harness = self._choice(
             f"{label.capitalize()} harness",
-            tuple((value, value) for value in profiles.HARNESS_REGISTRY),
+            tuple((value, value) for value in implemented_harnesses),
             default=getattr(state, harness_attr),
         )
         setattr(state, harness_attr, harness)
         setattr(
             state,
             model_attr,
-            self._text(
+            self._model_text(
                 f"{label.capitalize()} model (blank = profile/default)",
                 default=getattr(state, model_attr),
             ),
@@ -545,7 +562,7 @@ class _Wizard:
         while True:
             try:
                 parsed = cli_args.parse_args(validation_argv)
-                build_loop_config(parsed, self.cwd)
+                build_loop_config(parsed, self.cwd, require_implemented=False)
                 shell_command = shlex.join(("revrem", *argv))
                 return WizardResult(argv=tuple(argv), shell_command=shell_command, action=action)
             except SystemExit as exc:
@@ -617,6 +634,14 @@ class _Wizard:
             if error is None:
                 return value
             print(error, file=self.stderr)
+
+    def _model_text(self, label: str, *, default: str) -> str:
+        while True:
+            value = self._text(label, default=default)
+            if not value or not _model_input_needs_confirmation(value):
+                return value
+            if self._yes_no(f'Use model "{value}"?', default=False):
+                return value
 
     def _read(self, prompt: str) -> str:
         self._print_prompt(prompt)
@@ -945,89 +970,132 @@ def _argv_for_state(state: WizardState) -> list[str]:
 
 def _config_for_state(state: WizardState, cwd: Path):
     parsed = cli_args.parse_args((*_argv_for_state(state), "--dry-run"))
-    config, _source = build_loop_config(parsed, cwd)
+    config, _source = build_loop_config(parsed, cwd, require_implemented=False)
     return config
 
 
 def _run_preview(state: WizardState, cwd: Path) -> RunPreview:
     config = _config_for_state(state, cwd)
+    review_command, review_blocked_reason = _build_preview_command(
+        lambda: build_review_command(config)
+    )
     review = _phase_preview(
         "review",
         config.review_harness,
-        tuple(build_review_command(config)),
+        review_command,
         config.review_model or config.model,
         config.review_reasoning_effort or config.reasoning_effort,
         config.review_timeout_seconds_display,
         cwd=cwd,
+        blocked_reason=review_blocked_reason,
+    )
+    triage_command, triage_blocked_reason = (
+        _build_preview_command(lambda: build_triage_command(config))
+        if config.triage_enabled
+        else ((), None)
     )
     triage = (
         _phase_preview(
             "triage",
             config.triage_harness,
-            tuple(build_triage_command(config)),
+            triage_command,
             config.triage_model,
             config.triage_reasoning_effort,
             config.triage_timeout_seconds_display,
             cwd=cwd,
+            blocked_reason=triage_blocked_reason,
         )
         if config.triage_enabled
         else None
     )
+    remediation_command, remediation_blocked_reason = _build_preview_command(
+        lambda: build_remediation_command(config)
+    )
     remediation = _phase_preview(
         "remediate",
         config.remediation_harness,
-        tuple(build_remediation_command(config)),
+        remediation_command,
         config.remediation_model or config.model,
         config.remediation_reasoning_effort or config.reasoning_effort,
         config.remediation_timeout_seconds_display,
         cwd=cwd,
+        blocked_reason=remediation_blocked_reason,
     )
     routes: list[PhasePreview] = []
     routing_enabled = (
         config.profile_v2 is not None and config.profile_v2.triage.routing.enabled
     )
     if config.triage_enabled and routing_enabled and config.profile_v2 is not None:
-        for name, route in sorted(config.profile_v2.triage.routes.items()):
-            resolved_route = ResolvedRoute(
-                route_tier=name,
-                harness=route.harness,
-                model=route.model,
-                reasoning_effort=route.reasoning_effort,
-                timeout_seconds=route.timeout_seconds,
-                sandbox=route.sandbox,
+        for name in sorted(config.profile_v2.triage.routes):
+            resolved_route, route_blocked_reason = _resolve_preview_route(
+                config.profile_v2,
+                name,
             )
-            model = route.model or config.remediation_model or config.model
-            effort = (
-                route.reasoning_effort
-                or config.remediation_reasoning_effort
-                or config.reasoning_effort
-            )
-            timeout = (
-                route.timeout_seconds
-                if route.timeout_seconds is not None
-                else config.remediation_timeout_seconds_display
-            )
+            if resolved_route is None:
+                route = config.profile_v2.triage.routes[name]
+                model = route.model or config.remediation_model or config.model
+                effort = (
+                    route.reasoning_effort
+                    or config.remediation_reasoning_effort
+                    or config.reasoning_effort
+                )
+                timeout = (
+                    route.timeout_seconds
+                    if route.timeout_seconds is not None
+                    else config.remediation_timeout_seconds_display
+                )
+                label = f"route {name}"
+                harness = route.harness
+                route_command: tuple[str, ...] = ()
+            else:
+                model = resolved_route.model or config.remediation_model or config.model
+                effort = (
+                    resolved_route.reasoning_effort
+                    or config.remediation_reasoning_effort
+                    or config.reasoning_effort
+                )
+                timeout = (
+                    resolved_route.timeout_seconds
+                    if resolved_route.timeout_seconds is not None
+                    else config.remediation_timeout_seconds_display
+                )
+                label = _resolved_route_label(name, resolved_route)
+                harness = resolved_route.harness
+                route_command, build_blocked_reason = _build_preview_command(
+                    lambda route=resolved_route: build_remediation_command(
+                        config,
+                        resolved_route=route,
+                    )
+                )
+                route_blocked_reason = route_blocked_reason or build_blocked_reason
             routes.append(
                 _phase_preview(
-                    f"route {name}",
-                    route.harness,
-                    tuple(build_remediation_command(config, resolved_route=resolved_route)),
+                    label,
+                    harness,
+                    route_command,
                     model,
                     effort,
                     timeout,
                     cwd=cwd,
-                    source=f"fallback={route.fallback}" if route.fallback else None,
+                    source=_resolved_route_source(resolved_route),
+                    blocked_reason=route_blocked_reason,
                 )
             )
+    commit_command, commit_blocked_reason = (
+        _build_preview_command(lambda: tuple(phase_support.build_commit_message_command(config)))
+        if config.commit_after_remediation
+        else ((), None)
+    )
     commit_message = (
         _phase_preview(
             "commit message",
             config.commit_message_harness,
-            tuple(phase_support.build_commit_message_command(config)),
+            commit_command,
             config.commit_message_model,
             config.commit_reasoning_effort,
             config.commit_timeout_seconds_display,
             cwd=cwd,
+            blocked_reason=commit_blocked_reason,
         )
         if config.commit_after_remediation
         else None
@@ -1135,6 +1203,7 @@ def _phase_preview(
     *,
     cwd: Path,
     source: str | None = None,
+    blocked_reason: str | None = None,
 ) -> PhasePreview:
     command_model = _command_option(command, "--model")
     model = command_model or config_model
@@ -1153,7 +1222,8 @@ def _phase_preview(
         effort=effort,
         timeout=timeout,
         source=default_source,
-        unresolved_model=model is None,
+        unresolved_model=model is None or blocked_reason is not None,
+        blocked_reason=blocked_reason,
     )
 
 
@@ -1164,9 +1234,57 @@ def _phase_summary_for_preview(phase: PhasePreview) -> str:
         text += f"({phase.effort})"
     if phase.timeout is not None:
         text += f", timeout {_timeout_text(phase.timeout)}"
+    if phase.blocked_reason:
+        text += f" [{phase.blocked_reason}]"
     if phase.source:
         text += f" [{phase.source}]"
     return text
+
+
+def _build_preview_command(builder) -> tuple[tuple[str, ...], str | None]:
+    try:
+        return tuple(builder()), None
+    except (NotImplementedError, RuntimeError, ValueError) as exc:
+        return (), str(exc)
+
+
+def _resolve_preview_route(
+    profile: profiles.Profile,
+    route_name: str,
+) -> tuple[ResolvedRoute | None, str | None]:
+    try:
+        routing = replace(profile.triage.routing, default_route=route_name)
+        triage = replace(profile.triage, routing=routing)
+        preview_profile = replace(profile, triage=triage)
+        route = policy.resolve_routing(
+            preview_profile,
+            policy.RoutingContext(
+                domain_tags=(),
+                risk_level="medium",
+                refactor_depth="localised",
+                module_count=1,
+                safety_signals=(),
+            ),
+        )
+        return route, None
+    except (RuntimeError, ValueError) as exc:
+        return None, str(exc)
+
+
+def _resolved_route_label(requested_name: str, route: ResolvedRoute | None) -> str:
+    if route is None or route.route_tier == requested_name:
+        return f"route {requested_name}"
+    return f"route {requested_name} -> {route.route_tier} fallback"
+
+
+def _resolved_route_source(route: ResolvedRoute | None) -> str | None:
+    if route is None:
+        return None
+    if route.fallback_applied and route.fallbacks_considered:
+        return f"fallback from {route.fallbacks_considered[0]}"
+    if route.fallback_applied:
+        return f"fallback={route.fallback_applied}"
+    return None
 
 
 def _timeout_row(preview: RunPreview, state: WizardState) -> str:
@@ -1181,6 +1299,14 @@ def _timeout_row(preview: RunPreview, state: WizardState) -> str:
     if review == remediation:
         return f"review/remediation timeout: {review}"
     return f"review timeout: {review}; remediation timeout: {remediation}"
+
+
+def _model_input_needs_confirmation(value: str) -> bool:
+    normalized = value.strip().lower()
+    if normalized.isdigit():
+        return True
+    accepted_prefixes = ("gpt-", "o", "claude", "gemini", "kilo", "opencode")
+    return "/" not in normalized and not normalized.startswith(accepted_prefixes)
 
 
 @dataclass(frozen=True)

@@ -315,7 +315,54 @@ timeout_seconds = 1800
     rendered = stderr.getvalue()
     assert "triage: set up triage" in rendered
     assert "routing: choose triage first" in rendered
-    assert "timeout: review/remediation timeout: 1800s" in rendered
+    assert "timeout:" not in rendered
+    assert "reserved" not in rendered
+
+
+def test_wizard_timeout_menu_sets_shared_timeout_zero(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    stdin = StringIO(
+        "timeouts\n"
+        "0\n"
+        "\n"
+        "print\n"
+        "\n"
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=stderr)
+
+    assert result is not None
+    assert result.argv == ("--profile", "final-pr", "--timeout-seconds", "0")
+    rendered = stderr.getvalue()
+    assert "Timeouts" in rendered
+    assert "review/remediation timeout" in rendered
+
+
+def test_wizard_preview_blocks_unimplemented_harnesses(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.blocked]
+description = "Blocked"
+
+[profiles.blocked.review]
+harness = "reserved"
+""",
+        encoding="utf-8",
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("q\n"), stderr=stderr)
+
+    assert result is None
+    rendered = stderr.getvalue()
+    assert "status: model unresolved - edit models before running" in rendered
+    assert "command execution is not implemented" in rendered
+    assert "Traceback" not in rendered
 
 
 def test_wizard_dogfood_preview_shows_inner_check_retry_and_commit(tmp_path, monkeypatch):
@@ -371,6 +418,8 @@ def test_wizard_builds_common_overrides_and_quotes_checks(tmp_path, monkeypatch)
         "verbose\n"
         "both\n"
         "600\n"
+        "timeouts\n"
+        "0\n"
         "models\n"
         "triage\n"
         "n\n"
@@ -378,8 +427,6 @@ def test_wizard_builds_common_overrides_and_quotes_checks(tmp_path, monkeypatch)
         "\n"
         "gpt-test\n"
         "high\n"
-        "timeout\n"
-        "0\n"
         "commit\n"
         "n\n"
         "pending\n"
@@ -533,6 +580,74 @@ enabled = false
     assert "--triage-model" in result.argv
     assert "gpt-triage" in result.argv
     assert "--triage-reasoning-effort" in result.argv
+
+
+def test_wizard_confirms_suspicious_model_input(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    stdin = StringIO(
+        "models\n"
+        "triage\n"
+        "\n"
+        "\n"
+        "1\n"
+        "n\n"
+        "gpt-5.5\n"
+        "medium\n"
+        "\n"
+        "\n"
+        "done\n"
+        "\n"
+        "print\n"
+        "\n"
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=stderr)
+
+    assert result is not None
+    assert "--triage-model" in result.argv
+    assert "gpt-5.5" in result.argv
+    assert "1" not in result.argv
+    assert 'Use model "1"?' in stderr.getvalue()
+
+
+def test_wizard_route_preview_uses_fallback_resolution(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.routed]
+
+[profiles.routed.triage]
+enabled = true
+contract = "v2"
+
+[profiles.routed.triage.routing]
+enabled = true
+strict_on_unavailable_route = false
+default_route = "frontier"
+
+[profiles.routed.triage.routes.frontier]
+harness = "reserved"
+model = "frontier-model"
+fallback = "midtier"
+
+[profiles.routed.triage.routes.midtier]
+harness = "codex"
+model = "gpt-5.4-mini"
+""",
+        encoding="utf-8",
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("q\n"), stderr=stderr)
+
+    assert result is None
+    rendered = stderr.getvalue()
+    assert "route frontier -> midtier fallback: uses codex:gpt-5.4-mini" in rendered
+    assert "status: model unresolved" not in rendered
 
 
 def test_wizard_reprompts_invalid_harness_without_traceback(tmp_path, monkeypatch):
