@@ -6,12 +6,12 @@ import json
 import shlex
 import sys
 import tomllib
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from os import environ
 from pathlib import Path
 from typing import TextIO
 
-from code_review_loop import policy, profiles, run_history
+from code_review_loop import profiles, run_history
 from code_review_loop.adapters.commit import phase_support
 from code_review_loop.adapters.remediation import build_remediation_command
 from code_review_loop.adapters.review import build_review_command
@@ -797,7 +797,7 @@ def _last_run_state(cwd: Path) -> WizardState | None:
         if not path.is_absolute():
             path = cwd / path
         state = _state_from_summary(path, cwd)
-        if state is not None:
+        if state is not None and _state_is_previewable(state, cwd):
             return state
     return None
 
@@ -835,6 +835,14 @@ def _state_from_argv(argv: tuple[str, ...], cwd: Path) -> WizardState:
     state = _initial_state(WizardProfileChoice(profile_name=profile_name, profile=profile))
     _apply_parsed_args(state, parsed)
     return state
+
+
+def _state_is_previewable(state: WizardState, cwd: Path) -> bool:
+    try:
+        _config_for_state(state, cwd)
+    except (OSError, RuntimeError, ValueError):
+        return False
+    return True
 
 
 def _apply_parsed_args(state: WizardState, parsed) -> None:
@@ -1267,22 +1275,20 @@ def _resolve_preview_route(
     route_name: str,
 ) -> tuple[ResolvedRoute | None, str | None]:
     try:
-        routing = replace(profile.triage.routing, default_route=route_name)
-        triage = replace(profile.triage, routing=routing)
-        preview_profile = replace(profile, triage=triage)
-        route = policy.resolve_routing(
-            preview_profile,
-            policy.RoutingContext(
-                domain_tags=(),
-                risk_level="medium",
-                refactor_depth="localised",
-                module_count=1,
-                safety_signals=(),
-            ),
-        )
-        return route, None
-    except (RuntimeError, ValueError) as exc:
-        return None, str(exc)
+        route_cfg = profile.triage.routes[route_name]
+    except KeyError:
+        return None, f"route tier {route_name!r} not defined in profile"
+    return (
+        ResolvedRoute(
+            route_tier=route_name,
+            harness=route_cfg.harness,
+            model=route_cfg.model,
+            reasoning_effort=route_cfg.reasoning_effort,
+            timeout_seconds=route_cfg.timeout_seconds,
+            sandbox=route_cfg.sandbox,
+        ),
+        None,
+    )
 
 
 def _resolved_route_label(requested_name: str, route: ResolvedRoute | None) -> str:

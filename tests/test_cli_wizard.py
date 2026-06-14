@@ -307,6 +307,50 @@ def test_wizard_offers_last_run_as_starting_settings(tmp_path, monkeypatch):
     )
 
 
+def test_wizard_skips_incompatible_last_run_before_previewing(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    run_dir = tmp_path / ".revrem" / "runs" / "last"
+    run_dir.mkdir(parents=True)
+    summary_path = run_dir / "summary.json"
+    summary_path.write_text(
+        json.dumps(
+            {
+                "command_line": [
+                    "revrem",
+                    "--profile",
+                    "final-pr",
+                    "--route",
+                    "missing-route",
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    history_path = tmp_path / "home-global" / ".local" / "share" / "revrem" / "runs.jsonl"
+    history_path.parent.mkdir(parents=True)
+    history_path.write_text(
+        json.dumps(
+            {
+                "cwd": str(tmp_path),
+                "summary_path": str(summary_path),
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("q\n"), stderr=stderr)
+
+    assert result is None
+    rendered = stderr.getvalue()
+    assert "Start from which settings?" not in rendered
+    assert "route missing-route" not in rendered
+    assert "route midtier: uses codex:gpt-5.4-mini" in rendered
+
+
 def test_wizard_model_settings_show_effective_timeouts_and_triage_setup(
     tmp_path, monkeypatch
 ):
@@ -635,7 +679,7 @@ def test_wizard_confirms_suspicious_model_input(tmp_path, monkeypatch):
     assert 'Use model "1"?' in stderr.getvalue()
 
 
-def test_wizard_route_preview_uses_fallback_resolution(tmp_path, monkeypatch):
+def test_wizard_route_preview_shows_the_requested_route(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
     (tmp_path / ".revrem.toml").write_text(
@@ -651,10 +695,13 @@ enabled = true
 strict_on_unavailable_route = false
 default_route = "frontier"
 
+[[profiles.routed.triage.routing.rule]]
+id = "preview-switch"
+then.route = "midtier"
+
 [profiles.routed.triage.routes.frontier]
-harness = "reserved"
+harness = "codex"
 model = "frontier-model"
-fallback = "midtier"
 
 [profiles.routed.triage.routes.midtier]
 harness = "codex"
@@ -668,8 +715,9 @@ model = "gpt-5.4-mini"
 
     assert result is None
     rendered = stderr.getvalue()
-    assert "route frontier -> midtier fallback: uses codex:gpt-5.4-mini" in rendered
-    assert "status: model unresolved" not in rendered
+    assert "route frontier: uses codex:frontier-model" in rendered
+    assert "route frontier -> midtier fallback" not in rendered
+    assert "route midtier: uses codex:gpt-5.4-mini" in rendered
 
 
 def test_wizard_reprompts_invalid_harness_without_traceback(tmp_path, monkeypatch):
