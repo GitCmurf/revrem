@@ -84,7 +84,7 @@ def _write_profile(
 max_wall_seconds = {max_wall_seconds}
 """
     path.write_text(
-        """
+        f"""
 [profiles.final-pr]
 description = "Final PR"
 
@@ -94,9 +94,9 @@ max_iterations = 2
 checks = ["pytest -q"]
 
 [profiles.final-pr.output]
-summary_format = "%s"
+summary_format = "{summary_format}"
 
-%s
+{budget_block}
 
 [profiles.final-pr.triage]
 enabled = true
@@ -109,7 +109,7 @@ default_route = "midtier"
 [profiles.final-pr.triage.routes.midtier]
 harness = "codex"
 model = "gpt-5.4-mini"
-""" % (summary_format, budget_block),
+""",
         encoding="utf-8",
     )
 
@@ -209,6 +209,101 @@ def test_wizard_run_shape_shows_profile_budget_ceiling(tmp_path, monkeypatch):
     assert result is None
     rendered = stderr.getvalue()
     assert "budget: max wall 120s" in rendered
+
+
+def test_wizard_offers_last_run_as_starting_settings(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    run_dir = tmp_path / ".revrem" / "runs" / "last"
+    run_dir.mkdir(parents=True)
+    summary_path = run_dir / "summary.json"
+    summary_path.write_text(
+        json.dumps(
+            {
+                "command_line": [
+                    "revrem",
+                    "--profile",
+                    "final-pr",
+                    "--max-iterations",
+                    "4",
+                    "--remediation-reasoning-effort",
+                    "high",
+                    "--progress-style",
+                    "verbose",
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    history_path = tmp_path / "home-global" / ".local" / "share" / "revrem" / "runs.jsonl"
+    history_path.parent.mkdir(parents=True)
+    history_path.write_text(
+        json.dumps(
+            {
+                "cwd": str(tmp_path),
+                "summary_path": str(summary_path),
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(
+        cwd=tmp_path,
+        stdin=StringIO("\n\nprint\n\n"),
+        stdout=StringIO(),
+        stderr=stderr,
+    )
+
+    assert result is not None
+    assert result.argv == (
+        "--profile",
+        "final-pr",
+        "--max-iterations",
+        "4",
+        "--remediation-reasoning-effort",
+        "high",
+        "--progress-style",
+        "verbose",
+    )
+    rendered = stderr.getvalue()
+    assert "Start from which settings?" in rendered
+    assert "last run; command: revrem --profile final-pr --max-iterations 4" in rendered
+
+
+def test_wizard_model_settings_show_effective_timeouts_and_triage_setup(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.default]
+
+[profiles.default.review]
+model = "gpt-review"
+timeout_seconds = 1800
+
+[profiles.default.triage]
+enabled = false
+
+[profiles.default.remediation]
+model = "gpt-remediate"
+timeout_seconds = 1800
+""",
+        encoding="utf-8",
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("models\nq\n"), stderr=stderr)
+
+    assert result is None
+    rendered = stderr.getvalue()
+    assert "triage: set up triage" in rendered
+    assert "routing: choose triage first" in rendered
+    assert "timeout: review/remediation timeout: 1800s" in rendered
 
 
 def test_wizard_dogfood_preview_shows_inner_check_retry_and_commit(tmp_path, monkeypatch):
@@ -392,6 +487,64 @@ def test_wizard_sets_triage_and_commit_efforts_independently(tmp_path, monkeypat
     assert "--commit-message-model" in result.argv
     assert "gpt-commit" in result.argv
     assert "--commit-reasoning-effort" in result.argv
+
+
+def test_wizard_can_enable_triage_from_disabled_profile(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.default]
+
+[profiles.default.triage]
+enabled = false
+""",
+        encoding="utf-8",
+    )
+    stdin = StringIO(
+        "models\n"
+        "triage\n"
+        "y\n"
+        "\n"
+        "gpt-triage\n"
+        "low\n"
+        "done\n"
+        "\n"
+        "print\n"
+        "\n"
+    )
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=StringIO())
+
+    assert result is not None
+    assert "--triage" in result.argv
+    assert "--triage-model" in result.argv
+    assert "gpt-triage" in result.argv
+    assert "--triage-reasoning-effort" in result.argv
+
+
+def test_wizard_reprompts_invalid_harness_without_traceback(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    stdin = StringIO(
+        "models\n"
+        "review\n"
+        "not-a-harness\n"
+        "codex\n"
+        "\n"
+        "\n"
+        "done\n"
+        "q\n"
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=stderr)
+
+    assert result is None
+    rendered = stderr.getvalue()
+    assert "Choose one of the listed values or numbers." in rendered
+    assert "Traceback" not in rendered
 
 
 def test_wizard_no_profile_cannot_enable_routing_without_routes(tmp_path, monkeypatch):

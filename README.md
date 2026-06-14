@@ -212,14 +212,16 @@ revrem --wizard
 In an interactive terminal, bare `revrem` opens the wizard. `revrem --wizard`
 opens the wizard even when combined with other top-level options. In scripts
 and other non-interactive contexts, bare `revrem` keeps the normal CLI
-behavior. The wizard opens on a recommended run-shape diagram before provider
-calls can start; choose "another profile" only when you want to switch away
-from that recommendation. The preview is built from the same phase command
-builders used at runtime, lists the exact provider CLI commands for review,
-triage, remediation, routed remediation, and commit-message drafting, and shows
-each model-calling phase as `harness:model(effort)`. The diagram separates the
-outer remediation pass limit from the inner verify-failure retry limit, and
-shows commit-message drafting only under the "if verify passes" commit branch.
+behavior. When local run history contains a compatible run for the current
+repository, the wizard first offers those last settings as the starting point;
+otherwise it starts from the recommended profile/defaults. It then opens on a
+run-shape diagram before provider calls can start. The preview is built from
+the same phase command builders used at runtime, lists the exact provider CLI
+commands for review, triage, remediation, routed remediation, and
+commit-message drafting, and shows each model-calling phase as
+`harness:model(effort)`. The diagram separates the outer remediation pass limit
+from the inner verify-failure retry limit, and shows commit-message drafting
+only under the "if verify passes" commit branch.
 
 If a provider command omits `--model`, the wizard resolves a trusted local
 provider default when RevRem knows how. Codex defaults are read from
@@ -238,8 +240,12 @@ commit-message drafting each expose their own harness, model, and reasoning
 effort. When you change one phase, the generated command uses the matching
 phase flag such as `--review-reasoning-effort` or
 `--remediation-reasoning-effort`; it does not silently apply one shared model
-choice to every provider call. The timeout edit remains shared because the
-top-level CLI timeout flag is shared.
+choice to every provider call. Disabled triage is shown as a setup action, and
+selecting it walks through enabling triage before routing choices. Harnesses
+are selected from known RevRem harnesses so mistyped names are caught inside
+the wizard. The timeout edit remains shared because the top-level CLI timeout
+flag is shared, but the model settings table shows the effective timeout values
+currently inherited from the profile/defaults.
 
 Project-local profiles can be saved without running the loop:
 

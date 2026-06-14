@@ -44,6 +44,10 @@ and run history.
   TTYs; non-interactive invocations keep the existing default CLI behavior.
 - The wizard starts from resolved defaults or a named profile and emits a
   minimal command: accepted profile/default values are not repeated as flags.
+- If local run history contains a compatible run for the current repository,
+  the wizard offers those last settings before the profile/default starting
+  point. The recovered settings are replayed from the saved invocation command
+  through the normal CLI parser.
 - The first screen is the recommended run-shape diagram. Profile selection is
   available from "choose another profile" and distinguishes `no-profile`
   merged defaults from profiles named `default`.
@@ -66,12 +70,18 @@ and run history.
   and model settings. Model settings are presented as a phase table: review,
   triage, remediation, and commit-message drafting each expose their own
   harness, model, and reasoning effort. Timeout remains a shared setting
-  because the CLI timeout flag is shared.
+  because the CLI timeout flag is shared, but the table shows the effective
+  review/remediation timeout inherited from the profile/defaults.
 - Generated commands use phase-specific flags for phase-specific edits, for
   example `--review-reasoning-effort`,
   `--remediation-reasoning-effort`, `--triage-model`, and
   `--commit-message-model`, instead of applying one shared model or effort to
   every provider phase.
+- Disabled triage is shown as a setup action. Selecting it enables triage,
+  prompts for triage harness/model/effort, and then handles routing only when
+  profile routes exist.
+- Harness prompts are bounded to known RevRem harnesses so invalid input is
+  rejected before preview rebuild.
 - Routing is presented as "use profile routing policy" only when the selected
   config defines routes. The wizard does not offer routing for defaults with no
   routes, preventing generated commands that fail on the built-in
@@ -99,6 +109,9 @@ and run history.
   and shell-quoted command preview.
 - Scripted tests prove review, triage, remediation, and commit-message model
   settings can be changed independently.
+- Scripted tests prove last-run settings can be offered, disabled triage can
+  be enabled, effective timeouts appear in the model settings table, and
+  invalid harness input is reprompted without a traceback.
 - `revrem --wizard` feeds the generated argv back into the normal CLI path.
 - Bare `revrem` dispatches to the wizard only in interactive terminals.
 - Cancellation exits before provider calls with the standard operator-cancel

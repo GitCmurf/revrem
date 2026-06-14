@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shlex
 import sys
 import tomllib
@@ -10,7 +11,7 @@ from os import environ
 from pathlib import Path
 from typing import TextIO
 
-from code_review_loop import profiles
+from code_review_loop import profiles, run_history
 from code_review_loop.adapters.commit import phase_support
 from code_review_loop.adapters.remediation import build_remediation_command
 from code_review_loop.adapters.review import build_review_command
@@ -148,8 +149,7 @@ class _Wizard:
 
     def run(self) -> WizardResult:
         self._print_heading("RevRem command wizard")
-        choice = self._default_profile_choice()
-        state = _initial_state(choice)
+        state = self._starting_state()
         preview = _run_preview(state, self.cwd)
 
         while True:
@@ -235,6 +235,28 @@ class _Wizard:
             profile=profiles.resolve_defaults(cwd=self.cwd, require_implemented=False),
         )
 
+    def _starting_state(self) -> WizardState:
+        default_choice = self._default_profile_choice()
+        default_state = _initial_state(default_choice)
+        last_state = _last_run_state(self.cwd)
+        if last_state is None:
+            return default_state
+        selected = self._choice(
+            "Start from which settings?",
+            (
+                ("last", _last_run_label(last_state)),
+                ("default", _start_state_label(default_state)),
+                ("config", "choose another profile"),
+            ),
+            default="last",
+            help_text="Enter starts from the last compatible RevRem run in this repository.",
+        )
+        if selected == "last":
+            return last_state
+        if selected == "config":
+            return _initial_state(self._choose_profile())
+        return default_state
+
     def _choose_profile(self) -> WizardProfileChoice:
         resolved_profiles = tuple(
             profiles.resolve_profiles(cwd=self.cwd, require_implemented=False)
@@ -308,44 +330,30 @@ class _Wizard:
 
     def _phase_options(self, state: WizardState) -> None:
         while True:
+            preview = _run_preview(state, self.cwd)
             options = [
-                ("review", self._phase_row("review", state.review_harness, state.review_model, state.review_reasoning_effort)),
+                ("review", self._phase_row(preview.review)),
                 (
                     "triage",
-                    "off"
-                    if not state.triage_enabled
-                    else self._phase_row(
-                        "triage",
-                        state.triage_harness,
-                        state.triage_model,
-                        state.triage_reasoning_effort,
-                    ),
+                    "set up triage"
+                    if preview.triage is None
+                    else self._phase_row(preview.triage),
                 ),
                 (
                     "remediation",
-                    self._phase_row(
-                        "remediation",
-                        state.remediation_harness,
-                        state.remediation_model,
-                        state.remediation_reasoning_effort,
-                    ),
+                    self._phase_row(preview.remediation),
                 ),
                 (
                     "commit",
                     "off"
-                    if not state.commit_after_remediation
-                    else self._phase_row(
-                        "commit message",
-                        state.commit_message_harness,
-                        state.commit_message_model,
-                        state.commit_reasoning_effort,
-                    ),
+                    if preview.commit_message is None
+                    else self._phase_row(preview.commit_message),
                 ),
                 (
                     "routing",
                     self._routing_row(state),
                 ),
-                ("timeout", f"shared phase timeout: {state.timeout_seconds or 'profile/default'}"),
+                ("timeout", _timeout_row(preview, state)),
                 ("pending", f"pending review: {state.pending_review}"),
                 ("done", "return to run shape"),
             ]
@@ -376,7 +384,7 @@ class _Wizard:
                 self._edit_routing(state)
             elif selected == "timeout":
                 timeout = self._text(
-                    "Shared phase timeout seconds (0 disables, blank keeps profile/default)",
+                    "Review/remediation timeout seconds (0 disables, blank keeps profile/default)",
                     default=state.timeout_seconds,
                     validator=_non_negative_float_or_blank,
                 )
@@ -393,15 +401,12 @@ class _Wizard:
                     default=state.pending_review,
                 )
 
-    def _phase_row(self, label: str, harness: str, model: str, effort: str) -> str:
-        phase = f"{label}: {harness}:{model or 'profile/default'}"
-        if effort:
-            phase += f"({effort})"
-        return phase
+    def _phase_row(self, phase: PhasePreview) -> str:
+        return _phase_summary_for_preview(phase).replace("uses ", "", 1)
 
     def _routing_row(self, state: WizardState) -> str:
         if not state.triage_enabled:
-            return "off (triage disabled)"
+            return "choose triage first"
         if not state.profile.triage.routes:
             return "off (no profile routes)"
         if not state.routing_enabled:
@@ -417,11 +422,12 @@ class _Wizard:
         model_attr: str,
         effort_attr: str,
     ) -> None:
-        setattr(
-            state,
-            harness_attr,
-            self._text(f"{label.capitalize()} harness", default=getattr(state, harness_attr)),
+        harness = self._choice(
+            f"{label.capitalize()} harness",
+            tuple((value, value) for value in profiles.HARNESS_REGISTRY),
+            default=getattr(state, harness_attr),
         )
+        setattr(state, harness_attr, harness)
         setattr(
             state,
             model_attr,
@@ -440,7 +446,7 @@ class _Wizard:
 
     def _edit_triage_phase(self, state: WizardState) -> None:
         state.triage_enabled = self._yes_no(
-            "Use structured triage step before remediation?", state.triage_enabled
+            "Set up structured triage before remediation?", state.triage_enabled
         )
         if state.triage_enabled:
             self._edit_model_phase(
@@ -747,6 +753,116 @@ def _initial_state(choice: WizardProfileChoice) -> WizardState:
     )
 
 
+def _last_run_state(cwd: Path) -> WizardState | None:
+    for record in run_history.read_history(limit=10):
+        if record.get("cwd") != str(cwd):
+            continue
+        summary_path = record.get("summary_path")
+        if not isinstance(summary_path, str) or not summary_path:
+            continue
+        path = Path(summary_path)
+        if not path.is_absolute():
+            path = cwd / path
+        state = _state_from_summary(path, cwd)
+        if state is not None:
+            return state
+    return None
+
+
+def _state_from_summary(summary_path: Path, cwd: Path) -> WizardState | None:
+    try:
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    command_line = summary.get("command_line")
+    if not isinstance(command_line, list) or not command_line:
+        invocation = summary.get("invocation")
+        if isinstance(invocation, dict):
+            command_line = invocation.get("command_line")
+    if not isinstance(command_line, list) or len(command_line) < 1:
+        return None
+    argv = tuple(value for value in command_line[1:] if isinstance(value, str))
+    try:
+        return _state_from_argv(argv, cwd)
+    except (SystemExit, ValueError, OSError):
+        return None
+
+
+def _state_from_argv(argv: tuple[str, ...], cwd: Path) -> WizardState:
+    parsed = cli_args.parse_args((*argv, "--dry-run"))
+    profile_name = parsed.profile
+    if profile_name:
+        profile = profiles.resolve_profile(
+            profile_name,
+            cwd=cwd,
+            require_implemented=False,
+        )
+    else:
+        profile = profiles.resolve_defaults(cwd=cwd, require_implemented=False)
+    state = _initial_state(WizardProfileChoice(profile_name=profile_name, profile=profile))
+    _apply_parsed_args(state, parsed)
+    return state
+
+
+def _apply_parsed_args(state: WizardState, parsed) -> None:
+    if parsed.base is not None:
+        state.base = parsed.base
+    if parsed.max_iterations is not None:
+        state.max_iterations = parsed.max_iterations
+    if parsed.check:
+        state.checks = tuple(parsed.check)
+    if parsed.final_review is not None:
+        state.final_review = parsed.final_review
+    if parsed.triage_enabled is not None:
+        state.triage_enabled = parsed.triage_enabled
+    if parsed.routing_enabled is not None:
+        state.routing_enabled = parsed.routing_enabled
+    if parsed.routing_default_route is not None:
+        state.routing_default_route = parsed.routing_default_route
+    _apply_str_attr(state, "review_harness", parsed.review_harness)
+    _apply_str_attr(state, "review_model", parsed.review_model)
+    _apply_str_attr(state, "review_reasoning_effort", parsed.review_reasoning_effort)
+    _apply_str_attr(state, "triage_harness", parsed.triage_harness)
+    _apply_str_attr(state, "triage_model", parsed.triage_model)
+    _apply_str_attr(state, "triage_reasoning_effort", parsed.triage_reasoning_effort)
+    _apply_str_attr(state, "remediation_harness", parsed.remediation_harness)
+    _apply_str_attr(state, "remediation_model", parsed.remediation_model)
+    _apply_str_attr(
+        state,
+        "remediation_reasoning_effort",
+        parsed.remediation_reasoning_effort,
+    )
+    _apply_str_attr(state, "commit_message_harness", parsed.commit_message_harness)
+    _apply_str_attr(state, "commit_message_model", parsed.commit_message_model)
+    _apply_str_attr(state, "commit_reasoning_effort", parsed.commit_reasoning_effort)
+    if parsed.timeout_seconds is not None:
+        state.timeout_seconds = f"{parsed.timeout_seconds:g}"
+    if parsed.commit_after_remediation is not None:
+        state.commit_after_remediation = parsed.commit_after_remediation
+    if parsed.progress_style is not None:
+        state.progress_style = parsed.progress_style
+    if parsed.summary_format is not None:
+        state.summary_format = parsed.summary_format
+    if parsed.max_wall_seconds is not None:
+        state.max_wall_seconds = f"{parsed.max_wall_seconds:g}"
+    if parsed.pending_review is not None:
+        state.pending_review = parsed.pending_review
+
+
+def _apply_str_attr(state: WizardState, name: str, value: str | None) -> None:
+    if value is not None:
+        setattr(state, name, value)
+
+
+def _last_run_label(state: WizardState) -> str:
+    return f"last run; command: {shlex.join(('revrem', *_argv_for_state(state)))}"
+
+
+def _start_state_label(state: WizardState) -> str:
+    name = state.profile_name or "no profile"
+    return f"{name}; command: {shlex.join(('revrem', *_argv_for_state(state)))}"
+
+
 def _argv_for_state(state: WizardState) -> list[str]:
     profile = state.profile
     argv: list[str] = []
@@ -1041,6 +1157,20 @@ def _phase_summary_for_preview(phase: PhasePreview) -> str:
     if phase.source:
         text += f" [{phase.source}]"
     return text
+
+
+def _timeout_row(preview: RunPreview, state: WizardState) -> str:
+    if state.timeout_seconds:
+        return f"review/remediation timeout override: {_timeout_text(state.timeout_seconds)}"
+    review = _timeout_text(preview.review.timeout) if preview.review.timeout is not None else "none"
+    remediation = (
+        _timeout_text(preview.remediation.timeout)
+        if preview.remediation.timeout is not None
+        else "none"
+    )
+    if review == remediation:
+        return f"review/remediation timeout: {review}"
+    return f"review timeout: {review}; remediation timeout: {remediation}"
 
 
 @dataclass(frozen=True)
