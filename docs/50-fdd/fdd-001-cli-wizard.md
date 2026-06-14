@@ -54,6 +54,9 @@ and run history.
 - The run-shape preview is built from the same phase command builders used at
   runtime, including review, triage, remediation, routed remediation, and
   commit-message drafting provider CLI commands.
+- Preview artifact paths use `.revrem/runs/RUN/...` placeholders because the
+  actual run directory is allocated by the normal CLI path only after the
+  operator starts a real run or dry run.
 - Model-calling phases are shown as `harness:model(effort)`. If a command
   omits `--model`, the wizard resolves trusted provider defaults when
   available; Codex defaults come from `$CODEX_HOME/config.toml` or
@@ -93,6 +96,10 @@ and run history.
   config defines routes. The wizard does not offer routing for defaults with no
   routes, preventing generated commands that fail on the built-in
   `midtier-coder` default route.
+- Routed remediation previews resolve routes through the same policy fallback
+  loop as runtime, with profile rules disabled while each explicit route is
+  listed so the displayed route cannot be replaced by the synthetic preview
+  context.
 - Verification checks default to the selected profile when present. Otherwise
   the wizard offers detected repo presets such as `./scripts/dev-check`,
   Python pytest/static checks, Meminit DocOps checks, and `git diff --check`;

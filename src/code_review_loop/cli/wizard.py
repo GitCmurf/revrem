@@ -6,12 +6,12 @@ import json
 import shlex
 import sys
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from os import environ
 from pathlib import Path
 from typing import TextIO
 
-from code_review_loop import profiles, run_history
+from code_review_loop import policy, profiles, run_history
 from code_review_loop.adapters.commit import phase_support
 from code_review_loop.adapters.remediation import build_remediation_command
 from code_review_loop.adapters.review import build_review_command
@@ -117,6 +117,9 @@ class RunPreview:
 
 class WizardCancelled(Exception):
     """Raised when the operator cancels before a command is selected."""
+
+
+PREVIEW_ARTIFACT_DIR = Path(".revrem") / "runs" / "RUN"
 
 
 def run_wizard(
@@ -839,10 +842,10 @@ def _state_from_argv(argv: tuple[str, ...], cwd: Path) -> WizardState:
 
 def _state_is_previewable(state: WizardState, cwd: Path) -> bool:
     try:
-        _config_for_state(state, cwd)
+        preview = _run_preview(state, cwd)
     except (OSError, RuntimeError, ValueError):
         return False
-    return True
+    return not preview.has_unresolved_models
 
 
 def _apply_parsed_args(state: WizardState, parsed) -> None:
@@ -990,7 +993,7 @@ def _run_preview(state: WizardState, cwd: Path) -> RunPreview:
     config = _config_for_state(state, cwd)
     # Keep previewed remediation commands aligned with runtime remediation argv shaping.
     remediation_output_last_message_path = (
-        config.artifact_dir / "remediation-1-last-message.txt"
+        PREVIEW_ARTIFACT_DIR / "remediation-1-last-message.txt"
         if config.output_last_message
         else None
     )
@@ -1274,21 +1277,29 @@ def _resolve_preview_route(
     profile: profiles.Profile,
     route_name: str,
 ) -> tuple[ResolvedRoute | None, str | None]:
-    try:
-        route_cfg = profile.triage.routes[route_name]
-    except KeyError:
+    if route_name not in profile.triage.routes:
         return None, f"route tier {route_name!r} not defined in profile"
-    return (
-        ResolvedRoute(
-            route_tier=route_name,
-            harness=route_cfg.harness,
-            model=route_cfg.model,
-            reasoning_effort=route_cfg.reasoning_effort,
-            timeout_seconds=route_cfg.timeout_seconds,
-            sandbox=route_cfg.sandbox,
-        ),
-        None,
+
+    routing = replace(
+        profile.triage.routing,
+        default_route=route_name,
+        rule=(),
     )
+    preview_profile = replace(
+        profile,
+        triage=replace(profile.triage, routing=routing),
+    )
+    context = policy.RoutingContext(
+        domain_tags=(),
+        risk_level="medium",
+        refactor_depth="localised",
+        module_count=1,
+        safety_signals=(),
+    )
+    try:
+        return policy.resolve_routing(preview_profile, context), None
+    except (RuntimeError, ValueError) as exc:
+        return None, str(exc)
 
 
 def _resolved_route_label(requested_name: str, route: ResolvedRoute | None) -> str:

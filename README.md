@@ -221,7 +221,9 @@ commands for review, triage, remediation, routed remediation, and
 commit-message drafting, and shows each model-calling phase as
 `harness:model(effort)`. The diagram separates the outer remediation pass limit
 from the inner verify-failure retry limit, and shows commit-message drafting
-only under the "if verify passes" commit branch.
+only under the "if verify passes" commit branch. Preview artifact paths use
+`.revrem/runs/RUN/...` as a placeholder because the real run directory is
+allocated only when the command starts.
 
 If a provider command omits `--model`, the wizard resolves a trusted local
 provider default when RevRem knows how. Codex defaults are read from
@@ -249,6 +251,8 @@ confirmation. Timeouts have their own main-menu editor for the existing shared
 commit-message drafting, and shell-check subprocess timeouts for that run.
 This repository's project-local `default` profile keeps triage opt-in but
 defines v2 routes, so enabling triage from the wizard can also enable routing.
+When routing is enabled, route previews use the runtime routing policy,
+including configured fallbacks for unavailable harnesses or models.
 
 Project-local profiles can be saved without running the loop:
 

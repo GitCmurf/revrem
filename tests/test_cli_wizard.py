@@ -215,9 +215,10 @@ def test_wizard_remediation_preview_includes_output_last_message(tmp_path, monke
     assert result is None
     rendered = stderr.getvalue()
     assert (
-        "--output-last-message .revrem/runs/preview/remediation-1-last-message.txt"
+        "--output-last-message .revrem/runs/RUN/remediation-1-last-message.txt"
         in rendered
     )
+    assert ".revrem/runs/preview/remediation-1-last-message.txt" not in rendered
 
 
 def test_wizard_run_shape_shows_profile_budget_ceiling(tmp_path, monkeypatch):
@@ -349,6 +350,50 @@ def test_wizard_skips_incompatible_last_run_before_previewing(tmp_path, monkeypa
     assert "Start from which settings?" not in rendered
     assert "route missing-route" not in rendered
     assert "route midtier: uses codex:gpt-5.4-mini" in rendered
+
+
+def test_wizard_skips_blocked_last_run_before_previewing(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    run_dir = tmp_path / ".revrem" / "runs" / "last"
+    run_dir.mkdir(parents=True)
+    summary_path = run_dir / "summary.json"
+    summary_path.write_text(
+        json.dumps(
+            {
+                "command_line": [
+                    "revrem",
+                    "--profile",
+                    "final-pr",
+                    "--review-harness",
+                    "reserved",
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    history_path = tmp_path / "home-global" / ".local" / "share" / "revrem" / "runs.jsonl"
+    history_path.parent.mkdir(parents=True)
+    history_path.write_text(
+        json.dumps(
+            {
+                "cwd": str(tmp_path),
+                "summary_path": str(summary_path),
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("q\n"), stderr=stderr)
+
+    assert result is None
+    rendered = stderr.getvalue()
+    assert "Start from which settings?" not in rendered
+    assert "reserved" not in rendered
+    assert "+-- review: uses codex:gpt-5.5(low)" in rendered
 
 
 def test_wizard_model_settings_show_effective_timeouts_and_triage_setup(
@@ -718,6 +763,45 @@ model = "gpt-5.4-mini"
     assert "route frontier: uses codex:frontier-model" in rendered
     assert "route frontier -> midtier fallback" not in rendered
     assert "route midtier: uses codex:gpt-5.4-mini" in rendered
+
+
+def test_wizard_route_preview_uses_runtime_fallback_resolution(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.routed]
+
+[profiles.routed.triage]
+enabled = true
+contract = "v2"
+
+[profiles.routed.triage.routing]
+enabled = true
+strict_on_unavailable_route = false
+default_route = "frontier"
+
+[profiles.routed.triage.routes.frontier]
+harness = "reserved"
+model = "frontier-model"
+fallback = "midtier"
+
+[profiles.routed.triage.routes.midtier]
+harness = "codex"
+model = "gpt-5.4-mini"
+""",
+        encoding="utf-8",
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("q\n"), stderr=stderr)
+
+    assert result is None
+    rendered = stderr.getvalue()
+    assert "route frontier -> midtier fallback: uses codex:gpt-5.4-mini" in rendered
+    assert "[fallback from frontier]" in rendered
+    assert "status: model unresolved" not in rendered
+    assert "command execution is not implemented" not in rendered
 
 
 def test_wizard_reprompts_invalid_harness_without_traceback(tmp_path, monkeypatch):
