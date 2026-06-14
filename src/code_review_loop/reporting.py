@@ -293,8 +293,12 @@ def triage_parsing_warning_diagnostic(message: str) -> dict[str, object]:
 def _is_fallback_fingerprint_warning(message: str) -> bool:
     normalized = message.lower()
     return (
-        "f1:" in normalized or "f1 " in normalized
-    ) and "review-comment:" in normalized
+        ("f1:" in normalized or "f1 " in normalized)
+        and "review-comment:" in normalized
+    ) or (
+        "normalized needs_more_info missing fingerprint" in normalized
+        and "review-comment:" in normalized
+    )
 
 
 def add_phase_diagnostics(summary: dict[str, object], artifact_dir: Path) -> None:

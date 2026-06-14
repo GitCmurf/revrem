@@ -789,11 +789,7 @@ def test_summary_collects_triage_diagnostics_from_artifacts(tmp_path):
             "schema_version": "2.0",
             "parsing_warnings": [
                 "Moved misplaced finding definition_of_done entries into prompt requirements.",
-                (
-                    "Review comment did not include an f1: fingerprint, so fingerprint "
-                    "fell back to review-comment:1 based on the single supplied review "
-                    "comment."
-                ),
+                "Normalized needs_more_info missing fingerprint to review-comment:1 fallback.",
             ],
         },
     )
@@ -822,14 +818,23 @@ def test_summary_collects_triage_diagnostics_from_artifacts(tmp_path):
             "kind": "parsing_note",
             "code": "revrem.triage.fallback_fingerprint",
             "severity": "info",
-            "message": (
-                "Review comment did not include an f1: fingerprint, so fingerprint "
-                "fell back to review-comment:1 based on the single supplied review "
-                "comment."
-            ),
+            "message": "Normalized needs_more_info missing fingerprint to review-comment:1 fallback.",
             "artifact": str(artifact_dir / "triage-2.json"),
         },
     ]
+
+
+def test_triage_parsing_warning_diagnostic_treats_review_comment_fallback_as_note():
+    diagnostic = reporting.triage_parsing_warning_diagnostic(
+        "Normalized needs_more_info missing fingerprint to review-comment:1 fallback."
+    )
+
+    assert diagnostic == {
+        "kind": "parsing_note",
+        "code": "revrem.triage.fallback_fingerprint",
+        "severity": "info",
+        "message": "Normalized needs_more_info missing fingerprint to review-comment:1 fallback.",
+    }
 
 
 def test_terminal_summary_surfaces_triage_diagnostics():

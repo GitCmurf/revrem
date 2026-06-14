@@ -186,7 +186,6 @@ def test_parse_triage_payload_normalizes_null_needs_more_info_fingerprint():
     )
 
     assert payload["needs_more_info"][0]["fingerprint"] == "review-comment:1"
-    assert (
-        "Normalized needs_more_info missing fingerprint"
-        in payload["parsing_warnings"][-1]
+    assert payload["parsing_warnings"][-1] == (
+        "Normalized needs_more_info missing fingerprint to review-comment:1 fallback."
     )

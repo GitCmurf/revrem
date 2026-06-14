@@ -120,7 +120,8 @@ def _normalize_review_priority_severities(payload: dict[str, Any]) -> dict[str, 
                 normalized_item["fingerprint"] = f"review-comment:{len(normalized_collection) + 1}"
                 if warnings_can_update:
                     warnings.append(
-                        "Normalized needs_more_info missing fingerprint to a review-comment fallback."
+                        "Normalized needs_more_info missing fingerprint to "
+                        f"{normalized_item['fingerprint']} fallback."
                     )
                 changed = True
             if (
