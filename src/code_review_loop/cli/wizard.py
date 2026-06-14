@@ -45,6 +45,8 @@ class WizardState:
     triage_enabled: bool
     routing_enabled: bool
     routing_default_route: str
+    model: str | None = None
+    reasoning_effort: str | None = None
     review_harness: str = "codex"
     review_model: str = ""
     review_reasoning_effort: str = ""
@@ -735,6 +737,8 @@ def _initial_state(choice: WizardProfileChoice) -> WizardState:
         triage_enabled=profile.triage.enabled,
         routing_enabled=profile.triage.routing.enabled and bool(profile.triage.routes),
         routing_default_route=profile.triage.routing.default_route,
+        model=None,
+        reasoning_effort=None,
         review_harness=profile.review.harness,
         review_model=profile.review.model or "",
         review_reasoning_effort=profile.review.reasoning_effort or "",
@@ -819,6 +823,8 @@ def _apply_parsed_args(state: WizardState, parsed) -> None:
         state.routing_enabled = parsed.routing_enabled
     if parsed.routing_default_route is not None:
         state.routing_default_route = parsed.routing_default_route
+    _apply_str_attr(state, "model", parsed.model)
+    _apply_str_attr(state, "reasoning_effort", parsed.reasoning_effort)
     _apply_str_attr(state, "review_harness", parsed.review_harness)
     _apply_str_attr(state, "review_model", parsed.review_model)
     _apply_str_attr(state, "review_reasoning_effort", parsed.review_reasoning_effort)
@@ -890,6 +896,10 @@ def _argv_for_state(state: WizardState) -> list[str]:
             and state.routing_default_route != profile.triage.routing.default_route
         ):
             argv.extend(["--route", state.routing_default_route])
+    if state.model is not None:
+        argv.extend(["--model", state.model])
+    if state.reasoning_effort is not None:
+        argv.extend(["--reasoning-effort", state.reasoning_effort])
     if state.review_harness != profile.review.harness:
         argv.extend(["--review-harness", state.review_harness])
     if state.review_model != (profile.review.model or ""):

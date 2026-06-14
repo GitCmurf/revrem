@@ -225,10 +225,14 @@ def test_wizard_offers_last_run_as_starting_settings(tmp_path, monkeypatch):
                     "revrem",
                     "--profile",
                     "final-pr",
+                    "--model",
+                    "gpt-5.4-mini",
+                    "--reasoning-effort",
+                    "high",
                     "--max-iterations",
                     "4",
                     "--remediation-reasoning-effort",
-                    "high",
+                    "low",
                     "--progress-style",
                     "verbose",
                 ]
@@ -263,14 +267,22 @@ def test_wizard_offers_last_run_as_starting_settings(tmp_path, monkeypatch):
         "final-pr",
         "--max-iterations",
         "4",
-        "--remediation-reasoning-effort",
+        "--model",
+        "gpt-5.4-mini",
+        "--reasoning-effort",
         "high",
+        "--remediation-reasoning-effort",
+        "low",
         "--progress-style",
         "verbose",
     )
     rendered = stderr.getvalue()
     assert "Start from which settings?" in rendered
-    assert "last run; command: revrem --profile final-pr --max-iterations 4" in rendered
+    assert (
+        "last run; command: revrem --profile final-pr --max-iterations 4 --model gpt-5.4-mini "
+        "--reasoning-effort high --remediation-reasoning-effort low --progress-style verbose"
+        in rendered
+    )
 
 
 def test_wizard_model_settings_show_effective_timeouts_and_triage_setup(
