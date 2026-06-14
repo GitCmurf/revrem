@@ -81,6 +81,9 @@ and run history.
   Python pytest/static checks, Meminit DocOps checks, and `git diff --check`;
   manual shell commands are available as an explicit custom option.
 - The final action is run, dry-run, save-profile, print, or cancel.
+- The command confirmation line uses stdout only for `print`; `run`,
+  `dry-run`, and `save-profile` keep stdout reserved for the normal CLI
+  output path, including JSON summaries.
 - Generated commands are parsed and validated through the existing
   `parse_args` and `build_loop_config` path before the operator confirms them.
 - `Ctrl-C`, EOF, `q`, `quit`, and `cancel` exit cleanly before provider calls.

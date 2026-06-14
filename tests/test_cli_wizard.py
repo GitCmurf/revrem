@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import types
 from importlib import import_module
@@ -70,7 +71,7 @@ def _codex_home(tmp_path, monkeypatch):
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
 
 
-def _write_profile(path: Path) -> None:
+def _write_profile(path: Path, *, summary_format: str = "text") -> None:
     path.write_text(
         """
 [profiles.final-pr]
@@ -80,6 +81,9 @@ description = "Final PR"
 base = "trunk"
 max_iterations = 2
 checks = ["pytest -q"]
+
+[profiles.final-pr.output]
+summary_format = "%s"
 
 [profiles.final-pr.triage]
 enabled = true
@@ -92,7 +96,7 @@ default_route = "midtier"
 [profiles.final-pr.triage.routes.midtier]
 harness = "codex"
 model = "gpt-5.4-mini"
-""",
+""" % summary_format,
         encoding="utf-8",
     )
 
@@ -537,6 +541,40 @@ def test_main_explicit_wizard_uses_generated_argv(tmp_path, monkeypatch, capsys)
     assert captured["cwd"] == tmp_path
     assert captured["config"].dry_run is True
     assert '"final_status": "clear"' in capsys.readouterr().out
+
+
+def test_main_wizard_keeps_json_summary_stdout_pure(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml", summary_format="json")
+    run_context = {}
+
+    def fake_run_loop(config):
+        run_context["artifact_dir"] = str(config.artifact_dir)
+        return application_mod.ReviewLoopResult(
+            summary={
+                "artifact_dir": str(config.artifact_dir),
+                "final_status": "clear",
+                "stopped_reason": "dry_run",
+                "iterations": [],
+            },
+            outcome=OutcomeClear(reason="dry_run"),
+        )
+
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
+    monkeypatch.setattr("sys.stdin", StringIO("\n\n\n"))
+
+    assert cli_main.main(["--wizard"]) == 0
+
+    captured = capsys.readouterr()
+    assert json.loads(captured.out) == {
+        "artifact_dir": run_context["artifact_dir"],
+        "final_status": "clear",
+        "iterations": [],
+        "stopped_reason": "dry_run",
+    }
+    assert "Command: revrem --profile final-pr --dry-run" in captured.err
+    assert "Command:" not in captured.out
 
 
 def test_main_wizard_with_other_options_still_launches_wizard(

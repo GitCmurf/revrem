@@ -216,7 +216,8 @@ class _Wizard:
                 name = self._text("Project profile name", default=state.profile_name or "final-pr")
                 final_argv.extend(["--dry-run", "--save-profile", name])
             result = self._validate(final_argv, action=action)
-            print(f"\nCommand: {result.shell_command}", file=self.stdout)
+            output_stream = self.stdout if action == "print" else self.stderr
+            print(f"\nCommand: {result.shell_command}", file=output_stream)
             if self._yes_no("Use this command?", default=True):
                 return result
 
