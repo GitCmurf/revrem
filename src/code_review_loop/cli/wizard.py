@@ -99,7 +99,7 @@ class RunPreview:
     commit_message: PhasePreview | None
     summary_format: str
     progress_style: str
-    max_wall_seconds: str
+    budget_max_wall_seconds: float | int | str | None
     pending_review: str
 
     @property
@@ -922,7 +922,7 @@ def _run_preview(state: WizardState, cwd: Path) -> RunPreview:
         commit_message=commit_message,
         summary_format=state.summary_format,
         progress_style=config.progress_style,
-        max_wall_seconds=state.max_wall_seconds,
+        budget_max_wall_seconds=config.budget_config.max_wall_seconds,
         pending_review=state.pending_review,
     )
 
@@ -934,8 +934,8 @@ def _run_preview_lines(preview: RunPreview) -> tuple[str, ...]:
         f"remediation passes: max {preview.max_iterations}",
         f"terminal output: {preview.summary_format} summary, {preview.progress_style} progress",
     ]
-    if preview.max_wall_seconds:
-        lines.append(f"budget: max wall {preview.max_wall_seconds}s")
+    if preview.budget_max_wall_seconds is not None:
+        lines.append(f"budget: max wall {_wall_budget_text(preview.budget_max_wall_seconds)}")
     if preview.pending_review != "profile":
         lines.append(f"pending review: {preview.pending_review}")
     lines.extend(
@@ -1106,6 +1106,14 @@ def _timeout_text(value: str | int | float) -> str:
     return f"{number:g}s"
 
 
+def _wall_budget_text(value: float | int | str) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    return f"{number:g}s"
+
+
 def _profile_summary(profile: profiles.Profile) -> str:
     parts = [
         f"base={profile.pipeline.base}",
@@ -1232,9 +1240,7 @@ def _read_text_best_effort(path: Path) -> str:
 
 def _meminit_detected(cwd: Path) -> bool:
     agents = cwd / "AGENTS.md"
-    if agents.is_file() and "MEMINIT_PROTOCOL" in _read_text_best_effort(agents):
-        return True
-    return (cwd / "docs").is_dir()
+    return agents.is_file() and "MEMINIT_PROTOCOL" in _read_text_best_effort(agents)
 
 
 def _positive_int(value: str) -> str | None:

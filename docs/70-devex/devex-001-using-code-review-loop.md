@@ -235,6 +235,10 @@ Use repository-specific checks. For Meminit-backed repositories, include:
 --check "meminit check --format json"
 ```
 
+The wizard only suggests that preset when the repo's `AGENTS.md` advertises
+`MEMINIT_PROTOCOL`; a plain `docs/` tree does not opt a repository into
+Meminit checks.
+
 For repositories that need a virtualenv-local checker, pass the concrete path:
 
 ```bash
@@ -678,6 +682,8 @@ and defaults to `0.8`. `--max-tokens` and `--max-usd` are enforced once a
 harness reports usage through `cost_charge`; Codex does not currently report
 those values, so summaries record token and USD usage as `null` until a charge
 is observed rather than pretending unsupported accounting is zero usage.
+The interactive wizard preview mirrors the resolved profile wall budget, so a
+profile-defined `budgets.max_wall_seconds` stays visible before you edit it.
 
 Profiles may set the same defaults:
 

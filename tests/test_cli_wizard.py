@@ -71,7 +71,18 @@ def _codex_home(tmp_path, monkeypatch):
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
 
 
-def _write_profile(path: Path, *, summary_format: str = "text") -> None:
+def _write_profile(
+    path: Path,
+    *,
+    summary_format: str = "text",
+    max_wall_seconds: int | float | None = None,
+) -> None:
+    budget_block = ""
+    if max_wall_seconds is not None:
+        budget_block = f"""
+[profiles.final-pr.budgets]
+max_wall_seconds = {max_wall_seconds}
+"""
     path.write_text(
         """
 [profiles.final-pr]
@@ -85,6 +96,8 @@ checks = ["pytest -q"]
 [profiles.final-pr.output]
 summary_format = "%s"
 
+%s
+
 [profiles.final-pr.triage]
 enabled = true
 contract = "v2"
@@ -96,7 +109,7 @@ default_route = "midtier"
 [profiles.final-pr.triage.routes.midtier]
 harness = "codex"
 model = "gpt-5.4-mini"
-""" % summary_format,
+""" % (summary_format, budget_block),
         encoding="utf-8",
     )
 
@@ -183,6 +196,19 @@ def test_wizard_run_shape_previews_models_routes_checks_and_command(tmp_path, mo
     assert "if verify passes: commit off" in rendered
     assert "after pass limit: final review enabled" in rendered
     assert "provider command: codex review" in rendered
+
+
+def test_wizard_run_shape_shows_profile_budget_ceiling(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml", max_wall_seconds=120)
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("q\n"), stderr=stderr)
+
+    assert result is None
+    rendered = stderr.getvalue()
+    assert "budget: max wall 120s" in rendered
 
 
 def test_wizard_dogfood_preview_shows_inner_check_retry_and_commit(tmp_path, monkeypatch):
@@ -430,6 +456,16 @@ def test_wizard_detects_repo_check_presets(tmp_path, monkeypatch):
     assert "Python fast: pytest -q" in rendered
     assert "Python static: ruff check . && mypy src" in rendered
     assert "Meminit DocOps: uv run --locked meminit check --format json" in rendered
+
+
+def test_wizard_does_not_treat_docs_directory_as_meminit(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "docs").mkdir()
+
+    presets = wizard._detect_check_presets(tmp_path)
+
+    assert all(preset.key != "meminit" for preset in presets)
 
 
 def test_wizard_blocks_provider_actions_when_model_is_unresolved(tmp_path, monkeypatch):
