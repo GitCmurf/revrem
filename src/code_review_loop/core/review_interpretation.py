@@ -113,6 +113,7 @@ CLEAR_PHRASES = (
     "did not identify any introduced correctness, security, or maintainability issues that warrant an inline finding",
     "without revealing any discrete correctness issue",
     "no discrete, actionable bugs",
+    "no discrete correctness issues were found",
     "no actionable bugs",
     "without any clear regressions or actionable bugs",
     "without any clear regressions or actionable",

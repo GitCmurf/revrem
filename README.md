@@ -247,6 +247,8 @@ the wizard, and suspicious model names such as bare numbers require
 confirmation. Timeouts have their own main-menu editor for the existing shared
 `--timeout-seconds` flag; setting it to `0` disables review, remediation,
 commit-message drafting, and shell-check subprocess timeouts for that run.
+This repository's project-local `default` profile keeps triage opt-in but
+defines v2 routes, so enabling triage from the wizard can also enable routing.
 
 Project-local profiles can be saved without running the loop:
 

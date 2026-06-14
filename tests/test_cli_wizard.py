@@ -721,7 +721,7 @@ def test_wizard_no_profile_cannot_enable_routing_without_routes(tmp_path, monkey
     assert result is not None
     assert "--routing" not in result.argv
     assert "--route" not in result.argv
-    assert "No profile routes are defined, so routing stays off." in stderr.getvalue()
+    assert "This starting profile has no routing routes." in stderr.getvalue()
 
 
 def test_wizard_detects_repo_check_presets(tmp_path, monkeypatch):

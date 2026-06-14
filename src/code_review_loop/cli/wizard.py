@@ -494,12 +494,16 @@ class _Wizard:
 
     def _edit_routing(self, state: WizardState) -> None:
         if not state.triage_enabled:
-            self._print_dim("Routing stays off because triage is disabled.")
+            self._print_dim("Choose the triage setup option first; routing is configured after triage is enabled.")
             state.routing_enabled = False
             return
         route_names = tuple(sorted(state.profile.triage.routes))
         if not route_names:
-            self._print_dim("No profile routes are defined, so routing stays off.")
+            self._print_dim(
+                "This starting profile has no routing routes. Choose a routed profile, "
+                "such as dogfood in this repo, or save/edit a project profile with "
+                "[profiles.NAME.triage.routes.*] entries."
+            )
             state.routing_enabled = False
             return
         state.routing_enabled = self._yes_no(

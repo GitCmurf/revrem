@@ -85,6 +85,26 @@ def test_project_dogfood_profile_routes_multi_file_changes_to_gemini():
     assert resolved.fallback_applied is None
 
 
+def test_project_default_profile_has_routing_fallbacks_when_enabled():
+    loaded = profiles.load_profile_file(Path(profiles.PROJECT_CONFIG_NAME))
+    profile = loaded.profiles["default"]
+    context = policy.RoutingContext(
+        domain_tags=("python",),
+        risk_level="medium",
+        refactor_depth="localised",
+        module_count=4,
+        failed_checks=(),
+        safety_signals=(),
+    )
+
+    resolved = policy.resolve_routing(profile, context)
+
+    assert resolved.route_tier in {"gemini-pro", "codex-midi"}
+    if resolved.route_tier == "codex-midi":
+        assert resolved.fallback_applied == "codex-midi"
+        assert resolved.fallbacks_considered == ("gemini-pro",)
+
+
 def test_resolve_routing_model_escalation():
     profile = profiles.Profile(
         name="test",

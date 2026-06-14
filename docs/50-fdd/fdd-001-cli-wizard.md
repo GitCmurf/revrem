@@ -82,6 +82,9 @@ and run history.
 - Disabled triage is shown as a setup action. Selecting it enables triage,
   prompts for triage harness/model/effort, and then handles routing only when
   profile routes exist.
+- Profiles without routes explain how to choose or create a routed profile
+  instead of only saying routing is unavailable. This repository's project
+  `default` profile keeps triage opt-in but includes v2 route definitions.
 - Harness prompts are bounded to known RevRem harnesses so invalid input is
   rejected before preview rebuild.
 - Suspicious model names, including bare numbers and unknown-looking names,

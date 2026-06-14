@@ -15,6 +15,46 @@ model = "gpt-5.4-mini"
 reasoning_effort = "medium"
 timeout_seconds = 1800.0
 
+[profiles.default.triage]
+enabled = false
+contract = "v2"
+
+[profiles.default.triage.routing]
+enabled = true
+mode = "first-match"
+default_route = "codex-midi"
+allow_model_escalation = true
+strict_on_unavailable_route = false
+
+[[profiles.default.triage.routing.rule]]
+id = "high-risk-frontier"
+when.risk_level_min = "high"
+then.route = "codex-frontier"
+
+[[profiles.default.triage.routing.rule]]
+id = "multi-file-gemini"
+when.module_count_gte = 4
+then.route = "gemini-pro"
+
+[profiles.default.triage.routes.codex-frontier]
+harness = "codex"
+model = "gpt-5.5"
+reasoning_effort = "medium"
+timeout_seconds = 0
+
+[profiles.default.triage.routes.codex-midi]
+harness = "codex"
+model = "gpt-5.4-mini"
+reasoning_effort = "medium"
+timeout_seconds = 0
+
+[profiles.default.triage.routes.gemini-pro]
+harness = "gemini"
+model = "gemini-3.1-pro-preview"
+reasoning_effort = "medium"
+timeout_seconds = 0
+fallback = "codex-midi"
+
 [profiles.default.commit]
 enabled = true
 

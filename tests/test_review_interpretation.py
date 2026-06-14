@@ -99,6 +99,13 @@ def test_detect_review_status_accepts_exact_clear_review_lines() -> None:
     assert detect_review_status("No findings.\n") == "clear"
     assert detect_review_status("summary\nNo actionable findings\n") == "clear"
     assert (
+        detect_review_status(
+            "No discrete correctness issues were found in the diff. The added "
+            "wizard path and tests appear internally consistent."
+        )
+        == "clear"
+    )
+    assert (
         detect_review_status("I did not find any discrete, actionable bugs in the diff.") == "clear"
     )
     assert (

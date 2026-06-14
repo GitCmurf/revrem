@@ -114,6 +114,14 @@ scope = "user"
 def test_project_dogfood_profile_parses_exact_committed_profile():
     loaded = profiles.load_profile_file(ROOT / ".revrem.toml")
 
+    default = loaded.profiles["default"]
+    assert default.triage.enabled is False
+    assert default.triage.contract == "v2"
+    assert default.triage.routing.enabled is True
+    assert default.triage.routing.default_route == "codex-midi"
+    assert default.triage.routes["codex-midi"].model == "gpt-5.4-mini"
+    assert default.triage.routes["gemini-pro"].fallback == "codex-midi"
+
     dogfood = loaded.profiles["dogfood"]
     assert dogfood.pipeline.max_iterations == 3
     assert dogfood.triage.enabled is True

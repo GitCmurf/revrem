@@ -115,6 +115,14 @@ def _normalize_review_priority_severities(payload: dict[str, Any]) -> dict[str, 
                         )
                     changed = True
             raw_info_requested = normalized_item.get("info_requested")
+            raw_fingerprint = normalized_item.get("fingerprint")
+            if collection_name == "needs_more_info" and raw_fingerprint is None:
+                normalized_item["fingerprint"] = f"review-comment:{len(normalized_collection) + 1}"
+                if warnings_can_update:
+                    warnings.append(
+                        "Normalized needs_more_info missing fingerprint to a review-comment fallback."
+                    )
+                changed = True
             if (
                 collection_name == "needs_more_info"
                 and isinstance(raw_info_requested, list)

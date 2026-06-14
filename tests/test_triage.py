@@ -158,3 +158,35 @@ def test_invalid_triage_issue_uses_stable_code():
     assert issue.code == "revrem.triage.invalid_output"
     assert issue.severity == "warn"
     assert issue.evidence["iteration"] == 2
+
+
+def test_parse_triage_payload_normalizes_null_needs_more_info_fingerprint():
+    payload = triage.parse_triage_payload(
+        json.dumps(
+            {
+                "confirmed_findings": [],
+                "rejected_findings": [],
+                "needs_more_info": [
+                    {
+                        "fingerprint": None,
+                        "summary": "Missing source fingerprint",
+                        "severity": "medium",
+                        "affected_paths": ["src/code_review_loop/triage.py"],
+                        "rationale": "The review item had no stable f1 identifier.",
+                        "info_requested": "Provide the source review artifact.",
+                    }
+                ],
+                "implementation_order": [],
+                "verification_commands": [],
+                "parsing_warnings": [],
+            }
+        ),
+        run_id="run-123",
+        source_review_artifact="review-1.txt",
+    )
+
+    assert payload["needs_more_info"][0]["fingerprint"] == "review-comment:1"
+    assert (
+        "Normalized needs_more_info missing fingerprint"
+        in payload["parsing_warnings"][-1]
+    )
