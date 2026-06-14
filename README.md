@@ -233,6 +233,14 @@ detected repo presets such as `./scripts/dev-check`, Python test/static checks,
 Meminit DocOps checks, and `git diff --check`; raw shell commands remain
 available under the custom option.
 
+The model settings screen is phase-specific: review, triage, remediation, and
+commit-message drafting each expose their own harness, model, and reasoning
+effort. When you change one phase, the generated command uses the matching
+phase flag such as `--review-reasoning-effort` or
+`--remediation-reasoning-effort`; it does not silently apply one shared model
+choice to every provider call. The timeout edit remains shared because the
+top-level CLI timeout flag is shared.
+
 Project-local profiles can be saved without running the loop:
 
 ```bash

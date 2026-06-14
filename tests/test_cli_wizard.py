@@ -235,12 +235,19 @@ def test_wizard_builds_common_overrides_and_quotes_checks(tmp_path, monkeypatch)
         "both\n"
         "600\n"
         "models\n"
+        "triage\n"
         "n\n"
+        "remediation\n"
+        "\n"
         "gpt-test\n"
         "high\n"
+        "timeout\n"
         "0\n"
+        "commit\n"
         "n\n"
+        "pending\n"
         "ignore\n"
+        "done\n"
         "\n"
         "print\n"
         "\n"
@@ -263,9 +270,9 @@ def test_wizard_builds_common_overrides_and_quotes_checks(tmp_path, monkeypatch)
         "git diff --check",
         "--skip-final-review",
         "--no-triage",
-        "--model",
+        "--remediation-model",
         "gpt-test",
-        "--reasoning-effort",
+        "--remediation-reasoning-effort",
         "high",
         "--timeout-seconds",
         "0",
@@ -283,6 +290,80 @@ def test_wizard_builds_common_overrides_and_quotes_checks(tmp_path, monkeypatch)
     assert result.action == "print"
 
 
+def test_wizard_sets_review_and_remediation_efforts_independently(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    stdin = StringIO(
+        "models\n"
+        "review\n"
+        "\n"
+        "gpt-review\n"
+        "low\n"
+        "remediation\n"
+        "\n"
+        "gpt-remediate\n"
+        "high\n"
+        "done\n"
+        "\n"
+        "print\n"
+        "\n"
+    )
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=StringIO())
+
+    assert result is not None
+    assert result.argv == (
+        "--profile",
+        "final-pr",
+        "--review-model",
+        "gpt-review",
+        "--review-reasoning-effort",
+        "low",
+        "--remediation-model",
+        "gpt-remediate",
+        "--remediation-reasoning-effort",
+        "high",
+    )
+    assert "--reasoning-effort" not in result.argv
+    assert "--model" not in result.argv
+
+
+def test_wizard_sets_triage_and_commit_efforts_independently(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    stdin = StringIO(
+        "models\n"
+        "triage\n"
+        "\n"
+        "\n"
+        "gpt-triage\n"
+        "minimal\n"
+        "\n"  # keep routing enabled
+        "\n"  # keep default route
+        "commit\n"
+        "y\n"
+        "\n"
+        "gpt-commit\n"
+        "low\n"
+        "done\n"
+        "\n"
+        "print\n"
+        "\n"
+    )
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=StringIO())
+
+    assert result is not None
+    assert "--triage-model" in result.argv
+    assert "gpt-triage" in result.argv
+    assert "--triage-reasoning-effort" in result.argv
+    assert "--commit-message-model" in result.argv
+    assert "gpt-commit" in result.argv
+    assert "--commit-reasoning-effort" in result.argv
+
+
 def test_wizard_no_profile_cannot_enable_routing_without_routes(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
@@ -291,12 +372,13 @@ def test_wizard_no_profile_cannot_enable_routing_without_routes(tmp_path, monkey
         "config\n"
         "no-profile\n"
         "models\n"
+        "triage\n"
         "y\n"
+        "\n"  # harness
         "\n"  # model
         "\n"  # effort
-        "\n"  # timeout
-        "\n"  # commit
-        "\n"  # pending
+        "routing\n"
+        "done\n"
         "\n"  # accept
         "dry-run\n"
         "\n"

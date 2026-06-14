@@ -44,8 +44,18 @@ class WizardState:
     triage_enabled: bool
     routing_enabled: bool
     routing_default_route: str
-    shared_model: str = ""
-    shared_reasoning_effort: str = ""
+    review_harness: str = "codex"
+    review_model: str = ""
+    review_reasoning_effort: str = ""
+    triage_harness: str = "codex"
+    triage_model: str = ""
+    triage_reasoning_effort: str = ""
+    remediation_harness: str = "codex"
+    remediation_model: str = ""
+    remediation_reasoning_effort: str = ""
+    commit_message_harness: str = "codex"
+    commit_message_model: str = ""
+    commit_reasoning_effort: str = ""
     timeout_seconds: str = ""
     commit_after_remediation: bool = False
     progress_style: str = "compact"
@@ -296,73 +306,191 @@ class _Wizard:
         state.max_wall_seconds = wall
 
     def _phase_options(self, state: WizardState) -> None:
-        profile = state.profile
-        triage = self._yes_no(
+        while True:
+            options = [
+                ("review", self._phase_row("review", state.review_harness, state.review_model, state.review_reasoning_effort)),
+                (
+                    "triage",
+                    "off"
+                    if not state.triage_enabled
+                    else self._phase_row(
+                        "triage",
+                        state.triage_harness,
+                        state.triage_model,
+                        state.triage_reasoning_effort,
+                    ),
+                ),
+                (
+                    "remediation",
+                    self._phase_row(
+                        "remediation",
+                        state.remediation_harness,
+                        state.remediation_model,
+                        state.remediation_reasoning_effort,
+                    ),
+                ),
+                (
+                    "commit",
+                    "off"
+                    if not state.commit_after_remediation
+                    else self._phase_row(
+                        "commit message",
+                        state.commit_message_harness,
+                        state.commit_message_model,
+                        state.commit_reasoning_effort,
+                    ),
+                ),
+                (
+                    "routing",
+                    self._routing_row(state),
+                ),
+                ("timeout", f"shared phase timeout: {state.timeout_seconds or 'profile/default'}"),
+                ("pending", f"pending review: {state.pending_review}"),
+                ("done", "return to run shape"),
+            ]
+            selected = self._choice("Model settings", tuple(options), default="done")
+            if selected == "done":
+                return
+            if selected == "review":
+                self._edit_model_phase(
+                    state,
+                    label="review",
+                    harness_attr="review_harness",
+                    model_attr="review_model",
+                    effort_attr="review_reasoning_effort",
+                )
+            elif selected == "triage":
+                self._edit_triage_phase(state)
+            elif selected == "remediation":
+                self._edit_model_phase(
+                    state,
+                    label="remediation",
+                    harness_attr="remediation_harness",
+                    model_attr="remediation_model",
+                    effort_attr="remediation_reasoning_effort",
+                )
+            elif selected == "commit":
+                self._edit_commit_phase(state)
+            elif selected == "routing":
+                self._edit_routing(state)
+            elif selected == "timeout":
+                timeout = self._text(
+                    "Shared phase timeout seconds (0 disables, blank keeps profile/default)",
+                    default=state.timeout_seconds,
+                    validator=_non_negative_float_or_blank,
+                )
+                state.timeout_seconds = timeout
+            elif selected == "pending":
+                state.pending_review = self._choice(
+                    "Pending review handling",
+                    (
+                        ("profile", "interactive default"),
+                        ("prompt", "prompt when compatible feedback exists"),
+                        ("auto", "reuse compatible feedback automatically"),
+                        ("ignore", "always start fresh"),
+                    ),
+                    default=state.pending_review,
+                )
+
+    def _phase_row(self, label: str, harness: str, model: str, effort: str) -> str:
+        phase = f"{label}: {harness}:{model or 'profile/default'}"
+        if effort:
+            phase += f"({effort})"
+        return phase
+
+    def _routing_row(self, state: WizardState) -> str:
+        if not state.triage_enabled:
+            return "off (triage disabled)"
+        if not state.profile.triage.routes:
+            return "off (no profile routes)"
+        if not state.routing_enabled:
+            return "off"
+        return f"default route: {state.routing_default_route}"
+
+    def _edit_model_phase(
+        self,
+        state: WizardState,
+        *,
+        label: str,
+        harness_attr: str,
+        model_attr: str,
+        effort_attr: str,
+    ) -> None:
+        setattr(
+            state,
+            harness_attr,
+            self._text(f"{label.capitalize()} harness", default=getattr(state, harness_attr)),
+        )
+        setattr(
+            state,
+            model_attr,
+            self._text(
+                f"{label.capitalize()} model (blank = profile/default)",
+                default=getattr(state, model_attr),
+            ),
+        )
+        effort = self._choice(
+            f"{label.capitalize()} reasoning effort",
+            (("profile", "keep profile/default"),)
+            + tuple((value, value) for value in cli_args.REASONING_EFFORT_CHOICES),
+            default=getattr(state, effort_attr) or "profile",
+        )
+        setattr(state, effort_attr, "" if effort == "profile" else effort)
+
+    def _edit_triage_phase(self, state: WizardState) -> None:
+        state.triage_enabled = self._yes_no(
             "Use structured triage step before remediation?", state.triage_enabled
         )
-        state.triage_enabled = triage
-        if triage:
-            route_names = tuple(sorted(profile.triage.routes))
-            if route_names:
-                routing = self._yes_no(
-                    "Use profile routing policy? (triage may choose a remediation route)",
-                    state.routing_enabled,
-                )
-                state.routing_enabled = routing
-                if routing:
-                    route = self._choice(
-                        "Default remediation route",
-                        tuple(
-                            (name, _route_label(profile.triage.routes[name]))
-                            for name in route_names
-                        ),
-                        default=state.routing_default_route
-                        if state.routing_default_route in route_names
-                        else route_names[0],
-                    )
-                    state.routing_default_route = route
-            else:
-                state.routing_enabled = False
-                self._print_dim("No profile routes are defined, so routing stays off.")
+        if state.triage_enabled:
+            self._edit_model_phase(
+                state,
+                label="triage",
+                harness_attr="triage_harness",
+                model_attr="triage_model",
+                effort_attr="triage_reasoning_effort",
+            )
+            self._edit_routing(state)
         else:
             state.routing_enabled = False
 
-        shared_model = self._text(
-            "Override review/remediation model (blank = keep shown models)",
-            default=state.shared_model,
-        )
-        state.shared_model = shared_model
-        effort = self._choice(
-            "Override review/remediation reasoning effort",
-            (("profile", "keep profile/default"),)
-            + tuple((value, value) for value in cli_args.REASONING_EFFORT_CHOICES),
-            default=state.shared_reasoning_effort or "profile",
-        )
-        state.shared_reasoning_effort = "" if effort == "profile" else effort
-
-        timeout = self._text(
-            "Phase timeout seconds (0 disables, blank keeps profile/default)",
-            default=state.timeout_seconds,
-            validator=_non_negative_float_or_blank,
-        )
-        state.timeout_seconds = timeout
-
-        commit = self._yes_no(
+    def _edit_commit_phase(self, state: WizardState) -> None:
+        state.commit_after_remediation = self._yes_no(
             "Commit after verified remediation?", state.commit_after_remediation
         )
-        state.commit_after_remediation = commit
+        if state.commit_after_remediation:
+            self._edit_model_phase(
+                state,
+                label="commit message",
+                harness_attr="commit_message_harness",
+                model_attr="commit_message_model",
+                effort_attr="commit_reasoning_effort",
+            )
 
-        pending = self._choice(
-            "Pending review handling",
-            (
-                ("profile", "interactive default"),
-                ("prompt", "prompt when compatible feedback exists"),
-                ("auto", "reuse compatible feedback automatically"),
-                ("ignore", "always start fresh"),
-            ),
-            default=state.pending_review,
+    def _edit_routing(self, state: WizardState) -> None:
+        if not state.triage_enabled:
+            self._print_dim("Routing stays off because triage is disabled.")
+            state.routing_enabled = False
+            return
+        route_names = tuple(sorted(state.profile.triage.routes))
+        if not route_names:
+            self._print_dim("No profile routes are defined, so routing stays off.")
+            state.routing_enabled = False
+            return
+        state.routing_enabled = self._yes_no(
+            "Use profile routing policy? (triage may choose a remediation route)",
+            state.routing_enabled,
         )
-        state.pending_review = pending
+        if state.routing_enabled:
+            state.routing_default_route = self._choice(
+                "Default remediation route",
+                tuple(
+                    (name, _route_label(state.profile.triage.routes[name]))
+                    for name in route_names
+                ),
+                default=state.routing_default_route
+                if state.routing_default_route in route_names
+                else route_names[0],
+            )
 
     def _checks(self, current: tuple[str, ...]) -> tuple[str, ...]:
         presets = _detect_check_presets(self.cwd)
@@ -600,6 +728,18 @@ def _initial_state(choice: WizardProfileChoice) -> WizardState:
         triage_enabled=profile.triage.enabled,
         routing_enabled=profile.triage.routing.enabled and bool(profile.triage.routes),
         routing_default_route=profile.triage.routing.default_route,
+        review_harness=profile.review.harness,
+        review_model=profile.review.model or "",
+        review_reasoning_effort=profile.review.reasoning_effort or "",
+        triage_harness=profile.triage.harness,
+        triage_model=profile.triage.model or "",
+        triage_reasoning_effort=profile.triage.reasoning_effort or "",
+        remediation_harness=profile.remediation.harness,
+        remediation_model=profile.remediation.model or "",
+        remediation_reasoning_effort=profile.remediation.reasoning_effort or "",
+        commit_message_harness=profile.commit.harness,
+        commit_message_model=profile.commit.message_model or "",
+        commit_reasoning_effort=profile.commit.reasoning_effort or "",
         commit_after_remediation=profile.commit.enabled,
         progress_style=profile.output.progress_style,
         summary_format=profile.output.summary_format,
@@ -633,10 +773,30 @@ def _argv_for_state(state: WizardState) -> list[str]:
             and state.routing_default_route != profile.triage.routing.default_route
         ):
             argv.extend(["--route", state.routing_default_route])
-    if state.shared_model:
-        argv.extend(["--model", state.shared_model])
-    if state.shared_reasoning_effort:
-        argv.extend(["--reasoning-effort", state.shared_reasoning_effort])
+    if state.review_harness != profile.review.harness:
+        argv.extend(["--review-harness", state.review_harness])
+    if state.review_model != (profile.review.model or ""):
+        argv.extend(["--review-model", state.review_model])
+    if state.review_reasoning_effort != (profile.review.reasoning_effort or ""):
+        argv.extend(["--review-reasoning-effort", state.review_reasoning_effort])
+    if state.triage_harness != profile.triage.harness:
+        argv.extend(["--triage-harness", state.triage_harness])
+    if state.triage_model != (profile.triage.model or ""):
+        argv.extend(["--triage-model", state.triage_model])
+    if state.triage_reasoning_effort != (profile.triage.reasoning_effort or ""):
+        argv.extend(["--triage-reasoning-effort", state.triage_reasoning_effort])
+    if state.remediation_harness != profile.remediation.harness:
+        argv.extend(["--remediation-harness", state.remediation_harness])
+    if state.remediation_model != (profile.remediation.model or ""):
+        argv.extend(["--remediation-model", state.remediation_model])
+    if state.remediation_reasoning_effort != (profile.remediation.reasoning_effort or ""):
+        argv.extend(["--remediation-reasoning-effort", state.remediation_reasoning_effort])
+    if state.commit_message_harness != profile.commit.harness:
+        argv.extend(["--commit-message-harness", state.commit_message_harness])
+    if state.commit_message_model != (profile.commit.message_model or ""):
+        argv.extend(["--commit-message-model", state.commit_message_model])
+    if state.commit_reasoning_effort != (profile.commit.reasoning_effort or ""):
+        argv.extend(["--commit-reasoning-effort", state.commit_reasoning_effort])
     if state.timeout_seconds:
         argv.extend(["--timeout-seconds", state.timeout_seconds])
     if state.commit_after_remediation != profile.commit.enabled:

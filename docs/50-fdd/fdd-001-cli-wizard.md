@@ -63,8 +63,15 @@ and run history.
   commit-message drafting, final-review behavior, and budgets.
 - The normal path accepts the preview. Edit screens cover run settings
   (base branch, pass limit, checks, final review, output, wall-clock budget)
-  and model settings (triage, routing, model/effort overrides, timeouts,
-  auto-commit, pending-review handling).
+  and model settings. Model settings are presented as a phase table: review,
+  triage, remediation, and commit-message drafting each expose their own
+  harness, model, and reasoning effort. Timeout remains a shared setting
+  because the CLI timeout flag is shared.
+- Generated commands use phase-specific flags for phase-specific edits, for
+  example `--review-reasoning-effort`,
+  `--remediation-reasoning-effort`, `--triage-model`, and
+  `--commit-message-model`, instead of applying one shared model or effort to
+  every provider phase.
 - Routing is presented as "use profile routing policy" only when the selected
   config defines routes. The wizard does not offer routing for defaults with no
   routes, preventing generated commands that fail on the built-in
@@ -87,6 +94,8 @@ and run history.
   `revrem --profile NAME --dry-run` command.
 - Scripted tests prove common and advanced overrides produce the expected argv
   and shell-quoted command preview.
+- Scripted tests prove review, triage, remediation, and commit-message model
+  settings can be changed independently.
 - `revrem --wizard` feeds the generated argv back into the normal CLI path.
 - Bare `revrem` dispatches to the wizard only in interactive terminals.
 - Cancellation exits before provider calls with the standard operator-cancel
