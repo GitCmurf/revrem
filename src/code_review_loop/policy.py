@@ -189,8 +189,14 @@ def resolve_routing(
 
 TIER_RANK = {
     "security-specialist": 200,
+    "codex-frontier": 100,
+    "frontier": 100,
     "frontier-thinking": 100,
+    "gemini-pro": 90,
+    "codex-midi": 50,
     "midtier-coder": 50,
+    "midtier": 50,
+    "efficient": 10,
     "efficient-coder": 10,
 }
 

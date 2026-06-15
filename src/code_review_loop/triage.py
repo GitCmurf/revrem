@@ -296,6 +296,34 @@ def format_structured_handoff(payload: dict[str, Any], original_review: str) -> 
         for cmd in commands:
             parts.append(f"- {cmd}")
 
+    prompt_requirements = payload.get("prompt_requirements", {})
+    if isinstance(prompt_requirements, dict):
+        fragments = prompt_requirements.get("required_fragments", [])
+        if fragments:
+            parts.append("\nRequested Prompt Fragments:")
+            for fragment in fragments:
+                parts.append(f"- {fragment}")
+        dod = prompt_requirements.get("definition_of_done", [])
+        if dod:
+            parts.append("\nDefinition of Done:")
+            for item in dod:
+                parts.append(f"- {item}")
+        draft = prompt_requirements.get("triage_prompt_draft")
+        if isinstance(draft, str) and draft.strip():
+            parts.append("\nTriage Draft Instructions:")
+            parts.append(draft.strip())
+
+    classification = payload.get("classification", {})
+    if isinstance(classification, dict):
+        risk = classification.get("risk_level")
+        depth = classification.get("refactor_depth")
+        if risk or depth:
+            parts.append("\nTriage Classification:")
+            if risk:
+                parts.append(f"- Risk level: {risk}")
+            if depth:
+                parts.append(f"- Refactor depth: {depth}")
+
     parts.append("\nOriginal review/check context:")
     parts.append(original_review)
 

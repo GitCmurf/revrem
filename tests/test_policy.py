@@ -50,6 +50,41 @@ def test_resolve_routing_default(base_profile):
     assert resolved.rule_id == "default"
 
 
+def test_resolve_routing_accepts_codex_frontier_proposal_from_codex_midi():
+    profile = profiles.Profile(
+        name="default-routes",
+        triage=profiles.TriageConfig(
+            contract="v2",
+            routing=profiles.TriageRoutingConfig(
+                enabled=True,
+                default_route="codex-midi",
+                allow_model_escalation=True,
+            ),
+            routes={
+                "codex-midi": profiles.TriageRouteConfig(harness="codex", model="gpt-5.4-mini"),
+                "codex-frontier": profiles.TriageRouteConfig(harness="codex", model="gpt-5.5"),
+            },
+        ),
+    )
+    context = policy.RoutingContext(
+        domain_tags=("developer-experience",),
+        risk_level="medium",
+        refactor_depth="localised",
+        module_count=1,
+        failed_checks=(),
+        safety_signals=(),
+    )
+
+    resolved = policy.resolve_routing(
+        profile,
+        context,
+        model_proposal_tier="codex-frontier",
+    )
+
+    assert resolved.route_tier == "codex-frontier"
+    assert resolved.model == "gpt-5.5"
+
+
 def test_resolve_routing_rule_match(base_profile):
     context = policy.RoutingContext(
         domain_tags=("security",),

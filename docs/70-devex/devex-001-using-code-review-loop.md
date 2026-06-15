@@ -3,8 +3,8 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.52'
-last_updated: '2026-06-11'
+version: '1.53'
+last_updated: '2026-06-15'
 owner: GitCmurf
 docops_version: '2.0'
 area: devex
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.52
-> **Last Updated:** 2026-06-11
+> **Version:** 1.53
+> **Last Updated:** 2026-06-15
 > **Type:** DEVEX
 > **Area:** devex
 > **Description:** Operator guide for the code-review-loop utility
@@ -960,6 +960,16 @@ a positive CLI cap. Explicit CLI `--timeout-seconds 0` or
 semantics and does not cap route timeouts; `0` in the routing artifact means
 unbounded.
 
+The v2 triage prompt includes the configured route table, including route
+names, harnesses, models, reasoning effort, timeout, sandbox, and fallback.
+Triage route proposals should use those exact route names. Built-in route rank
+aliases include the historical `frontier-thinking`/`midtier-coder` names and
+the project-local `codex-frontier`/`codex-midi` names, so a proposal can
+intentionally select the frontier Codex route when policy permits escalation.
+If routing is disabled, structured triage still forwards prompt requirements
+such as `triage_prompt_draft`, `definition_of_done`, required fragments, and
+risk classification in the remediation handoff.
+
 Codex-only routing profile:
 
 ```toml
@@ -1405,6 +1415,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.53 | 2026-06-15 | Codex | Documented route-aware triage prompts, non-routed triage handoff guidance, and timeout override semantics |
 | 1.52 | 2026-06-11 | Codex | Documented native Codex provider observations and final-review failure diagnostics |
 | 1.51 | 2026-06-11 | Codex | Documented native Codex review sandbox enforcement through config |
 | 1.50 | 2026-06-10 | Codex | Documented recoverable triage diagnostics, check retry history, and symlink-safe hook handling |

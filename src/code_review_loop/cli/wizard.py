@@ -75,6 +75,12 @@ class WizardState:
 
 
 @dataclass(frozen=True)
+class LastRunLookup:
+    state: WizardState | None
+    skipped_reason: str | None = None
+
+
+@dataclass(frozen=True)
 class CheckPreset:
     key: str
     label: str
@@ -260,8 +266,11 @@ class _Wizard:
     def _starting_state(self) -> WizardState:
         default_choice = self._default_profile_choice()
         default_state = _initial_state(default_choice)
-        last_state = _last_run_state(self.cwd)
+        last_lookup = _last_run_state(self.cwd)
+        last_state = last_lookup.state
         if last_state is None:
+            if last_lookup.skipped_reason:
+                self._print_dim(f"Last run skipped: {last_lookup.skipped_reason}")
             return default_state
         selected = self._choice(
             "Start from which settings?",
@@ -420,35 +429,43 @@ class _Wizard:
         self._print_heading("Timeouts")
         self._print_dim("Blank keeps the shown profile/default value. 0 disables that phase timeout.")
         self._print_dim(_timeout_row(preview, state))
-        shared = self._text(
+        shared = self._timeout_text(
             "Shared fallback timeout",
-            default=state.timeout_seconds,
+            current=state.timeout_seconds,
+            keep_label=_timeout_keep_label(state.timeout_seconds or "profile/default"),
             validator=_non_negative_float_or_blank,
         )
         state.timeout_seconds = shared
-        state.review_timeout_seconds = self._text(
+        state.review_timeout_seconds = self._timeout_text(
             "Review timeout",
-            default=state.review_timeout_seconds,
+            current=state.review_timeout_seconds,
+            keep_label=_timeout_keep_label(preview.review.timeout),
             validator=_non_negative_float_or_blank,
         )
-        state.triage_timeout_seconds = self._text(
+        state.triage_timeout_seconds = self._timeout_text(
             "Triage timeout",
-            default=state.triage_timeout_seconds,
+            current=state.triage_timeout_seconds,
+            keep_label=_timeout_keep_label(preview.triage.timeout if preview.triage else None),
             validator=_non_negative_float_or_blank,
         )
-        state.remediation_timeout_seconds = self._text(
+        state.remediation_timeout_seconds = self._timeout_text(
             "Remediation timeout",
-            default=state.remediation_timeout_seconds,
+            current=state.remediation_timeout_seconds,
+            keep_label=_timeout_keep_label(preview.remediation.timeout),
             validator=_non_negative_float_or_blank,
         )
-        state.commit_timeout_seconds = self._text(
+        state.commit_timeout_seconds = self._timeout_text(
             "Commit-message timeout",
-            default=state.commit_timeout_seconds,
+            current=state.commit_timeout_seconds,
+            keep_label=_timeout_keep_label(
+                preview.commit_message.timeout if preview.commit_message else None
+            ),
             validator=_non_negative_float_or_blank,
         )
-        state.check_timeout_seconds = self._text(
+        state.check_timeout_seconds = self._timeout_text(
             "Verification-check timeout",
-            default=state.check_timeout_seconds,
+            current=state.check_timeout_seconds,
+            keep_label=_timeout_keep_label(preview.check_timeout),
             validator=_non_negative_float_or_blank,
         )
 
@@ -689,6 +706,25 @@ class _Wizard:
                 return value
             print(error, file=self.stderr)
 
+    def _timeout_text(
+        self,
+        label: str,
+        *,
+        current: str,
+        keep_label: str,
+        validator=None,
+    ) -> str:
+        while True:
+            raw = self._read(f"{label} [{keep_label}]: ").strip()
+            if not raw:
+                return current
+            if validator is None:
+                return raw
+            error = validator(raw)
+            if error is None:
+                return raw
+            print(error, file=self.stderr)
+
     def _model_text(self, label: str, *, default: str) -> str:
         while True:
             value = self._text(label, default=default)
@@ -840,20 +876,29 @@ def _initial_state(choice: WizardProfileChoice) -> WizardState:
     )
 
 
-def _last_run_state(cwd: Path) -> WizardState | None:
-    for record in run_history.read_history(limit=10):
+def _last_run_state(cwd: Path) -> LastRunLookup:
+    skipped_reason: str | None = None
+    for record in run_history.read_history():
         if record.get("cwd") != str(cwd):
             continue
         summary_path = record.get("summary_path")
         if not isinstance(summary_path, str) or not summary_path:
+            skipped_reason = "history record has no summary path"
             continue
         path = Path(summary_path)
         if not path.is_absolute():
             path = cwd / path
+        if not path.is_file():
+            skipped_reason = f"summary missing: {path}"
+            continue
         state = _state_from_summary(path, cwd)
-        if state is not None and _state_is_previewable(state, cwd):
-            return state
-    return None
+        if state is None:
+            skipped_reason = f"summary is not replayable: {path}"
+            continue
+        if _state_is_previewable(state, cwd):
+            return LastRunLookup(state=state)
+        skipped_reason = f"settings are no longer previewable: {path}"
+    return LastRunLookup(state=None, skipped_reason=skipped_reason)
 
 
 def _state_from_summary(summary_path: Path, cwd: Path) -> WizardState | None:
@@ -966,6 +1011,17 @@ def _apply_str_attr(state: WizardState, name: str, value: str | None) -> None:
         setattr(state, name, value)
 
 
+def _timeout_override_needed(phase_value: str, shared_value: str) -> bool:
+    if not phase_value:
+        return False
+    if not shared_value:
+        return True
+    try:
+        return float(phase_value) != float(shared_value)
+    except ValueError:
+        return phase_value != shared_value
+
+
 def _last_run_label(state: WizardState) -> str:
     return f"last run; command: {shlex.join(('revrem', *_argv_for_state(state)))}"
 
@@ -1032,15 +1088,15 @@ def _argv_for_state(state: WizardState) -> list[str]:
         argv.extend(["--commit-reasoning-effort", state.commit_reasoning_effort])
     if state.timeout_seconds:
         argv.extend(["--timeout-seconds", state.timeout_seconds])
-    if state.review_timeout_seconds:
+    if _timeout_override_needed(state.review_timeout_seconds, state.timeout_seconds):
         argv.extend(["--review-timeout-seconds", state.review_timeout_seconds])
-    if state.triage_timeout_seconds:
+    if _timeout_override_needed(state.triage_timeout_seconds, state.timeout_seconds):
         argv.extend(["--triage-timeout-seconds", state.triage_timeout_seconds])
-    if state.remediation_timeout_seconds:
+    if _timeout_override_needed(state.remediation_timeout_seconds, state.timeout_seconds):
         argv.extend(["--remediation-timeout-seconds", state.remediation_timeout_seconds])
-    if state.commit_timeout_seconds:
+    if _timeout_override_needed(state.commit_timeout_seconds, state.timeout_seconds):
         argv.extend(["--commit-timeout-seconds", state.commit_timeout_seconds])
-    if state.check_timeout_seconds:
+    if _timeout_override_needed(state.check_timeout_seconds, state.timeout_seconds):
         argv.extend(["--check-timeout-seconds", state.check_timeout_seconds])
     if state.commit_after_remediation != profile.commit.enabled:
         argv.append(
@@ -1515,6 +1571,12 @@ def _timeout_text(value: str | int | float) -> str:
     if number == 0:
         return "none"
     return f"{number:g}s"
+
+
+def _timeout_keep_label(value: str | int | float | None) -> str:
+    if value is None:
+        return "keep none"
+    return f"keep {_timeout_text(value)}"
 
 
 def _wall_budget_text(value: float | int | str) -> str:

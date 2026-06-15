@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from code_review_loop import policy, routing_artifacts, routing_timeouts
+from code_review_loop.adapters.remediation import run_remediation
 from code_review_loop.cli import args as cli_args
 from code_review_loop.cli import config_builder
-from code_review_loop.adapters.remediation import run_remediation
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.ports import CommandResult, RunContext
 from tests.support.fakes import FakeClock, FakeRunIdentity

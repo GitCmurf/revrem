@@ -907,7 +907,7 @@ harness = "codex"
     assert config.triage_contract == "v2"
     assert config.triage_model == "cli-triage"
     assert config.triage_harness == "gemini"
-    assert config.triage_timeout_seconds is None
+    assert config.triage_timeout_seconds == 0
     assert config.triage_timeout_seconds_display == 0
     assert config.phase_config_sources["triage"] == "mixed"
     assert config.phase_config_field_sources["triage"] == {
@@ -943,6 +943,45 @@ harness = "codex"
         }
     )
     assert "--no-routing-strict" in text
+
+
+def test_shared_cli_timeout_overrides_profile_check_timeout(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    config_path = home / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.slow-checks.pipeline]
+check_timeout_seconds = 1800
+checks = ["pytest -q"]
+""",
+        encoding="utf-8",
+    )
+    captured_configs = []
+
+    def fake_run_loop(config):
+        captured_configs.append(config)
+        return _clear_result(
+            {
+                "artifact_dir": str(config.artifact_dir),
+                "final_status": "clear",
+                "stopped_reason": "review_clear",
+                "iterations": [],
+            }
+        )
+
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
+
+    exit_code = cli_main.main(["--profile", "slow-checks", "--timeout-seconds", "30", "--dry-run"])
+
+    assert exit_code == 0
+    config = captured_configs[0]
+    assert config.check_timeout_seconds == 30
+    assert config.check_timeout_seconds_display == 30
+    assert config.phase_config_field_sources["checks"]["timeout_seconds"] == "cli"
 
 
 def test_main_triage_cli_negations_override_profile_enabled_values(tmp_path, monkeypatch):

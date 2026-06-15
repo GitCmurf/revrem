@@ -47,7 +47,9 @@ and run history.
 - If local run history contains a compatible run for the current repository,
   the wizard offers those last settings before the profile/default starting
   point. The recovered settings are replayed from the saved invocation command
-  through the normal CLI parser.
+  through the normal CLI parser. History lookup filters by repository before
+  compatibility selection so newer runs from other repositories cannot hide a
+  current-repository offer.
 - The first screen is the recommended run-shape diagram. Profile selection is
   available from "choose another profile" and distinguishes `no-profile`
   merged defaults from profiles named `default`.
@@ -78,7 +80,7 @@ and run history.
   `--review-timeout-seconds`, `--triage-timeout-seconds`,
   `--remediation-timeout-seconds`, `--commit-timeout-seconds`, and
   `--check-timeout-seconds` overrides, and accepts `0` to disable a phase
-  timeout.
+  timeout. Timeout prompts show the effective value blank input will keep.
 - Generated commands use phase-specific flags for phase-specific edits, for
   example `--review-reasoning-effort`,
   `--remediation-reasoning-effort`, `--triage-model`, and
@@ -102,6 +104,11 @@ and run history.
   loop as runtime, with profile rules disabled while each explicit route is
   listed so the displayed route cannot be replaced by the synthetic preview
   context.
+- The v2 triage prompt includes the selected profile's exact route names,
+  harnesses, models, efforts, timeouts, sandboxes, and fallbacks so
+  `route_proposal.route_tier` can name a configured route. Non-routed
+  structured triage handoff still carries prompt requirements such as
+  definition of done and triage draft instructions into remediation.
 - Verification checks default to the selected profile when present. Otherwise
   the wizard offers detected repo presets such as `./scripts/dev-check`,
   Python pytest/static checks, Meminit DocOps checks, and `git diff --check`;
@@ -125,9 +132,10 @@ and run history.
   and shell-quoted command preview.
 - Scripted tests prove review, triage, remediation, and commit-message model
   settings can be changed independently.
-- Scripted tests prove last-run settings can be offered, disabled triage can
-  be enabled, shared timeout can be set to `0`, suspicious model input is
-  confirmed, and invalid harness input is reprompted without a traceback.
+- Scripted tests prove last-run settings can be offered even with unrelated
+  history entries, disabled triage can be enabled, shared timeout can be set
+  to `0`, timeout prompts show effective keep values, suspicious model input
+  is confirmed, and invalid harness input is reprompted without a traceback.
 - Scripted tests prove routed preview commands use runtime fallback resolution
   instead of blocking profiles that can run through a configured fallback.
 - `revrem --wizard` feeds the generated argv back into the normal CLI path.

@@ -214,7 +214,8 @@ opens the wizard even when combined with other top-level options. In scripts
 and other non-interactive contexts, bare `revrem` keeps the normal CLI
 behavior. When local run history contains a compatible run for the current
 repository, the wizard first offers those last settings as the starting point;
-otherwise it starts from the recommended profile/defaults. It then opens on a
+history entries from other repositories do not hide the repo-local offer.
+Otherwise it starts from the recommended profile/defaults. It then opens on a
 run-shape diagram before provider calls can start. The preview is built from
 the same phase command builders used at runtime, lists the exact provider CLI
 commands for review, triage, remediation, routed remediation, and
@@ -250,12 +251,16 @@ confirmation. Timeouts have their own main-menu editor for the existing shared
 `--timeout-seconds` fallback plus phase-specific timeout flags:
 `--review-timeout-seconds`, `--triage-timeout-seconds`,
 `--remediation-timeout-seconds`, `--commit-timeout-seconds`, and
-`--check-timeout-seconds`. Setting any timeout to `0` disables that phase's
-subprocess timeout for the run.
+`--check-timeout-seconds`. Each timeout prompt shows the effective value that
+blank input will keep. Setting any timeout to `0` disables that phase's
+subprocess timeout for the run. A shared CLI timeout overrides profile check
+timeouts unless `--check-timeout-seconds` is also supplied.
 This repository's project-local `default` profile keeps triage opt-in but
 defines v2 routes, so enabling triage from the wizard can also enable routing.
 When routing is enabled, route previews use the runtime routing policy,
-including configured fallbacks for unavailable harnesses or models.
+including configured fallbacks for unavailable harnesses or models. The v2
+triage prompt includes the configured route names and route metadata so model
+route proposals can name the route the profile actually defines.
 
 Project-local profiles can be saved without running the loop:
 

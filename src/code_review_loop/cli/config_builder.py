@@ -299,20 +299,12 @@ def build_loop_config(
         review_timeout_seconds = timeout_seconds
         remediation_timeout_seconds = timeout_seconds
         triage_timeout_seconds = timeout_seconds if triage_enabled else None
-        check_timeout_seconds = (
-            resolve_profile_timeout_seconds(profile.pipeline.check_timeout_seconds)
-            if profile.pipeline.check_timeout_seconds is not None
-            else timeout_seconds
-        )
+        check_timeout_seconds = timeout_seconds
         timeout_seconds_display = args.timeout_seconds
         review_timeout_seconds_display = args.timeout_seconds
         remediation_timeout_seconds_display = args.timeout_seconds
         triage_timeout_seconds_display = args.timeout_seconds if triage_enabled else None
-        check_timeout_seconds_display = (
-            profile.pipeline.check_timeout_seconds
-            if profile.pipeline.check_timeout_seconds is not None
-            else args.timeout_seconds
-        )
+        check_timeout_seconds_display = args.timeout_seconds
     else:
         timeout_seconds = DEFAULT_TIMEOUT_SECONDS
         review_timeout_seconds = resolve_profile_timeout_seconds(profile.review.timeout_seconds)
@@ -362,8 +354,6 @@ def build_loop_config(
             flag="--triage-timeout-seconds",
         )
         triage_timeout_seconds_display = args.triage_timeout_seconds
-    if triage_timeout_seconds == 0:
-        triage_timeout_seconds = None
     if args.check_timeout_seconds is not None:
         check_timeout_seconds = resolve_optional_timeout_seconds(
             args.check_timeout_seconds,
@@ -636,7 +626,7 @@ def build_loop_config(
             "commands": "cli" if args.check is not None else profile_source,
             "timeout_seconds": (
                 "cli"
-                if args.check_timeout_seconds is not None
+                if args.check_timeout_seconds is not None or args.timeout_seconds is not None
                 else profile_source
                 if profile.pipeline.check_timeout_seconds is not None
                 else _timeout_source(profile_source, args.timeout_seconds)

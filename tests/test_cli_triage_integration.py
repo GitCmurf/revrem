@@ -550,6 +550,9 @@ def test_loop_recovers_misplaced_definition_of_done_and_routes(tmp_path):
         for warning in triage_json["parsing_warnings"]
     )
     assert routing_json["effective_route"]["route_tier"] == "codex-midi"
+    triage_prompt = next(input_text for args, input_text, _ in calls if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only")
+    assert "Configured remediation routes for route_proposal.route_tier" in triage_prompt
+    assert "- codex-midi: harness=codex, model=gpt-test" in triage_prompt
     assert (tmp_path / "artifacts" / "routing-outcome-1.json").is_file()
     assert any(
         item["code"] == "revrem.triage.parsing_warning"

@@ -60,6 +60,7 @@ def run_triage(
 ) -> tuple[str, int, bool, dict[str, Any] | None]:
     command = build_triage_command(config)
     prompt_root = config.triage_prompt or triage.load_prompt(contract=config.triage_contract)
+    prompt_root = _with_route_table(prompt_root, config)
     prompt = f"{prompt_root}\n{prompts_composer.trim_for_prompt(review_output, config.max_remediation_input_chars)}"
     prompt_artifact_path = config.artifact_dir / f"triage-{iteration}-prompt.txt"
     phase_support.write_artifact(prompt_artifact_path, prompt)
@@ -236,3 +237,35 @@ class TriageAdapter:
             is_clear=is_clear,
             payload=payload,
         )
+
+
+def _with_route_table(prompt_root: str, config: LoopConfig) -> str:
+    if config.triage_contract != "v2" or config.profile_v2 is None:
+        return prompt_root
+    routing = config.profile_v2.triage.routing
+    routes = config.profile_v2.triage.routes
+    if not routing.enabled or not routes:
+        return prompt_root
+    lines = [
+        "Configured remediation routes for route_proposal.route_tier:",
+        f"- default route: {routing.default_route}",
+    ]
+    for name, route in sorted(routes.items()):
+        parts = [f"- {name}: harness={route.harness}"]
+        if route.model:
+            parts.append(f"model={route.model}")
+        if route.reasoning_effort:
+            parts.append(f"effort={route.reasoning_effort}")
+        parts.append(
+            "timeout="
+            + ("profile/default" if route.timeout_seconds is None else f"{route.timeout_seconds:g}s")
+        )
+        parts.append(f"sandbox={route.sandbox}")
+        if route.fallback:
+            parts.append(f"fallback={route.fallback}")
+        lines.append(", ".join(parts))
+    lines.append(
+        "Use one of these exact route names when proposing a route. "
+        "RevRem policy may still override or fall back from the proposal."
+    )
+    return f"{prompt_root}\n\n" + "\n".join(lines)
