@@ -141,6 +141,23 @@ def test_detect_review_status_accepts_exact_clear_review_lines() -> None:
     assert detect_review_status("This would warrant an inline finding.") == "unknown"
 
 
+def test_detect_review_status_does_not_clear_mixed_non_correctness_findings() -> None:
+    assert (
+        detect_review_status(
+            "No discrete correctness issues were found. However, there is a security "
+            "vulnerability in the upload path."
+        )
+        == "unknown"
+    )
+    assert (
+        detect_review_status(
+            "No discrete correctness issues were found. However, there is a "
+            "maintainability concern in the wizard flow."
+        )
+        == "unknown"
+    )
+
+
 def test_detect_review_status_does_not_generalize_negated_clear_with_findings() -> None:
     assert (
         detect_review_status(

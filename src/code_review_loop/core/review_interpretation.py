@@ -37,6 +37,24 @@ AFFIRMATIVE_ISSUE_WORD_RE = re.compile(
     r"failure|failures|finding|findings)\b",
     re.IGNORECASE,
 )
+NON_CORRECTNESS_ISSUE_RE = re.compile(
+    r"\b(?:"
+    r"vulnerab\w+"
+    r"|insecure(?:\s+\w+){0,3}"
+    r"|unsafe(?:\s+\w+){0,3}"
+    r"|exploit(?:s|ed|ing|ation)?"
+    r"|leak(?:s|age|ed|ing)?"
+    r"|expos(?:e|ed|ure)"
+    r"|security(?:\s+\w+){0,4}\s+(?:issue|issues|problem|problems|risk|risks|concern|concerns|"
+    r"vulnerab\w+|flaw|flaws|debt)"
+    r"|maintainabil(?:ity|y)(?:\s+\w+){0,4}\s+(?:issue|issues|problem|problems|risk|risks|"
+    r"concern|concerns|debt|flaw|flaws)"
+    r"|hard to maintain"
+    r"|difficult to maintain"
+    r"|maintenance burden"
+    r")\b",
+    re.IGNORECASE,
+)
 STRUCTURED_EMPTY_FINDINGS_RE = re.compile(
     r'(?<!\w)["\']?findings["\']?\s*:\s*\[\s*\](?!\w)',
     re.IGNORECASE,
@@ -239,6 +257,27 @@ def has_affirmative_issue_prose(output: str) -> bool:
     return False
 
 
+def has_non_correctness_issue_prose(output: str) -> bool:
+    """Return True when the prose contains a likely security/maintainability finding.
+
+    Correctness-only clear wording can be valid for a review that still reports
+    non-correctness issues. This helper catches the common non-correctness
+    finding language that does not always include the generic issue keywords.
+    """
+
+    for sentence in iter_review_prose_sentences(output):
+        if not sentence:
+            continue
+        normalized_sentence = sentence.lower()
+        if NON_CORRECTNESS_ISSUE_RE.search(sentence):
+            if has_negated_clear_review_statement(normalized_sentence):
+                continue
+            if NEGATED_ISSUE_PROSE_RE.search(normalized_sentence):
+                continue
+            return True
+    return False
+
+
 def _strip_unrelated_failure_spans(sentence: str) -> str:
     """Remove the spans matched by ``UNRELATED_FAILURE_RE`` from a sentence.
 
@@ -369,11 +408,11 @@ def _detect_review_status_from_actionable(actionable_output: str) -> str:
         return "clear"
     if has_negated_clear_review_statement(normalized) and not has_affirmative_issue_prose(
         actionable_output
-    ):
+    ) and not has_non_correctness_issue_prose(actionable_output):
         return "clear"
     if any(phrase in normalized for phrase in CLEAR_PHRASES) and not has_affirmative_issue_prose(
         actionable_output
-    ):
+    ) and not has_non_correctness_issue_prose(actionable_output):
         return "clear"
     return "unknown"
 
@@ -438,6 +477,7 @@ def review_status_diagnostics(output: str, *, harness: str = "codex") -> dict[st
         harness not in PROMPTED_REVIEW_HARNESSES
         and clear_phrase_present
         and not has_affirmative_issue_prose(actionable_output)
+        and not has_non_correctness_issue_prose(actionable_output)
     ):
         status_source = "codex_clear_prose"
     else:
