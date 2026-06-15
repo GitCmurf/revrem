@@ -536,6 +536,44 @@ def test_terminal_summary_resume_command_preserves_external_review_overrides():
     assert "--external-review-truncation-policy fail" in text
 
 
+def test_terminal_summary_resume_command_preserves_phase_timeout_overrides():
+    text = format_terminal_summary(
+        {
+            "artifact_dir": "tmp/run",
+            "final_status": "findings",
+            "stopped_reason": "max_iterations_reached",
+            "artifact_paths": {"reviews": ["tmp/run/review-final.txt"]},
+            "base": "main",
+            "max_iterations": 1,
+            "profile": "final-pr",
+            "resume_config": {
+                "base": "main",
+                "max_iterations": 1,
+                "timeout_seconds": 600,
+                "review_timeout_seconds": 30,
+                "remediation_timeout_seconds": 120,
+                "commit_timeout_seconds": 45,
+                "check_commands": ["pytest -q"],
+            },
+            "phase_config": {
+                "review": {"sources": {"timeout_seconds": "cli"}},
+                "remediation": {"sources": {"timeout_seconds": "cli"}},
+                "commit_message": {"sources": {"timeout_seconds": "cli"}},
+                "checks": {
+                    "timeout_seconds": 60,
+                    "sources": {"timeout_seconds": "cli"},
+                },
+            },
+        }
+    )
+
+    assert "--timeout-seconds 600" in text
+    assert "--review-timeout-seconds 30" in text
+    assert "--remediation-timeout-seconds 120" in text
+    assert "--commit-timeout-seconds 45" in text
+    assert "--check-timeout-seconds 60" in text
+
+
 def test_terminal_summary_resume_command_preserves_non_default_harnesses():
     text = format_terminal_summary(
         {

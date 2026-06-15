@@ -11,13 +11,14 @@ from os import environ
 from pathlib import Path
 from typing import TextIO
 
-from code_review_loop import policy, profiles, run_history
+from code_review_loop import policy, profiles, run_history, routing_timeouts
 from code_review_loop.adapters.commit import phase_support
 from code_review_loop.adapters.remediation import build_remediation_command
 from code_review_loop.adapters.review import build_review_command
 from code_review_loop.adapters.triage import build_triage_command
 from code_review_loop.cli import args as cli_args
 from code_review_loop.cli.config_builder import build_loop_config
+from code_review_loop.config import LoopConfig
 from code_review_loop.core.routing_types import ResolvedRoute
 from code_review_loop.repo_roots import repo_root_or_cwd
 
@@ -1243,10 +1244,14 @@ def _run_preview(state: WizardState, cwd: Path) -> RunPreview:
                     or config.remediation_reasoning_effort
                     or config.reasoning_effort
                 )
-                timeout = (
-                    route.timeout_seconds
-                    if route.timeout_seconds is not None
-                    else config.remediation_timeout_seconds_display
+                timeout = _route_preview_timeout(
+                    config,
+                    route_name=name,
+                    harness=route.harness,
+                    model=model,
+                    reasoning_effort=effort,
+                    timeout_seconds=route.timeout_seconds,
+                    sandbox=route.sandbox,
                 )
                 label = f"route {name}"
                 harness = route.harness
@@ -1258,11 +1263,7 @@ def _run_preview(state: WizardState, cwd: Path) -> RunPreview:
                     or config.remediation_reasoning_effort
                     or config.reasoning_effort
                 )
-                timeout = (
-                    resolved_route.timeout_seconds
-                    if resolved_route.timeout_seconds is not None
-                    else config.remediation_timeout_seconds_display
-                )
+                timeout = routing_timeouts.effective_route_timeout_display(config, resolved_route)
                 label = _resolved_route_label(name, resolved_route)
                 harness = resolved_route.harness
                 route_command, build_blocked_reason = _build_preview_command(
@@ -1451,6 +1452,29 @@ def _phase_preview(
         unresolved_model=model is None or blocked_reason is not None,
         blocked_reason=blocked_reason,
     )
+
+
+def _route_preview_timeout(
+    config: LoopConfig,
+    *,
+    route_name: str,
+    harness: str,
+    model: str | None,
+    reasoning_effort: str | None,
+    timeout_seconds: float | None,
+    sandbox: str,
+) -> float:
+    route = ResolvedRoute(
+        route_tier=route_name,
+        harness=harness,
+        model=model,
+        reasoning_effort=reasoning_effort,
+        timeout_seconds=timeout_seconds,
+        sandbox=sandbox,
+        prompt_fragments=(),
+        allow_model_deescalation=True,
+    )
+    return routing_timeouts.effective_route_timeout_display(config, route)
 
 
 def _phase_summary_for_preview(phase: PhasePreview) -> str:

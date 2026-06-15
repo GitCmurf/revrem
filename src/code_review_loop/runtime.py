@@ -469,6 +469,20 @@ def _append_phase_resume_overrides(
         profile_selected=profile_selected,
         source=_phase_field_source(phase_config_map, "commit_message", "reasoning_effort"),
     )
+    _append_number_override(
+        command,
+        "--review-timeout-seconds",
+        config.get("review_timeout_seconds"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "review", "timeout_seconds"),
+    )
+    _append_number_override(
+        command,
+        "--remediation-timeout-seconds",
+        config.get("remediation_timeout_seconds"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "remediation", "timeout_seconds"),
+    )
     _append_bool_override(
         command,
         true_flag="--triage",
@@ -513,6 +527,20 @@ def _append_phase_resume_overrides(
         config.get("triage_timeout_seconds"),
         profile_selected=profile_selected,
         source=_phase_field_source(phase_config_map, "triage", "timeout_seconds"),
+    )
+    _append_number_override(
+        command,
+        "--commit-timeout-seconds",
+        config.get("commit_timeout_seconds"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "commit_message", "timeout_seconds"),
+    )
+    _append_number_override(
+        command,
+        "--check-timeout-seconds",
+        _phase_timeout_value(phase_config_map, "checks"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "checks", "timeout_seconds"),
     )
     _append_bool_override(
         command,
@@ -589,6 +617,17 @@ def _append_phase_resume_overrides(
             phase_config_map, "runtime", "external_review_truncation_policy"
         ),
     )
+
+
+def _phase_timeout_value(
+    phase_config: Mapping[object, object],
+    phase: str,
+) -> object:
+    value = phase_config.get(phase)
+    if not isinstance(value, dict):
+        return None
+    timeout_seconds = value.get("timeout_seconds")
+    return timeout_seconds
 
 
 def _phase_field_source(

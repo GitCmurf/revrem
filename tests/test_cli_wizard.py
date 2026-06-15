@@ -500,6 +500,45 @@ def test_wizard_skips_blocked_last_run_before_previewing(tmp_path, monkeypatch):
     assert "+-- review: uses codex:gpt-5.5(low)" in rendered
 
 
+def test_wizard_routed_preview_shows_effective_timeout_under_cli_cap(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.final-pr]
+description = "Final PR"
+
+[profiles.final-pr.pipeline]
+base = "trunk"
+max_iterations = 2
+checks = ["pytest -q"]
+
+[profiles.final-pr.triage]
+enabled = true
+contract = "v2"
+
+[profiles.final-pr.triage.routing]
+enabled = true
+default_route = "midtier"
+
+[profiles.final-pr.triage.routes.midtier]
+harness = "codex"
+model = "gpt-5.4-mini"
+timeout_seconds = 0
+""",
+        encoding="utf-8",
+    )
+    stdin = StringIO("timeouts\n600\n\n\n\n\n\nq\n")
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=stderr)
+
+    assert result is None
+    rendered = stderr.getvalue()
+    assert "route midtier: uses codex:gpt-5.4-mini" in rendered
+    assert "timeout 600s" in rendered
+
+
 def test_wizard_model_settings_show_effective_timeouts_and_triage_setup(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
