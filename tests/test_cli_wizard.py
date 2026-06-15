@@ -310,6 +310,57 @@ def test_wizard_offers_last_run_as_starting_settings(tmp_path, monkeypatch):
     )
 
 
+def test_wizard_offers_last_run_for_subdirectory_invocation(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+    run_dir = tmp_path / ".revrem" / "runs" / "last"
+    run_dir.mkdir(parents=True)
+    summary_path = run_dir / "summary.json"
+    summary_path.write_text(
+        json.dumps(
+            {
+                "command_line": [
+                    "revrem",
+                    "--profile",
+                    "final-pr",
+                    "--max-iterations",
+                    "4",
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    history_path = tmp_path / "home-global" / ".local" / "share" / "revrem" / "runs.jsonl"
+    history_path.parent.mkdir(parents=True)
+    history_path.write_text(
+        json.dumps(
+            {
+                "cwd": str(tmp_path),
+                "summary_path": str(summary_path),
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(
+        cwd=subdir,
+        stdin=StringIO("\n\nprint\n\n"),
+        stdout=StringIO(),
+        stderr=stderr,
+    )
+
+    assert result is not None
+    assert result.argv == ("--profile", "final-pr", "--max-iterations", "4")
+    rendered = stderr.getvalue()
+    assert "Start from which settings?" in rendered
+    assert "Started from: last run" in rendered
+
+
 def test_wizard_finds_repo_last_run_after_global_history_pollution(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()

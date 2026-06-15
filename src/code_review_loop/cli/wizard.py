@@ -19,6 +19,7 @@ from code_review_loop.adapters.triage import build_triage_command
 from code_review_loop.cli import args as cli_args
 from code_review_loop.cli.config_builder import build_loop_config
 from code_review_loop.core.routing_types import ResolvedRoute
+from code_review_loop.repo_roots import repo_root_or_cwd
 
 
 @dataclass(frozen=True)
@@ -914,8 +915,14 @@ def _initial_state(choice: WizardProfileChoice) -> WizardState:
 
 def _last_run_state(cwd: Path) -> LastRunLookup:
     skipped_reason: str | None = None
+    # Normalize both paths to repository roots so subdirectory invocations can
+    # reuse the same repository's last run configuration.
+    normalized_cwd = repo_root_or_cwd(cwd)
     for record in run_history.read_history():
-        if record.get("cwd") != str(cwd):
+        record_cwd = record.get("cwd")
+        if not isinstance(record_cwd, str):
+            continue
+        if repo_root_or_cwd(Path(record_cwd)) != normalized_cwd:
             continue
         summary_path = record.get("summary_path")
         if not isinstance(summary_path, str) or not summary_path:
