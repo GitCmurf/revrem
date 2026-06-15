@@ -492,7 +492,7 @@ def test_loop_recovers_misplaced_definition_of_done_and_routes(tmp_path):
             "model": "gpt-test",
             "reasoning_effort": "medium",
             "sandbox": "workspace-write",
-            "timeout_seconds": 60,
+            "timeout_seconds": None,
             "rationale": "Local filesystem fix.",
         },
     }
@@ -552,6 +552,7 @@ def test_loop_recovers_misplaced_definition_of_done_and_routes(tmp_path):
         for warning in triage_json["parsing_warnings"]
     )
     assert routing_json["effective_route"]["route_tier"] == "codex-midi"
+    assert triage_json["route_proposal"]["timeout_seconds"] == 0
     triage_prompt = next(
         input_text
         for args, input_text, _ in calls
@@ -560,9 +561,15 @@ def test_loop_recovers_misplaced_definition_of_done_and_routes(tmp_path):
     assert "Configured remediation routes for route_proposal.route_tier" in triage_prompt
     assert "- codex-midi: harness=codex, model=gpt-test" in triage_prompt
     assert "timeout=none" in triage_prompt
+    assert "emit route_proposal.timeout_seconds as 0" in triage_prompt
     assert (tmp_path / "artifacts" / "routing-outcome-1.json").is_file()
     assert any(
         item["code"] == "revrem.triage.parsing_warning" for item in summary["triage_diagnostics"]
+    )
+    assert any(
+        item["code"] == "revrem.triage.route_timeout_normalized"
+        and item["severity"] == "info"
+        for item in summary["triage_diagnostics"]
     )
     assert not (tmp_path / "artifacts" / "diagnostics-1.json").exists()
 

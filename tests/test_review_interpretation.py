@@ -106,6 +106,13 @@ def test_detect_review_status_accepts_exact_clear_review_lines() -> None:
         == "clear"
     )
     assert (
+        detect_review_status(
+            "No discrete, actionable correctness issues were found in the changed code. "
+            "The added wizard path and tests appear internally consistent."
+        )
+        == "clear"
+    )
+    assert (
         detect_review_status("I did not find any discrete, actionable bugs in the diff.") == "clear"
     )
     assert (
@@ -147,6 +154,13 @@ def test_detect_review_status_does_not_generalize_negated_clear_with_findings() 
 
 def test_detect_review_status_requires_explicit_status_line() -> None:
     assert detect_review_status("no findings about style, but several about logic") == "unknown"
+    assert (
+        detect_review_status(
+            "No discrete, actionable correctness issues were found in setup, but "
+            "there is a real regression in runtime routing."
+        )
+        == "unknown"
+    )
     assert detect_review_status("review is clear of syntax errors but not semantic") == "unknown"
     assert detect_review_status("") == "unknown"
 

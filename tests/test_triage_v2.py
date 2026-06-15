@@ -87,6 +87,64 @@ def test_parse_triage_payload_v2_accepts_minimal_reasoning_effort():
     assert payload["route_proposal"]["reasoning_effort"] == "minimal"
 
 
+def test_parse_triage_payload_v2_normalizes_null_route_timeout():
+    fixture = json.loads(_fixture("valid_v2"))
+    fixture["route_proposal"]["timeout_seconds"] = None
+
+    payload = triage.parse_triage_payload(
+        json.dumps(fixture),
+        run_id="run-123",
+        source_review_artifact="review-1.txt",
+        contract="v2",
+    )
+
+    assert payload["route_proposal"]["timeout_seconds"] == 0
+    assert any(
+        "Normalized route_proposal.timeout_seconds to 0" in warning
+        for warning in payload["parsing_warnings"]
+    )
+
+
+def test_parse_triage_payload_v2_normalizes_none_route_timeout_text():
+    fixture = json.loads(_fixture("valid_v2"))
+    fixture["route_proposal"]["timeout_seconds"] = "none"
+
+    payload = triage.parse_triage_payload(
+        json.dumps(fixture),
+        run_id="run-123",
+        source_review_artifact="review-1.txt",
+        contract="v2",
+    )
+
+    assert payload["route_proposal"]["timeout_seconds"] == 0
+
+
+def test_parse_triage_payload_v2_rejects_non_integer_route_timeout():
+    fixture = json.loads(_fixture("valid_v2"))
+    fixture["route_proposal"]["timeout_seconds"] = "profile/default"
+
+    with pytest.raises(triage.TriageValidationError):
+        triage.parse_triage_payload(
+            json.dumps(fixture),
+            run_id="run-123",
+            source_review_artifact="review-1.txt",
+            contract="v2",
+        )
+
+
+def test_parse_triage_payload_v2_rejects_missing_route_timeout():
+    fixture = json.loads(_fixture("valid_v2"))
+    del fixture["route_proposal"]["timeout_seconds"]
+
+    with pytest.raises(triage.TriageValidationError):
+        triage.parse_triage_payload(
+            json.dumps(fixture),
+            run_id="run-123",
+            source_review_artifact="review-1.txt",
+            contract="v2",
+        )
+
+
 def test_triage_v2_packaged_schema_accepts_suppressed_findings_field():
     payload = triage.parse_triage_payload(
         _fixture("valid_v2"),
@@ -286,6 +344,8 @@ def test_load_prompt_v2_includes_v2_fields():
     assert "`info_requested` must be a single string, not an array" in prompt
     assert "`review-comment:<1-based-order>`" in prompt
     assert "`parsing_warnings` must be an array of strings" in prompt
+    assert "Do not emit JSON null" in prompt
+    assert '"timeout_seconds": 0' in prompt
 
 
 def test_write_triage_artifact_preserves_payload_schema_version(tmp_path):

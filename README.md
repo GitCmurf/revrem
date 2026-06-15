@@ -266,7 +266,7 @@ fallback. Route previews use the runtime routing policy, including configured
 fallbacks for unavailable harnesses or models. The v2 triage prompt includes
 the configured route names and route metadata so model route proposals can name
 the route the profile actually defines; unbounded route timeouts are shown as
-`timeout=none`.
+`timeout=none`, and route proposals encode that as `timeout_seconds = 0`.
 
 Project-local profiles can be saved without running the loop:
 

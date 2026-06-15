@@ -77,6 +77,10 @@ This project follows Semantic Versioning once public releases begin.
   lists by moving them into `prompt_requirements.definition_of_done`, recording
   the repair in parsing warnings and `summary.triage_diagnostics` so routing
   artifacts are preserved for recoverable model drift.
+- Triage v2 now recovers route proposals that encode an unbounded route timeout
+  as JSON `null` or text `none`, normalizing the value to `timeout_seconds = 0`
+  before schema validation and reporting the repair as an info-level triage
+  note.
 - Routed remediation now treats an explicit CLI `--timeout-seconds` value as
   an upper bound for route timeouts, including routes saved with
   `timeout_seconds = 0`, and `revrem doctor` warns on disabled route timeouts.

@@ -282,6 +282,13 @@ def triage_parsing_warning_diagnostic(message: str) -> dict[str, object]:
             "severity": "info",
             "message": message,
         }
+    if _is_route_timeout_normalization_warning(message):
+        return {
+            "kind": "parsing_note",
+            "code": "revrem.triage.route_timeout_normalized",
+            "severity": "info",
+            "message": message,
+        }
     return {
         "kind": "parsing_warning",
         "code": "revrem.triage.parsing_warning",
@@ -298,6 +305,15 @@ def _is_fallback_fingerprint_warning(message: str) -> bool:
     ) or (
         "normalized needs_more_info missing fingerprint" in normalized
         and "review-comment:" in normalized
+    )
+
+
+def _is_route_timeout_normalization_warning(message: str) -> bool:
+    normalized = message.lower()
+    return (
+        "normalized route_proposal.timeout_seconds" in normalized
+        and "0" in normalized
+        and "timeout" in normalized
     )
 
 

@@ -263,7 +263,8 @@ def _with_route_table(prompt_root: str, config: LoopConfig) -> str:
         lines.append(", ".join(parts))
     lines.append(
         "Use one of these exact route names when proposing a route. "
-        "RevRem policy may still override or fall back from the proposal."
+        "RevRem policy may still override or fall back from the proposal. "
+        "When a route shows timeout=none, emit route_proposal.timeout_seconds as 0."
     )
     return f"{prompt_root}\n\n" + "\n".join(lines)
 
