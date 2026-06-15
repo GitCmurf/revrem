@@ -123,7 +123,13 @@ class RunPreview:
 
     @property
     def has_unresolved_models(self) -> bool:
-        phases = (self.review, self.triage, self.remediation, *self.routes, self.commit_message)
+        phases = (
+            self.review,
+            self.triage,
+            self.remediation,
+            *self.routes,
+            self.commit_message,
+        )
         return any(
             phase is not None and (phase.unresolved_model or phase.blocked_reason is not None)
             for phase in phases
@@ -183,7 +189,10 @@ class _Wizard:
                 "Use this run shape?",
                 (
                     ("accept", "accept and choose run action"),
-                    ("settings", "base, pass limit, checks, final review, output, budget"),
+                    (
+                        "settings",
+                        "base, pass limit, checks, final review, output, budget",
+                    ),
                     (
                         "models",
                         "harnesses, models, reasoning effort, triage, routing, commits",
@@ -300,7 +309,10 @@ class _Wizard:
             )
         ]
         options.extend(
-            (profile.name, self._profile_option_label(profile.name, profile, profile.name))
+            (
+                profile.name,
+                self._profile_option_label(profile.name, profile, profile.name),
+            )
             for profile in resolved_profiles
             if profile.name
         )
@@ -333,9 +345,7 @@ class _Wizard:
 
         state.checks = self._checks(state.checks)
 
-        final_review = self._yes_no(
-            "Run final review after remediation?", state.final_review
-        )
+        final_review = self._yes_no("Run final review after remediation?", state.final_review)
         state.final_review = final_review
 
         progress = self._choice(
@@ -366,9 +376,11 @@ class _Wizard:
                 ("review", self._phase_row(preview.review)),
                 (
                     "triage",
-                    "set up triage"
-                    if preview.triage is None
-                    else self._phase_row(preview.triage),
+                    (
+                        "set up triage"
+                        if preview.triage is None
+                        else self._phase_row(preview.triage)
+                    ),
                 ),
                 (
                     "remediation",
@@ -376,9 +388,11 @@ class _Wizard:
                 ),
                 (
                     "commit",
-                    "off"
-                    if preview.commit_message is None
-                    else self._phase_row(preview.commit_message),
+                    (
+                        "off"
+                        if preview.commit_message is None
+                        else self._phase_row(preview.commit_message)
+                    ),
                 ),
                 (
                     "routing",
@@ -427,7 +441,9 @@ class _Wizard:
     def _timeout_options(self, state: WizardState) -> None:
         preview = _run_preview(state, self.cwd)
         self._print_heading("Timeouts")
-        self._print_dim("Blank keeps the shown profile/default value. 0 disables that phase timeout.")
+        self._print_dim(
+            "Blank keeps the shown profile/default value. 0 disables that phase timeout."
+        )
         self._print_dim(_timeout_row(preview, state))
         shared = self._timeout_text(
             "Shared fallback timeout",
@@ -507,11 +523,25 @@ class _Wizard:
                 default=getattr(state, model_attr),
             ),
         )
+        effort_choices: tuple[str, ...] = cli_args.REASONING_EFFORT_CHOICES
+        if label == "triage" and harness == "codex":
+            effort_choices = tuple(value for value in effort_choices if value != "minimal")
+            self._print_dim(
+                "Codex triage starts at low effort; minimal is provider-incompatible with inherited tools."
+            )
+        effort_default = getattr(state, effort_attr) or "profile"
+        if effort_default != "profile" and effort_default not in effort_choices:
+            effort_default = "profile"
         effort = self._choice(
             f"{label.capitalize()} reasoning effort",
-            (("profile", f"keep current/profile ({self._effective_effort(state, label)})"),)
-            + tuple((value, value) for value in cli_args.REASONING_EFFORT_CHOICES),
-            default=getattr(state, effort_attr) or "profile",
+            (
+                (
+                    "profile",
+                    f"keep current/profile ({self._effective_effort(state, label)})",
+                ),
+            )
+            + tuple((value, value) for value in effort_choices),
+            default=effort_default,
         )
         setattr(state, effort_attr, "" if effort == "profile" else effort)
 
@@ -561,7 +591,9 @@ class _Wizard:
 
     def _edit_routing(self, state: WizardState) -> None:
         if not state.triage_enabled:
-            self._print_dim("Choose the triage setup option first; routing is configured after triage is enabled.")
+            self._print_dim(
+                "Choose the triage setup option first; routing is configured after triage is enabled."
+            )
             state.routing_enabled = False
             return
         route_names = tuple(sorted(state.profile.triage.routes))
@@ -581,12 +613,13 @@ class _Wizard:
             state.routing_default_route = self._choice(
                 "Default remediation route",
                 tuple(
-                    (name, _route_label(state.profile.triage.routes[name]))
-                    for name in route_names
+                    (name, _route_label(state.profile.triage.routes[name])) for name in route_names
                 ),
-                default=state.routing_default_route
-                if state.routing_default_route in route_names
-                else route_names[0],
+                default=(
+                    state.routing_default_route
+                    if state.routing_default_route in route_names
+                    else route_names[0]
+                ),
             )
 
     def _checks(self, current: tuple[str, ...]) -> tuple[str, ...]:
@@ -644,7 +677,10 @@ class _Wizard:
                     raise WizardCancelled from exc
                 action = self._choice(
                     "Fallback action",
-                    (("dry-run", "validate without provider execution"), ("print", "print only")),
+                    (
+                        ("dry-run", "validate without provider execution"),
+                        ("print", "print only"),
+                    ),
                     default="dry-run",
                 )
                 if action == "dry-run" and "--dry-run" not in argv:
@@ -771,7 +807,7 @@ class _Wizard:
         if state.origin_label:
             self._print_key_value("Started from", state.origin_label)
         if state.origin_command:
-            self._print_key_value("Previous command", state.origin_command)
+            self._print_key_value("Previous saved command", state.origin_command)
         for line in _run_preview_lines(preview):
             print(line, file=self.stderr)
 
@@ -1185,9 +1221,7 @@ def _run_preview(state: WizardState, cwd: Path) -> RunPreview:
         blocked_reason=remediation_blocked_reason,
     )
     routes: list[PhasePreview] = []
-    routing_enabled = (
-        config.profile_v2 is not None and config.profile_v2.triage.routing.enabled
-    )
+    routing_enabled = config.profile_v2 is not None and config.profile_v2.triage.routing.enabled
     if config.triage_enabled and routing_enabled and config.profile_v2 is not None:
         for name in sorted(config.profile_v2.triage.routes):
             resolved_route, route_blocked_reason = _resolve_preview_route(
@@ -1324,14 +1358,24 @@ def _run_preview_lines(preview: RunPreview) -> tuple[str, ...]:
             for route in preview.routes:
                 lines.append(f"|   - {route.label}: {_phase_summary_for_preview(route)}")
                 lines.append(f"|     provider command: {shlex.join(route.command)}")
-    lines.extend(
-        (
-            "|",
-            "+-- remediation and verification",
-            f"|   +-- remediate: {_phase_summary_for_preview(preview.remediation)}",
-            f"|   |   provider command: {shlex.join(preview.remediation.command)}",
+    if preview.routes:
+        lines.extend(
+            (
+                "|",
+                "+-- routed remediation and verification",
+                "|   +-- remediate: triage/policy selects one route above",
+                f"|   +-- unrouted fallback: {_phase_summary_for_preview(preview.remediation)}",
+            )
         )
-    )
+    else:
+        lines.extend(
+            (
+                "|",
+                "+-- remediation and verification",
+                f"|   +-- remediate: {_phase_summary_for_preview(preview.remediation)}",
+                f"|   |   provider command: {shlex.join(preview.remediation.command)}",
+            )
+        )
     lines.extend(_check_preview_lines(preview.checks, preview.check_timeout))
     lines.append(f"|   +-- if verify fails: {_inner_retry_text(preview.inner_check_retries)}")
     if preview.commit_message is None:
@@ -1675,7 +1719,9 @@ def _route_label(route: profiles.TriageRouteConfig) -> str:
 def _detect_check_presets(cwd: Path) -> tuple[CheckPreset, ...]:
     presets: list[CheckPreset] = []
     if (cwd / "scripts" / "dev-check").is_file():
-        presets.append(CheckPreset("repo-gate", "repo gate: ./scripts/dev-check", ("./scripts/dev-check",)))
+        presets.append(
+            CheckPreset("repo-gate", "repo gate: ./scripts/dev-check", ("./scripts/dev-check",))
+        )
 
     pyproject = cwd / "pyproject.toml"
     tests_dir = cwd / "tests"
@@ -1690,7 +1736,13 @@ def _detect_check_presets(cwd: Path) -> tuple[CheckPreset, ...]:
         if "[tool.mypy" in text or "mypy" in text:
             static_checks.append("mypy src")
     if static_checks:
-        presets.append(CheckPreset("python-static", "Python static: " + " && ".join(static_checks), tuple(static_checks)))
+        presets.append(
+            CheckPreset(
+                "python-static",
+                "Python static: " + " && ".join(static_checks),
+                tuple(static_checks),
+            )
+        )
 
     if _meminit_detected(cwd):
         presets.append(
@@ -1700,7 +1752,9 @@ def _detect_check_presets(cwd: Path) -> tuple[CheckPreset, ...]:
                 ("uv run --locked meminit check --format json",),
             )
         )
-    presets.append(CheckPreset("diff-check", "Git whitespace: git diff --check", ("git diff --check",)))
+    presets.append(
+        CheckPreset("diff-check", "Git whitespace: git diff --check", ("git diff --check",))
+    )
     return tuple(presets)
 
 

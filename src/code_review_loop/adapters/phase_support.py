@@ -183,6 +183,8 @@ def build_commit_message_command(config: LoopConfig) -> list[str]:
 
 def phase_timeout_seconds(config: LoopConfig, value: float | None) -> float | None:
     if value is None:
+        if config.timeout_seconds == 0:
+            return None
         return config.timeout_seconds
     if value == 0:
         return None

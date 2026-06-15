@@ -368,9 +368,7 @@ external_review_truncation_policy = "warn"
 
     assert config.external_review_truncation_policy == "fail"
     assert phase_config["runtime"]["external_review_truncation_policy"] == "fail"
-    assert (
-        phase_config["runtime"]["sources"]["external_review_truncation_policy"] == "cli"
-    )
+    assert phase_config["runtime"]["sources"]["external_review_truncation_policy"] == "cli"
     saved = config_builder.profile_from_loop_config(
         "saved",
         config,
@@ -751,7 +749,7 @@ reasoning_effort = "low"
 [profiles.final-pr.triage]
 enabled = true
 model = "gpt-4.1"
-reasoning_effort = "minimal"
+reasoning_effort = "low"
 timeout_seconds = 30
 """,
         encoding="utf-8",
@@ -780,7 +778,33 @@ timeout_seconds = 30
     assert config.remediation_reasoning_effort == "high"
     assert config.triage_enabled is True
     assert config.triage_model == "gpt-4.1"
-    assert config.triage_reasoning_effort == "minimal"
+    assert config.triage_reasoning_effort == "low"
+
+
+def test_main_rejects_codex_triage_minimal_reasoning_effort(tmp_path, monkeypatch, capsys):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+
+    def fake_run_loop(config):
+        raise AssertionError("provider loop should not start for invalid triage config")
+
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
+
+    exit_code = cli_main.main(
+        [
+            "--triage",
+            "--triage-harness",
+            "codex",
+            "--triage-reasoning-effort",
+            "minimal",
+            "--dry-run",
+        ]
+    )
+
+    assert exit_code == 1
+    assert "Codex triage cannot use reasoning effort 'minimal'" in capsys.readouterr().err
 
 
 def test_main_phase_reasoning_effort_overrides_win_independently(tmp_path, monkeypatch):

@@ -3,8 +3,8 @@ document_id: REVREM-FDD-001
 type: FDD
 title: CLI Wizard
 status: Draft
-version: '0.1'
-last_updated: '2026-06-13'
+version: '0.2'
+last_updated: '2026-06-15'
 owner: GitCmurf
 docops_version: '2.0'
 area: cli
@@ -89,6 +89,10 @@ and run history.
 - Disabled triage is shown as a setup action. Selecting it enables triage,
   prompts for triage harness/model/effort, and then handles routing only when
   profile routes exist.
+- Codex triage does not offer or accept `minimal` reasoning effort. The Codex
+  CLI can inherit tools that make `minimal` provider requests invalid before
+  RevRem receives structured triage output, so the wizard starts Codex triage
+  choices at `low`.
 - Profiles without routes explain how to choose or create a routed profile
   instead of only saying routing is unavailable. This repository's project
   `default` profile keeps triage opt-in but includes v2 route definitions.
@@ -104,9 +108,14 @@ and run history.
   loop as runtime, with profile rules disabled while each explicit route is
   listed so the displayed route cannot be replaced by the synthetic preview
   context.
+- When routing is enabled, the run-shape diagram shows triage/policy route
+  selection as the primary remediation path and labels the profile remediation
+  command as the unrouted fallback instead of implying both commands will run.
 - The v2 triage prompt includes the selected profile's exact route names,
   harnesses, models, efforts, timeouts, sandboxes, and fallbacks so
-  `route_proposal.route_tier` can name a configured route. Non-routed
+  `route_proposal.route_tier` can name a configured route. Route timeouts use
+  `timeout=none` for unbounded routes, avoiding the ambiguous `0s` wording.
+  Non-routed
   structured triage handoff still carries prompt requirements such as
   definition of done and triage draft instructions into remediation.
 - Verification checks default to the selected profile when present. Otherwise

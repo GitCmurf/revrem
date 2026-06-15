@@ -247,7 +247,10 @@ choice to every provider call. Disabled triage is shown as a setup action, and
 selecting it walks through enabling triage before routing choices. Harnesses
 are selected from known RevRem harnesses so mistyped names are caught inside
 the wizard, and suspicious model names such as bare numbers require
-confirmation. Timeouts have their own main-menu editor for the existing shared
+confirmation. Codex triage starts at `low` effort: RevRem rejects
+`--triage-reasoning-effort minimal` for Codex because inherited Codex tools can
+make that provider request fail before structured triage output is produced.
+Timeouts have their own main-menu editor for the existing shared
 `--timeout-seconds` fallback plus phase-specific timeout flags:
 `--review-timeout-seconds`, `--triage-timeout-seconds`,
 `--remediation-timeout-seconds`, `--commit-timeout-seconds`, and
@@ -257,10 +260,13 @@ subprocess timeout for the run. A shared CLI timeout overrides profile check
 timeouts unless `--check-timeout-seconds` is also supplied.
 This repository's project-local `default` profile keeps triage opt-in but
 defines v2 routes, so enabling triage from the wizard can also enable routing.
-When routing is enabled, route previews use the runtime routing policy,
-including configured fallbacks for unavailable harnesses or models. The v2
-triage prompt includes the configured route names and route metadata so model
-route proposals can name the route the profile actually defines.
+When routing is enabled, the diagram shows triage/policy route selection as
+the primary remediation path and keeps the unrouted remediation command as the
+fallback. Route previews use the runtime routing policy, including configured
+fallbacks for unavailable harnesses or models. The v2 triage prompt includes
+the configured route names and route metadata so model route proposals can name
+the route the profile actually defines; unbounded route timeouts are shown as
+`timeout=none`.
 
 Project-local profiles can be saved without running the loop:
 

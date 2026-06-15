@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from code_review_loop import policy, routing_artifacts, routing_timeouts
+from code_review_loop.adapters.phase_support import phase_timeout_seconds
 from code_review_loop.adapters.remediation import run_remediation
 from code_review_loop.cli import args as cli_args
 from code_review_loop.cli import config_builder
@@ -76,6 +77,12 @@ def test_cli_timeout_zero_preserves_unbounded_route_timeout() -> None:
 
     assert routing_timeouts.effective_route_timeout_seconds(config, _route(0)) is None
     assert routing_timeouts.effective_route_timeout_display(config, _route(0)) == 0
+
+
+def test_shared_timeout_zero_is_unbounded_for_inherited_phase_timeout() -> None:
+    config = LoopConfig(timeout_seconds=0)
+
+    assert phase_timeout_seconds(config, None) is None
 
 
 def test_routing_artifact_uses_effective_timeout() -> None:

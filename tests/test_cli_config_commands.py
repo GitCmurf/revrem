@@ -29,7 +29,9 @@ def _clear_result(summary: dict[str, object]) -> application_mod.ReviewLoopResul
 
 def test_config_unknown_command_reports_command_error(monkeypatch, capsys):
     monkeypatch.setattr(
-        config_command, "parse_config_args", lambda _argv: SimpleNamespace(command="wat")
+        config_command,
+        "parse_config_args",
+        lambda _argv: SimpleNamespace(command="wat"),
     )
 
     assert config_command.main([]) == 1
@@ -68,7 +70,7 @@ model = "gpt-5.4-mini"
 [profiles.final-pr.triage]
 enabled = true
 model = "gpt-triage"
-reasoning_effort = "minimal"
+reasoning_effort = "low"
 """,
         encoding="utf-8",
     )
@@ -96,7 +98,7 @@ reasoning_effort = "minimal"
     assert config.remediation_model == "gpt-test"
     assert config.triage_enabled is True
     assert config.triage_model == "gpt-triage"
-    assert config.triage_reasoning_effort == "minimal"
+    assert config.triage_reasoning_effort == "low"
 
 
 def test_main_uses_shared_defaults_without_an_explicit_profile(tmp_path, monkeypatch):
@@ -640,7 +642,10 @@ def test_editor_command_uses_windows_quoting_when_needed(monkeypatch):
     monkeypatch.setenv("EDITOR", '"C:\\Program Files\\Editor\\editor.exe" --wait')
     monkeypatch.setattr(config_command.os, "name", "nt")
 
-    assert config_command._editor_command() == ["C:\\Program Files\\Editor\\editor.exe", "--wait"]
+    assert config_command._editor_command() == [
+        "C:\\Program Files\\Editor\\editor.exe",
+        "--wait",
+    ]
 
 
 def test_is_large_context_gemini_review_model_accepts_canonical_pro_names():

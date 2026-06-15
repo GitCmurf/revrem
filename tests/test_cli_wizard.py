@@ -135,9 +135,7 @@ def test_wizard_keeps_profile_command_minimal_for_defaults(tmp_path, monkeypatch
     assert result.action == "dry-run"
 
 
-def test_wizard_first_screen_distinguishes_defaults_and_previews_commands(
-    tmp_path, monkeypatch
-):
+def test_wizard_first_screen_distinguishes_defaults_and_previews_commands(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
     _write_profile(tmp_path / ".revrem.toml")
@@ -191,8 +189,9 @@ def test_wizard_run_shape_previews_models_routes_checks_and_command(tmp_path, mo
     assert "+-- review: uses codex:gpt-5.5(low)" in rendered
     assert "+-- triage: uses codex:gpt-5.5(low)" in rendered
     assert "route midtier: uses codex:gpt-5.4-mini" in rendered
-    assert "+-- remediation and verification" in rendered
-    assert "remediate: uses codex:gpt-5.5(low)" in rendered
+    assert "+-- routed remediation and verification" in rendered
+    assert "remediate: triage/policy selects one route above" in rendered
+    assert "unrouted fallback: uses codex:gpt-5.5(low)" in rendered
     assert "verify: 1 checks" in rendered
     assert "1. pytest -q" in rendered
     assert "if verify fails: no inner retry" in rendered
@@ -214,10 +213,7 @@ def test_wizard_remediation_preview_includes_output_last_message(tmp_path, monke
 
     assert result is None
     rendered = stderr.getvalue()
-    assert (
-        "--output-last-message .revrem/runs/RUN/remediation-1-last-message.txt"
-        in rendered
-    )
+    assert "--output-last-message .revrem/runs/RUN/remediation-1-last-message.txt" in rendered
     assert ".revrem/runs/preview/remediation-1-last-message.txt" not in rendered
 
 
@@ -303,10 +299,9 @@ def test_wizard_offers_last_run_as_starting_settings(tmp_path, monkeypatch):
     assert "Start from which settings?" in rendered
     assert "Started from: last run" in rendered
     assert (
-        "Previous command: revrem --profile final-pr --model gpt-5.4-mini "
+        "Previous saved command: revrem --profile final-pr --model gpt-5.4-mini "
         "--reasoning-effort high --max-iterations 4 "
-        "--remediation-reasoning-effort low --progress-style verbose"
-        in rendered
+        "--remediation-reasoning-effort low --progress-style verbose" in rendered
     )
     assert (
         "last run; command: revrem --profile final-pr --max-iterations 4 --model gpt-5.4-mini "
@@ -454,9 +449,7 @@ def test_wizard_skips_blocked_last_run_before_previewing(tmp_path, monkeypatch):
     assert "+-- review: uses codex:gpt-5.5(low)" in rendered
 
 
-def test_wizard_model_settings_show_effective_timeouts_and_triage_setup(
-    tmp_path, monkeypatch
-):
+def test_wizard_model_settings_show_effective_timeouts_and_triage_setup(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
     (tmp_path / ".revrem.toml").write_text(
@@ -492,18 +485,7 @@ def test_wizard_timeout_menu_sets_shared_timeout_zero(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
     _write_profile(tmp_path / ".revrem.toml")
-    stdin = StringIO(
-        "timeouts\n"
-        "0\n"
-        "\n"
-        "\n"
-        "\n"
-        "\n"
-        "\n"
-        "\n"
-        "print\n"
-        "\n"
-    )
+    stdin = StringIO("timeouts\n0\n\n\n\n\n\n\nprint\n\n")
     stderr = StringIO()
 
     result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=stderr)
@@ -693,19 +675,7 @@ def test_wizard_sets_review_and_remediation_efforts_independently(tmp_path, monk
     (tmp_path / ".git").mkdir()
     _write_profile(tmp_path / ".revrem.toml")
     stdin = StringIO(
-        "models\n"
-        "review\n"
-        "\n"
-        "gpt-review\n"
-        "low\n"
-        "remediation\n"
-        "\n"
-        "gpt-remediate\n"
-        "high\n"
-        "done\n"
-        "\n"
-        "print\n"
-        "\n"
+        "models\nreview\n\ngpt-review\nlow\nremediation\n\ngpt-remediate\nhigh\ndone\n\nprint\n\n"
     )
 
     result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=StringIO())
@@ -737,7 +707,7 @@ def test_wizard_sets_triage_and_commit_efforts_independently(tmp_path, monkeypat
         "\n"
         "\n"
         "gpt-triage\n"
-        "minimal\n"
+        "low\n"
         "\n"  # keep routing enabled
         "\n"  # keep default route
         "commit\n"
@@ -757,6 +727,7 @@ def test_wizard_sets_triage_and_commit_efforts_independently(tmp_path, monkeypat
     assert "--triage-model" in result.argv
     assert "gpt-triage" in result.argv
     assert "--triage-reasoning-effort" in result.argv
+    assert "low" in result.argv
     assert "--commit-message-model" in result.argv
     assert "gpt-commit" in result.argv
     assert "--commit-reasoning-effort" in result.argv
@@ -774,18 +745,7 @@ enabled = false
 """,
         encoding="utf-8",
     )
-    stdin = StringIO(
-        "models\n"
-        "triage\n"
-        "y\n"
-        "\n"
-        "gpt-triage\n"
-        "low\n"
-        "done\n"
-        "\n"
-        "print\n"
-        "\n"
-    )
+    stdin = StringIO("models\ntriage\ny\n\ngpt-triage\nlow\ndone\n\nprint\n\n")
 
     result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=StringIO())
 
@@ -809,16 +769,7 @@ model = "gpt-triage"
 """,
         encoding="utf-8",
     )
-    stdin = StringIO(
-        "models\n"
-        "triage\n"
-        "\n"
-        "\n"
-        "\n"
-        "profile\n"
-        "done\n"
-        "q\n"
-    )
+    stdin = StringIO("models\ntriage\n\n\n\nprofile\ndone\nq\n")
     stderr = StringIO()
 
     result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=stderr)
@@ -827,26 +778,35 @@ model = "gpt-triage"
     assert "profile: keep current/profile (low)" in stderr.getvalue()
 
 
+def test_wizard_codex_triage_omits_provider_incompatible_minimal_effort(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.default]
+
+[profiles.default.triage]
+enabled = true
+model = "gpt-triage"
+""",
+        encoding="utf-8",
+    )
+    stdin = StringIO("models\ntriage\n\n\n\nlow\ndone\nq\n")
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=stderr)
+
+    assert result is None
+    rendered = stderr.getvalue()
+    assert "minimal: minimal" not in rendered
+    assert "Codex triage starts at low effort" in rendered
+
+
 def test_wizard_confirms_suspicious_model_input(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
     _write_profile(tmp_path / ".revrem.toml")
-    stdin = StringIO(
-        "models\n"
-        "triage\n"
-        "\n"
-        "\n"
-        "1\n"
-        "n\n"
-        "gpt-5.5\n"
-        "medium\n"
-        "\n"
-        "\n"
-        "done\n"
-        "\n"
-        "print\n"
-        "\n"
-    )
+    stdin = StringIO("models\ntriage\n\n\n1\nn\ngpt-5.5\nmedium\n\n\ndone\n\nprint\n\n")
     stderr = StringIO()
 
     result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=stderr)
@@ -942,16 +902,7 @@ def test_wizard_reprompts_invalid_harness_without_traceback(tmp_path, monkeypatc
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
     _write_profile(tmp_path / ".revrem.toml")
-    stdin = StringIO(
-        "models\n"
-        "review\n"
-        "not-a-harness\n"
-        "codex\n"
-        "\n"
-        "\n"
-        "done\n"
-        "q\n"
-    )
+    stdin = StringIO("models\nreview\nnot-a-harness\ncodex\n\n\ndone\nq\n")
     stderr = StringIO()
 
     result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=stderr)
@@ -1000,19 +951,7 @@ def test_wizard_detects_repo_check_presets(tmp_path, monkeypatch):
         encoding="utf-8",
     )
     (tmp_path / "AGENTS.md").write_text("<!-- MEMINIT_PROTOCOL: begin -->", encoding="utf-8")
-    stdin = StringIO(
-        "settings\n"
-        "\n"
-        "\n"
-        "repo-gate\n"
-        "\n"
-            "\n"
-            "\n"
-            "\n"
-            "accept\n"
-            "print\n"
-            "\n"
-        )
+    stdin = StringIO("settings\n\n\nrepo-gate\n\n\n\n\naccept\nprint\n\n")
     stderr = StringIO()
 
     result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=stderr)
@@ -1181,9 +1120,7 @@ def test_main_wizard_keeps_json_summary_stdout_pure(tmp_path, monkeypatch, capsy
     assert "Command:" not in captured.out
 
 
-def test_main_wizard_with_other_options_still_launches_wizard(
-    tmp_path, monkeypatch, capsys
-):
+def test_main_wizard_with_other_options_still_launches_wizard(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
     captured = {}

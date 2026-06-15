@@ -308,7 +308,9 @@ def test_loop_skips_remediation_when_structured_triage_only_rejects_findings(tmp
     assert len(calls) == 2
 
 
-def test_loop_keeps_check_failure_gate_when_structured_triage_rejects_findings(tmp_path):
+def test_loop_keeps_check_failure_gate_when_structured_triage_rejects_findings(
+    tmp_path,
+):
     calls = []
     review_outputs = iter(
         [
@@ -519,7 +521,7 @@ def test_loop_recovers_misplaced_definition_of_done_and_routes(tmp_path):
                     model="gpt-test",
                     reasoning_effort="medium",
                     sandbox="workspace-write",
-                    timeout_seconds=60,
+                    timeout_seconds=0,
                 )
             },
         ),
@@ -550,13 +552,17 @@ def test_loop_recovers_misplaced_definition_of_done_and_routes(tmp_path):
         for warning in triage_json["parsing_warnings"]
     )
     assert routing_json["effective_route"]["route_tier"] == "codex-midi"
-    triage_prompt = next(input_text for args, input_text, _ in calls if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only")
+    triage_prompt = next(
+        input_text
+        for args, input_text, _ in calls
+        if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only"
+    )
     assert "Configured remediation routes for route_proposal.route_tier" in triage_prompt
     assert "- codex-midi: harness=codex, model=gpt-test" in triage_prompt
+    assert "timeout=none" in triage_prompt
     assert (tmp_path / "artifacts" / "routing-outcome-1.json").is_file()
     assert any(
-        item["code"] == "revrem.triage.parsing_warning"
-        for item in summary["triage_diagnostics"]
+        item["code"] == "revrem.triage.parsing_warning" for item in summary["triage_diagnostics"]
     )
     assert not (tmp_path / "artifacts" / "diagnostics-1.json").exists()
 
@@ -664,7 +670,9 @@ def test_loop_malformed_suppressions_fail_open_for_structured_triage(tmp_path):
             return CommandResult(list(args), 0, stdout="src/code.py\n")
         if args[:3] == ["git", "commit", "-m"]:
             return CommandResult(
-                list(args), 0, stdout="[branch abc] fix(cli): harden RevRem commit flow\n"
+                list(args),
+                0,
+                stdout="[branch abc] fix(cli): harden RevRem commit flow\n",
             )
         return CommandResult(list(args), 0, stdout="passed\n")
 
@@ -693,7 +701,9 @@ def test_loop_writes_failure_summary_when_triage_fails(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
             return CommandResult(
-                list(args), 0, stdout="Full review comments:\n\n- [P2] Fix profile merge\n"
+                list(args),
+                0,
+                stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
             )
         return CommandResult(list(args), 1, stderr="Error: triage failed\n")
 

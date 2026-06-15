@@ -96,6 +96,20 @@ def resolve_optional_timeout_seconds(value: float | None, *, flag: str) -> float
     return value
 
 
+def validate_triage_reasoning_effort(
+    *,
+    triage_enabled: bool,
+    triage_harness: str,
+    triage_reasoning_effort: str | None,
+) -> None:
+    if triage_enabled and triage_harness == "codex" and triage_reasoning_effort == "minimal":
+        raise ValueError(
+            "Codex triage cannot use reasoning effort 'minimal' because inherited "
+            "Codex tools can make that provider request invalid; use "
+            "--triage-reasoning-effort low or a non-Codex triage harness."
+        )
+
+
 def _timeout_source(profile_source: str, *cli_values: object) -> str:
     return "cli" if any(value is not None for value in cli_values) else profile_source
 
@@ -432,6 +446,11 @@ def build_loop_config(
     if commit_after_remediation and not args.dry_run:
         harnesses.require_implemented_harness(commit_message_harness, field="commit.harness")
     triage_model = args.triage_model or profile.triage.model
+    validate_triage_reasoning_effort(
+        triage_enabled=triage_enabled,
+        triage_harness=triage_harness,
+        triage_reasoning_effort=triage_reasoning_effort,
+    )
     commit_reasoning_effort_inherited = (
         args.commit_reasoning_effort is None
         and profile.commit.reasoning_effort is None
@@ -533,9 +552,11 @@ def build_loop_config(
         )
     )
     external_review_warning_seconds_source = (
-        "cli" if args.external_review_warning_seconds is not None
-        else "profile" if profile.runtime.external_review_warning_seconds is not None
-        else "default"
+        "cli"
+        if args.external_review_warning_seconds is not None
+        else (
+            "profile" if profile.runtime.external_review_warning_seconds is not None else "default"
+        )
     )
     external_review_warning_seconds = resolve_external_review_warning_seconds(
         pick(
@@ -550,9 +571,13 @@ def build_loop_config(
         DEFAULT_EXTERNAL_REVIEW_TRUNCATION_POLICY,
     )
     external_review_truncation_policy_source = (
-        "cli" if args.external_review_truncation_policy is not None
-        else "profile" if profile.runtime.external_review_truncation_policy is not None
-        else "default"
+        "cli"
+        if args.external_review_truncation_policy is not None
+        else (
+            "profile"
+            if profile.runtime.external_review_truncation_policy is not None
+            else "default"
+        )
     )
     inner_check_retries = int(
         pick(args.inner_check_retries, profile.runtime.inner_check_retries, 0)
@@ -612,9 +637,9 @@ def build_loop_config(
             "reasoning_effort": (
                 "cli"
                 if args.commit_reasoning_effort is not None
-                else "inherited:remediation"
-                if commit_reasoning_effort_inherited
-                else profile_source
+                else (
+                    "inherited:remediation" if commit_reasoning_effort_inherited else profile_source
+                )
             ),
             "timeout_seconds": _timeout_source(
                 profile_source,
@@ -627,9 +652,11 @@ def build_loop_config(
             "timeout_seconds": (
                 "cli"
                 if args.check_timeout_seconds is not None or args.timeout_seconds is not None
-                else profile_source
-                if profile.pipeline.check_timeout_seconds is not None
-                else _timeout_source(profile_source, args.timeout_seconds)
+                else (
+                    profile_source
+                    if profile.pipeline.check_timeout_seconds is not None
+                    else _timeout_source(profile_source, args.timeout_seconds)
+                )
             ),
         },
         "runtime": {

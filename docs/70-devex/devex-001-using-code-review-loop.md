@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.53'
+version: '1.54'
 last_updated: '2026-06-15'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.53
+> **Version:** 1.54
 > **Last Updated:** 2026-06-15
 > **Type:** DEVEX
 > **Area:** devex
@@ -961,7 +961,11 @@ semantics and does not cap route timeouts; `0` in the routing artifact means
 unbounded.
 
 The v2 triage prompt includes the configured route table, including route
-names, harnesses, models, reasoning effort, timeout, sandbox, and fallback.
+names, harnesses, models, reasoning effort, timeout, sandbox, and fallback;
+unbounded route timeouts are rendered as `timeout=none`. Codex triage should
+use `low` or higher reasoning effort. RevRem rejects Codex
+`--triage-reasoning-effort minimal` because inherited Codex tools can make the
+provider request fail before structured triage output is produced.
 Triage route proposals should use those exact route names. Built-in route rank
 aliases include the historical `frontier-thinking`/`midtier-coder` names and
 the project-local `codex-frontier`/`codex-midi` names, so a proposal can
@@ -1415,6 +1419,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.54 | 2026-06-15 | Codex | Documented Codex triage effort guard and unbounded route timeout wording |
 | 1.53 | 2026-06-15 | Codex | Documented route-aware triage prompts, non-routed triage handoff guidance, and timeout override semantics |
 | 1.52 | 2026-06-11 | Codex | Documented native Codex provider observations and final-review failure diagnostics |
 | 1.51 | 2026-06-11 | Codex | Documented native Codex review sandbox enforcement through config |

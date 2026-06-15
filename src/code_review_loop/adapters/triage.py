@@ -256,10 +256,7 @@ def _with_route_table(prompt_root: str, config: LoopConfig) -> str:
             parts.append(f"model={route.model}")
         if route.reasoning_effort:
             parts.append(f"effort={route.reasoning_effort}")
-        parts.append(
-            "timeout="
-            + ("profile/default" if route.timeout_seconds is None else f"{route.timeout_seconds:g}s")
-        )
+        parts.append("timeout=" + _route_timeout_text(route.timeout_seconds))
         parts.append(f"sandbox={route.sandbox}")
         if route.fallback:
             parts.append(f"fallback={route.fallback}")
@@ -269,3 +266,11 @@ def _with_route_table(prompt_root: str, config: LoopConfig) -> str:
         "RevRem policy may still override or fall back from the proposal."
     )
     return f"{prompt_root}\n\n" + "\n".join(lines)
+
+
+def _route_timeout_text(value: float | None) -> str:
+    if value is None:
+        return "profile/default"
+    if value == 0:
+        return "none"
+    return f"{value:g}s"
