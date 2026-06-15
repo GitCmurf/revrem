@@ -93,8 +93,6 @@ def resolve_optional_timeout_seconds(value: float | None, *, flag: str) -> float
         return None
     if value < 0:
         raise ValueError(f"{flag} must be 0 or greater")
-    if value == 0:
-        return None
     return value
 
 
@@ -301,12 +299,20 @@ def build_loop_config(
         review_timeout_seconds = timeout_seconds
         remediation_timeout_seconds = timeout_seconds
         triage_timeout_seconds = timeout_seconds if triage_enabled else None
-        check_timeout_seconds = timeout_seconds
+        check_timeout_seconds = (
+            resolve_profile_timeout_seconds(profile.pipeline.check_timeout_seconds)
+            if profile.pipeline.check_timeout_seconds is not None
+            else timeout_seconds
+        )
         timeout_seconds_display = args.timeout_seconds
         review_timeout_seconds_display = args.timeout_seconds
         remediation_timeout_seconds_display = args.timeout_seconds
         triage_timeout_seconds_display = args.timeout_seconds if triage_enabled else None
-        check_timeout_seconds_display = args.timeout_seconds
+        check_timeout_seconds_display = (
+            profile.pipeline.check_timeout_seconds
+            if profile.pipeline.check_timeout_seconds is not None
+            else args.timeout_seconds
+        )
     else:
         timeout_seconds = DEFAULT_TIMEOUT_SECONDS
         review_timeout_seconds = resolve_profile_timeout_seconds(profile.review.timeout_seconds)
@@ -318,7 +324,11 @@ def build_loop_config(
             if triage_enabled
             else None
         )
-        check_timeout_seconds = timeout_seconds
+        check_timeout_seconds = (
+            resolve_profile_timeout_seconds(profile.pipeline.check_timeout_seconds)
+            if profile.pipeline.check_timeout_seconds is not None
+            else timeout_seconds
+        )
         timeout_seconds_display = DEFAULT_TIMEOUT_SECONDS
         review_timeout_seconds_display = profile.review.timeout_seconds
         if review_timeout_seconds_display is None:
@@ -329,7 +339,11 @@ def build_loop_config(
         triage_timeout_seconds_display = profile.triage.timeout_seconds if triage_enabled else None
         if triage_enabled and triage_timeout_seconds_display is None:
             triage_timeout_seconds_display = DEFAULT_TIMEOUT_SECONDS
-        check_timeout_seconds_display = timeout_seconds_display
+        check_timeout_seconds_display = (
+            profile.pipeline.check_timeout_seconds
+            if profile.pipeline.check_timeout_seconds is not None
+            else timeout_seconds_display
+        )
     if args.review_timeout_seconds is not None:
         review_timeout_seconds = resolve_optional_timeout_seconds(
             args.review_timeout_seconds,
@@ -348,6 +362,8 @@ def build_loop_config(
             flag="--triage-timeout-seconds",
         )
         triage_timeout_seconds_display = args.triage_timeout_seconds
+    if triage_timeout_seconds == 0:
+        triage_timeout_seconds = None
     if args.check_timeout_seconds is not None:
         check_timeout_seconds = resolve_optional_timeout_seconds(
             args.check_timeout_seconds,
@@ -618,10 +634,12 @@ def build_loop_config(
         },
         "checks": {
             "commands": "cli" if args.check is not None else profile_source,
-            "timeout_seconds": _timeout_source(
-                profile_source,
-                args.timeout_seconds,
-                args.check_timeout_seconds,
+            "timeout_seconds": (
+                "cli"
+                if args.check_timeout_seconds is not None
+                else profile_source
+                if profile.pipeline.check_timeout_seconds is not None
+                else _timeout_source(profile_source, args.timeout_seconds)
             ),
         },
         "runtime": {
@@ -742,19 +760,7 @@ def profile_from_loop_config(
     summary_format: str,
     description: str = "",
     include_artifact_dir: bool = False,
-    timeout_seconds: float | None = None,
 ) -> profiles.Profile:
-    saved_timeout_seconds = (
-        timeout_seconds if timeout_seconds is not None else config.review_timeout_seconds_display
-    )
-    saved_remediation_timeout_seconds = (
-        timeout_seconds if timeout_seconds is not None else config.remediation_timeout_seconds_display
-    )
-    saved_triage_timeout_seconds = (
-        timeout_seconds
-        if timeout_seconds is not None and config.triage_enabled
-        else config.triage_timeout_seconds_display
-    )
     return profiles.Profile(
         name=name,
         description=description,
@@ -763,19 +769,20 @@ def profile_from_loop_config(
             max_iterations=config.max_iterations,
             final_review=config.final_review,
             checks=config.check_commands,
+            check_timeout_seconds=config.check_timeout_seconds_display,
         ),
         review=profiles.PhaseConfig(
             harness=config.review_harness,
             model=config.review_model or config.model,
             reasoning_effort=config.review_reasoning_effort or config.reasoning_effort,
-            timeout_seconds=saved_timeout_seconds,
+            timeout_seconds=config.review_timeout_seconds_display,
         ),
         triage=profiles.TriageConfig(
             enabled=config.triage_enabled,
             harness=config.triage_harness,
             model=config.triage_model,
             reasoning_effort=config.triage_reasoning_effort,
-            timeout_seconds=saved_triage_timeout_seconds,
+            timeout_seconds=config.triage_timeout_seconds_display,
             prompt=config.triage_prompt,
             on_invalid=config.triage_on_invalid,
             contract=config.triage_contract,
@@ -790,7 +797,7 @@ def profile_from_loop_config(
             harness=config.remediation_harness,
             model=config.remediation_model or config.model,
             reasoning_effort=config.remediation_reasoning_effort or config.reasoning_effort,
-            timeout_seconds=saved_remediation_timeout_seconds,
+            timeout_seconds=config.remediation_timeout_seconds_display,
         ),
         commit=profiles.CommitConfig(
             enabled=config.commit_after_remediation,

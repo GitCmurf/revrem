@@ -245,13 +245,54 @@ timeout_seconds = 300
     config, _summary_format = config_builder.build_loop_config(args, tmp_path)
 
     assert config.timeout_seconds == 600
-    assert config.review_timeout_seconds is None
+    assert config.review_timeout_seconds == 0
     assert config.review_timeout_seconds_display == 0
     assert config.remediation_timeout_seconds == 900
     assert config.commit_timeout_seconds == 120
     assert config.check_timeout_seconds == 30
     assert config.phase_config_field_sources["review"]["timeout_seconds"] == "cli"
     assert config.phase_config_field_sources["checks"]["timeout_seconds"] == "cli"
+
+
+def test_main_preserves_zero_timeout_from_cli_for_review(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    config_path = home / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.final-pr]
+description = "Final PR"
+
+[profiles.final-pr.review]
+timeout_seconds = 1800
+""",
+        encoding="utf-8",
+    )
+    captured_timeouts: list[float | None] = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        captured_timeouts.append(timeout_seconds)
+        return CommandResult(
+            list(args), 0, stdout="No actionable findings.\nREVIEW_STATUS: clear\n"
+        )
+
+    args = cli_args.parse_args(
+        ["--profile", "final-pr", "--review-timeout-seconds", "0", "--base", "main"]
+    )
+    config, summary_format = config_builder.build_loop_config(args, tmp_path)
+
+    assert summary_format == "text"
+    assert config.review_timeout_seconds == 0
+    assert config.review_timeout_seconds_display == 0
+
+    object.__setattr__(config, "preflight_enabled", False)
+    summary = runner_mod.run_loop(config, runner).to_dict()
+
+    assert summary["final_status"] == "clear"
+    assert captured_timeouts == [None]
 
 
 def test_build_loop_config_rejects_negative_profile_timeout(tmp_path, monkeypatch):

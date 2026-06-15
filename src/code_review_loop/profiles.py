@@ -62,7 +62,13 @@ PROFILE_KEYS = (
     "budgets",
     "suppressions",
 )
-PIPELINE_KEYS = ("base", "max_iterations", "final_review", "checks")
+PIPELINE_KEYS = (
+    "base",
+    "max_iterations",
+    "final_review",
+    "checks",
+    "check_timeout_seconds",
+)
 PHASE_KEYS = ("harness", "model", "reasoning_effort", "timeout_seconds")
 TRIAGE_ON_INVALID_CHOICES = ("continue", "stop")
 TRIAGE_CONTRACT_CHOICES = ("v1", "v2")
@@ -234,11 +240,16 @@ def parse_pipeline(raw: dict[str, Any]) -> PipelineConfig:
         checks = ()
     if not isinstance(checks, list | tuple) or not all(isinstance(item, str) for item in checks):
         raise ValueError("pipeline.checks must be a list of strings")
+    check_timeout_seconds = _optional_float(
+        raw.get("check_timeout_seconds"),
+        "pipeline.check_timeout_seconds",
+    )
     return PipelineConfig(
         base=_str(raw.get("base", "main"), "pipeline.base"),
         max_iterations=_int(raw.get("max_iterations", 2), "pipeline.max_iterations"),
         final_review=_bool(raw.get("final_review", True), "pipeline.final_review"),
         checks=tuple(checks),
+        check_timeout_seconds=check_timeout_seconds,
     )
 
 

@@ -492,7 +492,39 @@ def test_main_save_profile_preserves_disabled_timeout(tmp_path, monkeypatch, cap
     assert exit_code == 0
     assert "saved final-pr in" in captured.out
     saved = profiles.project_config_path(tmp_path).read_text(encoding="utf-8")
-    assert saved.count("timeout_seconds = 0") == 2
+    assert saved.count("timeout_seconds = 0") == 3
+
+
+def test_main_save_profile_round_trips_explicit_review_and_check_timeouts(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+
+    def fail_run_loop(config):
+        raise AssertionError("--save-profile should exit before running the loop")
+
+    monkeypatch.setattr(application_mod, "run_review_loop", fail_run_loop)
+
+    exit_code = cli_main.main(
+        [
+            "--timeout-seconds",
+            "600",
+            "--review-timeout-seconds",
+            "0",
+            "--check-timeout-seconds",
+            "30",
+            "--save-profile",
+            "final-pr",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "saved final-pr in" in captured.out
+    saved = profiles.resolve_profile("final-pr", cwd=tmp_path)
+    assert saved.review.timeout_seconds == 0
+    assert saved.pipeline.check_timeout_seconds == 30
 
 
 def test_main_save_profile_preserves_external_review_truncation_policy(

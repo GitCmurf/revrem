@@ -96,6 +96,7 @@ class PipelineConfig:
     max_iterations: int = 2
     final_review: bool = True
     checks: tuple[str, ...] = field(default_factory=tuple)
+    check_timeout_seconds: float | None = None
 
 
 @dataclass(frozen=True)

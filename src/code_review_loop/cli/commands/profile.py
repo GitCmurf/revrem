@@ -27,7 +27,6 @@ def save_profile_from_args(
         summary_format=summary_format,
         description=f"Saved from RevRem CLI on {datetime.now(UTC).date().isoformat()}",
         include_artifact_dir=args.artifact_dir is not None,
-        timeout_seconds=args.timeout_seconds,
     )
     try:
         path = profiles.write_project_profile(

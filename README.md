@@ -265,7 +265,9 @@ revrem --base main --max-iterations 2 --check "git diff --check" --save-profile 
 
 `--save-profile` writes `.revrem.toml` at the repository root and refuses to
 overwrite an existing project profile unless `--save-profile-force` is
-supplied.
+supplied. Saved profiles keep the resolved phase-specific timeout values,
+including the check timeout, so explicit overrides survive a later
+`--profile` run.
 
 ## Safety Model
 
