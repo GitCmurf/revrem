@@ -247,8 +247,11 @@ selecting it walks through enabling triage before routing choices. Harnesses
 are selected from known RevRem harnesses so mistyped names are caught inside
 the wizard, and suspicious model names such as bare numbers require
 confirmation. Timeouts have their own main-menu editor for the existing shared
-`--timeout-seconds` flag; setting it to `0` disables review, remediation,
-commit-message drafting, and shell-check subprocess timeouts for that run.
+`--timeout-seconds` fallback plus phase-specific timeout flags:
+`--review-timeout-seconds`, `--triage-timeout-seconds`,
+`--remediation-timeout-seconds`, `--commit-timeout-seconds`, and
+`--check-timeout-seconds`. Setting any timeout to `0` disables that phase's
+subprocess timeout for the run.
 This repository's project-local `default` profile keeps triage opt-in but
 defines v2 routes, so enabling triage from the wizard can also enable routing.
 When routing is enabled, route previews use the runtime routing policy,

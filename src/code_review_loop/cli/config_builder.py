@@ -98,6 +98,10 @@ def resolve_optional_timeout_seconds(value: float | None, *, flag: str) -> float
     return value
 
 
+def _timeout_source(profile_source: str, *cli_values: object) -> str:
+    return "cli" if any(value is not None for value in cli_values) else profile_source
+
+
 def resolve_external_review_warning_seconds(value: float) -> float:
     if value < 0:
         raise ValueError("--external-review-warning-seconds must be 0 or greater")
@@ -297,10 +301,12 @@ def build_loop_config(
         review_timeout_seconds = timeout_seconds
         remediation_timeout_seconds = timeout_seconds
         triage_timeout_seconds = timeout_seconds if triage_enabled else None
+        check_timeout_seconds = timeout_seconds
         timeout_seconds_display = args.timeout_seconds
         review_timeout_seconds_display = args.timeout_seconds
         remediation_timeout_seconds_display = args.timeout_seconds
         triage_timeout_seconds_display = args.timeout_seconds if triage_enabled else None
+        check_timeout_seconds_display = args.timeout_seconds
     else:
         timeout_seconds = DEFAULT_TIMEOUT_SECONDS
         review_timeout_seconds = resolve_profile_timeout_seconds(profile.review.timeout_seconds)
@@ -312,6 +318,7 @@ def build_loop_config(
             if triage_enabled
             else None
         )
+        check_timeout_seconds = timeout_seconds
         timeout_seconds_display = DEFAULT_TIMEOUT_SECONDS
         review_timeout_seconds_display = profile.review.timeout_seconds
         if review_timeout_seconds_display is None:
@@ -322,12 +329,31 @@ def build_loop_config(
         triage_timeout_seconds_display = profile.triage.timeout_seconds if triage_enabled else None
         if triage_enabled and triage_timeout_seconds_display is None:
             triage_timeout_seconds_display = DEFAULT_TIMEOUT_SECONDS
+        check_timeout_seconds_display = timeout_seconds_display
+    if args.review_timeout_seconds is not None:
+        review_timeout_seconds = resolve_optional_timeout_seconds(
+            args.review_timeout_seconds,
+            flag="--review-timeout-seconds",
+        )
+        review_timeout_seconds_display = args.review_timeout_seconds
+    if args.remediation_timeout_seconds is not None:
+        remediation_timeout_seconds = resolve_optional_timeout_seconds(
+            args.remediation_timeout_seconds,
+            flag="--remediation-timeout-seconds",
+        )
+        remediation_timeout_seconds_display = args.remediation_timeout_seconds
     if args.triage_timeout_seconds is not None:
         triage_timeout_seconds = resolve_optional_timeout_seconds(
             args.triage_timeout_seconds,
             flag="--triage-timeout-seconds",
         )
         triage_timeout_seconds_display = args.triage_timeout_seconds
+    if args.check_timeout_seconds is not None:
+        check_timeout_seconds = resolve_optional_timeout_seconds(
+            args.check_timeout_seconds,
+            flag="--check-timeout-seconds",
+        )
+        check_timeout_seconds_display = args.check_timeout_seconds
     commit_after_remediation = (
         args.commit_after_remediation
         if args.commit_after_remediation is not None
@@ -360,7 +386,11 @@ def build_loop_config(
         shared_reasoning_effort_override=args.reasoning_effort,
         timeout_seconds=review_timeout_seconds,
         timeout_seconds_display=review_timeout_seconds_display,
-        timeout_source="cli" if args.timeout_seconds is not None else profile_source,
+        timeout_source=_timeout_source(
+            profile_source,
+            args.timeout_seconds,
+            args.review_timeout_seconds,
+        ),
     )
     remediation_phase = _resolve_model_phase(
         phase_name="remediation",
@@ -374,7 +404,11 @@ def build_loop_config(
         shared_reasoning_effort_override=args.reasoning_effort,
         timeout_seconds=remediation_timeout_seconds,
         timeout_seconds_display=remediation_timeout_seconds_display,
-        timeout_source="cli" if args.timeout_seconds is not None else profile_source,
+        timeout_source=_timeout_source(
+            profile_source,
+            args.timeout_seconds,
+            args.remediation_timeout_seconds,
+        ),
     )
     if not args.dry_run:
         harnesses.require_implemented_harness(review_phase.harness, field="review.harness")
@@ -392,6 +426,11 @@ def build_loop_config(
     if commit_after_remediation and not args.dry_run:
         harnesses.require_implemented_harness(commit_message_harness, field="commit.harness")
     triage_model = args.triage_model or profile.triage.model
+    commit_reasoning_effort_inherited = (
+        args.commit_reasoning_effort is None
+        and profile.commit.reasoning_effort is None
+        and remediation_phase.reasoning_effort is not None
+    )
     commit_reasoning_effort = (
         args.commit_reasoning_effort
         or profile.commit.reasoning_effort
@@ -412,11 +451,26 @@ def build_loop_config(
     commit_reasoning_effort = commit_effort_resolution.effective
     commit_reasoning_effort_requested = commit_effort_resolution.requested
     commit_reasoning_effort_adjustment = commit_effort_resolution.adjustment
-    commit_timeout_seconds = profile.commit.timeout_seconds
+    commit_timeout_seconds = (
+        resolve_optional_timeout_seconds(
+            args.commit_timeout_seconds,
+            flag="--commit-timeout-seconds",
+        )
+        if args.commit_timeout_seconds is not None
+        else (
+            resolve_profile_timeout_seconds(profile.commit.timeout_seconds)
+            if profile.commit.timeout_seconds is not None
+            else timeout_seconds
+        )
+    )
     commit_timeout_seconds_display = (
-        profile.commit.timeout_seconds
-        if profile.commit.timeout_seconds is not None
-        else timeout_seconds_display
+        args.commit_timeout_seconds
+        if args.commit_timeout_seconds is not None
+        else (
+            profile.commit.timeout_seconds
+            if profile.commit.timeout_seconds is not None
+            else timeout_seconds_display
+        )
     )
     commit_on_hook_failure = args.commit_on_hook_failure or profile.commit.on_hook_failure
     budget_config = budgets.BudgetConfig(
@@ -446,6 +500,7 @@ def build_loop_config(
         enabled=triage_enabled,
         harness=triage_harness,
         model=triage_model,
+        reasoning_effort=triage_reasoning_effort,
         timeout_seconds=triage_timeout_seconds,
         contract=triage_contract,
         routing=routing,
@@ -525,10 +580,10 @@ def build_loop_config(
             "reasoning_effort": (
                 "cli" if args.triage_reasoning_effort is not None else profile_source
             ),
-            "timeout_seconds": (
-                "cli"
-                if args.timeout_seconds is not None or args.triage_timeout_seconds is not None
-                else profile_source
+            "timeout_seconds": _timeout_source(
+                profile_source,
+                args.timeout_seconds,
+                args.triage_timeout_seconds,
             ),
             "contract": "cli" if args.triage_contract is not None else profile_source,
             "routing_enabled": ("cli" if args.routing_enabled is not None else profile_source),
@@ -549,13 +604,25 @@ def build_loop_config(
             "harness": ("cli" if args.commit_message_harness is not None else profile_source),
             "model": _phase_source(args.profile, args.commit_message_model or args.model),
             "reasoning_effort": (
-                "cli" if args.commit_reasoning_effort is not None else profile_source
+                "cli"
+                if args.commit_reasoning_effort is not None
+                else "inherited:remediation"
+                if commit_reasoning_effort_inherited
+                else profile_source
             ),
-            "timeout_seconds": ("cli" if args.timeout_seconds is not None else profile_source),
+            "timeout_seconds": _timeout_source(
+                profile_source,
+                args.timeout_seconds,
+                args.commit_timeout_seconds,
+            ),
         },
         "checks": {
             "commands": "cli" if args.check is not None else profile_source,
-            "timeout_seconds": ("cli" if args.timeout_seconds is not None else profile_source),
+            "timeout_seconds": _timeout_source(
+                profile_source,
+                args.timeout_seconds,
+                args.check_timeout_seconds,
+            ),
         },
         "runtime": {
             "inner_check_retries": (
@@ -638,10 +705,12 @@ def build_loop_config(
         timeout_seconds=timeout_seconds,
         review_timeout_seconds=review_phase.timeout_seconds,
         remediation_timeout_seconds=remediation_phase.timeout_seconds,
+        check_timeout_seconds=check_timeout_seconds,
         timeout_seconds_display=timeout_seconds_display,
         review_timeout_seconds_display=review_phase.timeout_seconds_display,
         remediation_timeout_seconds_display=remediation_phase.timeout_seconds_display,
         triage_timeout_seconds_display=triage_timeout_seconds_display,
+        check_timeout_seconds_display=check_timeout_seconds_display,
         phase_config_sources={
             phase: _mixed_phase_source(sources)
             for phase, sources in phase_config_field_sources.items()
@@ -676,15 +745,15 @@ def profile_from_loop_config(
     timeout_seconds: float | None = None,
 ) -> profiles.Profile:
     saved_timeout_seconds = (
-        timeout_seconds if timeout_seconds is not None else config.review_timeout_seconds
+        timeout_seconds if timeout_seconds is not None else config.review_timeout_seconds_display
     )
     saved_remediation_timeout_seconds = (
-        timeout_seconds if timeout_seconds is not None else config.remediation_timeout_seconds
+        timeout_seconds if timeout_seconds is not None else config.remediation_timeout_seconds_display
     )
     saved_triage_timeout_seconds = (
         timeout_seconds
         if timeout_seconds is not None and config.triage_enabled
-        else config.triage_timeout_seconds
+        else config.triage_timeout_seconds_display
     )
     return profiles.Profile(
         name=name,
@@ -730,7 +799,9 @@ def profile_from_loop_config(
             message_prompt=config.commit_message_prompt,
             on_hook_failure=config.commit_on_hook_failure,
             reasoning_effort=config.commit_reasoning_effort,
-            timeout_seconds=config.commit_timeout_seconds,
+            timeout_seconds=(
+                config.commit_timeout_seconds_display if config.commit_after_remediation else None
+            ),
         ),
         output=profiles.OutputConfig(
             summary_format=summary_format,

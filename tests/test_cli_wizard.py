@@ -301,6 +301,13 @@ def test_wizard_offers_last_run_as_starting_settings(tmp_path, monkeypatch):
     )
     rendered = stderr.getvalue()
     assert "Start from which settings?" in rendered
+    assert "Started from: last run" in rendered
+    assert (
+        "Previous command: revrem --profile final-pr --model gpt-5.4-mini "
+        "--reasoning-effort high --max-iterations 4 "
+        "--remediation-reasoning-effort low --progress-style verbose"
+        in rendered
+    )
     assert (
         "last run; command: revrem --profile final-pr --max-iterations 4 --model gpt-5.4-mini "
         "--reasoning-effort high --remediation-reasoning-effort low --progress-style verbose"
@@ -438,6 +445,11 @@ def test_wizard_timeout_menu_sets_shared_timeout_zero(tmp_path, monkeypatch):
         "timeouts\n"
         "0\n"
         "\n"
+        "\n"
+        "\n"
+        "\n"
+        "\n"
+        "\n"
         "print\n"
         "\n"
     )
@@ -449,7 +461,39 @@ def test_wizard_timeout_menu_sets_shared_timeout_zero(tmp_path, monkeypatch):
     assert result.argv == ("--profile", "final-pr", "--timeout-seconds", "0")
     rendered = stderr.getvalue()
     assert "Timeouts" in rendered
-    assert "review/remediation timeout" in rendered
+    assert "current: review" in rendered
+
+
+def test_wizard_timeout_menu_sets_phase_timeouts_independently(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    stdin = StringIO(
+        "timeouts\n"
+        "\n"  # shared fallback
+        "0\n"  # review
+        "\n"  # triage
+        "900\n"  # remediation
+        "\n"  # commit
+        "120\n"  # checks
+        "\n"
+        "print\n"
+        "\n"
+    )
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=StringIO())
+
+    assert result is not None
+    assert result.argv == (
+        "--profile",
+        "final-pr",
+        "--review-timeout-seconds",
+        "0",
+        "--remediation-timeout-seconds",
+        "900",
+        "--check-timeout-seconds",
+        "120",
+    )
 
 
 def test_wizard_preview_blocks_unimplemented_harnesses(tmp_path, monkeypatch):
@@ -531,6 +575,11 @@ def test_wizard_builds_common_overrides_and_quotes_checks(tmp_path, monkeypatch)
         "600\n"
         "timeouts\n"
         "0\n"
+        "\n"
+        "\n"
+        "\n"
+        "\n"
+        "\n"
         "models\n"
         "triage\n"
         "n\n"
@@ -691,6 +740,37 @@ enabled = false
     assert "--triage-model" in result.argv
     assert "gpt-triage" in result.argv
     assert "--triage-reasoning-effort" in result.argv
+
+
+def test_wizard_triage_effort_prompt_shows_effective_default(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.default]
+
+[profiles.default.triage]
+enabled = true
+model = "gpt-triage"
+""",
+        encoding="utf-8",
+    )
+    stdin = StringIO(
+        "models\n"
+        "triage\n"
+        "\n"
+        "\n"
+        "\n"
+        "profile\n"
+        "done\n"
+        "q\n"
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=stderr)
+
+    assert result is None
+    assert "profile: keep current/profile (low)" in stderr.getvalue()
 
 
 def test_wizard_confirms_suspicious_model_input(tmp_path, monkeypatch):

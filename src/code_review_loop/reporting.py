@@ -503,7 +503,11 @@ def phase_config_payload(config: LoopConfig) -> dict[str, object]:
         },
         "checks": {
             "commands": list(config.check_commands),
-            "timeout_seconds": config.timeout_seconds_display,
+            "timeout_seconds": (
+                config.check_timeout_seconds_display
+                if config.check_timeout_seconds_display is not None
+                else config.timeout_seconds_display
+            ),
             "source": config.phase_config_sources.get("checks", "direct-config"),
             "sources": field_sources.get("checks", {}),
         },

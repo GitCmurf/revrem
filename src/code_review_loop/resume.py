@@ -243,10 +243,12 @@ def resume_loop_config(
             resume_config, "remediation_timeout_seconds"
         ),
         triage_timeout_seconds=_resume_optional_float(resume_config, "triage_timeout_seconds"),
+        check_timeout_seconds=_resume_phase_timeout(resume_config, "checks"),
         timeout_seconds_display=_resume_phase_timeout(resume_config, "checks"),
         review_timeout_seconds_display=_resume_phase_timeout(resume_config, "review"),
         remediation_timeout_seconds_display=_resume_phase_timeout(resume_config, "remediation"),
         triage_timeout_seconds_display=_resume_phase_timeout(resume_config, "triage"),
+        check_timeout_seconds_display=_resume_phase_timeout(resume_config, "checks"),
         debug_status_detection=_resume_bool(resume_config, "debug_status_detection", False),
         progress_style=_resume_str(resume_config, "progress_style", "compact"),
         terminal_excerpt_chars=_resume_int(resume_config, "terminal_excerpt_chars", 4_000),

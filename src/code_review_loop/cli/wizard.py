@@ -60,11 +60,18 @@ class WizardState:
     commit_message_model: str = ""
     commit_reasoning_effort: str = ""
     timeout_seconds: str = ""
+    review_timeout_seconds: str = ""
+    triage_timeout_seconds: str = ""
+    remediation_timeout_seconds: str = ""
+    commit_timeout_seconds: str = ""
+    check_timeout_seconds: str = ""
     commit_after_remediation: bool = False
     progress_style: str = "compact"
     summary_format: str = "text"
     max_wall_seconds: str = ""
     pending_review: str = "profile"
+    origin_label: str = ""
+    origin_command: str = ""
 
 
 @dataclass(frozen=True)
@@ -82,6 +89,7 @@ class PhasePreview:
     model: str | None
     effort: str | None
     timeout: float | int | str | None
+    effort_source: str | None = None
     source: str | None = None
     unresolved_model: bool = False
     blocked_reason: str | None = None
@@ -99,6 +107,7 @@ class RunPreview:
     remediation: PhasePreview
     routes: tuple[PhasePreview, ...]
     checks: tuple[str, ...]
+    check_timeout: float | int | str | None
     final_review: bool
     commit_message: PhasePreview | None
     summary_format: str
@@ -173,7 +182,7 @@ class _Wizard:
                         "models",
                         "harnesses, models, reasoning effort, triage, routing, commits",
                     ),
-                    ("timeouts", "review/remediation/commit/check timeout"),
+                    ("timeouts", "review/triage/remediation/commit/check timeout"),
                     ("config", "choose another profile"),
                     ("cancel", "exit without doing anything"),
                 ),
@@ -409,16 +418,39 @@ class _Wizard:
     def _timeout_options(self, state: WizardState) -> None:
         preview = _run_preview(state, self.cwd)
         self._print_heading("Timeouts")
+        self._print_dim("Blank keeps the shown profile/default value. 0 disables that phase timeout.")
         self._print_dim(_timeout_row(preview, state))
-        self._print_dim(
-            "This sets the existing --timeout-seconds value for review, remediation, commit-message drafting, and shell checks."
-        )
-        timeout = self._text(
-            "Timeout seconds (0 disables, blank keeps profile/default)",
+        shared = self._text(
+            "Shared fallback timeout",
             default=state.timeout_seconds,
             validator=_non_negative_float_or_blank,
         )
-        state.timeout_seconds = timeout
+        state.timeout_seconds = shared
+        state.review_timeout_seconds = self._text(
+            "Review timeout",
+            default=state.review_timeout_seconds,
+            validator=_non_negative_float_or_blank,
+        )
+        state.triage_timeout_seconds = self._text(
+            "Triage timeout",
+            default=state.triage_timeout_seconds,
+            validator=_non_negative_float_or_blank,
+        )
+        state.remediation_timeout_seconds = self._text(
+            "Remediation timeout",
+            default=state.remediation_timeout_seconds,
+            validator=_non_negative_float_or_blank,
+        )
+        state.commit_timeout_seconds = self._text(
+            "Commit-message timeout",
+            default=state.commit_timeout_seconds,
+            validator=_non_negative_float_or_blank,
+        )
+        state.check_timeout_seconds = self._text(
+            "Verification-check timeout",
+            default=state.check_timeout_seconds,
+            validator=_non_negative_float_or_blank,
+        )
 
     def _phase_row(self, phase: PhasePreview) -> str:
         return _phase_summary_for_preview(phase).replace("uses ", "", 1)
@@ -460,11 +492,26 @@ class _Wizard:
         )
         effort = self._choice(
             f"{label.capitalize()} reasoning effort",
-            (("profile", "keep profile/default"),)
+            (("profile", f"keep current/profile ({self._effective_effort(state, label)})"),)
             + tuple((value, value) for value in cli_args.REASONING_EFFORT_CHOICES),
             default=getattr(state, effort_attr) or "profile",
         )
         setattr(state, effort_attr, "" if effort == "profile" else effort)
+
+    def _effective_effort(self, state: WizardState, label: str) -> str:
+        preview = _run_preview(state, self.cwd)
+        phases = {
+            "review": preview.review,
+            "triage": preview.triage,
+            "remediation": preview.remediation,
+            "commit message": preview.commit_message,
+        }
+        phase = phases.get(label)
+        if phase is None or not phase.effort:
+            return "none"
+        if phase.effort_source == "inherited:remediation":
+            return f"{phase.effort} via remediation"
+        return phase.effort
 
     def _edit_triage_phase(self, state: WizardState) -> None:
         state.triage_enabled = self._yes_no(
@@ -685,6 +732,10 @@ class _Wizard:
         if source:
             title += f" ({source})"
         self._print_heading(title)
+        if state.origin_label:
+            self._print_key_value("Started from", state.origin_label)
+        if state.origin_command:
+            self._print_key_value("Previous command", state.origin_command)
         for line in _run_preview_lines(preview):
             print(line, file=self.stderr)
 
@@ -819,9 +870,14 @@ def _state_from_summary(summary_path: Path, cwd: Path) -> WizardState | None:
         return None
     argv = tuple(value for value in command_line[1:] if isinstance(value, str))
     try:
-        return _state_from_argv(argv, cwd)
+        state = _state_from_argv(argv, cwd)
     except (SystemExit, ValueError, OSError):
         return None
+    started_at = summary.get("started_at") or summary.get("finished_at")
+    timestamp = f" from {started_at}" if isinstance(started_at, str) and started_at else ""
+    state.origin_label = f"last run{timestamp}"
+    state.origin_command = shlex.join(("revrem", *argv))
+    return state
 
 
 def _state_from_argv(argv: tuple[str, ...], cwd: Path) -> WizardState:
@@ -883,6 +939,16 @@ def _apply_parsed_args(state: WizardState, parsed) -> None:
     _apply_str_attr(state, "commit_reasoning_effort", parsed.commit_reasoning_effort)
     if parsed.timeout_seconds is not None:
         state.timeout_seconds = f"{parsed.timeout_seconds:g}"
+    if parsed.review_timeout_seconds is not None:
+        state.review_timeout_seconds = f"{parsed.review_timeout_seconds:g}"
+    if parsed.triage_timeout_seconds is not None:
+        state.triage_timeout_seconds = f"{parsed.triage_timeout_seconds:g}"
+    if parsed.remediation_timeout_seconds is not None:
+        state.remediation_timeout_seconds = f"{parsed.remediation_timeout_seconds:g}"
+    if parsed.commit_timeout_seconds is not None:
+        state.commit_timeout_seconds = f"{parsed.commit_timeout_seconds:g}"
+    if parsed.check_timeout_seconds is not None:
+        state.check_timeout_seconds = f"{parsed.check_timeout_seconds:g}"
     if parsed.commit_after_remediation is not None:
         state.commit_after_remediation = parsed.commit_after_remediation
     if parsed.progress_style is not None:
@@ -966,6 +1032,16 @@ def _argv_for_state(state: WizardState) -> list[str]:
         argv.extend(["--commit-reasoning-effort", state.commit_reasoning_effort])
     if state.timeout_seconds:
         argv.extend(["--timeout-seconds", state.timeout_seconds])
+    if state.review_timeout_seconds:
+        argv.extend(["--review-timeout-seconds", state.review_timeout_seconds])
+    if state.triage_timeout_seconds:
+        argv.extend(["--triage-timeout-seconds", state.triage_timeout_seconds])
+    if state.remediation_timeout_seconds:
+        argv.extend(["--remediation-timeout-seconds", state.remediation_timeout_seconds])
+    if state.commit_timeout_seconds:
+        argv.extend(["--commit-timeout-seconds", state.commit_timeout_seconds])
+    if state.check_timeout_seconds:
+        argv.extend(["--check-timeout-seconds", state.check_timeout_seconds])
     if state.commit_after_remediation != profile.commit.enabled:
         argv.append(
             "--commit-after-remediation"
@@ -1008,6 +1084,7 @@ def _run_preview(state: WizardState, cwd: Path) -> RunPreview:
         config.review_reasoning_effort or config.reasoning_effort,
         config.review_timeout_seconds_display,
         cwd=cwd,
+        effort_source=config.phase_config_field_sources.get("review", {}).get("reasoning_effort"),
         blocked_reason=review_blocked_reason,
     )
     triage_command, triage_blocked_reason = (
@@ -1024,6 +1101,9 @@ def _run_preview(state: WizardState, cwd: Path) -> RunPreview:
             config.triage_reasoning_effort,
             config.triage_timeout_seconds_display,
             cwd=cwd,
+            effort_source=config.phase_config_field_sources.get("triage", {}).get(
+                "reasoning_effort"
+            ),
             blocked_reason=triage_blocked_reason,
         )
         if config.triage_enabled
@@ -1043,6 +1123,9 @@ def _run_preview(state: WizardState, cwd: Path) -> RunPreview:
         config.remediation_reasoning_effort or config.reasoning_effort,
         config.remediation_timeout_seconds_display,
         cwd=cwd,
+        effort_source=config.phase_config_field_sources.get("remediation", {}).get(
+            "reasoning_effort"
+        ),
         blocked_reason=remediation_blocked_reason,
     )
     routes: list[PhasePreview] = []
@@ -1102,6 +1185,7 @@ def _run_preview(state: WizardState, cwd: Path) -> RunPreview:
                     effort,
                     timeout,
                     cwd=cwd,
+                    effort_source="profile:route",
                     source=_resolved_route_source(resolved_route),
                     blocked_reason=route_blocked_reason,
                 )
@@ -1120,6 +1204,9 @@ def _run_preview(state: WizardState, cwd: Path) -> RunPreview:
             config.commit_reasoning_effort,
             config.commit_timeout_seconds_display,
             cwd=cwd,
+            effort_source=config.phase_config_field_sources.get("commit_message", {}).get(
+                "reasoning_effort"
+            ),
             blocked_reason=commit_blocked_reason,
         )
         if config.commit_after_remediation
@@ -1137,6 +1224,7 @@ def _run_preview(state: WizardState, cwd: Path) -> RunPreview:
         remediation=remediation,
         routes=tuple(routes),
         checks=tuple(config.check_commands),
+        check_timeout=config.check_timeout_seconds_display,
         final_review=config.final_review,
         commit_message=commit_message,
         summary_format=state.summary_format,
@@ -1188,7 +1276,7 @@ def _run_preview_lines(preview: RunPreview) -> tuple[str, ...]:
             f"|   |   provider command: {shlex.join(preview.remediation.command)}",
         )
     )
-    lines.extend(_check_preview_lines(preview.checks))
+    lines.extend(_check_preview_lines(preview.checks, preview.check_timeout))
     lines.append(f"|   +-- if verify fails: {_inner_retry_text(preview.inner_check_retries)}")
     if preview.commit_message is None:
         lines.extend(("|", "+-- if verify passes: commit off"))
@@ -1227,6 +1315,7 @@ def _phase_preview(
     timeout: float | int | str | None,
     *,
     cwd: Path,
+    effort_source: str | None = None,
     source: str | None = None,
     blocked_reason: str | None = None,
 ) -> PhasePreview:
@@ -1234,11 +1323,15 @@ def _phase_preview(
     model = command_model or config_model
     effort = _command_effort(command) or config_effort
     default_source = source
-    if model is None:
+    if model is None or effort is None:
         provider_default = _provider_default(harness, cwd)
-        model = provider_default.model
+        used_provider_default = (model is None and provider_default.model is not None) or (
+            effort is None and provider_default.effort is not None
+        )
+        model = model or provider_default.model
         effort = effort or provider_default.effort
-        default_source = provider_default.source or default_source
+        if used_provider_default:
+            default_source = default_source or provider_default.source
     return PhasePreview(
         label=label,
         harness=harness,
@@ -1246,6 +1339,7 @@ def _phase_preview(
         model=model,
         effort=effort,
         timeout=timeout,
+        effort_source=effort_source,
         source=default_source,
         unresolved_model=model is None or blocked_reason is not None,
         blocked_reason=blocked_reason,
@@ -1256,7 +1350,8 @@ def _phase_summary_for_preview(phase: PhasePreview) -> str:
     model = phase.model or "model unresolved"
     text = f"uses {phase.harness}:{model}"
     if phase.effort:
-        text += f"({phase.effort})"
+        suffix = " via remediation" if phase.effort_source == "inherited:remediation" else ""
+        text += f"({phase.effort}{suffix})"
     if phase.timeout is not None:
         text += f", timeout {_timeout_text(phase.timeout)}"
     if phase.blocked_reason:
@@ -1319,17 +1414,32 @@ def _resolved_route_source(route: ResolvedRoute | None) -> str | None:
 
 
 def _timeout_row(preview: RunPreview, state: WizardState) -> str:
-    if state.timeout_seconds:
-        return f"review/remediation timeout override: {_timeout_text(state.timeout_seconds)}"
+    shared = _timeout_text(state.timeout_seconds) if state.timeout_seconds else "profile/default"
     review = _timeout_text(preview.review.timeout) if preview.review.timeout is not None else "none"
+    triage = (
+        _timeout_text(preview.triage.timeout)
+        if preview.triage is not None and preview.triage.timeout is not None
+        else "off"
+        if preview.triage is None
+        else "none"
+    )
     remediation = (
         _timeout_text(preview.remediation.timeout)
         if preview.remediation.timeout is not None
         else "none"
     )
-    if review == remediation:
-        return f"review/remediation timeout: {review}"
-    return f"review timeout: {review}; remediation timeout: {remediation}"
+    commit = (
+        _timeout_text(preview.commit_message.timeout)
+        if preview.commit_message is not None and preview.commit_message.timeout is not None
+        else "off"
+        if preview.commit_message is None
+        else "none"
+    )
+    checks = _timeout_text(preview.check_timeout) if preview.check_timeout is not None else "none"
+    return (
+        f"current: review {review}; triage {triage}; remediation {remediation}; "
+        f"commit {commit}; checks {checks}; shared fallback {shared}"
+    )
 
 
 def _model_input_needs_confirmation(value: str) -> bool:
@@ -1382,10 +1492,14 @@ def _command_effort(command: tuple[str, ...]) -> str | None:
     return None
 
 
-def _check_preview_lines(checks: tuple[str, ...]) -> list[str]:
+def _check_preview_lines(
+    checks: tuple[str, ...],
+    timeout: float | int | str | None,
+) -> list[str]:
+    timeout_text = _timeout_text(timeout) if timeout is not None else "none"
     if not checks:
-        return ["|   +-- verify: none configured"]
-    lines = [f"|   +-- verify: {len(checks)} checks"]
+        return [f"|   +-- verify: none configured, timeout {timeout_text}"]
+    lines = [f"|   +-- verify: {len(checks)} checks, timeout {timeout_text}"]
     for index, command in enumerate(checks[:5], start=1):
         lines.append(f"|       {index}. {command}")
     if len(checks) > 5:

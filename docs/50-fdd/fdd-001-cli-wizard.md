@@ -73,10 +73,12 @@ and run history.
   and model settings. Model settings are presented as a phase table: review,
   triage, remediation, and commit-message drafting each expose their own
   harness, model, and reasoning effort.
-- Timeouts are edited from a separate main-menu option. The wizard uses the
-  existing shared `--timeout-seconds` flag for review, remediation,
-  commit-message drafting, and shell checks, and accepts `0` to disable those
-  subprocess timeouts.
+- Timeouts are edited from a separate main-menu option. The wizard supports
+  the shared `--timeout-seconds` fallback plus phase-specific
+  `--review-timeout-seconds`, `--triage-timeout-seconds`,
+  `--remediation-timeout-seconds`, `--commit-timeout-seconds`, and
+  `--check-timeout-seconds` overrides, and accepts `0` to disable a phase
+  timeout.
 - Generated commands use phase-specific flags for phase-specific edits, for
   example `--review-reasoning-effort`,
   `--remediation-reasoning-effort`, `--triage-model`, and

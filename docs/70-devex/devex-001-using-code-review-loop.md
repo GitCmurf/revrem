@@ -952,11 +952,13 @@ sensitive transcript-like local data. In `routing-N.json`, `prompt.bytes` is
 the UTF-8 byte size of the written prompt artifact, and
 `effective_route.timeout_seconds` records the timeout RevRem will pass to
 remediation execution after inheritance and CLI caps. An explicit CLI
-positive `--timeout-seconds` is treated as an upper bound for routed
-remediation, so a route saved with `timeout_seconds = 0` remains unbounded only
-when the operator does not supply a positive CLI cap. Explicit CLI
-`--timeout-seconds 0` keeps the normal zero-means-unbounded semantics and does
-not cap route timeouts; `0` in the routing artifact means unbounded.
+positive `--timeout-seconds` or `--remediation-timeout-seconds` is treated as
+an upper bound for routed remediation, so a route saved with
+`timeout_seconds = 0` remains unbounded only when the operator does not supply
+a positive CLI cap. Explicit CLI `--timeout-seconds 0` or
+`--remediation-timeout-seconds 0` keeps the normal zero-means-unbounded
+semantics and does not cap route timeouts; `0` in the routing artifact means
+unbounded.
 
 Codex-only routing profile:
 
@@ -1073,11 +1075,15 @@ revrem --profile dogfood --no-allow-model-escalation
 
 Use `--review-harness`, `--triage-harness`, `--remediation-harness`, and
 `--commit-harness` to override the per-phase harnesses. Use `--triage-model`,
-`--triage-timeout-seconds`, and the phase-specific model/effort flags to
-override model context. Use `--route` to force an existing route from the
-selected profile for one run, and `--routing-strict` or `--no-routing-strict`
-to control whether an unavailable selected route is a hard failure. When strict
-routing is enabled, RevRem stops on the selected route's capability or budget
+the phase-specific model/effort flags, and the phase-specific timeout flags to
+override model context. `--timeout-seconds` remains a shared fallback;
+`--review-timeout-seconds`, `--triage-timeout-seconds`,
+`--remediation-timeout-seconds`, `--commit-timeout-seconds`, and
+`--check-timeout-seconds` override only their named phase. Use `--route` to
+force an existing route from the selected profile for one run, and
+`--routing-strict` or `--no-routing-strict` to control whether an unavailable
+selected route is a hard failure. When strict routing is enabled, RevRem stops
+on the selected route's capability or budget
 failure even if that route names a fallback. Disabled routing may carry draft
 routes during normal runs, but references inside the route table are still
 validated.
