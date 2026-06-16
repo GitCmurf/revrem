@@ -244,7 +244,7 @@ def resume_loop_config(
         ),
         triage_timeout_seconds=_resume_optional_float(resume_config, "triage_timeout_seconds"),
         check_timeout_seconds=_resume_phase_timeout(resume_config, "checks"),
-        timeout_seconds_display=_resume_phase_timeout(resume_config, "checks"),
+        timeout_seconds_display=_resume_optional_float(resume_config, "timeout_seconds"),
         review_timeout_seconds_display=_resume_phase_timeout(resume_config, "review"),
         remediation_timeout_seconds_display=_resume_phase_timeout(resume_config, "remediation"),
         triage_timeout_seconds_display=_resume_phase_timeout(resume_config, "triage"),

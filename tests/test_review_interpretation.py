@@ -158,6 +158,20 @@ def test_detect_review_status_does_not_clear_mixed_non_correctness_findings() ->
         )
         == "unknown"
     )
+    assert (
+        detect_review_status(
+            "I did not find any discrete, actionable bugs in the diff. "
+            "However, this exposes credentials to untrusted logs."
+        )
+        == "unknown"
+    )
+    assert (
+        detect_review_status(
+            "I did not find any discrete, actionable bugs in the diff. "
+            "However, the new endpoint is exploitable by unauthenticated callers."
+        )
+        == "unknown"
+    )
 
 
 def test_detect_review_status_allows_locally_negated_non_correctness_prose() -> None:

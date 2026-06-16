@@ -176,6 +176,37 @@ def test_resume_loop_config_seeds_budget_state_from_summary_totals(tmp_path):
     assert resumed_budget.usd_reported is True
 
 
+def test_resume_loop_config_preserves_global_timeout_with_distinct_check_timeout(tmp_path):
+    review_path = tmp_path / "review-1.txt"
+    review_path.write_text("REVIEW_STATUS: findings\n", encoding="utf-8")
+    summary = {
+        "resume_config": {
+            "base": "main",
+            "max_iterations": 1,
+            "codex_bin": "codex",
+            "timeout_seconds": 600,
+            "phase_config": {
+                "checks": {
+                    "timeout_seconds": 60,
+                    "source": "cli",
+                    "fields": {"timeout_seconds": "cli"},
+                },
+            },
+        },
+        "artifact_paths": {"reviews": [str(review_path)]},
+    }
+
+    resumed, _budget_state = resume_mod.resume_loop_config(summary, run_dir=tmp_path)
+    next_payload = resume_mod.resume_config_payload(resumed)
+
+    assert resumed.timeout_seconds == 600
+    assert resumed.timeout_seconds_display == 600
+    assert resumed.check_timeout_seconds == 60
+    assert resumed.check_timeout_seconds_display == 60
+    assert next_payload["timeout_seconds"] == 600
+    assert next_payload["phase_config"]["checks"]["timeout_seconds"] == 60
+
+
 def test_resume_loop_config_uses_supplied_cwd(tmp_path):
     review_path = tmp_path / "review-1.txt"
     review_path.write_text("REVIEW_STATUS: findings\n", encoding="utf-8")
