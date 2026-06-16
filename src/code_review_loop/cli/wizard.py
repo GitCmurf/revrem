@@ -535,6 +535,15 @@ class _Wizard:
             self._print_dim(
                 "Codex triage starts at low effort; minimal is provider-incompatible with inherited tools."
             )
+            triage_reasoning_effort, stale_triage_reasoning_effort = (
+                _repair_stale_codex_triage_reasoning_effort(
+                    harness=harness,
+                    reasoning_effort=state.triage_reasoning_effort,
+                )
+            )
+            if stale_triage_reasoning_effort:
+                state.stale_triage_reasoning_effort = stale_triage_reasoning_effort
+                state.triage_reasoning_effort = triage_reasoning_effort
         effort_default = getattr(state, effort_attr) or "profile"
         if effort_default != "profile" and effort_default not in effort_choices:
             effort_default = "profile"
@@ -900,15 +909,15 @@ def _profile_command(profile_name: str | None) -> tuple[str, ...]:
 
 def _initial_state(choice: WizardProfileChoice) -> WizardState:
     profile = choice.profile
-    stale_triage_reasoning_effort = ""
     triage_reasoning_effort = profile.triage.reasoning_effort or ""
-    if (
-        profile.triage.enabled
-        and profile.triage.harness == "codex"
-        and triage_reasoning_effort == "minimal"
-    ):
-        stale_triage_reasoning_effort = triage_reasoning_effort
-        triage_reasoning_effort = "low"
+    stale_triage_reasoning_effort = ""
+    if profile.triage.enabled:
+        triage_reasoning_effort, stale_triage_reasoning_effort = (
+            _repair_stale_codex_triage_reasoning_effort(
+                harness=profile.triage.harness,
+                reasoning_effort=triage_reasoning_effort,
+            )
+        )
     return WizardState(
         profile_name=choice.profile_name,
         profile=profile,
@@ -1085,6 +1094,17 @@ def _apply_parsed_args(state: WizardState, parsed) -> None:
 def _apply_str_attr(state: WizardState, name: str, value: str | None) -> None:
     if value is not None:
         setattr(state, name, value)
+
+
+def _repair_stale_codex_triage_reasoning_effort(
+    *,
+    harness: str,
+    reasoning_effort: str,
+) -> tuple[str, str]:
+    # Disabled profiles can still carry stale Codex triage state from older saves.
+    if harness == "codex" and reasoning_effort == "minimal":
+        return "low", "minimal"
+    return reasoning_effort, ""
 
 
 def _configured_effort(state: WizardState, label: str) -> str:

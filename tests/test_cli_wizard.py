@@ -913,6 +913,35 @@ enabled = false
     assert "--triage-reasoning-effort" in result.argv
 
 
+def test_wizard_repairs_stale_codex_triage_minimal_effort_when_enabling_from_disabled_profile(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.default]
+
+[profiles.default.triage]
+enabled = false
+model = "gpt-triage"
+reasoning_effort = "minimal"
+""",
+        encoding="utf-8",
+    )
+    stdin = StringIO("models\ntriage\ny\n\n\n\ndone\n\nprint\n\n")
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=stderr)
+
+    assert result is not None
+    assert "--triage" in result.argv
+    assert "--triage-reasoning-effort" in result.argv
+    assert "low" in result.argv
+    rendered = stderr.getvalue()
+    assert "Profile repair: Codex triage reasoning_effort minimal will be replaced with low" in rendered
+
+
 def test_wizard_triage_effort_prompt_shows_effective_default(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
