@@ -179,6 +179,20 @@ def test_detect_review_status_allows_locally_negated_non_correctness_prose() -> 
 def test_detect_review_status_preserves_contrastive_non_correctness_findings() -> None:
     assert (
         detect_review_status(
+            "I did not identify any correctness issues, but there is a security "
+            "risk in the upload path."
+        )
+        == "unknown"
+    )
+    assert (
+        detect_review_status(
+            "I did not find any discrete, actionable bugs in the diff; however "
+            "there is a maintainability concern in the wizard flow."
+        )
+        == "unknown"
+    )
+    assert (
+        detect_review_status(
             "No discrete correctness issues were found. This is not a security issue, "
             "but it is an insecure default."
         )
@@ -190,6 +204,13 @@ def test_detect_review_status_preserves_contrastive_non_correctness_findings() -
             "maintainability concern, however it creates security debt."
         )
         == "unknown"
+    )
+    assert (
+        detect_review_status(
+            "I did not identify any correctness issues, and the upload path does "
+            "not introduce a security risk."
+        )
+        == "clear"
     )
 
 

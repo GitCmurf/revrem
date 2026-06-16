@@ -296,6 +296,10 @@ This project follows Semantic Versioning once public releases begin.
 
 ### Fixed
 
+- Codex review-status interpretation now preserves same-sentence contrastive
+  security and maintainability findings after negated clear correctness prose,
+  so wording like "no correctness issues, but there is a security risk" no
+  longer lets the remediation loop stop as clear.
 - Auto-commit runs now enforce the documented clean-start invariant before any
   provider call. If `--commit-after-remediation` is enabled and `git status
   -z --untracked-files=all` reports non-artifact changes at startup,

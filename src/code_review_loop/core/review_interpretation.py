@@ -314,10 +314,10 @@ def has_non_correctness_issue_prose(output: str) -> bool:
             continue
         normalized_sentence = sentence.lower()
         if NON_CORRECTNESS_ISSUE_RE.search(sentence):
-            if has_negated_clear_review_statement(normalized_sentence):
-                continue
             if has_affirmative_non_correctness_contrastive_clause(sentence):
                 return True
+            if has_negated_clear_review_statement(normalized_sentence):
+                continue
             if NEGATED_NON_CORRECTNESS_ISSUE_RE.search(normalized_sentence):
                 continue
             if NEGATED_ISSUE_PROSE_RE.search(normalized_sentence):
