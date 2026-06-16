@@ -11,7 +11,7 @@ from os import environ
 from pathlib import Path
 from typing import TextIO
 
-from code_review_loop import policy, profiles, run_history, routing_timeouts
+from code_review_loop import policy, profiles, routing_timeouts, run_history
 from code_review_loop.adapters.commit import phase_support
 from code_review_loop.adapters.remediation import build_remediation_command
 from code_review_loop.adapters.review import build_review_command
@@ -454,6 +454,7 @@ class _Wizard:
             validator=_non_negative_float_or_blank,
         )
         state.timeout_seconds = shared
+        preview = _run_preview(state, self.cwd)
         state.review_timeout_seconds = self._timeout_text(
             "Review timeout",
             current=state.review_timeout_seconds,
@@ -931,7 +932,7 @@ def _last_run_state(cwd: Path) -> LastRunLookup:
             continue
         path = Path(summary_path)
         if not path.is_absolute():
-            path = cwd / path
+            path = Path(record_cwd) / path
         if not path.is_file():
             skipped_reason = f"summary missing: {path}"
             continue

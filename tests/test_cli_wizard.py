@@ -265,7 +265,7 @@ def test_wizard_offers_last_run_as_starting_settings(tmp_path, monkeypatch):
         json.dumps(
             {
                 "cwd": str(tmp_path),
-                "summary_path": str(summary_path),
+                "summary_path": str(summary_path.relative_to(tmp_path)),
             }
         )
         + "\n",
@@ -586,8 +586,11 @@ def test_wizard_timeout_menu_sets_shared_timeout_zero(tmp_path, monkeypatch):
     assert "Timeouts" in rendered
     assert "current: review" in rendered
     assert "Shared fallback timeout [keep profile/default]:" in rendered
-    assert "Review timeout [keep" in rendered
-    assert "Verification-check timeout [keep" in rendered
+    assert "Review timeout [keep none]:" in rendered
+    assert "Triage timeout [keep none]:" in rendered
+    assert "Remediation timeout [keep none]:" in rendered
+    assert "Commit-message timeout [keep none]:" in rendered
+    assert "Verification-check timeout [keep none]:" in rendered
 
 
 def test_wizard_timeout_menu_sets_phase_timeouts_independently(tmp_path, monkeypatch):

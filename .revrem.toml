@@ -32,6 +32,16 @@ when.risk_level_min = "high"
 then.route = "codex-frontier"
 
 [[profiles.default.triage.routing.rule]]
+id = "review-domain-frontier"
+when.domain_tags_any = ["security", "review-classification"]
+then.route = "codex-frontier"
+
+[[profiles.default.triage.routing.rule]]
+id = "review-safety-frontier"
+when.safety_signals_any = ["sensitive-domain:security-review-routing"]
+then.route = "codex-frontier"
+
+[[profiles.default.triage.routing.rule]]
 id = "multi-file-gemini"
 when.module_count_gte = 4
 then.route = "gemini-pro"
@@ -101,6 +111,16 @@ strict_on_unavailable_route = false
 [[profiles.dogfood.triage.routing.rule]]
 id = "high-risk-frontier"
 when.risk_level_min = "high"
+then.route = "codex-frontier"
+
+[[profiles.dogfood.triage.routing.rule]]
+id = "review-domain-frontier"
+when.domain_tags_any = ["security", "review-classification"]
+then.route = "codex-frontier"
+
+[[profiles.dogfood.triage.routing.rule]]
+id = "review-safety-frontier"
+when.safety_signals_any = ["sensitive-domain:security-review-routing"]
 then.route = "codex-frontier"
 
 [[profiles.dogfood.triage.routing.rule]]

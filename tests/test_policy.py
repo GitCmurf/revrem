@@ -140,6 +140,63 @@ def test_project_default_profile_has_routing_fallbacks_when_enabled():
         assert resolved.fallbacks_considered == ("gemini-pro",)
 
 
+@pytest.mark.parametrize("profile_name", ["default", "dogfood"])
+def test_project_profiles_route_review_classification_security_to_frontier(profile_name):
+    loaded = profiles.load_profile_file(Path(profiles.PROJECT_CONFIG_NAME))
+    profile = loaded.profiles[profile_name]
+    context = policy.RoutingContext(
+        domain_tags=("review-classification", "security"),
+        risk_level="medium",
+        refactor_depth="localised",
+        module_count=1,
+        failed_checks=(),
+        safety_signals=(),
+    )
+
+    resolved = policy.resolve_routing(profile, context)
+
+    assert resolved.route_tier == "codex-frontier"
+    assert resolved.model == "gpt-5.5"
+
+
+@pytest.mark.parametrize("profile_name", ["default", "dogfood"])
+def test_project_profiles_route_review_safety_signal_to_frontier(profile_name):
+    loaded = profiles.load_profile_file(Path(profiles.PROJECT_CONFIG_NAME))
+    profile = loaded.profiles[profile_name]
+    context = policy.RoutingContext(
+        domain_tags=("developer-experience",),
+        risk_level="medium",
+        refactor_depth="localised",
+        module_count=1,
+        failed_checks=(),
+        safety_signals=("sensitive-domain:security-review-routing",),
+    )
+
+    resolved = policy.resolve_routing(profile, context)
+
+    assert resolved.route_tier == "codex-frontier"
+    assert resolved.model == "gpt-5.5"
+
+
+@pytest.mark.parametrize("profile_name", ["default", "dogfood"])
+def test_project_profiles_keep_local_operator_ux_on_default_route(profile_name):
+    loaded = profiles.load_profile_file(Path(profiles.PROJECT_CONFIG_NAME))
+    profile = loaded.profiles[profile_name]
+    context = policy.RoutingContext(
+        domain_tags=("developer-experience", "cli", "operator-workflow"),
+        risk_level="medium",
+        refactor_depth="localised",
+        module_count=1,
+        failed_checks=(),
+        safety_signals=(),
+    )
+
+    resolved = policy.resolve_routing(profile, context)
+
+    assert resolved.route_tier == "codex-midi"
+    assert resolved.model == "gpt-5.4-mini"
+
+
 def test_resolve_routing_model_escalation():
     profile = profiles.Profile(
         name="test",

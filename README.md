@@ -267,6 +267,9 @@ fallbacks for unavailable harnesses or models. The v2 triage prompt includes
 the configured route names and route metadata so model route proposals can name
 the route the profile actually defines; unbounded route timeouts are shown as
 `timeout=none`, and route proposals encode that as `timeout_seconds = 0`.
+The project-local profiles route review-classification/security findings to
+`codex-frontier`, keep localised medium-risk operator workflow fixes on
+`codex-midi`, and route broad 4+ module findings to `gemini-pro`.
 
 Project-local profiles can be saved without running the loop:
 

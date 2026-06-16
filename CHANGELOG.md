@@ -81,6 +81,9 @@ This project follows Semantic Versioning once public releases begin.
   as JSON `null` or text `none`, normalizing the value to `timeout_seconds = 0`
   before schema validation and reporting the repair as an info-level triage
   note.
+- The project-local default and dogfood routing profiles now escalate
+  review-classification/security findings to `codex-frontier` while keeping
+  localised medium-risk operator workflow fixes on `codex-midi`.
 - Routed remediation now treats an explicit CLI `--timeout-seconds` value as
   an upper bound for route timeouts, including routes saved with
   `timeout_seconds = 0`, and `revrem doctor` warns on disabled route timeouts.

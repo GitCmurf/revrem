@@ -973,6 +973,11 @@ Triage route proposals should use those exact route names. Built-in route rank
 aliases include the historical `frontier-thinking`/`midtier-coder` names and
 the project-local `codex-frontier`/`codex-midi` names, so a proposal can
 intentionally select the frontier Codex route when policy permits escalation.
+The project-local `default` and `dogfood` profiles route high-risk findings,
+review-classification/security findings, or the
+`sensitive-domain:security-review-routing` safety signal to `codex-frontier`;
+localised medium-risk CLI/operator workflow fixes stay on `codex-midi`, and
+four-or-more-module changes route to `gemini-pro` with `codex-midi` fallback.
 If routing is disabled, structured triage still forwards prompt requirements
 such as `triage_prompt_draft`, `definition_of_done`, required fragments, and
 risk classification in the remediation handoff.

@@ -269,7 +269,10 @@ def _policy_decision(
             "default_route_applied",
             "No model route proposal or rule match; applied default route.",
         )
-    return "policy_override", "Applied policy based on classification."
+    return (
+        "policy_override",
+        f"Applied routing rule {resolved_route.rule_id!r} based on triage classification.",
+    )
 
 
 def _validate_and_write_routing_payload(

@@ -128,8 +128,17 @@ def test_project_dogfood_profile_parses_exact_committed_profile():
     assert dogfood.triage.contract == "v2"
     assert dogfood.triage.routing.rule[0].id == "high-risk-frontier"
     assert dogfood.triage.routing.rule[0].when.risk_level_min == "high"
-    assert dogfood.triage.routing.rule[1].id == "multi-file-gemini"
-    assert dogfood.triage.routing.rule[1].when.module_count_gte == 4
+    assert dogfood.triage.routing.rule[1].id == "review-domain-frontier"
+    assert dogfood.triage.routing.rule[1].when.domain_tags_any == (
+        "security",
+        "review-classification",
+    )
+    assert dogfood.triage.routing.rule[2].id == "review-safety-frontier"
+    assert dogfood.triage.routing.rule[2].when.safety_signals_any == (
+        "sensitive-domain:security-review-routing",
+    )
+    assert dogfood.triage.routing.rule[3].id == "multi-file-gemini"
+    assert dogfood.triage.routing.rule[3].when.module_count_gte == 4
     assert dogfood.triage.routes["gemini-pro"].harness == "gemini"
     assert dogfood.commit.message_model == "gpt-5.3-codex-spark"
     assert dogfood.commit.reasoning_effort == "low"

@@ -77,7 +77,16 @@ Routing proposal guidance:
 - `timeout_seconds` must be an integer. Use `0` for no timeout, including
   configured routes shown as `timeout=none`. Do not emit JSON null for this
   field.
-- Provide a clear `rationale` for these choices.
+- Use the configured default/midtier route for localised, medium-or-lower risk
+  implementation fixes.
+- Prefer a frontier route when findings affect review classification,
+  security-sensitive logic, or loop control that could hide actionable
+  feedback.
+- Prefer a broad/multi-harness route when several modules are affected or the
+  finding needs cross-module reasoning.
+- Provide a clear `rationale` for these choices and say whether the route came
+  from default policy, safety/risk escalation, multi-module breadth, or model
+  escalation.
 
 Prompt requirements guidance:
 - `required_fragments`: Use `[]` unless one of RevRem's built-in fragment names
