@@ -986,6 +986,47 @@ reasoning_effort = "minimal"
     assert "low: low" in rendered
 
 
+def test_wizard_reverts_profile_reasoning_effort_without_serializing_empty_override(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.final-pr]
+description = "Final PR"
+
+[profiles.final-pr.pipeline]
+base = "trunk"
+max_iterations = 2
+checks = ["pytest -q"]
+
+[profiles.final-pr.triage]
+enabled = true
+contract = "v2"
+reasoning_effort = "medium"
+
+[profiles.final-pr.triage.routing]
+enabled = true
+default_route = "midtier"
+
+[profiles.final-pr.triage.routes.midtier]
+harness = "codex"
+model = "gpt-5.4-mini"
+""",
+        encoding="utf-8",
+    )
+    profile = wizard.profiles.resolve_profile("final-pr", cwd=tmp_path)
+    state = wizard._initial_state(
+        wizard.WizardProfileChoice(profile_name="final-pr", profile=profile)
+    )
+    state.triage_reasoning_effort = ""
+
+    argv = wizard._argv_for_state(state)
+    assert "--triage-reasoning-effort" not in argv
+    assert wizard._config_for_state(state, tmp_path).triage_reasoning_effort == "medium"
+
+
 def test_wizard_confirms_suspicious_model_input(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()

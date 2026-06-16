@@ -1162,25 +1162,35 @@ def _argv_for_state(state: WizardState) -> list[str]:
         argv.extend(["--review-harness", state.review_harness])
     if state.review_model != (profile.review.model or ""):
         argv.extend(["--review-model", state.review_model])
-    if state.review_reasoning_effort != (profile.review.reasoning_effort or ""):
+    # Blank means "inherit from the selected profile/default", so do not
+    # serialize it as an explicit override.
+    if state.review_reasoning_effort and state.review_reasoning_effort != (
+        profile.review.reasoning_effort or ""
+    ):
         argv.extend(["--review-reasoning-effort", state.review_reasoning_effort])
     if state.triage_harness != profile.triage.harness:
         argv.extend(["--triage-harness", state.triage_harness])
     if state.triage_model != (profile.triage.model or ""):
         argv.extend(["--triage-model", state.triage_model])
-    if state.triage_reasoning_effort != (profile.triage.reasoning_effort or ""):
+    if state.triage_reasoning_effort and state.triage_reasoning_effort != (
+        profile.triage.reasoning_effort or ""
+    ):
         argv.extend(["--triage-reasoning-effort", state.triage_reasoning_effort])
     if state.remediation_harness != profile.remediation.harness:
         argv.extend(["--remediation-harness", state.remediation_harness])
     if state.remediation_model != (profile.remediation.model or ""):
         argv.extend(["--remediation-model", state.remediation_model])
-    if state.remediation_reasoning_effort != (profile.remediation.reasoning_effort or ""):
+    if state.remediation_reasoning_effort and state.remediation_reasoning_effort != (
+        profile.remediation.reasoning_effort or ""
+    ):
         argv.extend(["--remediation-reasoning-effort", state.remediation_reasoning_effort])
     if state.commit_message_harness != profile.commit.harness:
         argv.extend(["--commit-message-harness", state.commit_message_harness])
     if state.commit_message_model != (profile.commit.message_model or ""):
         argv.extend(["--commit-message-model", state.commit_message_model])
-    if state.commit_reasoning_effort != (profile.commit.reasoning_effort or ""):
+    if state.commit_reasoning_effort and state.commit_reasoning_effort != (
+        profile.commit.reasoning_effort or ""
+    ):
         argv.extend(["--commit-reasoning-effort", state.commit_reasoning_effort])
     if state.timeout_seconds:
         argv.extend(["--timeout-seconds", state.timeout_seconds])
