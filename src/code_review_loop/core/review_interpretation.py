@@ -159,24 +159,33 @@ CLEAR_PHRASES = (
 )
 
 PROMPTED_REVIEW_HARNESSES = frozenset({"claude", "gemini", "opencode", "kilo"})
+STDERR_MARKER = "[stderr]\n"
 
 # ---------------------------------------------------------------------------
 # Core helper
 # ---------------------------------------------------------------------------
 
 
+def _split_review_and_stderr(output: str) -> tuple[str, str]:
+    stripped = output.strip()
+    if stripped.startswith(STDERR_MARKER):
+        return "", stripped[len(STDERR_MARKER) :].strip()
+    review_text, sep, stderr_text = stripped.partition(f"\n{STDERR_MARKER}")
+    if sep:
+        return review_text.strip(), stderr_text.strip()
+    return stripped, ""
+
+
 def actionable_review_output(output: str) -> str:
     """Keep the review's actionable comments, not the verbose tool transcript."""
-    review_text = output.split("\n[stderr]\n", 1)[0].strip()
-    if not review_text:
-        review_text = output.strip()
+    review_text, _stderr_text = _split_review_and_stderr(output)
     return review_text
 
 
 def stderr_review_output(output: str) -> str:
     """Return provider stderr/control text from a combined review artifact."""
-    _review_text, sep, stderr_text = output.partition("\n[stderr]\n")
-    return stderr_text.strip() if sep else ""
+    _review_text, stderr_text = _split_review_and_stderr(output)
+    return stderr_text
 
 
 def tool_denial_evidence(stderr_output: str) -> str | None:
@@ -466,7 +475,7 @@ def review_status_diagnostics(output: str, *, harness: str = "codex") -> dict[st
     actionable_output = actionable_review_output(output)
     stderr_output = stderr_review_output(output)
     denial_evidence = tool_denial_evidence(stderr_output)
-    stderr_present = "\n[stderr]\n" in output
+    stderr_present = bool(stderr_output)
     explicit_status = STATUS_RE.search(actionable_output)
     finding_lines = CODEX_FINDING_RE.findall(actionable_output)
     normalized = actionable_output.lower()

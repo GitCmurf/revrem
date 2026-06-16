@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.56'
+version: '1.57'
 last_updated: '2026-06-16'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.54
-> **Last Updated:** 2026-06-15
+> **Version:** 1.57
+> **Last Updated:** 2026-06-16
 > **Type:** DEVEX
 > **Area:** devex
 > **Description:** Operator guide for the code-review-loop utility
@@ -1368,6 +1368,10 @@ one is present, and the full CLI stderr remains in the phase artifact.
   the review text looks clear. The flag writes `*-status.json` files next to
   review artifacts and logs the compact reason for each clear/findings/unknown
   classification.
+- Provider stderr/control transcripts are not actionable review feedback. If a
+  review artifact contains only that transcript, RevRem classifies the review as
+  `unknown` and stops before triage or remediation instead of letting transcript
+  text seed a large triage prompt.
 - If any review still classifies as `unknown`, the final text summary includes a
   warning and writes `unexpected-behavior-report.txt` in the artifact directory.
   Include that report, the referenced `review-N.txt`, and any
@@ -1434,6 +1438,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.57 | 2026-06-16 | Codex | Documented transcript-only provider output stopping as unknown before triage |
 | 1.56 | 2026-06-16 | Codex | Documented rule-backed frontier routing for routing-policy/model-escalation safety |
 | 1.55 | 2026-06-16 | Codex | Documented triage routing escalation boundaries for local timeout/config findings |
 | 1.54 | 2026-06-15 | Codex | Documented Codex triage effort guard and unbounded route timeout wording |

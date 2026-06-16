@@ -60,6 +60,50 @@ def test_loop_runs_optional_triage_between_review_and_remediation(tmp_path):
     assert summary["artifact_paths"]["triage"] == [str(tmp_path / "artifacts" / "triage-1.txt")]
 
 
+def test_loop_stops_before_triage_when_review_is_only_provider_stderr(tmp_path):
+    calls = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[1] == "review":
+            return CommandResult(
+                list(args),
+                0,
+                stdout=(
+                    "[stderr]\n"
+                    "OpenAI Codex v0.140.0\n"
+                    "Full review comments:\n"
+                    "- [P2] Stale example from a provider transcript\n"
+                ),
+            )
+        raise AssertionError(f"triage/remediation should not run after transcript-only review: {args!r}")
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        triage_enabled=True,
+        debug_status_detection=True,
+    )
+
+    summary = runner_mod.run_loop(config, runner).to_dict()
+    diagnostics = json.loads(
+        (tmp_path / "artifacts" / "review-1-status.json").read_text(encoding="utf-8")
+    )
+
+    assert summary["final_status"] == "unknown"
+    assert summary["stopped_reason"] == "review_unknown"
+    assert [call[0][1] for call in calls] == ["review"]
+    assert not (tmp_path / "artifacts" / "triage-1-prompt.txt").exists()
+    assert not (tmp_path / "artifacts" / "triage-1.txt").exists()
+    assert diagnostics["status"] == "unknown"
+    assert diagnostics["status_source"] == "none"
+    assert diagnostics["stderr_present"] is True
+    assert diagnostics["actionable_chars"] == 0
+
+
 def test_loop_writes_structured_triage_artifact_and_handoff(tmp_path):
     calls = []
     triage_payload = {

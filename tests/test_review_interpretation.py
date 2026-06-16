@@ -15,6 +15,8 @@ from code_review_loop.core.review_interpretation import (
     extract_finding_summaries,
     extract_review_summary,
     has_affirmative_issue_prose,
+    review_status_diagnostics,
+    stderr_review_output,
     strip_finding_priority,
 )
 
@@ -252,6 +254,26 @@ def test_actionable_review_output_drops_verbose_stderr_transcript() -> None:
         "diff --git a/x b/x\n" * 100
     )
     assert actionable_review_output(output) == "Full review comments:\n\n- [P1] Fix the bug"
+
+
+def test_actionable_review_output_drops_leading_stderr_transcript() -> None:
+    output = (
+        "[stderr]\n"
+        "OpenAI Codex v0.140.0\n"
+        "Full review comments:\n"
+        "- [P2] Example copied from a provider transcript\n"
+    )
+
+    diagnostics = review_status_diagnostics(output)
+
+    assert actionable_review_output(output) == ""
+    assert stderr_review_output(output).startswith("OpenAI Codex")
+    assert detect_review_status(output) == "unknown"
+    assert diagnostics["status"] == "unknown"
+    assert diagnostics["status_source"] == "none"
+    assert diagnostics["stderr_present"] is True
+    assert diagnostics["actionable_chars"] == 0
+    assert diagnostics["finding_line_count"] == 0
 
 
 def test_actionable_review_output_falls_back_to_full_output_when_no_stderr() -> None:

@@ -94,6 +94,9 @@ This project follows Semantic Versioning once public releases begin.
 - Review status diagnostics now distinguish `clear_phrase=used` from
   `clear_phrase=seen_not_used:<reason>` so findings that mention clear-sounding
   prose no longer produce misleading status-debug lines.
+- Review artifacts that contain only provider stderr/control transcripts are
+  now treated as `unknown` review output instead of findings, preventing
+  transcript text from being passed into structured triage as a giant prompt.
 - Routed remediation now treats an explicit CLI `--timeout-seconds` value as
   an upper bound for route timeouts, including routes saved with
   `timeout_seconds = 0`, and `revrem doctor` warns on disabled route timeouts.
