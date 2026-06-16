@@ -103,6 +103,68 @@ def test_main_uses_profile_commit_message_harness(tmp_path, monkeypatch):
     assert config.commit_timeout_seconds == 0
 
 
+def test_shared_timeout_overrides_profile_commit_timeout(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        config_builder,
+        "profile_or_default",
+        lambda name, cwd: profiles.Profile(
+            name="dogfood",
+            commit=profiles.CommitConfig(
+                enabled=True,
+                timeout_seconds=0,
+            ),
+        ),
+    )
+    args = cli_args.parse_args(
+        [
+            "--profile",
+            "dogfood",
+            "--dry-run",
+            "--timeout-seconds",
+            "30",
+        ]
+    )
+
+    config, _summary_format = config_builder.build_loop_config(args, tmp_path)
+
+    assert config.timeout_seconds == 30
+    assert config.commit_timeout_seconds == 30
+    assert config.commit_timeout_seconds_display == 30
+    assert config.phase_config_field_sources["commit_message"]["timeout_seconds"] == "cli"
+
+
+def test_explicit_commit_timeout_overrides_shared_timeout(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        config_builder,
+        "profile_or_default",
+        lambda name, cwd: profiles.Profile(
+            name="dogfood",
+            commit=profiles.CommitConfig(
+                enabled=True,
+                timeout_seconds=0,
+            ),
+        ),
+    )
+    args = cli_args.parse_args(
+        [
+            "--profile",
+            "dogfood",
+            "--dry-run",
+            "--timeout-seconds",
+            "30",
+            "--commit-timeout-seconds",
+            "45",
+        ]
+    )
+
+    config, _summary_format = config_builder.build_loop_config(args, tmp_path)
+
+    assert config.timeout_seconds == 30
+    assert config.commit_timeout_seconds == 45
+    assert config.commit_timeout_seconds_display == 45
+    assert config.phase_config_field_sources["commit_message"]["timeout_seconds"] == "cli"
+
+
 def test_phase_config_payload_marks_unsupported_provider_reasoning_effort():
     config = LoopConfig(
         review_harness="opencode",

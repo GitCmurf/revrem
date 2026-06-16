@@ -483,18 +483,26 @@ def build_loop_config(
         )
         if args.commit_timeout_seconds is not None
         else (
-            resolve_profile_timeout_seconds(profile.commit.timeout_seconds)
-            if profile.commit.timeout_seconds is not None
-            else timeout_seconds
+            timeout_seconds
+            if args.timeout_seconds is not None
+            else (
+                resolve_profile_timeout_seconds(profile.commit.timeout_seconds)
+                if profile.commit.timeout_seconds is not None
+                else timeout_seconds
+            )
         )
     )
     commit_timeout_seconds_display = (
         args.commit_timeout_seconds
         if args.commit_timeout_seconds is not None
         else (
-            profile.commit.timeout_seconds
-            if profile.commit.timeout_seconds is not None
-            else timeout_seconds_display
+            args.timeout_seconds
+            if args.timeout_seconds is not None
+            else (
+                profile.commit.timeout_seconds
+                if profile.commit.timeout_seconds is not None
+                else timeout_seconds_display
+            )
         )
     )
     commit_on_hook_failure = args.commit_on_hook_failure or profile.commit.on_hook_failure

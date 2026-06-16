@@ -256,8 +256,9 @@ Timeouts have their own main-menu editor for the existing shared
 `--remediation-timeout-seconds`, `--commit-timeout-seconds`, and
 `--check-timeout-seconds`. Each timeout prompt shows the effective value that
 blank input will keep. Setting any timeout to `0` disables that phase's
-subprocess timeout for the run. A shared CLI timeout overrides profile check
-timeouts unless `--check-timeout-seconds` is also supplied.
+subprocess timeout for the run. A shared CLI timeout overrides profile
+commit-message and check timeouts unless `--commit-timeout-seconds` or
+`--check-timeout-seconds` is also supplied.
 This repository's project-local `default` profile keeps triage opt-in but
 defines v2 routes, so enabling triage from the wizard can also enable routing.
 When routing is enabled, the diagram shows triage/policy route selection as
