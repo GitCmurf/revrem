@@ -158,6 +158,39 @@ def test_detect_review_status_does_not_clear_mixed_non_correctness_findings() ->
     )
 
 
+def test_detect_review_status_allows_locally_negated_non_correctness_prose() -> None:
+    assert (
+        detect_review_status(
+            "No discrete correctness issues were found. This is not a security issue."
+        )
+        == "clear"
+    )
+    assert (
+        detect_review_status(
+            "I did not identify any introduced correctness issues. "
+            "The changed helper is not a maintainability concern."
+        )
+        == "clear"
+    )
+
+
+def test_detect_review_status_preserves_contrastive_non_correctness_findings() -> None:
+    assert (
+        detect_review_status(
+            "No discrete correctness issues were found. This is not a security issue, "
+            "but it is an insecure default."
+        )
+        == "unknown"
+    )
+    assert (
+        detect_review_status(
+            "I did not identify any introduced correctness issues. This is not a "
+            "maintainability concern, however it creates security debt."
+        )
+        == "unknown"
+    )
+
+
 def test_detect_review_status_does_not_generalize_negated_clear_with_findings() -> None:
     assert (
         detect_review_status(

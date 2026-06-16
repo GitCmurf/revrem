@@ -55,6 +55,26 @@ NON_CORRECTNESS_ISSUE_RE = re.compile(
     r")\b",
     re.IGNORECASE,
 )
+NEGATED_NON_CORRECTNESS_ISSUE_RE = re.compile(
+    r"\b(?:not|is\s+not|isn't|was\s+not|wasn't|are\s+not|aren't|were\s+not|weren't|"
+    r"no|without(?:\s+any)?)\s+"
+    r"(?:an?\s+)?(?:"
+    r"vulnerab\w+"
+    r"|insecure(?:\s+\w+){0,3}"
+    r"|unsafe(?:\s+\w+){0,3}"
+    r"|exploit(?:s|ed|ing|ation|able)?"
+    r"|leak(?:s|age|ed|ing)?"
+    r"|expos(?:e|ed|ure)"
+    r"|security(?:\s+\w+){0,4}\s+(?:issue|issues|problem|problems|risk|risks|concern|concerns|"
+    r"vulnerab\w+|flaw|flaws|debt)"
+    r"|maintainabil(?:ity|y)(?:\s+\w+){0,4}\s+(?:issue|issues|problem|problems|risk|risks|"
+    r"concern|concerns|debt|flaw|flaws)"
+    r"|hard to maintain"
+    r"|difficult to maintain"
+    r"|maintenance burden"
+    r")\b",
+    re.IGNORECASE,
+)
 STRUCTURED_EMPTY_FINDINGS_RE = re.compile(
     r'(?<!\w)["\']?findings["\']?\s*:\s*\[\s*\](?!\w)',
     re.IGNORECASE,
@@ -251,7 +271,22 @@ def has_affirmative_issue_prose(output: str) -> bool:
             return True
         if has_negated_clear_review_statement(normalized_sentence):
             continue
+        if NEGATED_NON_CORRECTNESS_ISSUE_RE.search(sentence):
+            continue
         if NEGATED_ISSUE_PROSE_RE.search(sentence):
+            continue
+        return True
+    return False
+
+
+def has_affirmative_non_correctness_contrastive_clause(sentence: str) -> bool:
+    for match in CONTRASTIVE_CLAUSE_RE.finditer(sentence):
+        suffix = sentence[match.end() :]
+        if not suffix:
+            continue
+        if not NON_CORRECTNESS_ISSUE_RE.search(suffix):
+            continue
+        if NEGATED_NON_CORRECTNESS_ISSUE_RE.search(suffix):
             continue
         return True
     return False
@@ -271,6 +306,10 @@ def has_non_correctness_issue_prose(output: str) -> bool:
         normalized_sentence = sentence.lower()
         if NON_CORRECTNESS_ISSUE_RE.search(sentence):
             if has_negated_clear_review_statement(normalized_sentence):
+                continue
+            if has_affirmative_non_correctness_contrastive_clause(sentence):
+                return True
+            if NEGATED_NON_CORRECTNESS_ISSUE_RE.search(normalized_sentence):
                 continue
             if NEGATED_ISSUE_PROSE_RE.search(normalized_sentence):
                 continue

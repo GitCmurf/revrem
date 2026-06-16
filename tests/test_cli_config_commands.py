@@ -321,6 +321,30 @@ timeout_seconds = -1
         config_builder.build_loop_config(args, tmp_path)
 
 
+def test_build_loop_config_rejects_negative_profile_check_timeout(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    config_path = home / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.final-pr]
+description = "Final PR"
+
+[profiles.final-pr.pipeline]
+check_timeout_seconds = -1
+""",
+        encoding="utf-8",
+    )
+
+    args = cli_args.parse_args(["--profile", "final-pr", "--base", "main"])
+
+    with pytest.raises(ValueError, match="pipeline.check_timeout_seconds must be 0 or greater"):
+        config_builder.build_loop_config(args, tmp_path)
+
+
 def test_build_loop_config_rejects_non_positive_external_review_input_chars(tmp_path, monkeypatch):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))

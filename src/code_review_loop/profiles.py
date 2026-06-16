@@ -1123,6 +1123,11 @@ def validate_policy(profile: Profile, *, executable_routes: bool = False) -> lis
 def validate_profile(profile: Profile, *, require_implemented: bool) -> None:
     if profile.pipeline.max_iterations < 1:
         raise ValueError("pipeline.max_iterations must be at least 1")
+    if (
+        profile.pipeline.check_timeout_seconds is not None
+        and profile.pipeline.check_timeout_seconds < 0
+    ):
+        raise ValueError("pipeline.check_timeout_seconds must be 0 or greater")
     for phase_name, phase in (("review", profile.review), ("remediation", profile.remediation)):
         if phase.timeout_seconds is not None and phase.timeout_seconds < 0:
             raise ValueError(f"{phase_name}.timeout_seconds must be 0 or greater")

@@ -656,8 +656,9 @@ disable bounded execution. A phase timeout set to `0` stays disabled for that
 phase and is passed through to the matching subprocess unchanged. If a phase
 omits `timeout_seconds`, it falls back to the built-in default timeout instead
 of inheriting the sibling phase's value.
-Negative phase timeouts are rejected during profile loading as invalid
-configuration, matching the CLI's `--timeout-seconds` validation.
+Negative phase timeouts and `pipeline.check_timeout_seconds` values are
+rejected during profile loading as invalid configuration, matching the CLI's
+`--timeout-seconds` validation.
 `--max-iterations` and profile `pipeline.max_iterations` must be positive
 integers; invalid values fail before the review/remediation loop starts.
 Generated TOML config output rejects non-finite floats instead of writing
