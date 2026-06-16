@@ -84,6 +84,13 @@ This project follows Semantic Versioning once public releases begin.
 - The project-local default and dogfood routing profiles now escalate
   review-classification/security findings to `codex-frontier` while keeping
   localised medium-risk operator workflow fixes on `codex-midi`.
+- Triage v2 routing guidance now keeps ordinary local timeout/config precedence
+  fixes on the default route unless the review describes active cancellation
+  failure, runaway execution, finding-hiding, security, or multi-phase safety
+  impact.
+- Review status diagnostics now distinguish `clear_phrase=used` from
+  `clear_phrase=seen_not_used:<reason>` so findings that mention clear-sounding
+  prose no longer produce misleading status-debug lines.
 - Routed remediation now treats an explicit CLI `--timeout-seconds` value as
   an upper bound for route timeouts, including routes saved with
   `timeout_seconds = 0`, and `revrem doctor` warns on disabled route timeouts.

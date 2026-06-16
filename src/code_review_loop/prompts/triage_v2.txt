@@ -79,9 +79,15 @@ Routing proposal guidance:
   field.
 - Use the configured default/midtier route for localised, medium-or-lower risk
   implementation fixes.
-- Prefer a frontier route when findings affect review classification,
-  security-sensitive logic, or loop control that could hide actionable
-  feedback.
+- Prefer a frontier route when findings affect review-status classification,
+  routing-policy correctness, stale/pending-review selection, security, auth,
+  secrets, PII, or loop control that can hide actionable feedback or apply the
+  wrong review feedback.
+- Do not treat every timeout/config precedence issue as frontier-worthy. Use
+  the configured default/midtier route for local parser, profile, persistence,
+  and timeout wiring fixes unless the review describes active cancellation
+  failure, runaway execution after an operator requested a cap, finding-hiding,
+  security, or multi-phase safety impact.
 - Prefer a broad/multi-harness route when several modules are affected or the
   finding needs cross-module reasoning.
 - Provide a clear `rationale` for these choices and say whether the route came

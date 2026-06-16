@@ -514,6 +514,58 @@ def test_review_status_diagnostics_explain_clear_with_stderr_noise():
     assert diagnostics["actionable_chars"] > 0
 
 
+def test_review_status_diagnostics_show_finding_signal_ignored_clear_phrase():
+    output = """No discrete correctness issues were found in the setup text.
+
+Full review comments:
+
+- [P2] Preserve timeout overrides — src/code_review_loop/cli/config_builder.py:1
+  The CLI drops the operator's timeout cap.
+"""
+
+    diagnostics = review_status_diagnostics(output)
+
+    assert diagnostics["status"] == "findings"
+    assert diagnostics["status_source"] == "codex_finding_bullet"
+    assert diagnostics["clear_phrase_present"] is True
+    assert diagnostics["clear_phrase_used"] is False
+    assert diagnostics["ignored_clear_phrase_reason"] == "finding_signal_won"
+    assert (
+        "clear_phrase=seen_not_used:finding_signal_won"
+        in review_impl._status_debug_detail(diagnostics)
+    )
+
+
+def test_review_status_diagnostics_show_clear_phrase_used_for_true_clear():
+    output = (
+        "I did not identify any discrete correctness, security, or maintainability "
+        "regressions in the diff."
+    )
+
+    diagnostics = review_status_diagnostics(output)
+
+    assert diagnostics["status"] == "clear"
+    assert diagnostics["status_source"] == "codex_clear_prose"
+    assert diagnostics["clear_phrase_present"] is True
+    assert diagnostics["clear_phrase_used"] is True
+    assert diagnostics["ignored_clear_phrase_reason"] is None
+    assert "clear_phrase=used" in review_impl._status_debug_detail(diagnostics)
+
+
+def test_review_status_diagnostics_show_clear_phrase_blocked_by_security_prose():
+    output = (
+        "No discrete correctness issues were found. However, there is a security "
+        "vulnerability in the review selection path."
+    )
+
+    diagnostics = review_status_diagnostics(output)
+
+    assert diagnostics["status"] == "unknown"
+    assert diagnostics["clear_phrase_present"] is True
+    assert diagnostics["clear_phrase_used"] is False
+    assert diagnostics["ignored_clear_phrase_reason"] == "non_correctness_issue_prose"
+
+
 def test_config_show_accepts_reserved_harnesses(tmp_path, monkeypatch, capsys):
     home = tmp_path / "home"
     repo = tmp_path / "repo"

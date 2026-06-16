@@ -478,6 +478,8 @@ def review_status_diagnostics(output: str, *, harness: str = "codex") -> dict[st
         normalized
     )
     structured_status = structured_review_status(actionable_output)
+    affirmative_issue_prose = has_affirmative_issue_prose(actionable_output)
+    non_correctness_issue_prose = has_non_correctness_issue_prose(actionable_output)
     if explicit_status:
         status_source = "explicit_status"
     elif structured_status is not None:
@@ -515,20 +517,44 @@ def review_status_diagnostics(output: str, *, harness: str = "codex") -> dict[st
     elif (
         harness not in PROMPTED_REVIEW_HARNESSES
         and clear_phrase_present
-        and not has_affirmative_issue_prose(actionable_output)
-        and not has_non_correctness_issue_prose(actionable_output)
+        and not affirmative_issue_prose
+        and not non_correctness_issue_prose
     ):
         status_source = "codex_clear_prose"
     else:
         status_source = "none"
+    status = detect_review_status(output, harness=harness)
+    clear_phrase_used = status_source == "codex_clear_prose"
+    ignored_clear_phrase_reason = None
+    if clear_phrase_present and not clear_phrase_used:
+        if status_source in {
+            "explicit_status",
+            "structured_findings",
+            "codex_finding_bullet",
+            "finding_markers",
+        }:
+            ignored_clear_phrase_reason = "finding_signal_won"
+        elif non_correctness_issue_prose:
+            ignored_clear_phrase_reason = "non_correctness_issue_prose"
+        elif affirmative_issue_prose:
+            ignored_clear_phrase_reason = "affirmative_issue_prose"
+        elif harness in PROMPTED_REVIEW_HARNESSES:
+            ignored_clear_phrase_reason = "prompted_harness_requires_explicit_status"
+        elif status_source == "clear_lines":
+            ignored_clear_phrase_reason = "clear_line_won"
+        else:
+            ignored_clear_phrase_reason = "not_status_deciding_signal"
     return {
-        "status": detect_review_status(output, harness=harness),
+        "status": status,
         "status_source": status_source,
+        "status_deciding_signal": status_source,
         "actionable_chars": len(actionable_output),
         "stderr_present": stderr_present,
         "explicit_status": (explicit_status.group(1).lower() if explicit_status else None),
         "finding_line_count": len(finding_lines),
         "clear_phrase_present": clear_phrase_present,
+        "clear_phrase_used": clear_phrase_used,
+        "ignored_clear_phrase_reason": ignored_clear_phrase_reason,
         "matched_clear_phrase": matched_clear_phrase,
         "harness": harness,
         "explicit_status_required": harness in PROMPTED_REVIEW_HARNESSES,

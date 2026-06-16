@@ -346,7 +346,8 @@ def test_load_prompt_v2_includes_v2_fields():
     assert "`parsing_warnings` must be an array of strings" in prompt
     assert "Do not emit JSON null" in prompt
     assert '"timeout_seconds": 0' in prompt
-    assert "Prefer a frontier route when findings affect review classification" in prompt
+    assert "Prefer a frontier route when findings affect review-status classification" in prompt
+    assert "Do not treat every timeout/config precedence issue as frontier-worthy" in prompt
     assert "default policy, safety/risk escalation, multi-module breadth" in prompt
 
 

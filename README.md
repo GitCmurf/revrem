@@ -269,8 +269,12 @@ the configured route names and route metadata so model route proposals can name
 the route the profile actually defines; unbounded route timeouts are shown as
 `timeout=none`, and route proposals encode that as `timeout_seconds = 0`.
 The project-local profiles route review-classification/security findings to
-`codex-frontier`, keep localised medium-risk operator workflow fixes on
-`codex-midi`, and route broad 4+ module findings to `gemini-pro`.
+`codex-frontier`, keep localised medium-risk operator workflow and local
+timeout/config precedence fixes on `codex-midi`, and route broad 4+ module
+findings to `gemini-pro`. A timeout/config finding should only escalate when
+the review describes active cancellation failure, runaway execution after an
+operator requested a cap, finding-hiding, security, or multi-phase safety
+impact.
 
 Project-local profiles can be saved without running the loop:
 

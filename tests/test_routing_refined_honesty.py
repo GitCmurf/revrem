@@ -242,3 +242,123 @@ timeout_seconds = 300
     assert (tmp_path / "run1" / "remediation-1.txt").read_text(encoding="utf-8") == (
         "Remediation: frontier route\n"
     )
+
+
+def test_local_timeout_config_fix_stays_midtier_with_production_loop(
+    fake_harness, tmp_path, monkeypatch
+):
+    findings_dir = fake_harness / "fake-findings"
+    findings_dir.mkdir()
+    (findings_dir / "review.txt").write_text(
+        "Finding: f1\nREVIEW_STATUS: findings\n", encoding="utf-8"
+    )
+    triage_payload = {
+        "confirmed_findings": [
+            {
+                "fingerprint": "f1",
+                "summary": "Shared timeout override is not persisted",
+                "severity": "medium",
+                "affected_paths": ["src/code_review_loop/cli/config_builder.py"],
+                "rationale": "The fix is a local config precedence and persistence bug.",
+            }
+        ],
+        "rejected_findings": [],
+        "needs_more_info": [],
+        "implementation_order": ["f1"],
+        "verification_commands": [],
+        "parsing_warnings": [],
+        "classification": {
+            "domain_tags": ["cli", "configuration", "bounded-execution"],
+            "risk_level": "medium",
+            "refactor_depth": "localised",
+            "affected_modules": ["code_review_loop.cli"],
+            "estimated_blast_radius": {"module_count": 1, "finding_count": 1},
+            "safety_signals": ["bounded-execution:nested-provider-calls"],
+            "failed_check_signals": [],
+        },
+        "prompt_requirements": {
+            "required_fragments": [],
+            "definition_of_done": ["Timeout overrides round-trip through saved profiles."],
+            "triage_prompt_draft": "Fix the local timeout override persistence bug.",
+        },
+    }
+    (findings_dir / "triage.txt").write_text(json.dumps(triage_payload), encoding="utf-8")
+
+    default_dir = fake_harness / "fake-timeout"
+    default_dir.mkdir()
+    (default_dir / "remediation.txt").write_text(
+        "Remediation: midtier route\n", encoding="utf-8"
+    )
+    frontier_dir = fake_harness / "fake-clear"
+    frontier_dir.mkdir()
+    (frontier_dir / "remediation.txt").write_text("wrong route\n", encoding="utf-8")
+
+    _init_git_repo(tmp_path)
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.test.review]
+harness = "fake"
+
+[profiles.test.remediation]
+harness = "fake"
+
+[profiles.test.triage]
+contract = "v2"
+enabled = true
+harness = "fake"
+model = "fake-findings"
+
+[profiles.test.triage.routing]
+enabled = true
+default_route = "codex-midi"
+
+[[profiles.test.triage.routing.rule]]
+id = "review-domain-frontier"
+when.domain_tags_any = ["security", "review-classification"]
+then.route = "codex-frontier"
+
+[[profiles.test.triage.routing.rule]]
+id = "review-safety-frontier"
+when.safety_signals_any = ["sensitive-domain:security-review-routing"]
+then.route = "codex-frontier"
+
+[profiles.test.triage.routes.codex-midi]
+harness = "fake"
+model = "fake-timeout"
+timeout_seconds = 300
+
+[profiles.test.triage.routes.codex-frontier]
+harness = "fake"
+model = "fake-clear"
+timeout_seconds = 300
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    exit_code = cli_main(
+        [
+            "--profile",
+            "test",
+            "--review-model",
+            "fake-findings",
+            "--artifact-dir",
+            "run1",
+            "--max-iterations",
+            "1",
+            "--skip-final-review",
+            "--trusted-repo",
+        ]
+    )
+
+    assert exit_code == 2
+    routing = json.loads((tmp_path / "run1" / "routing-1.json").read_text())
+    assert routing["policy_decision"]["decision"] == "default_route_applied"
+    assert routing["policy_decision"]["matched_rule_ids"] == []
+    assert routing["effective_route"]["route_tier"] == "codex-midi"
+    assert routing["effective_route"]["model"] == "fake-timeout"
+    prompt = (tmp_path / "run1" / "remediation-1-prompt.txt").read_text(encoding="utf-8")
+    assert "Fix the local timeout override persistence bug." in prompt
+    assert (tmp_path / "run1" / "remediation-1.txt").read_text(encoding="utf-8") == (
+        "Remediation: midtier route\n"
+    )
