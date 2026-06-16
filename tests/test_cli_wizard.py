@@ -310,6 +310,69 @@ def test_wizard_offers_last_run_as_starting_settings(tmp_path, monkeypatch):
     )
 
 
+@pytest.mark.parametrize(
+    ("saved_flags", "expected_flags"),
+    [
+        (
+            ("--no-routing-strict", "--no-allow-model-escalation"),
+            ("--no-routing-strict", "--no-allow-model-escalation"),
+        ),
+        (("--routing-strict",), ("--routing-strict",)),
+    ],
+)
+def test_wizard_last_run_replays_explicit_routing_safety_flags(
+    tmp_path,
+    monkeypatch,
+    saved_flags,
+    expected_flags,
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    run_dir = tmp_path / ".revrem" / "runs" / "last"
+    run_dir.mkdir(parents=True)
+    summary_path = run_dir / "summary.json"
+    summary_path.write_text(
+        json.dumps(
+            {
+                "command_line": [
+                    "revrem",
+                    "--profile",
+                    "final-pr",
+                    *saved_flags,
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    history_path = tmp_path / "home-global" / ".local" / "share" / "revrem" / "runs.jsonl"
+    history_path.parent.mkdir(parents=True)
+    history_path.write_text(
+        json.dumps(
+            {
+                "cwd": str(tmp_path),
+                "summary_path": str(summary_path.relative_to(tmp_path)),
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(
+        cwd=tmp_path,
+        stdin=StringIO("\n\nprint\n\n"),
+        stdout=StringIO(),
+        stderr=stderr,
+    )
+
+    assert result is not None
+    for flag in expected_flags:
+        assert flag in result.argv
+        assert flag in result.shell_command
+        assert flag in stderr.getvalue()
+
+
 def test_wizard_offers_last_run_for_subdirectory_invocation(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
@@ -893,6 +956,34 @@ model = "gpt-triage"
     rendered = stderr.getvalue()
     assert "minimal: minimal" not in rendered
     assert "Codex triage starts at low effort" in rendered
+
+
+def test_wizard_can_replace_stale_codex_triage_minimal_effort(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.default]
+
+[profiles.default.triage]
+enabled = true
+model = "gpt-triage"
+reasoning_effort = "minimal"
+""",
+        encoding="utf-8",
+    )
+    stdin = StringIO("models\ntriage\n\n\n\nlow\ndone\n\nprint\n\n")
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=stderr)
+
+    assert result is not None
+    assert "--triage-reasoning-effort" in result.argv
+    assert "low" in result.argv
+    rendered = stderr.getvalue()
+    assert "Profile repair: Codex triage reasoning_effort minimal will be replaced with low" in rendered
+    assert "profile: keep current/profile (low)" in rendered
+    assert "low: low" in rendered
 
 
 def test_wizard_confirms_suspicious_model_input(tmp_path, monkeypatch):

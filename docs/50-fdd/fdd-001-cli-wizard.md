@@ -92,7 +92,14 @@ and run history.
 - Codex triage does not offer or accept `minimal` reasoning effort. The Codex
   CLI can inherit tools that make `minimal` provider requests invalid before
   RevRem receives structured triage output, so the wizard starts Codex triage
-  choices at `low`.
+  choices at `low`. Stale profiles that still contain Codex triage
+  `reasoning_effort = "minimal"` are replayed with an explicit
+  `--triage-reasoning-effort low` replacement and can still open the effort
+  screen for operator adjustment.
+- Last-run replay preserves explicit routing policy safety flags from the
+  previous command, including `--routing-strict`, `--no-routing-strict`, and
+  `--no-allow-model-escalation`, so the previewed command does not fall back to
+  profile defaults for those fields.
 - Profiles without routes explain how to choose or create a routed profile
   instead of only saying routing is unavailable. This repository's project
   `default` profile keeps triage opt-in but includes v2 route definitions.

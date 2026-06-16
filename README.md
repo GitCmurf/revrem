@@ -250,6 +250,10 @@ the wizard, and suspicious model names such as bare numbers require
 confirmation. Codex triage starts at `low` effort: RevRem rejects
 `--triage-reasoning-effort minimal` for Codex because inherited Codex tools can
 make that provider request fail before structured triage output is produced.
+If an older profile still contains Codex triage `reasoning_effort = "minimal"`,
+the wizard emits an explicit `--triage-reasoning-effort low` replacement and
+keeps the triage effort screen editable instead of failing before the operator
+can repair the profile.
 Timeouts have their own main-menu editor for the existing shared
 `--timeout-seconds` fallback plus phase-specific timeout flags:
 `--review-timeout-seconds`, `--triage-timeout-seconds`,

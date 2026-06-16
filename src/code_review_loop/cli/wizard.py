@@ -47,6 +47,8 @@ class WizardState:
     triage_enabled: bool
     routing_enabled: bool
     routing_default_route: str
+    routing_strict: bool | None = None
+    allow_model_escalation: bool | None = None
     model: str | None = None
     reasoning_effort: str | None = None
     review_harness: str = "codex"
@@ -74,6 +76,7 @@ class WizardState:
     pending_review: str = "profile"
     origin_label: str = ""
     origin_command: str = ""
+    stale_triage_reasoning_effort: str = ""
 
 
 @dataclass(frozen=True)
@@ -549,14 +552,20 @@ class _Wizard:
         setattr(state, effort_attr, "" if effort == "profile" else effort)
 
     def _effective_effort(self, state: WizardState, label: str) -> str:
-        preview = _run_preview(state, self.cwd)
-        phases = {
-            "review": preview.review,
-            "triage": preview.triage,
-            "remediation": preview.remediation,
-            "commit message": preview.commit_message,
-        }
-        phase = phases.get(label)
+        try:
+            preview = _run_preview(state, self.cwd)
+            phases = {
+                "review": preview.review,
+                "triage": preview.triage,
+                "remediation": preview.remediation,
+                "commit message": preview.commit_message,
+            }
+            phase = phases.get(label)
+        except ValueError:
+            configured = _configured_effort(state, label)
+            if configured:
+                return f"{configured}; choose a valid value such as low"
+            return "invalid; choose a valid value such as low"
         if phase is None or not phase.effort:
             return "none"
         if phase.effort_source == "inherited:remediation":
@@ -811,6 +820,12 @@ class _Wizard:
             self._print_key_value("Started from", state.origin_label)
         if state.origin_command:
             self._print_key_value("Previous saved command", state.origin_command)
+        if state.stale_triage_reasoning_effort:
+            self._print_key_value(
+                "Profile repair",
+                "Codex triage reasoning_effort "
+                f"{state.stale_triage_reasoning_effort} will be replaced with low",
+            )
         for line in _run_preview_lines(preview):
             print(line, file=self.stderr)
 
@@ -885,6 +900,15 @@ def _profile_command(profile_name: str | None) -> tuple[str, ...]:
 
 def _initial_state(choice: WizardProfileChoice) -> WizardState:
     profile = choice.profile
+    stale_triage_reasoning_effort = ""
+    triage_reasoning_effort = profile.triage.reasoning_effort or ""
+    if (
+        profile.triage.enabled
+        and profile.triage.harness == "codex"
+        and triage_reasoning_effort == "minimal"
+    ):
+        stale_triage_reasoning_effort = triage_reasoning_effort
+        triage_reasoning_effort = "low"
     return WizardState(
         profile_name=choice.profile_name,
         profile=profile,
@@ -902,7 +926,7 @@ def _initial_state(choice: WizardProfileChoice) -> WizardState:
         review_reasoning_effort=profile.review.reasoning_effort or "",
         triage_harness=profile.triage.harness,
         triage_model=profile.triage.model or "",
-        triage_reasoning_effort=profile.triage.reasoning_effort or "",
+        triage_reasoning_effort=triage_reasoning_effort,
         remediation_harness=profile.remediation.harness,
         remediation_model=profile.remediation.model or "",
         remediation_reasoning_effort=profile.remediation.reasoning_effort or "",
@@ -912,6 +936,7 @@ def _initial_state(choice: WizardProfileChoice) -> WizardState:
         commit_after_remediation=profile.commit.enabled,
         progress_style=profile.output.progress_style,
         summary_format=profile.output.summary_format,
+        stale_triage_reasoning_effort=stale_triage_reasoning_effort,
     )
 
 
@@ -1009,6 +1034,10 @@ def _apply_parsed_args(state: WizardState, parsed) -> None:
         state.routing_enabled = parsed.routing_enabled
     if parsed.routing_default_route is not None:
         state.routing_default_route = parsed.routing_default_route
+    if parsed.routing_strict is not None:
+        state.routing_strict = parsed.routing_strict
+    if parsed.allow_model_escalation is not None:
+        state.allow_model_escalation = parsed.allow_model_escalation
     _apply_str_attr(state, "model", parsed.model)
     _apply_str_attr(state, "reasoning_effort", parsed.reasoning_effort)
     _apply_str_attr(state, "review_harness", parsed.review_harness)
@@ -1016,6 +1045,8 @@ def _apply_parsed_args(state: WizardState, parsed) -> None:
     _apply_str_attr(state, "review_reasoning_effort", parsed.review_reasoning_effort)
     _apply_str_attr(state, "triage_harness", parsed.triage_harness)
     _apply_str_attr(state, "triage_model", parsed.triage_model)
+    if parsed.triage_reasoning_effort is not None:
+        state.stale_triage_reasoning_effort = ""
     _apply_str_attr(state, "triage_reasoning_effort", parsed.triage_reasoning_effort)
     _apply_str_attr(state, "remediation_harness", parsed.remediation_harness)
     _apply_str_attr(state, "remediation_model", parsed.remediation_model)
@@ -1054,6 +1085,18 @@ def _apply_parsed_args(state: WizardState, parsed) -> None:
 def _apply_str_attr(state: WizardState, name: str, value: str | None) -> None:
     if value is not None:
         setattr(state, name, value)
+
+
+def _configured_effort(state: WizardState, label: str) -> str:
+    if label == "review":
+        return state.review_reasoning_effort or state.profile.review.reasoning_effort or ""
+    if label == "triage":
+        return state.triage_reasoning_effort or state.profile.triage.reasoning_effort or ""
+    if label == "remediation":
+        return state.remediation_reasoning_effort or state.profile.remediation.reasoning_effort or ""
+    if label == "commit message":
+        return state.commit_reasoning_effort or state.profile.commit.reasoning_effort or ""
+    return ""
 
 
 def _timeout_override_needed(phase_value: str, shared_value: str) -> bool:
@@ -1103,6 +1146,14 @@ def _argv_for_state(state: WizardState) -> list[str]:
             and state.routing_default_route != profile.triage.routing.default_route
         ):
             argv.extend(["--route", state.routing_default_route])
+        if state.routing_strict is not None:
+            argv.append("--routing-strict" if state.routing_strict else "--no-routing-strict")
+        if state.allow_model_escalation is not None:
+            argv.append(
+                "--allow-model-escalation"
+                if state.allow_model_escalation
+                else "--no-allow-model-escalation"
+            )
     if state.model is not None:
         argv.extend(["--model", state.model])
     if state.reasoning_effort is not None:
