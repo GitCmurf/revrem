@@ -83,8 +83,11 @@ This project follows Semantic Versioning once public releases begin.
   note.
 - The project-local default and dogfood routing profiles now escalate
   review-classification/security findings and explicit routing-policy or
-  model-escalation safety signals to `codex-frontier` while keeping localised
-  medium-risk operator workflow fixes on `codex-midi`.
+  model-escalation safety signals to non-de-escalatable `codex-frontier` rules
+  while keeping localised medium-risk operator workflow fixes on `codex-midi`.
+- Routing artifacts now reserve `policy_override` for real disagreements
+  between the model proposal and the effective route; matching proposals backed
+  by a rule are recorded as `proposal_accepted` with the matched rule IDs.
 - Terminal summaries now hide info-only fallback-fingerprint bookkeeping;
   `triage-*.json` and `summary.json` still retain those notes for auditability.
 - Triage v2 routing guidance now keeps ordinary local timeout/config precedence

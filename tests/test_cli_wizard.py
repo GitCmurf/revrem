@@ -190,8 +190,9 @@ def test_wizard_run_shape_previews_models_routes_checks_and_command(tmp_path, mo
     assert "+-- triage: uses codex:gpt-5.5(low)" in rendered
     assert "route midtier: uses codex:gpt-5.4-mini" in rendered
     assert "+-- routed remediation and verification" in rendered
-    assert "remediate: triage/policy selects one route above" in rendered
-    assert "unrouted fallback: uses codex:gpt-5.5(low)" in rendered
+    assert "remediate: route selected from the candidates above" in rendered
+    assert "--remediation-model is ignored while routing selects a route" in rendered
+    assert "fallback if routing is off/unavailable: uses codex:gpt-5.5(low)" in rendered
     assert "verify: 1 checks" in rendered
     assert "1. pytest -q" in rendered
     assert "if verify fails: no inner retry" in rendered

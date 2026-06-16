@@ -254,6 +254,14 @@ def _policy_decision(
             "fallback_applied",
             f"Original route {original!r} fell back to {resolved_route.fallback_applied!r}.",
         )
+    if proposal_present and proposal_matches_effective:
+        if resolved_route.rule_id and resolved_route.rule_id != "default":
+            return (
+                "proposal_accepted",
+                f"Model route proposal accepted; routing rule {resolved_route.rule_id!r} "
+                "also matched.",
+            )
+        return "proposal_accepted", "Model route proposal accepted by policy."
     if resolved_route.rule_id and resolved_route.rule_id != "default":
         if proposal_present and proposal_overrides:
             fields = ", ".join(proposal_overrides)
@@ -266,8 +274,6 @@ def _policy_decision(
             "policy_override",
             f"Applied routing rule {resolved_route.rule_id!r} based on triage classification.",
         )
-    if proposal_present and proposal_matches_effective:
-        return "proposal_accepted", "Model route proposal accepted by policy."
     if proposal_present:
         if proposal_overrides:
             fields = ", ".join(proposal_overrides)

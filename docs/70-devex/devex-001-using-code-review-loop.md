@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.57'
+version: '1.58'
 last_updated: '2026-06-16'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.57
+> **Version:** 1.58
 > **Last Updated:** 2026-06-16
 > **Type:** DEVEX
 > **Area:** devex
@@ -978,13 +978,17 @@ The project-local `default` and `dogfood` profiles route high-risk findings,
 review-classification/security findings, the
 `sensitive-domain:security-review-routing` safety signal, and explicit
 `routing-policy-correctness` / `model-escalation-policy` safety signals to
-`codex-frontier`; localised medium-risk CLI/operator workflow and local
-timeout/config precedence fixes stay on `codex-midi`, and four-or-more-module
-changes route to `gemini-pro` with `codex-midi` fallback. Triage should not
-escalate every timeout/config finding by default; reserve `codex-frontier` for
-reviews that describe active cancellation failure, runaway execution after an
-operator requested a cap, finding-hiding, security, or multi-phase safety
-impact.
+`codex-frontier` and explicitly disallow model de-escalation for those safety
+rules; localised medium-risk CLI/operator workflow and local timeout/config
+precedence fixes stay on `codex-midi`, and four-or-more-module changes route to
+`gemini-pro` with `codex-midi` fallback. Triage should not escalate every
+timeout/config finding by default; reserve `codex-frontier` for reviews that
+describe active cancellation failure, runaway execution after an operator
+requested a cap, finding-hiding, security, or multi-phase safety impact.
+When `routing-N.json.policy_decision.decision` is `proposal_accepted` and
+`matched_rule_ids` is non-empty, the model proposal matched the effective route
+and a profile rule also supported that same choice. `policy_override` is
+reserved for cases where policy changed at least one proposed route field.
 If routing is disabled, structured triage still forwards prompt requirements
 such as `triage_prompt_draft`, `definition_of_done`, required fragments, and
 risk classification in the remediation handoff.
@@ -1438,6 +1442,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.58 | 2026-06-16 | Codex | Documented non-de-escalatable safety routes and proposal-accepted routing artifacts |
 | 1.57 | 2026-06-16 | Codex | Documented transcript-only provider output stopping as unknown before triage |
 | 1.56 | 2026-06-16 | Codex | Documented rule-backed frontier routing for routing-policy/model-escalation safety |
 | 1.55 | 2026-06-16 | Codex | Documented triage routing escalation boundaries for local timeout/config findings |

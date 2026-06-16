@@ -158,6 +158,15 @@ def test_review_classification_security_routes_to_frontier_with_production_loop(
             "safety_signals": [],
             "failed_check_signals": [],
         },
+        "route_proposal": {
+            "route_tier": "codex-midi",
+            "harness": "fake",
+            "model": "fake-timeout",
+            "reasoning_effort": "medium",
+            "sandbox": "workspace-write",
+            "timeout_seconds": 300,
+            "rationale": "This lower proposal must not override the safety rule.",
+        },
         "prompt_requirements": {
             "required_fragments": [],
             "definition_of_done": ["Classifier does not hide the finding."],
@@ -198,15 +207,18 @@ default_route = "codex-midi"
 id = "review-domain-frontier"
 when.domain_tags_any = ["security", "review-classification"]
 then.route = "codex-frontier"
+then.allow_model_deescalation = false
 
 [profiles.test.triage.routes.codex-midi]
 harness = "fake"
 model = "fake-timeout"
+reasoning_effort = "medium"
 timeout_seconds = 300
 
 [profiles.test.triage.routes.codex-frontier]
 harness = "fake"
 model = "fake-clear"
+reasoning_effort = "medium"
 timeout_seconds = 300
 """,
         encoding="utf-8",
@@ -233,8 +245,10 @@ timeout_seconds = 300
     assert routing["policy_decision"]["decision"] == "policy_override"
     assert routing["policy_decision"]["matched_rule_ids"] == ["review-domain-frontier"]
     assert routing["policy_decision"]["rationale"] == (
-        "Applied routing rule 'review-domain-frontier' based on triage classification."
+        "Applied routing rule 'review-domain-frontier' and overrode proposal field(s): "
+        "route_tier, model."
     )
+    assert routing["model_proposal"]["route_tier"] == "codex-midi"
     assert routing["effective_route"]["route_tier"] == "codex-frontier"
     assert routing["effective_route"]["model"] == "fake-clear"
     prompt = (tmp_path / "run1" / "remediation-1-prompt.txt").read_text(encoding="utf-8")

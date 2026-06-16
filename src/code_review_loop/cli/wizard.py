@@ -1433,8 +1433,9 @@ def _run_preview_lines(preview: RunPreview) -> tuple[str, ...]:
             (
                 "|",
                 "+-- routed remediation and verification",
-                "|   +-- remediate: triage/policy selects one route above",
-                f"|   +-- unrouted fallback: {_phase_summary_for_preview(preview.remediation)}",
+                "|   +-- remediate: route selected from the candidates above",
+                "|   |   note: --remediation-model is ignored while routing selects a route",
+                f"|   +-- fallback if routing is off/unavailable: {_phase_summary_for_preview(preview.remediation)}",
             )
         )
     else:
