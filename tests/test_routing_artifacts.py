@@ -70,3 +70,44 @@ def test_routing_payload_counts_prompt_utf8_bytes(tmp_path):
 
     assert payload["prompt"]["bytes"] == len(remediation_input.encode("utf-8"))
     assert payload["prompt"]["bytes"] > len(remediation_input)
+
+
+def test_routing_payload_explains_rule_backed_route_even_when_proposal_matches(tmp_path):
+    resolved_route = policy.ResolvedRoute(
+        route_tier="codex-frontier",
+        harness="codex",
+        model="gpt-5.5",
+        reasoning_effort="medium",
+        timeout_seconds=0,
+        sandbox="workspace-write",
+        rule_id="routing-policy-frontier",
+    )
+    triage_payload = {
+        "route_proposal": {
+            "route_tier": "codex-frontier",
+            "harness": "codex",
+            "model": "gpt-5.5",
+            "reasoning_effort": "medium",
+            "timeout_seconds": 0,
+            "sandbox": "workspace-write",
+            "rationale": "Routing-policy correctness needs frontier.",
+        }
+    }
+
+    payload = routing_artifacts.build_routing_payload(
+        resolved_route=resolved_route,
+        triage_payload=triage_payload,
+        run_id="run-1",
+        iteration=1,
+        remediation_input="fix it",
+        config=LoopConfig(cwd=tmp_path, artifact_dir=tmp_path),
+    )
+
+    assert payload["policy_decision"] == {
+        "decision": "policy_override",
+        "matched_rule_ids": ["routing-policy-frontier"],
+        "rationale": (
+            "Applied routing rule 'routing-policy-frontier' based on triage classification."
+        ),
+    }
+    assert payload["model_proposal"]["route_tier"] == "codex-frontier"

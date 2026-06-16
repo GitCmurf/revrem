@@ -188,7 +188,13 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
 
     triage_diagnostics = summary.get("triage_diagnostics")
     if isinstance(triage_diagnostics, list) and triage_diagnostics:
-        visible_items = [item for item in triage_diagnostics if isinstance(item, dict)]
+        visible_items = [
+            item
+            for item in triage_diagnostics
+            if isinstance(item, dict) and not _is_terminal_hidden_triage_note(item)
+        ]
+        if not visible_items:
+            return "\n".join(lines)
         has_warning = any(
             str(item.get("severity") or "warn").lower() in {"warn", "warning", "error", "blocking"}
             for item in visible_items
@@ -207,6 +213,13 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
             lines.append(f"  - {code}: {message}{suffix}")
 
     return "\n".join(lines)
+
+
+def _is_terminal_hidden_triage_note(item: Mapping[str, object]) -> bool:
+    return (
+        item.get("code") == "revrem.triage.fallback_fingerprint"
+        and str(item.get("severity") or "").lower() == "info"
+    )
 
 
 def _final_review_failed_after_successful_checks(summary: Mapping[str, object]) -> bool:

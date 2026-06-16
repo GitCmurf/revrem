@@ -83,6 +83,9 @@ Routing proposal guidance:
   routing-policy correctness, stale/pending-review selection, security, auth,
   secrets, PII, or loop control that can hide actionable feedback or apply the
   wrong review feedback.
+- For routing-policy or model-escalation safety, use the exact safety signal
+  names `routing-policy-correctness` or `model-escalation-policy` so configured
+  routing policy can audit the escalation.
 - Do not treat every timeout/config precedence issue as frontier-worthy. Use
   the configured default/midtier route for local parser, profile, persistence,
   and timeout wiring fixes unless the review describes active cancellation

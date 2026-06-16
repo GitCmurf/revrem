@@ -23,7 +23,7 @@ contract = "v2"
 enabled = true
 mode = "first-match"
 default_route = "codex-midi"
-allow_model_escalation = true
+allow_model_escalation = false
 strict_on_unavailable_route = false
 
 [[profiles.default.triage.routing.rule]]
@@ -39,6 +39,11 @@ then.route = "codex-frontier"
 [[profiles.default.triage.routing.rule]]
 id = "review-safety-frontier"
 when.safety_signals_any = ["sensitive-domain:security-review-routing"]
+then.route = "codex-frontier"
+
+[[profiles.default.triage.routing.rule]]
+id = "routing-policy-frontier"
+when.safety_signals_any = ["routing-policy-correctness", "model-escalation-policy"]
 then.route = "codex-frontier"
 
 [[profiles.default.triage.routing.rule]]
@@ -105,7 +110,7 @@ on_invalid = "continue"
 enabled = true
 mode = "first-match"
 default_route = "codex-midi"
-allow_model_escalation = true
+allow_model_escalation = false
 strict_on_unavailable_route = false
 
 [[profiles.dogfood.triage.routing.rule]]
@@ -121,6 +126,11 @@ then.route = "codex-frontier"
 [[profiles.dogfood.triage.routing.rule]]
 id = "review-safety-frontier"
 when.safety_signals_any = ["sensitive-domain:security-review-routing"]
+then.route = "codex-frontier"
+
+[[profiles.dogfood.triage.routing.rule]]
+id = "routing-policy-frontier"
+when.safety_signals_any = ["routing-policy-correctness", "model-escalation-policy"]
 then.route = "codex-frontier"
 
 [[profiles.dogfood.triage.routing.rule]]

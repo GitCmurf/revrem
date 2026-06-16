@@ -137,8 +137,13 @@ def test_project_dogfood_profile_parses_exact_committed_profile():
     assert dogfood.triage.routing.rule[2].when.safety_signals_any == (
         "sensitive-domain:security-review-routing",
     )
-    assert dogfood.triage.routing.rule[3].id == "multi-file-gemini"
-    assert dogfood.triage.routing.rule[3].when.module_count_gte == 4
+    assert dogfood.triage.routing.rule[3].id == "routing-policy-frontier"
+    assert dogfood.triage.routing.rule[3].when.safety_signals_any == (
+        "routing-policy-correctness",
+        "model-escalation-policy",
+    )
+    assert dogfood.triage.routing.rule[4].id == "multi-file-gemini"
+    assert dogfood.triage.routing.rule[4].when.module_count_gte == 4
     assert dogfood.triage.routes["gemini-pro"].harness == "gemini"
     assert dogfood.commit.message_model == "gpt-5.3-codex-spark"
     assert dogfood.commit.reasoning_effort == "low"

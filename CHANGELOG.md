@@ -82,8 +82,11 @@ This project follows Semantic Versioning once public releases begin.
   before schema validation and reporting the repair as an info-level triage
   note.
 - The project-local default and dogfood routing profiles now escalate
-  review-classification/security findings to `codex-frontier` while keeping
-  localised medium-risk operator workflow fixes on `codex-midi`.
+  review-classification/security findings and explicit routing-policy or
+  model-escalation safety signals to `codex-frontier` while keeping localised
+  medium-risk operator workflow fixes on `codex-midi`.
+- Terminal summaries now hide info-only fallback-fingerprint bookkeeping;
+  `triage-*.json` and `summary.json` still retain those notes for auditability.
 - Triage v2 routing guidance now keeps ordinary local timeout/config precedence
   fixes on the default route unless the review describes active cancellation
   failure, runaway execution, finding-hiding, security, or multi-phase safety

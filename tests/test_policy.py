@@ -178,6 +178,35 @@ def test_project_profiles_route_review_safety_signal_to_frontier(profile_name):
     assert resolved.model == "gpt-5.5"
 
 
+@pytest.mark.parametrize(
+    ("signal", "expected_rule"),
+    [
+        ("routing-policy-correctness", "routing-policy-frontier"),
+        ("model-escalation-policy", "routing-policy-frontier"),
+    ],
+)
+@pytest.mark.parametrize("profile_name", ["default", "dogfood"])
+def test_project_profiles_route_routing_policy_safety_to_frontier(
+    profile_name, signal, expected_rule
+):
+    loaded = profiles.load_profile_file(Path(profiles.PROJECT_CONFIG_NAME))
+    profile = loaded.profiles[profile_name]
+    context = policy.RoutingContext(
+        domain_tags=("developer-experience", "routing", "configuration"),
+        risk_level="medium",
+        refactor_depth="localised",
+        module_count=1,
+        failed_checks=(),
+        safety_signals=(signal,),
+    )
+
+    resolved = policy.resolve_routing(profile, context)
+
+    assert resolved.route_tier == "codex-frontier"
+    assert resolved.rule_id == expected_rule
+    assert resolved.model == "gpt-5.5"
+
+
 @pytest.mark.parametrize("profile_name", ["default", "dogfood"])
 def test_project_profiles_keep_local_operator_ux_on_default_route(profile_name):
     loaded = profiles.load_profile_file(Path(profiles.PROJECT_CONFIG_NAME))
@@ -211,6 +240,29 @@ def test_project_profiles_keep_local_timeout_config_work_on_default_route(profil
     )
 
     resolved = policy.resolve_routing(profile, context)
+
+    assert resolved.route_tier == "codex-midi"
+    assert resolved.model == "gpt-5.4-mini"
+
+
+@pytest.mark.parametrize("profile_name", ["default", "dogfood"])
+def test_project_profiles_ignore_model_only_frontier_escalation(profile_name):
+    loaded = profiles.load_profile_file(Path(profiles.PROJECT_CONFIG_NAME))
+    profile = loaded.profiles[profile_name]
+    context = policy.RoutingContext(
+        domain_tags=("cli", "configuration", "bounded-execution"),
+        risk_level="medium",
+        refactor_depth="localised",
+        module_count=1,
+        failed_checks=(),
+        safety_signals=("bounded-execution:nested-provider-calls",),
+    )
+
+    resolved = policy.resolve_routing(
+        profile,
+        context,
+        model_proposal_tier="codex-frontier",
+    )
 
     assert resolved.route_tier == "codex-midi"
     assert resolved.model == "gpt-5.4-mini"

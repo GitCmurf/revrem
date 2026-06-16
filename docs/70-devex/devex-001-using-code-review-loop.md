@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.55'
+version: '1.56'
 last_updated: '2026-06-16'
 owner: GitCmurf
 docops_version: '2.0'
@@ -975,14 +975,16 @@ aliases include the historical `frontier-thinking`/`midtier-coder` names and
 the project-local `codex-frontier`/`codex-midi` names, so a proposal can
 intentionally select the frontier Codex route when policy permits escalation.
 The project-local `default` and `dogfood` profiles route high-risk findings,
-review-classification/security findings, or the
-`sensitive-domain:security-review-routing` safety signal to `codex-frontier`;
-localised medium-risk CLI/operator workflow and local timeout/config precedence
-fixes stay on `codex-midi`, and four-or-more-module changes route to
-`gemini-pro` with `codex-midi` fallback. Triage should not escalate every
-timeout/config finding by default; reserve `codex-frontier` for reviews that
-describe active cancellation failure, runaway execution after an operator
-requested a cap, finding-hiding, security, or multi-phase safety impact.
+review-classification/security findings, the
+`sensitive-domain:security-review-routing` safety signal, and explicit
+`routing-policy-correctness` / `model-escalation-policy` safety signals to
+`codex-frontier`; localised medium-risk CLI/operator workflow and local
+timeout/config precedence fixes stay on `codex-midi`, and four-or-more-module
+changes route to `gemini-pro` with `codex-midi` fallback. Triage should not
+escalate every timeout/config finding by default; reserve `codex-frontier` for
+reviews that describe active cancellation failure, runaway execution after an
+operator requested a cap, finding-hiding, security, or multi-phase safety
+impact.
 If routing is disabled, structured triage still forwards prompt requirements
 such as `triage_prompt_draft`, `definition_of_done`, required fragments, and
 risk classification in the remediation handoff.
@@ -1432,6 +1434,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.56 | 2026-06-16 | Codex | Documented rule-backed frontier routing for routing-policy/model-escalation safety |
 | 1.55 | 2026-06-16 | Codex | Documented triage routing escalation boundaries for local timeout/config findings |
 | 1.54 | 2026-06-15 | Codex | Documented Codex triage effort guard and unbounded route timeout wording |
 | 1.53 | 2026-06-15 | Codex | Documented route-aware triage prompts, non-routed triage handoff guidance, and timeout override semantics |
