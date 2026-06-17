@@ -203,6 +203,20 @@ def test_detect_review_status_allows_locally_negated_non_correctness_prose() -> 
         )
         == "clear"
     )
+    assert (
+        detect_review_status(
+            "No actionable correctness, security, or maintainability issues were "
+            "identified. This does not introduce a security risk."
+        )
+        == "clear"
+    )
+    assert (
+        detect_review_status(
+            "I did not find any discrete, actionable bugs in the diff. The patch "
+            "does not create a security risk for the upload path."
+        )
+        == "clear"
+    )
 
 
 def test_detect_review_status_preserves_contrastive_non_correctness_findings() -> None:

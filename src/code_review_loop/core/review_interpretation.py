@@ -56,9 +56,12 @@ NON_CORRECTNESS_ISSUE_RE = re.compile(
     re.IGNORECASE,
 )
 NEGATED_NON_CORRECTNESS_ISSUE_RE = re.compile(
-    r"\b(?:not|is\s+not|isn't|was\s+not|wasn't|are\s+not|aren't|were\s+not|weren't|"
-    r"no|without(?:\s+any)?)\s+"
-    r"(?:an?\s+)?(?:"
+    r"\b(?:"
+    r"(?:(?:not|is\s+not|isn't|was\s+not|wasn't|are\s+not|aren't|were\s+not|weren't|"
+    r"no|without(?:\s+any)?)\s+(?:an?\s+)?)"
+    r"|(?:(?:do|does|did)\s+not|don't|doesn't|didn't)\s+"
+    r"(?:introduce|create)\s+(?:an?\s+|any\s+)?"
+    r")(?:"
     r"vulnerab\w+"
     r"|insecure(?:\s+\w+){0,3}"
     r"|unsafe(?:\s+\w+){0,3}"

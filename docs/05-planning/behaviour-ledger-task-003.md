@@ -56,6 +56,22 @@ There is no silent third option.
 
 ## Entries
 
+### 2026-06-17 — Verb-mediated security-risk negations stay clear
+
+- **Contract:** machine
+- **What changed:** Codex review-status interpretation now treats common
+  verb-mediated negations such as "does not introduce a security risk" and
+  "does not create a security risk" as negated non-correctness prose.
+- **Why:** Clear reviews can include a second sentence that explicitly says the
+  patch does not add security risk; that sentence should not be mistaken for an
+  actionable security finding.
+- **Before / After:** `detect_review_status("No actionable correctness,
+  security, or maintainability issues were identified. This does not introduce
+  a security risk.")` remains `clear` instead of being vetoed as `unknown`.
+- **schema_version impact:** none. The artifact schema is unchanged; this only
+  corrects status classification.
+- **CHANGELOG:** Unreleased / Fixed.
+
 ### 2026-06-16 — Contrastive non-correctness review prose stays non-clear
 
 - **Contract:** machine
