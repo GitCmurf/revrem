@@ -581,7 +581,12 @@ def _resume_phase_timeout(payload: dict[object, object], phase: str) -> float | 
                 return float(value)
 
     # Fall back to legacy top-level timeout fields for summaries that lack phase_config.
-    key = "check_timeout_seconds" if phase == "checks" else f"{phase}_timeout_seconds"
+    if phase == "checks":
+        key = "check_timeout_seconds"
+    elif phase == "commit_message":
+        key = "commit_timeout_seconds"
+    else:
+        key = f"{phase}_timeout_seconds"
     value = payload.get(key)
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return float(value)

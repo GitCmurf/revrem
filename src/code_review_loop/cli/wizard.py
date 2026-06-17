@@ -463,12 +463,15 @@ class _Wizard:
             keep_label=_timeout_keep_label(preview.review.timeout),
             validator=_non_negative_float_or_blank,
         )
-        state.triage_timeout_seconds = self._timeout_text(
-            "Triage timeout",
-            current=state.triage_timeout_seconds,
-            keep_label=_timeout_keep_label(preview.triage.timeout if preview.triage else None),
-            validator=_non_negative_float_or_blank,
-        )
+        if state.triage_enabled:
+            state.triage_timeout_seconds = self._timeout_text(
+                "Triage timeout",
+                current=state.triage_timeout_seconds,
+                keep_label=_timeout_keep_label(preview.triage.timeout if preview.triage else None),
+                validator=_non_negative_float_or_blank,
+            )
+        else:
+            self._print_dim("Triage timeout: n/a (triage is disabled).")
         state.remediation_timeout_seconds = self._timeout_text(
             "Remediation timeout",
             current=state.remediation_timeout_seconds,
@@ -678,6 +681,7 @@ class _Wizard:
         return tuple(checks)
 
     def _validate(self, argv: list[str], *, action: str) -> WizardResult:
+        argv = list(argv)  # Defensive copy to avoid shared mutation
         validation_argv = list(argv)
         if action in {"run", "print", "save-profile"} and "--dry-run" not in validation_argv:
             # Command-shape validation should not fail just because a provider
@@ -689,7 +693,7 @@ class _Wizard:
                 build_loop_config(parsed, self.cwd, require_implemented=False)
                 shell_command = shlex.join(("revrem", *argv))
                 return WizardResult(argv=tuple(argv), shell_command=shell_command, action=action)
-            except (SystemExit, ValueError) as exc:
+            except (SystemExit, ValueError, OSError) as exc:
                 message = f"exit {exc.code}" if isinstance(exc, SystemExit) else str(exc)
                 print(f"Validation failed: {message}", file=self.stderr)
                 if not self._yes_no("Choose a different action?", default=True):
@@ -705,6 +709,8 @@ class _Wizard:
                 if action == "dry-run" and "--dry-run" not in argv:
                     argv.append("--dry-run")
                 validation_argv = list(argv)
+                if action in {"run", "print", "save-profile"} and "--dry-run" not in validation_argv:
+                    validation_argv.append("--dry-run")
 
     def _choice(
         self,
