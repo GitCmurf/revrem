@@ -95,6 +95,9 @@ This project follows Semantic Versioning once public releases begin.
   routing-specific flags are supplied while triage is disabled; operators must
   add `--triage` or remove those flags instead of silently running without
   triage.
+- Codex review-status classification now recognizes all-scope clear prose such
+  as "No actionable correctness, security, or maintainability issues were
+  identified" even when provider stderr/control transcript text is appended.
 - Terminal summaries now hide info-only fallback-fingerprint bookkeeping;
   `triage-*.json` and `summary.json` still retain those notes for auditability.
 - Triage v2 routing guidance now keeps ordinary local timeout/config precedence

@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.60'
+version: '1.61'
 last_updated: '2026-06-17'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.60
+> **Version:** 1.61
 > **Last Updated:** 2026-06-17
 > **Type:** DEVEX
 > **Area:** devex
@@ -1383,6 +1383,11 @@ one is present, and the full CLI stderr remains in the phase artifact.
   the review text looks clear. The flag writes `*-status.json` files next to
   review artifacts and logs the compact reason for each clear/findings/unknown
   classification.
+- Native Codex review output may append provider stderr/control transcript text
+  after a clear prose summary. RevRem classifies the actionable review text
+  before that transcript, so all-scope clear wording such as "No actionable
+  correctness, security, or maintainability issues were identified" remains
+  clear while transcript-only output still fails closed.
 - Provider stderr/control transcripts are not actionable review feedback. If a
   review artifact contains only that transcript, RevRem classifies the review as
   `unknown` and stops before triage or remediation instead of letting transcript
@@ -1453,6 +1458,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.61 | 2026-06-17 | Codex | Documented all-scope clear review prose classification with appended provider stderr |
 | 1.60 | 2026-06-17 | Codex | Documented fail-fast triage/routing CLI overrides when triage is disabled |
 | 1.59 | 2026-06-17 | Codex | Documented Codex provider-default model handling in the wizard |
 | 1.58 | 2026-06-16 | Codex | Documented non-de-escalatable safety routes and proposal-accepted routing artifacts |

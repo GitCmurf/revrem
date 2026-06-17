@@ -110,7 +110,11 @@ UNRELATED_KEYWORD_RE = re.compile(
 _UNRELATED_PROXIMITY_CHARS = 80
 
 NEGATED_ISSUE_PREFIX_RE = r"(?:clear|discrete|actionable|introduced|known|new|obvious|blocking|material|major|serious|outstanding|significant|additional|further|remaining|open|critical|severe|real|actual|genuine|substantive|meaningful|correctness|security|maintainability)"
-NEGATED_ISSUE_PREFIX_CHAIN_RE = rf"{NEGATED_ISSUE_PREFIX_RE}(?:[\s,;:-]+{NEGATED_ISSUE_PREFIX_RE})*"
+NEGATED_ISSUE_PREFIX_SEPARATOR_RE = r"[\s,;:-]+(?:(?:and|or)\s+)?"
+NEGATED_ISSUE_PREFIX_CHAIN_RE = (
+    rf"{NEGATED_ISSUE_PREFIX_RE}(?:{NEGATED_ISSUE_PREFIX_SEPARATOR_RE}"
+    rf"{NEGATED_ISSUE_PREFIX_RE})*"
+)
 NEGATED_ISSUE_WORD_RE = r"(?:bug|bugs|issue|issues|regression|regressions|defect|defects|problem|problems|failure|failures|finding|findings)"
 NEGATED_ISSUE_PROSE_RE = re.compile(
     rf"\b(?:"
@@ -149,6 +153,8 @@ CLEAR_PHRASES = (
     "did not identify any introduced, actionable correctness issues",
     "did not identify any introduced correctness, security, or maintainability issues",
     "did not identify any introduced correctness, security, or maintainability issues that warrant an inline finding",
+    "no actionable correctness, security, or maintainability issues were found",
+    "no actionable correctness, security, or maintainability issues were identified",
     "without revealing any discrete correctness issue",
     "no discrete, actionable bugs",
     "no discrete, actionable correctness issues were found",

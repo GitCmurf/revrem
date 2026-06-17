@@ -104,6 +104,21 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
     )
     assert (
         detect_review_status(
+            "No actionable correctness, security, or maintainability issues were "
+            "identified in the diff. The full test suite also passed locally."
+        )
+        == "clear"
+    )
+    assert (
+        detect_review_status(
+            "No actionable correctness, security, or maintainability issues were "
+            "identified in the diff.\n\n[stderr]\nOpenAI Codex v0.140.0\n"
+            "reasoning effort: high\n"
+        )
+        == "clear"
+    )
+    assert (
+        detect_review_status(
             "I did not identify any introduced, actionable correctness issues in "
             "the changed code. A local full pytest run had one subprocess import "
             "failure in an existing test/tool path, but it does not appear tied "

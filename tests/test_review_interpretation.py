@@ -115,6 +115,21 @@ def test_detect_review_status_accepts_exact_clear_review_lines() -> None:
         == "clear"
     )
     assert (
+        detect_review_status(
+            "No actionable correctness, security, or maintainability issues were "
+            "identified in the diff. The full test suite also passed locally."
+        )
+        == "clear"
+    )
+    assert (
+        detect_review_status(
+            "No actionable correctness, security, or maintainability issues were "
+            "identified in the diff.\n\n[stderr]\nOpenAI Codex v0.140.0\n"
+            "reasoning effort: high\n"
+        )
+        == "clear"
+    )
+    assert (
         detect_review_status("I did not find any discrete, actionable bugs in the diff.") == "clear"
     )
     assert (
