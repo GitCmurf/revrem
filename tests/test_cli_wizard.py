@@ -1258,6 +1258,43 @@ harness = "claude"
     assert "save-profile" not in action_section
 
 
+def test_wizard_allows_codex_provider_default_model(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    codex_home = tmp_path / "empty-codex-home"
+    codex_home.mkdir()
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.codex-defaults.review]
+harness = "codex"
+
+[profiles.codex-defaults.remediation]
+harness = "codex"
+
+[profiles.codex-defaults.pipeline]
+max_iterations = 1
+checks = []
+""",
+        encoding="utf-8",
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("\nq\n"), stderr=stderr)
+
+    assert result is None
+    rendered = stderr.getvalue()
+    assert "review: uses codex:provider default" in rendered
+    assert "remediate: uses codex:provider default" in rendered
+    assert "status: model unresolved" not in rendered
+    assert "provider command: codex review" in rendered
+    assert "--model provider default" not in rendered
+    action_section = rendered.split("What should the wizard do?", maxsplit=1)[1]
+    assert "dry-run: validate and print the loop shape" in action_section
+    assert "run: start the real run" in action_section
+    assert "save-profile: save these choices as a project profile" in action_section
+
+
 def test_wizard_cancel_returns_none(tmp_path):
     (tmp_path / ".git").mkdir()
 

@@ -88,6 +88,9 @@ This project follows Semantic Versioning once public releases begin.
 - Routing artifacts now reserve `policy_override` for real disagreements
   between the model proposal and the effective route; matching proposals backed
   by a rule are recorded as `proposal_accepted` with the matched rule IDs.
+- The wizard now treats an omitted Codex model as a valid provider-default
+  configuration instead of blocking dry-run/run/save-profile actions as
+  unresolved.
 - Terminal summaries now hide info-only fallback-fingerprint bookkeeping;
   `triage-*.json` and `summary.json` still retain those notes for auditability.
 - Triage v2 routing guidance now keeps ordinary local timeout/config precedence

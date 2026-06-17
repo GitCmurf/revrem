@@ -1532,7 +1532,7 @@ def _phase_preview(
         timeout=timeout,
         effort_source=effort_source,
         source=default_source,
-        unresolved_model=model is None or blocked_reason is not None,
+        unresolved_model=(model is None and harness != "codex") or blocked_reason is not None,
         blocked_reason=blocked_reason,
     )
 
@@ -1561,7 +1561,12 @@ def _route_preview_timeout(
 
 
 def _phase_summary_for_preview(phase: PhasePreview) -> str:
-    model = phase.model or "model unresolved"
+    if phase.model:
+        model = phase.model
+    elif phase.harness == "codex" and not phase.unresolved_model:
+        model = "provider default"
+    else:
+        model = "model unresolved"
     text = f"uses {phase.harness}:{model}"
     if phase.effort:
         suffix = " via remediation" if phase.effort_source == "inherited:remediation" else ""

@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.58'
+version: '1.59'
 last_updated: '2026-06-16'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.58
+> **Version:** 1.59
 > **Last Updated:** 2026-06-16
 > **Type:** DEVEX
 > **Area:** devex
@@ -1109,7 +1109,10 @@ revrem --profile dogfood --no-allow-model-escalation
 Use `--review-harness`, `--triage-harness`, `--remediation-harness`, and
 `--commit-harness` to override the per-phase harnesses. Use `--triage-model`,
 the phase-specific model/effort flags, and the phase-specific timeout flags to
-override model context. `--timeout-seconds` remains a shared fallback;
+override model context. For Codex phases, omitting `model` is a valid provider
+default and the wizard leaves the generated command without `--model`; prompted
+non-Codex harnesses still need a resolvable model before the wizard offers
+provider-running actions. `--timeout-seconds` remains a shared fallback;
 `--review-timeout-seconds`, `--triage-timeout-seconds`,
 `--remediation-timeout-seconds`, `--commit-timeout-seconds`, and
 `--check-timeout-seconds` override only their named phase. Use `--route` to
@@ -1442,6 +1445,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.59 | 2026-06-17 | Codex | Documented Codex provider-default model handling in the wizard |
 | 1.58 | 2026-06-16 | Codex | Documented non-de-escalatable safety routes and proposal-accepted routing artifacts |
 | 1.57 | 2026-06-16 | Codex | Documented transcript-only provider output stopping as unknown before triage |
 | 1.56 | 2026-06-16 | Codex | Documented rule-backed frontier routing for routing-policy/model-escalation safety |
