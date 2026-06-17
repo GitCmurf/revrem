@@ -50,6 +50,11 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         ),
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument(
+        "--wizard",
+        action="store_true",
+        help="Launch the interactive command-building wizard.",
+    )
     parser.add_argument("--profile", default=None, help="Named profile from RevRem TOML config.")
     parser.add_argument("--base", default=None, help="Base branch passed to codex review.")
     parser.add_argument(
@@ -437,9 +442,34 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         type=float,
         default=None,
         help=(
-            "Maximum seconds for each review, remediation, or check command. "
+            "Shared maximum seconds for review, triage, remediation, commit-message drafting, "
+            "and checks. Phase-specific timeout flags override this value for their phase. "
             "Use 0 to disable subprocess timeouts. Defaults to profile value or 300."
         ),
+    )
+    parser.add_argument(
+        "--review-timeout-seconds",
+        type=float,
+        default=None,
+        help="Maximum seconds for review. Use 0 to disable review timeout.",
+    )
+    parser.add_argument(
+        "--remediation-timeout-seconds",
+        type=float,
+        default=None,
+        help="Maximum seconds for remediation. Use 0 to disable remediation timeout.",
+    )
+    parser.add_argument(
+        "--commit-timeout-seconds",
+        type=float,
+        default=None,
+        help="Maximum seconds for commit-message drafting. Use 0 to disable commit timeout.",
+    )
+    parser.add_argument(
+        "--check-timeout-seconds",
+        type=float,
+        default=None,
+        help="Maximum seconds for verification checks. Use 0 to disable check timeouts.",
     )
     parser.add_argument(
         "--max-wall-seconds",

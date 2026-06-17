@@ -188,7 +188,13 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
 
     triage_diagnostics = summary.get("triage_diagnostics")
     if isinstance(triage_diagnostics, list) and triage_diagnostics:
-        visible_items = [item for item in triage_diagnostics if isinstance(item, dict)]
+        visible_items = [
+            item
+            for item in triage_diagnostics
+            if isinstance(item, dict) and not _is_terminal_hidden_triage_note(item)
+        ]
+        if not visible_items:
+            return "\n".join(lines)
         has_warning = any(
             str(item.get("severity") or "warn").lower() in {"warn", "warning", "error", "blocking"}
             for item in visible_items
@@ -207,6 +213,13 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
             lines.append(f"  - {code}: {message}{suffix}")
 
     return "\n".join(lines)
+
+
+def _is_terminal_hidden_triage_note(item: Mapping[str, object]) -> bool:
+    return (
+        item.get("code") == "revrem.triage.fallback_fingerprint"
+        and str(item.get("severity") or "").lower() == "info"
+    )
 
 
 def _final_review_failed_after_successful_checks(summary: Mapping[str, object]) -> bool:
@@ -469,6 +482,20 @@ def _append_phase_resume_overrides(
         profile_selected=profile_selected,
         source=_phase_field_source(phase_config_map, "commit_message", "reasoning_effort"),
     )
+    _append_number_override(
+        command,
+        "--review-timeout-seconds",
+        config.get("review_timeout_seconds"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "review", "timeout_seconds"),
+    )
+    _append_number_override(
+        command,
+        "--remediation-timeout-seconds",
+        config.get("remediation_timeout_seconds"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "remediation", "timeout_seconds"),
+    )
     _append_bool_override(
         command,
         true_flag="--triage",
@@ -513,6 +540,20 @@ def _append_phase_resume_overrides(
         config.get("triage_timeout_seconds"),
         profile_selected=profile_selected,
         source=_phase_field_source(phase_config_map, "triage", "timeout_seconds"),
+    )
+    _append_number_override(
+        command,
+        "--commit-timeout-seconds",
+        config.get("commit_timeout_seconds"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "commit_message", "timeout_seconds"),
+    )
+    _append_number_override(
+        command,
+        "--check-timeout-seconds",
+        _phase_timeout_value(phase_config_map, "checks"),
+        profile_selected=profile_selected,
+        source=_phase_field_source(phase_config_map, "checks", "timeout_seconds"),
     )
     _append_bool_override(
         command,
@@ -589,6 +630,17 @@ def _append_phase_resume_overrides(
             phase_config_map, "runtime", "external_review_truncation_policy"
         ),
     )
+
+
+def _phase_timeout_value(
+    phase_config: Mapping[object, object],
+    phase: str,
+) -> object:
+    value = phase_config.get(phase)
+    if not isinstance(value, dict):
+        return None
+    timeout_seconds = value.get("timeout_seconds")
+    return timeout_seconds
 
 
 def _phase_field_source(

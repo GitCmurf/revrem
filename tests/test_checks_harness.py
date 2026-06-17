@@ -123,6 +123,38 @@ class TestChecksAdapter:
         assert outcome.results[1].returncode == 1
         assert "pytest -q" in outcome.failed_commands
 
+    def test_uses_check_timeout_for_cleanliness_and_configured_checks(
+        self, tmp_path: Path
+    ) -> None:
+        (tmp_path / ".git").mkdir()
+        (tmp_path / "artifacts").mkdir()
+        config = LoopConfig(
+            base="main",
+            max_iterations=1,
+            codex_bin="codex",
+            cwd=tmp_path,
+            artifact_dir=tmp_path / "artifacts",
+            check_commands=("pytest -q",),
+            timeout_seconds=999,
+            check_timeout_seconds=42,
+        )
+        calls: list[tuple[list[str], float | None]] = []
+
+        def runner(args, cwd, input_text=None, timeout_seconds=None):
+            calls.append((list(args), timeout_seconds))
+            return CommandResult(list(args), 0, stdout="")
+
+        ctx = _ctx(runner=runner)
+        adapter = ChecksAdapter(config)
+
+        outcome = adapter.execute(ChecksRequest(iteration=1), ctx)
+
+        assert not outcome.failed_commands
+        assert calls == [
+            (["git", "status", "-z", "--porcelain=v1", "--untracked-files=all"], 42),
+            (["pytest", "-q"], 42),
+        ]
+
     def test_signal_killed_check_names_signal_in_progress(self, tmp_path: Path) -> None:
         (tmp_path / "artifacts").mkdir()
         config = LoopConfig(

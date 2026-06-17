@@ -3,8 +3,8 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.52'
-last_updated: '2026-06-11'
+version: '1.62'
+last_updated: '2026-06-17'
 owner: GitCmurf
 docops_version: '2.0'
 area: devex
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.52
-> **Last Updated:** 2026-06-11
+> **Version:** 1.62
+> **Last Updated:** 2026-06-17
 > **Type:** DEVEX
 > **Area:** devex
 > **Description:** Operator guide for the code-review-loop utility
@@ -234,6 +234,10 @@ Use repository-specific checks. For Meminit-backed repositories, include:
 ```bash
 --check "meminit check --format json"
 ```
+
+The wizard only suggests that preset when the repo's `AGENTS.md` advertises
+`MEMINIT_PROTOCOL`; a plain `docs/` tree does not opt a repository into
+Meminit checks.
 
 For repositories that need a virtualenv-local checker, pass the concrete path:
 
@@ -652,8 +656,9 @@ disable bounded execution. A phase timeout set to `0` stays disabled for that
 phase and is passed through to the matching subprocess unchanged. If a phase
 omits `timeout_seconds`, it falls back to the built-in default timeout instead
 of inheriting the sibling phase's value.
-Negative phase timeouts are rejected during profile loading as invalid
-configuration, matching the CLI's `--timeout-seconds` validation.
+Negative phase timeouts and `pipeline.check_timeout_seconds` values are
+rejected during profile loading as invalid configuration, matching the CLI's
+`--timeout-seconds` validation.
 `--max-iterations` and profile `pipeline.max_iterations` must be positive
 integers; invalid values fail before the review/remediation loop starts.
 Generated TOML config output rejects non-finite floats instead of writing
@@ -678,6 +683,8 @@ and defaults to `0.8`. `--max-tokens` and `--max-usd` are enforced once a
 harness reports usage through `cost_charge`; Codex does not currently report
 those values, so summaries record token and USD usage as `null` until a charge
 is observed rather than pretending unsupported accounting is zero usage.
+The interactive wizard preview mirrors the resolved profile wall budget, so a
+profile-defined `budgets.max_wall_seconds` stays visible before you edit it.
 
 Profiles may set the same defaults:
 
@@ -946,11 +953,47 @@ sensitive transcript-like local data. In `routing-N.json`, `prompt.bytes` is
 the UTF-8 byte size of the written prompt artifact, and
 `effective_route.timeout_seconds` records the timeout RevRem will pass to
 remediation execution after inheritance and CLI caps. An explicit CLI
-positive `--timeout-seconds` is treated as an upper bound for routed
-remediation, so a route saved with `timeout_seconds = 0` remains unbounded only
-when the operator does not supply a positive CLI cap. Explicit CLI
-`--timeout-seconds 0` keeps the normal zero-means-unbounded semantics and does
-not cap route timeouts; `0` in the routing artifact means unbounded.
+positive `--timeout-seconds` or `--remediation-timeout-seconds` is treated as
+an upper bound for routed remediation, so a route saved with
+`timeout_seconds = 0` remains unbounded only when the operator does not supply
+a positive CLI cap. Explicit CLI `--timeout-seconds 0` or
+`--remediation-timeout-seconds 0` keeps the normal zero-means-unbounded
+semantics and does not cap route timeouts; `0` in the routing artifact means
+unbounded.
+
+The v2 triage prompt includes the configured route table, including route
+names, harnesses, models, reasoning effort, timeout, sandbox, and fallback;
+unbounded route timeouts are rendered as `timeout=none`, and route proposals
+must encode that as integer `timeout_seconds = 0` rather than JSON null. RevRem
+normalizes provider output that makes this specific mistake and records an
+info-level triage note. Codex triage should use `low` or higher reasoning
+effort. RevRem rejects Codex `--triage-reasoning-effort minimal` because
+inherited Codex tools can make the provider request fail before structured
+triage output is produced. The wizard treats stale Codex triage profiles that
+still contain `reasoning_effort = "minimal"` as `low`, including when the
+operator chooses the profile/current reasoning-effort option.
+Triage route proposals should use those exact route names. Built-in route rank
+aliases include the historical `frontier-thinking`/`midtier-coder` names and
+the project-local `codex-frontier`/`codex-midi` names, so a proposal can
+intentionally select the frontier Codex route when policy permits escalation.
+The project-local `default` and `dogfood` profiles route high-risk findings,
+review-classification/security findings, the
+`sensitive-domain:security-review-routing` safety signal, and explicit
+`routing-policy-correctness` / `model-escalation-policy` safety signals to
+`codex-frontier` and explicitly disallow model de-escalation for those safety
+rules; localised medium-risk CLI/operator workflow and local timeout/config
+precedence fixes stay on `codex-midi`, and four-or-more-module changes route to
+`gemini-pro` with `codex-midi` fallback. Triage should not escalate every
+timeout/config finding by default; reserve `codex-frontier` for reviews that
+describe active cancellation failure, runaway execution after an operator
+requested a cap, finding-hiding, security, or multi-phase safety impact.
+When `routing-N.json.policy_decision.decision` is `proposal_accepted` and
+`matched_rule_ids` is non-empty, the model proposal matched the effective route
+and a profile rule also supported that same choice. `policy_override` is
+reserved for cases where policy changed at least one proposed route field.
+If routing is disabled, structured triage still forwards prompt requirements
+such as `triage_prompt_draft`, `definition_of_done`, required fragments, and
+risk classification in the remediation handoff.
 
 Codex-only routing profile:
 
@@ -1067,14 +1110,29 @@ revrem --profile dogfood --no-allow-model-escalation
 
 Use `--review-harness`, `--triage-harness`, `--remediation-harness`, and
 `--commit-harness` to override the per-phase harnesses. Use `--triage-model`,
-`--triage-timeout-seconds`, and the phase-specific model/effort flags to
-override model context. Use `--route` to force an existing route from the
-selected profile for one run, and `--routing-strict` or `--no-routing-strict`
-to control whether an unavailable selected route is a hard failure. When strict
-routing is enabled, RevRem stops on the selected route's capability or budget
+the phase-specific model/effort flags, and the phase-specific timeout flags to
+override model context. For Codex phases, omitting `model` is a valid provider
+default and the wizard leaves the generated command without `--model`; prompted
+non-Codex harnesses still need a resolvable model before the wizard offers
+provider-running actions. `--timeout-seconds` remains a shared fallback;
+`--review-timeout-seconds`, `--triage-timeout-seconds`,
+`--remediation-timeout-seconds`, `--commit-timeout-seconds`, and
+`--check-timeout-seconds` override only their named phase. Use `--route` to
+force an existing route from the selected profile for one run, and
+`--routing-strict` or `--no-routing-strict` to control whether an unavailable
+selected route is a hard failure. When strict routing is enabled, RevRem stops
+on the selected route's capability or budget
 failure even if that route names a fallback. Disabled routing may carry draft
 routes during normal runs, but references inside the route table are still
 validated.
+
+Triage-specific CLI overrides do not enable triage by themselves. When the
+selected profile has triage disabled, add `--triage` before passing
+`--triage-model`, `--triage-harness`, `--triage-reasoning-effort`,
+`--triage-contract`, `--triage-timeout-seconds`, `--routing`, `--route`,
+`--routing-strict`, or model-escalation routing flags. RevRem fails before any
+provider call if those flags are supplied while triage remains disabled, so an
+operator does not think a routed run occurred when the triage phase was skipped.
 
 Executable route validation is opt-in when routing is disabled:
 
@@ -1327,6 +1385,15 @@ one is present, and the full CLI stderr remains in the phase artifact.
   the review text looks clear. The flag writes `*-status.json` files next to
   review artifacts and logs the compact reason for each clear/findings/unknown
   classification.
+- Native Codex review output may append provider stderr/control transcript text
+  after a clear prose summary. RevRem classifies the actionable review text
+  before that transcript, so all-scope clear wording such as "No actionable
+  correctness, security, or maintainability issues were identified" remains
+  clear while transcript-only output still fails closed.
+- Provider stderr/control transcripts are not actionable review feedback. If a
+  review artifact contains only that transcript, RevRem classifies the review as
+  `unknown` and stops before triage or remediation instead of letting transcript
+  text seed a large triage prompt.
 - If any review still classifies as `unknown`, the final text summary includes a
   warning and writes `unexpected-behavior-report.txt` in the artifact directory.
   Include that report, the referenced `review-N.txt`, and any
@@ -1393,6 +1460,16 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.62 | 2026-06-17 | Codex | Documented stale Codex triage minimal-effort repair when profile/current is selected |
+| 1.61 | 2026-06-17 | Codex | Documented all-scope clear review prose classification with appended provider stderr |
+| 1.60 | 2026-06-17 | Codex | Documented fail-fast triage/routing CLI overrides when triage is disabled |
+| 1.59 | 2026-06-17 | Codex | Documented Codex provider-default model handling in the wizard |
+| 1.58 | 2026-06-16 | Codex | Documented non-de-escalatable safety routes and proposal-accepted routing artifacts |
+| 1.57 | 2026-06-16 | Codex | Documented transcript-only provider output stopping as unknown before triage |
+| 1.56 | 2026-06-16 | Codex | Documented rule-backed frontier routing for routing-policy/model-escalation safety |
+| 1.55 | 2026-06-16 | Codex | Documented triage routing escalation boundaries for local timeout/config findings |
+| 1.54 | 2026-06-15 | Codex | Documented Codex triage effort guard and unbounded route timeout wording |
+| 1.53 | 2026-06-15 | Codex | Documented route-aware triage prompts, non-routed triage handoff guidance, and timeout override semantics |
 | 1.52 | 2026-06-11 | Codex | Documented native Codex provider observations and final-review failure diagnostics |
 | 1.51 | 2026-06-11 | Codex | Documented native Codex review sandbox enforcement through config |
 | 1.50 | 2026-06-10 | Codex | Documented recoverable triage diagnostics, check retry history, and symlink-safe hook handling |

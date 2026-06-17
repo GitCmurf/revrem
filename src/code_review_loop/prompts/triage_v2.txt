@@ -74,7 +74,28 @@ Routing proposal guidance:
 - Specify `harness` and `model` preferences.
 - Set `reasoning_effort` (low, medium, high).
 - Recommend `sandbox` and `timeout_seconds`.
-- Provide a clear `rationale` for these choices.
+- `timeout_seconds` must be an integer. Use `0` for no timeout, including
+  configured routes shown as `timeout=none`. Do not emit JSON null for this
+  field.
+- Use the configured default/midtier route for localised, medium-or-lower risk
+  implementation fixes.
+- Prefer a frontier route when findings affect review-status classification,
+  routing-policy correctness, stale/pending-review selection, security, auth,
+  secrets, PII, or loop control that can hide actionable feedback or apply the
+  wrong review feedback.
+- For routing-policy or model-escalation safety, use the exact safety signal
+  names `routing-policy-correctness` or `model-escalation-policy` so configured
+  routing policy can audit the escalation.
+- Do not treat every timeout/config precedence issue as frontier-worthy. Use
+  the configured default/midtier route for local parser, profile, persistence,
+  and timeout wiring fixes unless the review describes active cancellation
+  failure, runaway execution after an operator requested a cap, finding-hiding,
+  security, or multi-phase safety impact.
+- Prefer a broad/multi-harness route when several modules are affected or the
+  finding needs cross-module reasoning.
+- Provide a clear `rationale` for these choices and say whether the route came
+  from default policy, safety/risk escalation, multi-module breadth, or model
+  escalation.
 
 Prompt requirements guidance:
 - `required_fragments`: Use `[]` unless one of RevRem's built-in fragment names
@@ -111,6 +132,17 @@ Minimal valid top-level skeleton:
     "definition_of_done": [],
     "triage_prompt_draft": "No remediation required."
   }
+}
+
+Minimal valid `route_proposal` example when you choose to include one:
+{
+  "route_tier": "efficient-coder",
+  "harness": "codex",
+  "model": "gpt-5.4-mini",
+  "reasoning_effort": "low",
+  "sandbox": "workspace-write",
+  "timeout_seconds": 0,
+  "rationale": "0 means no route timeout."
 }
 
 Contract guidance:

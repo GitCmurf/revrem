@@ -77,6 +77,42 @@ This project follows Semantic Versioning once public releases begin.
   lists by moving them into `prompt_requirements.definition_of_done`, recording
   the repair in parsing warnings and `summary.triage_diagnostics` so routing
   artifacts are preserved for recoverable model drift.
+- Triage v2 now recovers route proposals that encode an unbounded route timeout
+  as JSON `null` or text `none`, normalizing the value to `timeout_seconds = 0`
+  before schema validation and reporting the repair as an info-level triage
+  note.
+- The project-local default and dogfood routing profiles now escalate
+  review-classification/security findings and explicit routing-policy or
+  model-escalation safety signals to non-de-escalatable `codex-frontier` rules
+  while keeping localised medium-risk operator workflow fixes on `codex-midi`.
+- Routing artifacts now reserve `policy_override` for real disagreements
+  between the model proposal and the effective route; matching proposals backed
+  by a rule are recorded as `proposal_accepted` with the matched rule IDs.
+- The wizard now treats an omitted Codex model as a valid provider-default
+  configuration instead of blocking dry-run/run/save-profile actions as
+  unresolved.
+- The wizard now keeps the repaired `low` Codex triage effort when stale
+  profiles contain `triage.reasoning_effort = "minimal"` and the operator
+  chooses the profile/current effort option.
+- CLI config building now fails before provider execution when triage or
+  routing-specific flags are supplied while triage is disabled; operators must
+  add `--triage` or remove those flags instead of silently running without
+  triage.
+- Codex review-status classification now recognizes all-scope clear prose such
+  as "No actionable correctness, security, or maintainability issues were
+  identified" even when provider stderr/control transcript text is appended.
+- Terminal summaries now hide info-only fallback-fingerprint bookkeeping;
+  `triage-*.json` and `summary.json` still retain those notes for auditability.
+- Triage v2 routing guidance now keeps ordinary local timeout/config precedence
+  fixes on the default route unless the review describes active cancellation
+  failure, runaway execution, finding-hiding, security, or multi-phase safety
+  impact.
+- Review status diagnostics now distinguish `clear_phrase=used` from
+  `clear_phrase=seen_not_used:<reason>` so findings that mention clear-sounding
+  prose no longer produce misleading status-debug lines.
+- Review artifacts that contain only provider stderr/control transcripts are
+  now treated as `unknown` review output instead of findings, preventing
+  transcript text from being passed into structured triage as a giant prompt.
 - Routed remediation now treats an explicit CLI `--timeout-seconds` value as
   an upper bound for route timeouts, including routes saved with
   `timeout_seconds = 0`, and `revrem doctor` warns on disabled route timeouts.
@@ -276,6 +312,10 @@ This project follows Semantic Versioning once public releases begin.
 
 ### Fixed
 
+- Codex review-status interpretation now preserves same-sentence contrastive
+  security and maintainability findings after negated clear correctness prose,
+  so wording like "no correctness issues, but there is a security risk" no
+  longer lets the remediation loop stop as clear.
 - Auto-commit runs now enforce the documented clean-start invariant before any
   provider call. If `--commit-after-remediation` is enabled and `git status
   -z --untracked-files=all` reports non-artifact changes at startup,

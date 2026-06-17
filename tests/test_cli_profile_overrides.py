@@ -103,6 +103,68 @@ def test_main_uses_profile_commit_message_harness(tmp_path, monkeypatch):
     assert config.commit_timeout_seconds == 0
 
 
+def test_shared_timeout_overrides_profile_commit_timeout(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        config_builder,
+        "profile_or_default",
+        lambda name, cwd: profiles.Profile(
+            name="dogfood",
+            commit=profiles.CommitConfig(
+                enabled=True,
+                timeout_seconds=0,
+            ),
+        ),
+    )
+    args = cli_args.parse_args(
+        [
+            "--profile",
+            "dogfood",
+            "--dry-run",
+            "--timeout-seconds",
+            "30",
+        ]
+    )
+
+    config, _summary_format = config_builder.build_loop_config(args, tmp_path)
+
+    assert config.timeout_seconds == 30
+    assert config.commit_timeout_seconds == 30
+    assert config.commit_timeout_seconds_display == 30
+    assert config.phase_config_field_sources["commit_message"]["timeout_seconds"] == "cli"
+
+
+def test_explicit_commit_timeout_overrides_shared_timeout(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        config_builder,
+        "profile_or_default",
+        lambda name, cwd: profiles.Profile(
+            name="dogfood",
+            commit=profiles.CommitConfig(
+                enabled=True,
+                timeout_seconds=0,
+            ),
+        ),
+    )
+    args = cli_args.parse_args(
+        [
+            "--profile",
+            "dogfood",
+            "--dry-run",
+            "--timeout-seconds",
+            "30",
+            "--commit-timeout-seconds",
+            "45",
+        ]
+    )
+
+    config, _summary_format = config_builder.build_loop_config(args, tmp_path)
+
+    assert config.timeout_seconds == 30
+    assert config.commit_timeout_seconds == 45
+    assert config.commit_timeout_seconds_display == 45
+    assert config.phase_config_field_sources["commit_message"]["timeout_seconds"] == "cli"
+
+
 def test_phase_config_payload_marks_unsupported_provider_reasoning_effort():
     config = LoopConfig(
         review_harness="opencode",
@@ -368,9 +430,7 @@ external_review_truncation_policy = "warn"
 
     assert config.external_review_truncation_policy == "fail"
     assert phase_config["runtime"]["external_review_truncation_policy"] == "fail"
-    assert (
-        phase_config["runtime"]["sources"]["external_review_truncation_policy"] == "cli"
-    )
+    assert phase_config["runtime"]["sources"]["external_review_truncation_policy"] == "cli"
     saved = config_builder.profile_from_loop_config(
         "saved",
         config,
@@ -751,7 +811,7 @@ reasoning_effort = "low"
 [profiles.final-pr.triage]
 enabled = true
 model = "gpt-4.1"
-reasoning_effort = "minimal"
+reasoning_effort = "low"
 timeout_seconds = 30
 """,
         encoding="utf-8",
@@ -780,7 +840,33 @@ timeout_seconds = 30
     assert config.remediation_reasoning_effort == "high"
     assert config.triage_enabled is True
     assert config.triage_model == "gpt-4.1"
-    assert config.triage_reasoning_effort == "minimal"
+    assert config.triage_reasoning_effort == "low"
+
+
+def test_main_rejects_codex_triage_minimal_reasoning_effort(tmp_path, monkeypatch, capsys):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+
+    def fake_run_loop(config):
+        raise AssertionError("provider loop should not start for invalid triage config")
+
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
+
+    exit_code = cli_main.main(
+        [
+            "--triage",
+            "--triage-harness",
+            "codex",
+            "--triage-reasoning-effort",
+            "minimal",
+            "--dry-run",
+        ]
+    )
+
+    assert exit_code == 1
+    assert "Codex triage cannot use reasoning effort 'minimal'" in capsys.readouterr().err
 
 
 def test_main_phase_reasoning_effort_overrides_win_independently(tmp_path, monkeypatch):
@@ -907,7 +993,7 @@ harness = "codex"
     assert config.triage_contract == "v2"
     assert config.triage_model == "cli-triage"
     assert config.triage_harness == "gemini"
-    assert config.triage_timeout_seconds is None
+    assert config.triage_timeout_seconds == 0
     assert config.triage_timeout_seconds_display == 0
     assert config.phase_config_sources["triage"] == "mixed"
     assert config.phase_config_field_sources["triage"] == {
@@ -943,6 +1029,207 @@ harness = "codex"
         }
     )
     assert "--no-routing-strict" in text
+
+
+def test_main_rejects_triage_overrides_when_triage_disabled(tmp_path, monkeypatch, capsys):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    config_path = home / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.final-pr.triage]
+enabled = false
+contract = "v2"
+
+[profiles.final-pr.triage.routing]
+enabled = false
+default_route = "midtier-coder"
+
+[profiles.final-pr.triage.routes.midtier-coder]
+harness = "codex"
+model = "gpt-5.4-mini"
+""",
+        encoding="utf-8",
+    )
+
+    def fake_run_loop(config):  # pragma: no cover - this must fail before execution
+        raise AssertionError(f"run_loop should not receive {config!r}")
+
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
+
+    exit_code = cli_main.main(
+        [
+            "--profile",
+            "final-pr",
+            "--triage-model",
+            "gpt-5.5",
+            "--triage-reasoning-effort",
+            "low",
+            "--triage-timeout-seconds",
+            "660",
+            "--dry-run",
+        ]
+    )
+
+    assert exit_code == 1
+    stderr = capsys.readouterr().err
+    assert "Triage is disabled" in stderr
+    assert "--triage-model" in stderr
+    assert "--triage-reasoning-effort" in stderr
+    assert "--triage-timeout-seconds" in stderr
+    assert "Add --triage" in stderr
+
+
+def test_main_rejects_routing_overrides_when_triage_disabled(tmp_path, monkeypatch, capsys):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    config_path = home / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.final-pr.triage]
+enabled = false
+contract = "v2"
+
+[profiles.final-pr.triage.routing]
+enabled = false
+default_route = "midtier-coder"
+
+[profiles.final-pr.triage.routes.midtier-coder]
+harness = "codex"
+model = "gpt-5.4-mini"
+""",
+        encoding="utf-8",
+    )
+
+    def fake_run_loop(config):  # pragma: no cover - this must fail before execution
+        raise AssertionError(f"run_loop should not receive {config!r}")
+
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
+
+    exit_code = cli_main.main(
+        [
+            "--profile",
+            "final-pr",
+            "--routing",
+            "--triage-contract",
+            "v2",
+            "--route",
+            "midtier-coder",
+            "--dry-run",
+        ]
+    )
+
+    assert exit_code == 1
+    stderr = capsys.readouterr().err
+    assert "Triage is disabled" in stderr
+    assert "--routing" in stderr
+    assert "--triage-contract" in stderr
+    assert "--routing-default-route" in stderr
+    assert "Add --triage" in stderr
+
+
+def test_main_accepts_triage_overrides_when_profile_enables_triage(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    config_path = home / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.final-pr.triage]
+enabled = true
+contract = "v2"
+harness = "codex"
+model = "profile-triage"
+
+[profiles.final-pr.triage.routing]
+enabled = false
+default_route = "midtier-coder"
+
+[profiles.final-pr.triage.routes.midtier-coder]
+harness = "codex"
+model = "gpt-5.4-mini"
+""",
+        encoding="utf-8",
+    )
+    captured_configs = []
+
+    def fake_run_loop(config):
+        captured_configs.append(config)
+        return _clear_result(
+            {
+                "artifact_dir": str(config.artifact_dir),
+                "final_status": "clear",
+                "stopped_reason": "review_clear",
+                "iterations": [],
+            }
+        )
+
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
+
+    exit_code = cli_main.main(
+        [
+            "--profile",
+            "final-pr",
+            "--triage-model",
+            "cli-triage",
+            "--triage-reasoning-effort",
+            "low",
+            "--dry-run",
+        ]
+    )
+
+    assert exit_code == 0
+    config = captured_configs[0]
+    assert config.triage_enabled is True
+    assert config.triage_model == "cli-triage"
+    assert config.triage_reasoning_effort == "low"
+
+
+def test_shared_cli_timeout_overrides_profile_check_timeout(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    config_path = home / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[profiles.slow-checks.pipeline]
+check_timeout_seconds = 1800
+checks = ["pytest -q"]
+""",
+        encoding="utf-8",
+    )
+    captured_configs = []
+
+    def fake_run_loop(config):
+        captured_configs.append(config)
+        return _clear_result(
+            {
+                "artifact_dir": str(config.artifact_dir),
+                "final_status": "clear",
+                "stopped_reason": "review_clear",
+                "iterations": [],
+            }
+        )
+
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
+
+    exit_code = cli_main.main(["--profile", "slow-checks", "--timeout-seconds", "30", "--dry-run"])
+
+    assert exit_code == 0
+    config = captured_configs[0]
+    assert config.check_timeout_seconds == 30
+    assert config.check_timeout_seconds_display == 30
+    assert config.phase_config_field_sources["checks"]["timeout_seconds"] == "cli"
 
 
 def test_main_triage_cli_negations_override_profile_enabled_values(tmp_path, monkeypatch):

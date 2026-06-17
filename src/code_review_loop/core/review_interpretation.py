@@ -37,6 +37,47 @@ AFFIRMATIVE_ISSUE_WORD_RE = re.compile(
     r"failure|failures|finding|findings)\b",
     re.IGNORECASE,
 )
+NON_CORRECTNESS_ISSUE_RE = re.compile(
+    r"\b(?:"
+    r"vulnerab\w+"
+    r"|insecure(?:\s+\w+){0,3}"
+    r"|unsafe(?:\s+\w+){0,3}"
+    r"|exploit(?:s|ed|ing|ation|able|ability)?"
+    r"|leak(?:s|age|ed|ing)?"
+    r"|expos(?:e|es|ed|ing|ure)"
+    r"|security(?:\s+\w+){0,4}\s+(?:issue|issues|problem|problems|risk|risks|concern|concerns|"
+    r"vulnerab\w+|flaw|flaws|debt)"
+    r"|maintainabil(?:ity|y)(?:\s+\w+){0,4}\s+(?:issue|issues|problem|problems|risk|risks|"
+    r"concern|concerns|debt|flaw|flaws)"
+    r"|hard to maintain"
+    r"|difficult to maintain"
+    r"|maintenance burden"
+    r")\b",
+    re.IGNORECASE,
+)
+NEGATED_NON_CORRECTNESS_ISSUE_RE = re.compile(
+    r"\b(?:"
+    r"(?:(?:not|is\s+not|isn't|was\s+not|wasn't|are\s+not|aren't|were\s+not|weren't|"
+    r"no|without(?:\s+any)?)\s+(?:an?\s+)?)"
+    r"|(?:(?:do|does|did)\s+not|don't|doesn't|didn't)\s+"
+    r"(?:introduce|create)\s+(?:an?\s+|any\s+)?"
+    r")(?:"
+    r"vulnerab\w+"
+    r"|insecure(?:\s+\w+){0,3}"
+    r"|unsafe(?:\s+\w+){0,3}"
+    r"|exploit(?:s|ed|ing|ation|able|ability)?"
+    r"|leak(?:s|age|ed|ing)?"
+    r"|expos(?:e|es|ed|ing|ure)"
+    r"|security(?:\s+\w+){0,4}\s+(?:issue|issues|problem|problems|risk|risks|concern|concerns|"
+    r"vulnerab\w+|flaw|flaws|debt)"
+    r"|maintainabil(?:ity|y)(?:\s+\w+){0,4}\s+(?:issue|issues|problem|problems|risk|risks|"
+    r"concern|concerns|debt|flaw|flaws)"
+    r"|hard to maintain"
+    r"|difficult to maintain"
+    r"|maintenance burden"
+    r")\b",
+    re.IGNORECASE,
+)
 STRUCTURED_EMPTY_FINDINGS_RE = re.compile(
     r'(?<!\w)["\']?findings["\']?\s*:\s*\[\s*\](?!\w)',
     re.IGNORECASE,
@@ -72,7 +113,11 @@ UNRELATED_KEYWORD_RE = re.compile(
 _UNRELATED_PROXIMITY_CHARS = 80
 
 NEGATED_ISSUE_PREFIX_RE = r"(?:clear|discrete|actionable|introduced|known|new|obvious|blocking|material|major|serious|outstanding|significant|additional|further|remaining|open|critical|severe|real|actual|genuine|substantive|meaningful|correctness|security|maintainability)"
-NEGATED_ISSUE_PREFIX_CHAIN_RE = rf"{NEGATED_ISSUE_PREFIX_RE}(?:[\s,;:-]+{NEGATED_ISSUE_PREFIX_RE})*"
+NEGATED_ISSUE_PREFIX_SEPARATOR_RE = r"[\s,;:-]+(?:(?:and|or)\s+)?"
+NEGATED_ISSUE_PREFIX_CHAIN_RE = (
+    rf"{NEGATED_ISSUE_PREFIX_RE}(?:{NEGATED_ISSUE_PREFIX_SEPARATOR_RE}"
+    rf"{NEGATED_ISSUE_PREFIX_RE})*"
+)
 NEGATED_ISSUE_WORD_RE = r"(?:bug|bugs|issue|issues|regression|regressions|defect|defects|problem|problems|failure|failures|finding|findings)"
 NEGATED_ISSUE_PROSE_RE = re.compile(
     rf"\b(?:"
@@ -111,32 +156,45 @@ CLEAR_PHRASES = (
     "did not identify any introduced, actionable correctness issues",
     "did not identify any introduced correctness, security, or maintainability issues",
     "did not identify any introduced correctness, security, or maintainability issues that warrant an inline finding",
+    "no actionable correctness, security, or maintainability issues were found",
+    "no actionable correctness, security, or maintainability issues were identified",
     "without revealing any discrete correctness issue",
     "no discrete, actionable bugs",
+    "no discrete, actionable correctness issues were found",
+    "no discrete correctness issues were found",
     "no actionable bugs",
     "without any clear regressions or actionable bugs",
     "without any clear regressions or actionable",
 )
 
 PROMPTED_REVIEW_HARNESSES = frozenset({"claude", "gemini", "opencode", "kilo"})
+STDERR_MARKER = "[stderr]\n"
 
 # ---------------------------------------------------------------------------
 # Core helper
 # ---------------------------------------------------------------------------
 
 
+def _split_review_and_stderr(output: str) -> tuple[str, str]:
+    stripped = output.strip()
+    if stripped.startswith(STDERR_MARKER):
+        return "", stripped[len(STDERR_MARKER) :].strip()
+    review_text, sep, stderr_text = stripped.partition(f"\n{STDERR_MARKER}")
+    if sep:
+        return review_text.strip(), stderr_text.strip()
+    return stripped, ""
+
+
 def actionable_review_output(output: str) -> str:
     """Keep the review's actionable comments, not the verbose tool transcript."""
-    review_text = output.split("\n[stderr]\n", 1)[0].strip()
-    if not review_text:
-        review_text = output.strip()
+    review_text, _stderr_text = _split_review_and_stderr(output)
     return review_text
 
 
 def stderr_review_output(output: str) -> str:
     """Return provider stderr/control text from a combined review artifact."""
-    _review_text, sep, stderr_text = output.partition("\n[stderr]\n")
-    return stderr_text.strip() if sep else ""
+    _review_text, stderr_text = _split_review_and_stderr(output)
+    return stderr_text
 
 
 def tool_denial_evidence(stderr_output: str) -> str | None:
@@ -180,6 +238,20 @@ def iter_review_prose_sentences(output: str):
                 yield sentence
 
 
+def _iter_clauses(sentence: str):
+    """Yield individual clauses within a sentence.
+
+    Splits on semicolons and common logical connectives that typically
+    demarcate independent assertions.
+    """
+    for clause in re.split(
+        r"\s*;\s*|\s+(?:and|but|however|although|though|yet|while|whereas)\s+",
+        sentence,
+        flags=re.IGNORECASE,
+    ):
+        yield clause.strip()
+
+
 def has_negated_clear_review_statement(normalized: str) -> bool:
     return NEGATED_CLEAR_REVIEW_STATEMENT_RE.search(normalized) is not None
 
@@ -208,7 +280,6 @@ def has_affirmative_issue_prose(output: str) -> bool:
     for sentence in iter_review_prose_sentences(output):
         if not sentence:
             continue
-        normalized_sentence = sentence.lower()
         if STRUCTURED_EMPTY_FINDINGS_RE.search(sentence):
             # Codex-style structured output often includes a literal empty findings
             # array alongside a clear explanation. Do not treat that field name as
@@ -226,14 +297,67 @@ def has_affirmative_issue_prose(output: str) -> bool:
             if not AFFIRMATIVE_ISSUE_WORD_RE.search(stripped):
                 continue
             sentence = stripped
-            normalized_sentence = sentence.lower()
         if has_affirmative_contrastive_issue_clause(sentence):
             return True
-        if has_negated_clear_review_statement(normalized_sentence):
+
+        for clause in _iter_clauses(sentence):
+            if not clause:
+                continue
+            normalized_clause = clause.lower()
+            if not AFFIRMATIVE_ISSUE_WORD_RE.search(clause):
+                continue
+            if has_negated_clear_review_statement(normalized_clause):
+                continue
+            if NEGATED_NON_CORRECTNESS_ISSUE_RE.search(clause):
+                continue
+            if NEGATED_ISSUE_PROSE_RE.search(clause):
+                continue
+            return True
+    return False
+
+
+def has_affirmative_non_correctness_contrastive_clause(sentence: str) -> bool:
+    for match in CONTRASTIVE_CLAUSE_RE.finditer(sentence):
+        suffix = sentence[match.end() :]
+        if not suffix:
             continue
-        if NEGATED_ISSUE_PROSE_RE.search(sentence):
+        if not NON_CORRECTNESS_ISSUE_RE.search(suffix):
+            continue
+        if NEGATED_NON_CORRECTNESS_ISSUE_RE.search(suffix):
             continue
         return True
+    return False
+
+
+def has_non_correctness_issue_prose(output: str) -> bool:
+    """Return True when the prose contains a likely security/maintainability finding.
+
+    Correctness-only clear wording can be valid for a review that still reports
+    non-correctness issues. This helper catches the common non-correctness
+    finding language that does not always include the generic issue keywords.
+    """
+
+    for sentence in iter_review_prose_sentences(output):
+        if not sentence:
+            continue
+        if not NON_CORRECTNESS_ISSUE_RE.search(sentence):
+            continue
+        if has_affirmative_non_correctness_contrastive_clause(sentence):
+            return True
+
+        for clause in _iter_clauses(sentence):
+            if not clause:
+                continue
+            normalized_clause = clause.lower()
+            if not NON_CORRECTNESS_ISSUE_RE.search(clause):
+                continue
+            if has_negated_clear_review_statement(normalized_clause):
+                continue
+            if NEGATED_NON_CORRECTNESS_ISSUE_RE.search(normalized_clause):
+                continue
+            if NEGATED_ISSUE_PROSE_RE.search(normalized_clause):
+                continue
+            return True
     return False
 
 
@@ -367,11 +491,11 @@ def _detect_review_status_from_actionable(actionable_output: str) -> str:
         return "clear"
     if has_negated_clear_review_statement(normalized) and not has_affirmative_issue_prose(
         actionable_output
-    ):
+    ) and not has_non_correctness_issue_prose(actionable_output):
         return "clear"
     if any(phrase in normalized for phrase in CLEAR_PHRASES) and not has_affirmative_issue_prose(
         actionable_output
-    ):
+    ) and not has_non_correctness_issue_prose(actionable_output):
         return "clear"
     return "unknown"
 
@@ -386,7 +510,7 @@ def review_status_diagnostics(output: str, *, harness: str = "codex") -> dict[st
     actionable_output = actionable_review_output(output)
     stderr_output = stderr_review_output(output)
     denial_evidence = tool_denial_evidence(stderr_output)
-    stderr_present = "\n[stderr]\n" in output
+    stderr_present = bool(stderr_output)
     explicit_status = STATUS_RE.search(actionable_output)
     finding_lines = CODEX_FINDING_RE.findall(actionable_output)
     normalized = actionable_output.lower()
@@ -398,6 +522,8 @@ def review_status_diagnostics(output: str, *, harness: str = "codex") -> dict[st
         normalized
     )
     structured_status = structured_review_status(actionable_output)
+    affirmative_issue_prose = has_affirmative_issue_prose(actionable_output)
+    non_correctness_issue_prose = has_non_correctness_issue_prose(actionable_output)
     if explicit_status:
         status_source = "explicit_status"
     elif structured_status is not None:
@@ -435,19 +561,44 @@ def review_status_diagnostics(output: str, *, harness: str = "codex") -> dict[st
     elif (
         harness not in PROMPTED_REVIEW_HARNESSES
         and clear_phrase_present
-        and not has_affirmative_issue_prose(actionable_output)
+        and not affirmative_issue_prose
+        and not non_correctness_issue_prose
     ):
         status_source = "codex_clear_prose"
     else:
         status_source = "none"
+    status = detect_review_status(output, harness=harness)
+    clear_phrase_used = status_source == "codex_clear_prose"
+    ignored_clear_phrase_reason = None
+    if clear_phrase_present and not clear_phrase_used:
+        if status_source in {
+            "explicit_status",
+            "structured_findings",
+            "codex_finding_bullet",
+            "finding_markers",
+        }:
+            ignored_clear_phrase_reason = "finding_signal_won"
+        elif non_correctness_issue_prose:
+            ignored_clear_phrase_reason = "non_correctness_issue_prose"
+        elif affirmative_issue_prose:
+            ignored_clear_phrase_reason = "affirmative_issue_prose"
+        elif harness in PROMPTED_REVIEW_HARNESSES:
+            ignored_clear_phrase_reason = "prompted_harness_requires_explicit_status"
+        elif status_source == "clear_lines":
+            ignored_clear_phrase_reason = "clear_line_won"
+        else:
+            ignored_clear_phrase_reason = "not_status_deciding_signal"
     return {
-        "status": detect_review_status(output, harness=harness),
+        "status": status,
         "status_source": status_source,
+        "status_deciding_signal": status_source,
         "actionable_chars": len(actionable_output),
         "stderr_present": stderr_present,
         "explicit_status": (explicit_status.group(1).lower() if explicit_status else None),
         "finding_line_count": len(finding_lines),
         "clear_phrase_present": clear_phrase_present,
+        "clear_phrase_used": clear_phrase_used,
+        "ignored_clear_phrase_reason": ignored_clear_phrase_reason,
         "matched_clear_phrase": matched_clear_phrase,
         "harness": harness,
         "explicit_status_required": harness in PROMPTED_REVIEW_HARNESSES,

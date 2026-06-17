@@ -243,10 +243,12 @@ def resume_loop_config(
             resume_config, "remediation_timeout_seconds"
         ),
         triage_timeout_seconds=_resume_optional_float(resume_config, "triage_timeout_seconds"),
-        timeout_seconds_display=_resume_phase_timeout(resume_config, "checks"),
+        check_timeout_seconds=_resume_phase_timeout(resume_config, "checks"),
+        timeout_seconds_display=_resume_optional_float(resume_config, "timeout_seconds"),
         review_timeout_seconds_display=_resume_phase_timeout(resume_config, "review"),
         remediation_timeout_seconds_display=_resume_phase_timeout(resume_config, "remediation"),
         triage_timeout_seconds_display=_resume_phase_timeout(resume_config, "triage"),
+        check_timeout_seconds_display=_resume_phase_timeout(resume_config, "checks"),
         debug_status_detection=_resume_bool(resume_config, "debug_status_detection", False),
         progress_style=_resume_str(resume_config, "progress_style", "compact"),
         terminal_excerpt_chars=_resume_int(resume_config, "terminal_excerpt_chars", 4_000),
@@ -571,12 +573,21 @@ def _resume_optional_float(payload: dict[object, object], key: str) -> float | N
 
 def _resume_phase_timeout(payload: dict[object, object], phase: str) -> float | None:
     phase_config = payload.get("phase_config")
-    if not isinstance(phase_config, dict):
-        return None
-    section = phase_config.get(phase)
-    if not isinstance(section, dict):
-        return None
-    value = section.get("timeout_seconds")
+    if isinstance(phase_config, dict):
+        section = phase_config.get(phase)
+        if isinstance(section, dict):
+            value = section.get("timeout_seconds")
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                return float(value)
+
+    # Fall back to legacy top-level timeout fields for summaries that lack phase_config.
+    if phase == "checks":
+        key = "check_timeout_seconds"
+    elif phase == "commit_message":
+        key = "commit_timeout_seconds"
+    else:
+        key = f"{phase}_timeout_seconds"
+    value = payload.get(key)
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return float(value)
     return None

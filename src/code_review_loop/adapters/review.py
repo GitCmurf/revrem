@@ -401,6 +401,7 @@ def _codex_review_retry_command(config: LoopConfig) -> list[str] | None:
 def _status_debug_detail(diagnostics: dict[str, object]) -> str:
     explicit_required = diagnostics.get("explicit_status_required") is True
     bullet_label = "codex_bullets" if explicit_required else "findings"
+    clear_phrase = _clear_phrase_debug_value(diagnostics)
     parts = [
         f"status={diagnostics['status']}",
         f"source={diagnostics['status_source']}",
@@ -411,12 +412,21 @@ def _status_debug_detail(diagnostics: dict[str, object]) -> str:
     parts.extend(
         [
             f"{bullet_label}={diagnostics['finding_line_count']}",
-            f"clear_phrase={diagnostics['clear_phrase_present']}",
+            f"clear_phrase={clear_phrase}",
             f"tool_denial={diagnostics['tool_denial_present']}",
             f"stderr={diagnostics['stderr_present']}",
         ]
     )
     return " ".join(parts)
+
+
+def _clear_phrase_debug_value(diagnostics: dict[str, object]) -> str:
+    if diagnostics.get("clear_phrase_used") is True:
+        return "used"
+    if diagnostics.get("clear_phrase_present") is True:
+        reason = diagnostics.get("ignored_clear_phrase_reason")
+        return f"seen_not_used:{reason or 'unknown'}"
+    return "absent"
 
 
 def run_review_with_retry(

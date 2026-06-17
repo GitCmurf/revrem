@@ -152,9 +152,72 @@ def test_format_structured_handoff_preserves_original_review():
     assert "Original review/check context:\nOriginal review text" in handoff
 
 
+def test_format_structured_handoff_includes_prompt_requirements():
+    payload = {
+        "confirmed_findings": [
+            {
+                "fingerprint": "f1",
+                "summary": "Fix timeout handling",
+                "severity": "medium",
+                "affected_paths": ["src/code_review_loop/cli/config_builder.py"],
+                "rationale": "Explicit zero should not inherit.",
+            }
+        ],
+        "implementation_order": ["f1"],
+        "verification_commands": ["pytest -q tests/test_cli_profile_overrides.py"],
+        "prompt_requirements": {
+            "required_fragments": ["regression-test-checklist"],
+            "definition_of_done": ["Explicit zero disables the phase timeout."],
+            "triage_prompt_draft": "Preserve the operator-visible timeout contract.",
+        },
+        "classification": {"risk_level": "medium", "refactor_depth": "localised"},
+    }
+
+    handoff = triage.format_structured_handoff(payload, "Original review text")
+
+    assert "Requested Prompt Fragments:" in handoff
+    assert "regression-test-checklist" in handoff
+    assert "Definition of Done:" in handoff
+    assert "Explicit zero disables the phase timeout." in handoff
+    assert "Triage Draft Instructions:" in handoff
+    assert "Preserve the operator-visible timeout contract." in handoff
+    assert "Risk level: medium" in handoff
+
+
 def test_invalid_triage_issue_uses_stable_code():
     issue = triage.invalid_triage_issue(ValueError("bad"), iteration=2)
 
     assert issue.code == "revrem.triage.invalid_output"
     assert issue.severity == "warn"
     assert issue.evidence["iteration"] == 2
+
+
+def test_parse_triage_payload_normalizes_null_needs_more_info_fingerprint():
+    payload = triage.parse_triage_payload(
+        json.dumps(
+            {
+                "confirmed_findings": [],
+                "rejected_findings": [],
+                "needs_more_info": [
+                    {
+                        "fingerprint": None,
+                        "summary": "Missing source fingerprint",
+                        "severity": "medium",
+                        "affected_paths": ["src/code_review_loop/triage.py"],
+                        "rationale": "The review item had no stable f1 identifier.",
+                        "info_requested": "Provide the source review artifact.",
+                    }
+                ],
+                "implementation_order": [],
+                "verification_commands": [],
+                "parsing_warnings": [],
+            }
+        ),
+        run_id="run-123",
+        source_review_artifact="review-1.txt",
+    )
+
+    assert payload["needs_more_info"][0]["fingerprint"] == "review-comment:1"
+    assert payload["parsing_warnings"][-1] == (
+        "Normalized needs_more_info missing fingerprint to review-comment:1 fallback."
+    )

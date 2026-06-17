@@ -60,6 +60,50 @@ def test_loop_runs_optional_triage_between_review_and_remediation(tmp_path):
     assert summary["artifact_paths"]["triage"] == [str(tmp_path / "artifacts" / "triage-1.txt")]
 
 
+def test_loop_stops_before_triage_when_review_is_only_provider_stderr(tmp_path):
+    calls = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[1] == "review":
+            return CommandResult(
+                list(args),
+                0,
+                stdout=(
+                    "[stderr]\n"
+                    "OpenAI Codex v0.140.0\n"
+                    "Full review comments:\n"
+                    "- [P2] Stale example from a provider transcript\n"
+                ),
+            )
+        raise AssertionError(f"triage/remediation should not run after transcript-only review: {args!r}")
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        triage_enabled=True,
+        debug_status_detection=True,
+    )
+
+    summary = runner_mod.run_loop(config, runner).to_dict()
+    diagnostics = json.loads(
+        (tmp_path / "artifacts" / "review-1-status.json").read_text(encoding="utf-8")
+    )
+
+    assert summary["final_status"] == "unknown"
+    assert summary["stopped_reason"] == "review_unknown"
+    assert [call[0][1] for call in calls] == ["review"]
+    assert not (tmp_path / "artifacts" / "triage-1-prompt.txt").exists()
+    assert not (tmp_path / "artifacts" / "triage-1.txt").exists()
+    assert diagnostics["status"] == "unknown"
+    assert diagnostics["status_source"] == "none"
+    assert diagnostics["stderr_present"] is True
+    assert diagnostics["actionable_chars"] == 0
+
+
 def test_loop_writes_structured_triage_artifact_and_handoff(tmp_path):
     calls = []
     triage_payload = {
@@ -308,7 +352,9 @@ def test_loop_skips_remediation_when_structured_triage_only_rejects_findings(tmp
     assert len(calls) == 2
 
 
-def test_loop_keeps_check_failure_gate_when_structured_triage_rejects_findings(tmp_path):
+def test_loop_keeps_check_failure_gate_when_structured_triage_rejects_findings(
+    tmp_path,
+):
     calls = []
     review_outputs = iter(
         [
@@ -490,7 +536,7 @@ def test_loop_recovers_misplaced_definition_of_done_and_routes(tmp_path):
             "model": "gpt-test",
             "reasoning_effort": "medium",
             "sandbox": "workspace-write",
-            "timeout_seconds": 60,
+            "timeout_seconds": None,
             "rationale": "Local filesystem fix.",
         },
     }
@@ -519,7 +565,7 @@ def test_loop_recovers_misplaced_definition_of_done_and_routes(tmp_path):
                     model="gpt-test",
                     reasoning_effort="medium",
                     sandbox="workspace-write",
-                    timeout_seconds=60,
+                    timeout_seconds=0,
                 )
             },
         ),
@@ -550,9 +596,23 @@ def test_loop_recovers_misplaced_definition_of_done_and_routes(tmp_path):
         for warning in triage_json["parsing_warnings"]
     )
     assert routing_json["effective_route"]["route_tier"] == "codex-midi"
+    assert triage_json["route_proposal"]["timeout_seconds"] == 0
+    triage_prompt = next(
+        input_text
+        for args, input_text, _ in calls
+        if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only"
+    )
+    assert "Configured remediation routes for route_proposal.route_tier" in triage_prompt
+    assert "- codex-midi: harness=codex, model=gpt-test" in triage_prompt
+    assert "timeout=none" in triage_prompt
+    assert "emit route_proposal.timeout_seconds as 0" in triage_prompt
     assert (tmp_path / "artifacts" / "routing-outcome-1.json").is_file()
     assert any(
-        item["code"] == "revrem.triage.parsing_warning"
+        item["code"] == "revrem.triage.parsing_warning" for item in summary["triage_diagnostics"]
+    )
+    assert any(
+        item["code"] == "revrem.triage.route_timeout_normalized"
+        and item["severity"] == "info"
         for item in summary["triage_diagnostics"]
     )
     assert not (tmp_path / "artifacts" / "diagnostics-1.json").exists()
@@ -661,7 +721,9 @@ def test_loop_malformed_suppressions_fail_open_for_structured_triage(tmp_path):
             return CommandResult(list(args), 0, stdout="src/code.py\n")
         if args[:3] == ["git", "commit", "-m"]:
             return CommandResult(
-                list(args), 0, stdout="[branch abc] fix(cli): harden RevRem commit flow\n"
+                list(args),
+                0,
+                stdout="[branch abc] fix(cli): harden RevRem commit flow\n",
             )
         return CommandResult(list(args), 0, stdout="passed\n")
 
@@ -690,7 +752,9 @@ def test_loop_writes_failure_summary_when_triage_fails(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
             return CommandResult(
-                list(args), 0, stdout="Full review comments:\n\n- [P2] Fix profile merge\n"
+                list(args),
+                0,
+                stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
             )
         return CommandResult(list(args), 1, stderr="Error: triage failed\n")
 

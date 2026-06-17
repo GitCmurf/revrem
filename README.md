@@ -202,6 +202,87 @@ revrem config show final-pr
 revrem --profile final-pr
 ```
 
+For a plain-terminal guided setup, use the CLI wizard:
+
+```bash
+revrem
+revrem --wizard
+```
+
+In an interactive terminal, bare `revrem` opens the wizard. `revrem --wizard`
+opens the wizard even when combined with other top-level options. In scripts
+and other non-interactive contexts, bare `revrem` keeps the normal CLI
+behavior. When local run history contains a compatible run for the current
+repository, the wizard first offers those last settings as the starting point;
+history entries from other repositories do not hide the repo-local offer.
+Otherwise it starts from the recommended profile/defaults. It then opens on a
+run-shape diagram before provider calls can start. The preview is built from
+the same phase command builders used at runtime, lists the exact provider CLI
+commands for review, triage, remediation, routed remediation, and
+commit-message drafting, and shows each model-calling phase as
+`harness:model(effort)`. The diagram separates the outer remediation pass limit
+from the inner verify-failure retry limit, and shows commit-message drafting
+only under the "if verify passes" commit branch. Preview artifact paths use
+`.revrem/runs/RUN/...` as a placeholder because the real run directory is
+allocated only when the command starts.
+
+If a provider command omits `--model`, the wizard resolves a trusted local
+provider default when RevRem knows how. Codex defaults are read from
+`$CODEX_HOME/config.toml` or `~/.codex/config.toml`. If the model still cannot
+be resolved, the diagram marks it as `model unresolved` and the wizard only
+allows printing or cancellation until you choose an explicit model.
+
+The normal wizard path keeps the profile values unless you choose an edit
+screen. Verification checks can be kept from the profile or selected from
+detected repo presets such as `./scripts/dev-check`, Python test/static checks,
+Meminit DocOps checks, and `git diff --check`; raw shell commands remain
+available under the custom option.
+
+The model settings screen is phase-specific: review, triage, remediation, and
+commit-message drafting each expose their own harness, model, and reasoning
+effort. When you change one phase, the generated command uses the matching
+phase flag such as `--review-reasoning-effort` or
+`--remediation-reasoning-effort`; it does not silently apply one shared model
+choice to every provider call. Disabled triage is shown as a setup action, and
+selecting it walks through enabling triage before routing choices. Harnesses
+are selected from known RevRem harnesses so mistyped names are caught inside
+the wizard, and suspicious model names such as bare numbers require
+confirmation. Codex triage starts at `low` effort: RevRem rejects
+`--triage-reasoning-effort minimal` for Codex because inherited Codex tools can
+make that provider request fail before structured triage output is produced.
+If an older profile still contains Codex triage `reasoning_effort = "minimal"`,
+the wizard emits an explicit `--triage-reasoning-effort low` replacement and
+keeps the triage effort screen editable instead of failing before the operator
+can repair the profile.
+Timeouts have their own main-menu editor for the existing shared
+`--timeout-seconds` fallback plus phase-specific timeout flags:
+`--review-timeout-seconds`, `--triage-timeout-seconds`,
+`--remediation-timeout-seconds`, `--commit-timeout-seconds`, and
+`--check-timeout-seconds`. Each timeout prompt shows the effective value that
+blank input will keep. Setting any timeout to `0` disables that phase's
+subprocess timeout for the run. A shared CLI timeout overrides profile
+commit-message and check timeouts unless `--commit-timeout-seconds` or
+`--check-timeout-seconds` is also supplied. Resumed runs preserve the shared
+timeout separately from phase-specific timeouts, so a check timeout override
+does not replace the global `--timeout-seconds` value in later summaries or
+resume commands.
+This repository's project-local `default` profile keeps triage opt-in but
+defines v2 routes, so enabling triage from the wizard can also enable routing.
+When routing is enabled, the diagram shows triage/policy route selection as
+the primary remediation path and keeps the unrouted remediation command as the
+fallback. Route previews use the runtime routing policy, including configured
+fallbacks for unavailable harnesses or models. The v2 triage prompt includes
+the configured route names and route metadata so model route proposals can name
+the route the profile actually defines; unbounded route timeouts are shown as
+`timeout=none`, and route proposals encode that as `timeout_seconds = 0`.
+The project-local profiles route review-classification/security findings and
+explicit routing-policy/model-escalation safety signals to `codex-frontier`,
+keep localised medium-risk operator workflow and local timeout/config
+precedence fixes on `codex-midi`, and route broad 4+ module findings to
+`gemini-pro`. A timeout/config finding should only escalate when the review
+describes active cancellation failure, runaway execution after an operator
+requested a cap, finding-hiding, security, or multi-phase safety impact.
+
 Project-local profiles can be saved without running the loop:
 
 ```bash
@@ -210,7 +291,9 @@ revrem --base main --max-iterations 2 --check "git diff --check" --save-profile 
 
 `--save-profile` writes `.revrem.toml` at the repository root and refuses to
 overwrite an existing project profile unless `--save-profile-force` is
-supplied.
+supplied. Saved profiles keep the resolved phase-specific timeout values,
+including the check timeout, so explicit overrides survive a later
+`--profile` run.
 
 ## Safety Model
 

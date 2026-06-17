@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from code_review_loop import policy, routing_artifacts, routing_timeouts
+from code_review_loop.adapters.phase_support import phase_timeout_seconds
 from code_review_loop.adapters.remediation import run_remediation
+from code_review_loop.cli import args as cli_args
+from code_review_loop.cli import config_builder
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.ports import CommandResult, RunContext
 from tests.support.fakes import FakeClock, FakeRunIdentity
@@ -74,6 +77,12 @@ def test_cli_timeout_zero_preserves_unbounded_route_timeout() -> None:
 
     assert routing_timeouts.effective_route_timeout_seconds(config, _route(0)) is None
     assert routing_timeouts.effective_route_timeout_display(config, _route(0)) == 0
+
+
+def test_shared_timeout_zero_is_unbounded_for_inherited_phase_timeout() -> None:
+    config = LoopConfig(timeout_seconds=0)
+
+    assert phase_timeout_seconds(config, None) is None
 
 
 def test_routing_artifact_uses_effective_timeout() -> None:
@@ -171,3 +180,28 @@ def test_routed_remediation_uses_route_timeout_when_cli_zero(tmp_path) -> None:
 
     assert result.returncode == 0
     assert captured_timeouts == [300]
+
+
+def test_cli_remediation_zero_does_not_fall_back_to_shared_timeout(tmp_path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+
+    args = cli_args.parse_args(
+        [
+            "--timeout-seconds",
+            "600",
+            "--remediation-timeout-seconds",
+            "0",
+            "--dry-run",
+        ]
+    )
+    config, _summary_format = config_builder.build_loop_config(args, tmp_path)
+
+    route = _route(1200)
+
+    assert config.timeout_seconds == 600
+    assert config.remediation_timeout_seconds == 0
+    assert config.phase_config_field_sources["remediation"]["timeout_seconds"] == "cli"
+    assert routing_timeouts.effective_route_timeout_seconds(config, route) == 1200

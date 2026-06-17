@@ -282,6 +282,13 @@ def triage_parsing_warning_diagnostic(message: str) -> dict[str, object]:
             "severity": "info",
             "message": message,
         }
+    if _is_route_timeout_normalization_warning(message):
+        return {
+            "kind": "parsing_note",
+            "code": "revrem.triage.route_timeout_normalized",
+            "severity": "info",
+            "message": message,
+        }
     return {
         "kind": "parsing_warning",
         "code": "revrem.triage.parsing_warning",
@@ -293,8 +300,21 @@ def triage_parsing_warning_diagnostic(message: str) -> dict[str, object]:
 def _is_fallback_fingerprint_warning(message: str) -> bool:
     normalized = message.lower()
     return (
-        "f1:" in normalized or "f1 " in normalized
-    ) and "review-comment:" in normalized
+        ("f1:" in normalized or "f1 " in normalized)
+        and "review-comment:" in normalized
+    ) or (
+        "normalized needs_more_info missing fingerprint" in normalized
+        and "review-comment:" in normalized
+    )
+
+
+def _is_route_timeout_normalization_warning(message: str) -> bool:
+    normalized = message.lower()
+    return (
+        "normalized route_proposal.timeout_seconds" in normalized
+        and "0" in normalized
+        and "timeout" in normalized
+    )
 
 
 def add_phase_diagnostics(summary: dict[str, object], artifact_dir: Path) -> None:
@@ -499,7 +519,11 @@ def phase_config_payload(config: LoopConfig) -> dict[str, object]:
         },
         "checks": {
             "commands": list(config.check_commands),
-            "timeout_seconds": config.timeout_seconds_display,
+            "timeout_seconds": (
+                config.check_timeout_seconds_display
+                if config.check_timeout_seconds_display is not None
+                else config.timeout_seconds_display
+            ),
             "source": config.phase_config_sources.get("checks", "direct-config"),
             "sources": field_sources.get("checks", {}),
         },

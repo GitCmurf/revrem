@@ -3,8 +3,8 @@ document_id: REVREM-LEDGER-003
 type: LEDGER
 title: Behaviour ledger for the cli.py re-engineering (REVREM-TASK-003)
 status: Approved
-version: '1.5'
-last_updated: '2026-06-10'
+version: '1.6'
+last_updated: '2026-06-16'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -55,6 +55,40 @@ There is no silent third option.
 ```
 
 ## Entries
+
+### 2026-06-17 — Verb-mediated security-risk negations stay clear
+
+- **Contract:** machine
+- **What changed:** Codex review-status interpretation now treats common
+  verb-mediated negations such as "does not introduce a security risk" and
+  "does not create a security risk" as negated non-correctness prose.
+- **Why:** Clear reviews can include a second sentence that explicitly says the
+  patch does not add security risk; that sentence should not be mistaken for an
+  actionable security finding.
+- **Before / After:** `detect_review_status("No actionable correctness,
+  security, or maintainability issues were identified. This does not introduce
+  a security risk.")` remains `clear` instead of being vetoed as `unknown`.
+- **schema_version impact:** none. The artifact schema is unchanged; this only
+  corrects status classification.
+- **CHANGELOG:** Unreleased / Fixed.
+
+### 2026-06-16 — Contrastive non-correctness review prose stays non-clear
+
+- **Contract:** machine
+- **What changed:** Codex review-status interpretation now treats same-sentence
+  contrastive security or maintainability findings as non-clear even when the
+  sentence starts with negated clear correctness prose.
+- **Why:** A review such as "I did not identify any correctness issues, but
+  there is a security risk..." reports an actionable non-correctness finding.
+  The previous negated-clear skip could suppress that later contrastive clause
+  and let remediation stop early.
+- **Before / After:** `detect_review_status("I did not identify any
+  correctness issues, but there is a security risk...")` moves from `clear` to
+  `unknown`; genuinely clear prose without an actionable contrastive clause
+  remains `clear`.
+- **schema_version impact:** none. The artifact schema is unchanged; this only
+  corrects status classification.
+- **CHANGELOG:** Unreleased / Fixed.
 
 ### 2026-06-10 — Prompted-review truncation coverage policy
 

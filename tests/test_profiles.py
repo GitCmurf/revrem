@@ -114,14 +114,46 @@ scope = "user"
 def test_project_dogfood_profile_parses_exact_committed_profile():
     loaded = profiles.load_profile_file(ROOT / ".revrem.toml")
 
+    default = loaded.profiles["default"]
+    assert default.triage.enabled is False
+    assert default.triage.contract == "v2"
+    assert default.triage.routing.enabled is True
+    assert default.triage.routing.default_route == "codex-midi"
+    assert [rule.then.allow_model_deescalation for rule in default.triage.routing.rule[:4]] == [
+        False,
+        False,
+        False,
+        False,
+    ]
+    assert default.triage.routes["codex-midi"].model == "gpt-5.4-mini"
+    assert default.triage.routes["gemini-pro"].fallback == "codex-midi"
+
     dogfood = loaded.profiles["dogfood"]
     assert dogfood.pipeline.max_iterations == 3
     assert dogfood.triage.enabled is True
     assert dogfood.triage.contract == "v2"
     assert dogfood.triage.routing.rule[0].id == "high-risk-frontier"
     assert dogfood.triage.routing.rule[0].when.risk_level_min == "high"
-    assert dogfood.triage.routing.rule[1].id == "multi-file-gemini"
-    assert dogfood.triage.routing.rule[1].when.module_count_gte == 4
+    assert dogfood.triage.routing.rule[0].then.allow_model_deescalation is False
+    assert dogfood.triage.routing.rule[1].id == "review-domain-frontier"
+    assert dogfood.triage.routing.rule[1].when.domain_tags_any == (
+        "security",
+        "review-classification",
+    )
+    assert dogfood.triage.routing.rule[1].then.allow_model_deescalation is False
+    assert dogfood.triage.routing.rule[2].id == "review-safety-frontier"
+    assert dogfood.triage.routing.rule[2].when.safety_signals_any == (
+        "sensitive-domain:security-review-routing",
+    )
+    assert dogfood.triage.routing.rule[2].then.allow_model_deescalation is False
+    assert dogfood.triage.routing.rule[3].id == "routing-policy-frontier"
+    assert dogfood.triage.routing.rule[3].when.safety_signals_any == (
+        "routing-policy-correctness",
+        "model-escalation-policy",
+    )
+    assert dogfood.triage.routing.rule[3].then.allow_model_deescalation is False
+    assert dogfood.triage.routing.rule[4].id == "multi-file-gemini"
+    assert dogfood.triage.routing.rule[4].when.module_count_gte == 4
     assert dogfood.triage.routes["gemini-pro"].harness == "gemini"
     assert dogfood.commit.message_model == "gpt-5.3-codex-spark"
     assert dogfood.commit.reasoning_effort == "low"

@@ -162,7 +162,7 @@ def run_worktree_cleanliness_check(
             command,
             config.cwd,
             None,
-            phase_support.phase_timeout_seconds(config, config.timeout_seconds),
+            phase_support.phase_timeout_seconds(config, config.check_timeout_seconds),
         ),
     )
     if result.returncode != 0:
@@ -198,7 +198,7 @@ def run_worktree_cleanliness_check(
             command,
             config.cwd,
             None,
-            phase_support.phase_timeout_seconds(config, config.timeout_seconds),
+            phase_support.phase_timeout_seconds(config, config.check_timeout_seconds),
         ),
     )
     if recheck.returncode != 0:
@@ -283,7 +283,7 @@ def _intent_add_untracked(
     """
     intent_added: list[str] = []
     intent_errors: list[str] = []
-    timeout_seconds = phase_support.phase_timeout_seconds(config, config.timeout_seconds)
+    timeout_seconds = phase_support.phase_timeout_seconds(config, config.check_timeout_seconds)
     intent_cwd = lexical_git_repo_root(config.cwd) or config.cwd
     for path_text in untracked_paths:
         if not path_text:
@@ -419,7 +419,7 @@ def run_checks(
                 command,
                 config.cwd,
                 None,
-                phase_support.phase_timeout_seconds(config, config.timeout_seconds),
+                phase_support.phase_timeout_seconds(config, config.check_timeout_seconds),
             )
             result = normalize_adaptive_check_result(command, config.cwd, result)
         results.append(result)

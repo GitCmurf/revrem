@@ -15,6 +15,8 @@ from code_review_loop.core.review_interpretation import (
     extract_finding_summaries,
     extract_review_summary,
     has_affirmative_issue_prose,
+    review_status_diagnostics,
+    stderr_review_output,
     strip_finding_priority,
 )
 
@@ -99,6 +101,35 @@ def test_detect_review_status_accepts_exact_clear_review_lines() -> None:
     assert detect_review_status("No findings.\n") == "clear"
     assert detect_review_status("summary\nNo actionable findings\n") == "clear"
     assert (
+        detect_review_status(
+            "No discrete correctness issues were found in the diff. The added "
+            "wizard path and tests appear internally consistent."
+        )
+        == "clear"
+    )
+    assert (
+        detect_review_status(
+            "No discrete, actionable correctness issues were found in the changed code. "
+            "The added wizard path and tests appear internally consistent."
+        )
+        == "clear"
+    )
+    assert (
+        detect_review_status(
+            "No actionable correctness, security, or maintainability issues were "
+            "identified in the diff. The full test suite also passed locally."
+        )
+        == "clear"
+    )
+    assert (
+        detect_review_status(
+            "No actionable correctness, security, or maintainability issues were "
+            "identified in the diff.\n\n[stderr]\nOpenAI Codex v0.140.0\n"
+            "reasoning effort: high\n"
+        )
+        == "clear"
+    )
+    assert (
         detect_review_status("I did not find any discrete, actionable bugs in the diff.") == "clear"
     )
     assert (
@@ -127,6 +158,105 @@ def test_detect_review_status_accepts_exact_clear_review_lines() -> None:
     assert detect_review_status("This would warrant an inline finding.") == "unknown"
 
 
+def test_detect_review_status_does_not_clear_mixed_non_correctness_findings() -> None:
+    assert (
+        detect_review_status(
+            "No discrete correctness issues were found. However, there is a security "
+            "vulnerability in the upload path."
+        )
+        == "unknown"
+    )
+    assert (
+        detect_review_status(
+            "No discrete correctness issues were found. However, there is a "
+            "maintainability concern in the wizard flow."
+        )
+        == "unknown"
+    )
+    assert (
+        detect_review_status(
+            "I did not find any discrete, actionable bugs in the diff. "
+            "However, this exposes credentials to untrusted logs."
+        )
+        == "unknown"
+    )
+    assert (
+        detect_review_status(
+            "I did not find any discrete, actionable bugs in the diff. "
+            "However, the new endpoint is exploitable by unauthenticated callers."
+        )
+        == "unknown"
+    )
+
+
+def test_detect_review_status_allows_locally_negated_non_correctness_prose() -> None:
+    assert (
+        detect_review_status(
+            "No discrete correctness issues were found. This is not a security issue."
+        )
+        == "clear"
+    )
+    assert (
+        detect_review_status(
+            "I did not identify any introduced correctness issues. "
+            "The changed helper is not a maintainability concern."
+        )
+        == "clear"
+    )
+    assert (
+        detect_review_status(
+            "No actionable correctness, security, or maintainability issues were "
+            "identified. This does not introduce a security risk."
+        )
+        == "clear"
+    )
+    assert (
+        detect_review_status(
+            "I did not find any discrete, actionable bugs in the diff. The patch "
+            "does not create a security risk for the upload path."
+        )
+        == "clear"
+    )
+
+
+def test_detect_review_status_preserves_contrastive_non_correctness_findings() -> None:
+    assert (
+        detect_review_status(
+            "I did not identify any correctness issues, but there is a security "
+            "risk in the upload path."
+        )
+        == "unknown"
+    )
+    assert (
+        detect_review_status(
+            "I did not find any discrete, actionable bugs in the diff; however "
+            "there is a maintainability concern in the wizard flow."
+        )
+        == "unknown"
+    )
+    assert (
+        detect_review_status(
+            "No discrete correctness issues were found. This is not a security issue, "
+            "but it is an insecure default."
+        )
+        == "unknown"
+    )
+    assert (
+        detect_review_status(
+            "I did not identify any introduced correctness issues. This is not a "
+            "maintainability concern, however it creates security debt."
+        )
+        == "unknown"
+    )
+    assert (
+        detect_review_status(
+            "I did not identify any correctness issues, and the upload path does "
+            "not introduce a security risk."
+        )
+        == "clear"
+    )
+
+
 def test_detect_review_status_does_not_generalize_negated_clear_with_findings() -> None:
     assert (
         detect_review_status(
@@ -140,6 +270,13 @@ def test_detect_review_status_does_not_generalize_negated_clear_with_findings() 
 
 def test_detect_review_status_requires_explicit_status_line() -> None:
     assert detect_review_status("no findings about style, but several about logic") == "unknown"
+    assert (
+        detect_review_status(
+            "No discrete, actionable correctness issues were found in setup, but "
+            "there is a real regression in runtime routing."
+        )
+        == "unknown"
+    )
     assert detect_review_status("review is clear of syntax errors but not semantic") == "unknown"
     assert detect_review_status("") == "unknown"
 
@@ -181,6 +318,26 @@ def test_actionable_review_output_drops_verbose_stderr_transcript() -> None:
         "diff --git a/x b/x\n" * 100
     )
     assert actionable_review_output(output) == "Full review comments:\n\n- [P1] Fix the bug"
+
+
+def test_actionable_review_output_drops_leading_stderr_transcript() -> None:
+    output = (
+        "[stderr]\n"
+        "OpenAI Codex v0.140.0\n"
+        "Full review comments:\n"
+        "- [P2] Example copied from a provider transcript\n"
+    )
+
+    diagnostics = review_status_diagnostics(output)
+
+    assert actionable_review_output(output) == ""
+    assert stderr_review_output(output).startswith("OpenAI Codex")
+    assert detect_review_status(output) == "unknown"
+    assert diagnostics["status"] == "unknown"
+    assert diagnostics["status_source"] == "none"
+    assert diagnostics["stderr_present"] is True
+    assert diagnostics["actionable_chars"] == 0
+    assert diagnostics["finding_line_count"] == 0
 
 
 def test_actionable_review_output_falls_back_to_full_output_when_no_stderr() -> None:

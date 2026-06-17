@@ -15,6 +15,65 @@ model = "gpt-5.4-mini"
 reasoning_effort = "medium"
 timeout_seconds = 1800.0
 
+[profiles.default.triage]
+enabled = false
+contract = "v2"
+
+[profiles.default.triage.routing]
+enabled = true
+mode = "first-match"
+default_route = "codex-midi"
+allow_model_escalation = false
+strict_on_unavailable_route = false
+
+[[profiles.default.triage.routing.rule]]
+id = "high-risk-frontier"
+when.risk_level_min = "high"
+then.route = "codex-frontier"
+then.allow_model_deescalation = false
+
+[[profiles.default.triage.routing.rule]]
+id = "review-domain-frontier"
+when.domain_tags_any = ["security", "review-classification"]
+then.route = "codex-frontier"
+then.allow_model_deescalation = false
+
+[[profiles.default.triage.routing.rule]]
+id = "review-safety-frontier"
+when.safety_signals_any = ["sensitive-domain:security-review-routing"]
+then.route = "codex-frontier"
+then.allow_model_deescalation = false
+
+[[profiles.default.triage.routing.rule]]
+id = "routing-policy-frontier"
+when.safety_signals_any = ["routing-policy-correctness", "model-escalation-policy"]
+then.route = "codex-frontier"
+then.allow_model_deescalation = false
+
+[[profiles.default.triage.routing.rule]]
+id = "multi-file-gemini"
+when.module_count_gte = 4
+then.route = "gemini-pro"
+
+[profiles.default.triage.routes.codex-frontier]
+harness = "codex"
+model = "gpt-5.5"
+reasoning_effort = "medium"
+timeout_seconds = 0
+
+[profiles.default.triage.routes.codex-midi]
+harness = "codex"
+model = "gpt-5.4-mini"
+reasoning_effort = "medium"
+timeout_seconds = 0
+
+[profiles.default.triage.routes.gemini-pro]
+harness = "gemini"
+model = "gemini-3.1-pro-preview"
+reasoning_effort = "medium"
+timeout_seconds = 0
+fallback = "codex-midi"
+
 [profiles.default.commit]
 enabled = true
 
@@ -55,13 +114,32 @@ on_invalid = "continue"
 enabled = true
 mode = "first-match"
 default_route = "codex-midi"
-allow_model_escalation = true
+allow_model_escalation = false
 strict_on_unavailable_route = false
 
 [[profiles.dogfood.triage.routing.rule]]
 id = "high-risk-frontier"
 when.risk_level_min = "high"
 then.route = "codex-frontier"
+then.allow_model_deescalation = false
+
+[[profiles.dogfood.triage.routing.rule]]
+id = "review-domain-frontier"
+when.domain_tags_any = ["security", "review-classification"]
+then.route = "codex-frontier"
+then.allow_model_deescalation = false
+
+[[profiles.dogfood.triage.routing.rule]]
+id = "review-safety-frontier"
+when.safety_signals_any = ["sensitive-domain:security-review-routing"]
+then.route = "codex-frontier"
+then.allow_model_deescalation = false
+
+[[profiles.dogfood.triage.routing.rule]]
+id = "routing-policy-frontier"
+when.safety_signals_any = ["routing-policy-correctness", "model-escalation-policy"]
+then.route = "codex-frontier"
+then.allow_model_deescalation = false
 
 [[profiles.dogfood.triage.routing.rule]]
 id = "multi-file-gemini"

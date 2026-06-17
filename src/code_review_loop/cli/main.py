@@ -20,6 +20,7 @@ from code_review_loop.cli.config_support import (
     lexical_git_repo_root,
 )
 from code_review_loop.cli.exit import map_application_call
+from code_review_loop.cli.wizard import run_wizard
 from code_review_loop.git_status import non_artifact_status_entries_from_status_z
 from code_review_loop.invocation import invocation_payload, redact_argv
 from code_review_loop.prompts_composer import trim_for_prompt
@@ -31,6 +32,16 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     executable = sys.argv[0] if argv is None else "revrem"
+    if "--wizard" in raw_argv or (
+        not raw_argv and sys.stdin.isatty() and sys.stdout.isatty()
+    ):
+        wizard_result = run_wizard(cwd=Path.cwd())
+        if wizard_result is None:
+            return 130  # outcome-exempt: operator cancelled before provider calls
+        if wizard_result.action == "print":
+            return 0  # outcome-exempt: command builder only
+        raw_argv = list(wizard_result.argv)
+
     dispatch_result = dispatch_or_none(raw_argv)
     if dispatch_result is not None:
         return dispatch_result

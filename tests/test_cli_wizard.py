@@ -1,0 +1,1583 @@
+from __future__ import annotations
+
+import json
+import sys
+import types
+from importlib import import_module
+from io import StringIO
+from pathlib import Path
+
+import pytest
+
+from code_review_loop import application as application_mod
+from code_review_loop.cli import wizard
+from code_review_loop.core.outcome import OutcomeClear
+
+cli_main = import_module("code_review_loop.cli.main")
+
+
+class _TtyStringIO(StringIO):
+    def isatty(self) -> bool:
+        return True
+
+
+class _KeyboardInterruptInput(StringIO):
+    def readline(self, *args, **kwargs):
+        raise KeyboardInterrupt
+
+
+class _FakeText:
+    def __init__(self):
+        self.parts = []
+
+    def append(self, value, style=None):
+        self.parts.append((value, style))
+
+
+class _FakeConsole:
+    printed = []
+
+    def __init__(self, *args, **kwargs):
+        self.args = args
+        self.kwargs = kwargs
+
+    def print(self, value, *args, **kwargs):
+        self.printed.append((value, kwargs))
+
+
+def _install_fake_rich(monkeypatch):
+    _FakeConsole.printed = []
+    rich_module = types.ModuleType("rich")
+    console_module = types.ModuleType("rich.console")
+    text_module = types.ModuleType("rich.text")
+    console_module.Console = _FakeConsole
+    text_module.Text = _FakeText
+    monkeypatch.setitem(sys.modules, "rich", rich_module)
+    monkeypatch.setitem(sys.modules, "rich.console", console_module)
+    monkeypatch.setitem(sys.modules, "rich.text", text_module)
+
+
+@pytest.fixture(autouse=True)
+def _codex_home(tmp_path, monkeypatch):
+    home = tmp_path / "home-global"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
+    (codex_home / "config.toml").write_text(
+        'model = "gpt-5.5"\nmodel_reasoning_effort = "low"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+
+
+def _write_profile(
+    path: Path,
+    *,
+    summary_format: str = "text",
+    max_wall_seconds: int | float | None = None,
+    artifact_dir: str | None = None,
+) -> None:
+    output_block = f'artifact_dir = "{artifact_dir}"\n' if artifact_dir is not None else ""
+    budget_block = ""
+    if max_wall_seconds is not None:
+        budget_block = f"""
+[profiles.final-pr.budgets]
+max_wall_seconds = {max_wall_seconds}
+"""
+    path.write_text(
+        f"""
+[profiles.final-pr]
+description = "Final PR"
+
+[profiles.final-pr.pipeline]
+base = "trunk"
+max_iterations = 2
+checks = ["pytest -q"]
+
+[profiles.final-pr.output]
+summary_format = "{summary_format}"
+{output_block}
+
+{budget_block}
+
+[profiles.final-pr.triage]
+enabled = true
+contract = "v2"
+
+[profiles.final-pr.triage.routing]
+enabled = true
+default_route = "midtier"
+
+[profiles.final-pr.triage.routes.midtier]
+harness = "codex"
+model = "gpt-5.4-mini"
+""",
+        encoding="utf-8",
+    )
+
+
+def test_wizard_keeps_profile_command_minimal_for_defaults(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    stdin = StringIO(
+        "\n"  # accept run shape
+        "\n"  # dry-run action
+        "\n"  # use command
+    )
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=StringIO())
+
+    assert result is not None
+    assert result.argv == ("--profile", "final-pr", "--dry-run")
+    assert result.shell_command == "revrem --profile final-pr --dry-run"
+    assert result.action == "dry-run"
+
+
+def test_wizard_first_screen_distinguishes_defaults_and_previews_commands(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    config_path = home / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        """
+[defaults.pipeline]
+base = "develop"
+
+[profiles.default]
+description = "Saved from CLI"
+
+[profiles.default.review]
+model = "gpt-5.5"
+reasoning_effort = "low"
+""",
+        encoding="utf-8",
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("config\nq\n"), stderr=stderr)
+
+    assert result is None
+    rendered = stderr.getvalue()
+    assert "no profile (merged defaults)" in rendered
+    assert "default: (~/.config/revrem/profiles.toml)" in rendered
+    assert "final-pr: (./.revrem.toml)" in rendered
+    assert "command: revrem --profile default" in rendered
+    assert "command: revrem --profile final-pr" in rendered
+    assert "review=codex,gpt-5.5" not in rendered
+
+
+def test_wizard_run_shape_previews_models_routes_checks_and_command(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("q\n"), stderr=stderr)
+
+    assert result is None
+    rendered = stderr.getvalue()
+    assert "Run shape: final-pr" in rendered
+    assert "command: revrem --profile final-pr" in rendered
+    assert "base: trunk" in rendered
+    assert "remediation passes: max 2" in rendered
+    assert "terminal output: text summary, compact progress" in rendered
+    assert "+-- review: uses codex:gpt-5.5(low)" in rendered
+    assert "+-- triage: uses codex:gpt-5.5(low)" in rendered
+    assert "route midtier: uses codex:gpt-5.4-mini" in rendered
+    assert "+-- routed remediation and verification" in rendered
+    assert "remediate: route selected from the candidates above" in rendered
+    assert "--remediation-model is ignored while routing selects a route" in rendered
+    assert "fallback if routing is off/unavailable: uses codex:gpt-5.5(low)" in rendered
+    assert "verify: 1 checks" in rendered
+    assert "1. pytest -q" in rendered
+    assert "if verify fails: no inner retry" in rendered
+    assert "if verify passes: commit off" in rendered
+    assert "after pass limit: final review enabled" in rendered
+    assert "provider command: codex review" in rendered
+
+
+def test_wizard_remediation_preview_includes_output_last_message(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(
+        tmp_path / ".revrem.toml",
+        artifact_dir=".revrem/runs/preview",
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("q\n"), stderr=stderr)
+
+    assert result is None
+    rendered = stderr.getvalue()
+    assert "--output-last-message .revrem/runs/RUN/remediation-1-last-message.txt" in rendered
+    assert ".revrem/runs/preview/remediation-1-last-message.txt" not in rendered
+
+
+def test_wizard_run_shape_shows_profile_budget_ceiling(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml", max_wall_seconds=120)
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("q\n"), stderr=stderr)
+
+    assert result is None
+    rendered = stderr.getvalue()
+    assert "budget: max wall 120s" in rendered
+
+
+def test_wizard_offers_last_run_as_starting_settings(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    run_dir = tmp_path / ".revrem" / "runs" / "last"
+    run_dir.mkdir(parents=True)
+    summary_path = run_dir / "summary.json"
+    summary_path.write_text(
+        json.dumps(
+            {
+                "command_line": [
+                    "revrem",
+                    "--profile",
+                    "final-pr",
+                    "--model",
+                    "gpt-5.4-mini",
+                    "--reasoning-effort",
+                    "high",
+                    "--max-iterations",
+                    "4",
+                    "--remediation-reasoning-effort",
+                    "low",
+                    "--progress-style",
+                    "verbose",
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    history_path = tmp_path / "home-global" / ".local" / "share" / "revrem" / "runs.jsonl"
+    history_path.parent.mkdir(parents=True)
+    history_path.write_text(
+        json.dumps(
+            {
+                "cwd": str(tmp_path),
+                "summary_path": str(summary_path.relative_to(tmp_path)),
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(
+        cwd=tmp_path,
+        stdin=StringIO("\n\nprint\n\n"),
+        stdout=StringIO(),
+        stderr=stderr,
+    )
+
+    assert result is not None
+    assert result.argv == (
+        "--profile",
+        "final-pr",
+        "--max-iterations",
+        "4",
+        "--model",
+        "gpt-5.4-mini",
+        "--reasoning-effort",
+        "high",
+        "--remediation-reasoning-effort",
+        "low",
+        "--progress-style",
+        "verbose",
+    )
+    rendered = stderr.getvalue()
+    assert "Start from which settings?" in rendered
+    assert "Started from: last run" in rendered
+    assert (
+        "Previous saved command: revrem --profile final-pr --model gpt-5.4-mini "
+        "--reasoning-effort high --max-iterations 4 "
+        "--remediation-reasoning-effort low --progress-style verbose" in rendered
+    )
+    assert (
+        "last run; command: revrem --profile final-pr --max-iterations 4 --model gpt-5.4-mini "
+        "--reasoning-effort high --remediation-reasoning-effort low --progress-style verbose"
+        in rendered
+    )
+
+
+@pytest.mark.parametrize(
+    ("saved_flags", "expected_flags"),
+    [
+        (
+            ("--no-routing-strict", "--no-allow-model-escalation"),
+            ("--no-routing-strict", "--no-allow-model-escalation"),
+        ),
+        (("--routing-strict",), ("--routing-strict",)),
+    ],
+)
+def test_wizard_last_run_replays_explicit_routing_safety_flags(
+    tmp_path,
+    monkeypatch,
+    saved_flags,
+    expected_flags,
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    run_dir = tmp_path / ".revrem" / "runs" / "last"
+    run_dir.mkdir(parents=True)
+    summary_path = run_dir / "summary.json"
+    summary_path.write_text(
+        json.dumps(
+            {
+                "command_line": [
+                    "revrem",
+                    "--profile",
+                    "final-pr",
+                    *saved_flags,
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    history_path = tmp_path / "home-global" / ".local" / "share" / "revrem" / "runs.jsonl"
+    history_path.parent.mkdir(parents=True)
+    history_path.write_text(
+        json.dumps(
+            {
+                "cwd": str(tmp_path),
+                "summary_path": str(summary_path.relative_to(tmp_path)),
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(
+        cwd=tmp_path,
+        stdin=StringIO("\n\nprint\n\n"),
+        stdout=StringIO(),
+        stderr=stderr,
+    )
+
+    assert result is not None
+    for flag in expected_flags:
+        assert flag in result.argv
+        assert flag in result.shell_command
+        assert flag in stderr.getvalue()
+
+
+def test_wizard_offers_last_run_for_subdirectory_invocation(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+    run_dir = tmp_path / ".revrem" / "runs" / "last"
+    run_dir.mkdir(parents=True)
+    summary_path = run_dir / "summary.json"
+    summary_path.write_text(
+        json.dumps(
+            {
+                "command_line": [
+                    "revrem",
+                    "--profile",
+                    "final-pr",
+                    "--max-iterations",
+                    "4",
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    history_path = tmp_path / "home-global" / ".local" / "share" / "revrem" / "runs.jsonl"
+    history_path.parent.mkdir(parents=True)
+    history_path.write_text(
+        json.dumps(
+            {
+                "cwd": str(tmp_path),
+                "summary_path": str(summary_path),
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(
+        cwd=subdir,
+        stdin=StringIO("\n\nprint\n\n"),
+        stdout=StringIO(),
+        stderr=stderr,
+    )
+
+    assert result is not None
+    assert result.argv == ("--profile", "final-pr", "--max-iterations", "4")
+    rendered = stderr.getvalue()
+    assert "Start from which settings?" in rendered
+    assert "Started from: last run" in rendered
+
+
+def test_wizard_finds_repo_last_run_after_global_history_pollution(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    run_dir = tmp_path / ".revrem" / "runs" / "last"
+    run_dir.mkdir(parents=True)
+    summary_path = run_dir / "summary.json"
+    summary_path.write_text(
+        json.dumps(
+            {
+                "command_line": [
+                    "revrem",
+                    "--profile",
+                    "final-pr",
+                    "--max-iterations",
+                    "4",
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    history_path = tmp_path / "home-global" / ".local" / "share" / "revrem" / "runs.jsonl"
+    history_path.parent.mkdir(parents=True)
+    records = [
+        {"cwd": str(tmp_path), "summary_path": str(summary_path)},
+        *(
+            {
+                "cwd": str(tmp_path / f"other-{index}"),
+                "summary_path": str(tmp_path / f"other-{index}" / "summary.json"),
+            }
+            for index in range(12)
+        ),
+    ]
+    history_path.write_text(
+        "".join(json.dumps(record) + "\n" for record in records),
+        encoding="utf-8",
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(
+        cwd=tmp_path,
+        stdin=StringIO("\n\nprint\n\n"),
+        stdout=StringIO(),
+        stderr=stderr,
+    )
+
+    assert result is not None
+    assert result.argv == ("--profile", "final-pr", "--max-iterations", "4")
+    assert "Start from which settings?" in stderr.getvalue()
+
+
+def test_wizard_skips_incompatible_last_run_before_previewing(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    run_dir = tmp_path / ".revrem" / "runs" / "last"
+    run_dir.mkdir(parents=True)
+    summary_path = run_dir / "summary.json"
+    summary_path.write_text(
+        json.dumps(
+            {
+                "command_line": [
+                    "revrem",
+                    "--profile",
+                    "final-pr",
+                    "--route",
+                    "missing-route",
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    history_path = tmp_path / "home-global" / ".local" / "share" / "revrem" / "runs.jsonl"
+    history_path.parent.mkdir(parents=True)
+    history_path.write_text(
+        json.dumps(
+            {
+                "cwd": str(tmp_path),
+                "summary_path": str(summary_path),
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("q\n"), stderr=stderr)
+
+    assert result is None
+    rendered = stderr.getvalue()
+    assert "Start from which settings?" not in rendered
+    assert "route missing-route" not in rendered
+    assert "route midtier: uses codex:gpt-5.4-mini" in rendered
+
+
+def test_wizard_skips_blocked_last_run_before_previewing(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    run_dir = tmp_path / ".revrem" / "runs" / "last"
+    run_dir.mkdir(parents=True)
+    summary_path = run_dir / "summary.json"
+    summary_path.write_text(
+        json.dumps(
+            {
+                "command_line": [
+                    "revrem",
+                    "--profile",
+                    "final-pr",
+                    "--review-harness",
+                    "reserved",
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    history_path = tmp_path / "home-global" / ".local" / "share" / "revrem" / "runs.jsonl"
+    history_path.parent.mkdir(parents=True)
+    history_path.write_text(
+        json.dumps(
+            {
+                "cwd": str(tmp_path),
+                "summary_path": str(summary_path),
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("q\n"), stderr=stderr)
+
+    assert result is None
+    rendered = stderr.getvalue()
+    assert "Start from which settings?" not in rendered
+    assert "reserved" not in rendered
+    assert "+-- review: uses codex:gpt-5.5(low)" in rendered
+
+
+def test_wizard_routed_preview_shows_effective_timeout_under_cli_cap(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.final-pr]
+description = "Final PR"
+
+[profiles.final-pr.pipeline]
+base = "trunk"
+max_iterations = 2
+checks = ["pytest -q"]
+
+[profiles.final-pr.triage]
+enabled = true
+contract = "v2"
+
+[profiles.final-pr.triage.routing]
+enabled = true
+default_route = "midtier"
+
+[profiles.final-pr.triage.routes.midtier]
+harness = "codex"
+model = "gpt-5.4-mini"
+timeout_seconds = 0
+""",
+        encoding="utf-8",
+    )
+    stdin = StringIO("timeouts\n600\n\n\n\n\n\nq\n")
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=stderr)
+
+    assert result is None
+    rendered = stderr.getvalue()
+    assert "route midtier: uses codex:gpt-5.4-mini" in rendered
+    assert "timeout 600s" in rendered
+
+
+def test_wizard_model_settings_show_effective_timeouts_and_triage_setup(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.default]
+
+[profiles.default.review]
+model = "gpt-review"
+timeout_seconds = 1800
+
+[profiles.default.triage]
+enabled = false
+
+[profiles.default.remediation]
+model = "gpt-remediate"
+timeout_seconds = 1800
+""",
+        encoding="utf-8",
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("models\nq\n"), stderr=stderr)
+
+    assert result is None
+    rendered = stderr.getvalue()
+    assert "triage: set up triage" in rendered
+    assert "routing: choose triage first" in rendered
+    assert "timeout:" not in rendered
+    assert "reserved" not in rendered
+
+
+def test_wizard_timeout_menu_sets_shared_timeout_zero(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    stdin = StringIO("timeouts\n0\n\n\n\n\n\n\nprint\n\n")
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=stderr)
+
+    assert result is not None
+    assert result.argv == ("--profile", "final-pr", "--timeout-seconds", "0")
+    rendered = stderr.getvalue()
+    assert "Timeouts" in rendered
+    assert "current: review" in rendered
+    assert "Shared fallback timeout [keep profile/default]:" in rendered
+    assert "Review timeout [keep none]:" in rendered
+    assert "Triage timeout [keep none]:" in rendered
+    assert "Remediation timeout [keep none]:" in rendered
+    assert "Commit-message timeout [keep none]:" in rendered
+    assert "Verification-check timeout [keep none]:" in rendered
+
+
+def test_wizard_timeout_menu_sets_phase_timeouts_independently(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    stdin = StringIO(
+        "timeouts\n"
+        "\n"  # shared fallback
+        "0\n"  # review
+        "\n"  # triage
+        "900\n"  # remediation
+        "\n"  # commit
+        "120\n"  # checks
+        "\n"
+        "print\n"
+        "\n"
+    )
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=StringIO())
+
+    assert result is not None
+    assert result.argv == (
+        "--profile",
+        "final-pr",
+        "--review-timeout-seconds",
+        "0",
+        "--remediation-timeout-seconds",
+        "900",
+        "--check-timeout-seconds",
+        "120",
+    )
+
+
+def test_wizard_preview_blocks_unimplemented_harnesses(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.blocked]
+description = "Blocked"
+
+[profiles.blocked.review]
+harness = "reserved"
+""",
+        encoding="utf-8",
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("q\n"), stderr=stderr)
+
+    assert result is None
+    rendered = stderr.getvalue()
+    assert "status: model unresolved - edit models before running" in rendered
+    assert "command execution is not implemented" in rendered
+    assert "Traceback" not in rendered
+
+
+def test_wizard_dogfood_preview_shows_inner_check_retry_and_commit(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.dogfood]
+description = "Dogfood"
+
+[profiles.dogfood.pipeline]
+max_iterations = 3
+checks = ["pytest -q"]
+
+[profiles.dogfood.remediation]
+model = "gpt-5.4-mini"
+
+[profiles.dogfood.commit]
+enabled = true
+message_model = "gpt-5.3-codex-spark"
+
+[profiles.dogfood.runtime]
+inner_check_retries = 1
+""",
+        encoding="utf-8",
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("q\n"), stderr=stderr)
+
+    assert result is None
+    rendered = stderr.getvalue()
+    assert "remediation passes: max 3" in rendered
+    assert "if verify fails: retry remediation up to 1 time" in rendered
+    assert "+-- if verify passes: commit enabled" in rendered
+    assert "commit message: uses codex:gpt-5.3-codex-spark" in rendered
+    assert "provider command: codex exec" in rendered
+
+
+def test_wizard_builds_common_overrides_and_quotes_checks(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    stdin = StringIO(
+        "settings\n"
+        "main\n"
+        "3\n"
+        "custom\n"
+        "pytest -q tests/unit\n"
+        "git diff --check\n"
+        "\n"
+        "n\n"
+        "verbose\n"
+        "both\n"
+        "600\n"
+        "timeouts\n"
+        "0\n"
+        "\n"
+        "\n"
+        "\n"
+        "\n"
+        "\n"
+        "models\n"
+        "triage\n"
+        "n\n"
+        "remediation\n"
+        "\n"
+        "gpt-test\n"
+        "high\n"
+        "commit\n"
+        "n\n"
+        "pending\n"
+        "ignore\n"
+        "done\n"
+        "\n"
+        "print\n"
+        "\n"
+    )
+    stdout = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=stdout, stderr=StringIO())
+
+    assert result is not None
+    assert result.argv == (
+        "--profile",
+        "final-pr",
+        "--base",
+        "main",
+        "--max-iterations",
+        "3",
+        "--check",
+        "pytest -q tests/unit",
+        "--check",
+        "git diff --check",
+        "--skip-final-review",
+        "--no-triage",
+        "--remediation-model",
+        "gpt-test",
+        "--remediation-reasoning-effort",
+        "high",
+        "--timeout-seconds",
+        "0",
+        "--progress-style",
+        "verbose",
+        "--summary-format",
+        "both",
+        "--max-wall-seconds",
+        "600",
+        "--pending-review",
+        "ignore",
+    )
+    assert "revrem --profile final-pr --base main --max-iterations 3" in result.shell_command
+    assert "'pytest -q tests/unit'" in result.shell_command
+    assert result.action == "print"
+
+
+def test_wizard_sets_review_and_remediation_efforts_independently(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    stdin = StringIO(
+        "models\nreview\n\ngpt-review\nlow\nremediation\n\ngpt-remediate\nhigh\ndone\n\nprint\n\n"
+    )
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=StringIO())
+
+    assert result is not None
+    assert result.argv == (
+        "--profile",
+        "final-pr",
+        "--review-model",
+        "gpt-review",
+        "--review-reasoning-effort",
+        "low",
+        "--remediation-model",
+        "gpt-remediate",
+        "--remediation-reasoning-effort",
+        "high",
+    )
+    assert "--reasoning-effort" not in result.argv
+    assert "--model" not in result.argv
+
+
+def test_wizard_sets_triage_and_commit_efforts_independently(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    stdin = StringIO(
+        "models\n"
+        "triage\n"
+        "\n"
+        "\n"
+        "gpt-triage\n"
+        "low\n"
+        "\n"  # keep routing enabled
+        "\n"  # keep default route
+        "commit\n"
+        "y\n"
+        "\n"
+        "gpt-commit\n"
+        "low\n"
+        "done\n"
+        "\n"
+        "print\n"
+        "\n"
+    )
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=StringIO())
+
+    assert result is not None
+    assert "--triage-model" in result.argv
+    assert "gpt-triage" in result.argv
+    assert "--triage-reasoning-effort" in result.argv
+    assert "low" in result.argv
+    assert "--commit-message-model" in result.argv
+    assert "gpt-commit" in result.argv
+    assert "--commit-reasoning-effort" in result.argv
+
+
+def test_wizard_can_enable_triage_from_disabled_profile(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.default]
+
+[profiles.default.triage]
+enabled = false
+""",
+        encoding="utf-8",
+    )
+    stdin = StringIO("models\ntriage\ny\n\ngpt-triage\nlow\ndone\n\nprint\n\n")
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=StringIO())
+
+    assert result is not None
+    assert "--triage" in result.argv
+    assert "--triage-model" in result.argv
+    assert "gpt-triage" in result.argv
+    assert "--triage-reasoning-effort" in result.argv
+
+
+def test_wizard_omits_stale_triage_overrides_after_disabling_triage(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.final-pr]
+description = "Final PR"
+
+[profiles.final-pr.triage]
+enabled = false
+""",
+        encoding="utf-8",
+    )
+    profile = wizard.profiles.resolve_profile("final-pr", cwd=tmp_path)
+    state = wizard._initial_state(
+        wizard.WizardProfileChoice(profile_name="final-pr", profile=profile)
+    )
+    state.triage_enabled = True
+    state.triage_harness = "gemini"
+    state.triage_model = "gpt-triage"
+    state.triage_reasoning_effort = "low"
+    state.timeout_seconds = "60"
+    state.triage_timeout_seconds = "30"
+    state.triage_enabled = False
+
+    argv = wizard._argv_for_state(state)
+
+    assert "--triage" not in argv
+    assert "--no-triage" not in argv
+    assert "--triage-harness" not in argv
+    assert "--triage-model" not in argv
+    assert "--triage-reasoning-effort" not in argv
+    assert "--triage-timeout-seconds" not in argv
+    assert wizard._config_for_state(state, tmp_path).triage_enabled is False
+
+
+def test_wizard_repairs_stale_codex_triage_minimal_effort_when_enabling_from_disabled_profile(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.default]
+
+[profiles.default.triage]
+enabled = false
+model = "gpt-triage"
+reasoning_effort = "minimal"
+""",
+        encoding="utf-8",
+    )
+    stdin = StringIO("models\ntriage\ny\n\n\n\ndone\n\nprint\n\n")
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=stderr)
+
+    assert result is not None
+    assert "--triage" in result.argv
+    assert "--triage-reasoning-effort" in result.argv
+    assert "low" in result.argv
+    rendered = stderr.getvalue()
+    assert "Profile repair: Codex triage reasoning_effort minimal will be replaced with low" in rendered
+
+
+def test_wizard_keeps_repaired_triage_effort_when_profile_selected_from_disabled_profile(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.default]
+
+[profiles.default.triage]
+enabled = false
+model = "gpt-triage"
+reasoning_effort = "minimal"
+""",
+        encoding="utf-8",
+    )
+    stdin = StringIO("models\ntriage\ny\n\n\nprofile\ndone\n\nprint\n\n")
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=stderr)
+
+    assert result is not None
+    assert "--triage" in result.argv
+    assert "--triage-reasoning-effort" in result.argv
+    assert "low" in result.argv
+    assert "" not in result.argv
+    rendered = stderr.getvalue()
+    assert "Profile repair: Codex triage reasoning_effort minimal will be replaced with low" in rendered
+    assert "profile: keep current/profile (low)" in rendered
+
+
+def test_wizard_triage_effort_prompt_shows_effective_default(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.default]
+
+[profiles.default.triage]
+enabled = true
+model = "gpt-triage"
+""",
+        encoding="utf-8",
+    )
+    stdin = StringIO("models\ntriage\n\n\n\nprofile\ndone\nq\n")
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=stderr)
+
+    assert result is None
+    assert "profile: keep current/profile (low)" in stderr.getvalue()
+
+
+def test_wizard_codex_triage_omits_provider_incompatible_minimal_effort(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.default]
+
+[profiles.default.triage]
+enabled = true
+model = "gpt-triage"
+""",
+        encoding="utf-8",
+    )
+    stdin = StringIO("models\ntriage\n\n\n\nlow\ndone\nq\n")
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=stderr)
+
+    assert result is None
+    rendered = stderr.getvalue()
+    assert "minimal: minimal" not in rendered
+    assert "Codex triage starts at low effort" in rendered
+
+
+def test_wizard_can_replace_stale_codex_triage_minimal_effort(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.default]
+
+[profiles.default.triage]
+enabled = true
+model = "gpt-triage"
+reasoning_effort = "minimal"
+""",
+        encoding="utf-8",
+    )
+    stdin = StringIO("models\ntriage\n\n\n\nlow\ndone\n\nprint\n\n")
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=stderr)
+
+    assert result is not None
+    assert "--triage-reasoning-effort" in result.argv
+    assert "low" in result.argv
+    rendered = stderr.getvalue()
+    assert "Profile repair: Codex triage reasoning_effort minimal will be replaced with low" in rendered
+    assert "profile: keep current/profile (low)" in rendered
+    assert "low: low" in rendered
+
+
+def test_wizard_keeps_repaired_triage_effort_when_profile_selected_from_enabled_profile(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.default]
+
+[profiles.default.triage]
+enabled = true
+model = "gpt-triage"
+reasoning_effort = "minimal"
+""",
+        encoding="utf-8",
+    )
+    stdin = StringIO("models\ntriage\n\n\n\nprofile\ndone\n\nprint\n\n")
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=stderr)
+
+    assert result is not None
+    assert "--triage-reasoning-effort" in result.argv
+    assert "low" in result.argv
+    assert "" not in result.argv
+    rendered = stderr.getvalue()
+    assert "Profile repair: Codex triage reasoning_effort minimal will be replaced with low" in rendered
+    assert "profile: keep current/profile (low)" in rendered
+
+
+def test_wizard_reverts_profile_reasoning_effort_without_serializing_empty_override(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.final-pr]
+description = "Final PR"
+
+[profiles.final-pr.pipeline]
+base = "trunk"
+max_iterations = 2
+checks = ["pytest -q"]
+
+[profiles.final-pr.triage]
+enabled = true
+contract = "v2"
+reasoning_effort = "medium"
+
+[profiles.final-pr.triage.routing]
+enabled = true
+default_route = "midtier"
+
+[profiles.final-pr.triage.routes.midtier]
+harness = "codex"
+model = "gpt-5.4-mini"
+""",
+        encoding="utf-8",
+    )
+    profile = wizard.profiles.resolve_profile("final-pr", cwd=tmp_path)
+    state = wizard._initial_state(
+        wizard.WizardProfileChoice(profile_name="final-pr", profile=profile)
+    )
+    state.triage_reasoning_effort = ""
+
+    argv = wizard._argv_for_state(state)
+    assert "--triage-reasoning-effort" not in argv
+    assert wizard._config_for_state(state, tmp_path).triage_reasoning_effort == "medium"
+
+
+def test_wizard_confirms_suspicious_model_input(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    stdin = StringIO("models\ntriage\n\n\n1\nn\ngpt-5.5\nmedium\n\n\ndone\n\nprint\n\n")
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=stderr)
+
+    assert result is not None
+    assert "--triage-model" in result.argv
+    assert "gpt-5.5" in result.argv
+    assert "1" not in result.argv
+    assert 'Use model "1"?' in stderr.getvalue()
+
+
+def test_wizard_route_preview_shows_the_requested_route(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.routed]
+
+[profiles.routed.triage]
+enabled = true
+contract = "v2"
+
+[profiles.routed.triage.routing]
+enabled = true
+strict_on_unavailable_route = false
+default_route = "frontier"
+
+[[profiles.routed.triage.routing.rule]]
+id = "preview-switch"
+then.route = "midtier"
+
+[profiles.routed.triage.routes.frontier]
+harness = "codex"
+model = "frontier-model"
+
+[profiles.routed.triage.routes.midtier]
+harness = "codex"
+model = "gpt-5.4-mini"
+""",
+        encoding="utf-8",
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("q\n"), stderr=stderr)
+
+    assert result is None
+    rendered = stderr.getvalue()
+    assert "route frontier: uses codex:frontier-model" in rendered
+    assert "route frontier -> midtier fallback" not in rendered
+    assert "route midtier: uses codex:gpt-5.4-mini" in rendered
+
+
+def test_wizard_route_preview_uses_runtime_fallback_resolution(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.routed]
+
+[profiles.routed.triage]
+enabled = true
+contract = "v2"
+
+[profiles.routed.triage.routing]
+enabled = true
+strict_on_unavailable_route = false
+default_route = "frontier"
+
+[profiles.routed.triage.routes.frontier]
+harness = "reserved"
+model = "frontier-model"
+fallback = "midtier"
+
+[profiles.routed.triage.routes.midtier]
+harness = "codex"
+model = "gpt-5.4-mini"
+""",
+        encoding="utf-8",
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("q\n"), stderr=stderr)
+
+    assert result is None
+    rendered = stderr.getvalue()
+    assert "route frontier -> midtier fallback: uses codex:gpt-5.4-mini" in rendered
+    assert "[fallback from frontier]" in rendered
+    assert "status: model unresolved" not in rendered
+    assert "command execution is not implemented" not in rendered
+
+
+def test_wizard_reprompts_invalid_harness_without_traceback(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    stdin = StringIO("models\nreview\nnot-a-harness\ncodex\n\n\ndone\nq\n")
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=stderr)
+
+    assert result is None
+    rendered = stderr.getvalue()
+    assert "Choose one of the listed values or numbers." in rendered
+    assert "Traceback" not in rendered
+
+
+def test_wizard_no_profile_cannot_enable_routing_without_routes(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    stderr = StringIO()
+    stdin = StringIO(
+        "config\n"
+        "no-profile\n"
+        "models\n"
+        "triage\n"
+        "y\n"
+        "\n"  # harness
+        "\n"  # model
+        "\n"  # effort
+        "routing\n"
+        "done\n"
+        "\n"  # accept
+        "dry-run\n"
+        "\n"
+    )
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=stderr)
+
+    assert result is not None
+    assert "--routing" not in result.argv
+    assert "--route" not in result.argv
+    assert "This starting profile has no routing routes." in stderr.getvalue()
+
+
+def test_wizard_detects_repo_check_presets(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "dev-check").write_text("#!/bin/sh\n", encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.ruff]\n[tool.mypy]\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "AGENTS.md").write_text("<!-- MEMINIT_PROTOCOL: begin -->", encoding="utf-8")
+    stdin = StringIO("settings\n\n\nrepo-gate\n\n\n\n\naccept\nprint\n\n")
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=stderr)
+
+    assert result is not None
+    assert result.argv == ("--check", "./scripts/dev-check")
+    rendered = stderr.getvalue()
+    assert "repo gate: ./scripts/dev-check" in rendered
+    assert "Python fast: pytest -q" in rendered
+    assert "Python static: ruff check . && mypy src" in rendered
+    assert "Meminit DocOps: uv run --locked meminit check --format json" in rendered
+
+
+def test_wizard_does_not_treat_docs_directory_as_meminit(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "docs").mkdir()
+
+    presets = wizard._detect_check_presets(tmp_path)
+
+    assert all(preset.key != "meminit" for preset in presets)
+
+
+def test_wizard_blocks_provider_actions_when_model_is_unresolved(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.claude-review]
+description = "Claude review without explicit model"
+
+[profiles.claude-review.review]
+harness = "claude"
+""",
+        encoding="utf-8",
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("\nq\n"), stderr=stderr)
+
+    assert result is None
+    rendered = stderr.getvalue()
+    assert "review: uses claude:model unresolved" in rendered
+    assert "status: model unresolved - edit models before running" in rendered
+    action_section = rendered.split("What should the wizard do?", maxsplit=1)[1]
+    assert "print: print the command only" in action_section
+    assert "dry-run" not in action_section
+    assert "run: start the real run" not in action_section
+    assert "save-profile" not in action_section
+
+
+def test_wizard_allows_codex_provider_default_model(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    codex_home = tmp_path / "empty-codex-home"
+    codex_home.mkdir()
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    (codex_home / "config.toml").write_text(
+        "# No explicit default model.\n",
+        encoding="utf-8",
+    )
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.codex-defaults.review]
+harness = "codex"
+
+[profiles.codex-defaults.remediation]
+harness = "codex"
+
+[profiles.codex-defaults.pipeline]
+max_iterations = 1
+checks = []
+""",
+        encoding="utf-8",
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("\nq\n"), stderr=stderr)
+
+    assert result is None
+    rendered = stderr.getvalue()
+    assert "review: uses codex:provider default" in rendered
+    assert "remediate: uses codex:provider default" in rendered
+    assert "status: model unresolved" not in rendered
+    assert "provider command: codex review" in rendered
+    assert "--model provider default" not in rendered
+    action_section = rendered.split("What should the wizard do?", maxsplit=1)[1]
+    assert "dry-run: validate and print the loop shape" in action_section
+    assert "run: start the real run" in action_section
+    assert "save-profile: save these choices as a project profile" in action_section
+
+
+def test_wizard_cancel_returns_none(tmp_path):
+    (tmp_path / ".git").mkdir()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("q\n"), stderr=StringIO())
+
+    assert result is None
+
+
+def test_wizard_keyboard_interrupt_returns_cancelled(tmp_path):
+    (tmp_path / ".git").mkdir()
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=_KeyboardInterruptInput(), stderr=stderr)
+
+    assert result is None
+    assert "Cancelled before provider calls." in stderr.getvalue()
+    assert "Traceback" not in stderr.getvalue()
+
+
+def test_wizard_uses_rich_when_available_and_terminal_supports_it(tmp_path, monkeypatch):
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    _install_fake_rich(monkeypatch)
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    stderr = _TtyStringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("q\n"), stderr=stderr)
+
+    assert result is None
+    printed_values = [value for value, _kwargs in _FakeConsole.printed]
+    assert any(isinstance(value, _FakeText) for value in printed_values)
+    assert "Run shape: final-pr (./.revrem.toml)" in printed_values
+
+
+def test_wizard_skips_rich_when_no_color_is_set(tmp_path, monkeypatch):
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    _install_fake_rich(monkeypatch)
+    monkeypatch.setenv("NO_COLOR", "1")
+    stderr = _TtyStringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=StringIO("q\n"), stderr=stderr)
+
+    assert result is None
+    assert _FakeConsole.printed == []
+    assert "Run shape: final-pr" in stderr.getvalue()
+
+
+def test_main_explicit_wizard_uses_generated_argv(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    captured = {}
+
+    def fake_wizard(*, cwd):
+        captured["cwd"] = cwd
+        return wizard.WizardResult(
+            argv=("--dry-run", "--summary-format", "json"),
+            shell_command="revrem --dry-run --summary-format json",
+            action="dry-run",
+        )
+
+    def fake_run_loop(config):
+        captured["config"] = config
+        return application_mod.ReviewLoopResult(
+            summary={
+                "artifact_dir": str(config.artifact_dir),
+                "final_status": "clear",
+                "stopped_reason": "dry_run",
+                "iterations": [],
+            },
+            outcome=OutcomeClear(reason="dry_run"),
+        )
+
+    monkeypatch.setattr(cli_main, "run_wizard", fake_wizard)
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
+
+    assert cli_main.main(["--wizard"]) == 0
+
+    assert captured["cwd"] == tmp_path
+    assert captured["config"].dry_run is True
+    assert '"final_status": "clear"' in capsys.readouterr().out
+
+
+def test_main_wizard_keeps_json_summary_stdout_pure(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml", summary_format="json")
+    run_context = {}
+
+    def fake_run_loop(config):
+        run_context["artifact_dir"] = str(config.artifact_dir)
+        return application_mod.ReviewLoopResult(
+            summary={
+                "artifact_dir": str(config.artifact_dir),
+                "final_status": "clear",
+                "stopped_reason": "dry_run",
+                "iterations": [],
+            },
+            outcome=OutcomeClear(reason="dry_run"),
+        )
+
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
+    monkeypatch.setattr("sys.stdin", StringIO("\n\n\n"))
+
+    assert cli_main.main(["--wizard"]) == 0
+
+    captured = capsys.readouterr()
+    assert json.loads(captured.out) == {
+        "artifact_dir": run_context["artifact_dir"],
+        "final_status": "clear",
+        "iterations": [],
+        "stopped_reason": "dry_run",
+    }
+    assert "Command: revrem --profile final-pr --dry-run" in captured.err
+    assert "Command:" not in captured.out
+
+
+def test_main_wizard_with_other_options_still_launches_wizard(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    captured = {}
+
+    def fake_wizard(*, cwd):
+        captured["cwd"] = cwd
+        return wizard.WizardResult(
+            argv=(),
+            shell_command="revrem",
+            action="print",
+        )
+
+    def fail_parse_args(argv):
+        raise AssertionError(f"parse_args should not run for wizard input: {list(argv)}")
+
+    monkeypatch.setattr(cli_main, "run_wizard", fake_wizard)
+    monkeypatch.setattr(cli_main, "parse_args", fail_parse_args)
+
+    assert cli_main.main(["--wizard", "--profile", "final-pr"]) == 0
+
+    assert captured["cwd"] == tmp_path
+    assert capsys.readouterr().out == ""
+
+
+def test_main_bare_revrem_uses_wizard_only_for_tty(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    captured = {}
+
+    def fake_wizard(*, cwd):
+        captured["wizard"] = cwd
+        return wizard.WizardResult(argv=(), shell_command="revrem", action="print")
+
+    def fake_parse_args(argv):
+        captured["argv"] = list(argv)
+        raise SystemExit(77)
+
+    monkeypatch.setattr(cli_main, "run_wizard", fake_wizard)
+    monkeypatch.setattr(cli_main, "parse_args", fake_parse_args)
+    monkeypatch.setattr("sys.stdin", _TtyStringIO(""))
+    monkeypatch.setattr("sys.stdout", _TtyStringIO())
+
+    assert cli_main.main([]) == 0
+    assert captured["wizard"] == tmp_path
+    assert "argv" not in captured
+
+    captured.clear()
+    monkeypatch.setattr("sys.stdin", StringIO(""))
+    monkeypatch.setattr("sys.stdout", StringIO())
+    with pytest.raises(SystemExit) as excinfo:
+        cli_main.main([])
+    assert excinfo.value.code == 77
+    assert captured["argv"] == []
+
+
+def test_main_explicit_wizard_keyboard_interrupt_exits_130(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+
+    def fake_wizard(*, cwd):
+        return None
+
+    monkeypatch.setattr(cli_main, "run_wizard", fake_wizard)
+
+    assert cli_main.main(["--wizard"]) == 130

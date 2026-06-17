@@ -81,6 +81,7 @@ def parse_triage_payload(
     }
     payload = _normalize_review_priority_severities(payload)
     if contract == "v2":
+        payload = _normalize_v2_route_proposal(payload)
         payload = _normalize_v2_definition_of_done_placement(payload)
     validator = Draft202012Validator(_triage_schema(contract))
     errors = list(validator.iter_errors(payload))
@@ -115,6 +116,15 @@ def _normalize_review_priority_severities(payload: dict[str, Any]) -> dict[str, 
                         )
                     changed = True
             raw_info_requested = normalized_item.get("info_requested")
+            raw_fingerprint = normalized_item.get("fingerprint")
+            if collection_name == "needs_more_info" and raw_fingerprint is None:
+                normalized_item["fingerprint"] = f"review-comment:{len(normalized_collection) + 1}"
+                if warnings_can_update:
+                    warnings.append(
+                        "Normalized needs_more_info missing fingerprint to "
+                        f"{normalized_item['fingerprint']} fallback."
+                    )
+                changed = True
             if (
                 collection_name == "needs_more_info"
                 and isinstance(raw_info_requested, list)
@@ -208,6 +218,37 @@ def _normalize_v2_definition_of_done_placement(payload: dict[str, Any]) -> dict[
     return normalized
 
 
+def _normalize_v2_route_proposal(payload: dict[str, Any]) -> dict[str, Any]:
+    """Normalize common route proposal timeout encodings before schema validation."""
+
+    route_proposal = payload.get("route_proposal")
+    if not isinstance(route_proposal, dict):
+        return payload
+    if "timeout_seconds" not in route_proposal:
+        return payload
+
+    raw_timeout = route_proposal.get("timeout_seconds")
+    if raw_timeout is not None and not (
+        isinstance(raw_timeout, str) and raw_timeout.strip().lower() == "none"
+    ):
+        return payload
+
+    normalized = dict(payload)
+    normalized_route_proposal = dict(route_proposal)
+    normalized_route_proposal["timeout_seconds"] = 0
+    normalized["route_proposal"] = normalized_route_proposal
+
+    raw_warnings = normalized.get("parsing_warnings")
+    warnings_can_update = raw_warnings is None or isinstance(raw_warnings, list)
+    if warnings_can_update:
+        warnings, _ = _normalize_parsing_warnings(raw_warnings or [])
+        warnings.append(
+            "Normalized route_proposal.timeout_seconds to 0 for an unbounded route timeout."
+        )
+        normalized["parsing_warnings"] = warnings
+    return normalized
+
+
 def write_triage_artifact(run_dir: Path, iteration: int, payload: dict[str, Any]) -> Path:
     return artifacts.write_json_artifact(
         run_dir,
@@ -286,6 +327,34 @@ def format_structured_handoff(payload: dict[str, Any], original_review: str) -> 
         parts.append("\nSuggested Verification Commands:")
         for cmd in commands:
             parts.append(f"- {cmd}")
+
+    prompt_requirements = payload.get("prompt_requirements", {})
+    if isinstance(prompt_requirements, dict):
+        fragments = prompt_requirements.get("required_fragments", [])
+        if fragments:
+            parts.append("\nRequested Prompt Fragments:")
+            for fragment in fragments:
+                parts.append(f"- {fragment}")
+        dod = prompt_requirements.get("definition_of_done", [])
+        if dod:
+            parts.append("\nDefinition of Done:")
+            for item in dod:
+                parts.append(f"- {item}")
+        draft = prompt_requirements.get("triage_prompt_draft")
+        if isinstance(draft, str) and draft.strip():
+            parts.append("\nTriage Draft Instructions:")
+            parts.append(draft.strip())
+
+    classification = payload.get("classification", {})
+    if isinstance(classification, dict):
+        risk = classification.get("risk_level")
+        depth = classification.get("refactor_depth")
+        if risk or depth:
+            parts.append("\nTriage Classification:")
+            if risk:
+                parts.append(f"- Risk level: {risk}")
+            if depth:
+                parts.append(f"- Refactor depth: {depth}")
 
     parts.append("\nOriginal review/check context:")
     parts.append(original_review)
