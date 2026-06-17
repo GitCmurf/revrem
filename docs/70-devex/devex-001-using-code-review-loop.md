@@ -3,8 +3,8 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.59'
-last_updated: '2026-06-16'
+version: '1.60'
+last_updated: '2026-06-17'
 owner: GitCmurf
 docops_version: '2.0'
 area: devex
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.59
-> **Last Updated:** 2026-06-16
+> **Version:** 1.60
+> **Last Updated:** 2026-06-17
 > **Type:** DEVEX
 > **Area:** devex
 > **Description:** Operator guide for the code-review-loop utility
@@ -1124,6 +1124,14 @@ failure even if that route names a fallback. Disabled routing may carry draft
 routes during normal runs, but references inside the route table are still
 validated.
 
+Triage-specific CLI overrides do not enable triage by themselves. When the
+selected profile has triage disabled, add `--triage` before passing
+`--triage-model`, `--triage-harness`, `--triage-reasoning-effort`,
+`--triage-contract`, `--triage-timeout-seconds`, `--routing`, `--route`,
+`--routing-strict`, or model-escalation routing flags. RevRem fails before any
+provider call if those flags are supplied while triage remains disabled, so an
+operator does not think a routed run occurred when the triage phase was skipped.
+
 Executable route validation is opt-in when routing is disabled:
 
 ```bash
@@ -1445,6 +1453,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.60 | 2026-06-17 | Codex | Documented fail-fast triage/routing CLI overrides when triage is disabled |
 | 1.59 | 2026-06-17 | Codex | Documented Codex provider-default model handling in the wizard |
 | 1.58 | 2026-06-16 | Codex | Documented non-de-escalatable safety routes and proposal-accepted routing artifacts |
 | 1.57 | 2026-06-16 | Codex | Documented transcript-only provider output stopping as unknown before triage |

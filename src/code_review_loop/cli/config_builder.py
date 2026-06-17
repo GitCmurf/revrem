@@ -65,6 +65,48 @@ def resolve_max_iterations(value: int) -> int:
     return value
 
 
+def triage_flags_supplied_while_disabled(args: argparse.Namespace) -> list[str]:
+    flags: list[str] = []
+    if args.triage_harness is not None:
+        flags.append("--triage-harness")
+    if args.triage_model is not None:
+        flags.append("--triage-model")
+    if args.triage_reasoning_effort is not None:
+        flags.append("--triage-reasoning-effort")
+    if args.triage_contract is not None:
+        flags.append("--triage-contract")
+    if args.triage_timeout_seconds is not None:
+        flags.append("--triage-timeout-seconds")
+    if args.routing_enabled is True:
+        flags.append("--routing")
+    if args.routing_strict is not None:
+        flags.append("--routing-strict" if args.routing_strict else "--no-routing-strict")
+    if args.allow_model_escalation is not None:
+        flags.append(
+            "--allow-model-escalation"
+            if args.allow_model_escalation
+            else "--no-allow-model-escalation"
+        )
+    if args.routing_default_route is not None:
+        flags.append("--routing-default-route")
+    return flags
+
+
+def validate_triage_overrides_enabled(
+    args: argparse.Namespace, *, triage_enabled: bool
+) -> None:
+    if triage_enabled:
+        return
+    flags = triage_flags_supplied_while_disabled(args)
+    if not flags:
+        return
+    joined = ", ".join(flags)
+    raise ValueError(
+        "Triage is disabled, but triage/routing option(s) were supplied: "
+        f"{joined}. Add --triage to use these options, or remove them."
+    )
+
+
 def parse_harness_bin_overrides(values: Sequence[str]) -> dict[str, str]:
     overrides: dict[str, str] = {}
     for value in values:
@@ -306,6 +348,7 @@ def build_loop_config(
         profile.triage.routing.allow_model_escalation,
         True,
     )
+    validate_triage_overrides_enabled(args, triage_enabled=triage_enabled)
     if routing_enabled and triage_contract != "v2":
         raise ValueError("--routing requires --triage-contract v2 or a v2 triage profile")
     if args.timeout_seconds is not None:

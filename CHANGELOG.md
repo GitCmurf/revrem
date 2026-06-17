@@ -91,6 +91,10 @@ This project follows Semantic Versioning once public releases begin.
 - The wizard now treats an omitted Codex model as a valid provider-default
   configuration instead of blocking dry-run/run/save-profile actions as
   unresolved.
+- CLI config building now fails before provider execution when triage or
+  routing-specific flags are supplied while triage is disabled; operators must
+  add `--triage` or remove those flags instead of silently running without
+  triage.
 - Terminal summaries now hide info-only fallback-fingerprint bookkeeping;
   `triage-*.json` and `summary.json` still retain those notes for auditability.
 - Triage v2 routing guidance now keeps ordinary local timeout/config precedence
