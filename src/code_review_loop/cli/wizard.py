@@ -558,7 +558,7 @@ class _Wizard:
             + tuple((value, value) for value in effort_choices),
             default=effort_default,
         )
-        setattr(state, effort_attr, "" if effort == "profile" else effort)
+        setattr(state, effort_attr, _selected_effort_value(state, label, effort))
 
     def _effective_effort(self, state: WizardState, label: str) -> str:
         try:
@@ -1105,6 +1105,19 @@ def _repair_stale_codex_triage_reasoning_effort(
     if harness == "codex" and reasoning_effort == "minimal":
         return "low", "minimal"
     return reasoning_effort, ""
+
+
+def _selected_effort_value(state: WizardState, label: str, effort: str) -> str:
+    if effort != "profile":
+        return effort
+    if (
+        label == "triage"
+        and state.triage_harness == "codex"
+        and state.stale_triage_reasoning_effort
+        and state.triage_reasoning_effort
+    ):
+        return state.triage_reasoning_effort
+    return ""
 
 
 def _configured_effort(state: WizardState, label: str) -> str:

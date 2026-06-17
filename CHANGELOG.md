@@ -91,6 +91,9 @@ This project follows Semantic Versioning once public releases begin.
 - The wizard now treats an omitted Codex model as a valid provider-default
   configuration instead of blocking dry-run/run/save-profile actions as
   unresolved.
+- The wizard now keeps the repaired `low` Codex triage effort when stale
+  profiles contain `triage.reasoning_effort = "minimal"` and the operator
+  chooses the profile/current effort option.
 - CLI config building now fails before provider execution when triage or
   routing-specific flags are supplied while triage is disabled; operators must
   add `--triage` or remove those flags instead of silently running without

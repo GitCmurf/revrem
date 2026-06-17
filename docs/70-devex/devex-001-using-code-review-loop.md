@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.61'
+version: '1.62'
 last_updated: '2026-06-17'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.61
+> **Version:** 1.62
 > **Last Updated:** 2026-06-17
 > **Type:** DEVEX
 > **Area:** devex
@@ -969,7 +969,9 @@ normalizes provider output that makes this specific mistake and records an
 info-level triage note. Codex triage should use `low` or higher reasoning
 effort. RevRem rejects Codex `--triage-reasoning-effort minimal` because
 inherited Codex tools can make the provider request fail before structured
-triage output is produced.
+triage output is produced. The wizard treats stale Codex triage profiles that
+still contain `reasoning_effort = "minimal"` as `low`, including when the
+operator chooses the profile/current reasoning-effort option.
 Triage route proposals should use those exact route names. Built-in route rank
 aliases include the historical `frontier-thinking`/`midtier-coder` names and
 the project-local `codex-frontier`/`codex-midi` names, so a proposal can
@@ -1458,6 +1460,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.62 | 2026-06-17 | Codex | Documented stale Codex triage minimal-effort repair when profile/current is selected |
 | 1.61 | 2026-06-17 | Codex | Documented all-scope clear review prose classification with appended provider stderr |
 | 1.60 | 2026-06-17 | Codex | Documented fail-fast triage/routing CLI overrides when triage is disabled |
 | 1.59 | 2026-06-17 | Codex | Documented Codex provider-default model handling in the wizard |
