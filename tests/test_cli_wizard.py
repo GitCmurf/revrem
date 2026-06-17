@@ -1264,6 +1264,10 @@ def test_wizard_allows_codex_provider_default_model(tmp_path, monkeypatch):
     codex_home = tmp_path / "empty-codex-home"
     codex_home.mkdir()
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    (codex_home / "config.toml").write_text(
+        "# No explicit default model.\n",
+        encoding="utf-8",
+    )
     (tmp_path / ".revrem.toml").write_text(
         """
 [profiles.codex-defaults.review]
