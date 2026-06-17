@@ -573,12 +573,16 @@ def _resume_optional_float(payload: dict[object, object], key: str) -> float | N
 
 def _resume_phase_timeout(payload: dict[object, object], phase: str) -> float | None:
     phase_config = payload.get("phase_config")
-    if not isinstance(phase_config, dict):
-        return None
-    section = phase_config.get(phase)
-    if not isinstance(section, dict):
-        return None
-    value = section.get("timeout_seconds")
+    if isinstance(phase_config, dict):
+        section = phase_config.get(phase)
+        if isinstance(section, dict):
+            value = section.get("timeout_seconds")
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                return float(value)
+
+    # Fall back to legacy top-level timeout fields for summaries that lack phase_config.
+    key = "check_timeout_seconds" if phase == "checks" else f"{phase}_timeout_seconds"
+    value = payload.get(key)
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return float(value)
     return None

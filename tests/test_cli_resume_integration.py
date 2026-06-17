@@ -189,7 +189,7 @@ def test_resume_loop_config_preserves_global_timeout_with_distinct_check_timeout
                 "checks": {
                     "timeout_seconds": 60,
                     "source": "cli",
-                    "fields": {"timeout_seconds": "cli"},
+                    "sources": {"timeout_seconds": "cli"},
                 },
             },
         },

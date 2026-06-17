@@ -185,7 +185,6 @@ class _Wizard:
     def run(self) -> WizardResult:
         self._print_heading("RevRem command wizard")
         state = self._starting_state()
-        preview = _run_preview(state, self.cwd)
 
         while True:
             preview = _run_preview(state, self.cwd)
@@ -690,10 +689,9 @@ class _Wizard:
                 build_loop_config(parsed, self.cwd, require_implemented=False)
                 shell_command = shlex.join(("revrem", *argv))
                 return WizardResult(argv=tuple(argv), shell_command=shell_command, action=action)
-            except SystemExit as exc:
-                raise ValueError(f"wizard produced invalid arguments: exit {exc.code}") from exc
-            except ValueError as exc:
-                print(f"Validation failed: {exc}", file=self.stderr)
+            except (SystemExit, ValueError) as exc:
+                message = f"exit {exc.code}" if isinstance(exc, SystemExit) else str(exc)
+                print(f"Validation failed: {message}", file=self.stderr)
                 if not self._yes_no("Choose a different action?", default=True):
                     raise WizardCancelled from exc
                 action = self._choice(
@@ -983,7 +981,7 @@ def _last_run_state(cwd: Path) -> LastRunLookup:
 def _state_from_summary(summary_path: Path, cwd: Path) -> WizardState | None:
     try:
         summary = json.loads(summary_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
         return None
     command_line = summary.get("command_line")
     if not isinstance(command_line, list) or not command_line:
@@ -1699,7 +1697,7 @@ def _provider_default(harness: str, cwd: Path) -> ProviderDefault:
     config_path = Path(environ.get("CODEX_HOME", Path.home() / ".codex")) / "config.toml"
     try:
         raw = tomllib.loads(config_path.read_text(encoding="utf-8"))
-    except (OSError, tomllib.TOMLDecodeError):
+    except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError):
         return ProviderDefault()
     model = raw.get("model")
     effort = raw.get("model_reasoning_effort")
@@ -1834,7 +1832,7 @@ def _clip(value: str, max_chars: int) -> str:
 
 
 def _rich_console(stderr: TextIO):
-    if not getattr(stderr, "isatty", lambda: False)() or environ.get("NO_COLOR"):
+    if not getattr(stderr, "isatty", lambda: False)() or "NO_COLOR" in environ:
         return None
     try:
         from rich.console import Console  # type: ignore[import-not-found]
@@ -1853,14 +1851,15 @@ def _route_label(route: profiles.TriageRouteConfig) -> str:
 
 
 def _detect_check_presets(cwd: Path) -> tuple[CheckPreset, ...]:
+    root = repo_root_or_cwd(cwd)
     presets: list[CheckPreset] = []
-    if (cwd / "scripts" / "dev-check").is_file():
+    if (root / "scripts" / "dev-check").is_file():
         presets.append(
             CheckPreset("repo-gate", "repo gate: ./scripts/dev-check", ("./scripts/dev-check",))
         )
 
-    pyproject = cwd / "pyproject.toml"
-    tests_dir = cwd / "tests"
+    pyproject = root / "pyproject.toml"
+    tests_dir = root / "tests"
     if pyproject.is_file() or tests_dir.is_dir():
         presets.append(CheckPreset("python-fast", "Python fast: pytest -q", ("pytest -q",)))
 
@@ -1880,7 +1879,7 @@ def _detect_check_presets(cwd: Path) -> tuple[CheckPreset, ...]:
             )
         )
 
-    if _meminit_detected(cwd):
+    if _meminit_detected(root):
         presets.append(
             CheckPreset(
                 "meminit",
@@ -1897,7 +1896,7 @@ def _detect_check_presets(cwd: Path) -> tuple[CheckPreset, ...]:
 def _read_text_best_effort(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8")
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return ""
 
 

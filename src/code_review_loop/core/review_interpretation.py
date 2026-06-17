@@ -238,6 +238,20 @@ def iter_review_prose_sentences(output: str):
                 yield sentence
 
 
+def _iter_clauses(sentence: str):
+    """Yield individual clauses within a sentence.
+
+    Splits on semicolons and common logical connectives that typically
+    demarcate independent assertions.
+    """
+    for clause in re.split(
+        r"\s*;\s*|\s+(?:and|but|however|although|though|yet|while|whereas)\s+",
+        sentence,
+        flags=re.IGNORECASE,
+    ):
+        yield clause.strip()
+
+
 def has_negated_clear_review_statement(normalized: str) -> bool:
     return NEGATED_CLEAR_REVIEW_STATEMENT_RE.search(normalized) is not None
 
@@ -266,7 +280,6 @@ def has_affirmative_issue_prose(output: str) -> bool:
     for sentence in iter_review_prose_sentences(output):
         if not sentence:
             continue
-        normalized_sentence = sentence.lower()
         if STRUCTURED_EMPTY_FINDINGS_RE.search(sentence):
             # Codex-style structured output often includes a literal empty findings
             # array alongside a clear explanation. Do not treat that field name as
@@ -284,16 +297,22 @@ def has_affirmative_issue_prose(output: str) -> bool:
             if not AFFIRMATIVE_ISSUE_WORD_RE.search(stripped):
                 continue
             sentence = stripped
-            normalized_sentence = sentence.lower()
         if has_affirmative_contrastive_issue_clause(sentence):
             return True
-        if has_negated_clear_review_statement(normalized_sentence):
-            continue
-        if NEGATED_NON_CORRECTNESS_ISSUE_RE.search(sentence):
-            continue
-        if NEGATED_ISSUE_PROSE_RE.search(sentence):
-            continue
-        return True
+
+        for clause in _iter_clauses(sentence):
+            if not clause:
+                continue
+            normalized_clause = clause.lower()
+            if not AFFIRMATIVE_ISSUE_WORD_RE.search(clause):
+                continue
+            if has_negated_clear_review_statement(normalized_clause):
+                continue
+            if NEGATED_NON_CORRECTNESS_ISSUE_RE.search(clause):
+                continue
+            if NEGATED_ISSUE_PROSE_RE.search(clause):
+                continue
+            return True
     return False
 
 
@@ -321,15 +340,22 @@ def has_non_correctness_issue_prose(output: str) -> bool:
     for sentence in iter_review_prose_sentences(output):
         if not sentence:
             continue
-        normalized_sentence = sentence.lower()
-        if NON_CORRECTNESS_ISSUE_RE.search(sentence):
-            if has_affirmative_non_correctness_contrastive_clause(sentence):
-                return True
-            if has_negated_clear_review_statement(normalized_sentence):
+        if not NON_CORRECTNESS_ISSUE_RE.search(sentence):
+            continue
+        if has_affirmative_non_correctness_contrastive_clause(sentence):
+            return True
+
+        for clause in _iter_clauses(sentence):
+            if not clause:
                 continue
-            if NEGATED_NON_CORRECTNESS_ISSUE_RE.search(normalized_sentence):
+            normalized_clause = clause.lower()
+            if not NON_CORRECTNESS_ISSUE_RE.search(clause):
                 continue
-            if NEGATED_ISSUE_PROSE_RE.search(normalized_sentence):
+            if has_negated_clear_review_statement(normalized_clause):
+                continue
+            if NEGATED_NON_CORRECTNESS_ISSUE_RE.search(normalized_clause):
+                continue
+            if NEGATED_ISSUE_PROSE_RE.search(normalized_clause):
                 continue
             return True
     return False
