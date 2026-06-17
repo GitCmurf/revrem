@@ -1188,14 +1188,16 @@ def _argv_for_state(state: WizardState) -> list[str]:
         profile.review.reasoning_effort or ""
     ):
         argv.extend(["--review-reasoning-effort", state.review_reasoning_effort])
-    if state.triage_harness != profile.triage.harness:
-        argv.extend(["--triage-harness", state.triage_harness])
-    if state.triage_model != (profile.triage.model or ""):
-        argv.extend(["--triage-model", state.triage_model])
-    if state.triage_reasoning_effort and state.triage_reasoning_effort != (
-        profile.triage.reasoning_effort or ""
-    ):
-        argv.extend(["--triage-reasoning-effort", state.triage_reasoning_effort])
+    if state.triage_enabled:
+        # Triage-specific overrides are only valid while triage is enabled.
+        if state.triage_harness != profile.triage.harness:
+            argv.extend(["--triage-harness", state.triage_harness])
+        if state.triage_model != (profile.triage.model or ""):
+            argv.extend(["--triage-model", state.triage_model])
+        if state.triage_reasoning_effort and state.triage_reasoning_effort != (
+            profile.triage.reasoning_effort or ""
+        ):
+            argv.extend(["--triage-reasoning-effort", state.triage_reasoning_effort])
     if state.remediation_harness != profile.remediation.harness:
         argv.extend(["--remediation-harness", state.remediation_harness])
     if state.remediation_model != (profile.remediation.model or ""):
@@ -1216,7 +1218,9 @@ def _argv_for_state(state: WizardState) -> list[str]:
         argv.extend(["--timeout-seconds", state.timeout_seconds])
     if _timeout_override_needed(state.review_timeout_seconds, state.timeout_seconds):
         argv.extend(["--review-timeout-seconds", state.review_timeout_seconds])
-    if _timeout_override_needed(state.triage_timeout_seconds, state.timeout_seconds):
+    if state.triage_enabled and _timeout_override_needed(
+        state.triage_timeout_seconds, state.timeout_seconds
+    ):
         argv.extend(["--triage-timeout-seconds", state.triage_timeout_seconds])
     if _timeout_override_needed(state.remediation_timeout_seconds, state.timeout_seconds):
         argv.extend(["--remediation-timeout-seconds", state.remediation_timeout_seconds])

@@ -913,6 +913,44 @@ enabled = false
     assert "--triage-reasoning-effort" in result.argv
 
 
+def test_wizard_omits_stale_triage_overrides_after_disabling_triage(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.final-pr]
+description = "Final PR"
+
+[profiles.final-pr.triage]
+enabled = false
+""",
+        encoding="utf-8",
+    )
+    profile = wizard.profiles.resolve_profile("final-pr", cwd=tmp_path)
+    state = wizard._initial_state(
+        wizard.WizardProfileChoice(profile_name="final-pr", profile=profile)
+    )
+    state.triage_enabled = True
+    state.triage_harness = "gemini"
+    state.triage_model = "gpt-triage"
+    state.triage_reasoning_effort = "low"
+    state.timeout_seconds = "60"
+    state.triage_timeout_seconds = "30"
+    state.triage_enabled = False
+
+    argv = wizard._argv_for_state(state)
+
+    assert "--triage" not in argv
+    assert "--no-triage" not in argv
+    assert "--triage-harness" not in argv
+    assert "--triage-model" not in argv
+    assert "--triage-reasoning-effort" not in argv
+    assert "--triage-timeout-seconds" not in argv
+    assert wizard._config_for_state(state, tmp_path).triage_enabled is False
+
+
 def test_wizard_repairs_stale_codex_triage_minimal_effort_when_enabling_from_disabled_profile(
     tmp_path, monkeypatch
 ):
