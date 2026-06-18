@@ -6,8 +6,15 @@ This project follows Semantic Versioning once public releases begin.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-18
+
 ### Added
 
+- Interactive CLI wizard: run `revrem` (or `revrem --wizard`) in a terminal to
+  build a run command without memorising flags. It previews the exact provider
+  CLI commands for each phase before any model call, with per-phase model,
+  reasoning effort, and timeout selection. A stepping stone toward the planned
+  TUI/GUI.
 - Triage Stage upgrade to v2: enables deterministic routing, dynamic model
   selection, and structured handoffs between review and remediation phases.
 - Routing Policy Engine: supports first-match rule sets based on domain tags,

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "revrem"
-version = "0.3.2"
+version = "0.4.0"
 description = "Bounded AI review, remediation, and re-review automation for local repositories."
 readme = "README.md"
 requires-python = ">=3.11"

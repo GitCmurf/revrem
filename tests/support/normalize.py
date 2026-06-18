@@ -2,10 +2,11 @@
 
 Canonicalizes the nondeterminism that survives the Clock/RunIdentity seam so a
 committed snapshot is stable across machines and runs. Scope is deliberately
-minimal — only the canonicalizations the current golden snapshots actually
-exercise (A2a: run-directory paths and budget wall-time). New placeholders
-(git SHAs, byte sizes, ...) are added in A2b alongside their first real
-consumer, not speculatively.
+minimal - only the canonicalizations the current golden snapshots actually
+exercise. Current canonicalizations: run-directory paths (A2a), budget
+wall-time (A2a), and CLI version strings (A2b). New placeholders (git SHAs,
+byte sizes, ...) are added alongside their first real consumer, not
+speculatively.
 """
 
 from __future__ import annotations
@@ -15,10 +16,16 @@ from typing import Any
 
 CWD_PLACEHOLDER = "<RUN_DIR>"
 DURATION_PLACEHOLDER = "<DURATION>"
+CLI_VERSION_PLACEHOLDER = "<CLI_VERSION>"
 
 # Numeric keys holding a measured wall-clock duration (real monotonic time that
 # the A1 seam intentionally does not inject — see the behaviour ledger).
 _DURATION_KEYS = frozenset({"wall_elapsed_seconds"})
+
+# String keys holding the RevRem CLI version, which changes every release and is
+# metadata rather than behaviour — canonicalize it so the golden masters stay
+# stable across version bumps.
+_CLI_VERSION_KEYS = frozenset({"cli_version"})
 
 
 def normalize(value: Any, *, run_dir: Path | str) -> Any:
@@ -26,7 +33,9 @@ def normalize(value: Any, *, run_dir: Path | str) -> Any:
 
     - any string containing ``run_dir`` has that prefix replaced with
       ``<RUN_DIR>`` (absolute temp paths in artifact locations);
-    - any ``wall_elapsed_seconds`` number becomes ``<DURATION>``.
+    - any ``wall_elapsed_seconds`` number becomes ``<DURATION>``;
+    - any ``cli_version`` string becomes ``<CLI_VERSION>`` (release metadata
+      that is not part of observable behaviour).
     """
     run_dir_str = str(run_dir)
 
@@ -42,6 +51,8 @@ def normalize(value: Any, *, run_dir: Path | str) -> Any:
     def _walk_value(key: str, val: Any) -> Any:
         if key in _DURATION_KEYS and isinstance(val, (int, float)) and not isinstance(val, bool):
             return DURATION_PLACEHOLDER
+        if key in _CLI_VERSION_KEYS and isinstance(val, str):
+            return CLI_VERSION_PLACEHOLDER
         return _walk(val)
 
     return _walk(value)
