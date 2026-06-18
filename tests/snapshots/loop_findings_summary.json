@@ -31,7 +31,7 @@
     "usd": null,
     "wall_elapsed_seconds": "<DURATION>"
   },
-  "cli_version": "0.3.2",
+  "cli_version": "<CLI_VERSION>",
   "command_line": null,
   "commit_no_verify": false,
   "commit_on_hook_failure": "remediate",
