@@ -3,7 +3,7 @@
 [![CI](https://github.com/GitCmurf/revrem/actions/workflows/ci.yml/badge.svg)](https://github.com/GitCmurf/revrem/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/revrem)](https://pypi.org/project/revrem/)
 [![Python](https://img.shields.io/pypi/pyversions/revrem)](https://pypi.org/project/revrem/)
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/GitCmurf/revrem/blob/main/LICENSE)
 
 **Run a bounded AI review → fix → verify loop on your local branch — before you push.**
 
@@ -16,7 +16,7 @@ a pull request.
 > development. It works end to end today, but interfaces may still shift.
 
 <p align="center">
-  <img src="docs/assets/revrem-demo.gif" width="900"
+  <img src="https://raw.githubusercontent.com/GitCmurf/revrem/main/docs/assets/revrem-demo.gif" width="900"
     alt="revrem running a review then fix then verify loop: a P1 finding is remediated, pytest passes, and the re-review comes back clear." />
 </p>
 
@@ -41,7 +41,7 @@ JSON summary: .revrem/runs/20260509T120823Z/summary.json
 </details>
 
 > The demo above is a scripted reconstruction of RevRem's real output format,
-> not a live model-backed capture. Source: [`docs/assets/`](docs/assets/).
+> not a live model-backed capture. Source: [`docs/assets/`](https://github.com/GitCmurf/revrem/tree/main/docs/assets).
 
 ## Why revrem
 
@@ -114,7 +114,7 @@ revrem doctor --base main --check "pytest -q"
 `revrem doctor` validates the Git base, a writable artifact path, the Codex
 executable, routed remediation harnesses, and configured checks. Use
 `--format json` for automation. See the
-[operator guide](docs/70-devex/devex-001-using-code-review-loop.md)
+[operator guide](https://github.com/GitCmurf/revrem/blob/main/docs/70-devex/devex-001-using-code-review-loop.md)
 for the full diagnostics contract.
 
 ## How It Works
@@ -144,8 +144,8 @@ RevRem is intentionally local, watched, and bounded:
 - **Rich progress and an optional Textual TUI** for richer watched-terminal runs.
 
 Each of these is documented in depth in the
-[operator guide](docs/70-devex/devex-001-using-code-review-loop.md). Machine-readable
-artifact contracts live under [`docs/52-api/`](docs/52-api/).
+[operator guide](https://github.com/GitCmurf/revrem/blob/main/docs/70-devex/devex-001-using-code-review-loop.md). Machine-readable
+artifact contracts live under [`docs/52-api/`](https://github.com/GitCmurf/revrem/tree/main/docs/52-api).
 
 ## Profiles and the Wizard
 
@@ -170,7 +170,7 @@ revrem --base main --max-iterations 2 --check "git diff --check" --save-profile 
 ```
 
 For triage, routing, multi-harness setups, and the full wizard reference, see
-the [operator guide](docs/70-devex/devex-001-using-code-review-loop.md#interactive-wizard).
+the [operator guide](https://github.com/GitCmurf/revrem/blob/main/docs/70-devex/devex-001-using-code-review-loop.md#interactive-wizard).
 
 ## Safety Model
 
@@ -188,7 +188,7 @@ safety posture is built around local operator control:
 Use `--commit-after-remediation` only when each verified remediation pass should
 become a git commit. Commit-hook failure handling, `--no-redact` bundle risks,
 and the full auto-commit contract are documented in the
-[operator guide](docs/70-devex/devex-001-using-code-review-loop.md#profile-based-usage).
+[operator guide](https://github.com/GitCmurf/revrem/blob/main/docs/70-devex/devex-001-using-code-review-loop.md#profile-based-usage).
 
 ## Optional Progress and TUI
 
@@ -245,13 +245,13 @@ pre-commit run --all-files
 Ruff, mypy, pytest, DocOps checks, and `git diff --check` are required local and
 CI gates. For a stable `revrem` command usable from other repositories, promote
 a snapshot with `./scripts/promote-stable` — see the
-[operator guide](docs/70-devex/devex-001-using-code-review-loop.md#promote-a-stable-local-version).
+[operator guide](https://github.com/GitCmurf/revrem/blob/main/docs/70-devex/devex-001-using-code-review-loop.md#promote-a-stable-local-version).
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution expectations, governed
+See [CONTRIBUTING.md](https://github.com/GitCmurf/revrem/blob/main/CONTRIBUTING.md) for contribution expectations, governed
 documentation, and release process details.
 
 ## License
 
-This project is licensed under the Apache License 2.0; see [LICENSE](LICENSE)
-for details. [NOTICE](NOTICE) contains project attribution and must be preserved
+This project is licensed under the Apache License 2.0; see [LICENSE](https://github.com/GitCmurf/revrem/blob/main/LICENSE)
+for details. [NOTICE](https://github.com/GitCmurf/revrem/blob/main/NOTICE) contains project attribution and must be preserved
 where Apache-2.0 notice requirements apply.
