@@ -1,0 +1,70 @@
+<!doctype html>
+<!-- Source for the GitHub social-preview (Open Graph) image.
+     Render: google-chrome --headless --screenshot=docs/assets/og-image.png \
+       --window-size=1280,640 --hide-scrollbars docs/assets/og-image.html
+     Then upload via GitHub → Settings → General → Social preview. -->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1280px; height: 640px; }
+  body {
+    font-family: "DejaVu Sans", "Segoe UI", system-ui, sans-serif;
+    background: radial-gradient(1200px 700px at 78% -8%, #1c2740 0%, #0d1117 60%);
+    color: #e6edf3;
+    padding: 60px 80px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    position: relative;
+    overflow: hidden;
+  }
+  .accent-bar {
+    position: absolute; left: 0; top: 0; bottom: 0; width: 12px;
+    background: linear-gradient(180deg, #2dd4bf 0%, #38bdf8 50%, #818cf8 100%);
+  }
+  .brand { font-family: "DejaVu Sans Mono", ui-monospace, monospace;
+    font-size: 100px; font-weight: 800; letter-spacing: -2px; line-height: 1; }
+  .brand .accent { color: #2dd4bf; }
+  .tagline { font-size: 34px; font-weight: 600; line-height: 1.25;
+    margin-top: 22px; color: #c9d1d9; max-width: 900px; }
+  .tagline .arrow { color: #2dd4bf; }
+  .term {
+    margin-top: 32px; font-family: "DejaVu Sans Mono", ui-monospace, monospace;
+    font-size: 22px; line-height: 1.6; color: #8b949e;
+    background: #0b0f15; border: 1px solid #21262d; border-radius: 12px;
+    padding: 20px 26px; width: fit-content; }
+  .term .rev { color: #56d4dd; } .term .rem { color: #e3b341; }
+  .term .chk { color: #3fb950; } .term .ok { color: #3fb950; font-weight: 700; }
+  .footer { display: flex; gap: 26px; align-items: center; margin-top: 44px;
+    font-size: 23px; color: #8b949e; white-space: nowrap; }
+  .footer .pill { background: #161b22; border: 1px solid #30363d;
+    border-radius: 999px; padding: 8px 20px; color: #c9d1d9;
+    white-space: nowrap; }
+  .footer .pip { font-family: "DejaVu Sans Mono", ui-monospace, monospace;
+    color: #2dd4bf; }
+</style>
+</head>
+<body>
+  <div class="accent-bar"></div>
+  <div>
+    <div class="brand">rev<span class="accent">rem</span></div>
+    <div class="tagline">Bounded AI review <span class="arrow">&rarr;</span> fix
+      <span class="arrow">&rarr;</span> verify on your local branch &mdash;
+      before you push.</div>
+    <div class="term">
+      <span class="rev">rev|1</span>&nbsp;&nbsp;[P1] finding &rarr;
+      <span class="rem">rem|1</span>&nbsp;&nbsp;done &rarr;
+      <span class="chk">chk|1.1</span>&nbsp;&nbsp;passed &rarr;
+      <span class="ok">clear</span>
+    </div>
+  </div>
+  <div class="footer">
+    <span class="pill pip">pipx install revrem</span>
+    <span>Local &middot; no telemetry</span>
+    <span>Apache-2.0</span>
+    <span>github.com/GitCmurf/revrem</span>
+  </div>
+</body>
+</html>

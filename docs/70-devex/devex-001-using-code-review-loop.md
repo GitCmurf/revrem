@@ -3,8 +3,8 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.62'
-last_updated: '2026-06-17'
+version: '1.63'
+last_updated: '2026-06-18'
 owner: GitCmurf
 docops_version: '2.0'
 area: devex
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.62
-> **Last Updated:** 2026-06-17
+> **Version:** 1.63
+> **Last Updated:** 2026-06-18
 > **Type:** DEVEX
 > **Area:** devex
 > **Description:** Operator guide for the code-review-loop utility
@@ -669,6 +669,72 @@ the same child after a timeout without resending stdin, which avoids the
 Profile `review.reasoning_effort` and `remediation.reasoning_effort` values are
 validated during profile loading and must be one of `minimal`, `low`, `medium`,
 or `high`.
+
+### Interactive wizard
+
+For a plain-terminal guided setup, use the CLI wizard:
+
+```bash
+revrem
+revrem --wizard
+```
+
+In an interactive terminal, bare `revrem` opens the wizard. `revrem --wizard`
+opens it even when combined with other top-level options. In scripts and other
+non-interactive contexts, bare `revrem` keeps the normal CLI behavior.
+
+The wizard chooses a starting point in this order: when local run history
+contains a compatible run for the current repository, it offers those last
+settings first; history entries from other repositories do not hide the
+repo-local offer; otherwise it starts from the recommended profile/defaults.
+
+Before any provider call can start, the wizard opens on a run-shape diagram. The
+preview is built from the same phase command builders used at runtime, lists the
+exact provider CLI commands for review, triage, remediation, routed
+remediation, and commit-message drafting, and shows each model-calling phase as
+`harness:model(effort)`. The diagram separates the outer remediation pass limit
+from the inner verify-failure retry limit and shows commit-message drafting only
+under the "if verify passes" commit branch. Preview artifact paths use
+`.revrem/runs/RUN/...` as a placeholder because the real run directory is
+allocated only when the command starts.
+
+If a provider command omits `--model`, the wizard resolves a trusted local
+provider default when RevRem knows how. Codex defaults are read from
+`$CODEX_HOME/config.toml` or `~/.codex/config.toml`. If the model still cannot
+be resolved, the diagram marks it as `model unresolved` and the wizard only
+allows printing or cancellation until you choose an explicit model.
+
+The normal wizard path keeps the profile values unless you choose an edit
+screen. Verification checks can be kept from the profile or selected from
+detected repo presets such as `./scripts/dev-check`, Python test/static checks,
+Meminit DocOps checks, and `git diff --check`; raw shell commands remain
+available under the custom option.
+
+The model settings screen is phase-specific: review, triage, remediation, and
+commit-message drafting each expose their own harness, model, and reasoning
+effort. Changing one phase uses the matching phase flag such as
+`--review-reasoning-effort` or `--remediation-reasoning-effort`; one shared
+model choice is not silently applied to every provider call. Harnesses are
+selected from known RevRem harnesses so mistyped names are caught inside the
+wizard, and suspicious model names such as bare numbers require confirmation.
+Codex triage starts at `low` effort: RevRem rejects
+`--triage-reasoning-effort minimal` for Codex because inherited Codex tools can
+make that provider request fail before structured triage output is produced.
+
+Timeouts have their own main-menu editor for the shared `--timeout-seconds`
+fallback plus phase-specific timeout flags (`--review-timeout-seconds`,
+`--triage-timeout-seconds`, `--remediation-timeout-seconds`,
+`--commit-timeout-seconds`, `--check-timeout-seconds`). Each prompt shows the
+effective value that blank input keeps, and setting any timeout to `0` disables
+that phase's subprocess timeout for the run.
+
+When routing is enabled, the diagram shows triage/policy route selection as the
+primary remediation path and keeps the unrouted remediation command as the
+fallback. Route previews use the runtime routing policy, including configured
+fallbacks for unavailable harnesses or models. Enabling triage from the wizard
+can also enable routing when the active profile defines routes. See
+[Profile-based usage](#profile-based-usage) for the routing rules and route
+tables themselves.
 
 ### Budgets
 
@@ -1460,6 +1526,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.63 | 2026-06-18 | GitCmurf | Added a dedicated Interactive wizard section consolidating wizard run-shape preview, per-phase model/timeout, and routing-preview guidance migrated from the README |
 | 1.62 | 2026-06-17 | Codex | Documented stale Codex triage minimal-effort repair when profile/current is selected |
 | 1.61 | 2026-06-17 | Codex | Documented all-scope clear review prose classification with appended provider stderr |
 | 1.60 | 2026-06-17 | Codex | Documented fail-fast triage/routing CLI overrides when triage is disabled |

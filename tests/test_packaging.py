@@ -141,26 +141,27 @@ def test_optional_tui_extra_declares_textual_dependency():
     assert any(dependency.startswith("rich>=") for dependency in tui_extra)
 
 
-def test_readme_tui_install_and_launch_commands_use_the_same_venv():
+def test_readme_tui_install_and_launch_commands_use_the_same_environment():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
-    assert './.venv/bin/pip install -e ".[tui]"' in readme
-    assert "./.venv/bin/revrem ui" in readme
-    assert "./.venv/bin/revrem ui --profile final-pr" in readme
+    # The TUI is dependency-gated: its install must place Textual in the SAME
+    # environment that provides the `revrem` used to launch it. The README leads
+    # with pipx (an isolated venv), so the TUI extra is installed into that pipx
+    # environment, not via a separate `pip install` that would land elsewhere.
+    assert 'pipx install --force "revrem[tui]"' in readme
+    assert "revrem ui --profile final-pr" in readme
+    # Guard against re-introducing an install/launch environment mismatch.
+    assert 'pip install "revrem[tui]"' not in readme
+    assert "./.venv/bin/revrem ui" not in readme
 
 
-def test_readme_bundle_command_fence_closes_before_explanatory_prose():
+def test_readme_code_fences_are_balanced():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
-    bundle_snippet = """```bash
-revrem bundle-bug-report .revrem/runs/<run-id> --output revrem-bug.tar.gz
-```"""
-
-    assert bundle_snippet in readme
-    assert "The bundle command ignores symlinked artifacts" in readme
-    assert bundle_snippet.index("```", 3) < readme.index(
-        "The bundle command ignores symlinked artifacts"
-    )
+    # Regression guard: every ``` code fence must be closed so explanatory prose
+    # is never swallowed into a code block. (Originally hit by the bug-report
+    # bundle command, whose full reference now lives in the operator guide.)
+    assert readme.count("```") % 2 == 0
 
 
 def test_dev_extra_exercises_rich_and_textual_paths():
