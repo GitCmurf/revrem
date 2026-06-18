@@ -2,10 +2,11 @@
 
 Canonicalizes the nondeterminism that survives the Clock/RunIdentity seam so a
 committed snapshot is stable across machines and runs. Scope is deliberately
-minimal — only the canonicalizations the current golden snapshots actually
-exercise (A2a: run-directory paths and budget wall-time). New placeholders
-(git SHAs, byte sizes, ...) are added in A2b alongside their first real
-consumer, not speculatively.
+minimal - only the canonicalizations the current golden snapshots actually
+exercise. Current canonicalizations: run-directory paths (A2a), budget
+wall-time (A2a), and CLI version strings (A2b). New placeholders (git SHAs,
+byte sizes, ...) are added alongside their first real consumer, not
+speculatively.
 """
 
 from __future__ import annotations
@@ -32,7 +33,9 @@ def normalize(value: Any, *, run_dir: Path | str) -> Any:
 
     - any string containing ``run_dir`` has that prefix replaced with
       ``<RUN_DIR>`` (absolute temp paths in artifact locations);
-    - any ``wall_elapsed_seconds`` number becomes ``<DURATION>``.
+    - any ``wall_elapsed_seconds`` number becomes ``<DURATION>``;
+    - any ``cli_version`` string becomes ``<CLI_VERSION>`` (release metadata
+      that is not part of observable behaviour).
     """
     run_dir_str = str(run_dir)
 
