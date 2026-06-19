@@ -12,9 +12,6 @@ findings through a bounded remediation pass, reruns your own verification
 commands, and leaves an inspectable artifact trail — all locally, before you open
 a pull request.
 
-> **Beta.** RevRem is used daily on its own development and works end to end
-> today; some interfaces may still change ahead of a 1.0 release.
-
 <p align="center">
   <img src="https://raw.githubusercontent.com/GitCmurf/revrem/main/docs/assets/revrem-demo.gif" width="900"
     alt="revrem running a review then fix then verify loop: a P1 finding is remediated, pytest passes, and the re-review comes back clear." />
@@ -212,6 +209,13 @@ revrem ui --profile final-pr
 
 The TUI renders Home, Profiles, Pipeline, Run Monitor, and Controls views, and
 shells through the same CLI command plans as normal terminal usage.
+
+## Status
+
+**Alpha.** RevRem is used daily on its own development and runs end to end
+today. The core review → fix → verify loop is stable; some CLI flags and
+artifact formats may still change ahead of a 1.0 release — pin a version if you
+depend on exact output.
 
 ## Limitations
 
