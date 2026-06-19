@@ -121,6 +121,14 @@ jobs:
         run: |
           mkdir -p release-assets
           cp dist/* release-assets/
+          # OpenSSF Scorecard's signed-releases check recognises the *.sigstore
+          # suffix, not *.sigstore.json. Add a recognised-name copy of each
+          # Sigstore bundle so the check credits the signing we already do; the
+          # canonical *.sigstore.json bundle is kept for standard verification.
+          for bundle in release-assets/*.sigstore.json; do
+            [ -e "$bundle" ] || continue
+            cp "$bundle" "${bundle%.json}"
+          done
           cd dist && for f in *; do
             case "$f" in *.whl|*.tar.gz) ;; *) rm -f "$f" ;; esac
           done
