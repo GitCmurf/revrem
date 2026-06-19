@@ -7,15 +7,20 @@ on:
   push:
     branches: [main]
 
+# Top-level permissions must stay read-only: the scorecard-action's
+# publish_results step verifies the OIDC token and rejects runs that grant
+# write scopes globally. Write scopes are granted per-job below instead.
 permissions:
   contents: read
-  id-token: write
-  security-events: write
 
 jobs:
   scorecard:
     name: Scorecard
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      security-events: write
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3

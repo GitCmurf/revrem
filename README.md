@@ -12,8 +12,8 @@ findings through a bounded remediation pass, reruns your own verification
 commands, and leaves an inspectable artifact trail — all locally, before you open
 a pull request.
 
-> **Early but functional (v0.3.x, alpha).** RevRem is used daily on its own
-> development. It works end to end today, but interfaces may still shift.
+> **Beta.** RevRem is used daily on its own development and works end to end
+> today; some interfaces may still change ahead of a 1.0 release.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/GitCmurf/revrem/main/docs/assets/revrem-demo.gif" width="900"
