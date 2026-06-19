@@ -158,5 +158,4 @@ jobs:
         uses: softprops/action-gh-release@6cbd405e2c4e67a21c47fa9e383d020e4e28b836 # v2.3.3
         with:
           body_path: release-notes.md
-          generate_release_notes: true
           files: release-assets/*

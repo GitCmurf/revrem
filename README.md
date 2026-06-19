@@ -212,7 +212,7 @@ shells through the same CLI command plans as normal terminal usage.
 
 ## Status
 
-**Alpha.** RevRem is used daily on its own development and runs end to end
+**Alpha.** RevRem is used daily in its own development and runs end to end
 today. The core review → fix → verify loop is stable; some CLI flags and
 artifact formats may still change ahead of a 1.0 release — pin a version if you
 depend on exact output.
