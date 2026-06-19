@@ -138,8 +138,24 @@ jobs:
         with:
           packages-dir: dist/
 
+      - name: Extract release notes from CHANGELOG
+        if: github.event_name == 'push'
+        run: |
+          python - <<'PY'
+          import os, re, pathlib
+          ref = os.environ["GITHUB_REF_NAME"]            # e.g. v0.4.0 or v0.4.0-rc1
+          version = ref[1:] if ref.startswith("v") else ref
+          version = version.replace("-rc", "rc")          # CHANGELOG uses 0.4.0rc1 form if present
+          text = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
+          match = re.search(rf"^## \[{re.escape(version)}\].*?(?=^## \[|\Z)", text, re.M | re.S)
+          notes = match.group(0).strip() if match else f"Release {ref}."
+          pathlib.Path("release-notes.md").write_text(notes + "\n", encoding="utf-8")
+          print(notes[:200])
+          PY
+
       - name: Publish GitHub release
         if: github.event_name == 'push'
         uses: softprops/action-gh-release@6cbd405e2c4e67a21c47fa9e383d020e4e28b836 # v2.3.3
         with:
+          body_path: release-notes.md
           files: release-assets/*
