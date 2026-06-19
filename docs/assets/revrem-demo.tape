@@ -33,7 +33,7 @@ Type "alias revrem='bash ./docs/assets/revrem-demo.sh'"
 Enter
 Type "clear"
 Enter
-Type "revrem --base main --max-iterations 2 --check 'pytest -q'"
+Type "revrem --base main --max-iterations 2 --check \"pytest -q\""
 Show
 
 # Poster: hold on the ready command, then run it.
