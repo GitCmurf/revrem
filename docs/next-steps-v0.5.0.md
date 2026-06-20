@@ -692,10 +692,18 @@ infrastructure (L3).
 - New: `scripts/ci/post_pr_comment.py` — a small, dependency-light script that
   reads `revrem-report.json` (the redacted JSON index written by the Report step)
   and posts/updates one PR comment via the GitHub REST API using `GITHUB_TOKEN`.
-  Its full input surface: `revrem-report.json` on disk, `GITHUB_TOKEN` env var,
-  `REVREM_ARTIFACT_URL` env var (the artifact deep-link or workflow run URL
-  fallback — set by the Action before invoking the script; the script never
-  constructs URLs itself).
+  Its full input surface: `revrem-report.json` on disk; env vars read from the
+  GitHub Actions runtime (all automatically set by Actions, none need to be
+  explicitly forwarded unless overriding):
+  - `GITHUB_TOKEN` — authentication for the REST API comment calls
+  - `GITHUB_REPOSITORY` — `owner/repo` string for the API URL path
+  - `GITHUB_EVENT_PATH` — path to the event JSON; the script reads
+    `.pull_request.number` from it to identify the target PR
+  - `GITHUB_API_URL` — base URL (defaults to `https://api.github.com`; allows
+    GitHub Enterprise Server support without code changes)
+  - `REVREM_ARTIFACT_URL` — artifact deep-link or workflow run URL fallback,
+    set by the Action before invoking the script; the script never constructs
+    artifact URLs itself
 - New: `docs/52-api/` note or `REVREM-DEVEX-001` section documenting the Action
   contract and least-privilege permissions.
 
@@ -720,9 +728,31 @@ infrastructure (L3).
      prefix is required for portability.) The dogfood workflow uses `local`
      so v0.5.0 can be validated before its PyPI package exists.
      Document both modes clearly.
+   - **Checkout contract.** The composite action does **not** call
+     `actions/checkout` — that is the caller workflow's responsibility. However,
+     RevRem requires the base ref to be present locally for `git diff`. The
+     dogfood `revrem-pr.yml` must use `fetch-depth: 0` (full history) or at
+     minimum fetch the base branch explicitly:
+     ```yaml
+     - uses: actions/checkout@v4
+       with:
+         fetch-depth: 0   # required so origin/main is available for git diff
+     ```
+     Document this as a caller prerequisite in the Action's README and in
+     `REVREM-DEVEX-001`. The action itself should verify the base ref exists
+     before invoking RevRem (e.g. `git rev-parse --verify "$base"`) and exit 4
+     with a human-readable message if it does not, rather than letting RevRem
+     fail with a cryptic git error.
    - **Run:** `revrem --base "$base" --profile "$profile" --no-tty
      --progress-style compact --summary-format json
      --max-iterations ... --max-wall-seconds ... --max-usd ...`.
+     The `checks` input (newline-delimited list) must be split into repeated
+     `--check <cmd>` arguments; do this in a bash step with
+     `while IFS= read -r line; do [[ -n "$line" ]] && args+=(--check "$line"); done <<< "$checks"`.
+     Pass the resulting `"${args[@]}"` array to `revrem`. Never interpolate
+     the newline-joined string directly into the command — that is a shell
+     injection vector. Add a test confirming that a two-entry `checks` input
+     produces two separate `--check` flags in the revrem invocation.
      GitHub Actions sets `CI=true` automatically, so RevRem would suppress
      ANSI even without `--no-tty`; the flag is included explicitly so the
      intent is readable in the workflow YAML and the behaviour is guaranteed
@@ -829,9 +859,17 @@ infrastructure (L3).
    body; it may contain file paths or exception tracebacks. If
    `raw-artifacts: true`, upload the captured stderr as a separate artifact
    for diagnosis.
-3. **Least privilege.** Document and set `permissions:` to `contents: read`,
-   `pull-requests: write` (for the comment) only. The Action never uploads off
-   the repo's CI store (Contract #4, PLAN-003 privacy contract).
+3. **Least privilege.** Composite actions cannot declare `permissions:` — that
+   block belongs in the **caller's workflow**, not in `action.yml`. The dogfood
+   `revrem-pr.yml` must include:
+   ```yaml
+   permissions:
+     contents: read
+     pull-requests: write
+   ```
+   Document the required permissions in the Action README and in
+   `REVREM-DEVEX-001` so public callers know what to add. The Action never
+   uploads off the repo's CI store (Contract #4, PLAN-003 privacy contract).
 
    > **Fork-PR security model (required decision — D-6).** On PRs from forks,
    > GitHub Actions does not grant `pull-requests: write` to the `GITHUB_TOKEN`
@@ -1461,7 +1499,7 @@ each built-in TOML's `description` should be a one-to-two sentence statement
 of the profile's purpose and intended audience. This is sufficient for
 `revrem config list` and `--dry-run` output. **Do not add `date_created` or a
 separate narrative-note field in v0.5.0** — date provenance is available from
-`git log -- src/code_review_loop/profiles/<name>.toml` and a dedicated
+`git log -- src/code_review_loop/expert_profiles/<name>.toml` and a dedicated
 presentation field would require schema versioning. If a future UX surface
 (e.g. a profile browser in the TUI) genuinely needs structured metadata,
 add a `[meta]` table additively at that point per Contract #7.
