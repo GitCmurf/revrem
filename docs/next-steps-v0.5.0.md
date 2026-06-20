@@ -168,13 +168,13 @@ protect the showcase from scope creep.
 Using the `REVREM-PLAN-003` maturity ladder (Experimental → Preview →
 Default-on-local → Default-on-hands-off → Stable contract):
 
-| Capability | Target maturity at v0.5.0 |
-|---|---|
-| `revrem report` HTML | Default-on for local use (documented, schema-validated inputs, fixture-tested) |
-| GitHub Action + PR comment | Preview (documented, reference repo smoke, least-privilege tokens) |
-| Expert profiles | Preview (documented, fixture suite proves distinct findings; not yet SemVer-frozen) |
-| Examples / completions / demo | Default-on for local use |
-| TUI real runs (stretch) | Experimental (flagged; Pilot-tested replay before live runs) |
+| Capability | Tier | Target maturity at v0.5.0 |
+|---|---|---|
+| `revrem report` HTML | Tier 1 (committed) | Default-on for local use (documented, schema-validated inputs, fixture-tested) |
+| GitHub Action + PR comment | Tier 1 (committed) | Preview (documented, reference repo smoke, least-privilege tokens) |
+| Expert profiles | Tier 2 (v0.5.x follow-on if capacity limited) | Preview (documented, fixture suite proves distinct findings; not yet SemVer-frozen) |
+| Examples / completions / demo | Tier 2 (v0.5.x follow-on if capacity limited) | Default-on for local use |
+| TUI real runs (stretch) | Tier 1 stretch / v0.6.0 | Experimental (flagged; Pilot-tested replay before live runs) |
 
 The HTML report **input** contract is the only frozen surface: it reads the
 already-frozen `summary-v1` and `events-v1` schemas. The report's *HTML layout*
@@ -460,7 +460,12 @@ single self-contained HTML file from a finished run.
      missing key is a schema violation, not a null.
    Add a golden fixture (`tests/fixtures/report_index_golden.json`) that
    `test_report_json.py` asserts byte-for-byte (modulo run-id/timestamps
-   masked with a normaliser) so schema drift is caught immediately.
+   masked with a normaliser) so schema drift is caught immediately. Per
+   Contract #8, also add `docs/52-api/schemas/report-index-v1.schema.json`
+   (a JSON Schema file describing all fields, types, and nullability) plus an
+   `_history/` baseline, and validate the golden fixture against the schema in
+   `test_report_json.py`. The Action consumes this artifact, so the schema is
+   a versioned cross-boundary contract.
 4. Exit-code mapping: `0` on success; `1` on missing/invalid inputs (mirror
    `replay.py`'s error handling); if `events.jsonl` is truncated, still render
    what is available and print a warning to stderr (do not fail the render —
@@ -489,6 +494,13 @@ single self-contained HTML file from a finished run.
   rendered HTML by default and present only with `--no-redact
   --i-understand-the-risks`.
 - Truncated-`events.jsonl` test: renders with a warning, exits `0`.
+- `tests/test_report_json.py`: for each T0 fixture, `revrem report --format
+  json` produces valid JSON on stdout; assert `schema_version`, `run_id`, and
+  required keys are present and match the golden fixture
+  (`tests/golden/report/report-index-*.json`). Validate each golden against
+  `docs/52-api/schemas/report-index-v1.schema.json`. Assert `--output` flag is
+  silently ignored when `--format json` (output still lands on stdout, not a
+  file).
 
 **Docs.** Add a "Static HTML report" subsection to `REVREM-DEVEX-001` and a
 short README mention under Key Features.
@@ -680,6 +692,10 @@ infrastructure (L3).
 - New: `scripts/ci/post_pr_comment.py` — a small, dependency-light script that
   reads `revrem-report.json` (the redacted JSON index written by the Report step)
   and posts/updates one PR comment via the GitHub REST API using `GITHUB_TOKEN`.
+  Its full input surface: `revrem-report.json` on disk, `GITHUB_TOKEN` env var,
+  `REVREM_ARTIFACT_URL` env var (the artifact deep-link or workflow run URL
+  fallback — set by the Action before invoking the script; the script never
+  constructs URLs itself).
 - New: `docs/52-api/` note or `REVREM-DEVEX-001` section documenting the Action
   contract and least-privilege permissions.
 
@@ -689,12 +705,20 @@ infrastructure (L3).
    `profile`, `max-iterations`, `max-wall-seconds`, `max-usd`, `max-tokens`,
    `checks` (newline list), `comment` (bool, default true),
    `upload-artifacts` (bool, default true), `raw-artifacts` (bool, default
-   false — see artifact upload note below), `install-mode` (`pypi` or `local`,
-   default `pypi` — see dogfood note below). Steps:
+   false — see artifact upload note below), `fail-on-findings` (bool, default
+   false — when true, the job exits 1 if revrem returns exit code 2; when
+   false, findings are surfaced as a `::warning::` annotation and the job
+   passes), `install-mode` (`pypi` or `local`, default `pypi` — see dogfood
+   note below). Steps:
    - **Install:** when `install-mode == pypi`, install via
-     `pipx install revrem==<pinned>`; when `install-mode == local`, run
-     `pip install -e .` against the checked-out source. The dogfood workflow
-     uses `local` so v0.5.0 can be validated before its PyPI package exists.
+     `pipx install revrem==<version>` where `<version>` is the literal
+     version string embedded in `action.yml` (updated by the T13 release task
+     to match the tag being cut); when `install-mode == local`, run
+     `pip install -e "${{ github.action_path }}"` against the action repo's
+     checkout. (`pip install -e .` would resolve to `$GITHUB_WORKSPACE`, which
+     is the caller's repo, not the action directory; the `github.action_path`
+     prefix is required for portability.) The dogfood workflow uses `local`
+     so v0.5.0 can be validated before its PyPI package exists.
      Document both modes clearly.
    - **Run:** `revrem --base "$base" --profile "$profile" --no-tty
      --progress-style compact --summary-format json
@@ -742,7 +766,15 @@ infrastructure (L3).
      report, because a raw run directory can contain model output, prompts,
      check output, and local context paths — Contract #4 (redaction on by
      default for anything that leaves the run dir) applies to CI uploads
-     equally.
+     equally. Capture the `artifact-url` output from `actions/upload-artifact`
+     (available as `steps.<upload-step-id>.outputs.artifact-url`); set it as
+     the environment variable `REVREM_ARTIFACT_URL` before invoking
+     `post_pr_comment.py`. If upload is skipped or the output is empty, set
+     `REVREM_ARTIFACT_URL` to the workflow run URL instead
+     (`${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`
+     ) as a fallback so the comment always contains a navigable link. The
+     script reads the URL from `REVREM_ARTIFACT_URL`; it does not attempt to
+     construct or guess artifact URLs itself.
    - **Comment:** when `comment` is true, run
      `python "${{ github.action_path }}/scripts/ci/post_pr_comment.py"`.
      **Why `${{ github.action_path }}`?** When a user writes
@@ -805,16 +837,17 @@ infrastructure (L3).
    > GitHub Actions does not grant `pull-requests: write` to the `GITHUB_TOKEN`
    > under the default `pull_request` trigger. Attempting to post a comment will
    > fail silently or with an HTTP 403. The safe behavior for v0.5.0 is:
-   > **detect fork and skip the comment step** (post_pr_comment.py receives
-   > `--skip-comment`), but still run `revrem`, generate the report, and upload
-   > the artifact so the review is available via the Actions tab. Do **not** use
+   > **detect fork and skip the comment step**, but still run `revrem`,
+   > generate the report, and upload the artifact so the review is available via
+   > the Actions tab. Skip the step entirely via an `if:` condition on the
+   > comment step in `action.yml` —
+   > `if: inputs.comment == 'true' && github.event.pull_request.head.repo.fork != 'true'`
+   > — rather than passing a flag to `post_pr_comment.py`; the simpler model is
+   > to never invoke the script when posting is not possible. Do **not** use
    > `pull_request_target` to gain write access on fork PRs — it runs workflow
    > code from the default branch against fork code and requires explicit checkout
-   > hardening that is out of scope for v0.5.0. The reference workflow
-   > (`revrem-pr.yml`) must detect forks by checking
-   > `github.event.pull_request.head.repo.fork == true` and skip only the
-   > comment step. Add a test asserting that fork mode produces an artifact but
-   > no comment API call.
+   > hardening that is out of scope for v0.5.0. Add a test asserting that fork
+   > mode produces an artifact but no comment API call.
 4. **Boundedness.** The action template always passes a wall-clock and an
    iteration cap; document that omitting them is unsupported in CI.
 
@@ -876,7 +909,9 @@ exemplary, not exclusive), and the privacy contract. README gains a CI badge /
 
 **Cheap-model suitability:** Medium. The comment script and YAML are
 template-shaped; the GitHub API stubbing is the main subtlety — provide the fake
-in T0 or here.
+in T4 as `tests/support/fake_github_api.py` (a minimal `http.server`-based stub
+or `responses`-style recorded fixture that handles `GET /repos/.../issues/comments`
+and `POST /repos/.../issues/<pr>/comments`).
 
 ---
 
@@ -1042,10 +1077,11 @@ default.
   routing; `refactor` does not block when run alone on a refactor-only diff.
 - All referenced fragments resolve (no unresolved-fragment warnings on a clean
   run).
-- No built-in profile enables a check command by default unless `doctor`
-  detects the corresponding tooling. Verified by a test that runs each profile's
-  default check matrix against a bare Python repo with only `git` + `revrem`
-  installed and asserts no `command not found` or non-zero check-setup exit.
+- No built-in profile enables any check command by default (`pipeline.checks`
+  is `[]` in every built-in TOML — there is no auto-enable path in v0.5.0;
+  doctor-driven auto-enable is explicitly deferred). `revrem checks suggest`
+  may recommend commands but never writes them into the profile. Verified by a
+  test that loads each built-in profile and asserts `pipeline.checks == []`.
 
 **Tests.** Covered by T7's suite plus a fragment-resolution unit test.
 
@@ -1365,10 +1401,12 @@ Releasable when Tier 1 gates pass **and**:
 
 ## Mapping To The Path-To-1.0
 
-This plan advances PLAN-003 as follows. After v0.5.0, the only remaining roadmap
-work is the final M5 TUI slice (if deferred here) and **M9** (archive, dataset
-export, daemon) — the natural v0.6.0/0.7.0 focus, leading to the 1.0 "boring
-infrastructure" freeze.
+This plan advances PLAN-003 as follows. After a **Tier 1** v0.5.0 release,
+remaining roadmap work includes Pillars C + D (expert profiles, DevEx — as
+v0.5.x follow-ons), the final M5 TUI slice (if deferred), and **M9** (archive,
+dataset export, daemon). After a **Tier 2** v0.5.0 release, only the M5 TUI
+slice (if deferred) and M9 remain — the natural v0.6.0/0.7.0 focus, leading to
+the 1.0 "boring infrastructure" freeze.
 
 | PLAN-003 milestone | Status after v0.5.0 |
 |---|---|
@@ -1400,12 +1438,33 @@ The current profile schema already covers all the structure expert profiles
 need. The relevant TOML tables and keys are: `[pipeline]` (with `checks = []`
 as a list of shell commands — there is no standalone `[checks]` table);
 `[triage]` (top-level); and `triage.routing` (a sub-table nested *inside*
-`[triage]`, not a top-level `[routing]` table). Do not create a new
-`expert-profile-v1` schema preemptively — schemas add maintenance overhead
+`[triage]`, not a top-level `[routing]` table).
+
+**Budget fields are forbidden in built-in profiles.** Built-in TOMLs must not
+set `max_iterations`, `max_usd`, or `max_wall_seconds`. Budget is a user/project
+concern; a built-in that silently raises a user's budget cap would violate
+Contract #5 (additive-safe changes must not surprise existing users). Add a test
+to `test_expert_profiles.py` asserting that no built-in TOML contains any of
+these keys. Built-ins should only set `description`, `[triage]` routing/severity
+rules, and `pipeline.checks = []`.
+
+Do not create a new `expert-profile-v1` schema preemptively — schemas add maintenance overhead
 (history baselines, migration notes, version bumps). If a specific future
 profile needs a field the schema does not have (e.g. a `self_skip_when`
 accessibility check), add it additively at that point following Contract #7
 and Contract #8, and create a schema history baseline then.
+
+**Profile metadata for user-facing presentation (name, description, date,
+narrative note):** The existing `description` field (a free-text string in the
+profile TOML's top-level `description =` key) is the narrative for v0.5.0 —
+each built-in TOML's `description` should be a one-to-two sentence statement
+of the profile's purpose and intended audience. This is sufficient for
+`revrem config list` and `--dry-run` output. **Do not add `date_created` or a
+separate narrative-note field in v0.5.0** — date provenance is available from
+`git log -- src/code_review_loop/profiles/<name>.toml` and a dedicated
+presentation field would require schema versioning. If a future UX surface
+(e.g. a profile browser in the TUI) genuinely needs structured metadata,
+add a `[meta]` table additively at that point per Contract #7.
 
 > **Example:** `security.toml` does not need a `self_skip_when` field for
 > v0.5.0 — it is a universally applicable profile. A future `accessibility`
