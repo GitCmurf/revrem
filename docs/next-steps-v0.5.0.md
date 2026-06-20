@@ -117,9 +117,12 @@ execution path and no weakening of the bounded/diagnosable/local-first posture.
 
 ## Scope
 
-v0.5.0 ships five pillars. Each pillar is independently shippable; pillars A–D
-are committed, pillar E is a stretch that may slip to v0.6.0 without blocking
-the release.
+v0.5.0 ships five pillars across two release tiers. **Pillars A and B are the
+committed minimum core (Tier 1)**; the release is gated on these alone. Pillars
+C and D are the full candidate scope (Tier 2) and land as follow-on v0.5.x
+releases if capacity allows — they are not required to cut v0.5.0. Pillar E is
+a stretch that may slip to v0.6.0 without blocking the release. See the Release
+& Exit Criteria section for precise gate conditions for each tier.
 
 - **Pillar A — `revrem report` (static HTML run report).** A new read-only
   subcommand that renders `summary.json` + `events.jsonl` into a single
@@ -357,14 +360,14 @@ measured against.
    `timeout`, `check_failure`, `cost_ceiling`, `cancelled`, and
    `all_suppressed`. Add a small loader helper `tests/support/run_fixtures.py`
    exposing `load_run(name) -> Path` so T1/T2/T4 share inputs.
-3. Create the **contrived multi-issue reference repo** fixture under
-   `tests/fixtures/expert_repo/` (or extend the existing reference fixture
-   repository noted in the v0.4.0 changelog). It must contain seeded issues that
-   map to each expert profile: at least one security bug (e.g. unsafe
-   deserialization / hardcoded secret), one performance bug (e.g. an N+1 / hot
-   allocation), one refactor smell (duplication / dead code), one test gap
-   (changed-but-uncovered branch), and one docs drift (docstring contradicts
-   code). Record expected-flag metadata in
+3. *(Tier 2 only — skip for Tier 1 release.)* Create the **contrived
+   multi-issue reference repo** fixture under `tests/fixtures/expert_repo/`
+   (or extend the existing reference fixture repository noted in the v0.4.0
+   changelog). It must contain seeded issues that map to each expert profile:
+   at least one security bug (e.g. unsafe deserialization / hardcoded secret),
+   one performance bug (e.g. an N+1 / hot allocation), one refactor smell
+   (duplication / dead code), one test gap (changed-but-uncovered branch), and
+   one docs drift (docstring contradicts code). Record expected-flag metadata in
    `tests/fixtures/expert_repo/EXPECTED.json` keyed by profile.
 4. Record the v0.5.0 **success-metric targets** (copied from PLAN-003 plus the
    two new ones below) in a short "Metrics" section appended to this doc or in
@@ -378,8 +381,8 @@ measured against.
 - `meminit check --format json` passes with REVREM-PLAN-005 registered.
 - `tests/support/run_fixtures.py::load_run` returns a directory with both
   `summary.json` and `events.jsonl` for every named scenario.
-- `tests/fixtures/expert_repo/EXPECTED.json` enumerates ≥ 5 seeded issues with
-  the profile expected to flag each.
+- *(Tier 2 only)* `tests/fixtures/expert_repo/EXPECTED.json` enumerates ≥ 5
+  seeded issues with the profile expected to flag each.
 
 **Tests.** A meta-test asserts every fixture run directory's `summary.json`
 validates against `summary-v1.schema.json` and `events.jsonl` validates against
@@ -442,6 +445,22 @@ single self-contained HTML file from a finished run.
    `summary.json`. Apply redaction to all rendered text when `redact` is true
    (default) — this makes the JSON index safe to upload or pass across a trust
    boundary.
+
+   **Field nullability contract** (all consumers must handle these):
+   - `cost_usd`: `null` if the run was a dry-run or the engine did not record a
+     cost (e.g. fake harness); never absent from the key set.
+   - `top_findings`: `[]` (empty list) when there are no findings or they were
+     suppressed; each entry's `line` field is `null` when the finding has no
+     file-level location.
+   - `artifact_paths`: `{}` (empty object) if the run dir is unavailable or was
+     not written (e.g. `--dry-run`); otherwise a dict keyed by artifact type
+     (`"summary"`, `"events"`, `"report_html"`).
+   - All other required fields (`schema_version`, `run_id`, `final_status`,
+     finding counts, `suppression_count`) are always present and non-null; a
+     missing key is a schema violation, not a null.
+   Add a golden fixture (`tests/fixtures/report_index_golden.json`) that
+   `test_report_json.py` asserts byte-for-byte (modulo run-id/timestamps
+   masked with a normaliser) so schema drift is caught immediately.
 4. Exit-code mapping: `0` on success; `1` on missing/invalid inputs (mirror
    `replay.py`'s error handling); if `events.jsonl` is truncated, still render
    what is available and print a warning to stderr (do not fail the render —
@@ -773,12 +792,29 @@ infrastructure (L3).
    not raw model responses. Standard library + `urllib` only for the HTTP calls;
    no extra deps. If `revrem report --format json` exits non-zero (rare, since
    T1 step 4 makes it resilient to truncated events), post a degraded comment
-   noting the report was unavailable and include the report step's stderr for
-   diagnosis, then exit 1.
+   with a generic message ("RevRem report generation failed — see workflow
+   logs for details") and exit 1. Do **not** include raw stderr in the comment
+   body; it may contain file paths or exception tracebacks. If
+   `raw-artifacts: true`, upload the captured stderr as a separate artifact
+   for diagnosis.
 3. **Least privilege.** Document and set `permissions:` to `contents: read`,
-   `pull-requests: write`, `issues: write` (for the comment) only. The Action
-   never uploads off the repo's CI store (Contract #4, PLAN-003 privacy
-   contract).
+   `pull-requests: write` (for the comment) only. The Action never uploads off
+   the repo's CI store (Contract #4, PLAN-003 privacy contract).
+
+   > **Fork-PR security model (required decision — D-6).** On PRs from forks,
+   > GitHub Actions does not grant `pull-requests: write` to the `GITHUB_TOKEN`
+   > under the default `pull_request` trigger. Attempting to post a comment will
+   > fail silently or with an HTTP 403. The safe behavior for v0.5.0 is:
+   > **detect fork and skip the comment step** (post_pr_comment.py receives
+   > `--skip-comment`), but still run `revrem`, generate the report, and upload
+   > the artifact so the review is available via the Actions tab. Do **not** use
+   > `pull_request_target` to gain write access on fork PRs — it runs workflow
+   > code from the default branch against fork code and requires explicit checkout
+   > hardening that is out of scope for v0.5.0. The reference workflow
+   > (`revrem-pr.yml`) must detect forks by checking
+   > `github.event.pull_request.head.repo.fork == true` and skip only the
+   > comment step. Add a test asserting that fork mode produces an artifact but
+   > no comment API call.
 4. **Boundedness.** The action template always passes a wall-clock and an
    iteration cap; document that omitting them is unsupported in CI.
 
@@ -917,8 +953,11 @@ authoritative when they shadow a built-in.
 2. Wire resolution in `profiles.py` so `--profile <name>` falls back to a
    built-in when no user/project profile matches, and `revrem config list`
    shows built-ins with a `source = "builtin"` marker (read-only; `config
-   edit`/`delete` refuse to mutate a built-in and instead offer `config clone
-   <name> <copy>`).
+   edit`/`delete` on a built-in name print an explicit "built-in profile
+   '<name>' is read-only; use `revrem config clone <name> <copy>` to create
+   an editable copy" error to stderr and exit 1 — they do **not** return a
+   generic "not found" error, which would be misleading given the profile is
+   discoverable via `config list`).
 3. Each built-in profile references a tuned triage rubric and prompt fragments
    (content in T6) and a recommended check matrix; profiles that only apply to a
    subset of repos (e.g. `accessibility`, if added later) declare a self-skip
@@ -929,14 +968,18 @@ authoritative when they shadow a built-in.
   expected provider commands without a user-authored profile present.
 - A user profile named `security` shadows the built-in (verified by a test).
 - `revrem config list` shows built-ins as `source = builtin`; `config edit
-  security` refuses and suggests `config clone`.
+  security` and `config delete security` exit 1 with the message "built-in
+  profile 'security' is read-only; use `revrem config clone security <copy>`
+  to create an editable copy" (not a generic "not found" error).
 - Built-in profiles validate against the profile schema in CI.
 
 **Tests.** `tests/test_expert_profiles.py`: resolution precedence (four cases:
 built-in only, user named shadows built-in, project named shadows built-in,
 project named shadows user named shadows built-in), shadowing, read-only
-protection, schema validation of every bundled TOML. Tests must exercise the
-exact `resolve_profile_from_files` code path, not just the loader helpers.
+protection (assert `config edit <builtin>` and `config delete <builtin>` each
+exit 1 with the exact read-only message, not a "not found" error), schema
+validation of every bundled TOML. Tests must exercise the exact
+`resolve_profile_from_files` code path, not just the loader helpers.
 
 **Docs.** New "Expert profiles" section in `REVREM-DEVEX-001`; README "Key
 Features" mention.
