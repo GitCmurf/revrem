@@ -162,6 +162,11 @@ protect the showcase from scope creep.
   report is a single file safe to upload as a CI artifact and open offline.
 - **No auto-editing of user profiles or hooks** beyond the existing opt-in
   `install-hooks`; expert profiles are read-only built-ins the user selects.
+- **No engine, performance, or observability work.** v0.5.0 is a showcase
+  (adoption-surface) release; the execution engine is considered stable at
+  v0.4.0. Engine hardening, profiling, and runtime observability resume in
+  v0.6.0 and are intentionally out of scope here — this is a deliberate
+  deferral, not an implication that the engine is finished.
 
 ## Capability Maturity Targets
 
@@ -172,7 +177,7 @@ Default-on-local → Default-on-hands-off → Stable contract):
 |---|---|---|
 | `revrem report` HTML | Tier 1 (committed) | Default-on for local use (documented, schema-validated inputs, fixture-tested) |
 | GitHub Action + PR comment | Tier 1 (committed) | Preview (documented, reference repo smoke, least-privilege tokens) |
-| Expert profiles | Tier 2 (v0.5.x follow-on if capacity limited) | Preview (documented, fixture suite proves distinct findings; not yet SemVer-frozen) |
+| Expert profiles | Tier 2 (v0.5.x follow-on if capacity limited) | Preview (documented, fixture suite proves distinct *configured* findings; not yet SemVer-frozen) |
 | Examples / completions / demo | Tier 2 (v0.5.x follow-on if capacity limited) | Default-on for local use |
 | TUI real runs (stretch) | Tier 1 stretch / v0.6.0 | Experimental (flagged; Pilot-tested replay before live runs) |
 
@@ -374,8 +379,15 @@ measured against.
    `REVREM-TEST-001`:
    - HTML report renders a stored run in < 1 s and validates structurally.
    - Action posts a comment within 5 min on a 1k-LOC reference PR.
-   - ≥ 4 expert profiles produce distinct findings with ≤ 20% overlap on the
-     contrived repo.
+   - ≥ 4 expert profiles produce distinct *configured* findings with ≤ 20%
+     overlap on the contrived repo, measured hermetically via the fake harness
+     (scripted findings). **This metric validates the profile machinery — that
+     distinct profiles route to distinct outcomes — not that a live model flags
+     distinct real bugs.** Real-model distinctness is a separate, weaker-evidence
+     gate: a Tier 2 live-smoke run (see T7) that is manual/optional and not part
+     of the hermetic suite. A Tier 2 release may not claim M7 "done" on the
+     hermetic metric alone — it must also record one live-smoke run showing the
+     profiles produce differing findings on real model output.
 
 **Acceptance criteria.**
 - `meminit check --format json` passes with REVREM-PLAN-005 registered.
@@ -554,6 +566,12 @@ with golden-file tests.
 - For a `cost_ceiling` fixture, the cost section shows the ceiling breach and
   the report header badge reflects the budget-stop state.
 - Golden HTML files match byte-for-byte across two runs and across Linux/macOS.
+  To make the cross-platform claim enforceable (not aspirational), the renderer
+  must guarantee OS-independent output: a test asserts the rendered HTML contains
+  no `\r\n` sequences, and any filesystem path embedded in the report is rendered
+  via `pathlib.PurePosixPath` (or string-normalized to `/`) so a path separator
+  never leaks `os.sep`. Without these two guards a golden can pass on Linux CI
+  and fail on a macOS dev box; with them the invariant is actually tested.
 
 **Tests.** Golden comparisons for ≥ 6 fixtures; a redaction golden; a
 "diff stats unavailable" path.
@@ -758,7 +776,11 @@ infrastructure (L3).
      intent is readable in the workflow YAML and the behaviour is guaranteed
      even on non-standard CI providers that omit `CI`. `--progress-style
      compact` produces greppable, line-by-line progress in `revrem-err.txt`
-     that operators can read after a failure.
+     that operators can read after a failure. (Note the distinction: `--no-tty`
+     is belt-and-braces — `CI=true` already implies it — whereas
+     `--summary-format json` and the `--max-*` caps are *functionally required*,
+     not redundant: CI detection does not change the output format and does not
+     impose budget caps, so these must be passed explicitly.)
      **Do not pass `--artifact-dir`**: the runner generates a
      timestamped concrete run directory under `.revrem/runs/` by default
      (see `default_artifact_dir()` in `cli/config_builder.py`). Use `set +e`
@@ -770,7 +792,11 @@ infrastructure (L3).
      `both` prepends a human-readable terminal summary before the JSON block,
      which breaks `jq .artifact_dir` and any other JSON parser reading stdout.
      `--summary-format json` produces a single, valid JSON object and nothing
-     else. After capture, **validate that `revrem-out.json` parses as JSON
+     else. Read the **top-level** `.artifact_dir` key (written by
+     `core/state.py` — it is the authoritative run-directory field; a nested
+     `artifact_paths.artifact_dir` also exists for path-bundle consumers, but
+     CI must use the top-level one, which is always present in a completed run).
+     After capture, **validate that `revrem-out.json` parses as JSON
      before extracting `artifact_dir`**: if the file is empty or not valid JSON
      (e.g. revrem crashed before writing its summary), take the setup-error
      fast-fail path immediately — the same path used when `artifact_dir` is
@@ -849,7 +875,15 @@ infrastructure (L3).
    wheel; under the default `install-mode: pypi` (`pipx install revrem`),
    `code_review_loop` runs in an isolated virtualenv and is unreachable from a
    loose script. Reading a file on disk works identically under every install
-   mode. Never paste raw model output or prompt content into the comment body;
+   mode. **Structure the body-building logic as a pure function**
+   (`build_comment_body(report_index: dict) -> str`) inside `post_pr_comment.py`,
+   separate from the HTTP/API code, so it can be unit-tested directly (the test
+   imports it via `importlib` from the script path) without a network stub. The
+   comment body is the most security-sensitive output the Action emits (it lands
+   in a public PR); keeping the builder a pure, independently-tested function
+   ensures that surface is covered even though the script sits outside the
+   import-lintered package. Never paste raw model output or prompt content into
+   the comment body;
    the JSON index enforces this by design — it contains only summary fields,
    not raw model responses. Standard library + `urllib` only for the HTTP calls;
    no extra deps. If `revrem report --format json` exits non-zero (rare, since
@@ -889,10 +923,11 @@ infrastructure (L3).
 4. **Boundedness.** The action template always passes a wall-clock and an
    iteration cap; document that omitting them is unsupported in CI.
 
-**Acceptance criteria.**
-- Opening a PR on this repo triggers `revrem-pr.yml`; within the 5-minute metric
-  target on a ~1k-LOC PR, a single comment appears summarizing findings, cost,
-  and suppressions, with an artifact link.
+**Acceptance criteria.** (Criteria marked *(live)* are human-verified by opening
+a real PR; all others are automated test gates.)
+- *(live)* Opening a PR on this repo triggers `revrem-pr.yml`; within the
+  5-minute metric target on a ~1k-LOC PR, a single comment appears summarizing
+  findings, cost, and suppressions, with an artifact link.
 - Re-running the workflow updates the same comment instead of stacking new ones
   (idempotency verified by the marker).
 - The job respects budget caps and maps exit codes correctly (a `3` ceiling hit
@@ -1162,14 +1197,22 @@ calls in CI.
    > content* (T6), not the configuration machinery (T5). Keep the two concerns
    > separate when debugging.
 2. Compute pairwise finding-overlap by fingerprint across profiles; assert ≥ 4
-   profiles each flag their seeded issue and pairwise overlap ≤ 20%.
-3. Provide an optional **live smoke** (gated like the existing
-   `REVREM_LIVE_*` tests) that runs the real profiles against the contrived repo
-   for maintainers, skipped by default.
+   profiles each flag their seeded issue and pairwise overlap ≤ 20%. This proves
+   distinct *configured* findings (machinery), not distinct real-model findings
+   — see the M7 metric note in T0.
+3. Provide a **live smoke** (gated like the existing `REVREM_LIVE_*` tests) that
+   runs the real profiles against the contrived repo for maintainers, skipped by
+   default. This is the only evidence of real-model distinctness; it is a **Tier 2
+   release gate** — a Tier 2 release must record one passing live-smoke run, but
+   it is never part of the hermetic CI suite.
 
 **Acceptance criteria.**
 - The hermetic overlap test passes in CI with no model/network access.
-- The computed overlap matrix is recorded as a test artifact for inspection.
+- The computed overlap matrix is recorded at
+  `tests/artifacts/profile_overlap_matrix.json` (a dict of `"profileA|profileB"`
+  → float overlap ratio) as a pytest artifact for inspection.
+- (Tier 2 manual gate) One live-smoke run is recorded before a Tier 2 release
+  showing the profiles produce differing findings on real model output.
 
 **Tests.** This task *is* the test; also assert each profile self-skips
 correctly where it declares a self-skip marker.
@@ -1417,16 +1460,25 @@ Gates:
   sequencing test passes.
 - CI uploads default to redacted HTML report; raw upload requires
   `raw-artifacts: true`; redacted-upload test passes.
-- The Action posts a single idempotent PR comment within the 5-minute metric
-  on a ~1k-LOC PR and respects budget ceilings.
-- At least one live dogfood run of `revrem --profile dogfood` (CLI) on a real
-  branch, with `revrem report` rendering the result, is recorded before tagging.
+- *(manual/human gate — not automatable in the test suite)* The Action posts a
+  single idempotent PR comment within the 5-minute metric on a ~1k-LOC PR and
+  respects budget ceilings. Verified by a human opening a real PR, the same way
+  the dogfood gate below is; idempotency and exit-code mapping themselves are
+  covered by automated tests (above), but the wall-clock/end-to-end behaviour is
+  a live observation.
+- *(manual/human gate)* At least one live dogfood run of `revrem --profile
+  dogfood` (CLI) on a real branch, with `revrem report` rendering the result, is
+  recorded before tagging.
 
 ### Tier 2 — Full v0.5.0 (Pillars A–D, all tasks except T12)
 
 Releasable when Tier 1 gates pass **and**:
 - ≥ 4 expert profiles flag their seeded issues with ≤ 20% pairwise overlap on
-  the contrived repo, hermetically (fake harness, no network).
+  the contrived repo, hermetically (fake harness, no network) — this is the
+  *configured-findings* (machinery) gate.
+- *(manual/human gate)* One live-smoke run (T7 step 3) is recorded showing the
+  profiles produce differing findings on real model output. Tier 2 may not claim
+  M7 done on the hermetic gate alone — see the M7 metric note in T0.
 - Built-in profile precedence integration test passes all four shadowing cases.
 - No built-in profile enables an ecosystem check by default; stack-detection
   test passes (`pipeline.checks = []` in every built-in TOML, confirmed by
