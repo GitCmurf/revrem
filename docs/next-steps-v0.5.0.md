@@ -4,7 +4,7 @@ type: PLAN
 title: Next steps — v0.5.0 (Showcase & Hands-Off Adoption)
 status: Draft
 version: '0.1'
-last_updated: '2026-06-18'
+last_updated: '2026-06-20'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -345,8 +345,9 @@ measured against.
 1. Migrate this document to the governed planning tree as
    `docs/05-planning/plan-005-next-steps-v0.5.0.md` (this is required, not
    optional — all governed planning docs live under `docs/05-planning/` and
-   must be created or registered via Meminit). Update the MEMORY.md pointer
-   accordingly. Confirm `meminit check --format json` passes with the
+   must be created or registered via Meminit). Update the Meminit index (the
+   in-repo governed document index that `meminit check` reads) accordingly.
+   Confirm `meminit check --format json` passes with the
    front-matter above (document_id `REVREM-PLAN-005`). This is the very first
    action in T0 because downstream tasks reference this document's stable path.
 2. Create a **finished-run fixture catalogue** under
@@ -540,31 +541,83 @@ tests catch mistakes.
 
 **Implementation steps.**
 
-1. Confirm/here-implement `--no-tty` (and auto-detection when stdout is not a
-   TTY): disable progress animation, terminal-title escapes, and all ANSI, and
-   emit stable line-oriented logs. If this already exists from M5, add a test
-   that asserts **zero** ANSI escape bytes when stdout is not a TTY and document
-   it; if it does not, implement it in `progress.py`.
+1. **Implement `--no-tty` and `CI=true` auto-detection in `progress.py`.**
+   The goal is that RevRem never emits ANSI escape sequences (colour codes,
+   cursor movement, terminal-title writes, progress spinners) in any headless
+   context. Two complementary mechanisms achieve this:
+
+   - **Auto-detect `CI=true`.** Most CI providers (GitHub Actions, CircleCI,
+     Travis, Jenkins) set the environment variable `CI=true` automatically —
+     no user action required. In `progress.py`, extend the `force_terminal`
+     calculation to also check this variable: when `CI` is set, treat the
+     session as non-interactive regardless of `isatty()`. This is the
+     zero-friction path: a standard CI run requires no RevRem-specific flags.
+
+   - **Add `--no-tty` flag.** Some CI environments do not set `CI`, and
+     developers sometimes want headless output locally (e.g. piping to a
+     file while their terminal is still attached). Add `--no-tty` to
+     `cli/args.py` (boolean flag, no value); when set, force non-interactive
+     mode regardless of `isatty()` or `CI`. Wire it through
+     `build_loop_config` to the progress layer.
+
+   The combined gate in `progress.py`:
+   ```python
+   force_terminal = (
+       sys.stderr.isatty()
+       and not os.environ.get("CI")
+       and not config.no_tty
+   )
+   ```
+
+   When `force_terminal` is False, suppress everything that produces ANSI:
+   Rich progress, terminal-title writes (`\033]0;...\007`), and any other
+   escape sequences not routed through Rich. Emit stable, greppable,
+   line-oriented log lines via `--progress-style compact` in this mode.
+   Document `--progress-style compact` as the recommended CI setting in
+   `REVREM-DEVEX-001`.
+
+   > **Why two mechanisms?** A single `--no-tty` flag requires every CI
+   > workflow YAML to include it explicitly — easy to forget. A single env-var
+   > check means a developer running a local script cannot force headless mode
+   > without setting environment variables — clunky. Both together cover all
+   > cases while keeping the CI YAML minimal.
 2. Guarantee the documented exit codes (Contract #6) are emitted on every
    terminal path in headless mode, including `3` (ceiling), `4` (setup/resume),
    `5` (cancel). Add a parametrized test mapping each scenario fixture to its
    exit code.
 3. Provide a **machine run-summary on stdout** suitable for CI logs:
    `--summary-format json` already exists; verify it prints canonical
-   `summary.json` content and add a `--summary-format both` ordering test so a
-   CI step can both show humans a compact summary and capture JSON.
+   `summary.json` content and add a `--summary-format both` ordering test
+   (text block first, then a blank line, then the JSON block) so the documented
+   ordering is contractually verified. **Note:** `both` is useful in interactive
+   scripts where a developer wants readable output *and* wants to pipe JSON to
+   `jq`. In the T4 GitHub Action, always use `--summary-format json` — `both`
+   prepends text before the JSON and breaks stdout-as-JSON-stream parsing
+   (see T4 step 1, Run).
 4. Ensure `events.jsonl` and `summary.json` are always written before process
    exit on every terminal path (already true for most; add coverage for the
    headless cancel path).
 
 **Acceptance criteria.**
-- With stdout redirected to a file, output contains no ANSI escape sequences and
-  is greppable line-by-line.
-- Each scenario fixture exits with its documented code under `--no-tty`.
+- With `--no-tty` set, **stderr** contains zero ANSI escape bytes and is
+  greppable line-by-line. (ANSI progress output goes to stderr, not stdout —
+  Rich writes to `sys.stderr`; the test must capture stderr, not stdout.)
+- With `CI=true` in the environment and no explicit flags, the same ANSI-free
+  behaviour is observed on stderr — confirming auto-detection fires.
+- Each scenario fixture exits with its documented code when run with `--no-tty`.
 - `--summary-format json` output validates against `summary-v1.schema.json`.
 
-**Tests.** `tests/test_headless_output.py` (ANSI-free assertion, exit-code
-matrix, JSON summary validation).
+**Tests.** `tests/test_headless_output.py`:
+- **ANSI-free on stderr via `--no-tty`**: run each scenario with `--no-tty`
+  and assert stderr contains zero bytes matching the ANSI escape pattern
+  `\x1b\[`. Capturing stdout separately to confirm JSON output is clean.
+- **ANSI-free via `CI=true`**: same assertion but without `--no-tty`,
+  using `CI=true` in the subprocess environment — this confirms
+  auto-detection fires independently of the explicit flag.
+- **Exit-code matrix**: parametrized across scenario fixtures, asserting
+  each maps to its documented code (Contract #6).
+- **JSON summary validation**: `--summary-format json` output validates
+  against `summary-v1.schema.json`.
 
 **Docs.** Update the "Current CLI boundary" / "Exit codes" sections of
 `REVREM-DEVEX-001` to state the headless guarantees explicitly.
@@ -581,8 +634,7 @@ updating PR comment plus uploaded artifacts — turning RevRem into ambient
 infrastructure (L3).
 
 **Files.**
-- New: `action.yml` (composite action at repo root) — or `.github/actions/revrem/action.yml`
-  if kept namespaced; document the choice (see PLAN-003 OQ5).
+- New: `action.yml` (composite action at repo root — see D-1).
 - New: `.github/workflows/revrem-pr.yml` — a reference workflow that uses the
   action on this repo's own PRs (dogfood).
 - New: `scripts/ci/post_pr_comment.py` — a small, dependency-light script that
@@ -605,14 +657,34 @@ infrastructure (L3).
      uses `local` so v0.5.0 can be validated before its PyPI package exists.
      Document both modes clearly.
    - **Run:** `revrem --base "$base" --profile "$profile" --no-tty
-     --summary-format json --max-iterations ... --max-wall-seconds ...
-     --max-usd ...`. **Do not pass `--artifact-dir`**: the runner generates a
+     --progress-style compact --summary-format json
+     --max-iterations ... --max-wall-seconds ... --max-usd ...`.
+     GitHub Actions sets `CI=true` automatically, so RevRem would suppress
+     ANSI even without `--no-tty`; the flag is included explicitly so the
+     intent is readable in the workflow YAML and the behaviour is guaranteed
+     even on non-standard CI providers that omit `CI`. `--progress-style
+     compact` produces greppable, line-by-line progress in `revrem-err.txt`
+     that operators can read after a failure.
+     **Do not pass `--artifact-dir`**: the runner generates a
      timestamped concrete run directory under `.revrem/runs/` by default
-     (see `default_artifact_dir()` in `cli/config_builder.py`). Capture the
-     actual run directory from the `--summary-format json` output
-     (`artifact_dir` field) or by globbing `.revrem/runs/` for the newest
-     entry. Never hard-code `.revrem/runs/ci/<run>` — that pattern assumes a
-     non-existent parent→child layout.
+     (see `default_artifact_dir()` in `cli/config_builder.py`). Use `set +e`
+     (or the composite action equivalent `continue-on-error: true`) so a
+     non-zero exit code does not abort the step before later steps can read
+     the artifacts. Capture stdout, stderr, and the exit code explicitly:
+     `revrem ... > revrem-out.json 2>revrem-err.txt; REVREM_EXIT=$?`.
+     **stdout must be pure JSON here — never use `--summary-format both`.**
+     `both` prepends a human-readable terminal summary before the JSON block,
+     which breaks `jq .artifact_dir` and any other JSON parser reading stdout.
+     `--summary-format json` produces a single, valid JSON object and nothing
+     else. After capture, **validate that `revrem-out.json` parses as JSON
+     before extracting `artifact_dir`**: if the file is empty or not valid JSON
+     (e.g. revrem crashed before writing its summary), take the setup-error
+     fast-fail path immediately — the same path used when `artifact_dir` is
+     absent from valid JSON. This two-stage guard (parse check first, field
+     check second) prevents confusing downstream errors if revrem never reached
+     the summary-writing stage. Do not fall back to globbing `.revrem/runs/`
+     for the newest entry, as that is fragile in CI retries, matrix jobs, and
+     reused workspaces.
    - **Report:** `revrem report "$RUN_DIR" --output revrem-report.html`.
    - **Upload:** when `upload-artifacts` is true, upload `revrem-report.html`
      and, when `raw-artifacts` is **also** true, the full run directory. By
@@ -622,17 +694,32 @@ infrastructure (L3).
      default for anything that leaves the run dir) applies to CI uploads
      equally.
    - **Comment:** when `comment` is true, run `scripts/ci/post_pr_comment.py`.
-   - **Exit-code mapping:** `0` pass; `2` findings → configurable (default:
-     neutral/soft-fail so the comment is the signal, with an opt-in
-     `fail-on-findings: true`); `3/4/5` → fail with a clear message.
+   - **Always render, upload, and comment when `$RUN_DIR` was discovered**,
+     regardless of `$REVREM_EXIT`. The report and PR comment are the core value
+     of the Action — they must appear even when findings or a budget ceiling
+     stopped the run.
+   - **Apply the mapped job result last**, after comment/upload complete:
+     `$REVREM_EXIT 0` → pass; `2` → neutral (default) or fail (if
+     `fail-on-findings: true`); `3/4/5` → fail with a clear budget/setup/cancel
+     message; any other non-zero → fail with the raw stderr attached.
 2. **Idempotent comment (`post_pr_comment.py`).** Find an existing comment
    authored by the action bot that carries a hidden marker
    (`<!-- revrem-report -->`); update it if present, else create it. Body: status
    badge, finding/suppression counts, cost, top findings (bounded), a "rerun"
-   hint, and a link to the uploaded artifact. **Redact** the body using
-   `redaction.py` semantics (the script can shell to `revrem report --format
-   json` or import the helper if packaged) — never paste raw transcripts.
-   Standard library + `urllib` only; no extra deps.
+   hint, and a link to the uploaded artifact. **Source the comment body from
+   `revrem-report.json`**, the JSON index produced by the preceding Report step
+   (`revrem report "$RUN_DIR" --format json --output-json revrem-report.json` —
+   see T2/D-3). This file is written to disk before `post_pr_comment.py` runs
+   and is already redacted by `revrem report` (Contract #4, T1), so the comment
+   script needs only a plain `json.load()` — no package import. This matters
+   because `post_pr_comment.py` lives in `scripts/`, which is not part of the
+   wheel; under the default `install-mode: pypi` (`pipx install revrem`),
+   `code_review_loop` runs in an isolated virtualenv and is unreachable from a
+   loose script. Reading a file on disk works identically under every install
+   mode. Never paste raw model output or prompt content into the comment body;
+   the JSON index enforces this by design — it contains only summary fields,
+   not raw model responses. Standard library + `urllib` only for the HTTP calls;
+   no extra deps.
 3. **Least privilege.** Document and set `permissions:` to `contents: read`,
    `pull-requests: write`, `issues: write` (for the comment) only. The Action
    never uploads off the repo's CI store (Contract #4, PLAN-003 privacy
@@ -665,6 +752,25 @@ infrastructure (L3).
   `revrem-report.html` has the secret scrubbed by redaction.
 - **Raw upload opt-in test:** with `raw-artifacts: true`, assert the full run
   dir is included.
+- **Comment-before-fail test:** with `fail-on-findings: true` and a fixture
+  that has findings, assert that (a) the PR comment is posted and (b) the
+  artifact is uploaded *before* the job exits non-zero. This is the most
+  important integration property of the Action: the report must appear even
+  when the job fails. Implement using the stub GitHub API and a scripted
+  action step invocation; verify ordering by recording the sequence of API
+  calls made.
+- **Budget-exit message test:** with a fixture that exits `3` (cost ceiling),
+  assert that the action emits a human-readable "budget ceiling reached"
+  message (not a generic "step failed" error) and that the job result is
+  `failure` with the budget exit code surfaced. This verifies that exit-code
+  mapping (Contract #6) is wired end-to-end through the action, not just in
+  the CLI.
+- **Missing-RUN_DIR fast-fail test:** simulate revrem crashing before writing
+  `summary.json` (so `artifact_dir` is absent from stdout). Assert the action
+  step fails immediately with a "setup error — could not discover run
+  directory" message, and does NOT attempt to run the report, upload, or
+  comment steps. This guards against silent failures where an empty or missing
+  `artifact_dir` would cause the subsequent steps to fail with confusing errors.
 - A workflow-lint / `act`-style or schema check on `action.yml` and the
   workflow YAML (at minimum `yamllint` + a parse test).
 
@@ -698,8 +804,8 @@ authoritative when they shadow a built-in.
   Concretely: after applying user defaults, attempt to load the built-in profile
   of the given name and merge it; then apply user named (which shadows the
   built-in), then project defaults and project named (which shadow everything).
-  This means a project `.revrem.toml` `[profile.security]` fully overrides the
-  built-in; a user `profiles.toml` `[profile.security]` partially overrides
+  This means a project `.revrem.toml` `[profiles.security]` fully overrides the
+  built-in; a user `profiles.toml` `[profiles.security]` partially overrides
   (after user defaults). If neither user nor project defines the name and no
   built-in matches, raise the existing `FileNotFoundError`. Document this merge
   order explicitly in `REVREM-DEVEX-001`.
@@ -713,9 +819,35 @@ authoritative when they shadow a built-in.
 
 **Implementation steps.**
 
-1. Add a `list_builtin_profiles()` and `load_builtin_profile(name)` to the new
-   package; profiles are parsed through the same validator as user profiles so
-   they cannot drift from the profile schema.
+1. Add `list_builtin_profiles() -> list[str]` and
+   `load_builtin_profile(name: str) -> str` (returns raw TOML text) to the
+   new package. **Use `importlib.resources.files()` to read the TOML files,
+   not `Path(__file__).parent`.** Here is why this matters: when Python
+   installs a package from PyPI into a user's environment, it may store the
+   package files inside a zip archive (a "wheel") rather than on disk as
+   loose files. `Path(__file__).parent / "security.toml"` only works when
+   the files are loose on disk; `importlib.resources` works in both cases.
+
+   ```python
+   from importlib.resources import files
+
+   _data = files("code_review_loop.expert_profiles")
+
+   def load_builtin_profile(name: str) -> str:
+       return (_data / f"{name}.toml").read_text(encoding="utf-8")
+
+   def list_builtin_profiles() -> list[str]:
+       return [
+           r.name.removesuffix(".toml")
+           for r in _data.iterdir()
+           if r.name.endswith(".toml")
+       ]
+   ```
+
+   Parse the returned TOML text through the same profile validator as user
+   profiles so built-in TOMLs cannot silently drift from the profile schema.
+   If a built-in TOML is malformed, raise at import time (not at first use)
+   so the error is caught immediately in CI.
 2. Wire resolution in `profiles.py` so `--profile <name>` falls back to a
    built-in when no user/project profile matches, and `revrem config list`
    shows built-ins with a `source = "builtin"` marker (read-only; `config
@@ -768,16 +900,16 @@ default.
    emphasizing that lens, (b) a **severity policy** (e.g. `refactor` never blocks
    on its own — lower default severity; `security` escalates auth/secrets/PII to
    a non-de-escalatable frontier route, reusing the existing routing policy
-   engine), (c) a **recommended check matrix** (e.g. `security` pairs well with
-   `pip-audit`/`npm audit`; `test-gap` pairs well with coverage; `performance`
-   pairs well with benchmarks) — but these checks must be **advisory only**:
-   they appear as documentation and as suggestions from `revrem checks suggest`,
-   and are never enabled by default unless `revrem doctor` positively detects
-   the relevant tooling in the project. Built-in profiles must not assume
-   ecosystem commands are installed. If `pip-audit` is absent the security
-   profile must still work; it simply cannot run that check. This avoids
-   repeating the pattern where wrong-stack checks fail or produce noise, and (d)
-   a pointer to its fixture in the T0 contrived repo.
+   engine), (c) a **recommended check matrix** — but built-in profiles **ship
+   with no ecosystem-specific executable checks enabled by default**. Each
+   profile's `[checks]` table in its TOML is empty or contains only universally
+   available commands (e.g. `git diff`). Recommended ecosystem checks
+   (e.g. `pip-audit`, `npm audit`, `pytest --coverage`) are listed in
+   documentation and surfaced as post-install hints by `revrem checks suggest`,
+   which already performs stack detection. There is no new dynamic resolution
+   path in v0.5.0; the static TOML stays static. A doctor-driven auto-enable
+   mechanism is explicitly deferred to a future milestone, and (d) a pointer to
+   its fixture in the T0 contrived repo.
 2. Keep prompts deterministic fragments composed via `prompts_composer.py`; do
    not invent fragment names outside the allowlist (the triage prompt already
    warns models about this).
@@ -832,6 +964,18 @@ calls in CI.
    using scripted review/triage outputs per profile so the suite is hermetic and
    deterministic (no Codex, no network) — exactly how existing fake-harness
    contract tests work.
+
+   > **What fake-harness tests prove — and what they don't.** The fake harness
+   > replaces the model with scripted responses that *you write*. This means
+   > these tests prove that the *configuration machinery* is wired correctly:
+   > that when you run `revrem --profile security`, RevRem sends the security
+   > profile's prompt to the model, interprets the response using the security
+   > triage rules, and produces findings with the right severity policy. They
+   > do NOT prove that a real model will flag real security bugs in real code —
+   > that requires a human review or a live smoke run. The distinction matters:
+   > if these tests pass but the live smoke fails, the problem is the *prompt
+   > content* (T6), not the configuration machinery (T5). Keep the two concerns
+   > separate when debugging.
 2. Compute pairwise finding-overlap by fingerprint across profiles; assert ≥ 4
    profiles each flag their seeded issue and pairwise overlap ≤ 20%.
 3. Provide an optional **live smoke** (gated like the existing
@@ -1063,44 +1207,49 @@ showcase.
 
 ---
 
-## Minimum Release Core (Recommended Sequencing)
-
-If capacity is limited, the minimum releasable core is **T0 + T1 + T2 + T3 + T4 + T13**
-(Pillars A and B). This proves the report and CI surfaces from existing artifacts,
-closes PLAN-003 M8, and produces the "screenshot-worthy showcase" goal. Expert
-profiles (T5–T7) and DevEx expansion (T8–T11) can land as follow-on PRs or in a
-v0.5.x patch once the CI surface is validated. T12 (TUI runs) should be explicitly
-deferred to v0.6.0 unless a dedicated pairing session is available. The release
-exit criteria below cover all committed pillars; adjust the CHANGELOG accordingly
-if any pillar is deferred.
-
 ## Release & Exit Criteria
 
-v0.5.0 is releasable when **all committed pillars (A–D)** meet their acceptance
-criteria and:
+v0.5.0 has two release tiers. Choose one before starting T13.
 
+### Tier 1 — Minimum v0.5.0 Core (Pillars A + B, T0–T4 + T13)
+
+Releasable when **Pillars A and B** meet their acceptance criteria. This closes
+PLAN-003 M8, produces the "screenshot-worthy showcase" goal, and is the
+recommended target when capacity is limited. Expert profiles (T5–T7) and DevEx
+expansion (T8–T11) land as follow-on v0.5.x PRs; T12 is deferred to v0.6.0.
+Record deferred pillars explicitly in CHANGELOG.
+
+Gates:
 - `./scripts/dev-check`, `pre-commit run --all-files`, `meminit check --format
-  json`, and `git diff --check` pass; `lint-imports` is green (no new boundary
-  violations).
-- `revrem report` renders every T0 fixture deterministically and validates its
+  json`, and `git diff --check` pass; `lint-imports` is green.
+- `revrem report` renders every T0 fixture deterministically and validates
   inputs against `summary-v1`/`events-v1` schemas; no model/network access.
-- The reference GitHub Action posts a single idempotent PR comment within the
-  5-minute metric on a ~1k-LOC PR and respects budget ceilings.
-- ≥ 4 expert profiles flag their seeded issues with ≤ 20% pairwise overlap on
-  the contrived repo, hermetically (fake harness, no network).
-- Examples validate in CI; completions emit for all three shells; the demo asset
-  regenerates from a fixture; the failure-diagnostics guide has no code drift.
-- The GitHub Action correctly discovers the actual run directory from runner
-  output (not from a hard-coded path); artifact-dir discovery test passes.
-- CI uploads default to the redacted HTML report only; raw run-dir upload
-  requires explicit `raw-artifacts: true`; redacted-upload test passes.
-- Built-in profile precedence integration test passes all four shadowing cases.
-- No built-in profile enables an ecosystem check command unless `doctor`
-  positively detects it; stack-detection test passes.
+- Headless output is ANSI-free on stderr with `--no-tty` and with `CI=true`
+  in the environment; `test_headless_output.py` passes both assertions.
+- The Action correctly discovers run directory from `--summary-format json`
+  `artifact_dir` field; artifact-dir discovery test passes.
+- Action continues to report/upload/comment on non-zero revrem exit; exit-code
+  sequencing test passes.
+- CI uploads default to redacted HTML report; raw upload requires
+  `raw-artifacts: true`; redacted-upload test passes.
+- The Action posts a single idempotent PR comment within the 5-minute metric
+  on a ~1k-LOC PR and respects budget ceilings.
 - At least one live dogfood run of `revrem --profile dogfood` (CLI) on a real
   branch, with `revrem report` rendering the result, is recorded before tagging.
+
+### Tier 2 — Full v0.5.0 (Pillars A–D, all tasks except T12)
+
+Releasable when Tier 1 gates pass **and**:
+- ≥ 4 expert profiles flag their seeded issues with ≤ 20% pairwise overlap on
+  the contrived repo, hermetically (fake harness, no network).
+- Built-in profile precedence integration test passes all four shadowing cases.
+- No built-in profile enables an ecosystem check by default; stack-detection
+  test passes (empty `[checks]` table in every built-in TOML).
+- Examples validate in CI; completions emit for all three shells; the demo
+  asset regenerates from a fixture; the failure-diagnostics guide has no code
+  drift.
 - Pillar E (TUI runs) either meets its acceptance criteria *or* is explicitly
-  deferred to v0.6.0 in the CHANGELOG — it does not block the release.
+  deferred to v0.6.0 in the CHANGELOG — it does not block the Tier 2 release.
 
 ## Mapping To The Path-To-1.0
 
@@ -1113,23 +1262,74 @@ infrastructure" freeze.
 |---|---|
 | M0–M4, M6 | Done (v0.4.0) |
 | M5 (TUI runs, hooks, headless) | Hooks/headless done; TUI real runs done **or** deferred (Pillar E) |
-| M7 (expert profiles + DevEx) | **Done** (Pillars C, D) |
+| M7 (expert profiles + DevEx) | **Done if Tier 2** (Pillars C + D); *partial* if Tier 1 only (Pillars C + D deferred to v0.5.x) |
 | M8 (CI surface + HTML report) | **Done** (Pillars A, B) |
 | M9 (archive, daemon, dataset) | Next (v0.6.0+) |
 
-## Open Questions
+## Pre-Sprint Decisions
 
-- **OQ-A (T4).** Action in this repo (`action.yml` at root) vs. a sibling
-  marketplace repo? PLAN-003 OQ5 leans "own repo for marketplace, this repo for
-  fewer moving parts." Recommendation: ship in-repo for v0.5.0; extract later if
-  a marketplace listing is wanted.
-- **OQ-B (T5/T6).** Do any expert profiles need manifest fields beyond the
-  current profile schema (e.g. `self_skip_when`, `expected_fixture`)? If yes,
-  add them additively with a new `expert-profile-v1` schema + history baseline;
-  if no, reuse the existing profile schema.
-- **OQ-C (T2).** Does the report need a `--format json` index beyond the HTML, or
-  is HTML + the existing `summary.json` sufficient for CI? Default: provide the
-  small JSON index (cheap, useful for the Action).
-- **OQ-D (Pillar E).** Commit Pillar E to v0.5.0 or pre-commit to deferring it to
-  v0.6.0 to protect the release date? Recommendation: treat as stretch; decide at
-  the T0/T1 review gate based on capacity.
+These questions were identified during planning review and are resolved here
+so implementers do not encounter them as surprises mid-sprint. Record any
+future changes to these decisions as ADRs (`REVREM-ADR-0NN`).
+
+**D-1 (T4): `action.yml` lives at the repo root for v0.5.0.**
+
+GitHub's composite action lookup finds `action.yml` at the repository root
+when a user writes `uses: owner/revrem@v0.5.0`. This is the path of least
+resistance: no separate marketplace repo to maintain, no cross-repo
+synchronisation. If a standalone marketplace listing is wanted in the future,
+move the file at that time — no behaviour change required. Ref: PLAN-003 OQ5.
+
+**D-2 (T5/T6): Reuse the existing profile TOML schema for all built-in
+profiles. Add new manifest fields only if a specific profile genuinely
+requires them.**
+
+The current profile schema already covers `[checks]`, `[routing]`,
+`[triage]`, and all the structure expert profiles need. Do not create a new
+`expert-profile-v1` schema preemptively — schemas add maintenance overhead
+(history baselines, migration notes, version bumps). If a specific future
+profile needs a field the schema does not have (e.g. a `self_skip_when`
+accessibility check), add it additively at that point following Contract #7
+and Contract #8, and create a schema history baseline then.
+
+> **Example:** `security.toml` does not need a `self_skip_when` field for
+> v0.5.0 — it is a universally applicable profile. A future `accessibility`
+> profile might need it. Add the field only when the profile needs it, not
+> speculatively.
+
+**D-3 (T2): Provide the `--format json` index from `revrem report`.**
+
+A machine-readable report index is cheap to produce (a small dict alongside
+the HTML renderer) and unlocks a useful CI integration pattern: the Action
+can read artifact paths from JSON without parsing HTML, and future tooling
+can consume it without understanding the HTML layout. HTML remains the primary
+human-readable output; the JSON index is the machine-readable companion.
+Both are additive-safe per Contract #7.
+
+The JSON index is a *summary* (counts, paths, schema version, run ID) — it
+is NOT a duplicate of `summary.json`. Think of it as: "what do I need to
+know to link to this report from a comment or dashboard?"
+
+**D-4 (T12 / Pillar E): Treat TUI real runs as stretch; cut at the T0/T1
+review gate.**
+
+TUI real runs (T12) do not gate the showcase goal (Pillars A + B are the
+milestone delivery). T12 carries the highest implementation risk in the plan
+because it touches the Textual UI boundary and requires Pilot test coverage.
+At the T0/T1 review gate, assess remaining capacity:
+- If T1 and T2 are on track and a stronger model or human pairing is
+  available, proceed with T12.
+- Otherwise, defer explicitly to v0.6.0 and record the deferral in the
+  CHANGELOG.
+
+Do not start T12 if T4 is not yet complete and accepted. T4 is the primary
+milestone delivery for v0.5.0.
+
+**D-5 (T3): Headless suppression uses `CI=true` auto-detection plus `--no-tty`.**
+
+See T3 step 1 for the full design. In short: `CI=true` (set automatically by
+GitHub Actions, CircleCI, Travis, Jenkins, and most other providers) triggers
+auto-suppression without any flag; `--no-tty` provides an explicit override
+for non-standard environments and local scripting. Both write to the same
+gate in `progress.py`. `--progress-style compact` is the recommended
+accompanying setting for CI logs.
