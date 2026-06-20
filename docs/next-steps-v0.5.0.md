@@ -342,11 +342,13 @@ measured against.
 
 **Implementation steps.**
 
-1. Promote this document into the governed tree. Either keep it at
-   `docs/next-steps-v0.5.0.md` and add it to the Meminit index, or move it to
-   `docs/05-planning/plan-005-next-steps-v0.5.0.md` to match the existing
-   `plan-00N-*` naming. Confirm `meminit check --format json` passes with the
-   front-matter above (document_id `REVREM-PLAN-005`).
+1. Migrate this document to the governed planning tree as
+   `docs/05-planning/plan-005-next-steps-v0.5.0.md` (this is required, not
+   optional — all governed planning docs live under `docs/05-planning/` and
+   must be created or registered via Meminit). Update the MEMORY.md pointer
+   accordingly. Confirm `meminit check --format json` passes with the
+   front-matter above (document_id `REVREM-PLAN-005`). This is the very first
+   action in T0 because downstream tasks reference this document's stable path.
 2. Create a **finished-run fixture catalogue** under
    `tests/fixtures/runs/` (reuse the existing golden artifact scenarios). Ensure
    each scenario directory contains a valid `summary.json` and `events.jsonl`
@@ -403,9 +405,10 @@ single self-contained HTML file from a finished run.
   `"report": report.main` to `build_subcommand_registry()` and its import block.
 - Edit: `src/code_review_loop/cli/args.py` — add `parse_report_args(argv)`
   supporting `run_dir` (positional), `--output/-o <path>` (default
-  `<run-dir>/report.html`), `--format {html,json}` (default `html`), `--open`
-  (no-op placeholder for local convenience; off by default), and the redaction
-  opt-out pair `--no-redact` + `--i-understand-the-risks`.
+  `<run-dir>/report.html`), `--format {html,json}` (default `html`), and the
+  redaction opt-out pair `--no-redact` + `--i-understand-the-risks`. Do not
+  add `--open` — a no-op placeholder is not acceptable API design; add it only
+  if there is a real implementation ready to ship.
 
 **Implementation steps.**
 
@@ -592,21 +595,36 @@ infrastructure (L3).
 
 1. **Composite action (`action.yml`).** Inputs: `base` (default `origin/main`),
    `profile`, `max-iterations`, `max-wall-seconds`, `max-usd`, `max-tokens`,
-   `checks` (newline list), `comment` (bool, default true), `upload-artifacts`
-   (bool, default true). Steps:
-   - install `revrem` via `pipx install revrem==<pinned>` (pin to the release
-     being shipped; document how to float);
-   - run `revrem --base "$base" --profile "$profile" --no-tty
+   `checks` (newline list), `comment` (bool, default true),
+   `upload-artifacts` (bool, default true), `raw-artifacts` (bool, default
+   false — see artifact upload note below), `install-mode` (`pypi` or `local`,
+   default `pypi` — see dogfood note below). Steps:
+   - **Install:** when `install-mode == pypi`, install via
+     `pipx install revrem==<pinned>`; when `install-mode == local`, run
+     `pip install -e .` against the checked-out source. The dogfood workflow
+     uses `local` so v0.5.0 can be validated before its PyPI package exists.
+     Document both modes clearly.
+   - **Run:** `revrem --base "$base" --profile "$profile" --no-tty
      --summary-format json --max-iterations ... --max-wall-seconds ...
-     --max-usd ...` against the checked-out PR head, writing artifacts to a
-     known dir (`--artifact-dir .revrem/runs/ci`);
-   - run `revrem report .revrem/runs/ci/<run> --output revrem-report.html`;
-   - upload the run dir + `revrem-report.html` with `actions/upload-artifact`
-     when `upload-artifacts` is true;
-   - when `comment` is true, run `scripts/ci/post_pr_comment.py`.
-   - Map RevRem's exit code to the job result: `0` pass; `2` findings →
-     configurable (default: neutral/soft-fail so the comment is the signal, with
-     an opt-in `fail-on-findings: true`); `3/4/5` → fail with a clear message.
+     --max-usd ...`. **Do not pass `--artifact-dir`**: the runner generates a
+     timestamped concrete run directory under `.revrem/runs/` by default
+     (see `default_artifact_dir()` in `cli/config_builder.py`). Capture the
+     actual run directory from the `--summary-format json` output
+     (`artifact_dir` field) or by globbing `.revrem/runs/` for the newest
+     entry. Never hard-code `.revrem/runs/ci/<run>` — that pattern assumes a
+     non-existent parent→child layout.
+   - **Report:** `revrem report "$RUN_DIR" --output revrem-report.html`.
+   - **Upload:** when `upload-artifacts` is true, upload `revrem-report.html`
+     and, when `raw-artifacts` is **also** true, the full run directory. By
+     default (i.e. `raw-artifacts: false`) upload only the redacted HTML
+     report, because a raw run directory can contain model output, prompts,
+     check output, and local context paths — Contract #4 (redaction on by
+     default for anything that leaves the run dir) applies to CI uploads
+     equally.
+   - **Comment:** when `comment` is true, run `scripts/ci/post_pr_comment.py`.
+   - **Exit-code mapping:** `0` pass; `2` findings → configurable (default:
+     neutral/soft-fail so the comment is the signal, with an opt-in
+     `fail-on-findings: true`); `3/4/5` → fail with a clear message.
 2. **Idempotent comment (`post_pr_comment.py`).** Find an existing comment
    authored by the action bot that carries a hidden marker
    (`<!-- revrem-report -->`); update it if present, else create it. Body: status
@@ -637,6 +655,16 @@ infrastructure (L3).
 - `tests/test_post_pr_comment.py`: given a fixture `summary.json` and a fake
   GitHub API (recorded HTTP / a stub server), assert create-vs-update logic,
   marker handling, body redaction, and bounded finding count.
+- **Artifact-dir discovery test:** assert that the action step correctly
+  extracts the actual run directory from `--summary-format json` output (the
+  `artifact_dir` field), not from a hard-coded path. A test using a mock runner
+  invocation that writes `artifact_dir` to stdout confirms this.
+- **Redacted upload test:** given a fixture run dir containing a synthetic
+  secret, assert that the upload step with `raw-artifacts: false` (default)
+  does not include the raw `events.jsonl` or model-output files, and that
+  `revrem-report.html` has the secret scrubbed by redaction.
+- **Raw upload opt-in test:** with `raw-artifacts: true`, assert the full run
+  dir is included.
 - A workflow-lint / `act`-style or schema check on `action.yml` and the
   workflow YAML (at minimum `yamllint` + a parse test).
 
@@ -661,10 +689,20 @@ authoritative when they shadow a built-in.
 - New: `src/code_review_loop/expert_profiles/` package containing one TOML per
   profile (`security.toml`, `performance.toml`, `refactor.toml`,
   `test_gap.toml`, `docs.toml`) plus an `__init__.py` loader.
-- Edit: `src/code_review_loop/profiles.py` — resolve built-in profiles after
-  user/project profiles (precedence: CLI flag > project `.revrem.toml` > user
-  `profiles.toml` > **built-in expert profile** > defaults). A user profile of
-  the same name shadows the built-in; document this.
+- Edit: `src/code_review_loop/profiles.py` — add a built-in tier to the
+  existing resolution chain. The current chain (see `resolve_profile_from_files`
+  at `profiles.py:612`) is:
+  `user defaults → user named → project defaults → project named → error`.
+  The new chain inserts the built-in at the right place so it is overridable:
+  `user defaults → builtin named → user named → project defaults → project named → error`.
+  Concretely: after applying user defaults, attempt to load the built-in profile
+  of the given name and merge it; then apply user named (which shadows the
+  built-in), then project defaults and project named (which shadow everything).
+  This means a project `.revrem.toml` `[profile.security]` fully overrides the
+  built-in; a user `profiles.toml` `[profile.security]` partially overrides
+  (after user defaults). If neither user nor project defines the name and no
+  built-in matches, raise the existing `FileNotFoundError`. Document this merge
+  order explicitly in `REVREM-DEVEX-001`.
 - Edit: `pyproject.toml` — add `code_review_loop.expert_profiles` package data
   (`*.toml`) to `[tool.setuptools.package-data]`.
 - New (optional): `docs/52-api/schemas/expert-profile-v1.schema.json` +
@@ -696,8 +734,11 @@ authoritative when they shadow a built-in.
   security` refuses and suggests `config clone`.
 - Built-in profiles validate against the profile schema in CI.
 
-**Tests.** `tests/test_expert_profiles.py`: resolution precedence, shadowing,
-read-only protection, schema validation of every bundled TOML.
+**Tests.** `tests/test_expert_profiles.py`: resolution precedence (four cases:
+built-in only, user named shadows built-in, project named shadows built-in,
+project named shadows user named shadows built-in), shadowing, read-only
+protection, schema validation of every bundled TOML. Tests must exercise the
+exact `resolve_profile_from_files` code path, not just the loader helpers.
 
 **Docs.** New "Expert profiles" section in `REVREM-DEVEX-001`; README "Key
 Features" mention.
@@ -727,10 +768,16 @@ default.
    emphasizing that lens, (b) a **severity policy** (e.g. `refactor` never blocks
    on its own — lower default severity; `security` escalates auth/secrets/PII to
    a non-de-escalatable frontier route, reusing the existing routing policy
-   engine), (c) a **recommended check matrix** (e.g. `security` pairs with
-   `pip-audit`/`npm audit`; `test-gap` pairs with coverage; `performance` pairs
-   with benchmarks where present), and (d) a pointer to its fixture in the T0
-   contrived repo.
+   engine), (c) a **recommended check matrix** (e.g. `security` pairs well with
+   `pip-audit`/`npm audit`; `test-gap` pairs well with coverage; `performance`
+   pairs well with benchmarks) — but these checks must be **advisory only**:
+   they appear as documentation and as suggestions from `revrem checks suggest`,
+   and are never enabled by default unless `revrem doctor` positively detects
+   the relevant tooling in the project. Built-in profiles must not assume
+   ecosystem commands are installed. If `pip-audit` is absent the security
+   profile must still work; it simply cannot run that check. This avoids
+   repeating the pattern where wrong-stack checks fail or produce noise, and (d)
+   a pointer to its fixture in the T0 contrived repo.
 2. Keep prompts deterministic fragments composed via `prompts_composer.py`; do
    not invent fragment names outside the allowlist (the triage prompt already
    warns models about this).
@@ -752,6 +799,10 @@ default.
   routing; `refactor` does not block when run alone on a refactor-only diff.
 - All referenced fragments resolve (no unresolved-fragment warnings on a clean
   run).
+- No built-in profile enables a check command by default unless `doctor`
+  detects the corresponding tooling. Verified by a test that runs each profile's
+  default check matrix against a bare Python repo with only `git` + `revrem`
+  installed and asserts no `command not found` or non-zero check-setup exit.
 
 **Tests.** Covered by T7's suite plus a fragment-resolution unit test.
 
@@ -1012,6 +1063,17 @@ showcase.
 
 ---
 
+## Minimum Release Core (Recommended Sequencing)
+
+If capacity is limited, the minimum releasable core is **T0 + T1 + T2 + T3 + T4 + T13**
+(Pillars A and B). This proves the report and CI surfaces from existing artifacts,
+closes PLAN-003 M8, and produces the "screenshot-worthy showcase" goal. Expert
+profiles (T5–T7) and DevEx expansion (T8–T11) can land as follow-on PRs or in a
+v0.5.x patch once the CI surface is validated. T12 (TUI runs) should be explicitly
+deferred to v0.6.0 unless a dedicated pairing session is available. The release
+exit criteria below cover all committed pillars; adjust the CHANGELOG accordingly
+if any pillar is deferred.
+
 ## Release & Exit Criteria
 
 v0.5.0 is releasable when **all committed pillars (A–D)** meet their acceptance
@@ -1028,6 +1090,15 @@ criteria and:
   the contrived repo, hermetically (fake harness, no network).
 - Examples validate in CI; completions emit for all three shells; the demo asset
   regenerates from a fixture; the failure-diagnostics guide has no code drift.
+- The GitHub Action correctly discovers the actual run directory from runner
+  output (not from a hard-coded path); artifact-dir discovery test passes.
+- CI uploads default to the redacted HTML report only; raw run-dir upload
+  requires explicit `raw-artifacts: true`; redacted-upload test passes.
+- Built-in profile precedence integration test passes all four shadowing cases.
+- No built-in profile enables an ecosystem check command unless `doctor`
+  positively detects it; stack-detection test passes.
+- At least one live dogfood run of `revrem --profile dogfood` (CLI) on a real
+  branch, with `revrem report` rendering the result, is recorded before tagging.
 - Pillar E (TUI runs) either meets its acceptance criteria *or* is explicitly
   deferred to v0.6.0 in the CHANGELOG — it does not block the release.
 
