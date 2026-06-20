@@ -433,9 +433,15 @@ single self-contained HTML file from a finished run.
 3. In `cli/commands/report.py::main`, parse args, resolve the run dir, read
    `summary.json` (via `json`/`artifacts`) and
    `events.read_events(run_dir / events.EVENTS_FILENAME)`. On `--format json`,
-   emit a small machine index (`schema_version`, run id, status, counts,
-   artifact paths) instead of HTML. Apply redaction to all rendered text when
-   `redact` is true (default).
+   emit a machine index instead of HTML — at minimum: `schema_version`, run id,
+   final status, finding counts (by severity), suppression count, **cost_usd**,
+   **top_findings** (list of at most 5 redacted finding summaries: severity,
+   file, line, one-sentence title), and artifact paths. These fields are
+   the minimum required for `post_pr_comment.py` to populate the PR comment
+   body from this file alone, without reading raw `events.jsonl` or
+   `summary.json`. Apply redaction to all rendered text when `redact` is true
+   (default) — this makes the JSON index safe to upload or pass across a trust
+   boundary.
 4. Exit-code mapping: `0` on success; `1` on missing/invalid inputs (mirror
    `replay.py`'s error handling); if `events.jsonl` is truncated, still render
    what is available and print a warning to stderr (do not fail the render —
@@ -449,8 +455,9 @@ single self-contained HTML file from a finished run.
   fixture run.
 - The HTML is a single file (no external references), opens offline, and
   contains the run id and final status.
-- `revrem report <run-dir> --format json` prints canonical JSON with a
-  `schema_version`.
+- `revrem report <run-dir> --format json` prints canonical JSON to stdout
+  with a `schema_version`. When `--format json`, the `--output` flag is
+  ignored; use a shell redirect (`> file.json`) to write to a file.
 - No model, network, or Codex access occurs (enforced by a test that runs the
   command with network blocked / Codex absent).
 - `render_report` is importable and callable without touching disk.
@@ -535,9 +542,10 @@ tests catch mistakes.
 
 **Files.**
 - Edit: `src/code_review_loop/progress.py` (TTY detection / ANSI suppression),
-  `src/code_review_loop/cli/args.py` (flag), `cli/outcome.py`/`cli/exit.py`
-  (verify code mapping), and `reporting.py` if a stdout JSON summary needs a
-  stable shape.
+  `src/code_review_loop/adapters/terminal.py` (terminal-title / control-sequence
+  writes — see step 1 note below), `src/code_review_loop/cli/args.py` (flag),
+  `cli/outcome.py`/`cli/exit.py` (verify code mapping), and `reporting.py` if
+  a stdout JSON summary needs a stable shape.
 
 **Implementation steps.**
 
@@ -576,6 +584,18 @@ tests catch mistakes.
    Document `--progress-style compact` as the recommended CI setting in
    `REVREM-DEVEX-001`.
 
+   > **`adapters/terminal.py` also needs updating.** `terminal_title_supported()`
+   > in that file checks `sys.stderr.isatty() or Path("/dev/tty").exists()`.
+   > On many CI runners `/dev/tty` exists even when `stderr` is redirected —
+   > so even if `progress.py`'s gate is False, terminal-title sequences could
+   > still reach `/dev/tty`. Extend `terminal_title_supported()` to also
+   > check `config.no_tty` and `os.environ.get("CI")`:
+   > `return config.terminal_title and not config.no_tty and not os.environ.get("CI") and (sys.stderr.isatty() or ...)`.
+   > This must be in scope for T3 — tests that capture `stderr` alone will
+   > not catch `/dev/tty` writes. The T3 test suite must monkeypatch
+   > `write_terminal_control_to_tty` and assert it is never called under
+   > `--no-tty` or `CI=true`.
+
    > **Why two mechanisms?** A single `--no-tty` flag requires every CI
    > workflow YAML to include it explicitly — easy to forget. A single env-var
    > check means a developer running a local script cannot force headless mode
@@ -607,7 +627,8 @@ tests catch mistakes.
 - Each scenario fixture exits with its documented code when run with `--no-tty`.
 - `--summary-format json` output validates against `summary-v1.schema.json`.
 
-**Tests.** `tests/test_headless_output.py`:
+**Tests.** `tests/test_headless_output.py` (all scenarios use
+`REVREM_ALLOW_FAKE_HARNESS=1` for hermetic, model-free execution):
 - **ANSI-free on stderr via `--no-tty`**: run each scenario with `--no-tty`
   and assert stderr contains zero bytes matching the ANSI escape pattern
   `\x1b\[`. Capturing stdout separately to confirm JSON output is clean.
@@ -638,8 +659,8 @@ infrastructure (L3).
 - New: `.github/workflows/revrem-pr.yml` — a reference workflow that uses the
   action on this repo's own PRs (dogfood).
 - New: `scripts/ci/post_pr_comment.py` — a small, dependency-light script that
-  reads `summary.json` (+ optional `report.html` link) and posts/updates one PR
-  comment via the GitHub REST API using `GITHUB_TOKEN`.
+  reads `revrem-report.json` (the redacted JSON index written by the Report step)
+  and posts/updates one PR comment via the GitHub REST API using `GITHUB_TOKEN`.
 - New: `docs/52-api/` note or `REVREM-DEVEX-001` section documenting the Action
   contract and least-privilege permissions.
 
@@ -685,7 +706,17 @@ infrastructure (L3).
      the summary-writing stage. Do not fall back to globbing `.revrem/runs/`
      for the newest entry, as that is fragile in CI retries, matrix jobs, and
      reused workspaces.
-   - **Report:** `revrem report "$RUN_DIR" --output revrem-report.html`.
+   - **Report:** Run two report commands in sequence:
+     ```
+     revrem report "$RUN_DIR" --output revrem-report.html
+     revrem report "$RUN_DIR" --format json > revrem-report.json
+     ```
+     The first produces the HTML report for upload. The second produces the
+     machine-readable JSON index (defined in T1 step 3 / D-3) that
+     `post_pr_comment.py` reads to build the PR comment body. Both use the
+     same `--no-redact` default (redaction on) so neither leaks raw model
+     content. The `--format json` flag prints to stdout; redirect to file with
+     `>`. Do not use a non-existent `--output-json` flag.
    - **Upload:** when `upload-artifacts` is true, upload `revrem-report.html`
      and, when `raw-artifacts` is **also** true, the full run directory. By
      default (i.e. `raw-artifacts: false`) upload only the redacted HTML
@@ -693,23 +724,44 @@ infrastructure (L3).
      check output, and local context paths — Contract #4 (redaction on by
      default for anything that leaves the run dir) applies to CI uploads
      equally.
-   - **Comment:** when `comment` is true, run `scripts/ci/post_pr_comment.py`.
+   - **Comment:** when `comment` is true, run
+     `python "${{ github.action_path }}/scripts/ci/post_pr_comment.py"`.
+     **Why `${{ github.action_path }}`?** When a user writes
+     `uses: owner/revrem@v0.5.0` in their workflow, GitHub checks out the
+     *action* repository into a temporary directory, not the caller's workspace.
+     The caller's workspace will not contain `scripts/ci/post_pr_comment.py` —
+     only the action's own checkout will. `${{ github.action_path }}` always
+     points to the directory containing `action.yml`, regardless of which
+     repository is being reviewed. Omitting this prefix would cause the step
+     to fail immediately with "file not found" for every external user while
+     passing in the dogfood workflow (because the dogfood workflow uses
+     `install-mode: local` and the script happens to be on disk).
    - **Always render, upload, and comment when `$RUN_DIR` was discovered**,
      regardless of `$REVREM_EXIT`. The report and PR comment are the core value
      of the Action — they must appear even when findings or a budget ceiling
      stopped the run.
    - **Apply the mapped job result last**, after comment/upload complete:
-     `$REVREM_EXIT 0` → pass; `2` → neutral (default) or fail (if
-     `fail-on-findings: true`); `3/4/5` → fail with a clear budget/setup/cancel
-     message; any other non-zero → fail with the raw stderr attached.
+     - `$REVREM_EXIT 0` → exit 0 (job passes).
+     - `$REVREM_EXIT 2` (findings): if `fail-on-findings: true` → exit 1 (job
+       fails); otherwise → exit 0 (job passes) **and** emit a GitHub Actions
+       warning annotation (`echo "::warning::RevRem found N findings — see PR
+       comment for details"`) so findings are surfaced on a passing job without
+       blocking the merge. GitHub Actions composite actions do not have a native
+       "neutral" state; the `::warning::` annotation is the correct substitute.
+     - `$REVREM_EXIT 3` (budget ceiling) → exit 1 with a human-readable message:
+       "RevRem budget ceiling reached — partial review uploaded. Increase
+       max-usd or max-iterations to complete the review."
+     - `$REVREM_EXIT 4` (setup/resume) or `5` (cancelled) → exit 1 with a
+       clear message derived from `revrem-err.txt`.
+     - Any other non-zero → exit 1, attach `revrem-err.txt` to the job summary.
 2. **Idempotent comment (`post_pr_comment.py`).** Find an existing comment
    authored by the action bot that carries a hidden marker
    (`<!-- revrem-report -->`); update it if present, else create it. Body: status
    badge, finding/suppression counts, cost, top findings (bounded), a "rerun"
    hint, and a link to the uploaded artifact. **Source the comment body from
    `revrem-report.json`**, the JSON index produced by the preceding Report step
-   (`revrem report "$RUN_DIR" --format json --output-json revrem-report.json` —
-   see T2/D-3). This file is written to disk before `post_pr_comment.py` runs
+   (`revrem report "$RUN_DIR" --format json > revrem-report.json` — see T1
+   step 3 / D-3). This file is written to disk before `post_pr_comment.py` runs
    and is already redacted by `revrem report` (Contract #4, T1), so the comment
    script needs only a plain `json.load()` — no package import. This matters
    because `post_pr_comment.py` lives in `scripts/`, which is not part of the
@@ -719,7 +771,10 @@ infrastructure (L3).
    mode. Never paste raw model output or prompt content into the comment body;
    the JSON index enforces this by design — it contains only summary fields,
    not raw model responses. Standard library + `urllib` only for the HTTP calls;
-   no extra deps.
+   no extra deps. If `revrem report --format json` exits non-zero (rare, since
+   T1 step 4 makes it resilient to truncated events), post a degraded comment
+   noting the report was unavailable and include the report step's stderr for
+   diagnosis, then exit 1.
 3. **Least privilege.** Document and set `permissions:` to `contents: read`,
    `pull-requests: write`, `issues: write` (for the comment) only. The Action
    never uploads off the repo's CI store (Contract #4, PLAN-003 privacy
@@ -735,13 +790,17 @@ infrastructure (L3).
   (idempotency verified by the marker).
 - The job respects budget caps and maps exit codes correctly (a `3` ceiling hit
   fails the job with a budget message, not a generic error).
-- `post_pr_comment.py` runs on Python stdlib only and redacts secrets in a
-  poisoned-fixture test.
+- `post_pr_comment.py` runs on Python stdlib only. It does **not** redact —
+  it reads the already-redacted `revrem-report.json`. A poisoned-fixture test
+  confirms no raw secret appears in the posted comment body, because `revrem
+  report` (upstream) has already scrubbed it before the script ever runs.
 
 **Tests.**
-- `tests/test_post_pr_comment.py`: given a fixture `summary.json` and a fake
-  GitHub API (recorded HTTP / a stub server), assert create-vs-update logic,
-  marker handling, body redaction, and bounded finding count.
+- `tests/test_post_pr_comment.py`: given a fixture `revrem-report.json` (a
+  pre-built JSON index, not raw `summary.json`) and a fake GitHub API
+  (recorded HTTP / a stub server), assert create-vs-update logic, marker
+  handling, bounded finding count, and that no raw model output appears in
+  the posted body (redaction is upstream in `revrem report`, not here).
 - **Artifact-dir discovery test:** assert that the action step correctly
   extracts the actual run directory from `--summary-format json` output (the
   `artifact_dir` field), not from a hard-coded path. A test using a mock runner
@@ -846,8 +905,15 @@ authoritative when they shadow a built-in.
 
    Parse the returned TOML text through the same profile validator as user
    profiles so built-in TOMLs cannot silently drift from the profile schema.
-   If a built-in TOML is malformed, raise at import time (not at first use)
-   so the error is caught immediately in CI.
+   **Do not raise at import time.** If `code_review_loop.profiles` raises
+   during import because a built-in TOML is malformed, the *entire CLI fails
+   to start* — even commands that don't use profiles. Instead: validate each
+   built-in TOML inside `load_builtin_profile()` (at load time, when the
+   profile is actually requested) and raise a normal `ValueError` with a clear
+   message. Separately, add a packaging test (`tests/test_builtin_profiles.py`)
+   that calls `load_builtin_profile(name)` for every name in
+   `list_builtin_profiles()` — this catches malformed TOMLs immediately in CI
+   without the operator-UX cost of a broken import.
 2. Wire resolution in `profiles.py` so `--profile <name>` falls back to a
    built-in when no user/project profile matches, and `revrem config list`
    shows built-ins with a `source = "builtin"` marker (read-only; `config
@@ -902,8 +968,10 @@ default.
    a non-de-escalatable frontier route, reusing the existing routing policy
    engine), (c) a **recommended check matrix** — but built-in profiles **ship
    with no ecosystem-specific executable checks enabled by default**. Each
-   profile's `[checks]` table in its TOML is empty or contains only universally
-   available commands (e.g. `git diff`). Recommended ecosystem checks
+   profile's `pipeline.checks` list in its TOML is empty or contains only
+   universally available commands (e.g. `git diff`). In TOML, this is written
+   as `checks = []` under a `[pipeline]` section — there is no `[checks]` table
+   in the profile schema. Recommended ecosystem checks
    (e.g. `pip-audit`, `npm audit`, `pytest --coverage`) are listed in
    documentation and surfaced as post-install hints by `revrem checks suggest`,
    which already performs stack detection. There is no new dynamic resolution
@@ -1244,7 +1312,8 @@ Releasable when Tier 1 gates pass **and**:
   the contrived repo, hermetically (fake harness, no network).
 - Built-in profile precedence integration test passes all four shadowing cases.
 - No built-in profile enables an ecosystem check by default; stack-detection
-  test passes (empty `[checks]` table in every built-in TOML).
+  test passes (`pipeline.checks = []` in every built-in TOML, confirmed by
+  `test_builtin_profiles.py`).
 - Examples validate in CI; completions emit for all three shells; the demo
   asset regenerates from a fixture; the failure-diagnostics guide has no code
   drift.
@@ -1284,8 +1353,11 @@ move the file at that time — no behaviour change required. Ref: PLAN-003 OQ5.
 profiles. Add new manifest fields only if a specific profile genuinely
 requires them.**
 
-The current profile schema already covers `[checks]`, `[routing]`,
-`[triage]`, and all the structure expert profiles need. Do not create a new
+The current profile schema already covers all the structure expert profiles
+need. The relevant TOML tables and keys are: `[pipeline]` (with `checks = []`
+as a list of shell commands — there is no standalone `[checks]` table);
+`[triage]` (top-level); and `triage.routing` (a sub-table nested *inside*
+`[triage]`, not a top-level `[routing]` table). Do not create a new
 `expert-profile-v1` schema preemptively — schemas add maintenance overhead
 (history baselines, migration notes, version bumps). If a specific future
 profile needs a field the schema does not have (e.g. a `self_skip_when`
@@ -1306,9 +1378,13 @@ can consume it without understanding the HTML layout. HTML remains the primary
 human-readable output; the JSON index is the machine-readable companion.
 Both are additive-safe per Contract #7.
 
-The JSON index is a *summary* (counts, paths, schema version, run ID) — it
-is NOT a duplicate of `summary.json`. Think of it as: "what do I need to
-know to link to this report from a comment or dashboard?"
+The JSON index is a *summary* (schema version, run ID, final status, finding
+counts by severity, suppression count, `cost_usd`, `top_findings` of at most
+5 redacted finding summaries with severity/file/line/one-sentence title, and
+artifact paths) — it is NOT a duplicate of `summary.json`. It is the minimum
+payload needed for `post_pr_comment.py` to build a complete PR comment body
+without reading raw events or summary files. Think of it as: "what do I need
+to know to comment on this run and link to the report?"
 
 **D-4 (T12 / Pillar E): Treat TUI real runs as stretch; cut at the T0/T1
 review gate.**
