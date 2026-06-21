@@ -139,7 +139,11 @@ runs:
         path: ${{ env.REVREM_RUN_DIR }}
 
     - name: Post PR comment
-      if: always() && env.REVREM_RUN_DIR != '' && inputs.comment == 'true' && github.event.pull_request.head.repo.fork != 'true'
+      # NB: compare the boolean to `false`, not the string 'true'. Under GHA's
+      # type coercion `head.repo.fork != 'true'` is ALWAYS true (boolean true→1,
+      # string 'true'→NaN, 1 != NaN), so the fork guard never fired. `== false`
+      # blocks fork PRs (where the token is read-only) as intended.
+      if: always() && env.REVREM_RUN_DIR != '' && inputs.comment == 'true' && github.event.pull_request.head.repo.fork == false
       shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
