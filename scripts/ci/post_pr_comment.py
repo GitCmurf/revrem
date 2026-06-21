@@ -168,7 +168,9 @@ def main(argv: list[str]) -> int:
     token = os.environ.get("GITHUB_TOKEN", "")
     repo = os.environ.get("GITHUB_REPOSITORY", "")
     pr_number = os.environ.get("GITHUB_PR_NUMBER", "")
-    run_url = os.environ.get("GITHUB_RUN_URL", "")
+    run_url = os.environ.get("REVREM_ARTIFACT_URL", "") or os.environ.get(
+        "GITHUB_RUN_URL", ""
+    )
 
     if not (token and repo and pr_number):
         print(

@@ -101,6 +101,23 @@ def test_body_includes_run_url_when_provided():
     assert "https://example/run/1" in body
 
 
+def test_main_prefers_artifact_url_over_run_url(tmp_path, fake_github, monkeypatch):
+    """The comment links the uploaded report artifact (REVREM_ARTIFACT_URL) when
+    present, falling back to the run URL only when absent (C6)."""
+    report = tmp_path / "revrem-report.json"
+    report.write_text(json.dumps(_clear_index()), encoding="utf-8")
+    monkeypatch.setenv("REVREM_REPORT_JSON", str(report))
+    monkeypatch.setenv("GITHUB_TOKEN", "t")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "o/r")
+    monkeypatch.setenv("GITHUB_PR_NUMBER", "7")
+    monkeypatch.setenv("REVREM_ARTIFACT_URL", "https://artifact-link/report.html")
+    monkeypatch.setenv("GITHUB_RUN_URL", "https://run/1")
+    assert ppc.main([]) == 0
+    posted = next(iter(fake_github.comments.values()))["body"]
+    assert "https://artifact-link/report.html" in posted
+    assert "https://run/1" not in posted
+
+
 def test_body_never_embeds_secrets_by_design():
     """The builder only reads known index fields; it never pastes raw stdin/argv.
     A stray secret in an unrelated field would not appear because we never

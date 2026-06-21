@@ -117,10 +117,19 @@ runs:
 
     - name: Upload report artifact
       if: always() && env.REVREM_RUN_DIR != '' && inputs.upload-artifacts == 'true'
+      id: upload-report
       uses: actions/upload-artifact@v4
       with:
         name: revrem-report
         path: revrem-report.html
+
+    - name: Export artifact URL
+      if: always() && env.REVREM_RUN_DIR != '' && inputs.upload-artifacts == 'true'
+      shell: bash
+      run: |
+        # upload-artifact exposes artifact-url on its outputs; fall back to the
+        # run URL (set on the comment step) when upload was skipped or empty.
+        echo "REVREM_ARTIFACT_URL=${{ steps.upload-report.outputs.artifact-url }}" >> "$GITHUB_ENV"
 
     - name: Upload raw run directory
       if: always() && env.REVREM_RUN_DIR != '' && inputs.raw-artifacts == 'true'
@@ -137,6 +146,7 @@ runs:
         GITHUB_REPOSITORY: ${{ github.repository }}
         GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
         GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        REVREM_ARTIFACT_URL: ${{ env.REVREM_ARTIFACT_URL }}
       run: |
         set -euo pipefail
         python3 "${{ github.action_path }}/scripts/ci/post_pr_comment.py"
