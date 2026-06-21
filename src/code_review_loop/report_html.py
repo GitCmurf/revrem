@@ -81,6 +81,54 @@ def _exit_code_for(summary: dict[str, Any]) -> int:
     return 1
 
 
+def _phase_config_section(summary: dict[str, Any], *, redact: bool) -> str:
+    """Per-phase harness/model/effort table from ``summary.phase_config``.
+
+    The engine writes ``phase_config`` on every run via
+    ``reporting.add_summary_contract_fields``; it carries per-phase config under
+    ``review``/``triage``/``remediation``/``commit_message`` (and non-model
+    blocks ``checks``/``runtime``). Only the model-bearing phases are rendered —
+    a block without a ``harness``/``model`` is skipped rather than emitted as a
+    blank row. Absent on very old runs, in which case the section is omitted.
+    """
+    phase_config = summary.get("phase_config")
+    if not isinstance(phase_config, dict) or not phase_config:
+        return ""
+    rows: list[str] = []
+    for phase in sorted(phase_config):
+        cfg = phase_config[phase]
+        if not isinstance(cfg, dict):
+            continue
+        harness = cfg.get("harness")
+        model = cfg.get("model")
+        if not harness and not model:
+            # checks/runtime and any future non-model block: no harness/model.
+            continue
+        effort = cfg.get("reasoning_effort")
+        timeout = cfg.get("timeout_seconds")
+        sandbox = cfg.get("sandbox")
+        rows.append(
+            "<tr>"
+            f"<td>{_esc(phase, redact=redact)}</td>"
+            f"<td>{_esc(harness, redact=redact) or '<em>unset</em>'}</td>"
+            f"<td>{_esc(model, redact=redact) or '<em>unset</em>'}</td>"
+            f"<td>{_esc(effort, redact=redact) or '&mdash;'}</td>"
+            f"<td>{_esc(timeout, redact=redact) or '&mdash;'}</td>"
+            f"<td>{_esc(sandbox, redact=redact) or '&mdash;'}</td>"
+            "</tr>"
+        )
+    if not rows:
+        return ""
+    return (
+        '<section><h2>Phase configuration</h2>'
+        '<table><thead><tr><th>Phase</th><th>Harness</th><th>Model</th>'
+        '<th>Reasoning effort</th><th>Timeout (s)</th><th>Sandbox</th>'
+        '</tr></thead><tbody>'
+        + "".join(rows)
+        + "</tbody></table></section>"
+    )
+
+
 def _header(summary: dict[str, Any], *, redact: bool) -> str:
     run_id = _esc(summary.get("run_id"), redact=redact)
     badge = _status_badge(str(summary.get("final_status", "")), redact=redact)
@@ -143,10 +191,23 @@ def _outcome_summary(
         and str(ev.payload.get("status", "")).lower() == "failed"
     )
     suppressed = sum(1 for ev in events if ev.kind == "suppressed")
+    # Per-iteration review status from summary.iterations[].review_status — the
+    # engine's record of what each review pass concluded (e.g. clear/findings).
+    review_states: list[str] = []
+    if isinstance(iterations, list):
+        for it in iterations:
+            if isinstance(it, dict) and it.get("review_status"):
+                review_states.append(str(it["review_status"]))
+    review_status_cell = (
+        ", ".join(_esc(s, redact=redact) for s in review_states)
+        if review_states
+        else "<em>none</em>"
+    )
     return (
         '<section><h2>Outcome</h2><dl>'
         f"<dt>Stopped reason</dt><dd>{reason or '<em>none</em>'}</dd>"
         f"<dt>Iterations</dt><dd>{iteration_count}</dd>"
+        f"<dt>Review status</dt><dd>{review_status_cell}</dd>"
         f"<dt>Checks passed</dt><dd>{check_pass}</dd>"
         f"<dt>Checks failed</dt><dd>{check_fail}</dd>"
         f"<dt>Suppressed findings</dt><dd>{suppressed}</dd>"
@@ -202,19 +263,27 @@ def _flatten_confirmed_findings(
     return confirmed
 
 
-def _flatten_suppressed_findings(
+def _flatten_findings_kind(
     triage_findings: list[dict[str, Any]] | None,
+    key: str,
 ) -> list[dict[str, Any]]:
+    """Flatten one finding list (e.g. ``suppressed_findings``) across triage payloads."""
     if not triage_findings:
         return []
-    suppressed: list[dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
     for triage in triage_findings:
         if not isinstance(triage, dict):
             continue
-        for finding in triage.get("suppressed_findings") or []:
+        for finding in triage.get(key) or []:
             if isinstance(finding, dict):
-                suppressed.append(finding)
-    return suppressed
+                out.append(finding)
+    return out
+
+
+def _flatten_suppressed_findings(
+    triage_findings: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    return _flatten_findings_kind(triage_findings, "suppressed_findings")
 
 
 def _findings_section(
@@ -270,6 +339,42 @@ def _findings_section(
         parts.append("<h3>Suppressed findings</h3><ul>")
         parts.extend(suppressed_rows)
         parts.append("</ul>")
+
+    # Rejected findings: triage looked and dismissed them. Surface the reason so
+    # the report does not silently drop part of the triage outcome (C1).
+    rejected = _flatten_findings_kind(triage_findings, "rejected_findings")
+    if rejected:
+        parts.append("<h3>Rejected findings</h3><ul>")
+        for finding in rejected:
+            fingerprint = finding.get("fingerprint", "")
+            reason = (
+                finding.get("rejection_reason")
+                or finding.get("rationale")
+                or ""
+            )
+            parts.append(
+                f"<li><code>{_esc(fingerprint, redact=redact)}</code> "
+                f"&mdash; {_esc(reason, redact=redact)}</li>"
+            )
+        parts.append("</ul>")
+
+    # Needs-more-info: triage could not classify; surface the open question.
+    needs_info = _flatten_findings_kind(triage_findings, "needs_more_info")
+    if needs_info:
+        parts.append("<h3>Needs more info</h3><ul>")
+        for finding in needs_info:
+            fingerprint = finding.get("fingerprint", "")
+            requested = (
+                finding.get("info_requested")
+                or finding.get("rationale")
+                or ""
+            )
+            parts.append(
+                f"<li><code>{_esc(fingerprint, redact=redact)}</code> "
+                f"&mdash; {_esc(requested, redact=redact)}</li>"
+            )
+        parts.append("</ul>")
+
     parts.append("</section>")
     return "".join(parts)
 
@@ -474,6 +579,7 @@ def render_report(
     body = (
         _header(summary, redact=redact)
         + _outcome_summary(summary, events, redact=redact)
+        + _phase_config_section(summary, redact=redact)
         + _findings_section(summary, events, redact=redact, triage_findings=triage_findings)
         + _checks_section(summary, events, redact=redact)
         + _cost_section(summary, events, redact=redact)

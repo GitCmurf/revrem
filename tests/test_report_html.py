@@ -117,13 +117,47 @@ def test_render_report_calls_no_disk():
 
 
 def test_header_renders_summary_harness():
-    """The header shows the top-level summary.harness (the real source; there is
-    no per-phase phase_config key in summary-v1 — P0-2 removed that dead code)."""
+    """The header shows the top-level summary.harness."""
     summary, event_records = _load("clear")
     summary = {**summary, "harness": "codex"}
     html_out = render_report(summary, event_records)
     assert "codex" in html_out
+
+
+def test_phase_config_section_absent_when_summary_omits_it():
+    """A run that carries no phase_config (e.g. an older run) omits the section
+    rather than rendering an empty table."""
+    summary, event_records = _load("clear")
+    summary = {k: v for k, v in summary.items() if k != "phase_config"}
+    html_out = render_report(summary, event_records)
     assert "Phase configuration" not in html_out
+
+
+def test_phase_config_section_renders_model_bearing_phases_only():
+    """When summary.phase_config is present (every modern run), the section
+    renders the model-bearing phases and skips checks/runtime (no harness/model).
+
+    Regression guard for P0-A: the prior P0-2 wrongly deleted this section,
+    believing the key did not exist. It is written on every real run by
+    reporting.add_summary_contract_fields."""
+    summary, event_records = _load("clear")
+    summary = {
+        **summary,
+        "phase_config": {
+            "review": {"harness": "codex", "model": "gpt-5.5",
+                       "reasoning_effort": "high"},
+            "remediation": {"harness": "codex", "model": "gpt-5.4-mini"},
+            "checks": {"commands": ["ruff check ."]},
+            "runtime": {"provider_retry_attempts": 2},
+        },
+    }
+    html_out = render_report(summary, event_records)
+    assert "Phase configuration" in html_out
+    assert "gpt-5.5" in html_out
+    assert "gpt-5.4-mini" in html_out
+    # checks/runtime have no harness/model — filtered, not blank rows.
+    assert "<td>checks</td>" not in html_out
+    assert "<td>runtime</td>" not in html_out
 
 
 # --- CLI command -----------------------------------------------------------

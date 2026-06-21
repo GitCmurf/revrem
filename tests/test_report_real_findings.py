@@ -112,3 +112,59 @@ def test_checks_section_renders_from_summary_iterations(capsys):
     assert "passed" in html_out
     # The summary-sourced check renders, not the empty placeholder.
     assert "No check results recorded" not in html_out
+
+
+def test_phase_config_section_renders_per_phase_harness_and_model(capsys):
+    """The per-phase harness/model table renders from summary.phase_config
+    (P0-A regression guard). The prior P0-2 review wrongly concluded the key
+    did not exist — it is written on every real run by
+    reporting.add_summary_contract_fields. The fixture carries a real-shaped
+    phase_config; the report MUST surface it.
+
+    Only the model-bearing phases (review/triage/remediation/commit_message)
+    render; checks/runtime carry no harness/model and must be filtered out
+    rather than emitted as blank rows.
+    """
+    exit_code = report_command.main([str(_FIXTURE), "--output", str(_FIXTURE / "report.html")])
+    assert exit_code == 0
+    html_out = (_FIXTURE / "report.html").read_text(encoding="utf-8")
+    (_FIXTURE / "report.html").unlink()
+
+    assert "Phase configuration" in html_out, (
+        "the phase-config section must render; summary.phase_config is present "
+        "on every real run (reporting.add_summary_contract_fields)"
+    )
+    # Model-bearing phases and their real harness/model surface.
+    for phase in ("review", "triage", "remediation", "commit_message"):
+        assert phase in html_out, f"phase {phase!r} missing from the table"
+    assert "gpt-5.5" in html_out  # review/triage model
+    assert "gpt-5.4-mini" in html_out  # remediation model
+    # checks/runtime have no harness/model and must NOT appear as table rows.
+    assert "<td>checks</td>" not in html_out
+    assert "<td>runtime</td>" not in html_out
+
+
+def test_rejected_and_needs_more_info_findings_render(capsys):
+    """Triage rejected_findings and needs_more_info are part of the C1 contract
+    and must surface, not be silently dropped (C1 completeness)."""
+    exit_code = report_command.main([str(_FIXTURE), "--output", str(_FIXTURE / "report.html")])
+    assert exit_code == 0
+    html_out = (_FIXTURE / "report.html").read_text(encoding="utf-8")
+    (_FIXTURE / "report.html").unlink()
+    # rejected finding: its rejection reason / fingerprint surfaces.
+    assert "review-comment:2" in html_out
+    assert "Not introduced by the reviewed change" in html_out
+    # needs-more-info: its info request surfaces.
+    assert "f2:unclear-auth-check" in html_out
+    assert "auth guard is enforced upstream" in html_out
+
+
+def test_per_iteration_review_status_surfaces(capsys):
+    """The outcome section surfaces summary.iterations[].review_status (the
+    docstring promised it; this asserts it is actually rendered)."""
+    exit_code = report_command.main([str(_FIXTURE), "--output", str(_FIXTURE / "report.html")])
+    assert exit_code == 0
+    html_out = (_FIXTURE / "report.html").read_text(encoding="utf-8")
+    (_FIXTURE / "report.html").unlink()
+    # The fixture's single iteration has review_status "findings".
+    assert "Review status" in html_out
