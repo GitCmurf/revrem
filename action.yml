@@ -1,0 +1,177 @@
+name: revrem
+description: Run a RevRem code-review remediation loop on a pull request and post a single updatable comment with the results.
+author: GitCmurf
+branding:
+  icon: check-circle
+  color: green
+
+inputs:
+  base:
+    description: Git ref to review against (e.g. origin/main). The caller must checkout with fetch-depth 0.
+    default: origin/main
+  profile:
+    description: RevRem profile to run.
+    default: default
+  max-iterations:
+    description: Override the profile's max iterations.
+    default: ""
+  max-wall-seconds:
+    description: Wall-clock budget in seconds.
+    default: ""
+  max-usd:
+    description: USD cost ceiling.
+    default: ""
+  max-tokens:
+    description: Token budget ceiling.
+    default: ""
+  checks:
+    description: Newline-separated check commands (one per line), overriding the profile.
+    default: ""
+  comment:
+    description: Post an idempotent PR comment summarizing the run.
+    default: "true"
+  upload-artifacts:
+    description: Upload the redacted HTML report as a workflow artifact.
+    default: "true"
+  raw-artifacts:
+    description: Also upload the full (still-redacted) run directory.
+    default: "false"
+  fail-on-findings:
+    description: Fail the job when RevRem exits 2 (findings remain).
+    default: "false"
+  install-mode:
+    description: How to install revrem — "pypi" (published) or "local" (this repo, for dogfooding).
+    default: "pypi"
+  revrem-version:
+    description: "revrem version to install from PyPI (install-mode: pypi only)."
+    default: "0.4.0"
+
+runs:
+  using: composite
+  steps:
+    - name: Install revrem
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [[ "${{ inputs.install-mode }}" == "local" ]]; then
+          pip install -e "${{ github.action_path }}"
+        else
+          pip install "revrem==${{ inputs.revrem-version }}"
+        fi
+        revrem --version
+
+    - name: Verify base ref exists
+      shell: bash
+      run: |
+        set -euo pipefail
+        if ! git rev-parse --verify "${{ inputs.base }}" >/dev/null 2>&1; then
+          echo "::error::Base ref '${{ inputs.base }}' not found. Checkout with fetch-depth: 0."
+          exit 4
+        fi
+
+    - name: Run revrem
+      id: revrem
+      shell: bash
+      run: |
+        set -uo pipefail
+        ARGS=(--base "${{ inputs.base }}" --profile "${{ inputs.profile }}" --no-tty --progress-style compact --summary-format json)
+        if [[ -n "${{ inputs.max-iterations }}" ]]; then ARGS+=(--max-iterations "${{ inputs.max-iterations }}"); fi
+        if [[ -n "${{ inputs.max-wall-seconds }}" ]]; then ARGS+=(--max-wall-seconds "${{ inputs.max-wall-seconds }}"); fi
+        if [[ -n "${{ inputs.max-usd }}" ]]; then ARGS+=(--max-usd "${{ inputs.max-usd }}"); fi
+        if [[ -n "${{ inputs.max-tokens }}" ]]; then ARGS+=(--max-tokens "${{ inputs.max-tokens }}"); fi
+        # Split newline-separated checks into repeated --check flags (never
+        # interpolate the joined string — that would be an injection vector).
+        while IFS= read -r line; do
+          [[ -n "$line" ]] && ARGS+=(--check "$line")
+        done <<< "${{ inputs.checks }}"
+
+        set +e
+        revrem "${ARGS[@]}" > revrem-out.json 2> revrem-err.txt
+        REVREM_EXIT=$?
+        set -e
+        echo "revrem-exit=$REVREM_EXIT" >> "$GITHUB_OUTPUT"
+
+        # Two-stage guard: stdout must be valid JSON AND carry a top-level
+        # artifact_dir (always present on a completed run). If revrem crashed
+        # before writing a summary, fast-fail here rather than globbing runs/.
+        if ! RUN_DIR=$(python3 -c "import json,sys; d=json.load(open('revrem-out.json')); print(d['artifact_dir'])" 2>/dev/null); then
+          echo "::error::RevRem did not produce a parseable run summary. It may have crashed during setup."
+          echo "::group::revrem stderr"
+          cat revrem-err.txt || true
+          echo "::endgroup::"
+          exit 4
+        fi
+        echo "run-dir=$RUN_DIR" >> "$GITHUB_OUTPUT"
+        echo "REVREM_RUN_DIR=$RUN_DIR" >> "$GITHUB_ENV"
+
+    - name: Render report
+      if: always() && env.REVREM_RUN_DIR != ''
+      shell: bash
+      run: |
+        set -euo pipefail
+        revrem report "$REVREM_RUN_DIR" --output revrem-report.html
+        revrem report "$REVREM_RUN_DIR" --format json > revrem-report.json
+
+    - name: Upload report artifact
+      if: always() && env.REVREM_RUN_DIR != '' && inputs.upload-artifacts == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: revrem-report
+        path: revrem-report.html
+
+    - name: Upload raw run directory
+      if: always() && env.REVREM_RUN_DIR != '' && inputs.raw-artifacts == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: revrem-run
+        path: ${{ env.REVREM_RUN_DIR }}
+
+    - name: Post PR comment
+      if: always() && env.REVREM_RUN_DIR != '' && inputs.comment == 'true' && github.event.pull_request.head.repo.fork != 'true'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ env.GITHUB_TOKEN }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
+        GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        set -euo pipefail
+        python3 "${{ github.action_path }}/scripts/ci/post_pr_comment.py"
+
+    - name: Map exit code
+      if: always()
+      shell: bash
+      run: |
+        set -uo pipefail
+        EXIT=${{ steps.revrem.outputs.revrem-exit }}
+        case "$EXIT" in
+          0)
+            echo "RevRem: clear."
+            exit 0
+            ;;
+          2)
+            if [[ "${{ inputs.fail-on-findings }}" == "true" ]]; then
+              echo "::error::RevRem found findings that remain."
+              exit 1
+            fi
+            echo "::warning::RevRem found findings that remain. See the report artifact."
+            exit 0
+            ;;
+          3)
+            echo "::error::RevRem hit a budget ceiling (tokens, cost, or wall-clock)."
+            cat revrem-err.txt 2>/dev/null || true
+            exit 1
+            ;;
+          4|5)
+            echo "::error::RevRem exited with code $EXIT."
+            echo "::group::revrem stderr"
+            cat revrem-err.txt || true
+            echo "::endgroup::"
+            exit 1
+            ;;
+          *)
+            echo "::error::RevRem exited with unexpected code $EXIT."
+            cat revrem-err.txt 2>/dev/null || true
+            exit 1
+            ;;
+        esac

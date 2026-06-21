@@ -139,6 +139,10 @@ RevRem is intentionally local, watched, and bounded:
 - **Static HTML reports** render a finished run into a single, self-contained,
   redacted-by-default HTML file (or a machine-readable JSON index) — no model
   re-run, no network, safe to upload as a CI artifact (`revrem report`).
+- **Hands-off CI** via the reference GitHub Action (`action.yml`): runs a
+  profile on a PR, uploads the redacted report, and posts a single updatable
+  comment. ANSI-free in CI by default (`--no-tty`, auto-detected from `CI`),
+  least-privilege permissions, fork-PR safe.
 - **Git hooks** install bounded pre-push/pre-commit example hooks into a target
   repo.
 - **Rich progress and an optional Textual TUI** for richer watched-terminal runs.

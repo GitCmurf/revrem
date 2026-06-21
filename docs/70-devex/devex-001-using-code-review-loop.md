@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.65'
+version: '1.66'
 last_updated: '2026-06-21'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.65
+> **Version:** 1.66
 > **Last Updated:** 2026-06-21
 > **Type:** DEVEX
 > **Area:** devex
@@ -1319,6 +1319,67 @@ prints canonical `summary.json` to stdout for downstream tooling (use
 `events.jsonl` and `summary.json` are always written before exit, including on
 the cancel path.
 
+### Hands-off CI (GitHub Action)
+
+The `revrem` GitHub Action (this repo's `action.yml`) runs a profile on a pull
+request, uploads a redacted HTML report, and posts a single updatable PR
+comment summarizing the result. It installs from PyPI by default or, for
+dogfooding, from the repo via `install-mode: local`.
+
+```yaml
+# .github/workflows/revrem-pr.yml
+name: RevRem
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  revrem:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: owner/revrem-action@v0.5.0   # or uses: ./ to dogfood this repo
+        with:
+          base: origin/main
+          profile: default
+          fail-on-findings: "false"
+        env:
+          CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
+```
+
+The action does not check out the repo itself — the caller must (with
+`fetch-depth: 0` so the base ref resolves). It runs revrem headless
+(`--no-tty --progress-style compact --summary-format json`), discovers the run
+directory from the JSON `artifact_dir` on stdout (never by globbing
+`.revrem/runs/`), then renders and uploads the redacted HTML report and posts
+the PR comment. The exit code is mapped last, after artifacts and comment land:
+0 (clear) passes; 2 (findings remain) respects `fail-on-findings`; 3 (budget
+ceiling) and 4/5 (setup/cancel) fail the job.
+
+**Least privilege** is declared on the caller workflow: `contents: read`,
+`pull-requests: write`. **Fork PRs** are supported without exposing secrets:
+the comment step is gated on
+`github.event.pull_request.head.repo.fork != 'true'`, so the run, report, and
+artifact upload still happen on a fork PR, but no comment is posted and no
+secrets are exposed to fork code (the action never uses `pull_request_target`).
+**Privacy**: the uploaded HTML report and the comment body are redacted by
+default by `revrem report`; pass `raw-artifacts: true` to also upload the full
+(still-redacted) run directory. The PR comment body is bounded — at most the
+top 5 findings — and never embeds raw model output or stderr.
+
+`revrem --summary-format json` is the contract other providers build on: any
+CI provider that can run a Python tool and capture JSON stdout (GitLab CI,
+Buildkite, Jenkins, a generic shell loop) can run revrem headless and call
+`revrem report --format json` to get the same machine index this Action's
+comment builder consumes.
+
 `revrem ui` is available as a dependency-gated Textual interface:
 
 ```bash
@@ -1579,6 +1640,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.66 | 2026-06-21 | GitCmurf | Documented the reference GitHub Action (`action.yml`): hands-off CI usage, least-privilege permissions, fork-PR model, redacted upload, comment-before-fail exit mapping, and the generic-provider path |
 | 1.65 | 2026-06-21 | GitCmurf | Documented headless/CI output hardening: `--no-tty` + auto-trigger on `CI=true`, the recommended CI invocation, and the always-write-before-exit guarantee |
 | 1.64 | 2026-06-21 | GitCmurf | Documented the `revrem report` subcommand: static self-contained HTML report + `--format json` machine index (reads summary.json/events.jsonl only; redacted by default) |
 | 1.63 | 2026-06-18 | GitCmurf | Added a dedicated Interactive wizard section consolidating wizard run-shape preview, per-phase model/timeout, and routing-preview guidance migrated from the README |

@@ -1,0 +1,39 @@
+name: RevRem (dogfood)
+
+# Dogfood: run the reference revrem Action (local install) on PRs to this repo.
+# Coexists with ci.yml (test/lint gate) and release.yml (tag-triggered publish).
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  revrem:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run revrem
+        uses: ./
+        with:
+          install-mode: local
+          profile: dogfood
+          comment: "true"
+          upload-artifacts: "true"
+          fail-on-findings: "false"
+        env:
+          # Codex harness credentials for the dogfood run. Fork PRs skip the
+          # comment step (see action.yml), and the checkout is read-only to the
+          # runner, so secrets are not exposed to fork PR code.
+          CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
