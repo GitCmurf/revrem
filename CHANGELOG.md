@@ -59,9 +59,6 @@ single updatable PR comment. Tier 1 of `REVREM-PLAN-005`; expert profiles
   exist in the engine. Before this, the findings section, `finding_counts`, and
   `top_findings` were empty on every real run and the PR comment reported zero
   findings. (P0-1)
-- Removed the "Phase configuration" section, which read a `summary.phase_config`
-  key that does not exist in `summary-v1`. The header already shows the real
-  top-level `harness`. (P0-2)
 - The GitHub Action now wires `GITHUB_TOKEN` via a `github-token` input
   (defaulting to `${{ github.token }}`) instead of an unset `env.GITHUB_TOKEN`,
   so the PR comment step actually authenticates and posts. (P0-3)
@@ -75,6 +72,36 @@ single updatable PR comment. Tier 1 of `REVREM-PLAN-005`; expert profiles
   asserts the finding surfaces. This gate exists because the initial T0 fixtures
   were hand-authored against the renderer's assumptions rather than the engine's
   contract, producing self-confirming green tests. Registered in REVREM-TEST-001.
+
+### Fixed (corrective, second peer-review iteration)
+
+- **Reverted the P0-2 removal of the "Phase configuration" section** — the
+  premise was wrong. `summary.phase_config` *is* written on every run by
+  `reporting.add_summary_contract_fields` (present on 106/156 local runs, all
+  recent ones), carrying per-phase `harness`/`model`/`reasoning_effort` for
+  `review`/`triage`/`remediation`/`commit_message`. Deleting the section dropped
+  a section that renders real data on every run. The section is restored,
+  filtered to the model-bearing phases (`checks`/`runtime` carry no
+  harness/model and are skipped, not rendered as blank rows), and now also
+  surfaces reasoning-effort, timeout, and sandbox.
+- **Documented `phase_config` in `summary-v1.schema.json`** (additive,
+  non-breaking; `additionalProperties` was already `true`). The undocumented
+  schema/engine drift is what led P0-2 to wrongly conclude the key did not
+  exist. History baseline updated.
+- **Fixed the inert fork-PR guard** in `action.yml`: `head.repo.fork != 'true'`
+  always evaluated true under GitHub Actions' type coercion (boolean→1,
+  `'true'`→NaN), so the comment step never actually skipped on fork PRs. Now
+  `== false`. (Pending live verification on a real fork PR.)
+- Findings rendering now also surfaces triage `rejected_findings` and
+  `needs_more_info`, which were silently dropped; the outcome section surfaces
+  per-iteration `iterations[].review_status`.
+- The PR comment now labels the artifact deep-link `[Report]` (it was
+  mislabelled `[Run]` while pointing at the artifact); the workflow-run link is
+  used and labelled `[Run]` only as a fallback.
+- `findings_with_triage` fixture is now representative of a real run (carries
+  `phase_config` + `external_review_coverage`/`invocation`/`phase_failures`/
+  `phase_observations`/`triage_diagnostics` in their real shapes), closing the
+  self-confirming-fixture gap for the renderer paths under gate.
 
 ### Stability
 
