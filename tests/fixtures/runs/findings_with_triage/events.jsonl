@@ -1,0 +1,4 @@
+{"iteration":1,"kind":"phase_start","payload":{"message":"codex review --base main"},"phase":"review","run_id":"fixture-findings-with-triage","schema_version":"1.0","seq":1,"ts":"2026-06-21T00:00:00Z"}
+{"iteration":1,"kind":"phase_result","payload":{"status":"findings","summary":"findings"},"phase":"review","run_id":"fixture-findings-with-triage","schema_version":"1.0","seq":2,"ts":"2026-06-21T00:00:01Z"}
+{"iteration":1,"kind":"status_classification","payload":{"message":"status=findings findings=1 clear_phrase=False stderr=True","summary":"status-debug"},"phase":null,"run_id":"fixture-findings-with-triage","schema_version":"1.0","seq":3,"ts":"2026-06-21T00:00:02Z"}
+{"iteration":null,"kind":"summary","payload":{"summary":"max_iterations_reached"},"phase":null,"run_id":"fixture-findings-with-triage","schema_version":"1.0","seq":4,"ts":"2026-06-21T00:00:03Z"}

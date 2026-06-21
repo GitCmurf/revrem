@@ -4,7 +4,10 @@
     "reviews": [
       "review-1.txt"
     ],
-    "summary": "summary.json"
+    "summary": "summary.json",
+    "triage": [
+      "triage-1.json"
+    ]
   },
   "base": "main",
   "cli_version": "0.3.0",

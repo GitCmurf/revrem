@@ -28,6 +28,22 @@ def _load(name: str) -> tuple[dict, list]:
     return summary, event_records
 
 
+def _load_triage(name: str) -> list[dict] | None:
+    """Load triage artifacts the way the report command does (C1)."""
+    run_dir = load_run(name)
+    triage_paths = (json.loads((run_dir / "summary.json").read_text()).get("artifact_paths") or {}).get("triage") or []
+    loaded: list[dict] = []
+    for raw in triage_paths:
+        candidate = run_dir / raw if not Path(raw).is_absolute() else Path(raw)
+        try:
+            payload = json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(payload, dict):
+            loaded.append(payload)
+    return loaded if loaded else None
+
+
 # --- pure-function rendering over the T0 fixture catalogue -----------------
 
 
@@ -205,7 +221,8 @@ def test_build_report_index_cost_usd_null_for_fake_harness():
 
 def test_build_report_index_suppression_count_for_all_suppressed():
     summary, event_records = _load("all_suppressed")
-    idx = build_report_index(summary, event_records)
+    triage = _load_triage("all_suppressed")
+    idx = build_report_index(summary, event_records, triage_findings=triage)
     assert idx["suppression_count"] >= 1
 
 
@@ -281,10 +298,12 @@ def _assert_golden_html(scenario: str) -> None:
     Regenerate intentionally with ``REVREM_UPDATE_SNAPSHOTS=1`` (consistent with
     the repo's other golden-master snapshots). The golden guarantees the report
     is byte-stable across runs and platforms (Contract #9): no CRLF, paths
-    POSIX-normalised, timestamps pinned from inputs.
+    POSIX-normalised, timestamps pinned from inputs. Triage findings are loaded
+    so the findings section renders from its authoritative source (C1).
     """
     summary, event_records = _load(scenario)
-    actual = render_report(summary, event_records)
+    triage = _load_triage(scenario)
+    actual = render_report(summary, event_records, triage_findings=triage)
     golden_path = _GOLDEN_DIR / f"{scenario}.html"
     if os.environ.get("REVREM_UPDATE_SNAPSHOTS") == "1" or not golden_path.exists():
         golden_path.parent.mkdir(parents=True, exist_ok=True)

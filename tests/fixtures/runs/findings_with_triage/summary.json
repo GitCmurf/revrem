@@ -1,0 +1,50 @@
+{
+  "artifact_dir": "tests/fixtures/runs/findings_with_triage",
+  "artifact_paths": {
+    "artifact_dir": "tests/fixtures/runs/findings_with_triage",
+    "checks": [],
+    "commits": [],
+    "diagnostics": [],
+    "last_messages": [],
+    "remediations": [],
+    "reviews": [
+      "review-1.txt"
+    ],
+    "summary": "summary.json",
+    "triage": [
+      "triage-1.json"
+    ]
+  },
+  "base": "main",
+  "cli_version": "0.5.0",
+  "command_line": null,
+  "duration_seconds": 3.0,
+  "final_status": "findings",
+  "finished_at": "2026-06-21T00:00:03Z",
+  "harness": "codex",
+  "harness_version": null,
+  "initial_review_file": "review-1.txt",
+  "iterations": [
+    {
+      "iteration": 1,
+      "review_status": "findings"
+    }
+  ],
+  "latest_review_excerpt": "Found a SQL injection in src/app.py.",
+  "max_iterations": 3,
+  "phases": {
+    "review": {
+      "count": 1
+    },
+    "triage": {
+      "count": 1
+    }
+  },
+  "profile": "default",
+  "run_id": "fixture-findings-with-triage",
+  "schema_version": "1.0",
+  "started_at": "2026-06-21T00:00:00Z",
+  "stopped_reason": "max_iterations_reached",
+  "tokens": null,
+  "usd": null
+}

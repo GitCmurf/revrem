@@ -21,6 +21,38 @@ from ..outcome import CommandFailed, CommandOk
 _SUMMARY_FILENAME = "summary.json"
 
 
+def _load_triage_findings(
+    summary: dict, run_dir: Path
+) -> list[dict] | None:
+    """Load parsed ``triage-N.json`` payloads referenced by ``summary``.
+
+    ``summary.artifact_paths.triage`` is a list of paths (the engine's real
+    location; highest N is authoritative). Triage paths may be relative to the
+    run dir or absolute. Missing/unreadable artifacts are skipped gracefully —
+    the report renders with whatever triage is available. Returns ``None`` when
+    no triage artifacts are referenced or loaded, so the renderer treats it as
+    "no triage" (honest, not an empty-list false positive).
+    """
+    artifact_paths = summary.get("artifact_paths") or {}
+    triage_paths = artifact_paths.get("triage") or []
+    if not isinstance(triage_paths, list) or not triage_paths:
+        return None
+    loaded: list[dict] = []
+    for raw in triage_paths:
+        if not isinstance(raw, str) or not raw:
+            continue
+        candidate = Path(raw)
+        if not candidate.is_absolute():
+            candidate = run_dir / candidate
+        try:
+            payload = json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(payload, dict):
+            loaded.append(payload)
+    return loaded if loaded else None
+
+
 def main(argv: Sequence[str]) -> int:
     args = parse_report_args(argv)
     if args.no_redact and not args.i_understand_the_risks:
@@ -57,12 +89,22 @@ def main(argv: Sequence[str]) -> int:
             file=sys.stderr,
         )
 
+    # Load triage artifacts so findings render from their authoritative source
+    # (triage-N.json::confirmed_findings), not the status_classification event
+    # whose payload is only {message, summary}. The renderer stays pure: it
+    # receives the parsed findings, never reads disk.
+    triage_findings = _load_triage_findings(summary, run_dir)
+
     if args.format == "json":
-        index = build_report_index(summary, event_records, redact=redact)
+        index = build_report_index(
+            summary, event_records, redact=redact, triage_findings=triage_findings
+        )
         canonical = artifacts.canonicalize_json(index)
         print(json.dumps(canonical, ensure_ascii=False, indent=2, sort_keys=True))
     else:
-        html_report = render_report(summary, event_records, redact=redact)
+        html_report = render_report(
+            summary, event_records, redact=redact, triage_findings=triage_findings
+        )
         output_path = (
             Path(args.output)
             if args.output

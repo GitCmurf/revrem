@@ -1,0 +1,20 @@
+{
+  "classification": "clear",
+  "confirmed_findings": [],
+  "implementation_order": [],
+  "needs_more_info": [],
+  "parsing_warnings": [],
+  "rejected_findings": [],
+  "suppressed_findings": [
+    {
+      "affected_paths": ["src/legacy.py"],
+      "fingerprint": "f1:legacy-noise",
+      "reason": "Matched suppression rule legacy-noise; noise, not actionable.",
+      "severity": "low",
+      "summary": "1 finding(s) suppressed by the suppression file"
+    }
+  ],
+  "run_id": "fixture-suppressed",
+  "schema_version": "1.0",
+  "source_review_artifact": "review-1.txt"
+}

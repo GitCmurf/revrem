@@ -1,0 +1,24 @@
+{
+  "classification": "findings",
+  "confirmed_findings": [
+    {
+      "affected_paths": [
+        "src/app.py"
+      ],
+      "fingerprint": "f1:sql-injection-user-input",
+      "rationale": "User input is concatenated directly into the SQL query string without parameterization, allowing SQL injection.",
+      "severity": "medium",
+      "summary": "SQL injection in user lookup query"
+    }
+  ],
+  "implementation_order": [
+    "f1:sql-injection-user-input"
+  ],
+  "needs_more_info": [],
+  "parsing_warnings": [],
+  "rejected_findings": [],
+  "suppressed_findings": [],
+  "run_id": "fixture-findings-with-triage",
+  "schema_version": "1.0",
+  "source_review_artifact": "review-1.txt"
+}

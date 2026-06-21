@@ -1,7 +1,10 @@
 {
   "artifact_dir": "tests/fixtures/runs/all_suppressed",
   "artifact_paths": {
-    "summary": "summary.json"
+    "summary": "summary.json",
+    "triage": [
+      "triage-1.json"
+    ]
   },
   "base": "main",
   "cli_version": "0.3.0",

@@ -210,51 +210,81 @@ def _timeline(events: list[Event], *, redact: bool) -> str:
     )
 
 
+def _flatten_confirmed_findings(
+    triage_findings: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    """Confirmed findings from one or more parsed ``triage-N.json`` payloads.
+
+    The engine writes per-finding detail (severity, summary, affected_paths,
+    fingerprint, rationale) into ``triage-N.json::confirmed_findings`` — not
+    into the ``status_classification`` event (whose payload is only
+    ``{message, summary}``). The command layer loads the triage artifact(s)
+    and passes them here so the renderer stays pure (no disk I/O).
+    """
+    if not triage_findings:
+        return []
+    confirmed: list[dict[str, Any]] = []
+    for triage in triage_findings:
+        if not isinstance(triage, dict):
+            continue
+        for finding in triage.get("confirmed_findings") or []:
+            if isinstance(finding, dict):
+                confirmed.append(finding)
+    return confirmed
+
+
+def _flatten_suppressed_findings(
+    triage_findings: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    if not triage_findings:
+        return []
+    suppressed: list[dict[str, Any]] = []
+    for triage in triage_findings:
+        if not isinstance(triage, dict):
+            continue
+        for finding in triage.get("suppressed_findings") or []:
+            if isinstance(finding, dict):
+                suppressed.append(finding)
+    return suppressed
+
+
 def _findings_section(
-    summary: dict[str, Any], events: list[Event], *, redact: bool
+    summary: dict[str, Any],
+    events: list[Event],
+    *,
+    redact: bool,
+    triage_findings: list[dict[str, Any]] | None = None,
 ) -> str:
     """Findings & triage section.
 
-    Source: ``status_classification`` events for configured findings, plus
-    ``suppressed`` events for suppressed findings with provenance. The richer
-    per-finding detail in a ``triage-N.json`` artifact is surfaced when the
-    run dir contains one (T2 reads it via summary artifact_paths); otherwise
-    the section renders the event-derived view honestly.
+    Source: ``triage-N.json::confirmed_findings`` (severity, affected_paths,
+    summary, fingerprint, rationale) passed in by the command layer; plus
+    ``suppressed_findings`` from the same artifacts. Per-iteration review
+    status is surfaced in the outcome section via ``iterations[].review_status``.
     """
+    confirmed = _flatten_confirmed_findings(triage_findings)
     configured: list[str] = []
-    for ev in events:
-        if ev.kind != "status_classification":
-            continue
-        for severity in ("critical", "high", "medium", "low"):
-            for item in ev.payload.get(severity, []) or []:
-                if isinstance(item, dict):
-                    summary_text = item.get("summary") or item.get("title") or ""
-                    fingerprint = item.get("fingerprint", "")
-                    configured.append(
-                        f"<tr><td>{_esc(severity, redact=redact)}</td>"
-                        f"<td>{_esc(item.get('path') or item.get('file') or '', redact=redact)}</td>"
-                        f"<td>{_esc(summary_text, redact=redact)}</td>"
-                        f"<td><code>{_esc(fingerprint, redact=redact)}</code></td></tr>"
-                    )
+    for finding in confirmed:
+        severity = finding.get("severity", "")
+        paths = finding.get("affected_paths") or []
+        path_text = ", ".join(str(p) for p in paths) if paths else ""
+        summary_text = finding.get("summary") or finding.get("rationale") or ""
+        fingerprint = finding.get("fingerprint", "")
+        configured.append(
+            f"<tr><td>{_esc(severity, redact=redact)}</td>"
+            f"<td>{_esc(_normalize_path(path_text), redact=redact)}</td>"
+            f"<td>{_esc(summary_text, redact=redact)}</td>"
+            f"<td><code>{_esc(fingerprint, redact=redact)}</code></td></tr>"
+        )
 
+    suppressed_findings = _flatten_suppressed_findings(triage_findings)
     suppressed_rows: list[str] = []
-    for ev in events:
-        if ev.kind != "suppressed":
-            continue
-        message = ev.payload.get("message", "")
+    for finding in suppressed_findings:
+        message = finding.get("summary") or finding.get("reason") or ""
         suppressed_rows.append(
             f"<li>{_esc(message, redact=redact)} "
             f'<span class="placeholder">(suppressed)</span></li>'
         )
-
-    artifact_hint = ""
-    artifact_paths = summary.get("artifact_paths") or {}
-    triage_artifacts = (
-        artifact_paths.get("triage") or artifact_paths.get("triages") or []
-    )
-    if isinstance(triage_artifacts, list) and triage_artifacts:
-        joined = ", ".join(_esc(_normalize_path(a), redact=redact) for a in triage_artifacts)
-        artifact_hint = f'<p class="placeholder">Detailed triage: <code>{joined}</code></p>'
 
     parts = ['<section><h2>Findings &amp; triage</h2>']
     if configured:
@@ -271,7 +301,6 @@ def _findings_section(
         parts.append("<h3>Suppressed findings</h3><ul>")
         parts.extend(suppressed_rows)
         parts.append("</ul>")
-    parts.append(artifact_hint)
     parts.append("</section>")
     return "".join(parts)
 
@@ -424,19 +453,25 @@ def _footer(summary: dict[str, Any], *, redact: bool) -> str:
 
 
 def render_report(
-    summary: dict[str, Any], events: list[Event], *, redact: bool = True
+    summary: dict[str, Any],
+    events: list[Event],
+    *,
+    redact: bool = True,
+    triage_findings: list[dict[str, Any]] | None = None,
 ) -> str:
     """Render a finished run's ``summary`` + ``events`` into a self-contained HTML string.
 
     Pure: no disk I/O, no network, no model. ``redact`` defaults to True so the
     rendered HTML is safe to upload across a trust boundary by default (gate
-    G7). Deterministic across runs and platforms (Contract #9).
+    G7). Deterministic across runs and platforms (Contract #9). Findings detail
+    is sourced from parsed ``triage-N.json`` payloads passed in as
+    ``triage_findings`` (the command layer loads them so the renderer stays pure).
     """
     body = (
         _header(summary, redact=redact)
         + _outcome_summary(summary, events, redact=redact)
         + _phase_config_rows(summary, redact=redact)
-        + _findings_section(summary, events, redact=redact)
+        + _findings_section(summary, events, redact=redact, triage_findings=triage_findings)
         + _checks_section(events, redact=redact)
         + _cost_section(summary, events, redact=redact)
         + _diff_stats_section(summary, redact=redact)
@@ -462,54 +497,51 @@ def render_report(
 # --- Machine-readable JSON index (D-3) --------------------------------------
 
 
-def _count_findings_by_severity(events: list[Event]) -> dict[str, int]:
-    """Tally finding severities. T1 derives a conservative count from events.
+def _count_findings_by_severity(
+    triage_findings: list[dict[str, Any]] | None,
+) -> dict[str, int]:
+    """Tally finding severities from triage ``confirmed_findings``.
 
-    Authoritative per-finding detail comes from triage artifacts (T2); here we
-    surface a best-effort count keyed by severity so the index is never empty.
+    The authoritative per-finding detail lives in ``triage-N.json``; the
+    ``status_classification`` event payload is only ``{message, summary}`` and
+    carries no severities.
     """
     counts: dict[str, int] = {"critical": 0, "high": 0, "medium": 0, "low": 0}
-    for ev in events:
-        if ev.kind == "status_classification":
-            payload = ev.payload or {}
-            for key, value in payload.items():
-                if isinstance(value, list):
-                    counts[key] = counts.get(key, 0) + len(value)
+    for finding in _flatten_confirmed_findings(triage_findings):
+        severity = str(finding.get("severity", "")).lower()
+        if severity in counts:
+            counts[severity] += 1
+        else:
+            counts[severity] = counts.get(severity, 0) + 1
     return counts
 
 
-def _top_findings(events: list[Event], *, redact: bool) -> list[dict[str, Any]]:
+def _top_findings(
+    triage_findings: list[dict[str, Any]] | None,
+    *,
+    redact: bool,
+) -> list[dict[str, Any]]:
     """At most 5 redacted finding summaries for the comment builder.
 
     Each entry: severity, file, line (nullable), and a one-sentence title.
-    T1 derives these conservatively from status_classification events; T2 will
-    source richer detail from triage artifacts. The list is empty when there
+    Sourced from triage ``confirmed_findings``. The list is empty when there
     are no findings or they were suppressed.
     """
     findings: list[dict[str, Any]] = []
-    for ev in events:
-        if ev.kind != "status_classification":
-            continue
-        payload = ev.payload or {}
-        for severity in ("critical", "high", "medium", "low"):
-            for item in payload.get(severity, []) or []:
-                if not isinstance(item, dict):
-                    continue
-                title = item.get("summary") or item.get("title") or item.get("message") or ""
-                path = item.get("path") or item.get("file") or item.get("affected_path")
-                line = item.get("line")
-                findings.append(
-                    {
-                        "severity": severity,
-                        "file": _esc(_normalize_path(path), redact=False)
-                        if path
-                        else None,
-                        "line": line if isinstance(line, int) else None,
-                        "title": _esc(title, redact=False) if title else "",
-                    }
-                )
-                if len(findings) >= 5:
-                    return findings
+    for finding in _flatten_confirmed_findings(triage_findings):
+        title = finding.get("summary") or finding.get("rationale") or ""
+        paths = finding.get("affected_paths") or []
+        file_path = paths[0] if paths else None
+        findings.append(
+            {
+                "severity": finding.get("severity", "unknown"),
+                "file": _normalize_path(file_path) if file_path else None,
+                "line": None,  # triage findings are path-level, not line-level
+                "title": title,
+            }
+        )
+        if len(findings) >= 5:
+            break
     return findings
 
 
@@ -547,7 +579,11 @@ def _artifact_paths(summary: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_report_index(
-    summary: dict[str, Any], events: list[Event], *, redact: bool = True
+    summary: dict[str, Any],
+    events: list[Event],
+    *,
+    redact: bool = True,
+    triage_findings: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Build the machine-readable report index (D-3).
 
@@ -559,8 +595,11 @@ def build_report_index(
     the finding has no file-level location); ``artifact_paths`` is ``{}`` when
     the run dir is unavailable. All other required keys are always present and
     non-null; a missing key is a schema violation, not a null.
+
+    Findings detail is sourced from parsed ``triage-N.json`` payloads passed in
+    as ``triage_findings``.
     """
-    top = _top_findings(events, redact=redact)
+    top = _top_findings(triage_findings, redact=redact)
     if redact:
         top = _redact_index_findings(top)
     run_id = summary.get("run_id", "")
@@ -571,8 +610,8 @@ def build_report_index(
         "run_id": run_id,
         "final_status": summary.get("final_status"),
         "stopped_reason": summary.get("stopped_reason"),
-        "finding_counts": _count_findings_by_severity(events),
-        "suppression_count": sum(1 for ev in events if ev.kind == "suppressed"),
+        "finding_counts": _count_findings_by_severity(triage_findings),
+        "suppression_count": len(_flatten_suppressed_findings(triage_findings)),
         "cost_usd": _cost_usd(summary),
         "top_findings": top,
         "artifact_paths": _artifact_paths(summary),
