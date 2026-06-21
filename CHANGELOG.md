@@ -103,6 +103,22 @@ single updatable PR comment. Tier 1 of `REVREM-PLAN-005`; expert profiles
   `phase_observations`/`triage_diagnostics` in their real shapes), closing the
   self-confirming-fixture gap for the renderer paths under gate.
 
+### Security & robustness (corrective, external review)
+
+- **Script-injection hardening** in the reference Action: every workflow input
+  is passed through `env:` and read as a shell variable, never interpolated as
+  `${{ inputs.x }}` into a `run:` script (the latter is expanded into the script
+  text before bash parses it). Budget inputs are validated as numeric; a test
+  asserts no input is interpolated into any run script.
+- **Token resolution** no longer depends on expression evaluation inside an
+  input default: the comment step uses `${{ inputs.github-token || github.token }}`.
+- **`raw-artifacts` honesty**: documented as uploading the run directory
+  verbatim and **unredacted** (the prior "still-redacted" wording was false).
+- **Report index** preserves array-valued `artifact_paths` (was flattening lists
+  to repr strings) and redacts path values when `redact=True`.
+- **PR comment** escapes Markdown table cells so a model-derived finding title
+  containing `|`, a newline, or a backtick cannot break or inject formatting.
+
 ### Stability
 
 - **Frozen** (additive-only within v1): the artifact JSON schemas (`summary-v1`,
