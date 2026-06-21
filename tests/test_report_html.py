@@ -10,6 +10,7 @@ default, truncated-event tolerance, and the CLI exit-code/error paths.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -213,3 +214,119 @@ def test_build_report_index_top_findings_bounded_and_redacted():
     idx = build_report_index(summary, event_records)
     assert isinstance(idx["top_findings"], list)
     assert len(idx["top_findings"]) <= 5
+
+
+# --- T2: body content sections --------------------------------------------
+
+
+def test_findings_remediated_shows_check_and_clear_status():
+    """The remediated fixture shows the passing check and the final clear status."""
+    summary, event_records = _load("findings_remediated")
+    html_out = render_report(summary, event_records)
+    assert "pytest -q" in html_out
+    assert "passed" in html_out
+    # Final review came back clear after remediation.
+    assert "clear" in html_out
+
+
+def test_all_suppressed_shows_suppressed_findings_and_stop_reason():
+    summary, event_records = _load("all_suppressed")
+    html_out = render_report(summary, event_records)
+    assert "suppressed" in html_out.lower()
+    assert "all_findings_suppressed" in html_out
+
+
+def test_cost_ceiling_shows_ceiling_breach_and_badge():
+    summary, event_records = _load("cost_ceiling")
+    html_out = render_report(summary, event_records)
+    assert "budget ceiling" in html_out.lower()
+    assert "10 / 10" in html_out
+    # The error status badge reflects the budget-stop state.
+    assert "error" in html_out
+
+
+def test_cost_section_renders_null_not_zero():
+    """When the harness cannot report cost, the section says 'not reported', not 0."""
+    summary, event_records = _load("clear")
+    html_out = render_report(summary, event_records)
+    assert "not reported" in html_out
+    # Never fabricate a zero USD figure for an unreported cost.
+    assert "usd</dt><dd>0" not in html_out.lower()
+
+
+def test_diff_stats_unavailable_when_absent():
+    """No diff-stat data in the run dir renders 'unavailable'; the report never shells out."""
+    summary, event_records = _load("clear")
+    html_out = render_report(summary, event_records)
+    assert "diff stats unavailable" in html_out.lower()
+
+
+# --- T2: golden HTML comparison (Contract #9) ------------------------------
+
+
+_GOLDEN_DIR = Path(__file__).resolve().parents[1] / "golden" / "report"
+_GOLDEN_SCENARIOS = (
+    "clear",
+    "findings_remediated",
+    "findings_remaining",
+    "check_failure",
+    "cost_ceiling",
+    "all_suppressed",
+)
+
+
+def _assert_golden_html(scenario: str) -> None:
+    """Compare the rendered HTML against a committed golden, byte-for-byte.
+
+    Regenerate intentionally with ``REVREM_UPDATE_SNAPSHOTS=1`` (consistent with
+    the repo's other golden-master snapshots). The golden guarantees the report
+    is byte-stable across runs and platforms (Contract #9): no CRLF, paths
+    POSIX-normalised, timestamps pinned from inputs.
+    """
+    summary, event_records = _load(scenario)
+    actual = render_report(summary, event_records)
+    golden_path = _GOLDEN_DIR / f"{scenario}.html"
+    if os.environ.get("REVREM_UPDATE_SNAPSHOTS") == "1" or not golden_path.exists():
+        golden_path.parent.mkdir(parents=True, exist_ok=True)
+        golden_path.write_text(actual, encoding="utf-8")
+        return
+    expected = golden_path.read_text(encoding="utf-8")
+    assert actual == expected, (
+        f"Golden HTML for {scenario!r} changed. If intentional, record it and "
+        f"regenerate with REVREM_UPDATE_SNAPSHOTS=1.\n"
+        + _diff(expected, actual)
+    )
+
+
+def _diff(expected: str, actual: str) -> str:
+    import difflib
+
+    return "".join(
+        difflib.unified_diff(
+            expected.splitlines(keepends=True),
+            actual.splitlines(keepends=True),
+            fromfile="(committed)",
+            tofile="(actual)",
+        )
+    )
+
+
+@pytest.mark.parametrize("scenario", _GOLDEN_SCENARIOS)
+def test_report_matches_golden_html(scenario: str):
+    _assert_golden_html(scenario)
+
+
+@pytest.mark.parametrize("scenario", _GOLDEN_SCENARIOS)
+def test_golden_html_is_cross_platform_safe(scenario: str):
+    """Determinism guards enforced on the committed golden itself.
+
+    The golden must contain no CRLF and no backslash path separators, so it is
+    byte-stable on Linux CI and a macOS/Windows dev box alike. Asserting on the
+    committed golden (not just the live render) makes the invariant durable.
+    """
+    golden_path = _GOLDEN_DIR / f"{scenario}.html"
+    raw = golden_path.read_bytes()
+    assert b"\r" not in raw, f"{scenario} golden contains CRLF"
+    text = raw.decode("utf-8")
+    # No backslash path separators leaked from os.sep.
+    assert "\\" not in text, f"{scenario} golden contains a backslash"

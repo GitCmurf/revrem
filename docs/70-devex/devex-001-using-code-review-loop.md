@@ -842,6 +842,24 @@ disabling redaction requires both `--no-redact` and
 is truncated or malformed, the report renders what is available and prints a
 warning to stderr rather than failing the render — the report is diagnostic.
 
+The report body, in order: a **header** (run id, final-status badge with
+distinct colours, base/HEAD, profile, per-phase harness/model, wall-clock
+duration, and the mapped exit code); an **outcome summary** (stopped reason,
+iteration count, check pass/fail tally, suppressed-finding count); **findings
+& triage** (configured findings with severity, path, one-line summary, and
+`f1:` fingerprint; suppressed findings labelled with provenance; a pointer to
+`triage-N.json` when the run dir contains one); **checks** (command, status,
+message, and iteration from `check_result` events); **cost & budget** (tokens,
+USD, charge events, and any budget-ceiling breach — unreported costs render
+`not reported`, never a fabricated `0`); **diff stats** (only when captured in
+the run's artifacts; otherwise `diff stats unavailable for this run` — the
+report never shells out to `git`); a **timeline** of `phase_start`/`phase_result`
+events; and a **footer** with the RevRem version, schema versions consumed, a
+"rendered from events.jsonl — no model was re-run" provenance line, and a
+redaction notice. The HTML layout is deterministic (byte-stable across runs
+and platforms) but is explicitly *not* a stable contract until the 0.9.0
+freeze — only the `report-index-v1` JSON fields are versioned.
+
 Local setup diagnostics:
 
 ```bash

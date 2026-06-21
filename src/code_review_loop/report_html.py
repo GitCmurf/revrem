@@ -210,6 +210,167 @@ def _timeline(events: list[Event], *, redact: bool) -> str:
     )
 
 
+def _findings_section(
+    summary: dict[str, Any], events: list[Event], *, redact: bool
+) -> str:
+    """Findings & triage section.
+
+    Source: ``status_classification`` events for configured findings, plus
+    ``suppressed`` events for suppressed findings with provenance. The richer
+    per-finding detail in a ``triage-N.json`` artifact is surfaced when the
+    run dir contains one (T2 reads it via summary artifact_paths); otherwise
+    the section renders the event-derived view honestly.
+    """
+    configured: list[str] = []
+    for ev in events:
+        if ev.kind != "status_classification":
+            continue
+        for severity in ("critical", "high", "medium", "low"):
+            for item in ev.payload.get(severity, []) or []:
+                if isinstance(item, dict):
+                    summary_text = item.get("summary") or item.get("title") or ""
+                    fingerprint = item.get("fingerprint", "")
+                    configured.append(
+                        f"<tr><td>{_esc(severity, redact=redact)}</td>"
+                        f"<td>{_esc(item.get('path') or item.get('file') or '', redact=redact)}</td>"
+                        f"<td>{_esc(summary_text, redact=redact)}</td>"
+                        f"<td><code>{_esc(fingerprint, redact=redact)}</code></td></tr>"
+                    )
+
+    suppressed_rows: list[str] = []
+    for ev in events:
+        if ev.kind != "suppressed":
+            continue
+        message = ev.payload.get("message", "")
+        suppressed_rows.append(
+            f"<li>{_esc(message, redact=redact)} "
+            f'<span class="placeholder">(suppressed)</span></li>'
+        )
+
+    artifact_hint = ""
+    artifact_paths = summary.get("artifact_paths") or {}
+    triage_artifacts = (
+        artifact_paths.get("triage") or artifact_paths.get("triages") or []
+    )
+    if isinstance(triage_artifacts, list) and triage_artifacts:
+        joined = ", ".join(_esc(_normalize_path(a), redact=redact) for a in triage_artifacts)
+        artifact_hint = f'<p class="placeholder">Detailed triage: <code>{joined}</code></p>'
+
+    parts = ['<section><h2>Findings &amp; triage</h2>']
+    if configured:
+        parts.append(
+            '<table><thead><tr><th>Severity</th><th>Path</th>'
+            '<th>Summary</th><th>Fingerprint</th></tr></thead><tbody>'
+        )
+        parts.extend(configured)
+        parts.append("</tbody></table>")
+    else:
+        parts.append('<p class="placeholder">No configured findings recorded.</p>')
+
+    if suppressed_rows:
+        parts.append("<h3>Suppressed findings</h3><ul>")
+        parts.extend(suppressed_rows)
+        parts.append("</ul>")
+    parts.append(artifact_hint)
+    parts.append("</section>")
+    return "".join(parts)
+
+
+def _checks_section(events: list[Event], *, redact: bool) -> str:
+    """Checks section from ``check_result`` events: command, status, message."""
+    rows: list[str] = []
+    for ev in events:
+        if ev.kind != "check_result":
+            continue
+        command = ev.payload.get("command", "")
+        status = str(ev.payload.get("status", "")).lower()
+        message = ev.payload.get("message", "")
+        status_class = "check-pass" if status == "passed" else "check-fail"
+        rows.append(
+            "<tr>"
+            f'<td><code>{_esc(command, redact=redact)}</code></td>'
+            f'<td class="{status_class}">{_esc(status, redact=redact)}</td>'
+            f"<td>{_esc(message, redact=redact)}</td>"
+            f"<td>{_esc(ev.iteration, redact=redact)}</td>"
+            "</tr>"
+        )
+    if not rows:
+        return (
+            '<section><h2>Checks</h2>'
+            '<p class="placeholder">No check results recorded.</p></section>'
+        )
+    return (
+        '<section><h2>Checks</h2>'
+        '<table><thead><tr><th>Command</th><th>Status</th>'
+        '<th>Message</th><th>Iteration</th></tr></thead><tbody>'
+        + "".join(rows)
+        + "</tbody></table></section>"
+    )
+
+
+def _cost_section(
+    summary: dict[str, Any], events: list[Event], *, redact: bool
+) -> str:
+    """Cost & budget section. Renders ``null`` honestly, never ``0``."""
+    tokens = summary.get("tokens")
+    usd = summary.get("usd")
+    cost_charges = [ev for ev in events if ev.kind == "cost_charge"]
+    ceiling_hits = [ev for ev in events if ev.kind == "cost_ceiling_hit"]
+
+    def _fmt_tokens(t: object) -> str:
+        if t is None:
+            return '<em class="placeholder">not reported</em>'
+        if isinstance(t, dict):
+            if not t:
+                return '<em class="placeholder">not reported</em>'
+            return ", ".join(
+                f"{_esc(k, redact=redact)}={_esc(v, redact=redact)}"
+                for k, v in sorted(t.items())
+            )
+        return _esc(t, redact=redact)
+
+    _not_reported = '<em class="placeholder">not reported</em>'
+    usd_cell = _esc(usd, redact=redact) if usd is not None else _not_reported
+    rows = [
+        f"<dt>Tokens</dt><dd>{_fmt_tokens(tokens)}</dd>",
+        f"<dt>USD</dt><dd>{usd_cell}</dd>",
+        f"<dt>Charge events</dt><dd>{len(cost_charges)}</dd>",
+    ]
+    if ceiling_hits:
+        ceiling = ceiling_hits[-1].payload
+        rows.append(
+            f"<dt>Budget ceiling</dt><dd>{_esc(ceiling.get('ceiling'), redact=redact)} "
+            f"reached ({_esc(ceiling.get('actual'), redact=redact)} / "
+            f"{_esc(ceiling.get('limit'), redact=redact)})</dd>"
+        )
+    return (
+        '<section><h2>Cost &amp; budget</h2><dl>'
+        + "".join(rows)
+        + "</dl></section>"
+    )
+
+
+def _diff_stats_section(summary: dict[str, Any], *, redact: bool) -> str:
+    """Diff stats from in-artifact data only. Never shells out to git.
+
+    The summary may carry a diff-stat block under various keys; when absent the
+    section renders "diff stats unavailable for this run" rather than
+    recomputing from the worktree (the report must not shell out).
+    """
+    diff_stat = summary.get("diff_stat") or summary.get("diff_stats")
+    if not diff_stat:
+        return (
+            '<section><h2>Diff stats</h2>'
+            '<p class="placeholder">Diff stats unavailable for this run.</p>'
+            "</section>"
+        )
+    return (
+        '<section><h2>Diff stats</h2><pre>'
+        + _esc(diff_stat, redact=redact)
+        + "</pre></section>"
+    )
+
+
 _CSS = """
 body{font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
 max-width:60rem;margin:2rem auto;padding:0 1rem;color:#1f2328;line-height:1.5}
@@ -234,6 +395,10 @@ padding:.15rem 0;border-bottom:1px solid #eaeef2}
 .placeholder{color:#6e7781;font-style:italic}
 footer{margin-top:2.5rem;padding-top:.75rem;border-top:1px solid #d0d7de;
 font-size:.8rem;color:#57606a}
+.check-pass{color:#1a7f37;font-weight:600}
+.check-fail{color:#cf222e;font-weight:600}
+pre{background:#f6f8fa;padding:.75rem;border-radius:6px;overflow-x:auto;
+font-size:.85rem}
 """
 
 
@@ -271,10 +436,11 @@ def render_report(
         _header(summary, redact=redact)
         + _outcome_summary(summary, events, redact=redact)
         + _phase_config_rows(summary, redact=redact)
+        + _findings_section(summary, events, redact=redact)
+        + _checks_section(events, redact=redact)
+        + _cost_section(summary, events, redact=redact)
+        + _diff_stats_section(summary, redact=redact)
         + _timeline(events, redact=redact)
-        # Body content sections (findings/triage, checks, cost, diff stats) are
-        # filled in by REVREM-PLAN-005 T2; T1 ships the header, outcome, and
-        # timeline so the report is immediately useful and golden-testable.
         + _footer(summary, redact=redact)
     )
     title = _esc(
