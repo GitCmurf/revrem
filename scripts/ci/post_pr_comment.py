@@ -34,6 +34,25 @@ MARKER = "<!-- revrem-report -->"
 _API_BASE = "https://api.github.com"
 
 
+def _md_cell(value: Any) -> str:
+    """Make a value safe to drop into a Markdown table cell.
+
+    Neutralises the column delimiter (`|`) and collapses line breaks so a
+    model-derived string (e.g. a finding title) cannot add columns, split the
+    row, or escape into block formatting. Backticks are replaced with a single
+    quote so a stray backtick cannot open an unterminated code span.
+    """
+    text = "" if value is None else str(value)
+    return (
+        text.replace("\\", "\\\\")
+        .replace("|", "\\|")
+        .replace("`", "'")
+        .replace("\r\n", " ")
+        .replace("\n", " ")
+        .replace("\r", " ")
+    )
+
+
 def build_comment_body(
     report_index: dict[str, Any], *, report_url: str = "", run_url: str = ""
 ) -> str:
@@ -83,11 +102,11 @@ def build_comment_body(
         lines.append("| Severity | File | Finding |")
         lines.append("|---|---|---|")
         for finding in top:
-            severity = finding.get("severity", "?")
+            severity = _md_cell(finding.get("severity", "?"))
             file_path = finding.get("file") or "-"
-            title = finding.get("title") or "(no detail)"
             line = finding.get("line")
-            loc = f"{file_path}:{line}" if line else file_path
+            loc = _md_cell(f"{file_path}:{line}" if line else file_path)
+            title = _md_cell(finding.get("title") or "(no detail)")
             lines.append(f"| {severity} | `{loc}` | {title} |")
         lines.append("")
 

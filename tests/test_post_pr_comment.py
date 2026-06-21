@@ -120,6 +120,31 @@ def test_main_prefers_artifact_url_over_run_url(tmp_path, fake_github, monkeypat
     assert "[Report](https://artifact-link/report.html)" in posted
 
 
+def test_table_cells_are_sanitized_against_markdown_injection():
+    """A model-derived finding title containing a pipe, newline, or backtick must
+    not break the Markdown table row or inject formatting (GPT review #6)."""
+    idx = {
+        **_findings_index(),
+        "top_findings": [
+            {
+                "severity": "high",
+                "file": "src/a|b.py",
+                "line": 1,
+                "title": "bad | title\nwith newline and `code`",
+            }
+        ],
+    }
+    body = ppc.build_comment_body(idx)
+    rows = [ln for ln in body.splitlines() if ln.startswith("| high ")]
+    assert len(rows) == 1, f"finding must occupy exactly one table row: {rows}"
+    row = rows[0]
+    # The raw pipe from the title must not appear unescaped (it would add a column).
+    assert "bad | title" not in row
+    assert "bad \\| title" in row
+    # No literal newline leaked into the row (asserted by single-row check above).
+    assert row.count("\n") == 0
+
+
 def test_body_never_embeds_secrets_by_design():
     """The builder only reads known index fields; it never pastes raw stdin/argv.
     A stray secret in an unrelated field would not appear because we never
