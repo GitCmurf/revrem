@@ -3,7 +3,7 @@ document_id: REVREM-TEST-001
 type: TEST
 title: Utility verification strategy
 status: Draft
-version: '1.7'
+version: '1.8'
 last_updated: '2026-06-21'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-TEST-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.7
+> **Version:** 1.8
 > **Last Updated:** 2026-06-21
 > **Type:** TEST
 > **Area:** testing
@@ -240,6 +240,7 @@ M0-M4 metrics with deterministic local evidence. Current status:
 | Cost-cap respected | 100% of tested runs stop before the next model call after a ceiling hit | `tests/test_budgets.py` plus loop-level CLI budget tests cover soft warnings, token/USD accounting, missing-cost null semantics, pre-model-call ceiling checks, fake harness token charges, and exit code `3`. |
 | Replayable runs from event fixtures | 100% of event fixtures replay offline | `tests/test_replay.py` discovers every directory under `tests/fixtures/events/`, validates readable `events.jsonl`, and compares compact replay output to `replay.compact.txt` without invoking a runner or harness. |
 | Static HTML report renders a stored run | Renders in < 1 s and validates structurally (v0.5.0) | `tests/test_report_html.py` renders every `tests/fixtures/runs/<scenario>` to a single self-contained HTML file offline (no model/network), asserts the run id and final status appear, and that two renders are byte-equal. Inputs validate against `summary-v1`/`events-v1`. |
+| Report surfaces real-engine findings (anti self-confirming-fixture gate) | A confirmed triage finding appears in both the HTML and the JSON index (v0.5.0) | `tests/test_report_real_findings.py` renders a real-shaped fixture (`status_classification` payload `{message, summary}` — no severities; findings sourced from `triage-N.json::confirmed_findings` and checks from `summary.iterations[].checks[]`) and asserts the finding's fingerprint/severity/summary and `finding_counts` total > 0. This gate exists because the T0 fixtures were initially hand-authored against the renderer's assumptions rather than the engine's contract; it fails if findings ever stop surfacing on real-shaped input. |
 | Hands-off CI comment on a PR | One idempotent PR comment within ~5 min on a ~1k-LOC PR (v0.5.0) | The reference Action's idempotency, exit-code mapping, redacted upload, and comment-before-fail ordering are covered by `tests/test_post_pr_comment.py` + action-step tests against a stub GitHub API (no network). The wall-clock / end-to-end target is a live observation, recorded manually before tagging. |
 | Mean time to actionable diagnosis on a failing run | Less than 60 seconds reading structured artifacts | Preflight-blocking runs write `diagnostics.json`, `summary.json`, and `events.jsonl` before any model call. Tests assert stable diagnostic codes, messages, hints, fingerprints, and exit codes; this makes setup failures actionable from artifacts without parsing raw transcripts. |
 
