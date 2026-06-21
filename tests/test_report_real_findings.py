@@ -98,3 +98,17 @@ def test_findings_section_is_not_empty_on_real_shaped_input():
         summary, evs, triage_findings=[triage] if triage.get("confirmed_findings") else []
     )
     assert "No configured findings recorded" not in html_out
+
+
+def test_checks_section_renders_from_summary_iterations(capsys):
+    """Checks render from summary.iterations[].checks[] (the engine real
+    location), not only check_result events (C4). The fixture carries a
+    summary check (ruff check ., passed) and no check_result event."""
+    exit_code = report_command.main([str(_FIXTURE), "--output", str(_FIXTURE / "report.html")])
+    assert exit_code == 0
+    html_out = (_FIXTURE / "report.html").read_text(encoding="utf-8")
+    (_FIXTURE / "report.html").unlink()
+    assert "ruff check ." in html_out
+    assert "passed" in html_out
+    # The summary-sourced check renders, not the empty placeholder.
+    assert "No check results recorded" not in html_out

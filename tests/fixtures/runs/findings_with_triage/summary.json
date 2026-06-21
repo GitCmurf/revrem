@@ -26,6 +26,15 @@
   "initial_review_file": "review-1.txt",
   "iterations": [
     {
+      "check_failures": 0,
+      "checks": [
+        {
+          "artifact": "check-1-1.txt",
+          "command": "ruff check .",
+          "status": "passed"
+        }
+      ],
+      "commit_status": "not_attempted",
       "iteration": 1,
       "review_status": "findings"
     }

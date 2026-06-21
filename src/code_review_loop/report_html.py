@@ -274,24 +274,59 @@ def _findings_section(
     return "".join(parts)
 
 
-def _checks_section(events: list[Event], *, redact: bool) -> str:
-    """Checks section from ``check_result`` events: command, status, message."""
+def _checks_section(
+    summary: dict[str, Any], events: list[Event], *, redact: bool
+) -> str:
+    """Checks section.
+
+    Authoritative source: ``summary.iterations[].checks[]`` (the committed
+    record; each entry {command, status, artifact}). Falls back to
+    ``check_result`` events ({command, status, returncode}) when the summary
+    carries no checks (e.g. an older run). Renders artifact links relative.
+    """
     rows: list[str] = []
-    for ev in events:
-        if ev.kind != "check_result":
-            continue
-        command = ev.payload.get("command", "")
-        status = str(ev.payload.get("status", "")).lower()
-        message = ev.payload.get("message", "")
-        status_class = "check-pass" if status == "passed" else "check-fail"
-        rows.append(
-            "<tr>"
-            f'<td><code>{_esc(command, redact=redact)}</code></td>'
-            f'<td class="{status_class}">{_esc(status, redact=redact)}</td>'
-            f"<td>{_esc(message, redact=redact)}</td>"
-            f"<td>{_esc(ev.iteration, redact=redact)}</td>"
-            "</tr>"
-        )
+    iterations = summary.get("iterations") or []
+    if isinstance(iterations, list):
+        for it in iterations:
+            if not isinstance(it, dict):
+                continue
+            iteration = it.get("iteration", "")
+            for check in it.get("checks") or []:
+                if not isinstance(check, dict):
+                    continue
+                command = check.get("command", "")
+                status = str(check.get("status", "")).lower()
+                artifact = check.get("artifact", "")
+                status_class = "check-pass" if status == "passed" else "check-fail"
+                artifact_cell = (
+                    f'<a href="{_esc(_normalize_path(artifact), redact=redact)}">{_esc(artifact, redact=redact)}</a>'
+                    if artifact
+                    else ""
+                )
+                rows.append(
+                    "<tr>"
+                    f'<td><code>{_esc(command, redact=redact)}</code></td>'
+                    f'<td class="{status_class}">{_esc(status, redact=redact)}</td>'
+                    f"<td>{artifact_cell}</td>"
+                    f"<td>{_esc(iteration, redact=redact)}</td>"
+                    "</tr>"
+                )
+    # Fallback: check_result events when the summary carried no checks.
+    if not rows:
+        for ev in events:
+            if ev.kind != "check_result":
+                continue
+            command = ev.payload.get("command", "")
+            status = str(ev.payload.get("status", "")).lower()
+            status_class = "check-pass" if status == "passed" else "check-fail"
+            rows.append(
+                "<tr>"
+                f'<td><code>{_esc(command, redact=redact)}</code></td>'
+                f'<td class="{status_class}">{_esc(status, redact=redact)}</td>'
+                f"<td>{_esc(ev.payload.get('returncode', ''), redact=redact)}</td>"
+                f"<td>{_esc(ev.iteration, redact=redact)}</td>"
+                "</tr>"
+            )
     if not rows:
         return (
             '<section><h2>Checks</h2>'
@@ -300,7 +335,7 @@ def _checks_section(events: list[Event], *, redact: bool) -> str:
     return (
         '<section><h2>Checks</h2>'
         '<table><thead><tr><th>Command</th><th>Status</th>'
-        '<th>Message</th><th>Iteration</th></tr></thead><tbody>'
+        '<th>Artifact</th><th>Iteration</th></tr></thead><tbody>'
         + "".join(rows)
         + "</tbody></table></section>"
     )
@@ -440,7 +475,7 @@ def render_report(
         _header(summary, redact=redact)
         + _outcome_summary(summary, events, redact=redact)
         + _findings_section(summary, events, redact=redact, triage_findings=triage_findings)
-        + _checks_section(events, redact=redact)
+        + _checks_section(summary, events, redact=redact)
         + _cost_section(summary, events, redact=redact)
         + _diff_stats_section(summary, redact=redact)
         + _timeline(events, redact=redact)
