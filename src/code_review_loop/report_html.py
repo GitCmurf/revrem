@@ -679,12 +679,29 @@ def _cost_usd(summary: dict[str, Any]) -> float | None:
         return None
 
 
-def _artifact_paths(summary: dict[str, Any]) -> dict[str, Any]:
-    """Artifact locations keyed by type. Empty dict when unavailable."""
+def _artifact_paths(summary: dict[str, Any], *, redact: bool) -> dict[str, Any]:
+    """Artifact locations keyed by type. Empty dict when unavailable.
+
+    List-valued entries (e.g. ``triage``, ``reviews``) are preserved as lists of
+    normalised strings — never flattened to a repr string — matching the
+    ``report-index-v1`` schema (``anyOf`` string|array). Each path is redacted
+    when ``redact`` is set, since an absolute run dir can sit under a home dir.
+    """
     paths = summary.get("artifact_paths")
     if not isinstance(paths, dict) or not paths:
         return {}
-    return {str(k): _normalize_path(v) for k, v in paths.items()}
+
+    def _norm(value: object) -> str:
+        text = _normalize_path(value)
+        return redact_text(text).text if redact else text
+
+    out: dict[str, Any] = {}
+    for k, v in paths.items():
+        if isinstance(v, list):
+            out[str(k)] = [_norm(item) for item in v]
+        else:
+            out[str(k)] = _norm(v)
+    return out
 
 
 def build_report_index(
@@ -723,5 +740,5 @@ def build_report_index(
         "suppression_count": len(_flatten_suppressed_findings(triage_findings)),
         "cost_usd": _cost_usd(summary),
         "top_findings": top,
-        "artifact_paths": _artifact_paths(summary),
+        "artifact_paths": _artifact_paths(summary, redact=redact),
     }

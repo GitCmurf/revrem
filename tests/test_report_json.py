@@ -47,6 +47,46 @@ def test_report_index_validates_against_schema(scenario: str):
     validate(idx, _REPORT_INDEX_SCHEMA)
 
 
+def test_artifact_paths_preserve_list_shape():
+    """List-valued artifact paths (triage/reviews/...) must stay lists, not be
+    flattened to repr strings like "['triage-1.json']" (GPT review #3). The
+    schema allows arrays; the PR comment / consumers rely on the real shape."""
+    summary = {
+        "run_id": "r1",
+        "artifact_paths": {
+            "summary": "summary.json",
+            "triage": ["triage-1.json", "triage-2.json"],
+            "checks": [],
+        },
+    }
+    idx = build_report_index(summary, [], redact=True)
+    ap = idx["artifact_paths"]
+    assert ap["summary"] == "summary.json"
+    assert ap["triage"] == ["triage-1.json", "triage-2.json"]
+    assert ap["checks"] == []
+
+
+def test_artifact_paths_are_redacted_when_redact_true():
+    """An absolute run dir under the user's home must be redacted in the index
+    when redact=True (GPT review #7). redact_text scrubs the current home to
+    [REDACTED:home]; real runs use relative paths, but a local absolute path is
+    a genuine leak vector."""
+    import os
+
+    home = os.path.expanduser("~")
+    summary = {
+        "run_id": "r1",
+        "artifact_paths": {
+            "artifact_dir": f"{home}/secret/runs/x",
+            "triage": [f"{home}/secret/runs/x/triage-1.json"],
+        },
+    }
+    idx = build_report_index(summary, [], redact=True)
+    assert home not in idx["artifact_paths"]["artifact_dir"]
+    assert "[REDACTED:home]" in idx["artifact_paths"]["artifact_dir"]
+    assert home not in idx["artifact_paths"]["triage"][0]
+
+
 @pytest.mark.parametrize("scenario", RUN_SCENARIOS)
 def test_report_command_json_output_validates_against_schema(
     scenario: str, capsys

@@ -166,5 +166,6 @@ def test_per_iteration_review_status_surfaces(capsys):
     assert exit_code == 0
     html_out = (_FIXTURE / "report.html").read_text(encoding="utf-8")
     (_FIXTURE / "report.html").unlink()
-    # The fixture's single iteration has review_status "findings".
-    assert "Review status" in html_out
+    # The fixture's single iteration has review_status "findings" — assert the
+    # actual value renders in the outcome row, not merely the label.
+    assert "<dt>Review status</dt><dd>findings</dd>" in html_out
