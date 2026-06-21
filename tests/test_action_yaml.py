@@ -89,6 +89,26 @@ def test_action_comment_step_gated_on_fork_mode():
     assert "head.repo.fork" in condition
 
 
+def test_action_wires_github_token_via_input():
+    """The comment step receives the token from the github-token input, not an
+    unset env var (P0-3). Composite actions can't read secrets, so the caller
+    passes github.token in; the input defaults to ${{ github.token }}."""
+    data = _load("action.yml")
+    assert "github-token" in data["inputs"]
+    # Default is the automatic github.token, so the dogfood workflow needs no
+    # extra secret wiring.
+    assert "github.token" in str(data["inputs"]["github-token"]["default"])
+    steps = data["runs"]["steps"]
+    comment_step = next(s for s in steps if s.get("name") == "Post PR comment")
+    token_env = comment_step["env"]["GITHUB_TOKEN"]
+    assert "inputs.github-token" in token_env, (
+        "GITHUB_TOKEN must come from the github-token input; "
+        f"got {token_env!r}"
+    )
+    # Must NOT reference an unset env var (the original bug).
+    assert "env.GITHUB_TOKEN" not in token_env
+
+
 def test_action_exit_mapping_is_last_step():
     """The exit-code mapping applies AFTER render/upload/comment."""
     steps = _load("action.yml")["runs"]["steps"]

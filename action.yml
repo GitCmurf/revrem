@@ -45,6 +45,9 @@ inputs:
   revrem-version:
     description: "revrem version to install from PyPI (install-mode: pypi only)."
     default: "0.5.0"
+  github-token:
+    description: "GitHub token for posting the PR comment. Defaults to the automatic github.token; override to use a PAT or app token. Composite actions cannot read secrets, so this must be passed in explicitly."
+    default: ${{ github.token }}
 
 runs:
   using: composite
@@ -130,7 +133,7 @@ runs:
       if: always() && env.REVREM_RUN_DIR != '' && inputs.comment == 'true' && github.event.pull_request.head.repo.fork != 'true'
       shell: bash
       env:
-        GITHUB_TOKEN: ${{ env.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
         GITHUB_REPOSITORY: ${{ github.repository }}
         GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
         GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
