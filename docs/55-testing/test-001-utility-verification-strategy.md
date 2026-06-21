@@ -3,8 +3,8 @@ document_id: REVREM-TEST-001
 type: TEST
 title: Utility verification strategy
 status: Draft
-version: '1.6'
-last_updated: '2026-05-13'
+version: '1.7'
+last_updated: '2026-06-21'
 owner: GitCmurf
 docops_version: '2.0'
 area: testing
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-TEST-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.6
-> **Last Updated:** 2026-05-13
+> **Version:** 1.7
+> **Last Updated:** 2026-06-21
 > **Type:** TEST
 > **Area:** testing
 > **Description:** Test and release gates for code-review-loop
@@ -163,6 +163,16 @@ validates the golden artifact scenario fixtures under
 `tests/fixtures/artifacts/{clear,findings,setup_failure,timeout,check_failure,unknown}/`
 and asserts every current v1 schema has a matching `_history` baseline for
 future compatibility checks.
+`tests/test_run_fixtures.py` validates the finished-run fixture catalogue
+under `tests/fixtures/runs/<scenario>/` introduced for v0.5.0
+(REVREM-PLAN-005 T0). Each scenario co-locates a `summary.json` +
+`events.jsonl` pair — the two inputs the read-only `revrem report`
+subcommand and the reference GitHub Action consume from a finished run.
+Scenarios: `clear`, `findings_remediated`, `findings_remaining`, `timeout`,
+`check_failure`, `cost_ceiling`, `cancelled`, `all_suppressed`. The
+catalogue is addressed by stable name through
+`tests/support/run_fixtures.py::load_run`, and the meta-test asserts every
+pair validates against `summary-v1` and `events-v1`.
 `tests/test_redaction.py` covers the built-in redaction defaults used by future
 bug-report bundles, including poisoned fixtures for API keys, authorization
 headers, private keys, local paths, usernames, and idempotence.
@@ -229,6 +239,8 @@ M0-M4 metrics with deterministic local evidence. Current status:
 | Triage precision on labelled fixture set | At least 0.85 precision | `tests/test_triage.py` uses labelled structured triage fixtures and asserts the current fixture precision target. Suppressed and rejected findings remain visible in artifacts rather than hiding original review context. |
 | Cost-cap respected | 100% of tested runs stop before the next model call after a ceiling hit | `tests/test_budgets.py` plus loop-level CLI budget tests cover soft warnings, token/USD accounting, missing-cost null semantics, pre-model-call ceiling checks, fake harness token charges, and exit code `3`. |
 | Replayable runs from event fixtures | 100% of event fixtures replay offline | `tests/test_replay.py` discovers every directory under `tests/fixtures/events/`, validates readable `events.jsonl`, and compares compact replay output to `replay.compact.txt` without invoking a runner or harness. |
+| Static HTML report renders a stored run | Renders in < 1 s and validates structurally (v0.5.0) | `tests/test_report_html.py` renders every `tests/fixtures/runs/<scenario>` to a single self-contained HTML file offline (no model/network), asserts the run id and final status appear, and that two renders are byte-equal. Inputs validate against `summary-v1`/`events-v1`. |
+| Hands-off CI comment on a PR | One idempotent PR comment within ~5 min on a ~1k-LOC PR (v0.5.0) | The reference Action's idempotency, exit-code mapping, redacted upload, and comment-before-fail ordering are covered by `tests/test_post_pr_comment.py` + action-step tests against a stub GitHub API (no network). The wall-clock / end-to-end target is a live observation, recorded manually before tagging. |
 | Mean time to actionable diagnosis on a failing run | Less than 60 seconds reading structured artifacts | Preflight-blocking runs write `diagnostics.json`, `summary.json`, and `events.jsonl` before any model call. Tests assert stable diagnostic codes, messages, hints, fingerprints, and exit codes; this makes setup failures actionable from artifacts without parsing raw transcripts. |
 
 ### Local verification

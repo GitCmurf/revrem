@@ -1,0 +1,33 @@
+{
+  "artifact_dir": "tests/fixtures/runs/cancelled",
+  "artifact_paths": {
+    "summary": "summary.json"
+  },
+  "base": "main",
+  "cli_version": "0.3.0",
+  "command_line": null,
+  "duration_seconds": 1.0,
+  "finished_at": "2026-05-13T00:00:01Z",
+  "final_status": "error",
+  "harness": "fake",
+  "harness_version": null,
+  "iterations": [
+    {
+      "iteration": 1,
+      "review_status": "running"
+    }
+  ],
+  "max_iterations": 3,
+  "phases": {
+    "review": {
+      "count": 1
+    }
+  },
+  "profile": null,
+  "run_id": "fixture-cancellation",
+  "schema_version": "1.0",
+  "started_at": "2026-05-13T00:00:00Z",
+  "stopped_reason": "cancelled",
+  "tokens": null,
+  "usd": null
+}
