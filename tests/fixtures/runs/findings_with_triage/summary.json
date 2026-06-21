@@ -19,11 +19,47 @@
   "cli_version": "0.5.0",
   "command_line": null,
   "duration_seconds": 3.0,
+  "external_review_coverage": {
+    "external_review_input_chars": 80000,
+    "external_review_truncation_policy": "warn",
+    "prompt_chars": 4096,
+    "prompt_delivery": "argv",
+    "prompt_truncated": false,
+    "review_context_chars": 4096,
+    "review_context_supplied_in_full": true
+  },
   "final_status": "findings",
   "finished_at": "2026-06-21T00:00:03Z",
   "harness": "codex",
   "harness_version": null,
   "initial_review_file": "review-1.txt",
+  "invocation": {
+    "argv": [
+      "revrem",
+      "--profile",
+      "default",
+      "--base",
+      "main",
+      "--max-iterations",
+      "3",
+      "--summary-format",
+      "json"
+    ],
+    "command_line": [
+      "revrem",
+      "--profile",
+      "default",
+      "--base",
+      "main",
+      "--max-iterations",
+      "3",
+      "--summary-format",
+      "json"
+    ],
+    "cwd": "[REDACTED:home]/code/example-project",
+    "environment": {},
+    "schema_version": "1.0"
+  },
   "iterations": [
     {
       "check_failures": 0,
@@ -41,6 +77,116 @@
   ],
   "latest_review_excerpt": "Found a SQL injection in src/app.py.",
   "max_iterations": 3,
+  "phase_config": {
+    "checks": {
+      "commands": [
+        "ruff check ."
+      ],
+      "source": "profile:default",
+      "sources": {
+        "commands": "profile:default"
+      },
+      "timeout_seconds": 0.0
+    },
+    "commit_message": {
+      "enabled": false,
+      "harness": "codex",
+      "model": "gpt-5.3-codex-spark",
+      "provider_reasoning_effort": "medium",
+      "reasoning_effort": "medium",
+      "reasoning_effort_supported": true,
+      "requested_reasoning_effort": "medium",
+      "sandbox": "read-only",
+      "source": "profile:default",
+      "sources": {
+        "harness": "profile:default",
+        "model": "profile:default"
+      },
+      "timeout_seconds": 180.0
+    },
+    "remediation": {
+      "harness": "codex",
+      "model": "gpt-5.4-mini",
+      "provider_reasoning_effort": "medium",
+      "reasoning_effort": "medium",
+      "reasoning_effort_supported": true,
+      "sandbox": "workspace-write",
+      "source": "profile:default",
+      "sources": {
+        "harness": "profile:default",
+        "model": "profile:default"
+      },
+      "timeout_seconds": 0.0
+    },
+    "review": {
+      "harness": "codex",
+      "model": "gpt-5.5",
+      "provider_reasoning_effort": "high",
+      "reasoning_effort": "high",
+      "reasoning_effort_supported": true,
+      "sandbox": "read-only",
+      "source": "profile:default",
+      "sources": {
+        "harness": "profile:default",
+        "model": "profile:default"
+      },
+      "timeout_seconds": 0.0
+    },
+    "runtime": {
+      "external_review_input_chars": 80000,
+      "external_review_truncation_policy": "warn",
+      "inner_check_retries": 0,
+      "provider_retry_attempts": 2,
+      "provider_retry_backoff_seconds": 1.0,
+      "source": "profile:default",
+      "sources": {
+        "inner_check_retries": "profile:default"
+      }
+    },
+    "triage": {
+      "allow_model_escalation": false,
+      "contract": "v2",
+      "enabled": true,
+      "harness": "codex",
+      "model": "gpt-5.5",
+      "provider_reasoning_effort": "low",
+      "reasoning_effort": "low",
+      "reasoning_effort_supported": true,
+      "routing_default_route": "codex-midi",
+      "routing_enabled": true,
+      "routing_strict": false,
+      "sandbox": "read-only",
+      "source": "profile:default",
+      "sources": {
+        "harness": "profile:default",
+        "model": "profile:default"
+      },
+      "timeout_seconds": 660.0
+    }
+  },
+  "phase_failures": [],
+  "phase_observations": [
+    {
+      "diagnostic_artifact": "diagnostics-review-1-observation.json",
+      "iteration": "1",
+      "observed": {
+        "approval": "never",
+        "provider": "openai",
+        "reasoning_effort": "high",
+        "sandbox": "read-only"
+      },
+      "phase": "review",
+      "provider": "codex",
+      "raw_provider_finding_count": 1,
+      "requested": {
+        "model": "gpt-5.5",
+        "reasoning_effort": "high",
+        "sandbox": "read-only"
+      },
+      "schema_version": "1.0",
+      "warnings": []
+    }
+  ],
   "phases": {
     "review": {
       "count": 1
@@ -55,5 +201,6 @@
   "started_at": "2026-06-21T00:00:00Z",
   "stopped_reason": "max_iterations_reached",
   "tokens": null,
+  "triage_diagnostics": [],
   "usd": null
 }

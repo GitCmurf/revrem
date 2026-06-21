@@ -14,11 +14,31 @@
   "implementation_order": [
     "f1:sql-injection-user-input"
   ],
-  "needs_more_info": [],
+  "needs_more_info": [
+    {
+      "affected_paths": [
+        "src/app.py"
+      ],
+      "fingerprint": "f2:unclear-auth-check",
+      "info_requested": "Confirm whether the auth guard is enforced upstream before this handler.",
+      "rationale": "The review comment flags a possible missing auth check but the call site is ambiguous.",
+      "severity": "medium"
+    }
+  ],
   "parsing_warnings": [],
-  "rejected_findings": [],
-  "suppressed_findings": [],
+  "rejected_findings": [
+    {
+      "affected_paths": [
+        "tests/"
+      ],
+      "fingerprint": "review-comment:2",
+      "rationale": "Pre-existing test-suite debt unrelated to the reviewed diff.",
+      "rejection_reason": "Not introduced by the reviewed change; no change-specific evidence.",
+      "severity": "low"
+    }
+  ],
   "run_id": "fixture-findings-with-triage",
   "schema_version": "1.0",
-  "source_review_artifact": "review-1.txt"
+  "source_review_artifact": "review-1.txt",
+  "suppressed_findings": []
 }
