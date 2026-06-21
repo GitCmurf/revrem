@@ -6,6 +6,69 @@ This project follows Semantic Versioning once public releases begin.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-06-21
+
+The "showcase & hands-off adoption" release: a static HTML report for finished
+runs, headless/CI output hardening, and a reference GitHub Action that posts a
+single updatable PR comment. Tier 1 of `REVREM-PLAN-005`; expert profiles
+(Pillar C) and DevEx polish (Pillar D) are deferred to v0.5.x.
+
+### Added
+
+- `revrem report <run-dir>`: renders a finished run's `summary.json` +
+  `events.jsonl` into a single self-contained HTML file (plain HTML5 + inline
+  CSS, no JavaScript or external assets, safe to upload as a CI artifact and
+  open offline). Never invokes a model or touches the network. Redacted by
+  default; `--no-redact` requires `--i-understand-the-risks`. `--format json`
+  prints a machine-readable index to stdout (the `--output` flag is ignored in
+  that mode). Truncated or malformed events render what is available and warn
+  rather than failing — the report is diagnostic.
+- `report-index-v1` JSON schema: the frozen cross-boundary contract describing
+  the machine index's fields and nullability (`cost_usd` null for dry-runs /
+  fake harnesses; `top_findings` empty when none; `artifact_paths` empty when
+  unavailable). Added with a `_history/` baseline.
+- Reference GitHub Action (`action.yml`): runs a revrem profile on a pull
+  request, uploads the redacted HTML report, and posts a single updatable PR
+  comment. Composite action with inputs for base, profile, budgets, checks,
+  comment/upload/fail-on-findings toggles, and install-mode (`pypi` |
+  `local`). Runs revrem headless, discovers the run directory from the JSON
+  `artifact_dir` on stdout, and maps the exit code last (after artifacts and
+  comment land). Fork-PR safe and least-privilege.
+- `--no-tty` flag: forces non-interactive (headless) output — suppresses ANSI
+  escape sequences, progress spinners, and terminal-title writes on stderr.
+  Auto-triggered when the `CI` environment variable is set (GitHub Actions,
+  CircleCI, Travis, Jenkins), so a standard CI run needs no RevRem-specific
+  flag. Also exposed as an additive profile key `[output] no_tty`.
+- Finished-run fixture catalogue under `tests/fixtures/runs/<scenario>/` (8
+  terminal-state scenarios: clear, findings_remediated, findings_remaining,
+  timeout, check_failure, cost_ceiling, cancelled, all_suppressed), co-locating
+  `summary.json` + `events.jsonl` for read-only consumers.
+
+### Changed
+
+- The recommended CI invocation is
+  `revrem --no-tty --progress-style compact --summary-format json` — compact
+  progress is line-oriented and greppable, and `--summary-format json` prints
+  canonical `summary.json` to stdout for downstream tooling.
+
+### Stability
+
+- **Frozen** (additive-only within v1): the artifact JSON schemas (`summary-v1`,
+  `events-v1`, `report-index-v1`, and the others under `docs/52-api/schemas/`),
+  the suppression-file surface, and the `summary.json` / `events.jsonl`
+  artifacts.
+- **Preview** (may change before the 0.9.0 freeze): the `revrem report` HTML
+  layout and CSS are explicitly *not* a stable contract yet; only the
+  `report-index-v1` fields are versioned. The expert-profile surface is
+  deferred to v0.5.x and is also Preview.
+
+### Deferred
+
+- Pillar C (expert profiles T5–T7) and Pillar D (DevEx T8–T11) of
+  `REVREM-PLAN-005` are deferred to v0.5.x follow-on releases.
+- T12 (TUI launches real runs) is deferred to v0.6.0 per the plan's decision
+  gate; the TUI keeps its current replay-from-events default.
+
 ## [0.4.0] - 2026-06-18
 
 ### Added

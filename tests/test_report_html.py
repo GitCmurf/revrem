@@ -264,7 +264,7 @@ def test_diff_stats_unavailable_when_absent():
 # --- T2: golden HTML comparison (Contract #9) ------------------------------
 
 
-_GOLDEN_DIR = Path(__file__).resolve().parents[1] / "golden" / "report"
+_GOLDEN_DIR = Path(__file__).resolve().parent / "golden" / "report"
 _GOLDEN_SCENARIOS = (
     "clear",
     "findings_remediated",
