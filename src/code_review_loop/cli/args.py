@@ -822,6 +822,47 @@ def parse_replay_args(argv: Sequence[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def parse_report_args(argv: Sequence[str]) -> argparse.Namespace:
+    parser = _argument_parser(
+        prog="revrem report",
+        description=(
+            "Render a finished RevRem run into a single self-contained HTML "
+            "report, or a machine-readable JSON index. Reads summary.json + "
+            "events.jsonl only; never invokes a model or touches the network."
+        ),
+    )
+    parser.add_argument(
+        "run_dir",
+        help="Run directory containing summary.json and events.jsonl.",
+    )
+    parser.add_argument(
+        "--output",
+        "-o",
+        default=None,
+        help=(
+            "Output path for the HTML report (default: <run-dir>/report.html). "
+            "Ignored when --format json."
+        ),
+    )
+    parser.add_argument(
+        "--format",
+        choices=("html", "json"),
+        default="html",
+        help="html (default) writes a file; json prints a machine index to stdout.",
+    )
+    parser.add_argument(
+        "--no-redact",
+        action="store_true",
+        help="Disable redaction. Requires --i-understand-the-risks.",
+    )
+    parser.add_argument(
+        "--i-understand-the-risks",
+        action="store_true",
+        help="Acknowledge that --no-redact may expose secrets in the output.",
+    )
+    return parser.parse_args(argv)
+
+
 def parse_policy_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = _argument_parser(
         prog="revrem policy",

@@ -1,0 +1,215 @@
+"""Tests for ``revrem report`` HTML rendering (REVREM-PLAN-005 T1).
+
+The report is a read-only consumer of ``summary.json`` + ``events.jsonl``: it
+never invokes a model or touches the network (gate G5), and redaction is on by
+default for anything that leaves the run dir (gate G7). These tests cover every
+T0 fixture, determinism (byte-stable across two renders), the redaction
+default, truncated-event tolerance, and the CLI exit-code/error paths.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from code_review_loop import events
+from code_review_loop.cli.commands import report as report_command
+from code_review_loop.report_html import build_report_index, render_report
+from tests.support.run_fixtures import RUN_SCENARIOS, load_run
+
+
+def _load(name: str) -> tuple[dict, list]:
+    run_dir = load_run(name)
+    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    event_records, _ = events.read_events(run_dir / events.EVENTS_FILENAME)
+    return summary, event_records
+
+
+# --- pure-function rendering over the T0 fixture catalogue -----------------
+
+
+@pytest.mark.parametrize("scenario", RUN_SCENARIOS)
+def test_render_report_contains_run_id_and_status(scenario: str):
+    summary, event_records = _load(scenario)
+    html_out = render_report(summary, event_records)
+    assert summary["run_id"] in html_out
+    assert summary["final_status"] in html_out
+    assert html_out.startswith("<!DOCTYPE html>")
+
+
+@pytest.mark.parametrize("scenario", RUN_SCENARIOS)
+def test_render_report_is_deterministic(scenario: str):
+    summary, event_records = _load(scenario)
+    first = render_report(summary, event_records)
+    second = render_report(summary, event_records)
+    assert first == second
+
+
+@pytest.mark.parametrize("scenario", RUN_SCENARIOS)
+def test_render_report_has_no_crlf(scenario: str):
+    """Determinism guard (Contract #9): HTML must contain no \\r\\n bytes.
+
+    Without this, a golden passes on Linux CI and fails on a macOS/Windows
+    dev box that normalises line endings.
+    """
+    summary, event_records = _load(scenario)
+    assert b"\r" not in render_report(summary, event_records).encode("utf-8")
+
+
+@pytest.mark.parametrize("scenario", RUN_SCENARIOS)
+def test_render_report_is_single_file_with_no_external_refs(scenario: str):
+    """The report is a single file safe to open offline: no script/external src/link."""
+    summary, event_records = _load(scenario)
+    html_out = render_report(summary, event_records)
+    lowered = html_out.lower()
+    assert "<script" not in lowered
+    assert "<link" not in lowered
+    # No external src/href attributes (inline <style> is allowed).
+    assert "src=" not in lowered
+    assert "href=" not in lowered
+
+
+def test_render_report_redacts_by_default_and_reveals_with_opt_out():
+    """A synthetic secret is scrubbed when redact=True (default) and present otherwise."""
+    summary, event_records = _load("clear")
+    # Use a real-format OpenAI key (sk- + >=20 word chars) that the redactor
+    # genuinely matches, not an arbitrary string it would miss.
+    secret = "sk-abcdef1234567890ABCDEF1234567890"
+    summary = {**summary, "run_id": f"run-leaked-{secret}"}
+    redacted = render_report(summary, event_records, redact=True)
+    unredacted = render_report(summary, event_records, redact=False)
+    assert secret not in redacted
+    assert secret in unredacted
+
+
+def test_render_report_calls_no_disk():
+    """render_report is pure: callable with in-memory inputs only."""
+    summary = {
+        "schema_version": "1.0",
+        "run_id": "mem-1",
+        "final_status": "clear",
+        "stopped_reason": "review_clear",
+        "started_at": "2026-06-21T00:00:00Z",
+        "finished_at": "2026-06-21T00:00:01Z",
+    }
+    html_out = render_report(summary, [])
+    assert "mem-1" in html_out
+    assert "clear" in html_out
+
+
+# --- CLI command -----------------------------------------------------------
+
+
+@pytest.mark.parametrize("scenario", RUN_SCENARIOS)
+def test_report_command_writes_html_and_exits_zero(
+    scenario: str, tmp_path: Path, capsys
+):
+    run_dir = load_run(scenario)
+    output = tmp_path / "report.html"
+    exit_code = report_command.main([str(run_dir), "--output", str(output)])
+    assert exit_code == 0
+    assert output.is_file()
+    content = output.read_text(encoding="utf-8")
+    assert content.startswith("<!DOCTYPE html>")
+    captured = capsys.readouterr()
+    assert str(output) in captured.out
+
+
+def test_report_command_default_output_is_run_dir(tmp_path: Path):
+    """Without --output, the report lands at <run-dir>/report.html."""
+    run_dir = load_run("clear")
+    exit_code = report_command.main([str(run_dir)])
+    assert exit_code == 0
+    assert (run_dir / "report.html").is_file()
+    # Clean up so the fixture tree stays pristine for other tests.
+    (run_dir / "report.html").unlink()
+
+
+def test_report_command_missing_run_dir_exits_one(tmp_path: Path, capsys):
+    missing = tmp_path / "does-not-exist"
+    exit_code = report_command.main([str(missing)])
+    assert exit_code == 1
+    assert "ERROR" in capsys.readouterr().err
+
+
+def test_report_command_no_redact_without_acknowledgement_exits_four(
+    capsys,
+):
+    run_dir = load_run("clear")
+    exit_code = report_command.main([str(run_dir), "--no-redact", "--output", "/dev/null"])
+    assert exit_code == 4
+    assert "--i-understand-the-risks" in capsys.readouterr().err
+
+
+def test_report_command_truncated_events_still_renders_with_warning(
+    tmp_path: Path, capsys
+):
+    """A truncated events.jsonl renders what is available + warns, exits 0."""
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "summary.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "run_id": "trunc-1",
+                "final_status": "error",
+                "stopped_reason": "review_failed",
+                "started_at": "2026-06-21T00:00:00Z",
+                "finished_at": "2026-06-21T00:00:01Z",
+            }
+        ),
+        encoding="utf-8",
+    )
+    # An events.jsonl with a seq gap (1 then 3) triggers read_events truncation.
+    (run_dir / events.EVENTS_FILENAME).write_text(
+        '{"iteration":null,"kind":"summary","payload":{},"phase":null,'
+        '"run_id":"trunc-1","schema_version":"1.0","seq":3,'
+        '"ts":"2026-06-21T00:00:01Z"}\n',
+        encoding="utf-8",
+    )
+    output = tmp_path / "report.html"
+    exit_code = report_command.main([str(run_dir), "--output", str(output)])
+    assert exit_code == 0
+    assert output.is_file()
+    assert "truncated" in capsys.readouterr().err.lower()
+
+
+# --- machine-readable JSON index ------------------------------------------
+
+
+def test_build_report_index_required_keys_always_present():
+    summary, event_records = _load("clear")
+    idx = build_report_index(summary, event_records)
+    for key in (
+        "schema_version",
+        "run_id",
+        "final_status",
+        "finding_counts",
+        "suppression_count",
+        "cost_usd",
+        "top_findings",
+        "artifact_paths",
+    ):
+        assert key in idx, f"missing required key {key}"
+
+
+def test_build_report_index_cost_usd_null_for_fake_harness():
+    """cost_usd is null when the harness did not record cost (nullability contract)."""
+    summary, event_records = _load("clear")
+    idx = build_report_index(summary, event_records)
+    assert idx["cost_usd"] is None
+
+
+def test_build_report_index_suppression_count_for_all_suppressed():
+    summary, event_records = _load("all_suppressed")
+    idx = build_report_index(summary, event_records)
+    assert idx["suppression_count"] >= 1
+
+
+def test_build_report_index_top_findings_bounded_and_redacted():
+    summary, event_records = _load("clear")
+    idx = build_report_index(summary, event_records)
+    assert isinstance(idx["top_findings"], list)
+    assert len(idx["top_findings"]) <= 5

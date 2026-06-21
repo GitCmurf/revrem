@@ -3,8 +3,8 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.63'
-last_updated: '2026-06-18'
+version: '1.64'
+last_updated: '2026-06-21'
 owner: GitCmurf
 docops_version: '2.0'
 area: devex
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.63
-> **Last Updated:** 2026-06-18
+> **Version:** 1.64
+> **Last Updated:** 2026-06-21
 > **Type:** DEVEX
 > **Area:** devex
 > **Description:** Operator guide for the code-review-loop utility
@@ -819,6 +819,29 @@ When a repository-level suppression audit exists, the bundle also includes a
 redacted suppression-audit summary resolved from the owning repo, even for runs
 stored under `.revrem/runs/<run-id>`.
 
+Static HTML report command:
+
+```bash
+revrem report .revrem/runs/<run-id>                      # writes <run-dir>/report.html
+revrem report .revrem/runs/<run-id> --output report.html # custom output path
+revrem report .revrem/runs/<run-id> --format json        # machine index to stdout
+```
+
+`revrem report` is a read-only consumer: it reads a finished run's
+`summary.json` + `events.jsonl` and renders a single self-contained HTML file
+(plain HTML5 + inline CSS, no JavaScript or external assets, safe to upload as
+a CI artifact and open offline). It never invokes a model or touches the
+network. The default output is `<run-dir>/report.html`; pass `--output/-o` for
+a custom path. With `--format json`, a machine-readable index is printed to
+stdout instead (the `--output` flag is ignored in that mode — use a shell
+redirect to write it to a file). The index is the minimum payload a CI comment
+builder needs to summarize a run without re-reading raw events, and validates
+against the `report-index-v1` schema. Both outputs are redacted by default;
+disabling redaction requires both `--no-redact` and
+`--i-understand-the-risks`, as with the bug-report bundle. If `events.jsonl`
+is truncated or malformed, the report renders what is available and prints a
+warning to stderr rather than failing the render — the report is diagnostic.
+
 Local setup diagnostics:
 
 ```bash
@@ -1526,6 +1549,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.64 | 2026-06-21 | GitCmurf | Documented the `revrem report` subcommand: static self-contained HTML report + `--format json` machine index (reads summary.json/events.jsonl only; redacted by default) |
 | 1.63 | 2026-06-18 | GitCmurf | Added a dedicated Interactive wizard section consolidating wizard run-shape preview, per-phase model/timeout, and routing-preview guidance migrated from the README |
 | 1.62 | 2026-06-17 | Codex | Documented stale Codex triage minimal-effort repair when profile/current is selected |
 | 1.61 | 2026-06-17 | Codex | Documented all-scope clear review prose classification with appended provider stderr |

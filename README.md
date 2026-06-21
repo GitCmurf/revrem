@@ -136,6 +136,9 @@ RevRem is intentionally local, watched, and bounded:
 - **Auto-commit** (optional) commits each verified remediation pass after your
   checks pass.
 - **Bug-report bundles** package a failed run into a redacted, shareable archive.
+- **Static HTML reports** render a finished run into a single, self-contained,
+  redacted-by-default HTML file (or a machine-readable JSON index) — no model
+  re-run, no network, safe to upload as a CI artifact (`revrem report`).
 - **Git hooks** install bounded pre-push/pre-commit example hooks into a target
   repo.
 - **Rich progress and an optional Textual TUI** for richer watched-terminal runs.
