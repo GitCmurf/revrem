@@ -89,6 +89,42 @@ def test_action_comment_step_gated_on_fork_mode():
     assert "head.repo.fork" in condition
 
 
+def test_action_fork_guard_compares_to_boolean_not_string():
+    """The fork guard must compare to the boolean `false`, not the string
+    'true' (GPT review #5 / Sec-1): `fork != 'true'` always evaluates true under
+    GitHub Actions' type coercion, so the guard never fires."""
+    steps = _load("action.yml")["runs"]["steps"]
+    comment_step = next(s for s in steps if s.get("name") == "Post PR comment")
+    condition = comment_step["if"]
+    assert "head.repo.fork == false" in condition
+    assert "!= 'true'" not in condition
+
+
+def test_action_docs_agree_with_fork_guard():
+    """The DevEx doc must document the same fork-guard expression the action
+    uses (GPT review #5) — they drifted once already."""
+    doc = (ROOT / "docs/70-devex/devex-001-using-code-review-loop.md").read_text(
+        encoding="utf-8"
+    )
+    assert "head.repo.fork == false" in doc
+    assert "head.repo.fork != 'true'" not in doc
+
+
+def test_action_inputs_are_not_interpolated_into_run_scripts():
+    """SECURITY (GPT review #1): no `${{ inputs.* }}` may appear inside a `run:`
+    script — every input must be passed via `env:` and read as a shell variable,
+    or it is a script-injection vector."""
+    steps = _load("action.yml")["runs"]["steps"]
+    offenders = [
+        s.get("name")
+        for s in steps
+        if isinstance(s.get("run"), str) and "${{ inputs." in s["run"]
+    ]
+    assert not offenders, (
+        f"steps interpolate inputs directly into run scripts: {offenders}"
+    )
+
+
 def test_action_wires_github_token_via_input():
     """The comment step receives the token from the github-token input, not an
     unset env var (P0-3). Composite actions can't read secrets, so the caller
@@ -107,6 +143,9 @@ def test_action_wires_github_token_via_input():
     )
     # Must NOT reference an unset env var (the original bug).
     assert "env.GITHUB_TOKEN" not in token_env
+    # Falls back to github.token so the token resolves even if expression
+    # evaluation inside the input default is not honoured (GPT review #2).
+    assert "github.token" in token_env
 
 
 def test_action_exit_mapping_is_last_step():
@@ -114,10 +153,12 @@ def test_action_exit_mapping_is_last_step():
     steps = _load("action.yml")["runs"]["steps"]
     names = [s.get("name", "") for s in steps]
     assert names.index("Map exit code") == len(names) - 1
-    map_script = steps[-1]["run"]
-    # exit 3 -> budget ceiling; exit 2 -> fail-on-findings gate.
+    map_step = steps[-1]
+    map_script = map_step["run"]
+    # exit 3 -> budget ceiling; exit 2 -> fail-on-findings gate (read from env).
     assert "3)" in map_script
-    assert "fail-on-findings" in map_script
+    assert "$FAIL_ON_FINDINGS" in map_script
+    assert "fail-on-findings" in str(map_step["env"]["FAIL_ON_FINDINGS"])
 
 
 def test_action_uses_action_path_for_comment_script():

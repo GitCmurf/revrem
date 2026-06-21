@@ -1366,13 +1366,17 @@ ceiling) and 4/5 (setup/cancel) fail the job.
 **Least privilege** is declared on the caller workflow: `contents: read`,
 `pull-requests: write`. **Fork PRs** are supported without exposing secrets:
 the comment step is gated on
-`github.event.pull_request.head.repo.fork != 'true'`, so the run, report, and
-artifact upload still happen on a fork PR, but no comment is posted and no
-secrets are exposed to fork code (the action never uses `pull_request_target`).
+`github.event.pull_request.head.repo.fork == false` (compare to the boolean,
+not the string `'true'` — the latter always evaluates true under GitHub Actions'
+type coercion and never actually skips), so the run, report, and artifact upload
+still happen on a fork PR, but no comment is posted and no secrets are exposed
+to fork code (the action never uses `pull_request_target`).
 **Privacy**: the uploaded HTML report and the comment body are redacted by
-default by `revrem report`; pass `raw-artifacts: true` to also upload the full
-(still-redacted) run directory. The PR comment body is bounded — at most the
-top 5 findings — and never embeds raw model output or stderr.
+default by `revrem report`. `raw-artifacts: true` additionally uploads the run
+directory **verbatim and unredacted** — it contains raw prompts, model output,
+check output, and local paths, so enable it only on trusted repos. The PR
+comment body is bounded — at most the top 5 findings — and never embeds raw
+model output or stderr.
 
 `revrem --summary-format json` is the contract other providers build on: any
 CI provider that can run a Python tool and capture JSON stdout (GitLab CI,

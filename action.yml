@@ -34,7 +34,11 @@ inputs:
     description: Upload the redacted HTML report as a workflow artifact.
     default: "true"
   raw-artifacts:
-    description: Also upload the full (still-redacted) run directory.
+    description: >-
+      Also upload the full run directory verbatim. WARNING: this is NOT redacted
+      — it contains raw prompts, model output, check output, and local paths.
+      Only enable on trusted repos. (The HTML/JSON report from upload-artifacts
+      is redacted; this raw bundle is not.)
     default: "false"
   fail-on-findings:
     description: Fail the job when RevRem exits 2 (findings remain).
@@ -52,41 +56,69 @@ inputs:
 runs:
   using: composite
   steps:
+    # SECURITY: every workflow input is passed through `env:` and read as a
+    # shell variable ("$VAR"), never interpolated as `${{ inputs.x }}` inside a
+    # run script. GitHub expands `${{ }}` into the script *text* before bash
+    # parses it, so direct interpolation of caller-controlled input is a
+    # script-injection vector (https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions#understanding-the-risk-of-script-injections).
     - name: Install revrem
       shell: bash
+      env:
+        INSTALL_MODE: ${{ inputs.install-mode }}
+        REVREM_VERSION: ${{ inputs.revrem-version }}
+        ACTION_PATH: ${{ github.action_path }}
       run: |
         set -euo pipefail
-        if [[ "${{ inputs.install-mode }}" == "local" ]]; then
-          pip install -e "${{ github.action_path }}"
+        if [[ "$INSTALL_MODE" == "local" ]]; then
+          pip install -e "$ACTION_PATH"
         else
-          pip install "revrem==${{ inputs.revrem-version }}"
+          pip install "revrem==$REVREM_VERSION"
         fi
         revrem --version
 
     - name: Verify base ref exists
       shell: bash
+      env:
+        BASE: ${{ inputs.base }}
       run: |
         set -euo pipefail
-        if ! git rev-parse --verify "${{ inputs.base }}" >/dev/null 2>&1; then
-          echo "::error::Base ref '${{ inputs.base }}' not found. Checkout with fetch-depth: 0."
+        if ! git rev-parse --verify "$BASE" >/dev/null 2>&1; then
+          echo "::error::Base ref '$BASE' not found. Checkout with fetch-depth: 0."
           exit 4
         fi
 
     - name: Run revrem
       id: revrem
       shell: bash
+      env:
+        BASE: ${{ inputs.base }}
+        PROFILE: ${{ inputs.profile }}
+        MAX_ITERATIONS: ${{ inputs.max-iterations }}
+        MAX_WALL_SECONDS: ${{ inputs.max-wall-seconds }}
+        MAX_USD: ${{ inputs.max-usd }}
+        MAX_TOKENS: ${{ inputs.max-tokens }}
+        CHECKS: ${{ inputs.checks }}
       run: |
         set -uo pipefail
-        ARGS=(--base "${{ inputs.base }}" --profile "${{ inputs.profile }}" --no-tty --progress-style compact --summary-format json)
-        if [[ -n "${{ inputs.max-iterations }}" ]]; then ARGS+=(--max-iterations "${{ inputs.max-iterations }}"); fi
-        if [[ -n "${{ inputs.max-wall-seconds }}" ]]; then ARGS+=(--max-wall-seconds "${{ inputs.max-wall-seconds }}"); fi
-        if [[ -n "${{ inputs.max-usd }}" ]]; then ARGS+=(--max-usd "${{ inputs.max-usd }}"); fi
-        if [[ -n "${{ inputs.max-tokens }}" ]]; then ARGS+=(--max-tokens "${{ inputs.max-tokens }}"); fi
-        # Split newline-separated checks into repeated --check flags (never
-        # interpolate the joined string — that would be an injection vector).
+        # Validate optional numeric budgets up front: empty or a number only.
+        for pair in "max-iterations=$MAX_ITERATIONS" "max-wall-seconds=$MAX_WALL_SECONDS" \
+                    "max-usd=$MAX_USD" "max-tokens=$MAX_TOKENS"; do
+          name="${pair%%=*}"; val="${pair#*=}"
+          if [[ -n "$val" && ! "$val" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "::error::Input '$name' must be numeric; got '$val'."
+            exit 4
+          fi
+        done
+        ARGS=(--base "$BASE" --profile "$PROFILE" --no-tty --progress-style compact --summary-format json)
+        if [[ -n "$MAX_ITERATIONS" ]]; then ARGS+=(--max-iterations "$MAX_ITERATIONS"); fi
+        if [[ -n "$MAX_WALL_SECONDS" ]]; then ARGS+=(--max-wall-seconds "$MAX_WALL_SECONDS"); fi
+        if [[ -n "$MAX_USD" ]]; then ARGS+=(--max-usd "$MAX_USD"); fi
+        if [[ -n "$MAX_TOKENS" ]]; then ARGS+=(--max-tokens "$MAX_TOKENS"); fi
+        # Split newline-separated checks into repeated --check flags, read from
+        # the env var (never interpolate the joined string — injection vector).
         while IFS= read -r line; do
           [[ -n "$line" ]] && ARGS+=(--check "$line")
-        done <<< "${{ inputs.checks }}"
+        done <<< "$CHECKS"
 
         set +e
         revrem "${ARGS[@]}" > revrem-out.json 2> revrem-err.txt
@@ -146,7 +178,11 @@ runs:
       if: always() && env.REVREM_RUN_DIR != '' && inputs.comment == 'true' && github.event.pull_request.head.repo.fork == false
       shell: bash
       env:
-        GITHUB_TOKEN: ${{ inputs.github-token }}
+        # `inputs.github-token` defaults to `${{ github.token }}`, but expression
+        # evaluation inside an input default is not a documented guarantee — the
+        # `|| github.token` fallback makes the token resolve regardless of how
+        # the default is handled, so callers need not pass it explicitly.
+        GITHUB_TOKEN: ${{ inputs.github-token || github.token }}
         GITHUB_REPOSITORY: ${{ github.repository }}
         GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
         GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -158,16 +194,18 @@ runs:
     - name: Map exit code
       if: always()
       shell: bash
+      env:
+        EXIT: ${{ steps.revrem.outputs.revrem-exit }}
+        FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
       run: |
         set -uo pipefail
-        EXIT=${{ steps.revrem.outputs.revrem-exit }}
-        case "$EXIT" in
+        case "${EXIT:-}" in
           0)
             echo "RevRem: clear."
             exit 0
             ;;
           2)
-            if [[ "${{ inputs.fail-on-findings }}" == "true" ]]; then
+            if [[ "$FAIL_ON_FINDINGS" == "true" ]]; then
               echo "::error::RevRem found findings that remain."
               exit 1
             fi
