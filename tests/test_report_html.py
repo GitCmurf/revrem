@@ -116,6 +116,16 @@ def test_render_report_calls_no_disk():
     assert "clear" in html_out
 
 
+def test_header_renders_summary_harness():
+    """The header shows the top-level summary.harness (the real source; there is
+    no per-phase phase_config key in summary-v1 — P0-2 removed that dead code)."""
+    summary, event_records = _load("clear")
+    summary = {**summary, "harness": "codex"}
+    html_out = render_report(summary, event_records)
+    assert "codex" in html_out
+    assert "Phase configuration" not in html_out
+
+
 # --- CLI command -----------------------------------------------------------
 
 

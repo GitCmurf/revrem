@@ -81,37 +81,6 @@ def _exit_code_for(summary: dict[str, Any]) -> int:
     return 1
 
 
-def _phase_config_rows(summary: dict[str, Any], *, redact: bool) -> str:
-    """Per-phase harness/model rows from ``summary.phase_config`` if present."""
-    phase_config = summary.get("phase_config")
-    if not isinstance(phase_config, dict) or not phase_config:
-        return ""
-    rows: list[str] = []
-    for phase in sorted(phase_config):
-        cfg = phase_config[phase]
-        if not isinstance(cfg, dict):
-            continue
-        harness = cfg.get("harness", "")
-        model = cfg.get("model", "")
-        rows.append(
-            "<tr>"
-            f"<td>{_esc(phase, redact=redact)}</td>"
-            f"<td>{_esc(harness, redact=redact)}</td>"
-            f"<td>{_esc(model, redact=redact)}</td>"
-            "</tr>"
-        )
-    if not rows:
-        return ""
-    body = "".join(rows)
-    return (
-        '<section><h2>Phase configuration</h2>'
-        '<table><thead><tr><th>Phase</th><th>Harness</th><th>Model</th>'
-        '</tr></thead><tbody>'
-        f"{body}"
-        '</tbody></table></section>'
-    )
-
-
 def _header(summary: dict[str, Any], *, redact: bool) -> str:
     run_id = _esc(summary.get("run_id"), redact=redact)
     badge = _status_badge(str(summary.get("final_status", "")), redact=redact)
@@ -470,7 +439,6 @@ def render_report(
     body = (
         _header(summary, redact=redact)
         + _outcome_summary(summary, events, redact=redact)
-        + _phase_config_rows(summary, redact=redact)
         + _findings_section(summary, events, redact=redact, triage_findings=triage_findings)
         + _checks_section(events, redact=redact)
         + _cost_section(summary, events, redact=redact)
