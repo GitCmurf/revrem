@@ -10,7 +10,9 @@ Environment (all required for posting):
   GITHUB_TOKEN         - a pull-requests: write token
   GITHUB_REPOSITORY    - owner/repo (set by the Actions runner)
   GITHUB_PR_NUMBER     - PR issue number (the action passes this explicitly)
-  GITHUB_RUN_URL       - optional, a link to the workflow run
+  GITHUB_RUN_URL       - optional, a link to the workflow run (fallback link)
+  REVREM_ARTIFACT_URL  - optional, deep-link to the uploaded report artifact;
+                         preferred over GITHUB_RUN_URL in the comment footer
   REVREM_REPORT_JSON   - path to the redacted report index (default
                          revrem-report.json in the cwd)
 
@@ -32,7 +34,9 @@ MARKER = "<!-- revrem-report -->"
 _API_BASE = "https://api.github.com"
 
 
-def build_comment_body(report_index: dict[str, Any], *, run_url: str = "") -> str:
+def build_comment_body(
+    report_index: dict[str, Any], *, report_url: str = "", run_url: str = ""
+) -> str:
     """Build the markdown PR comment body from a report index.
 
     Pure: no I/O, no network. The input is the already-redacted index from
@@ -88,7 +92,12 @@ def build_comment_body(report_index: dict[str, Any], *, run_url: str = "") -> st
         lines.append("")
 
     provenance = "See the uploaded revrem-report.html artifact for the full report."
-    if run_url:
+    # Deep-link the report artifact when we captured its URL; otherwise fall back
+    # to the workflow run. Label each link for what it actually points at — a
+    # "[Run]" link that resolves to the artifact (or vice versa) is misleading.
+    if report_url:
+        provenance += f" [Report]({report_url})."
+    elif run_url:
         provenance += f" [Run]({run_url})."
     lines.append(f"<sub>{provenance}</sub>")
 
@@ -168,9 +177,8 @@ def main(argv: list[str]) -> int:
     token = os.environ.get("GITHUB_TOKEN", "")
     repo = os.environ.get("GITHUB_REPOSITORY", "")
     pr_number = os.environ.get("GITHUB_PR_NUMBER", "")
-    run_url = os.environ.get("REVREM_ARTIFACT_URL", "") or os.environ.get(
-        "GITHUB_RUN_URL", ""
-    )
+    report_url = os.environ.get("REVREM_ARTIFACT_URL", "")
+    run_url = os.environ.get("GITHUB_RUN_URL", "")
 
     if not (token and repo and pr_number):
         print(
@@ -179,7 +187,7 @@ def main(argv: list[str]) -> int:
         )
         return 1
 
-    body = build_comment_body(report_index, run_url=run_url)
+    body = build_comment_body(report_index, report_url=report_url, run_url=run_url)
     try:
         action = post_or_update_comment(
             body, token=token, repo=repo, pr_number=pr_number

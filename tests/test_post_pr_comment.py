@@ -116,6 +116,8 @@ def test_main_prefers_artifact_url_over_run_url(tmp_path, fake_github, monkeypat
     posted = next(iter(fake_github.comments.values()))["body"]
     assert "https://artifact-link/report.html" in posted
     assert "https://run/1" not in posted
+    # The artifact link is labelled [Report], not mislabelled [Run] (C6).
+    assert "[Report](https://artifact-link/report.html)" in posted
 
 
 def test_body_never_embeds_secrets_by_design():
