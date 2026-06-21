@@ -133,6 +133,7 @@ OUTPUT_KEYS = (
     "progress_style",
     "quiet_progress",
     "terminal_title",
+    "no_tty",
     "artifact_dir",
 )
 RUNTIME_KEYS = (
@@ -480,6 +481,7 @@ def parse_output(raw: dict[str, Any]) -> OutputConfig:
         progress_style=progress_style,
         quiet_progress=_bool(raw.get("quiet_progress", False), "output.quiet_progress"),
         terminal_title=_bool(raw.get("terminal_title", False), "output.terminal_title"),
+        no_tty=_bool(raw.get("no_tty", False), "output.no_tty"),
         artifact_dir=_optional_str(raw.get("artifact_dir"), "output.artifact_dir"),
     )
 

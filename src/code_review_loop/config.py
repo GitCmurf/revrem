@@ -84,6 +84,7 @@ class LoopConfig:
     progress: bool = True
     progress_style: str = "compact"
     terminal_title: bool = False
+    no_tty: bool = False
     initial_review_file: Path | None = None
     initial_review_mode: str = "none"
     check_commands: tuple[str, ...] = field(default_factory=tuple)

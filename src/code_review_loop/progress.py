@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from collections import deque
 from contextlib import contextmanager
@@ -37,13 +38,26 @@ def rich_available() -> bool:
     return True
 
 
-def _console_and_text():
+def force_terminal(*, no_tty: bool = False) -> bool:
+    """Whether Rich should emit ANSI escape sequences for the live panel.
+
+    The single gate for headless suppression (Contract via PLAN-005 T3): Rich
+    output, progress spinners, and terminal-title writes are suppressed when
+    either an explicit ``--no-tty`` override is set or the ``CI`` environment
+    variable is present (set automatically by GitHub Actions, CircleCI, Travis,
+    Jenkins, and most other providers). A standard CI run therefore requires
+    no RevRem-specific flags.
+    """
+    return sys.stderr.isatty() and not os.environ.get("CI") and not no_tty
+
+
+def _console_and_text(*, no_tty: bool = False):
     try:
         from rich.console import Console  # type: ignore[import-not-found]
         from rich.text import Text  # type: ignore[import-not-found]
     except ImportError:
         return None
-    return Console(file=sys.stderr, force_terminal=sys.stderr.isatty()), Text
+    return Console(file=sys.stderr, force_terminal=force_terminal(no_tty=no_tty)), Text
 
 
 def _styled_text(*parts: tuple[str, str | None]):
@@ -58,8 +72,12 @@ def _styled_text(*parts: tuple[str, str | None]):
 
 
 @contextmanager
-def rich_live_progress(enabled: bool):
-    """Render Rich progress in one in-place panel when Rich is available."""
+def rich_live_progress(enabled: bool, *, no_tty: bool = False):
+    """Render Rich progress in one in-place panel when Rich is available.
+
+    ``no_tty`` (and the ``CI`` env var) suppress ANSI via :func:`force_terminal`
+    so headless runs emit no escape sequences on stderr.
+    """
     global _ACTIVE_LIVE, _ACTIVE_LIVE_LINES
     if not enabled:
         yield False
@@ -72,7 +90,7 @@ def rich_live_progress(enabled: bool):
         yield False
         return
 
-    console = Console(file=sys.stderr, force_terminal=sys.stderr.isatty())
+    console = Console(file=sys.stderr, force_terminal=force_terminal(no_tty=no_tty))
     lines: deque[Any] = deque(maxlen=RICH_LIVE_MAX_LINES)
     live = Live(
         Panel("Starting RevRem...", title="RevRem", border_style="green"),

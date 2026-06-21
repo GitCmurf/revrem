@@ -552,6 +552,17 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         help="Do not update the terminal title even when a profile enables it.",
     )
     parser.add_argument(
+        "--no-tty",
+        dest="no_tty",
+        action="store_true",
+        default=False,
+        help=(
+            "Force non-interactive (headless) output: suppress ANSI escape "
+            "sequences, progress spinners, and terminal-title writes on stderr. "
+            "Also auto-triggered when the CI environment variable is set."
+        ),
+    )
+    parser.add_argument(
         "--initial-review-file",
         type=str,
         default=None,

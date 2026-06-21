@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.64'
+version: '1.65'
 last_updated: '2026-06-21'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.64
+> **Version:** 1.65
 > **Last Updated:** 2026-06-21
 > **Type:** DEVEX
 > **Area:** devex
@@ -1307,6 +1307,18 @@ the display. Terminal-title escape output is suppressed in Rich mode because
 some terminals render OSC title bytes inside the live panel instead of consuming
 them.
 
+For headless runs (CI, redirected output), pass `--no-tty` to suppress ANSI
+escape sequences, progress spinners, and terminal-title writes on stderr. The
+same suppression also triggers automatically when the `CI` environment variable
+is set (GitHub Actions, CircleCI, Travis, Jenkins, and most other providers set
+it), so a standard CI run needs no RevRem-specific flag. The recommended CI
+invocation is `--progress-style compact --no-tty --summary-format json`:
+compact progress is line-oriented and greppable, and `--summary-format json`
+prints canonical `summary.json` to stdout for downstream tooling (use
+`--summary-format both` for a human-readable text block followed by the JSON).
+`events.jsonl` and `summary.json` are always written before exit, including on
+the cancel path.
+
 `revrem ui` is available as a dependency-gated Textual interface:
 
 ```bash
@@ -1567,6 +1579,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.65 | 2026-06-21 | GitCmurf | Documented headless/CI output hardening: `--no-tty` + auto-trigger on `CI=true`, the recommended CI invocation, and the always-write-before-exit guarantee |
 | 1.64 | 2026-06-21 | GitCmurf | Documented the `revrem report` subcommand: static self-contained HTML report + `--format json` machine index (reads summary.json/events.jsonl only; redacted by default) |
 | 1.63 | 2026-06-18 | GitCmurf | Added a dedicated Interactive wizard section consolidating wizard run-shape preview, per-phase model/timeout, and routing-preview guidance migrated from the README |
 | 1.62 | 2026-06-17 | Codex | Documented stale Codex triage minimal-effort repair when profile/current is selected |

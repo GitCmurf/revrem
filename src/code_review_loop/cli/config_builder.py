@@ -810,6 +810,7 @@ def build_loop_config(
         progress=not pick(args.quiet_progress, profile.output.quiet_progress, False),
         progress_style=pick(args.progress_style, profile.output.progress_style, "compact"),
         terminal_title=pick(args.terminal_title, profile.output.terminal_title, False),
+        no_tty=pick(args.no_tty, profile.output.no_tty, False),
         initial_review_file=initial_review_file,
         initial_review_mode=initial_review_mode,
         check_commands=checks,
