@@ -51,6 +51,31 @@ single updatable PR comment. Tier 1 of `REVREM-PLAN-005`; expert profiles
   progress is line-oriented and greppable, and `--summary-format json` prints
   canonical `summary.json` to stdout for downstream tooling.
 
+### Fixed (corrective, post-peer-review)
+
+- Findings now render from their authoritative source
+  (`triage-N.json::confirmed_findings`, keyed by `summary.artifact_paths.triage`)
+  instead of an invented `status_classification` severity payload that does not
+  exist in the engine. Before this, the findings section, `finding_counts`, and
+  `top_findings` were empty on every real run and the PR comment reported zero
+  findings. (P0-1)
+- Removed the "Phase configuration" section, which read a `summary.phase_config`
+  key that does not exist in `summary-v1`. The header already shows the real
+  top-level `harness`. (P0-2)
+- The GitHub Action now wires `GITHUB_TOKEN` via a `github-token` input
+  (defaulting to `${{ github.token }}`) instead of an unset `env.GITHUB_TOKEN`,
+  so the PR comment step actually authenticates and posts. (P0-3)
+- Checks now render from `summary.iterations[].checks[]` (the engine's record),
+  with `check_result` events as a fallback.
+- The PR comment deep-links the uploaded report artifact
+  (`REVREM_ARTIFACT_URL`) rather than always linking the workflow run.
+- Added `tests/test_report_real_findings.py` — a standing gate that renders a
+  real-engine-shaped fixture (a `status_classification` payload of
+  `{message, summary}` plus a `triage-N.json` with a confirmed finding) and
+  asserts the finding surfaces. This gate exists because the initial T0 fixtures
+  were hand-authored against the renderer's assumptions rather than the engine's
+  contract, producing self-confirming green tests. Registered in REVREM-TEST-001.
+
 ### Stability
 
 - **Frozen** (additive-only within v1): the artifact JSON schemas (`summary-v1`,
