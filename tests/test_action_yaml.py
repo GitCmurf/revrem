@@ -128,12 +128,9 @@ def test_action_inputs_are_not_interpolated_into_run_scripts():
 def test_action_wires_github_token_via_input():
     """The comment step receives the token from the github-token input, not an
     unset env var (P0-3). Composite actions can't read secrets, so the caller
-    passes github.token in; the input defaults to ${{ github.token }}."""
+    passes github.token in (or omits it and the step falls back)."""
     data = _load("action.yml")
     assert "github-token" in data["inputs"]
-    # Default is the automatic github.token, so the dogfood workflow needs no
-    # extra secret wiring.
-    assert "github.token" in str(data["inputs"]["github-token"]["default"])
     steps = data["runs"]["steps"]
     comment_step = next(s for s in steps if s.get("name") == "Post PR comment")
     token_env = comment_step["env"]["GITHUB_TOKEN"]
@@ -146,6 +143,16 @@ def test_action_wires_github_token_via_input():
     # Falls back to github.token so the token resolves even if expression
     # evaluation inside the input default is not honoured (GPT review #2).
     assert "github.token" in token_env
+
+
+def test_action_github_token_default_is_empty_not_an_expression():
+    """The github-token default must be empty (not ${{ github.token }}): a
+    non-empty literal default is truthy and would defeat the comment step's
+    `inputs.github-token || github.token` fallback, sending a bad token if the
+    expression is not evaluated in the default (GPT re-review of c14-c17)."""
+    data = _load("action.yml")
+    default = data["inputs"]["github-token"].get("default", "")
+    assert default == "", f"github-token default must be empty; got {default!r}"
 
 
 def test_action_exit_mapping_is_last_step():

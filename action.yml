@@ -50,8 +50,13 @@ inputs:
     description: "revrem version to install from PyPI (install-mode: pypi only)."
     default: "0.5.0"
   github-token:
-    description: "GitHub token for posting the PR comment. Defaults to the automatic github.token; override to use a PAT or app token. Composite actions cannot read secrets, so this must be passed in explicitly."
-    default: ${{ github.token }}
+    description: >-
+      GitHub token for posting the PR comment. Leave unset to use the automatic
+      ${{ github.token }} (resolved in the comment step); override to use a PAT
+      or app token. The default is intentionally empty — not an expression — so
+      the comment step's `inputs.github-token || github.token` fallback resolves
+      correctly regardless of how GitHub handles expressions in input defaults.
+    default: ""
 
 runs:
   using: composite
@@ -178,10 +183,11 @@ runs:
       if: always() && env.REVREM_RUN_DIR != '' && inputs.comment == 'true' && github.event.pull_request.head.repo.fork == false
       shell: bash
       env:
-        # `inputs.github-token` defaults to `${{ github.token }}`, but expression
-        # evaluation inside an input default is not a documented guarantee — the
-        # `|| github.token` fallback makes the token resolve regardless of how
-        # the default is handled, so callers need not pass it explicitly.
+        # The github-token input defaults to "" (empty, NOT an expression), so
+        # when the caller omits it `inputs.github-token` is falsy and this
+        # `|| github.token` fallback resolves to the automatic token — evaluated
+        # here in the step, where expressions are honoured. A non-empty literal
+        # default would be truthy and defeat the fallback, sending a bad token.
         GITHUB_TOKEN: ${{ inputs.github-token || github.token }}
         GITHUB_REPOSITORY: ${{ github.repository }}
         GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}

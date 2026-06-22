@@ -60,8 +60,8 @@ single updatable PR comment. Tier 1 of `REVREM-PLAN-005`; expert profiles
   `top_findings` were empty on every real run and the PR comment reported zero
   findings. (P0-1)
 - The GitHub Action now wires `GITHUB_TOKEN` via a `github-token` input
-  (defaulting to `${{ github.token }}`) instead of an unset `env.GITHUB_TOKEN`,
-  so the PR comment step actually authenticates and posts. (P0-3)
+  instead of an unset `env.GITHUB_TOKEN`, so the PR comment step actually
+  authenticates and posts. (P0-3; default-token handling refined below.)
 - Checks now render from `summary.iterations[].checks[]` (the engine's record),
   with `check_result` events as a fallback.
 - The PR comment deep-links the uploaded report artifact
@@ -111,7 +111,10 @@ single updatable PR comment. Tier 1 of `REVREM-PLAN-005`; expert profiles
   text before bash parses it). Budget inputs are validated as numeric; a test
   asserts no input is interpolated into any run script.
 - **Token resolution** no longer depends on expression evaluation inside an
-  input default: the comment step uses `${{ inputs.github-token || github.token }}`.
+  input default: the `github-token` default is empty (not `${{ github.token }}`)
+  and the comment step uses `${{ inputs.github-token || github.token }}`, so the
+  fallback resolves the automatic token in the step context. A non-empty literal
+  default would be truthy and silently defeat the fallback.
 - **`raw-artifacts` honesty**: documented as uploading the run directory
   verbatim and **unredacted** (the prior "still-redacted" wording was false).
 - **Report index** preserves array-valued `artifact_paths` (was flattening lists
