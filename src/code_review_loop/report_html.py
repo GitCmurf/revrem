@@ -634,7 +634,12 @@ def render_report(
         f"<style>{_CSS}</style>"
         "</head>"
         f"<body>{body}</body>"
-        "</html>"
+        # Trailing newline so the document is a well-formed POSIX text file,
+        # consistent with the JSON artifact path (``write_json_artifact`` appends
+        # "\n") and the repo's end-of-file-fixer hook. Without it the committed
+        # golden snapshots are newline-free and the fixer rewrites them on every
+        # run, breaking the byte-exact golden comparison.
+        "</html>\n"
     )
 
 
