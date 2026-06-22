@@ -75,6 +75,14 @@ def test_report_index_validates_with_triage_findings_including_unknown_severity(
     validate(idx, _REPORT_INDEX_SCHEMA)
     severities = {f["severity"] for f in idx["top_findings"]}
     assert severities == {"critical", "low"}  # "INFO" and missing both clamp to "low"
+    # finding_counts must clamp identically — no stray "info" key, and the
+    # clamped tally must agree with top_findings (the index must not
+    # self-contradict). Guards _count_findings_by_severity: top_findings was
+    # already clamped before this fix, so without this assertion the counts bug
+    # would pass silently.
+    assert set(idx["finding_counts"]) == {"critical", "high", "medium", "low"}
+    assert idx["finding_counts"]["critical"] == 1
+    assert idx["finding_counts"]["low"] == 2  # "INFO" + missing severity
 
 
 def test_artifact_paths_preserve_list_shape():

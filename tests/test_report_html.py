@@ -93,7 +93,7 @@ def test_render_report_redacts_by_default_and_reveals_with_opt_out():
     summary, event_records = _load("clear")
     # Use a real-format OpenAI key (sk- + >=20 word chars) that the redactor
     # genuinely matches, not an arbitrary string it would miss.
-    secret = "sk-abcdef1234567890ABCDEF1234567890"
+    secret = "sk-abcdef1234567890ABCDEF1234567890"  # pragma: allowlist secret
     summary = {**summary, "run_id": f"run-leaked-{secret}"}
     redacted = render_report(summary, event_records, redact=True)
     unredacted = render_report(summary, event_records, redact=False)

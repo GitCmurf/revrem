@@ -652,11 +652,12 @@ def _count_findings_by_severity(
     """
     counts: dict[str, int] = dict.fromkeys(_KNOWN_SEVERITIES, 0)
     for finding in _flatten_confirmed_findings(triage_findings):
-        severity = str(finding.get("severity", "")).lower()
-        if severity in counts:
-            counts[severity] += 1
-        else:
-            counts[severity] = counts.get(severity, 0) + 1
+        # Clamp via the same helper _top_findings uses so the index never
+        # self-contradicts: an out-of-enum "info" must tally under "low" here
+        # exactly as it surfaces as "low" in top_findings. Because counts is
+        # pre-seeded with every known severity and _normalize_severity only ever
+        # returns one of them, no stray key can appear.
+        counts[_normalize_severity(finding.get("severity"))] += 1
     return counts
 
 

@@ -306,9 +306,10 @@ Concrete anchors so a fast model does not have to rediscover them:
 - **Event stream API (`src/code_review_loop/events.py`):**
   `EVENTS_FILENAME = "events.jsonl"`; `read_events(path) -> (records, truncated)`;
   `render_compact(records) -> str`; `EVENT_KINDS` includes `phase_start`,
-  `phase_result`, `status_classification`, `check_result`, `artifact_write`,
-  `warning`, `failure`, `summary`, `suppressed`, `cost_charge`,
-  `cost_ceiling_hit`, `routing_decision`, `routing_outcome`; `Event` is a frozen
+  `phase_output`, `phase_result`, `status_classification`, `check_result`,
+  `artifact_write`, `warning`, `failure`, `summary`, `suppressed`,
+  `cancellation`, `cost_charge`, `cost_ceiling_hit`, `routing_decision`,
+  `routing_outcome`; `Event` is a frozen
   dataclass with `run_id, seq, kind, phase, iteration, payload, ts,
   schema_version`.
 - **Summary building:** `src/code_review_loop/reporting.py` owns `summary.json`
