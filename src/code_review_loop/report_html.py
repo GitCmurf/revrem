@@ -137,7 +137,8 @@ def _header(summary: dict[str, Any], *, redact: bool) -> str:
     profile = _esc(summary.get("profile"), redact=redact)
     harness = _esc(summary.get("harness"), redact=redact)
     duration = summary.get("duration_seconds")
-    duration_text = "unknown" if duration is None else _esc(duration, redact=redact)
+    duration_unknown = duration is None
+    duration_text = "unknown" if duration_unknown else _esc(duration, redact=redact)
     exit_code = _exit_code_for(summary)
     exit_hint = _exit_hint(summary)
     started = _esc(summary.get("started_at"), redact=redact)
@@ -153,7 +154,7 @@ def _header(summary: dict[str, Any], *, redact: bool) -> str:
         f"<dt>HEAD</dt><dd>{head or '<em>unset</em>'}</dd>"
         f"<dt>Profile</dt><dd>{profile or '<em>none</em>'}</dd>"
         f"<dt>Harness</dt><dd>{harness or '<em>unknown</em>'}</dd>"
-        f"<dt>Wall-clock</dt><dd>{duration_text}s</dd>"
+        f"<dt>Wall-clock</dt><dd>{duration_text}{'' if duration_unknown else 's'}</dd>"
         f"<dt>Started</dt><dd>{started or '<em>unknown</em>'}</dd>"
         f"<dt>Finished</dt><dd>{finished or '<em>unknown</em>'}</dd>"
         "</dl>"
@@ -305,12 +306,15 @@ def _findings_section(
     for finding in confirmed:
         severity = finding.get("severity", "")
         paths = finding.get("affected_paths") or []
-        path_text = ", ".join(str(p) for p in paths) if paths else ""
+        # Normalize each path individually before joining: running the joined
+        # string through PurePosixPath would treat the ", " separator as part of
+        # a single path and skip per-path normalization (e.g. drop "./" or "//").
+        path_text = ", ".join(_normalize_path(p) for p in paths) if paths else ""
         summary_text = finding.get("summary") or finding.get("rationale") or ""
         fingerprint = finding.get("fingerprint", "")
         configured.append(
             f"<tr><td>{_esc(severity, redact=redact)}</td>"
-            f"<td>{_esc(_normalize_path(path_text), redact=redact)}</td>"
+            f"<td>{_esc(path_text, redact=redact)}</td>"
             f"<td>{_esc(summary_text, redact=redact)}</td>"
             f"<td><code>{_esc(fingerprint, redact=redact)}</code></td></tr>"
         )
@@ -403,8 +407,12 @@ def _checks_section(
                 status = str(check.get("status", "")).lower()
                 artifact = check.get("artifact", "")
                 status_class = "check-pass" if status == "passed" else "check-fail"
+                # Render the artifact path as inert text (<code>), not an <a href>:
+                # the single-file report contract (asserted in
+                # test_render_report_is_single_file_with_no_external_refs) forbids
+                # href/src attributes so the report stays offline-safe.
                 artifact_cell = (
-                    f'<a href="{_esc(_normalize_path(artifact), redact=redact)}">{_esc(artifact, redact=redact)}</a>'
+                    f"<code>{_esc(_normalize_path(artifact), redact=redact)}</code>"
                     if artifact
                     else ""
                 )
@@ -424,11 +432,15 @@ def _checks_section(
             command = ev.payload.get("command", "")
             status = str(ev.payload.get("status", "")).lower()
             status_class = "check-pass" if status == "passed" else "check-fail"
+            # The "Artifact" column header is shared with the primary path.
+            # check_result events carry a returncode (exit status), not an
+            # artifact path — render an empty cell so the column never shows a
+            # misleading integer where a path is expected.
             rows.append(
                 "<tr>"
                 f'<td><code>{_esc(command, redact=redact)}</code></td>'
                 f'<td class="{status_class}">{_esc(status, redact=redact)}</td>'
-                f"<td>{_esc(ev.payload.get('returncode', ''), redact=redact)}</td>"
+                f"<td></td>"
                 f"<td>{_esc(ev.iteration, redact=redact)}</td>"
                 "</tr>"
             )
@@ -627,14 +639,13 @@ def _count_findings_by_severity(
 
 def _top_findings(
     triage_findings: list[dict[str, Any]] | None,
-    *,
-    redact: bool,
 ) -> list[dict[str, Any]]:
-    """At most 5 redacted finding summaries for the comment builder.
+    """At most 5 finding summaries for the comment builder.
 
     Each entry: severity, file, line (nullable), and a one-sentence title.
     Sourced from triage ``confirmed_findings``. The list is empty when there
-    are no findings or they were suppressed.
+    are no findings or they were suppressed. The caller applies redaction via
+    :func:`_redact_index_findings`; this function is redaction-agnostic.
     """
     findings: list[dict[str, Any]] = []
     for finding in _flatten_confirmed_findings(triage_findings):
@@ -725,7 +736,7 @@ def build_report_index(
     Findings detail is sourced from parsed ``triage-N.json`` payloads passed in
     as ``triage_findings``.
     """
-    top = _top_findings(triage_findings, redact=redact)
+    top = _top_findings(triage_findings)
     if redact:
         top = _redact_index_findings(top)
     run_id = summary.get("run_id", "")

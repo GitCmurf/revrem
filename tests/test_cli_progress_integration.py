@@ -358,6 +358,10 @@ class TtyBuffer(io.StringIO):
 def test_terminal_title_tracks_review_and_remediation_phases(tmp_path, monkeypatch):
     stderr = TtyBuffer()
     monkeypatch.setattr(terminal_mod.sys, "stderr", stderr)
+    # These tests assert interactive (TTY) title output, which the CI env var
+    # suppresses by design (see test_headless_output.py). Force a clean slate so
+    # the suite is hermetic under CI=true runners.
+    monkeypatch.delenv("CI", raising=False)
     review_outputs = iter(
         [
             "Needs work.\nREVIEW_STATUS: findings\n",
@@ -394,6 +398,7 @@ def test_terminal_title_tracks_review_and_remediation_phases(tmp_path, monkeypat
 def test_terminal_title_restores_after_remediation_failure(tmp_path, monkeypatch):
     stderr = TtyBuffer()
     monkeypatch.setattr(terminal_mod.sys, "stderr", stderr)
+    monkeypatch.delenv("CI", raising=False)
 
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         if args[1] == "review":
@@ -450,6 +455,7 @@ def test_terminal_title_is_suppressed_in_rich_mode_to_avoid_escape_leaks(tmp_pat
     stderr = TtyBuffer()
     tty_sequences = []
     monkeypatch.setattr(terminal_mod.sys, "stderr", stderr)
+    monkeypatch.delenv("CI", raising=False)
     monkeypatch.setattr(
         terminal_mod,
         "write_terminal_control_to_tty",
@@ -506,6 +512,7 @@ def test_phase_terminal_title_skips_dev_tty_on_windows(tmp_path, monkeypatch):
 def test_terminal_title_context_restores_cursor_on_exit(tmp_path, monkeypatch):
     stderr = TtyBuffer()
     monkeypatch.setattr(terminal_mod.sys, "stderr", stderr)
+    monkeypatch.delenv("CI", raising=False)
     config = LoopConfig(
         base="main",
         max_iterations=1,

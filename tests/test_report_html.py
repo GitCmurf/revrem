@@ -197,9 +197,13 @@ def test_report_command_missing_run_dir_exits_one(tmp_path: Path, capsys):
 
 def test_report_command_no_redact_without_acknowledgement_exits_four(
     capsys,
+    tmp_path,
 ):
     run_dir = load_run("clear")
-    exit_code = report_command.main([str(run_dir), "--no-redact", "--output", "/dev/null"])
+    # Use tmp_path rather than the POSIX-only /dev/null so the suite is portable.
+    exit_code = report_command.main(
+        [str(run_dir), "--no-redact", "--output", str(tmp_path / "dummy.html")]
+    )
     assert exit_code == 4
     assert "--i-understand-the-risks" in capsys.readouterr().err
 

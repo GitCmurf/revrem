@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import threading
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 
@@ -24,6 +25,10 @@ class FakeGitHubServer:
         self._server: HTTPServer | None = None
         self._thread: threading.Thread | None = None
         self.base_url = ""
+        #: Page size used when serving the comments listing endpoint. Set <total
+        #: to exercise the client's Link-header pagination. None (default) means
+        #: "serve all comments in one response" (the original behaviour).
+        self.page_size: int | None = None
 
     def start(self) -> str:
         handler = self._make_handler()
@@ -51,19 +56,42 @@ class FakeGitHubServer:
                 pass
 
             def _record(self, method, path, body):
-                server.requests.append({"method": method, "path": path, "body": body})
+                server.requests.append(
+                    {
+                        "method": method,
+                        "path": path,
+                        "body": body,
+                        "headers": {k: v for k, v in self.headers.items()},
+                    }
+                )
 
             def do_GET(self):  # noqa: N802 - http.server convention
                 self._record("GET", self.path, None)
-                # /repos/{repo}/issues/{pr}/comments[?per_page=...]
+                # /repos/{repo}/issues/{pr}/comments[?per_page=...&page=...]
                 path_only = self.path.split("?", 1)[0]
                 parts = [p for p in path_only.split("/") if p]
                 # ["repos", owner, repo, "issues", pr, "comments"]
                 if parts and parts[-1] == "comments":
-                    body = json.dumps(list(server.comments.values())).encode()
+                    all_comments = list(server.comments.values())
+                    query = urllib.parse.parse_qs(self.path.split("?", 1)[1]) if "?" in self.path else {}
+                    per_page = int(query.get("per_page", ["100"])[0]) if query.get("per_page") else 100
+                    page = int(query.get("page", ["1"])[0]) if query.get("page") else 1
+                    page_size = server.page_size if server.page_size is not None else max(1, len(all_comments))
+                    total_pages = max(1, (len(all_comments) + page_size - 1) // page_size)
+                    start = (page - 1) * page_size
+                    page_comments = all_comments[start : start + page_size]
+                    body = json.dumps(page_comments).encode()
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
                     self.send_header("Content-Length", str(len(body)))
+                    if page < total_pages and server.page_size is not None:
+                        host = self.headers.get("Host", "127.0.0.1")
+                        base = f"http://{host}{path_only}"
+                        link = (
+                            f'<{base}?per_page={per_page}&page={page + 1}>; rel="next", '
+                            f'<{base}?per_page={per_page}&page={total_pages}>; rel="last"'
+                        )
+                        self.send_header("Link", link)
                     self.end_headers()
                     self.wfile.write(body)
                 else:

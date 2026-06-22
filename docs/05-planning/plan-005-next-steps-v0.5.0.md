@@ -806,7 +806,7 @@ infrastructure (L3).
      for the newest entry, as that is fragile in CI retries, matrix jobs, and
      reused workspaces.
    - **Report:** Run two report commands in sequence:
-     ```
+     ```bash
      revrem report "$RUN_DIR" --output revrem-report.html
      revrem report "$RUN_DIR" --format json > revrem-report.json
      ```

@@ -18,6 +18,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # Do not persist the GITHUB_TOKEN into .git/config; this dogfood job
+          # does not push commits, so the saved credential is pure exposure.
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v5

@@ -127,6 +127,7 @@ def _auth_headers(token: str) -> dict[str, str]:
     return {
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
+        "Content-Type": "application/json",
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "revrem-pr-comment",
     }
@@ -135,15 +136,38 @@ def _auth_headers(token: str) -> dict[str, str]:
 def _find_existing_comment(
     token: str, repo: str, pr_number: str, api_base: str
 ) -> str | None:
-    """Return the comment id of the existing RevRem comment, or None."""
-    url = f"{api_base}/repos/{repo}/issues/{pr_number}/comments?per_page=100"
-    req = urllib.request.Request(url, headers=_auth_headers(token))
-    with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310 - trusted GitHub API
-        comments = json.loads(resp.read().decode("utf-8"))
-    for comment in comments:
-        body = comment.get("body", "") or ""
-        if MARKER in body:
-            return str(comment.get("id"))
+    """Return the comment id of the existing RevRem comment, or None.
+
+    Follows the ``Link: <url>; rel="next"`` header across pages so a long-lived
+    PR with more than 100 comments still finds the marked comment (the marker is
+    the idempotency key — missing it would create a duplicate on every run).
+    """
+    url: str | None = (
+        f"{api_base}/repos/{repo}/issues/{pr_number}/comments?per_page=100"
+    )
+    while url is not None:
+        req = urllib.request.Request(url, headers=_auth_headers(token))
+        with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310 - trusted GitHub API
+            comments = json.loads(resp.read().decode("utf-8"))
+            link = resp.headers.get("Link")
+        for comment in comments:
+            body = comment.get("body", "") or ""
+            if MARKER in body:
+                return str(comment.get("id"))
+        url = _next_link(link) if link else None
+    return None
+
+
+def _next_link(link_header: str) -> str | None:
+    """Extract the ``rel="next"`` URL from a GitHub ``Link`` header, or None."""
+    for part in link_header.split(","):
+        segment = part.strip()
+        if 'rel="next"' not in segment:
+            continue
+        start = segment.find("<")
+        end = segment.find(">", start + 1)
+        if start != -1 and end != -1:
+            return segment[start + 1 : end]
     return None
 
 
@@ -211,7 +235,7 @@ def main(argv: list[str]) -> int:
         action = post_or_update_comment(
             body, token=token, repo=repo, pr_number=pr_number
         )
-    except urllib.error.URLError as exc:
+    except (urllib.error.URLError, ValueError) as exc:
         print(f"ERROR: GitHub API request failed: {exc}", file=sys.stderr)
         return 1
     print(f"revrem comment {action}")

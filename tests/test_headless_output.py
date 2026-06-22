@@ -108,6 +108,41 @@ def test_rich_live_progress_emits_no_ansi_under_no_tty(capsys, monkeypatch):
     assert _ANSI_CSI not in captured.err.encode("utf-8", errors="replace")
 
 
+def test_rich_fallback_console_suppresses_ansi_under_no_tty(monkeypatch):
+    """The print_rich_* helpers build their own Console without a no_tty arg.
+
+    When a run entered headless mode via rich_live_progress(no_tty=True), that
+    mode must latch so the fallback console (used when no live panel is active)
+    also suppresses ANSI. Without the latch, a local --no-tty run with an
+    interactive stderr would leak escape sequences through the fallback path.
+    """
+    import io
+
+    monkeypatch.delenv("CI", raising=False)
+    if not progress.rich_available():
+        pytest.skip("rich not installed")
+
+    class _Tty(io.StringIO):
+        def isatty(self) -> bool:
+            return True
+
+    stderr = _Tty()
+    monkeypatch.setattr(progress.sys, "stderr", stderr)
+    # Enter headless mode to latch _NO_TTY_FORCED, then simulate the fallback
+    # path (no active live panel) by clearing the live state while still inside
+    # the context. print_rich_message must build an ANSI-free fallback console.
+    with progress.rich_live_progress(True, no_tty=True):
+        saved_live, saved_lines = progress._ACTIVE_LIVE, progress._ACTIVE_LIVE_LINES
+        progress._ACTIVE_LIVE = None
+        progress._ACTIVE_LIVE_LINES = None
+        try:
+            progress.print_rich_message("review", "iter-1", "detail", head="warn: ")
+        finally:
+            progress._ACTIVE_LIVE = saved_live
+            progress._ACTIVE_LIVE_LINES = saved_lines
+    assert b"\x1b[" not in stderr.getvalue().encode("utf-8", errors="replace")
+
+
 # --- summary-format / exit-code contract surface --------------------------
 
 

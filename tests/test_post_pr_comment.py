@@ -201,6 +201,72 @@ def test_post_marker_is_the_idempotency_key(fake_github):
     assert len(revrem_comments) == 1
 
 
+def test_post_finds_marker_across_paginated_comments(fake_github):
+    """The marker must be found even when it sits past the first 100 comments.
+
+    Idempotency depends on locating the existing marked comment; without Link-
+    header pagination a long-lived PR would get a duplicate comment every run.
+    """
+    # 150 unrelated comments push the marker onto page 2 at per_page=100.
+    fake_github.page_size = 100
+    for i in range(150):
+        fake_github.comments[2000 + i] = {"id": 2000 + i, "body": f"noise {i}"}
+    marker_id = 3000
+    fake_github.comments[marker_id] = {
+        "id": marker_id,
+        "body": ppc.MARKER + "\nold body",
+    }
+    body = ppc.build_comment_body(_clear_index())
+    action = ppc.post_or_update_comment(body, token="t", repo="o/r", pr_number="1")
+    assert action == "updated"
+    # No duplicate created: the marked comment was updated in place.
+    assert len(fake_github.comments) == 151
+    assert ppc.MARKER in fake_github.comments[marker_id]["body"]
+    assert "old body" not in fake_github.comments[marker_id]["body"]
+
+
+def test_post_sends_json_content_type(fake_github):
+    """POST must declare Content-Type: application/json, not let urllib default
+    to application/x-www-form-urlencoded (GitHub expects JSON on this endpoint)."""
+    body = ppc.build_comment_body(_clear_index())
+    ppc.post_or_update_comment(body, token="t", repo="o/r", pr_number="1")
+    post_requests = [r for r in fake_github.requests if r["method"] == "POST"]
+    assert post_requests, "expected a POST request"
+    assert post_requests[-1]["headers"].get("Content-Type") == "application/json"
+
+
+def test_main_handles_invalid_json_response(monkeypatch):
+    """A non-JSON API response (proxy outage, empty body) must exit 1, not crash."""
+    import http.server
+    import threading
+
+    class BadJsonHandler(http.server.BaseHTTPRequestHandler):
+        def log_message(self, fmt, *args):  # noqa: A002
+            pass
+
+        def do_GET(self):  # noqa: N802
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Link", '<http://x>; rel="next"')
+            self.end_headers()
+            self.wfile.write(b"not-json")
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), BadJsonHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        monkeypatch.setattr(ppc, "_API_BASE", base)
+        monkeypatch.setenv("GITHUB_TOKEN", "t")
+        monkeypatch.setenv("GITHUB_REPOSITORY", "o/r")
+        monkeypatch.setenv("GITHUB_PR_NUMBER", "7")
+        # main() must catch the ValueError from json.loads and return 1.
+        assert ppc.main([]) == 1
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def test_comment_before_fail_ordering(fake_github):
     """The comment is posted (created) before any exit-code mapping happens.
     The action applies the exit code LAST; here we assert the posting step

@@ -555,7 +555,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         "--no-tty",
         dest="no_tty",
         action="store_true",
-        default=False,
+        default=None,
         help=(
             "Force non-interactive (headless) output: suppress ANSI escape "
             "sequences, progress spinners, and terminal-title writes on stderr. "

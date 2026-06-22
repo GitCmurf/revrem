@@ -11,6 +11,12 @@ from typing import Any
 
 _ACTIVE_LIVE: Any | None = None
 _ACTIVE_LIVE_LINES: deque[Any] | None = None
+#: Latched by :func:`rich_live_progress` when a run enters headless mode
+#: (``--no-tty``). The fallback consoles built by ``_console_and_text`` for the
+#: ``print_rich_*`` helpers do not receive ``no_tty`` directly, so they consult
+#: this latch to stay ANSI-free under ``--no-tty`` even when no live panel is
+#: active. This is a one-way floor: once forced off, it stays off for the run.
+_NO_TTY_FORCED: bool = False
 RICH_LIVE_MAX_LINES = 7
 RICH_TEXT_MAX_CHARS = 140
 #: Rich style applied to each " · "-separated value in a structured start
@@ -43,12 +49,18 @@ def force_terminal(*, no_tty: bool = False) -> bool:
 
     The single gate for headless suppression (Contract via PLAN-005 T3): Rich
     output, progress spinners, and terminal-title writes are suppressed when
-    either an explicit ``--no-tty`` override is set or the ``CI`` environment
-    variable is present (set automatically by GitHub Actions, CircleCI, Travis,
-    Jenkins, and most other providers). A standard CI run therefore requires
-    no RevRem-specific flags.
+    either an explicit ``--no-tty`` override is set, the run latched headless
+    mode via :func:`rich_live_progress`, or the ``CI`` environment variable is
+    present (set automatically by GitHub Actions, CircleCI, Travis, Jenkins,
+    and most other providers). A standard CI run therefore requires no
+    RevRem-specific flags.
     """
-    return sys.stderr.isatty() and not os.environ.get("CI") and not no_tty
+    return (
+        sys.stderr.isatty()
+        and not os.environ.get("CI")
+        and not no_tty
+        and not _NO_TTY_FORCED
+    )
 
 
 def _console_and_text(*, no_tty: bool = False):
@@ -76,9 +88,14 @@ def rich_live_progress(enabled: bool, *, no_tty: bool = False):
     """Render Rich progress in one in-place panel when Rich is available.
 
     ``no_tty`` (and the ``CI`` env var) suppress ANSI via :func:`force_terminal`
-    so headless runs emit no escape sequences on stderr.
+    so headless runs emit no escape sequences on stderr. Entering with
+    ``no_tty`` also latches the module-level headless flag so the fallback
+    consoles built by the ``print_rich_*`` helpers (which do not receive
+    ``no_tty``) honor ``--no-tty`` even when their text does not route to the
+    live panel. The latch is scoped to this context and restored on exit so
+    test runs remain isolated.
     """
-    global _ACTIVE_LIVE, _ACTIVE_LIVE_LINES
+    global _ACTIVE_LIVE, _ACTIVE_LIVE_LINES, _NO_TTY_FORCED
     if not enabled:
         yield False
         return
@@ -101,14 +118,19 @@ def rich_live_progress(enabled: bool, *, no_tty: bool = False):
     )
     previous_live = _ACTIVE_LIVE
     previous_lines = _ACTIVE_LIVE_LINES
+    previous_no_tty_forced = _NO_TTY_FORCED
     _ACTIVE_LIVE = (live, Panel, Group)
     _ACTIVE_LIVE_LINES = lines
+    # Latch headless mode for the duration of this context so the fallback
+    # consoles built by print_rich_* (which take no no_tty arg) stay ANSI-free.
+    _NO_TTY_FORCED = _NO_TTY_FORCED or no_tty
     try:
         with live:
             yield True
     finally:
         _ACTIVE_LIVE = previous_live
         _ACTIVE_LIVE_LINES = previous_lines
+        _NO_TTY_FORCED = previous_no_tty_forced
 
 
 def _update_live(text: Any) -> bool:

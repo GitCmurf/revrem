@@ -9,7 +9,9 @@ scenario by stable name without hard-coding paths.
 
 Scenarios mirror the run-loop terminal states the report must render:
 ``clear``, ``findings_remediated``, ``findings_remaining``, ``timeout``,
-``check_failure``, ``cost_ceiling``, ``cancelled``, ``all_suppressed``.
+``check_failure``, ``cost_ceiling``, ``cancelled``, ``all_suppressed``,
+and ``findings_with_triage`` (a findings run whose triage artifacts and
+check artifacts exercise the report's triage/checks rendering paths).
 """
 
 from __future__ import annotations
@@ -26,6 +28,7 @@ RUN_SCENARIOS: tuple[str, ...] = (
     "clear",
     "findings_remediated",
     "findings_remaining",
+    "findings_with_triage",
     "timeout",
     "check_failure",
     "cost_ceiling",

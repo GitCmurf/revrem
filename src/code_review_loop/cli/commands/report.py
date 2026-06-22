@@ -66,6 +66,10 @@ def main(argv: Sequence[str]) -> int:
 
     try:
         summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        if not isinstance(summary, dict):
+            raise ValueError(
+                f"expected a JSON object at the top level, got {type(summary).__name__}"
+            )
     except (OSError, ValueError) as exc:
         print(f"ERROR: cannot read {summary_path}: {exc}", file=sys.stderr)
         return CommandFailed(exit_code=1).exit_code

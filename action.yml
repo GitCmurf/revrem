@@ -163,10 +163,14 @@ runs:
     - name: Export artifact URL
       if: always() && env.REVREM_RUN_DIR != '' && inputs.upload-artifacts == 'true'
       shell: bash
+      env:
+        ARTIFACT_URL: ${{ steps.upload-report.outputs.artifact-url }}
       run: |
         # upload-artifact exposes artifact-url on its outputs; fall back to the
         # run URL (set on the comment step) when upload was skipped or empty.
-        echo "REVREM_ARTIFACT_URL=${{ steps.upload-report.outputs.artifact-url }}" >> "$GITHUB_ENV"
+        # Routed through env: to stay consistent with this file's injection-
+        # hardening policy (never interpolate ${{ }} directly into a run script).
+        echo "REVREM_ARTIFACT_URL=$ARTIFACT_URL" >> "$GITHUB_ENV"
 
     - name: Upload raw run directory
       if: always() && env.REVREM_RUN_DIR != '' && inputs.raw-artifacts == 'true'
@@ -179,8 +183,11 @@ runs:
       # NB: compare the boolean to `false`, not the string 'true'. Under GHA's
       # type coercion `head.repo.fork != 'true'` is ALWAYS true (boolean true→1,
       # string 'true'→NaN, 1 != NaN), so the fork guard never fired. `== false`
-      # blocks fork PRs (where the token is read-only) as intended.
-      if: always() && env.REVREM_RUN_DIR != '' && inputs.comment == 'true' && github.event.pull_request.head.repo.fork == false
+      # blocks fork PRs (where the token is read-only) as intended. The
+      # `github.event.pull_request &&` guard keeps this step safe on non-PR
+      # triggers (push/workflow_dispatch), where `.head` would otherwise be a
+      # null-property evaluation error.
+      if: always() && env.REVREM_RUN_DIR != '' && inputs.comment == 'true' && github.event.pull_request && github.event.pull_request.head.repo.fork == false
       shell: bash
       env:
         # The github-token input defaults to "" (empty, NOT an expression), so

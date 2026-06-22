@@ -885,6 +885,7 @@ def profile_from_loop_config(
             progress_style=config.progress_style,
             quiet_progress=not config.progress,
             terminal_title=config.terminal_title,
+            no_tty=config.no_tty,
             artifact_dir=str(config.artifact_dir) if include_artifact_dir else None,
         ),
         runtime=profiles.RuntimeConfig(

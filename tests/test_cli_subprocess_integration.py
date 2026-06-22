@@ -363,6 +363,7 @@ class TtyBuffer(io.StringIO):
 def test_default_runner_refreshes_active_terminal_title_during_child_process(tmp_path, monkeypatch):
     stderr = TtyBuffer()
     monkeypatch.setattr(terminal_mod.sys, "stderr", stderr)
+    monkeypatch.delenv("CI", raising=False)
     monkeypatch.setattr(terminal_mod, "TERMINAL_TITLE_REFRESH_SECONDS", 0.01)
     config = LoopConfig(
         base="main",
@@ -398,6 +399,7 @@ def test_default_runner_refreshes_active_terminal_title_during_child_process(tmp
 def test_default_runner_does_not_refresh_terminal_title_during_rich_progress(tmp_path, monkeypatch):
     stderr = TtyBuffer()
     monkeypatch.setattr(terminal_mod.sys, "stderr", stderr)
+    monkeypatch.delenv("CI", raising=False)
     monkeypatch.setattr(terminal_mod, "TERMINAL_TITLE_REFRESH_SECONDS", 0.01)
     config = LoopConfig(
         base="main",
