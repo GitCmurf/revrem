@@ -47,6 +47,29 @@ _EXIT_CODE_BY_STATUS: dict[str, int] = {
     "error": 1,
 }
 
+#: The severity levels the report-index schema enumerates for top_findings[]
+#: (report-index-v1.schema.json). Any triage finding whose severity is absent or
+#: holds an out-of-enum string is clamped into this set so the index always
+#: validates — a model returning "info" or omitting the field must not produce a
+#: structurally invalid index that breaks downstream schema validators.
+_KNOWN_SEVERITIES: tuple[str, ...] = ("critical", "high", "medium", "low")
+#: Fallback severity for findings whose severity is missing or unrecognized.
+#: "low" is the least-alarming valid value, so a mis-classified finding is never
+#: over-elevated in the report.
+_DEFAULT_SEVERITY = "low"
+
+
+def _normalize_severity(raw: object) -> str:
+    """Clamp a triage finding severity into the schema's enum.
+
+    The triage artifact is model-derived and may carry "info", a typo, or omit
+    the key entirely. The report index is schema-validated downstream, so an
+    out-of-enum value would make the whole index invalid. Normalize to a known
+    severity (defaulting low) instead.
+    """
+    severity = str(raw or "").strip().lower()
+    return severity if severity in _KNOWN_SEVERITIES else _DEFAULT_SEVERITY
+
 
 def _esc(value: object, *, redact: bool) -> str:
     """HTML-escape (and optionally redact) a single interpolated value."""
@@ -337,7 +360,7 @@ def _findings_section(
         parts.extend(configured)
         parts.append("</tbody></table>")
     else:
-        parts.append('<p class="placeholder">No configured findings recorded.</p>')
+        parts.append('<p class="placeholder">No confirmed findings recorded.</p>')
 
     if suppressed_rows:
         parts.append("<h3>Suppressed findings</h3><ul>")
@@ -627,7 +650,7 @@ def _count_findings_by_severity(
     ``status_classification`` event payload is only ``{message, summary}`` and
     carries no severities.
     """
-    counts: dict[str, int] = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+    counts: dict[str, int] = dict.fromkeys(_KNOWN_SEVERITIES, 0)
     for finding in _flatten_confirmed_findings(triage_findings):
         severity = str(finding.get("severity", "")).lower()
         if severity in counts:
@@ -654,7 +677,7 @@ def _top_findings(
         file_path = paths[0] if paths else None
         findings.append(
             {
-                "severity": finding.get("severity", "unknown"),
+                "severity": _normalize_severity(finding.get("severity")),
                 "file": _normalize_path(file_path) if file_path else None,
                 "line": None,  # triage findings are path-level, not line-level
                 "title": title,

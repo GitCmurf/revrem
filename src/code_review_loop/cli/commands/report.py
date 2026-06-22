@@ -121,7 +121,12 @@ def main(argv: Sequence[str]) -> int:
             return CommandFailed(exit_code=1).exit_code
         print(str(output_path))
 
-    if truncated:
+    if truncated and event_records:
+        # A genuinely truncated stream (malformed line mid-read) yielded a
+        # partial event set; the report rendered with what was available. The
+        # fully-malformed case (ValueError -> empty event_records) already
+        # printed its own "summary.json only" warning above and must not reach
+        # here, or the two messages would contradict each other.
         print(
             f"WARNING: {events_path} was truncated; report rendered with the "
             "events available.",

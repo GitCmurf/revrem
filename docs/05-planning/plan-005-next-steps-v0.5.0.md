@@ -763,7 +763,7 @@ infrastructure (L3).
      fail with a cryptic git error.
    - **Run:** `revrem --base "$base" --profile "$profile" --no-tty
      --progress-style compact --summary-format json
-     --max-iterations ... --max-wall-seconds ... --max-usd ...`.
+     --max-iterations ... --max-wall-seconds ... --max-tokens ... --max-usd ...`.
      The `checks` input (newline-delimited list) must be split into repeated
      `--check <cmd>` arguments; do this in a bash step with
      `while IFS= read -r line; do [[ -n "$line" ]] && args+=(--check "$line"); done <<< "$checks"`.

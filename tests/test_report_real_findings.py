@@ -91,13 +91,13 @@ def test_json_index_counts_and_surfaces_the_finding():
 
 
 def test_findings_section_is_not_empty_on_real_shaped_input():
-    """No real run should show "No configured findings recorded" when triage found issues."""
+    """No real run should show "No confirmed findings recorded" when triage found issues."""
     summary, evs = _load()
     triage = json.loads((_FIXTURE / "triage-1.json").read_text(encoding="utf-8"))
     html_out = render_report(
         summary, evs, triage_findings=[triage] if triage.get("confirmed_findings") else []
     )
-    assert "No configured findings recorded" not in html_out
+    assert "No confirmed findings recorded" not in html_out
 
 
 def test_checks_section_renders_from_summary_iterations(capsys):

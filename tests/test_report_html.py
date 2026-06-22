@@ -241,6 +241,46 @@ def test_report_command_truncated_events_still_renders_with_warning(
     assert "truncated" in capsys.readouterr().err.lower()
 
 
+def test_report_command_malformed_events_warns_once_without_contradiction(
+    tmp_path: Path, capsys
+):
+    """A fully-malformed event stream (seq gap -> ValueError) renders from
+    summary.json only and must NOT also print the contradictory "rendered with
+    the events available" message (which implies partial events were used when
+    none were). The two warnings are for distinct truncation states."""
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "summary.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "run_id": "mal-1",
+                "final_status": "error",
+                "stopped_reason": "review_failed",
+                "started_at": "2026-06-21T00:00:00Z",
+                "finished_at": "2026-06-21T00:00:01Z",
+            }
+        ),
+        encoding="utf-8",
+    )
+    # A seq gap raises ValueError in read_events -> event_records stays empty.
+    (run_dir / events.EVENTS_FILENAME).write_text(
+        '{"iteration":null,"kind":"summary","payload":{},"phase":null,'
+        '"run_id":"mal-1","schema_version":"1.0","seq":5,'
+        '"ts":"2026-06-21T00:00:01Z"}\n',
+        encoding="utf-8",
+    )
+    exit_code = report_command.main(
+        [str(run_dir), "--output", str(tmp_path / "report.html")]
+    )
+    assert exit_code == 0
+    err = capsys.readouterr().err.lower()
+    # The "summary.json only" message must appear (no events were usable)...
+    assert "summary.json only" in err
+    # ...and the contradictory "events available" message must NOT (none were).
+    assert "events available" not in err
+
+
 # --- machine-readable JSON index ------------------------------------------
 
 

@@ -1,3 +1,22 @@
+---
+document_id: REVREM-PLAN-006
+type: PLAN
+title: Scorecard "Signed-Releases" — next steps (handoff)
+status: Draft
+version: '0.1'
+last_updated: '2026-06-19'
+owner: GitCmurf
+docops_version: '2.0'
+area: planning
+description: Handoff note for the OpenSSF Scorecard signed-releases work — current state (scorecard green after three layered fixes), in-flight PR #33 staging *.sigstore copies, and the remaining steps to reach a signed-releases score of 8 then 10 (real SLSA provenance).
+keywords:
+  - scorecard
+  - signed-releases
+  - sigstore
+  - slsa
+  - security
+---
+
 # Scorecard "Signed-Releases" — next steps (handoff)
 
 _Last updated: 2026-06-19. Written to hand off to a fresh thread._

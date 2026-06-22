@@ -47,6 +47,36 @@ def test_report_index_validates_against_schema(scenario: str):
     validate(idx, _REPORT_INDEX_SCHEMA)
 
 
+def test_report_index_validates_with_triage_findings_including_unknown_severity():
+    """top_findings[].severity is schema-enum-constrained (critical/high/medium/low).
+
+    A model that returns an out-of-enum severity ("info") or omits the key must
+    not produce a structurally invalid index. The renderer clamps such values
+    into the enum so every index validates downstream. This also closes a test
+    gap: the parametrized schema test above passes triage_findings=None, so
+    top_findings is always [] and the enum was never exercised.
+    """
+    summary = {
+        "run_id": "r1",
+        "final_status": "findings",
+        "artifact_paths": {},
+    }
+    triage_findings = [
+        {
+            "confirmed_findings": [
+                {"severity": "critical", "affected_paths": ["src/a.py"], "summary": "real"},
+                {"severity": "INFO", "affected_paths": ["src/b.py"], "summary": "out of enum"},
+                {"affected_paths": ["src/c.py"], "summary": "missing severity"},
+            ]
+        }
+    ]
+    idx = build_report_index(summary, [], triage_findings=triage_findings)
+    # Must validate despite the out-of-enum / missing severities in the source.
+    validate(idx, _REPORT_INDEX_SCHEMA)
+    severities = {f["severity"] for f in idx["top_findings"]}
+    assert severities == {"critical", "low"}  # "INFO" and missing both clamp to "low"
+
+
 def test_artifact_paths_preserve_list_shape():
     """List-valued artifact paths (triage/reviews/...) must stay lists, not be
     flattened to repr strings like "['triage-1.json']" (GPT review #3). The
