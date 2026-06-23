@@ -265,6 +265,7 @@ def test_dogfood_workflow_parses_and_uses_local_install():
     assert data["name"] == "RevRem (dogfood)"
     job = data["jobs"]["revrem"]
     assert job["if"] == "github.event.pull_request.head.repo.fork == false"
+    assert job["timeout-minutes"] == 20
     # Least privilege declared on the caller workflow.
     assert data["permissions"]["pull-requests"] == "write"
     assert data["permissions"]["contents"] == "read"
@@ -295,6 +296,7 @@ def test_dogfood_workflow_parses_and_uses_local_install():
     assert revrem_step["with"]["install-mode"] == "local"
     assert revrem_step["with"]["profile"] == "dogfood"
     assert revrem_step["with"]["routing"] == "false"
+    assert revrem_step["with"]["max-wall-seconds"] == "900"
     checks = revrem_step["with"]["checks"]
     for command in (
         "./.venv/bin/ruff check .",

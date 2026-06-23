@@ -14,6 +14,7 @@ jobs:
   revrem:
     if: github.event.pull_request.head.repo.fork == false
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -54,6 +55,7 @@ jobs:
           install-mode: local
           profile: dogfood
           routing: "false"
+          max-wall-seconds: "900"
           comment: "true"
           upload-artifacts: "true"
           fail-on-findings: "false"

@@ -130,8 +130,10 @@ single updatable PR comment. Tier 1 of `REVREM-PLAN-005`; expert profiles
   that need to force routing on/off, and setup failures print the latest
   preflight `diagnostics.json` when RevRem writes one. The dogfood workflow
   configures a Git author before running RevRem so commit-mode remediation can
-  create verified commits on GitHub-hosted runners. The credentialed dogfood job
-  skips fork PRs where provider secrets are intentionally unavailable.
+  create verified commits on GitHub-hosted runners, and now has both a RevRem
+  wall-clock budget and GitHub job timeout so nested Codex execution is bounded
+  in CI. The credentialed dogfood job skips fork PRs where provider secrets are
+  intentionally unavailable.
 
 ### Stability
 
