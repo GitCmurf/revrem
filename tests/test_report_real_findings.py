@@ -112,6 +112,10 @@ def test_checks_section_renders_from_summary_iterations(capsys):
     assert "passed" in html_out
     # The summary-sourced check renders, not the empty placeholder.
     assert "No check results recorded" not in html_out
+    # The Outcome counters use the same summary-sourced check data as the
+    # Checks table, so the report cannot contradict itself.
+    assert "<dt>Checks passed</dt><dd>1</dd>" in html_out
+    assert "<dt>Checks failed</dt><dd>0</dd>" in html_out
 
 
 def test_phase_config_section_renders_per_phase_harness_and_model(capsys):

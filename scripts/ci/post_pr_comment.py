@@ -88,7 +88,7 @@ def build_comment_body(
     cost_str = f"${cost:.2f}" if isinstance(cost, (int, float)) else "n/a"
     lines.append("| | |")
     lines.append("|---|---|")
-    lines.append(f"| **Findings** | {total_findings} ({sev_row}) |")
+    lines.append(f"| **Findings** | {_md_cell(f'{total_findings} ({sev_row})')} |")
     if suppression:
         lines.append(f"| **Suppressed** | {suppression} |")
     lines.append(f"| **Cost** | {cost_str} |")

@@ -160,6 +160,31 @@ def test_phase_config_section_renders_model_bearing_phases_only():
     assert "<td>runtime</td>" not in html_out
 
 
+@pytest.mark.parametrize(
+    ("stopped_reason", "expected_code"),
+    (
+        ("review_failed", 1),
+        ("budget_ceiling_hit", 3),
+        ("setup_failed", 4),
+        ("cancelled", 5),
+    ),
+)
+def test_error_exit_code_mapping_honors_stopped_reason(
+    stopped_reason: str, expected_code: int
+):
+    """The HTML report mirrors the runtime exit-code contract for error states."""
+    summary = {
+        "schema_version": "1.0",
+        "run_id": f"error-{stopped_reason}",
+        "final_status": "error",
+        "stopped_reason": stopped_reason,
+        "started_at": "2026-06-21T00:00:00Z",
+        "finished_at": "2026-06-21T00:00:01Z",
+    }
+    html_out = render_report(summary, [])
+    assert f"Exit code: <code>{expected_code}</code>" in html_out
+
+
 # --- CLI command -----------------------------------------------------------
 
 

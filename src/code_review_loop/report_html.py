@@ -46,6 +46,11 @@ _EXIT_CODE_BY_STATUS: dict[str, int] = {
     "unknown": 2,
     "error": 1,
 }
+_EXIT_CODE_BY_ERROR_REASON: dict[str, int] = {
+    "budget_ceiling_hit": 3,
+    "setup_failed": 4,
+    "cancelled": 5,
+}
 
 #: The severity levels the report-index schema enumerates for top_findings[]
 #: (report-index-v1.schema.json). Any triage finding whose severity is absent or
@@ -99,7 +104,10 @@ def _status_badge(final_status: str, *, redact: bool) -> str:
 def _exit_code_for(summary: dict[str, Any]) -> int:
     """Map a run's terminal state to its documented exit code (display only)."""
     final_status = summary.get("final_status")
+    stopped_reason = summary.get("stopped_reason")
     if isinstance(final_status, str):
+        if final_status == "error" and isinstance(stopped_reason, str):
+            return _EXIT_CODE_BY_ERROR_REASON.get(stopped_reason, 1)
         return _EXIT_CODE_BY_STATUS.get(final_status, 1)
     return 1
 
@@ -202,18 +210,7 @@ def _outcome_summary(
     reason = _esc(summary.get("stopped_reason"), redact=redact)
     iterations = summary.get("iterations") or []
     iteration_count = len(iterations) if isinstance(iterations, list) else 0
-    check_pass = sum(
-        1
-        for ev in events
-        if ev.kind == "check_result"
-        and str(ev.payload.get("status", "")).lower() == "passed"
-    )
-    check_fail = sum(
-        1
-        for ev in events
-        if ev.kind == "check_result"
-        and str(ev.payload.get("status", "")).lower() == "failed"
-    )
+    check_pass, check_fail = _check_counts(summary, events)
     suppressed = sum(1 for ev in events if ev.kind == "suppressed")
     # Per-iteration review status from summary.iterations[].review_status — the
     # engine's record of what each review pass concluded (e.g. clear/findings).
@@ -237,6 +234,46 @@ def _outcome_summary(
         f"<dt>Suppressed findings</dt><dd>{suppressed}</dd>"
         "</dl></section>"
     )
+
+
+def _check_counts(summary: dict[str, Any], events: list[Event]) -> tuple[int, int]:
+    """Count checks from the same source order as the rendered Checks table."""
+    saw_summary_check = False
+    summary_pass = 0
+    summary_fail = 0
+    iterations = summary.get("iterations") or []
+    if isinstance(iterations, list):
+        for it in iterations:
+            if not isinstance(it, dict):
+                continue
+            checks = it.get("checks")
+            if not isinstance(checks, list):
+                continue
+            for check in checks:
+                if not isinstance(check, dict):
+                    continue
+                saw_summary_check = True
+                status = str(check.get("status", "")).lower()
+                if status == "passed":
+                    summary_pass += 1
+                elif status == "failed":
+                    summary_fail += 1
+    if saw_summary_check:
+        return summary_pass, summary_fail
+
+    event_pass = sum(
+        1
+        for ev in events
+        if ev.kind == "check_result"
+        and str(ev.payload.get("status", "")).lower() == "passed"
+    )
+    event_fail = sum(
+        1
+        for ev in events
+        if ev.kind == "check_result"
+        and str(ev.payload.get("status", "")).lower() == "failed"
+    )
+    return event_pass, event_fail
 
 
 def _timeline(events: list[Event], *, redact: bool) -> str:

@@ -121,6 +121,10 @@ single updatable PR comment. Tier 1 of `REVREM-PLAN-005`; expert profiles
   to repr strings) and redacts path values when `redact=True`.
 - **PR comment** escapes Markdown table cells so a model-derived finding title
   containing `|`, a newline, or a backtick cannot break or inject formatting.
+- Dogfood-found report/comment correctness fixes: error reports now display the
+  documented exit code for budget/setup/cancelled stops, outcome check counters
+  count summary-sourced checks instead of only event-sourced checks, and the PR
+  comment's severity-count summary row escapes its internal `|` separators.
 - **Dogfood Action workflow** now bootstraps Codex through
   `openai/codex-action@v1` before invoking RevRem, so GitHub-hosted runners
   have the `codex` executable/proxy that preflight requires. It also creates

@@ -80,6 +80,15 @@ def test_body_lists_findings_when_present():
     assert "high: 2" in body
 
 
+def test_summary_severity_counts_do_not_break_markdown_table():
+    body = ppc.build_comment_body(_findings_index())
+    row = next(ln for ln in body.splitlines() if ln.startswith("| **Findings** |"))
+    assert row == (
+        "| **Findings** | "
+        "6 (critical: 1 \\| high: 2 \\| medium: 0 \\| low: 3) |"
+    )
+
+
 def test_body_no_findings_when_absent():
     body = ppc.build_comment_body(_clear_index())
     assert "Top findings" not in body
