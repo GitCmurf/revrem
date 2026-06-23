@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.71'
+version: '1.72'
 last_updated: '2026-06-23'
 owner: GitCmurf
 docops_version: '2.0'
@@ -856,6 +856,9 @@ disabling redaction requires both `--no-redact` and
 `--i-understand-the-risks`, as with the bug-report bundle. If `events.jsonl`
 is truncated or malformed, the report renders what is available and prints a
 warning to stderr rather than failing the render — the report is diagnostic.
+Triage artifacts referenced by `summary.artifact_paths.triage` are loaded only
+when the resolved path remains inside the run directory; absolute paths and
+`..` traversal are ignored.
 
 The report body, in order: a **header** (run id, final-status badge with
 distinct colours, base/HEAD, profile, per-phase harness/model, wall-clock
@@ -1415,6 +1418,9 @@ the PR comment. The exit code is mapped last, after artifacts and comment land:
 0 (clear) passes; 1 (typed runtime error) fails with the redacted
 `failure_summary` when available; 2 (findings remain) respects
 `fail-on-findings`; 3 (budget ceiling) and 4/5 (setup/cancel) fail the job.
+The final exit-mapping step tolerates a missing `REVREM_STDERR` export, so a
+setup failure before the action creates its scratch stderr file does not mask
+the original error with a shell `nounset` failure.
 
 The `routing` input is an optional profile override. Leave it empty to use the
 selected profile, set `"true"` to force routing on, or set `"false"` for
@@ -1706,6 +1712,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.72 | 2026-06-23 | Codex | Documented scoped report artifact loading and missing-stderr tolerance in the GitHub Action exit mapper |
 | 1.71 | 2026-06-23 | Codex | Documented the portable GitHub Action diagnostics fallback for setup-crash reports on Linux and macOS runners |
 | 1.70 | 2026-06-23 | Codex | Documented CI cost risk, budgeted Action usage, and report-index failure summaries for quota/billing exhaustion |
 | 1.69 | 2026-06-23 | Codex | Documented Codex Action proxy quota exhaustion classification as non-retryable `provider quota exhausted` |

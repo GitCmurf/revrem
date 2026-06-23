@@ -27,11 +27,11 @@ def _load_triage_findings(
     """Load the latest parsed ``triage-N.json`` payload referenced by ``summary``.
 
     ``summary.artifact_paths.triage`` is a list of paths (the engine's real
-    location; highest N is authoritative). Triage paths may be relative to the
-    run dir or absolute. Missing/unreadable artifacts are skipped gracefully —
-    the report renders with whatever triage is available. Returns ``None`` when
-    no triage artifacts are referenced or loaded, so the renderer treats it as
-    "no triage" (honest, not an empty-list false positive).
+    location; highest N is authoritative). Referenced paths must remain inside
+    the run dir. Missing/unreadable/out-of-scope artifacts are skipped
+    gracefully — the report renders with whatever triage is available. Returns
+    ``None`` when no triage artifacts are referenced or loaded, so the renderer
+    treats it as "no triage" (honest, not an empty-list false positive).
     """
     artifact_paths = summary.get("artifact_paths") or {}
     triage_paths = artifact_paths.get("triage") or []
@@ -41,9 +41,9 @@ def _load_triage_findings(
     for index, raw in enumerate(triage_paths):
         if not isinstance(raw, str) or not raw:
             continue
-        candidate = Path(raw)
-        if not candidate.is_absolute():
-            candidate = run_dir / candidate
+        candidate = _scoped_run_artifact_path(run_dir, raw)
+        if candidate is None:
+            continue
         try:
             payload = json.loads(candidate.read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -54,6 +54,20 @@ def _load_triage_findings(
         return None
     _key, payload = max(loaded, key=lambda item: item[0])
     return [payload]
+
+
+def _scoped_run_artifact_path(run_dir: Path, raw_path: str) -> Path | None:
+    """Resolve a summary artifact path only if it stays inside ``run_dir``."""
+    raw = Path(raw_path)
+    if raw.is_absolute():
+        return None
+    try:
+        root = run_dir.resolve()
+        candidate = (root / raw).resolve()
+        candidate.relative_to(root)
+    except (OSError, ValueError):
+        return None
+    return candidate
 
 
 def _triage_sort_key(raw_path: str, index: int) -> tuple[int, int]:

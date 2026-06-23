@@ -72,6 +72,30 @@
         "type": "integer",
         "minimum": 0
       },
+      "properties": {
+        "critical": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "high": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "low": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "medium": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "critical",
+        "high",
+        "medium",
+        "low"
+      ],
       "type": "object"
     },
     "run_id": {

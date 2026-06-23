@@ -249,6 +249,14 @@ runs:
         FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
       run: |
         set -uo pipefail
+        print_revrem_stderr() {
+          local stderr_path="${REVREM_STDERR:-}"
+          if [[ -n "$stderr_path" && -f "$stderr_path" ]]; then
+            cat "$stderr_path" || true
+          else
+            echo "(revrem stderr unavailable)"
+          fi
+        }
         case "${EXIT:-}" in
           0)
             echo "RevRem: clear."
@@ -265,7 +273,7 @@ runs:
               echo "::error::RevRem ended with an error. See the report artifact when available."
             fi
             echo "::group::revrem stderr"
-            cat "$REVREM_STDERR" || true
+            print_revrem_stderr
             echo "::endgroup::"
             exit 1
             ;;
@@ -279,19 +287,19 @@ runs:
             ;;
           3)
             echo "::error::RevRem hit a budget ceiling (tokens, cost, or wall-clock)."
-            cat "$REVREM_STDERR" 2>/dev/null || true
+            print_revrem_stderr
             exit 1
             ;;
           4|5)
             echo "::error::RevRem exited with code $EXIT."
             echo "::group::revrem stderr"
-            cat "$REVREM_STDERR" || true
+            print_revrem_stderr
             echo "::endgroup::"
             exit 1
             ;;
           *)
             echo "::error::RevRem exited with unexpected code $EXIT."
-            cat "$REVREM_STDERR" 2>/dev/null || true
+            print_revrem_stderr
             exit 1
             ;;
         esac

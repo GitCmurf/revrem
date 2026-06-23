@@ -645,7 +645,7 @@ tests catch mistakes.
    > not catch `/dev/tty` writes. The T3 test suite must monkeypatch
    > `write_terminal_control_to_tty` and assert it is never called under
    > `--no-tty` or `CI=true`.
-
+   >
    > **Why two mechanisms?** A single `--no-tty` flag requires every CI
    > workflow YAML to include it explicitly — easy to forget. A single env-var
    > check means a developer running a local script cannot force headless mode

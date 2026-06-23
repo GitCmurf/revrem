@@ -116,7 +116,7 @@ def test_action_scratch_files_live_under_runner_temp():
     assert "2> \"$REVREM_STDERR\"" in run_step["run"]
     assert "revrem-out.json" not in render_step["run"]
     assert "revrem-report.html" not in str(upload_step["with"]["path"])
-    assert "$REVREM_STDERR" in map_step["run"]
+    assert "${REVREM_STDERR:-}" in map_step["run"]
 
 
 def test_action_splits_checks_safely():
@@ -164,6 +164,15 @@ def test_action_error_annotation_includes_report_failure_summary():
     assert "REVREM_REPORT_JSON" in script
     assert "failure_summary" in script
     assert "RevRem ended with an error: $DETAIL" in script
+
+
+def test_action_exit_mapping_tolerates_missing_stderr_env_with_nounset():
+    steps = _load("action.yml")["runs"]["steps"]
+    map_step = next(s for s in steps if s.get("name") == "Map exit code")
+    script = map_step["run"]
+    assert "set -uo pipefail" in script
+    assert "${REVREM_STDERR:-}" in script
+    assert 'cat "$REVREM_STDERR"' not in script
 
 
 def test_action_routing_input_is_validated_and_env_mapped():

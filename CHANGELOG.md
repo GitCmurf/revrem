@@ -26,7 +26,9 @@ single updatable PR comment. Tier 1 of `REVREM-PLAN-005`; expert profiles
 - `report-index-v1` JSON schema: the frozen cross-boundary contract describing
   the machine index's fields and nullability (`cost_usd` null for dry-runs /
   fake harnesses; `top_findings` empty when none; `artifact_paths` empty when
-  unavailable). Added with a `_history/` baseline.
+  unavailable). `finding_counts` now machine-enforces the baseline severity keys
+  (`critical`, `high`, `medium`, `low`) that the prose contract already
+  promised. Added with a `_history/` baseline.
 - Reference GitHub Action (`action.yml`): runs a revrem profile on a pull
   request, uploads the redacted HTML report, and posts a single updatable PR
   comment. Composite action with inputs for base, profile, budgets, checks,
@@ -36,6 +38,10 @@ single updatable PR comment. Tier 1 of `REVREM-PLAN-005`; expert profiles
   comment land). Its setup-crash diagnostic fallback uses Python/pathlib rather
   than GNU-only `find -printf`, so macOS runners can still print the latest
   `diagnostics.json`. Fork-PR safe and least-privilege.
+- `revrem report` loads referenced triage artifacts only when the resolved path
+  remains inside the run directory; absolute paths and `..` traversal are
+  ignored so a crafted run summary cannot make the renderer read arbitrary
+  files.
 - `--no-tty` flag: forces non-interactive (headless) output — suppresses ANSI
   escape sequences, progress spinners, and terminal-title writes on stderr.
   Auto-triggered when the `CI` environment variable is set (GitHub Actions,
@@ -162,6 +168,9 @@ single updatable PR comment. Tier 1 of `REVREM-PLAN-005`; expert profiles
   makes paid model API calls and can become too expensive for non-commercial
   hobby use. The credentialed dogfood job skips fork PRs where provider secrets
   are intentionally unavailable.
+- The Action exit-code mapper now tolerates a missing `REVREM_STDERR` export
+  under `set -u`, so setup failures before scratch-file creation report the
+  action error instead of being masked by an unbound-variable shell failure.
 
 ### Stability
 

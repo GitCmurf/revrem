@@ -85,6 +85,25 @@ def test_report_index_validates_with_triage_findings_including_unknown_severity(
     assert idx["finding_counts"]["low"] == 2  # "INFO" + missing severity
 
 
+def test_report_index_schema_requires_baseline_finding_count_keys():
+    idx = {
+        "schema_version": "1.0",
+        "run_id": "r1",
+        "final_status": "clear",
+        "stopped_reason": "review_clear",
+        "finding_counts": {"critical": 0, "high": 0, "medium": 0},
+        "suppression_count": 0,
+        "cost_usd": None,
+        "top_findings": [],
+        "artifact_paths": {},
+    }
+
+    validator = Draft202012Validator(_REPORT_INDEX_SCHEMA)
+    errors = list(validator.iter_errors(idx))
+
+    assert any(error.validator == "required" and "low" in str(error) for error in errors)
+
+
 def test_artifact_paths_preserve_list_shape():
     """List-valued artifact paths (triage/reviews/...) must stay lists, not be
     flattened to repr strings like "['triage-1.json']" (GPT review #3). The
@@ -187,6 +206,68 @@ def test_report_command_json_ignores_output_flag(capsys, tmp_path: Path):
     json.loads(captured.out)
     # --output was ignored: no file written.
     assert not bogus_output.exists()
+
+
+def test_report_command_ignores_triage_artifacts_outside_run_dir(
+    capsys, tmp_path: Path
+) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    outside = tmp_path / "outside.json"
+    outside.write_text(
+        json.dumps(
+            {
+                "confirmed_findings": [
+                    {
+                        "severity": "critical",
+                        "affected_paths": ["outside.py"],
+                        "summary": "outside finding",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "triage-1.json").write_text(
+        json.dumps(
+            {
+                "confirmed_findings": [
+                    {
+                        "severity": "low",
+                        "affected_paths": ["inside.py"],
+                        "summary": "inside finding",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / events.EVENTS_FILENAME).write_text("", encoding="utf-8")
+    (run_dir / "summary.json").write_text(
+        json.dumps(
+            {
+                "run_id": "scoped-run",
+                "final_status": "findings",
+                "stopped_reason": "max_iterations_reached",
+                "artifact_paths": {
+                    "triage": [
+                        "../outside.json",
+                        str(outside),
+                        "triage-1.json",
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = report_command.main([str(run_dir), "--format", "json"])
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert [finding["title"] for finding in payload["top_findings"]] == [
+        "inside finding"
+    ]
 
 
 def test_clear_run_index_matches_golden_snapshot():
