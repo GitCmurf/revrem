@@ -41,7 +41,9 @@ single updatable PR comment. Tier 1 of `REVREM-PLAN-005`; expert profiles
 - `revrem report` loads referenced triage artifacts only when the resolved path
   remains inside the run directory; absolute paths and `..` traversal are
   ignored so a crafted run summary cannot make the renderer read arbitrary
-  files.
+  files. Report path normalization also converts Windows-style `\` separators
+  to `/` before rendering HTML or JSON, preserving the POSIX-normalized report
+  contract across platforms.
 - `--no-tty` flag: forces non-interactive (headless) output — suppresses ANSI
   escape sequences, progress spinners, and terminal-title writes on stderr.
   Auto-triggered when the `CI` environment variable is set (GitHub Actions,

@@ -123,6 +123,37 @@ def test_artifact_paths_preserve_list_shape():
     assert ap["checks"] == []
 
 
+def test_report_index_normalizes_windows_path_separators():
+    summary = {
+        "run_id": "r1",
+        "final_status": "findings",
+        "artifact_paths": {
+            "summary": "artifacts\\summary.json",
+            "triage": ["artifacts\\triage-1.json"],
+        },
+    }
+    triage_findings = [
+        {
+            "confirmed_findings": [
+                {
+                    "severity": "medium",
+                    "affected_paths": ["src\\app.py"],
+                    "summary": "Windows-style path",
+                },
+            ]
+        }
+    ]
+
+    idx = build_report_index(
+        summary, [], redact=True, triage_findings=triage_findings
+    )
+
+    validate(idx, _REPORT_INDEX_SCHEMA)
+    assert idx["artifact_paths"]["summary"] == "artifacts/summary.json"
+    assert idx["artifact_paths"]["triage"] == ["artifacts/triage-1.json"]
+    assert idx["top_findings"][0]["file"] == "src/app.py"
+
+
 def test_artifact_paths_are_redacted_when_redact_true():
     """An absolute run dir under the user's home must be redacted in the index
     when redact=True (GPT review #7). redact_text scrubs the current home to
