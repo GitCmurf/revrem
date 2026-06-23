@@ -139,9 +139,12 @@ single updatable PR comment. Tier 1 of `REVREM-PLAN-005`; expert profiles
   uploaded report. Review failure diagnostics now also carry bounded, redacted
   stdout/stderr excerpts so provider CLI errors can be diagnosed without
   uploading raw run artifacts, and the Codex Action proxy's quota-exceeded
-  wording is classified as non-retryable `provider_quota_exhausted`. The Action
-  now maps exit code `1` explicitly as a documented RevRem error instead of
-  labelling it an unexpected code.
+  wording is classified as non-retryable `provider_quota_exhausted`. The report
+  index now carries a bounded redacted `failure_summary`, and the PR comment /
+  GitHub Actions error annotation surface quota or billing exhaustion explicitly
+  instead of requiring operators to open the full report. The Action now maps
+  exit code `1` explicitly as a documented RevRem error instead of labelling it
+  an unexpected code.
 - **Dogfood Action workflow** now bootstraps Codex through
   `openai/codex-action@v1` before invoking RevRem, so GitHub-hosted runners
   have the `codex` executable/proxy that preflight requires. It also creates
@@ -153,8 +156,10 @@ single updatable PR comment. Tier 1 of `REVREM-PLAN-005`; expert profiles
   configures a Git author before running RevRem so commit-mode remediation can
   create verified commits on GitHub-hosted runners, and now has both a RevRem
   wall-clock budget and GitHub job timeout so nested Codex execution is bounded
-  in CI. The credentialed dogfood job skips fork PRs where provider secrets are
-  intentionally unavailable.
+  in CI. It also carries a `max-usd` ceiling because provider-backed GitHub CI
+  makes paid model API calls and can become too expensive for non-commercial
+  hobby use. The credentialed dogfood job skips fork PRs where provider secrets
+  are intentionally unavailable.
 
 ### Stability
 

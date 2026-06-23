@@ -69,6 +69,7 @@ def build_comment_body(
     suppression = report_index.get("suppression_count", 0)
     cost = report_index.get("cost_usd")
     top = report_index.get("top_findings") or []
+    failure = report_index.get("failure_summary")
 
     status_emoji = {
         "clear": "white_check_mark",
@@ -94,6 +95,10 @@ def build_comment_body(
     lines.append(f"| **Cost** | {cost_str} |")
     if stopped_reason:
         lines.append(f"| **Stop reason** | `{_md_cell(stopped_reason)}` |")
+    if isinstance(failure, dict):
+        message = failure.get("message") or failure.get("detail") or failure.get("reason")
+        if message:
+            lines.append(f"| **Failure** | {_md_cell(message)} |")
     lines.append("")
 
     if top:

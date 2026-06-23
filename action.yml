@@ -1,5 +1,8 @@
 name: revrem
-description: Run a RevRem code-review remediation loop on a pull request and post a single updatable comment with the results.
+description: >-
+  Run a RevRem code-review remediation loop on a pull request and post a single
+  updatable comment with the results. WARNING: provider-backed CI makes paid
+  model API calls; set max-usd/max-tokens before enabling on GitHub.
 author: GitCmurf
 branding:
   icon: check-circle
@@ -19,7 +22,7 @@ inputs:
     description: Wall-clock budget in seconds.
     default: ""
   max-usd:
-    description: USD cost ceiling.
+    description: USD cost ceiling. Strongly recommended for GitHub CI because provider-backed runs can incur real API charges.
     default: ""
   max-tokens:
     description: Token budget ceiling.
@@ -252,7 +255,15 @@ runs:
             exit 0
             ;;
           1)
-            echo "::error::RevRem ended with an error. See the report artifact when available."
+            DETAIL=""
+            if [[ -n "${REVREM_REPORT_JSON:-}" && -f "$REVREM_REPORT_JSON" ]]; then
+              DETAIL=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); f=d.get("failure_summary") or {}; msg=f.get("message") or f.get("detail") or f.get("reason") or ""; print(str(msg).replace("\r", " ").replace("\n", " "))' "$REVREM_REPORT_JSON" 2>/dev/null || true)
+            fi
+            if [[ -n "$DETAIL" ]]; then
+              echo "::error::RevRem ended with an error: $DETAIL"
+            else
+              echo "::error::RevRem ended with an error. See the report artifact when available."
+            fi
             echo "::group::revrem stderr"
             cat "$REVREM_STDERR" || true
             echo "::endgroup::"

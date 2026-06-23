@@ -96,6 +96,48 @@ def test_stop_reason_does_not_break_markdown_table_or_code_span():
     assert row == "| **Stop reason** | `bad\\|reason with 'code'` |"
 
 
+def test_failure_summary_is_rendered_in_summary_table():
+    idx = {
+        **_clear_index(),
+        "final_status": "error",
+        "stopped_reason": "review_failed",
+        "failure_summary": {
+            "phase": "review",
+            "iteration": "1",
+            "reason": "provider_quota_exhausted",
+            "detail": "provider quota exhausted",
+            "message": "Provider quota/billing exhausted. Fix billing, then rerun.",
+        },
+    }
+
+    body = ppc.build_comment_body(idx)
+
+    row = next(ln for ln in body.splitlines() if ln.startswith("| **Failure** |"))
+    assert row == (
+        "| **Failure** | "
+        "Provider quota/billing exhausted. Fix billing, then rerun. |"
+    )
+
+
+def test_failure_summary_does_not_break_markdown_table():
+    idx = {
+        **_clear_index(),
+        "final_status": "error",
+        "failure_summary": {
+            "phase": "review",
+            "iteration": "1",
+            "reason": "bad|reason",
+            "detail": "",
+            "message": "bad | failure\nwith `code`",
+        },
+    }
+
+    body = ppc.build_comment_body(idx)
+
+    row = next(ln for ln in body.splitlines() if ln.startswith("| **Failure** |"))
+    assert row == "| **Failure** | bad \\| failure with 'code' |"
+
+
 def test_body_no_findings_when_absent():
     body = ppc.build_comment_body(_clear_index())
     assert "Top findings" not in body

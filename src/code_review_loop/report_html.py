@@ -872,6 +872,48 @@ def _artifact_paths(summary: dict[str, Any], *, redact: bool) -> dict[str, Any]:
     return out
 
 
+def _failure_summary(summary: dict[str, Any], *, redact: bool) -> dict[str, Any] | None:
+    """Return the first phase failure as a bounded operator-facing summary."""
+    failures = summary.get("phase_failures")
+    if not isinstance(failures, list) or not failures:
+        return None
+    first = next((item for item in failures if isinstance(item, dict)), None)
+    if first is None:
+        return None
+    failure = first.get("failure")
+    if not isinstance(failure, dict):
+        return None
+
+    phase = str(first.get("phase") or "")
+    iteration = str(first.get("iteration") or "")
+    reason = str(failure.get("reason") or "")
+    detail = str(failure.get("detail") or "")
+    message = _failure_operator_message(reason, detail, phase=phase)
+    out = {
+        "phase": phase,
+        "iteration": iteration,
+        "reason": reason,
+        "detail": detail,
+        "message": message,
+    }
+    if redact:
+        return {key: redact_text(value).text for key, value in out.items()}
+    return out
+
+
+def _failure_operator_message(reason: str, detail: str, *, phase: str) -> str:
+    if reason == "provider_quota_exhausted":
+        return (
+            "Provider quota/billing exhausted. The model provider refused the "
+            "request because account, project, or billing capacity is exhausted; "
+            "fix provider billing/quota or credentials, then rerun."
+        )
+    description = detail or reason or "phase failed"
+    if phase:
+        return f"{phase} failed: {description}"
+    return description
+
+
 def build_report_index(
     summary: dict[str, Any],
     events: list[Event],
@@ -899,7 +941,7 @@ def build_report_index(
     run_id = summary.get("run_id", "")
     if redact:
         run_id = redact_text(str(run_id)).text
-    return {
+    index: dict[str, Any] = {
         "schema_version": REPORT_INDEX_SCHEMA_VERSION,
         "run_id": run_id,
         "final_status": summary.get("final_status"),
@@ -910,3 +952,7 @@ def build_report_index(
         "top_findings": top,
         "artifact_paths": _artifact_paths(summary, redact=redact),
     }
+    failure_summary = _failure_summary(summary, redact=redact)
+    if failure_summary is not None:
+        index["failure_summary"] = failure_summary
+    return index

@@ -125,6 +125,41 @@ def test_artifact_paths_are_redacted_when_redact_true():
     assert home not in idx["artifact_paths"]["triage"][0]
 
 
+def test_report_index_includes_quota_failure_summary():
+    summary = {
+        "run_id": "r-quota",
+        "final_status": "error",
+        "stopped_reason": "review_failed",
+        "artifact_paths": {},
+        "phase_failures": [
+            {
+                "phase": "review",
+                "iteration": "1",
+                "failure": {
+                    "reason": "provider_quota_exhausted",
+                    "detail": "provider quota exhausted",
+                    "transient": False,
+                },
+            }
+        ],
+    }
+
+    idx = build_report_index(summary, [], redact=True)
+
+    validate(idx, _REPORT_INDEX_SCHEMA)
+    assert idx["failure_summary"] == {
+        "phase": "review",
+        "iteration": "1",
+        "reason": "provider_quota_exhausted",
+        "detail": "provider quota exhausted",
+        "message": (
+            "Provider quota/billing exhausted. The model provider refused the "
+            "request because account, project, or billing capacity is exhausted; "
+            "fix provider billing/quota or credentials, then rerun."
+        ),
+    }
+
+
 @pytest.mark.parametrize("scenario", RUN_SCENARIOS)
 def test_report_command_json_output_validates_against_schema(
     scenario: str, capsys

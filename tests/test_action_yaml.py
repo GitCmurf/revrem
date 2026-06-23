@@ -53,6 +53,17 @@ def test_action_install_modes_are_pypi_and_local():
     assert "local" in desc and "pypi" in desc
 
 
+def test_action_warns_that_github_ci_makes_paid_provider_calls():
+    data = _load("action.yml")
+    description = data["description"].lower()
+    assert "paid model api calls" in description
+    assert "max-usd" in description
+    assert "max-tokens" in description
+    max_usd = data["inputs"]["max-usd"]["description"].lower()
+    assert "real api charges" in max_usd
+    assert "github ci" in max_usd
+
+
 def test_action_runs_revrem_headless_with_json_summary():
     steps = _load("action.yml")["runs"]["steps"]
     run_step = next(s for s in steps if s.get("name") == "Run revrem")
@@ -131,6 +142,15 @@ def test_action_maps_documented_error_exit_code_explicitly():
     unexpected_index = script.index("unexpected code")
     error_index = script.index("RevRem ended with an error")
     assert error_index < unexpected_index
+
+
+def test_action_error_annotation_includes_report_failure_summary():
+    steps = _load("action.yml")["runs"]["steps"]
+    map_step = next(s for s in steps if s.get("name") == "Map exit code")
+    script = map_step["run"]
+    assert "REVREM_REPORT_JSON" in script
+    assert "failure_summary" in script
+    assert "RevRem ended with an error: $DETAIL" in script
 
 
 def test_action_routing_input_is_validated_and_env_mapped():
@@ -309,6 +329,7 @@ def test_dogfood_workflow_parses_and_uses_local_install():
     assert revrem_step["with"]["profile"] == "dogfood"
     assert revrem_step["with"]["routing"] == "false"
     assert revrem_step["with"]["max-wall-seconds"] == "900"
+    assert revrem_step["with"]["max-usd"] == "1.00"
     checks = revrem_step["with"]["checks"]
     for command in (
         "./.venv/bin/ruff check .",

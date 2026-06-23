@@ -36,6 +36,36 @@
         "error"
       ]
     },
+    "failure_summary": {
+      "additionalProperties": false,
+      "description": "Optional bounded, redacted summary of the first phase failure. Present only when summary.phase_failures contains a structured failure; intended for CI comments and annotations so operators can see why an error occurred without opening raw artifacts.",
+      "properties": {
+        "detail": {
+          "type": "string"
+        },
+        "iteration": {
+          "type": "string"
+        },
+        "message": {
+          "description": "Operator-facing explanation suitable for Markdown comments and GitHub Actions annotations.",
+          "type": "string"
+        },
+        "phase": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "phase",
+        "iteration",
+        "reason",
+        "detail",
+        "message"
+      ],
+      "type": "object"
+    },
     "finding_counts": {
       "description": "Findings tallied by severity. Always present; every severity key is present (zero when none of that severity).",
       "additionalProperties": {

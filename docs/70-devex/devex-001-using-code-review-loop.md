@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.69'
+version: '1.70'
 last_updated: '2026-06-23'
 owner: GitCmurf
 docops_version: '2.0'
@@ -848,7 +848,10 @@ a custom path. With `--format json`, a machine-readable index is printed to
 stdout instead (the `--output` flag is ignored in that mode — use a shell
 redirect to write it to a file). The index is the minimum payload a CI comment
 builder needs to summarize a run without re-reading raw events, and validates
-against the `report-index-v1` schema. Both outputs are redacted by default;
+against the `report-index-v1` schema. When a run fails in a structured phase,
+the index includes a bounded, redacted `failure_summary` so CI comments and
+Actions annotations can say why the run failed without requiring operators to
+open raw artifacts. Both outputs are redacted by default;
 disabling redaction requires both `--no-redact` and
 `--i-understand-the-risks`, as with the bug-report bundle. If `events.jsonl`
 is truncated or malformed, the report renders what is available and prints a
@@ -1338,6 +1341,16 @@ request, uploads a redacted HTML report, and posts a single updatable PR
 comment summarizing the result. It installs from PyPI by default or, for
 dogfooding, from the repo via `install-mode: local`.
 
+Provider-backed GitHub CI makes paid model API calls. Do not enable the
+credentialed Action on a repo until the expected provider spend is acceptable
+and explicit limits are set. For non-commercial hobby use, start with local
+runs or a manual-only workflow, set `max-usd` / `max-tokens`, keep
+`max-wall-seconds` bounded, and avoid broad automatic triggers. A small number
+of dogfood runs can cost several dollars if the model provider accepts the
+requests; quota or billing exhaustion is reported explicitly as
+`provider_quota_exhausted` / `provider quota exhausted` in the PR comment,
+Actions annotation, and HTML report.
+
 ```yaml
 # .github/workflows/revrem-pr.yml
 name: RevRem
@@ -1373,6 +1386,7 @@ jobs:
           base: origin/main
           profile: default
           routing: "false"
+          max-usd: "1.00"
           fail-on-findings: "false"
           checks: |
             ./.venv/bin/ruff check .
@@ -1398,8 +1412,9 @@ headless
 directory from the JSON `artifact_dir` on stdout (never by globbing
 `.revrem/runs/`), then renders and uploads the redacted HTML report and posts
 the PR comment. The exit code is mapped last, after artifacts and comment land:
-0 (clear) passes; 2 (findings remain) respects `fail-on-findings`; 3 (budget
-ceiling) and 4/5 (setup/cancel) fail the job.
+0 (clear) passes; 1 (typed runtime error) fails with the redacted
+`failure_summary` when available; 2 (findings remain) respects
+`fail-on-findings`; 3 (budget ceiling) and 4/5 (setup/cancel) fail the job.
 
 The `routing` input is an optional profile override. Leave it empty to use the
 selected profile, set `"true"` to force routing on, or set `"false"` for
@@ -1690,6 +1705,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.70 | 2026-06-23 | Codex | Documented CI cost risk, budgeted Action usage, and report-index failure summaries for quota/billing exhaustion |
 | 1.69 | 2026-06-23 | Codex | Documented Codex Action proxy quota exhaustion classification as non-retryable `provider quota exhausted` |
 | 1.68 | 2026-06-23 | Codex | Documented phase-failure diagnostics, bounded redacted provider excerpts in HTML reports, and explicit Action handling for typed exit code `1` errors |
 | 1.67 | 2026-06-23 | Codex | Documented that typed failure outcomes still honor `--summary-format`, allowing CI automation to parse `artifact_dir` and render failed-run reports for exit code `1` |
