@@ -128,8 +128,10 @@ single updatable PR comment. Tier 1 of `REVREM-PLAN-005`; expert profiles
   gate, so preflight does not depend on tools that only exist on a developer
   workstation. The Action now has a constrained `routing` input for CI jobs
   that need to force routing on/off, and setup failures print the latest
-  preflight `diagnostics.json` when RevRem writes one. The credentialed dogfood
-  job skips fork PRs where provider secrets are intentionally unavailable.
+  preflight `diagnostics.json` when RevRem writes one. The dogfood workflow
+  configures a Git author before running RevRem so commit-mode remediation can
+  create verified commits on GitHub-hosted runners. The credentialed dogfood job
+  skips fork PRs where provider secrets are intentionally unavailable.
 
 ### Stability
 

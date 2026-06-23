@@ -280,6 +280,14 @@ def test_dogfood_workflow_parses_and_uses_local_install():
     )
     assert codex_step["name"] == "Start Codex proxy"
     assert codex_step["with"]["openai-api-key"] == "${{ secrets.CODEX_API_KEY }}"
+    git_step = next(
+        s for s in job["steps"] if s.get("name") == "Configure git author"
+    )
+    assert 'git config user.name "RevRem Action"' in git_step["run"]
+    assert (
+        'git config user.email "revrem-action@users.noreply.github.com"'
+        in git_step["run"]
+    )
     # The uses: ./ step (local action) + install-mode local.
     revrem_step = next(
         s for s in job["steps"] if s.get("uses", "").strip() == "./"
