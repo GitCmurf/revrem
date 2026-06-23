@@ -1,0 +1,33 @@
+[profiles.docs]
+description = "Docs lens: drift between code, public docs, examples, CLI help, and adjacent docstrings."
+
+[profiles.docs.pipeline]
+checks = []
+
+[profiles.docs.review]
+reasoning_effort = "medium"
+
+[profiles.docs.triage]
+enabled = true
+contract = "v2"
+prompt = "Prioritize documentation drift caused by the change: incorrect README examples, stale CLI help, mismatched docstrings, and missing operator-facing notes for changed behavior."
+
+[profiles.docs.triage.routing]
+enabled = true
+default_route = "codex-midi"
+strict_on_unavailable_route = false
+
+[[profiles.docs.triage.routing.rule]]
+id = "docs-drift-fragment"
+when.domain_tags_any = ["docs", "documentation", "devex"]
+then.route = "codex-midi"
+then.prompt_fragments = ["docs-drift-checklist"]
+then.allow_model_escalation = false
+
+[profiles.docs.triage.routes.codex-midi]
+harness = "codex"
+model = "gpt-5.4-mini"
+reasoning_effort = "medium"
+
+[profiles.docs.output]
+progress_style = "compact"

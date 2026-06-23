@@ -610,14 +610,12 @@ def test_config_list_includes_last_used_from_run_history(tmp_path, monkeypatch, 
 
     assert cli_main.main(["config", "list", "--format", "json"]) == 0
     data = json.loads(capsys.readouterr().out)
-    assert data == [
-        {
-            "description": "Smoke profile",
-            "last_used_at": "2026-05-02T10:00:00Z",
-            "name": "smoke",
-            "source": str(home / ".config" / "revrem" / "profiles.toml"),
-        }
-    ]
+    assert {
+        "description": "Smoke profile",
+        "last_used_at": "2026-05-02T10:00:00Z",
+        "name": "smoke",
+        "source": str(home / ".config" / "revrem" / "profiles.toml"),
+    } in data
 
 
 def test_config_new_reports_profile_write_oserror(tmp_path, monkeypatch, capsys):

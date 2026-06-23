@@ -22,7 +22,7 @@ def main(argv: Sequence[str]) -> int:
     try:
         output_format = getattr(args, "format", None)
         if args.command == "list":
-            items = profiles.profile_list_items(cwd=Path.cwd())
+            items = profiles.profile_list_items(cwd=Path.cwd(), include_builtins=True)
             if (output_format or "text") == "json":
                 print(
                     json.dumps(
@@ -90,7 +90,9 @@ def main(argv: Sequence[str]) -> int:
             print(f"imported profiles into {path}")
             return CommandOk().exit_code
         if args.command == "doctor":
-            profile_names = [item.name for item in profiles.list_profiles(cwd=Path.cwd())]
+            profile_names = [
+                item.name for item in profiles.list_profiles(cwd=Path.cwd(), include_builtins=True)
+            ]
             info: dict[str, object] = {
                 "user_config": str(profiles.user_config_path()),
                 "project_config": str(profiles.project_config_path(Path.cwd())),
@@ -153,6 +155,9 @@ def _profile_config_owner_path(name: str, cwd: Path, home: Path | None = None) -
     user_file = profiles.load_profile_file(user_path)
     if name in user_file.profiles:
         return user_path
+
+    if profiles.is_builtin_profile(name):
+        raise RuntimeError(profiles.builtin_profile_readonly_message(name))
 
     raise FileNotFoundError(f"profile not found: {name}")
 

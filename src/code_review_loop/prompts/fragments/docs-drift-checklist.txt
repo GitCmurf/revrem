@@ -1,0 +1,4 @@
+Documentation-drift review checklist:
+- Compare changed behavior with nearby README sections, CLI help, examples, and docstrings.
+- Flag docs that now instruct users to run stale commands or expect stale outputs.
+- Prefer concrete doc updates tied directly to changed public behavior.

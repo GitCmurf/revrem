@@ -1,0 +1,14 @@
+[profiles.go]
+description = "Go review profile with native formatting and tests."
+
+[profiles.go.pipeline]
+max_iterations = 2
+checks = [
+  "test -z \"$(gofmt -l .)\"",
+  "go test ./...",
+  "git diff --check",
+]
+
+[profiles.go.triage]
+enabled = true
+contract = "v2"

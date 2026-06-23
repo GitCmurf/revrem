@@ -1,0 +1,4 @@
+Refactor review checklist:
+- Flag duplication, dead branches, and abstraction leaks only when the changed code makes them worse.
+- Prefer small, behavior-preserving simplifications with clear tests.
+- Treat refactor-only findings as advisory unless correctness, safety, or operational risk is involved.

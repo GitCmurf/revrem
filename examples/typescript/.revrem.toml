@@ -1,0 +1,15 @@
+[profiles.typescript]
+description = "TypeScript review profile with package-manager checks."
+
+[profiles.typescript.pipeline]
+max_iterations = 2
+checks = [
+  "pnpm run typecheck",
+  "pnpm run lint",
+  "pnpm run test",
+  "git diff --check",
+]
+
+[profiles.typescript.triage]
+enabled = true
+contract = "v2"

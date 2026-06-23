@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.74'
+version: '1.75'
 last_updated: '2026-06-23'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.74
+> **Version:** 1.75
 > **Last Updated:** 2026-06-23
 > **Type:** DEVEX
 > **Area:** devex
@@ -801,7 +801,40 @@ into each imported profile before writing the destination config. This preserves
 the behavior of portable shared-profile files even when the destination
 `profiles.toml` has different user-wide defaults.
 
-`revrem config list` shows each profile's description, source file, and last-used timestamp from run history.
+`revrem config list` shows each profile's description, source file, and last-used timestamp from run history. Bundled expert profiles appear with `source = builtin`; they are read-only, but `revrem config clone security security-local` creates an editable user copy.
+
+Bundled expert profiles:
+
+| Profile | Intent | Default checks |
+|---|---|---|
+| `security` | Authn/authz, secret leakage, unsafe parsing, PII exposure, and dependency-risk deltas. | None; use `revrem checks suggest` for stack-specific checks. |
+| `performance` | N+1 work, avoidable quadratic paths, hot allocations, blocking I/O, and latency regressions. | None. |
+| `refactor` | Duplication, dead code, leaky abstractions, naming drift, and maintainability risks; advisory by default. | None. |
+| `test-gap` | Changed behavior without focused coverage, missing regression tests, and unverified edge cases. | None. |
+| `docs` | Drift between code, public docs, examples, CLI help, and adjacent docstrings. | None. |
+
+Built-in profile precedence is: user defaults, built-in named profile, user
+named profile, project defaults, project named profile. That lets a project
+shadow `security` with `[profiles.security]` while still inheriting any
+user-wide defaults.
+
+Examples:
+
+```bash
+cp examples/python-final-pr/.revrem.toml .
+revrem --profile python-final-pr --dry-run
+```
+
+Shell completions:
+
+```bash
+revrem completions bash > ~/.local/share/bash-completion/completions/revrem
+revrem completions zsh > ~/.zfunc/_revrem
+revrem completions fish > ~/.config/fish/completions/revrem.fish
+```
+
+The README demo asset is maintained by `scripts/record-demo`; run
+`scripts/record-demo --check` to verify it has not drifted.
 
 Run-history commands:
 
@@ -899,6 +932,9 @@ with `timeout_seconds = 0` and when the current locale is not UTF-8 capable,
 because both conditions make unattended artifact generation less predictable.
 Regenerate the diagnostics table with `scripts/dev-render-diagnostics` after
 adding or changing diagnostic codes.
+
+For failure triage by exit code and artifact family, see
+`REVREM-GUIDE-001` (`docs/60-runbooks/guide-001-failure-diagnostics-guide.md`).
 
 Normal live CLI runs use the same diagnostics path before the first model call.
 When setup preflight blocks execution, RevRem writes `diagnostics.json`,
@@ -1740,6 +1776,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.75 | 2026-06-23 | Codex | Documented bundled expert profiles, examples, completions, demo regeneration, and the failure diagnostics guide |
 | 1.74 | 2026-06-23 | Codex | Aligned the example paid dogfood workflow with the documented `run-dogfood` label gate |
 | 1.73 | 2026-06-23 | Codex | Documented the no-provider GitHub Action smoke workflow and `run-dogfood` label gate before paid dogfood runs |
 | 1.72 | 2026-06-23 | Codex | Documented scoped report artifact loading and missing-stderr tolerance in the GitHub Action exit mapper |

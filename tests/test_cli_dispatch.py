@@ -22,6 +22,7 @@ cli_registry = import_module("code_review_loop.cli.commands.registry")
 _EXPECTED_SUBCOMMANDS = {
     "bundle-bug-report",
     "checks",
+    "completions",
     "config",
     "doctor",
     "history",

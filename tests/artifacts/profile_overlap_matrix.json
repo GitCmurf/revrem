@@ -1,0 +1,12 @@
+{
+  "docs|performance": 0.0,
+  "docs|refactor": 0.0,
+  "docs|security": 0.0,
+  "docs|test-gap": 0.0,
+  "performance|refactor": 0.0,
+  "performance|security": 0.0,
+  "performance|test-gap": 0.0,
+  "refactor|security": 0.0,
+  "refactor|test-gap": 0.0,
+  "security|test-gap": 0.0
+}

@@ -1,0 +1,29 @@
+[profiles.triage-routing]
+description = "Route high-risk findings to a frontier model and ordinary findings to a cheaper Codex model."
+
+[profiles.triage-routing.pipeline]
+max_iterations = 2
+checks = ["git diff --check"]
+
+[profiles.triage-routing.triage]
+enabled = true
+contract = "v2"
+
+[profiles.triage-routing.triage.routing]
+enabled = true
+default_route = "codex-midi"
+
+[[profiles.triage-routing.triage.routing.rule]]
+id = "high-risk-frontier"
+when.risk_level_min = "high"
+then.route = "codex-frontier"
+then.allow_model_deescalation = false
+
+[profiles.triage-routing.triage.routes.codex-midi]
+harness = "codex"
+model = "gpt-5.4-mini"
+
+[profiles.triage-routing.triage.routes.codex-frontier]
+harness = "codex"
+model = "gpt-5.5"
+reasoning_effort = "high"

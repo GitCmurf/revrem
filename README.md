@@ -37,8 +37,10 @@ JSON summary: .revrem/runs/20260509T120823Z/summary.json
 
 </details>
 
-> The demo above is a scripted reconstruction of RevRem's real output format,
-> not a live model-backed capture. Source: [`docs/assets/`](https://github.com/GitCmurf/revrem/tree/main/docs/assets).
+> The demo above is maintained from deterministic demo assets under
+> [`docs/assets/`](https://github.com/GitCmurf/revrem/tree/main/docs/assets).
+> Run `scripts/record-demo --check` to verify the asciicast source has not
+> drifted. It is not a live model-backed capture.
 
 ## Why revrem
 
@@ -129,6 +131,8 @@ RevRem is intentionally local, watched, and bounded:
 
 - **Profiles** keep long commands repeatable, with per-phase model, effort, and
   timeout control.
+- **Bundled expert profiles** (`security`, `performance`, `refactor`,
+  `test-gap`, `docs`) give focused review lenses without writing TOML first.
 - **Interactive wizard** builds a run command in a plain terminal and previews
   the exact provider calls before anything runs.
 - **Finding triage and routing** (optional) turn review prose into ordered,
@@ -145,6 +149,8 @@ RevRem is intentionally local, watched, and bounded:
   least-privilege permissions, fork-PR safe.
 - **Git hooks** install bounded pre-push/pre-commit example hooks into a target
   repo.
+- **Examples and shell completions** provide copyable profiles for common
+  stacks plus `revrem completions bash|zsh|fish`.
 - **Rich progress and an optional Textual TUI** for richer watched-terminal runs.
 
 Each of these is documented in depth in the
@@ -175,6 +181,15 @@ revrem --base main --max-iterations 2 --check "git diff --check" --save-profile 
 
 For triage, routing, multi-harness setups, and the full wizard reference, see
 the [operator guide](https://github.com/GitCmurf/revrem/blob/main/docs/70-devex/devex-001-using-code-review-loop.md#interactive-wizard).
+
+Bundled expert profiles are available immediately:
+
+```bash
+revrem --profile security --dry-run
+revrem config clone security security-local
+```
+
+Copyable stack profiles live under [`examples/`](https://github.com/GitCmurf/revrem/tree/main/examples).
 
 ## Safety Model
 

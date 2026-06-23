@@ -700,6 +700,15 @@ def parse_checks_args(argv: Sequence[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def parse_completions_args(argv: Sequence[str]) -> argparse.Namespace:
+    parser = _argument_parser(
+        prog="revrem completions",
+        description="Print shell completion scripts for RevRem.",
+    )
+    parser.add_argument("shell", choices=("bash", "zsh", "fish"))
+    return parser.parse_args(argv)
+
+
 def parse_doctor_checks_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = _argument_parser(
         prog="revrem doctor checks",
