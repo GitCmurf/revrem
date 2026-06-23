@@ -108,7 +108,11 @@ runs:
         CHECKS: ${{ inputs.checks }}
         ROUTING: ${{ inputs.routing }}
       run: |
-        set -uo pipefail
+        # -e so the setup region (mkdir, $GITHUB_ENV exports, input validation)
+        # fails fast; a failed mkdir must not silently skip the path exports and
+        # hand downstream steps empty REVREM_* paths. The revrem call itself is
+        # bracketed with `set +e` / `set -e` below to capture its exit code.
+        set -euo pipefail
         ACTION_TMP="${RUNNER_TEMP:-/tmp}/revrem-action"
         mkdir -p "$ACTION_TMP"
         REVREM_STDOUT="$ACTION_TMP/revrem-out.json"

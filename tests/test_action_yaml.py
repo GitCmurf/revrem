@@ -104,6 +104,23 @@ def test_action_splits_checks_safely():
     assert '--check "$line"' in script
 
 
+def test_action_run_step_fails_fast_with_errexit():
+    """The Run revrem step's setup region must run under `set -e`.
+
+    Without errexit a failed `mkdir -p "$ACTION_TMP"` (or a failed `$GITHUB_ENV`
+    export) is silently ignored, so the path exports are skipped and downstream
+    steps receive empty REVREM_* paths. The revrem invocation itself is
+    deliberately bracketed with `set +e` ... `set -e` to capture its non-zero
+    exit code, so that toggle must remain after the fix.
+    """
+    steps = _load("action.yml")["runs"]["steps"]
+    run_step = next(s for s in steps if s.get("name") == "Run revrem")
+    script = run_step["run"]
+    assert "set -euo pipefail" in script  # fail-fast over the setup region
+    assert "set -uo pipefail" not in script  # not the errexit-less variant
+    assert "set +e" in script  # revrem call still brackets errexit to read $?
+
+
 def test_action_routing_input_is_validated_and_env_mapped():
     """The action can disable profile routing for Codex-only CI dogfood runs."""
     data = _load("action.yml")
