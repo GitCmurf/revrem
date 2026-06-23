@@ -78,6 +78,47 @@ terminal_title = true
     assert config.terminal_title is False
 
 
+def test_profile_no_tty_wins_when_cli_flag_absent(tmp_path, monkeypatch):
+    """An unset --no-tty must let the profile's no_tty=true take effect.
+
+    With default=False (the old bug), pick() always saw a non-None CLI value and
+    a profile that sets no_tty=true was silently ignored. default=None lets the
+    flag be absent (None) so the profile value wins, matching every other
+    override flag in this file.
+    """
+    monkeypatch.setattr(
+        config_builder,
+        "profile_or_default",
+        lambda name, cwd: profiles.Profile(
+            name="ci",
+            output=profiles.OutputConfig(no_tty=True),
+        ),
+    )
+    args = cli_args.parse_args(["--profile", "ci", "--dry-run"])
+    config, _summary_format = config_builder.build_loop_config(args, tmp_path)
+    assert config.no_tty is True
+
+
+def test_no_tty_round_trips_through_profile_from_loop_config(tmp_path):
+    """no_tty must survive config -> profile -> config (bidirectional wiring).
+
+    build_loop_config reads profile.output.no_tty; profile_from_loop_config
+    must write it back so a round-trip export does not silently reset it.
+    """
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        no_tty=True,
+    )
+    saved = config_builder.profile_from_loop_config(
+        "saved", config, summary_format="json"
+    )
+    assert saved.output.no_tty is True
+
+
 def test_main_uses_profile_commit_message_harness(tmp_path, monkeypatch):
     monkeypatch.setattr(
         config_builder,

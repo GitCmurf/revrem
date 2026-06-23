@@ -117,6 +117,7 @@ class OutputConfig:
     progress_style: str = "compact"
     quiet_progress: bool = False
     terminal_title: bool = False
+    no_tty: bool = False
     artifact_dir: str | None = None
 
 

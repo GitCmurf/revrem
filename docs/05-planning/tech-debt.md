@@ -3,8 +3,8 @@ document_id: REVREM-LEDGER-004
 type: LEDGER
 title: Tech Debt Register
 status: Approved
-version: '0.4'
-last_updated: '2026-06-10'
+version: '0.5'
+last_updated: '2026-06-23'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -25,9 +25,9 @@ Issues identified during code review and simplification passes that were deferre
 
 ## Current State
 
-This register currently has one partially mitigated open item, TD-008. Earlier
-debt items TD-001 through TD-007 are resolved and retained as historical
-context.
+This register currently has two open items: TD-008 (partially mitigated) and
+TD-009 (the headless-suppression module-global latch). Earlier debt items
+TD-001 through TD-007 are resolved and retained as historical context.
 
 ---
 
@@ -102,6 +102,54 @@ coverage boundary visible. If the model did not receive the whole generated
 review context, the run summary and operator output should preserve that fact
 clearly enough that humans and automation can decide whether a follow-up review
 is required.
+
+---
+
+## TD-009 — Headless ANSI suppression relies on a module-global latch (`_NO_TTY_FORCED`) (OPEN)
+
+**Location:** `src/code_review_loop/progress.py` (`_NO_TTY_FORCED`,
+`force_terminal`, `_console_and_text`, `rich_live_progress`, and the
+`print_rich_event` / `print_rich_message` / `print_rich_continuation` helpers).
+
+**Problem:** Whether RevRem suppresses ANSI escape sequences on stderr is gated
+by `force_terminal()`, which reads a module-level mutable global,
+`_NO_TTY_FORCED`. The `print_rich_*` helpers build their own fallback `Console`
+via `_console_and_text()` *without* a `no_tty` argument, so they cannot know the
+run is headless except by consulting this latch. The latch is set by
+`rich_live_progress(no_tty=...)` and restored in a `finally`, so correctness of
+`--no-tty` depends on every entry into that context manager latching and
+restoring the global in balance — including early-return paths (compact mode,
+missing `rich`) and exceptions thrown into the `with` body.
+
+This is fragile: a mutable global used for control flow is invisible at the
+`print_rich_*` call sites, the latch and the live-panel concern are conflated in
+one context manager, and the unit tests have to assert `_NO_TTY_FORCED is False`
+as a precondition to detect leaks from a sibling test that failed to restore it.
+It already produced one real bug — when `progress_style != "rich"` the context
+manager returned before latching, so `revrem --no-tty --progress-style compact`
+leaked ANSI on an interactive non-CI terminal despite the flag's documented
+promise (fixed 2026-06-23 by latching before the early return; see
+`tests/test_headless_output.py::test_compact_mode_no_tty_latches_and_suppresses_ansi_fallback`).
+The fix closed the symptom but left the global-state design in place.
+
+**Possible remediations:**
+
+- Thread `no_tty` (or a small `OutputContext`/headless flag) explicitly through
+  the `print_rich_*` helpers and their adapter call sites
+  (`adapters/terminal.py`, `adapters/phase_support.py`), so each console is
+  built from an explicit argument and `force_terminal` takes no hidden global.
+- Alternatively, resolve the headless decision once at run setup and pass an
+  immutable rendering context (or a pre-configured `Console` factory) down to
+  the helpers, removing per-call recomputation of `force_terminal`.
+- If a process-scoped flag must remain, encapsulate it behind a single
+  set-once/read accessor with explicit ownership rather than a bare module
+  global mutated by a context manager.
+
+**Best practice:** State that drives control flow should be passed explicitly,
+not read from a module-level global that callers can neither see nor verify.
+When a value is process-scoped by necessity, it should have one owner and a
+named accessor, so correctness does not depend on every context manager
+restoring it in balance.
 
 ---
 

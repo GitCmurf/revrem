@@ -6,6 +6,206 @@ This project follows Semantic Versioning once public releases begin.
 
 ## [Unreleased]
 
+### Added
+
+- Manual no-provider GitHub Action smoke workflow
+  (`.github/workflows/revrem-action-smoke.yml`) that exercises the local
+  composite action with the gated fake harness and asserts generated
+  summary/report artifacts before any paid dogfood run is attempted.
+- The credentialed dogfood PR workflow now requires an explicit `run-dogfood`
+  PR label before starting Codex/provider-backed review, preventing ordinary PR
+  pushes from spending API budget.
+- `revrem report` now loads absolute triage artifact paths when they resolve
+  inside the run directory, matching production summaries while still rejecting
+  out-of-scope paths. Empty diagnostic artifact values now render as blank
+  cells instead of `.` in phase-failure tables.
+
+## [0.5.0] - 2026-06-21
+
+The "showcase & hands-off adoption" release: a static HTML report for finished
+runs, headless/CI output hardening, and a reference GitHub Action that posts a
+single updatable PR comment. Tier 1 of `REVREM-PLAN-005`; expert profiles
+(Pillar C) and DevEx polish (Pillar D) are deferred to v0.5.x.
+
+### Added
+
+- `revrem report <run-dir>`: renders a finished run's `summary.json` +
+  `events.jsonl` into a single self-contained HTML file (plain HTML5 + inline
+  CSS, no JavaScript or external assets, safe to upload as a CI artifact and
+  open offline). Never invokes a model or touches the network. Redacted by
+  default; `--no-redact` requires `--i-understand-the-risks`. `--format json`
+  prints a machine-readable index to stdout (the `--output` flag is ignored in
+  that mode). Truncated or malformed events render what is available and warn
+  rather than failing — the report is diagnostic.
+- `report-index-v1` JSON schema: the frozen cross-boundary contract describing
+  the machine index's fields and nullability (`cost_usd` null for dry-runs /
+  fake harnesses; `top_findings` empty when none; `artifact_paths` empty when
+  unavailable). `finding_counts` now machine-enforces the baseline severity keys
+  (`critical`, `high`, `medium`, `low`) that the prose contract already
+  promised. Added with a `_history/` baseline.
+- Reference GitHub Action (`action.yml`): runs a revrem profile on a pull
+  request, uploads the redacted HTML report, and posts a single updatable PR
+  comment. Composite action with inputs for base, profile, budgets, checks,
+  comment/upload/fail-on-findings toggles, and install-mode (`pypi` |
+  `local`). Runs revrem headless, discovers the run directory from the JSON
+  `artifact_dir` on stdout, and maps the exit code last (after artifacts and
+  comment land). Its setup-crash diagnostic fallback uses Python/pathlib rather
+  than GNU-only `find -printf`, so macOS runners can still print the latest
+  `diagnostics.json`. Fork-PR safe and least-privilege.
+- `revrem report` loads referenced triage artifacts only when the resolved path
+  remains inside the run directory; absolute paths and `..` traversal are
+  ignored so a crafted run summary cannot make the renderer read arbitrary
+  files. Report path normalization also converts Windows-style `\` separators
+  to `/` before rendering HTML or JSON, preserving the POSIX-normalized report
+  contract across platforms.
+- `--no-tty` flag: forces non-interactive (headless) output — suppresses ANSI
+  escape sequences, progress spinners, and terminal-title writes on stderr.
+  Auto-triggered when the `CI` environment variable is set (GitHub Actions,
+  CircleCI, Travis, Jenkins), so a standard CI run needs no RevRem-specific
+  flag. Also exposed as an additive profile key `[output] no_tty`.
+- Finished-run fixture catalogue under `tests/fixtures/runs/<scenario>/` (8
+  terminal-state scenarios: clear, findings_remediated, findings_remaining,
+  timeout, check_failure, cost_ceiling, cancelled, all_suppressed), co-locating
+  `summary.json` + `events.jsonl` for read-only consumers.
+
+### Changed
+
+- The recommended CI invocation is
+  `revrem --no-tty --progress-style compact --summary-format json` — compact
+  progress is line-oriented and greppable, and `--summary-format json` prints
+  canonical `summary.json` to stdout for downstream tooling.
+
+### Fixed (corrective, post-peer-review)
+
+- Findings now render from their authoritative source
+  (`triage-N.json::confirmed_findings`, keyed by `summary.artifact_paths.triage`)
+  instead of an invented `status_classification` severity payload that does not
+  exist in the engine. Before this, the findings section, `finding_counts`, and
+  `top_findings` were empty on every real run and the PR comment reported zero
+  findings. (P0-1)
+- The GitHub Action now wires `GITHUB_TOKEN` via a `github-token` input
+  instead of an unset `env.GITHUB_TOKEN`, so the PR comment step actually
+  authenticates and posts. (P0-3; default-token handling refined below.)
+- Checks now render from `summary.iterations[].checks[]` (the engine's record),
+  with `check_result` events as a fallback.
+- The PR comment deep-links the uploaded report artifact
+  (`REVREM_ARTIFACT_URL`) rather than always linking the workflow run.
+- Added `tests/test_report_real_findings.py` — a standing gate that renders a
+  real-engine-shaped fixture (a `status_classification` payload of
+  `{message, summary}` plus a `triage-N.json` with a confirmed finding) and
+  asserts the finding surfaces. This gate exists because the initial T0 fixtures
+  were hand-authored against the renderer's assumptions rather than the engine's
+  contract, producing self-confirming green tests. Registered in REVREM-TEST-001.
+
+### Fixed (corrective, second peer-review iteration)
+
+- **Reverted the P0-2 removal of the "Phase configuration" section** — the
+  premise was wrong. `summary.phase_config` *is* written on every run by
+  `reporting.add_summary_contract_fields` (present on 106/156 local runs, all
+  recent ones), carrying per-phase `harness`/`model`/`reasoning_effort` for
+  `review`/`triage`/`remediation`/`commit_message`. Deleting the section dropped
+  a section that renders real data on every run. The section is restored,
+  filtered to the model-bearing phases (`checks`/`runtime` carry no
+  harness/model and are skipped, not rendered as blank rows), and now also
+  surfaces reasoning-effort, timeout, and sandbox.
+- **Documented `phase_config` in `summary-v1.schema.json`** (additive,
+  non-breaking; `additionalProperties` was already `true`). The undocumented
+  schema/engine drift is what led P0-2 to wrongly conclude the key did not
+  exist. History baseline updated.
+- **Fixed the inert fork-PR guard** in `action.yml`: `head.repo.fork != 'true'`
+  always evaluated true under GitHub Actions' type coercion (boolean→1,
+  `'true'`→NaN), so the comment step never actually skipped on fork PRs. Now
+  `== false`. (Pending live verification on a real fork PR.)
+- Findings rendering now also surfaces triage `rejected_findings` and
+  `needs_more_info`, which were silently dropped; the outcome section surfaces
+  per-iteration `iterations[].review_status`.
+- The PR comment now labels the artifact deep-link `[Report]` (it was
+  mislabelled `[Run]` while pointing at the artifact); the workflow-run link is
+  used and labelled `[Run]` only as a fallback.
+- `findings_with_triage` fixture is now representative of a real run (carries
+  `phase_config` + `external_review_coverage`/`invocation`/`phase_failures`/
+  `phase_observations`/`triage_diagnostics` in their real shapes), closing the
+  self-confirming-fixture gap for the renderer paths under gate.
+
+### Security & robustness (corrective, external review)
+
+- **Script-injection hardening** in the reference Action: every workflow input
+  is passed through `env:` and read as a shell variable, never interpolated as
+  `${{ inputs.x }}` into a `run:` script (the latter is expanded into the script
+  text before bash parses it). Budget inputs are validated as numeric; a test
+  asserts no input is interpolated into any run script.
+- **Token resolution** no longer depends on expression evaluation inside an
+  input default: the `github-token` default is empty (not `${{ github.token }}`)
+  and the comment step uses `${{ inputs.github-token || github.token }}`, so the
+  fallback resolves the automatic token in the step context. A non-empty literal
+  default would be truthy and silently defeat the fallback.
+- **`raw-artifacts` honesty**: documented as uploading the run directory
+  verbatim and **unredacted** (the prior "still-redacted" wording was false).
+- **Report index** preserves array-valued `artifact_paths` (was flattening lists
+  to repr strings) and redacts path values when `redact=True`.
+- **PR comment** escapes Markdown table cells so a model-derived finding title
+  containing `|`, a newline, or a backtick cannot break or inject formatting.
+- Dogfood-found report/comment correctness fixes: error reports now display the
+  documented exit code for budget/setup/cancelled stops, outcome check counters
+  count summary-sourced checks instead of only event-sourced checks, and the PR
+  comment's severity-count summary row escapes its internal `|` separators.
+- Dogfood-found stale-triage fix: `revrem report` now uses only the latest
+  `triage-N.json` artifact, so reports and PR comments do not resurrect stale
+  findings from earlier triage passes.
+- CLI JSON summaries are now emitted for typed failure outcomes such as
+  `review_failed` instead of returning after stderr only. The composite Action
+  can therefore parse `artifact_dir`, render the failed report, and upload the
+  phase diagnostics for ordinary provider subprocess failures that still map to
+  process exit code `1`.
+- Failed-run HTML reports now render a bounded `Phase failures` section from
+  `summary.phase_failures`, including the diagnostic artifact and retry command
+  metadata that was previously present in `summary.json` but invisible in the
+  uploaded report. Review failure diagnostics now also carry bounded, redacted
+  stdout/stderr excerpts so provider CLI errors can be diagnosed without
+  uploading raw run artifacts, and the Codex Action proxy's quota-exceeded
+  wording is classified as non-retryable `provider_quota_exhausted`. The report
+  index now carries a bounded redacted `failure_summary`, and the PR comment /
+  GitHub Actions error annotation surface quota or billing exhaustion explicitly
+  instead of requiring operators to open the full report. The Action now maps
+  exit code `1` explicitly as a documented RevRem error instead of labelling it
+  an unexpected code.
+- **Dogfood Action workflow** now bootstraps Codex through
+  `openai/codex-action@v1` before invoking RevRem, so GitHub-hosted runners
+  have the `codex` executable/proxy that preflight requires. It also creates
+  the repo-local `.venv` and passes explicit check commands for the dogfood
+  gate, so preflight does not depend on tools that only exist on a developer
+  workstation. The Action now has a constrained `routing` input for CI jobs
+  that need to force routing on/off, and setup failures print the latest
+  preflight `diagnostics.json` when RevRem writes one. The dogfood workflow
+  configures a Git author before running RevRem so commit-mode remediation can
+  create verified commits on GitHub-hosted runners, and now has both a RevRem
+  wall-clock budget and GitHub job timeout so nested Codex execution is bounded
+  in CI. It also carries a `max-usd` ceiling because provider-backed GitHub CI
+  makes paid model API calls and can become too expensive for non-commercial
+  hobby use. The credentialed dogfood job skips fork PRs where provider secrets
+  are intentionally unavailable.
+- The Action exit-code mapper now tolerates a missing `REVREM_STDERR` export
+  under `set -u`, so setup failures before scratch-file creation report the
+  action error instead of being masked by an unbound-variable shell failure.
+
+### Stability
+
+- **Frozen** (additive-only within v1): the artifact JSON schemas (`summary-v1`,
+  `events-v1`, `report-index-v1`, and the others under `docs/52-api/schemas/`),
+  the suppression-file surface, and the `summary.json` / `events.jsonl`
+  artifacts.
+- **Preview** (may change before the 0.9.0 freeze): the `revrem report` HTML
+  layout and CSS are explicitly *not* a stable contract yet; only the
+  `report-index-v1` fields are versioned. The expert-profile surface is
+  deferred to v0.5.x and is also Preview.
+
+### Deferred
+
+- Pillar C (expert profiles T5–T7) and Pillar D (DevEx T8–T11) of
+  `REVREM-PLAN-005` are deferred to v0.5.x follow-on releases.
+- T12 (TUI launches real runs) is deferred to v0.6.0 per the plan's decision
+  gate; the TUI keeps its current replay-from-events default.
+
 ## [0.4.0] - 2026-06-18
 
 ### Added

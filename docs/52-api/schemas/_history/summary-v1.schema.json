@@ -179,6 +179,205 @@
       },
       "type": "object"
     },
+    "phase_config": {
+      "additionalProperties": true,
+      "description": "Per-phase resolved configuration. review/triage/remediation/commit_message carry harness/model/reasoning_effort; checks/runtime carry no harness/model. Written on every run by reporting.add_summary_contract_fields.",
+      "properties": {
+        "checks": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "commit_message": {
+          "additionalProperties": true,
+          "properties": {
+            "harness": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "model": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "reasoning_effort": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "sandbox": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "source": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "sources": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "timeout_seconds": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "remediation": {
+          "additionalProperties": true,
+          "properties": {
+            "harness": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "model": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "reasoning_effort": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "sandbox": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "source": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "sources": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "timeout_seconds": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "review": {
+          "additionalProperties": true,
+          "properties": {
+            "harness": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "model": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "reasoning_effort": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "sandbox": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "source": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "sources": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "timeout_seconds": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "runtime": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "triage": {
+          "additionalProperties": true,
+          "properties": {
+            "harness": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "model": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "reasoning_effort": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "sandbox": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "source": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "sources": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "timeout_seconds": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
     "phase_failures": {
       "items": {
         "additionalProperties": true,

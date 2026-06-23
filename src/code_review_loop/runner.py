@@ -78,7 +78,10 @@ def run_loop(
         terminal_recovery_context(),
         terminal_title_context(config),
         progress_warning_context(),
-        progress.rich_live_progress(config.progress and config.progress_style == "rich"),
+        progress.rich_live_progress(
+            config.progress and config.progress_style == "rich",
+            no_tty=config.no_tty,
+        ),
     ):
         return _run_session(
             config,

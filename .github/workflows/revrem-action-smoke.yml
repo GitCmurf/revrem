@@ -1,0 +1,97 @@
+name: RevRem Action smoke
+
+# No-provider smoke for the composite action. This is intentionally manual-only:
+# it exercises action.yml on a GitHub-hosted runner without starting Codex or
+# making model-provider API calls.
+"on":
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install smoke profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.config/revrem"
+          cat > "$HOME/.config/revrem/profiles.toml" <<'TOML'
+          [profiles.action-smoke]
+          description = "GitHub Action smoke test using the gated fake harness."
+
+          [profiles.action-smoke.pipeline]
+          max_iterations = 1
+          final_review = false
+          checks = ["python -c \"print('revrem action smoke check')\""]
+
+          [profiles.action-smoke.review]
+          harness = "fake"
+          model = "review_clear"
+          timeout_seconds = 30
+
+          [profiles.action-smoke.triage]
+          enabled = false
+          harness = "fake"
+          contract = "v2"
+
+          [profiles.action-smoke.triage.routing]
+          enabled = false
+
+          [profiles.action-smoke.remediation]
+          harness = "fake"
+          model = "remediation"
+          timeout_seconds = 30
+
+          [profiles.action-smoke.commit]
+          enabled = false
+          harness = "fake"
+          message_model = "commit"
+
+          [profiles.action-smoke.output]
+          progress_style = "compact"
+          TOML
+
+      - name: Run revrem action smoke
+        uses: ./
+        with:
+          install-mode: local
+          profile: action-smoke
+          base: HEAD~1
+          max-iterations: "1"
+          max-wall-seconds: "300"
+          routing: "false"
+          comment: "false"
+          upload-artifacts: "true"
+          raw-artifacts: "false"
+          fail-on-findings: "false"
+          checks: |
+            python -c "print('revrem action smoke check')"
+        env:
+          REVREM_ALLOW_FAKE_HARNESS: "1"
+
+      - name: Assert smoke artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${REVREM_RUN_DIR:-}"
+          test -f "$REVREM_RUN_DIR/summary.json"
+          test -f "$REVREM_REPORT_HTML"
+          test -f "$REVREM_REPORT_JSON"
+          python3 -c 'import json, os; summary=json.load(open(os.environ["REVREM_RUN_DIR"] + "/summary.json")); report=json.load(open(os.environ["REVREM_REPORT_JSON"])); assert summary["harness"] == "fake"; assert summary["final_status"] == "clear"; assert summary["stopped_reason"] == "review_clear"; assert report["final_status"] == "clear"; assert sum(report["finding_counts"].values()) == 0'

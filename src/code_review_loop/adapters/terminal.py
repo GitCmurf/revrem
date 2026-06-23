@@ -100,6 +100,12 @@ def terminal_recovery_context() -> Iterator[None]:
 
 
 def terminal_title_supported(config: LoopConfig) -> bool:
+    # Suppress title writes in any headless context: --no-tty or CI=true (set
+    # automatically by most CI providers). Without this, /dev/tty writes could
+    # reach a CI runner even when stderr is redirected, since /dev/tty exists
+    # on many runners regardless of isatty() (PLAN-005 T3).
+    if config.no_tty or os.environ.get("CI"):
+        return False
     return config.terminal_title and (
         sys.stderr.isatty() or (os.name != "nt" and Path("/dev/tty").exists())
     )

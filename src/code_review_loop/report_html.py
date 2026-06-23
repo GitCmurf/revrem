@@ -1,0 +1,961 @@
+"""Static HTML report renderer for finished RevRem runs (REVREM-PLAN-005 T1).
+
+Read-only: consumes the already-frozen ``summary.json`` (``summary-v1``) and
+``events.jsonl`` (``events-v1``) of a finished run and renders them into a
+single self-contained HTML file — plain HTML5 + inline ``<style>``, no JS, no
+external assets — safe to upload as a CI artifact and open offline. Also
+exposes a machine-readable JSON index (``build_report_index``) that is the
+minimum payload a CI comment builder needs without re-reading raw events.
+
+This module never invokes a model, touches the network, or re-runs a phase
+(gate G5 extended to a new renderer). Redaction is on by default for anything
+that leaves the run dir (gate G7): every interpolated string is passed through
+``redaction.redact_text`` unless ``redact=False``.
+
+The two public functions are pure (inputs -> str/dict, no disk I/O) so they
+are trivially testable and deterministic: the same inputs always yield the
+same bytes (timestamps are read from the inputs, never ``now()`` at render
+time; filesystem paths are normalised to ``/`` via ``PurePosixPath``).
+"""
+
+from __future__ import annotations
+
+import html
+import shlex
+from pathlib import PurePosixPath
+from typing import Any
+
+from code_review_loop import __version__
+from code_review_loop.events import Event
+from code_review_loop.redaction import redact_text
+
+REPORT_INDEX_SCHEMA_VERSION = "1.0"
+
+# Distinct colours per terminal status, mirrored in the report-index enum.
+_STATUS_COLOURS: dict[str, str] = {
+    "clear": "#1a7f37",
+    "findings": "#bf8700",
+    "unknown": "#6e7781",
+    "error": "#cf222e",
+}
+
+# Maps a run's final_status / stopped_reason to the documented exit code
+# (Contract #6). The report surfaces the mapping; it never redefines it.
+_EXIT_CODE_BY_STATUS: dict[str, int] = {
+    "clear": 0,
+    "findings": 2,
+    "unknown": 2,
+    "error": 1,
+}
+_EXIT_CODE_BY_ERROR_REASON: dict[str, int] = {
+    "budget_ceiling_hit": 3,
+    "setup_failed": 4,
+    "cancelled": 5,
+}
+
+#: The severity levels the report-index schema enumerates for top_findings[]
+#: (report-index-v1.schema.json). Any triage finding whose severity is absent or
+#: holds an out-of-enum string is clamped into this set so the index always
+#: validates — a model returning "info" or omitting the field must not produce a
+#: structurally invalid index that breaks downstream schema validators.
+_KNOWN_SEVERITIES: tuple[str, ...] = ("critical", "high", "medium", "low")
+#: Fallback severity for findings whose severity is missing or unrecognized.
+#: "low" is the least-alarming valid value, so a mis-classified finding is never
+#: over-elevated in the report.
+_DEFAULT_SEVERITY = "low"
+
+
+def _normalize_severity(raw: object) -> str:
+    """Clamp a triage finding severity into the schema's enum.
+
+    The triage artifact is model-derived and may carry "info", a typo, or omit
+    the key entirely. The report index is schema-validated downstream, so an
+    out-of-enum value would make the whole index invalid. Normalize to a known
+    severity (defaulting low) instead.
+    """
+    severity = str(raw or "").strip().lower()
+    return severity if severity in _KNOWN_SEVERITIES else _DEFAULT_SEVERITY
+
+
+def _esc(value: object, *, redact: bool) -> str:
+    """HTML-escape (and optionally redact) a single interpolated value."""
+    text = "" if value is None else str(value)
+    if redact:
+        text = redact_text(text).text
+    return html.escape(text, quote=True)
+
+
+def _normalize_path(value: object) -> str:
+    """Render a filesystem path with POSIX separators so ``os.sep`` never leaks.
+
+    Determinism guard (Contract #9): a golden must be byte-stable across
+    Linux/macOS, so any embedded path is rendered through ``PurePosixPath``.
+    """
+    if value is None:
+        return ""
+    path_str = str(value).replace("\\", "/")
+    if not path_str:
+        return ""
+    return str(PurePosixPath(path_str))
+
+
+def _status_badge(final_status: str, *, redact: bool) -> str:
+    colour = _STATUS_COLOURS.get(final_status, "#6e7781")
+    label = _esc(final_status, redact=redact)
+    return f'<span class="badge" style="background:{colour}">{label}</span>'
+
+
+def _exit_code_for(summary: dict[str, Any]) -> int:
+    """Map a run's terminal state to its documented exit code (display only)."""
+    final_status = summary.get("final_status")
+    stopped_reason = summary.get("stopped_reason")
+    if isinstance(final_status, str):
+        if final_status == "error" and isinstance(stopped_reason, str):
+            return _EXIT_CODE_BY_ERROR_REASON.get(stopped_reason, 1)
+        return _EXIT_CODE_BY_STATUS.get(final_status, 1)
+    return 1
+
+
+def _phase_config_section(summary: dict[str, Any], *, redact: bool) -> str:
+    """Per-phase harness/model/effort table from ``summary.phase_config``.
+
+    The engine writes ``phase_config`` on every run via
+    ``reporting.add_summary_contract_fields``; it carries per-phase config under
+    ``review``/``triage``/``remediation``/``commit_message`` (and non-model
+    blocks ``checks``/``runtime``). Only the model-bearing phases are rendered —
+    a block without a ``harness``/``model`` is skipped rather than emitted as a
+    blank row. Absent on very old runs, in which case the section is omitted.
+    """
+    phase_config = summary.get("phase_config")
+    if not isinstance(phase_config, dict) or not phase_config:
+        return ""
+    rows: list[str] = []
+    for phase in sorted(phase_config):
+        cfg = phase_config[phase]
+        if not isinstance(cfg, dict):
+            continue
+        harness = cfg.get("harness")
+        model = cfg.get("model")
+        if not harness and not model:
+            # checks/runtime and any future non-model block: no harness/model.
+            continue
+        effort = cfg.get("reasoning_effort")
+        timeout = cfg.get("timeout_seconds")
+        sandbox = cfg.get("sandbox")
+        rows.append(
+            "<tr>"
+            f"<td>{_esc(phase, redact=redact)}</td>"
+            f"<td>{_esc(harness, redact=redact) or '<em>unset</em>'}</td>"
+            f"<td>{_esc(model, redact=redact) or '<em>unset</em>'}</td>"
+            f"<td>{_esc(effort, redact=redact) or '&mdash;'}</td>"
+            f"<td>{_esc(timeout, redact=redact) or '&mdash;'}</td>"
+            f"<td>{_esc(sandbox, redact=redact) or '&mdash;'}</td>"
+            "</tr>"
+        )
+    if not rows:
+        return ""
+    return (
+        '<section><h2>Phase configuration</h2>'
+        '<table><thead><tr><th>Phase</th><th>Harness</th><th>Model</th>'
+        '<th>Reasoning effort</th><th>Timeout (s)</th><th>Sandbox</th>'
+        '</tr></thead><tbody>'
+        + "".join(rows)
+        + "</tbody></table></section>"
+    )
+
+
+def _phase_failures_section(summary: dict[str, Any], *, redact: bool) -> str:
+    """Render bounded phase-failure diagnostics mirrored into summary.json.
+
+    Provider subprocess failures often leave their useful context in
+    ``summary.phase_failures`` via ``diagnostics-*-failure.json``. CI reports
+    need to expose that metadata without linking to raw local files or dumping
+    full transcripts.
+    """
+    failures = summary.get("phase_failures")
+    if not isinstance(failures, list) or not failures:
+        return ""
+    rows: list[str] = []
+    for item in failures[:5]:
+        if not isinstance(item, dict):
+            continue
+        phase = item.get("phase", "")
+        iteration = item.get("iteration", "")
+        failure = item.get("failure")
+        reason = ""
+        detail = ""
+        transient = ""
+        if isinstance(failure, dict):
+            reason = str(failure.get("reason") or "")
+            detail = str(failure.get("detail") or "")
+            if "transient" in failure:
+                transient = str(failure.get("transient"))
+        diagnostic = _normalize_path(item.get("diagnostic_artifact") or "")
+        retry = _retry_command_text(item.get("redirected_retry_command"))
+        output_excerpt = _phase_failure_output_excerpt(item)
+        output_cell = (
+            f"<pre>{_esc(output_excerpt, redact=redact)}</pre>"
+            if output_excerpt
+            else "&mdash;"
+        )
+        rows.append(
+            "<tr>"
+            f"<td>{_esc(phase, redact=redact)}</td>"
+            f"<td>{_esc(iteration, redact=redact)}</td>"
+            f"<td>{_esc(reason, redact=redact) or '<em>unknown</em>'}</td>"
+            f"<td>{_esc(detail, redact=redact) or '&mdash;'}</td>"
+            f"<td>{_esc(transient, redact=redact) or '&mdash;'}</td>"
+            f"<td><code>{_esc(diagnostic, redact=redact)}</code></td>"
+            f"<td><code>{_esc(retry, redact=redact)}</code></td>"
+            f"<td>{output_cell}</td>"
+            "</tr>"
+        )
+    if not rows:
+        return ""
+    suffix = (
+        '<p class="placeholder">Showing first 5 phase failures.</p>'
+        if len(failures) > 5
+        else ""
+    )
+    return (
+        '<section><h2>Phase failures</h2>'
+        '<table><thead><tr><th>Phase</th><th>Iteration</th><th>Reason</th>'
+        '<th>Detail</th><th>Transient</th><th>Diagnostic</th><th>Retry</th>'
+        '<th>Output excerpt</th></tr></thead><tbody>'
+        + "".join(rows)
+        + "</tbody></table>"
+        + suffix
+        + "</section>"
+    )
+
+
+def _retry_command_text(value: object) -> str:
+    if isinstance(value, dict):
+        command = value.get("command")
+        if isinstance(command, list) and all(isinstance(part, str) for part in command):
+            return shlex.join(command)
+        if isinstance(command, str):
+            return command
+    if isinstance(value, list) and all(isinstance(part, str) for part in value):
+        return shlex.join(value)
+    if isinstance(value, str):
+        return value
+    return ""
+
+
+def _phase_failure_output_excerpt(item: dict[str, Any]) -> str:
+    stderr = item.get("stderr_excerpt")
+    if isinstance(stderr, str) and stderr.strip():
+        return stderr.strip()
+    stdout = item.get("stdout_excerpt")
+    if isinstance(stdout, str) and stdout.strip():
+        return stdout.strip()
+    return ""
+
+
+def _header(summary: dict[str, Any], *, redact: bool) -> str:
+    run_id = _esc(summary.get("run_id"), redact=redact)
+    badge = _status_badge(str(summary.get("final_status", "")), redact=redact)
+    base = _esc(summary.get("base"), redact=redact)
+    head = _esc(summary.get("head"), redact=redact)
+    profile = _esc(summary.get("profile"), redact=redact)
+    harness = _esc(summary.get("harness"), redact=redact)
+    duration = summary.get("duration_seconds")
+    duration_unknown = duration is None
+    duration_text = "unknown" if duration_unknown else _esc(duration, redact=redact)
+    exit_code = _exit_code_for(summary)
+    exit_hint = _exit_hint(summary)
+    started = _esc(summary.get("started_at"), redact=redact)
+    finished = _esc(summary.get("finished_at"), redact=redact)
+    return (
+        '<header>'
+        f'<h1>RevRem run <code>{run_id}</code></h1>'
+        f'<p class="status">Final status: {badge}</p>'
+        f'<p>Exit code: <code>{exit_code}</code>'
+        f'{f" &mdash; {exit_hint}" if exit_hint else ""}</p>'
+        "<dl>"
+        f"<dt>Base ref</dt><dd>{base or '<em>unset</em>'}</dd>"
+        f"<dt>HEAD</dt><dd>{head or '<em>unset</em>'}</dd>"
+        f"<dt>Profile</dt><dd>{profile or '<em>none</em>'}</dd>"
+        f"<dt>Harness</dt><dd>{harness or '<em>unknown</em>'}</dd>"
+        f"<dt>Wall-clock</dt><dd>{duration_text}{'' if duration_unknown else 's'}</dd>"
+        f"<dt>Started</dt><dd>{started or '<em>unknown</em>'}</dd>"
+        f"<dt>Finished</dt><dd>{finished or '<em>unknown</em>'}</dd>"
+        "</dl>"
+        "</header>"
+    )
+
+
+def _exit_hint(summary: dict[str, Any]) -> str:
+    reason = str(summary.get("stopped_reason") or "")
+    if reason == "budget_ceiling_hit":
+        return "budget ceiling reached"
+    if reason == "cancelled":
+        return "cancelled by operator"
+    if reason == "review_failed" or reason == "setup_failed":
+        return "error"
+    return ""
+
+
+def _outcome_summary(
+    summary: dict[str, Any], events: list[Event], *, redact: bool
+) -> str:
+    reason = _esc(summary.get("stopped_reason"), redact=redact)
+    iterations = summary.get("iterations") or []
+    iteration_count = len(iterations) if isinstance(iterations, list) else 0
+    check_pass, check_fail = _check_counts(summary, events)
+    suppressed = sum(1 for ev in events if ev.kind == "suppressed")
+    # Per-iteration review status from summary.iterations[].review_status — the
+    # engine's record of what each review pass concluded (e.g. clear/findings).
+    review_states: list[str] = []
+    if isinstance(iterations, list):
+        for it in iterations:
+            if isinstance(it, dict) and it.get("review_status"):
+                review_states.append(str(it["review_status"]))
+    review_status_cell = (
+        ", ".join(_esc(s, redact=redact) for s in review_states)
+        if review_states
+        else "<em>none</em>"
+    )
+    return (
+        '<section><h2>Outcome</h2><dl>'
+        f"<dt>Stopped reason</dt><dd>{reason or '<em>none</em>'}</dd>"
+        f"<dt>Iterations</dt><dd>{iteration_count}</dd>"
+        f"<dt>Review status</dt><dd>{review_status_cell}</dd>"
+        f"<dt>Checks passed</dt><dd>{check_pass}</dd>"
+        f"<dt>Checks failed</dt><dd>{check_fail}</dd>"
+        f"<dt>Suppressed findings</dt><dd>{suppressed}</dd>"
+        "</dl></section>"
+    )
+
+
+def _check_counts(summary: dict[str, Any], events: list[Event]) -> tuple[int, int]:
+    """Count checks from the same source order as the rendered Checks table."""
+    saw_summary_check = False
+    summary_pass = 0
+    summary_fail = 0
+    iterations = summary.get("iterations") or []
+    if isinstance(iterations, list):
+        for it in iterations:
+            if not isinstance(it, dict):
+                continue
+            checks = it.get("checks")
+            if not isinstance(checks, list):
+                continue
+            for check in checks:
+                if not isinstance(check, dict):
+                    continue
+                saw_summary_check = True
+                status = str(check.get("status", "")).lower()
+                if status == "passed":
+                    summary_pass += 1
+                elif status == "failed":
+                    summary_fail += 1
+    if saw_summary_check:
+        return summary_pass, summary_fail
+
+    event_pass = sum(
+        1
+        for ev in events
+        if ev.kind == "check_result"
+        and str(ev.payload.get("status", "")).lower() == "passed"
+    )
+    event_fail = sum(
+        1
+        for ev in events
+        if ev.kind == "check_result"
+        and str(ev.payload.get("status", "")).lower() == "failed"
+    )
+    return event_pass, event_fail
+
+
+def _timeline(events: list[Event], *, redact: bool) -> str:
+    """Compact ordered list of phase_start/phase_result events."""
+    rows: list[str] = []
+    for ev in events:
+        if ev.kind not in ("phase_start", "phase_result"):
+            continue
+        phase = _esc(ev.phase, redact=redact)
+        iteration = _esc(ev.iteration, redact=redact)
+        status = _esc(ev.payload.get("status") or ev.payload.get("message"), redact=redact)
+        rows.append(
+            f'<li><span class="seq">{ev.seq}</span> '
+            f'<span class="phase">{phase}</span> '
+            f'<span class="iter">{iteration}</span> '
+            f'<span class="kind">{ev.kind}</span> '
+            f'<span class="detail">{status}</span></li>'
+        )
+    if not rows:
+        return ""
+    return (
+        '<section><h2>Timeline</h2><ol class="timeline">'
+        + "".join(rows)
+        + "</ol></section>"
+    )
+
+
+def _flatten_confirmed_findings(
+    triage_findings: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    """Confirmed findings from one or more parsed ``triage-N.json`` payloads.
+
+    The engine writes per-finding detail (severity, summary, affected_paths,
+    fingerprint, rationale) into ``triage-N.json::confirmed_findings`` — not
+    into the ``status_classification`` event (whose payload is only
+    ``{message, summary}``). The command layer loads the triage artifact(s)
+    and passes them here so the renderer stays pure (no disk I/O).
+    """
+    if not triage_findings:
+        return []
+    confirmed: list[dict[str, Any]] = []
+    for triage in triage_findings:
+        if not isinstance(triage, dict):
+            continue
+        for finding in triage.get("confirmed_findings") or []:
+            if isinstance(finding, dict):
+                confirmed.append(finding)
+    return confirmed
+
+
+def _flatten_findings_kind(
+    triage_findings: list[dict[str, Any]] | None,
+    key: str,
+) -> list[dict[str, Any]]:
+    """Flatten one finding list (e.g. ``suppressed_findings``) across triage payloads."""
+    if not triage_findings:
+        return []
+    out: list[dict[str, Any]] = []
+    for triage in triage_findings:
+        if not isinstance(triage, dict):
+            continue
+        for finding in triage.get(key) or []:
+            if isinstance(finding, dict):
+                out.append(finding)
+    return out
+
+
+def _flatten_suppressed_findings(
+    triage_findings: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    return _flatten_findings_kind(triage_findings, "suppressed_findings")
+
+
+def _findings_section(
+    summary: dict[str, Any],
+    events: list[Event],
+    *,
+    redact: bool,
+    triage_findings: list[dict[str, Any]] | None = None,
+) -> str:
+    """Findings & triage section.
+
+    Source: ``triage-N.json::confirmed_findings`` (severity, affected_paths,
+    summary, fingerprint, rationale) passed in by the command layer; plus
+    ``suppressed_findings`` from the same artifacts. Per-iteration review
+    status is surfaced in the outcome section via ``iterations[].review_status``.
+    """
+    confirmed = _flatten_confirmed_findings(triage_findings)
+    configured: list[str] = []
+    for finding in confirmed:
+        severity = finding.get("severity", "")
+        paths = finding.get("affected_paths") or []
+        # Normalize each path individually before joining: running the joined
+        # string through PurePosixPath would treat the ", " separator as part of
+        # a single path and skip per-path normalization (e.g. drop "./" or "//").
+        path_text = ", ".join(_normalize_path(p) for p in paths) if paths else ""
+        summary_text = finding.get("summary") or finding.get("rationale") or ""
+        fingerprint = finding.get("fingerprint", "")
+        configured.append(
+            f"<tr><td>{_esc(severity, redact=redact)}</td>"
+            f"<td>{_esc(path_text, redact=redact)}</td>"
+            f"<td>{_esc(summary_text, redact=redact)}</td>"
+            f"<td><code>{_esc(fingerprint, redact=redact)}</code></td></tr>"
+        )
+
+    suppressed_findings = _flatten_suppressed_findings(triage_findings)
+    suppressed_rows: list[str] = []
+    for finding in suppressed_findings:
+        message = finding.get("summary") or finding.get("reason") or ""
+        suppressed_rows.append(
+            f"<li>{_esc(message, redact=redact)} "
+            f'<span class="placeholder">(suppressed)</span></li>'
+        )
+
+    parts = ['<section><h2>Findings &amp; triage</h2>']
+    if configured:
+        parts.append(
+            '<table><thead><tr><th>Severity</th><th>Path</th>'
+            '<th>Summary</th><th>Fingerprint</th></tr></thead><tbody>'
+        )
+        parts.extend(configured)
+        parts.append("</tbody></table>")
+    else:
+        parts.append('<p class="placeholder">No confirmed findings recorded.</p>')
+
+    if suppressed_rows:
+        parts.append("<h3>Suppressed findings</h3><ul>")
+        parts.extend(suppressed_rows)
+        parts.append("</ul>")
+
+    # Rejected findings: triage looked and dismissed them. Surface the reason so
+    # the report does not silently drop part of the triage outcome (C1).
+    rejected = _flatten_findings_kind(triage_findings, "rejected_findings")
+    if rejected:
+        parts.append("<h3>Rejected findings</h3><ul>")
+        for finding in rejected:
+            fingerprint = finding.get("fingerprint", "")
+            reason = (
+                finding.get("rejection_reason")
+                or finding.get("rationale")
+                or ""
+            )
+            parts.append(
+                f"<li><code>{_esc(fingerprint, redact=redact)}</code> "
+                f"&mdash; {_esc(reason, redact=redact)}</li>"
+            )
+        parts.append("</ul>")
+
+    # Needs-more-info: triage could not classify; surface the open question.
+    needs_info = _flatten_findings_kind(triage_findings, "needs_more_info")
+    if needs_info:
+        parts.append("<h3>Needs more info</h3><ul>")
+        for finding in needs_info:
+            fingerprint = finding.get("fingerprint", "")
+            requested = (
+                finding.get("info_requested")
+                or finding.get("rationale")
+                or ""
+            )
+            parts.append(
+                f"<li><code>{_esc(fingerprint, redact=redact)}</code> "
+                f"&mdash; {_esc(requested, redact=redact)}</li>"
+            )
+        parts.append("</ul>")
+
+    parts.append("</section>")
+    return "".join(parts)
+
+
+def _checks_section(
+    summary: dict[str, Any], events: list[Event], *, redact: bool
+) -> str:
+    """Checks section.
+
+    Authoritative source: ``summary.iterations[].checks[]`` (the committed
+    record; each entry {command, status, artifact}). Falls back to
+    ``check_result`` events ({command, status, returncode}) when the summary
+    carries no checks (e.g. an older run). Renders artifact links relative.
+    """
+    rows: list[str] = []
+    iterations = summary.get("iterations") or []
+    if isinstance(iterations, list):
+        for it in iterations:
+            if not isinstance(it, dict):
+                continue
+            iteration = it.get("iteration", "")
+            for check in it.get("checks") or []:
+                if not isinstance(check, dict):
+                    continue
+                command = check.get("command", "")
+                status = str(check.get("status", "")).lower()
+                artifact = check.get("artifact", "")
+                status_class = "check-pass" if status == "passed" else "check-fail"
+                # Render the artifact path as inert text (<code>), not an <a href>:
+                # the single-file report contract (asserted in
+                # test_render_report_is_single_file_with_no_external_refs) forbids
+                # href/src attributes so the report stays offline-safe.
+                artifact_cell = (
+                    f"<code>{_esc(_normalize_path(artifact), redact=redact)}</code>"
+                    if artifact
+                    else ""
+                )
+                rows.append(
+                    "<tr>"
+                    f'<td><code>{_esc(command, redact=redact)}</code></td>'
+                    f'<td class="{status_class}">{_esc(status, redact=redact)}</td>'
+                    f"<td>{artifact_cell}</td>"
+                    f"<td>{_esc(iteration, redact=redact)}</td>"
+                    "</tr>"
+                )
+    # Fallback: check_result events when the summary carried no checks.
+    if not rows:
+        for ev in events:
+            if ev.kind != "check_result":
+                continue
+            command = ev.payload.get("command", "")
+            status = str(ev.payload.get("status", "")).lower()
+            status_class = "check-pass" if status == "passed" else "check-fail"
+            # The "Artifact" column header is shared with the primary path.
+            # check_result events carry a returncode (exit status), not an
+            # artifact path — render an empty cell so the column never shows a
+            # misleading integer where a path is expected.
+            rows.append(
+                "<tr>"
+                f'<td><code>{_esc(command, redact=redact)}</code></td>'
+                f'<td class="{status_class}">{_esc(status, redact=redact)}</td>'
+                f"<td></td>"
+                f"<td>{_esc(ev.iteration, redact=redact)}</td>"
+                "</tr>"
+            )
+    if not rows:
+        return (
+            '<section><h2>Checks</h2>'
+            '<p class="placeholder">No check results recorded.</p></section>'
+        )
+    return (
+        '<section><h2>Checks</h2>'
+        '<table><thead><tr><th>Command</th><th>Status</th>'
+        '<th>Artifact</th><th>Iteration</th></tr></thead><tbody>'
+        + "".join(rows)
+        + "</tbody></table></section>"
+    )
+
+
+def _cost_section(
+    summary: dict[str, Any], events: list[Event], *, redact: bool
+) -> str:
+    """Cost & budget section. Renders ``null`` honestly, never ``0``."""
+    tokens = summary.get("tokens")
+    usd = summary.get("usd")
+    cost_charges = [ev for ev in events if ev.kind == "cost_charge"]
+    ceiling_hits = [ev for ev in events if ev.kind == "cost_ceiling_hit"]
+
+    def _fmt_tokens(t: object) -> str:
+        if t is None:
+            return '<em class="placeholder">not reported</em>'
+        if isinstance(t, dict):
+            if not t:
+                return '<em class="placeholder">not reported</em>'
+            return ", ".join(
+                f"{_esc(k, redact=redact)}={_esc(v, redact=redact)}"
+                for k, v in sorted(t.items())
+            )
+        return _esc(t, redact=redact)
+
+    _not_reported = '<em class="placeholder">not reported</em>'
+    usd_cell = _esc(usd, redact=redact) if usd is not None else _not_reported
+    rows = [
+        f"<dt>Tokens</dt><dd>{_fmt_tokens(tokens)}</dd>",
+        f"<dt>USD</dt><dd>{usd_cell}</dd>",
+        f"<dt>Charge events</dt><dd>{len(cost_charges)}</dd>",
+    ]
+    if ceiling_hits:
+        ceiling = ceiling_hits[-1].payload
+        rows.append(
+            f"<dt>Budget ceiling</dt><dd>{_esc(ceiling.get('ceiling'), redact=redact)} "
+            f"reached ({_esc(ceiling.get('actual'), redact=redact)} / "
+            f"{_esc(ceiling.get('limit'), redact=redact)})</dd>"
+        )
+    return (
+        '<section><h2>Cost &amp; budget</h2><dl>'
+        + "".join(rows)
+        + "</dl></section>"
+    )
+
+
+def _diff_stats_section(summary: dict[str, Any], *, redact: bool) -> str:
+    """Diff stats from in-artifact data only. Never shells out to git.
+
+    The summary may carry a diff-stat block under various keys; when absent the
+    section renders "diff stats unavailable for this run" rather than
+    recomputing from the worktree (the report must not shell out).
+    """
+    diff_stat = summary.get("diff_stat") or summary.get("diff_stats")
+    if not diff_stat:
+        return (
+            '<section><h2>Diff stats</h2>'
+            '<p class="placeholder">Diff stats unavailable for this run.</p>'
+            "</section>"
+        )
+    return (
+        '<section><h2>Diff stats</h2><pre>'
+        + _esc(diff_stat, redact=redact)
+        + "</pre></section>"
+    )
+
+
+_CSS = """
+body{font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+max-width:60rem;margin:2rem auto;padding:0 1rem;color:#1f2328;line-height:1.5}
+code{background:#f6f8fa;padding:.1em .3em;border-radius:4px;font-size:.95em}
+header h1{font-size:1.6rem;margin-bottom:.25rem}
+.status{font-size:1.15rem}
+.badge{color:#fff;padding:.15em .5em;border-radius:1em;font-weight:600;font-size:.85em}
+dl{display:grid;grid-template-columns:auto 1fr;gap:.25rem 1rem;margin:.5rem 0}
+dt{font-weight:600;color:#57606a}
+section{margin-top:1.75rem;padding-top:.5rem;border-top:1px solid #d0d7de}
+h2{font-size:1.2rem;margin-bottom:.5rem}
+table{border-collapse:collapse;margin:.5rem 0}
+th,td{border:1px solid #d0d7de;padding:.35rem .6rem;text-align:left}
+th{background:#f6f8fa}
+.timeline{list-style:none;padding-left:0}
+.timeline li{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.85rem;
+padding:.15rem 0;border-bottom:1px solid #eaeef2}
+.seq{color:#6e7781;display:inline-block;width:3em}
+.phase{display:inline-block;width:7em;color:#0969da}
+.iter{display:inline-block;width:4em;color:#57606a}
+.kind{display:inline-block;width:8em;color:#8250df}
+.placeholder{color:#6e7781;font-style:italic}
+footer{margin-top:2.5rem;padding-top:.75rem;border-top:1px solid #d0d7de;
+font-size:.8rem;color:#57606a}
+.check-pass{color:#1a7f37;font-weight:600}
+.check-fail{color:#cf222e;font-weight:600}
+pre{background:#f6f8fa;padding:.75rem;border-radius:6px;overflow-x:auto;
+font-size:.85rem}
+"""
+
+
+def _footer(summary: dict[str, Any], *, redact: bool) -> str:
+    schema_version = _esc(summary.get("schema_version"), redact=redact)
+    artifact_dir = _esc(
+        _normalize_path(summary.get("artifact_dir")), redact=redact
+    )
+    redaction_note = (
+        "Redaction enabled (default): secrets scrubbed."
+        if redact
+        else "WARNING: redaction disabled (--no-redact). Output may contain secrets."
+    )
+    return (
+        "<footer>"
+        f"<p>RevRem <code>{__version__}</code> &middot; "
+        f"summary schema <code>{schema_version}</code> &middot; "
+        "rendered from <code>events.jsonl</code> &mdash; no model was re-run.</p>"
+        f"<p>Run directory: <code>{artifact_dir}</code></p>"
+        f"<p>{redaction_note}</p>"
+        "</footer>"
+    )
+
+
+def render_report(
+    summary: dict[str, Any],
+    events: list[Event],
+    *,
+    redact: bool = True,
+    triage_findings: list[dict[str, Any]] | None = None,
+) -> str:
+    """Render a finished run's ``summary`` + ``events`` into a self-contained HTML string.
+
+    Pure: no disk I/O, no network, no model. ``redact`` defaults to True so the
+    rendered HTML is safe to upload across a trust boundary by default (gate
+    G7). Deterministic across runs and platforms (Contract #9). Findings detail
+    is sourced from parsed ``triage-N.json`` payloads passed in as
+    ``triage_findings`` (the command layer loads them so the renderer stays pure).
+    """
+    body = (
+        _header(summary, redact=redact)
+        + _outcome_summary(summary, events, redact=redact)
+        + _phase_config_section(summary, redact=redact)
+        + _phase_failures_section(summary, redact=redact)
+        + _findings_section(summary, events, redact=redact, triage_findings=triage_findings)
+        + _checks_section(summary, events, redact=redact)
+        + _cost_section(summary, events, redact=redact)
+        + _diff_stats_section(summary, redact=redact)
+        + _timeline(events, redact=redact)
+        + _footer(summary, redact=redact)
+    )
+    title = _esc(
+        f"RevRem run {summary.get('run_id', '')}", redact=redact
+    )
+    return (
+        "<!DOCTYPE html>"
+        '<html lang="en">'
+        "<head>"
+        '<meta charset="utf-8">'
+        f"<title>{title}</title>"
+        f"<style>{_CSS}</style>"
+        "</head>"
+        f"<body>{body}</body>"
+        # Trailing newline so the document is a well-formed POSIX text file,
+        # consistent with the JSON artifact path (``write_json_artifact`` appends
+        # "\n") and the repo's end-of-file-fixer hook. Without it the committed
+        # golden snapshots are newline-free and the fixer rewrites them on every
+        # run, breaking the byte-exact golden comparison.
+        "</html>\n"
+    )
+
+
+# --- Machine-readable JSON index (D-3) --------------------------------------
+
+
+def _count_findings_by_severity(
+    triage_findings: list[dict[str, Any]] | None,
+) -> dict[str, int]:
+    """Tally finding severities from triage ``confirmed_findings``.
+
+    The authoritative per-finding detail lives in ``triage-N.json``; the
+    ``status_classification`` event payload is only ``{message, summary}`` and
+    carries no severities.
+    """
+    counts: dict[str, int] = dict.fromkeys(_KNOWN_SEVERITIES, 0)
+    for finding in _flatten_confirmed_findings(triage_findings):
+        # Clamp via the same helper _top_findings uses so the index never
+        # self-contradicts: an out-of-enum "info" must tally under "low" here
+        # exactly as it surfaces as "low" in top_findings. Because counts is
+        # pre-seeded with every known severity and _normalize_severity only ever
+        # returns one of them, no stray key can appear.
+        counts[_normalize_severity(finding.get("severity"))] += 1
+    return counts
+
+
+def _top_findings(
+    triage_findings: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    """At most 5 finding summaries for the comment builder.
+
+    Each entry: severity, file, line (nullable), and a one-sentence title.
+    Sourced from triage ``confirmed_findings``. The list is empty when there
+    are no findings or they were suppressed. The caller applies redaction via
+    :func:`_redact_index_findings`; this function is redaction-agnostic.
+    """
+    findings: list[dict[str, Any]] = []
+    for finding in _flatten_confirmed_findings(triage_findings):
+        title = finding.get("summary") or finding.get("rationale") or ""
+        paths = finding.get("affected_paths") or []
+        file_path = paths[0] if paths else None
+        findings.append(
+            {
+                "severity": _normalize_severity(finding.get("severity")),
+                "file": _normalize_path(file_path) if file_path else None,
+                "line": None,  # triage findings are path-level, not line-level
+                "title": title,
+            }
+        )
+        if len(findings) >= 5:
+            break
+    return findings
+
+
+def _redact_index_findings(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    redacted: list[dict[str, Any]] = []
+    for item in findings:
+        redacted.append(
+            {
+                "severity": item["severity"],
+                "file": redact_text(item["file"]).text if item["file"] else None,
+                "line": item["line"],
+                "title": redact_text(item["title"]).text if item["title"] else "",
+            }
+        )
+    return redacted
+
+
+def _cost_usd(summary: dict[str, Any]) -> float | None:
+    """Total USD spent, or null when the harness did not report cost."""
+    usd = summary.get("usd")
+    if usd is None or usd == "":
+        return None
+    try:
+        return float(usd)
+    except (TypeError, ValueError):
+        return None
+
+
+def _artifact_paths(summary: dict[str, Any], *, redact: bool) -> dict[str, Any]:
+    """Artifact locations keyed by type. Empty dict when unavailable.
+
+    List-valued entries (e.g. ``triage``, ``reviews``) are preserved as lists of
+    normalised strings — never flattened to a repr string — matching the
+    ``report-index-v1`` schema (``anyOf`` string|array). Each path is redacted
+    when ``redact`` is set, since an absolute run dir can sit under a home dir.
+    """
+    paths = summary.get("artifact_paths")
+    if not isinstance(paths, dict) or not paths:
+        return {}
+
+    def _norm(value: object) -> str:
+        text = _normalize_path(value)
+        return redact_text(text).text if redact else text
+
+    out: dict[str, Any] = {}
+    for k, v in paths.items():
+        if isinstance(v, list):
+            out[str(k)] = [_norm(item) for item in v]
+        else:
+            out[str(k)] = _norm(v)
+    return out
+
+
+def _failure_summary(summary: dict[str, Any], *, redact: bool) -> dict[str, Any] | None:
+    """Return the first phase failure as a bounded operator-facing summary."""
+    failures = summary.get("phase_failures")
+    if not isinstance(failures, list) or not failures:
+        return None
+    first = next((item for item in failures if isinstance(item, dict)), None)
+    if first is None:
+        return None
+    failure = first.get("failure")
+    if not isinstance(failure, dict):
+        return None
+
+    phase = str(first.get("phase") or "")
+    iteration = str(first.get("iteration") or "")
+    reason = str(failure.get("reason") or "")
+    detail = str(failure.get("detail") or "")
+    message = _failure_operator_message(reason, detail, phase=phase)
+    out = {
+        "phase": phase,
+        "iteration": iteration,
+        "reason": reason,
+        "detail": detail,
+        "message": message,
+    }
+    if redact:
+        return {key: redact_text(value).text for key, value in out.items()}
+    return out
+
+
+def _failure_operator_message(reason: str, detail: str, *, phase: str) -> str:
+    if reason == "provider_quota_exhausted":
+        return (
+            "Provider quota/billing exhausted. The model provider refused the "
+            "request because account, project, or billing capacity is exhausted; "
+            "fix provider billing/quota or credentials, then rerun."
+        )
+    description = detail or reason or "phase failed"
+    if phase:
+        return f"{phase} failed: {description}"
+    return description
+
+
+def build_report_index(
+    summary: dict[str, Any],
+    events: list[Event],
+    *,
+    redact: bool = True,
+    triage_findings: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Build the machine-readable report index (D-3).
+
+    The minimum payload ``post_pr_comment.py`` needs to populate a PR comment
+    body from this file alone, without reading raw ``events.jsonl`` or
+    ``summary.json``. Fields follow the nullability contract: ``cost_usd`` is
+    null for dry-runs / unrecorded cost; ``top_findings`` is ``[]`` when there
+    are no findings or they were suppressed (each entry's ``line`` is null when
+    the finding has no file-level location); ``artifact_paths`` is ``{}`` when
+    the run dir is unavailable. All other required keys are always present and
+    non-null; a missing key is a schema violation, not a null.
+
+    Findings detail is sourced from parsed ``triage-N.json`` payloads passed in
+    as ``triage_findings``.
+    """
+    top = _top_findings(triage_findings)
+    if redact:
+        top = _redact_index_findings(top)
+    run_id = summary.get("run_id", "")
+    if redact:
+        run_id = redact_text(str(run_id)).text
+    index: dict[str, Any] = {
+        "schema_version": REPORT_INDEX_SCHEMA_VERSION,
+        "run_id": run_id,
+        "final_status": summary.get("final_status"),
+        "stopped_reason": summary.get("stopped_reason"),
+        "finding_counts": _count_findings_by_severity(triage_findings),
+        "suppression_count": len(_flatten_suppressed_findings(triage_findings)),
+        "cost_usd": _cost_usd(summary),
+        "top_findings": top,
+        "artifact_paths": _artifact_paths(summary, redact=redact),
+    }
+    failure_summary = _failure_summary(summary, redact=redact)
+    if failure_summary is not None:
+        index["failure_summary"] = failure_summary
+    return index

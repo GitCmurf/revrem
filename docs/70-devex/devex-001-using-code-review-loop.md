@@ -3,8 +3,8 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.63'
-last_updated: '2026-06-18'
+version: '1.74'
+last_updated: '2026-06-23'
 owner: GitCmurf
 docops_version: '2.0'
 area: devex
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.63
-> **Last Updated:** 2026-06-18
+> **Version:** 1.74
+> **Last Updated:** 2026-06-23
 > **Type:** DEVEX
 > **Area:** devex
 > **Description:** Operator guide for the code-review-loop utility
@@ -196,6 +196,18 @@ literal inline shell syntax cannot be reconstructed after process startup.
 When `--max-wall-seconds` is set, the summary also stores the cumulative wall
 seconds already spent so a resumed run continues against the same total wall
 budget instead of starting a fresh ceiling.
+Typed run failures, including review, triage, remediation, commit, budget, and
+cancellation outcomes, still honor `--summary-format`. Automation using
+`--summary-format json` can parse stdout for `artifact_dir` and render or upload
+the failed run report instead of treating exit code `1` as an unstructured
+process crash.
+HTML reports for phase-level failures include a bounded `Phase failures`
+section sourced from `summary.phase_failures`, showing the phase, iteration,
+classified provider failure, diagnostic artifact path, and retry command when
+available. Review invocation diagnostics also include bounded, redacted
+stdout/stderr excerpts so CI operators can see provider CLI errors without
+uploading the raw run directory. The reference Action treats exit code `1` as
+this documented RevRem error path, not as an unexpected process shape.
 If triage produces invalid structured output or RevRem recovers a narrow
 contract-adjacent model mistake, the run summary records
 `triage_diagnostics` and the terminal summary prints the diagnostic code and
@@ -819,6 +831,53 @@ When a repository-level suppression audit exists, the bundle also includes a
 redacted suppression-audit summary resolved from the owning repo, even for runs
 stored under `.revrem/runs/<run-id>`.
 
+Static HTML report command:
+
+```bash
+revrem report .revrem/runs/<run-id>                      # writes <run-dir>/report.html
+revrem report .revrem/runs/<run-id> --output report.html # custom output path
+revrem report .revrem/runs/<run-id> --format json        # machine index to stdout
+```
+
+`revrem report` is a read-only consumer: it reads a finished run's
+`summary.json` + `events.jsonl` and renders a single self-contained HTML file
+(plain HTML5 + inline CSS, no JavaScript or external assets, safe to upload as
+a CI artifact and open offline). It never invokes a model or touches the
+network. The default output is `<run-dir>/report.html`; pass `--output/-o` for
+a custom path. With `--format json`, a machine-readable index is printed to
+stdout instead (the `--output` flag is ignored in that mode — use a shell
+redirect to write it to a file). The index is the minimum payload a CI comment
+builder needs to summarize a run without re-reading raw events, and validates
+against the `report-index-v1` schema. When a run fails in a structured phase,
+the index includes a bounded, redacted `failure_summary` so CI comments and
+Actions annotations can say why the run failed without requiring operators to
+open raw artifacts. Both outputs are redacted by default;
+disabling redaction requires both `--no-redact` and
+`--i-understand-the-risks`, as with the bug-report bundle. If `events.jsonl`
+is truncated or malformed, the report renders what is available and prints a
+warning to stderr rather than failing the render — the report is diagnostic.
+Triage artifacts referenced by `summary.artifact_paths.triage` are loaded only
+when the resolved path remains inside the run directory; absolute paths and
+`..` traversal are ignored.
+
+The report body, in order: a **header** (run id, final-status badge with
+distinct colours, base/HEAD, profile, per-phase harness/model, wall-clock
+duration, and the mapped exit code); an **outcome summary** (stopped reason,
+iteration count, check pass/fail tally, suppressed-finding count); **findings
+& triage** (configured findings with severity, path, one-line summary, and
+`f1:` fingerprint; suppressed findings labelled with provenance; a pointer to
+`triage-N.json` when the run dir contains one); **checks** (command, status,
+message, and iteration from `check_result` events); **cost & budget** (tokens,
+USD, charge events, and any budget-ceiling breach — unreported costs render
+`not reported`, never a fabricated `0`); **diff stats** (only when captured in
+the run's artifacts; otherwise `diff stats unavailable for this run` — the
+report never shells out to `git`); a **timeline** of `phase_start`/`phase_result`
+events; and a **footer** with the RevRem version, schema versions consumed, a
+"rendered from events.jsonl — no model was re-run" provenance line, and a
+redaction notice. The HTML layout is deterministic (byte-stable across runs
+and platforms) but is explicitly *not* a stable contract until the 0.9.0
+freeze — only the `report-index-v1` JSON fields are versioned.
+
 Local setup diagnostics:
 
 ```bash
@@ -1266,6 +1325,160 @@ the display. Terminal-title escape output is suppressed in Rich mode because
 some terminals render OSC title bytes inside the live panel instead of consuming
 them.
 
+For headless runs (CI, redirected output), pass `--no-tty` to suppress ANSI
+escape sequences, progress spinners, and terminal-title writes on stderr. The
+same suppression also triggers automatically when the `CI` environment variable
+is set (GitHub Actions, CircleCI, Travis, Jenkins, and most other providers set
+it), so a standard CI run needs no RevRem-specific flag. The recommended CI
+invocation is `--progress-style compact --no-tty --summary-format json`:
+compact progress is line-oriented and greppable, and `--summary-format json`
+prints canonical `summary.json` to stdout for downstream tooling (use
+`--summary-format both` for a human-readable text block followed by the JSON).
+`events.jsonl` and `summary.json` are always written before exit, including on
+the cancel path.
+
+### Hands-off CI (GitHub Action)
+
+The `revrem` GitHub Action (this repo's `action.yml`) runs a profile on a pull
+request, uploads a redacted HTML report, and posts a single updatable PR
+comment summarizing the result. It installs from PyPI by default or, for
+dogfooding, from the repo via `install-mode: local`.
+
+Provider-backed GitHub CI makes paid model API calls. Do not enable the
+credentialed Action on a repo until the expected provider spend is acceptable
+and explicit limits are set. For non-commercial hobby use, start with local
+runs or a manual-only workflow, set `max-usd` / `max-tokens`, keep
+`max-wall-seconds` bounded, and avoid broad automatic triggers. A small number
+of dogfood runs can cost several dollars if the model provider accepts the
+requests; quota or billing exhaustion is reported explicitly as
+`provider_quota_exhausted` / `provider quota exhausted` in the PR comment,
+Actions annotation, and HTML report.
+
+This repository includes a no-provider smoke workflow,
+`.github/workflows/revrem-action-smoke.yml`, for validating the composite
+Action surface on a GitHub-hosted runner before spending provider budget. It is
+triggered on PR updates and also supports `workflow_dispatch` once the workflow
+is registered on the default branch. It installs a temporary `action-smoke`
+profile under `$HOME/.config/revrem/profiles.toml`, enables the gated fake
+harness with `REVREM_ALLOW_FAKE_HARNESS=1`, runs `uses: ./` with
+`install-mode: local`, and asserts the generated `summary.json`, HTML report,
+and JSON report. It does not start `openai/codex-action`, read `CODEX_API_KEY`,
+post a PR comment, upload raw artifacts, or invoke a model provider.
+
+Before the workflow exists on the default branch, test it through the PR trigger
+by pushing a normal commit. After it is registered on the default branch, it can
+also be run manually:
+
+```bash
+gh workflow run "RevRem Action smoke" --repo GitCmurf/revrem --ref feat/v0.5.0-tier1-report-and-action
+gh run list --repo GitCmurf/revrem --workflow "RevRem Action smoke" --branch feat/v0.5.0-tier1-report-and-action --limit 1
+gh run watch --repo GitCmurf/revrem <run-id> --exit-status
+```
+
+Only after this smoke workflow is green should a release-candidate branch run
+the credentialed dogfood workflow. This repo's paid dogfood PR workflow is
+label-gated: it runs only on non-fork PRs that carry the `run-dogfood` label,
+and it keeps explicit `max-usd`, `max-tokens`, and wall-clock ceilings.
+
+```yaml
+# .github/workflows/revrem-pr.yml
+name: RevRem
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  revrem:
+    if: github.event.pull_request.head.repo.fork == false && contains(github.event.pull_request.labels.*.name, 'run-dogfood')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dogfood dependencies
+        run: |
+          python -m venv .venv
+          ./.venv/bin/python -m pip install --upgrade pip
+          ./.venv/bin/python -m pip install -e ".[dev]"
+          ./.venv/bin/python -m pip install "meminit @ git+https://github.com/GitCmurf/meminit.git@63547bc79f46200d25e4b7375b5c661f64aa34f8"
+      - name: Start Codex proxy
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.CODEX_API_KEY }}
+      - uses: owner/revrem-action@v0.5.0   # or uses: ./ to dogfood this repo
+        with:
+          base: origin/main
+          profile: default
+          routing: "false"
+          max-usd: "1.00"
+          fail-on-findings: "false"
+          checks: |
+            ./.venv/bin/ruff check .
+            ./.venv/bin/mypy src
+            ./.venv/bin/lint-imports
+            ./.venv/bin/meminit check --format json
+            ./.venv/bin/pytest -q
+            git diff --check
+        env:
+          CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
+```
+
+The action does not check out the repo itself — the caller must (with
+`fetch-depth: 0` so the base ref resolves). A credentialed Codex-backed
+workflow must also install and configure Codex before invoking RevRem; the
+example uses `openai/codex-action@v1` once to start the Codex proxy so later
+steps can call `codex`. The caller also owns any check-command toolchain:
+dogfood-style profiles that run `ruff`, `mypy`, `lint-imports`, Meminit, and
+pytest should install those tools first and either put them on `PATH` or pass
+explicit `checks` entries that point at the created environment. It runs revrem
+headless
+(`--no-tty --progress-style compact --summary-format json`), discovers the run
+directory from the JSON `artifact_dir` on stdout (never by globbing
+`.revrem/runs/`), then renders and uploads the redacted HTML report and posts
+the PR comment. The exit code is mapped last, after artifacts and comment land:
+0 (clear) passes; 1 (typed runtime error) fails with the redacted
+`failure_summary` when available; 2 (findings remain) respects
+`fail-on-findings`; 3 (budget ceiling) and 4/5 (setup/cancel) fail the job.
+The final exit-mapping step tolerates a missing `REVREM_STDERR` export, so a
+setup failure before the action creates its scratch stderr file does not mask
+the original error with a shell `nounset` failure.
+
+The `routing` input is an optional profile override. Leave it empty to use the
+selected profile, set `"true"` to force routing on, or set `"false"` for
+Codex-only CI environments where secondary harnesses such as Gemini are not
+installed. Setup failures print RevRem stderr and the latest preflight
+`diagnostics.json` when one exists, using a Python/pathlib lookup rather than
+GNU-only `find` flags, so missing executables or dirty-worktree blocks are
+visible in the Actions log on Linux and macOS runners.
+
+**Least privilege** is declared on the caller workflow: `contents: read`,
+`pull-requests: write`. **Fork PRs** should not receive model-provider secrets:
+credentialed dogfood workflows should skip fork PRs at the job level and should
+require an explicit operator signal such as this repo's `run-dogfood` label
+before spending provider budget. The composite action's comment step has its
+own defense-in-depth gate on
+`github.event.pull_request.head.repo.fork == false` (compare to the boolean,
+not the string `'true'` — the latter always evaluates true under GitHub Actions'
+type coercion and never actually skips). The action never uses
+`pull_request_target`.
+**Privacy**: the uploaded HTML report and the comment body are redacted by
+default by `revrem report`. `raw-artifacts: true` additionally uploads the run
+directory **verbatim and unredacted** — it contains raw prompts, model output,
+check output, and local paths, so enable it only on trusted repos. The PR
+comment body is bounded — at most the top 5 findings — and never embeds raw
+model output or stderr.
+
+`revrem --summary-format json` is the contract other providers build on: any
+CI provider that can run a Python tool and capture JSON stdout (GitLab CI,
+Buildkite, Jenkins, a generic shell loop) can run revrem headless and call
+`revrem report --format json` to get the same machine index this Action's
+comment builder consumes.
+
 `revrem ui` is available as a dependency-gated Textual interface:
 
 ```bash
@@ -1393,9 +1606,10 @@ is reserved for provider-control denial evidence, not denial text echoed inside
 reviewed diffs or test fixtures. Remediation failures
 name the active harness, for example `gemini remediation failed`, and point to
 the remediation artifact. Known provider-state failures are called out in the
-same error; Gemini CLI quota exhaustion is reported as `provider quota
-exhausted`, OpenCode server-side failures include the provider reference when
-one is present, and the full CLI stderr remains in the phase artifact.
+same error; Gemini CLI and Codex Action proxy quota exhaustion are reported as
+`provider quota exhausted`, OpenCode server-side failures include the provider
+reference when one is present, and the full CLI stderr remains in the phase
+artifact.
 
 ### Exit codes
 
@@ -1526,6 +1740,17 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.74 | 2026-06-23 | Codex | Aligned the example paid dogfood workflow with the documented `run-dogfood` label gate |
+| 1.73 | 2026-06-23 | Codex | Documented the no-provider GitHub Action smoke workflow and `run-dogfood` label gate before paid dogfood runs |
+| 1.72 | 2026-06-23 | Codex | Documented scoped report artifact loading and missing-stderr tolerance in the GitHub Action exit mapper |
+| 1.71 | 2026-06-23 | Codex | Documented the portable GitHub Action diagnostics fallback for setup-crash reports on Linux and macOS runners |
+| 1.70 | 2026-06-23 | Codex | Documented CI cost risk, budgeted Action usage, and report-index failure summaries for quota/billing exhaustion |
+| 1.69 | 2026-06-23 | Codex | Documented Codex Action proxy quota exhaustion classification as non-retryable `provider quota exhausted` |
+| 1.68 | 2026-06-23 | Codex | Documented phase-failure diagnostics, bounded redacted provider excerpts in HTML reports, and explicit Action handling for typed exit code `1` errors |
+| 1.67 | 2026-06-23 | Codex | Documented that typed failure outcomes still honor `--summary-format`, allowing CI automation to parse `artifact_dir` and render failed-run reports for exit code `1` |
+| 1.66 | 2026-06-21 | GitCmurf | Documented the reference GitHub Action (`action.yml`): hands-off CI usage, least-privilege permissions, fork-PR model, redacted upload, comment-before-fail exit mapping, and the generic-provider path |
+| 1.65 | 2026-06-21 | GitCmurf | Documented headless/CI output hardening: `--no-tty` + auto-trigger on `CI=true`, the recommended CI invocation, and the always-write-before-exit guarantee |
+| 1.64 | 2026-06-21 | GitCmurf | Documented the `revrem report` subcommand: static self-contained HTML report + `--format json` machine index (reads summary.json/events.jsonl only; redacted by default) |
 | 1.63 | 2026-06-18 | GitCmurf | Added a dedicated Interactive wizard section consolidating wizard run-shape preview, per-phase model/timeout, and routing-preview guidance migrated from the README |
 | 1.62 | 2026-06-17 | Codex | Documented stale Codex triage minimal-effort repair when profile/current is selected |
 | 1.61 | 2026-06-17 | Codex | Documented all-scope clear review prose classification with appended provider stderr |

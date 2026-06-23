@@ -1,0 +1,176 @@
+{
+  "$id": "https://github.com/GitCmurf/revrem/schemas/report-index/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Machine-readable companion to the static HTML report. The minimum payload a CI comment builder needs to summarize a run without re-reading raw summary.json or events.jsonl. Frozen surface: report HTML layout is explicitly NOT stable until PLAN-003 0.9.0; only this index's fields are versioned (additive within v1).",
+  "properties": {
+    "artifact_paths": {
+      "description": "Artifact locations keyed by type. Empty object when the run dir is unavailable or was not written (e.g. --dry-run). Path separators are POSIX-normalised.",
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        ]
+      },
+      "type": "object"
+    },
+    "cost_usd": {
+      "description": "Total USD spent, or null when the run was a dry-run or the engine did not record a cost (e.g. fake harness). Never absent from the key set.",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "final_status": {
+      "enum": [
+        "clear",
+        "findings",
+        "unknown",
+        "error"
+      ]
+    },
+    "failure_summary": {
+      "additionalProperties": false,
+      "description": "Optional bounded, redacted summary of the first phase failure. Present only when summary.phase_failures contains a structured failure; intended for CI comments and annotations so operators can see why an error occurred without opening raw artifacts.",
+      "properties": {
+        "detail": {
+          "type": "string"
+        },
+        "iteration": {
+          "type": "string"
+        },
+        "message": {
+          "description": "Operator-facing explanation suitable for Markdown comments and GitHub Actions annotations.",
+          "type": "string"
+        },
+        "phase": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "phase",
+        "iteration",
+        "reason",
+        "detail",
+        "message"
+      ],
+      "type": "object"
+    },
+    "finding_counts": {
+      "description": "Findings tallied by severity. Always present; every severity key is present (zero when none of that severity).",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "properties": {
+        "critical": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "high": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "low": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "medium": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "critical",
+        "high",
+        "medium",
+        "low"
+      ],
+      "type": "object"
+    },
+    "run_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0"
+    },
+    "stopped_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "suppression_count": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "top_findings": {
+      "description": "At most 5 redacted finding summaries. Empty list when there are no findings or they were suppressed.",
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "description": "Redacted affected file path (POSIX-normalised), or null when the finding has no file-level location.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "line": {
+            "description": "1-based line number, or null when the finding has no file-level location.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "severity": {
+            "enum": [
+              "critical",
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "title": {
+            "description": "Redacted one-sentence finding title.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "severity",
+          "file",
+          "line",
+          "title"
+        ],
+        "type": "object"
+      },
+      "type": "array",
+      "maxItems": 5
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "final_status",
+    "stopped_reason",
+    "finding_counts",
+    "suppression_count",
+    "cost_usd",
+    "top_findings",
+    "artifact_paths"
+  ],
+  "title": "RevRem report index v1",
+  "type": "object"
+}

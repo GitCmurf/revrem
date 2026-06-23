@@ -1,0 +1,29 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>RevRem run fixture-findings-fixed</title><style>
+body{font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+max-width:60rem;margin:2rem auto;padding:0 1rem;color:#1f2328;line-height:1.5}
+code{background:#f6f8fa;padding:.1em .3em;border-radius:4px;font-size:.95em}
+header h1{font-size:1.6rem;margin-bottom:.25rem}
+.status{font-size:1.15rem}
+.badge{color:#fff;padding:.15em .5em;border-radius:1em;font-weight:600;font-size:.85em}
+dl{display:grid;grid-template-columns:auto 1fr;gap:.25rem 1rem;margin:.5rem 0}
+dt{font-weight:600;color:#57606a}
+section{margin-top:1.75rem;padding-top:.5rem;border-top:1px solid #d0d7de}
+h2{font-size:1.2rem;margin-bottom:.5rem}
+table{border-collapse:collapse;margin:.5rem 0}
+th,td{border:1px solid #d0d7de;padding:.35rem .6rem;text-align:left}
+th{background:#f6f8fa}
+.timeline{list-style:none;padding-left:0}
+.timeline li{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.85rem;
+padding:.15rem 0;border-bottom:1px solid #eaeef2}
+.seq{color:#6e7781;display:inline-block;width:3em}
+.phase{display:inline-block;width:7em;color:#0969da}
+.iter{display:inline-block;width:4em;color:#57606a}
+.kind{display:inline-block;width:8em;color:#8250df}
+.placeholder{color:#6e7781;font-style:italic}
+footer{margin-top:2.5rem;padding-top:.75rem;border-top:1px solid #d0d7de;
+font-size:.8rem;color:#57606a}
+.check-pass{color:#1a7f37;font-weight:600}
+.check-fail{color:#cf222e;font-weight:600}
+pre{background:#f6f8fa;padding:.75rem;border-radius:6px;overflow-x:auto;
+font-size:.85rem}
+</style></head><body><header><h1>RevRem run <code>fixture-findings-fixed</code></h1><p class="status">Final status: <span class="badge" style="background:#1a7f37">clear</span></p><p>Exit code: <code>0</code></p><dl><dt>Base ref</dt><dd>main</dd><dt>HEAD</dt><dd><em>unset</em></dd><dt>Profile</dt><dd><em>none</em></dd><dt>Harness</dt><dd>fake</dd><dt>Wall-clock</dt><dd>6.0s</dd><dt>Started</dt><dd>2026-05-13T00:00:00Z</dd><dt>Finished</dt><dd>2026-05-13T00:00:06Z</dd></dl></header><section><h2>Outcome</h2><dl><dt>Stopped reason</dt><dd>review_clear</dd><dt>Iterations</dt><dd>1</dd><dt>Review status</dt><dd>findings</dd><dt>Checks passed</dt><dd>1</dd><dt>Checks failed</dt><dd>0</dd><dt>Suppressed findings</dt><dd>0</dd></dl></section><section><h2>Findings &amp; triage</h2><p class="placeholder">No confirmed findings recorded.</p></section><section><h2>Checks</h2><table><thead><tr><th>Command</th><th>Status</th><th>Artifact</th><th>Iteration</th></tr></thead><tbody><tr><td><code>pytest -q</code></td><td class="check-pass">passed</td><td></td><td>1.1</td></tr></tbody></table></section><section><h2>Cost &amp; budget</h2><dl><dt>Tokens</dt><dd><em class="placeholder">not reported</em></dd><dt>USD</dt><dd><em class="placeholder">not reported</em></dd><dt>Charge events</dt><dd>0</dd></dl></section><section><h2>Diff stats</h2><p class="placeholder">Diff stats unavailable for this run.</p></section><section><h2>Timeline</h2><ol class="timeline"><li><span class="seq">1</span> <span class="phase">review</span> <span class="iter">1</span> <span class="kind">phase_start</span> <span class="detail">codex review --base main</span></li><li><span class="seq">2</span> <span class="phase">review</span> <span class="iter">1</span> <span class="kind">phase_result</span> <span class="detail">findings</span></li><li><span class="seq">3</span> <span class="phase">remediate</span> <span class="iter">1</span> <span class="kind">phase_start</span> <span class="detail">codex exec</span></li><li><span class="seq">4</span> <span class="phase">remediate</span> <span class="iter">1</span> <span class="kind">phase_result</span> <span class="detail">done</span></li><li><span class="seq">6</span> <span class="phase">review</span> <span class="iter">final</span> <span class="kind">phase_result</span> <span class="detail">clear</span></li></ol></section><footer><p>RevRem <code>0.5.0</code> &middot; summary schema <code>1.0</code> &middot; rendered from <code>events.jsonl</code> &mdash; no model was re-run.</p><p>Run directory: <code>tests/fixtures/runs/findings_remediated</code></p><p>Redaction enabled (default): secrets scrubbed.</p></footer></body></html>

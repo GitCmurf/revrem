@@ -1,0 +1,77 @@
+name: RevRem (dogfood)
+
+# Dogfood: run the reference revrem Action (local install) on PRs to this repo.
+# This job makes paid provider calls, so it is opt-in via the `run-dogfood` PR
+# label rather than running on every PR push.
+# Coexists with ci.yml (test/lint gate) and release.yml (tag-triggered publish).
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  revrem:
+    if: github.event.pull_request.head.repo.fork == false && contains(github.event.pull_request.labels.*.name, 'run-dogfood')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Do not persist the GITHUB_TOKEN into .git/config; this dogfood job
+          # does not push commits, so the saved credential is pure exposure.
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dogfood dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m venv .venv
+          ./.venv/bin/python -m pip install --upgrade pip
+          ./.venv/bin/python -m pip install -e ".[dev]"
+          ./.venv/bin/python -m pip install "meminit @ git+https://github.com/GitCmurf/meminit.git@63547bc79f46200d25e4b7375b5c661f64aa34f8"
+
+      - name: Start Codex proxy
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.CODEX_API_KEY }}
+
+      - name: Configure git author
+        shell: bash
+        run: |
+          git config user.name "RevRem Action"
+          git config user.email "revrem-action@users.noreply.github.com"
+
+      - name: Run revrem
+        uses: ./
+        with:
+          install-mode: local
+          profile: dogfood
+          routing: "false"
+          max-wall-seconds: "900"
+          max-usd: "1.00"
+          comment: "true"
+          upload-artifacts: "true"
+          fail-on-findings: "false"
+          checks: |
+            ./.venv/bin/ruff check .
+            ./.venv/bin/mypy src
+            ./.venv/bin/lint-imports
+            ./.venv/bin/meminit check --format json
+            ./.venv/bin/pytest -q
+            git diff --check
+        env:
+          # Codex harness credentials for the dogfood run. Fork PRs skip the
+          # comment step (see action.yml), and the checkout is read-only to the
+          # runner, so secrets are not exposed to fork PR code.
+          CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}

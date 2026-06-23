@@ -1,0 +1,305 @@
+name: revrem
+description: >-
+  Run a RevRem code-review remediation loop on a pull request and post a single
+  updatable comment with the results. WARNING: provider-backed CI makes paid
+  model API calls; set max-usd/max-tokens before enabling on GitHub.
+author: GitCmurf
+branding:
+  icon: check-circle
+  color: green
+
+inputs:
+  base:
+    description: Git ref to review against (e.g. origin/main). The caller must checkout with fetch-depth 0.
+    default: origin/main
+  profile:
+    description: RevRem profile to run.
+    default: default
+  max-iterations:
+    description: Override the profile's max iterations.
+    default: ""
+  max-wall-seconds:
+    description: Wall-clock budget in seconds.
+    default: ""
+  max-usd:
+    description: USD cost ceiling. Strongly recommended for GitHub CI because provider-backed runs can incur real API charges.
+    default: ""
+  max-tokens:
+    description: Token budget ceiling.
+    default: ""
+  checks:
+    description: Newline-separated check commands (one per line), overriding the profile.
+    default: ""
+  routing:
+    description: 'Override profile routing: "true" enables routing, "false" disables routing, empty uses the profile.'
+    default: ""
+  comment:
+    description: Post an idempotent PR comment summarizing the run.
+    default: "true"
+  upload-artifacts:
+    description: Upload the redacted HTML report as a workflow artifact.
+    default: "true"
+  raw-artifacts:
+    description: >-
+      Also upload the full run directory verbatim. WARNING: this is NOT redacted
+      — it contains raw prompts, model output, check output, and local paths.
+      Only enable on trusted repos. (The HTML/JSON report from upload-artifacts
+      is redacted; this raw bundle is not.)
+    default: "false"
+  fail-on-findings:
+    description: Fail the job when RevRem exits 2 (findings remain).
+    default: "false"
+  install-mode:
+    description: How to install revrem — "pypi" (published) or "local" (this repo, for dogfooding).
+    default: "pypi"
+  revrem-version:
+    description: "revrem version to install from PyPI (install-mode: pypi only)."
+    default: "0.5.0"
+  github-token:
+    description: >-
+      GitHub token for posting the PR comment. Leave unset to use the automatic
+      GitHub token (resolved in the comment step); override to use a PAT
+      or app token. The default is intentionally empty — not an expression — so
+      the comment step fallback resolves
+      correctly regardless of how GitHub handles expressions in input defaults.
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    # SECURITY: every workflow input is passed through `env:` and read as a
+    # shell variable ("$VAR"), never interpolated as `${{ inputs.x }}` inside a
+    # run script. GitHub expands `${{ }}` into the script *text* before bash
+    # parses it, so direct interpolation of caller-controlled input is a
+    # script-injection vector (https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions#understanding-the-risk-of-script-injections).
+    - name: Install revrem
+      shell: bash
+      env:
+        INSTALL_MODE: ${{ inputs.install-mode }}
+        REVREM_VERSION: ${{ inputs.revrem-version }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        if [[ "$INSTALL_MODE" == "local" ]]; then
+          pip install -e "$ACTION_PATH"
+        else
+          pip install "revrem==$REVREM_VERSION"
+        fi
+        revrem --version
+
+    - name: Verify base ref exists
+      shell: bash
+      env:
+        BASE: ${{ inputs.base }}
+      run: |
+        set -euo pipefail
+        if ! git rev-parse --verify "$BASE" >/dev/null 2>&1; then
+          echo "::error::Base ref '$BASE' not found. Checkout with fetch-depth: 0."
+          exit 4
+        fi
+
+    - name: Run revrem
+      id: revrem
+      shell: bash
+      env:
+        BASE: ${{ inputs.base }}
+        PROFILE: ${{ inputs.profile }}
+        MAX_ITERATIONS: ${{ inputs.max-iterations }}
+        MAX_WALL_SECONDS: ${{ inputs.max-wall-seconds }}
+        MAX_USD: ${{ inputs.max-usd }}
+        MAX_TOKENS: ${{ inputs.max-tokens }}
+        CHECKS: ${{ inputs.checks }}
+        ROUTING: ${{ inputs.routing }}
+      run: |
+        # -e so the setup region (mkdir, $GITHUB_ENV exports, input validation)
+        # fails fast; a failed mkdir must not silently skip the path exports and
+        # hand downstream steps empty REVREM_* paths. The revrem call itself is
+        # bracketed with `set +e` / `set -e` below to capture its exit code.
+        set -euo pipefail
+        ACTION_TMP="${RUNNER_TEMP:-/tmp}/revrem-action"
+        mkdir -p "$ACTION_TMP"
+        REVREM_STDOUT="$ACTION_TMP/revrem-out.json"
+        REVREM_STDERR="$ACTION_TMP/revrem-err.txt"
+        REVREM_REPORT_HTML="$ACTION_TMP/revrem-report.html"
+        REVREM_REPORT_JSON="$ACTION_TMP/revrem-report.json"
+        echo "REVREM_STDERR=$REVREM_STDERR" >> "$GITHUB_ENV"
+        echo "REVREM_REPORT_HTML=$REVREM_REPORT_HTML" >> "$GITHUB_ENV"
+        echo "REVREM_REPORT_JSON=$REVREM_REPORT_JSON" >> "$GITHUB_ENV"
+
+        # Validate optional numeric budgets up front: empty or a number only.
+        for pair in "max-iterations=$MAX_ITERATIONS" "max-wall-seconds=$MAX_WALL_SECONDS" \
+                    "max-usd=$MAX_USD" "max-tokens=$MAX_TOKENS"; do
+          name="${pair%%=*}"; val="${pair#*=}"
+          if [[ -n "$val" && ! "$val" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "::error::Input '$name' must be numeric; got '$val'."
+            exit 4
+          fi
+        done
+        if [[ -n "$ROUTING" && "$ROUTING" != "true" && "$ROUTING" != "false" ]]; then
+          echo "::error::Input 'routing' must be 'true', 'false', or empty; got '$ROUTING'."
+          exit 4
+        fi
+        ARGS=(--base "$BASE" --profile "$PROFILE" --no-tty --progress-style compact --summary-format json)
+        if [[ -n "$MAX_ITERATIONS" ]]; then ARGS+=(--max-iterations "$MAX_ITERATIONS"); fi
+        if [[ -n "$MAX_WALL_SECONDS" ]]; then ARGS+=(--max-wall-seconds "$MAX_WALL_SECONDS"); fi
+        if [[ -n "$MAX_USD" ]]; then ARGS+=(--max-usd "$MAX_USD"); fi
+        if [[ -n "$MAX_TOKENS" ]]; then ARGS+=(--max-tokens "$MAX_TOKENS"); fi
+        if [[ "$ROUTING" == "true" ]]; then ARGS+=(--routing); fi
+        if [[ "$ROUTING" == "false" ]]; then ARGS+=(--no-routing); fi
+        # Split newline-separated checks into repeated --check flags, read from
+        # the env var (never interpolate the joined string — injection vector).
+        while IFS= read -r line; do
+          [[ -n "$line" ]] && ARGS+=(--check "$line")
+        done <<< "$CHECKS"
+
+        set +e
+        revrem "${ARGS[@]}" > "$REVREM_STDOUT" 2> "$REVREM_STDERR"
+        REVREM_EXIT=$?
+        set -e
+        echo "revrem-exit=$REVREM_EXIT" >> "$GITHUB_OUTPUT"
+
+        # Two-stage guard: stdout must be valid JSON AND carry a top-level
+        # artifact_dir (always present on a completed run). If revrem crashed
+        # before writing a summary, fast-fail here rather than globbing runs/.
+        if ! RUN_DIR=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d['artifact_dir'])" "$REVREM_STDOUT" 2>/dev/null); then
+          echo "::error::RevRem did not produce a parseable run summary. It may have crashed during setup."
+          echo "::group::revrem stderr"
+          cat "$REVREM_STDERR" || true
+          echo "::endgroup::"
+          if [[ -d .revrem/runs ]]; then
+            DIAGNOSTICS=$(python3 -c 'from pathlib import Path; files=[p for p in Path(".revrem/runs").rglob("diagnostics.json") if p.is_file()]; print(max(files, key=lambda p: p.stat().st_mtime, default=""))' 2>/dev/null || true)
+            if [[ -n "$DIAGNOSTICS" ]]; then
+              echo "::group::revrem diagnostics"
+              cat "$DIAGNOSTICS" || true
+              echo "::endgroup::"
+            fi
+          fi
+          exit 4
+        fi
+        echo "run-dir=$RUN_DIR" >> "$GITHUB_OUTPUT"
+        echo "REVREM_RUN_DIR=$RUN_DIR" >> "$GITHUB_ENV"
+
+    - name: Render report
+      if: always() && env.REVREM_RUN_DIR != ''
+      shell: bash
+      run: |
+        set -euo pipefail
+        revrem report "$REVREM_RUN_DIR" --output "$REVREM_REPORT_HTML"
+        revrem report "$REVREM_RUN_DIR" --format json > "$REVREM_REPORT_JSON"
+
+    - name: Upload report artifact
+      if: always() && env.REVREM_RUN_DIR != '' && inputs.upload-artifacts == 'true'
+      id: upload-report
+      uses: actions/upload-artifact@v4
+      with:
+        name: revrem-report
+        path: ${{ env.REVREM_REPORT_HTML }}
+
+    - name: Export artifact URL
+      if: always() && env.REVREM_RUN_DIR != '' && inputs.upload-artifacts == 'true'
+      shell: bash
+      env:
+        ARTIFACT_URL: ${{ steps.upload-report.outputs.artifact-url }}
+      run: |
+        # upload-artifact exposes artifact-url on its outputs; fall back to the
+        # run URL (set on the comment step) when upload was skipped or empty.
+        # Routed through env: to stay consistent with this file's injection-
+        # hardening policy (never interpolate expressions directly into a run script).
+        echo "REVREM_ARTIFACT_URL=$ARTIFACT_URL" >> "$GITHUB_ENV"
+
+    - name: Upload raw run directory
+      if: always() && env.REVREM_RUN_DIR != '' && inputs.raw-artifacts == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: revrem-run
+        path: ${{ env.REVREM_RUN_DIR }}
+
+    - name: Post PR comment
+      # NB: compare the boolean to `false`, not the string 'true'. Under GHA's
+      # type coercion `head.repo.fork != 'true'` is ALWAYS true (boolean true→1,
+      # string 'true'→NaN, 1 != NaN), so the fork guard never fired. `== false`
+      # blocks fork PRs (where the token is read-only) as intended. The
+      # `github.event.pull_request &&` guard keeps this step safe on non-PR
+      # triggers (push/workflow_dispatch), where `.head` would otherwise be a
+      # null-property evaluation error.
+      if: always() && env.REVREM_RUN_DIR != '' && inputs.comment == 'true' && github.event.pull_request && github.event.pull_request.head.repo.fork == false
+      shell: bash
+      env:
+        # The github-token input defaults to "" (empty, NOT an expression), so
+        # when the caller omits it `inputs.github-token` is falsy and this
+        # `|| github.token` fallback resolves to the automatic token — evaluated
+        # here in the step, where expressions are honoured. A non-empty literal
+        # default would be truthy and defeat the fallback, sending a bad token.
+        GITHUB_TOKEN: ${{ inputs.github-token || github.token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
+        GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        REVREM_ARTIFACT_URL: ${{ env.REVREM_ARTIFACT_URL }}
+        ACTION_PATH: ${{ github.action_path }}
+        REVREM_REPORT_JSON: ${{ env.REVREM_REPORT_JSON }}
+      run: |
+        set -euo pipefail
+        python3 "$ACTION_PATH/scripts/ci/post_pr_comment.py"
+
+    - name: Map exit code
+      if: always()
+      shell: bash
+      env:
+        EXIT: ${{ steps.revrem.outputs.revrem-exit }}
+        FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
+      run: |
+        set -uo pipefail
+        print_revrem_stderr() {
+          local stderr_path="${REVREM_STDERR:-}"
+          if [[ -n "$stderr_path" && -f "$stderr_path" ]]; then
+            cat "$stderr_path" || true
+          else
+            echo "(revrem stderr unavailable)"
+          fi
+        }
+        case "${EXIT:-}" in
+          0)
+            echo "RevRem: clear."
+            exit 0
+            ;;
+          1)
+            DETAIL=""
+            if [[ -n "${REVREM_REPORT_JSON:-}" && -f "$REVREM_REPORT_JSON" ]]; then
+              DETAIL=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); f=d.get("failure_summary") or {}; msg=f.get("message") or f.get("detail") or f.get("reason") or ""; print(str(msg).replace("\r", " ").replace("\n", " "))' "$REVREM_REPORT_JSON" 2>/dev/null || true)
+            fi
+            if [[ -n "$DETAIL" ]]; then
+              echo "::error::RevRem ended with an error: $DETAIL"
+            else
+              echo "::error::RevRem ended with an error. See the report artifact when available."
+            fi
+            echo "::group::revrem stderr"
+            print_revrem_stderr
+            echo "::endgroup::"
+            exit 1
+            ;;
+          2)
+            if [[ "$FAIL_ON_FINDINGS" == "true" ]]; then
+              echo "::error::RevRem found findings that remain."
+              exit 1
+            fi
+            echo "::warning::RevRem found findings that remain. See the report artifact."
+            exit 0
+            ;;
+          3)
+            echo "::error::RevRem hit a budget ceiling (tokens, cost, or wall-clock)."
+            print_revrem_stderr
+            exit 1
+            ;;
+          4|5)
+            echo "::error::RevRem exited with code $EXIT."
+            echo "::group::revrem stderr"
+            print_revrem_stderr
+            echo "::endgroup::"
+            exit 1
+            ;;
+          *)
+            echo "::error::RevRem exited with unexpected code $EXIT."
+            print_revrem_stderr
+            exit 1
+            ;;
+        esac

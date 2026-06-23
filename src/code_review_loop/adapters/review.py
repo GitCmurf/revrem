@@ -40,6 +40,7 @@ from code_review_loop.core.review_interpretation import (
     detect_review_status,
     review_status_diagnostics,
 )
+from code_review_loop.redaction import redact_text
 
 if TYPE_CHECKING:
     from code_review_loop.config import LoopConfig
@@ -354,6 +355,10 @@ def _write_review_failure_diagnostic(
         "stderr_chars": len(result.stderr or ""),
         "combined_chars": len(phase_support._combined_output(result)),
     }
+    if stdout_excerpt := _redacted_failure_excerpt(result.stdout):
+        payload["stdout_excerpt"] = stdout_excerpt
+    if stderr_excerpt := _redacted_failure_excerpt(result.stderr):
+        payload["stderr_excerpt"] = stderr_excerpt
     if failure is not None:
         payload["failure"] = {
             "reason": failure.reason,
@@ -374,6 +379,14 @@ def _write_review_failure_diagnostic(
         f"diagnostics-{artifact_label}-failure.json",
         payload,
     )
+
+
+def _redacted_failure_excerpt(text: str, max_chars: int = 2_000) -> str:
+    text = (text or "").strip()
+    if not text:
+        return ""
+    redacted = redact_text(text).text
+    return prompts_composer.trim_for_prompt(redacted, max_chars)
 
 
 def _codex_review_retry_command(config: LoopConfig) -> list[str] | None:
