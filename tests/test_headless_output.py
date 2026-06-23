@@ -143,6 +143,38 @@ def test_rich_fallback_console_suppresses_ansi_under_no_tty(monkeypatch):
     assert b"\x1b[" not in stderr.getvalue().encode("utf-8", errors="replace")
 
 
+def test_compact_mode_no_tty_latches_and_suppresses_ansi_fallback(monkeypatch):
+    """Compact progress (no rich live panel) + --no-tty must still suppress ANSI.
+
+    Regression: rich_live_progress is entered with enabled=False whenever
+    progress_style != "rich" (compact is the default). It used to return before
+    latching _NO_TTY_FORCED, so the print_rich_* fallback consoles fell back to
+    sys.stderr.isatty() and leaked escape sequences on an interactive non-CI
+    terminal — breaking --no-tty's documented promise for its out-of-CI use.
+    """
+    import io
+
+    monkeypatch.delenv("CI", raising=False)
+    if not progress.rich_available():
+        pytest.skip("rich not installed")
+
+    class _Tty(io.StringIO):
+        def isatty(self) -> bool:
+            return True
+
+    stderr = _Tty()
+    monkeypatch.setattr(progress.sys, "stderr", stderr)
+    # Compact mode: the live panel is disabled (enabled=False). No live panel is
+    # ever active, so print_rich_* take the fallback-console path directly.
+    assert progress._NO_TTY_FORCED is False  # clean precondition
+    with progress.rich_live_progress(False, no_tty=True):
+        assert progress._NO_TTY_FORCED is True  # latched despite enabled=False
+        progress.print_rich_message("review", "iter-1", "detail", head="warn: ")
+    # Latch restored on exit so other runs/tests stay isolated.
+    assert progress._NO_TTY_FORCED is False
+    assert b"\x1b[" not in stderr.getvalue().encode("utf-8", errors="replace")
+
+
 # --- summary-format / exit-code contract surface --------------------------
 
 

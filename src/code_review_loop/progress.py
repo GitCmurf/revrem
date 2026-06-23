@@ -96,40 +96,46 @@ def rich_live_progress(enabled: bool, *, no_tty: bool = False):
     test runs remain isolated.
     """
     global _ACTIVE_LIVE, _ACTIVE_LIVE_LINES, _NO_TTY_FORCED
-    if not enabled:
-        yield False
-        return
-    try:
-        from rich.console import Console, Group  # type: ignore[import-not-found]
-        from rich.live import Live  # type: ignore[import-not-found]
-        from rich.panel import Panel  # type: ignore[import-not-found]
-    except ImportError:
-        yield False
-        return
-
-    console = Console(file=sys.stderr, force_terminal=force_terminal(no_tty=no_tty))
-    lines: deque[Any] = deque(maxlen=RICH_LIVE_MAX_LINES)
-    live = Live(
-        Panel("Starting RevRem...", title="RevRem", border_style="green"),
-        console=console,
-        refresh_per_second=4,
-        transient=False,
-        vertical_overflow="ellipsis",
-    )
-    previous_live = _ACTIVE_LIVE
-    previous_lines = _ACTIVE_LIVE_LINES
+    # Latch headless mode for the whole context *before* any early return, so the
+    # fallback consoles built by print_rich_* (which take no no_tty arg) stay
+    # ANSI-free even when the live panel is disabled — i.e. compact progress
+    # (progress_style != "rich"), which enters here with enabled=False. Setting
+    # the latch only on the enabled path left --no-tty broken for its documented
+    # out-of-CI use in compact mode. One-way floor, restored on exit.
     previous_no_tty_forced = _NO_TTY_FORCED
-    _ACTIVE_LIVE = (live, Panel, Group)
-    _ACTIVE_LIVE_LINES = lines
-    # Latch headless mode for the duration of this context so the fallback
-    # consoles built by print_rich_* (which take no no_tty arg) stay ANSI-free.
     _NO_TTY_FORCED = _NO_TTY_FORCED or no_tty
     try:
-        with live:
-            yield True
+        if not enabled:
+            yield False
+            return
+        try:
+            from rich.console import Console, Group  # type: ignore[import-not-found]
+            from rich.live import Live  # type: ignore[import-not-found]
+            from rich.panel import Panel  # type: ignore[import-not-found]
+        except ImportError:
+            yield False
+            return
+
+        console = Console(file=sys.stderr, force_terminal=force_terminal(no_tty=no_tty))
+        lines: deque[Any] = deque(maxlen=RICH_LIVE_MAX_LINES)
+        live = Live(
+            Panel("Starting RevRem...", title="RevRem", border_style="green"),
+            console=console,
+            refresh_per_second=4,
+            transient=False,
+            vertical_overflow="ellipsis",
+        )
+        previous_live = _ACTIVE_LIVE
+        previous_lines = _ACTIVE_LIVE_LINES
+        _ACTIVE_LIVE = (live, Panel, Group)
+        _ACTIVE_LIVE_LINES = lines
+        try:
+            with live:
+                yield True
+        finally:
+            _ACTIVE_LIVE = previous_live
+            _ACTIVE_LIVE_LINES = previous_lines
     finally:
-        _ACTIVE_LIVE = previous_live
-        _ACTIVE_LIVE_LINES = previous_lines
         _NO_TTY_FORCED = previous_no_tty_forced
 
 
