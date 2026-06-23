@@ -33,7 +33,9 @@ single updatable PR comment. Tier 1 of `REVREM-PLAN-005`; expert profiles
   comment/upload/fail-on-findings toggles, and install-mode (`pypi` |
   `local`). Runs revrem headless, discovers the run directory from the JSON
   `artifact_dir` on stdout, and maps the exit code last (after artifacts and
-  comment land). Fork-PR safe and least-privilege.
+  comment land). Its setup-crash diagnostic fallback uses Python/pathlib rather
+  than GNU-only `find -printf`, so macOS runners can still print the latest
+  `diagnostics.json`. Fork-PR safe and least-privilege.
 - `--no-tty` flag: forces non-interactive (headless) output — suppresses ANSI
   escape sequences, progress spinners, and terminal-title writes on stderr.
   Auto-triggered when the `CI` environment variable is set (GitHub Actions,

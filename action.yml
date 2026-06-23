@@ -167,7 +167,7 @@ runs:
           cat "$REVREM_STDERR" || true
           echo "::endgroup::"
           if [[ -d .revrem/runs ]]; then
-            DIAGNOSTICS=$(find .revrem/runs -name diagnostics.json -type f -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -n 1 | cut -d' ' -f2-)
+            DIAGNOSTICS=$(python3 -c 'from pathlib import Path; files=[p for p in Path(".revrem/runs").rglob("diagnostics.json") if p.is_file()]; print(max(files, key=lambda p: p.stat().st_mtime, default=""))' 2>/dev/null || true)
             if [[ -n "$DIAGNOSTICS" ]]; then
               echo "::group::revrem diagnostics"
               cat "$DIAGNOSTICS" || true

@@ -86,6 +86,19 @@ def test_action_discovers_run_dir_from_json_not_globbing():
     assert "diagnostics.json" in script
 
 
+def test_action_diagnostics_fallback_is_portable():
+    """The setup-crash diagnostics fallback must not rely on GNU find flags.
+
+    macOS/BSD find does not support ``-printf``; suppressing that error leaves
+    DIAGNOSTICS empty and hides the root cause on macOS runners.
+    """
+    steps = _load("action.yml")["runs"]["steps"]
+    run_step = next(s for s in steps if s.get("name") == "Run revrem")
+    script = run_step["run"]
+    assert "Path(\".revrem/runs\").rglob(\"diagnostics.json\")" in script
+    assert "-printf" not in script
+
+
 def test_action_scratch_files_live_under_runner_temp():
     """Action-owned stdout/stderr/report files must not be created in the checkout.
 

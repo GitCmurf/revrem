@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.70'
+version: '1.71'
 last_updated: '2026-06-23'
 owner: GitCmurf
 docops_version: '2.0'
@@ -1420,8 +1420,9 @@ The `routing` input is an optional profile override. Leave it empty to use the
 selected profile, set `"true"` to force routing on, or set `"false"` for
 Codex-only CI environments where secondary harnesses such as Gemini are not
 installed. Setup failures print RevRem stderr and the latest preflight
-`diagnostics.json` when one exists, so missing executables or dirty-worktree
-blocks are visible in the Actions log.
+`diagnostics.json` when one exists, using a Python/pathlib lookup rather than
+GNU-only `find` flags, so missing executables or dirty-worktree blocks are
+visible in the Actions log on Linux and macOS runners.
 
 **Least privilege** is declared on the caller workflow: `contents: read`,
 `pull-requests: write`. **Fork PRs** should not receive model-provider secrets:
@@ -1705,6 +1706,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.71 | 2026-06-23 | Codex | Documented the portable GitHub Action diagnostics fallback for setup-crash reports on Linux and macOS runners |
 | 1.70 | 2026-06-23 | Codex | Documented CI cost risk, budgeted Action usage, and report-index failure summaries for quota/billing exhaustion |
 | 1.69 | 2026-06-23 | Codex | Documented Codex Action proxy quota exhaustion classification as non-retryable `provider quota exhausted` |
 | 1.68 | 2026-06-23 | Codex | Documented phase-failure diagnostics, bounded redacted provider excerpts in HTML reports, and explicit Action handling for typed exit code `1` errors |
