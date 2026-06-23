@@ -21,6 +21,7 @@ time; filesystem paths are normalised to ``/`` via ``PurePosixPath``).
 from __future__ import annotations
 
 import html
+import shlex
 from pathlib import PurePosixPath
 from typing import Any
 
@@ -158,6 +159,78 @@ def _phase_config_section(summary: dict[str, Any], *, redact: bool) -> str:
         + "".join(rows)
         + "</tbody></table></section>"
     )
+
+
+def _phase_failures_section(summary: dict[str, Any], *, redact: bool) -> str:
+    """Render bounded phase-failure diagnostics mirrored into summary.json.
+
+    Provider subprocess failures often leave their useful context in
+    ``summary.phase_failures`` via ``diagnostics-*-failure.json``. CI reports
+    need to expose that metadata without linking to raw local files or dumping
+    full transcripts.
+    """
+    failures = summary.get("phase_failures")
+    if not isinstance(failures, list) or not failures:
+        return ""
+    rows: list[str] = []
+    for item in failures[:5]:
+        if not isinstance(item, dict):
+            continue
+        phase = item.get("phase", "")
+        iteration = item.get("iteration", "")
+        failure = item.get("failure")
+        reason = ""
+        detail = ""
+        transient = ""
+        if isinstance(failure, dict):
+            reason = str(failure.get("reason") or "")
+            detail = str(failure.get("detail") or "")
+            if "transient" in failure:
+                transient = str(failure.get("transient"))
+        diagnostic = _normalize_path(item.get("diagnostic_artifact") or "")
+        retry = _retry_command_text(item.get("redirected_retry_command"))
+        rows.append(
+            "<tr>"
+            f"<td>{_esc(phase, redact=redact)}</td>"
+            f"<td>{_esc(iteration, redact=redact)}</td>"
+            f"<td>{_esc(reason, redact=redact) or '<em>unknown</em>'}</td>"
+            f"<td>{_esc(detail, redact=redact) or '&mdash;'}</td>"
+            f"<td>{_esc(transient, redact=redact) or '&mdash;'}</td>"
+            f"<td><code>{_esc(diagnostic, redact=redact)}</code></td>"
+            f"<td><code>{_esc(retry, redact=redact)}</code></td>"
+            "</tr>"
+        )
+    if not rows:
+        return ""
+    suffix = (
+        '<p class="placeholder">Showing first 5 phase failures.</p>'
+        if len(failures) > 5
+        else ""
+    )
+    return (
+        '<section><h2>Phase failures</h2>'
+        '<table><thead><tr><th>Phase</th><th>Iteration</th><th>Reason</th>'
+        '<th>Detail</th><th>Transient</th><th>Diagnostic</th><th>Retry</th>'
+        '</tr></thead><tbody>'
+        + "".join(rows)
+        + "</tbody></table>"
+        + suffix
+        + "</section>"
+    )
+
+
+def _retry_command_text(value: object) -> str:
+    if isinstance(value, dict):
+        command = value.get("command")
+        if isinstance(command, list) and all(isinstance(part, str) for part in command):
+            return shlex.join(command)
+        if isinstance(command, str):
+            return command
+    if isinstance(value, list) and all(isinstance(part, str) for part in value):
+        return shlex.join(value)
+    if isinstance(value, str):
+        return value
+    return ""
 
 
 def _header(summary: dict[str, Any], *, redact: bool) -> str:
@@ -652,6 +725,7 @@ def render_report(
         _header(summary, redact=redact)
         + _outcome_summary(summary, events, redact=redact)
         + _phase_config_section(summary, redact=redact)
+        + _phase_failures_section(summary, redact=redact)
         + _findings_section(summary, events, redact=redact, triage_findings=triage_findings)
         + _checks_section(summary, events, redact=redact)
         + _cost_section(summary, events, redact=redact)

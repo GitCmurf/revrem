@@ -121,6 +121,18 @@ def test_action_run_step_fails_fast_with_errexit():
     assert "set +e" in script  # revrem call still brackets errexit to read $?
 
 
+def test_action_maps_documented_error_exit_code_explicitly():
+    """Exit code 1 is a typed RevRem error, not an unexpected process shape."""
+    steps = _load("action.yml")["runs"]["steps"]
+    map_step = next(s for s in steps if s.get("name") == "Map exit code")
+    script = map_step["run"]
+    assert "1)" in script
+    assert "RevRem ended with an error" in script
+    unexpected_index = script.index("unexpected code")
+    error_index = script.index("RevRem ended with an error")
+    assert error_index < unexpected_index
+
+
 def test_action_routing_input_is_validated_and_env_mapped():
     """The action can disable profile routing for Codex-only CI dogfood runs."""
     data = _load("action.yml")

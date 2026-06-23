@@ -160,6 +160,38 @@ def test_phase_config_section_renders_model_bearing_phases_only():
     assert "<td>runtime</td>" not in html_out
 
 
+def test_phase_failures_section_surfaces_diagnostics_and_retry_command():
+    summary, event_records = _load("clear")
+    summary = {
+        **summary,
+        "final_status": "error",
+        "stopped_reason": "review_failed",
+        "phase_failures": [
+            {
+                "phase": "review",
+                "iteration": "1",
+                "diagnostic_artifact": "tmp/run/diagnostics-review-1-failure.json",
+                "failure": {
+                    "reason": "provider_exit",
+                    "detail": "exit 1",
+                    "transient": False,
+                },
+                "redirected_retry_command": {
+                    "command": ["codex", "--model", "gpt-5.5", "review"]
+                },
+            }
+        ],
+    }
+
+    html_out = render_report(summary, event_records)
+
+    assert "Phase failures" in html_out
+    assert "provider_exit" in html_out
+    assert "exit 1" in html_out
+    assert "tmp/run/diagnostics-review-1-failure.json" in html_out
+    assert "codex --model gpt-5.5 review" in html_out
+
+
 @pytest.mark.parametrize(
     ("stopped_reason", "expected_code"),
     (

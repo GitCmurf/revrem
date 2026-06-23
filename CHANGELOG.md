@@ -133,6 +133,11 @@ single updatable PR comment. Tier 1 of `REVREM-PLAN-005`; expert profiles
   can therefore parse `artifact_dir`, render the failed report, and upload the
   phase diagnostics for ordinary provider subprocess failures that still map to
   process exit code `1`.
+- Failed-run HTML reports now render a bounded `Phase failures` section from
+  `summary.phase_failures`, including the diagnostic artifact and retry command
+  metadata that was previously present in `summary.json` but invisible in the
+  uploaded report. The Action now maps exit code `1` explicitly as a documented
+  RevRem error instead of labelling it an unexpected code.
 - **Dogfood Action workflow** now bootstraps Codex through
   `openai/codex-action@v1` before invoking RevRem, so GitHub-hosted runners
   have the `codex` executable/proxy that preflight requires. It also creates

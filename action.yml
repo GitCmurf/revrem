@@ -251,6 +251,13 @@ runs:
             echo "RevRem: clear."
             exit 0
             ;;
+          1)
+            echo "::error::RevRem ended with an error. See the report artifact when available."
+            echo "::group::revrem stderr"
+            cat "$REVREM_STDERR" || true
+            echo "::endgroup::"
+            exit 1
+            ;;
           2)
             if [[ "$FAIL_ON_FINDINGS" == "true" ]]; then
               echo "::error::RevRem found findings that remain."

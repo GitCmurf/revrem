@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.67'
+version: '1.68'
 last_updated: '2026-06-23'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.67
+> **Version:** 1.68
 > **Last Updated:** 2026-06-23
 > **Type:** DEVEX
 > **Area:** devex
@@ -201,6 +201,11 @@ cancellation outcomes, still honor `--summary-format`. Automation using
 `--summary-format json` can parse stdout for `artifact_dir` and render or upload
 the failed run report instead of treating exit code `1` as an unstructured
 process crash.
+HTML reports for phase-level failures include a bounded `Phase failures`
+section sourced from `summary.phase_failures`, showing the phase, iteration,
+classified provider failure, diagnostic artifact path, and retry command when
+available. The reference Action treats exit code `1` as this documented RevRem
+error path, not as an unexpected process shape.
 If triage produces invalid structured output or RevRem recovers a narrow
 contract-adjacent model mistake, the run summary records
 `triage_diagnostics` and the terminal summary prints the diagnostic code and
@@ -1682,6 +1687,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.68 | 2026-06-23 | Codex | Documented phase-failure diagnostics in HTML reports and explicit Action handling for typed exit code `1` errors |
 | 1.67 | 2026-06-23 | Codex | Documented that typed failure outcomes still honor `--summary-format`, allowing CI automation to parse `artifact_dir` and render failed-run reports for exit code `1` |
 | 1.66 | 2026-06-21 | GitCmurf | Documented the reference GitHub Action (`action.yml`): hands-off CI usage, least-privilege permissions, fork-PR model, redacted upload, comment-before-fail exit mapping, and the generic-provider path |
 | 1.65 | 2026-06-21 | GitCmurf | Documented headless/CI output hardening: `--no-tty` + auto-trigger on `CI=true`, the recommended CI invocation, and the always-write-before-exit guarantee |
