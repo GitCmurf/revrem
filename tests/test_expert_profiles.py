@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from code_review_loop import expert_profiles, profiles
@@ -13,12 +14,12 @@ def _repo(tmp_path: Path) -> Path:
     return repo
 
 
-def test_builtin_profiles_validate_and_enable_no_default_checks():
+def test_builtin_profiles_validate_and_enable_no_default_checks(tmp_path):
     names = expert_profiles.list_builtin_profiles()
     assert {"security", "performance", "refactor", "test-gap", "docs"} <= set(names)
+    home = tmp_path / "home"
+    repo = _repo(tmp_path)
     for name in names:
-        home = Path("/tmp/nonexistent-revrem-home")
-        repo = Path.cwd()
         resolved = profiles.resolve_profile(
             name, cwd=repo, home=home, require_implemented=False
         )
@@ -106,7 +107,7 @@ def test_config_list_includes_builtin_source(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("HOME", str(home))
 
     assert config_command.main(["list", "--format", "json"]) == 0
-    payload = {item["name"]: item for item in json_loads(capsys.readouterr().out)}
+    payload = {item["name"]: item for item in json.loads(capsys.readouterr().out)}
 
     assert payload["security"]["source"] == profiles.BUILTIN_PROFILE_SOURCE
 
@@ -138,9 +139,3 @@ def test_clone_builtin_profile_writes_editable_copy(tmp_path, monkeypatch):
     )
     assert resolved.source == str(profiles.user_config_path(home))
     assert "Security lens" in resolved.description
-
-
-def json_loads(text: str):
-    import json
-
-    return json.loads(text)

@@ -649,7 +649,6 @@ def resolve_profile_from_files(
     found = False
     if user_file.defaults is not None:
         raw = _deep_merge(raw, user_file.raw_defaults)
-        source = str(user_file.path)
     builtin_raw = _load_builtin_profile_raw(name)
     if builtin_raw is not None:
         raw = _deep_merge(raw, builtin_raw)
@@ -661,7 +660,6 @@ def resolve_profile_from_files(
         found = True
     if project_file.defaults is not None:
         raw = _deep_merge(raw, project_file.raw_defaults)
-        source = str(project_file.path)
     if name in project_file.profiles:
         raw = _deep_merge(raw, project_file.raw_profiles[name])
         source = str(project_file.path)
@@ -995,12 +993,15 @@ def clone_user_profile(
     source = resolve_profile(source_name, cwd=cwd, home=home, require_implemented=False)
     if source.source == BUILTIN_PROFILE_SOURCE:
         raw_source_profile = _load_builtin_profile_raw(source_name)
+        if raw_source_profile is None:
+            raise FileNotFoundError(f"built-in profile not found: {source_name}")
+        cloned = parse_profile(target_name, raw_source_profile, source=None)
     else:
         source_file = load_profile_file(Path(source.source)) if source.source is not None else None
         raw_source_profile = (
             source_file.raw_profiles.get(source_name) if source_file is not None else None
         )
-    cloned = replace(source, name=target_name, source=None)
+        cloned = replace(source, name=target_name, source=None)
     return write_user_profile(cloned, home=home, force=force, raw_profile=raw_source_profile)
 
 
