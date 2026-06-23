@@ -189,6 +189,12 @@ def _phase_failures_section(summary: dict[str, Any], *, redact: bool) -> str:
                 transient = str(failure.get("transient"))
         diagnostic = _normalize_path(item.get("diagnostic_artifact") or "")
         retry = _retry_command_text(item.get("redirected_retry_command"))
+        output_excerpt = _phase_failure_output_excerpt(item)
+        output_cell = (
+            f"<pre>{_esc(output_excerpt, redact=redact)}</pre>"
+            if output_excerpt
+            else "&mdash;"
+        )
         rows.append(
             "<tr>"
             f"<td>{_esc(phase, redact=redact)}</td>"
@@ -198,6 +204,7 @@ def _phase_failures_section(summary: dict[str, Any], *, redact: bool) -> str:
             f"<td>{_esc(transient, redact=redact) or '&mdash;'}</td>"
             f"<td><code>{_esc(diagnostic, redact=redact)}</code></td>"
             f"<td><code>{_esc(retry, redact=redact)}</code></td>"
+            f"<td>{output_cell}</td>"
             "</tr>"
         )
     if not rows:
@@ -211,7 +218,7 @@ def _phase_failures_section(summary: dict[str, Any], *, redact: bool) -> str:
         '<section><h2>Phase failures</h2>'
         '<table><thead><tr><th>Phase</th><th>Iteration</th><th>Reason</th>'
         '<th>Detail</th><th>Transient</th><th>Diagnostic</th><th>Retry</th>'
-        '</tr></thead><tbody>'
+        '<th>Output excerpt</th></tr></thead><tbody>'
         + "".join(rows)
         + "</tbody></table>"
         + suffix
@@ -230,6 +237,16 @@ def _retry_command_text(value: object) -> str:
         return shlex.join(value)
     if isinstance(value, str):
         return value
+    return ""
+
+
+def _phase_failure_output_excerpt(item: dict[str, Any]) -> str:
+    stderr = item.get("stderr_excerpt")
+    if isinstance(stderr, str) and stderr.strip():
+        return stderr.strip()
+    stdout = item.get("stdout_excerpt")
+    if isinstance(stdout, str) and stdout.strip():
+        return stdout.strip()
     return ""
 
 

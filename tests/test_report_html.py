@@ -179,6 +179,7 @@ def test_phase_failures_section_surfaces_diagnostics_and_retry_command():
                 "redirected_retry_command": {
                     "command": ["codex", "--model", "gpt-5.5", "review"]
                 },
+                "stderr_excerpt": "provider said: invalid model",
             }
         ],
     }
@@ -190,6 +191,7 @@ def test_phase_failures_section_surfaces_diagnostics_and_retry_command():
     assert "exit 1" in html_out
     assert "tmp/run/diagnostics-review-1-failure.json" in html_out
     assert "codex --model gpt-5.5 review" in html_out
+    assert "provider said: invalid model" in html_out
 
 
 @pytest.mark.parametrize(
