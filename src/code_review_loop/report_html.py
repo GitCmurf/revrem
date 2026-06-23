@@ -298,13 +298,19 @@ def _exit_hint(summary: dict[str, Any]) -> str:
 
 
 def _outcome_summary(
-    summary: dict[str, Any], events: list[Event], *, redact: bool
+    summary: dict[str, Any],
+    events: list[Event],
+    *,
+    redact: bool,
+    triage_findings: list[dict[str, Any]] | None = None,
 ) -> str:
     reason = _esc(summary.get("stopped_reason"), redact=redact)
     iterations = summary.get("iterations") or []
     iteration_count = len(iterations) if isinstance(iterations, list) else 0
     check_pass, check_fail = _check_counts(summary, events)
-    suppressed = sum(1 for ev in events if ev.kind == "suppressed")
+    # Count suppressed findings from the same triage_findings source used by the
+    # findings section and JSON index so all three agree.
+    suppressed = len(_flatten_suppressed_findings(triage_findings))
     # Per-iteration review status from summary.iterations[].review_status — the
     # engine's record of what each review pass concluded (e.g. clear/findings).
     review_states: list[str] = []
@@ -743,7 +749,7 @@ def render_report(
     """
     body = (
         _header(summary, redact=redact)
-        + _outcome_summary(summary, events, redact=redact)
+        + _outcome_summary(summary, events, redact=redact, triage_findings=triage_findings)
         + _phase_config_section(summary, redact=redact)
         + _phase_failures_section(summary, redact=redact)
         + _findings_section(summary, events, redact=redact, triage_findings=triage_findings)
