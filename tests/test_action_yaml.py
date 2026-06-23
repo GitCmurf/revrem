@@ -35,6 +35,8 @@ def test_action_declares_required_inputs():
     for required in (
         "base",
         "profile",
+        "checks",
+        "routing",
         "comment",
         "upload-artifacts",
         "raw-artifacts",
@@ -68,7 +70,9 @@ def test_action_discovers_run_dir_from_json_not_globbing():
     run_step = next(s for s in steps if s.get("name") == "Run revrem")
     script = run_step["run"]
     assert "artifact_dir" in script
-    assert ".revrem/runs" not in script
+    run_dir_line = next(line for line in script.splitlines() if "RUN_DIR=" in line)
+    assert ".revrem/runs" not in run_dir_line
+    assert "diagnostics.json" in script
 
 
 def test_action_scratch_files_live_under_runner_temp():
@@ -98,6 +102,19 @@ def test_action_splits_checks_safely():
     script = run_step["run"]
     assert "while IFS=" in script
     assert '--check "$line"' in script
+
+
+def test_action_routing_input_is_validated_and_env_mapped():
+    """The action can disable profile routing for Codex-only CI dogfood runs."""
+    data = _load("action.yml")
+    assert data["inputs"]["routing"]["default"] == ""
+    steps = data["runs"]["steps"]
+    run_step = next(s for s in steps if s.get("name") == "Run revrem")
+    assert run_step["env"]["ROUTING"] == "${{ inputs.routing }}"
+    script = run_step["run"]
+    assert "Input 'routing' must be 'true', 'false', or empty" in script
+    assert "ARGS+=(--routing)" in script
+    assert "ARGS+=(--no-routing)" in script
 
 
 def test_action_comment_step_gated_on_fork_mode():
@@ -252,6 +269,7 @@ def test_dogfood_workflow_parses_and_uses_local_install():
     )
     assert revrem_step["with"]["install-mode"] == "local"
     assert revrem_step["with"]["profile"] == "dogfood"
+    assert revrem_step["with"]["routing"] == "false"
     checks = revrem_step["with"]["checks"]
     for command in (
         "./.venv/bin/ruff check .",

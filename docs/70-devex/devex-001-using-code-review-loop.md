@@ -1360,6 +1360,7 @@ jobs:
         with:
           base: origin/main
           profile: default
+          routing: "false"
           fail-on-findings: "false"
           checks: |
             ./.venv/bin/ruff check .
@@ -1387,6 +1388,13 @@ directory from the JSON `artifact_dir` on stdout (never by globbing
 the PR comment. The exit code is mapped last, after artifacts and comment land:
 0 (clear) passes; 2 (findings remain) respects `fail-on-findings`; 3 (budget
 ceiling) and 4/5 (setup/cancel) fail the job.
+
+The `routing` input is an optional profile override. Leave it empty to use the
+selected profile, set `"true"` to force routing on, or set `"false"` for
+Codex-only CI environments where secondary harnesses such as Gemini are not
+installed. Setup failures print RevRem stderr and the latest preflight
+`diagnostics.json` when one exists, so missing executables or dirty-worktree
+blocks are visible in the Actions log.
 
 **Least privilege** is declared on the caller workflow: `contents: read`,
 `pull-requests: write`. **Fork PRs** should not receive model-provider secrets:

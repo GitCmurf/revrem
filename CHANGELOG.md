@@ -126,8 +126,10 @@ single updatable PR comment. Tier 1 of `REVREM-PLAN-005`; expert profiles
   have the `codex` executable/proxy that preflight requires. It also creates
   the repo-local `.venv` and passes explicit check commands for the dogfood
   gate, so preflight does not depend on tools that only exist on a developer
-  workstation. The credentialed dogfood job skips fork PRs where provider
-  secrets are intentionally unavailable.
+  workstation. The Action now has a constrained `routing` input for CI jobs
+  that need to force routing on/off, and setup failures print the latest
+  preflight `diagnostics.json` when RevRem writes one. The credentialed dogfood
+  job skips fork PRs where provider secrets are intentionally unavailable.
 
 ### Stability
 

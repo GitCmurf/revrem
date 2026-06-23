@@ -47,6 +47,7 @@ jobs:
         with:
           install-mode: local
           profile: dogfood
+          routing: "false"
           comment: "true"
           upload-artifacts: "true"
           fail-on-findings: "false"

@@ -27,6 +27,9 @@ inputs:
   checks:
     description: Newline-separated check commands (one per line), overriding the profile.
     default: ""
+  routing:
+    description: 'Override profile routing: "true" enables routing, "false" disables routing, empty uses the profile.'
+    default: ""
   comment:
     description: Post an idempotent PR comment summarizing the run.
     default: "true"
@@ -103,6 +106,7 @@ runs:
         MAX_USD: ${{ inputs.max-usd }}
         MAX_TOKENS: ${{ inputs.max-tokens }}
         CHECKS: ${{ inputs.checks }}
+        ROUTING: ${{ inputs.routing }}
       run: |
         set -uo pipefail
         ACTION_TMP="${RUNNER_TEMP:-/tmp}/revrem-action"
@@ -124,11 +128,17 @@ runs:
             exit 4
           fi
         done
+        if [[ -n "$ROUTING" && "$ROUTING" != "true" && "$ROUTING" != "false" ]]; then
+          echo "::error::Input 'routing' must be 'true', 'false', or empty; got '$ROUTING'."
+          exit 4
+        fi
         ARGS=(--base "$BASE" --profile "$PROFILE" --no-tty --progress-style compact --summary-format json)
         if [[ -n "$MAX_ITERATIONS" ]]; then ARGS+=(--max-iterations "$MAX_ITERATIONS"); fi
         if [[ -n "$MAX_WALL_SECONDS" ]]; then ARGS+=(--max-wall-seconds "$MAX_WALL_SECONDS"); fi
         if [[ -n "$MAX_USD" ]]; then ARGS+=(--max-usd "$MAX_USD"); fi
         if [[ -n "$MAX_TOKENS" ]]; then ARGS+=(--max-tokens "$MAX_TOKENS"); fi
+        if [[ "$ROUTING" == "true" ]]; then ARGS+=(--routing); fi
+        if [[ "$ROUTING" == "false" ]]; then ARGS+=(--no-routing); fi
         # Split newline-separated checks into repeated --check flags, read from
         # the env var (never interpolate the joined string — injection vector).
         while IFS= read -r line; do
@@ -149,6 +159,14 @@ runs:
           echo "::group::revrem stderr"
           cat "$REVREM_STDERR" || true
           echo "::endgroup::"
+          if [[ -d .revrem/runs ]]; then
+            DIAGNOSTICS=$(find .revrem/runs -name diagnostics.json -type f -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -n 1 | cut -d' ' -f2-)
+            if [[ -n "$DIAGNOSTICS" ]]; then
+              echo "::group::revrem diagnostics"
+              cat "$DIAGNOSTICS" || true
+              echo "::endgroup::"
+            fi
+          fi
           exit 4
         fi
         echo "run-dir=$RUN_DIR" >> "$GITHUB_OUTPUT"
