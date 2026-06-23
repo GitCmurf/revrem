@@ -89,6 +89,13 @@ def test_summary_severity_counts_do_not_break_markdown_table():
     )
 
 
+def test_stop_reason_does_not_break_markdown_table_or_code_span():
+    idx = {**_findings_index(), "stopped_reason": "bad|reason\nwith `code`"}
+    body = ppc.build_comment_body(idx)
+    row = next(ln for ln in body.splitlines() if ln.startswith("| **Stop reason** |"))
+    assert row == "| **Stop reason** | `bad\\|reason with 'code'` |"
+
+
 def test_body_no_findings_when_absent():
     body = ppc.build_comment_body(_clear_index())
     assert "Top findings" not in body

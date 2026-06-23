@@ -93,7 +93,7 @@ def build_comment_body(
         lines.append(f"| **Suppressed** | {suppression} |")
     lines.append(f"| **Cost** | {cost_str} |")
     if stopped_reason:
-        lines.append(f"| **Stop reason** | `{stopped_reason}` |")
+        lines.append(f"| **Stop reason** | `{_md_cell(stopped_reason)}` |")
     lines.append("")
 
     if top:
