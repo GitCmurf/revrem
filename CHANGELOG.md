@@ -125,6 +125,9 @@ single updatable PR comment. Tier 1 of `REVREM-PLAN-005`; expert profiles
   documented exit code for budget/setup/cancelled stops, outcome check counters
   count summary-sourced checks instead of only event-sourced checks, and the PR
   comment's severity-count summary row escapes its internal `|` separators.
+- Dogfood-found stale-triage fix: `revrem report` now uses only the latest
+  `triage-N.json` artifact, so reports and PR comments do not resurrect stale
+  findings from earlier triage passes.
 - **Dogfood Action workflow** now bootstraps Codex through
   `openai/codex-action@v1` before invoking RevRem, so GitHub-hosted runners
   have the `codex` executable/proxy that preflight requires. It also creates

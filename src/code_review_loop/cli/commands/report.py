@@ -24,7 +24,7 @@ _SUMMARY_FILENAME = "summary.json"
 def _load_triage_findings(
     summary: dict, run_dir: Path
 ) -> list[dict] | None:
-    """Load parsed ``triage-N.json`` payloads referenced by ``summary``.
+    """Load the latest parsed ``triage-N.json`` payload referenced by ``summary``.
 
     ``summary.artifact_paths.triage`` is a list of paths (the engine's real
     location; highest N is authoritative). Triage paths may be relative to the
@@ -37,8 +37,8 @@ def _load_triage_findings(
     triage_paths = artifact_paths.get("triage") or []
     if not isinstance(triage_paths, list) or not triage_paths:
         return None
-    loaded: list[dict] = []
-    for raw in triage_paths:
+    loaded: list[tuple[tuple[int, int], dict]] = []
+    for index, raw in enumerate(triage_paths):
         if not isinstance(raw, str) or not raw:
             continue
         candidate = Path(raw)
@@ -49,8 +49,22 @@ def _load_triage_findings(
         except (OSError, ValueError):
             continue
         if isinstance(payload, dict):
-            loaded.append(payload)
-    return loaded if loaded else None
+            loaded.append((_triage_sort_key(raw, index), payload))
+    if not loaded:
+        return None
+    _key, payload = max(loaded, key=lambda item: item[0])
+    return [payload]
+
+
+def _triage_sort_key(raw_path: str, index: int) -> tuple[int, int]:
+    """Sort triage artifacts by numeric ``triage-N`` suffix, then list order."""
+    stem = Path(raw_path).stem
+    prefix = "triage-"
+    if stem.startswith(prefix):
+        suffix = stem.removeprefix(prefix)
+        if suffix.isdigit():
+            return (int(suffix), index)
+    return (-1, index)
 
 
 def main(argv: Sequence[str]) -> int:

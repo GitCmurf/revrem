@@ -306,6 +306,57 @@ def test_report_command_malformed_events_warns_once_without_contradiction(
     assert "events available" not in err
 
 
+def test_report_command_uses_latest_triage_artifact_for_index(
+    tmp_path: Path, capsys
+):
+    """Only the highest-numbered triage artifact is authoritative for reports."""
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "summary.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "run_id": "multi-triage",
+                "final_status": "clear",
+                "stopped_reason": "review_clear",
+                "started_at": "2026-06-21T00:00:00Z",
+                "finished_at": "2026-06-21T00:00:01Z",
+                "artifact_paths": {
+                    # Deliberately out of order: highest N still wins.
+                    "triage": ["triage-2.json", "triage-1.json"],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / events.EVENTS_FILENAME).write_text("", encoding="utf-8")
+    (run_dir / "triage-1.json").write_text(
+        json.dumps(
+            {
+                "confirmed_findings": [
+                    {
+                        "fingerprint": "stale",
+                        "severity": "high",
+                        "summary": "stale finding",
+                        "affected_paths": ["src/stale.py"],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "triage-2.json").write_text(
+        json.dumps({"confirmed_findings": []}),
+        encoding="utf-8",
+    )
+
+    exit_code = report_command.main([str(run_dir), "--format", "json"])
+    assert exit_code == 0
+    idx = json.loads(capsys.readouterr().out)
+    assert idx["finding_counts"] == {"critical": 0, "high": 0, "low": 0, "medium": 0}
+    assert idx["top_findings"] == []
+
+
 # --- machine-readable JSON index ------------------------------------------
 
 
