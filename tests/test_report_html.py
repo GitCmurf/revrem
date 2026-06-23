@@ -194,6 +194,27 @@ def test_phase_failures_section_surfaces_diagnostics_and_retry_command():
     assert "provider said: invalid model" in html_out
 
 
+def test_phase_failures_empty_diagnostic_artifact_stays_blank():
+    summary, event_records = _load("clear")
+    summary = {
+        **summary,
+        "final_status": "error",
+        "stopped_reason": "review_failed",
+        "phase_failures": [
+            {
+                "phase": "review",
+                "iteration": "1",
+                "failure": {"reason": "provider_exit"},
+            }
+        ],
+    }
+
+    html_out = render_report(summary, event_records)
+
+    assert "Phase failures" in html_out
+    assert "<code>.</code>" not in html_out
+
+
 @pytest.mark.parametrize(
     ("stopped_reason", "expected_code"),
     (

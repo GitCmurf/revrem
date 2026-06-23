@@ -15,6 +15,10 @@ This project follows Semantic Versioning once public releases begin.
 - The credentialed dogfood PR workflow now requires an explicit `run-dogfood`
   PR label before starting Codex/provider-backed review, preventing ordinary PR
   pushes from spending API budget.
+- `revrem report` now loads absolute triage artifact paths when they resolve
+  inside the run directory, matching production summaries while still rejecting
+  out-of-scope paths. Empty diagnostic artifact values now render as blank
+  cells instead of `.` in phase-failure tables.
 
 ## [0.5.0] - 2026-06-21
 

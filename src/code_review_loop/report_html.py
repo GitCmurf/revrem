@@ -93,7 +93,10 @@ def _normalize_path(value: object) -> str:
     """
     if value is None:
         return ""
-    return str(PurePosixPath(str(value).replace("\\", "/")))
+    path_str = str(value).replace("\\", "/")
+    if not path_str:
+        return ""
+    return str(PurePosixPath(path_str))
 
 
 def _status_badge(final_status: str, *, redact: bool) -> str:

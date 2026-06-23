@@ -59,11 +59,9 @@ def _load_triage_findings(
 def _scoped_run_artifact_path(run_dir: Path, raw_path: str) -> Path | None:
     """Resolve a summary artifact path only if it stays inside ``run_dir``."""
     raw = Path(raw_path)
-    if raw.is_absolute():
-        return None
     try:
         root = run_dir.resolve()
-        candidate = (root / raw).resolve()
+        candidate = raw.resolve() if raw.is_absolute() else (root / raw).resolve()
         candidate.relative_to(root)
     except (OSError, ValueError):
         return None

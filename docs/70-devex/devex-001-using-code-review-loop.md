@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.73'
+version: '1.74'
 last_updated: '2026-06-23'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.73
+> **Version:** 1.74
 > **Last Updated:** 2026-06-23
 > **Type:** DEVEX
 > **Area:** devex
@@ -1391,7 +1391,7 @@ permissions:
   pull-requests: write
 jobs:
   revrem:
-    if: github.event.pull_request.head.repo.fork == false
+    if: github.event.pull_request.head.repo.fork == false && contains(github.event.pull_request.labels.*.name, 'run-dogfood')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -1740,6 +1740,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.74 | 2026-06-23 | Codex | Aligned the example paid dogfood workflow with the documented `run-dogfood` label gate |
 | 1.73 | 2026-06-23 | Codex | Documented the no-provider GitHub Action smoke workflow and `run-dogfood` label gate before paid dogfood runs |
 | 1.72 | 2026-06-23 | Codex | Documented scoped report artifact loading and missing-stderr tolerance in the GitHub Action exit mapper |
 | 1.71 | 2026-06-23 | Codex | Documented the portable GitHub Action diagnostics fallback for setup-crash reports on Linux and macOS runners |

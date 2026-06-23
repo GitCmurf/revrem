@@ -301,6 +301,49 @@ def test_report_command_ignores_triage_artifacts_outside_run_dir(
     ]
 
 
+def test_report_command_loads_absolute_triage_artifact_inside_run_dir(
+    capsys, tmp_path: Path
+) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    triage_path = run_dir / "triage-1.json"
+    triage_path.write_text(
+        json.dumps(
+            {
+                "confirmed_findings": [
+                    {
+                        "severity": "high",
+                        "affected_paths": ["prod.py"],
+                        "summary": "production-shaped absolute triage path",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / events.EVENTS_FILENAME).write_text("", encoding="utf-8")
+    (run_dir / "summary.json").write_text(
+        json.dumps(
+            {
+                "run_id": "absolute-in-run",
+                "final_status": "findings",
+                "stopped_reason": "max_iterations_reached",
+                "artifact_paths": {"triage": [str(triage_path)]},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = report_command.main([str(run_dir), "--format", "json"])
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["finding_counts"]["high"] == 1
+    assert [finding["title"] for finding in payload["top_findings"]] == [
+        "production-shaped absolute triage path"
+    ]
+
+
 def test_clear_run_index_matches_golden_snapshot():
     """Lock the clear-run index shape against schema drift."""
     summary, event_records = _load("clear")

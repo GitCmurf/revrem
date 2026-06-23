@@ -218,6 +218,19 @@ def test_action_docs_agree_with_fork_guard():
     assert "head.repo.fork != 'true'" not in doc
 
 
+def test_action_docs_agree_with_paid_dogfood_label_gate():
+    """The paid workflow example must not omit the opt-in cost gate."""
+    dogfood = (ROOT / ".github/workflows/revrem-pr.yml").read_text(
+        encoding="utf-8"
+    )
+    doc = (ROOT / "docs/70-devex/devex-001-using-code-review-loop.md").read_text(
+        encoding="utf-8"
+    )
+    gate = "contains(github.event.pull_request.labels.*.name, 'run-dogfood')"
+    assert gate in dogfood
+    assert gate in doc
+
+
 def test_action_inputs_are_not_interpolated_into_run_scripts():
     """SECURITY (GPT review #1): no `${{ inputs.* }}` may appear inside a `run:`
     script — every input must be passed via `env:` and read as a shell variable,
