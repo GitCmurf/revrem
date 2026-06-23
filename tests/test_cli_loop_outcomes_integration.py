@@ -471,6 +471,46 @@ def test_main_returns_exit_code_3_for_budget_ceiling(tmp_path, monkeypatch, caps
     assert "wall budget exceeded" in capsys.readouterr().err
 
 
+def test_main_prints_json_summary_for_typed_failures(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    artifact_dir = tmp_path / "artifacts"
+    summary = {
+        "run_id": "run-1",
+        "artifact_dir": str(artifact_dir),
+        "artifact_paths": {
+            "reviews": [str(artifact_dir / "review-1.txt")],
+            "diagnostics": [str(artifact_dir / "diagnostics-review-1-failure.json")],
+        },
+        "final_status": "error",
+        "stopped_reason": "review_failed",
+        "iterations": [{"iteration": 1, "review_status": "running"}],
+        "error": f"codex review failed for review-1; see {artifact_dir / 'review-1.txt'}",
+    }
+
+    def fake_run_loop(_config, **_kwargs):
+        raise RunLoopFailed(
+            summary,
+            summary["error"],
+            outcome=OutcomeFailed(reason="review_failed", error=str(summary["error"])),
+        )
+
+    monkeypatch.setattr(application, "run_review_loop", fake_run_loop)
+
+    exit_code = cli_main.main(
+        ["--summary-format", "json", "--no-run-history", "--artifact-dir", str(artifact_dir)]
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    payload = json.loads(captured.out)
+    assert payload["artifact_dir"] == str(artifact_dir)
+    assert payload["stopped_reason"] == "review_failed"
+    assert payload["artifact_paths"]["diagnostics"] == [
+        str(artifact_dir / "diagnostics-review-1-failure.json")
+    ]
+    assert "codex review failed for review-1" in captured.err
+
+
 def test_loop_writes_cancellation_summary_when_interrupted(tmp_path):
     def runner(args, cwd, input_text=None, timeout_seconds=None):
         raise KeyboardInterrupt

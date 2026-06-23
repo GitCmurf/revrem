@@ -3,8 +3,8 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.66'
-last_updated: '2026-06-21'
+version: '1.67'
+last_updated: '2026-06-23'
 owner: GitCmurf
 docops_version: '2.0'
 area: devex
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.66
-> **Last Updated:** 2026-06-21
+> **Version:** 1.67
+> **Last Updated:** 2026-06-23
 > **Type:** DEVEX
 > **Area:** devex
 > **Description:** Operator guide for the code-review-loop utility
@@ -196,6 +196,11 @@ literal inline shell syntax cannot be reconstructed after process startup.
 When `--max-wall-seconds` is set, the summary also stores the cumulative wall
 seconds already spent so a resumed run continues against the same total wall
 budget instead of starting a fresh ceiling.
+Typed run failures, including review, triage, remediation, commit, budget, and
+cancellation outcomes, still honor `--summary-format`. Automation using
+`--summary-format json` can parse stdout for `artifact_dir` and render or upload
+the failed run report instead of treating exit code `1` as an unstructured
+process crash.
 If triage produces invalid structured output or RevRem recovers a narrow
 contract-adjacent model mistake, the run summary records
 `triage_diagnostics` and the terminal summary prints the diagnostic code and
@@ -1677,6 +1682,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.67 | 2026-06-23 | Codex | Documented that typed failure outcomes still honor `--summary-format`, allowing CI automation to parse `artifact_dir` and render failed-run reports for exit code `1` |
 | 1.66 | 2026-06-21 | GitCmurf | Documented the reference GitHub Action (`action.yml`): hands-off CI usage, least-privilege permissions, fork-PR model, redacted upload, comment-before-fail exit mapping, and the generic-provider path |
 | 1.65 | 2026-06-21 | GitCmurf | Documented headless/CI output hardening: `--no-tty` + auto-trigger on `CI=true`, the recommended CI invocation, and the always-write-before-exit guarantee |
 | 1.64 | 2026-06-21 | GitCmurf | Documented the `revrem report` subcommand: static self-contained HTML report + `--format json` machine index (reads summary.json/events.jsonl only; redacted by default) |

@@ -128,6 +128,11 @@ single updatable PR comment. Tier 1 of `REVREM-PLAN-005`; expert profiles
 - Dogfood-found stale-triage fix: `revrem report` now uses only the latest
   `triage-N.json` artifact, so reports and PR comments do not resurrect stale
   findings from earlier triage passes.
+- CLI JSON summaries are now emitted for typed failure outcomes such as
+  `review_failed` instead of returning after stderr only. The composite Action
+  can therefore parse `artifact_dir`, render the failed report, and upload the
+  phase diagnostics for ordinary provider subprocess failures that still map to
+  process exit code `1`.
 - **Dogfood Action workflow** now bootstraps Codex through
   `openai/codex-action@v1` before invoking RevRem, so GitHub-hosted runners
   have the `codex` executable/proxy that preflight requires. It also creates

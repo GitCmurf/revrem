@@ -98,6 +98,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(app_exit.error, file=sys.stderr)
         else:
             print(f"ERROR: {app_exit.error}", file=sys.stderr)
+        _print_summary(summary, summary_format=summary_format)
         return app_exit.exit_code
 
     if not args.dry_run and not args.no_run_history and summary.get("run_id"):
@@ -106,15 +107,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         except OSError as exc:
             print(f"WARNING: could not write run history: {exc}", file=sys.stderr)
 
+    _print_summary(summary, summary_format=summary_format)
+    if args.dry_run:
+        return 0  # outcome-exempt: dry-run summary is intentionally non-terminal
+    return app_exit.exit_code
+
+
+def _print_summary(summary: dict[str, object], *, summary_format: str) -> None:
+    if not summary:
+        return
+    from code_review_loop import application
+
     if summary_format in {"text", "both"}:
         print(application.format_terminal_summary(summary))
     if summary_format in {"json", "both"}:
         if summary_format == "both":
             print()
         print(json.dumps(summary, indent=2, sort_keys=True))
-    if args.dry_run:
-        return 0  # outcome-exempt: dry-run summary is intentionally non-terminal
-    return app_exit.exit_code
 
 
 def _apply_pending_review_choice(config, args):
