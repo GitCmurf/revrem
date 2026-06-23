@@ -6,6 +6,16 @@ This project follows Semantic Versioning once public releases begin.
 
 ## [Unreleased]
 
+### Added
+
+- Manual no-provider GitHub Action smoke workflow
+  (`.github/workflows/revrem-action-smoke.yml`) that exercises the local
+  composite action with the gated fake harness and asserts generated
+  summary/report artifacts before any paid dogfood run is attempted.
+- The credentialed dogfood PR workflow now requires an explicit `run-dogfood`
+  PR label before starting Codex/provider-backed review, preventing ordinary PR
+  pushes from spending API budget.
+
 ## [0.5.0] - 2026-06-21
 
 The "showcase & hands-off adoption" release: a static HTML report for finished

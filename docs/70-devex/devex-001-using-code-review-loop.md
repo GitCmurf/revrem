@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.72'
+version: '1.73'
 last_updated: '2026-06-23'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.68
+> **Version:** 1.73
 > **Last Updated:** 2026-06-23
 > **Type:** DEVEX
 > **Area:** devex
@@ -1354,6 +1354,32 @@ requests; quota or billing exhaustion is reported explicitly as
 `provider_quota_exhausted` / `provider quota exhausted` in the PR comment,
 Actions annotation, and HTML report.
 
+This repository includes a no-provider smoke workflow,
+`.github/workflows/revrem-action-smoke.yml`, for validating the composite
+Action surface on a GitHub-hosted runner before spending provider budget. It is
+triggered on PR updates and also supports `workflow_dispatch` once the workflow
+is registered on the default branch. It installs a temporary `action-smoke`
+profile under `$HOME/.config/revrem/profiles.toml`, enables the gated fake
+harness with `REVREM_ALLOW_FAKE_HARNESS=1`, runs `uses: ./` with
+`install-mode: local`, and asserts the generated `summary.json`, HTML report,
+and JSON report. It does not start `openai/codex-action`, read `CODEX_API_KEY`,
+post a PR comment, upload raw artifacts, or invoke a model provider.
+
+Before the workflow exists on the default branch, test it through the PR trigger
+by pushing a normal commit. After it is registered on the default branch, it can
+also be run manually:
+
+```bash
+gh workflow run "RevRem Action smoke" --repo GitCmurf/revrem --ref feat/v0.5.0-tier1-report-and-action
+gh run list --repo GitCmurf/revrem --workflow "RevRem Action smoke" --branch feat/v0.5.0-tier1-report-and-action --limit 1
+gh run watch --repo GitCmurf/revrem <run-id> --exit-status
+```
+
+Only after this smoke workflow is green should a release-candidate branch run
+the credentialed dogfood workflow. This repo's paid dogfood PR workflow is
+label-gated: it runs only on non-fork PRs that carry the `run-dogfood` label,
+and it keeps explicit `max-usd`, `max-tokens`, and wall-clock ceilings.
+
 ```yaml
 # .github/workflows/revrem-pr.yml
 name: RevRem
@@ -1432,8 +1458,10 @@ visible in the Actions log on Linux and macOS runners.
 
 **Least privilege** is declared on the caller workflow: `contents: read`,
 `pull-requests: write`. **Fork PRs** should not receive model-provider secrets:
-credentialed dogfood workflows should skip fork PRs at the job level, and the
-composite action's comment step has its own defense-in-depth gate on
+credentialed dogfood workflows should skip fork PRs at the job level and should
+require an explicit operator signal such as this repo's `run-dogfood` label
+before spending provider budget. The composite action's comment step has its
+own defense-in-depth gate on
 `github.event.pull_request.head.repo.fork == false` (compare to the boolean,
 not the string `'true'` — the latter always evaluates true under GitHub Actions'
 type coercion and never actually skips). The action never uses
@@ -1712,6 +1740,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.73 | 2026-06-23 | Codex | Documented the no-provider GitHub Action smoke workflow and `run-dogfood` label gate before paid dogfood runs |
 | 1.72 | 2026-06-23 | Codex | Documented scoped report artifact loading and missing-stderr tolerance in the GitHub Action exit mapper |
 | 1.71 | 2026-06-23 | Codex | Documented the portable GitHub Action diagnostics fallback for setup-crash reports on Linux and macOS runners |
 | 1.70 | 2026-06-23 | Codex | Documented CI cost risk, budgeted Action usage, and report-index failure summaries for quota/billing exhaustion |

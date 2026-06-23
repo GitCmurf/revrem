@@ -318,7 +318,12 @@ def test_dogfood_workflow_parses_and_uses_local_install():
     data = _load(".github/workflows/revrem-pr.yml")
     assert data["name"] == "RevRem (dogfood)"
     job = data["jobs"]["revrem"]
-    assert job["if"] == "github.event.pull_request.head.repo.fork == false"
+    assert (
+        job["if"]
+        == "github.event.pull_request.head.repo.fork == false && "
+        "contains(github.event.pull_request.labels.*.name, 'run-dogfood')"
+    )
+    assert "labeled" in data[True]["pull_request"]["types"]
     assert job["timeout-minutes"] == 20
     # Least privilege declared on the caller workflow.
     assert data["permissions"]["pull-requests"] == "write"
@@ -362,3 +367,52 @@ def test_dogfood_workflow_parses_and_uses_local_install():
         "git diff --check",
     ):
         assert command in checks
+
+
+def test_action_smoke_workflow_parses_and_uses_fake_harness():
+    data = _load(".github/workflows/revrem-action-smoke.yml")
+    assert data["name"] == "RevRem Action smoke"
+    assert "workflow_dispatch" in data["on"]
+    assert data["on"]["pull_request"]["branches"] == ["main"]
+    assert data["permissions"] == {"contents": "read"}
+
+    job = data["jobs"]["smoke"]
+    assert job["timeout-minutes"] == 10
+    steps = job["steps"]
+    workflow_text = (ROOT / ".github/workflows/revrem-action-smoke.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "openai/codex-action" not in workflow_text
+    assert "CODEX_API_KEY" not in workflow_text
+    assert "secrets." not in workflow_text
+
+    profile_step = next(s for s in steps if s.get("name") == "Install smoke profile")
+    profile_script = profile_step["run"]
+    assert "[profiles.action-smoke.review]" in profile_script
+    assert 'harness = "fake"' in profile_script
+    assert 'model = "review_clear"' in profile_script
+    assert "[profiles.action-smoke.remediation]" in profile_script
+    assert 'model = "remediation"' in profile_script
+    assert 'message_model = "commit"' in profile_script
+    assert "final_review = false" in profile_script
+
+    revrem_step = next(s for s in steps if s.get("name") == "Run revrem action smoke")
+    assert revrem_step["uses"] == "./"
+    assert revrem_step["env"]["REVREM_ALLOW_FAKE_HARNESS"] == "1"
+    assert revrem_step["with"]["install-mode"] == "local"
+    assert revrem_step["with"]["profile"] == "action-smoke"
+    assert revrem_step["with"]["base"] == "HEAD~1"
+    assert revrem_step["with"]["routing"] == "false"
+    assert revrem_step["with"]["comment"] == "false"
+    assert revrem_step["with"]["raw-artifacts"] == "false"
+    assert revrem_step["with"]["max-wall-seconds"] == "300"
+
+    assert_step = next(s for s in steps if s.get("name") == "Assert smoke artifacts")
+    assert_script = assert_step["run"]
+    assert "REVREM_RUN_DIR" in assert_script
+    assert "REVREM_REPORT_HTML" in assert_script
+    assert "REVREM_REPORT_JSON" in assert_script
+    assert 'summary["harness"] == "fake"' in assert_script
+    assert 'summary["stopped_reason"] == "review_clear"' in assert_script
+    assert 'sum(report["finding_counts"].values()) == 0' in assert_script
+    assert 'report["finding_counts"]["total"]' not in assert_script

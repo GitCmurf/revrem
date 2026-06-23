@@ -1,10 +1,13 @@
 name: RevRem (dogfood)
 
 # Dogfood: run the reference revrem Action (local install) on PRs to this repo.
+# This job makes paid provider calls, so it is opt-in via the `run-dogfood` PR
+# label rather than running on every PR push.
 # Coexists with ci.yml (test/lint gate) and release.yml (tag-triggered publish).
 on:
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, labeled]
 
 permissions:
   contents: read
@@ -12,7 +15,7 @@ permissions:
 
 jobs:
   revrem:
-    if: github.event.pull_request.head.repo.fork == false
+    if: github.event.pull_request.head.repo.fork == false && contains(github.event.pull_request.labels.*.name, 'run-dogfood')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
