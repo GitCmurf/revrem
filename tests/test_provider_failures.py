@@ -46,6 +46,16 @@ def _result(returncode: int, *, stdout: str = "", stderr: str = "") -> CommandRe
             "provider_quota_exhausted",
             False,
         ),
+        # Non-retryable: Codex Action proxy reports account/project quota
+        # exhaustion without a 429 code in the visible transcript.
+        (
+            {
+                "returncode": 1,
+                "stderr": "ERROR: Quota exceeded. Check your plan and billing details.",
+            },
+            "provider_quota_exhausted",
+            False,
+        ),
         # Non-retryable: configured provider model is unavailable even when
         # the CLI also wraps the response in a generic server-error envelope.
         (
@@ -308,6 +318,48 @@ def test_run_review_with_retry_does_not_retry_quota_exhausted(tmp_path: Path) ->
         config,
         runner,
         ["opencode"],
+        None,
+        "1",
+        None,
+        ctx=ctx,
+    )
+
+    assert result.returncode == 1
+    assert len(calls) == 1
+
+
+def test_run_review_with_retry_does_not_retry_codex_proxy_quota_exhausted(
+    tmp_path: Path,
+) -> None:
+    calls: list[list[str]] = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append(list(args))
+        return CommandResult(
+            list(args),
+            1,
+            stderr="ERROR: Quota exceeded. Check your plan and billing details.",
+        )
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="codex",
+        review_model="gpt-5.5",
+    )
+    ctx = RunContext(
+        runner=runner,
+        clock=FakeClock(),
+        identity=FakeRunIdentity(),
+        **phase_harness_kwargs(),
+    )
+
+    result = review_impl.run_review_with_retry(
+        config,
+        runner,
+        ["codex"],
         None,
         "1",
         None,

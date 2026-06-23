@@ -138,8 +138,10 @@ single updatable PR comment. Tier 1 of `REVREM-PLAN-005`; expert profiles
   metadata that was previously present in `summary.json` but invisible in the
   uploaded report. Review failure diagnostics now also carry bounded, redacted
   stdout/stderr excerpts so provider CLI errors can be diagnosed without
-  uploading raw run artifacts. The Action now maps exit code `1` explicitly as
-  a documented RevRem error instead of labelling it an unexpected code.
+  uploading raw run artifacts, and the Codex Action proxy's quota-exceeded
+  wording is classified as non-retryable `provider_quota_exhausted`. The Action
+  now maps exit code `1` explicitly as a documented RevRem error instead of
+  labelling it an unexpected code.
 - **Dogfood Action workflow** now bootstraps Codex through
   `openai/codex-action@v1` before invoking RevRem, so GitHub-hosted runners
   have the `codex` executable/proxy that preflight requires. It also creates

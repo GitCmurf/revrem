@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.68'
+version: '1.69'
 last_updated: '2026-06-23'
 owner: GitCmurf
 docops_version: '2.0'
@@ -1556,9 +1556,10 @@ is reserved for provider-control denial evidence, not denial text echoed inside
 reviewed diffs or test fixtures. Remediation failures
 name the active harness, for example `gemini remediation failed`, and point to
 the remediation artifact. Known provider-state failures are called out in the
-same error; Gemini CLI quota exhaustion is reported as `provider quota
-exhausted`, OpenCode server-side failures include the provider reference when
-one is present, and the full CLI stderr remains in the phase artifact.
+same error; Gemini CLI and Codex Action proxy quota exhaustion are reported as
+`provider quota exhausted`, OpenCode server-side failures include the provider
+reference when one is present, and the full CLI stderr remains in the phase
+artifact.
 
 ### Exit codes
 
@@ -1689,6 +1690,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.69 | 2026-06-23 | Codex | Documented Codex Action proxy quota exhaustion classification as non-retryable `provider quota exhausted` |
 | 1.68 | 2026-06-23 | Codex | Documented phase-failure diagnostics, bounded redacted provider excerpts in HTML reports, and explicit Action handling for typed exit code `1` errors |
 | 1.67 | 2026-06-23 | Codex | Documented that typed failure outcomes still honor `--summary-format`, allowing CI automation to parse `artifact_dir` and render failed-run reports for exit code `1` |
 | 1.66 | 2026-06-21 | GitCmurf | Documented the reference GitHub Action (`action.yml`): hands-off CI usage, least-privilege permissions, fork-PR model, redacted upload, comment-before-fail exit mapping, and the generic-provider path |

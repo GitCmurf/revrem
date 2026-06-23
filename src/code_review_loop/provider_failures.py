@@ -83,6 +83,7 @@ CLI_CONTRACT_PATTERNS: tuple[re.Pattern[str], ...] = (
 )
 QUOTA_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bquota_exhausted\b"),
+    re.compile(r"\bquota exceeded\b"),
     re.compile(r"\bterminalquotaerror\b"),
     re.compile(r"\bexhausted your capacity\b"),
     re.compile(r"\bcode:\s*429\b.*\bquota\b"),
