@@ -28,6 +28,15 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install dogfood dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m venv .venv
+          ./.venv/bin/python -m pip install --upgrade pip
+          ./.venv/bin/python -m pip install -e ".[dev]"
+          ./.venv/bin/python -m pip install "meminit @ git+https://github.com/GitCmurf/meminit.git@63547bc79f46200d25e4b7375b5c661f64aa34f8"
+
       - name: Start Codex proxy
         uses: openai/codex-action@v1
         with:
@@ -41,6 +50,13 @@ jobs:
           comment: "true"
           upload-artifacts: "true"
           fail-on-findings: "false"
+          checks: |
+            ./.venv/bin/ruff check .
+            ./.venv/bin/mypy src
+            ./.venv/bin/lint-imports
+            ./.venv/bin/meminit check --format json
+            ./.venv/bin/pytest -q
+            git diff --check
         env:
           # Codex harness credentials for the dogfood run. Fork PRs skip the
           # comment step (see action.yml), and the checkout is read-only to the

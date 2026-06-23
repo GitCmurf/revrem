@@ -1346,6 +1346,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install dogfood dependencies
+        run: |
+          python -m venv .venv
+          ./.venv/bin/python -m pip install --upgrade pip
+          ./.venv/bin/python -m pip install -e ".[dev]"
+          ./.venv/bin/python -m pip install "meminit @ git+https://github.com/GitCmurf/meminit.git@63547bc79f46200d25e4b7375b5c661f64aa34f8"
       - name: Start Codex proxy
         uses: openai/codex-action@v1
         with:
@@ -1355,6 +1361,13 @@ jobs:
           base: origin/main
           profile: default
           fail-on-findings: "false"
+          checks: |
+            ./.venv/bin/ruff check .
+            ./.venv/bin/mypy src
+            ./.venv/bin/lint-imports
+            ./.venv/bin/meminit check --format json
+            ./.venv/bin/pytest -q
+            git diff --check
         env:
           CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
 ```
@@ -1363,7 +1376,11 @@ The action does not check out the repo itself — the caller must (with
 `fetch-depth: 0` so the base ref resolves). A credentialed Codex-backed
 workflow must also install and configure Codex before invoking RevRem; the
 example uses `openai/codex-action@v1` once to start the Codex proxy so later
-steps can call `codex`. It runs revrem headless
+steps can call `codex`. The caller also owns any check-command toolchain:
+dogfood-style profiles that run `ruff`, `mypy`, `lint-imports`, Meminit, and
+pytest should install those tools first and either put them on `PATH` or pass
+explicit `checks` entries that point at the created environment. It runs revrem
+headless
 (`--no-tty --progress-style compact --summary-format json`), discovers the run
 directory from the JSON `artifact_dir` on stdout (never by globbing
 `.revrem/runs/`), then renders and uploads the redacted HTML report and posts
