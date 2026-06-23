@@ -230,9 +230,15 @@ def test_dogfood_workflow_parses_and_uses_local_install():
     data = _load(".github/workflows/revrem-pr.yml")
     assert data["name"] == "RevRem (dogfood)"
     job = data["jobs"]["revrem"]
+    assert job["if"] == "github.event.pull_request.head.repo.fork == false"
     # Least privilege declared on the caller workflow.
     assert data["permissions"]["pull-requests"] == "write"
     assert data["permissions"]["contents"] == "read"
+    codex_step = next(
+        s for s in job["steps"] if s.get("uses", "").strip() == "openai/codex-action@v1"
+    )
+    assert codex_step["name"] == "Start Codex proxy"
+    assert codex_step["with"]["openai-api-key"] == "${{ secrets.CODEX_API_KEY }}"
     # The uses: ./ step (local action) + install-mode local.
     revrem_step = next(
         s for s in job["steps"] if s.get("uses", "").strip() == "./"

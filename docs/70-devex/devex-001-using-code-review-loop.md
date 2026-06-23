@@ -1337,6 +1337,7 @@ permissions:
   pull-requests: write
 jobs:
   revrem:
+    if: github.event.pull_request.head.repo.fork == false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -1345,6 +1346,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Start Codex proxy
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.CODEX_API_KEY }}
       - uses: owner/revrem-action@v0.5.0   # or uses: ./ to dogfood this repo
         with:
           base: origin/main
@@ -1355,7 +1360,10 @@ jobs:
 ```
 
 The action does not check out the repo itself — the caller must (with
-`fetch-depth: 0` so the base ref resolves). It runs revrem headless
+`fetch-depth: 0` so the base ref resolves). A credentialed Codex-backed
+workflow must also install and configure Codex before invoking RevRem; the
+example uses `openai/codex-action@v1` once to start the Codex proxy so later
+steps can call `codex`. It runs revrem headless
 (`--no-tty --progress-style compact --summary-format json`), discovers the run
 directory from the JSON `artifact_dir` on stdout (never by globbing
 `.revrem/runs/`), then renders and uploads the redacted HTML report and posts
@@ -1364,13 +1372,13 @@ the PR comment. The exit code is mapped last, after artifacts and comment land:
 ceiling) and 4/5 (setup/cancel) fail the job.
 
 **Least privilege** is declared on the caller workflow: `contents: read`,
-`pull-requests: write`. **Fork PRs** are supported without exposing secrets:
-the comment step is gated on
+`pull-requests: write`. **Fork PRs** should not receive model-provider secrets:
+credentialed dogfood workflows should skip fork PRs at the job level, and the
+composite action's comment step has its own defense-in-depth gate on
 `github.event.pull_request.head.repo.fork == false` (compare to the boolean,
 not the string `'true'` — the latter always evaluates true under GitHub Actions'
-type coercion and never actually skips), so the run, report, and artifact upload
-still happen on a fork PR, but no comment is posted and no secrets are exposed
-to fork code (the action never uses `pull_request_target`).
+type coercion and never actually skips). The action never uses
+`pull_request_target`.
 **Privacy**: the uploaded HTML report and the comment body are redacted by
 default by `revrem report`. `raw-artifacts: true` additionally uploads the run
 directory **verbatim and unredacted** — it contains raw prompts, model output,
