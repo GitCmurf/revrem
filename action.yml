@@ -52,9 +52,9 @@ inputs:
   github-token:
     description: >-
       GitHub token for posting the PR comment. Leave unset to use the automatic
-      ${{ github.token }} (resolved in the comment step); override to use a PAT
+      GitHub token (resolved in the comment step); override to use a PAT
       or app token. The default is intentionally empty — not an expression — so
-      the comment step's `inputs.github-token || github.token` fallback resolves
+      the comment step fallback resolves
       correctly regardless of how GitHub handles expressions in input defaults.
     default: ""
 
@@ -169,7 +169,7 @@ runs:
         # upload-artifact exposes artifact-url on its outputs; fall back to the
         # run URL (set on the comment step) when upload was skipped or empty.
         # Routed through env: to stay consistent with this file's injection-
-        # hardening policy (never interpolate ${{ }} directly into a run script).
+        # hardening policy (never interpolate expressions directly into a run script).
         echo "REVREM_ARTIFACT_URL=$ARTIFACT_URL" >> "$GITHUB_ENV"
 
     - name: Upload raw run directory
@@ -200,9 +200,10 @@ runs:
         GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
         GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         REVREM_ARTIFACT_URL: ${{ env.REVREM_ARTIFACT_URL }}
+        ACTION_PATH: ${{ github.action_path }}
       run: |
         set -euo pipefail
-        python3 "${{ github.action_path }}/scripts/ci/post_pr_comment.py"
+        python3 "$ACTION_PATH/scripts/ci/post_pr_comment.py"
 
     - name: Map exit code
       if: always()

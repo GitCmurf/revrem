@@ -125,6 +125,36 @@ def test_action_inputs_are_not_interpolated_into_run_scripts():
     )
 
 
+def test_action_run_scripts_contain_no_expression_delimiters():
+    """GitHub template-parses composite run scripts before bash sees them.
+
+    Even expression-looking text in comments can make the action manifest fail
+    to load, so run scripts must read expressions through env/with fields only.
+    """
+    steps = _load("action.yml")["runs"]["steps"]
+    offenders = [
+        s.get("name")
+        for s in steps
+        if isinstance(s.get("run"), str) and "${{" in s["run"]
+    ]
+    assert not offenders, f"steps include expression text in run scripts: {offenders}"
+
+
+def test_action_input_descriptions_do_not_contain_expression_text():
+    """Action metadata descriptions are parsed as templates by the runner.
+
+    Do not include `${{ ... }}` examples in descriptions; they can fail action
+    loading before any step executes.
+    """
+    inputs = _load("action.yml")["inputs"]
+    offenders = [
+        name
+        for name, spec in inputs.items()
+        if "${{" in str(spec.get("description", ""))
+    ]
+    assert not offenders, f"input descriptions contain expression text: {offenders}"
+
+
 def test_action_wires_github_token_via_input():
     """The comment step receives the token from the github-token input, not an
     unset env var (P0-3). Composite actions can't read secrets, so the caller
@@ -172,7 +202,8 @@ def test_action_uses_action_path_for_comment_script():
     """External users invoke the script via the action_path prefix."""
     steps = _load("action.yml")["runs"]["steps"]
     comment_step = next(s for s in steps if s.get("name") == "Post PR comment")
-    assert "github.action_path" in comment_step["run"]
+    assert "github.action_path" in str(comment_step["env"]["ACTION_PATH"])
+    assert "$ACTION_PATH/scripts/ci/post_pr_comment.py" in comment_step["run"]
 
 
 def test_dogfood_workflow_parses_and_uses_local_install():
