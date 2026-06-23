@@ -71,6 +71,26 @@ def test_action_discovers_run_dir_from_json_not_globbing():
     assert ".revrem/runs" not in script
 
 
+def test_action_scratch_files_live_under_runner_temp():
+    """Action-owned stdout/stderr/report files must not be created in the checkout.
+
+    The dogfood profile can require a clean worktree before provider calls, so
+    files like revrem-out.json in the repository root break the live gate.
+    """
+    steps = _load("action.yml")["runs"]["steps"]
+    run_step = next(s for s in steps if s.get("name") == "Run revrem")
+    render_step = next(s for s in steps if s.get("name") == "Render report")
+    upload_step = next(s for s in steps if s.get("name") == "Upload report artifact")
+    map_step = next(s for s in steps if s.get("name") == "Map exit code")
+
+    assert "RUNNER_TEMP" in run_step["run"]
+    assert "> \"$REVREM_STDOUT\"" in run_step["run"]
+    assert "2> \"$REVREM_STDERR\"" in run_step["run"]
+    assert "revrem-out.json" not in render_step["run"]
+    assert "revrem-report.html" not in str(upload_step["with"]["path"])
+    assert "$REVREM_STDERR" in map_step["run"]
+
+
 def test_action_splits_checks_safely():
     """checks input is split into repeated --check flags, never interpolated as one string."""
     steps = _load("action.yml")["runs"]["steps"]
