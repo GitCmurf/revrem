@@ -56,9 +56,13 @@ def _completion_spec() -> CompletionSpec:
     for command, build_parser in parser_builders.items():
         parser = build_parser()
         nested = _subcommand_parsers(parser)
-        command_words[command] = _words((*nested, *_parser_options(parser)))
+        command_words[command] = _words(
+            (*nested, *_parser_options(parser), *_parser_positional_choices(parser))
+        )
         for nested_command, nested_parser in nested.items():
-            nested_words[(command, nested_command)] = _words(_parser_options(nested_parser))
+            nested_words[(command, nested_command)] = _words(
+                (*_parser_options(nested_parser), *_parser_positional_choices(nested_parser))
+            )
     return CompletionSpec(root_words, command_words, nested_words)
 
 
@@ -71,6 +75,15 @@ def _parser_options(parser: argparse.ArgumentParser) -> tuple[str, ...]:
     for action in parser._actions:
         options.extend(option for option in action.option_strings if option.startswith("-"))
     return tuple(options)
+
+
+def _parser_positional_choices(parser: argparse.ArgumentParser) -> tuple[str, ...]:
+    choices: list[str] = []
+    for action in parser._actions:
+        if action.option_strings or action.choices is None:
+            continue
+        choices.extend(str(choice) for choice in action.choices)
+    return tuple(choices)
 
 
 def _subcommand_parsers(parser: argparse.ArgumentParser) -> dict[str, RevRemArgumentParser]:

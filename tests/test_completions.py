@@ -31,6 +31,13 @@ def test_completion_spec_uses_argparse_flags():
     assert "--i-understand-the-risks" in spec.command_words["report"]
 
 
+def test_completion_spec_includes_positional_enum_choices():
+    spec = completions._completion_spec()
+
+    assert {"bash", "zsh", "fish"} <= set(spec.command_words["completions"])
+    assert {"html", "json"}.isdisjoint(spec.command_words["report"])
+
+
 def test_completion_spec_includes_nested_config_flags_without_repeating_subcommands():
     spec = completions._completion_spec()
 
