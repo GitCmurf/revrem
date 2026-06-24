@@ -26,14 +26,17 @@ This project follows Semantic Versioning once public releases begin.
   `--pending-review ignore`, and JSON summaries; reused explicit artifact
   directories ignore stale `events.jsonl` and `summary.json` files until the
   child replaces them. Tests prove CLI/TUI artifact equivalence across clear,
-  findings, unknown, review-failure, check-failure, and budget-ceiling
-  fake-harness scenarios.
+  findings, unknown, review-failure, setup-failure, check-failure, and
+  budget-ceiling fake-harness scenarios; Pilot tests now drive confirmed
+  launch, visible monitor updates, and cancellation through the real Textual
+  widget tree.
 - The experimental TUI now uses a denser operator-console layout instead of
   plain tabbed text snapshots: a persistent status bar, profile/pipeline and
   run-monitor columns, contextual live-run controls, and an on-demand help panel
   make run state and keybindings visible without changing the execution path.
   Quitting during a live run now requires confirmation and cancels the managed
-  child before the app exits.
+  child before the app exits. `Esc` clears input focus so single-key operator
+  actions are available again after editing profile/path fields.
 
 ## [0.5.0] - 2026-06-21
 

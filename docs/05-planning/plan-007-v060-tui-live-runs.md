@@ -55,7 +55,8 @@ This plan has been implemented as the experimental v0.6.0 live-run slice:
   escalation only for forced cleanup.
 - S4: `tests/test_tui_cli_equivalence.py` proves direct CLI and
   TUI-controller-launched runs have equivalent stable artifacts for clear,
-  findings, unknown, review-failure, check-failure, and cost-ceiling outcomes.
+  findings, unknown, review-failure, setup-failure, check-failure, and
+  cost-ceiling outcomes.
 - Design polish: the first live-run UI now presents an operator console with a
   persistent status bar, profile/pipeline and monitor columns, contextual
   controls, inactive-cancel feedback, and a help panel.
@@ -646,7 +647,7 @@ the subtlety is process-group setup, which S3 depends on.
   during the new run's `starting` state, including the case where the stale file
   is malformed and has no readable first `run_id`.
 - A Pilot test runs a fake live run and asserts the **visible** monitor updates
-  across at least two phases before completion.
+  across at least two event rows before cancellation.
 
 **Tests.** Renderer units per event kind; Pilot live-update test.
 
@@ -706,8 +707,8 @@ the existing signal-driven cancellation path (D-1, Contract 6).
 - That Pilot test uses a fixture that actually leaves the child process running
   until the controller sends `SIGINT`; immediate fake `KeyboardInterrupt`
   scenarios are additional coverage, not a substitute.
-- No orphan harness process remains in the fake-process test harness, including
-  the case where a nested child has its own session.
+- No orphan harness process remains in the subprocess-provider test harness,
+  including the case where a nested child has its own session.
 - Cancellation does not corrupt run history; replay of the cancelled run renders.
 
 **Tests.** Pilot cancel test (start → cancel → assert cancelled state + artifacts
@@ -732,8 +733,8 @@ on fake-harness fixtures.
   two run directories, masks nondeterministic fields, and asserts equality.
 
 **Implementation steps.**
-1. For each scenario (`clear`, `findings`, `unknown`, `setup-failure`,
-   `check-failure`, `cost-ceiling`), run the loop **once via a direct `revrem`
+1. For each scenario (`clear`, `findings`, `unknown`, `review-failure`,
+   `setup-failure`, `check-failure`, `cost-ceiling`), run the loop **once via a direct `revrem`
    subprocess** (the reference path — a plain CLI run, *not* an in-process
    `application.run_review_loop` call) and **once via the TUI controller path**
    against the same fake-harness inputs and the same profile. Give the two runs
@@ -754,7 +755,7 @@ on fake-harness fixtures.
    scenario.
 
 **Acceptance.**
-- Equivalence holds for all six scenarios: compatible `summary.json`,
+- Equivalence holds for all seven scenarios: compatible `summary.json`,
   `events.jsonl`, review/check artifacts, and final status.
 - Pilot coverage includes clear, findings, unknown, setup failure, check
   failure, and cost-ceiling states.
@@ -833,7 +834,7 @@ v0.6.0 is releasable when:
 - `./scripts/dev-check`, `pre-commit run --all-files`, `meminit check --format
   json`, `git diff --check`, and `lint-imports` pass.
 - The TUI live-run Pilot suite passes when the `tui` extra is installed.
-- CLI/TUI equivalence (S4) passes against the fake-harness fixtures for all six
+- CLI/TUI equivalence (S4) passes against the fake-harness fixtures for all seven
   scenarios, including exact child exit-code agreement before artifact
   comparison.
 - Cancellation (S3), cost-ceiling, and at least three failure states have

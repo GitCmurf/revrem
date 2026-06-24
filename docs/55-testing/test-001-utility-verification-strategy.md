@@ -197,7 +197,8 @@ live monitor refresh, cancellation routing, and CLI-backed profile lifecycle
 actions. It also covers the operator-console status/help widgets, including
 inactive cancellation feedback, background cancellation completion,
 quit-with-active-run confirmation, terminal-status refresh stopping, and the
-visible live-run confirmation state.
+visible live-run confirmation state. Selector-dispatch widget probes catch
+wrong TUI target selectors in the mocked-widget tests.
 `tests/test_tui_state.py` covers dependency-free TUI view models for profile
 discovery, run-history loading, harness metadata, pipeline phase summaries, and
 profile command previews, launch plans, profile lifecycle command plans,
@@ -205,14 +206,17 @@ run-monitor artifact links, and the composed shell model used by the
 interactive entry point.
 `tests/test_tui_pilot_smoke.py` boots the module-scope Textual app through a
 Pilot harness and asserts the Home, status, and help panels render through
-Textual. `tests/test_tui_run_controller.py` covers live-run argv assembly,
-explicit artifact-dir stale event/summary guards, exit classification,
-process-group cancellation escalation, and a real child-process cancellation
-smoke.
+Textual. It also drives confirmed live-run launch, visible monitor updates, and
+cancellation through the real widget tree and keybindings.
+`tests/test_tui_run_controller.py` covers live-run argv assembly, explicit
+artifact-dir stale event/summary guards, exit classification, process-group
+cancellation escalation, real child-process cancellation, and cleanup of a
+nested provider child that starts its own session.
 `tests/test_tui_cli_equivalence.py` runs the package entry point directly and
 through the TUI controller, asserts matching child exit codes, then compares
 stable summaries, event streams, and artifact file sets for clear, findings,
-unknown, review-failure, check-failure, and cost-ceiling fake-harness scenarios.
+unknown, review-failure, setup-failure, check-failure, and cost-ceiling
+fake-harness scenarios.
 `tests/test_fixtures.py` covers long-lived fixture infrastructure, including
 the reference repository used by the post-launch foundation phase.
 
@@ -260,7 +264,7 @@ M0-M4 metrics with deterministic local evidence. Current status:
 | Public DevEx examples, completions, and demo assets stay current | Examples parse; completions emit; demo source is deterministic (v0.5.0) | `tests/test_examples_valid.py` validates every `examples/**/.revrem.toml`; `tests/test_completions.py` verifies `revrem completions bash\|zsh\|fish` includes known subcommands and parser-derived flags; `tests/test_record_demo.py` runs `scripts/record-demo --check`. |
 | Failure diagnostics guide covers operator triage surfaces | Exit codes and major diagnostic families are documented (v0.5.0) | `tests/test_failure_diagnostics_guide.py` asserts `REVREM-GUIDE-001` documents exit codes `0`-`6`, `summary.phase_failures`, `diagnostics.json`, provider quota exhaustion, report generation, and raw-artifact privacy. |
 | Mean time to actionable diagnosis on a failing run | Less than 60 seconds reading structured artifacts | Preflight-blocking runs write `diagnostics.json`, `summary.json`, and `events.jsonl` before any model call. Tests assert stable diagnostic codes, messages, hints, fingerprints, and exit codes; this makes setup failures actionable from artifacts without parsing raw transcripts. |
-| TUI-launched live runs match CLI runs | Stable summaries, event streams, and artifact file sets match direct CLI execution for representative fake-harness outcomes | `tests/test_tui_cli_equivalence.py` compares direct `python -m code_review_loop` runs with TUI-controller-launched child runs using identical profile flags and out-of-repo artifact dirs, covering clear, findings, unknown, review-failure, check-failure, and cost-ceiling scenarios. |
+| TUI-launched live runs match CLI runs | Stable summaries, event streams, and artifact file sets match direct CLI execution for representative fake-harness outcomes | `tests/test_tui_cli_equivalence.py` compares direct `python -m code_review_loop` runs with TUI-controller-launched child runs using identical profile flags and out-of-repo artifact dirs, covering clear, findings, unknown, review-failure, setup-failure, check-failure, and cost-ceiling scenarios. |
 
 ### Local verification
 

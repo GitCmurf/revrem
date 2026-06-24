@@ -1397,7 +1397,7 @@ slice tracked in `REVREM-PLAN-007`.
    `--artifact-dir`, `--no-tty`, `--pending-review ignore`, and
    `--summary-format json`. No review/remediation logic is reimplemented in the
    TUI.
-2. The Run Monitor tails the child run's `events.jsonl` and renders parsed
+2. The Run Monitor reads the child run's `events.jsonl` during refresh and renders parsed
    events through the same `RunEventView` path used by replay/history.
 3. Cancellation sends `SIGINT` to the child process group first, allowing the
    normal run loop to emit `cancellation`, write artifacts, and exit code `5`;
