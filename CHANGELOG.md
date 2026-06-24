@@ -20,16 +20,20 @@ This project follows Semantic Versioning once public releases begin.
   out-of-scope paths. Empty diagnostic artifact values now render as blank
   cells instead of `.` in phase-failure tables.
 - Experimental `revrem ui` live runs: the Textual TUI can now confirm-start a
-  real run, stream the same `events.jsonl` rows used by replay into the Run
-  Monitor, and cancel the child process cleanly. The controller runs the normal
-  `revrem` entry point as a managed subprocess with `--no-tty`,
-  `--pending-review ignore`, and JSON summaries; tests prove CLI/TUI artifact
-  equivalence across clear, findings, unknown, review-failure, check-failure,
-  and budget-ceiling fake-harness scenarios.
+  real run, read the same `events.jsonl` rows used by replay into the Run
+  Monitor, and cancel the child process without blocking the UI. The controller
+  runs the normal `revrem` entry point as a managed subprocess with `--no-tty`,
+  `--pending-review ignore`, and JSON summaries; reused explicit artifact
+  directories ignore stale `events.jsonl` and `summary.json` files until the
+  child replaces them. Tests prove CLI/TUI artifact equivalence across clear,
+  findings, unknown, review-failure, check-failure, and budget-ceiling
+  fake-harness scenarios.
 - The experimental TUI now uses a denser operator-console layout instead of
   plain tabbed text snapshots: a persistent status bar, profile/pipeline and
   run-monitor columns, contextual live-run controls, and an on-demand help panel
   make run state and keybindings visible without changing the execution path.
+  Quitting during a live run now requires confirmation and cancels the managed
+  child before the app exits.
 
 ## [0.5.0] - 2026-06-21
 

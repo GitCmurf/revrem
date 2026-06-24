@@ -834,9 +834,12 @@ v0.6.0 is releasable when:
   json`, `git diff --check`, and `lint-imports` pass.
 - The TUI live-run Pilot suite passes when the `tui` extra is installed.
 - CLI/TUI equivalence (S4) passes against the fake-harness fixtures for all six
-  scenarios.
+  scenarios, including exact child exit-code agreement before artifact
+  comparison.
 - Cancellation (S3), cost-ceiling, and at least three failure states have
-  automated coverage.
+  automated coverage. The cancellation path must not block the Textual event
+  loop, and quitting during an active run must cancel the managed child before
+  exit.
 - No new code was added under `core/`, `runner.py`, `runner_shell.py`,
   `runner_setup.py`, `runner_finish.py`, peer runner modules, or
   `application.py` (D-1 invariant), and no `import-linter` contract was relaxed.

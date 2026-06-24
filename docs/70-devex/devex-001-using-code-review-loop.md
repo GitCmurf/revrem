@@ -1535,17 +1535,22 @@ profile. Key bindings shell through `revrem config` and the normal run CLI:
 real live run, `k` cancels an active live run, `s` shows the profile, `e` edits
 it, `n` creates a profile, `c` clones the selected profile, `x` exports, `i`
 imports from the path field, `delete` deletes through
-`revrem config delete --yes`, `?` toggles contextual help, and `q` quits.
+`revrem config delete --yes`, `h`/`?` toggles contextual help, and `q` quits.
 
 Live TUI runs are experimental but use the same execution path as the CLI. The
 TUI controller starts a managed `revrem` subprocess with the selected profile,
 forces machine-friendly child output (`--no-tty`, `--pending-review ignore`,
-`--summary-format json`), tails the child run's `events.jsonl`, and renders those
-events through the same `RunEventView` path as replay/history. Cancellation sends
-`SIGINT` to the child process group first, so a normal active run writes the
-standard `cancellation` event and `summary.json` with exit code `5`; `SIGTERM`
-and `SIGKILL` are reserved for forced cleanup if the child does not exit.
-When no live run is active, cancellation is a no-op with explicit feedback.
+`--summary-format json`), reads the child run's `events.jsonl` during refresh,
+and renders those events through the same `RunEventView` path as replay/history.
+Cancellation runs in a background worker and sends `SIGINT` to the child process
+group first, so a normal active run writes the standard `cancellation` event and
+`summary.json` with exit code `5`; `SIGTERM` and `SIGKILL` are reserved for
+forced cleanup if the child does not exit. When no live run is active,
+cancellation is a no-op with explicit feedback. Quitting during an active live
+run requires a second `q`, then uses the same cancellation path before the TUI
+exits. If a profile points at a reused explicit artifact directory, the live
+monitor ignores stale `events.jsonl` and `summary.json` files until the child
+creates replacements for the current run.
 
 Codex, Claude, Gemini, opencode, and KiloCode are executable
 review/remediation harnesses through the shared adapter boundary. Their CLIs
