@@ -61,6 +61,21 @@ Read in this order:
 
 If a task and the Shared Contracts section disagree, **the contracts win**.
 
+## Post-Release Status (2026-06-24)
+
+v0.5.0 shipped as a full Tier 2 release on 2026-06-24.
+
+Verified release evidence:
+- GitHub release `v0.5.0` published successfully.
+- PyPI install smoke passed for `revrem==0.5.0`; `revrem --version` returned
+  `revrem 0.5.0`, and `revrem --help` rendered.
+- Release assets include the wheel, sdist, SBOM, `SHA256SUMS`, canonical
+  `*.sigstore.json` bundles, and Scorecard-recognised `*.sigstore` copies.
+- `sha256sum --check SHA256SUMS` passed for the release artifacts.
+
+The only intentionally deferred task is T12, TUI real runs. Its v0.6.0
+implementation plan is `REVREM-PLAN-007`.
+
 ## Where We Are (Baseline, 2026-06-18)
 
 RevRem is at **v0.4.0**, released today. The governing roadmap

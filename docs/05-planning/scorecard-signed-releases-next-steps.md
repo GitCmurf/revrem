@@ -3,12 +3,12 @@ document_id: REVREM-PLAN-006
 type: PLAN
 title: Scorecard "Signed-Releases" — next steps (handoff)
 status: Draft
-version: '0.1'
-last_updated: '2026-06-19'
+version: '0.2'
+last_updated: '2026-06-24'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
-description: Handoff note for the OpenSSF Scorecard signed-releases work — current state (scorecard green after three layered fixes), in-flight PR #33 staging *.sigstore copies, and the remaining steps to reach a signed-releases score of 8 then 10 (real SLSA provenance).
+description: Status note for the OpenSSF Scorecard signed-releases work — PR #33 and v0.5.0 release-asset proof are complete; Scorecard re-evaluation and real SLSA provenance remain.
 keywords:
   - scorecard
   - signed-releases
@@ -19,7 +19,7 @@ keywords:
 
 # Scorecard "Signed-Releases" — next steps (handoff)
 
-_Last updated: 2026-06-19. Written to hand off to a fresh thread._
+_Last updated: 2026-06-24. Updated after the v0.5.0 release._
 
 ## Where things stand
 
@@ -36,28 +36,39 @@ took three layered fixes, all merged:
 A full audit confirmed those two security actions were the **only** bogus pins;
 all 10 action pins across all workflows are now canonical.
 
-## In flight
+## Current status
 
-- **PR #33** (`feat/scorecard-signed-releases`) — stages a `*.sigstore` copy of
-  each `*.sigstore.json` bundle in `release.yml`'s "Stage release assets" step.
-  - Why: releases ARE Sigstore-signed, but Scorecard's signed-releases check
-    only recognises these suffixes: `*.minisig`, `*.asc`, `*.sig`, `*.sign`,
-    `*.sigstore`, `*.intoto.jsonl`. It does NOT recognise `*.sigstore.json`,
-    so the check scored 0 despite real signatures.
-  - **Cannot be CI-verified** — the release workflow only runs on tags. It
-    first proves out on the **next tagged release**.
-  - **Status when handing off: open, normal CI green, needs merge.**
+- **PR #33** (`feat/scorecard-signed-releases`) merged on 2026-06-19.
+- The `v0.5.0` release on 2026-06-24 proved the workflow change on a real tag.
+  The GitHub Release includes both canonical `*.sigstore.json` bundles and
+  Scorecard-recognised `*.sigstore` copies for the wheel, sdist, SBOM, and
+  `SHA256SUMS`.
+- `sha256sum --check SHA256SUMS` passed for the downloaded `v0.5.0` release
+  artifacts.
+- The latest observed Scorecard run still predates the `v0.5.0` release, so
+  Scorecard has not yet re-evaluated the new assets.
 
 ## Remaining work (pick up here)
 
-### 1. Merge PR #33 (if not already merged)
-Normal CI only; merge with admin if the conversation-resolution gate blocks
-(`gh pr merge 33 -R GitCmurf/revrem --squash --admin --delete-branch`).
+### 1. Wait for Scorecard re-evaluation
 
-### 2. (Optional) Backfill the existing v0.4.0 release for immediate credit
-PR #33 only affects future releases. To make the *current* release count on the
-next Scorecard scan, add `*.sigstore` copies to v0.4.0's assets now. The v0.4.0
-release currently has these signed bundles:
+The release asset side is complete. The remaining proof is a Scorecard run that
+starts after the `v0.5.0` release publication timestamp and observes the
+`*.sigstore` assets.
+
+Check:
+
+```bash
+gh run list -R GitCmurf/revrem --workflow "OpenSSF Scorecard" --limit 3
+```
+
+The expected outcome is that `Signed-Releases` moves from 0 toward 8.
+
+### 2. (Optional, low value) Backfill the existing v0.4.0 release
+
+This is no longer needed for future releases because `v0.5.0` already contains
+recognised `*.sigstore` assets. Only do this if historical `v0.4.0` credit is
+still useful. The v0.4.0 release has these signed bundles:
 `revrem-0.4.0-py3-none-any.whl.sigstore.json`,
 `revrem-0.4.0.tar.gz.sigstore.json`,
 `revrem-sbom.cdx.json.sigstore.json`,
@@ -87,12 +98,13 @@ provenance file named `*.intoto.jsonl` attached to the release.
   attach it to the GitHub release. This is a non-trivial workflow addition;
   scope it on its own.
 
-## How to verify after the next release
-After tagging the next version and the release workflow runs:
+## How to verify after a release
+
+After tagging a version and the release workflow runs:
 ```bash
 gh release view <tag> -R GitCmurf/revrem --json assets -q '.assets[].name'   # expect *.sigstore present
 # then wait for the scheduled/post-push Scorecard run and check signed-releases:
-gh run list -R GitCmurf/revrem --workflow=scorecard.yml --limit 1
+gh run list -R GitCmurf/revrem --workflow "OpenSSF Scorecard" --limit 1
 ```
 The Scorecard `Signed-Releases` check should move from 0 → 8 (→ 10 once SLSA
 provenance is added).
