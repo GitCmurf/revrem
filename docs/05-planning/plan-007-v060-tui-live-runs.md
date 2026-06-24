@@ -3,7 +3,7 @@ document_id: REVREM-PLAN-007
 type: PLAN
 title: v0.6.0 TUI live runs
 status: Draft
-version: '0.3'
+version: '0.4'
 last_updated: '2026-06-24'
 owner: GitCmurf
 docops_version: '2.0'
@@ -135,9 +135,10 @@ Verified against the v0.5.0 source tree:
 ## Non-Goals
 
 - **No second execution engine, runner fork, or TUI-local remediation logic.**
-  The TUI drives a `revrem` *process*; it never imports `runner`, `core.engine`,
-  or `application`, and never reimplements loop, artifact, or cancellation
-  semantics. (Reaffirms the PLAN-005 / `REVREM-TASK-002` no-second-engine rule.)
+  The TUI drives a `revrem` *process*; it never imports `code_review_loop.cli`,
+  `runner`, `core.engine`, or `application`, and never reimplements loop,
+  artifact, or cancellation semantics. (Reaffirms the PLAN-005 /
+  `REVREM-TASK-002` no-second-engine rule.)
 - **No in-process worker-thread execution in v0.6.0.** In-process execution is
   *achievable* without any engine change (see **D-1**); it is deferred for
   isolation, coupling, and risk reasons appropriate to an experimental surface,
@@ -186,10 +187,21 @@ wrong and is corrected here.
 
 **Why the subprocess model wins for v0.6.0.** Since both can cancel, the choice
 turns on isolation, coupling, and risk for an *experimental* first slice:
-1. **Cancellation reuses the tested path verbatim.** `SIGINT` to the run process
-   is byte-for-byte a terminal Ctrl-C → `terminal.py` handler →
-   `finish_cancelled` → exit 5. There is no custom `ProcessRunner` and no
-   `raise`-on-cancel logic to get right.
+1. **Cancellation reuses the tested path — correct by construction.** The spawned
+   child is an ordinary `revrem` run: the CLI calls
+   `application.run_review_loop(config)` without overriding `terminal_ui`
+   (`cli/main.py:89`), so it runs `terminal_ui=True` and installs the `terminal.py`
+   `SIGINT` handler even with piped stdio. `killpg(SIGINT)` is then byte-for-byte
+   a terminal Ctrl-C → handler → `finish_cancelled` → exit 5. Crucially,
+   correctness does **not** hinge on that handler: the
+   `except KeyboardInterrupt → finish_cancelled` lives in `_run_session`
+   (`runner.py:146,183`), which `run_loop` calls on *both* the `terminal_ui` True
+   (`:86`) and False (`:68`) branches, and `SIGINT` raises `KeyboardInterrupt`
+   under Python's default handler too — so the clean exit-5 path holds regardless
+   of how the child is launched. (This is also why SIGTERM/SIGKILL belong only in
+   forced cleanup: SIGTERM does *not* raise `KeyboardInterrupt` under the default
+   handler — default disposition is terminate.) There is no custom `ProcessRunner`
+   and no `raise`-on-cancel logic to get right.
 2. **Terminal/stdio isolation by construction.** The run is a separate process
    with captured pipes (as the dry-run launcher already does), so harness child
    stdout/stderr/`/dev/tty` writes cannot corrupt the TUI. In-process, every
@@ -265,19 +277,26 @@ Every slice must obey these.
    never reconstructs loop, artifact, summary, history, or cancellation
    semantics.
 4. **Resolve the run directory before launch.** Live streaming cannot wait until
-   `summary.json` exists to discover artifacts. The controller must know the run
-   directory before launch, append `--artifact-dir <dir>` to the child argv, and
-   tail only that directory's `events.jsonl`. Respect an explicit
-   `profile.output.artifact_dir`; generate a unique default-shaped directory only
-   when the selected profile has no explicit artifact dir. After exit, reconcile
-   the child's top-level `summary.artifact_dir` with the prelaunch path and treat
-   a mismatch as a failed setup/controller bug.
-5. **Machine-friendly child invocation.** Live runs add `--summary-format json`,
-   `--no-tty`, and `--pending-review ignore` unless the operator has explicitly
-   chosen an interactive mode in a later design. The controller drains
-   stdout/stderr concurrently to bounded in-memory buffers or controller
-   diagnostics outside the child run directory so a verbose child cannot block on
-   a full pipe.
+   `summary.json` exists to discover artifacts. The controller computes the run
+   directory *before* launch as `profile.output.artifact_dir` if the selected
+   profile sets one, else a unique default-shaped directory, then passes it as
+   `--artifact-dir <dir>` and tails only that directory's `events.jsonl`. It
+   computes but does **not** pre-create or write into that directory (Contract 8);
+   the child creates and owns it. Note that passing `--artifact-dir` makes the
+   child's `artifact_dir_is_default` `False` (`config_builder.py:736`), which
+   shifts the pending-review `search_root` (`:427`) — harmless here because
+   Contract 5 forces `--pending-review ignore`. After exit, reconcile the child's
+   top-level `summary.artifact_dir` with the prelaunch path and treat a mismatch
+   as a failed setup/controller bug.
+5. **Machine-friendly child invocation.** Live runs add `--no-tty` (force
+   headless, no ANSI) and `--pending-review ignore` (belt-and-braces — `--no-tty`
+   already makes the non-interactive default `ignore`, per `cli/args.py:575`, but
+   stating it keeps the invocation explicit). `--summary-format json` is added as
+   a stdout *diagnostics* nicety only: the controller derives all state from the
+   on-disk `events.jsonl` and `summary.json`, never by parsing child stdout, so
+   the stdout format is never a dependency. The controller drains stdout/stderr
+   concurrently to bounded in-memory buffers (or controller diagnostics outside
+   the child run directory) so a verbose child cannot block on a full pipe.
 6. **Reuse the existing cancellation path.** Cancellation first sends `SIGINT`
    to the run process group (D-1). The TUI must not synthesize a `cancellation`
    event and must not write a summary itself. If a child ignores SIGINT past a
@@ -304,7 +323,12 @@ Every slice must obey these.
 
 ## Reference Facts For Implementers
 
-Concrete anchors, verified against the v0.5.0 tree, so no rediscovery is needed:
+Concrete anchors, verified against the v0.5.0 tree, so no rediscovery is needed.
+Every flag and symbol below was grep-confirmed in source (the child flags in
+`cli/args.py`, the artifact-dir precedence in `cli/config_builder.py`,
+`archive_existing_events` in `runner_setup.py`, the cancellation path in
+`runner.py`/`adapters/terminal.py`); treat line numbers as v0.5.0 references that
+may drift.
 
 - **TUI modules:** `src/code_review_loop/tui.py` (Textual app; gated behind the
   `tui` extra, lazy optional imports), `src/code_review_loop/tui_state.py` (pure
@@ -327,18 +351,32 @@ Concrete anchors, verified against the v0.5.0 tree, so no rediscovery is needed:
   `run_event_views(records, ...) -> (tuple[RunEventView, ...], truncated, error)`,
   `run_event_view(event) -> RunEventView`, `run_monitor_view(record) -> RunMonitorView`.
   `RunMonitorView.events` is a `tuple[RunEventView, ...]`.
-- **Cancellation / exit codes:** `adapters/terminal.py` installs handlers for
-  `signal.SIGINT`/`SIGTERM`; `runner.run_loop` catches `KeyboardInterrupt` →
-  `runner_finish.finish_cancelled` (emits `cancellation`, writes summary, outcome
-  `cancelled`); `core.outcome.outcome_to_exit_code` maps `cancelled` → `5`.
-- **Artifact dir control:** `cli.config_builder.default_artifact_dir()` currently
-  creates the normal `.revrem/runs/<timestamp>-<run-id>` path, and
-  `--artifact-dir` lets a caller choose it up front. The live controller must not
-  import the CLI helper; either move that tiny path factory to a neutral module
-  or duplicate the path shape locally with focused tests. A completed run's
-  `summary.json` still carries the authoritative top-level `artifact_dir`
-  (written by `core/state.py`); the live controller should pass the directory for
-  streaming, then reconcile it against the top-level summary field after exit.
+- **Cancellation / exit codes:** the `except KeyboardInterrupt → finish_cancelled`
+  is in `runner._run_session` (`runner.py:146,183`), which `run_loop` calls on
+  **both** the `terminal_ui=True` (`:86`) and `terminal_ui=False` (`:68`)
+  branches. `adapters/terminal.py`'s `terminal_recovery_context()` adds the
+  `SIGINT`/`SIGTERM` handler only under `terminal_ui=True`; the CLI invokes
+  `application.run_review_loop(config)` without overriding `terminal_ui`
+  (`cli/main.py:89`), so a spawned `revrem` child runs `terminal_ui=True` and has
+  it. `finish_cancelled` emits `cancellation`, writes the summary, and yields
+  outcome `cancelled`; `core.outcome.outcome_to_exit_code` maps `cancelled` → `5`.
+  `SIGINT` raises `KeyboardInterrupt` under Python's default handler too, so the
+  catch fires even absent the custom handler; `SIGTERM` does not (default =
+  terminate), which is why it is reserved for forced cleanup.
+- **Artifact dir control + precedence:** the child resolves its run directory as
+  `args.artifact_dir or profile.output.artifact_dir or default_artifact_dir()`
+  (`cli/config_builder.py:425-426`), where `default_artifact_dir()` builds the
+  normal `.revrem/runs/<timestamp>-<run-id>` path. So a controller-supplied
+  `--artifact-dir` *overrides* a profile's `output.artifact_dir` — which is why
+  the controller must resolve the profile value first (Contract 4) and pass that
+  exact value, not blindly generate a fresh one. The live controller must not
+  import the CLI helper (Contract 2); either move that tiny path factory to a
+  neutral module or duplicate the path shape locally with focused tests.
+  Supplying `--artifact-dir` also sets `artifact_dir_is_default=False`
+  (`:736`), changing the pending-review `search_root` (`:427`) — neutralized by
+  `--pending-review ignore` (Contract 5). A completed run's `summary.json` carries
+  the authoritative top-level `artifact_dir` (written by `core/state.py`); pass
+  the directory for streaming, then reconcile it against that field after exit.
   *(Cross-reference the `artifact_dir` two-locations note: use the top-level
   field, not the nested `artifact_paths.artifact_dir`.)*
 - **Fake harness for tests:** `REVREM_ALLOW_FAKE_HARNESS=1` enables scripted
@@ -443,20 +481,23 @@ experimental action, modeled by a small dependency-light state machine.
 2. The launch action requires an explicit confirm (a modal or a two-key
    action) so a live provider run is never one stray keypress away — Non-Goals.
    Gate it behind an "experimental" label.
-3. Resolve the run directory before launch. If the selected profile has an
-   explicit `output.artifact_dir`, use that value; otherwise generate a unique
-   default-shaped `.revrem/runs/<timestamp>-<run-id>` path without importing
-   `code_review_loop.cli` (move the tiny factory to a neutral module if reuse is
-   worth it). Append `--artifact-dir <dir>` to the argv so the child and
-   controller agree exactly.
+3. Resolve the run directory before launch (Contract 4). If the selected profile
+   has an explicit `output.artifact_dir`, use that value; otherwise generate a
+   unique default-shaped `.revrem/runs/<timestamp>-<run-id>` path without
+   importing `code_review_loop.cli` (move the tiny factory to a neutral module if
+   reuse is worth it). Append `--artifact-dir <dir>` to the argv so child and
+   controller agree exactly. Compute the path only — do not pre-create or write
+   into it; the child creates and owns the directory.
 4. The child owns `events.jsonl`, `summary.json`, run history, and
    review/check/remediation artifacts. The TUI writes no files inside the child
    run directory; if full stdout/stderr capture is needed, put it in a separate
    controller diagnostics location and link to it from UI state only.
-5. Add `--summary-format json`, `--no-tty`, and `--pending-review ignore` to the
-   child argv for the experimental live-run path, so output is machine-readable
-   for diagnostics and the child cannot block on a pending-review prompt in the
-   TUI. `summary.json` remains the authoritative completion payload.
+5. Add `--no-tty` and `--pending-review ignore` to the child argv for the
+   experimental live-run path so the child runs headless and cannot block on a
+   pending-review prompt (Contract 5; `--pending-review ignore` is belt-and-braces
+   under `--no-tty`). Add `--summary-format json` only as a stdout diagnostics
+   nicety. The on-disk `events.jsonl` (live) and `summary.json` (final) are the
+   authoritative payloads; never parse child stdout.
 6. Drain stdout and stderr concurrently while the child runs. Keep bounded
    in-memory excerpts for the UI and, if full streams are persisted, write them
    outside the child run directory.
@@ -509,9 +550,12 @@ the subtlety is process-group setup, which S3 depends on.
 
 **Implementation steps.**
 1. Before launch, record whether `run_dir / events.EVENTS_FILENAME` already
-   exists. This matters for explicit profile artifact dirs: `runner_setup` will
-   archive an existing events file once the child reaches `prepare_run`, but the
-   TUI must not briefly render stale events while the child is still starting.
+   exists. A default-generated run dir is brand-new and cannot contain stale
+   events, so this guard applies **only** to the explicit-`output.artifact_dir`
+   case: `runner_setup.archive_existing_events` renames any prior `events.jsonl`
+   to `events-<run_id>.jsonl` once the child reaches `prepare_run`
+   (`runner_setup.py:72-78,155`), but until then the TUI must not render the old
+   file's events as if they were this run's.
 2. On each tick, call `events.read_events(prelaunch_run_dir /
    events.EVENTS_FILENAME)` only after the file is absent/replaced/newer than
    the launch timestamp, then feed records through `run_event_views(...)` →
@@ -625,9 +669,15 @@ on fake-harness fixtures.
 
 **Implementation steps.**
 1. For each scenario (`clear`, `findings`, `unknown`, `setup-failure`,
-   `check-failure`, `cost-ceiling`), run the loop **once via the CLI/application
-   path** and **once via the TUI controller path** against the same fake-harness
-   inputs and the same `LoopConfig`-equivalent profile.
+   `check-failure`, `cost-ceiling`), run the loop **once via a direct `revrem`
+   subprocess** (the reference path — a plain CLI run, *not* an in-process
+   `application.run_review_loop` call) and **once via the TUI controller path**
+   against the same fake-harness inputs and the same profile. Invoke **both sides
+   with
+   identical flags** (`--artifact-dir`, `--no-tty`, `--pending-review ignore`,
+   `--summary-format json`) so the *only* difference under test is who launches
+   the process — otherwise `artifact_dir_is_default`/`search_root` divergence
+   (Reference Facts) makes the comparison apples-to-oranges.
 2. Compare the **stable** fields of `summary.json` and the **file set** of the
    run directory (`summary.json`, `events.jsonl`, review artifacts, checks, final
    status). Mask expected nondeterministic fields per Contract 9 (timestamps, run
