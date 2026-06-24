@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import time
 from io import StringIO
+from pathlib import Path
 
 from code_review_loop import events, profiles, tui_run_controller, tui_state
 
@@ -267,6 +269,76 @@ triage.enabled = false
     assert any(event.kind == "cancellation" for event in controller.read_live_events().events)
 
 
+def test_cancel_reaps_nested_provider_child_with_own_session(tmp_path, monkeypatch):
+    repo = _init_git_repo(tmp_path / "repo")
+    provider = tmp_path / "provider.py"
+    nested_pid_file = tmp_path / "nested.pid"
+    provider.write_text(
+        """#!/usr/bin/env python3
+import os
+import subprocess
+import sys
+import time
+
+child = subprocess.Popen(
+    [sys.executable, "-c", "import time; time.sleep(60)"],
+    start_new_session=True,
+)
+with open(os.environ["REVREM_NESTED_PID_FILE"], "w", encoding="utf-8") as handle:
+    handle.write(str(child.pid))
+    handle.flush()
+time.sleep(60)
+""",
+        encoding="utf-8",
+    )
+    provider.chmod(0o755)
+    (repo / ".revrem.toml").write_text(
+        f"""
+[profiles.cancel-nested]
+
+[profiles.cancel-nested.pipeline]
+max_iterations = 1
+final_review = false
+
+[profiles.cancel-nested.review]
+harness = "claude"
+model = "nested"
+
+[profiles.cancel-nested.remediation]
+harness = "fake"
+model = "clear"
+
+[profiles.cancel-nested.triage]
+enabled = false
+
+[profiles.cancel-nested.runtime]
+provider_retry_attempts = 1
+
+[profiles.cancel-nested.runtime.harness_executables]
+claude = "{provider}"
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("REVREM_ALLOW_FAKE_HARNESS", "1")
+    monkeypatch.setenv("REVREM_NESTED_PID_FILE", str(nested_pid_file))
+    profile = profiles.resolve_profile("cancel-nested", cwd=repo)
+    plan = tui_state.launch_plan(profile, dry_run=False)
+    controller = tui_run_controller.LiveRunController()
+
+    controller.start(
+        profile=profile,
+        plan=plan,
+        cwd=repo,
+        entrypoint_resolver=lambda argv: [sys.executable, "-m", "code_review_loop", *argv[1:]],
+    )
+    nested_pid = _wait_for_pid_file(nested_pid_file)
+
+    status = controller.cancel(grace_seconds=1)
+
+    assert status == "cancelled"
+    _wait_until_not_running(nested_pid)
+
+
 def test_live_events_ignore_stale_explicit_artifact_dir_until_replaced(tmp_path):
     run_dir = tmp_path / "custom" / "run"
     run_dir.mkdir(parents=True)
@@ -422,3 +494,53 @@ def test_terminal_statuses_cover_all_non_idle_running_states():
         "failed",
         "failed-forced-cleanup",
     }
+
+
+def _init_git_repo(repo: Path) -> Path:
+    repo.mkdir()
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, check=True)
+    (repo / "README.md").write_text("# Fixture\n", encoding="utf-8")
+    subprocess.run(["git", "add", "README.md"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=repo, check=True, capture_output=True)
+    return repo
+
+
+def _wait_for_pid_file(path: Path) -> int:
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        if path.is_file():
+            return int(path.read_text(encoding="utf-8"))
+        time.sleep(0.01)
+    raise AssertionError("timed out waiting for nested pid file")
+
+
+def _wait_until_not_running(pid: int) -> None:
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        if not _pid_is_running(pid):
+            return
+        time.sleep(0.05)
+    raise AssertionError(f"nested child still running: {pid}")
+
+
+def _pid_is_running(pid: int) -> bool:
+    proc_stat = Path("/proc") / str(pid) / "stat"
+    try:
+        stat_text = proc_stat.read_text(encoding="utf-8", errors="replace")
+    except FileNotFoundError:
+        return False
+    except OSError:
+        pass
+    else:
+        close_paren = stat_text.rfind(")")
+        if close_paren != -1:
+            fields = stat_text[close_paren + 1 :].strip().split()
+            if fields and fields[0] == "Z":
+                return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True

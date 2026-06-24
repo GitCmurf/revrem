@@ -7,6 +7,7 @@ import os
 import signal
 import subprocess
 import threading
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -158,15 +159,22 @@ class LiveRunController:
             return self.status
         if self.process.poll() is not None:
             return self.finish(self.process.returncode)
+        descendant_pids = _descendant_pids(self.process)
         _signal_process_group(self.process, signal.SIGINT)
         try:
-            return self.finish(self.process.wait(timeout=grace_seconds))
+            status = self.finish(self.process.wait(timeout=grace_seconds))
+            _terminate_descendants(descendant_pids, grace_seconds=grace_seconds)
+            return status
         except subprocess.TimeoutExpired:
             _signal_process_group(self.process, signal.SIGTERM)
+            _signal_process_groups_by_pid(descendant_pids, signal.SIGTERM)
         try:
-            return self.finish(self.process.wait(timeout=grace_seconds))
+            status = self.finish(self.process.wait(timeout=grace_seconds))
+            _terminate_descendants(descendant_pids, grace_seconds=grace_seconds)
+            return status
         except subprocess.TimeoutExpired:
             _signal_process_group(self.process, signal.SIGKILL)
+            _signal_process_groups_by_pid(descendant_pids, signal.SIGKILL)
             self.process.wait(timeout=grace_seconds)
             self.status = "failed-forced-cleanup"
             self.exit_code = self.process.returncode
@@ -292,6 +300,103 @@ def _signal_process_group(process: subprocess.Popen[str], signum: int) -> None:
         except OSError:
             pass
     process.send_signal(signum)
+
+
+def _descendant_pids(process: subprocess.Popen[str]) -> frozenset[int]:
+    pid = getattr(process, "pid", None)
+    if pid is None:
+        return frozenset()
+    children_by_parent = _proc_children_by_parent()
+    descendants: set[int] = set()
+    pending = list(children_by_parent.get(pid, ()))
+    while pending:
+        child_pid = pending.pop()
+        if child_pid in descendants:
+            continue
+        descendants.add(child_pid)
+        pending.extend(children_by_parent.get(child_pid, ()))
+    return frozenset(descendants)
+
+
+def _proc_children_by_parent() -> dict[int, tuple[int, ...]]:
+    proc_root = Path("/proc")
+    if not proc_root.is_dir():
+        return {}
+    children: dict[int, list[int]] = {}
+    for entry in proc_root.iterdir():
+        if not entry.name.isdigit():
+            continue
+        pid = int(entry.name)
+        try:
+            stat_text = (entry / "stat").read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        ppid = _ppid_from_proc_stat(stat_text)
+        if ppid is not None:
+            children.setdefault(ppid, []).append(pid)
+    return {ppid: tuple(pids) for ppid, pids in children.items()}
+
+
+def _ppid_from_proc_stat(stat_text: str) -> int | None:
+    # /proc/<pid>/stat wraps the command name in parentheses; the fields after
+    # the final ")" start with state and then parent pid.
+    close_paren = stat_text.rfind(")")
+    if close_paren == -1:
+        return None
+    fields = stat_text[close_paren + 1 :].strip().split()
+    if len(fields) < 2:
+        return None
+    try:
+        return int(fields[1])
+    except ValueError:
+        return None
+
+
+def _terminate_descendants(pids: frozenset[int], *, grace_seconds: float) -> None:
+    alive = _alive_pids(pids)
+    if not alive:
+        return
+    _signal_process_groups_by_pid(alive, signal.SIGTERM)
+    deadline = time.monotonic() + grace_seconds
+    while alive and time.monotonic() < deadline:
+        time.sleep(0.01)
+        alive = _alive_pids(alive)
+    if alive:
+        _signal_process_groups_by_pid(alive, signal.SIGKILL)
+
+
+def _alive_pids(pids: frozenset[int]) -> frozenset[int]:
+    alive: set[int] = set()
+    for pid in pids:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            continue
+        except PermissionError:
+            alive.add(pid)
+        else:
+            alive.add(pid)
+    return frozenset(alive)
+
+
+def _signal_process_groups_by_pid(pids: frozenset[int], signum: int) -> None:
+    for pid in sorted(pids):
+        if pid == os.getpid():
+            continue
+        if hasattr(os, "killpg") and hasattr(os, "getpgid"):
+            try:
+                os.killpg(os.getpgid(pid), signum)
+                continue
+            except ProcessLookupError:
+                continue
+            except OSError:
+                pass
+        try:
+            os.kill(pid, signum)
+        except ProcessLookupError:
+            continue
+        except OSError:
+            continue
 
 
 def _event_file_identity(path: Path) -> EventFileIdentity | None:
