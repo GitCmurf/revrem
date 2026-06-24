@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import signal
 import subprocess
 import threading
 from collections.abc import Callable, Sequence
@@ -25,6 +27,7 @@ RunControllerStatus = Literal[
     "cancelled",
     "interrupted-before-run-initialized",
     "failed",
+    "failed-forced-cleanup",
 ]
 
 PopenFactory = Callable[..., subprocess.Popen[str]]
@@ -129,6 +132,25 @@ class LiveRunController:
             return self.status
         return self.finish(exit_code)
 
+    def cancel(self, *, grace_seconds: float = 5.0) -> RunControllerStatus:
+        if self.process is None:
+            return self.status
+        if self.process.poll() is not None:
+            return self.finish(self.process.returncode)
+        _signal_process_group(self.process, signal.SIGINT)
+        try:
+            return self.finish(self.process.wait(timeout=grace_seconds))
+        except subprocess.TimeoutExpired:
+            _signal_process_group(self.process, signal.SIGTERM)
+        try:
+            return self.finish(self.process.wait(timeout=grace_seconds))
+        except subprocess.TimeoutExpired:
+            _signal_process_group(self.process, signal.SIGKILL)
+            self.process.wait(timeout=grace_seconds)
+            self.status = "failed-forced-cleanup"
+            self.exit_code = self.process.returncode
+            return self.status
+
     def finish(self, exit_code: int | None = None) -> RunControllerStatus:
         if self.process is None:
             return self.status
@@ -231,6 +253,22 @@ def _resolve_child_path(path: str, *, cwd: Path) -> Path:
     if resolved.is_absolute():
         return resolved
     return cwd / resolved
+
+
+def _signal_process_group(process: subprocess.Popen[str], signum: int) -> None:
+    pid = getattr(process, "pid", None)
+    if pid is None:
+        process.send_signal(signum)
+        return
+    if hasattr(os, "killpg") and hasattr(os, "getpgid"):
+        try:
+            os.killpg(os.getpgid(pid), signum)
+            return
+        except ProcessLookupError:
+            return
+        except OSError:
+            pass
+    process.send_signal(signum)
 
 
 def _event_file_identity(path: Path) -> EventFileIdentity | None:

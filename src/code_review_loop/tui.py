@@ -106,6 +106,7 @@ class RevRemApp(_AppBase):  # type: ignore[misc, valid-type]
     BINDINGS = [
         ("d", "launch_dry_run", "Dry run"),
         ("r", "launch_run", "Run"),
+        ("k", "cancel_run", "Cancel run"),
         ("s", "show_profile", "Show"),
         ("e", "edit_profile", "Edit profile"),
         ("n", "new_profile", "New"),
@@ -196,6 +197,11 @@ class RevRemApp(_AppBase):  # type: ignore[misc, valid-type]
             entrypoint_resolver=current_entrypoint_argv,
         )
         _notify(self, f"Live run started: {profile_name} ({launch.artifact_dir_arg})")
+        self._render_live_monitor()
+
+    def action_cancel_run(self) -> None:
+        status = self.live_run_controller.cancel()
+        _notify(self, f"Live run cancel requested: {status}")
         self._render_live_monitor()
 
     def action_show_profile(self) -> None:
@@ -340,7 +346,7 @@ def _controls_markup(selected_profile_name: str | None) -> str:
     return (
         f"[b]Selected[/b]\n{tui_state.markup_escape(selected)}\n\n"
         "[b]Profile lifecycle[/b]\n"
-        "d dry-run | r live run | s show | e edit | n new | c clone | x export | i import | delete delete\n\n"
+        "d dry-run | r live run | k cancel | s show | e edit | n new | c clone | x export | i import | delete delete\n\n"
         "[b]Notes[/b]\n"
         "Use the profile field for target profile actions. Use the path field for TOML imports."
     )

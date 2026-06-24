@@ -232,6 +232,34 @@ def test_tui_live_monitor_refresh_updates_run_monitor_widget(monkeypatch, tmp_pa
     assert "0001|review|1|phase_start: reviewing" in updates[0]
 
 
+def test_tui_cancel_action_routes_to_controller(monkeypatch, tmp_path):
+    notifications = []
+    updates = []
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    model = tui.tui_state.build_shell_model(cwd=repo, selected_profile_name="security")
+    app = tui.RevRemApp(model=model, profiles_by_name={})
+    app.live_run_controller.launch = tui.tui_run_controller.LiveRunLaunch(
+        argv=("revrem",),
+        artifact_dir_arg=".revrem/runs/live",
+        artifact_dir=repo / ".revrem" / "runs" / "live",
+    )
+    monkeypatch.setattr(app.live_run_controller, "cancel", lambda: "cancelled")
+    monkeypatch.setattr(app, "notify", lambda message: notifications.append(message))
+
+    class FakeWidget:
+        def update(self, value):
+            updates.append(value)
+
+    monkeypatch.setattr(app, "query_one", lambda selector: FakeWidget())
+
+    app.action_cancel_run()
+
+    assert notifications == ["Live run cancel requested: cancelled"]
+    assert updates
+
+
 def test_tui_edit_action_launches_profile_editor_with_suspended_app(monkeypatch, tmp_path):
     actions = []
     notifications = []

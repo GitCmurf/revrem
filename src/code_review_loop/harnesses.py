@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import Iterator, Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -582,6 +583,9 @@ def run_fake_harness_command(args: list[str] | tuple[str, ...]) -> tuple[int, st
         return -1, "", "Fake harness timeout\n"
     if scenario == "cancellation":
         raise KeyboardInterrupt()
+    if scenario == "slow_cancel":
+        time.sleep(60)
+        return 0, "No actionable findings.\nREVIEW_STATUS: clear\n", ""
     if scenario == "unsupported":
         return (
             2,
