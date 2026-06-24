@@ -1,0 +1,33 @@
+[profiles.refactor]
+description = "Refactor lens: duplication, dead code, leaky abstractions, naming drift, and maintainability risks; advisory by default."
+
+[profiles.refactor.pipeline]
+checks = []
+
+[profiles.refactor.review]
+reasoning_effort = "medium"
+
+[profiles.refactor.triage]
+enabled = true
+contract = "v2"
+prompt = "Prioritize maintainability findings only when they are concrete and close to the changed code. Refactor-only issues are advisory unless they hide correctness or safety risk."
+
+[profiles.refactor.triage.routing]
+enabled = true
+default_route = "codex-midi"
+strict_on_unavailable_route = false
+
+[[profiles.refactor.triage.routing.rule]]
+id = "refactor-advisory"
+when.domain_tags_any = ["refactor", "maintainability", "architecture"]
+then.route = "codex-midi"
+then.prompt_fragments = ["refactor-checklist"]
+then.allow_model_escalation = false
+
+[profiles.refactor.triage.routes.codex-midi]
+harness = "codex"
+model = "gpt-5.4-mini"
+reasoning_effort = "medium"
+
+[profiles.refactor.output]
+progress_style = "compact"

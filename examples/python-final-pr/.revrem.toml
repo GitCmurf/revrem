@@ -1,0 +1,16 @@
+[profiles.python-final-pr]
+description = "Python final PR review with tests, type checks, import contracts, and whitespace checks."
+
+[profiles.python-final-pr.pipeline]
+max_iterations = 2
+checks = [
+  "pytest -q",
+  "ruff check .",
+  "mypy src",
+  "lint-imports",
+  "git diff --check",
+]
+
+[profiles.python-final-pr.triage]
+enabled = true
+contract = "v2"

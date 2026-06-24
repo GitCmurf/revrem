@@ -176,8 +176,12 @@ runs:
           fi
           exit 4
         fi
-        echo "run-dir=$RUN_DIR" >> "$GITHUB_OUTPUT"
-        echo "REVREM_RUN_DIR=$RUN_DIR" >> "$GITHUB_ENV"
+        if [[ "$RUN_DIR" == *$'\n'* || "$RUN_DIR" == *$'\r'* ]]; then
+          echo "::error::RevRem artifact_dir contains a newline; refusing to export it."
+          exit 4
+        fi
+        printf 'run-dir=%s\n' "$RUN_DIR" >> "$GITHUB_OUTPUT"
+        printf 'REVREM_RUN_DIR=%s\n' "$RUN_DIR" >> "$GITHUB_ENV"
 
     - name: Render report
       if: always() && env.REVREM_RUN_DIR != ''

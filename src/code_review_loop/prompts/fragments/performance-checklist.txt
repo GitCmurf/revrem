@@ -1,0 +1,5 @@
+Performance review checklist:
+- Look for new repeated database/API calls inside loops or request handlers.
+- Check for avoidable quadratic work, unnecessary full scans, and hot-path allocations.
+- Prefer findings with measurable latency, throughput, or resource impact.
+- Do not block on speculative micro-optimizations.

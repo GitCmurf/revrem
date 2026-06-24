@@ -21,6 +21,7 @@ time; filesystem paths are normalised to ``/`` via ``PurePosixPath``).
 from __future__ import annotations
 
 import html
+import re
 import shlex
 from pathlib import PurePosixPath
 from typing import Any
@@ -63,6 +64,7 @@ _KNOWN_SEVERITIES: tuple[str, ...] = ("critical", "high", "medium", "low")
 #: "low" is the least-alarming valid value, so a mis-classified finding is never
 #: over-elevated in the report.
 _DEFAULT_SEVERITY = "low"
+_SUPPRESSED_EVENT_COUNT_RE = re.compile(r"\b(\d+)\b")
 
 
 def _normalize_severity(raw: object) -> str:
@@ -298,13 +300,21 @@ def _exit_hint(summary: dict[str, Any]) -> str:
 
 
 def _outcome_summary(
-    summary: dict[str, Any], events: list[Event], *, redact: bool
+    summary: dict[str, Any],
+    events: list[Event],
+    *,
+    redact: bool,
+    triage_findings: list[dict[str, Any]] | None = None,
 ) -> str:
     reason = _esc(summary.get("stopped_reason"), redact=redact)
     iterations = summary.get("iterations") or []
     iteration_count = len(iterations) if isinstance(iterations, list) else 0
     check_pass, check_fail = _check_counts(summary, events)
-    suppressed = sum(1 for ev in events if ev.kind == "suppressed")
+    # Preserve suppressed findings even when triage artifacts are absent or
+    # unreadable by falling back to summary / event evidence.
+    suppressed = _suppressed_count(
+        summary, events, triage_findings=triage_findings
+    )
     # Per-iteration review status from summary.iterations[].review_status — the
     # engine's record of what each review pass concluded (e.g. clear/findings).
     review_states: list[str] = []
@@ -438,6 +448,44 @@ def _flatten_suppressed_findings(
     triage_findings: list[dict[str, Any]] | None,
 ) -> list[dict[str, Any]]:
     return _flatten_findings_kind(triage_findings, "suppressed_findings")
+
+
+def _suppressed_count_from_events(events: list[Event]) -> int:
+    """Count suppressed findings recorded in ``events.jsonl``.
+
+    Suppression events emit the number of findings removed in the message text,
+    so summing those counts preserves the total when triage artifacts are not
+    readable or intentionally skipped.
+    """
+    total = 0
+    for ev in events:
+        if ev.kind != "suppressed":
+            continue
+        message = str(ev.payload.get("message") or ev.payload.get("summary") or "")
+        match = _SUPPRESSED_EVENT_COUNT_RE.search(message)
+        if match:
+            total += int(match.group(1))
+        else:
+            total += 1
+    return total
+
+
+def _suppressed_count(
+    summary: dict[str, Any],
+    events: list[Event],
+    *,
+    triage_findings: list[dict[str, Any]] | None = None,
+) -> int:
+    """Resolve the suppressed finding total without double-counting."""
+    if triage_findings:
+        return len(_flatten_suppressed_findings(triage_findings))
+    suppressed_summary = summary.get("suppressed_findings_count")
+    if suppressed_summary is not None:
+        try:
+            return max(int(suppressed_summary), 0)
+        except (TypeError, ValueError):
+            pass
+    return _suppressed_count_from_events(events)
 
 
 def _findings_section(
@@ -743,7 +791,7 @@ def render_report(
     """
     body = (
         _header(summary, redact=redact)
-        + _outcome_summary(summary, events, redact=redact)
+        + _outcome_summary(summary, events, redact=redact, triage_findings=triage_findings)
         + _phase_config_section(summary, redact=redact)
         + _phase_failures_section(summary, redact=redact)
         + _findings_section(summary, events, redact=redact, triage_findings=triage_findings)
@@ -950,7 +998,9 @@ def build_report_index(
         "final_status": summary.get("final_status"),
         "stopped_reason": summary.get("stopped_reason"),
         "finding_counts": _count_findings_by_severity(triage_findings),
-        "suppression_count": len(_flatten_suppressed_findings(triage_findings)),
+        "suppression_count": _suppressed_count(
+            summary, events, triage_findings=triage_findings
+        ),
         "cost_usd": _cost_usd(summary),
         "top_findings": top,
         "artifact_paths": _artifact_paths(summary, redact=redact),

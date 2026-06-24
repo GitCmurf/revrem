@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from code_review_loop import application as application_mod
+from code_review_loop import profiles
 from code_review_loop.cli import wizard
 from code_review_loop.core.outcome import OutcomeClear
 
@@ -199,6 +200,31 @@ def test_wizard_run_shape_previews_models_routes_checks_and_command(tmp_path, mo
     assert "if verify passes: commit off" in rendered
     assert "after pass limit: final review enabled" in rendered
     assert "provider command: codex review" in rendered
+
+
+def test_wizard_can_choose_builtin_profile_without_local_config(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    wizard_app = wizard._Wizard(cwd=tmp_path, stdin=StringIO(), stdout=StringIO(), stderr=StringIO())
+    captured = {}
+
+    def fake_choice(prompt, options, default=None, help_text=None):
+        if prompt == "Start from which configuration?":
+            captured["options"] = options
+            captured["default"] = default
+            return "security"
+        raise AssertionError(f"unexpected prompt: {prompt}")
+
+    monkeypatch.setattr(wizard_app, "_choice", fake_choice)
+    monkeypatch.setattr(wizard_app, "_print_key_value", lambda *args, **kwargs: None)
+
+    choice = wizard_app._choose_profile()
+
+    assert choice.profile_name == "security"
+    assert choice.profile.source == profiles.BUILTIN_PROFILE_SOURCE
+    assert "security" in {name for name, _ in captured["options"]}
+    assert "no-profile" in {name for name, _ in captured["options"]}
 
 
 def test_wizard_remediation_preview_includes_output_last_message(tmp_path, monkeypatch):
@@ -1311,7 +1337,7 @@ def test_wizard_detects_repo_check_presets(tmp_path, monkeypatch):
     result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=stderr)
 
     assert result is not None
-    assert result.argv == ("--check", "./scripts/dev-check")
+    assert result.argv == ("--profile", "docs", "--check", "./scripts/dev-check")
     rendered = stderr.getvalue()
     assert "repo gate: ./scripts/dev-check" in rendered
     assert "Python fast: pytest -q" in rendered

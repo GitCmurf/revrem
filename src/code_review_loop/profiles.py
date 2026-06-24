@@ -16,7 +16,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, cast
 
-from code_review_loop import run_history
+from code_review_loop import expert_profiles, run_history
 from code_review_loop._compat_tomli_w import dumps as toml_dumps
 from code_review_loop.core.routing_types import (
     COMMIT_ON_HOOK_FAILURE_CHOICES,
@@ -157,6 +157,7 @@ BUDGET_KEYS = ("max_wall_seconds", "max_tokens", "max_usd", "soft_warn_fraction"
 SUPPRESSION_SCOPE_CHOICES = ("repo", "user")
 SUPPRESSIONS_KEYS = ("scope",)
 TOP_LEVEL_KEYS = ("defaults", "profiles")
+BUILTIN_PROFILE_SOURCE = "builtin"
 
 
 def user_config_path(home: Path | None = None) -> Path:
@@ -593,9 +594,15 @@ def resolve_profiles(
     cwd: Path,
     home: Path | None = None,
     require_implemented: bool = True,
+    include_builtins: bool = False,
 ) -> list[Profile]:
     user_file, project_file = load_profile_files(cwd=cwd, home=home)
-    names = sorted(set(user_file.profiles) | set(project_file.profiles))
+    names = set(user_file.profiles) | set(project_file.profiles)
+    if include_builtins:
+        builtin_names = set(expert_profiles.list_builtin_profiles())
+        names |= builtin_names
+    else:
+        builtin_names = set()
     return [
         resolve_profile_from_files(
             name,
@@ -603,12 +610,34 @@ def resolve_profiles(
             project_file=project_file,
             require_implemented=require_implemented,
         )
-        for name in names
+        for name in sorted(names, key=lambda name: (name in builtin_names, name))
     ]
 
 
 def load_profile_files(*, cwd: Path, home: Path | None = None) -> tuple[ProfileFile, ProfileFile]:
     return load_profile_file(user_config_path(home)), load_profile_file(project_config_path(cwd))
+
+
+def _load_builtin_profile_raw(name: str) -> dict[str, Any] | None:
+    try:
+        raw = tomllib.loads(expert_profiles.load_builtin_profile(name))
+    except FileNotFoundError:
+        return None
+    except tomllib.TOMLDecodeError as exc:
+        raise ValueError(f"built-in profile {name!r} is not valid TOML: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise ValueError(f"built-in profile {name!r} is not a TOML table")
+    _reject_unknown_keys(raw, TOP_LEVEL_KEYS, f"built-in profile {name}")
+    profiles_raw = _table(raw.get("profiles", {}), f"built-in profile {name}:profiles")
+    if set(profiles_raw) != {name}:
+        raise ValueError(
+            f"built-in profile {name!r} must define exactly [profiles.{name}]"
+        )
+    raw_profile = _table(profiles_raw[name], f"built-in profile {name}:profiles.{name}")
+    # Validate at load time, not import time, so unrelated CLI commands still
+    # start if a packaged profile is somehow corrupt.
+    parse_profile(name, raw_profile, source=BUILTIN_PROFILE_SOURCE)
+    return raw_profile
 
 
 def resolve_profile_from_files(
@@ -623,14 +652,17 @@ def resolve_profile_from_files(
     found = False
     if user_file.defaults is not None:
         raw = _deep_merge(raw, user_file.raw_defaults)
-        source = str(user_file.path)
+    builtin_raw = _load_builtin_profile_raw(name)
+    if builtin_raw is not None:
+        raw = _deep_merge(raw, builtin_raw)
+        source = BUILTIN_PROFILE_SOURCE
+        found = True
     if name in user_file.profiles:
         raw = _deep_merge(raw, user_file.raw_profiles[name])
         source = str(user_file.path)
         found = True
     if project_file.defaults is not None:
         raw = _deep_merge(raw, project_file.raw_defaults)
-        source = str(project_file.path)
     if name in project_file.profiles:
         raw = _deep_merge(raw, project_file.raw_profiles[name])
         source = str(project_file.path)
@@ -663,13 +695,25 @@ def resolve_defaults(
     return defaults
 
 
-def list_profiles(*, cwd: Path, home: Path | None = None) -> list[Profile]:
+def list_profiles(
+    *, cwd: Path, home: Path | None = None, include_builtins: bool = False
+) -> list[Profile]:
     files = load_profile_files(cwd=cwd, home=home)
-    seen: dict[str, Profile] = {}
-    for profile_file in files:
-        for name, profile in profile_file.profiles.items():
-            seen[name] = profile
-    return [seen[name] for name in sorted(seen)]
+    names = set(files[0].profiles) | set(files[1].profiles)
+    if include_builtins:
+        builtin_names = set(expert_profiles.list_builtin_profiles())
+        names |= builtin_names
+    else:
+        builtin_names = set()
+    return [
+        resolve_profile_from_files(
+            name,
+            user_file=files[0],
+            project_file=files[1],
+            require_implemented=False,
+        )
+        for name in sorted(names, key=lambda name: (name in builtin_names, name))
+    ]
 
 
 def profile_list_items(
@@ -677,6 +721,7 @@ def profile_list_items(
     cwd: Path,
     home: Path | None = None,
     history_path: Path | None = None,
+    include_builtins: bool = False,
 ) -> list[ProfileListItem]:
     last_used_at_by_profile = _profile_last_used_at_by_name(history_path)
     return [
@@ -686,12 +731,23 @@ def profile_list_items(
             source=profile.source,
             last_used_at=last_used_at_by_profile.get(profile.name),
         )
-        for profile in list_profiles(cwd=cwd, home=home)
+        for profile in list_profiles(cwd=cwd, home=home, include_builtins=include_builtins)
     ]
 
 
 def profile_list_item_to_dict(item: ProfileListItem) -> dict[str, Any]:
     return asdict(item)
+
+
+def is_builtin_profile(name: str) -> bool:
+    return name in expert_profiles.list_builtin_profiles()
+
+
+def builtin_profile_readonly_message(name: str) -> str:
+    return (
+        f"built-in profile {name!r} is read-only; use "
+        f"`revrem config clone {name} <copy>` to create an editable copy"
+    )
 
 
 def merge_profiles(name: str, *profiles: Profile) -> Profile:
@@ -915,6 +971,8 @@ def delete_user_profile(name: str, *, home: Path | None = None) -> Path:
     path = user_config_path(home)
     profile_file = load_profile_file(path)
     if name not in profile_file.profiles:
+        if is_builtin_profile(name):
+            raise RuntimeError(builtin_profile_readonly_message(name))
         raise FileNotFoundError(f"profile not found: {name}")
     raw_profiles = dict(profile_file.raw_profiles)
     del raw_profiles[name]
@@ -939,11 +997,17 @@ def clone_user_profile(
     if source_name == target_name:
         raise ValueError("clone target must be different from source profile")
     source = resolve_profile(source_name, cwd=cwd, home=home, require_implemented=False)
-    source_file = load_profile_file(Path(source.source)) if source.source is not None else None
-    raw_source_profile = (
-        source_file.raw_profiles.get(source_name) if source_file is not None else None
-    )
-    cloned = replace(source, name=target_name, source=None)
+    if source.source == BUILTIN_PROFILE_SOURCE:
+        raw_source_profile = _load_builtin_profile_raw(source_name)
+        if raw_source_profile is None:
+            raise FileNotFoundError(f"built-in profile not found: {source_name}")
+        cloned = parse_profile(target_name, raw_source_profile, source=None)
+    else:
+        source_file = load_profile_file(Path(source.source)) if source.source is not None else None
+        raw_source_profile = (
+            source_file.raw_profiles.get(source_name) if source_file is not None else None
+        )
+        cloned = replace(source, name=target_name, source=None)
     return write_user_profile(cloned, home=home, force=force, raw_profile=raw_source_profile)
 
 

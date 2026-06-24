@@ -264,7 +264,11 @@ class _Wizard:
 
     def _default_profile_choice(self) -> WizardProfileChoice:
         resolved_profiles = tuple(
-            profiles.resolve_profiles(cwd=self.cwd, require_implemented=False)
+            profiles.resolve_profiles(
+                cwd=self.cwd,
+                require_implemented=False,
+                include_builtins=True,
+            )
         )
         if resolved_profiles:
             return WizardProfileChoice(
@@ -303,7 +307,11 @@ class _Wizard:
 
     def _choose_profile(self) -> WizardProfileChoice:
         resolved_profiles = tuple(
-            profiles.resolve_profiles(cwd=self.cwd, require_implemented=False)
+            profiles.resolve_profiles(
+                cwd=self.cwd,
+                require_implemented=False,
+                include_builtins=True,
+            )
         )
         defaults = profiles.resolve_defaults(cwd=self.cwd, require_implemented=False)
         options: list[tuple[str, str]] = [

@@ -1,0 +1,34 @@
+{
+  "profiles": {
+    "security": [
+      {
+        "fingerprint": "f1:security-hardcoded-token",
+        "title": "Hardcoded token is exposed in request signing"
+      }
+    ],
+    "performance": [
+      {
+        "fingerprint": "f1:performance-n-plus-one",
+        "title": "Loop performs repeated data fetches"
+      }
+    ],
+    "refactor": [
+      {
+        "fingerprint": "f1:refactor-duplicate-branch",
+        "title": "Duplicated branch obscures shared validation"
+      }
+    ],
+    "test-gap": [
+      {
+        "fingerprint": "f1:test-gap-uncovered-error-path",
+        "title": "Changed error path has no regression coverage"
+      }
+    ],
+    "docs": [
+      {
+        "fingerprint": "f1:docs-stale-cli-example",
+        "title": "README command example no longer matches CLI behavior"
+      }
+    ]
+  }
+}

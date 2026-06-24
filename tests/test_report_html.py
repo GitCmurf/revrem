@@ -445,6 +445,12 @@ def test_build_report_index_suppression_count_for_all_suppressed():
     assert idx["suppression_count"] >= 1
 
 
+def test_build_report_index_falls_back_without_triage_artifacts():
+    summary, event_records = _load("all_suppressed")
+    idx = build_report_index(summary, event_records, triage_findings=None)
+    assert idx["suppression_count"] == 1
+
+
 def test_build_report_index_top_findings_bounded_and_redacted():
     summary, event_records = _load("clear")
     idx = build_report_index(summary, event_records)
@@ -470,6 +476,54 @@ def test_all_suppressed_shows_suppressed_findings_and_stop_reason():
     html_out = render_report(summary, event_records)
     assert "suppressed" in html_out.lower()
     assert "all_findings_suppressed" in html_out
+    assert "<dt>Suppressed findings</dt><dd>1</dd>" in html_out
+
+
+def test_report_command_preserves_suppressed_count_when_triage_missing(
+    tmp_path: Path, capsys
+):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "summary.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "run_id": "fixture-suppressed-missing-triage",
+                "final_status": "clear",
+                "stopped_reason": "all_findings_suppressed",
+                "started_at": "2026-05-12T00:00:00Z",
+                "finished_at": "2026-05-12T00:00:02Z",
+                "artifact_paths": {
+                    "triage": ["triage-1.json"],
+                },
+                "suppressed_findings_count": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / events.EVENTS_FILENAME).write_text(
+        "\n".join(
+            [
+                '{"iteration":"1","kind":"phase_start","payload":{"message":"codex exec --sandbox read-only"},"phase":"triage","run_id":"fixture-suppressed-missing-triage","schema_version":"1.0","seq":1,"ts":"2026-05-12T00:00:00Z"}',
+                '{"iteration":"1","kind":"suppressed","payload":{"message":"1 finding(s)","summary":"suppressed"},"phase":"triage","run_id":"fixture-suppressed-missing-triage","schema_version":"1.0","seq":2,"ts":"2026-05-12T00:00:01Z"}',
+                '{"iteration":null,"kind":"summary","payload":{"summary":"all_findings_suppressed"},"phase":null,"run_id":"fixture-suppressed-missing-triage","schema_version":"1.0","seq":3,"ts":"2026-05-12T00:00:02Z"}',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "report.html"
+
+    exit_code = report_command.main([str(run_dir), "--output", str(output)])
+
+    assert exit_code == 0
+    assert output.is_file()
+    html_out = output.read_text(encoding="utf-8")
+    assert "<dt>Suppressed findings</dt><dd>1</dd>" in html_out
+    assert "all_findings_suppressed" in html_out
+    assert "No confirmed findings recorded." in html_out
+    assert "triage-1.json" not in html_out
+    assert "triage-1.json" not in capsys.readouterr().err
 
 
 def test_cost_ceiling_shows_ceiling_breach_and_badge():

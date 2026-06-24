@@ -1,0 +1,5 @@
+Test-gap review checklist:
+- Identify changed behavior that has no focused regression coverage.
+- Name the branch, edge case, or failure mode the missing test should exercise.
+- Prefer tests that would fail before the fix and pass after it.
+- Avoid generic coverage-percentage requests.

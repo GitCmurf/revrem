@@ -1,0 +1,32 @@
+[profiles.performance]
+description = "Performance lens: algorithmic complexity, N+1 work, hot allocations, blocking I/O, and latency regressions."
+
+[profiles.performance.pipeline]
+checks = []
+
+[profiles.performance.review]
+reasoning_effort = "medium"
+
+[profiles.performance.triage]
+enabled = true
+contract = "v2"
+prompt = "Prioritize concrete performance regressions: repeated queries, avoidable O(n^2) paths, hot-loop allocations, sync work in async paths, and expensive work added to common request paths."
+
+[profiles.performance.triage.routing]
+enabled = true
+default_route = "codex-midi"
+strict_on_unavailable_route = false
+
+[[profiles.performance.triage.routing.rule]]
+id = "performance-fragment"
+when.domain_tags_any = ["performance", "database", "async", "latency"]
+then.route = "codex-midi"
+then.prompt_fragments = ["performance-checklist"]
+
+[profiles.performance.triage.routes.codex-midi]
+harness = "codex"
+model = "gpt-5.4-mini"
+reasoning_effort = "medium"
+
+[profiles.performance.output]
+progress_style = "compact"

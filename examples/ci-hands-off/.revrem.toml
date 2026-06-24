@@ -1,0 +1,14 @@
+[profiles.ci-hands-off]
+description = "Bounded CI profile for the reference GitHub Action."
+
+[profiles.ci-hands-off.pipeline]
+max_iterations = 1
+checks = ["git diff --check"]
+
+[profiles.ci-hands-off.output]
+progress_style = "compact"
+no_tty = true
+
+[profiles.ci-hands-off.budgets]
+max_wall_seconds = 900
+max_usd = "1.00"

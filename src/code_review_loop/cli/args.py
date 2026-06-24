@@ -36,7 +36,7 @@ def _subparsers(parser: argparse.ArgumentParser, **kwargs):
     return parser.add_subparsers(**kwargs)
 
 
-def parse_args(argv: Sequence[str]) -> argparse.Namespace:
+def build_run_parser() -> RevRemArgumentParser:
     parser = _argument_parser(
         prog="revrem",
         description="Run a bounded Codex review/remediation loop against a base branch.",
@@ -599,10 +599,14 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         action="store_true",
         help="Replace an existing project-local profile when used with --save-profile.",
     )
-    return parser.parse_args(argv)
+    return parser
 
 
-def parse_config_args(argv: Sequence[str]) -> argparse.Namespace:
+def parse_args(argv: Sequence[str]) -> argparse.Namespace:
+    return build_run_parser().parse_args(argv)
+
+
+def build_config_parser() -> RevRemArgumentParser:
     parser = _argument_parser(
         prog="revrem config",
         description="Manage RevRem TOML profiles.",
@@ -668,10 +672,14 @@ def parse_config_args(argv: Sequence[str]) -> argparse.Namespace:
     doctor = subparsers.add_parser("doctor", help="Show config paths and merge diagnostics.")
     doctor.add_argument("--profile", default=None)
     doctor.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)
-    return parser.parse_args(argv)
+    return parser
 
 
-def parse_history_args(argv: Sequence[str]) -> argparse.Namespace:
+def parse_config_args(argv: Sequence[str]) -> argparse.Namespace:
+    return build_config_parser().parse_args(argv)
+
+
+def build_history_parser() -> RevRemArgumentParser:
     parser = _argument_parser(
         prog="revrem history",
         description="Inspect local RevRem run history.",
@@ -682,10 +690,14 @@ def parse_history_args(argv: Sequence[str]) -> argparse.Namespace:
     list_parser = subparsers.add_parser("list", help="List recent runs.")
     list_parser.add_argument("--limit", type=int, default=10)
     list_parser.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)
-    return parser.parse_args(argv)
+    return parser
 
 
-def parse_checks_args(argv: Sequence[str]) -> argparse.Namespace:
+def parse_history_args(argv: Sequence[str]) -> argparse.Namespace:
+    return build_history_parser().parse_args(argv)
+
+
+def build_checks_parser() -> RevRemArgumentParser:
     parser = _argument_parser(
         prog="revrem checks",
         description="Suggest repository verification commands without executing them.",
@@ -697,20 +709,41 @@ def parse_checks_args(argv: Sequence[str]) -> argparse.Namespace:
     )
     suggest.add_argument("--format", choices=("text", "json"), default=None)
     suggest.add_argument("--cwd", default=None, help="Repository directory to inspect.")
-    return parser.parse_args(argv)
+    return parser
 
 
-def parse_doctor_checks_args(argv: Sequence[str]) -> argparse.Namespace:
+def parse_checks_args(argv: Sequence[str]) -> argparse.Namespace:
+    return build_checks_parser().parse_args(argv)
+
+
+def build_completions_parser() -> RevRemArgumentParser:
+    parser = _argument_parser(
+        prog="revrem completions",
+        description="Print shell completion scripts for RevRem.",
+    )
+    parser.add_argument("shell", choices=("bash", "zsh", "fish"))
+    return parser
+
+
+def parse_completions_args(argv: Sequence[str]) -> argparse.Namespace:
+    return build_completions_parser().parse_args(argv)
+
+
+def build_doctor_checks_parser() -> RevRemArgumentParser:
     parser = _argument_parser(
         prog="revrem doctor checks",
         description="Suggest repository verification commands without executing them.",
     )
     parser.add_argument("--format", choices=("text", "json"), default=None)
     parser.add_argument("--cwd", default=None, help="Repository directory to inspect.")
-    return parser.parse_args(argv)
+    return parser
 
 
-def parse_doctor_args(argv: Sequence[str]) -> argparse.Namespace:
+def parse_doctor_checks_args(argv: Sequence[str]) -> argparse.Namespace:
+    return build_doctor_checks_parser().parse_args(argv)
+
+
+def build_doctor_parser() -> RevRemArgumentParser:
     parser = _argument_parser(
         prog="revrem doctor",
         description="Run local RevRem setup diagnostics without invoking a model.",
@@ -742,10 +775,14 @@ def parse_doctor_args(argv: Sequence[str]) -> argparse.Namespace:
         default=None,
         help="Validate commit-mode preconditions such as a clean worktree and a non-root artifact directory.",
     )
-    return parser.parse_args(argv)
+    return parser
 
 
-def parse_install_hooks_args(argv: Sequence[str]) -> argparse.Namespace:
+def parse_doctor_args(argv: Sequence[str]) -> argparse.Namespace:
+    return build_doctor_parser().parse_args(argv)
+
+
+def build_install_hooks_parser() -> RevRemArgumentParser:
     parser = _argument_parser(
         prog="revrem install-hooks",
         description="Install or remove RevRem-managed Git hook examples.",
@@ -768,10 +805,14 @@ def parse_install_hooks_args(argv: Sequence[str]) -> argparse.Namespace:
         help="Remove RevRem-managed hooks without touching unmanaged hooks.",
     )
     parser.add_argument("--format", choices=("text", "json"), default=None)
-    return parser.parse_args(argv)
+    return parser
 
 
-def parse_bundle_bug_report_args(argv: Sequence[str]) -> argparse.Namespace:
+def parse_install_hooks_args(argv: Sequence[str]) -> argparse.Namespace:
+    return build_install_hooks_parser().parse_args(argv)
+
+
+def build_bundle_bug_report_parser() -> RevRemArgumentParser:
     parser = _argument_parser(
         prog="revrem bundle-bug-report",
         description="Create a redacted, deterministic bug-report bundle from a RevRem run directory.",
@@ -781,20 +822,28 @@ def parse_bundle_bug_report_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--include-raw-transcripts", action="store_true")
     parser.add_argument("--no-redact", action="store_true")
     parser.add_argument("--i-understand-the-risks", action="store_true")
-    return parser.parse_args(argv)
+    return parser
 
 
-def parse_resume_args(argv: Sequence[str]) -> argparse.Namespace:
+def parse_bundle_bug_report_args(argv: Sequence[str]) -> argparse.Namespace:
+    return build_bundle_bug_report_parser().parse_args(argv)
+
+
+def build_resume_parser() -> RevRemArgumentParser:
     parser = _argument_parser(
         prog="revrem resume",
         description="Validate whether a previous RevRem run is safe to resume.",
     )
     parser.add_argument("run_dir", help="Run directory containing summary.json and events.jsonl.")
     parser.add_argument("--format", choices=("text", "json"), default="text")
-    return parser.parse_args(argv)
+    return parser
 
 
-def parse_suppress_args(argv: Sequence[str]) -> argparse.Namespace:
+def parse_resume_args(argv: Sequence[str]) -> argparse.Namespace:
+    return build_resume_parser().parse_args(argv)
+
+
+def build_suppress_parser() -> RevRemArgumentParser:
     parser = _argument_parser(
         prog="revrem suppress",
         description="Manage explicit finding suppressions.",
@@ -820,20 +869,28 @@ def parse_suppress_args(argv: Sequence[str]) -> argparse.Namespace:
 
     subparsers.add_parser("list", help="List suppressions.")
     subparsers.add_parser("expire", help="Remove expired suppressions.")
-    return parser.parse_args(argv)
+    return parser
 
 
-def parse_replay_args(argv: Sequence[str]) -> argparse.Namespace:
+def parse_suppress_args(argv: Sequence[str]) -> argparse.Namespace:
+    return build_suppress_parser().parse_args(argv)
+
+
+def build_replay_parser() -> RevRemArgumentParser:
     parser = _argument_parser(
         prog="revrem replay",
         description="Replay a RevRem run from events.jsonl without invoking a model.",
     )
     parser.add_argument("run_dir", help="Run directory containing events.jsonl.")
     parser.add_argument("--renderer", choices=("compact",), default="compact")
-    return parser.parse_args(argv)
+    return parser
 
 
-def parse_report_args(argv: Sequence[str]) -> argparse.Namespace:
+def parse_replay_args(argv: Sequence[str]) -> argparse.Namespace:
+    return build_replay_parser().parse_args(argv)
+
+
+def build_report_parser() -> RevRemArgumentParser:
     parser = _argument_parser(
         prog="revrem report",
         description=(
@@ -871,10 +928,14 @@ def parse_report_args(argv: Sequence[str]) -> argparse.Namespace:
         action="store_true",
         help="Acknowledge that --no-redact may expose secrets in the output.",
     )
-    return parser.parse_args(argv)
+    return parser
 
 
-def parse_policy_args(argv: Sequence[str]) -> argparse.Namespace:
+def parse_report_args(argv: Sequence[str]) -> argparse.Namespace:
+    return build_report_parser().parse_args(argv)
+
+
+def build_policy_parser() -> RevRemArgumentParser:
     parser = _argument_parser(
         prog="revrem policy",
         description="Inspect and lint routing policy.",
@@ -893,10 +954,14 @@ def parse_policy_args(argv: Sequence[str]) -> argparse.Namespace:
     review = subparsers.add_parser("review", help="Summarize routing outcomes from run artifacts.")
     review.add_argument("--artifact-dir", required=True)
     review.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)
-    return parser.parse_args(argv)
+    return parser
 
 
-def parse_triage_args(argv: Sequence[str]) -> argparse.Namespace:
+def parse_policy_args(argv: Sequence[str]) -> argparse.Namespace:
+    return build_policy_parser().parse_args(argv)
+
+
+def build_triage_parser() -> RevRemArgumentParser:
     parser = _argument_parser(
         prog="revrem triage",
         description="Inspect triage and routing artifacts.",
@@ -910,4 +975,8 @@ def parse_triage_args(argv: Sequence[str]) -> argparse.Namespace:
     explain.add_argument("run_dir")
     explain.add_argument("--iteration", type=int, default=1)
     explain.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)
-    return parser.parse_args(argv)
+    return parser
+
+
+def parse_triage_args(argv: Sequence[str]) -> argparse.Namespace:
+    return build_triage_parser().parse_args(argv)

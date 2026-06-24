@@ -1,0 +1,36 @@
+[profiles.security]
+description = "Security lens: authn/authz, secrets, unsafe parsing, PII exposure, and dependency-risk deltas."
+
+[profiles.security.pipeline]
+checks = []
+
+[profiles.security.review]
+reasoning_effort = "high"
+
+[profiles.security.triage]
+enabled = true
+contract = "v2"
+prompt = "Prioritize exploitable vulnerabilities, secret leakage, authn/authz drift, unsafe deserialization, and PII exposure. Escalate credible security-impact findings; avoid broad speculative hardening requests."
+
+[profiles.security.triage.routing]
+enabled = true
+default_route = "codex-frontier"
+strict_on_unavailable_route = false
+
+[[profiles.security.triage.routing.rule]]
+id = "security-frontier"
+when.domain_tags_any = ["security", "auth", "secrets", "pii"]
+then.route = "codex-frontier"
+then.prompt_fragments = ["security-checklist"]
+then.allow_model_deescalation = false
+
+[profiles.security.triage.routes.codex-frontier]
+harness = "codex"
+model = "gpt-5.5"
+reasoning_effort = "high"
+
+[profiles.security.remediation]
+reasoning_effort = "high"
+
+[profiles.security.output]
+progress_style = "compact"

@@ -32,6 +32,9 @@ from typing import Any
 
 MARKER = "<!-- revrem-report -->"
 _API_BASE = "https://api.github.com"
+# Cap a single Markdown cell so a verbose finding title or failure message
+# cannot push the PR comment body toward GitHub's size limit.
+_MAX_CELL_LEN = 300
 
 
 def _md_cell(value: Any) -> str:
@@ -40,10 +43,12 @@ def _md_cell(value: Any) -> str:
     Neutralises the column delimiter (`|`) and collapses line breaks so a
     model-derived string (e.g. a finding title) cannot add columns, split the
     row, or escape into block formatting. Backticks are replaced with a single
-    quote so a stray backtick cannot open an unterminated code span.
+    quote so a stray backtick cannot open an unterminated code span. The result
+    is truncated to keep a single verbose value from bloating the comment toward
+    GitHub's body-size limit.
     """
     text = "" if value is None else str(value)
-    return (
+    cell = (
         text.replace("\\", "\\\\")
         .replace("|", "\\|")
         .replace("`", "'")
@@ -51,6 +56,9 @@ def _md_cell(value: Any) -> str:
         .replace("\n", " ")
         .replace("\r", " ")
     )
+    if len(cell) > _MAX_CELL_LEN:
+        cell = cell[: _MAX_CELL_LEN - 1].rstrip() + "…"
+    return cell
 
 
 def build_comment_body(

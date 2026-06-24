@@ -23,9 +23,10 @@ This project follows Semantic Versioning once public releases begin.
 ## [0.5.0] - 2026-06-21
 
 The "showcase & hands-off adoption" release: a static HTML report for finished
-runs, headless/CI output hardening, and a reference GitHub Action that posts a
-single updatable PR comment. Tier 1 of `REVREM-PLAN-005`; expert profiles
-(Pillar C) and DevEx polish (Pillar D) are deferred to v0.5.x.
+runs, headless/CI output hardening, a reference GitHub Action that posts a
+single updatable PR comment, bundled expert profiles, and public DevEx polish.
+Full Tier 2 of `REVREM-PLAN-005`; TUI live-run launch remains deferred to
+v0.6.0.
 
 ### Added
 
@@ -67,6 +68,20 @@ single updatable PR comment. Tier 1 of `REVREM-PLAN-005`; expert profiles
   terminal-state scenarios: clear, findings_remediated, findings_remaining,
   timeout, check_failure, cost_ceiling, cancelled, all_suppressed), co-locating
   `summary.json` + `events.jsonl` for read-only consumers.
+- Bundled expert profiles: `security`, `performance`, `refactor`, `test-gap`,
+  and `docs`, resolved as read-only built-ins that user and project profiles can
+  shadow. Built-ins enable no ecosystem checks by default; use
+  `revrem checks suggest` and examples for stack-specific verification.
+- `revrem completions bash|zsh|fish` for dependency-free shell completion
+  scripts.
+- Copyable profiles under `examples/` for Python, TypeScript, Go, triage
+  routing, commit-after-remediation, and CI hands-off usage.
+- Maintained demo regeneration via `scripts/record-demo` and
+  `docs/assets/revrem-demo.cast`.
+- `REVREM-GUIDE-001`, the failure diagnostics guide, covering exit codes,
+  diagnostic families, CI triage, and artifact-first debugging.
+- Three governed good-first-issue TASK stubs for GitLab CI, fish completions,
+  and a migration expert profile.
 
 ### Changed
 
@@ -201,8 +216,6 @@ single updatable PR comment. Tier 1 of `REVREM-PLAN-005`; expert profiles
 
 ### Deferred
 
-- Pillar C (expert profiles T5–T7) and Pillar D (DevEx T8–T11) of
-  `REVREM-PLAN-005` are deferred to v0.5.x follow-on releases.
 - T12 (TUI launches real runs) is deferred to v0.6.0 per the plan's decision
   gate; the TUI keeps its current replay-from-events default.
 

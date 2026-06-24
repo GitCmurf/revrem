@@ -1,0 +1,12 @@
+[profiles.commit-after-remediation]
+description = "Commit after each passing remediation iteration."
+
+[profiles.commit-after-remediation.pipeline]
+max_iterations = 2
+checks = ["git diff --check"]
+
+[profiles.commit-after-remediation.commit]
+enabled = true
+on_hook_failure = "remediate"
+reasoning_effort = "low"
+timeout_seconds = 0

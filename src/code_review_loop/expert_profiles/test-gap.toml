@@ -1,0 +1,32 @@
+[profiles.test-gap]
+description = "Test-gap lens: changed behavior without focused coverage, missing regression tests, and unverified edge cases."
+
+[profiles.test-gap.pipeline]
+checks = []
+
+[profiles.test-gap.review]
+reasoning_effort = "medium"
+
+[profiles.test-gap.triage]
+enabled = true
+contract = "v2"
+prompt = "Prioritize gaps where changed behavior lacks a targeted test or existing tests would not fail for the regression. Avoid generic requests for more coverage without a concrete branch or bug class."
+
+[profiles.test-gap.triage.routing]
+enabled = true
+default_route = "codex-midi"
+strict_on_unavailable_route = false
+
+[[profiles.test-gap.triage.routing.rule]]
+id = "test-gap-fragment"
+when.domain_tags_any = ["tests", "coverage", "regression"]
+then.route = "codex-midi"
+then.prompt_fragments = ["test-gap-checklist", "regression-test-checklist"]
+
+[profiles.test-gap.triage.routes.codex-midi]
+harness = "codex"
+model = "gpt-5.4-mini"
+reasoning_effort = "medium"
+
+[profiles.test-gap.output]
+progress_style = "compact"

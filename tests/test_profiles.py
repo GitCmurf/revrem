@@ -1046,6 +1046,78 @@ final_review = true
     assert cloned.pipeline.final_review is True
 
 
+def test_builtin_profile_source_survives_project_defaults(tmp_path):
+    home = tmp_path / "home"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    profiles.project_config_path(repo).write_text(
+        """
+[defaults.review]
+model = "project-model"
+""",
+        encoding="utf-8",
+    )
+
+    resolved = profiles.resolve_profile(
+        "security", cwd=repo, home=home, require_implemented=False
+    )
+
+    assert resolved.source == profiles.BUILTIN_PROFILE_SOURCE
+    assert resolved.review.model == "project-model"
+
+
+def test_clone_builtin_profile_does_not_absorb_project_defaults(tmp_path):
+    home = tmp_path / "home"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    profiles.project_config_path(repo).write_text(
+        """
+[defaults.review]
+model = "project-model"
+""",
+        encoding="utf-8",
+    )
+
+    path = profiles.clone_user_profile("security", "security-copy", cwd=repo, home=home)
+
+    rendered = path.read_text(encoding="utf-8")
+    assert 'model = "project-model"' not in rendered
+    cloned = profiles.resolve_profile("security-copy", cwd=tmp_path, home=home)
+    assert cloned.review.model is None
+
+
+def test_user_profile_source_survives_project_defaults(tmp_path):
+    home = tmp_path / "home"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    user_path = profiles.user_config_path(home)
+    user_path.parent.mkdir(parents=True)
+    user_path.write_text(
+        """
+[profiles.source]
+description = "User source"
+""",
+        encoding="utf-8",
+    )
+    profiles.project_config_path(repo).write_text(
+        """
+[defaults.review]
+model = "project-model"
+""",
+        encoding="utf-8",
+    )
+
+    resolved = profiles.resolve_profile(
+        "source", cwd=repo, home=home, require_implemented=False
+    )
+
+    assert resolved.source == str(user_path)
+    assert resolved.review.model == "project-model"
+
+
 def test_prompt_for_new_profile_collects_separate_review_and_remediation_models():
     answers = iter(
         [
