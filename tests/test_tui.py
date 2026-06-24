@@ -235,6 +235,7 @@ def test_tui_live_monitor_refresh_updates_run_monitor_widget(monkeypatch, tmp_pa
 def test_tui_cancel_action_routes_to_controller(monkeypatch, tmp_path):
     notifications = []
     updates = []
+    workers = []
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / ".git").mkdir()
@@ -248,6 +249,8 @@ def test_tui_cancel_action_routes_to_controller(monkeypatch, tmp_path):
     app.live_run_controller.process = types.SimpleNamespace(poll=lambda: None)
     monkeypatch.setattr(app.live_run_controller, "cancel", lambda: "cancelled")
     monkeypatch.setattr(app, "notify", lambda message: notifications.append(message))
+    monkeypatch.setattr(app, "run_worker", lambda target, thread=True: workers.append((target, thread)))
+    monkeypatch.setattr(app, "call_from_thread", lambda callback: callback())
 
     class FakeWidget:
         def update(self, value):
@@ -257,7 +260,15 @@ def test_tui_cancel_action_routes_to_controller(monkeypatch, tmp_path):
 
     app.action_cancel_run()
 
-    assert notifications == ["Live run cancel requested: cancelled"]
+    assert notifications == ["Live run cancellation requested."]
+    assert workers and workers[0][1] is True
+    assert app._cancel_in_progress is True
+    workers[0][0]()
+    assert notifications == [
+        "Live run cancellation requested.",
+        "Live run cancel completed: cancelled",
+    ]
+    assert app._cancel_in_progress is False
     assert updates
 
 
@@ -281,6 +292,74 @@ def test_tui_cancel_action_reports_when_no_run_is_active(monkeypatch, tmp_path):
 
     assert notifications == ["No active live run to cancel."]
     assert any("idle: press r twice to start" in update for update in updates)
+
+
+def test_tui_quit_warns_before_cancelling_active_run(monkeypatch, tmp_path):
+    notifications = []
+    exits = []
+    workers = []
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    model = tui.tui_state.build_shell_model(cwd=repo, selected_profile_name="security")
+    app = tui.RevRemApp(model=model, profiles_by_name={})
+    app.live_run_controller.process = types.SimpleNamespace(poll=lambda: None)
+    monkeypatch.setattr(app.live_run_controller, "cancel", lambda: "cancelled")
+    monkeypatch.setattr(app, "notify", lambda message: notifications.append(message))
+    monkeypatch.setattr(app, "run_worker", lambda target, thread=True: workers.append(target))
+    monkeypatch.setattr(app, "call_from_thread", lambda callback: callback())
+    monkeypatch.setattr(app, "exit", lambda: exits.append(True))
+    monkeypatch.setattr(
+        app,
+        "query_one",
+        lambda selector: types.SimpleNamespace(update=lambda value: None, set_classes=lambda value: None),
+    )
+
+    app.action_quit()
+
+    assert notifications == ["Live run is active. Press q again to cancel it and quit."]
+    assert exits == []
+    assert workers == []
+    assert app._quit_confirmation_pending is True
+
+    app.action_quit()
+    assert notifications[-1] == "Live run cancellation requested."
+    assert len(workers) == 1
+    workers[0]()
+
+    assert notifications[-1] == "Live run cancel completed: cancelled"
+    assert exits == [True]
+    assert app._quit_confirmation_pending is False
+
+
+def test_tui_quit_without_active_run_exits_immediately(monkeypatch, tmp_path):
+    exits = []
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    model = tui.tui_state.build_shell_model(cwd=repo, selected_profile_name="security")
+    app = tui.RevRemApp(model=model, profiles_by_name={})
+    monkeypatch.setattr(app, "exit", lambda: exits.append(True))
+
+    app.action_quit()
+
+    assert exits == [True]
+
+
+def test_tui_refresh_stops_after_terminal_status(monkeypatch, tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    model = tui.tui_state.build_shell_model(cwd=repo, selected_profile_name="security")
+    app = tui.RevRemApp(model=model, profiles_by_name={})
+    app.live_run_controller.status = "completed-clear"
+    monkeypatch.setattr(
+        app.live_run_controller,
+        "refresh",
+        lambda: (_ for _ in ()).throw(AssertionError("refresh should not run")),
+    )
+
+    app._refresh_live_run()
 
 
 def test_tui_help_toggle_updates_help_and_status_widgets(monkeypatch, tmp_path):

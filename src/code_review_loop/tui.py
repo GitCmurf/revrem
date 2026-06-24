@@ -7,6 +7,7 @@ import importlib
 import importlib.util
 import subprocess
 import sys
+import threading
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -152,6 +153,10 @@ class RevRemApp(_AppBase):  # type: ignore[misc, valid-type]
         color: $accent;
     }
 
+    .status-cancelled {
+        color: $warning;
+    }
+
     .status-completed-clear {
         color: $success;
     }
@@ -160,7 +165,8 @@ class RevRemApp(_AppBase):  # type: ignore[misc, valid-type]
         color: $warning;
     }
 
-    .status-failed, .status-setup-failed, .status-failed-forced-cleanup {
+    .status-failed, .status-setup-failed, .status-failed-forced-cleanup,
+    .status-interrupted-before-run-initialized {
         color: $error;
     }
     """
@@ -202,6 +208,8 @@ class RevRemApp(_AppBase):  # type: ignore[misc, valid-type]
         self.live_run_controller = tui_run_controller.LiveRunController()
         self._pending_live_confirmation_profile: str | None = None
         self._help_visible = False
+        self._cancel_in_progress = False
+        self._quit_confirmation_pending = False
 
     def compose(self):
         yield _Header(show_clock=True)
@@ -335,13 +343,23 @@ class RevRemApp(_AppBase):  # type: ignore[misc, valid-type]
         self._render_live_monitor()
 
     def action_cancel_run(self) -> None:
+        self._quit_confirmation_pending = False
         if not self._live_run_active():
             _notify(self, "No active live run to cancel.")
             self._update_console_status()
             return
-        status = self.live_run_controller.cancel()
-        _notify(self, f"Live run cancel requested: {status}")
-        self._render_live_monitor()
+        self._request_cancel(exit_after=False)
+
+    def action_quit(self) -> None:
+        if not self._live_run_active():
+            self._exit_app()
+            return
+        if not self._quit_confirmation_pending:
+            self._quit_confirmation_pending = True
+            _notify(self, "Live run is active. Press q again to cancel it and quit.")
+            self._update_console_status()
+            return
+        self._request_cancel(exit_after=True)
 
     def action_toggle_help(self) -> None:
         self._help_visible = not self._help_visible
@@ -466,8 +484,38 @@ class RevRemApp(_AppBase):  # type: ignore[misc, valid-type]
     def _refresh_live_run(self) -> None:
         if self.live_run_controller.status == "idle":
             return
+        if self.live_run_controller.status in tui_run_controller.TERMINAL_STATUSES:
+            return
         self.live_run_controller.refresh()
         self._render_live_monitor()
+
+    def _request_cancel(self, *, exit_after: bool) -> None:
+        if self._cancel_in_progress:
+            _notify(self, "Live run cancellation is already in progress.")
+            return
+        self._cancel_in_progress = True
+        _notify(self, "Live run cancellation requested.")
+        self._update_console_status()
+
+        def cancel_and_update() -> None:
+            status = self.live_run_controller.cancel()
+
+            def finish_update() -> None:
+                self._cancel_in_progress = False
+                self._quit_confirmation_pending = False
+                _notify(self, f"Live run cancel completed: {status}")
+                self._render_live_monitor()
+                if exit_after:
+                    self._exit_app()
+
+            _call_from_thread(self, finish_update)
+
+        _run_background(self, cancel_and_update)
+
+    def _exit_app(self) -> None:
+        exit_app = getattr(self, "exit", None)
+        if callable(exit_app):
+            exit_app()
 
     def _render_live_monitor(self) -> None:
         if self.live_run_controller.launch is None:
@@ -500,7 +548,11 @@ def _screen_by_name(model: tui_state.TuiShellModel, name: str) -> tui_state.TuiS
 
 def _controls_markup(app: RevRemApp) -> str:
     selected = app._profile_name() or "<none>"
-    if app._pending_live_confirmation_profile:
+    if app._cancel_in_progress:
+        live_hint = "cancelling: waiting for child process to exit"
+    elif app._quit_confirmation_pending:
+        live_hint = "quit pending: press q again to cancel the run and quit"
+    elif app._pending_live_confirmation_profile:
         live_hint = f"confirm run: press r again for {app._pending_live_confirmation_profile}"
     elif app._live_run_active():
         live_hint = "active run: press k to cancel"
@@ -551,6 +603,10 @@ def _status_bar_markup(app: RevRemApp) -> str:
         if app._pending_live_confirmation_profile
         else ""
     )
+    if app._cancel_in_progress:
+        pending = " | cancelling"
+    elif app._quit_confirmation_pending:
+        pending = " | quit needs confirmation"
     help_state = "help open" if app._help_visible else "h help"
     return (
         f"RevRem | {tui_state.markup_escape(Path(app.model.snapshot.cwd).name or app.model.snapshot.cwd)}"
@@ -600,6 +656,23 @@ def _set_widget_classes(app: Any, selector: str, classes: str) -> None:
     set_classes = getattr(widget, "set_classes", None)
     if callable(set_classes):
         set_classes(classes)
+
+
+def _run_background(app: Any, target: Any) -> None:
+    run_worker = getattr(app, "run_worker", None)
+    if callable(run_worker):
+        run_worker(target, thread=True)
+        return
+    thread = threading.Thread(target=target, name="revrem-tui-cancel", daemon=True)
+    thread.start()
+
+
+def _call_from_thread(app: Any, callback: Any) -> None:
+    call_from_thread = getattr(app, "call_from_thread", None)
+    if callable(call_from_thread):
+        call_from_thread(callback)
+        return
+    callback()
 
 
 def _input_value(app: Any, selector: str) -> str | None:
