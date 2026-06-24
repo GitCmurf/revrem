@@ -163,6 +163,43 @@ def test_tui_dry_run_action_launches_builtin_profile_without_local_config(
     assert notifications == ["Dry run completed: security"]
 
 
+def test_tui_live_run_action_requires_confirmation_and_starts_controller(monkeypatch, tmp_path):
+    notifications = []
+    starts = []
+
+    config_path = tmp_path / "home" / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text('[profiles.final-pr]\ndescription = "Final PR"\n', encoding="utf-8")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(
+        tui.importlib.util, "find_spec", lambda name: object() if name == "textual" else None
+    )
+    monkeypatch.setattr(tui.Path, "cwd", lambda: tmp_path)
+
+    def fake_start(**kwargs):
+        starts.append(kwargs)
+        return types.SimpleNamespace(artifact_dir_arg=".revrem/runs/live")
+
+    def fake_run(self):
+        self.live_run_controller.start = fake_start
+        self.action_launch_run()
+        self.action_launch_run()
+
+    monkeypatch.setattr(tui.RevRemApp, "run", fake_run)
+    monkeypatch.setattr(tui.RevRemApp, "notify", lambda self, message: notifications.append(message))
+
+    assert cli_main(["ui", "--profile", "final-pr"]) == 0
+
+    assert notifications == [
+        "Press r again to start an experimental live run: final-pr",
+        "Live run started: final-pr (.revrem/runs/live)",
+    ]
+    assert starts[0]["plan"].argv == ("revrem", "--profile", "final-pr")
+    assert starts[0]["plan"].mode == "run"
+    assert starts[0]["cwd"] == tmp_path
+    assert starts[0]["entrypoint_resolver"] is tui.current_entrypoint_argv
+
+
 def test_tui_edit_action_launches_profile_editor_with_suspended_app(monkeypatch, tmp_path):
     actions = []
     notifications = []

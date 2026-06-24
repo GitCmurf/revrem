@@ -198,6 +198,20 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
+name = "TUI run controller stays UI and engine independent"
+type = "forbidden"
+source_modules = [
+  "code_review_loop.tui_run_controller",
+]
+forbidden_modules = [
+  "code_review_loop.application",
+  "code_review_loop.cli",
+  "code_review_loop.core.engine",
+  "code_review_loop.runner",
+  "textual",
+]
+
+[[tool.importlinter.contracts]]
 name = "Wave D engine acceptance tests stay core-only"
 type = "forbidden"
 source_modules = [

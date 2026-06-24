@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from code_review_loop import profiles, tui_state
+from code_review_loop import profiles, tui_run_controller, tui_state
 
 INSTALL_HINT = "Install it with: python -m pip install 'revrem[tui]'"
 _TEXTUAL_AVAILABLE = importlib.util.find_spec("textual") is not None
@@ -105,6 +105,7 @@ class RevRemApp(_AppBase):  # type: ignore[misc, valid-type]
     """
     BINDINGS = [
         ("d", "launch_dry_run", "Dry run"),
+        ("r", "launch_run", "Run"),
         ("s", "show_profile", "Show"),
         ("e", "edit_profile", "Edit profile"),
         ("n", "new_profile", "New"),
@@ -124,6 +125,8 @@ class RevRemApp(_AppBase):  # type: ignore[misc, valid-type]
         super().__init__()
         self.model = model
         self.profiles_by_name = profiles_by_name
+        self.live_run_controller = tui_run_controller.LiveRunController()
+        self._pending_live_confirmation_profile: str | None = None
 
     def compose(self):
         yield _Header(show_clock=True)
@@ -168,6 +171,26 @@ class RevRemApp(_AppBase):  # type: ignore[misc, valid-type]
             _notify(self, f"Dry run completed: {profile_name}")
             return
         _notify(self, f"Dry run failed with exit {result.returncode}: {profile_name}")
+
+    def action_launch_run(self) -> None:
+        profile_name = self._profile_name()
+        selected = self._profile_by_name(profile_name)
+        if selected is None or profile_name is None:
+            _notify(self, "No profile is available to run.")
+            return
+        if self._pending_live_confirmation_profile != profile_name:
+            self._pending_live_confirmation_profile = profile_name
+            _notify(self, f"Press r again to start an experimental live run: {profile_name}")
+            return
+        self._pending_live_confirmation_profile = None
+        plan = tui_state.launch_plan(selected, dry_run=False)
+        launch = self.live_run_controller.start(
+            profile=selected,
+            plan=plan,
+            cwd=Path(self.model.snapshot.cwd),
+            entrypoint_resolver=current_entrypoint_argv,
+        )
+        _notify(self, f"Live run started: {profile_name} ({launch.artifact_dir_arg})")
 
     def action_show_profile(self) -> None:
         profile_name = self._profile_name()
@@ -291,7 +314,7 @@ def _controls_markup(selected_profile_name: str | None) -> str:
     return (
         f"[b]Selected[/b]\n{tui_state.markup_escape(selected)}\n\n"
         "[b]Profile lifecycle[/b]\n"
-        "d dry-run | s show | e edit | n new | c clone | x export | i import | delete delete\n\n"
+        "d dry-run | r live run | s show | e edit | n new | c clone | x export | i import | delete delete\n\n"
         "[b]Notes[/b]\n"
         "Use the profile field for target profile actions. Use the path field for TOML imports."
     )
