@@ -29,6 +29,18 @@ RunControllerStatus = Literal[
     "failed",
     "failed-forced-cleanup",
 ]
+TERMINAL_STATUSES: frozenset[RunControllerStatus] = frozenset(
+    {
+        "completed-clear",
+        "completed-findings",
+        "budget",
+        "setup-failed",
+        "cancelled",
+        "interrupted-before-run-initialized",
+        "failed",
+        "failed-forced-cleanup",
+    }
+)
 
 PopenFactory = Callable[..., subprocess.Popen[str]]
 EntrypointResolver = Callable[[Sequence[str]], list[str]]
@@ -57,6 +69,13 @@ class EventFileIdentity:
     first_run_id: str | None
 
 
+@dataclass(frozen=True)
+class FileIdentity:
+    inode: int | None
+    size: int
+    mtime_ns: int
+
+
 @dataclass
 class _BoundedLines:
     max_lines: int = 200
@@ -82,6 +101,7 @@ class LiveRunController:
     stdout_tail: tuple[str, ...] = ()
     stderr_tail: tuple[str, ...] = ()
     preexisting_events: EventFileIdentity | None = None
+    preexisting_summary: FileIdentity | None = None
     _stdout_buffer: _BoundedLines = field(default_factory=_BoundedLines)
     _stderr_buffer: _BoundedLines = field(default_factory=_BoundedLines)
     _drain_threads: list[threading.Thread] = field(default_factory=list)
@@ -107,6 +127,7 @@ class LiveRunController:
         self.preexisting_events = _event_file_identity(
             launch.artifact_dir / events.EVENTS_FILENAME
         )
+        self.preexisting_summary = _file_identity(launch.artifact_dir / "summary.json")
         self._stdout_buffer = _BoundedLines()
         self._stderr_buffer = _BoundedLines()
         self.process = popen_factory(
@@ -173,6 +194,8 @@ class LiveRunController:
             return None
         summary_path = self.launch.artifact_dir / "summary.json"
         if not summary_path.is_file():
+            return None
+        if _matches_preexisting_file(summary_path, self.preexisting_summary):
             return None
         try:
             payload = json.loads(summary_path.read_text(encoding="utf-8"))
@@ -272,15 +295,42 @@ def _signal_process_group(process: subprocess.Popen[str], signum: int) -> None:
 
 
 def _event_file_identity(path: Path) -> EventFileIdentity | None:
+    base_identity = _file_identity(path)
+    if base_identity is None:
+        return None
+    return EventFileIdentity(
+        inode=base_identity.inode,
+        size=base_identity.size,
+        mtime_ns=base_identity.mtime_ns,
+        first_run_id=events.first_run_id(path),
+    )
+
+
+def _file_identity(path: Path) -> FileIdentity | None:
     if not path.is_file():
         return None
     stat_result = path.stat()
     inode = stat_result.st_ino if hasattr(stat_result, "st_ino") else None
-    return EventFileIdentity(
+    return FileIdentity(
         inode=inode,
         size=stat_result.st_size,
         mtime_ns=stat_result.st_mtime_ns,
-        first_run_id=events.first_run_id(path),
+    )
+
+
+def _matches_preexisting_file(
+    path: Path,
+    preexisting: FileIdentity | None,
+) -> bool:
+    if preexisting is None:
+        return False
+    current = _file_identity(path)
+    if current is None:
+        return False
+    return (
+        current.inode == preexisting.inode
+        and current.size == preexisting.size
+        and current.mtime_ns == preexisting.mtime_ns
     )
 
 

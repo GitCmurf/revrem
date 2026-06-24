@@ -338,3 +338,87 @@ def test_live_events_ignore_malformed_stale_file_until_identity_changes(tmp_path
     snapshot = controller.read_live_events()
     assert snapshot.ready is True
     assert [event.run_id for event in snapshot.events] == ["new-run"]
+
+
+def test_finish_ignores_stale_summary_from_explicit_artifact_dir(tmp_path):
+    run_dir = tmp_path / "custom" / "run"
+    run_dir.mkdir(parents=True)
+    (run_dir / "summary.json").write_text(
+        json.dumps({"final_status": "error", "stopped_reason": "cancelled"}),
+        encoding="utf-8",
+    )
+    profile = profiles.Profile(
+        name="demo",
+        output=profiles.OutputConfig(artifact_dir="custom/run"),
+    )
+    plan = tui_state.LaunchPlan(
+        profile_name="demo",
+        mode="run",
+        argv=("revrem", "--profile", "demo"),
+        shell_command="revrem --profile demo",
+    )
+
+    controller = tui_run_controller.LiveRunController()
+    controller.start(
+        profile=profile,
+        plan=plan,
+        cwd=tmp_path,
+        entrypoint_resolver=list,
+        popen_factory=lambda *_args, **_kwargs: FakeProcess(returncode=5),
+    )
+
+    status = controller.finish(5)
+
+    assert status == "failed"
+
+
+def test_finish_accepts_replaced_summary_from_explicit_artifact_dir(tmp_path):
+    run_dir = tmp_path / "custom" / "run"
+    run_dir.mkdir(parents=True)
+    summary_path = run_dir / "summary.json"
+    summary_path.write_text(
+        json.dumps({"final_status": "error", "stopped_reason": "cancelled"}),
+        encoding="utf-8",
+    )
+    profile = profiles.Profile(
+        name="demo",
+        output=profiles.OutputConfig(artifact_dir="custom/run"),
+    )
+    plan = tui_state.LaunchPlan(
+        profile_name="demo",
+        mode="run",
+        argv=("revrem", "--profile", "demo"),
+        shell_command="revrem --profile demo",
+    )
+    controller = tui_run_controller.LiveRunController()
+    controller.start(
+        profile=profile,
+        plan=plan,
+        cwd=tmp_path,
+        entrypoint_resolver=list,
+        popen_factory=lambda *_args, **_kwargs: FakeProcess(returncode=5),
+    )
+    summary_path.unlink()
+    summary_path.write_text(
+        json.dumps({"final_status": "error", "stopped_reason": "cancelled"}),
+        encoding="utf-8",
+    )
+
+    status = controller.finish(5)
+
+    assert status == "cancelled"
+
+
+def test_terminal_statuses_cover_all_non_idle_running_states():
+    statuses = set(tui_run_controller.TERMINAL_STATUSES)
+
+    assert statuses == {
+        "completed-clear",
+        "completed-findings",
+        "budget",
+        "setup-failed",
+        "cancelled",
+        "interrupted-before-run-initialized",
+        "failed",
+        "failed-forced-cleanup",
+    }
