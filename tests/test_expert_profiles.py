@@ -38,6 +38,9 @@ def test_builtin_profile_resolves_without_user_or_project_config(tmp_path):
     assert resolved.name == "security"
     assert resolved.source == profiles.BUILTIN_PROFILE_SOURCE
     assert "Security lens" in resolved.description
+    assert resolved.review.reasoning_effort == "high"
+    assert resolved.triage.enabled is True
+    assert resolved.triage.routing.enabled is True
 
 
 def test_user_profile_shadows_builtin_profile(tmp_path):
@@ -62,6 +65,10 @@ model = "user-model"
 
     assert resolved.description == "User security override"
     assert resolved.review.model == "user-model"
+    assert resolved.review.reasoning_effort is None
+    assert resolved.triage.enabled is False
+    assert resolved.triage.routing.enabled is False
+    assert resolved.triage.routes == {}
     assert resolved.source == str(user_path)
 
 
@@ -97,6 +104,10 @@ model = "project-model"
 
     assert resolved.description == "Project security override"
     assert resolved.review.model == "project-model"
+    assert resolved.review.reasoning_effort is None
+    assert resolved.triage.enabled is False
+    assert resolved.triage.routing.enabled is False
+    assert resolved.triage.routes == {}
     assert resolved.source == str(profiles.project_config_path(repo))
 
 

@@ -652,11 +652,13 @@ def resolve_profile_from_files(
     found = False
     if user_file.defaults is not None:
         raw = _deep_merge(raw, user_file.raw_defaults)
-    builtin_raw = _load_builtin_profile_raw(name)
-    if builtin_raw is not None:
-        raw = _deep_merge(raw, builtin_raw)
-        source = BUILTIN_PROFILE_SOURCE
-        found = True
+    has_local_profile = name in user_file.profiles or name in project_file.profiles
+    if not has_local_profile:
+        builtin_raw = _load_builtin_profile_raw(name)
+        if builtin_raw is not None:
+            raw = _deep_merge(raw, builtin_raw)
+            source = BUILTIN_PROFILE_SOURCE
+            found = True
     if name in user_file.profiles:
         raw = _deep_merge(raw, user_file.raw_profiles[name])
         source = str(user_file.path)

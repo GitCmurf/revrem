@@ -813,10 +813,10 @@ Bundled expert profiles:
 | `test-gap` | Changed behavior without focused coverage, missing regression tests, and unverified edge cases. | None. |
 | `docs` | Drift between code, public docs, examples, CLI help, and adjacent docstrings. | None. |
 
-Built-in profile precedence is: user defaults, built-in named profile, user
-named profile, project defaults, project named profile. That lets a project
-shadow `security` with `[profiles.security]` while still inheriting any
-user-wide defaults.
+Built-in profile precedence is: user defaults, local named profile if present,
+built-in named profile only when no local definition exists, project defaults,
+project named profile. That lets a project or user shadow `security` with
+`[profiles.security]` while still inheriting any user-wide defaults.
 
 Examples:
 
