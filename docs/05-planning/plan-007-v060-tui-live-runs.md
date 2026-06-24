@@ -3,7 +3,7 @@ document_id: REVREM-PLAN-007
 type: PLAN
 title: v0.6.0 TUI live runs
 status: Draft
-version: '0.2'
+version: '0.3'
 last_updated: '2026-06-24'
 owner: GitCmurf
 docops_version: '2.0'
@@ -233,7 +233,7 @@ showcase. Document it as expected behavior, not a defect.
 **Decision: extract `RevRemApp` to module scope and stand up a Textual `Pilot`
 harness as Slice 0, before any live-run feature work.**
 
-All three feature slices' acceptance criteria require a Pilot test, and the app
+The later live-run slices' acceptance criteria require a Pilot test, and the app
 class is currently function-local (`tui.run_textual_app`'s inner
 `RevRemApp`), so it cannot be instantiated by `app.run_test()`. This is the
 prerequisite `REVREM-PLAN-002` named and never delivered. Treating it as a
@@ -250,28 +250,34 @@ Every slice must obey these.
    pasted local verification evidence. A slice is not "done" until
    `./scripts/dev-check`, `pre-commit run --all-files`, `meminit check --format
    json`, `git diff --check`, and `lint-imports` all pass.
-2. **TUI stays a subprocess driver (architecture boundary).** New code lives
-   under the TUI layer (`tui.py`, `tui_state.py`, a new
-   `tui_run_controller.py`). It must not import `code_review_loop.runner`,
-   `runner_shell`, `core.engine`, or `application`. `lint-imports` enforces this;
-   a TUI module that imports the engine fails CI. (`pyproject.toml`
+2. **TUI stays a subprocess driver (architecture boundary).** New feature code
+   lives under the TUI layer (`tui.py`, `tui_state.py`, a new
+   `tui_run_controller.py`). The one acceptable non-TUI extraction is a tiny
+   dependency-free run-directory path factory shared with CLI, if that is cleaner
+   than local duplication. The TUI must not import `code_review_loop.cli`,
+   `code_review_loop.runner`, `runner_shell`, `core.engine`, or `application`.
+   `lint-imports` enforces the runner/core side today; add a TUI→CLI guard if
+   needed so this boundary stays machine-checked. (`pyproject.toml`
    `[tool.importlinter]` already forbids `core` → `tui` and isolates the runner;
    this slice must not require relaxing any contract.)
 3. **No second engine, ever.** The run is `revrem` invoked as a child process
    via the argv from `tui_state.launch_plan(profile, dry_run=False)`. The TUI
    never reconstructs loop, artifact, summary, history, or cancellation
    semantics.
-4. **Preallocate the run directory.** Live streaming cannot wait until
-   `summary.json` exists to discover artifacts. The controller must allocate a
-   unique run directory before launch, append `--artifact-dir <dir>` to the
-   child argv, and tail only that directory's `events.jsonl`. After exit, it
-   reconciles the child's top-level `summary.artifact_dir` with the preallocated
-   path and treats a mismatch as a failed setup/controller bug.
+4. **Resolve the run directory before launch.** Live streaming cannot wait until
+   `summary.json` exists to discover artifacts. The controller must know the run
+   directory before launch, append `--artifact-dir <dir>` to the child argv, and
+   tail only that directory's `events.jsonl`. Respect an explicit
+   `profile.output.artifact_dir`; generate a unique default-shaped directory only
+   when the selected profile has no explicit artifact dir. After exit, reconcile
+   the child's top-level `summary.artifact_dir` with the prelaunch path and treat
+   a mismatch as a failed setup/controller bug.
 5. **Machine-friendly child invocation.** Live runs add `--summary-format json`,
    `--no-tty`, and `--pending-review ignore` unless the operator has explicitly
    chosen an interactive mode in a later design. The controller drains
-   stdout/stderr concurrently to bounded buffers or artifacts so a verbose child
-   cannot block on a full pipe.
+   stdout/stderr concurrently to bounded in-memory buffers or controller
+   diagnostics outside the child run directory so a verbose child cannot block on
+   a full pipe.
 6. **Reuse the existing cancellation path.** Cancellation first sends `SIGINT`
    to the run process group (D-1). The TUI must not synthesize a `cancellation`
    event and must not write a summary itself. If a child ignores SIGINT past a
@@ -284,9 +290,10 @@ Every slice must obey these.
    `doctor --strict`. The controller *maps* the child's exit code to UI state; it
    never redefines a code (`core.outcome.outcome_to_exit_code` is the source of
    truth).
-8. **Read-from-artifacts, never re-run.** The monitor derives everything from the
-   child's `events.jsonl` and `summary.json`. It never invokes a model, never
-   touches the network, and never re-renders by recomputing run state.
+8. **Read-from-artifacts, never re-run.** The monitor derives run progress from
+   the child's `events.jsonl` and final run state from `summary.json`. It never
+   invokes a model, never touches the network, and never re-renders by
+   recomputing run state. The TUI writes no files into the child run directory.
 9. **Determinism in tests.** Pilot and equivalence tests must be hermetic:
    `REVREM_ALLOW_FAKE_HARNESS=1`, no real provider, no network. The equivalence
    comparator masks expected nondeterministic fields (timestamps, run ids,
@@ -324,19 +331,23 @@ Concrete anchors, verified against the v0.5.0 tree, so no rediscovery is needed:
   `signal.SIGINT`/`SIGTERM`; `runner.run_loop` catches `KeyboardInterrupt` →
   `runner_finish.finish_cancelled` (emits `cancellation`, writes summary, outcome
   `cancelled`); `core.outcome.outcome_to_exit_code` maps `cancelled` → `5`.
-- **Artifact dir control:** `cli.config_builder.default_artifact_dir()` creates
-  the normal `.revrem/runs/<timestamp>-<run-id>` path, and `--artifact-dir`
-  lets a caller choose it up front. A completed run's `summary.json` still
-  carries the authoritative top-level `artifact_dir` (written by
-  `core/state.py`); the live controller should preallocate/pass the directory
-  for streaming, then reconcile it against the top-level summary field after
-  exit. *(Cross-reference the `artifact_dir` two-locations note: use the
-  top-level field, not the nested `artifact_paths.artifact_dir`.)*
+- **Artifact dir control:** `cli.config_builder.default_artifact_dir()` currently
+  creates the normal `.revrem/runs/<timestamp>-<run-id>` path, and
+  `--artifact-dir` lets a caller choose it up front. The live controller must not
+  import the CLI helper; either move that tiny path factory to a neutral module
+  or duplicate the path shape locally with focused tests. A completed run's
+  `summary.json` still carries the authoritative top-level `artifact_dir`
+  (written by `core/state.py`); the live controller should pass the directory for
+  streaming, then reconcile it against the top-level summary field after exit.
+  *(Cross-reference the `artifact_dir` two-locations note: use the top-level
+  field, not the nested `artifact_paths.artifact_dir`.)*
 - **Fake harness for tests:** `REVREM_ALLOW_FAKE_HARNESS=1` enables scripted
   scenarios; `harnesses.py` includes a `cancellation` scenario that raises
   `KeyboardInterrupt`, and golden scenarios (`clear`, `findings`, `unknown`,
   `setup-failure`, `check-failure`, `cost-ceiling`) already used by PLAN-005
-  fixtures under `tests/`.
+  fixtures under `tests/`. It does **not** currently provide a controllable
+  long-running scenario suitable for TUI cancel-in-flight tests; S3 must add one
+  or provide an equivalent subprocess fixture.
 - **Textual `Pilot`:** available via `app.run_test()` once `RevRemApp` is at
   module scope (S0). `textual>=0.80` is declared in the `tui` extra.
 
@@ -425,32 +436,35 @@ experimental action, modeled by a small dependency-light state machine.
 
 **Implementation steps.**
 1. Define the state enum/dataclass and transitions in `tui_run_controller.py`,
-   with a pure `classify_exit(code) -> status` mapping aligned to Contract 5
+   with a pure `classify_exit(code) -> status` mapping aligned to Contract 7
    (`0`→completed-clear, `2`→completed-findings, `3`→budget, `4`→setup-failed,
    `5`→cancelled, other→failed). Do **not** hard-code integers in the UI; keep
    them in one mapping table.
 2. The launch action requires an explicit confirm (a modal or a two-key
    action) so a live provider run is never one stray keypress away — Non-Goals.
    Gate it behind an "experimental" label.
-3. Allocate the run directory before launch using the same shape as
-   `cli.config_builder.default_artifact_dir()` (or that helper if importing it
-   does not violate the TUI boundary), append `--artifact-dir <dir>` to the
-   argv, and create no files in it from the TUI other than optional
-   controller-owned stdout/stderr capture artifacts. The child owns
-   `events.jsonl`, `summary.json`, run history, and review/check/remediation
-   artifacts.
-4. Add `--summary-format json`, `--no-tty`, and `--pending-review ignore` to the
-   child argv for the experimental live-run path, so output is parseable and the
-   child cannot block on a pending-review prompt in the TUI.
-5. Drain stdout and stderr concurrently while the child runs. Keep bounded
+3. Resolve the run directory before launch. If the selected profile has an
+   explicit `output.artifact_dir`, use that value; otherwise generate a unique
+   default-shaped `.revrem/runs/<timestamp>-<run-id>` path without importing
+   `code_review_loop.cli` (move the tiny factory to a neutral module if reuse is
+   worth it). Append `--artifact-dir <dir>` to the argv so the child and
+   controller agree exactly.
+4. The child owns `events.jsonl`, `summary.json`, run history, and
+   review/check/remediation artifacts. The TUI writes no files inside the child
+   run directory; if full stdout/stderr capture is needed, put it in a separate
+   controller diagnostics location and link to it from UI state only.
+5. Add `--summary-format json`, `--no-tty`, and `--pending-review ignore` to the
+   child argv for the experimental live-run path, so output is machine-readable
+   for diagnostics and the child cannot block on a pending-review prompt in the
+   TUI. `summary.json` remains the authoritative completion payload.
+6. Drain stdout and stderr concurrently while the child runs. Keep bounded
    in-memory excerpts for the UI and, if full streams are persisted, write them
-   to clearly controller-owned artifact names that do not collide with RevRem's
-   existing artifact schema.
-6. After the child exits, read the top-level `artifact_dir` from `summary.json`
-   when present and assert it matches the preallocated directory. If the child
+   outside the child run directory.
+7. After the child exits, read the top-level `artifact_dir` from `summary.json`
+   when present and assert it matches the prelaunch directory. If the child
    exits before writing a summary, surface the bounded stdout/stderr excerpts as
    setup failure context.
-7. A setup failure (bad profile, missing base ref, non-zero exit before any
+8. A setup failure (bad profile, missing base ref, non-zero exit before any
    artifacts) must land in the `failed` state with a user-facing message — never
    a raw Python traceback in the TUI.
 
@@ -464,6 +478,9 @@ experimental action, modeled by a small dependency-light state machine.
 - The launched argv includes `--artifact-dir`, `--summary-format json`,
   `--no-tty`, and `--pending-review ignore`, and stdout/stderr are drained
   without deadlocking.
+- A unit test covers explicit profile `output.artifact_dir` precedence, default
+  generated run-dir shape, and no import edge from the TUI controller to
+  `code_review_loop.cli`.
 - A failed setup yields a `failed` UI state with a readable message.
 
 **Tests.** Controller state-machine units; a Pilot test that triggers the
@@ -491,19 +508,25 @@ the subtlety is process-group setup, which S3 depends on.
   `run_monitor_view` as-is).
 
 **Implementation steps.**
-1. On each tick, call `events.read_events(preallocated_run_dir /
-   events.EVENTS_FILENAME)` and feed records through `run_event_views(...)` →
+1. Before launch, record whether `run_dir / events.EVENTS_FILENAME` already
+   exists. This matters for explicit profile artifact dirs: `runner_setup` will
+   archive an existing events file once the child reaches `prepare_run`, but the
+   TUI must not briefly render stale events while the child is still starting.
+2. On each tick, call `events.read_events(prelaunch_run_dir /
+   events.EVENTS_FILENAME)` only after the file is absent/replaced/newer than
+   the launch timestamp, then feed records through `run_event_views(...)` →
    `RunEventView` tuple. If the file does not exist yet, render the controller's
    `starting`/`running` state and keep polling. Full re-read on a short interval
    is acceptable (events files are small; append-only). Note an optional
    incremental `seq`-based tail as a future optimization, not a requirement.
-2. Render current phase, iteration, status, artifact dir, latest check/review
-   summaries, and compact detail — the fields the existing `RunMonitorView`
-   already carries.
-3. Because the child flushes at `FLUSH_KINDS`, the monitor advances at each phase
+3. Render compact event detail with the existing `RunEventView` path. If the UI
+   needs first-class current-phase, latest-review, latest-check, or elapsed-time
+   fields beyond the event rows, add a narrow live view model in `tui_state.py`
+   with tests instead of overloading `RunMonitorView` implicitly.
+4. Because the child flushes at `FLUSH_KINDS`, the monitor advances at each phase
    boundary. When a `summary` (or `failure`/`cancellation`) event appears, stop
    tailing and transition the controller to its terminal state.
-4. **Preserve replay-from-history behavior**: the live tail is an additional mode
+5. **Preserve replay-from-history behavior**: the live tail is an additional mode
    layered onto the existing monitor; selecting a historical run still renders
    from history exactly as before.
 
@@ -513,6 +536,8 @@ the subtlety is process-group setup, which S3 depends on.
   `check_result`, `warning`, `cost_ceiling_hit`, `failure`, `cancellation`, and
   `summary` events (most reuse existing `run_event_view` coverage; add any
   missing kinds).
+- A stale pre-existing `events.jsonl` in an explicit artifact dir is not rendered
+  during the new run's `starting` state.
 - A Pilot test runs a fake live run and asserts the **visible** monitor updates
   across at least two phases before completion.
 
@@ -536,6 +561,10 @@ the existing signal-driven cancellation path (D-1, Contract 6).
   (`os.killpg(os.getpgid(child.pid), signal.SIGINT)` on POSIX; guard for
   platforms without `killpg`). Expose the Cancel action/binding only in the
   `running` state.
+- Edit: `src/code_review_loop/harnesses.py` or test support — add a deterministic
+  cancel-in-flight fixture. The existing fake `cancellation` scenario raises
+  immediately inside the adapter and is useful for runner semantics, but it does
+  not leave a live subprocess for the TUI controller to cancel.
 
 **Implementation steps.**
 1. Because S1 started the child with `start_new_session=True`,
@@ -546,21 +575,29 @@ the existing signal-driven cancellation path (D-1, Contract 6).
    descendant may be in its own process group. Add tests that cover both "run
    process exits cleanly after SIGINT" and "no long-lived child remains after the
    bounded cleanup path."
-2. After signaling, the controller waits for the child to exit, then reads the
+2. Add a deterministic long-running fake run that emits at least one early event
+   and then blocks until cancelled (for example a test-only fake harness scenario
+   or a local helper process wired through `--harness-bin`). Do not rely on the
+   current fake `cancellation` scenario alone; it does not exercise the TUI
+   process-signal path.
+3. After signaling, the controller waits for the child to exit, then reads the
    written `summary.json`/`cancellation` event and transitions to `cancelled`.
    The TUI never writes the summary or synthesizes the event itself.
-3. If the process has not exited after a short, documented grace period, the
+4. If the process has not exited after a short, documented grace period, the
    controller escalates cleanup (`SIGTERM`/`SIGKILL` as needed) and reports
    `failed-forced-cleanup` unless the child's own summary/events prove a clean
    RevRem cancellation. Forced cleanup is operational hygiene, not a substitute
    for the exit-5 cancellation contract.
-4. Cancel must restore terminal/cursor state and must not corrupt existing run
+5. Cancel must restore terminal/cursor state and must not corrupt existing run
    history (the child owns history writes).
 
 **Acceptance.**
 - A Pilot test starts a fake long-running run, cancels it, and observes the
   `cancelled` UI state **plus** a written `summary.json` with the `cancellation`
   event and a `5` exit mapping.
+- That Pilot test uses a fixture that actually leaves the child process running
+  until the controller sends `SIGINT`; immediate fake `KeyboardInterrupt`
+  scenarios are additional coverage, not a substitute.
 - No orphan harness process remains in the fake-process test harness, including
   the case where a nested child has its own session.
 - Cancellation does not corrupt run history; replay of the cancelled run renders.
@@ -593,7 +630,7 @@ on fake-harness fixtures.
    inputs and the same `LoopConfig`-equivalent profile.
 2. Compare the **stable** fields of `summary.json` and the **file set** of the
    run directory (`summary.json`, `events.jsonl`, review artifacts, checks, final
-   status). Mask expected nondeterministic fields per Contract 7 (timestamps, run
+   status). Mask expected nondeterministic fields per Contract 9 (timestamps, run
    ids, absolute paths, wall-clock durations) before diffing.
 3. Assert final status and exit-code mapping match across both paths for every
    scenario.
@@ -634,12 +671,25 @@ execution slice (PLAN-003).
   adds an explicit "no orphan" test, and requires bounded forced cleanup to be
   reported separately from clean exit-5 cancellation.
 - **Live tail has no path before `summary.json`.** End-of-run summary discovery
-  is too late for streaming. *Mitigation:* S1 preallocates the run directory and
-  passes it with `--artifact-dir`; the summary is used only to reconcile the
-  child's reported path after exit.
+  is too late for streaming. *Mitigation:* S1 resolves the run directory before
+  launch and passes it with `--artifact-dir`; the summary is used only to
+  reconcile the child's reported path after exit.
+- **Explicit artifact dirs may contain stale events.** A profile-level
+  `output.artifact_dir` can point at a directory from a previous run. *Mitigation:*
+  S2 records prelaunch `events.jsonl` state and renders only the new/replaced
+  event stream for the live run.
 - **Child stdout/stderr deadlock.** A long run with captured pipes can block if
   nobody drains them. *Mitigation:* S1 drains both streams concurrently to
-  bounded buffers/artifacts and tests a verbose fake child.
+  bounded buffers or controller diagnostics outside the child run directory and
+  tests a verbose fake child.
+- **Controller artifacts contaminate equivalence.** TUI-owned stream captures in
+  the child run directory would make S4 fail for the wrong reason. *Mitigation:*
+  the TUI writes no files into the child run directory; any controller diagnostics
+  live outside it or remain bounded in memory.
+- **Fake cancellation does not prove TUI cancellation.** The current fake
+  `cancellation` scenario raises immediately inside the harness adapter.
+  *Mitigation:* S3 adds a deterministic cancel-in-flight subprocess fixture and
+  uses immediate fake cancellation only as supplemental runner-semantics coverage.
 - **Tail latency perceived as a hang.** Phase-granular updates mean quiet gaps
   during long phases. *Mitigation:* show an active-phase spinner/elapsed timer in
   `running` state; document phase-level granularity as expected (D-1 consequence).
