@@ -260,6 +260,7 @@ def run_textual_app(*, selected_profile_name: str | None = None) -> None:
         for profile in profiles.resolve_profiles(
             cwd=Path(model.snapshot.cwd),
             require_implemented=False,
+            include_builtins=True,
         )
     }
     RevRemApp().run()

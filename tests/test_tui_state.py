@@ -50,7 +50,8 @@ checks = ["pytest -q", "git diff --check"]
     )
 
     assert snapshot.cwd == str(repo)
-    assert [profile.name for profile in snapshot.profiles] == ["final-pr"]
+    assert snapshot.profiles[0].name == "final-pr"
+    assert "security" in {profile.name for profile in snapshot.profiles}
     assert snapshot.profiles[0].checks == ("pytest -q", "git diff --check")
     assert snapshot.recent_runs[0]["run_id"] == "run-1"
     assert snapshot.run_monitors[0].run_id == "run-1"
@@ -100,10 +101,24 @@ description = "Final PR"
 
     snapshot = tui_state.build_home_snapshot(cwd=repo, home=home)
 
-    assert [profile.name for profile in snapshot.profiles] == ["final-pr"]
+    assert snapshot.profiles[0].name == "final-pr"
+    assert "docs" in {profile.name for profile in snapshot.profiles}
     assert snapshot.profiles[0].base == "trunk"
     assert snapshot.profiles[0].checks == ("pytest -q", "git diff --check")
     assert snapshot.run_previews[0].shell_command == "revrem --profile final-pr"
+
+
+def test_shell_model_exposes_builtin_profiles_without_local_configs(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+
+    model = tui_state.build_shell_model(cwd=repo, selected_profile_name="security")
+
+    assert model.selected_profile_name == "security"
+    assert any(profile.name == "security" for profile in model.snapshot.profiles)
+    assert model.selected_launch_plan is not None
+    assert model.selected_launch_plan.shell_command == "revrem --profile security --dry-run"
 
 
 def test_shell_model_reuses_batch_resolved_profiles(tmp_path, monkeypatch):
@@ -114,8 +129,10 @@ def test_shell_model_reuses_batch_resolved_profiles(tmp_path, monkeypatch):
     )
     calls = []
 
-    def fake_resolve_profiles(*, cwd, home=None, require_implemented=True):
-        calls.append((cwd, home, require_implemented))
+    def fake_resolve_profiles(
+        *, cwd, home=None, require_implemented=True, include_builtins=False
+    ):
+        calls.append((cwd, home, require_implemented, include_builtins))
         return [profile]
 
     def fail_resolve_profile(*args, **kwargs):
@@ -126,7 +143,7 @@ def test_shell_model_reuses_batch_resolved_profiles(tmp_path, monkeypatch):
 
     model = tui_state.build_shell_model(cwd=tmp_path, selected_profile_name="final-pr")
 
-    assert calls == [(tmp_path, None, False)]
+    assert calls == [(tmp_path, None, False, True)]
     assert model.selected_profile_name == "final-pr"
     assert model.selected_launch_plan is not None
     assert model.selected_launch_plan.shell_command == "revrem --profile final-pr --dry-run"
@@ -663,9 +680,9 @@ def test_shell_model_handles_missing_profiles_without_launch_plan(tmp_path):
 
     model = tui_state.build_shell_model(cwd=repo, home=tmp_path / "home")
 
-    assert model.selected_profile_name is None
-    assert model.selected_launch_plan is None
-    assert "No profiles found" in tui_state.render_shell_text(model)
+    assert model.selected_profile_name == "docs"
+    assert model.selected_launch_plan is not None
+    assert model.selected_launch_plan.shell_command == "revrem --profile docs --dry-run"
 
 
 def test_shell_model_rejects_unknown_selected_profile(tmp_path):

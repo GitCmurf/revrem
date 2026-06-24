@@ -599,7 +599,10 @@ def resolve_profiles(
     user_file, project_file = load_profile_files(cwd=cwd, home=home)
     names = set(user_file.profiles) | set(project_file.profiles)
     if include_builtins:
-        names |= set(expert_profiles.list_builtin_profiles())
+        builtin_names = set(expert_profiles.list_builtin_profiles())
+        names |= builtin_names
+    else:
+        builtin_names = set()
     return [
         resolve_profile_from_files(
             name,
@@ -607,7 +610,7 @@ def resolve_profiles(
             project_file=project_file,
             require_implemented=require_implemented,
         )
-        for name in sorted(names)
+        for name in sorted(names, key=lambda name: (name in builtin_names, name))
     ]
 
 
@@ -698,7 +701,10 @@ def list_profiles(
     files = load_profile_files(cwd=cwd, home=home)
     names = set(files[0].profiles) | set(files[1].profiles)
     if include_builtins:
-        names |= set(expert_profiles.list_builtin_profiles())
+        builtin_names = set(expert_profiles.list_builtin_profiles())
+        names |= builtin_names
+    else:
+        builtin_names = set()
     return [
         resolve_profile_from_files(
             name,
@@ -706,7 +712,7 @@ def list_profiles(
             project_file=files[1],
             require_implemented=False,
         )
-        for name in sorted(names)
+        for name in sorted(names, key=lambda name: (name in builtin_names, name))
     ]
 
 

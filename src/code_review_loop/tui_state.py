@@ -116,8 +116,15 @@ def build_home_snapshot(
     history_limit: int = 5,
     history_path: Path | None = None,
 ) -> HomeSnapshot:
+    # Include bundled expert profiles so the TUI can surface them even when a
+    # repository has no local profile files.
     resolved_profiles = tuple(
-        profiles.resolve_profiles(cwd=cwd, home=home, require_implemented=False)
+        profiles.resolve_profiles(
+            cwd=cwd,
+            home=home,
+            require_implemented=False,
+            include_builtins=True,
+        )
     )
     return home_snapshot_for_profiles(
         cwd=cwd,
@@ -153,8 +160,15 @@ def build_shell_model(
     history_path: Path | None = None,
     selected_profile_name: str | None = None,
 ) -> TuiShellModel:
+    # Shell mode uses the same operator-facing profile enumeration as the home
+    # screen, so bundled profiles must be available here too.
     resolved_profiles = tuple(
-        profiles.resolve_profiles(cwd=cwd, home=home, require_implemented=False)
+        profiles.resolve_profiles(
+            cwd=cwd,
+            home=home,
+            require_implemented=False,
+            include_builtins=True,
+        )
     )
     snapshot = home_snapshot_for_profiles(
         cwd=cwd,

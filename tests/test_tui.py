@@ -169,6 +169,54 @@ checks = ["git diff --check"]
     assert notifications == ["Dry run completed: final-pr"]
 
 
+def test_tui_dry_run_action_launches_builtin_profile_without_local_config(
+    monkeypatch, tmp_path
+):
+    actions = []
+    notifications = []
+
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+
+    class FakeApp:
+        def run(self):
+            self.action_launch_dry_run()
+            actions.append(type(self).__name__)
+
+        def notify(self, message):
+            notifications.append(message)
+
+    class FakeWidget:
+        def __init__(self, *args, **kwargs):
+            self.args = args
+            self.kwargs = kwargs
+
+    app_module = types.ModuleType("textual.app")
+    widgets_module = types.ModuleType("textual.widgets")
+    app_module.App = FakeApp
+    widgets_module.Header = FakeWidget
+    widgets_module.Footer = FakeWidget
+    widgets_module.Static = FakeWidget
+    monkeypatch.setitem(sys.modules, "textual.app", app_module)
+    monkeypatch.setitem(sys.modules, "textual.widgets", widgets_module)
+    monkeypatch.setattr(
+        tui.importlib.util, "find_spec", lambda name: object() if name == "textual" else None
+    )
+    monkeypatch.setattr(tui.Path, "cwd", lambda: tmp_path)
+
+    def fake_run_launch_plan(plan, *, cwd):
+        actions.append((plan.argv, cwd))
+        return types.SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(tui, "run_launch_plan", fake_run_launch_plan)
+
+    assert cli_main(["ui", "--profile", "security"]) == 0
+
+    assert actions[0][0] == ("revrem", "--profile", "security", "--dry-run")
+    assert actions[0][1] == tmp_path
+    assert actions[1] == "RevRemApp"
+    assert notifications == ["Dry run completed: security"]
+
+
 def test_tui_edit_action_launches_profile_editor_with_suspended_app(monkeypatch, tmp_path):
     actions = []
     notifications = []
