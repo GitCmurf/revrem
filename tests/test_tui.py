@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import importlib.util
-import sys
 import types
 
 from code_review_loop import tui
@@ -50,14 +49,6 @@ def test_tui_reports_missing_optional_dependency(monkeypatch, capsys):
 
 
 def test_tui_reports_unknown_initial_profile(monkeypatch, tmp_path, capsys):
-    app_module = types.ModuleType("textual.app")
-    widgets_module = types.ModuleType("textual.widgets")
-    app_module.App = object
-    widgets_module.Header = object
-    widgets_module.Footer = object
-    widgets_module.Static = object
-    monkeypatch.setitem(sys.modules, "textual.app", app_module)
-    monkeypatch.setitem(sys.modules, "textual.widgets", widgets_module)
     monkeypatch.setattr(
         tui.importlib.util, "find_spec", lambda name: object() if name == "textual" else None
     )
@@ -71,43 +62,28 @@ def test_tui_reports_unknown_initial_profile(monkeypatch, tmp_path, capsys):
 
 
 def test_tui_launches_textual_app_with_home_snapshot(monkeypatch, tmp_path):
-    rendered_widgets = []
+    rendered = []
     launched = []
 
-    class FakeApp:
-        def run(self):
-            launched.append(type(self).__name__)
-            rendered_widgets.extend(list(self.compose()))
-
-    class FakeWidget:
-        def __init__(self, *args, **kwargs):
-            self.args = args
-            self.kwargs = kwargs
-
-    app_module = types.ModuleType("textual.app")
-    widgets_module = types.ModuleType("textual.widgets")
-    app_module.App = FakeApp
-    widgets_module.Header = FakeWidget
-    widgets_module.Footer = FakeWidget
-    widgets_module.Static = FakeWidget
-    monkeypatch.setitem(sys.modules, "textual.app", app_module)
-    monkeypatch.setitem(sys.modules, "textual.widgets", widgets_module)
     monkeypatch.setattr(
         tui.importlib.util, "find_spec", lambda name: object() if name == "textual" else None
     )
     monkeypatch.setattr(tui.Path, "cwd", lambda: tmp_path)
 
+    def fake_run(self):
+        launched.append(type(self).__name__)
+        rendered.append(tui.tui_state.render_shell_text(self.model))
+
+    monkeypatch.setattr(tui.RevRemApp, "run", fake_run)
+
     assert cli_main(["ui"]) == 0
 
     assert launched == ["RevRemApp"]
-    body = rendered_widgets[1]
-    assert body.kwargs["id"] == "body"
-    assert body.kwargs["markup"] is True
-    assert f"Workspace: {tmp_path}" in body.args[0]
-    assert "[b]Home[/b]" in body.args[0]
-    assert "[b]Profiles[/b]" in body.args[0]
-    assert "[b]Pipeline[/b]" in body.args[0]
-    assert "[b]Run Monitor[/b]" in body.args[0]
+    assert f"Workspace: {tmp_path}" in rendered[0]
+    assert "[b]Home[/b]" in rendered[0]
+    assert "[b]Profiles[/b]" in rendered[0]
+    assert "[b]Pipeline[/b]" in rendered[0]
+    assert "[b]Run Monitor[/b]" in rendered[0]
 
 
 def test_tui_dry_run_action_launches_selected_profile(monkeypatch, tmp_path):
@@ -129,27 +105,6 @@ checks = ["git diff --check"]
     )
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
 
-    class FakeApp:
-        def run(self):
-            self.action_launch_dry_run()
-            actions.append(type(self).__name__)
-
-        def notify(self, message):
-            notifications.append(message)
-
-    class FakeWidget:
-        def __init__(self, *args, **kwargs):
-            self.args = args
-            self.kwargs = kwargs
-
-    app_module = types.ModuleType("textual.app")
-    widgets_module = types.ModuleType("textual.widgets")
-    app_module.App = FakeApp
-    widgets_module.Header = FakeWidget
-    widgets_module.Footer = FakeWidget
-    widgets_module.Static = FakeWidget
-    monkeypatch.setitem(sys.modules, "textual.app", app_module)
-    monkeypatch.setitem(sys.modules, "textual.widgets", widgets_module)
     monkeypatch.setattr(
         tui.importlib.util, "find_spec", lambda name: object() if name == "textual" else None
     )
@@ -160,6 +115,12 @@ checks = ["git diff --check"]
         return types.SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(tui, "run_launch_plan", fake_run_launch_plan)
+    monkeypatch.setattr(
+        tui.RevRemApp,
+        "run",
+        lambda self: (self.action_launch_dry_run(), actions.append(type(self).__name__)),
+    )
+    monkeypatch.setattr(tui.RevRemApp, "notify", lambda self, message: notifications.append(message))
 
     assert cli_main(["ui"]) == 0
 
@@ -177,27 +138,6 @@ def test_tui_dry_run_action_launches_builtin_profile_without_local_config(
 
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
 
-    class FakeApp:
-        def run(self):
-            self.action_launch_dry_run()
-            actions.append(type(self).__name__)
-
-        def notify(self, message):
-            notifications.append(message)
-
-    class FakeWidget:
-        def __init__(self, *args, **kwargs):
-            self.args = args
-            self.kwargs = kwargs
-
-    app_module = types.ModuleType("textual.app")
-    widgets_module = types.ModuleType("textual.widgets")
-    app_module.App = FakeApp
-    widgets_module.Header = FakeWidget
-    widgets_module.Footer = FakeWidget
-    widgets_module.Static = FakeWidget
-    monkeypatch.setitem(sys.modules, "textual.app", app_module)
-    monkeypatch.setitem(sys.modules, "textual.widgets", widgets_module)
     monkeypatch.setattr(
         tui.importlib.util, "find_spec", lambda name: object() if name == "textual" else None
     )
@@ -208,6 +148,12 @@ def test_tui_dry_run_action_launches_builtin_profile_without_local_config(
         return types.SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(tui, "run_launch_plan", fake_run_launch_plan)
+    monkeypatch.setattr(
+        tui.RevRemApp,
+        "run",
+        lambda self: (self.action_launch_dry_run(), actions.append(type(self).__name__)),
+    )
+    monkeypatch.setattr(tui.RevRemApp, "notify", lambda self, message: notifications.append(message))
 
     assert cli_main(["ui", "--profile", "security"]) == 0
 
@@ -234,30 +180,6 @@ def test_tui_edit_action_launches_profile_editor_with_suspended_app(monkeypatch,
             actions.append("suspend-exit")
             return False
 
-    class FakeApp:
-        def run(self):
-            self.action_edit_profile()
-            actions.append(type(self).__name__)
-
-        def suspend(self):
-            return FakeSuspend()
-
-        def notify(self, message):
-            notifications.append(message)
-
-    class FakeWidget:
-        def __init__(self, *args, **kwargs):
-            self.args = args
-            self.kwargs = kwargs
-
-    app_module = types.ModuleType("textual.app")
-    widgets_module = types.ModuleType("textual.widgets")
-    app_module.App = FakeApp
-    widgets_module.Header = FakeWidget
-    widgets_module.Footer = FakeWidget
-    widgets_module.Static = FakeWidget
-    monkeypatch.setitem(sys.modules, "textual.app", app_module)
-    monkeypatch.setitem(sys.modules, "textual.widgets", widgets_module)
     monkeypatch.setattr(
         tui.importlib.util, "find_spec", lambda name: object() if name == "textual" else None
     )
@@ -268,6 +190,13 @@ def test_tui_edit_action_launches_profile_editor_with_suspended_app(monkeypatch,
         return types.SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(tui, "run_launch_plan", fake_run_launch_plan)
+    monkeypatch.setattr(
+        tui.RevRemApp,
+        "run",
+        lambda self: (self.action_edit_profile(), actions.append(type(self).__name__)),
+    )
+    monkeypatch.setattr(tui.RevRemApp, "suspend", lambda self: FakeSuspend())
+    monkeypatch.setattr(tui.RevRemApp, "notify", lambda self, message: notifications.append(message))
 
     assert cli_main(["ui", "--profile", "final-pr"]) == 0
 
@@ -293,32 +222,6 @@ def test_tui_profile_lifecycle_actions_use_config_commands(monkeypatch, tmp_path
         def __init__(self, value):
             self.value = value
 
-    class FakeApp:
-        def run(self):
-            self.action_clone_profile()
-            self.action_delete_profile()
-            actions.append(type(self).__name__)
-
-        def query_one(self, selector):
-            assert selector == "#profile-name"
-            return FakeInput("copy")
-
-        def notify(self, message):
-            notifications.append(message)
-
-    class FakeWidget:
-        def __init__(self, *args, **kwargs):
-            self.args = args
-            self.kwargs = kwargs
-
-    app_module = types.ModuleType("textual.app")
-    widgets_module = types.ModuleType("textual.widgets")
-    app_module.App = FakeApp
-    widgets_module.Header = FakeWidget
-    widgets_module.Footer = FakeWidget
-    widgets_module.Static = FakeWidget
-    monkeypatch.setitem(sys.modules, "textual.app", app_module)
-    monkeypatch.setitem(sys.modules, "textual.widgets", widgets_module)
     monkeypatch.setattr(
         tui.importlib.util, "find_spec", lambda name: object() if name == "textual" else None
     )
@@ -329,6 +232,21 @@ def test_tui_profile_lifecycle_actions_use_config_commands(monkeypatch, tmp_path
         return types.SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(tui, "run_launch_plan", fake_run_launch_plan)
+    monkeypatch.setattr(
+        tui.RevRemApp,
+        "run",
+        lambda self: (
+            self.action_clone_profile(),
+            self.action_delete_profile(),
+            actions.append(type(self).__name__),
+        ),
+    )
+    monkeypatch.setattr(
+        tui.RevRemApp,
+        "query_one",
+        lambda self, selector: FakeInput("copy") if selector == "#profile-name" else None,
+    )
+    monkeypatch.setattr(tui.RevRemApp, "notify", lambda self, message: notifications.append(message))
 
     assert cli_main(["ui", "--profile", "final-pr"]) == 0
 

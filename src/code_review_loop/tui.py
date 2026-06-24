@@ -14,6 +14,25 @@ from typing import Any
 from code_review_loop import profiles, tui_state
 
 INSTALL_HINT = "Install it with: python -m pip install 'revrem[tui]'"
+_TEXTUAL_AVAILABLE = importlib.util.find_spec("textual") is not None
+if _TEXTUAL_AVAILABLE:
+    textual_app = importlib.import_module("textual.app")
+    widgets = importlib.import_module("textual.widgets")
+    _AppBase: Any = textual_app.App
+    _Header: Any = widgets.Header
+    _Footer: Any = widgets.Footer
+    _Static: Any = widgets.Static
+    _Input: Any | None = getattr(widgets, "Input", None)
+    _TabbedContent: Any | None = getattr(widgets, "TabbedContent", None)
+    _TabPane: Any | None = getattr(widgets, "TabPane", None)
+else:
+    _AppBase = object
+    _Header = object
+    _Footer = object
+    _Static = object
+    _Input = None
+    _TabbedContent = None
+    _TabPane = None
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -54,207 +73,6 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
 
 def run_textual_app(*, selected_profile_name: str | None = None) -> None:
     model = tui_state.build_shell_model(cwd=Path.cwd(), selected_profile_name=selected_profile_name)
-    textual_app = importlib.import_module("textual.app")
-    widgets = importlib.import_module("textual.widgets")
-
-    app_base: Any = textual_app.App
-    header: Any = widgets.Header
-    footer: Any = widgets.Footer
-    static: Any = widgets.Static
-    input_widget: Any | None = getattr(widgets, "Input", None)
-    tabbed_content: Any | None = getattr(widgets, "TabbedContent", None)
-    tab_pane: Any | None = getattr(widgets, "TabPane", None)
-
-    class RevRemApp(app_base):  # type: ignore[misc, valid-type]
-        CSS = """
-        Screen {
-            layout: vertical;
-        }
-
-        #body {
-            height: 1fr;
-            padding: 1 2;
-        }
-
-        #profile-name, #profile-path {
-            margin: 0 2 1 2;
-        }
-
-        .panel-title {
-            text-style: bold;
-        }
-        """
-        BINDINGS = [
-            ("d", "launch_dry_run", "Dry run"),
-            ("s", "show_profile", "Show"),
-            ("e", "edit_profile", "Edit profile"),
-            ("n", "new_profile", "New"),
-            ("c", "clone_profile", "Clone"),
-            ("x", "export_profile", "Export"),
-            ("i", "import_profiles", "Import"),
-            ("delete", "delete_profile", "Delete"),
-            ("q", "quit", "Quit"),
-        ]
-
-        def compose(self):
-            yield header(show_clock=True)
-            if tabbed_content is not None and tab_pane is not None:
-                with tabbed_content():
-                    for screen in model.screens:
-                        with tab_pane(screen.title):
-                            yield static(
-                                _screen_markup(screen), id=f"screen-{screen.name}", markup=True
-                            )
-                    with tab_pane("Controls"):
-                        if input_widget is not None:
-                            yield input_widget(
-                                value=model.selected_profile_name or "",
-                                placeholder="profile name",
-                                id="profile-name",
-                            )
-                            yield input_widget(
-                                placeholder="import path",
-                                id="profile-path",
-                            )
-                        yield static(
-                            _controls_markup(model.selected_profile_name),
-                            id="screen-controls",
-                            markup=True,
-                        )
-            else:
-                yield static(
-                    tui_state.render_shell_text(model),
-                    id="body",
-                    markup=True,
-                )
-            yield footer()
-
-        def action_launch_dry_run(self) -> None:
-            profile_name = self._profile_name()
-            selected = self._profile_by_name(profile_name)
-            if selected is None:
-                _notify(self, "No profile is available to dry-run.")
-                return
-            plan = tui_state.launch_plan(selected, dry_run=True)
-            result = run_launch_plan(plan, cwd=Path(model.snapshot.cwd))
-            if result.returncode == 0:
-                _notify(self, f"Dry run completed: {profile_name}")
-                return
-            _notify(self, f"Dry run failed with exit {result.returncode}: {profile_name}")
-
-        def action_show_profile(self) -> None:
-            profile_name = self._profile_name()
-            if profile_name is None:
-                _notify(self, "No profile is available to show.")
-                return
-            self._run_interactive(
-                tui_state.show_plan_for_name(profile_name), success=f"Shown profile: {profile_name}"
-            )
-
-        def action_edit_profile(self) -> None:
-            profile_name = self._profile_name()
-            if profile_name is None:
-                _notify(self, "No profile is available to edit.")
-                return
-            self._run_interactive(
-                tui_state.edit_plan_for_name(profile_name),
-                success=f"Edited profile: {profile_name}",
-            )
-
-        def action_new_profile(self) -> None:
-            profile_name = self._profile_name()
-            if profile_name is None:
-                _notify(self, "Enter a profile name before creating a profile.")
-                return
-            self._run_captured(
-                tui_state.new_plan_for_name(profile_name),
-                success=f"Created profile: {profile_name}",
-            )
-
-        def action_clone_profile(self) -> None:
-            source = model.selected_profile_name
-            target = self._profile_name()
-            if source is None:
-                _notify(self, "No profile is available to clone.")
-                return
-            if target is None or target == source:
-                target = f"{source}-copy"
-            self._run_captured(
-                tui_state.clone_plan_for_name(source, target),
-                success=f"Cloned profile: {source} -> {target}",
-            )
-
-        def action_delete_profile(self) -> None:
-            profile_name = self._profile_name()
-            if profile_name is None:
-                _notify(self, "No profile is available to delete.")
-                return
-            self._run_captured(
-                tui_state.delete_plan_for_name(profile_name),
-                success=f"Deleted profile: {profile_name}",
-            )
-
-        def action_export_profile(self) -> None:
-            profile_name = self._profile_name()
-            if profile_name is None:
-                _notify(self, "No profile is available to export.")
-                return
-            self._run_interactive(
-                tui_state.export_plan_for_name(profile_name),
-                success=f"Exported profile: {profile_name}",
-            )
-
-        def action_import_profiles(self) -> None:
-            path = self._path_value()
-            if path is None:
-                _notify(self, "Enter an import path before importing profiles.")
-                return
-            self._run_captured(
-                tui_state.import_plan_for_path(path), success=f"Imported profiles: {path}"
-            )
-
-        def _run_interactive(self, plan: tui_state.LaunchPlan, *, success: str) -> None:
-            result = self._run_plan(plan, capture_output=False)
-            if result.returncode == 0:
-                _notify(self, success)
-                return
-            _notify(self, f"{plan.mode} failed with exit {result.returncode}: {plan.profile_name}")
-
-        def _run_captured(self, plan: tui_state.LaunchPlan, *, success: str) -> None:
-            result = self._run_plan(plan, capture_output=True)
-            if result.returncode == 0:
-                _notify(self, success)
-                return
-            _notify(self, f"{plan.mode} failed with exit {result.returncode}: {plan.profile_name}")
-
-        def _run_plan(
-            self,
-            plan: tui_state.LaunchPlan,
-            *,
-            capture_output: bool,
-        ) -> subprocess.CompletedProcess[str]:
-            suspend = getattr(self, "suspend", None)
-            if callable(suspend) and not capture_output:
-                with suspend():
-                    return run_launch_plan(plan, cwd=Path(model.snapshot.cwd), capture_output=False)
-            return run_launch_plan(
-                plan, cwd=Path(model.snapshot.cwd), capture_output=capture_output
-            )
-
-        def _profile_name(self) -> str | None:
-            value = _input_value(self, "#profile-name")
-            if value:
-                return value
-            return model.selected_profile_name
-
-        def _path_value(self) -> str | None:
-            return _input_value(self, "#profile-path")
-
-        def _profile_by_name(self, profile_name: str | None) -> Any | None:
-            if profile_name is None:
-                return None
-            return profiles_by_name.get(profile_name)
-
     profiles_by_name = {
         profile.name: profile
         for profile in profiles.resolve_profiles(
@@ -263,7 +81,204 @@ def run_textual_app(*, selected_profile_name: str | None = None) -> None:
             include_builtins=True,
         )
     }
-    RevRemApp().run()
+    RevRemApp(model=model, profiles_by_name=profiles_by_name).run()
+
+
+class RevRemApp(_AppBase):  # type: ignore[misc, valid-type]
+    CSS = """
+    Screen {
+        layout: vertical;
+    }
+
+    #body {
+        height: 1fr;
+        padding: 1 2;
+    }
+
+    #profile-name, #profile-path {
+        margin: 0 2 1 2;
+    }
+
+    .panel-title {
+        text-style: bold;
+    }
+    """
+    BINDINGS = [
+        ("d", "launch_dry_run", "Dry run"),
+        ("s", "show_profile", "Show"),
+        ("e", "edit_profile", "Edit profile"),
+        ("n", "new_profile", "New"),
+        ("c", "clone_profile", "Clone"),
+        ("x", "export_profile", "Export"),
+        ("i", "import_profiles", "Import"),
+        ("delete", "delete_profile", "Delete"),
+        ("q", "quit", "Quit"),
+    ]
+
+    def __init__(
+        self,
+        *,
+        model: tui_state.TuiShellModel,
+        profiles_by_name: dict[str, profiles.Profile],
+    ) -> None:
+        super().__init__()
+        self.model = model
+        self.profiles_by_name = profiles_by_name
+
+    def compose(self):
+        yield _Header(show_clock=True)
+        if _TabbedContent is not None and _TabPane is not None:
+            with _TabbedContent():
+                for screen in self.model.screens:
+                    with _TabPane(screen.title):
+                        yield _Static(_screen_markup(screen), id=f"screen-{screen.name}", markup=True)
+                with _TabPane("Controls"):
+                    if _Input is not None:
+                        yield _Input(
+                            value=self.model.selected_profile_name or "",
+                            placeholder="profile name",
+                            id="profile-name",
+                        )
+                        yield _Input(
+                            placeholder="import path",
+                            id="profile-path",
+                        )
+                    yield _Static(
+                        _controls_markup(self.model.selected_profile_name),
+                        id="screen-controls",
+                        markup=True,
+                    )
+        else:
+            yield _Static(
+                tui_state.render_shell_text(self.model),
+                id="body",
+                markup=True,
+            )
+        yield _Footer()
+
+    def action_launch_dry_run(self) -> None:
+        profile_name = self._profile_name()
+        selected = self._profile_by_name(profile_name)
+        if selected is None:
+            _notify(self, "No profile is available to dry-run.")
+            return
+        plan = tui_state.launch_plan(selected, dry_run=True)
+        result = run_launch_plan(plan, cwd=Path(self.model.snapshot.cwd))
+        if result.returncode == 0:
+            _notify(self, f"Dry run completed: {profile_name}")
+            return
+        _notify(self, f"Dry run failed with exit {result.returncode}: {profile_name}")
+
+    def action_show_profile(self) -> None:
+        profile_name = self._profile_name()
+        if profile_name is None:
+            _notify(self, "No profile is available to show.")
+            return
+        self._run_interactive(
+            tui_state.show_plan_for_name(profile_name), success=f"Shown profile: {profile_name}"
+        )
+
+    def action_edit_profile(self) -> None:
+        profile_name = self._profile_name()
+        if profile_name is None:
+            _notify(self, "No profile is available to edit.")
+            return
+        self._run_interactive(
+            tui_state.edit_plan_for_name(profile_name),
+            success=f"Edited profile: {profile_name}",
+        )
+
+    def action_new_profile(self) -> None:
+        profile_name = self._profile_name()
+        if profile_name is None:
+            _notify(self, "Enter a profile name before creating a profile.")
+            return
+        self._run_captured(
+            tui_state.new_plan_for_name(profile_name),
+            success=f"Created profile: {profile_name}",
+        )
+
+    def action_clone_profile(self) -> None:
+        source = self.model.selected_profile_name
+        target = self._profile_name()
+        if source is None:
+            _notify(self, "No profile is available to clone.")
+            return
+        if target is None or target == source:
+            target = f"{source}-copy"
+        self._run_captured(
+            tui_state.clone_plan_for_name(source, target),
+            success=f"Cloned profile: {source} -> {target}",
+        )
+
+    def action_delete_profile(self) -> None:
+        profile_name = self._profile_name()
+        if profile_name is None:
+            _notify(self, "No profile is available to delete.")
+            return
+        self._run_captured(
+            tui_state.delete_plan_for_name(profile_name),
+            success=f"Deleted profile: {profile_name}",
+        )
+
+    def action_export_profile(self) -> None:
+        profile_name = self._profile_name()
+        if profile_name is None:
+            _notify(self, "No profile is available to export.")
+            return
+        self._run_interactive(
+            tui_state.export_plan_for_name(profile_name),
+            success=f"Exported profile: {profile_name}",
+        )
+
+    def action_import_profiles(self) -> None:
+        path = self._path_value()
+        if path is None:
+            _notify(self, "Enter an import path before importing profiles.")
+            return
+        self._run_captured(tui_state.import_plan_for_path(path), success=f"Imported profiles: {path}")
+
+    def _run_interactive(self, plan: tui_state.LaunchPlan, *, success: str) -> None:
+        result = self._run_plan(plan, capture_output=False)
+        if result.returncode == 0:
+            _notify(self, success)
+            return
+        _notify(self, f"{plan.mode} failed with exit {result.returncode}: {plan.profile_name}")
+
+    def _run_captured(self, plan: tui_state.LaunchPlan, *, success: str) -> None:
+        result = self._run_plan(plan, capture_output=True)
+        if result.returncode == 0:
+            _notify(self, success)
+            return
+        _notify(self, f"{plan.mode} failed with exit {result.returncode}: {plan.profile_name}")
+
+    def _run_plan(
+        self,
+        plan: tui_state.LaunchPlan,
+        *,
+        capture_output: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        suspend = getattr(self, "suspend", None)
+        if callable(suspend) and not capture_output:
+            with suspend():
+                return run_launch_plan(
+                    plan, cwd=Path(self.model.snapshot.cwd), capture_output=False
+                )
+        return run_launch_plan(plan, cwd=Path(self.model.snapshot.cwd), capture_output=capture_output)
+
+    def _profile_name(self) -> str | None:
+        value = _input_value(self, "#profile-name")
+        if value:
+            return value
+        return self.model.selected_profile_name
+
+    def _path_value(self) -> str | None:
+        return _input_value(self, "#profile-path")
+
+    def _profile_by_name(self, profile_name: str | None) -> Any | None:
+        if profile_name is None:
+            return None
+        return self.profiles_by_name.get(profile_name)
 
 
 def _screen_markup(screen: tui_state.TuiScreen) -> str:
