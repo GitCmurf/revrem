@@ -126,9 +126,10 @@ def test_tui_live_run_matches_cli_artifacts(
     monkeypatch.setenv("HOME", str(home))
 
     cli_result = _run_cli(repo=repo, artifact_dir=cli_dir, env=env)
-    tui_status = _run_tui_controller(repo=repo, artifact_dir=tui_dir)
+    tui_status, tui_exit_code = _run_tui_controller(repo=repo, artifact_dir=tui_dir)
 
     assert cli_result.returncode == expected_code, cli_result.stderr + cli_result.stdout
+    assert tui_exit_code == expected_code
     assert tui_status == tui_run_controller.classify_exit(
         expected_code,
         summary=_read_summary(tui_dir),
@@ -199,7 +200,10 @@ def _run_cli(repo: Path, artifact_dir: Path, env: dict[str, str]) -> subprocess.
     )
 
 
-def _run_tui_controller(repo: Path, artifact_dir: Path) -> tui_run_controller.RunControllerStatus:
+def _run_tui_controller(
+    repo: Path,
+    artifact_dir: Path,
+) -> tuple[tui_run_controller.RunControllerStatus, int | None]:
     profile = profiles.resolve_profile("equivalence", cwd=repo)
     profile = replace(profile, output=replace(profile.output, artifact_dir=str(artifact_dir)))
     plan = tui_state.launch_plan(profile, dry_run=False)
@@ -217,7 +221,8 @@ def _run_tui_controller(repo: Path, artifact_dir: Path) -> tui_run_controller.Ru
             controller.cancel(grace_seconds=0.1)
             raise AssertionError(f"TUI controller run timed out for {artifact_dir}")
         time.sleep(0.01)
-    return controller.finish(controller.process.returncode)
+    status = controller.finish(controller.process.returncode)
+    return status, controller.exit_code
 
 
 def _read_summary(run_dir: Path) -> dict[str, object]:
