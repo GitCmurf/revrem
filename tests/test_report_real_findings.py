@@ -39,6 +39,14 @@ def _load():
     return summary, event_records
 
 
+def _render_html(tmp_path) -> str:
+    """Render the fixture to an HTML file under tmp_path and return its contents."""
+    out = tmp_path / "report.html"
+    exit_code = report_command.main([str(_FIXTURE), "--output", str(out)])
+    assert exit_code == 0
+    return out.read_text(encoding="utf-8")
+
+
 def _real_status_classification_has_no_severities():
     """Sanity: the fixture status_classification event matches the real engine shape."""
     _summary, evs = _load()
@@ -57,9 +65,7 @@ def test_html_report_surfaces_the_confirmed_triage_finding(capsys, tmp_path):
     _real_status_classification_has_no_severities()
     # The command layer loads triage-N.json and threads it into the renderer.
     # Verify end-to-end by writing an HTML report, then assert on the file.
-    exit_code = report_command.main([str(_FIXTURE), "--output", str(tmp_path / "report.html")])
-    assert exit_code == 0
-    html_out = (tmp_path / "report.html").read_text(encoding="utf-8")
+    html_out = _render_html(tmp_path)
 
     assert "f1:sql-injection-user-input" in html_out, (
         "the confirmed finding fingerprint must render; findings are sourced "
@@ -103,9 +109,7 @@ def test_checks_section_renders_from_summary_iterations(capsys, tmp_path):
     """Checks render from summary.iterations[].checks[] (the engine real
     location), not only check_result events (C4). The fixture carries a
     summary check (ruff check ., passed) and no check_result event."""
-    exit_code = report_command.main([str(_FIXTURE), "--output", str(tmp_path / "report.html")])
-    assert exit_code == 0
-    html_out = (tmp_path / "report.html").read_text(encoding="utf-8")
+    html_out = _render_html(tmp_path)
     assert "ruff check ." in html_out
     assert "passed" in html_out
     # The summary-sourced check renders, not the empty placeholder.
@@ -127,9 +131,7 @@ def test_phase_config_section_renders_per_phase_harness_and_model(capsys, tmp_pa
     render; checks/runtime carry no harness/model and must be filtered out
     rather than emitted as blank rows.
     """
-    exit_code = report_command.main([str(_FIXTURE), "--output", str(tmp_path / "report.html")])
-    assert exit_code == 0
-    html_out = (tmp_path / "report.html").read_text(encoding="utf-8")
+    html_out = _render_html(tmp_path)
 
     assert "Phase configuration" in html_out, (
         "the phase-config section must render; summary.phase_config is present "
@@ -148,9 +150,7 @@ def test_phase_config_section_renders_per_phase_harness_and_model(capsys, tmp_pa
 def test_rejected_and_needs_more_info_findings_render(capsys, tmp_path):
     """Triage rejected_findings and needs_more_info are part of the C1 contract
     and must surface, not be silently dropped (C1 completeness)."""
-    exit_code = report_command.main([str(_FIXTURE), "--output", str(tmp_path / "report.html")])
-    assert exit_code == 0
-    html_out = (tmp_path / "report.html").read_text(encoding="utf-8")
+    html_out = _render_html(tmp_path)
     # rejected finding: its rejection reason / fingerprint surfaces.
     assert "review-comment:2" in html_out
     assert "Not introduced by the reviewed change" in html_out
@@ -162,9 +162,7 @@ def test_rejected_and_needs_more_info_findings_render(capsys, tmp_path):
 def test_per_iteration_review_status_surfaces(capsys, tmp_path):
     """The outcome section surfaces summary.iterations[].review_status (the
     docstring promised it; this asserts it is actually rendered)."""
-    exit_code = report_command.main([str(_FIXTURE), "--output", str(tmp_path / "report.html")])
-    assert exit_code == 0
-    html_out = (tmp_path / "report.html").read_text(encoding="utf-8")
+    html_out = _render_html(tmp_path)
     # The fixture's single iteration has review_status "findings" — assert the
     # actual value renders in the outcome row, not merely the label.
     assert "<dt>Review status</dt><dd>findings</dd>" in html_out
