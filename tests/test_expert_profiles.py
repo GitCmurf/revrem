@@ -111,6 +111,34 @@ model = "project-model"
     assert resolved.source == str(profiles.project_config_path(repo))
 
 
+def test_project_only_profile_shadows_builtin_profile(tmp_path):
+    repo = _repo(tmp_path)
+    home = tmp_path / "home"
+    project_path = profiles.project_config_path(repo)
+    project_path.write_text(
+        """
+[profiles.security]
+description = "Project security override"
+
+[profiles.security.review]
+model = "project-model"
+""",
+        encoding="utf-8",
+    )
+
+    resolved = profiles.resolve_profile(
+        "security", cwd=repo, home=home, require_implemented=False
+    )
+
+    assert resolved.description == "Project security override"
+    assert resolved.review.model == "project-model"
+    assert resolved.review.reasoning_effort is None
+    assert resolved.triage.enabled is False
+    assert resolved.triage.routing.enabled is False
+    assert resolved.triage.routes == {}
+    assert resolved.source == str(project_path)
+
+
 def test_config_list_includes_builtin_source(tmp_path, monkeypatch, capsys):
     repo = _repo(tmp_path)
     home = tmp_path / "home"
