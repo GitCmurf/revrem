@@ -186,6 +186,11 @@ class RevRemApp(_AppBase):  # type: ignore[misc, valid-type]
         ),
         ("tab", "focus_next", "Focus next"),
         ("shift+tab", "focus_previous", "Focus previous"),
+        (
+            _Binding("escape", "clear_focus", "Clear focus", priority=True)
+            if _Binding is not None
+            else ("escape", "clear_focus", "Clear focus")
+        ),
         ("s", "show_profile", "Show"),
         ("e", "edit_profile", "Edit profile"),
         ("n", "new_profile", "New"),
@@ -366,6 +371,12 @@ class RevRemApp(_AppBase):  # type: ignore[misc, valid-type]
         _update_widget(self, "#screen-help", _help_markup(visible=self._help_visible))
         self._update_console_status()
 
+    def action_clear_focus(self) -> None:
+        set_focus = getattr(self, "set_focus", None)
+        if callable(set_focus):
+            set_focus(None)
+        _notify(self, "Input focus cleared.")
+
     def action_show_profile(self) -> None:
         profile_name = self._profile_name()
         if profile_name is None:
@@ -482,6 +493,8 @@ class RevRemApp(_AppBase):  # type: ignore[misc, valid-type]
         return process is not None and process.poll() is None
 
     def _refresh_live_run(self) -> None:
+        if self._cancel_in_progress:
+            return
         if self.live_run_controller.status == "idle":
             return
         if self.live_run_controller.status in tui_run_controller.TERMINAL_STATUSES:
@@ -588,10 +601,7 @@ def _live_monitor_markup(controller: tui_run_controller.LiveRunController) -> st
         suffix = " [truncated]" if snapshot.truncated else ""
         lines.append(f"events: {len(snapshot.events)} loaded{suffix}")
         for event in tui_state.event_views_from_events(list(snapshot.events))[-8:]:
-            phase = event.phase or event.kind
-            iteration = "" if event.iteration is None else f"|{event.iteration}"
-            detail = f": {event.detail}" if event.detail else ""
-            lines.append(f"  {event.seq:04d}|{phase}{iteration}|{event.kind}{detail}")
+            lines.append(f"  {tui_state.event_row_text(event)}")
     return "\n".join(lines)
 
 
@@ -625,7 +635,7 @@ def _help_markup(*, visible: bool) -> str:
         return "[b]Help[/b]\nPress \\[h] for full keybindings."
     return (
         "[b]Help[/b]\n"
-        "Universal: \\[q] quit | \\[Tab] next focus | \\[Shift+Tab] previous focus | \\[h] hide help\n"
+        "Universal: \\[q] quit | \\[Tab] next focus | \\[Shift+Tab] previous focus | \\[Esc] clear focus | \\[h] hide help\n"
         "Run: \\[d] dry-run selected profile | \\[r] confirm/start live run | \\[k] cancel active run\n"
         "Profile: \\[s] show | \\[e] edit | \\[n] new | \\[c] clone | \\[x] export | \\[i] import | \\[delete] delete\n"
         "Fields: profile name targets profile actions; import path targets profile imports."

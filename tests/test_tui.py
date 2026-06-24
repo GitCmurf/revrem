@@ -7,6 +7,26 @@ from code_review_loop import tui
 from code_review_loop.cli.main import main as cli_main
 
 
+class _WidgetProbe:
+    def __init__(self) -> None:
+        self.updates: list[tuple[str, str]] = []
+        self.classes: list[tuple[str, str]] = []
+
+    def query_one(self, selector: str):
+        if selector not in {"#screen-run-monitor", "#screen-controls", "#screen-help", "#status-bar"}:
+            raise AssertionError(f"unexpected selector: {selector}")
+        probe = self
+
+        class Widget:
+            def update(self, value):
+                probe.updates.append((selector, value))
+
+            def set_classes(self, value):
+                probe.classes.append((selector, value))
+
+        return Widget()
+
+
 def test_tui_dry_run_does_not_require_textual(capsys):
     assert cli_main(["ui", "--dry-run"]) == 0
 
@@ -217,16 +237,12 @@ def test_tui_live_monitor_refresh_updates_run_monitor_widget(monkeypatch, tmp_pa
         artifact_dir=run_dir,
     )
     app.live_run_controller.status = "running"
-    updates = []
-
-    class FakeWidget:
-        def update(self, value):
-            updates.append(value)
-
-    monkeypatch.setattr(app, "query_one", lambda selector: FakeWidget())
+    widgets = _WidgetProbe()
+    monkeypatch.setattr(app, "query_one", widgets.query_one)
 
     app._render_live_monitor()
 
+    updates = [value for selector, value in widgets.updates if selector == "#screen-run-monitor"]
     assert updates
     assert "Live status: running" in updates[0]
     assert "0001|review|1|phase_start: reviewing" in updates[0]
@@ -234,7 +250,6 @@ def test_tui_live_monitor_refresh_updates_run_monitor_widget(monkeypatch, tmp_pa
 
 def test_tui_cancel_action_routes_to_controller(monkeypatch, tmp_path):
     notifications = []
-    updates = []
     workers = []
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -252,11 +267,8 @@ def test_tui_cancel_action_routes_to_controller(monkeypatch, tmp_path):
     monkeypatch.setattr(app, "run_worker", lambda target, thread=True: workers.append((target, thread)))
     monkeypatch.setattr(app, "call_from_thread", lambda callback: callback())
 
-    class FakeWidget:
-        def update(self, value):
-            updates.append(value)
-
-    monkeypatch.setattr(app, "query_one", lambda selector: FakeWidget())
+    widgets = _WidgetProbe()
+    monkeypatch.setattr(app, "query_one", widgets.query_one)
 
     app.action_cancel_run()
 
@@ -269,12 +281,11 @@ def test_tui_cancel_action_routes_to_controller(monkeypatch, tmp_path):
         "Live run cancel completed: cancelled",
     ]
     assert app._cancel_in_progress is False
-    assert updates
+    assert any(selector == "#screen-run-monitor" for selector, _ in widgets.updates)
 
 
 def test_tui_cancel_action_reports_when_no_run_is_active(monkeypatch, tmp_path):
     notifications = []
-    updates = []
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / ".git").mkdir()
@@ -282,15 +293,13 @@ def test_tui_cancel_action_reports_when_no_run_is_active(monkeypatch, tmp_path):
     app = tui.RevRemApp(model=model, profiles_by_name={})
     monkeypatch.setattr(app, "notify", lambda message: notifications.append(message))
 
-    class FakeWidget:
-        def update(self, value):
-            updates.append(value)
-
-    monkeypatch.setattr(app, "query_one", lambda selector: FakeWidget())
+    widgets = _WidgetProbe()
+    monkeypatch.setattr(app, "query_one", widgets.query_one)
 
     app.action_cancel_run()
 
     assert notifications == ["No active live run to cancel."]
+    updates = [value for selector, value in widgets.updates if selector == "#screen-controls"]
     assert any("idle: press r twice to start" in update for update in updates)
 
 
@@ -309,11 +318,8 @@ def test_tui_quit_warns_before_cancelling_active_run(monkeypatch, tmp_path):
     monkeypatch.setattr(app, "run_worker", lambda target, thread=True: workers.append(target))
     monkeypatch.setattr(app, "call_from_thread", lambda callback: callback())
     monkeypatch.setattr(app, "exit", lambda: exits.append(True))
-    monkeypatch.setattr(
-        app,
-        "query_one",
-        lambda selector: types.SimpleNamespace(update=lambda value: None, set_classes=lambda value: None),
-    )
+    widgets = _WidgetProbe()
+    monkeypatch.setattr(app, "query_one", widgets.query_one)
 
     app.action_quit()
 
@@ -362,27 +368,55 @@ def test_tui_refresh_stops_after_terminal_status(monkeypatch, tmp_path):
     app._refresh_live_run()
 
 
+def test_tui_refresh_stops_while_cancel_is_in_progress(monkeypatch, tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    model = tui.tui_state.build_shell_model(cwd=repo, selected_profile_name="security")
+    app = tui.RevRemApp(model=model, profiles_by_name={})
+    app.live_run_controller.status = "running"
+    app._cancel_in_progress = True
+    monkeypatch.setattr(
+        app.live_run_controller,
+        "refresh",
+        lambda: (_ for _ in ()).throw(AssertionError("refresh should not run")),
+    )
+
+    app._refresh_live_run()
+
+
+def test_tui_clear_focus_action_clears_input_focus(monkeypatch, tmp_path):
+    focused = []
+    notifications = []
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    model = tui.tui_state.build_shell_model(cwd=repo, selected_profile_name="security")
+    app = tui.RevRemApp(model=model, profiles_by_name={})
+    monkeypatch.setattr(app, "set_focus", lambda value: focused.append(value))
+    monkeypatch.setattr(app, "notify", lambda message: notifications.append(message))
+
+    app.action_clear_focus()
+
+    assert focused == [None]
+    assert notifications == ["Input focus cleared."]
+
+
 def test_tui_help_toggle_updates_help_and_status_widgets(monkeypatch, tmp_path):
-    updates = []
-    classes = []
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / ".git").mkdir()
     model = tui.tui_state.build_shell_model(cwd=repo, selected_profile_name="security")
     app = tui.RevRemApp(model=model, profiles_by_name={})
 
-    class FakeWidget:
-        def update(self, value):
-            updates.append(value)
-
-        def set_classes(self, value):
-            classes.append(value)
-
-    monkeypatch.setattr(app, "query_one", lambda selector: FakeWidget())
+    widgets = _WidgetProbe()
+    monkeypatch.setattr(app, "query_one", widgets.query_one)
 
     app.action_toggle_help()
 
     assert app._help_visible is True
+    updates = [value for _, value in widgets.updates]
+    classes = [value for _, value in widgets.classes]
     assert any("Run: \\[d] dry-run selected profile" in update for update in updates)
     assert any("help open" in update for update in updates)
     assert "status-idle" in classes
@@ -390,26 +424,20 @@ def test_tui_help_toggle_updates_help_and_status_widgets(monkeypatch, tmp_path):
 
 def test_tui_help_key_handler_stops_event_and_toggles_help(monkeypatch, tmp_path):
     stopped = []
-    updates = []
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / ".git").mkdir()
     model = tui.tui_state.build_shell_model(cwd=repo, selected_profile_name="security")
     app = tui.RevRemApp(model=model, profiles_by_name={})
-    monkeypatch.setattr(
-        app,
-        "query_one",
-        lambda selector: types.SimpleNamespace(
-            update=lambda value: updates.append(value),
-            set_classes=lambda value: None,
-        ),
-    )
+    widgets = _WidgetProbe()
+    monkeypatch.setattr(app, "query_one", widgets.query_one)
     event = types.SimpleNamespace(key="h", stop=lambda: stopped.append(True))
 
     app.on_key(event)
 
     assert stopped == [True]
     assert app._help_visible is True
+    updates = [value for _, value in widgets.updates]
     assert any("confirm/start live run" in update for update in updates)
 
 

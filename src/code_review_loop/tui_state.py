@@ -317,10 +317,7 @@ def run_monitor_screen(snapshot: HomeSnapshot) -> TuiScreen:
             suffix = " [truncated]" if monitor.events_truncated else ""
             lines.append(f"  events: {len(monitor.events)} loaded{suffix}")
             for event in monitor.events[-4:]:
-                phase = event.phase or event.kind
-                iteration = "" if event.iteration is None else f"|{event.iteration}"
-                detail = f": {event.detail}" if event.detail else ""
-                lines.append(f"    {event.seq:04d}|{phase}{iteration}|{event.kind}{detail}")
+                lines.append(f"    {event_row_text(event)}")
     return TuiScreen(name="run-monitor", title="Run Monitor", lines=tuple(lines))
 
 
@@ -545,6 +542,13 @@ def event_views_from_events(
     records: tuple[event_model.Event, ...] | list[event_model.Event],
 ) -> tuple[RunEventView, ...]:
     return tuple(run_event_view(event) for event in records)
+
+
+def event_row_text(event: RunEventView) -> str:
+    phase = event.phase or event.kind
+    iteration = "" if event.iteration is None else f"|{event.iteration}"
+    detail = f": {event.detail}" if event.detail else ""
+    return f"{event.seq:04d}|{phase}{iteration}|{event.kind}{detail}"
 
 
 def events_path_for_record(record: dict[str, Any]) -> Path | None:
