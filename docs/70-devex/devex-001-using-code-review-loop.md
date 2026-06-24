@@ -1524,16 +1524,18 @@ comment builder consumes.
 ```
 
 Without the `tui` extra, `revrem ui` exits cleanly with an installation hint.
-The CLI remains the authoritative execution path. The TUI renders Home,
-Profiles, Pipeline, Run Monitor, and Controls views from dependency-free view
-models for profiles, recent runs, harness metadata, phase state, command
-previews, and artifact links. Use `--profile NAME` to select the initial
+The CLI remains the authoritative execution path. The TUI renders an
+operator-console view from dependency-free view models for profiles, recent
+runs, harness metadata, phase state, command previews, and artifact links. The
+layout keeps workspace/profile/live-run status visible at the top, shows profile
+and pipeline context beside the Run Monitor, and keeps contextual live-run
+controls plus help on the right. Use `--profile NAME` to select the initial
 profile. Key bindings shell through `revrem config` and the normal run CLI:
 `d` dry-runs the selected profile, `r` asks for confirmation and then starts a
 real live run, `k` cancels an active live run, `s` shows the profile, `e` edits
 it, `n` creates a profile, `c` clones the selected profile, `x` exports, `i`
 imports from the path field, `delete` deletes through
-`revrem config delete --yes`, and `q` quits.
+`revrem config delete --yes`, `?` toggles contextual help, and `q` quits.
 
 Live TUI runs are experimental but use the same execution path as the CLI. The
 TUI controller starts a managed `revrem` subprocess with the selected profile,
@@ -1543,6 +1545,7 @@ events through the same `RunEventView` path as replay/history. Cancellation send
 `SIGINT` to the child process group first, so a normal active run writes the
 standard `cancellation` event and `summary.json` with exit code `5`; `SIGTERM`
 and `SIGKILL` are reserved for forced cleanup if the child does not exit.
+When no live run is active, cancellation is a no-op with explicit feedback.
 
 Codex, Claude, Gemini, opencode, and KiloCode are executable
 review/remediation harnesses through the shared adapter boundary. Their CLIs

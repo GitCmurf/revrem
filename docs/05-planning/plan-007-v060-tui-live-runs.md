@@ -56,6 +56,9 @@ This plan has been implemented as the experimental v0.6.0 live-run slice:
 - S4: `tests/test_tui_cli_equivalence.py` proves direct CLI and
   TUI-controller-launched runs have equivalent stable artifacts for clear,
   findings, unknown, review-failure, check-failure, and cost-ceiling outcomes.
+- Design polish: the first live-run UI now presents an operator console with a
+  persistent status bar, profile/pipeline and monitor columns, contextual
+  controls, inactive-cancel feedback, and a help panel.
 
 ## How To Read This Document
 

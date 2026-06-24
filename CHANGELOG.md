@@ -26,6 +26,10 @@ This project follows Semantic Versioning once public releases begin.
   `--pending-review ignore`, and JSON summaries; tests prove CLI/TUI artifact
   equivalence across clear, findings, unknown, review-failure, check-failure,
   and budget-ceiling fake-harness scenarios.
+- The experimental TUI now uses a denser operator-console layout instead of
+  plain tabbed text snapshots: a persistent status bar, profile/pipeline and
+  run-monitor columns, contextual live-run controls, and an on-demand help panel
+  make run state and keybindings visible without changing the execution path.
 
 ## [0.5.0] - 2026-06-21
 

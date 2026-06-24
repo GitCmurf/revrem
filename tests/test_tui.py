@@ -245,6 +245,7 @@ def test_tui_cancel_action_routes_to_controller(monkeypatch, tmp_path):
         artifact_dir_arg=".revrem/runs/live",
         artifact_dir=repo / ".revrem" / "runs" / "live",
     )
+    app.live_run_controller.process = types.SimpleNamespace(poll=lambda: None)
     monkeypatch.setattr(app.live_run_controller, "cancel", lambda: "cancelled")
     monkeypatch.setattr(app, "notify", lambda message: notifications.append(message))
 
@@ -258,6 +259,79 @@ def test_tui_cancel_action_routes_to_controller(monkeypatch, tmp_path):
 
     assert notifications == ["Live run cancel requested: cancelled"]
     assert updates
+
+
+def test_tui_cancel_action_reports_when_no_run_is_active(monkeypatch, tmp_path):
+    notifications = []
+    updates = []
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    model = tui.tui_state.build_shell_model(cwd=repo, selected_profile_name="security")
+    app = tui.RevRemApp(model=model, profiles_by_name={})
+    monkeypatch.setattr(app, "notify", lambda message: notifications.append(message))
+
+    class FakeWidget:
+        def update(self, value):
+            updates.append(value)
+
+    monkeypatch.setattr(app, "query_one", lambda selector: FakeWidget())
+
+    app.action_cancel_run()
+
+    assert notifications == ["No active live run to cancel."]
+    assert any("idle: press r twice to start" in update for update in updates)
+
+
+def test_tui_help_toggle_updates_help_and_status_widgets(monkeypatch, tmp_path):
+    updates = []
+    classes = []
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    model = tui.tui_state.build_shell_model(cwd=repo, selected_profile_name="security")
+    app = tui.RevRemApp(model=model, profiles_by_name={})
+
+    class FakeWidget:
+        def update(self, value):
+            updates.append(value)
+
+        def set_classes(self, value):
+            classes.append(value)
+
+    monkeypatch.setattr(app, "query_one", lambda selector: FakeWidget())
+
+    app.action_toggle_help()
+
+    assert app._help_visible is True
+    assert any("Run: \\[d] dry-run selected profile" in update for update in updates)
+    assert any("help open" in update for update in updates)
+    assert "status-idle" in classes
+
+
+def test_tui_help_key_handler_stops_event_and_toggles_help(monkeypatch, tmp_path):
+    stopped = []
+    updates = []
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    model = tui.tui_state.build_shell_model(cwd=repo, selected_profile_name="security")
+    app = tui.RevRemApp(model=model, profiles_by_name={})
+    monkeypatch.setattr(
+        app,
+        "query_one",
+        lambda selector: types.SimpleNamespace(
+            update=lambda value: updates.append(value),
+            set_classes=lambda value: None,
+        ),
+    )
+    event = types.SimpleNamespace(key="h", stop=lambda: stopped.append(True))
+
+    app.on_key(event)
+
+    assert stopped == [True]
+    assert app._help_visible is True
+    assert any("confirm/start live run" in update for update in updates)
 
 
 def test_tui_edit_action_launches_profile_editor_with_suspended_app(monkeypatch, tmp_path):

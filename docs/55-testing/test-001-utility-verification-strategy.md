@@ -194,14 +194,16 @@ scripts, including optional extras metadata.
 requiring Textual in the default development environment, plus fake-Textual
 launch smoke tests for the operator shell, dry-run and live-run launch actions,
 live monitor refresh, cancellation routing, and CLI-backed profile lifecycle
-actions.
+actions. It also covers the operator-console status/help widgets, including
+inactive cancellation feedback and the visible live-run confirmation state.
 `tests/test_tui_state.py` covers dependency-free TUI view models for profile
 discovery, run-history loading, harness metadata, pipeline phase summaries, and
 profile command previews, launch plans, profile lifecycle command plans,
 run-monitor artifact links, and the composed shell model used by the
 interactive entry point.
 `tests/test_tui_pilot_smoke.py` boots the module-scope Textual app through a
-Pilot harness. `tests/test_tui_run_controller.py` covers live-run argv assembly,
+Pilot harness and asserts the Home, status, and help panels render through
+Textual. `tests/test_tui_run_controller.py` covers live-run argv assembly,
 explicit artifact-dir stale-event guards, exit classification, process-group
 cancellation escalation, and a real child-process cancellation smoke.
 `tests/test_tui_cli_equivalence.py` runs the package entry point directly and
