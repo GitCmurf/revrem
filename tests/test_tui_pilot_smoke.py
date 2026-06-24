@@ -1,8 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import subprocess
+import time
+from collections.abc import Awaitable, Callable
+from pathlib import Path
 
 from support.tui_pilot import pilot_app
+
+from code_review_loop import events, tui
 
 
 def test_tui_pilot_boots_home_view(tmp_path):
@@ -25,3 +32,124 @@ def test_tui_pilot_boots_home_view(tmp_path):
             assert "confirm/start live run" in str(help_panel.render())
 
     asyncio.run(run())
+
+
+def test_tui_pilot_confirmed_launch_reaches_visible_running_state(tmp_path, monkeypatch):
+    async def run() -> None:
+        repo = _init_repo(tmp_path / "repo")
+        _write_live_profile(repo, review_model="slow_cancel", artifact_dir="runs/live-launch")
+        monkeypatch.setattr(tui.sys, "argv", [str(repo / "launcher.py")])
+
+        async with pilot_app(cwd=repo, profile_name="live") as (app, pilot):
+            await pilot.press("escape")
+            await pilot.press("r")
+            await pilot.press("r")
+
+            await _wait_for(
+                lambda: "Live status: running" in _render(app, "#screen-run-monitor"),
+                pilot_pause=pilot.pause,
+            )
+            assert "Live run started: live" in _render(app, "#screen-run-monitor") or (
+                app.live_run_controller.launch is not None
+            )
+            assert app.live_run_controller.launch is not None
+            assert app.live_run_controller.launch.artifact_dir == repo / "runs/live-launch"
+            app.live_run_controller.cancel(grace_seconds=1)
+
+    asyncio.run(run())
+
+
+def test_tui_pilot_live_monitor_updates_and_cancels_visible_run(tmp_path, monkeypatch):
+    async def run() -> None:
+        repo = _init_repo(tmp_path / "repo")
+        _write_live_profile(repo, review_model="review_findings", artifact_dir="runs/live-cancel")
+        monkeypatch.setattr(tui.sys, "argv", [str(repo / "launcher.py")])
+
+        async with pilot_app(cwd=repo, profile_name="live") as (app, pilot):
+            await pilot.press("escape")
+            await pilot.press("r")
+            await pilot.press("r")
+
+            await _wait_for(
+                lambda: (
+                    "events: 2 loaded" in _render(app, "#screen-run-monitor")
+                    and "phase_start" in _render(app, "#screen-run-monitor")
+                    and "phase_result: findings-summary (1)" in _render(app, "#screen-run-monitor")
+                ),
+                pilot_pause=pilot.pause,
+                timeout=12,
+            )
+            await pilot.press("escape")
+            await pilot.press("k")
+            await _wait_for(
+                lambda: "Live status: cancelled" in _render(app, "#screen-run-monitor"),
+                pilot_pause=pilot.pause,
+                timeout=12,
+            )
+
+            launch = app.live_run_controller.launch
+            assert launch is not None
+            summary = json.loads((launch.artifact_dir / "summary.json").read_text(encoding="utf-8"))
+            assert summary["stopped_reason"] == "cancelled"
+            records, _ = events.read_events(launch.artifact_dir / events.EVENTS_FILENAME)
+            assert any(record.kind == "cancellation" for record in records)
+
+    asyncio.run(run())
+
+
+def _init_repo(repo: Path) -> Path:
+    repo.mkdir(parents=True)
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, check=True)
+    (repo / "README.md").write_text("# Fixture\n", encoding="utf-8")
+    subprocess.run(["git", "add", "README.md"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=repo, check=True, capture_output=True)
+    return repo
+
+
+def _write_live_profile(repo: Path, *, review_model: str, artifact_dir: str) -> None:
+    (repo / ".revrem.toml").write_text(
+        f"""
+[profiles.live]
+description = "Pilot live run"
+
+[profiles.live.pipeline]
+max_iterations = 1
+final_review = false
+
+[profiles.live.output]
+artifact_dir = "{artifact_dir}"
+
+[profiles.live.review]
+harness = "fake"
+model = "{review_model}"
+
+[profiles.live.remediation]
+harness = "fake"
+model = "slow_cancel"
+
+[profiles.live.triage]
+enabled = false
+""",
+        encoding="utf-8",
+    )
+
+
+async def _wait_for(
+    predicate: Callable[[], bool],
+    *,
+    pilot_pause: Callable[[], Awaitable[object]],
+    timeout: float = 8,
+) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        await pilot_pause()
+        if predicate():
+            return
+        await asyncio.sleep(0.05)
+    raise AssertionError("timed out waiting for TUI state")
+
+
+def _render(app: tui.RevRemApp, selector: str) -> str:
+    return str(app.query_one(selector).render())

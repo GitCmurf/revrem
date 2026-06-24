@@ -75,6 +75,21 @@ triage.enabled = false
             1,
         ),
         (
+            "setup-failure",
+            """
+[profiles.equivalence]
+pipeline.base = "missing-base"
+pipeline.max_iterations = 1
+pipeline.final_review = false
+review.harness = "fake"
+review.model = "review_clear"
+remediation.harness = "fake"
+remediation.model = "remediation"
+triage.enabled = false
+""",
+            4,
+        ),
+        (
             "check-failure",
             f"""
 [profiles.equivalence]
