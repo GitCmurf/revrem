@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import IO, Literal
 
-from code_review_loop import profiles, tui_state
+from code_review_loop import events, profiles, tui_state
 from code_review_loop.identity import SYSTEM_IDENTITY, RunIdentity
 
 RunControllerStatus = Literal[
@@ -38,6 +38,22 @@ class LiveRunLaunch:
     artifact_dir: Path
 
 
+@dataclass(frozen=True)
+class LiveEventSnapshot:
+    events: tuple[events.Event, ...] = ()
+    truncated: bool = False
+    error: str | None = None
+    ready: bool = False
+
+
+@dataclass(frozen=True)
+class EventFileIdentity:
+    inode: int | None
+    size: int
+    mtime_ns: int
+    first_run_id: str | None
+
+
 @dataclass
 class _BoundedLines:
     max_lines: int = 200
@@ -62,6 +78,7 @@ class LiveRunController:
     message: str | None = None
     stdout_tail: tuple[str, ...] = ()
     stderr_tail: tuple[str, ...] = ()
+    preexisting_events: EventFileIdentity | None = None
     _stdout_buffer: _BoundedLines = field(default_factory=_BoundedLines)
     _stderr_buffer: _BoundedLines = field(default_factory=_BoundedLines)
     _drain_threads: list[threading.Thread] = field(default_factory=list)
@@ -84,6 +101,9 @@ class LiveRunController:
         self.launch = launch
         self.exit_code = None
         self.message = None
+        self.preexisting_events = _event_file_identity(
+            launch.artifact_dir / events.EVENTS_FILENAME
+        )
         self._stdout_buffer = _BoundedLines()
         self._stderr_buffer = _BoundedLines()
         self.process = popen_factory(
@@ -137,6 +157,20 @@ class LiveRunController:
         except (OSError, json.JSONDecodeError):
             return None
         return payload if isinstance(payload, dict) else None
+
+    def read_live_events(self) -> LiveEventSnapshot:
+        if self.launch is None:
+            return LiveEventSnapshot()
+        events_path = self.launch.artifact_dir / events.EVENTS_FILENAME
+        if not events_path.is_file():
+            return LiveEventSnapshot(ready=False)
+        if _matches_preexisting_events(events_path, self.preexisting_events):
+            return LiveEventSnapshot(ready=False)
+        try:
+            records, truncated = events.read_events(events_path)
+        except (OSError, ValueError) as exc:
+            return LiveEventSnapshot(error=str(exc), ready=True)
+        return LiveEventSnapshot(events=tuple(records), truncated=truncated, ready=True)
 
 
 def prepare_live_run_launch(
@@ -199,6 +233,42 @@ def _resolve_child_path(path: str, *, cwd: Path) -> Path:
     return cwd / resolved
 
 
+def _event_file_identity(path: Path) -> EventFileIdentity | None:
+    if not path.is_file():
+        return None
+    stat_result = path.stat()
+    inode = stat_result.st_ino if hasattr(stat_result, "st_ino") else None
+    return EventFileIdentity(
+        inode=inode,
+        size=stat_result.st_size,
+        mtime_ns=stat_result.st_mtime_ns,
+        first_run_id=events.first_run_id(path),
+    )
+
+
+def _matches_preexisting_events(
+    path: Path,
+    preexisting: EventFileIdentity | None,
+) -> bool:
+    if preexisting is None:
+        return False
+    current = _event_file_identity(path)
+    if current is None:
+        return False
+    same_identity = (
+        current.inode == preexisting.inode
+        and current.size == preexisting.size
+        and current.mtime_ns == preexisting.mtime_ns
+    )
+    if same_identity:
+        return True
+    return (
+        current.first_run_id is not None
+        and preexisting.first_run_id is not None
+        and current.first_run_id == preexisting.first_run_id
+    )
+
+
 def _drain_stream(
     stream: IO[str] | None,
     buffer: _BoundedLines,
@@ -217,4 +287,3 @@ def _drain_stream(
     thread = threading.Thread(target=run, name=name, daemon=True)
     thread.start()
     return thread
-

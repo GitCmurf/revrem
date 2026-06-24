@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from io import StringIO
 
-from code_review_loop import profiles, tui_run_controller, tui_state
+from code_review_loop import events, profiles, tui_run_controller, tui_state
 
 
 class FixedIdentity:
@@ -140,3 +140,76 @@ def test_classify_exit_requires_artifacts_for_clean_cancellation():
     )
     assert tui_run_controller.classify_exit(6) == "failed"
     assert tui_run_controller.classify_exit(130) == "interrupted-before-run-initialized"
+
+
+def test_live_events_ignore_stale_explicit_artifact_dir_until_replaced(tmp_path):
+    run_dir = tmp_path / "custom" / "run"
+    run_dir.mkdir(parents=True)
+    old_sink = events.JsonlSink(run_dir, "old-run")
+    old_sink.emit("phase_start", phase="review")
+    old_sink.close()
+    profile = profiles.Profile(
+        name="demo",
+        output=profiles.OutputConfig(artifact_dir="custom/run"),
+    )
+    plan = tui_state.LaunchPlan(
+        profile_name="demo",
+        mode="run",
+        argv=("revrem", "--profile", "demo"),
+        shell_command="revrem --profile demo",
+    )
+
+    controller = tui_run_controller.LiveRunController()
+    controller.start(
+        profile=profile,
+        plan=plan,
+        cwd=tmp_path,
+        entrypoint_resolver=list,
+        popen_factory=lambda *_args, **_kwargs: FakeProcess(),
+    )
+
+    assert controller.read_live_events().ready is False
+
+    new_sink = events.JsonlSink(run_dir, "new-run")
+    new_sink.emit("phase_start", phase="review", payload={"message": "new"})
+    new_sink.close()
+
+    snapshot = controller.read_live_events()
+    assert snapshot.ready is True
+    assert [event.run_id for event in snapshot.events] == ["new-run"]
+
+
+def test_live_events_ignore_malformed_stale_file_until_identity_changes(tmp_path):
+    run_dir = tmp_path / "custom" / "run"
+    run_dir.mkdir(parents=True)
+    events_path = run_dir / events.EVENTS_FILENAME
+    events_path.write_text("{not json}\n", encoding="utf-8")
+    profile = profiles.Profile(
+        name="demo",
+        output=profiles.OutputConfig(artifact_dir="custom/run"),
+    )
+    plan = tui_state.LaunchPlan(
+        profile_name="demo",
+        mode="run",
+        argv=("revrem", "--profile", "demo"),
+        shell_command="revrem --profile demo",
+    )
+
+    controller = tui_run_controller.LiveRunController()
+    controller.start(
+        profile=profile,
+        plan=plan,
+        cwd=tmp_path,
+        entrypoint_resolver=list,
+        popen_factory=lambda *_args, **_kwargs: FakeProcess(),
+    )
+
+    assert controller.read_live_events().ready is False
+
+    new_sink = events.JsonlSink(run_dir, "new-run")
+    new_sink.emit("phase_start", phase="review")
+    new_sink.close()
+
+    snapshot = controller.read_live_events()
+    assert snapshot.ready is True
+    assert [event.run_id for event in snapshot.events] == ["new-run"]

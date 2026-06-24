@@ -420,6 +420,26 @@ def test_run_monitor_view_derives_state_from_events_jsonl(tmp_path):
     assert "0002|checks|1.1|check_result: passed" in "\n".join(rendered.lines)
 
 
+def test_event_views_from_events_is_shared_renderer():
+    records = (
+        events.make_event(run_id="run-1", seq=1, kind="phase_start", phase="review"),
+        events.make_event(
+            run_id="run-1",
+            seq=2,
+            kind="check_result",
+            phase="checks",
+            payload={"status": "passed"},
+        ),
+    )
+
+    views = tui_state.event_views_from_events(records)
+
+    assert [(view.seq, view.phase, view.kind, view.detail) for view in views] == [
+        (1, "review", "phase_start", ""),
+        (2, "checks", "check_result", "passed"),
+    ]
+
+
 def test_run_monitor_view_renders_routing_event_details(tmp_path):
     repo = tmp_path / "repo"
     run_dir = repo / ".revrem" / "runs" / "run-1"

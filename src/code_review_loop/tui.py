@@ -159,6 +159,11 @@ class RevRemApp(_AppBase):  # type: ignore[misc, valid-type]
             )
         yield _Footer()
 
+    def on_mount(self) -> None:
+        set_interval = getattr(self, "set_interval", None)
+        if callable(set_interval):
+            set_interval(0.5, self._refresh_live_run)
+
     def action_launch_dry_run(self) -> None:
         profile_name = self._profile_name()
         selected = self._profile_by_name(profile_name)
@@ -191,6 +196,7 @@ class RevRemApp(_AppBase):  # type: ignore[misc, valid-type]
             entrypoint_resolver=current_entrypoint_argv,
         )
         _notify(self, f"Live run started: {profile_name} ({launch.artifact_dir_arg})")
+        self._render_live_monitor()
 
     def action_show_profile(self) -> None:
         profile_name = self._profile_name()
@@ -303,6 +309,26 @@ class RevRemApp(_AppBase):  # type: ignore[misc, valid-type]
             return None
         return self.profiles_by_name.get(profile_name)
 
+    def _refresh_live_run(self) -> None:
+        if self.live_run_controller.status == "idle":
+            return
+        self.live_run_controller.refresh()
+        self._render_live_monitor()
+
+    def _render_live_monitor(self) -> None:
+        if self.live_run_controller.launch is None:
+            return
+        query_one = getattr(self, "query_one", None)
+        if not callable(query_one):
+            return
+        try:
+            widget = query_one("#screen-run-monitor")
+        except Exception:
+            return
+        update = getattr(widget, "update", None)
+        if callable(update):
+            update(_live_monitor_markup(self.live_run_controller))
+
 
 def _screen_markup(screen: tui_state.TuiScreen) -> str:
     escaped_lines = "\n".join(tui_state.markup_escape(line) for line in screen.lines)
@@ -318,6 +344,31 @@ def _controls_markup(selected_profile_name: str | None) -> str:
         "[b]Notes[/b]\n"
         "Use the profile field for target profile actions. Use the path field for TOML imports."
     )
+
+
+def _live_monitor_markup(controller: tui_run_controller.LiveRunController) -> str:
+    lines = [
+        "[b]Run Monitor[/b]",
+        f"Live status: {tui_state.markup_escape(controller.status)}",
+    ]
+    if controller.launch is not None:
+        lines.append(f"artifacts: {tui_state.markup_escape(str(controller.launch.artifact_dir))}")
+    if controller.message:
+        lines.append(f"message: {tui_state.markup_escape(controller.message)}")
+    snapshot = controller.read_live_events()
+    if snapshot.error:
+        lines.append(f"events: unavailable ({tui_state.markup_escape(snapshot.error)})")
+    elif not snapshot.ready:
+        lines.append("events: waiting for events.jsonl")
+    else:
+        suffix = " [truncated]" if snapshot.truncated else ""
+        lines.append(f"events: {len(snapshot.events)} loaded{suffix}")
+        for event in tui_state.event_views_from_events(list(snapshot.events))[-8:]:
+            phase = event.phase or event.kind
+            iteration = "" if event.iteration is None else f"|{event.iteration}"
+            detail = f": {event.detail}" if event.detail else ""
+            lines.append(f"  {event.seq:04d}|{phase}{iteration}|{event.kind}{detail}")
+    return "\n".join(lines)
 
 
 def _input_value(app: Any, selector: str) -> str | None:

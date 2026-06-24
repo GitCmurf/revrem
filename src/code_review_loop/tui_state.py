@@ -538,7 +538,13 @@ def run_event_views(
         records, truncated = event_model.read_events(events_path)
     except (ValueError, OSError) as exc:
         return (), False, str(exc)
-    return tuple(run_event_view(event) for event in records), truncated, None
+    return event_views_from_events(records), truncated, None
+
+
+def event_views_from_events(
+    records: tuple[event_model.Event, ...] | list[event_model.Event],
+) -> tuple[RunEventView, ...]:
+    return tuple(run_event_view(event) for event in records)
 
 
 def events_path_for_record(record: dict[str, Any]) -> Path | None:
