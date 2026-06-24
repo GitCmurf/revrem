@@ -3,7 +3,7 @@ document_id: REVREM-PLAN-007
 type: PLAN
 title: v0.6.0 TUI live runs
 status: Draft
-version: '0.5'
+version: '0.6'
 last_updated: '2026-06-24'
 owner: GitCmurf
 docops_version: '2.0'
@@ -97,10 +97,12 @@ Verified against the v0.5.0 source tree:
   `events.JsonlSink` writes `events.jsonl` append-only; `FLUSH_KINDS` flushes at
   `phase_result`, `failure`, `summary`, `cancellation`, and `cost_ceiling_hit`,
   so a *tailing* reader sees every phase boundary as it happens.
-- **The monitor renderer already exists.** `tui_state.run_event_views(...)` and
-  `run_event_view(event)` convert `events.Event` → `RunEventView`
-  (`seq, kind, phase, iteration, detail`). The replay/history monitor uses these
-  today; the live monitor will reuse them unchanged.
+- **The monitor renderer already exists.** `tui_state.run_event_view(event)`
+  converts `events.Event` → `RunEventView` (`seq, kind, phase, iteration,
+  detail`). `run_event_views(record)` is the replay/history wrapper that resolves
+  a finished-run record's `events.jsonl`, reads it, and applies that converter.
+  The live monitor will reuse the same converter, either directly or through a
+  small extracted event-list helper shared with replay.
 - **Cancellation needs a `KeyboardInterrupt` on the run loop's own thread**
   (`REVREM-ADR-009`). `runner.run_loop` catches `KeyboardInterrupt` and calls
   `runner_finish.finish_cancelled`, which emits a `cancellation` event, writes
@@ -221,9 +223,11 @@ turns on isolation, coupling, and risk for an *experimental* first slice:
    fires on the sink's daemon drain thread) onto the Textual thread via
    `app.call_from_thread()`.
 4. **Live == replay.** `events.jsonl` is append-only and flushed at every phase
-   boundary (`FLUSH_KINDS`); tailing it and re-running
-   `tui_state.run_event_views(...)` is the *same* render path the history monitor
-   already uses — exactly the property the S4 equivalence gate asserts.
+   boundary (`FLUSH_KINDS`); tailing it and passing parsed `Event` objects through
+   `tui_state.run_event_view(event)` (or a shared event-list helper extracted
+   from `run_event_views(record)`) is the *same* event-row render path the
+   history monitor already uses — exactly the property the S4 equivalence gate
+   asserts.
 5. **In-process's latency edge is smaller than it looks.** A cooperative
    in-process cancel only takes effect at the next child-call boundary anyway,
    and the monitor is phase/iteration-grained either way (`RunEventView`'s
@@ -257,8 +261,8 @@ class is currently function-local (`tui.run_textual_app`'s inner
 prerequisite `REVREM-PLAN-002` named and never delivered. Treating it as a
 foundational slice (S0) — rather than folding it into S1 — keeps the refactor
 reviewable in isolation and gives every later slice a working test substrate.
-Textual `>=0.80` is already declared in the `tui` extra (CI installs 8.x), so
-`Pilot` is available with no new dependency.
+Textual `>=0.80` is already declared in the `tui` extra, so `Pilot` is available
+with no new dependency.
 
 ## Shared Contracts
 
@@ -314,11 +318,15 @@ Every slice must obey these.
    but the UX must report that as forced cleanup rather than a clean RevRem
    cancellation unless the child's artifacts contain the real `cancellation`
    event and exit-code-5 summary.
-7. **Stable exit codes (do not change).** `0` clear · `1` utility · `2`
-   findings · `3` budget ceiling · `4` setup/resume · `5` cancelled · `6`
-   `doctor --strict`. The controller *maps* the child's exit code to UI state; it
-   never redefines a code (`core.outcome.outcome_to_exit_code` is the source of
-   truth).
+7. **Stable exit codes (do not change).** Global CLI meanings stay fixed: `0`
+   clear · `1` utility · `2` findings/unknown · `3` budget ceiling · `4`
+   setup/resume precondition · `5` cancelled · `6` `doctor --strict` warnings.
+   A live review-loop child is expected to produce only the run-loop codes
+   `0`-`5`; `6` means the wrong subcommand path was launched, and `130` can only
+   occur if the process is interrupted before the application exit wrapper owns a
+   `RunOutcome`. The controller maps the child's exit code plus artifacts to UI
+   state; it never redefines a code (`core.outcome.outcome_to_exit_code` and the
+   subcommand outcomes are the sources of truth).
 8. **Read-from-artifacts, never re-run.** The monitor derives run progress from
    the child's `events.jsonl` and final run state from `summary.json`. It never
    invokes a model, never touches the network, and never re-renders by
@@ -358,9 +366,11 @@ may drift.
   `FLUSH_KINDS = {phase_result, failure, summary, cancellation, cost_ceiling_hit}`;
   `compact_detail(event) -> str`.
 - **Monitor renderer (`tui_state.py`):**
-  `run_event_views(records, ...) -> (tuple[RunEventView, ...], truncated, error)`,
-  `run_event_view(event) -> RunEventView`, `run_monitor_view(record) -> RunMonitorView`.
-  `RunMonitorView.events` is a `tuple[RunEventView, ...]`.
+  `run_event_view(event) -> RunEventView`; `run_event_views(record) ->
+  (tuple[RunEventView, ...], truncated, error)` resolves `record` to an
+  `events.jsonl` path and applies `run_event_view` to each parsed event;
+  `run_monitor_view(record) -> RunMonitorView`. `RunMonitorView.events` is a
+  `tuple[RunEventView, ...]`.
 - **Cancellation / exit codes:** the `except KeyboardInterrupt → finish_cancelled`
   is in `runner._run_session` (`runner.py:146,183`), which `run_loop` calls on
   **both** the `terminal_ui=True` (`:86`) and `terminal_ui=False` (`:68`)
@@ -402,6 +412,13 @@ may drift.
   fixtures under `tests/`. It does **not** currently provide a controllable
   long-running scenario suitable for TUI cancel-in-flight tests; S3 must add one
   or provide an equivalent subprocess fixture.
+- **Event-file startup behavior:** `runner_setup.archive_existing_events`
+  rotates a prior `events.jsonl` only when `events.first_run_id(path)` can read a
+  run id. `events.JsonlSink` then opens the live file with `O_TRUNC | O_CREAT`
+  (`events.py:_open_fresh_artifact`). Therefore stale events cannot contaminate
+  the child's new stream after the sink opens, but a TUI tailer can still render
+  an old explicit-artifact-dir file during the startup window before
+  `prepare_run`. S2's prelaunch file identity/run-id guard exists for that window.
 - **Textual `Pilot`:** available via `app.run_test()` once `RevRemApp` is at
   module scope (S0). `textual>=0.80` is declared in the `tui` extra.
 
@@ -490,10 +507,13 @@ experimental action, modeled by a small dependency-light state machine.
 
 **Implementation steps.**
 1. Define the state enum/dataclass and transitions in `tui_run_controller.py`,
-   with a pure `classify_exit(code) -> status` mapping aligned to Contract 7
-   (`0`→completed-clear, `2`→completed-findings, `3`→budget, `4`→setup-failed,
-   `5`→cancelled, other→failed). Do **not** hard-code integers in the UI; keep
-   them in one mapping table.
+   with a pure `classify_exit(code, artifacts) -> status` mapping aligned to
+   Contract 7 (`0`→completed-clear, `2`→completed-findings/unknown,
+   `3`→budget, `4`→setup-failed, `5`→cancelled only when artifacts prove the
+   clean cancellation path, `6`→controller/setup error because live runs should
+   not invoke `doctor`, `130`→interrupted-before-run-initialized when there is no
+   summary, other→failed). Do **not** hard-code integers in the UI; keep them in
+   one mapping table.
 2. The launch action requires an explicit confirm (a modal or a two-key
    action) so a live provider run is never one stray keypress away — Non-Goals.
    Gate it behind an "experimental" label.
@@ -560,27 +580,33 @@ the subtlety is process-group setup, which S3 depends on.
 
 **Files.**
 - Edit: `src/code_review_loop/tui.py` — add a Textual interval/worker that, while
-  a run is `running`, polls the child's `events.jsonl`, rebuilds the monitor via
-  `tui_state.run_event_views(...)`, and refreshes the Run Monitor widget.
-- Edit: `src/code_review_loop/tui_state.py` only if a thin "live monitor from
-  events list" helper is warranted (prefer reusing `run_event_views` /
-  `run_monitor_view` as-is).
+  a run is `running`, polls the child's `events.jsonl`, rebuilds the monitor by
+  applying the same event-row renderer replay uses, and refreshes the Run Monitor
+  widget.
+- Edit: `src/code_review_loop/tui_state.py` — extract a thin
+  `event_views_from_events(events) -> tuple[RunEventView, ...]` helper and have
+  both live mode and existing `run_event_views(record)` use it. Do not duplicate
+  event-detail formatting in `tui.py`.
 
 **Implementation steps.**
 1. Before launch, record whether `run_dir / events.EVENTS_FILENAME` already
-   exists. A default-generated run dir is brand-new and cannot contain stale
-   events, so this guard applies **only** to the explicit-`output.artifact_dir`
-   case: `runner_setup.archive_existing_events` renames any prior `events.jsonl`
-   to `events-<run_id>.jsonl` once the child reaches `prepare_run`
-   (`runner_setup.py:72-78,155`), but until then the TUI must not render the old
-   file's events as if they were this run's.
+   exists. If it does, record its stat identity (`st_ino` when available,
+   `st_size`, `st_mtime_ns`) and `events.first_run_id(path)`. A default-generated
+   run dir is brand-new and cannot contain stale events, so this guard applies
+   **only** to the explicit-`output.artifact_dir` case. The child will rotate
+   known-run event files and open the new sink with `O_TRUNC`, but until it reaches
+   `prepare_run` the TUI must not render the old file's events as if they were
+   this run's.
 2. On each tick, call `events.read_events(prelaunch_run_dir /
-   events.EVENTS_FILENAME)` only after the file is absent/replaced/newer than
-   the launch timestamp, then feed records through `run_event_views(...)` →
-   `RunEventView` tuple. If the file does not exist yet, render the controller's
+   events.EVENTS_FILENAME)` only after the file has disappeared/reappeared, its
+   stat identity has changed, or its first readable `run_id` differs from the
+   prelaunch `run_id` (with launch-time `mtime` as a fallback signal, never the
+   only proof). Then convert parsed events with `run_event_view(event)` or the
+   extracted shared event-list helper. If the file does not exist yet, or still
+   matches the prelaunch file identity/run id, render the controller's
    `starting`/`running` state and keep polling. Full re-read on a short interval
-   is acceptable (events files are small; append-only). Note an optional
-   incremental `seq`-based tail as a future optimization, not a requirement.
+   is acceptable (events files are small). Note an optional incremental
+   `seq`-based tail as a future optimization, not a requirement.
 3. Render compact event detail with the existing `RunEventView` path. If the UI
    needs first-class current-phase, latest-review, latest-check, or elapsed-time
    fields beyond the event rows, add a narrow live view model in `tui_state.py`
@@ -596,10 +622,11 @@ the subtlety is process-group setup, which S3 depends on.
 - Existing replay-from-history monitor behavior is unchanged.
 - Unit tests prove `RunEventView` rendering for `phase_start`/`phase_result`,
   `check_result`, `warning`, `cost_ceiling_hit`, `failure`, `cancellation`, and
-  `summary` events (most reuse existing `run_event_view` coverage; add any
-  missing kinds).
+  `summary` events through the shared converter/helper (most reuse existing
+  `run_event_view` coverage; add any missing kinds).
 - A stale pre-existing `events.jsonl` in an explicit artifact dir is not rendered
-  during the new run's `starting` state.
+  during the new run's `starting` state, including the case where the stale file
+  is malformed and has no readable first `run_id`.
 - A Pilot test runs a fake live run and asserts the **visible** monitor updates
   across at least two phases before completion.
 
@@ -683,8 +710,8 @@ on fake-harness fixtures.
 
 **Files.**
 - New: `tests/test_tui_cli_equivalence.py`.
-- New (if needed): a small comparator in `tests/support/` that loads two run
-  directories, masks nondeterministic fields, and asserts equality.
+- New: `tests/support/run_artifact_compare.py` — a small comparator that loads
+  two run directories, masks nondeterministic fields, and asserts equality.
 
 **Implementation steps.**
 1. For each scenario (`clear`, `findings`, `unknown`, `setup-failure`,
