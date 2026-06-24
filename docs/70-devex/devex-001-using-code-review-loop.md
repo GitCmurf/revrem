@@ -1529,10 +1529,20 @@ Profiles, Pipeline, Run Monitor, and Controls views from dependency-free view
 models for profiles, recent runs, harness metadata, phase state, command
 previews, and artifact links. Use `--profile NAME` to select the initial
 profile. Key bindings shell through `revrem config` and the normal run CLI:
-`d` dry-runs the selected profile, `s` shows it, `e` edits it, `n` creates a
-profile, `c` clones the selected profile, `x` exports, `i` imports from the
-path field, `delete` deletes through `revrem config delete --yes`, and `q`
-quits.
+`d` dry-runs the selected profile, `r` asks for confirmation and then starts a
+real live run, `k` cancels an active live run, `s` shows the profile, `e` edits
+it, `n` creates a profile, `c` clones the selected profile, `x` exports, `i`
+imports from the path field, `delete` deletes through
+`revrem config delete --yes`, and `q` quits.
+
+Live TUI runs are experimental but use the same execution path as the CLI. The
+TUI controller starts a managed `revrem` subprocess with the selected profile,
+forces machine-friendly child output (`--no-tty`, `--pending-review ignore`,
+`--summary-format json`), tails the child run's `events.jsonl`, and renders those
+events through the same `RunEventView` path as replay/history. Cancellation sends
+`SIGINT` to the child process group first, so a normal active run writes the
+standard `cancellation` event and `summary.json` with exit code `5`; `SIGTERM`
+and `SIGKILL` are reserved for forced cleanup if the child does not exit.
 
 Codex, Claude, Gemini, opencode, and KiloCode are executable
 review/remediation harnesses through the shared adapter boundary. Their CLIs

@@ -3,7 +3,7 @@ document_id: REVREM-PLAN-007
 type: PLAN
 title: v0.6.0 TUI live runs
 status: Draft
-version: '0.6'
+version: '0.7'
 last_updated: '2026-06-24'
 owner: GitCmurf
 docops_version: '2.0'
@@ -34,13 +34,28 @@ related_ids:
 
 > **Document ID:** REVREM-PLAN-007
 > **Owner:** GitCmurf
-> **Status:** Draft
+> **Status:** Draft; implementation slice landed on `feat/tui-live-runs`
 > **Type:** PLAN
 > **Area:** planning
 > **Description:** Implementation plan for the deferred PLAN-005 T12 slice — TUI
 > live-run launch, monitoring, cancellation, and CLI-equivalent artifacts.
 
 # PLAN: v0.6.0 TUI live runs
+
+## Implementation Status
+
+This plan has been implemented as the experimental v0.6.0 live-run slice:
+
+- S0: `RevRemApp` is module-scope and the Textual Pilot smoke harness boots it.
+- S1: `tui_run_controller.LiveRunController` starts a managed `revrem`
+  subprocess with child-safe output flags and explicit artifact dirs.
+- S2: the live Run Monitor reads child `events.jsonl` and uses the same
+  `RunEventView` conversion path as replay/history.
+- S3: `k` cancels an active child through process-group `SIGINT`, with
+  escalation only for forced cleanup.
+- S4: `tests/test_tui_cli_equivalence.py` proves direct CLI and
+  TUI-controller-launched runs have equivalent stable artifacts for clear,
+  findings, unknown, review-failure, check-failure, and cost-ceiling outcomes.
 
 ## How To Read This Document
 

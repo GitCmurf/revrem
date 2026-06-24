@@ -19,6 +19,13 @@ This project follows Semantic Versioning once public releases begin.
   inside the run directory, matching production summaries while still rejecting
   out-of-scope paths. Empty diagnostic artifact values now render as blank
   cells instead of `.` in phase-failure tables.
+- Experimental `revrem ui` live runs: the Textual TUI can now confirm-start a
+  real run, stream the same `events.jsonl` rows used by replay into the Run
+  Monitor, and cancel the child process cleanly. The controller runs the normal
+  `revrem` entry point as a managed subprocess with `--no-tty`,
+  `--pending-review ignore`, and JSON summaries; tests prove CLI/TUI artifact
+  equivalence across clear, findings, unknown, review-failure, check-failure,
+  and budget-ceiling fake-harness scenarios.
 
 ## [0.5.0] - 2026-06-21
 

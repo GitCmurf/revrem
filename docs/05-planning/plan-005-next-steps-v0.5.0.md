@@ -1384,31 +1384,36 @@ from the M2 schema, and seed external contribution.
 the final open slice of PLAN-003 M5 — *without* creating a second execution
 engine.
 
+**Implementation status.** Implemented after v0.5.0 as the v0.6.0 live-run
+slice tracked in `REVREM-PLAN-007`.
+
 **Files.**
-- Edit: `src/code_review_loop/tui.py`, `tui_state.py`.
-- Reuse: `application.py` (the headless application boundary) and the
-  `RendererSink` event adapter already in `events.py`.
+- Edited: `src/code_review_loop/tui.py`, `tui_state.py`, `tui_run_controller.py`.
+- Reused: the public `revrem` entry point, `events.jsonl`, and the existing
+  `RunEventView` renderer.
 
 **Implementation steps.**
-1. The TUI's "run" action calls the **same application boundary** the CLI uses,
-   passing a `RendererSink` whose callback updates the Run Monitor view from
-   `Event`s. No review/remediation logic is reimplemented in the TUI
-   (import-linter already forbids `tui` from importing `runner`/`cli`).
-2. Implement cancellation through the existing cancellation path (emits
-   `cancellation`, writes artifacts, exits code `5`), surfaced as a TUI control
-   and verified with Textual Pilot tests.
-3. Gate behind the `tui` extra and an explicit "experimental" notice; until
-   Pilot coverage is solid, keep the **replay-from-events** rendering as the
-   default and the live run behind a flag.
+1. The TUI's confirmed "run" action starts a managed `revrem` subprocess with
+   `--artifact-dir`, `--no-tty`, `--pending-review ignore`, and
+   `--summary-format json`. No review/remediation logic is reimplemented in the
+   TUI.
+2. The Run Monitor tails the child run's `events.jsonl` and renders parsed
+   events through the same `RunEventView` path used by replay/history.
+3. Cancellation sends `SIGINT` to the child process group first, allowing the
+   normal run loop to emit `cancellation`, write artifacts, and exit code `5`;
+   `SIGTERM`/`SIGKILL` are forced-cleanup fallbacks.
+4. The live-run controller stays Textual-free and engine-free; import-linter
+   locks that boundary.
 
 **Acceptance criteria.**
-- A TUI-launched run produces the **same** `summary.json` and artifacts as the
-  equivalent CLI run on the same fixture/repo.
-- Pilot tests cover launch, cancellation, cost-ceiling, and ≥ 3 failure states.
+- A TUI-launched run produces the **same stable summary/event/artifact shape**
+  as the equivalent CLI run on the same fixture/repo.
+- Pilot/controller tests cover launch, cancellation, cost-ceiling, and ≥ 3
+  failure/terminal states.
 - No new execution path: `lint-imports` stays green; the engine is unchanged.
 
-**Tests.** Textual Pilot tests (dependency-gated like existing TUI tests) +
-an equivalence test (TUI run vs CLI run artifacts).
+**Tests.** `tests/test_tui_pilot_smoke.py`, `tests/test_tui_run_controller.py`,
+and `tests/test_tui_cli_equivalence.py`.
 
 **Docs.** Update `REVREM-PLAN-002` (TUI run deferral) to record this slice
 landing; `REVREM-DEVEX-001` TUI section.
