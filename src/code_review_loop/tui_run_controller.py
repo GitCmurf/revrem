@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import signal
+import stat
 import subprocess
 import threading
 import time
@@ -131,14 +132,20 @@ class LiveRunController:
         self.preexisting_summary = _file_identity(launch.artifact_dir / "summary.json")
         self._stdout_buffer = _BoundedLines()
         self._stderr_buffer = _BoundedLines()
-        self.process = popen_factory(
-            argv,
-            cwd=cwd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            start_new_session=True,
-        )
+        try:
+            self.process = popen_factory(
+                argv,
+                cwd=cwd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                start_new_session=True,
+            )
+        except OSError as exc:
+            self.process = None
+            self.status = "setup-failed"
+            self.message = f"failed to start live run: {exc}"
+            raise
         self._drain_threads = [
             _drain_stream(self.process.stdout, self._stdout_buffer, name="revrem-tui-stdout"),
             _drain_stream(self.process.stderr, self._stderr_buffer, name="revrem-tui-stderr"),
@@ -412,9 +419,12 @@ def _event_file_identity(path: Path) -> EventFileIdentity | None:
 
 
 def _file_identity(path: Path) -> FileIdentity | None:
-    if not path.is_file():
+    try:
+        stat_result = path.stat()
+    except OSError:
         return None
-    stat_result = path.stat()
+    if not stat.S_ISREG(stat_result.st_mode):
+        return None
     inode = stat_result.st_ino if hasattr(stat_result, "st_ino") else None
     return FileIdentity(
         inode=inode,

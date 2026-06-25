@@ -19,6 +19,8 @@ async def pilot_app(
     previous_fake = os.environ.get("REVREM_ALLOW_FAKE_HARNESS")
     if fake_harness:
         os.environ["REVREM_ALLOW_FAKE_HARNESS"] = "1"
+    else:
+        os.environ.pop("REVREM_ALLOW_FAKE_HARNESS", None)
     try:
         model = tui_state.build_shell_model(
             cwd=cwd,

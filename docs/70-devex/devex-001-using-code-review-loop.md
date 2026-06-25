@@ -1547,8 +1547,8 @@ Cancellation runs in a background worker and sends `SIGINT` to the child process
 group first, so a normal active run writes the standard `cancellation` event and
 `summary.json` with exit code `5`; `SIGTERM` and `SIGKILL` are reserved for
 forced cleanup if the child does not exit. The controller snapshots descendant
-PIDs before cancellation and reaps known nested provider children after the
-managed child exits. When no live run is active, cancellation is a no-op with
+PIDs before cancellation and performs bounded cleanup of those known nested
+provider children after the managed child exits. When no live run is active, cancellation is a no-op with
 explicit feedback. Quitting during an active live run requires a second `q`,
 then uses the same cancellation path before the TUI exits. If a profile points
 at a reused explicit artifact directory, the live monitor ignores stale

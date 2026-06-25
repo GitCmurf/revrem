@@ -214,6 +214,7 @@ def test_tui_live_run_action_requires_confirmation_and_starts_controller(monkeyp
         "Press r again to start an experimental live run: final-pr",
         "Live run started: final-pr (.revrem/runs/live)",
     ]
+    assert len(starts) == 1
     assert starts[0]["plan"].argv == ("revrem", "--profile", "final-pr")
     assert starts[0]["plan"].mode == "run"
     assert starts[0]["cwd"] == tmp_path
@@ -246,6 +247,39 @@ def test_tui_live_monitor_refresh_updates_run_monitor_widget(monkeypatch, tmp_pa
     assert updates
     assert "Live status: running" in updates[0]
     assert "0001|review|1|phase_start: reviewing" in updates[0]
+
+
+def test_tui_live_monitor_escapes_markup_in_event_detail(monkeypatch, tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    model = tui.tui_state.build_shell_model(cwd=repo, selected_profile_name="security")
+    app = tui.RevRemApp(model=model, profiles_by_name={})
+    run_dir = repo / ".revrem" / "runs" / "live"
+    run_dir.mkdir(parents=True)
+    sink = tui.tui_run_controller.events.JsonlSink(run_dir, "live")
+    sink.emit("phase_start", phase="review", iteration=1, payload={"message": "[bold]danger[/bold]"})
+    sink.close()
+    app.live_run_controller.launch = tui.tui_run_controller.LiveRunLaunch(
+        argv=("revrem",),
+        artifact_dir_arg=".revrem/runs/live",
+        artifact_dir=run_dir,
+    )
+    app.live_run_controller.status = "running"
+    updates = []
+
+    class FakeWidget:
+        def update(self, value):
+            updates.append(value)
+
+    monkeypatch.setattr(app, "query_one", lambda selector: FakeWidget())
+
+    app._render_live_monitor()
+
+    assert updates
+    # Untrusted event detail must be escaped, not interpreted as Rich markup.
+    assert "\\[bold\\]danger\\[/bold\\]" in updates[0]
+    assert "[bold]danger[/bold]" not in updates[0]
 
 
 def test_tui_cancel_action_routes_to_controller(monkeypatch, tmp_path):

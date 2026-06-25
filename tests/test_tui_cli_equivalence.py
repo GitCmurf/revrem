@@ -95,7 +95,7 @@ triage.enabled = false
 [profiles.equivalence]
 pipeline.max_iterations = 1
 pipeline.final_review = false
-pipeline.checks = ["{sys.executable} -c 'import sys; sys.exit(1)'"]
+pipeline.checks = ["{sys.executable} check_fail.py"]
 review.harness = "fake"
 review.model = "review_findings"
 remediation.harness = "fake"
@@ -169,8 +169,11 @@ def _init_repo(repo: Path, profile_toml: str) -> Path:
     )
     (repo / "README.md").write_text("# Fixture\n", encoding="utf-8")
     (repo / ".revrem.toml").write_text(profile_toml, encoding="utf-8")
+    # Portable failing check used by the check-failure scenario: a committed
+    # script avoids embedding shell-style quoting inside the profile TOML.
+    (repo / "check_fail.py").write_text("import sys\n\nsys.exit(1)\n", encoding="utf-8")
     subprocess.run(
-        ["git", "add", "README.md", ".revrem.toml"],
+        ["git", "add", "README.md", ".revrem.toml", "check_fail.py"],
         cwd=repo,
         check=True,
         capture_output=True,
@@ -180,7 +183,7 @@ def _init_repo(repo: Path, profile_toml: str) -> Path:
 
 
 def _fixture_dir(path: Path) -> Path:
-    source = Path("tests/fixtures/harnesses")
+    source = Path(__file__).resolve().parent / "fixtures" / "harnesses"
     shutil.copytree(source, path)
     unknown_dir = path / "unknown"
     unknown_dir.mkdir()

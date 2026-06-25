@@ -8,6 +8,8 @@ import time
 from io import StringIO
 from pathlib import Path
 
+import pytest
+
 from code_review_loop import events, profiles, tui_run_controller, tui_state
 
 
@@ -134,6 +136,37 @@ def test_live_run_controller_starts_child_with_machine_friendly_argv(tmp_path):
     assert calls[0][1]["stderr"] is tui_run_controller.subprocess.PIPE
     assert calls[0][1]["text"] is True
     assert calls[0][1]["start_new_session"] is True
+
+
+def test_start_marks_setup_failed_when_launch_raises(tmp_path):
+    profile = profiles.Profile(name="demo")
+    plan = tui_state.LaunchPlan(
+        profile_name="demo",
+        mode="run",
+        argv=("revrem", "--profile", "demo"),
+        shell_command="revrem --profile demo",
+    )
+
+    def boom_popen(*_args, **_kwargs):
+        raise OSError("no such executable")
+
+    controller = tui_run_controller.LiveRunController()
+    with pytest.raises(OSError):
+        controller.start(
+            profile=profile,
+            plan=plan,
+            cwd=tmp_path,
+            entrypoint_resolver=list,
+            popen_factory=boom_popen,
+            identity=FixedIdentity(),
+        )
+
+    assert controller.status == "setup-failed"
+    assert controller.process is None
+    assert controller.message is not None
+    assert "no such executable" in controller.message
+    # A failed launch must not look like an active run to the TUI.
+    assert controller.refresh() == "setup-failed"
 
 
 def test_classify_exit_requires_artifacts_for_clean_cancellation():
@@ -333,7 +366,10 @@ claude = "{provider}"
     )
     nested_pid = _wait_for_pid_file(nested_pid_file)
 
-    status = controller.cancel(grace_seconds=1)
+    # Allow the normal SIGINT cancellation path enough headroom to write
+    # summary.json and exit before escalation, even when the suite saturates
+    # CPU; the sibling real-child cancel test uses the same grace.
+    status = controller.cancel(grace_seconds=5)
 
     assert status == "cancelled"
     _wait_until_not_running(nested_pid)
@@ -526,21 +562,24 @@ def _wait_until_not_running(pid: int) -> None:
 
 
 def _pid_is_running(pid: int) -> bool:
-    proc_stat = Path("/proc") / str(pid) / "stat"
-    try:
-        stat_text = proc_stat.read_text(encoding="utf-8", errors="replace")
-    except FileNotFoundError:
-        return False
-    except OSError:
-        pass
-    else:
-        close_paren = stat_text.rfind(")")
-        if close_paren != -1:
-            fields = stat_text[close_paren + 1 :].strip().split()
-            if fields and fields[0] == "Z":
-                return False
+    # os.kill(pid, 0) is the portable liveness probe; it governs on hosts
+    # without /proc. /proc only refines the result so an already-reaped
+    # zombie (which os.kill still reports as alive) is treated as gone.
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
+    except PermissionError:
+        return True
+    proc_stat = Path("/proc") / str(pid) / "stat"
+    try:
+        stat_text = proc_stat.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        # /proc is unavailable or the entry vanished after os.kill succeeded.
+        return True
+    close_paren = stat_text.rfind(")")
+    if close_paren != -1:
+        fields = stat_text[close_paren + 1 :].strip().split()
+        if fields and fields[0] == "Z":
+            return False
     return True

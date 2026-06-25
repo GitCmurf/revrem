@@ -81,6 +81,8 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
 
 
 def run_textual_app(*, selected_profile_name: str | None = None) -> None:
+    if not _TEXTUAL_AVAILABLE:
+        raise RuntimeError(f"The RevRem TUI requires the optional Textual dependency. {INSTALL_HINT}")
     model = tui_state.build_shell_model(cwd=Path.cwd(), selected_profile_name=selected_profile_name)
     profiles_by_name = {
         profile.name: profile
@@ -601,7 +603,7 @@ def _live_monitor_markup(controller: tui_run_controller.LiveRunController) -> st
         suffix = " [truncated]" if snapshot.truncated else ""
         lines.append(f"events: {len(snapshot.events)} loaded{suffix}")
         for event in tui_state.event_views_from_events(list(snapshot.events))[-8:]:
-            lines.append(f"  {tui_state.event_row_text(event)}")
+            lines.append(f"  {tui_state.markup_escape(tui_state.event_row_text(event))}")
     return "\n".join(lines)
 
 

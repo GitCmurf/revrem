@@ -73,8 +73,9 @@ Verified release evidence:
   `*.sigstore.json` bundles, and Scorecard-recognised `*.sigstore` copies.
 - `sha256sum --check SHA256SUMS` passed for the release artifacts.
 
-The only intentionally deferred task is T12, TUI real runs. Its v0.6.0
-implementation plan is `REVREM-PLAN-007`.
+The only intentionally deferred *release* task is T12, TUI real runs; its v0.6.0
+implementation plan is `REVREM-PLAN-007`. The Scorecard re-evaluation and SLSA
+provenance items remain open follow-up work, not closed by this release.
 
 ## Where We Are (Baseline, 2026-06-18)
 
