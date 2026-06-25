@@ -329,6 +329,16 @@ class RevRemApp(_AppBase):  # type: ignore[misc, valid-type]
         if selected is None or profile_name is None:
             _notify(self, "No profile is available to run.")
             return
+        if self._cancel_in_progress:
+            self._pending_live_confirmation_profile = None
+            _notify(self, "Live run cancellation is already in progress.")
+            self._update_console_status()
+            return
+        if self._live_run_active():
+            self._pending_live_confirmation_profile = None
+            _notify(self, "Live run is already active. Press k to cancel it.")
+            self._update_console_status()
+            return
         if self._pending_live_confirmation_profile != profile_name:
             self._pending_live_confirmation_profile = profile_name
             _notify(self, f"Press r again to start an experimental live run: {profile_name}")
@@ -336,12 +346,17 @@ class RevRemApp(_AppBase):  # type: ignore[misc, valid-type]
             return
         self._pending_live_confirmation_profile = None
         plan = tui_state.launch_plan(selected, dry_run=False)
-        launch = self.live_run_controller.start(
-            profile=selected,
-            plan=plan,
-            cwd=Path(self.model.snapshot.cwd),
-            entrypoint_resolver=current_entrypoint_argv,
-        )
+        try:
+            launch = self.live_run_controller.start(
+                profile=selected,
+                plan=plan,
+                cwd=Path(self.model.snapshot.cwd),
+                entrypoint_resolver=current_entrypoint_argv,
+            )
+        except OSError:
+            _notify(self, self.live_run_controller.message or f"Live run failed: {profile_name}")
+            self._render_live_monitor()
+            return
         _notify(self, f"Live run started: {profile_name} ({launch.artifact_dir_arg})")
         self._render_live_monitor()
 

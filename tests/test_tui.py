@@ -221,6 +221,149 @@ def test_tui_live_run_action_requires_confirmation_and_starts_controller(monkeyp
     assert starts[0]["entrypoint_resolver"] is tui.current_entrypoint_argv
 
 
+def test_tui_live_run_action_catches_startup_oserror_and_keeps_setup_failed_state(
+    monkeypatch, tmp_path
+):
+    notifications = []
+
+    config_path = tmp_path / "home" / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text('[profiles.final-pr]\ndescription = "Final PR"\n', encoding="utf-8")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+
+    app = tui.RevRemApp(
+        model=tui.tui_state.build_shell_model(cwd=tmp_path, selected_profile_name="final-pr"),
+        profiles_by_name={
+            profile.name: profile
+            for profile in tui.profiles.resolve_profiles(
+                cwd=tmp_path,
+                require_implemented=False,
+                include_builtins=True,
+            )
+        },
+    )
+    monkeypatch.setattr(
+        app, "notify", lambda message: notifications.append(message), raising=False
+    )
+    widgets = _WidgetProbe()
+    monkeypatch.setattr(app, "query_one", widgets.query_one)
+
+    original_start = app.live_run_controller.start
+
+    def fake_start(**kwargs):
+        def boom_popen(*_args, **_kwargs):
+            raise OSError("revrem not found")
+
+        return original_start(popen_factory=boom_popen, **kwargs)
+
+    app.live_run_controller.start = fake_start
+
+    app.action_launch_run()
+    app.action_launch_run()
+
+    assert notifications == [
+        "Press r again to start an experimental live run: final-pr",
+        "failed to start live run: revrem not found",
+    ]
+    assert app.live_run_controller.status == "setup-failed"
+    assert app.live_run_controller.message == "failed to start live run: revrem not found"
+    assert app._pending_live_confirmation_profile is None
+
+    run_monitor_updates = [
+        value for selector, value in widgets.updates if selector == "#screen-run-monitor"
+    ]
+    assert run_monitor_updates
+    assert "Live status: setup-failed" in run_monitor_updates[-1]
+    assert "failed to start live run: revrem not found" in run_monitor_updates[-1]
+    assert ("#status-bar", "status-setup-failed") in widgets.classes
+
+
+def test_tui_live_run_action_refuses_second_r_while_run_is_active(monkeypatch, tmp_path):
+    notifications = []
+    starts = []
+
+    config_path = tmp_path / "home" / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text('[profiles.final-pr]\ndescription = "Final PR"\n', encoding="utf-8")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+
+    app = tui.RevRemApp(
+        model=tui.tui_state.build_shell_model(cwd=tmp_path, selected_profile_name="final-pr"),
+        profiles_by_name={
+            profile.name: profile
+            for profile in tui.profiles.resolve_profiles(
+                cwd=tmp_path,
+                require_implemented=False,
+                include_builtins=True,
+            )
+        },
+    )
+    monkeypatch.setattr(
+        app, "notify", lambda message: notifications.append(message), raising=False
+    )
+
+    def fake_start(**kwargs):
+        starts.append(kwargs)
+        return types.SimpleNamespace(artifact_dir_arg=".revrem/runs/live")
+
+    app.live_run_controller.start = fake_start
+
+    app.action_launch_run()
+    app.live_run_controller.process = types.SimpleNamespace(poll=lambda: None)
+    app.action_launch_run()
+
+    assert notifications == [
+        "Press r again to start an experimental live run: final-pr",
+        "Live run is already active. Press k to cancel it.",
+    ]
+    assert starts == []
+    assert app._pending_live_confirmation_profile is None
+
+
+def test_tui_live_run_action_refuses_second_r_while_run_is_cancelling(
+    monkeypatch, tmp_path
+):
+    notifications = []
+    starts = []
+
+    config_path = tmp_path / "home" / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text('[profiles.final-pr]\ndescription = "Final PR"\n', encoding="utf-8")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+
+    app = tui.RevRemApp(
+        model=tui.tui_state.build_shell_model(cwd=tmp_path, selected_profile_name="final-pr"),
+        profiles_by_name={
+            profile.name: profile
+            for profile in tui.profiles.resolve_profiles(
+                cwd=tmp_path,
+                require_implemented=False,
+                include_builtins=True,
+            )
+        },
+    )
+    monkeypatch.setattr(
+        app, "notify", lambda message: notifications.append(message), raising=False
+    )
+
+    def fake_start(**kwargs):
+        starts.append(kwargs)
+        return types.SimpleNamespace(artifact_dir_arg=".revrem/runs/live")
+
+    app.live_run_controller.start = fake_start
+
+    app.action_launch_run()
+    app._cancel_in_progress = True
+    app.action_launch_run()
+
+    assert notifications == [
+        "Press r again to start an experimental live run: final-pr",
+        "Live run cancellation is already in progress.",
+    ]
+    assert starts == []
+    assert app._pending_live_confirmation_profile is None
+
+
 def test_tui_live_monitor_refresh_updates_run_monitor_widget(monkeypatch, tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()

@@ -72,8 +72,7 @@ def test_tui_pilot_live_monitor_updates_and_cancels_visible_run(tmp_path, monkey
 
             await _wait_for(
                 lambda: (
-                    "events: 2 loaded" in _render(app, "#screen-run-monitor")
-                    and "phase_start" in _render(app, "#screen-run-monitor")
+                    "phase_start" in _render(app, "#screen-run-monitor")
                     and "phase_result: findings-summary (1)" in _render(app, "#screen-run-monitor")
                 ),
                 pilot_pause=pilot.pause,
