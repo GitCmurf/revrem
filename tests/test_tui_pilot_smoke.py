@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import json
-import subprocess
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
+from support.git_fixtures import init_repo
 from support.tui_pilot import pilot_app
 
 from code_review_loop import events, tui
@@ -36,7 +36,7 @@ def test_tui_pilot_boots_home_view(tmp_path):
 
 def test_tui_pilot_confirmed_launch_reaches_visible_running_state(tmp_path, monkeypatch):
     async def run() -> None:
-        repo = _init_repo(tmp_path / "repo")
+        repo = init_repo(tmp_path / "repo")
         _write_live_profile(repo, review_model="slow_cancel", artifact_dir="runs/live-launch")
         monkeypatch.setattr(tui.sys, "argv", [str(repo / "launcher.py")])
 
@@ -61,7 +61,7 @@ def test_tui_pilot_confirmed_launch_reaches_visible_running_state(tmp_path, monk
 
 def test_tui_pilot_live_monitor_updates_and_cancels_visible_run(tmp_path, monkeypatch):
     async def run() -> None:
-        repo = _init_repo(tmp_path / "repo")
+        repo = init_repo(tmp_path / "repo")
         _write_live_profile(repo, review_model="review_findings", artifact_dir="runs/live-cancel")
         monkeypatch.setattr(tui.sys, "argv", [str(repo / "launcher.py")])
 
@@ -95,17 +95,6 @@ def test_tui_pilot_live_monitor_updates_and_cancels_visible_run(tmp_path, monkey
             assert any(record.kind == "cancellation" for record in records)
 
     asyncio.run(run())
-
-
-def _init_repo(repo: Path) -> Path:
-    repo.mkdir(parents=True)
-    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
-    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
-    subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, check=True)
-    (repo / "README.md").write_text("# Fixture\n", encoding="utf-8")
-    subprocess.run(["git", "add", "README.md"], cwd=repo, check=True, capture_output=True)
-    subprocess.run(["git", "commit", "-m", "initial"], cwd=repo, check=True, capture_output=True)
-    return repo
 
 
 def _write_live_profile(repo: Path, *, review_model: str, artifact_dir: str) -> None:

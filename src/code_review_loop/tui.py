@@ -95,6 +95,14 @@ def run_textual_app(*, selected_profile_name: str | None = None) -> None:
     RevRemApp(model=model, profiles_by_name=profiles_by_name).run()
 
 
+def _binding(key: str, action: str, description: str, *, priority: bool = False) -> Any:
+    """Build a Textual Binding, falling back to a plain tuple when Textual's
+    Binding class is unavailable (optional dependency not installed)."""
+    if _Binding is not None:
+        return _Binding(key, action, description, priority=priority)
+    return (key, action, description)
+
+
 class RevRemApp(_AppBase):  # type: ignore[misc, valid-type]
     CSS = """
     Screen {
@@ -176,23 +184,11 @@ class RevRemApp(_AppBase):  # type: ignore[misc, valid-type]
         ("d", "launch_dry_run", "Dry run"),
         ("r", "launch_run", "Run"),
         ("k", "cancel_run", "Cancel run"),
-        (
-            _Binding("question_mark", "toggle_help", "Help", priority=True)
-            if _Binding is not None
-            else ("question_mark", "toggle_help", "Help")
-        ),
-        (
-            _Binding("h", "toggle_help", "Help", priority=True)
-            if _Binding is not None
-            else ("h", "toggle_help", "Help")
-        ),
+        _binding("question_mark", "toggle_help", "Help", priority=True),
+        _binding("h", "toggle_help", "Help", priority=True),
         ("tab", "focus_next", "Focus next"),
         ("shift+tab", "focus_previous", "Focus previous"),
-        (
-            _Binding("escape", "clear_focus", "Clear focus", priority=True)
-            if _Binding is not None
-            else ("escape", "clear_focus", "Clear focus")
-        ),
+        _binding("escape", "clear_focus", "Clear focus", priority=True),
         ("s", "show_profile", "Show"),
         ("e", "edit_profile", "Edit profile"),
         ("n", "new_profile", "New"),
@@ -449,14 +445,15 @@ class RevRemApp(_AppBase):  # type: ignore[misc, valid-type]
         self._run_captured(tui_state.import_plan_for_path(path), success=f"Imported profiles: {path}")
 
     def _run_interactive(self, plan: tui_state.LaunchPlan, *, success: str) -> None:
-        result = self._run_plan(plan, capture_output=False)
-        if result.returncode == 0:
-            _notify(self, success)
-            return
-        _notify(self, f"{plan.mode} failed with exit {result.returncode}: {plan.profile_name}")
+        self._run_and_notify(plan, success=success, capture_output=False)
 
     def _run_captured(self, plan: tui_state.LaunchPlan, *, success: str) -> None:
-        result = self._run_plan(plan, capture_output=True)
+        self._run_and_notify(plan, success=success, capture_output=True)
+
+    def _run_and_notify(
+        self, plan: tui_state.LaunchPlan, *, success: str, capture_output: bool
+    ) -> None:
+        result = self._run_plan(plan, capture_output=capture_output)
         if result.returncode == 0:
             _notify(self, success)
             return
@@ -602,7 +599,7 @@ def _live_monitor_markup(controller: tui_run_controller.LiveRunController) -> st
     else:
         suffix = " [truncated]" if snapshot.truncated else ""
         lines.append(f"events: {len(snapshot.events)} loaded{suffix}")
-        for event in tui_state.event_views_from_events(list(snapshot.events))[-8:]:
+        for event in tui_state.event_views_from_events(snapshot.events[-8:]):
             lines.append(f"  {tui_state.markup_escape(tui_state.event_row_text(event))}")
     return "\n".join(lines)
 
@@ -644,27 +641,25 @@ def _help_markup(*, visible: bool) -> str:
     )
 
 
-def _update_widget(app: Any, selector: str, value: str) -> None:
+def _resolve_widget(app: Any, selector: str) -> Any | None:
     query_one = getattr(app, "query_one", None)
     if not callable(query_one):
-        return
+        return None
     try:
-        widget = query_one(selector)
+        return query_one(selector)
     except Exception:
-        return
+        return None
+
+
+def _update_widget(app: Any, selector: str, value: str) -> None:
+    widget = _resolve_widget(app, selector)
     update = getattr(widget, "update", None)
     if callable(update):
         update(value)
 
 
 def _set_widget_classes(app: Any, selector: str, classes: str) -> None:
-    query_one = getattr(app, "query_one", None)
-    if not callable(query_one):
-        return
-    try:
-        widget = query_one(selector)
-    except Exception:
-        return
+    widget = _resolve_widget(app, selector)
     set_classes = getattr(widget, "set_classes", None)
     if callable(set_classes):
         set_classes(classes)
@@ -688,13 +683,7 @@ def _call_from_thread(app: Any, callback: Any) -> None:
 
 
 def _input_value(app: Any, selector: str) -> str | None:
-    query_one = getattr(app, "query_one", None)
-    if not callable(query_one):
-        return None
-    try:
-        widget = query_one(selector)
-    except Exception:
-        return None
+    widget = _resolve_widget(app, selector)
     value = getattr(widget, "value", None)
     if not isinstance(value, str):
         return None

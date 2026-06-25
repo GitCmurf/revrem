@@ -9,6 +9,7 @@ from io import StringIO
 from pathlib import Path
 
 import pytest
+from support.git_fixtures import init_repo
 
 from code_review_loop import events, profiles, tui_run_controller, tui_state
 
@@ -303,7 +304,7 @@ triage.enabled = false
 
 
 def test_cancel_reaps_nested_provider_child_with_own_session(tmp_path, monkeypatch):
-    repo = _init_git_repo(tmp_path / "repo")
+    repo = init_repo(tmp_path / "repo")
     provider = tmp_path / "provider.py"
     nested_pid_file = tmp_path / "nested.pid"
     provider.write_text(
@@ -530,17 +531,6 @@ def test_terminal_statuses_cover_all_non_idle_running_states():
         "failed",
         "failed-forced-cleanup",
     }
-
-
-def _init_git_repo(repo: Path) -> Path:
-    repo.mkdir()
-    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
-    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
-    subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, check=True)
-    (repo / "README.md").write_text("# Fixture\n", encoding="utf-8")
-    subprocess.run(["git", "add", "README.md"], cwd=repo, check=True, capture_output=True)
-    subprocess.run(["git", "commit", "-m", "initial"], cwd=repo, check=True, capture_output=True)
-    return repo
 
 
 def _wait_for_pid_file(path: Path) -> int:

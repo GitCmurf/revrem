@@ -107,6 +107,8 @@ class LiveRunController:
     _stdout_buffer: _BoundedLines = field(default_factory=_BoundedLines)
     _stderr_buffer: _BoundedLines = field(default_factory=_BoundedLines)
     _drain_threads: list[threading.Thread] = field(default_factory=list)
+    _events_cache_key: tuple[int, int] | None = None
+    _events_cache_snapshot: LiveEventSnapshot | None = None
 
     def start(
         self,
@@ -132,6 +134,8 @@ class LiveRunController:
         self.preexisting_summary = _file_identity(launch.artifact_dir / "summary.json")
         self._stdout_buffer = _BoundedLines()
         self._stderr_buffer = _BoundedLines()
+        self._events_cache_key = None
+        self._events_cache_snapshot = None
         try:
             self.process = popen_factory(
                 argv,
@@ -219,11 +223,30 @@ class LiveRunController:
         return payload if isinstance(payload, dict) else None
 
     def read_live_events(self) -> LiveEventSnapshot:
+        # Called on every refresh tick. Cache the parsed snapshot keyed on the
+        # file's (size, mtime_ns) so an unchanged events.jsonl is not re-read and
+        # re-parsed each tick; identical size+mtime implies identical content and
+        # therefore an identical staleness verdict and event set.
         if self.launch is None:
             return LiveEventSnapshot()
         events_path = self.launch.artifact_dir / events.EVENTS_FILENAME
-        if not events_path.is_file():
+        try:
+            stat_result = events_path.stat()
+        except OSError:
+            self._events_cache_key = None
+            self._events_cache_snapshot = None
             return LiveEventSnapshot(ready=False)
+        if not stat.S_ISREG(stat_result.st_mode):
+            return LiveEventSnapshot(ready=False)
+        cache_key = (stat_result.st_size, stat_result.st_mtime_ns)
+        if cache_key == self._events_cache_key and self._events_cache_snapshot is not None:
+            return self._events_cache_snapshot
+        snapshot = self._read_live_events_uncached(events_path)
+        self._events_cache_key = cache_key
+        self._events_cache_snapshot = snapshot
+        return snapshot
+
+    def _read_live_events_uncached(self, events_path: Path) -> LiveEventSnapshot:
         if _matches_preexisting_events(events_path, self.preexisting_events):
             return LiveEventSnapshot(ready=False)
         try:
@@ -293,20 +316,27 @@ def _resolve_child_path(path: str, *, cwd: Path) -> Path:
     return cwd / resolved
 
 
+def _signal_pid_group(pid: int, signum: int) -> bool:
+    """Signal pid's process group; return True when handled (or the target is
+    already gone), False when the caller should fall back to a direct signal."""
+    if hasattr(os, "killpg") and hasattr(os, "getpgid"):
+        try:
+            os.killpg(os.getpgid(pid), signum)
+            return True
+        except ProcessLookupError:
+            return True
+        except OSError:
+            return False
+    return False
+
+
 def _signal_process_group(process: subprocess.Popen[str], signum: int) -> None:
     pid = getattr(process, "pid", None)
     if pid is None:
         process.send_signal(signum)
         return
-    if hasattr(os, "killpg") and hasattr(os, "getpgid"):
-        try:
-            os.killpg(os.getpgid(pid), signum)
-            return
-        except ProcessLookupError:
-            return
-        except OSError:
-            pass
-    process.send_signal(signum)
+    if not _signal_pid_group(pid, signum):
+        process.send_signal(signum)
 
 
 def _descendant_pids(process: subprocess.Popen[str]) -> frozenset[int]:
@@ -390,18 +420,10 @@ def _signal_process_groups_by_pid(pids: frozenset[int], signum: int) -> None:
     for pid in sorted(pids):
         if pid == os.getpid():
             continue
-        if hasattr(os, "killpg") and hasattr(os, "getpgid"):
-            try:
-                os.killpg(os.getpgid(pid), signum)
-                continue
-            except ProcessLookupError:
-                continue
-            except OSError:
-                pass
+        if _signal_pid_group(pid, signum):
+            continue
         try:
             os.kill(pid, signum)
-        except ProcessLookupError:
-            continue
         except OSError:
             continue
 

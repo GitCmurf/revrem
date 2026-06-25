@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from code_review_loop import harnesses, profiles, tui_run_controller, tui_state
+from tests.support.git_fixtures import init_repo
 from tests.support.run_artifact_compare import assert_equivalent_run_artifacts
 
 
@@ -153,33 +154,15 @@ def test_tui_live_run_matches_cli_artifacts(
 
 
 def _init_repo(repo: Path, profile_toml: str) -> Path:
-    repo.mkdir(parents=True)
-    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Test User"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-    )
-    (repo / "README.md").write_text("# Fixture\n", encoding="utf-8")
-    (repo / ".revrem.toml").write_text(profile_toml, encoding="utf-8")
     # Portable failing check used by the check-failure scenario: a committed
     # script avoids embedding shell-style quoting inside the profile TOML.
-    (repo / "check_fail.py").write_text("import sys\n\nsys.exit(1)\n", encoding="utf-8")
-    subprocess.run(
-        ["git", "add", "README.md", ".revrem.toml", "check_fail.py"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
+    return init_repo(
+        repo,
+        extra_files={
+            ".revrem.toml": profile_toml,
+            "check_fail.py": "import sys\n\nsys.exit(1)\n",
+        },
     )
-    subprocess.run(["git", "commit", "-m", "initial"], cwd=repo, check=True, capture_output=True)
-    return repo
 
 
 def _fixture_dir(path: Path) -> Path:
