@@ -27,9 +27,11 @@ def test_tui_pilot_boots_home_view(tmp_path):
             assert "profile security" in str(status.render())
             help_panel = app.query_one("#screen-help")
             assert "Press [h] for full keybindings." in str(help_panel.render())
-            app.action_toggle_help()
+            await pilot.press("h")
             await pilot.pause()
             assert "confirm/start live run" in str(help_panel.render())
+            _assert_no_widget(app, "#profile-name")
+            _assert_no_widget(app, "#profile-path")
 
     asyncio.run(run())
 
@@ -41,7 +43,6 @@ def test_tui_pilot_confirmed_launch_reaches_visible_running_state(tmp_path, monk
         monkeypatch.setattr(tui.sys, "argv", [str(repo / "launcher.py")])
 
         async with pilot_app(cwd=repo, profile_name="live") as (app, pilot):
-            await pilot.press("escape")
             await pilot.press("r")
             await pilot.press("r")
 
@@ -66,7 +67,6 @@ def test_tui_pilot_live_monitor_updates_and_cancels_visible_run(tmp_path, monkey
         monkeypatch.setattr(tui.sys, "argv", [str(repo / "launcher.py")])
 
         async with pilot_app(cwd=repo, profile_name="live") as (app, pilot):
-            await pilot.press("escape")
             await pilot.press("r")
             await pilot.press("r")
 
@@ -78,7 +78,6 @@ def test_tui_pilot_live_monitor_updates_and_cancels_visible_run(tmp_path, monkey
                 pilot_pause=pilot.pause,
                 timeout=12,
             )
-            await pilot.press("escape")
             await pilot.press("k")
             await _wait_for(
                 lambda: "Live status: cancelled" in _render(app, "#screen-run-monitor"),
@@ -92,6 +91,53 @@ def test_tui_pilot_live_monitor_updates_and_cancels_visible_run(tmp_path, monkey
             assert summary["stopped_reason"] == "cancelled"
             records, _ = events.read_events(launch.artifact_dir / events.EVENTS_FILENAME)
             assert any(record.kind == "cancellation" for record in records)
+
+    asyncio.run(run())
+
+
+def test_tui_pilot_prompt_entry_runs_profile_actions(tmp_path, monkeypatch):
+    async def run() -> None:
+        repo = init_repo(tmp_path / "repo")
+        _write_live_profile(repo, review_model="review_clear", artifact_dir="runs/live-prompt")
+        calls = []
+
+        def fake_run_launch_plan(plan, *, cwd, capture_output=True):
+            calls.append((plan.argv, cwd, capture_output))
+            return type("Result", (), {"returncode": 0})()
+
+        monkeypatch.setattr(tui, "run_launch_plan", fake_run_launch_plan)
+
+        async with pilot_app(cwd=repo, profile_name="live") as (_app, pilot):
+            await pilot.press("n")
+            await pilot.press("f", "r", "e", "s", "h")
+            await pilot.press("enter")
+            await _wait_for(lambda: bool(calls), pilot_pause=pilot.pause)
+
+        assert calls == [
+            (("revrem", "config", "new", "fresh", "--no-interactive"), repo, True)
+        ]
+
+    asyncio.run(run())
+
+
+def test_tui_pilot_prompt_escape_cancels_without_running(tmp_path, monkeypatch):
+    async def run() -> None:
+        repo = init_repo(tmp_path / "repo")
+        _write_live_profile(repo, review_model="review_clear", artifact_dir="runs/live-prompt-cancel")
+        calls = []
+
+        def fake_run_launch_plan(plan, *, cwd, capture_output=True):
+            calls.append((plan.argv, cwd, capture_output))
+            return type("Result", (), {"returncode": 0})()
+
+        monkeypatch.setattr(tui, "run_launch_plan", fake_run_launch_plan)
+
+        async with pilot_app(cwd=repo, profile_name="live") as (_app, pilot):
+            await pilot.press("i")
+            await pilot.press("escape")
+            await pilot.pause()
+
+        assert calls == []
 
     asyncio.run(run())
 
@@ -141,3 +187,11 @@ async def _wait_for(
 
 def _render(app: tui.RevRemApp, selector: str) -> str:
     return str(app.query_one(selector).render())
+
+
+def _assert_no_widget(app: tui.RevRemApp, selector: str) -> None:
+    try:
+        app.query_one(selector)
+    except Exception:
+        return
+    raise AssertionError(f"unexpected widget exists: {selector}")

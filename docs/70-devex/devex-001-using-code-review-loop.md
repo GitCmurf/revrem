@@ -1529,14 +1529,16 @@ operator-console view from dependency-free view models for profiles, recent
 runs, harness metadata, phase state, command previews, and artifact links. The
 layout keeps workspace/profile/live-run status visible at the top, shows profile
 and pipeline context beside the Run Monitor, and keeps contextual live-run
-controls plus help on the right. Use `--profile NAME` to select the initial
-profile. Key bindings shell through `revrem config` and the normal run CLI:
-`d` dry-runs the selected profile, `r` asks for confirmation and then starts a
-real live run, `k` cancels an active live run, `s` shows the profile, `e` edits
-it, `n` creates a profile, `c` clones the selected profile, `x` exports, `i`
-imports from the path field, `delete` deletes through
-`revrem config delete --yes`, `Esc` clears input focus, `h`/`?` toggles
-contextual help, and `q` quits.
+controls plus help on the right. The main dashboard has no persistent text
+inputs, so command keys work immediately after launch. Use `--profile NAME` to
+select the initial profile. Key bindings shell through `revrem config` and the
+normal run CLI: `d` dry-runs the selected profile, `r` asks for confirmation
+and then starts a real live run, `k` cancels an active live run, `s` shows the
+profile, `e` edits it, `n` opens a profile-name prompt and creates a profile,
+`c` opens a target-name prompt and clones the selected profile, `x` exports,
+`i` opens an import-path prompt, `delete` deletes through
+`revrem config delete --yes`, `Esc` clears focus or cancels an open prompt,
+`h`/`?` toggles contextual help, and `q` quits.
 
 Live TUI runs are experimental but use the same execution path as the CLI. The
 TUI controller starts a managed `revrem` subprocess with the selected profile,

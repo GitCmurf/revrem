@@ -194,11 +194,11 @@ scripts, including optional extras metadata.
 requiring Textual in the default development environment, plus fake-Textual
 launch smoke tests for the operator shell, dry-run and live-run launch actions,
 live monitor refresh, cancellation routing, and CLI-backed profile lifecycle
-actions. It also covers the operator-console status/help widgets, including
-inactive cancellation feedback, background cancellation completion,
-quit-with-active-run confirmation, terminal-status refresh stopping, and the
-visible live-run confirmation state. Selector-dispatch widget probes catch
-wrong TUI target selectors in the mocked-widget tests.
+actions. It also covers compact operator-console markup, prompt cancellation,
+status/help widgets, inactive cancellation feedback, background cancellation
+completion, quit-with-active-run confirmation, terminal-status refresh
+stopping, and the visible live-run confirmation state. Selector-dispatch widget
+probes catch wrong TUI target selectors in the mocked-widget tests.
 `tests/test_tui_state.py` covers dependency-free TUI view models for profile
 discovery, run-history loading, harness metadata, pipeline phase summaries, and
 profile command previews, launch plans, profile lifecycle command plans,
@@ -206,8 +206,10 @@ run-monitor artifact links, and the composed shell model used by the
 interactive entry point.
 `tests/test_tui_pilot_smoke.py` boots the module-scope Textual app through a
 Pilot harness and asserts the Home, status, and help panels render through
-Textual. It also drives confirmed live-run launch, visible monitor updates, and
-cancellation through the real widget tree and keybindings.
+Textual. It also verifies the main dashboard has no persistent text-input
+focus trap, then drives confirmed live-run launch, visible monitor updates,
+cancellation, modal prompt submit, and modal prompt cancel through the real
+widget tree and keybindings.
 `tests/test_tui_run_controller.py` covers live-run argv assembly, explicit
 artifact-dir stale event/summary guards, exit classification, process-group
 cancellation escalation, real child-process cancellation, and cleanup of a

@@ -312,7 +312,7 @@ prompt.
 | Profiles | Profile table plus lifecycle affordances for New, Edit, Clone, Delete, Export, Import |
 | Pipeline Builder | Ordered phase list, checks count, harness, model, effort, and timeout summaries |
 | Run Monitor | Recent run statuses, stopped reasons, artifact directories, and artifact-link existence |
-| Controls | Profile/path input fields and key-bound lifecycle actions |
+| Controls | Key-bound lifecycle actions plus modal prompts for actions that need text |
 
 The TUI shells out to the same tested command plans used by the CLI preview
 layer. It does not own remediation logic or write profile files directly. It
@@ -326,18 +326,22 @@ future acceptance criteria. The current TUI is a control panel and artifact
 viewer; the CLI remains the execution engine for `0.3.0`.
 
 The delivered Textual shell accepts `--profile` to select the initial profile,
-renders the operator screens in tabs when Textual supports tabbed containers,
-and exposes key-bound actions for the profile lifecycle:
+renders compact operator panels, and exposes key-bound actions for the profile
+lifecycle. The main dashboard has no persistent text fields, so global command
+keys work immediately unless a modal prompt is open:
 
-- `d`: launch a dry-run preview for the selected/profile-field profile.
+- `d`: launch a dry-run preview for the selected profile.
 - `s`: show the resolved profile with `revrem config show`.
 - `e`: edit the owning profile file through `revrem config edit`.
-- `n`: create a user profile with `revrem config new --no-interactive` so the
-  Textual event loop never blocks on hidden stdin prompts.
-- `c`: clone the selected profile with `revrem config clone`.
+- `n`: prompt for a profile name, then create a user profile with
+  `revrem config new --no-interactive` so the Textual event loop never blocks
+  on hidden stdin prompts.
+- `c`: prompt for a target name, then clone the selected profile with
+  `revrem config clone`.
 - `x`: export a resolved profile with `revrem config export`.
-- `i`: import profiles from the path field with `revrem config import`.
-- `delete`: delete the profile-field profile through `revrem config delete --yes`.
+- `i`: prompt for a TOML path, then import profiles with `revrem config import`.
+- `delete`: delete the selected profile through `revrem config delete --yes`.
+- `Esc`: clear focus, or cancel an open prompt.
 - `q`: quit.
 
 ---
@@ -562,8 +566,10 @@ Initial slice done when:
 - TUI state tests cover profile discovery, run-history loading, harness
   metadata, pipeline phase modeling, profile command previews, launch plans, and
   run-monitor artifact-link views without importing Textual.
-- A dependency-guarded launch smoke test proves the Textual app can render the
-  home snapshot when Textual is available.
+- Dependency-guarded Pilot tests prove the Textual app can render the home
+  snapshot, keep global keys active on the main dashboard, drive live-run
+  launch/cancel keybindings, and submit/cancel modal text prompts when Textual
+  is available.
 - Fake-Textual action tests prove TUI key bindings shell to stable `revrem
   config` command plans rather than duplicating config mutation logic.
 - `revrem config new NAME --interactive` prompts for common profile fields,

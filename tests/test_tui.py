@@ -457,6 +457,30 @@ def test_tui_live_monitor_escapes_markup_in_event_detail(monkeypatch, tmp_path):
     assert "[bold]danger[/bold]" not in updates[0]
 
 
+def test_tui_compact_profiles_markup_truncates_description_and_source(tmp_path):
+    config_path = tmp_path / ".revrem.toml"
+    config_path.write_text(
+        """
+[profiles.dogfood]
+description = "Project-local RevRem dogfood run with full verification, commits, diagnostics, and explicit phase models."
+
+[profiles.dogfood.pipeline]
+base = "main"
+checks = ["pytest -q"]
+""",
+        encoding="utf-8",
+    )
+    model = tui.tui_state.build_shell_model(cwd=tmp_path, selected_profile_name="dogfood")
+    app = tui.RevRemApp(model=model, profiles_by_name={})
+
+    markup = tui._profiles_markup(app)
+
+    assert "> dogfood" in markup
+    assert "Project-local RevRem dogfood run with ful..." in markup
+    assert str(config_path) not in markup
+    assert "project" in markup
+
+
 def test_tui_cancel_action_routes_to_controller(monkeypatch, tmp_path):
     notifications = []
     workers = []
@@ -608,7 +632,7 @@ def test_tui_clear_focus_action_clears_input_focus(monkeypatch, tmp_path):
     app.action_clear_focus()
 
     assert focused == [None]
-    assert notifications == ["Input focus cleared."]
+    assert notifications == ["Focus cleared."]
 
 
 def test_tui_help_toggle_updates_help_and_status_widgets(monkeypatch, tmp_path):
@@ -627,7 +651,7 @@ def test_tui_help_toggle_updates_help_and_status_widgets(monkeypatch, tmp_path):
     updates = [value for _, value in widgets.updates]
     classes = [value for _, value in widgets.classes]
     assert any("Run: \\[d] dry-run selected profile" in update for update in updates)
-    assert any("help open" in update for update in updates)
+    assert any("\\[h]hide help" in update for update in updates)
     assert "status-idle" in classes
 
 
@@ -701,10 +725,6 @@ def test_tui_profile_lifecycle_actions_use_config_commands(monkeypatch, tmp_path
     config_path.write_text('[profiles.final-pr]\ndescription = "Final PR"\n', encoding="utf-8")
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
 
-    class FakeInput:
-        def __init__(self, value):
-            self.value = value
-
     monkeypatch.setattr(tui.Path, "cwd", lambda: tmp_path)
 
     def fake_run_launch_plan(plan, *, cwd, capture_output=True):
@@ -712,32 +732,79 @@ def test_tui_profile_lifecycle_actions_use_config_commands(monkeypatch, tmp_path
         return types.SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(tui, "run_launch_plan", fake_run_launch_plan)
+
+    def fake_prompt(self, *, title, prompt, initial, on_submit):
+        del prompt, initial
+        if title == "Clone profile":
+            on_submit("copy")
+        elif title == "New profile":
+            on_submit("fresh")
+        elif title == "Import profiles":
+            on_submit("/tmp/profiles.toml")
+        else:
+            raise AssertionError(f"unexpected prompt: {title}")
+
     app_class = _patch_textual_app_class(
         monkeypatch,
         lambda self: (
+            self.action_new_profile(),
             self.action_clone_profile(),
+            self.action_import_profiles(),
             self.action_delete_profile(),
             actions.append(type(self).__name__),
         ),
     )
-    monkeypatch.setattr(
-        app_class,
-        "query_one",
-        lambda self, selector: FakeInput("copy") if selector == "#profile-name" else None,
-    )
+    monkeypatch.setattr(app_class, "_prompt_for_text", fake_prompt)
     monkeypatch.setattr(app_class, "notify", lambda self, message: notifications.append(message))
 
     assert cli_main(["ui", "--profile", "final-pr"]) == 0
 
-    assert actions[:2] == [
+    assert actions[:4] == [
+        (("revrem", "config", "new", "fresh", "--no-interactive"), tmp_path, True),
         (("revrem", "config", "clone", "final-pr", "copy"), tmp_path, True),
-        (("revrem", "config", "delete", "copy", "--yes"), tmp_path, True),
+        (("revrem", "config", "import", "/tmp/profiles.toml"), tmp_path, True),
+        (("revrem", "config", "delete", "final-pr", "--yes"), tmp_path, True),
     ]
-    assert actions[2] == "RevRemApp"
+    assert actions[4] == "RevRemApp"
     assert notifications == [
+        "Created profile: fresh",
         "Cloned profile: final-pr -> copy",
-        "Deleted profile: copy",
+        "Imported profiles: /tmp/profiles.toml",
+        "Deleted profile: final-pr",
     ]
+
+
+def test_tui_prompt_cancellation_does_not_run_command(monkeypatch, tmp_path):
+    notifications = []
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    model = tui.tui_state.build_shell_model(cwd=repo, selected_profile_name="security")
+    app = tui.RevRemApp(model=model, profiles_by_name={})
+    monkeypatch.setattr(app, "notify", lambda message: notifications.append(message))
+
+    class Prompt:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    pushed = []
+    monkeypatch.setattr(tui, "text_prompt_screen_class", lambda: Prompt)
+    monkeypatch.setattr(
+        app,
+        "push_screen",
+        lambda screen, callback: (pushed.append(screen), callback(None)),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        app,
+        "_run_captured",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("should not run")),
+    )
+
+    app.action_new_profile()
+
+    assert pushed
+    assert notifications == ["New profile cancelled."]
 
 
 def test_run_launch_plan_uses_current_dev_entrypoint(tmp_path, monkeypatch):

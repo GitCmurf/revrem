@@ -12,12 +12,13 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Literal, NamedTuple
 
-from code_review_loop import profiles, tui_run_controller, tui_state
+from code_review_loop import harnesses, profiles, tui_run_controller, tui_state
 
 INSTALL_HINT = "Install it with: python -m pip install 'revrem[tui]'"
 _TEXTUAL_IMPORT_ERROR: Exception | None = None
 _TEXTUAL_COMPONENTS: _TextualComponents | None = None
 _TEXTUAL_APP_CLASS: type[Any] | None = None
+_TEXT_PROMPT_SCREEN_CLASS: type[Any] | None = None
 
 
 class _TextualFallbackApp:
@@ -61,6 +62,7 @@ class _TextualComponents(NamedTuple):
     app: Any
     binding: Any
     containers: Any
+    screen: Any
     widgets: Any
 
 
@@ -70,7 +72,9 @@ _Footer: Any = object
 _Static: Any = object
 _Horizontal: Any | None = None
 _Vertical: Any | None = None
+_VerticalScroll: Any | None = None
 _Input: Any | None = None
+_ModalScreen: Any | None = None
 _TabbedContent: Any | None = None
 _TabPane: Any | None = None
 
@@ -149,6 +153,7 @@ def _load_textual_components() -> _TextualComponents | None:
             app=importlib.import_module("textual.app"),
             binding=importlib.import_module("textual.binding"),
             containers=importlib.import_module("textual.containers"),
+            screen=importlib.import_module("textual.screen"),
             widgets=importlib.import_module("textual.widgets"),
         )
     except Exception as exc:
@@ -158,15 +163,17 @@ def _load_textual_components() -> _TextualComponents | None:
 
 
 def _install_textual_components(components: _TextualComponents) -> None:
-    global _Binding, _Header, _Footer, _Static, _Horizontal, _Vertical, _Input
-    global _TabbedContent, _TabPane
+    global _Binding, _Header, _Footer, _Static, _Horizontal, _Vertical, _VerticalScroll
+    global _Input, _ModalScreen, _TabbedContent, _TabPane
     _Binding = getattr(components.binding, "Binding", None)
     _Header = components.widgets.Header
     _Footer = components.widgets.Footer
     _Static = components.widgets.Static
     _Horizontal = getattr(components.containers, "Horizontal", None)
     _Vertical = getattr(components.containers, "Vertical", None)
+    _VerticalScroll = getattr(components.containers, "VerticalScroll", None)
     _Input = getattr(components.widgets, "Input", None)
+    _ModalScreen = getattr(components.screen, "ModalScreen", None)
     _TabbedContent = getattr(components.widgets, "TabbedContent", None)
     _TabPane = getattr(components.widgets, "TabPane", None)
 
@@ -184,6 +191,58 @@ def textual_app_class() -> type[Any]:
             {"BINDINGS": _build_bindings(_Binding)},
         )
     return _TEXTUAL_APP_CLASS
+
+
+def text_prompt_screen_class() -> type[Any] | None:
+    global _TEXT_PROMPT_SCREEN_CLASS
+    components = _load_textual_components()
+    if components is None:
+        return None
+    _install_textual_components(components)
+    if _ModalScreen is None or _Input is None or _Vertical is None:
+        return None
+    if _TEXT_PROMPT_SCREEN_CLASS is None:
+        modal_screen: Any = _ModalScreen
+        vertical: Any = _Vertical
+        static: Any = _Static
+        input_widget: Any = _Input
+
+        class TextPrompt(modal_screen):
+            BINDINGS = [
+                _binding("escape", "cancel", "Cancel", priority=True, binding_cls=_Binding)
+            ]
+
+            def __init__(self, *, title: str, prompt: str, initial: str) -> None:
+                super().__init__()
+                self.prompt_title = title
+                self.prompt_text = prompt
+                self.initial_value = initial
+
+            def compose(self):
+                with vertical(id="prompt-dialog"):
+                    yield static(
+                        tui_state.markup_escape(self.prompt_title),
+                        id="prompt-title",
+                        markup=True,
+                    )
+                    yield static(tui_state.markup_escape(self.prompt_text), markup=True)
+                    yield input_widget(value=self.initial_value, id="prompt-input")
+                    yield static("Enter submits | Esc cancels")
+
+            def on_mount(self) -> None:
+                set_focus = getattr(self, "set_focus", None)
+                query_one = getattr(self, "query_one", None)
+                if callable(set_focus) and callable(query_one):
+                    set_focus(query_one("#prompt-input"))
+
+            def on_input_submitted(self, event: Any) -> None:
+                self.dismiss(getattr(event, "value", ""))
+
+            def action_cancel(self) -> None:
+                self.dismiss(None)
+
+        _TEXT_PROMPT_SCREEN_CLASS = TextPrompt
+    return _TEXT_PROMPT_SCREEN_CLASS
 
 
 def _binding(
@@ -257,6 +316,7 @@ class _RevRemAppMixin:
         border: round $surface;
         padding: 0 1;
         margin: 0 1 1 0;
+        overflow-y: auto;
     }
 
     #screen-run-monitor {
@@ -299,6 +359,27 @@ class _RevRemAppMixin:
     .status-interrupted-before-run-initialized {
         color: $error;
     }
+
+    TextPrompt {
+        align: center middle;
+    }
+
+    #prompt-dialog {
+        width: 64;
+        height: 9;
+        max-width: 90%;
+        border: round $accent;
+        background: $surface;
+        padding: 1 2;
+    }
+
+    #prompt-title {
+        text-style: bold;
+    }
+
+    #prompt-input {
+        margin: 1 0;
+    }
     """
     BINDINGS = _build_bindings(None)
 
@@ -331,30 +412,16 @@ class _RevRemAppMixin:
                     for screen_name in ("home", "profiles", "pipeline"):
                         screen = _screen_by_name(self.model, screen_name)
                         if screen is not None:
-                            yield _Static(
-                                _screen_markup(screen),
-                                id=f"screen-{screen.name}",
-                                classes="panel",
-                                markup=True,
+                            yield _panel_widget(
+                                _screen_markup_for_app(self, screen),
+                                widget_id=f"screen-{screen.name}",
                             )
                 with _Vertical(id="right-column"):
                     screen = _screen_by_name(self.model, "run-monitor")
                     if screen is not None:
-                        yield _Static(
+                        yield _panel_widget(
                             _screen_markup(screen),
-                            id=f"screen-{screen.name}",
-                            classes="panel",
-                            markup=True,
-                        )
-                    if _Input is not None:
-                        yield _Input(
-                            value=self.model.selected_profile_name or "",
-                            placeholder="profile name",
-                            id="profile-name",
-                        )
-                        yield _Input(
-                            placeholder="import path",
-                            id="profile-path",
+                            widget_id=f"screen-{screen.name}",
                         )
                     yield _Static(
                         _controls_markup(self),
@@ -372,18 +439,12 @@ class _RevRemAppMixin:
             with _TabbedContent():
                 for screen in self.model.screens:
                     with _TabPane(screen.title):
-                        yield _Static(_screen_markup(screen), id=f"screen-{screen.name}", markup=True)
+                        yield _Static(
+                            _screen_markup_for_app(self, screen),
+                            id=f"screen-{screen.name}",
+                            markup=True,
+                        )
                 with _TabPane("Controls"):
-                    if _Input is not None:
-                        yield _Input(
-                            value=self.model.selected_profile_name or "",
-                            placeholder="profile name",
-                            id="profile-name",
-                        )
-                        yield _Input(
-                            placeholder="import path",
-                            id="profile-path",
-                        )
                     yield _Static(
                         _controls_markup(self),
                         id="screen-controls",
@@ -491,7 +552,7 @@ class _RevRemAppMixin:
         set_focus = getattr(self, "set_focus", None)
         if callable(set_focus):
             set_focus(None)
-        _notify(self, "Input focus cleared.")
+        _notify(self, "Focus cleared.")
 
     def action_show_profile(self) -> None:
         profile_name = self._profile_name()
@@ -513,26 +574,23 @@ class _RevRemAppMixin:
         )
 
     def action_new_profile(self) -> None:
-        profile_name = self._profile_name()
-        if profile_name is None:
-            _notify(self, "Enter a profile name before creating a profile.")
-            return
-        self._run_captured(
-            tui_state.new_plan_for_name(profile_name),
-            success=f"Created profile: {profile_name}",
+        self._prompt_for_text(
+            title="New profile",
+            prompt="Profile name",
+            initial="",
+            on_submit=self._create_profile,
         )
 
     def action_clone_profile(self) -> None:
         source = self.model.selected_profile_name
-        target = self._profile_name()
         if source is None:
             _notify(self, "No profile is available to clone.")
             return
-        if target is None or target == source:
-            target = f"{source}-copy"
-        self._run_captured(
-            tui_state.clone_plan_for_name(source, target),
-            success=f"Cloned profile: {source} -> {target}",
+        self._prompt_for_text(
+            title="Clone profile",
+            prompt=f"Target name for clone of {source}",
+            initial=f"{source}-copy",
+            on_submit=lambda target: self._clone_profile(source, target),
         )
 
     def action_delete_profile(self) -> None:
@@ -556,10 +614,55 @@ class _RevRemAppMixin:
         )
 
     def action_import_profiles(self) -> None:
-        path = self._path_value()
-        if path is None:
-            _notify(self, "Enter an import path before importing profiles.")
+        self._prompt_for_text(
+            title="Import profiles",
+            prompt="TOML profile file path",
+            initial="",
+            on_submit=self._import_profiles,
+        )
+
+    def _prompt_for_text(
+        self,
+        *,
+        title: str,
+        prompt: str,
+        initial: str,
+        on_submit: Any,
+    ) -> None:
+        screen_class = text_prompt_screen_class()
+        push_screen = getattr(self, "push_screen", None)
+        if screen_class is None or not callable(push_screen):
+            _notify(self, f"{title} requires the interactive Textual prompt.")
             return
+
+        def handle_result(value: str | None) -> None:
+            if value is None:
+                _notify(self, f"{title} cancelled.")
+                return
+            stripped = value.strip()
+            if not stripped:
+                _notify(self, f"{title} cancelled.")
+                return
+            on_submit(stripped)
+
+        push_screen(
+            screen_class(title=title, prompt=prompt, initial=initial),
+            callback=handle_result,
+        )
+
+    def _create_profile(self, profile_name: str) -> None:
+        self._run_captured(
+            tui_state.new_plan_for_name(profile_name),
+            success=f"Created profile: {profile_name}",
+        )
+
+    def _clone_profile(self, source: str, target: str) -> None:
+        self._run_captured(
+            tui_state.clone_plan_for_name(source, target),
+            success=f"Cloned profile: {source} -> {target}",
+        )
+
+    def _import_profiles(self, path: str) -> None:
         self._run_captured(tui_state.import_plan_for_path(path), success=f"Imported profiles: {path}")
 
     def _run_interactive(self, plan: tui_state.LaunchPlan, *, success: str) -> None:
@@ -592,13 +695,7 @@ class _RevRemAppMixin:
         return run_launch_plan(plan, cwd=Path(self.model.snapshot.cwd), capture_output=capture_output)
 
     def _profile_name(self) -> str | None:
-        value = _input_value(self, "#profile-name")
-        if value:
-            return value
         return self.model.selected_profile_name
-
-    def _path_value(self) -> str | None:
-        return _input_value(self, "#profile-path")
 
     def _profile_by_name(self, profile_name: str | None) -> Any | None:
         if profile_name is None:
@@ -673,6 +770,126 @@ def _screen_markup(screen: tui_state.TuiScreen) -> str:
     return f"[b]{tui_state.markup_escape(screen.title)}[/b]\n{escaped_lines}"
 
 
+def _screen_markup_for_app(app: Any, screen: tui_state.TuiScreen) -> str:
+    if screen.name == "home":
+        return _home_markup(app)
+    if screen.name == "profiles":
+        return _profiles_markup(app)
+    if screen.name == "pipeline":
+        return _pipeline_markup(app)
+    return _screen_markup(screen)
+
+
+def _panel_widget(markup: str, *, widget_id: str) -> Any:
+    return _Static(markup, id=widget_id, classes="panel", markup=True)
+
+
+def _home_markup(app: Any) -> str:
+    snapshot = app.model.snapshot
+    implemented = [harness.name for harness in snapshot.harnesses if harness.implemented]
+    reserved_count = sum(1 for harness in snapshot.harnesses if not harness.implemented)
+    harness_text = ", ".join(implemented[:5]) or "none"
+    if len(implemented) > 5:
+        harness_text += f", +{len(implemented) - 5}"
+    if reserved_count:
+        harness_text += f" ({reserved_count} reserved)"
+    artifact_count = sum(len(run.artifacts) for run in snapshot.run_monitors)
+    lines = [
+        "[b]Home[/b]",
+        f"Workspace: {tui_state.markup_escape(snapshot.cwd)}",
+        f"Profile: {tui_state.markup_escape(app.model.selected_profile_name or 'none')}",
+        (
+            f"Profiles {len(snapshot.profiles)} | Recent runs {len(snapshot.recent_runs)} "
+            f"| Artifact links {artifact_count}"
+        ),
+        f"Harnesses: {tui_state.markup_escape(harness_text)}",
+    ]
+    if app.model.selected_launch_plan is not None:
+        lines.append(
+            f"Dry-run: {tui_state.markup_escape(app.model.selected_launch_plan.shell_command)}"
+        )
+    return "\n".join(lines)
+
+
+def _profiles_markup(app: Any) -> str:
+    selected = app.model.selected_profile_name
+    profiles_by_name = {profile.name: profile for profile in app.model.snapshot.profiles}
+    ordered = []
+    if selected and selected in profiles_by_name:
+        ordered.append(profiles_by_name[selected])
+    ordered.extend(profile for profile in app.model.snapshot.profiles if profile.name != selected)
+    lines = ["[b]Profiles[/b]"]
+    for index, profile in enumerate(ordered[:7]):
+        marker = ">" if profile.name == selected else " "
+        description = _truncate(profile.description or "-", 44)
+        source = _short_source(profile.source)
+        lines.append(
+            f"{marker} {tui_state.markup_escape(profile.name)}  "
+            f"base={tui_state.markup_escape(profile.base)}  "
+            f"max={profile.max_iterations}  checks={len(profile.checks)}  "
+            f"{tui_state.markup_escape(source)}"
+        )
+        if description != "-":
+            lines.append(f"  {tui_state.markup_escape(description)}")
+        if index == 0 and profile.name == selected:
+            lines.append("  selected: d dry-run | r run | s show | e edit | x export")
+    remaining = len(ordered) - 7
+    if remaining > 0:
+        lines.append(f"... {remaining} more profiles")
+    return "\n".join(lines)
+
+
+def _pipeline_markup(app: Any) -> str:
+    profile = app._profile_by_name(app.model.selected_profile_name)
+    if profile is None:
+        return "[b]Pipeline[/b]\nNo selected profile."
+    lines = [
+        "[b]Pipeline[/b]",
+        f"Profile: {tui_state.markup_escape(profile.name)}",
+    ]
+    for phase in tui_state.pipeline_phases(profile):
+        state = "on" if phase.enabled else "off"
+        details = [state]
+        if phase.harness:
+            details.append(phase.harness)
+        if phase.model:
+            details.append(_truncate(phase.model, 26))
+        effort = harnesses.phase_effort_text(phase.harness, phase.reasoning_effort)
+        if effort:
+            details.append(f"effort={effort}")
+        if phase.command_count is not None:
+            details.append(f"commands={phase.command_count}")
+        lines.append(f"{phase.name}: " + ", ".join(tui_state.markup_escape(item) for item in details))
+    if profile.triage.routing.enabled:
+        route_count = len(profile.triage.routes)
+        route = profile.triage.routing.default_route or "none"
+        lines.append(f"routing: default={tui_state.markup_escape(route)} routes={route_count}")
+    if app.model.selected_launch_plan is not None:
+        lines.append(
+            f"Dry-run: {tui_state.markup_escape(app.model.selected_launch_plan.shell_command)}"
+        )
+    return "\n".join(lines)
+
+
+def _truncate(value: str, max_chars: int) -> str:
+    if len(value) <= max_chars:
+        return value
+    return value[: max_chars - 3].rstrip() + "..."
+
+
+def _short_source(source: str | None) -> str:
+    if not source:
+        return "-"
+    if source == "builtin":
+        return "builtin"
+    path = Path(source)
+    if path.name == ".revrem.toml":
+        return "project"
+    if path.name == "profiles.toml":
+        return "user"
+    return path.name or source
+
+
 def _screen_by_name(model: tui_state.TuiShellModel, name: str) -> tui_state.TuiScreen | None:
     for screen in model.screens:
         if screen.name == name:
@@ -699,7 +916,7 @@ def _controls_markup(app: Any) -> str:
         "[b]Essential keys[/b]\n"
         "\\[d]ry-run  \\[r]un  \\[k]cancel  \\[h]help  \\[q]quit\n\n"
         "[b]Profile actions[/b]\n"
-        "\\[s]how  \\[e]dit  \\[n]ew  \\[c]lone  e\\[x]port  \\[i]mport  \\[delete]delete"
+        "\\[s]how  \\[e]dit  \\[n]ew...  \\[c]lone...  e\\[x]port  \\[i]mport..."
     )
 
 
@@ -738,12 +955,12 @@ def _status_bar_markup(app: Any) -> str:
         pending = " | cancelling"
     elif app._quit_confirmation_pending:
         pending = " | quit needs confirmation"
-    help_state = "help open" if app._help_visible else "h help"
+    help_hint = "\\[h]hide help" if app._help_visible else "\\[h]help"
     return (
         f"RevRem | {tui_state.markup_escape(Path(app.model.snapshot.cwd).name or app.model.snapshot.cwd)}"
         f" | profile {tui_state.markup_escape(profile_name)}"
         f" | live {tui_state.markup_escape(status)}{tui_state.markup_escape(pending)}\n"
-        f"\\[d]dry-run \\[r]run \\[k]cancel \\[{help_state}] \\[q]quit"
+        f"\\[d]dry-run \\[r]run \\[k]cancel {help_hint} \\[q]quit"
     )
 
 
@@ -758,8 +975,8 @@ def _help_markup(*, visible: bool) -> str:
         "[b]Help[/b]\n"
         "Universal: \\[q] quit | \\[Tab] next focus | \\[Shift+Tab] previous focus | \\[Esc] clear focus | \\[h] hide help\n"
         "Run: \\[d] dry-run selected profile | \\[r] confirm/start live run | \\[k] cancel active run\n"
-        "Profile: \\[s] show | \\[e] edit | \\[n] new | \\[c] clone | \\[x] export | \\[i] import | \\[delete] delete\n"
-        "Fields: profile name targets profile actions; import path targets profile imports."
+        "Profile: \\[s] show | \\[e] edit | \\[n] new... | \\[c] clone... | \\[x] export | \\[i] import... | \\[delete] delete\n"
+        "Prompts: Enter submits text; Esc cancels and returns to global keys."
     )
 
 
@@ -802,15 +1019,6 @@ def _call_from_thread(app: Any, callback: Any) -> None:
         call_from_thread(callback)
         return
     callback()
-
-
-def _input_value(app: Any, selector: str) -> str | None:
-    widget = _resolve_widget(app, selector)
-    value = getattr(widget, "value", None)
-    if not isinstance(value, str):
-        return None
-    stripped = value.strip()
-    return stripped or None
 
 
 def run_launch_plan(
