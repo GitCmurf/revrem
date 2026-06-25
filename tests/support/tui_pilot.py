@@ -15,7 +15,7 @@ async def pilot_app(
     home: Path | None = None,
     profile_name: str | None = None,
     fake_harness: bool = True,
-) -> AsyncIterator[tuple[tui.RevRemApp, object]]:
+) -> AsyncIterator[tuple[object, object]]:
     previous_fake = os.environ.get("REVREM_ALLOW_FAKE_HARNESS")
     if fake_harness:
         os.environ["REVREM_ALLOW_FAKE_HARNESS"] = "1"
@@ -36,7 +36,7 @@ async def pilot_app(
                 include_builtins=True,
             )
         }
-        app = tui.RevRemApp(model=model, profiles_by_name=profiles_by_name)
+        app = tui.textual_app_class()(model=model, profiles_by_name=profiles_by_name)
         async with app.run_test() as pilot:
             yield app, pilot
     finally:

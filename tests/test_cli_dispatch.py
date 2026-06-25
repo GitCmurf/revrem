@@ -9,8 +9,12 @@ keys cover every documented subcommand.
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 from collections.abc import Sequence
 from importlib import import_module
+from pathlib import Path
 
 import pytest
 
@@ -18,6 +22,8 @@ from code_review_loop.cli import args as cli_args
 
 cli_main = import_module("code_review_loop.cli.main")
 cli_registry = import_module("code_review_loop.cli.commands.registry")
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 
 _EXPECTED_SUBCOMMANDS = {
     "bundle-bug-report",
@@ -41,6 +47,14 @@ _EXPECTED_SUBCOMMANDS = {
 def test_registry_keys_match_documented_subcommands() -> None:
     registry = cli_registry.build_subcommand_registry()
     assert set(registry) == _EXPECTED_SUBCOMMANDS
+
+
+def test_non_ui_subcommand_help_survives_discoverable_broken_textual(tmp_path: Path) -> None:
+    result = _run_cli_with_broken_textual(tmp_path, "checks", "--help")
+
+    assert result.returncode == 0, result.stderr
+    assert "usage:" in result.stdout
+    assert "checks" in result.stdout
 
 
 @pytest.mark.parametrize(
@@ -153,3 +167,29 @@ def test_subcommand_parser_rejects_truncated_long_option(
 
     assert excinfo.value.code == 2
     assert "unrecognized arguments: --uninst" in capsys.readouterr().err
+
+
+def _run_cli_with_broken_textual(
+    tmp_path: Path, *argv: str
+) -> subprocess.CompletedProcess[str]:
+    fake_site = tmp_path / "fake_site"
+    textual_package = fake_site / "textual"
+    textual_package.mkdir(parents=True)
+    (textual_package / "__init__.py").write_text("", encoding="utf-8")
+    (textual_package / "app.py").write_text(
+        'raise RuntimeError("broken textual app import")\n',
+        encoding="utf-8",
+    )
+    existing_pythonpath = os.environ.get("PYTHONPATH")
+    pythonpath_entries = [str(fake_site), str(_REPO_ROOT / "src")]
+    if existing_pythonpath:
+        pythonpath_entries.append(existing_pythonpath)
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(pythonpath_entries)}
+    return subprocess.run(
+        [sys.executable, "-m", "code_review_loop", *argv],
+        cwd=_REPO_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )

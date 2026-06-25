@@ -1,10 +1,26 @@
 from __future__ import annotations
 
 import importlib.util
+import os
+import subprocess
+import sys
 import types
+from pathlib import Path
 
 from code_review_loop import tui
 from code_review_loop.cli.main import main as cli_main
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _patch_textual_app_class(monkeypatch, run):
+    class FakeRevRemApp(tui.RevRemApp):
+        def run(self):
+            run(self)
+
+    FakeRevRemApp.__name__ = "RevRemApp"
+    monkeypatch.setattr(tui, "textual_app_class", lambda: FakeRevRemApp)
+    return FakeRevRemApp
 
 
 class _WidgetProbe:
@@ -33,6 +49,38 @@ def test_tui_dry_run_does_not_require_textual(capsys):
     captured = capsys.readouterr()
     assert "RevRem TUI entry point is available." in captured.out
     assert captured.err == ""
+
+
+def test_tui_dry_run_survives_discoverable_broken_textual(tmp_path):
+    result = _run_cli_with_broken_textual(tmp_path, "ui", "--dry-run")
+
+    assert result.returncode == 0, result.stderr
+    assert "RevRem TUI entry point is available." in result.stdout
+    assert result.stderr == ""
+
+
+def test_tui_module_import_does_not_import_discoverable_broken_textual(
+    tmp_path: Path,
+) -> None:
+    sentinel = tmp_path / "textual_app_imported"
+    result = _run_python_with_broken_textual(
+        tmp_path,
+        "import code_review_loop.tui; print('import-ok')",
+        sentinel=sentinel,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "import-ok\n"
+    assert not sentinel.exists()
+
+
+def test_tui_launch_reports_discoverable_broken_textual(tmp_path: Path) -> None:
+    result = _run_cli_with_broken_textual(tmp_path, "ui")
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert "Textual was found but could not be imported" in result.stderr
+    assert "broken textual app import" in result.stderr
 
 
 def test_tui_main_uses_process_argv_when_called_without_explicit_argv(monkeypatch, capsys):
@@ -69,9 +117,7 @@ def test_tui_reports_missing_optional_dependency(monkeypatch, capsys):
 
 
 def test_tui_reports_unknown_initial_profile(monkeypatch, tmp_path, capsys):
-    monkeypatch.setattr(
-        tui.importlib.util, "find_spec", lambda name: object() if name == "textual" else None
-    )
+    _patch_textual_app_class(monkeypatch, lambda self: None)
     monkeypatch.setattr(tui.Path, "cwd", lambda: tmp_path)
 
     assert cli_main(["ui", "--profile", "missing"]) == 1
@@ -85,16 +131,13 @@ def test_tui_launches_textual_app_with_home_snapshot(monkeypatch, tmp_path):
     rendered = []
     launched = []
 
-    monkeypatch.setattr(
-        tui.importlib.util, "find_spec", lambda name: object() if name == "textual" else None
-    )
     monkeypatch.setattr(tui.Path, "cwd", lambda: tmp_path)
 
     def fake_run(self):
         launched.append(type(self).__name__)
         rendered.append(tui.tui_state.render_shell_text(self.model))
 
-    monkeypatch.setattr(tui.RevRemApp, "run", fake_run)
+    _patch_textual_app_class(monkeypatch, fake_run)
 
     assert cli_main(["ui"]) == 0
 
@@ -125,9 +168,6 @@ checks = ["git diff --check"]
     )
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
 
-    monkeypatch.setattr(
-        tui.importlib.util, "find_spec", lambda name: object() if name == "textual" else None
-    )
     monkeypatch.setattr(tui.Path, "cwd", lambda: tmp_path)
 
     def fake_run_launch_plan(plan, *, cwd):
@@ -135,12 +175,11 @@ checks = ["git diff --check"]
         return types.SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(tui, "run_launch_plan", fake_run_launch_plan)
-    monkeypatch.setattr(
-        tui.RevRemApp,
-        "run",
+    app_class = _patch_textual_app_class(
+        monkeypatch,
         lambda self: (self.action_launch_dry_run(), actions.append(type(self).__name__)),
     )
-    monkeypatch.setattr(tui.RevRemApp, "notify", lambda self, message: notifications.append(message))
+    monkeypatch.setattr(app_class, "notify", lambda self, message: notifications.append(message))
 
     assert cli_main(["ui"]) == 0
 
@@ -158,9 +197,6 @@ def test_tui_dry_run_action_launches_builtin_profile_without_local_config(
 
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
 
-    monkeypatch.setattr(
-        tui.importlib.util, "find_spec", lambda name: object() if name == "textual" else None
-    )
     monkeypatch.setattr(tui.Path, "cwd", lambda: tmp_path)
 
     def fake_run_launch_plan(plan, *, cwd):
@@ -168,12 +204,11 @@ def test_tui_dry_run_action_launches_builtin_profile_without_local_config(
         return types.SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(tui, "run_launch_plan", fake_run_launch_plan)
-    monkeypatch.setattr(
-        tui.RevRemApp,
-        "run",
+    app_class = _patch_textual_app_class(
+        monkeypatch,
         lambda self: (self.action_launch_dry_run(), actions.append(type(self).__name__)),
     )
-    monkeypatch.setattr(tui.RevRemApp, "notify", lambda self, message: notifications.append(message))
+    monkeypatch.setattr(app_class, "notify", lambda self, message: notifications.append(message))
 
     assert cli_main(["ui", "--profile", "security"]) == 0
 
@@ -191,9 +226,6 @@ def test_tui_live_run_action_requires_confirmation_and_starts_controller(monkeyp
     config_path.parent.mkdir(parents=True)
     config_path.write_text('[profiles.final-pr]\ndescription = "Final PR"\n', encoding="utf-8")
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    monkeypatch.setattr(
-        tui.importlib.util, "find_spec", lambda name: object() if name == "textual" else None
-    )
     monkeypatch.setattr(tui.Path, "cwd", lambda: tmp_path)
 
     def fake_start(**kwargs):
@@ -205,8 +237,8 @@ def test_tui_live_run_action_requires_confirmation_and_starts_controller(monkeyp
         self.action_launch_run()
         self.action_launch_run()
 
-    monkeypatch.setattr(tui.RevRemApp, "run", fake_run)
-    monkeypatch.setattr(tui.RevRemApp, "notify", lambda self, message: notifications.append(message))
+    app_class = _patch_textual_app_class(monkeypatch, fake_run)
+    monkeypatch.setattr(app_class, "notify", lambda self, message: notifications.append(message))
 
     assert cli_main(["ui", "--profile", "final-pr"]) == 0
 
@@ -635,9 +667,6 @@ def test_tui_edit_action_launches_profile_editor_with_suspended_app(monkeypatch,
             actions.append("suspend-exit")
             return False
 
-    monkeypatch.setattr(
-        tui.importlib.util, "find_spec", lambda name: object() if name == "textual" else None
-    )
     monkeypatch.setattr(tui.Path, "cwd", lambda: tmp_path)
 
     def fake_run_launch_plan(plan, *, cwd, capture_output=True):
@@ -645,13 +674,12 @@ def test_tui_edit_action_launches_profile_editor_with_suspended_app(monkeypatch,
         return types.SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(tui, "run_launch_plan", fake_run_launch_plan)
-    monkeypatch.setattr(
-        tui.RevRemApp,
-        "run",
+    app_class = _patch_textual_app_class(
+        monkeypatch,
         lambda self: (self.action_edit_profile(), actions.append(type(self).__name__)),
     )
-    monkeypatch.setattr(tui.RevRemApp, "suspend", lambda self: FakeSuspend())
-    monkeypatch.setattr(tui.RevRemApp, "notify", lambda self, message: notifications.append(message))
+    monkeypatch.setattr(app_class, "suspend", lambda self: FakeSuspend())
+    monkeypatch.setattr(app_class, "notify", lambda self, message: notifications.append(message))
 
     assert cli_main(["ui", "--profile", "final-pr"]) == 0
 
@@ -677,9 +705,6 @@ def test_tui_profile_lifecycle_actions_use_config_commands(monkeypatch, tmp_path
         def __init__(self, value):
             self.value = value
 
-    monkeypatch.setattr(
-        tui.importlib.util, "find_spec", lambda name: object() if name == "textual" else None
-    )
     monkeypatch.setattr(tui.Path, "cwd", lambda: tmp_path)
 
     def fake_run_launch_plan(plan, *, cwd, capture_output=True):
@@ -687,9 +712,8 @@ def test_tui_profile_lifecycle_actions_use_config_commands(monkeypatch, tmp_path
         return types.SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(tui, "run_launch_plan", fake_run_launch_plan)
-    monkeypatch.setattr(
-        tui.RevRemApp,
-        "run",
+    app_class = _patch_textual_app_class(
+        monkeypatch,
         lambda self: (
             self.action_clone_profile(),
             self.action_delete_profile(),
@@ -697,11 +721,11 @@ def test_tui_profile_lifecycle_actions_use_config_commands(monkeypatch, tmp_path
         ),
     )
     monkeypatch.setattr(
-        tui.RevRemApp,
+        app_class,
         "query_one",
         lambda self, selector: FakeInput("copy") if selector == "#profile-name" else None,
     )
-    monkeypatch.setattr(tui.RevRemApp, "notify", lambda self, message: notifications.append(message))
+    monkeypatch.setattr(app_class, "notify", lambda self, message: notifications.append(message))
 
     assert cli_main(["ui", "--profile", "final-pr"]) == 0
 
@@ -775,3 +799,43 @@ def test_run_launch_plan_uses_module_entrypoint_when_console_script_is_missing(
         "--dry-run",
     ]
     assert calls[0][1]["cwd"] == tmp_path
+
+
+def _run_cli_with_broken_textual(
+    tmp_path: Path, *argv: str
+) -> subprocess.CompletedProcess[str]:
+    return _run_python_with_broken_textual(
+        tmp_path,
+        "import sys; from code_review_loop.__main__ import main; raise SystemExit(main(sys.argv[1:]))",
+        *argv,
+    )
+
+
+def _run_python_with_broken_textual(
+    tmp_path: Path,
+    code: str,
+    *argv: str,
+    sentinel: Path | None = None,
+) -> subprocess.CompletedProcess[str]:
+    fake_site = tmp_path / "fake_site"
+    textual_package = fake_site / "textual"
+    textual_package.mkdir(parents=True)
+    (textual_package / "__init__.py").write_text("", encoding="utf-8")
+    app_code = ""
+    if sentinel is not None:
+        app_code = f"from pathlib import Path\nPath({str(sentinel)!r}).write_text('imported')\n"
+    app_code += 'raise RuntimeError("broken textual app import")\n'
+    (textual_package / "app.py").write_text(app_code, encoding="utf-8")
+    existing_pythonpath = os.environ.get("PYTHONPATH")
+    pythonpath_entries = [str(fake_site), str(_REPO_ROOT / "src")]
+    if existing_pythonpath:
+        pythonpath_entries.append(existing_pythonpath)
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(pythonpath_entries)}
+    return subprocess.run(
+        [sys.executable, "-c", code, *argv],
+        cwd=_REPO_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )

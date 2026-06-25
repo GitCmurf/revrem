@@ -556,7 +556,9 @@ Deliverables:
 Initial slice done when:
 
 - `revrem ui --dry-run` succeeds without Textual installed.
-- `revrem ui` exits cleanly with an installation hint when Textual is absent.
+- `revrem ui` exits cleanly with an installation hint when Textual is absent
+  or discoverable but unusable; non-UI commands and `revrem ui --dry-run` do
+  not fail while building the subcommand registry.
 - TUI state tests cover profile discovery, run-history loading, harness
   metadata, pipeline phase modeling, profile command previews, launch plans, and
   run-monitor artifact-link views without importing Textual.

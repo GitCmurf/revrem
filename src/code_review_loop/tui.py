@@ -10,38 +10,69 @@ import sys
 import threading
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, NamedTuple
 
 from code_review_loop import profiles, tui_run_controller, tui_state
 
 INSTALL_HINT = "Install it with: python -m pip install 'revrem[tui]'"
-_TEXTUAL_AVAILABLE = importlib.util.find_spec("textual") is not None
-if _TEXTUAL_AVAILABLE:
-    textual_app = importlib.import_module("textual.app")
-    textual_binding = importlib.import_module("textual.binding")
-    containers = importlib.import_module("textual.containers")
-    widgets = importlib.import_module("textual.widgets")
-    _AppBase: Any = textual_app.App
-    _Binding: Any | None = getattr(textual_binding, "Binding", None)
-    _Header: Any = widgets.Header
-    _Footer: Any = widgets.Footer
-    _Static: Any = widgets.Static
-    _Horizontal: Any | None = getattr(containers, "Horizontal", None)
-    _Vertical: Any | None = getattr(containers, "Vertical", None)
-    _Input: Any | None = getattr(widgets, "Input", None)
-    _TabbedContent: Any | None = getattr(widgets, "TabbedContent", None)
-    _TabPane: Any | None = getattr(widgets, "TabPane", None)
-else:
-    _AppBase = object
-    _Binding = None
-    _Header = object
-    _Footer = object
-    _Static = object
-    _Horizontal = None
-    _Vertical = None
-    _Input = None
-    _TabbedContent = None
-    _TabPane = None
+_TEXTUAL_IMPORT_ERROR: Exception | None = None
+_TEXTUAL_COMPONENTS: _TextualComponents | None = None
+_TEXTUAL_APP_CLASS: type[Any] | None = None
+
+
+class _TextualFallbackApp:
+    """Test-double-friendly base used when Textual is not importable."""
+
+    def run(self) -> None:
+        raise RuntimeError(_textual_unavailable_message())
+
+    def notify(self, _message: str) -> None:
+        return None
+
+    def query_one(self, _selector: str) -> Any:
+        raise RuntimeError(_textual_unavailable_message())
+
+    def set_focus(self, _value: Any) -> None:
+        return None
+
+    def exit(self) -> None:
+        return None
+
+    def run_worker(self, target: Any, *, thread: bool = True) -> None:
+        del thread
+        target()
+
+    def call_from_thread(self, callback: Any) -> None:
+        callback()
+
+    def suspend(self) -> Any:
+        class _Suspend:
+            def __enter__(self) -> None:
+                return None
+
+            def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> Literal[False]:
+                del exc_type, exc, tb
+                return False
+
+        return _Suspend()
+
+
+class _TextualComponents(NamedTuple):
+    app: Any
+    binding: Any
+    containers: Any
+    widgets: Any
+
+
+_Binding: Any | None = None
+_Header: Any = object
+_Footer: Any = object
+_Static: Any = object
+_Horizontal: Any | None = None
+_Vertical: Any | None = None
+_Input: Any | None = None
+_TabbedContent: Any | None = None
+_TabPane: Any | None = None
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -49,11 +80,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.dry_run:
         print("RevRem TUI entry point is available.")
         return 0
-    if importlib.util.find_spec("textual") is None:
-        print(
-            f"ERROR: revrem ui requires the optional Textual dependency. {INSTALL_HINT}",
-            file=sys.stderr,
-        )
+    if not _textual_can_launch():
+        print(_textual_unavailable_message(), file=sys.stderr)
         return 1
     try:
         run_textual_app(selected_profile_name=args.profile)
@@ -71,7 +99,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Validate the TUI entry point without importing or launching Textual.",
+        help="Validate the TUI entry point without launching Textual.",
     )
     parser.add_argument(
         "--profile",
@@ -81,8 +109,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
 
 
 def run_textual_app(*, selected_profile_name: str | None = None) -> None:
-    if not _TEXTUAL_AVAILABLE:
-        raise RuntimeError(f"The RevRem TUI requires the optional Textual dependency. {INSTALL_HINT}")
+    app_class = textual_app_class()
     model = tui_state.build_shell_model(cwd=Path.cwd(), selected_profile_name=selected_profile_name)
     profiles_by_name = {
         profile.name: profile
@@ -92,18 +119,111 @@ def run_textual_app(*, selected_profile_name: str | None = None) -> None:
             include_builtins=True,
         )
     }
-    RevRemApp(model=model, profiles_by_name=profiles_by_name).run()
+    app_class(model=model, profiles_by_name=profiles_by_name).run()
 
 
-def _binding(key: str, action: str, description: str, *, priority: bool = False) -> Any:
+def _textual_unavailable_message() -> str:
+    message = f"ERROR: revrem ui requires the optional Textual dependency. {INSTALL_HINT}"
+    if _TEXTUAL_IMPORT_ERROR is not None:
+        message += (
+            " Textual was found but could not be imported: "
+            f"{type(_TEXTUAL_IMPORT_ERROR).__name__}: {_TEXTUAL_IMPORT_ERROR}"
+        )
+    return message
+
+
+def _textual_can_launch() -> bool:
+    return _load_textual_components() is not None
+
+
+def _load_textual_components() -> _TextualComponents | None:
+    global _TEXTUAL_COMPONENTS, _TEXTUAL_IMPORT_ERROR
+    if _TEXTUAL_COMPONENTS is not None:
+        return _TEXTUAL_COMPONENTS
+    if _TEXTUAL_IMPORT_ERROR is not None:
+        return None
+    if importlib.util.find_spec("textual") is None:
+        return None
+    try:
+        _TEXTUAL_COMPONENTS = _TextualComponents(
+            app=importlib.import_module("textual.app"),
+            binding=importlib.import_module("textual.binding"),
+            containers=importlib.import_module("textual.containers"),
+            widgets=importlib.import_module("textual.widgets"),
+        )
+    except Exception as exc:
+        _TEXTUAL_IMPORT_ERROR = exc
+        return None
+    return _TEXTUAL_COMPONENTS
+
+
+def _install_textual_components(components: _TextualComponents) -> None:
+    global _Binding, _Header, _Footer, _Static, _Horizontal, _Vertical, _Input
+    global _TabbedContent, _TabPane
+    _Binding = getattr(components.binding, "Binding", None)
+    _Header = components.widgets.Header
+    _Footer = components.widgets.Footer
+    _Static = components.widgets.Static
+    _Horizontal = getattr(components.containers, "Horizontal", None)
+    _Vertical = getattr(components.containers, "Vertical", None)
+    _Input = getattr(components.widgets, "Input", None)
+    _TabbedContent = getattr(components.widgets, "TabbedContent", None)
+    _TabPane = getattr(components.widgets, "TabPane", None)
+
+
+def textual_app_class() -> type[Any]:
+    global _TEXTUAL_APP_CLASS
+    components = _load_textual_components()
+    if components is None:
+        raise RuntimeError(_textual_unavailable_message())
+    _install_textual_components(components)
+    if _TEXTUAL_APP_CLASS is None:
+        _TEXTUAL_APP_CLASS = type(
+            "RevRemApp",
+            (_RevRemAppMixin, components.app.App),
+            {"BINDINGS": _build_bindings(_Binding)},
+        )
+    return _TEXTUAL_APP_CLASS
+
+
+def _binding(
+    key: str,
+    action: str,
+    description: str,
+    *,
+    priority: bool = False,
+    binding_cls: Any | None = None,
+) -> Any:
     """Build a Textual Binding, falling back to a plain tuple when Textual's
     Binding class is unavailable (optional dependency not installed)."""
-    if _Binding is not None:
-        return _Binding(key, action, description, priority=priority)
+    binding = _Binding if binding_cls is None else binding_cls
+    if binding is not None:
+        return binding(key, action, description, priority=priority)
     return (key, action, description)
 
 
-class RevRemApp(_AppBase):  # type: ignore[misc, valid-type]
+def _build_bindings(binding_cls: Any | None) -> list[Any]:
+    return [
+        ("d", "launch_dry_run", "Dry run"),
+        ("r", "launch_run", "Run"),
+        ("k", "cancel_run", "Cancel run"),
+        _binding("question_mark", "toggle_help", "Help", priority=True, binding_cls=binding_cls),
+        _binding("h", "toggle_help", "Help", priority=True, binding_cls=binding_cls),
+        ("tab", "focus_next", "Focus next"),
+        ("shift+tab", "focus_previous", "Focus previous"),
+        _binding("escape", "clear_focus", "Clear focus", priority=True, binding_cls=binding_cls),
+        ("s", "show_profile", "Show"),
+        ("e", "edit_profile", "Edit profile"),
+        ("n", "new_profile", "New"),
+        ("c", "clone_profile", "Clone"),
+        ("x", "export_profile", "Export"),
+        ("i", "import_profiles", "Import"),
+        ("delete", "delete_profile", "Delete"),
+        ("q", "quit", "Quit"),
+    ]
+
+
+class _RevRemAppMixin:
     CSS = """
     Screen {
         layout: vertical;
@@ -180,24 +300,7 @@ class RevRemApp(_AppBase):  # type: ignore[misc, valid-type]
         color: $error;
     }
     """
-    BINDINGS = [
-        ("d", "launch_dry_run", "Dry run"),
-        ("r", "launch_run", "Run"),
-        ("k", "cancel_run", "Cancel run"),
-        _binding("question_mark", "toggle_help", "Help", priority=True),
-        _binding("h", "toggle_help", "Help", priority=True),
-        ("tab", "focus_next", "Focus next"),
-        ("shift+tab", "focus_previous", "Focus previous"),
-        _binding("escape", "clear_focus", "Clear focus", priority=True),
-        ("s", "show_profile", "Show"),
-        ("e", "edit_profile", "Edit profile"),
-        ("n", "new_profile", "New"),
-        ("c", "clone_profile", "Clone"),
-        ("x", "export_profile", "Export"),
-        ("i", "import_profiles", "Import"),
-        ("delete", "delete_profile", "Delete"),
-        ("q", "quit", "Quit"),
-    ]
+    BINDINGS = _build_bindings(None)
 
     def __init__(
         self,
@@ -561,6 +664,10 @@ class RevRemApp(_AppBase):  # type: ignore[misc, valid-type]
         )
 
 
+class RevRemApp(_RevRemAppMixin, _TextualFallbackApp):
+    """Import-safe app shell used by unit tests and by lazy Textual subclasses."""
+
+
 def _screen_markup(screen: tui_state.TuiScreen) -> str:
     escaped_lines = "\n".join(tui_state.markup_escape(line) for line in screen.lines)
     return f"[b]{tui_state.markup_escape(screen.title)}[/b]\n{escaped_lines}"
@@ -573,7 +680,7 @@ def _screen_by_name(model: tui_state.TuiShellModel, name: str) -> tui_state.TuiS
     return None
 
 
-def _controls_markup(app: RevRemApp) -> str:
+def _controls_markup(app: Any) -> str:
     selected = app._profile_name() or "<none>"
     if app._cancel_in_progress:
         live_hint = "cancelling: waiting for child process to exit"
@@ -619,7 +726,7 @@ def _live_monitor_markup(controller: tui_run_controller.LiveRunController) -> st
     return "\n".join(lines)
 
 
-def _status_bar_markup(app: RevRemApp) -> str:
+def _status_bar_markup(app: Any) -> str:
     profile_name = app._profile_name() or "<none>"
     status = app.live_run_controller.status
     pending = (
