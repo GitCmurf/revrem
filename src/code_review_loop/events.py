@@ -239,7 +239,10 @@ def _open_fresh_artifact(path: Path):
         raise
 
     try:
-        return os.fdopen(fd, "a", encoding="utf-8")
+        # Line-buffer the JSONL sink so newline-terminated live events become
+        # visible to the TUI poller immediately, while `close()` still performs
+        # the final flush for completed runs.
+        return os.fdopen(fd, "a", encoding="utf-8", buffering=1)
     except Exception:
         os.close(fd)
         raise

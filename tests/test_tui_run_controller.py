@@ -449,6 +449,50 @@ def test_live_events_ignore_malformed_stale_file_until_identity_changes(tmp_path
     assert [event.run_id for event in snapshot.events] == ["new-run"]
 
 
+def test_live_events_expose_non_terminal_rows_before_close(tmp_path):
+    run_dir = tmp_path / "custom" / "run"
+    run_dir.mkdir(parents=True)
+    profile = profiles.Profile(
+        name="demo",
+        output=profiles.OutputConfig(artifact_dir="custom/run"),
+    )
+    plan = tui_state.LaunchPlan(
+        profile_name="demo",
+        mode="run",
+        argv=("revrem", "--profile", "demo"),
+        shell_command="revrem --profile demo",
+    )
+
+    controller = tui_run_controller.LiveRunController()
+    controller.start(
+        profile=profile,
+        plan=plan,
+        cwd=tmp_path,
+        entrypoint_resolver=list,
+        popen_factory=lambda *_args, **_kwargs: FakeProcess(returncode=None),
+    )
+
+    sink = events.JsonlSink(run_dir, "new-run")
+    sink.emit("phase_start", phase="review", payload={"message": "start"})
+
+    snapshot = controller.read_live_events()
+    assert snapshot.ready is True
+    views = tui_state.event_views_from_events(snapshot.events)
+    assert [(event.seq, event.kind, event.detail) for event in views] == [
+        (1, "phase_start", "start"),
+    ]
+
+    sink.emit("phase_result", phase="review", payload={"status": "clear"})
+    sink.close()
+
+    snapshot = controller.read_live_events()
+    views = tui_state.event_views_from_events(snapshot.events)
+    assert [(event.seq, event.kind, event.detail) for event in views] == [
+        (1, "phase_start", "start"),
+        (2, "phase_result", "clear"),
+    ]
+
+
 def test_finish_ignores_stale_summary_from_explicit_artifact_dir(tmp_path):
     run_dir = tmp_path / "custom" / "run"
     run_dir.mkdir(parents=True)
