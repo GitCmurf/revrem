@@ -29,7 +29,14 @@ class _WidgetProbe:
         self.classes: list[tuple[str, str]] = []
 
     def query_one(self, selector: str):
-        if selector not in {"#screen-run-monitor", "#screen-controls", "#screen-help", "#status-bar"}:
+        if selector not in {
+            "#screen-run-monitor",
+            "#screen-home",
+            "#screen-controls",
+            "#screen-help",
+            "#status-bar",
+            "#footer-bar",
+        }:
             raise AssertionError(f"unexpected selector: {selector}")
         probe = self
 
@@ -481,6 +488,71 @@ checks = ["pytest -q"]
     assert "project" in markup
 
 
+def test_tui_workspace_switching_updates_two_pane_workbench(monkeypatch, tmp_path):
+    model = tui.tui_state.build_shell_model(cwd=tmp_path, selected_profile_name="security")
+    app = tui.RevRemApp(model=model, profiles_by_name={})
+    widgets = _WidgetProbe()
+    monkeypatch.setattr(app, "query_one", widgets.query_one)
+
+    app.action_workspace_loop()
+
+    assert app._workspace == "loop"
+    assert app._focused_pane == "left"
+    updates = dict(widgets.updates)
+    assert "Loop Phases" in updates["#screen-home"]
+    assert "Loop Detail" in updates["#screen-run-monitor"]
+    assert "workspace=loop" in updates["#status-bar"]
+
+
+def test_tui_profile_selection_moves_command_preview(monkeypatch, tmp_path):
+    config_path = tmp_path / ".revrem.toml"
+    config_path.write_text(
+        """
+[profiles.alpha]
+description = "Alpha"
+
+[profiles.beta]
+description = "Beta"
+""",
+        encoding="utf-8",
+    )
+    model = tui.tui_state.build_shell_model(cwd=tmp_path, selected_profile_name="alpha")
+    app = tui.RevRemApp(
+        model=model,
+        profiles_by_name={
+            profile.name: profile
+            for profile in tui.profiles.resolve_profiles(
+                cwd=tmp_path,
+                require_implemented=False,
+                include_builtins=True,
+            )
+        },
+    )
+    widgets = _WidgetProbe()
+    monkeypatch.setattr(app, "query_one", widgets.query_one)
+
+    app.action_move_down()
+    app.action_select()
+
+    assert app._profile_name() == "beta"
+    updates = dict(widgets.updates)
+    assert "revrem --profile beta" in updates["#status-bar"]
+    assert "> [status-info]beta[/]" in updates["#screen-home"]
+
+
+def test_tui_focus_toggle_updates_panel_classes(monkeypatch, tmp_path):
+    model = tui.tui_state.build_shell_model(cwd=tmp_path, selected_profile_name="security")
+    app = tui.RevRemApp(model=model, profiles_by_name={})
+    widgets = _WidgetProbe()
+    monkeypatch.setattr(app, "query_one", widgets.query_one)
+
+    app.action_focus_next()
+
+    assert app._focused_pane == "right"
+    assert ("#screen-home", "panel panel-muted") in widgets.classes
+    assert ("#screen-run-monitor", "panel panel-focused") in widgets.classes
+
+
 def test_tui_cancel_action_routes_to_controller(monkeypatch, tmp_path):
     notifications = []
     workers = []
@@ -532,8 +604,8 @@ def test_tui_cancel_action_reports_when_no_run_is_active(monkeypatch, tmp_path):
     app.action_cancel_run()
 
     assert notifications == ["No active live run to cancel."]
-    updates = [value for selector, value in widgets.updates if selector == "#screen-controls"]
-    assert any("idle: press r twice to start" in update for update in updates)
+    updates = [value for selector, value in widgets.updates if selector == "#footer-bar"]
+    assert any("live: idle" in update for update in updates)
 
 
 def test_tui_quit_warns_before_cancelling_active_run(monkeypatch, tmp_path):
@@ -619,20 +691,19 @@ def test_tui_refresh_stops_while_cancel_is_in_progress(monkeypatch, tmp_path):
 
 
 def test_tui_clear_focus_action_clears_input_focus(monkeypatch, tmp_path):
-    focused = []
     notifications = []
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / ".git").mkdir()
     model = tui.tui_state.build_shell_model(cwd=repo, selected_profile_name="security")
     app = tui.RevRemApp(model=model, profiles_by_name={})
-    monkeypatch.setattr(app, "set_focus", lambda value: focused.append(value))
     monkeypatch.setattr(app, "notify", lambda message: notifications.append(message))
+    app._focused_pane = "right"
 
     app.action_clear_focus()
 
-    assert focused == [None]
-    assert notifications == ["Focus cleared."]
+    assert app._focused_pane == "left"
+    assert notifications == ["Focus returned to navigation."]
 
 
 def test_tui_help_toggle_updates_help_and_status_widgets(monkeypatch, tmp_path):
@@ -651,7 +722,7 @@ def test_tui_help_toggle_updates_help_and_status_widgets(monkeypatch, tmp_path):
     updates = [value for _, value in widgets.updates]
     classes = [value for _, value in widgets.classes]
     assert any("Run: \\[d] dry-run selected profile" in update for update in updates)
-    assert any("\\[h]hide help" in update for update in updates)
+    assert any("? hide help" in update for update in updates)
     assert "status-idle" in classes
 
 

@@ -19,6 +19,10 @@ _TEXTUAL_IMPORT_ERROR: Exception | None = None
 _TEXTUAL_COMPONENTS: _TextualComponents | None = None
 _TEXTUAL_APP_CLASS: type[Any] | None = None
 _TEXT_PROMPT_SCREEN_CLASS: type[Any] | None = None
+_WORKSPACES = ("profiles", "loop", "prompts", "run")
+_PHASES = ("review", "triage", "remediation", "checks", "commit")
+_RUN_TABS = ("events", "stdout", "stderr", "summary")
+_FOCUS_PANES = ("left", "right")
 
 
 class _TextualFallbackApp:
@@ -263,6 +267,14 @@ def _binding(
 
 def _build_bindings(binding_cls: Any | None) -> list[Any]:
     return [
+        ("1", "workspace_profiles", "Profiles"),
+        ("2", "workspace_loop", "Loop"),
+        ("3", "workspace_prompts", "Prompts"),
+        ("4", "workspace_run", "Run"),
+        ("j", "move_down", "Down"),
+        ("down", "move_down", "Down"),
+        ("up", "move_up", "Up"),
+        ("enter", "select", "Select"),
         ("d", "launch_dry_run", "Dry run"),
         ("r", "launch_run", "Run"),
         ("k", "cancel_run", "Cancel run"),
@@ -295,19 +307,19 @@ class _RevRemAppMixin:
 
     #status-bar {
         dock: top;
-        height: 3;
+        height: 4;
         padding: 0 2;
         text-style: bold;
     }
 
-    #left-column {
-        width: 45%;
+    #left-pane {
+        width: 38%;
         min-width: 34;
         height: 1fr;
     }
 
-    #right-column {
-        width: 55%;
+    #right-pane {
+        width: 62%;
         min-width: 42;
         height: 1fr;
     }
@@ -315,24 +327,52 @@ class _RevRemAppMixin:
     .panel {
         border: round $surface;
         padding: 0 1;
-        margin: 0 1 1 0;
+        margin: 0 1 0 0;
         overflow-y: auto;
     }
 
-    #screen-run-monitor {
-        height: 2fr;
+    .panel-focused {
+        border: round $accent;
     }
 
-    #screen-controls, #screen-help {
-        height: 1fr;
+    .panel-muted {
+        border: round $surface;
+        color: $text-muted;
     }
 
-    #profile-name, #profile-path {
-        margin: 0 0 1 0;
+    #footer-bar {
+        dock: bottom;
+        height: 2;
+        padding: 0 2;
+        background: $surface;
     }
 
-    .panel-title {
+    .panel-title, .workspace-active {
         text-style: bold;
+    }
+
+    .workspace-active {
+        color: $accent;
+    }
+
+    .status-success {
+        color: $success;
+    }
+
+    .status-warning {
+        color: $warning;
+    }
+
+    .status-error {
+        color: $error;
+    }
+
+    .status-info {
+        color: $accent;
+    }
+
+    .muted {
+        color: $text-muted;
     }
 
     .status-idle {
@@ -397,6 +437,11 @@ class _RevRemAppMixin:
         self._help_visible = False
         self._cancel_in_progress = False
         self._quit_confirmation_pending = False
+        self._workspace: str = "profiles"
+        self._focused_pane: str = "left"
+        self._selected_profile_index = self._initial_profile_index()
+        self._selected_phase_index = 0
+        self._selected_run_tab_index = 0
 
     def compose(self):
         yield _Header(show_clock=True)
@@ -408,33 +453,23 @@ class _RevRemAppMixin:
                 markup=True,
             )
             with _Horizontal(id="body"):
-                with _Vertical(id="left-column"):
-                    for screen_name in ("home", "profiles", "pipeline"):
-                        screen = _screen_by_name(self.model, screen_name)
-                        if screen is not None:
-                            yield _panel_widget(
-                                _screen_markup_for_app(self, screen),
-                                widget_id=f"screen-{screen.name}",
-                            )
-                with _Vertical(id="right-column"):
-                    screen = _screen_by_name(self.model, "run-monitor")
-                    if screen is not None:
-                        yield _panel_widget(
-                            _screen_markup(screen),
-                            widget_id=f"screen-{screen.name}",
-                        )
-                    yield _Static(
-                        _controls_markup(self),
-                        id="screen-controls",
-                        classes="panel",
-                        markup=True,
+                with _Vertical(id="left-pane"):
+                    yield _panel_widget(
+                        _left_pane_markup(self),
+                        widget_id="screen-home",
+                        focused=self._focused_pane == "left",
                     )
-                    yield _Static(
-                        _help_markup(visible=False),
-                        id="screen-help",
-                        classes="panel",
-                        markup=True,
+                with _Vertical(id="right-pane"):
+                    yield _panel_widget(
+                        _right_pane_markup(self),
+                        widget_id="screen-run-monitor",
+                        focused=self._focused_pane == "right",
                     )
+            yield _Static(
+                _footer_markup(self),
+                id="footer-bar",
+                markup=True,
+            )
         elif _TabbedContent is not None and _TabPane is not None:
             with _TabbedContent():
                 for screen in self.model.screens:
@@ -456,7 +491,6 @@ class _RevRemAppMixin:
                 id="body",
                 markup=True,
             )
-        yield _Footer()
 
     def on_mount(self) -> None:
         set_focus = getattr(self, "set_focus", None)
@@ -521,6 +555,8 @@ class _RevRemAppMixin:
             _notify(self, self.live_run_controller.message or f"Live run failed: {profile_name}")
             self._render_live_monitor()
             return
+        self._workspace = "run"
+        self._focused_pane = "right"
         _notify(self, f"Live run started: {profile_name} ({launch.artifact_dir_arg})")
         self._render_live_monitor()
 
@@ -549,10 +585,47 @@ class _RevRemAppMixin:
         self._update_console_status()
 
     def action_clear_focus(self) -> None:
-        set_focus = getattr(self, "set_focus", None)
-        if callable(set_focus):
-            set_focus(None)
-        _notify(self, "Focus cleared.")
+        self._focused_pane = "left"
+        self._render_workbench()
+        _notify(self, "Focus returned to navigation.")
+
+    def action_focus_next(self) -> None:
+        self._focused_pane = "right" if self._focused_pane == "left" else "left"
+        self._render_workbench()
+
+    def action_focus_previous(self) -> None:
+        self.action_focus_next()
+
+    def action_workspace_profiles(self) -> None:
+        self._set_workspace("profiles")
+
+    def action_workspace_loop(self) -> None:
+        self._set_workspace("loop")
+
+    def action_workspace_prompts(self) -> None:
+        self._set_workspace("prompts")
+
+    def action_workspace_run(self) -> None:
+        self._set_workspace("run")
+
+    def action_move_down(self) -> None:
+        self._move_selection(1)
+
+    def action_move_up(self) -> None:
+        self._move_selection(-1)
+
+    def action_select(self) -> None:
+        if self._workspace == "profiles" and self._focused_pane == "left":
+            selected = self._selected_profile_view()
+            if selected is not None:
+                self._select_profile(selected.name)
+                _notify(self, f"Selected profile: {selected.name}")
+        elif self._workspace == "run" and self._focused_pane == "left":
+            self._selected_run_tab_index = (self._selected_run_tab_index + 1) % len(_RUN_TABS)
+            _notify(self, f"Run view: {_RUN_TABS[self._selected_run_tab_index]}")
+        else:
+            self._focused_pane = "right"
+        self._render_workbench()
 
     def action_show_profile(self) -> None:
         profile_name = self._profile_name()
@@ -582,7 +655,7 @@ class _RevRemAppMixin:
         )
 
     def action_clone_profile(self) -> None:
-        source = self.model.selected_profile_name
+        source = self._profile_name()
         if source is None:
             _notify(self, "No profile is available to clone.")
             return
@@ -695,16 +768,78 @@ class _RevRemAppMixin:
         return run_launch_plan(plan, cwd=Path(self.model.snapshot.cwd), capture_output=capture_output)
 
     def _profile_name(self) -> str | None:
-        return self.model.selected_profile_name
+        selected = self._selected_profile_view()
+        return selected.name if selected is not None else None
 
     def _profile_by_name(self, profile_name: str | None) -> Any | None:
         if profile_name is None:
             return None
-        return self.profiles_by_name.get(profile_name)
+        profile = self.profiles_by_name.get(profile_name)
+        if profile is not None:
+            return profile
+        try:
+            return profiles.resolve_profile(
+                profile_name,
+                cwd=Path(self.model.snapshot.cwd),
+                require_implemented=False,
+            )
+        except (OSError, ValueError):
+            return None
 
     def _live_run_active(self) -> bool:
         process = self.live_run_controller.process
         return process is not None and process.poll() is None
+
+    def _initial_profile_index(self) -> int:
+        selected_name = self.model.selected_profile_name
+        for index, profile in enumerate(self.model.snapshot.profiles):
+            if profile.name == selected_name:
+                return index
+        return 0
+
+    def _selected_profile_view(self) -> tui_state.ProfileView | None:
+        if not self.model.snapshot.profiles:
+            return None
+        index = max(0, min(self._selected_profile_index, len(self.model.snapshot.profiles) - 1))
+        self._selected_profile_index = index
+        return self.model.snapshot.profiles[index]
+
+    def _selected_phase_name(self) -> str:
+        index = max(0, min(self._selected_phase_index, len(_PHASES) - 1))
+        self._selected_phase_index = index
+        return _PHASES[index]
+
+    def _set_workspace(self, workspace: str) -> None:
+        if workspace not in _WORKSPACES:
+            return
+        self._workspace = workspace
+        self._focused_pane = "left"
+        self._render_workbench()
+
+    def _move_selection(self, delta: int) -> None:
+        if self._workspace == "profiles" and self._focused_pane == "left":
+            count = len(self.model.snapshot.profiles)
+            if count:
+                self._selected_profile_index = (self._selected_profile_index + delta) % count
+        elif self._workspace in {"loop", "prompts", "run"} and self._focused_pane == "left":
+            self._selected_phase_index = (self._selected_phase_index + delta) % len(_PHASES)
+        elif self._workspace == "run" and self._focused_pane == "right":
+            self._selected_run_tab_index = (self._selected_run_tab_index + delta) % len(_RUN_TABS)
+        self._render_workbench()
+
+    def _select_profile(self, profile_name: str) -> None:
+        for index, profile in enumerate(self.model.snapshot.profiles):
+            if profile.name == profile_name:
+                self._selected_profile_index = index
+                return
+
+    def _render_workbench(self) -> None:
+        _update_widget(self, "#status-bar", _status_bar_markup(self))
+        _update_widget(self, "#screen-home", _left_pane_markup(self))
+        _update_widget(self, "#screen-run-monitor", _right_pane_markup(self))
+        _update_widget(self, "#footer-bar", _footer_markup(self))
+        _set_widget_classes(self, "#screen-home", _pane_classes(self, "left"))
+        _set_widget_classes(self, "#screen-run-monitor", _pane_classes(self, "right"))
 
     def _refresh_live_run(self) -> None:
         if self._cancel_in_progress:
@@ -745,15 +880,14 @@ class _RevRemAppMixin:
             exit_app()
 
     def _render_live_monitor(self) -> None:
-        if self.live_run_controller.launch is None:
-            self._update_console_status()
-            return
-        _update_widget(self, "#screen-run-monitor", _live_monitor_markup(self.live_run_controller))
+        self._workspace = "run"
+        self._focused_pane = "right"
+        _update_widget(self, "#screen-run-monitor", _right_pane_markup(self))
         self._update_console_status()
 
     def _update_console_status(self) -> None:
         _update_widget(self, "#status-bar", _status_bar_markup(self))
-        _update_widget(self, "#screen-controls", _controls_markup(self))
+        _update_widget(self, "#footer-bar", _footer_markup(self))
         _set_widget_classes(
             self,
             "#status-bar",
@@ -780,8 +914,336 @@ def _screen_markup_for_app(app: Any, screen: tui_state.TuiScreen) -> str:
     return _screen_markup(screen)
 
 
-def _panel_widget(markup: str, *, widget_id: str) -> Any:
-    return _Static(markup, id=widget_id, classes="panel", markup=True)
+def _panel_widget(markup: str, *, widget_id: str, focused: bool = False) -> Any:
+    return _Static(markup, id=widget_id, classes=_panel_classes(focused), markup=True)
+
+
+def _panel_classes(focused: bool) -> str:
+    return "panel panel-focused" if focused else "panel panel-muted"
+
+
+def _pane_classes(app: Any, pane: str) -> str:
+    return _panel_classes(app._focused_pane == pane)
+
+
+def _left_pane_markup(app: Any) -> str:
+    if app._workspace == "profiles":
+        return _profile_navigation_markup(app)
+    title = {
+        "loop": "Loop Phases",
+        "prompts": "Prompt Sources",
+        "run": "Run Timeline",
+    }.get(app._workspace, "Navigation")
+    return _phase_navigation_markup(app, title=title)
+
+
+def _right_pane_markup(app: Any) -> str:
+    if app._workspace == "profiles":
+        return _profile_detail_markup(app)
+    if app._workspace == "loop":
+        return _loop_detail_markup(app)
+    if app._workspace == "prompts":
+        return _prompt_detail_markup(app)
+    return _run_workspace_markup(app)
+
+
+def _workspace_tabs_markup(app: Any) -> str:
+    parts = []
+    labels = (
+        ("profiles", "1 Profiles"),
+        ("loop", "2 Loop"),
+        ("prompts", "3 Prompts"),
+        ("run", "4 Run"),
+    )
+    for workspace, label in labels:
+        escaped = tui_state.markup_escape(label)
+        if app._workspace == workspace:
+            parts.append(f"[workspace-active]{escaped}[/]")
+        else:
+            parts.append(f"[muted]{escaped}[/]")
+    return "  ".join(parts)
+
+
+def _profile_navigation_markup(app: Any) -> str:
+    selected_name = app._profile_name()
+    lines = [
+        f"[b]Profiles[/b]  [muted]{len(app.model.snapshot.profiles)} available[/]",
+        _workspace_tabs_markup(app),
+        "",
+    ]
+    if not app.model.snapshot.profiles:
+        lines.append("No profiles found. Press n to create one.")
+        return "\n".join(lines)
+    for index, profile in enumerate(app.model.snapshot.profiles):
+        marker = ">" if index == app._selected_profile_index else " "
+        selected = "[status-info]" if profile.name == selected_name else ""
+        selected_end = "[/]" if selected else ""
+        source = _short_source(profile.source)
+        lines.append(
+            f"{marker} {selected}{tui_state.markup_escape(profile.name)}{selected_end}  "
+            f"[muted]{tui_state.markup_escape(source)}[/]"
+        )
+        lines.append(
+            "  "
+            f"base={tui_state.markup_escape(profile.base)} "
+            f"max={profile.max_iterations} checks={len(profile.checks)}"
+        )
+    return "\n".join(lines)
+
+
+def _profile_detail_markup(app: Any) -> str:
+    profile_view = app._selected_profile_view()
+    if profile_view is None:
+        return "[b]Profile[/b]\nNo profile selected."
+    profile = app._profile_by_name(profile_view.name)
+    lines = [
+        f"[b]Profile Detail[/b]  [muted]{tui_state.markup_escape(profile_view.name)}[/]",
+        f"description: {tui_state.markup_escape(profile_view.description or '-')}",
+        f"source: {tui_state.markup_escape(_short_source(profile_view.source))}",
+        f"base: {tui_state.markup_escape(profile_view.base)}",
+        f"max iterations: {profile_view.max_iterations}",
+        f"checks: {len(profile_view.checks)}",
+        "",
+        "[b]Composed command[/b]",
+        tui_state.markup_escape(_command_preview(app)),
+        "",
+        "[b]Actions[/b]",
+        "d dry-run | r run | s show | e edit | n new | c clone | x export | i import",
+    ]
+    if profile is not None:
+        lines.extend(("", "[b]Phase summary[/b]"))
+        for phase in tui_state.pipeline_phases(profile):
+            lines.append(_phase_summary_line(phase, selected=False))
+    return "\n".join(lines)
+
+
+def _phase_navigation_markup(app: Any, *, title: str) -> str:
+    profile = app._profile_by_name(app._profile_name())
+    lines = [
+        f"[b]{tui_state.markup_escape(title)}[/]  [muted]{tui_state.markup_escape(app._profile_name() or '<none>')}[/]",
+        _workspace_tabs_markup(app),
+        "",
+    ]
+    if profile is None:
+        lines.append("No selected profile.")
+        return "\n".join(lines)
+    phase_by_name = {phase.name: phase for phase in tui_state.pipeline_phases(profile)}
+    for index, phase_name in enumerate(_PHASES):
+        phase = phase_by_name.get(phase_name)
+        marker = ">" if index == app._selected_phase_index else " "
+        if phase is None:
+            lines.append(f"{marker} [ ] {phase_name}")
+        else:
+            lines.append(f"{marker} {_phase_summary_line(phase, selected=index == app._selected_phase_index)}")
+    if app._workspace == "run":
+        lines.extend(("", "[b]Run tabs[/b]"))
+        for index, tab in enumerate(_RUN_TABS):
+            marker = ">" if index == app._selected_run_tab_index else " "
+            lines.append(f"{marker} {tab}")
+    return "\n".join(lines)
+
+
+def _loop_detail_markup(app: Any) -> str:
+    profile = app._profile_by_name(app._profile_name())
+    if profile is None:
+        return "[b]Loop[/b]\nNo selected profile."
+    phase_name = app._selected_phase_name()
+    lines = [
+        f"[b]Loop Detail[/b]  [muted]{tui_state.markup_escape(phase_name)}[/]",
+        f"profile: {tui_state.markup_escape(profile.name)}",
+        "",
+    ]
+    for phase in tui_state.pipeline_phases(profile):
+        if phase.name == phase_name:
+            lines.extend(_phase_detail_lines(profile, phase))
+            break
+    else:
+        lines.append("Phase metadata unavailable.")
+    lines.extend(("", "[b]Loop shape[/b]"))
+    lines.extend(_loop_shape_lines(profile))
+    return "\n".join(lines)
+
+
+def _prompt_detail_markup(app: Any) -> str:
+    profile = app._profile_by_name(app._profile_name())
+    if profile is None:
+        return "[b]Prompts[/b]\nNo selected profile."
+    phase_name = app._selected_phase_name()
+    lines = [
+        f"[b]Prompt Source[/b]  [muted]{tui_state.markup_escape(phase_name)}[/]",
+        f"profile: {tui_state.markup_escape(profile.name)}",
+        "",
+    ]
+    if phase_name == "triage":
+        lines.append("field: triage.prompt")
+        lines.append(f"editable: {_yes_no(profile.triage.prompt is not None)} via revrem config edit")
+        lines.append(f"value: {tui_state.markup_escape(profile.triage.prompt or '<default triage contract prompt>')}")
+    elif phase_name == "commit":
+        lines.append("field: commit.message_prompt")
+        lines.append(
+            f"editable: {_yes_no(profile.commit.message_prompt is not None)} via revrem config edit"
+        )
+        lines.append(
+            "value: "
+            + tui_state.markup_escape(profile.commit.message_prompt or "<default commit-message prompt>")
+        )
+    elif phase_name == "review":
+        lines.append("source: native codex review prompt or composed external review prompt")
+        lines.append("editable: no dedicated profile field; edit harness/model/profile settings")
+    elif phase_name == "remediation":
+        fragment_names = sorted(
+            {
+                fragment
+                for rule in profile.triage.routing.rule
+                for fragment in rule.then.prompt_fragments
+            }
+        )
+        lines.append("source: generated remediation prompt plus route prompt fragments")
+        lines.append("editable: route fragments are configured in triage.routing.rule[].then.prompt_fragments")
+        lines.append("fragments: " + (", ".join(fragment_names) if fragment_names else "none configured"))
+    else:
+        lines.append("source: verification check commands and failed-check handoff")
+        lines.append("editable: pipeline.checks in the owning profile config")
+        for command in profile.pipeline.checks[:8]:
+            lines.append(f"- {tui_state.markup_escape(command)}")
+        if len(profile.pipeline.checks) > 8:
+            lines.append(f"... {len(profile.pipeline.checks) - 8} more")
+    lines.extend(("", "Press e to open the owning profile config."))
+    return "\n".join(lines)
+
+
+def _run_workspace_markup(app: Any) -> str:
+    lines = _live_monitor_markup(app.live_run_controller).splitlines()
+    tab = _RUN_TABS[app._selected_run_tab_index]
+    lines.insert(1, f"view: {tab}")
+    if tab == "stdout":
+        lines.extend(_bounded_lines("stdout", app.live_run_controller.stdout_tail.lines))
+    elif tab == "stderr":
+        lines.extend(_bounded_lines("stderr", app.live_run_controller.stderr_tail.lines))
+    elif tab == "summary":
+        lines.extend(_summary_lines(app.live_run_controller))
+    return "\n".join(lines)
+
+
+def _footer_markup(app: Any) -> str:
+    live = _live_hint(app)
+    if app._help_visible:
+        keys = _help_markup(visible=True).replace("\n", " | ")
+    elif app._workspace == "profiles":
+        keys = "[j/down]move [up]move [Enter]select [d]dry-run [r]run [?]help"
+    elif app._workspace == "loop":
+        keys = "[j/down]phase [up]phase [Tab]focus [e]edit [d]dry-run [?]help"
+    elif app._workspace == "prompts":
+        keys = "[j/down]source [up]source [e]edit config [Tab]focus [?]help"
+    else:
+        keys = "[j/down]phase [up]phase [Enter]tab [k]cancel [r]run [?]help"
+    return f"{tui_state.markup_escape(live)}\n{tui_state.markup_escape(keys)}"
+
+
+def _live_hint(app: Any) -> str:
+    if app._cancel_in_progress:
+        return "live: cancelling child process"
+    if app._quit_confirmation_pending:
+        return "live: press q again to cancel and quit"
+    if app._pending_live_confirmation_profile:
+        return f"live: press r again to start {app._pending_live_confirmation_profile}"
+    if app._live_run_active():
+        return "live: running; press k to cancel"
+    return f"live: {app.live_run_controller.status}"
+
+
+def _command_preview(app: Any) -> str:
+    profile = app._profile_by_name(app._profile_name())
+    if profile is None:
+        return "revrem config new final-pr"
+    return tui_state.launch_plan(profile, dry_run=False).shell_command
+
+
+def _phase_summary_line(phase: tui_state.PhaseView, *, selected: bool) -> str:
+    marker = _phase_marker(phase)
+    state = "on" if phase.enabled else "off"
+    details = [state]
+    if phase.harness:
+        details.append(phase.harness)
+    if phase.model:
+        details.append(_truncate(phase.model, 24))
+    effort = harnesses.phase_effort_text(phase.harness, phase.reasoning_effort)
+    if effort:
+        details.append(f"effort={effort}")
+    if phase.command_count is not None:
+        details.append(f"commands={phase.command_count}")
+    text = f"{marker} {phase.name}: " + ", ".join(tui_state.markup_escape(item) for item in details)
+    if selected:
+        return f"[status-info]{text}[/]"
+    if not phase.enabled:
+        return f"[muted]{text}[/]"
+    return text
+
+
+def _phase_marker(phase: tui_state.PhaseView) -> str:
+    if not phase.enabled:
+        return "[ ]"
+    return "[ok]"
+
+
+def _phase_detail_lines(profile: profiles.Profile, phase: tui_state.PhaseView) -> list[str]:
+    lines = [
+        f"state: {'enabled' if phase.enabled else 'disabled'}",
+        f"harness: {phase.harness or '-'}",
+        f"model: {phase.model or '-'}",
+        f"reasoning effort: {harnesses.phase_effort_text(phase.harness, phase.reasoning_effort) or '-'}",
+        f"timeout: {_timeout_text(phase.timeout_seconds)}",
+    ]
+    if phase.name == "checks":
+        lines.append(f"commands: {len(profile.pipeline.checks)}")
+        for command in profile.pipeline.checks[:8]:
+            lines.append(f"- {tui_state.markup_escape(command)}")
+    if phase.name == "triage" and profile.triage.routing.enabled:
+        lines.append(f"routing: default={profile.triage.routing.default_route}")
+        lines.append(f"routes: {len(profile.triage.routes)}")
+    return lines
+
+
+def _loop_shape_lines(profile: profiles.Profile) -> list[str]:
+    lines = [
+        "review",
+        "  -> triage" if profile.triage.enabled else "  -> triage skipped",
+        "  -> remediation",
+        f"  -> checks ({len(profile.pipeline.checks)})",
+    ]
+    if profile.commit.enabled:
+        lines.append("  -> commit after passing checks")
+    else:
+        lines.append("  -> commit off")
+    lines.append("  -> final review" if profile.pipeline.final_review else "  -> final review off")
+    return lines
+
+
+def _timeout_text(value: float | None) -> str:
+    if value is None:
+        return "default"
+    if value == 0:
+        return "none"
+    return f"{value:g}s"
+
+
+def _yes_no(value: bool) -> str:
+    return "yes" if value else "no"
+
+
+def _bounded_lines(label: str, lines: list[str], *, limit: int = 12) -> list[str]:
+    if not lines:
+        return ["", f"[b]{label}[/]", "No captured lines yet."]
+    return ["", f"[b]{label}[/]", *[tui_state.markup_escape(line) for line in lines[-limit:]]]
+
+
+def _summary_lines(controller: tui_run_controller.LiveRunController) -> list[str]:
+    if controller.launch is None:
+        return ["", "[b]summary[/]", "No live run has been launched."]
+    summary_path = controller.launch.artifact_dir / "summary.json"
+    if not summary_path.is_file():
+        return ["", "[b]summary[/]", f"waiting for {tui_state.markup_escape(str(summary_path))}"]
+    return ["", "[b]summary[/]", tui_state.markup_escape(str(summary_path))]
 
 
 def _home_markup(app: Any) -> str:
@@ -955,12 +1417,15 @@ def _status_bar_markup(app: Any) -> str:
         pending = " | cancelling"
     elif app._quit_confirmation_pending:
         pending = " | quit needs confirmation"
-    help_hint = "\\[h]hide help" if app._help_visible else "\\[h]help"
+    help_hint = "? hide help" if app._help_visible else "? help"
     return (
-        f"RevRem | {tui_state.markup_escape(Path(app.model.snapshot.cwd).name or app.model.snapshot.cwd)}"
-        f" | profile {tui_state.markup_escape(profile_name)}"
-        f" | live {tui_state.markup_escape(status)}{tui_state.markup_escape(pending)}\n"
-        f"\\[d]dry-run \\[r]run \\[k]cancel {help_hint} \\[q]quit"
+        f"RevRem  {tui_state.markup_escape(Path(app.model.snapshot.cwd).name or app.model.snapshot.cwd)}"
+        f"  profile={tui_state.markup_escape(profile_name)}"
+        f"  workspace={tui_state.markup_escape(app._workspace)}"
+        f"  focus={tui_state.markup_escape(app._focused_pane)}\n"
+        f"command: {tui_state.markup_escape(_command_preview(app))}\n"
+        f"live={tui_state.markup_escape(status)}{tui_state.markup_escape(pending)}"
+        f"  1 profiles 2 loop 3 prompts 4 run  {help_hint}  q quit"
     )
 
 

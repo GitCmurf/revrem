@@ -1527,18 +1527,24 @@ Without the `tui` extra, `revrem ui` exits cleanly with an installation hint.
 The CLI remains the authoritative execution path. The TUI renders an
 operator-console view from dependency-free view models for profiles, recent
 runs, harness metadata, phase state, command previews, and artifact links. The
-layout keeps workspace/profile/live-run status visible at the top, shows profile
-and pipeline context beside the Run Monitor, and keeps contextual live-run
-controls plus help on the right. The main dashboard has no persistent text
-inputs, so command keys work immediately after launch. Use `--profile NAME` to
-select the initial profile. Key bindings shell through `revrem config` and the
-normal run CLI: `d` dry-runs the selected profile, `r` asks for confirmation
-and then starts a real live run, `k` cancels an active live run, `s` shows the
-profile, `e` edits it, `n` opens a profile-name prompt and creates a profile,
-`c` opens a target-name prompt and clones the selected profile, `x` exports,
-`i` opens an import-path prompt, `delete` deletes through
-`revrem config delete --yes`, `Esc` clears focus or cancels an open prompt,
-`h`/`?` toggles contextual help, and `q` quits.
+layout is a stable workbench: the top bar shows the composed command and active
+workspace, the middle area has a focused navigation pane and detail pane, and
+the bottom bar shows live-run status plus context-specific keys. Workspaces are
+`1` profiles, `2` loop, `3` prompts, and `4` run. The profiles workspace selects
+and manages profiles; the loop workspace explains review, triage, remediation,
+checks, and commit; the prompts workspace shows which prompt/config source is
+used by the selected phase; the run workspace shows live events plus stdout,
+stderr, and summary views. The main dashboard has no persistent text inputs, so
+command keys work immediately after launch. Use `--profile NAME` to select the
+initial profile. Key bindings shell through `revrem config` and the normal run
+CLI: `j`/Down and Up move the active selection, `Tab` changes pane focus,
+`Enter` selects or advances the active view, `d` dry-runs the selected profile,
+`r` asks for confirmation and then starts a real live run, `k` cancels an active
+live run, `s` shows the profile, `e` edits it, `n` opens a profile-name prompt
+and creates a profile, `c` opens a target-name prompt and clones the selected
+profile, `x` exports, `i` opens an import-path prompt, `delete` deletes through
+`revrem config delete --yes`, `Esc` returns focus to the navigation pane or
+cancels an open prompt, `h`/`?` toggles contextual help, and `q` quits.
 
 Live TUI runs are experimental but use the same execution path as the CLI. The
 TUI controller starts a managed `revrem` subprocess with the selected profile,

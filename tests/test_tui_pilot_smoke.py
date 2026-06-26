@@ -21,15 +21,16 @@ def test_tui_pilot_boots_home_view(tmp_path):
             await pilot.pause()
             home = app.query_one("#screen-home")
             rendered = str(home.render())
-            assert "Workspace:" in rendered
-            assert str(repo) in rendered
+            assert "Profiles" in rendered
+            assert "1 Profiles" in rendered
+            assert "security" in rendered
             status = app.query_one("#status-bar")
-            assert "profile security" in str(status.render())
-            help_panel = app.query_one("#screen-help")
-            assert "Press [h] for full keybindings." in str(help_panel.render())
+            assert "profile=security" in str(status.render())
+            footer = app.query_one("#footer-bar")
+            assert "?\\]help" in str(footer.render())
             await pilot.press("h")
             await pilot.pause()
-            assert "confirm/start live run" in str(help_panel.render())
+            assert "confirm/start live run" in str(footer.render())
             _assert_no_widget(app, "#profile-name")
             _assert_no_widget(app, "#profile-path")
 

@@ -37,6 +37,11 @@ This project follows Semantic Versioning once public releases begin.
   Quitting during a live run now requires confirmation and cancels the managed
   child before the app exits. `Esc` clears input focus so single-key operator
   actions are available again after editing profile/path fields.
+- The experimental TUI now presents a command-bar/workbench/footer layout with
+  four explicit workspaces: profiles, loop, prompts, and run. The middle of the
+  screen is always a focused navigation pane plus detail pane, `Tab` switches
+  pane focus, `j`/Down and Up move selections, and the footer shows only the
+  keys that apply to the current workspace.
 
 ## [0.5.0] - 2026-06-21
 
