@@ -651,17 +651,19 @@ def build_config_parser() -> RevRemArgumentParser:
             "Set a single profile field non-interactively while preserving inherited "
             "values from the full user/project profile chain (defaults plus named "
             "profile overlays) as inherited values "
-            "(not materialized in the owning profile). Only the requested "
-            "dotted field is rewritten (e.g. review.model gpt-5.5, output.no_tty true, "
-            "runtime.full_auto off, or pipeline.max_iterations 11)."
+            "(not materialized in the owning profile). Only the requested field is rewritten "
+            "(top-level or dotted) "
+            "(e.g. description \"Local profile\", review.model gpt-5.5, output.no_tty true, "
+            "runtime.full_auto off, triage.routing.default_route codex-midi, or "
+            "pipeline.max_iterations 11)."
         ),
     )
     set_parser.add_argument("name")
     set_parser.add_argument(
         "key",
         help=(
-            "Dotted field path, e.g. review.timeout_seconds, output.no_tty, "
-            "runtime.full_auto, or budgets.max_wall_seconds."
+            "Field path, e.g. description, review.timeout_seconds, output.no_tty, "
+            "runtime.full_auto, triage.routing.default_route, or budgets.max_wall_seconds."
         ),
     )
     set_parser.add_argument(

@@ -179,7 +179,13 @@ Boolean profile fields are written as TOML booleans. `config set` accepts
 `config set` rewrites only the requested dotted field path for one profile.
 Omitted fields stay as-is and continue inheriting from any applicable
 resolved profile chain (`user defaults`, `project defaults`, and named profile
-overlays) instead of being materialized during the save.
+overlays) instead of being materialized during the save. In particular,
+changing `triage.routing.default_route` only rewrites that leaf and preserves
+inherited values including top-level `description` unless you explicitly set
+`description` for that profile.
+inherited routing siblings (`enabled`, `mode`, `rule`, `strict_on_unavailable_route`,
+`allow_model_escalation`) and inherited route tables unless you explicitly set
+them too.
 `config set` validates using the full effective chain (user defaults + project
 defaults + profile). If you edit routing, the target route must exist in the
 inherited route table or the edit is rejected.

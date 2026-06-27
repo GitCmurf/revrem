@@ -77,6 +77,44 @@ def test_config_set_does_not_materialize_inherited_defaults(tmp_path, monkeypatc
     assert "triage" not in reloaded
 
 
+def test_config_set_does_not_materialize_nested_routing_inheritance(tmp_path, monkeypatch):
+    _write(
+        tmp_path / ".revrem.toml",
+        '[defaults]\n'
+        '[defaults.triage]\n'
+        'enabled = true\n'
+        'contract = "v2"\n'
+        '[defaults.triage.routing]\n'
+        'enabled = true\n'
+        'mode = "first-match"\n'
+        'strict_on_unavailable_route = false\n'
+        'allow_model_escalation = false\n'
+        'default_route = "codex-midi"\n'
+        '[defaults.triage.routes.codex-midi]\n'
+        'harness = "codex"\n'
+        '[defaults.triage.routes.midtier-coder]\n'
+        'harness = "codex"\n'
+        '[profiles.demo]\n'
+        'review.model = "old"\n',
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    code = config_cmd.main(
+        ["set", "demo", "triage.routing.default_route", "codex-midi"]
+    )
+    assert code == 0
+    reloaded = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"]
+    assert reloaded["review"]["model"] == "old"
+    assert reloaded["triage"]["routing"]["default_route"] == "codex-midi"
+    assert "enabled" not in reloaded["triage"]["routing"]
+    assert "mode" not in reloaded["triage"]["routing"]
+    assert "strict_on_unavailable_route" not in reloaded["triage"]["routing"]
+    assert "allow_model_escalation" not in reloaded["triage"]["routing"]
+    assert "rule" not in reloaded["triage"]["routing"]
+    assert "routes" not in reloaded["triage"]
+
+
 def test_config_set_does_not_materialize_inherited_named_profile_fields(tmp_path, monkeypatch):
     _write(
         tmp_path / ".config" / "revrem" / "profiles.toml",

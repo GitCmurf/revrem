@@ -844,7 +844,16 @@ def _profile_to_toml_dict(
     raw_profile: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     result: dict[str, Any] = {}
-    if profile.description:
+    explicit_description = raw_profile is not None and "description" in raw_profile
+    if (
+        profile.description
+        and not (
+            omit_reference_defaults
+            and not explicit_description
+            and reference is not None
+            and profile.description == reference.description
+        )
+    ):
         result["description"] = profile.description
     for section_name in (
         "pipeline",
@@ -865,26 +874,20 @@ def _profile_to_toml_dict(
         for key, item in asdict(value).items():
             if item is None:
                 continue
-            explicit = isinstance(raw_section, dict) and key in raw_section
-            if reference_value is not None:
-                reference_item = _reference_profile_value(getattr(reference_value, key))
-            else:
-                reference_item = None
-            if (
-                omit_reference_defaults
-                and not explicit
-                and reference_value is not None
-                and item == reference_item
-            ):
-                continue
-            if omit_builtin_defaults and item == getattr(defaults, key) and not explicit:
-                continue
-
-            # Nested structures (from routing) need deep None removal
-            clean_item = _deep_remove_none(item)
+            clean_item = _profile_toml_value(
+                item,
+                raw=raw_section.get(key) if isinstance(raw_section, dict) else None,
+                defaults=getattr(defaults, key),
+                reference_item=(
+                    _reference_profile_value(getattr(reference_value, key))
+                    if reference_value is not None
+                    else None
+                ),
+                omit_reference_defaults=omit_reference_defaults,
+                omit_builtin_defaults=omit_builtin_defaults,
+            )
             if clean_item is None:
                 continue
-
             if isinstance(clean_item, tuple):
                 section_dict[key] = list(clean_item)
             elif isinstance(clean_item, Decimal):
@@ -899,6 +902,109 @@ def _profile_to_toml_dict(
 def _reference_profile_value(value: Any) -> Any:
     if is_dataclass(value):
         return asdict(cast(Any, value))
+    return value
+
+
+def _as_raw_dict(value: Any) -> dict[str, Any] | None:
+    if is_dataclass(value):
+        return asdict(cast(Any, value))
+    if isinstance(value, dict):
+        return value
+    return None
+
+
+def _profile_toml_dict(
+    value: dict[str, Any],
+    *,
+    raw: Any,
+    defaults: Any,
+    reference_item: Any,
+    omit_reference_defaults: bool,
+    omit_builtin_defaults: bool,
+) -> dict[str, Any] | None:
+    raw_dict = raw if isinstance(raw, dict) else None
+    defaults_dict = _as_raw_dict(defaults) or {}
+    reference_dict = _as_raw_dict(reference_item) if reference_item is not None else None
+
+    rendered: dict[str, Any] = {}
+    for key, item in value.items():
+        if item is None:
+            continue
+        explicit = raw_dict is not None and key in raw_dict
+
+        if (
+            omit_reference_defaults
+            and not explicit
+            and reference_dict is not None
+            and item == reference_dict.get(key)
+        ):
+            continue
+        if omit_builtin_defaults and not explicit and item == defaults_dict.get(key):
+            continue
+
+        rendered_item = _profile_toml_value(
+            item,
+            raw=raw_dict.get(key) if raw_dict is not None else None,
+            defaults=defaults_dict.get(key) if defaults_dict is not None else None,
+            reference_item=reference_dict.get(key) if reference_dict is not None else None,
+            omit_reference_defaults=omit_reference_defaults,
+            omit_builtin_defaults=omit_builtin_defaults,
+        )
+        if rendered_item is None:
+            continue
+        rendered[key] = rendered_item
+
+    return rendered or None
+
+
+def _profile_toml_value(
+    value: Any,
+    *,
+    raw: Any,
+    defaults: Any,
+    reference_item: Any,
+    omit_reference_defaults: bool,
+    omit_builtin_defaults: bool,
+) -> Any | None:
+    if value is None:
+        return None
+    explicit = raw is not None
+    if not explicit:
+        if (
+            omit_reference_defaults
+            and reference_item is not None
+            and value == reference_item
+        ):
+            return None
+        if omit_builtin_defaults and value == defaults:
+            return None
+    if is_dataclass(value):
+        value = asdict(cast(Any, value))
+    if isinstance(value, dict):
+        return _profile_toml_dict(
+            value,
+            raw=raw,
+            defaults=defaults,
+            reference_item=reference_item,
+            omit_reference_defaults=omit_reference_defaults,
+            omit_builtin_defaults=omit_builtin_defaults,
+        )
+    if isinstance(value, list | tuple):
+        rendered = [
+            _profile_toml_value(
+                item,
+                raw=None,
+                defaults=None,
+                reference_item=None,
+                omit_reference_defaults=False,
+                omit_builtin_defaults=False,
+            )
+            for item in value
+        ]
+        rendered = [item for item in rendered if item is not None]
+        return rendered
+    if isinstance(value, Decimal):
+        return str(value)
     return value
 
 

@@ -822,8 +822,13 @@ values. `*.timeout_seconds` can be fractional (for example `0.5`), and `0`
 means unbounded for phase timeouts.
 `config set` writes only the field you specify in that profile and preserves
 inherited values from the effective chain (defaults and named profile overlays)
-unless that field is explicitly set. Nested tables
-are not materialized just because you changed one unrelated key.
+unless that field is explicitly set. Nested tables are not materialized just
+because you changed one unrelated key. Changing `triage.routing.default_route`
+only rewrites that leaf and preserves inherited routing siblings
+(`enabled`, `mode`, `rule`, `strict_on_unavailable_route`,
+`allow_model_escalation`) and route tables unless you explicitly set them.
+Top-level `description` follows the same inheritance rule: it is preserved from
+defaults unless explicitly overridden with `config set <profile> description ...`.
 If a profile is defined at both user and project scope, project edits preserve
 user-owned values as inherited, and do not copy those into `.revrem.toml`.
 `config set` validates using the full effective chain (user defaults + project

@@ -166,6 +166,66 @@ def test_set_profile_field_preserves_inherited_defaults(tmp_path):
     assert "triage" not in reloaded
 
 
+def test_set_profile_field_does_not_materialize_routing_siblings(tmp_path):
+    _write(
+        tmp_path / ".revrem.toml",
+        '[defaults]\n'
+        '[defaults.triage]\n'
+        'enabled = true\n'
+        'contract = "v2"\n'
+        '[defaults.triage.routing]\n'
+        'enabled = true\n'
+        'mode = "first-match"\n'
+        'strict_on_unavailable_route = false\n'
+        'allow_model_escalation = false\n'
+        'default_route = "codex-midi"\n'
+        '[defaults.triage.routes.codex-midi]\n'
+        'harness = "codex"\n'
+        '[defaults.triage.routes.midtier-coder]\n'
+        'harness = "codex"\n'
+        '[profiles.demo]\n'
+        'review.model = "old"\n',
+    )
+
+    profiles.set_profile_field(
+        "demo", "triage.routing.default_route", "codex-midi", cwd=tmp_path, home=tmp_path
+    )
+    reloaded = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"]
+    assert reloaded["review"]["model"] == "old"
+    assert reloaded["triage"]["routing"]["default_route"] == "codex-midi"
+    assert "enabled" not in reloaded["triage"]["routing"]
+    assert "mode" not in reloaded["triage"]["routing"]
+    assert "strict_on_unavailable_route" not in reloaded["triage"]["routing"]
+    assert "allow_model_escalation" not in reloaded["triage"]["routing"]
+    assert "rule" not in reloaded["triage"]["routing"]
+    assert "routes" not in reloaded["triage"]
+
+
+def test_set_profile_field_does_not_materialize_inherited_description(tmp_path):
+    _write(
+        tmp_path / ".config" / "revrem" / "profiles.toml",
+        "[defaults]\n"
+        'description = "Global description"\n'
+        "[defaults.review]\n"
+        'harness = "codex"\n',
+    )
+    _write(
+        tmp_path / ".revrem.toml",
+        '[profiles.demo]\nreview.model = "old"\n',
+    )
+
+    profiles.set_profile_field(
+        "demo", "review.timeout_seconds", "0.5", cwd=tmp_path, home=tmp_path
+    )
+
+    reloaded = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"]
+    assert "description" not in reloaded
+    assert reloaded["review"]["model"] == "old"
+    assert reloaded["review"]["timeout_seconds"] == 0.5
+    resolved = profiles.resolve_profile("demo", cwd=tmp_path, home=tmp_path)
+    assert resolved.description == "Global description"
+
+
 def test_set_profile_field_preserves_inherited_defaults_from_user_file(tmp_path):
     _write(
         tmp_path / ".config" / "revrem" / "profiles.toml",
