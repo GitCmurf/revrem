@@ -814,11 +814,12 @@ Edit one field without opening `$EDITOR`:
     revrem config set final-pr review.model gpt-5.5
     revrem config set final-pr review.timeout_seconds 0.5
     revrem config set final-pr triage.routing.default_route codex-midi
-    revrem config set final-pr budgets.max_wall_seconds 7200
-    revrem config set final-pr runtime.provider_retry_attempts 5
-    revrem config set final-pr output.no_tty true
-    revrem config set final-pr runtime.full_auto off
-    revrem config --format json set final-pr output.no_tty true
+revrem config set final-pr budgets.max_wall_seconds 7200
+revrem config set final-pr runtime.provider_retry_attempts 5
+revrem config set final-pr output.no_tty true
+revrem config set final-pr runtime.full_auto off
+revrem config set final-pr description ""
+revrem config --format json set final-pr output.no_tty true
 
 Numeric fields (including `...max_iterations`, `...max_tokens`,
 `...max_wall_seconds`, and `...provider_retry_attempts`) are parsed as numeric
@@ -833,6 +834,11 @@ only rewrites that leaf and preserves inherited routing siblings
 `allow_model_escalation`) and route tables unless you explicitly set them.
 Top-level `description` follows the same inheritance rule: it is preserved from
 defaults unless explicitly overridden with `config set <profile> description ...`.
+To clear an inherited description, set an explicit empty string:
+
+```bash
+revrem config set final-pr description ""
+```
 If a profile is defined at both user and project scope, project edits preserve
 user-owned values as inherited, and do not copy those into `.revrem.toml`.
 `config set` validates using the full effective chain (user defaults + project

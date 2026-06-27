@@ -171,6 +171,7 @@ revrem config set final-pr review.timeout_seconds 0.5
 revrem config set final-pr triage.timeout_seconds 0
 revrem config set final-pr output.no_tty true
 revrem config set final-pr runtime.full_auto off
+revrem config set final-pr description ""
 revrem config --format json set final-pr runtime.full_auto off
 revrem --profile final-pr
 ```
@@ -186,7 +187,12 @@ resolved profile chain (`user defaults`, `project defaults`, and named profile
 overlays) instead of being materialized during the save. In particular,
 changing `triage.routing.default_route` only rewrites that leaf and preserves
 inherited values including top-level `description` unless you explicitly set
-`description` for that profile.
+`description` for that profile. To clear an inherited description, set it to
+an empty string:
+
+```
+revrem config set final-pr description ""
+```
 inherited routing siblings (`enabled`, `mode`, `rule`, `strict_on_unavailable_route`,
 `allow_model_escalation`) and inherited route tables unless you explicitly set
 them too. This route validation uses the same merged view, so defaults-based

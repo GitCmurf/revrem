@@ -846,12 +846,15 @@ def _profile_to_toml_dict(
     result: dict[str, Any] = {}
     explicit_description = raw_profile is not None and "description" in raw_profile
     if (
-        profile.description
-        and not (
-            omit_reference_defaults
-            and not explicit_description
-            and reference is not None
-            and profile.description == reference.description
+        explicit_description
+        or (
+            profile.description
+            and not (
+                omit_reference_defaults
+                and not explicit_description
+                and reference is not None
+                and profile.description == reference.description
+            )
         )
     ):
         result["description"] = profile.description

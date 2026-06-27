@@ -247,6 +247,24 @@ def test_set_profile_field_does_not_materialize_inherited_description(tmp_path):
     assert resolved.description == "Global description"
 
 
+def test_set_profile_field_clears_inherited_description_with_empty_string(tmp_path):
+    _write(
+        tmp_path / ".config" / "revrem" / "profiles.toml",
+        "[defaults]\n"
+        'description = "Global description"\n'
+    )
+    _write(
+        tmp_path / ".revrem.toml",
+        '[profiles.demo]\nreview.model = "old"\n',
+    )
+
+    profiles.set_profile_field("demo", "description", "", cwd=tmp_path, home=tmp_path)
+
+    reloaded = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"]
+    assert reloaded["description"] == ""
+    assert profiles.resolve_profile("demo", cwd=tmp_path, home=tmp_path).description == ""
+
+
 def test_set_profile_field_preserves_inherited_defaults_from_user_file(tmp_path):
     _write(
         tmp_path / ".config" / "revrem" / "profiles.toml",

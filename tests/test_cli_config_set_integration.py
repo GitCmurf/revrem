@@ -77,6 +77,23 @@ def test_config_set_does_not_materialize_inherited_defaults(tmp_path, monkeypatc
     assert "triage" not in reloaded
 
 
+def test_config_set_can_clear_inherited_description_with_empty_string(tmp_path, monkeypatch):
+    _write(
+        tmp_path / ".config" / "revrem" / "profiles.toml",
+        '[defaults]\n'
+        'description = "Global description"\n',
+    )
+    _write(tmp_path / ".revrem.toml", '[profiles.demo]\nreview.model = "old"\n')
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    code = config_cmd.main(["set", "demo", "description", ""])
+    assert code == 0
+    reloaded = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"]
+    assert reloaded["description"] == ""
+    assert profiles.resolve_profile("demo", cwd=tmp_path, home=tmp_path).description == ""
+
+
 def test_config_set_does_not_materialize_nested_routing_inheritance(tmp_path, monkeypatch):
     _write(
         tmp_path / ".revrem.toml",

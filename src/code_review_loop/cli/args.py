@@ -654,7 +654,7 @@ def build_config_parser() -> RevRemArgumentParser:
             "(not materialized in the owning profile). Only the requested field is rewritten "
             "(top-level or dotted) "
             "(e.g. description \"Local profile\", review.model gpt-5.5, output.no_tty true, "
-            "runtime.full_auto off, triage.routing.default_route codex-midi, or "
+            "runtime.full_auto off, triage.routing.default_route codex-midi, and description \"\", or "
             "pipeline.max_iterations 11). With --format json, this command emits a machine-readable "
             "object describing the edit and destination path. Routing edits are validated "
             "against the effective inherited route table after user and project defaults "
@@ -671,7 +671,11 @@ def build_config_parser() -> RevRemArgumentParser:
     )
     set_parser.add_argument(
         "value",
-        help="Field value; numeric fields accept numbers, booleans use true/false (or 1/0, yes/no, on/off).",
+        help=(
+            "Field value; numeric fields accept numbers, booleans use true/false (or "
+            "1/0, yes/no, on/off). Use an empty string (\"\") to explicitly clear "
+            "top-level description."
+        ),
     )
 
     clone = subparsers.add_parser("clone", help="Clone a resolved profile into the user config.")
