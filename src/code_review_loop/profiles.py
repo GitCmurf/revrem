@@ -1145,7 +1145,10 @@ def save_profile_raw(
     cwd: Path,
     home: Path | None = None,
 ) -> Path:
-    parsed = parse_profile(name, raw_profile, source="<edit>")
+    user_file, project_file = load_profile_files(cwd=cwd, home=home)
+    merged = _merged_profile_raw_for_edit(name, user_file=user_file, project_file=project_file)
+    merged_updated = _deep_merge(merged, raw_profile)
+    parsed = parse_profile(name, merged_updated, source="<edit>")
     owner = profile_owner_path(name, cwd=cwd, home=home, allow_new=True)
     return write_profile_to_path(owner, parsed, force=True, raw_profile=raw_profile)
 

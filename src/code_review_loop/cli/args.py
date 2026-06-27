@@ -656,7 +656,9 @@ def build_config_parser() -> RevRemArgumentParser:
             "(e.g. description \"Local profile\", review.model gpt-5.5, output.no_tty true, "
             "runtime.full_auto off, triage.routing.default_route codex-midi, or "
             "pipeline.max_iterations 11). With --format json, this command emits a machine-readable "
-            "object describing the edit and destination path."
+            "object describing the edit and destination path. Routing edits are validated "
+            "against the effective inherited route table after user and project defaults "
+            "are applied."
         ),
     )
     set_parser.add_argument("name")

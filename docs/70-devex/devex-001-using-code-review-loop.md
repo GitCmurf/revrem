@@ -631,7 +631,9 @@ profile keeps fail-closed prompted-review behavior. When the source profile
 uses v2 triage routing, `--save-profile` preserves the triage contract, routing
 rules, route table, and effective `runtime.harness_executables` map, including
 any one-off `--harness-bin HARNESS=EXECUTABLE` overrides supplied on the same
-command.
+command. The save path also validates the fully resolved profile (including
+inherited route tables from defaults) before writing, so a profile that would
+become invalid after defaults merge is rejected instead of being persisted.
 
 Project profile discovery intentionally ignores system temp roots and their
 ancestors when walking for `.git`. This prevents an ambient `/tmp/.git` marker
@@ -834,9 +836,9 @@ defaults unless explicitly overridden with `config set <profile> description ...
 If a profile is defined at both user and project scope, project edits preserve
 user-owned values as inherited, and do not copy those into `.revrem.toml`.
 `config set` validates using the full effective chain (user defaults + project
-defaults + profile). For routing edits this means `triage.routing.default_route`
-must resolve to a route present in the inherited route table, otherwise the edit
-is rejected.
+defaults + profile), including inherited route tables. For routing edits this
+means `triage.routing.default_route` must resolve to a route present in that
+inherited route table, otherwise the edit is rejected.
 Boolean fields (for example `output.no_tty` and `runtime.full_auto`) are parsed
 from `true/false`, `1/0`, `yes/no`, and `on/off`.
 

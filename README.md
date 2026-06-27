@@ -189,10 +189,11 @@ inherited values including top-level `description` unless you explicitly set
 `description` for that profile.
 inherited routing siblings (`enabled`, `mode`, `rule`, `strict_on_unavailable_route`,
 `allow_model_escalation`) and inherited route tables unless you explicitly set
-them too.
+them too. This route validation uses the same merged view, so defaults-based
+route tables are included when checking whether `default_route` is known.
 `config set` validates using the full effective chain (user defaults + project
-defaults + profile). If you edit routing, the target route must exist in the
-inherited route table or the edit is rejected.
+defaults + profile), including inherited route tables. If you edit routing, the
+target route must exist in that merged route table or the edit is rejected.
 
 In an interactive terminal, bare `revrem` (or `revrem --wizard`) opens a guided
 setup. It offers your last compatible settings or the recommended defaults,

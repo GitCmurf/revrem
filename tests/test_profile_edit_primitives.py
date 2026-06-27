@@ -117,6 +117,27 @@ def test_save_profile_raw_validates(tmp_path):
         profiles.save_profile_raw("demo", bad, cwd=tmp_path, home=tmp_path)
 
 
+def test_save_profile_raw_validates_inherited_default_routes(tmp_path):
+    _write(
+        tmp_path / ".config" / "revrem" / "profiles.toml",
+        "[defaults]\n"
+        "[defaults.triage]\n"
+        "[defaults.triage.routing]\n"
+        'default_route = "codex-midi"\n'
+        "[defaults.triage.routes.codex-midi]\n"
+        'harness = "codex"\n',
+    )
+    _write(tmp_path / ".revrem.toml", '[profiles.demo]\nreview.model = "old"\n')
+
+    bad = profiles.deep_set_raw({}, "triage.routing.default_route", "missing-route")
+    with pytest.raises(ValueError, match="triage.routing.default_route refers to unknown route"):
+        profiles.save_profile_raw("demo", bad, cwd=tmp_path, home=tmp_path)
+
+    reloaded = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"]
+    assert reloaded["review"]["model"] == "old"
+    assert "triage" not in reloaded
+
+
 def test_save_profile_raw_preserves_sibling_profiles(tmp_path):
     # The real .revrem.toml holds multiple project profiles; editing one must
     # not drop the others (data-loss guard).
