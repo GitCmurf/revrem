@@ -43,6 +43,12 @@ This project follows Semantic Versioning once public releases begin.
   pane focus, `j`/Down and Up move selections, and the footer shows only the
   keys that apply to the current workspace.
 
+### Fixed
+
+- Codex review status detection now treats the clear-prose form "No actionable
+  correctness, safety, or maintainability defects were found" as clear while
+  still refusing contrastive prose that reports a later defect.
+
 ## [0.5.0] - 2026-06-21
 
 The "showcase & hands-off adoption" release: a static HTML report for finished

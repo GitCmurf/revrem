@@ -111,6 +111,16 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
     )
     assert (
         detect_review_status(
+            "No actionable correctness, safety, or maintainability defects were "
+            "found in the changed code. The added TypeScript surfaces typecheck "
+            "cleanly; targeted Vitest execution could not be completed in this "
+            "read-only sandbox because Vite attempted to write a temporary "
+            "bundled config file."
+        )
+        == "clear"
+    )
+    assert (
+        detect_review_status(
             "No actionable correctness, security, or maintainability issues were "
             "identified in the diff.\n\n[stderr]\nOpenAI Codex v0.140.0\n"
             "reasoning effort: high\n"
@@ -264,6 +274,14 @@ def test_detect_review_status_does_not_generalize_negated_clear_with_findings():
         detect_review_status(
             "The patch has a concrete issue. I did not identify any alternative approach.\n"
             "Please fix the failure described above."
+        )
+        == "unknown"
+    )
+    assert (
+        detect_review_status(
+            "No actionable correctness, safety, or maintainability defects were "
+            "found in the changed code, but there is a safety defect in the "
+            "permission boundary."
         )
         == "unknown"
     )
