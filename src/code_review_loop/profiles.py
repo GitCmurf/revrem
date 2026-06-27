@@ -12,7 +12,7 @@ import tempfile
 import tomllib
 from collections.abc import Callable
 from contextlib import suppress
-from dataclasses import asdict, fields, replace
+from dataclasses import asdict, fields, is_dataclass, replace
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, cast
@@ -865,7 +865,10 @@ def _profile_to_toml_dict(
         for key, item in asdict(value).items():
             if item is None:
                 continue
-            reference_item = getattr(reference_value, key) if reference_value is not None else None
+            if reference_value is not None:
+                reference_item = _reference_profile_value(getattr(reference_value, key))
+            else:
+                reference_item = None
             if omit_reference_defaults and reference_value is not None and item == reference_item:
                 continue
             explicit = isinstance(raw_section, dict) and key in raw_section
@@ -886,6 +889,27 @@ def _profile_to_toml_dict(
         if section_dict:
             result[section_name] = section_dict
     return result
+
+
+def _reference_profile_value(value: Any) -> Any:
+    if is_dataclass(value):
+        return asdict(cast(Any, value))
+    return value
+
+
+def _merged_profile_raw_for_edit(
+    name: str, *, user_file: ProfileFile, project_file: ProfileFile
+) -> dict[str, Any]:
+    raw: dict[str, Any] = {}
+    if user_file.defaults is not None:
+        raw = _deep_merge(raw, user_file.raw_defaults)
+    if name in user_file.profiles:
+        raw = _deep_merge(raw, user_file.raw_profiles[name])
+    if project_file.defaults is not None:
+        raw = _deep_merge(raw, project_file.raw_defaults)
+    if name in project_file.profiles:
+        raw = _deep_merge(raw, project_file.raw_profiles[name])
+    return raw
 
 
 def _deep_remove_none(value: Any) -> Any:
@@ -1011,9 +1035,20 @@ def set_profile_field(
     home: Path | None = None,
 ) -> Path:
     owner = profile_owner_path(name, cwd=cwd, home=home)  # raises for builtin/unknown
-    current = load_profile_file(owner).raw_profiles.get(name, {})
+    profile_file = load_profile_file(owner)
+    user_file = load_profile_file(user_config_path(home))
+    project_file = load_profile_file(project_config_path(cwd))
+    current = profile_file.raw_profiles.get(name, {})
     updated = deep_set_raw(current, dotted_key, value)
-    return save_profile_raw(name, updated, cwd=cwd, home=home)
+    merged = _merged_profile_raw_for_edit(name, user_file=user_file, project_file=project_file)
+    merged_updated = deep_set_raw(merged, dotted_key, value)
+    parsed = parse_profile(name, merged_updated, source="<edit>")
+    return write_profile_to_path(
+        owner,
+        parsed,
+        force=True,
+        raw_profile=updated,
+    )
 
 
 def delete_user_profile(name: str, *, home: Path | None = None) -> Path:
@@ -1444,6 +1479,13 @@ _BOOL_SUFFIXES = (
     ".enabled",
     ".final_review",
     ".strict_on_unavailable_route",
+    ".debug_status_detection",
+    ".quiet_progress",
+    ".terminal_title",
+    ".no_tty",
+    ".exec_json",
+    ".output_last_message",
+    ".full_auto",
     ".allow_model_escalation",
     ".allow_model_deescalation",
 )

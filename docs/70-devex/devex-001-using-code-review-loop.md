@@ -810,13 +810,25 @@ Edit one field without opening `$EDITOR`:
     revrem config set default pipeline.max_iterations 11
     revrem config set default review.model gpt-5.5
     revrem config set default review.timeout_seconds 0.5
+    revrem config set default triage.routing.default_route codex-midi
     revrem config set default budgets.max_wall_seconds 7200
     revrem config set default runtime.provider_retry_attempts 5
+    revrem config set default output.no_tty true
+    revrem config set default runtime.full_auto off
 
 Numeric fields (including `...max_iterations`, `...max_tokens`,
 `...max_wall_seconds`, and `...provider_retry_attempts`) are parsed as numeric
 values. `*.timeout_seconds` can be fractional (for example `0.5`), and `0`
 means unbounded for phase timeouts.
+`config set` writes only the field you specify in that profile and preserves
+inherited `[defaults]` values unless that field is explicitly set. Nested tables
+are not materialized just because you changed one unrelated key.
+`config set` validates using the full effective chain (user defaults + project
+defaults + profile). For routing edits this means `triage.routing.default_route`
+must resolve to a route present in the inherited route table, otherwise the edit
+is rejected.
+Boolean fields (for example `output.no_tty` and `runtime.full_auto`) are parsed
+from `true/false`, `1/0`, `yes/no`, and `on/off`.
 
 Builtins are read-only — clone first (`revrem config clone <builtin> mine`).
 This is the same write path the TUI's working-copy save uses.
@@ -1569,10 +1581,15 @@ TUI controller starts a managed `revrem` subprocess with the selected profile,
 forces machine-friendly child output (`--no-tty`, `--pending-review ignore`,
 `--summary-format json`), reads the child run's `events.jsonl` during refresh,
 and renders those events through the same `RunEventView` path as replay/history.
+During a live refresh, the monitor updates content in place and does not force
+workspace or pane focus changes; operators can keep working in Profiles/Loop/
+Prompts while the background run continues to stream.
 Cancellation runs in a background worker and sends `SIGINT` to the child process
 group first, so a normal active run writes the standard `cancellation` event and
 `summary.json` with exit code `5`; `SIGTERM` and `SIGKILL` are reserved for
-forced cleanup if the child does not exit. The controller snapshots descendant
+forced cleanup if the child does not exit. A direct interrupt path that exits
+before writing `summary.json` now surfaces as `interrupted-before-run-initialized`
+in the TUI monitor. The controller snapshots descendant
 PIDs before cancellation and performs bounded cleanup of those known nested
 provider children after the managed child exits. When no live run is active, cancellation is a no-op with
 explicit feedback. Quitting during an active live run requires a second `q`,
@@ -1706,6 +1723,9 @@ artifact.
   resumability precondition failed.
 - `5`: the operator cancelled the run with Ctrl-C/SIGTERM and RevRem wrote
   best-effort cancellation artifacts.
+- `130`: operator interrupted a run before RevRem wrote summary artifacts
+  (including direct-SIGINT termination paths); the TUI status shown is
+  `interrupted-before-run-initialized`.
 - `6`: `revrem doctor --strict` found warning-level diagnostics.
 
 ### Operator guidance

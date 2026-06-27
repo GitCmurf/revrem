@@ -145,6 +145,56 @@ def test_set_profile_field_persists_single_field(tmp_path):
     assert reloaded["review"]["model"] == "old"
 
 
+def test_set_profile_field_preserves_inherited_defaults(tmp_path):
+    _write(
+        tmp_path / ".revrem.toml",
+        '[defaults]\n'
+        '[defaults.triage]\n'
+        'enabled = true\n'
+        '[defaults.triage.routing]\n'
+        'default_route = "security"\n\n'
+        '[profiles.demo]\n'
+        'review.model = "old"\n',
+    )
+
+    profiles.set_profile_field(
+        "demo", "review.timeout_seconds", "0.5", cwd=tmp_path, home=tmp_path
+    )
+    reloaded = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"]
+    assert reloaded["review"]["model"] == "old"
+    assert reloaded["review"]["timeout_seconds"] == 0.5
+    assert "triage" not in reloaded
+
+
+def test_set_profile_field_validates_against_inherited_project_defaults(tmp_path):
+    _write(
+        tmp_path / ".config" / "revrem" / "profiles.toml",
+        "[defaults]\n"
+        "[defaults.triage]\n"
+        "[defaults.triage.routing]\n"
+        'default_route = "codex-midi"\n'
+        "[defaults.triage.routes.codex-midi]\n"
+        'harness = "codex"\n',
+    )
+    _write(tmp_path / ".revrem.toml", "[profiles.demo]\nreview.model = \"old\"\n")
+
+    with pytest.raises(
+        ValueError,
+        match="triage.routing.default_route refers to unknown route: missing-route",
+    ):
+        profiles.set_profile_field(
+            "demo",
+            "triage.routing.default_route",
+            "missing-route",
+            cwd=tmp_path,
+            home=tmp_path,
+        )
+
+    reloaded = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"]
+    assert reloaded["review"]["model"] == "old"
+    assert "triage" not in reloaded
+
+
 def test_set_profile_field_persists_float_timeout(tmp_path):
     _write(tmp_path / ".revrem.toml", '[profiles.demo]\nreview.model = "old"\n')
     profiles.set_profile_field(
@@ -157,6 +207,15 @@ def test_set_profile_field_persists_float_timeout(tmp_path):
 def test_set_profile_field_unknown_raises(tmp_path):
     with pytest.raises(FileNotFoundError):
         profiles.set_profile_field("ghost", "review.model", "x", cwd=tmp_path, home=tmp_path)
+
+
+def test_set_profile_field_coerces_boolean_fields(tmp_path):
+    _write(tmp_path / ".revrem.toml", "[profiles.demo]\n")
+    profiles.set_profile_field("demo", "output.no_tty", "off", cwd=tmp_path, home=tmp_path)
+    profiles.set_profile_field("demo", "runtime.full_auto", "on", cwd=tmp_path, home=tmp_path)
+    reloaded = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"]
+    assert reloaded["output"]["no_tty"] is False
+    assert reloaded["runtime"]["full_auto"] is True
 
 
 # ── Regression tests for REVREM-PLAN-009 final review ────────────────────────

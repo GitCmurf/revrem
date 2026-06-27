@@ -307,13 +307,16 @@ def test_tui_live_run_action_catches_startup_oserror_and_keeps_setup_failed_stat
     assert app.live_run_controller.status == "setup-failed"
     assert app.live_run_controller.message == "failed to start live run: revrem not found"
     assert app._pending_live_confirmation_profile is None
+    assert app._workspace == "profiles"
+    assert app._focused_pane == "left"
 
     run_monitor_updates = [
         value for selector, value in widgets.updates if selector == "#screen-run-monitor"
     ]
     assert run_monitor_updates
-    assert "Live status: setup-failed" in run_monitor_updates[-1]
-    assert "failed to start live run: revrem not found" in run_monitor_updates[-1]
+    assert "Profile Detail" in run_monitor_updates[-1]
+    assert "Live status: setup-failed" not in run_monitor_updates[-1]
+    assert "failed to start live run: revrem not found" not in run_monitor_updates[-1]
     assert ("#status-bar", "status-setup-failed") in widgets.classes
 
 
@@ -420,15 +423,63 @@ def test_tui_live_monitor_refresh_updates_run_monitor_widget(monkeypatch, tmp_pa
         artifact_dir=run_dir,
     )
     app.live_run_controller.status = "running"
+    app._workspace = "run"
+    app._focused_pane = "right"
     widgets = _WidgetProbe()
     monkeypatch.setattr(app, "query_one", widgets.query_one)
 
     app._render_live_monitor()
 
-    updates = [value for selector, value in widgets.updates if selector == "#screen-run-monitor"]
-    assert updates
-    assert "Live status: running" in updates[0]
-    assert "0001|review|1|phase_start: reviewing" in updates[0]
+    updates = {
+        selector: value
+        for selector, value in widgets.updates
+        if selector in {"#screen-home", "#screen-run-monitor"}
+    }
+    classes = {
+        selector: value
+        for selector, value in widgets.classes
+        if selector in {"#screen-home", "#screen-run-monitor"}
+    }
+    assert "Run Timeline" in updates["#screen-home"]
+    assert "Live status: running" in updates["#screen-run-monitor"]
+    assert "0001|review|1|phase_start: reviewing" in updates["#screen-run-monitor"]
+    assert classes["#screen-home"] == "panel panel-muted"
+    assert classes["#screen-run-monitor"] == "panel panel-focused"
+
+
+def test_tui_live_monitor_does_not_override_workspace_or_focus(monkeypatch, tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    model = tui.tui_state.build_shell_model(cwd=repo, selected_profile_name="security")
+    app = tui.RevRemApp(model=model, profiles_by_name={})
+    run_dir = repo / ".revrem" / "runs" / "live"
+    run_dir.mkdir(parents=True)
+    sink = tui.tui_run_controller.events.JsonlSink(run_dir, "live")
+    sink.emit("phase_start", phase="review", iteration=1, payload={"message": "reviewing"})
+    sink.close()
+    app.live_run_controller.launch = tui.tui_run_controller.LiveRunLaunch(
+        argv=("revrem",),
+        artifact_dir_arg=".revrem/runs/live",
+        artifact_dir=run_dir,
+    )
+    app.live_run_controller.status = "running"
+    app._workspace = "profiles"
+    app._focused_pane = "left"
+    widgets = _WidgetProbe()
+    monkeypatch.setattr(app, "query_one", widgets.query_one)
+
+    app._render_live_monitor()
+
+    updates = {
+        selector: value
+        for selector, value in widgets.updates
+        if selector == "#screen-run-monitor"
+    }
+    assert "Profile Detail" in updates["#screen-run-monitor"]
+    assert "Live status: running" not in updates["#screen-run-monitor"]
+    assert app._workspace == "profiles"
+    assert app._focused_pane == "left"
 
 
 def test_tui_live_monitor_escapes_markup_in_event_detail(monkeypatch, tmp_path):
@@ -448,6 +499,8 @@ def test_tui_live_monitor_escapes_markup_in_event_detail(monkeypatch, tmp_path):
         artifact_dir=run_dir,
     )
     app.live_run_controller.status = "running"
+    app._workspace = "run"
+    app._focused_pane = "right"
     updates = []
 
     class FakeWidget:

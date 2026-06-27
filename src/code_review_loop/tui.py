@@ -880,9 +880,10 @@ class _RevRemAppMixin:
             exit_app()
 
     def _render_live_monitor(self) -> None:
-        self._workspace = "run"
-        self._focused_pane = "right"
         _update_widget(self, "#screen-run-monitor", _right_pane_markup(self))
+        _update_widget(self, "#screen-home", _left_pane_markup(self))
+        _set_widget_classes(self, "#screen-run-monitor", _pane_classes(self, "right"))
+        _set_widget_classes(self, "#screen-home", _pane_classes(self, "left"))
         self._update_console_status()
 
     def _update_console_status(self) -> None:

@@ -166,10 +166,22 @@ revrem config new final-pr --description "Full PR readiness check"
 revrem config edit final-pr
 revrem config set default pipeline.max_iterations 11
 revrem config set default runtime.provider_retry_attempts 5
+revrem config set default triage.routing.default_route codex-midi
 revrem config set default review.timeout_seconds 0.5
 revrem config set default triage.timeout_seconds 0
+revrem config set default output.no_tty true
+revrem config set default runtime.full_auto off
 revrem --profile final-pr
 ```
+
+Boolean profile fields are written as TOML booleans. `config set` accepts
+`true/false`, `1/0`, `yes/no`, and `on/off` for those fields.
+`config set` rewrites only the requested dotted field path for one profile.
+Omitted fields stay as-is and continue inheriting from any applicable
+`[defaults]` entries instead of being materialized during the save.
+`config set` validates using the full effective chain (user defaults + project
+defaults + profile). If you edit routing, the target route must exist in the
+inherited route table or the edit is rejected.
 
 In an interactive terminal, bare `revrem` (or `revrem --wizard`) opens a guided
 setup. It offers your last compatible settings or the recommended defaults,

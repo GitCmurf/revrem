@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -185,6 +186,10 @@ def test_classify_exit_requires_artifacts_for_clean_cancellation():
     )
     assert tui_run_controller.classify_exit(6) == "failed"
     assert tui_run_controller.classify_exit(130) == "interrupted-before-run-initialized"
+    assert (
+        tui_run_controller.classify_exit(-signal.SIGINT)
+        == "interrupted-before-run-initialized"
+    )
 
 
 def test_cancel_sends_sigint_to_process_group(monkeypatch):

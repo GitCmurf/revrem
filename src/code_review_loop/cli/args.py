@@ -648,15 +648,19 @@ def build_config_parser() -> RevRemArgumentParser:
     set_parser = subparsers.add_parser(
         "set",
         help=(
-            "Set a single profile field non-interactively "
-            "(e.g. review.model gpt-5.5, review.timeout_seconds 0.5, "
-            "or pipeline.max_iterations 11)."
+            "Set a single profile field non-interactively while preserving inherited "
+            "defaults from the full user/project inheritance chain. Only the requested "
+            "dotted field is rewritten (e.g. review.model gpt-5.5, output.no_tty true, "
+            "runtime.full_auto off, or pipeline.max_iterations 11)."
         ),
     )
     set_parser.add_argument("name")
     set_parser.add_argument(
         "key",
-        help="Dotted field path, e.g. review.timeout_seconds, pipeline.max_iterations, or budgets.max_wall_seconds.",
+        help=(
+            "Dotted field path, e.g. review.timeout_seconds, output.no_tty, "
+            "runtime.full_auto, or budgets.max_wall_seconds."
+        ),
     )
     set_parser.add_argument(
         "value",

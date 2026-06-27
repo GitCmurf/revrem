@@ -304,7 +304,7 @@ def classify_exit(
         return "setup-failed"
     if exit_code == 5 and final_status == "error" and stopped_reason == "cancelled":
         return "cancelled"
-    if exit_code == 130 and summary is None:
+    if exit_code in (130, -signal.SIGINT) and summary is None:
         return "interrupted-before-run-initialized"
     return "failed"
 
