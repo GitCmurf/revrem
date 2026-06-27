@@ -781,6 +781,7 @@ revrem config list
 revrem config show final-pr
 revrem config new final-pr --description "Full PR readiness check"
 revrem config edit final-pr
+revrem config set final-pr runtime.full_auto off
 revrem config clone final-pr final-pr-copy
 revrem config export final-pr
 revrem config import profiles.toml
@@ -815,6 +816,7 @@ Edit one field without opening `$EDITOR`:
     revrem config set final-pr runtime.provider_retry_attempts 5
     revrem config set final-pr output.no_tty true
     revrem config set final-pr runtime.full_auto off
+    revrem config --format json set final-pr output.no_tty true
 
 Numeric fields (including `...max_iterations`, `...max_tokens`,
 `...max_wall_seconds`, and `...provider_retry_attempts`) are parsed as numeric
@@ -985,7 +987,8 @@ fail before remediation when the selected route names an unimplemented or
 incapable harness without an explicit valid fallback.
 
 The `--format` flag is accepted both before and after the subcommand, so the
-global form `revrem config --format json doctor --profile final-pr` works too.
+global form `revrem config --format json doctor --profile final-pr` works too, as do
+`revrem config --format json set final-pr output.no_tty true` for automation.
 
 Profiles use `review.harness`, `triage.harness`, `remediation.harness`, and
 `commit.harness` to select headless adapters. Codex, Claude, Gemini, opencode,

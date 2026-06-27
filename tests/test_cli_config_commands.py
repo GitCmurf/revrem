@@ -465,6 +465,40 @@ def test_config_commands_create_show_list_and_delete_profile(tmp_path, monkeypat
     assert cli_main.main(["config", "show", "smoke"]) == 1
 
 
+def test_config_set_supports_global_json_format(tmp_path, monkeypatch, capsys):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+
+    assert cli_main.main(["config", "new", "smoke", "--description", "Smoke profile"]) == 0
+    assert cli_main.main(["config", "set", "smoke", "pipeline.max_iterations", "11"]) == 0
+    assert (
+        f"set pipeline.max_iterations on smoke in {profiles.profile_owner_path('smoke', cwd=tmp_path, home=home)}"
+        in capsys.readouterr().out
+    )
+
+    assert (
+        cli_main.main(
+            ["config", "--format", "json", "set", "smoke", "runtime.provider_retry_attempts", "5"]
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "ok"
+    assert payload["command"] == "set"
+    assert payload["name"] == "smoke"
+    assert payload["key"] == "runtime.provider_retry_attempts"
+    assert payload["value"] == "5"
+    assert payload["path"] == str(
+        profiles.profile_owner_path("smoke", cwd=tmp_path, home=home)
+    )
+    assert (
+        profiles.resolve_profile("smoke", cwd=tmp_path, home=home).runtime.provider_retry_attempts
+        == 5
+    )
+
+
 def test_config_new_prompts_for_common_fields_when_interactive(tmp_path, monkeypatch, capsys):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))

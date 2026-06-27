@@ -119,7 +119,23 @@ def main(argv: Sequence[str]) -> int:
             path = profiles.set_profile_field(
                 args.name, args.key, args.value, cwd=Path.cwd()
             )
-            print(f"set {args.key} on {args.name} in {path}")
+            if output_format == "json":
+                print(
+                    json.dumps(
+                        {
+                            "status": "ok",
+                            "command": "set",
+                            "name": args.name,
+                            "key": args.key,
+                            "value": args.value,
+                            "path": str(path),
+                        },
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+            else:
+                print(f"set {args.key} on {args.name} in {path}")
             return CommandOk().exit_code
         raise ValueError(f"unhandled config command: {args.command}")
     except (OSError, RuntimeError, ValueError) as exc:
