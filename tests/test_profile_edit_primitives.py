@@ -166,6 +166,34 @@ def test_set_profile_field_preserves_inherited_defaults(tmp_path):
     assert "triage" not in reloaded
 
 
+def test_set_profile_field_preserves_inherited_defaults_from_user_file(tmp_path):
+    _write(
+        tmp_path / ".config" / "revrem" / "profiles.toml",
+        "[defaults]\n"
+        "[defaults.output]\n"
+        "no_tty = true\n"
+        "[defaults.triage]\n"
+        "enabled = true\n"
+        '[defaults.triage.routing]\n'
+        'default_route = "codex-midi"\n',
+    )
+    _write(
+        tmp_path / ".revrem.toml",
+        "[profiles.demo]\n"
+        'review.model = "old"\n',
+    )
+
+    profiles.set_profile_field(
+        "demo", "review.timeout_seconds", "0.5", cwd=tmp_path, home=tmp_path
+    )
+
+    reloaded = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"]
+    assert reloaded["review"]["model"] == "old"
+    assert reloaded["review"]["timeout_seconds"] == 0.5
+    assert "output" not in reloaded
+    assert "triage" not in reloaded
+
+
 def test_set_profile_field_validates_against_inherited_project_defaults(tmp_path):
     _write(
         tmp_path / ".config" / "revrem" / "profiles.toml",

@@ -865,13 +865,18 @@ def _profile_to_toml_dict(
         for key, item in asdict(value).items():
             if item is None:
                 continue
+            explicit = isinstance(raw_section, dict) and key in raw_section
             if reference_value is not None:
                 reference_item = _reference_profile_value(getattr(reference_value, key))
             else:
                 reference_item = None
-            if omit_reference_defaults and reference_value is not None and item == reference_item:
+            if (
+                omit_reference_defaults
+                and not explicit
+                and reference_value is not None
+                and item == reference_item
+            ):
                 continue
-            explicit = isinstance(raw_section, dict) and key in raw_section
             if omit_builtin_defaults and item == getattr(defaults, key) and not explicit:
                 continue
 
@@ -909,6 +914,17 @@ def _merged_profile_raw_for_edit(
         raw = _deep_merge(raw, project_file.raw_defaults)
     if name in project_file.profiles:
         raw = _deep_merge(raw, project_file.raw_profiles[name])
+    return raw
+
+
+def _merged_default_raw_for_edit(
+    *, user_file: ProfileFile, project_file: ProfileFile
+) -> dict[str, Any]:
+    raw: dict[str, Any] = {}
+    if user_file.raw_defaults is not None:
+        raw = _deep_merge(raw, user_file.raw_defaults)
+    if project_file.raw_defaults is not None:
+        raw = _deep_merge(raw, project_file.raw_defaults)
     return raw
 
 
@@ -990,6 +1006,7 @@ def write_profile_to_path(
     *,
     force: bool = False,
     raw_profile: dict[str, Any] | None = None,
+    reference: Profile | None = None,
 ) -> Path:
     profile_file = load_profile_file(path)
     if profile.name in profile_file.profiles and not force:
@@ -1010,6 +1027,7 @@ def write_profile_to_path(
         else None,
         raw_profiles=profile_file.raw_profiles,
         omit_reference_defaults=True,
+        reference=reference,
     )
     return path
 
@@ -1042,12 +1060,18 @@ def set_profile_field(
     updated = deep_set_raw(current, dotted_key, value)
     merged = _merged_profile_raw_for_edit(name, user_file=user_file, project_file=project_file)
     merged_updated = deep_set_raw(merged, dotted_key, value)
+    edit_defaults = parse_profile(
+        "<defaults>",
+        _merged_default_raw_for_edit(user_file=user_file, project_file=project_file),
+        source="<edit>",
+    )
     parsed = parse_profile(name, merged_updated, source="<edit>")
     return write_profile_to_path(
         owner,
         parsed,
         force=True,
         raw_profile=updated,
+        reference=edit_defaults,
     )
 
 
@@ -1360,6 +1384,7 @@ def _write_profile_file(
     raw_rendered_profiles: dict[str, dict[str, Any]] | None = None,
     raw_profiles: dict[str, dict[str, Any]] | None = None,
     omit_reference_defaults: bool = False,
+    reference: Profile | None = None,
     omit_builtin_defaults_for_rendered: bool = True,
 ) -> None:
     blocks: list[str] = []
@@ -1378,7 +1403,7 @@ def _write_profile_file(
                     root=("profiles", name),
                     omit_builtin_defaults=omit_builtin_defaults_for_rendered,
                     omit_reference_defaults=omit_reference_defaults,
-                    reference=defaults,
+                    reference=reference or defaults,
                     raw_profile=(raw_rendered_profiles or {}).get(name),
                 ).rstrip()
             )

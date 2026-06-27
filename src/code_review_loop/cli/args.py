@@ -649,7 +649,8 @@ def build_config_parser() -> RevRemArgumentParser:
         "set",
         help=(
             "Set a single profile field non-interactively while preserving inherited "
-            "defaults from the full user/project inheritance chain. Only the requested "
+            "defaults from the full user+project inheritance chain as inherited values "
+            "(not materialized in the owning profile). Only the requested "
             "dotted field is rewritten (e.g. review.model gpt-5.5, output.no_tty true, "
             "runtime.full_auto off, or pipeline.max_iterations 11)."
         ),
