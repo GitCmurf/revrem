@@ -645,6 +645,14 @@ def build_config_parser() -> RevRemArgumentParser:
     edit = subparsers.add_parser("edit", help="Open the owning config file in $EDITOR.")
     edit.add_argument("name")
 
+    set_parser = subparsers.add_parser(
+        "set",
+        help="Set a single profile field non-interactively (e.g. review.model gpt-5.5).",
+    )
+    set_parser.add_argument("name")
+    set_parser.add_argument("key", help="Dotted field path, e.g. pipeline.max_iterations.")
+    set_parser.add_argument("value")
+
     clone = subparsers.add_parser("clone", help="Clone a resolved profile into the user config.")
     clone.add_argument("source")
     clone.add_argument("target")

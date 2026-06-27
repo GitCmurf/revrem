@@ -115,6 +115,12 @@ def main(argv: Sequence[str]) -> int:
                 if "resolved_profile" in info:
                     print(f"resolved_profile: {json.dumps(info['resolved_profile'], indent=2)}")
             return CommandOk().exit_code
+        if args.command == "set":
+            path = profiles.set_profile_field(
+                args.name, args.key, args.value, cwd=Path.cwd()
+            )
+            print(f"set {args.key} on {args.name} in {path}")
+            return CommandOk().exit_code
         raise ValueError(f"unhandled config command: {args.command}")
     except (OSError, RuntimeError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
