@@ -760,14 +760,14 @@ def profile_owner_path(
     home: Path | None = None,
     allow_new: bool = False,
 ) -> Path:
-    if is_builtin_profile(name):
-        raise RuntimeError(builtin_profile_readonly_message(name))
     project_path = project_config_path(cwd)
     if name in load_profile_file(project_path).profiles:
         return project_path
     user_path = user_config_path(home)
     if name in load_profile_file(user_path).profiles:
         return user_path
+    if is_builtin_profile(name):
+        raise RuntimeError(builtin_profile_readonly_message(name))
     if allow_new:
         return user_path
     raise FileNotFoundError(f"profile not found: {name}")
@@ -1429,6 +1429,7 @@ _BOOL_SUFFIXES = (
     ".final_review",
     ".strict_on_unavailable_route",
     ".allow_model_escalation",
+    ".allow_model_deescalation",
 )
 
 

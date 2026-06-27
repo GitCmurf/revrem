@@ -128,3 +128,32 @@ def test_set_profile_field_persists_single_field(tmp_path):
 def test_set_profile_field_unknown_raises(tmp_path):
     with pytest.raises(FileNotFoundError):
         profiles.set_profile_field("ghost", "review.model", "x", cwd=tmp_path, home=tmp_path)
+
+
+# ── Regression tests for REVREM-PLAN-009 final review ────────────────────────
+
+def test_profile_owner_path_local_shadows_builtin(tmp_path):
+    """A LOCAL profile whose name collides with a builtin must remain editable.
+
+    Fix 1 regression lock: profile_owner_path must check project/user files
+    BEFORE raising for a builtin name, so a shadowing local profile wins.
+    """
+    name = next(
+        p.name
+        for p in profiles.list_profiles(cwd=tmp_path, include_builtins=True)
+        if profiles.is_builtin_profile(p.name)
+    )
+    _write(tmp_path / ".revrem.toml", f'[profiles.{name}]\nreview.model = "x"\n')
+    # Must NOT raise; must return the project config path, not the user path
+    got = profiles.profile_owner_path(name, cwd=tmp_path, home=tmp_path)
+    assert got == profiles.project_config_path(tmp_path)
+
+
+def test_deep_set_raw_coerces_allow_model_deescalation():
+    """allow_model_deescalation must be coerced to bool by deep_set_raw.
+
+    Fix 2 regression lock: .allow_model_deescalation must appear in
+    _BOOL_SUFFIXES so string "off" becomes False, not the string "off".
+    """
+    result = profiles.deep_set_raw({}, "triage.routing.allow_model_deescalation", "off")
+    assert result["triage"]["routing"]["allow_model_deescalation"] is False
