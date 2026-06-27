@@ -8,6 +8,7 @@ This project follows Semantic Versioning once public releases begin.
 
 ### Added
 
+- `revrem config set <profile> <key> <value>` — non-interactive single-field profile edits (foundation for the loop-first TUI, REVREM-DESIGN-001 / PLAN-009).
 - Manual no-provider GitHub Action smoke workflow
   (`.github/workflows/revrem-action-smoke.yml`) that exercises the local
   composite action with the gated fake harness and asserts generated

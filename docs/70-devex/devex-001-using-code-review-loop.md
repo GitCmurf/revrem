@@ -803,6 +803,16 @@ the behavior of portable shared-profile files even when the destination
 
 `revrem config list` shows each profile's description, source file, and last-used timestamp from run history. Bundled expert profiles appear with `source = builtin`; they are read-only, but `revrem config clone security security-local` creates an editable user copy.
 
+### Set a single profile field
+
+Edit one field without opening `$EDITOR`:
+
+    revrem config set default pipeline.max_iterations 11
+    revrem config set default review.model gpt-5.5
+
+Builtins are read-only — clone first (`revrem config clone <builtin> mine`).
+This is the same write path the TUI's working-copy save uses.
+
 Bundled expert profiles:
 
 | Profile | Intent | Default checks |
