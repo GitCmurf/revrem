@@ -208,6 +208,18 @@ class LiveRunController:
             self.message = detail or f"run exited with code {exit_code} before writing summary.json"
         return self.status
 
+    def stdout_lines(self) -> tuple[str, ...]:
+        """Return currently buffered stdout for an in-flight run or final tail."""
+        if self.process is None or self.process.poll() is not None:
+            return self.stdout_tail
+        return self._stdout_buffer.lines
+
+    def stderr_lines(self) -> tuple[str, ...]:
+        """Return currently buffered stderr for an in-flight run or final tail."""
+        if self.process is None or self.process.poll() is not None:
+            return self.stderr_tail
+        return self._stderr_buffer.lines
+
     def _read_summary(self) -> dict[str, object] | None:
         if self.launch is None:
             return None

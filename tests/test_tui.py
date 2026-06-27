@@ -406,6 +406,67 @@ def test_tui_live_run_action_refuses_second_r_while_run_is_cancelling(
     assert app._pending_live_confirmation_profile is None
 
 
+def test_tui_edit_profile_refreshes_profile_cache_before_next_live_launch(monkeypatch, tmp_path):
+    notifications = []
+    launched_artifact_dirs = []
+
+    home = tmp_path / "home"
+    config_path = home / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+
+    def write_profile(artifact_dir: str) -> None:
+        config_path.write_text(
+            f"""
+[profiles.final-pr]
+description = "Final PR"
+
+[profiles.final-pr.output]
+artifact_dir = "{artifact_dir}"
+""",
+            encoding="utf-8",
+        )
+
+    write_profile("artifacts/old")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(tui.Path, "cwd", lambda: tmp_path)
+
+    def fake_run_launch_plan(plan, *, cwd, capture_output=True):
+        if plan.mode == "edit":
+            write_profile("artifacts/new")
+        return types.SimpleNamespace(returncode=0)
+
+    def fake_start(**kwargs) -> types.SimpleNamespace:
+        profile = kwargs["profile"]
+        launched_artifact_dirs.append(profile.output.artifact_dir)
+        return types.SimpleNamespace(artifact_dir_arg=profile.output.artifact_dir)
+
+    app = tui.RevRemApp(
+        model=tui.tui_state.build_shell_model(cwd=tmp_path, selected_profile_name="final-pr"),
+        profiles_by_name={
+            profile.name: profile
+            for profile in tui.profiles.resolve_profiles(
+                cwd=tmp_path,
+                require_implemented=False,
+                include_builtins=True,
+            )
+        },
+    )
+    monkeypatch.setattr(tui, "run_launch_plan", fake_run_launch_plan)
+    monkeypatch.setattr(app, "notify", lambda message: notifications.append(message), raising=False)
+    app.live_run_controller.start = fake_start
+
+    app.action_edit_profile()
+    app.action_launch_run()
+    app.action_launch_run()
+
+    assert notifications == [
+        "Edited profile: final-pr",
+        "Press r again to start an experimental live run: final-pr",
+        "Live run started: final-pr (artifacts/new)",
+    ]
+    assert launched_artifact_dirs == ["artifacts/new"]
+
+
 def test_tui_live_monitor_refresh_updates_run_monitor_widget(monkeypatch, tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -535,6 +596,26 @@ def test_tui_run_workspace_render_uses_tuple_stdout_stderr_tails_without_crash(t
     stderr_markup = tui._run_workspace_markup(app)
     assert "view: stderr" in stderr_markup
     assert "err-1" in stderr_markup
+
+
+def test_tui_run_workspace_render_uses_live_stdout_stderr_buffers_while_running(tmp_path):
+    model = tui.tui_state.build_shell_model(cwd=tmp_path, selected_profile_name="security")
+    app = tui.RevRemApp(model=model, profiles_by_name={})
+    app._workspace = "run"
+    app.live_run_controller.status = "running"
+    app.live_run_controller.process = types.SimpleNamespace(poll=lambda: None)
+    app.live_run_controller._stdout_buffer.append("line-live-1")
+    app.live_run_controller._stderr_buffer.append("err-live-1")
+
+    app._selected_run_tab_index = 1
+    stdout_markup = tui._run_workspace_markup(app)
+    assert "view: stdout" in stdout_markup
+    assert "line-live-1" in stdout_markup
+
+    app._selected_run_tab_index = 2
+    stderr_markup = tui._run_workspace_markup(app)
+    assert "view: stderr" in stderr_markup
+    assert "err-live-1" in stderr_markup
 
 
 def test_tui_compact_profiles_markup_truncates_description_and_source(tmp_path):

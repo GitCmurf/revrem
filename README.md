@@ -265,6 +265,10 @@ revrem ui --profile final-pr
 
 The TUI renders Home, Profiles, Pipeline, Run Monitor, and Controls views, and
 shells through the same CLI command plans as normal terminal usage.
+During a live run, the run monitor refreshes continuously and streams stdout/stderr
+into the dedicated tabs while output is still in flight.
+Profile edits done in-session are visible to subsequent live runs without restarting
+the TUI.
 
 ## Status
 

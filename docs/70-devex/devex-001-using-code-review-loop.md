@@ -1600,9 +1600,15 @@ TUI controller starts a managed `revrem` subprocess with the selected profile,
 forces machine-friendly child output (`--no-tty`, `--pending-review ignore`,
 `--summary-format json`), reads the child run's `events.jsonl` during refresh,
 and renders those events through the same `RunEventView` path as replay/history.
+The `stdout` and `stderr` run tabs also render child stream buffers while the
+run is active, so operator-visible process output and diagnostics are visible before
+process exit.
 During a live refresh, the monitor updates content in place and does not force
 workspace or pane focus changes; operators can keep working in Profiles/Loop/
 Prompts while the background run continues to stream.
+Profile updates performed in-session (for example via `e`/Edit) are re-resolved
+before the next live launch so changed settings (like `output.artifact_dir`) take
+effect immediately.
 Cancellation runs in a background worker and sends `SIGINT` to the child process
 group first, so a normal active run writes the standard `cancellation` event and
 `summary.json` with exit code `5`; `SIGTERM` and `SIGKILL` are reserved for

@@ -749,9 +749,40 @@ class _RevRemAppMixin:
     ) -> None:
         result = self._run_plan(plan, capture_output=capture_output)
         if result.returncode == 0:
+            if plan.mode in {"edit", "new", "clone", "delete", "import"}:
+                self._refresh_profiles_from_disk()
             _notify(self, success)
             return
         _notify(self, f"{plan.mode} failed with exit {result.returncode}: {plan.profile_name}")
+
+    def _refresh_profiles_from_disk(self) -> None:
+        selected_profile_name = self._profile_name()
+        cwd = Path(self.model.snapshot.cwd)
+        try:
+            self.model = tui_state.build_shell_model(
+                cwd=cwd,
+                selected_profile_name=selected_profile_name,
+            )
+        except FileNotFoundError:
+            self.model = tui_state.build_shell_model(cwd=cwd)
+        self.profiles_by_name = {
+            profile.name: profile
+            for profile in profiles.resolve_profiles(
+                cwd=cwd,
+                require_implemented=False,
+                include_builtins=True,
+            )
+        }
+        if selected_profile_name is None or not self.model.snapshot.profiles:
+            self._selected_profile_index = 0
+        else:
+            for index, profile in enumerate(self.model.snapshot.profiles):
+                if profile.name == selected_profile_name:
+                    self._selected_profile_index = index
+                    break
+            else:
+                self._selected_profile_index = 0
+        self._render_workbench()
 
     def _run_plan(
         self,
@@ -1118,9 +1149,9 @@ def _run_workspace_markup(app: Any) -> str:
     tab = _RUN_TABS[app._selected_run_tab_index]
     lines.insert(1, f"view: {tab}")
     if tab == "stdout":
-        lines.extend(_bounded_lines("stdout", app.live_run_controller.stdout_tail))
+        lines.extend(_bounded_lines("stdout", app.live_run_controller.stdout_lines()))
     elif tab == "stderr":
-        lines.extend(_bounded_lines("stderr", app.live_run_controller.stderr_tail))
+        lines.extend(_bounded_lines("stderr", app.live_run_controller.stderr_lines()))
     elif tab == "summary":
         lines.extend(_summary_lines(app.live_run_controller))
     return "\n".join(lines)
