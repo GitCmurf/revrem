@@ -1060,18 +1060,14 @@ def set_profile_field(
     updated = deep_set_raw(current, dotted_key, value)
     merged = _merged_profile_raw_for_edit(name, user_file=user_file, project_file=project_file)
     merged_updated = deep_set_raw(merged, dotted_key, value)
-    edit_defaults = parse_profile(
-        "<defaults>",
-        _merged_default_raw_for_edit(user_file=user_file, project_file=project_file),
-        source="<edit>",
-    )
     parsed = parse_profile(name, merged_updated, source="<edit>")
+    edit_reference = parse_profile(name, merged, source="<edit>")
     return write_profile_to_path(
         owner,
         parsed,
         force=True,
         raw_profile=updated,
-        reference=edit_defaults,
+        reference=edit_reference,
     )
 
 

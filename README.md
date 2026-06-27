@@ -178,7 +178,8 @@ Boolean profile fields are written as TOML booleans. `config set` accepts
 `true/false`, `1/0`, `yes/no`, and `on/off` for those fields.
 `config set` rewrites only the requested dotted field path for one profile.
 Omitted fields stay as-is and continue inheriting from any applicable
-`[defaults]` entries instead of being materialized during the save.
+resolved profile chain (`user defaults`, `project defaults`, and named profile
+overlays) instead of being materialized during the save.
 `config set` validates using the full effective chain (user defaults + project
 defaults + profile). If you edit routing, the target route must exist in the
 inherited route table or the edit is rejected.

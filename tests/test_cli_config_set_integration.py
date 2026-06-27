@@ -77,6 +77,26 @@ def test_config_set_does_not_materialize_inherited_defaults(tmp_path, monkeypatc
     assert "triage" not in reloaded
 
 
+def test_config_set_does_not_materialize_inherited_named_profile_fields(tmp_path, monkeypatch):
+    _write(
+        tmp_path / ".config" / "revrem" / "profiles.toml",
+        "[profiles.demo]\n"
+        "[profiles.demo.runtime]\n"
+        'harness_executables = { codex = "/tmp/user-codex" }\n',
+    )
+    _write(tmp_path / ".revrem.toml", '[profiles.demo]\nreview.model = "old"\n')
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    code = config_cmd.main(["set", "demo", "review.timeout_seconds", "0.5"])
+    assert code == 0
+
+    reloaded = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"]
+    assert reloaded["review"]["model"] == "old"
+    assert reloaded["review"]["timeout_seconds"] == 0.5
+    assert "runtime" not in reloaded
+
+
 def test_config_set_rejects_unknown_route_with_inherited_user_defaults(tmp_path, monkeypatch):
     _write(
         tmp_path / ".config" / "revrem" / "profiles.toml",
