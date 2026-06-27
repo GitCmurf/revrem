@@ -465,7 +465,7 @@ def test_config_commands_create_show_list_and_delete_profile(tmp_path, monkeypat
     assert cli_main.main(["config", "show", "smoke"]) == 1
 
 
-def test_config_set_supports_global_json_format(tmp_path, monkeypatch, capsys):
+def test_config_set_supports_json_format_before_and_after_subcommand(tmp_path, monkeypatch, capsys):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.chdir(tmp_path)
@@ -497,6 +497,20 @@ def test_config_set_supports_global_json_format(tmp_path, monkeypatch, capsys):
         profiles.resolve_profile("smoke", cwd=tmp_path, home=home).runtime.provider_retry_attempts
         == 5
     )
+
+    assert (
+        cli_main.main(
+            ["config", "set", "smoke", "output.no_tty", "true", "--format", "json"]
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "ok"
+    assert payload["command"] == "set"
+    assert payload["name"] == "smoke"
+    assert payload["key"] == "output.no_tty"
+    assert payload["value"] == "true"
+    assert profiles.resolve_profile("smoke", cwd=tmp_path, home=home).output.no_tty is True
 
 
 def test_config_new_prompts_for_common_fields_when_interactive(tmp_path, monkeypatch, capsys):

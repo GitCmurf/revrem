@@ -819,7 +819,7 @@ revrem config set final-pr runtime.provider_retry_attempts 5
 revrem config set final-pr output.no_tty true
 revrem config set final-pr runtime.full_auto off
 revrem config set final-pr description ""
-revrem config --format json set final-pr output.no_tty true
+revrem config set final-pr output.no_tty true --format json
 
 Numeric fields (including `...max_iterations`, `...max_tokens`,
 `...max_wall_seconds`, and `...provider_retry_attempts`) are parsed as numeric
@@ -994,9 +994,11 @@ and route capability chains without invoking a model. Executable runs still
 fail before remediation when the selected route names an unimplemented or
 incapable harness without an explicit valid fallback.
 
-The `--format` flag is accepted both before and after the subcommand, so the
-global form `revrem config --format json doctor --profile final-pr` works too, as do
-`revrem config --format json set final-pr output.no_tty true` for automation.
+The `--format` flag is accepted both before and after the subcommand, so both:
+- `revrem config --format json set final-pr output.no_tty true`
+- `revrem config set final-pr output.no_tty true --format json`
+
+work for automation.
 
 Profiles use `review.harness`, `triage.harness`, `remediation.harness`, and
 `commit.harness` to select headless adapters. Codex, Claude, Gemini, opencode,

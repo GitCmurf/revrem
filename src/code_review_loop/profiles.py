@@ -1152,8 +1152,13 @@ def save_profile_raw(
     merged = _merged_profile_raw_for_edit(name, user_file=user_file, project_file=project_file)
     merged_updated = _deep_merge(merged, raw_profile)
     parsed = parse_profile(name, merged_updated, source="<edit>")
+    edit_reference = parse_profile(name, merged, source="<edit>")
     owner = profile_owner_path(name, cwd=cwd, home=home, allow_new=True)
-    return write_profile_to_path(owner, parsed, force=True, raw_profile=raw_profile)
+    current = load_profile_file(owner).raw_profiles.get(name, {})
+    merged_raw_profile = _deep_merge(current, raw_profile)
+    return write_profile_to_path(
+        owner, parsed, force=True, raw_profile=merged_raw_profile, reference=edit_reference
+    )
 
 
 def set_profile_field(

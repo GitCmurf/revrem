@@ -677,6 +677,7 @@ def build_config_parser() -> RevRemArgumentParser:
             "top-level description."
         ),
     )
+    set_parser.add_argument("--format", choices=("json",), default=argparse.SUPPRESS)
 
     clone = subparsers.add_parser("clone", help="Clone a resolved profile into the user config.")
     clone.add_argument("source")

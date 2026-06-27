@@ -109,6 +109,27 @@ def test_save_profile_raw_round_trips_minimal_toml(tmp_path):
     assert "remediation" not in reloaded  # stays minimal, no resolved-default bloat
 
 
+def test_save_profile_raw_does_not_materialize_inherited_defaults(tmp_path):
+    _write(
+        tmp_path / ".config" / "revrem" / "profiles.toml",
+        "[defaults]\n"
+        "[defaults.output]\n"
+        "no_tty = true\n"
+        "[defaults.triage]\n"
+        "enabled = true\n",
+    )
+    _write(tmp_path / ".revrem.toml", '[profiles.demo]\nreview.model = "old"\n')
+
+    raw = profiles.deep_set_raw({}, "review.timeout_seconds", "0.5")
+    profiles.save_profile_raw("demo", raw, cwd=tmp_path, home=tmp_path)
+
+    reloaded = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"]
+    assert reloaded["review"]["model"] == "old"
+    assert reloaded["review"]["timeout_seconds"] == 0.5
+    assert "output" not in reloaded
+    assert "triage" not in reloaded
+
+
 def test_save_profile_raw_validates(tmp_path):
     _write(tmp_path / ".revrem.toml", '[profiles.demo]\nreview.model = "old"\n')
     bad = profiles.deep_set_raw({}, "pipeline.max_iterations", "5")

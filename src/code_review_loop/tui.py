@@ -1215,7 +1215,7 @@ def _phase_summary_line(phase: tui_state.PhaseView, *, selected: bool) -> str:
 def _phase_marker(phase: tui_state.PhaseView) -> str:
     if not phase.enabled:
         return "[ ]"
-    return "[ok]"
+    return "[[ok]]"
 
 
 def _phase_detail_lines(profile: profiles.Profile, phase: tui_state.PhaseView) -> list[str]:

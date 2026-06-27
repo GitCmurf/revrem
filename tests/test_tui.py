@@ -156,6 +156,11 @@ def test_tui_launches_textual_app_with_home_snapshot(monkeypatch, tmp_path):
     assert "[b]Run Monitor[/b]" in rendered[0]
 
 
+def test_phase_summary_line_escapes_enabled_marker_for_markup():
+    phase = tui.tui_state.PhaseView(name="review", enabled=True)
+    assert tui._phase_summary_line(phase, selected=False).startswith("[[ok]] review: ")
+
+
 def test_tui_dry_run_action_launches_selected_profile(monkeypatch, tmp_path):
     actions = []
     notifications = []

@@ -172,12 +172,13 @@ revrem config set final-pr triage.timeout_seconds 0
 revrem config set final-pr output.no_tty true
 revrem config set final-pr runtime.full_auto off
 revrem config set final-pr description ""
-revrem config --format json set final-pr runtime.full_auto off
+revrem config set final-pr runtime.full_auto off --format json
 revrem --profile final-pr
 ```
 
-`revrem config --format json set ...` is machine-readable; automation should parse the
+`revrem config set <profile> <key> <value> --format json` is machine-readable; automation should parse the
 JSON object with `status`, `command`, `name`, `key`, `value`, and `path`.
+The global form `revrem config --format json set ...` is also supported.
 
 Boolean profile fields are written as TOML booleans. `config set` accepts
 `true/false`, `1/0`, `yes/no`, and `on/off` for those fields.
