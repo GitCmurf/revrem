@@ -22,6 +22,39 @@ def test_config_set_updates_field(tmp_path, monkeypatch):
     assert reloaded["review"]["model"] == "gpt-5.5"
 
 
+def test_config_set_accepts_float_timeout(tmp_path, monkeypatch):
+    _write(tmp_path / ".revrem.toml", '[profiles.demo]\nreview.model = "old"\n')
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    code = config_cmd.main(["set", "demo", "review.timeout_seconds", "0.5"])
+    assert code == 0
+    reloaded = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"]
+    assert reloaded["review"]["timeout_seconds"] == 0.5
+
+
+def test_config_set_accepts_integer_field(tmp_path, monkeypatch):
+    _write(tmp_path / ".revrem.toml", '[profiles.demo]\nreview.model = "old"\n')
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    code = config_cmd.main(["set", "demo", "pipeline.max_iterations", "11"])
+    assert code == 0
+    reloaded = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"]
+    assert reloaded["pipeline"]["max_iterations"] == 11
+
+
+def test_config_set_accepts_non_timeout_float_field(tmp_path, monkeypatch):
+    _write(tmp_path / ".revrem.toml", '[profiles.demo]\nreview.model = "old"\n')
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    code = config_cmd.main(["set", "demo", "budgets.max_wall_seconds", "7200.5"])
+    assert code == 0
+    reloaded = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"]
+    assert reloaded["budgets"]["max_wall_seconds"] == 7200.5
+
+
 def test_config_set_rejects_unknown(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("HOME", str(tmp_path))

@@ -809,6 +809,14 @@ Edit one field without opening `$EDITOR`:
 
     revrem config set default pipeline.max_iterations 11
     revrem config set default review.model gpt-5.5
+    revrem config set default review.timeout_seconds 0.5
+    revrem config set default budgets.max_wall_seconds 7200
+    revrem config set default runtime.provider_retry_attempts 5
+
+Numeric fields (including `...max_iterations`, `...max_tokens`,
+`...max_wall_seconds`, and `...provider_retry_attempts`) are parsed as numeric
+values. `*.timeout_seconds` can be fractional (for example `0.5`), and `0`
+means unbounded for phase timeouts.
 
 Builtins are read-only — clone first (`revrem config clone <builtin> mine`).
 This is the same write path the TUI's working-copy save uses.

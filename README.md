@@ -164,6 +164,10 @@ Profiles keep long commands repeatable:
 ```bash
 revrem config new final-pr --description "Full PR readiness check"
 revrem config edit final-pr
+revrem config set default pipeline.max_iterations 11
+revrem config set default runtime.provider_retry_attempts 5
+revrem config set default review.timeout_seconds 0.5
+revrem config set default triage.timeout_seconds 0
 revrem --profile final-pr
 ```
 

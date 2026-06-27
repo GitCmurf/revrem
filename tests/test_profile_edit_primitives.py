@@ -29,6 +29,26 @@ def test_deep_set_raw_coerces_int_and_bool():
     assert out3["runtime"]["inner_check_retries"] == 2
 
 
+def test_deep_set_raw_coerces_timeout_float():
+    out = profiles.deep_set_raw({}, "review.timeout_seconds", "0.5")
+    assert out["review"]["timeout_seconds"] == 0.5
+    assert isinstance(out["review"]["timeout_seconds"], float)
+
+
+def test_deep_set_raw_coerces_additional_numeric_fields():
+    out = profiles.deep_set_raw({}, "pipeline.check_timeout_seconds", "42")
+    assert out["pipeline"]["check_timeout_seconds"] == 42.0
+    assert isinstance(out["pipeline"]["check_timeout_seconds"], float)
+
+    out2 = profiles.deep_set_raw({}, "budgets.max_tokens", "500")
+    assert out2["budgets"]["max_tokens"] == 500
+    assert isinstance(out2["budgets"]["max_tokens"], int)
+
+    out3 = profiles.deep_set_raw({}, "runtime.provider_retry_attempts", "3")
+    assert out3["runtime"]["provider_retry_attempts"] == 3
+    assert isinstance(out3["runtime"]["provider_retry_attempts"], int)
+
+
 def test_deep_set_raw_routing_default_route_stays_string():
     # default_route is a string; only strict_*/allow_* under routing are bools.
     out = profiles.deep_set_raw({}, "triage.routing.default_route", "remediation")
@@ -78,7 +98,7 @@ def test_profile_owner_path_rejects_builtin(tmp_path):
 def test_save_profile_raw_round_trips_minimal_toml(tmp_path):
     _write(tmp_path / ".revrem.toml",
            '[profiles.demo]\nreview.model = "old"\npipeline.max_iterations = 3\n')
-    raw = dict(load := profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"])
+    raw = dict(profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"])
     raw = profiles.deep_set_raw(raw, "review.model", "gpt-5.5")
     path = profiles.save_profile_raw("demo", raw, cwd=tmp_path, home=tmp_path)
     assert path == profiles.project_config_path(tmp_path)
@@ -123,6 +143,15 @@ def test_set_profile_field_persists_single_field(tmp_path):
     reloaded = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"]
     assert reloaded["pipeline"]["max_iterations"] == 11
     assert reloaded["review"]["model"] == "old"
+
+
+def test_set_profile_field_persists_float_timeout(tmp_path):
+    _write(tmp_path / ".revrem.toml", '[profiles.demo]\nreview.model = "old"\n')
+    profiles.set_profile_field(
+        "demo", "review.timeout_seconds", "0.5", cwd=tmp_path, home=tmp_path
+    )
+    reloaded = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"]
+    assert reloaded["review"]["timeout_seconds"] == 0.5
 
 
 def test_set_profile_field_unknown_raises(tmp_path):

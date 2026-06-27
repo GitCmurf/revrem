@@ -1117,9 +1117,9 @@ def _run_workspace_markup(app: Any) -> str:
     tab = _RUN_TABS[app._selected_run_tab_index]
     lines.insert(1, f"view: {tab}")
     if tab == "stdout":
-        lines.extend(_bounded_lines("stdout", app.live_run_controller.stdout_tail.lines))
+        lines.extend(_bounded_lines("stdout", app.live_run_controller.stdout_tail))
     elif tab == "stderr":
-        lines.extend(_bounded_lines("stderr", app.live_run_controller.stderr_tail.lines))
+        lines.extend(_bounded_lines("stderr", app.live_run_controller.stderr_tail))
     elif tab == "summary":
         lines.extend(_summary_lines(app.live_run_controller))
     return "\n".join(lines)
@@ -1231,7 +1231,7 @@ def _yes_no(value: bool) -> str:
     return "yes" if value else "no"
 
 
-def _bounded_lines(label: str, lines: list[str], *, limit: int = 12) -> list[str]:
+def _bounded_lines(label: str, lines: Sequence[str], *, limit: int = 12) -> list[str]:
     if not lines:
         return ["", f"[b]{label}[/]", "No captured lines yet."]
     return ["", f"[b]{label}[/]", *[tui_state.markup_escape(line) for line in lines[-limit:]]]

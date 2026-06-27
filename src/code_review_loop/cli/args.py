@@ -647,11 +647,21 @@ def build_config_parser() -> RevRemArgumentParser:
 
     set_parser = subparsers.add_parser(
         "set",
-        help="Set a single profile field non-interactively (e.g. review.model gpt-5.5).",
+        help=(
+            "Set a single profile field non-interactively "
+            "(e.g. review.model gpt-5.5, review.timeout_seconds 0.5, "
+            "or pipeline.max_iterations 11)."
+        ),
     )
     set_parser.add_argument("name")
-    set_parser.add_argument("key", help="Dotted field path, e.g. pipeline.max_iterations.")
-    set_parser.add_argument("value")
+    set_parser.add_argument(
+        "key",
+        help="Dotted field path, e.g. review.timeout_seconds, pipeline.max_iterations, or budgets.max_wall_seconds.",
+    )
+    set_parser.add_argument(
+        "value",
+        help="Field value; numeric fields accept numbers, booleans use true/false (or 1/0, yes/no, on/off).",
+    )
 
     clone = subparsers.add_parser("clone", help="Clone a resolved profile into the user config.")
     clone.add_argument("source")

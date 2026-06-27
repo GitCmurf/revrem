@@ -1421,7 +1421,23 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
     return merged
 
 
-_INT_SUFFIXES = (".max_iterations", ".inner_check_retries", ".timeout_seconds")
+_INT_SUFFIXES = (
+    ".inner_check_retries",
+    ".max_iterations",
+    ".max_remediation_input_chars",
+    ".max_tokens",
+    ".external_review_input_chars",
+    ".terminal_excerpt_chars",
+    ".provider_retry_attempts",
+)
+_FLOAT_SUFFIXES = (
+    ".check_timeout_seconds",
+    ".external_review_warning_seconds",
+    ".max_wall_seconds",
+    ".provider_retry_backoff_seconds",
+    ".soft_warn_fraction",
+    ".timeout_seconds",
+)
 # Enumerate bool keys explicitly: triage.routing.default_route is a STRING, so a
 # "triage.routing." prefix match would wrongly coerce it to bool.
 _BOOL_SUFFIXES = (
@@ -1439,6 +1455,11 @@ def _coerce_field_value(dotted_key: str, value: str) -> Any:
             return int(value)
         except ValueError as exc:
             raise ValueError(f"{dotted_key} must be an integer, got {value!r}") from exc
+    if dotted_key.endswith(_FLOAT_SUFFIXES):
+        try:
+            return float(value)
+        except ValueError as exc:
+            raise ValueError(f"{dotted_key} must be a number, got {value!r}") from exc
     if dotted_key.endswith(_BOOL_SUFFIXES):
         lowered = value.strip().lower()
         if lowered in ("true", "1", "yes", "on"):

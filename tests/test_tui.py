@@ -464,6 +464,26 @@ def test_tui_live_monitor_escapes_markup_in_event_detail(monkeypatch, tmp_path):
     assert "[bold]danger[/bold]" not in updates[0]
 
 
+def test_tui_run_workspace_render_uses_tuple_stdout_stderr_tails_without_crash(tmp_path):
+    model = tui.tui_state.build_shell_model(cwd=tmp_path, selected_profile_name="security")
+    app = tui.RevRemApp(model=model, profiles_by_name={})
+    app.live_run_controller.stdout_tail = ("line-1", "line-2")
+    app.live_run_controller.stderr_tail = ("err-1",)
+    app.live_run_controller.status = "completed-clear"
+    app._workspace = "run"
+
+    app._selected_run_tab_index = 1
+    stdout_markup = tui._run_workspace_markup(app)
+    assert "view: stdout" in stdout_markup
+    assert "line-1" in stdout_markup
+    assert "line-2" in stdout_markup
+
+    app._selected_run_tab_index = 2
+    stderr_markup = tui._run_workspace_markup(app)
+    assert "view: stderr" in stderr_markup
+    assert "err-1" in stderr_markup
+
+
 def test_tui_compact_profiles_markup_truncates_description_and_source(tmp_path):
     config_path = tmp_path / ".revrem.toml"
     config_path.write_text(
