@@ -1002,6 +1002,20 @@ def save_profile_raw(
     return write_profile_to_path(owner, parsed, force=True, raw_profile=raw_profile)
 
 
+def set_profile_field(
+    name: str,
+    dotted_key: str,
+    value: str,
+    *,
+    cwd: Path,
+    home: Path | None = None,
+) -> Path:
+    owner = profile_owner_path(name, cwd=cwd, home=home)  # raises for builtin/unknown
+    current = load_profile_file(owner).raw_profiles.get(name, {})
+    updated = deep_set_raw(current, dotted_key, value)
+    return save_profile_raw(name, updated, cwd=cwd, home=home)
+
+
 def delete_user_profile(name: str, *, home: Path | None = None) -> Path:
     path = user_config_path(home)
     profile_file = load_profile_file(path)

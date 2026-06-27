@@ -113,3 +113,18 @@ def test_save_profile_raw_preserves_sibling_profiles(tmp_path):
     assert reloaded["default"]["review"]["model"] == "gpt-5.5"
     assert reloaded["dogfood"]["review"]["model"] == "keep"
     assert reloaded["dogfood"]["pipeline"]["max_iterations"] == 5
+
+
+def test_set_profile_field_persists_single_field(tmp_path):
+    _write(tmp_path / ".revrem.toml",
+           '[profiles.demo]\nreview.model = "old"\npipeline.max_iterations = 3\n')
+    profiles.set_profile_field("demo", "pipeline.max_iterations", "11",
+                               cwd=tmp_path, home=tmp_path)
+    reloaded = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"]
+    assert reloaded["pipeline"]["max_iterations"] == 11
+    assert reloaded["review"]["model"] == "old"
+
+
+def test_set_profile_field_unknown_raises(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        profiles.set_profile_field("ghost", "review.model", "x", cwd=tmp_path, home=tmp_path)
