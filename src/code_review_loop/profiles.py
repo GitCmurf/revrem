@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy as _copy
 import json
 import os
 import re
@@ -1372,6 +1373,50 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
         else:
             merged[key] = value
     return merged
+
+
+_INT_SUFFIXES = (".max_iterations", ".inner_check_retries", ".timeout_seconds")
+# Enumerate bool keys explicitly: triage.routing.default_route is a STRING, so a
+# "triage.routing." prefix match would wrongly coerce it to bool.
+_BOOL_SUFFIXES = (
+    ".enabled",
+    ".final_review",
+    ".strict_on_unavailable_route",
+    ".allow_model_escalation",
+)
+
+
+def _coerce_field_value(dotted_key: str, value: str) -> Any:
+    if dotted_key.endswith(_INT_SUFFIXES):
+        try:
+            return int(value)
+        except ValueError as exc:
+            raise ValueError(f"{dotted_key} must be an integer, got {value!r}") from exc
+    if dotted_key.endswith(_BOOL_SUFFIXES):
+        lowered = value.strip().lower()
+        if lowered in ("true", "1", "yes", "on"):
+            return True
+        if lowered in ("false", "0", "no", "off"):
+            return False
+        raise ValueError(f"{dotted_key} must be a boolean, got {value!r}")
+    return value
+
+
+def deep_set_raw(raw: dict[str, Any], dotted_key: str, value: str) -> dict[str, Any]:
+    if not dotted_key:
+        raise ValueError("dotted_key must be non-empty")
+    coerced = _coerce_field_value(dotted_key, value)
+    result = _copy.deepcopy(raw)
+    cursor = result
+    parts = dotted_key.split(".")
+    for part in parts[:-1]:
+        nxt = cursor.get(part)
+        if not isinstance(nxt, dict):
+            nxt = {}
+            cursor[part] = nxt
+        cursor = nxt
+    cursor[parts[-1]] = coerced
+    return result
 
 
 def _reject_unknown_keys(raw: dict[str, Any], allowed: tuple[str, ...], field: str) -> None:
