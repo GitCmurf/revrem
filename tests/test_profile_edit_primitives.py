@@ -73,3 +73,43 @@ def test_profile_owner_path_rejects_builtin(tmp_path):
                 if profiles.is_builtin_profile(p.name))
     with pytest.raises(RuntimeError):
         profiles.profile_owner_path(name, cwd=tmp_path, home=tmp_path)
+
+
+def test_save_profile_raw_round_trips_minimal_toml(tmp_path):
+    _write(tmp_path / ".revrem.toml",
+           '[profiles.demo]\nreview.model = "old"\npipeline.max_iterations = 3\n')
+    raw = dict(load := profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"])
+    raw = profiles.deep_set_raw(raw, "review.model", "gpt-5.5")
+    path = profiles.save_profile_raw("demo", raw, cwd=tmp_path, home=tmp_path)
+    assert path == profiles.project_config_path(tmp_path)
+
+    reloaded = profiles.load_profile_file(path).raw_profiles["demo"]
+    assert reloaded["review"]["model"] == "gpt-5.5"
+    assert reloaded["pipeline"]["max_iterations"] == 3  # preserved
+    assert "remediation" not in reloaded  # stays minimal, no resolved-default bloat
+
+
+def test_save_profile_raw_validates(tmp_path):
+    _write(tmp_path / ".revrem.toml", '[profiles.demo]\nreview.model = "old"\n')
+    bad = profiles.deep_set_raw({}, "pipeline.max_iterations", "5")
+    bad["review"] = {"model": 123}  # wrong type for a model
+    with pytest.raises(ValueError):
+        profiles.save_profile_raw("demo", bad, cwd=tmp_path, home=tmp_path)
+
+
+def test_save_profile_raw_preserves_sibling_profiles(tmp_path):
+    # The real .revrem.toml holds multiple project profiles; editing one must
+    # not drop the others (data-loss guard).
+    _write(
+        tmp_path / ".revrem.toml",
+        '[profiles.default]\nreview.model = "old"\n\n'
+        '[profiles.dogfood]\nreview.model = "keep"\npipeline.max_iterations = 5\n',
+    )
+    raw = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["default"]
+    raw = profiles.deep_set_raw(raw, "review.model", "gpt-5.5")
+    profiles.save_profile_raw("default", raw, cwd=tmp_path, home=tmp_path)
+
+    reloaded = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles
+    assert reloaded["default"]["review"]["model"] == "gpt-5.5"
+    assert reloaded["dogfood"]["review"]["model"] == "keep"
+    assert reloaded["dogfood"]["pipeline"]["max_iterations"] == 5

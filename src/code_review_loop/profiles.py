@@ -990,6 +990,18 @@ def write_profile_to_path(
     return path
 
 
+def save_profile_raw(
+    name: str,
+    raw_profile: dict[str, Any],
+    *,
+    cwd: Path,
+    home: Path | None = None,
+) -> Path:
+    parsed = parse_profile(name, raw_profile, source="<edit>")
+    owner = profile_owner_path(name, cwd=cwd, home=home, allow_new=True)
+    return write_profile_to_path(owner, parsed, force=True, raw_profile=raw_profile)
+
+
 def delete_user_profile(name: str, *, home: Path | None = None) -> Path:
     path = user_config_path(home)
     profile_file = load_profile_file(path)
