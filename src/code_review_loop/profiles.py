@@ -753,6 +753,26 @@ def builtin_profile_readonly_message(name: str) -> str:
     )
 
 
+def profile_owner_path(
+    name: str,
+    *,
+    cwd: Path,
+    home: Path | None = None,
+    allow_new: bool = False,
+) -> Path:
+    if is_builtin_profile(name):
+        raise RuntimeError(builtin_profile_readonly_message(name))
+    project_path = project_config_path(cwd)
+    if name in load_profile_file(project_path).profiles:
+        return project_path
+    user_path = user_config_path(home)
+    if name in load_profile_file(user_path).profiles:
+        return user_path
+    if allow_new:
+        return user_path
+    raise FileNotFoundError(f"profile not found: {name}")
+
+
 def merge_profiles(name: str, *profiles: Profile) -> Profile:
     if not profiles:
         raise ValueError("merge_profiles requires at least one profile")

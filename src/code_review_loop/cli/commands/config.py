@@ -146,20 +146,7 @@ def edit_profile_config(name: str, *, cwd: Path, home: Path | None = None) -> Pa
 
 
 def _profile_config_owner_path(name: str, cwd: Path, home: Path | None = None) -> Path:
-    project_path = profiles.project_config_path(cwd)
-    project_file = profiles.load_profile_file(project_path)
-    if name in project_file.profiles:
-        return project_path
-
-    user_path = profiles.user_config_path(home)
-    user_file = profiles.load_profile_file(user_path)
-    if name in user_file.profiles:
-        return user_path
-
-    if profiles.is_builtin_profile(name):
-        raise RuntimeError(profiles.builtin_profile_readonly_message(name))
-
-    raise FileNotFoundError(f"profile not found: {name}")
+    return profiles.profile_owner_path(name, cwd=cwd, home=home)
 
 
 def _editor_command() -> list[str]:
