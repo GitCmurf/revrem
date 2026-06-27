@@ -1,0 +1,311 @@
+---
+document_id: REVREM-DESIGN-001
+type: Design
+title: Loop-First TUI Overhaul
+status: Draft
+version: "0.1"
+last_updated: '2026-06-27'
+owner: GitCmurf
+area: product
+docops_version: "2.0"
+template_type: design-standard
+template_version: "2.0"
+description: "A loop-first redesign of the revrem TUI: the loop pipeline becomes an editable vertical diagram that is the spine of both authoring and live monitoring; profiles demote to a save/load layer; prompts gain a curation library."
+keywords:
+  - revrem
+  - tui
+  - textual
+  - loop
+  - profiles
+  - prompts
+  - ux
+related_ids:
+  - REVREM-PRD-001
+  - REVREM-PLAN-007
+  - REVREM-ADR-002
+---
+
+> **Document ID:** REVREM-DESIGN-001
+> **Owner:** GitCmurf
+> **Status:** Draft
+> **Version:** 0.1
+> **Last Updated:** 2026-06-27
+> **Type:** Design
+
+# Design: Loop-First TUI Overhaul
+
+## 1. Problem
+
+The current TUI (see `RevRemApp` in `src/code_review_loop/tui.py`) renders every screen
+as plain text lines (`tuple[str]`) piped into `Static` widgets, laid out as a left
+list / right dense-detail two-pane "workbench". This reads as a text dump and has two
+named problems:
+
+1. **Profiles are hard to understand.** The profiles screen and the detail pane both try
+   to display *settings*, so profiles compete with the pipeline for the same job and the
+   mental model is muddy.
+2. **The loop is invisible as a loop.** The pipeline is shown as a flat list of phases.
+   There is no depiction of the actual control flow — the outer iterate-until-clear loop,
+   or the inner `inner_check_retries` loop (checks → remediation). Both are buried in
+   config fields.
+
+The operator's dominant workflow is **overnight, pre-PR codebase hardening — loop until
+clear** — so the run/monitor surface matters as much as authoring. Profiles are the
+"save game" for settings, and prompt management is a known growth area (prompts are
+fragment-composed and vary by harness *and* model).
+
+## 2. Goals / Non-goals
+
+**Goals**
+- Make the **loop** the centre of gravity: an editable vertical diagram that truthfully
+  depicts the active control flow (outer loop, inner check-retry loop, disabled phases).
+- Allow editing harness / model / effort / timeout / prompt **directly from the loop**,
+  including triage's nested routes table.
+- Reuse the loop diagram as the **live run/monitor** view (same shape, two modes).
+- Demote **profiles** to a clean save/load picker.
+- Keep a **prompts library** for curation, with in-loop prompt picking for the common case.
+- Move to **real interactive Textual widgets** (focus, selection, mouse + keyboard).
+
+**Non-goals**
+- Loop **reordering / topology editing** (not a CLI capability; out of scope).
+- Replacing the CLI write path. All edits continue to shell through `revrem config`.
+- A standalone visual prompt-fragment composer (future roadmap; this design only reserves
+  the library surface).
+
+## 3. Design principles
+
+1. **The loop diagram is the spine of the app** — the same vertical diagram is used to
+   *author* a loop and to *watch* it run. One mental model, two modes.
+2. **The diagram is config-truthful.** What you see always equals what the profile will
+   do: inner rail only drawn when `inner_check_retries > 0`; disabled phases dim and drop
+   out of the data flow; `final review` only shown when enabled.
+3. **Edit where you see it.** Summary always visible per phase; the focused phase expands
+   in place to edit. Single fields edit inline; large content (prompts, route rows) opens
+   a focused modal.
+4. **CLI-equivalence is preserved.** The TUI launches runs and writes config exactly as
+   the CLI does; `assert_equivalent_run_artifacts` parity is maintained. `render_shell_text`
+   is retained as a headless fallback derived from the same state, but is no longer the
+   load-bearing render path.
+5. **Profiles are the save layer, not the settings layer.** They load settings into the
+   loop and save the current loop; they never try to display full settings.
+
+## 4. Architecture
+
+### 4.1 Render strategy
+Replace the "render screens to text lines into `Static`" approach with genuine Textual
+widgets. The existing pure functions in `tui_state.py` (`pipeline_phases`, `profile_view`,
+`run_monitor_view`, etc.) remain the **view-model layer** — they already compute exactly
+the data each widget needs. Widgets consume those view-models; they do not read profiles
+directly.
+
+```
+profiles.Profile / run records
+        │  (pure functions, unchanged)
+        ▼
+tui_state view-models  ──►  Textual widgets (interactive)   [primary path]
+        │                                                     keyboard + mouse
+        └────────────────►  render_shell_text(...)           [headless fallback]
+```
+
+### 4.2 Edit path — working copy + explicit save (PREREQUISITE)
+
+**Constraint discovered during design.** The CLI has no non-interactive field-level write.
+`config` exposes `new` (`--description` + `--no-interactive` only), `edit` (opens
+`$EDITOR`, not driveable), `clone`, `delete`, `export`, `import`, `doctor`. There is **no**
+`config set <profile> <key> <value>`, and the run path has no per-field override flags
+(only `--base`). The library *does* have a whole-profile writer
+(`profiles.write_profile_to_path`). So inline editing has **no headless write path today**
+— this is a prerequisite, not an assumption.
+
+**Chosen model: working copy + explicit save.** This fits the operator's stated mental
+model ("profiles are the save game").
+
+1. The TUI loads a profile into an **in-memory working copy**. Inline edits mutate the
+   working copy only — no CLI call per keystroke. A `*` marks unsaved changes.
+2. **Save → profile** persists the whole working copy in one write. Implementation reuses
+   the non-interactive `config import` path (serialize the working copy to TOML, import
+   under the target name with `--force`) rather than introducing a brand-new granular
+   setter. (Alternative considered: add `revrem config set <profile> <key> <value>` so
+   each edit persists immediately — rejected for this iteration: more CLI surface, and
+   auto-persist conflicts with the "save game" model.)
+3. **Run** launches `revrem --profile NAME`, so a working copy must be saved first. If the
+   working copy is dirty, `run` offers *save-and-run* (persist, then launch). This keeps
+   run/artifact CLI-equivalence intact (the run is still `revrem --profile NAME`).
+
+This means **a small non-interactive persist capability is the first implementation task**
+(confirm `config import` can target a named profile non-interactively, or add a thin
+`config write`/`set`). It must land before inline editing is wired up.
+
+### 4.3 Optional-dependency posture
+Textual remains an optional `[tui]` extra. The lazy-import / fallback scaffolding in
+`tui.py` (`_TextualComponents`, `_TextualFallbackApp`) is retained; when Textual is absent,
+`render_shell_text` provides the headless view.
+
+## 5. Screens
+
+Navigation: **`1 Loop · 2 Run · 3 Profiles · 4 Prompts`** (Loop first). Compact top bar:
+`app · loaded profile (with * when modified) · base / iteration summary`. Bottom bar:
+contextual keys for the active screen.
+
+### 5.1 Loop (centerpiece)
+
+Vertical accordion. Each phase shows a one-line summary always; the focused phase expands
+in place. `●`/`○` = enabled/disabled (space toggles). The left gutter draws the loop
+rails; arrows carry their real exit condition and bound.
+
+Flat phase focused (review):
+
+```
+┌─ LOOP · default ──────── base main · max 11 · stop when clear · inner-check retries: 2 ───┐
+│                                                                                           │
+│  ┌▶ ▼ review ◀ ──────────────────────────────────────────── codex · gpt-5.5 · med · 600s │
+│  │     harness ‹ codex ›   model ‹ gpt-5.5 ›   effort ‹ medium ›   timeout ‹ 600s ›       │
+│  │     prompt  built-in review (codex)        [↵ pick · e edit]                           │
+│  │                                                                                         │
+│  │     ○ triage ──────────────────────────────────────────────────────────────── off ─── │
+│  │  ┌▶ ● remediation ─────────────────────────────────── codex · gpt-5.4-mini · med · 600s│
+│  │  │  ● checks ───────────────────────────────────────────────────────────── 2 commands │
+│  │  └◀─ checks failed → remediation   (up to 2 inner retries)                             │
+│  │     ● commit ───────────────────────────────────────────── codex · gpt-5.3-spark · 300s│
+│  └◀──── not clear & iteration < 11 → review                                                │
+│                                                                                           │
+│  ⚑ final review  (runs once when the loop ends) ─────────────────── codex · gpt-5.5 · med │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
+ ↑↓ phase · space enable · ↵ expand/edit · e prompt · r run · d dry-run · s save→profile · ? help
+```
+
+Triage focused & ON — the discriminating case; expands into its nested routes table:
+
+```
+│  ▼ triage ◀ ──────────────────────────────────────────── codex · routes: 3 · default→remed.│
+│    routing   default ‹ remediation ›   strict ‹ off ›   escalate-model ‹ on ›             │
+│    ┌ routes ────────┬───────────┬────────┬───────┬───────────┬─────────────┐             │
+│    │ ▸ security   codex │ gpt-5.5  │ high  │ 600s │ read-only │ remediation │             │
+│    │   correctness codex│ gpt-5.4  │ med   │ 600s │ read-only │ remediation │             │
+│    │   nit        claude│ haiku-4.5│ low   │ 300s │ none      │ drop        │             │
+│    └────────────────┴───────────┴────────┴───────┴───────────┴─────────────┘             │
+│    [↵ edit route · a add · x remove]                                                       │
+```
+
+Interaction:
+- Single fields (harness, model, effort, timeout) edit **inline** (cycle/`‹ ›` select or
+  small inline input).
+- **Prompt** is harness-aware: codex `review` shows `built-in review (codex)`; other
+  harnesses show the selected prompt/fragments. `↵ pick` opens the library picker; `e`
+  opens a prompt-edit modal.
+- **Route rows** edit in a focused modal (`↵ edit route`); `a`/`x` add/remove.
+- Disabled phases render dimmed and drop out of the rails.
+
+### 5.2 Run / monitor
+
+The same diagram, live. `✓` done · `▶` running · `·` pending · `⤫` disabled. Iteration and
+inner-retry counters ride on the loop arrows.
+
+```
+┌─ RUN · default ──────────────  running · iteration 3 / 11 · 04:12 elapsed ───────────────┐
+│                                                                                          │
+│  ┌▶ ✓ review        2 findings (not clear)            codex · gpt-5.5 · 0:48             │
+│  │     ⤫ triage      disabled                                                             │
+│  │  ┌▶ ✓ remediation  2 fixed                          codex · gpt-5.4-mini · 1:30        │
+│  │  │  ▶ checks       running 1/2  ▕▰▰▰▱▱▏             pytest · 0:21                       │
+│  │  └◀─ inner retry 0 / 2                                                                  │
+│  │     · commit       pending                                                             │
+│  └◀──── iteration 3 / 11 · not yet clear                                                   │
+│                                                                                          │
+│  events ─────────────────────────────────────────────────────────────────────────────── │
+│   12:31:50  remediation  applied 2 fixes                                                   │
+│   12:32:11  checks       running pytest -q …                                               │
+│  ──────────────────────────────────────────────────────────────────────────────────────  │
+│  artifacts: run-2026…06-27 · 14 files      p pause · k stop · l logs · o open dir         │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Backed by the existing `run_monitor_view`, `run_event_views`, and artifact/event plumbing.
+For the overnight workflow this answers "where is it / how many iterations left / is it
+converging" at a glance, with the event tail and artifacts for a morning post-mortem.
+
+### 5.3 Profiles (save / load)
+
+A picker, not a settings editor. Each row: identity + one-line loop summary. Light grouping
+separates the operator's saves from preset starting points.
+
+```
+┌─ PROFILES ─────────────────────────────────────────────────────────────────────────────┐
+│  load a saved loop · 8 available                                                          │
+│                                                                                          │
+│  ─ yours ──────────────────────────────────────────────────────────────                 │
+│  ▸ default     project  main · 11 iters · 2 checks · triage off     ← loaded              │
+│    dogfood     project  main · 3 iters  · 5 checks · triage on                            │
+│    final-pr    user     main · 2 iters  · 0 checks                                        │
+│  ─ presets ────────────────────────────────────────────────────────────                 │
+│    docs        builtin  main · 2 iters · 0 checks                                         │
+│    security    builtin  main · 2 iters · 0 checks                                         │
+│    refactor    builtin  main · 2 iters · 0 checks    … (3 more)                           │
+│                                                                                          │
+│  “Saved from RevRem CLI on 2026-05-05”                                                    │
+│  ─────────────────────────────────────────────────────────────────────────────────────  │
+│  ↵ load into loop · s save current · n new · c clone · e rename · x export · del delete   │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+`presets` (builtin) double as the team-guidance mechanism in the roadmap: a recommended
+loop you hand to others. Actions shell through `revrem config` as today.
+
+### 5.4 Prompts (library + in-loop picking)
+
+Prompts are fragment-composed (`prompts/fragments/`, `triage_v1/v2.txt`,
+`prompts_composer.py`) with trust levels and versioning. Division of labour:
+
+- **In-loop:** harness-aware prompt field — pick from library, quick-edit, or show
+  `built-in` for codex review. Covers the 80% case.
+- **Library (`4 Prompts`):** curate prompts + fragments, tagged by harness + model, with
+  versioning. Home for roadmap features (per-model recommended prompts, swap-on-new-model,
+  diffing). This design delivers the **library surface + in-loop picking**; advanced
+  curation tooling is reserved, not built here.
+
+## 6. Component breakdown
+
+Each widget consumes a view-model and is independently testable.
+
+| Widget | Purpose | Consumes | Notes |
+| --- | --- | --- | --- |
+| `LoopDiagram` | vertical accordion + rails; focus/selection | `pipeline_phases()` + loop meta | draws rails from config truth |
+| `PhaseCard` | one phase summary + inline expand/edit | `PhaseView` | flat-field editing |
+| `TriageRoutesTable` | nested routing + routes table | triage routing/routes | route-row modal |
+| `LoopRunView` | live mode of the diagram | `run_monitor_view` + events | status glyphs, counters |
+| `EventLog` | scrolling event tail | `run_event_views` | reuses `event_row_text` |
+| `ProfilePicker` | grouped save/load list | `profile_view`/snapshot | load / save-current |
+| `PromptField` | harness-aware prompt cell | phase + harness caps | picker + edit modal |
+| `PromptLibrary` | curate prompts/fragments | prompts inventory | roadmap surface |
+| `PromptEditModal`, `RouteEditModal` | focused editors | single item | overlay screens |
+
+State model: a single `TuiShellModel`-style object holds the loaded profile, modified
+flag, selected screen/phase, and run state; widgets render from it and emit
+`revrem config` / run intents back to the controller.
+
+## 7. Error handling
+
+- Config edits that fail validation surface the `revrem config` error inline on the field /
+  modal; the model is not mutated until the command succeeds.
+- Run/monitor degrades gracefully when events are unavailable (existing `event_error`
+  path) and when artifacts are missing (existing `exists` flag).
+- Missing Textual → headless `render_shell_text`.
+
+## 8. Testing
+
+- **Snapshot tests** for each widget's rendered output (Textual pilot / SVG export) across
+  representative profiles: triage off, triage on with routes, `inner_check_retries` 0 vs N,
+  final review on/off.
+- **Pilot smoke** (`test_tui_pilot_smoke.py`) extended for navigation and inline editing.
+- **CLI-equivalence preserved**: `test_tui_cli_equivalence.py` /
+  `assert_equivalent_run_artifacts` must continue to pass — TUI-launched runs equal
+  CLI-launched runs.
+- **View-model unit tests** stay valuable since widgets consume view-models.
+
+## 9. Open questions / future
+
+- Depth of in-loop prompt editing vs. deferring to the library (resolved direction: pick +
+  quick-edit in loop; deep curation in library).
+- Prompt library data model for harness×model recommendations (roadmap).
+- Whether `presets` editing should be blocked (builtin) vs. clone-to-edit (lean: clone-to-edit).
+```
