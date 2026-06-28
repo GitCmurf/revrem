@@ -168,6 +168,33 @@ def test_config_set_route_edit_uses_inherited_v2_contract_context(tmp_path, monk
     assert profiles.resolve_profile("demo", cwd=tmp_path, home=tmp_path).triage.contract == "v2"
 
 
+def test_config_set_preserves_explicit_empty_route_table_on_unrelated_edit(
+    tmp_path, monkeypatch
+):
+    _write(
+        tmp_path / ".revrem.toml",
+        "[profiles.demo]\n"
+        'review.model = "old"\n'
+        "[profiles.demo.triage]\n"
+        "[profiles.demo.triage.routing]\n"
+        'default_route = "foo"\n'
+        "[profiles.demo.triage.routes.foo]\n",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    code = config_cmd.main(["set", "demo", "review.timeout_seconds", "1"])
+    assert code == 0
+
+    persisted = (tmp_path / ".revrem.toml").read_text(encoding="utf-8")
+    assert "[profiles.demo.triage.routes.foo]" in persisted
+
+    reloaded = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"]
+    assert reloaded["review"]["timeout_seconds"] == 1
+    assert reloaded["triage"]["routing"]["default_route"] == "foo"
+    assert reloaded["triage"]["routes"]["foo"] == {}
+
+
 def test_config_set_routing_default_route_preserves_owner_routing_metadata_over_project_default(
     tmp_path, monkeypatch
 ):

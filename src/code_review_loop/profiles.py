@@ -957,7 +957,11 @@ def _profile_toml_dict(
             continue
         rendered[key] = rendered_item
 
-    return rendered or None
+    if rendered:
+        return rendered
+    if raw_dict is not None:
+        return {}
+    return None
 
 
 def _profile_toml_value(
