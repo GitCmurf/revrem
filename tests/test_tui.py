@@ -472,6 +472,72 @@ artifact_dir = "{artifact_dir}"
     assert launched_artifact_dirs == ["artifacts/new"]
 
 
+def test_tui_edit_profile_keeps_current_session_on_invalid_profile_toml(monkeypatch, tmp_path):
+    notifications = []
+    launched_artifact_dirs = []
+
+    home = tmp_path / "home"
+    config_path = home / ".config" / "revrem" / "profiles.toml"
+    config_path.parent.mkdir(parents=True)
+
+    def write_profile(artifact_dir: str) -> None:
+        config_path.write_text(
+            f"""
+[profiles.final-pr]
+description = "Final PR"
+
+[profiles.final-pr.output]
+artifact_dir = "{artifact_dir}"
+""",
+            encoding="utf-8",
+        )
+
+    def write_invalid_profile() -> None:
+        config_path.write_text("[profiles.final-pr\n", encoding="utf-8")
+
+    write_profile("artifacts/old")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(tui.Path, "cwd", lambda: tmp_path)
+
+    def fake_run_launch_plan(plan, *, cwd, capture_output=True):
+        if plan.mode == "edit":
+            write_invalid_profile()
+        return types.SimpleNamespace(returncode=0)
+
+    def fake_start(**kwargs) -> types.SimpleNamespace:
+        profile = kwargs["profile"]
+        launched_artifact_dirs.append(profile.output.artifact_dir)
+        return types.SimpleNamespace(artifact_dir_arg=profile.output.artifact_dir)
+
+    app = tui.RevRemApp(
+        model=tui.tui_state.build_shell_model(cwd=tmp_path, selected_profile_name="final-pr"),
+        profiles_by_name={
+            profile.name: profile
+            for profile in tui.profiles.resolve_profiles(
+                cwd=tmp_path,
+                require_implemented=False,
+                include_builtins=True,
+            )
+        },
+    )
+    monkeypatch.setattr(tui, "run_launch_plan", fake_run_launch_plan)
+    monkeypatch.setattr(app, "notify", lambda message: notifications.append(message), raising=False)
+    app.live_run_controller.start = fake_start
+
+    app.action_edit_profile()
+    assert any(
+        "Profile refresh skipped: invalid profile config on disk; "
+        "keeping current in-session profile state." in message
+        for message in notifications
+    )
+    assert app.profiles_by_name["final-pr"].output.artifact_dir == "artifacts/old"
+
+    app.action_launch_run()
+    app.action_launch_run()
+    assert launched_artifact_dirs == ["artifacts/old"]
+    assert notifications[-1].endswith("final-pr (artifacts/old)")
+
+
 def test_tui_live_monitor_refresh_updates_run_monitor_widget(monkeypatch, tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()

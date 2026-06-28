@@ -285,7 +285,9 @@ shells through the same CLI command plans as normal terminal usage.
 During a live run, the run monitor refreshes continuously and streams stdout/stderr
 into the dedicated tabs while output is still in flight.
 Profile edits done in-session are visible to subsequent live runs without restarting
-the TUI.
+the TUI. If a profile edit leaves invalid TOML or schema on disk, the TUI keeps
+the current session profile in use and reports a non-fatal warning instead of
+crashing.
 
 ## Status
 

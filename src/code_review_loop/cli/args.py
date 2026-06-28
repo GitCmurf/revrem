@@ -642,7 +642,13 @@ def build_config_parser() -> RevRemArgumentParser:
     )
     new.add_argument("--force", action="store_true")
 
-    edit = subparsers.add_parser("edit", help="Open the owning config file in $EDITOR.")
+    edit = subparsers.add_parser(
+        "edit",
+        help=(
+            "Open the owning config file in $EDITOR. Invalid edits are rejected and the "
+            "current in-session profile cache is preserved."
+        ),
+    )
     edit.add_argument("name")
 
     set_parser = subparsers.add_parser(

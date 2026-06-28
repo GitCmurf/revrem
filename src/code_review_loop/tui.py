@@ -758,21 +758,49 @@ class _RevRemAppMixin:
     def _refresh_profiles_from_disk(self) -> None:
         selected_profile_name = self._profile_name()
         cwd = Path(self.model.snapshot.cwd)
+
         try:
-            self.model = tui_state.build_shell_model(
+            refreshed_model = tui_state.build_shell_model(
                 cwd=cwd,
                 selected_profile_name=selected_profile_name,
             )
         except FileNotFoundError:
-            self.model = tui_state.build_shell_model(cwd=cwd)
-        self.profiles_by_name = {
-            profile.name: profile
-            for profile in profiles.resolve_profiles(
-                cwd=cwd,
-                require_implemented=False,
-                include_builtins=True,
+            try:
+                refreshed_model = tui_state.build_shell_model(cwd=cwd)
+            except ValueError as exc:
+                _notify(
+                    self,
+                    "Profile refresh skipped: invalid profile config on disk; "
+                    f"keeping current in-session profile state. ({exc})",
+                )
+                return
+        except ValueError as exc:
+            _notify(
+                self,
+                "Profile refresh skipped: invalid profile config on disk; "
+                f"keeping current in-session profile state. ({exc})",
             )
-        }
+            return
+
+        try:
+            refreshed_profiles_by_name = {
+                profile.name: profile
+                for profile in profiles.resolve_profiles(
+                    cwd=cwd,
+                    require_implemented=False,
+                    include_builtins=True,
+                )
+            }
+        except ValueError as exc:
+            _notify(
+                self,
+                "Profile refresh skipped: invalid profile config on disk; "
+                f"keeping current in-session profile state. ({exc})",
+            )
+            return
+
+        self.model = refreshed_model
+        self.profiles_by_name = refreshed_profiles_by_name
         if selected_profile_name is None or not self.model.snapshot.profiles:
             self._selected_profile_index = 0
         else:

@@ -1622,7 +1622,8 @@ workspace or pane focus changes; operators can keep working in Profiles/Loop/
 Prompts while the background run continues to stream.
 Profile updates performed in-session (for example via `e`/Edit) are re-resolved
 before the next live launch so changed settings (like `output.artifact_dir`) take
-effect immediately.
+effect immediately. If an edited profile is malformed, the refresh is rejected with
+a non-fatal notification, and the current in-session profile remains active.
 Cancellation runs in a background worker and sends `SIGINT` to the child process
 group first, so a normal active run writes the standard `cancellation` event and
 `summary.json` with exit code `5`; `SIGTERM` and `SIGKILL` are reserved for
