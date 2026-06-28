@@ -1177,8 +1177,9 @@ def set_profile_field(
     updated = deep_set_raw(current, dotted_key, value)
     merged = _merged_profile_raw_for_edit(name, user_file=user_file, project_file=project_file)
     merged_updated = deep_set_raw(merged, dotted_key, value)
-    # Validate against the full inherited profile chain to enforce inherited defaults
-    # and route-table constraints.
+    # Validate routing-sensitive updates against the full inherited profile chain.
+    # Route-table and routing edits both need inherited triage contract/routes for
+    # correct validation and cross-field compatibility checks.
     parse_profile(name, merged_updated, source="<edit>")
 
     # Preserve explicit owner values by rendering only the owning profile's raw
@@ -1186,8 +1187,9 @@ def set_profile_field(
     # context and materialize the effective route rows needed for reload-safe
     # local config.
     route_edit = dotted_key.startswith("triage.routes.")
+    routing_edit = dotted_key.startswith("triage.routing.")
+    merged_validation = route_edit or routing_edit
     parsed: Profile
-    merged_route_context: dict[str, Any] = {}
     merged_routing = None
     merged_routes = None
     merged_default_route = None
@@ -1195,23 +1197,29 @@ def set_profile_field(
     if isinstance(merged_triage, dict):
         merged_routing = merged_triage.get("routing")
         merged_routes = merged_triage.get("routes")
-        if isinstance(merged_routing, dict):
-            merged_route_context["routing"] = merged_routing
-        if isinstance(merged_routes, dict):
-            merged_route_context["routes"] = merged_routes
-    if route_edit:
+    if merged_validation:
         # Keep inherited triage contract/routing state (especially v2 routing
         # from defaults/project) while validating the owner-facing route edit.
         parsed = parse_profile(name, merged_updated, source="<edit>")
     else:
         parsed = parse_profile(name, updated, source="<edit>")
     raw_profile = updated
-    if route_edit:
+    write_routing_context = dotted_key == "triage.routing.enabled" and parsed.triage.routing.enabled
+    if route_edit or write_routing_context:
         raw_profile = _copy.deepcopy(updated)
         triage_raw = raw_profile.setdefault("triage", {})
         if not isinstance(triage_raw, dict):
             triage_raw = {}
             raw_profile["triage"] = triage_raw
+
+        if dotted_key == "triage.routing.enabled" and write_routing_context:
+            merged_contract = None
+            if isinstance(merged_triage, dict):
+                merged_contract = merged_triage.get("contract")
+                if not isinstance(merged_contract, str):
+                    merged_contract = None
+            if merged_contract is not None:
+                triage_raw.setdefault("contract", merged_contract)
 
         if isinstance(merged_routing, dict):
             merged_default_route = merged_routing.get("default_route")
@@ -1242,8 +1250,9 @@ def set_profile_field(
                 else:
                     routes_raw[route_name] = _copy.deepcopy(inherited_route)
 
-            route_name = dotted_key[len("triage.routes.") :].split(".", 1)[0]
-            _materialize_route(route_name)
+            if route_edit:
+                route_name = dotted_key[len("triage.routes.") :].split(".", 1)[0]
+                _materialize_route(route_name)
             if isinstance(merged_default_route, str):
                 _materialize_route(merged_default_route)
     edit_reference = parse_profile(name, merged, source="<edit>")

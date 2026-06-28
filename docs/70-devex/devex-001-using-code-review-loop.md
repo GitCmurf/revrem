@@ -814,6 +814,7 @@ Edit one field without opening `$EDITOR`:
     revrem config set final-pr review.model gpt-5.5
     revrem config set final-pr review.timeout_seconds 0.5
     revrem config set final-pr triage.routing.default_route codex-midi
+    revrem config set final-pr triage.routing.enabled true
     revrem config set final-pr triage.routes.codex-midi.model gpt-5.4-mini
     revrem config set final-pr budgets.max_wall_seconds 7200
     revrem config set final-pr runtime.provider_retry_attempts 5
@@ -846,8 +847,10 @@ If a user-owned value conflicts with a project default for the same field, `conf
 rewrites only the selected field and keeps the user-owned explicit value in place.
 `config set` validates using the full effective chain (user defaults + project
 defaults + profile), including inherited route tables. For routing edits this
-means `triage.routing.default_route` and `triage.routes.<name>.*` must resolve to
-a route present in that inherited route table, otherwise the edit is rejected.
+means `triage.routing.enabled`, `triage.routing.default_route`, and `triage.routes.<name>.*`
+must resolve to a route present in that inherited route table, otherwise the edit is rejected.
+In inherited-v2 setups, this is how non-interactive routing enablement stays valid without
+pre-materializing full route tables into the owning profile.
 For `triage.routes.<name>.*` specifically, explicit route field edits are validated
 against inherited routing context and the edited route row is materialized into the
 owning profile (including inherited values). If the edited route is not the

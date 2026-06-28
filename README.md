@@ -167,6 +167,7 @@ revrem config edit final-pr
 revrem config set final-pr pipeline.max_iterations 11
 revrem config set final-pr runtime.provider_retry_attempts 5
 revrem config set final-pr triage.routing.default_route codex-midi
+revrem config set final-pr triage.routing.enabled true
 revrem config set final-pr triage.routes.codex-midi.model gpt-5.4-mini
 revrem config set final-pr review.timeout_seconds 0.5
 revrem config set final-pr triage.timeout_seconds 0
@@ -213,7 +214,8 @@ merged context, otherwise the edit is rejected.
 persisted with inherited route values (plus the default route row when needed) so
 the owning profile remains loadable when read alone.
 This includes the common inherited-routing scenario where `triage.contract = "v2"` and
-`triage.routing.enabled = true` are supplied only by defaults.
+`triage.routing.enabled = true` are supplied only by defaults. In that case, non-interactive `config set`
+writes the requested leaf and validates against inherited routing context before saving.
 
 In an interactive terminal, bare `revrem` (or `revrem --wizard`) opens a guided
 setup. It offers your last compatible settings or the recommended defaults,

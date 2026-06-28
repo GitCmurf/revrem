@@ -655,7 +655,8 @@ def build_config_parser() -> RevRemArgumentParser:
             "in the owning profile are retained. Only the requested field is rewritten "
             "(top-level or dotted), even if it conflicts with an inherited default. "
             "(e.g. description \"Local profile\", review.model gpt-5.5, triage.routes.codex-midi.model gpt-5, "
-            "output.no_tty true, runtime.full_auto off, triage.routing.default_route codex-midi, "
+            "triage.routing.enabled true, triage.contract v2, output.no_tty true, runtime.full_auto off, "
+            "triage.routing.default_route codex-midi, "
             "and description \"\", or pipeline.max_iterations 11). With --format json, this command emits a "
             "object describing the edit and destination path. Routing edits are "
             "validated against the effective inherited route table after user and "
@@ -671,7 +672,8 @@ def build_config_parser() -> RevRemArgumentParser:
         "key",
         help=(
             "Field path, e.g. description, review.timeout_seconds, output.no_tty, "
-            "runtime.full_auto, triage.routing.default_route, or budgets.max_wall_seconds."
+            "runtime.full_auto, triage.contract, triage.routing.enabled, triage.routing.default_route, "
+            "triage.routes.<name>.model, or budgets.max_wall_seconds."
         ),
     )
     set_parser.add_argument(

@@ -136,6 +136,36 @@ def test_config_set_route_edit_uses_inherited_v2_contract_context(tmp_path, monk
     assert profiles.resolve_profile("demo", cwd=tmp_path, home=tmp_path).triage.contract == "v2"
 
 
+def test_config_set_routing_enabled_edit_uses_inherited_v2_contract_context(tmp_path, monkeypatch):
+    _write(
+        tmp_path / ".config" / "revrem" / "profiles.toml",
+        "[defaults]\n"
+        "[defaults.triage]\n"
+        "enabled = true\n"
+        'contract = "v2"\n'
+        "[defaults.triage.routing]\n"
+        'default_route = "codex-midi"\n'
+        "enabled = true\n"
+        "strict_on_unavailable_route = false\n"
+        "allow_model_escalation = false\n"
+        "[defaults.triage.routes.codex-midi]\n"
+        'harness = "codex"\n',
+    )
+    _write(tmp_path / ".revrem.toml", '[profiles.demo]\nreview.model = "old"\n')
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    code = config_cmd.main(["set", "demo", "triage.routing.enabled", "true"])
+    assert code == 0
+
+    reloaded = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"]
+    resolved = profiles.resolve_profile("demo", cwd=tmp_path, home=tmp_path)
+    assert reloaded["triage"]["routing"]["enabled"] is True
+    assert reloaded["triage"]["routing"]["default_route"] == "codex-midi"
+    assert reloaded["triage"]["routes"]["codex-midi"]["harness"] == "codex"
+    assert resolved.triage.contract == "v2"
+
+
 def test_config_set_does_not_materialize_inherited_defaults(tmp_path, monkeypatch):
     _write(
         tmp_path / ".revrem.toml",
