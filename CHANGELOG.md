@@ -64,6 +64,10 @@ This project follows Semantic Versioning once public releases begin.
 - Routed remediation now inherits the remediation phase timeout when a route
   omits `timeout_seconds`, so `--remediation-timeout-seconds` applies to routed
   runs instead of falling back to the shared default timeout.
+- Stale initial-review validation now runs before triage, routing, or
+  remediation. If the old finding is already resolved, RevRem records only the
+  validation/check artifacts and exits `stale_review_already_resolved` without
+  misleading routing or remediation artifacts.
 - Saved summaries now include a compact `command` string when a sanitized
   command line is available, matching the existing `command_line` and
   `invocation.json` metadata.

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Literal, cast
 
-from code_review_loop import budgets, stale_review, stale_validation_status, triage
+from code_review_loop import budgets, stale_validation_status, triage
 from code_review_loop.adapters.checks import (
     all_failed_checks_are_revrem_timeouts as _all_failed_checks_are_revrem_timeouts,
 )
@@ -33,6 +33,7 @@ from code_review_loop.core.engine import (
     RunCommit,
     RunRemediation,
     RunReview,
+    RunStaleValidation,
     RunTriage,
     TriageDone,
 )
@@ -63,7 +64,7 @@ from code_review_loop.runner_check_attempts import record_check_attempt
 from code_review_loop.runner_commit_phase import execute_commit_phase
 from code_review_loop.runner_retry_phase import retry_after_checks, retry_after_commit_hook
 from code_review_loop.runner_routing_phase import resolve_routing_accumulator
-from code_review_loop.runner_stale_phase import run_stale_preflight
+from code_review_loop.runner_stale_phase import execute_stale_validation_phase
 
 _ENGINE_STEPS_PER_ITERATION = 10
 _ENGINE_STEP_BUDGET_OVERHEAD = 4
@@ -99,6 +100,8 @@ class _RunnerEngineExecutor:
                 next_state = replace(engine_state, event=LoopStarted(), iteration=engine_state.iteration + 1)
             case RunReview(is_final=is_final):
                 next_state = self._run_review(engine_state, is_final=is_final)
+            case RunStaleValidation():
+                next_state = self._run_stale_validation(engine_state)
             case RunTriage():
                 next_state = self._run_triage(engine_state)
             case RunRemediation():
@@ -257,6 +260,22 @@ class _RunnerEngineExecutor:
             return replace(engine_state, event=TriageDone(is_clear=False, exc=exc))
         return replace(engine_state, acc=acc, event=TriageDone(is_clear=False))
 
+    def _run_stale_validation(self, engine_state: EngineState) -> EngineState:
+        result = execute_stale_validation_phase(
+            config=self.config,
+            ctx=self.ctx,
+            clock=self.clock,
+            run_state=self.state,
+            engine_state=engine_state,
+            expected_head=self.expected_head,
+        )
+        self.cause = result.cause or self.cause
+        self.stale_review_validation_output = (
+            result.validation_output or self.stale_review_validation_output
+        )
+        self.stale_review_status_before = result.status_before
+        return result.state
+
     def _run_remediation(self, engine_state: EngineState) -> EngineState:
         iteration = engine_state.iteration
         retry_count = engine_state.acc.inner_check_retry_count
@@ -267,18 +286,7 @@ class _RunnerEngineExecutor:
             remediation_input = engine_state.acc.last_review_output
             if engine_state.acc.pending_check_failures:
                 remediation_input = engine_state.acc.pending_check_failures + "\n\n" + remediation_input
-        validating_stale_review = stale_review.should_validate_stale_review(
-            self.config,
-            engine_state,
-            initial_review_output=self.initial_review_output,
-        )
-        in_stale_preflight = validating_stale_review
         try:
-            if in_stale_preflight:
-                self.stale_review_status_before = stale_validation_status.non_artifact_status_snapshot(
-                    self.config,
-                    self.ctx,
-                )
             assert_worktree_stable_before_remediation(
                 self.config,
                 self.ctx,
@@ -286,23 +294,6 @@ class _RunnerEngineExecutor:
                 expected_head=self.expected_head,
             )
             rem_start_time = self.clock.monotonic()
-            if in_stale_preflight:
-                preflight = run_stale_preflight(
-                    config=self.config,
-                    ctx=self.ctx,
-                    clock=self.clock,
-                    iteration=iteration,
-                    remediation_input=remediation_input,
-                    acc=engine_state.acc,
-                    started_at=rem_start_time,
-                    status_before=self.stale_review_status_before,
-                )
-                if preflight.acc is not None:
-                    self.stale_review_validation_output = preflight.summary
-                    self.state.iterations[-1]["stale_review_resolved"] = True
-                    return replace(engine_state, acc=preflight.acc, event=RemediationDone())
-                self.state.iterations[-1]["stale_review_still_applies"] = True
-                in_stale_preflight = False
             rem_outcome = self.ctx.phase_remediation.execute(
                 RemediationRequest(
                     iteration=iteration,
@@ -313,46 +304,28 @@ class _RunnerEngineExecutor:
                 ),
                 self.ctx,
             )
-            combined_output = _combined_output(rem_outcome.result)
             acc = replace(
                 engine_state.acc,
                 remediation_input=remediation_input,
                 remediation_result_returncode=rem_outcome.result.returncode,
                 remediation_duration=self.clock.monotonic() - rem_start_time,
-                stale_review_resolved=(
-                    validating_stale_review
-                    and stale_review.contains_resolved_marker(combined_output)
-                ),
             )
-            if acc.stale_review_resolved:
-                dirty = stale_validation_status.dirty_message(
-                    self.config,
-                    self.ctx,
-                    self.stale_review_status_before,
-                )
-                if dirty:
-                    raise RuntimeError(dirty)
-                self.stale_review_validation_output = stale_review.validation_summary(combined_output)
-                self.state.iterations[-1]["stale_review_resolved"] = True
         except budgets.BudgetExceeded:
             raise
         except Exception as exc:
             self.cause = exc
-            failure_reason: Literal["stale_validation_failed", "remediation_failed"] = (
-                "stale_validation_failed" if in_stale_preflight else "remediation_failed"
-            )
-            self.state.iterations[-1][failure_reason] = True
+            self.state.iterations[-1]["remediation_failed"] = True
             emit_loop_failure_event(
                 self.config,
-                phase="stale-validation" if in_stale_preflight else "remediate",
+                phase="remediate",
                 iteration=iteration,
-                reason=failure_reason,
+                reason="remediation_failed",
                 error=str(exc),
                 ctx=self.ctx,
             )
             return replace(
                 engine_state,
-                event=RemediationDone(exc=exc, failure_reason=failure_reason),
+                event=RemediationDone(exc=exc, failure_reason="remediation_failed"),
             )
         return replace(engine_state, acc=acc, event=RemediationDone())
 

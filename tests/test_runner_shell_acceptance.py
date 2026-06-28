@@ -48,6 +48,7 @@ def _snapshot(config: LoopConfig) -> ConfigSnapshot:
         commit_after_remediation=config.commit_after_remediation,
         commit_on_hook_failure=config.commit_on_hook_failure,
         final_review=config.final_review,
+        initial_review_mode=config.initial_review_mode,
     )
 
 
@@ -466,6 +467,162 @@ def test_runner_shell_marks_stale_review_resolved_when_validation_noops(
     assert state.iterations[0]["stale_review_resolved"] is True
     assert (config.artifact_dir / "stale-validation-1.txt").is_file()
     assert (config.artifact_dir / "stale-validation-1-prompt.txt").is_file()
+
+
+def test_runner_shell_resolved_stale_review_skips_triage_routing_and_remediation(
+    tmp_path: Path,
+) -> None:
+    profile = profiles.Profile(
+        name="test",
+        triage=profiles.TriageConfig(
+            contract="v2",
+            routing=profiles.TriageRoutingConfig(enabled=True, default_route="frontier"),
+            routes={"frontier": profiles.TriageRouteConfig(harness="codex", model="fake-clear")},
+        ),
+    )
+    config = replace(
+        _config(tmp_path, max_iterations=1, triage_enabled=True),
+        commit_after_remediation=True,
+        initial_review_mode="stale",
+        triage_contract="v2",
+        profile_v2=profile,
+    )
+    triage = StaticTriageHarness(
+        payload={
+            "schema_version": "2.0",
+            "run_id": FIXED_RUN_ID,
+            "source_review_artifact": "review-initial.txt",
+            "confirmed_findings": [
+                {"summary": "Old finding", "severity": "P2", "files": ["profiles.py"]}
+            ],
+            "classification": {
+                "domain_tags": ["config"],
+                "risk_level": "medium",
+                "refactor_depth": "atomic",
+                "module_count": 1,
+            },
+        },
+    )
+    remediation = RecordingRemediationHarness()
+    ctx, sink = _context(
+        config,
+        review=SequencedReviewHarness(["clear"]),
+        triage=triage,
+        remediation=remediation,
+        runner=_stale_validation_runner("resolved"),
+    )
+    clock = ctx.clock
+    try:
+        state = _state(config)
+
+        result = run_iterations(
+            config=config,
+            state=state,
+            clock=clock,
+            ctx=ctx,
+            snap=_snapshot(config),
+            initial_review_output="Full review comments:\n\n- [P2] Old finding\n",
+            run_id=FIXED_RUN_ID,
+        )
+    finally:
+        sink.close()
+
+    assert result.outcome.reason == "stale_review_already_resolved"
+    assert triage.calls == []
+    assert remediation.calls == []
+    assert (config.artifact_dir / "stale-validation-1.txt").is_file()
+    assert not (config.artifact_dir / "triage-1.txt").exists()
+    assert not (config.artifact_dir / "routing-1.json").exists()
+    assert not (config.artifact_dir / "routing-outcome-1.json").exists()
+    assert not (config.artifact_dir / "remediation-1-prompt.txt").exists()
+    records, _ = events.read_events(config.artifact_dir / "events.jsonl")
+    kinds = [record.kind for record in records]
+    assert "routing_decision" not in kinds
+    assert "routing_outcome" not in kinds
+
+
+def test_runner_shell_still_applicable_stale_review_validates_before_routing(
+    tmp_path: Path,
+) -> None:
+    profile = profiles.Profile(
+        name="test",
+        triage=profiles.TriageConfig(
+            contract="v2",
+            routing=profiles.TriageRoutingConfig(enabled=True, default_route="frontier"),
+            routes={"frontier": profiles.TriageRouteConfig(harness="codex", model="fake-clear")},
+        ),
+    )
+    config = replace(
+        _config(tmp_path, max_iterations=1, triage_enabled=True),
+        commit_after_remediation=False,
+        initial_review_mode="stale",
+        triage_contract="v2",
+        profile_v2=profile,
+        remediation_harness="fake",
+    )
+
+    class AssertingTriageHarness(StaticTriageHarness):
+        def __init__(self) -> None:
+            super().__init__(
+                handoff="fix it",
+                payload={
+                    "schema_version": "2.0",
+                    "run_id": FIXED_RUN_ID,
+                    "source_review_artifact": "review-initial.txt",
+                    "confirmed_findings": [
+                        {
+                            "summary": "Old finding still applies",
+                            "severity": "P2",
+                            "files": ["profiles.py"],
+                        }
+                    ],
+                    "classification": {
+                        "domain_tags": ["config"],
+                        "risk_level": "medium",
+                        "refactor_depth": "atomic",
+                        "module_count": 1,
+                    },
+                },
+            )
+            self.validation_artifact_seen = False
+
+        def execute(self, request, ctx):
+            self.validation_artifact_seen = (config.artifact_dir / "stale-validation-1.txt").is_file()
+            return super().execute(request, ctx)
+
+    triage = AssertingTriageHarness()
+    remediation = RecordingRemediationHarness()
+    ctx, sink = _context(
+        config,
+        review=SequencedReviewHarness(["clear"]),
+        triage=triage,
+        remediation=remediation,
+        runner=_stale_validation_runner("still_applies"),
+    )
+    clock = ctx.clock
+    try:
+        state = _state(config)
+
+        result = run_iterations(
+            config=config,
+            state=state,
+            clock=clock,
+            ctx=ctx,
+            snap=_snapshot(config),
+            initial_review_output="Full review comments:\n\n- [P2] Old finding still applies\n",
+            run_id=FIXED_RUN_ID,
+        )
+    finally:
+        sink.close()
+
+    assert result.outcome.reason == "review_clear"
+    assert triage.validation_artifact_seen is True
+    assert triage.calls
+    assert remediation.calls
+    assert state.iterations[0]["stale_review_still_applies"] is True
+    assert (config.artifact_dir / "stale-validation-1.txt").is_file()
+    assert (config.artifact_dir / "routing-1.json").is_file()
+    assert (config.artifact_dir / "routing-outcome-1.json").is_file()
 
 
 def test_runner_shell_skips_commit_when_stale_review_resolved(

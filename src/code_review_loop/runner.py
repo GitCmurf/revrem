@@ -51,6 +51,7 @@ def _config_snapshot(config: LoopConfig) -> ConfigSnapshot:
         commit_on_hook_failure=config.commit_on_hook_failure,
         final_review=config.final_review,
         inner_check_retries=config.inner_check_retries,
+        initial_review_mode=config.initial_review_mode,
     )
 
 

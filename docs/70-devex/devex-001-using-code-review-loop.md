@@ -3,8 +3,8 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.75'
-last_updated: '2026-06-23'
+version: '1.76'
+last_updated: '2026-06-28'
 owner: GitCmurf
 docops_version: '2.0'
 area: devex
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.75
-> **Last Updated:** 2026-06-23
+> **Version:** 1.76
+> **Last Updated:** 2026-06-28
 > **Type:** DEVEX
 > **Area:** devex
 > **Description:** Operator guide for the code-review-loop utility
@@ -412,16 +412,18 @@ When an operator intentionally uses a pending review from a different
 `HEAD`/base, RevRem treats it as stale-review validation instead of ordinary
 remediation. RevRem first runs a read-only stale-validation provider pass using
 the configured review harness/model. That pass decides whether the finding
-still applies to the current checkout before any write-capable remediation
-provider is invoked. If the finding is already resolved, the validator must make
-no edits and include
+still applies to the current checkout before triage, routing, or any
+write-capable remediation provider is invoked. If the finding is already
+resolved, RevRem skips triage/routing/remediation artifacts for that iteration,
+runs the configured checks, and then exits clear if validation and checks left
+the non-artifact Git status unchanged. The validator must make no edits and include
 `STALE_REVIEW_VALIDATION:` evidence ending with
 `REVREM_STALE_REVIEW_STATUS: resolved` in its response. When checks pass and
 the non-artifact Git status snapshot remains unchanged, RevRem stops as
 `clear (stale_review_already_resolved)`, exits `0`, and surfaces only the
 compact validation output instead of continuing to report the old stale
 finding. If validation returns `REVREM_STALE_REVIEW_STATUS: still_applies`,
-RevRem proceeds to normal remediation. If validation returns `unknown` or the
+RevRem proceeds to normal triage, routing, and remediation. If validation returns `unknown` or the
 read-only validation provider fails, RevRem stops before remediation. RevRem
 parses only the first `STALE_REVIEW_VALIDATION:` block in provider stdout before
 any `[stderr]` transcript, so echoed prompt templates or review context cannot
@@ -1892,6 +1894,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.76 | 2026-06-28 | Codex | Documented stale-review validation ordering before triage/routing/remediation |
 | 1.75 | 2026-06-23 | Codex | Documented bundled expert profiles, examples, completions, demo regeneration, and the failure diagnostics guide |
 | 1.74 | 2026-06-23 | Codex | Aligned the example paid dogfood workflow with the documented `run-dogfood` label gate |
 | 1.73 | 2026-06-23 | Codex | Documented the no-provider GitHub Action smoke workflow and `run-dogfood` label gate before paid dogfood runs |

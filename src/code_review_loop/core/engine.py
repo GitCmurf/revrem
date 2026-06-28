@@ -46,6 +46,7 @@ class ConfigSnapshot:
     commit_on_hook_failure: str  # "fail" | "remediate" | "no-verify"
     final_review: bool
     inner_check_retries: int = 0
+    initial_review_mode: str = "none"
 
 
 # ---------------------------------------------------------------------------
@@ -100,6 +101,14 @@ class TriageDone:
 
 
 @dataclass(frozen=True)
+class StaleValidationDone:
+    """Emitted after validating whether a stale initial review still applies."""
+
+    status: Literal["resolved", "still_applies", "unknown"]
+    exc: BaseException | None = None
+
+
+@dataclass(frozen=True)
 class RemediationDone:
     """Emitted after the remediation phase completes."""
 
@@ -129,6 +138,7 @@ class NoFinalReview:
 PhaseEvent = (
     LoopStarted
     | ReviewDone
+    | StaleValidationDone
     | TriageDone
     | RemediationDone
     | ChecksDone
@@ -157,6 +167,11 @@ class RunReview:
 @dataclass(frozen=True)
 class RunTriage:
     """Run the triage phase for current review findings."""
+
+
+@dataclass(frozen=True)
+class RunStaleValidation:
+    """Validate a stale initial review before triage/remediation."""
 
 
 @dataclass(frozen=True)
@@ -196,6 +211,7 @@ class Stop:
 Action = (
     Continue
     | RunReview
+    | RunStaleValidation
     | RunTriage
     | RunRemediation
     | RunChecks
@@ -257,6 +273,7 @@ def run(state: EngineState, ctx: EngineExecutor, *, max_steps: int | None = None
             (
                 Continue,
                 RunReview,
+                RunStaleValidation,
                 RunTriage,
                 RunRemediation,
                 RunChecks,
@@ -288,7 +305,9 @@ def decide(
     if isinstance(event, LoopStarted):
         return RunReview(is_final=False)
     if isinstance(event, ReviewDone):
-        return _decide_review(cfg, acc, event)
+        return _decide_review(cfg, acc, event, iteration)
+    if isinstance(event, StaleValidationDone):
+        return _decide_stale_validation(cfg, acc, event)
     if isinstance(event, TriageDone):
         return _decide_triage(acc, event)
     if isinstance(event, RemediationDone):
@@ -303,7 +322,9 @@ def decide(
     assert_never(event)
 
 
-def _decide_review(cfg: ConfigSnapshot, acc: LoopAccumulator, event: ReviewDone) -> Action:
+def _decide_review(
+    cfg: ConfigSnapshot, acc: LoopAccumulator, event: ReviewDone, iteration: int
+) -> Action:
     if event.exc is not None:
         return Stop(OutcomeFailed(reason="review_failed", error=str(event.exc)))
     if not event.is_final:
@@ -311,6 +332,13 @@ def _decide_review(cfg: ConfigSnapshot, acc: LoopAccumulator, event: ReviewDone)
             return Stop(OutcomeClear(reason="review_clear", excerpt=""))
         if event.status == "unknown" and not acc.pending_check_failures:
             return Stop(OutcomeUnknown(reason="review_unknown"))
+        if (
+            event.status == "findings"
+            and cfg.initial_review_mode == "stale"
+            and iteration == 1
+            and not acc.pending_check_failures
+        ):
+            return RunStaleValidation()
         if cfg.triage_enabled:
             return RunTriage()
         return RunRemediation()
@@ -326,6 +354,25 @@ def _decide_review(cfg: ConfigSnapshot, acc: LoopAccumulator, event: ReviewDone)
     if event.status == "findings":
         return Stop(OutcomeFindings(reason="max_iterations_reached"))
     return Stop(OutcomeUnknown(reason="max_iterations_reached"))
+
+
+def _decide_stale_validation(
+    cfg: ConfigSnapshot, acc: LoopAccumulator, event: StaleValidationDone
+) -> Action:
+    if event.exc is not None:
+        return Stop(OutcomeFailed(reason="stale_validation_failed", error=str(event.exc)))
+    if event.status == "resolved":
+        return RunChecks()
+    if event.status == "unknown":
+        return Stop(
+            OutcomeFailed(
+                reason="stale_validation_failed",
+                error="stale review validation returned unknown status",
+            )
+        )
+    if cfg.triage_enabled:
+        return RunTriage()
+    return RunRemediation()
 
 
 def _decide_triage(acc: LoopAccumulator, event: TriageDone) -> Action:
