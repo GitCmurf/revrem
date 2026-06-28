@@ -167,6 +167,7 @@ revrem config edit final-pr
 revrem config set final-pr pipeline.max_iterations 11
 revrem config set final-pr runtime.provider_retry_attempts 5
 revrem config set final-pr triage.routing.default_route codex-midi
+revrem config set final-pr triage.routes.codex-midi.model gpt-5.4-mini
 revrem config set final-pr review.timeout_seconds 0.5
 revrem config set final-pr triage.timeout_seconds 0
 revrem config set final-pr output.no_tty true
@@ -204,6 +205,7 @@ route tables are included when checking whether `default_route` is known.
 `config set` validates using the full effective chain (user defaults + project
 defaults + profile), including inherited route tables. If you edit routing, the
 target route must exist in that merged route table or the edit is rejected.
+This includes both `triage.routing.default_route` and `triage.routes.<name>.*`.
 
 In an interactive terminal, bare `revrem` (or `revrem --wizard`) opens a guided
 setup. It offers your last compatible settings or the recommended defaults,

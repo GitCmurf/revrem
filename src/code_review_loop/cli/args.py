@@ -654,12 +654,12 @@ def build_config_parser() -> RevRemArgumentParser:
             "(not materialized in the owning profile). Explicit values already present "
             "in the owning profile are retained. Only the requested field is rewritten "
             "(top-level or dotted), even if it conflicts with an inherited default. "
-            "(e.g. description \"Local profile\", review.model gpt-5.5, output.no_tty true, "
-            "runtime.full_auto off, triage.routing.default_route codex-midi, and description \"\", or "
-            "pipeline.max_iterations 11). With --format json, this command emits a machine-readable "
+            "(e.g. description \"Local profile\", review.model gpt-5.5, triage.routes.codex-midi.model gpt-5, "
+            "output.no_tty true, runtime.full_auto off, triage.routing.default_route codex-midi, "
+            "and description \"\", or pipeline.max_iterations 11). With --format json, this command emits a "
             "object describing the edit and destination path. Routing edits are validated "
             "against the effective inherited route table after user and project defaults "
-            "are applied."
+            "are applied; this includes both triage.routing.default_route and triage.routes.* edits."
         ),
     )
     set_parser.add_argument("name")
