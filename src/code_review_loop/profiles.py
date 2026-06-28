@@ -1177,7 +1177,12 @@ def set_profile_field(
     updated = deep_set_raw(current, dotted_key, value)
     merged = _merged_profile_raw_for_edit(name, user_file=user_file, project_file=project_file)
     merged_updated = deep_set_raw(merged, dotted_key, value)
-    parsed = parse_profile(name, merged_updated, source="<edit>")
+    # Validate against the full inherited profile chain to enforce inherited defaults
+    # and route-table constraints.
+    parse_profile(name, merged_updated, source="<edit>")
+    # Preserve any explicit owner values by rendering only the owning profile's raw
+    # structure, then materializing with that as the base.
+    parsed = parse_profile(name, updated, source="<edit>")
     edit_reference = parse_profile(name, merged, source="<edit>")
     return write_profile_to_path(
         owner,

@@ -33,6 +33,30 @@ def test_config_set_accepts_float_timeout(tmp_path, monkeypatch):
     assert reloaded["review"]["timeout_seconds"] == 0.5
 
 
+def test_config_set_preserves_shadowed_user_value(tmp_path, monkeypatch):
+    _write(
+        tmp_path / ".config" / "revrem" / "profiles.toml",
+        "[profiles.demo]\n"
+        "[profiles.demo.remediation]\n"
+        'model = "user"\n',
+    )
+    _write(
+        tmp_path / ".revrem.toml",
+        "[defaults]\n"
+        "[defaults.remediation]\n"
+        'model = "repo"\n',
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    code = config_cmd.main(["set", "demo", "review.timeout_seconds", "0.5"])
+    assert code == 0
+
+    reloaded = profiles.load_profile_file(tmp_path / ".config" / "revrem" / "profiles.toml").raw_profiles["demo"]
+    assert reloaded["remediation"]["model"] == "user"
+    assert reloaded["review"]["timeout_seconds"] == 0.5
+
+
 def test_config_set_accepts_integer_field(tmp_path, monkeypatch):
     _write(tmp_path / ".revrem.toml", '[profiles.demo]\nreview.model = "old"\n')
     monkeypatch.chdir(tmp_path)

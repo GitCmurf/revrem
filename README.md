@@ -183,6 +183,9 @@ The global form `revrem config --format json set ...` is also supported.
 Boolean profile fields are written as TOML booleans. `config set` accepts
 `true/false`, `1/0`, `yes/no`, and `on/off` for those fields.
 `config set` rewrites only the requested dotted field path for one profile.
+If a requested key conflicts with a value inherited from defaults or overlays,
+`config set` keeps the explicit value already in the owning profile and rewrites
+only the requested field.
 Omitted fields stay as-is and continue inheriting from any applicable
 resolved profile chain (`user defaults`, `project defaults`, and named profile
 overlays) instead of being materialized during the save. In particular,

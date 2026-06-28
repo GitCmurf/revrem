@@ -187,6 +187,27 @@ def test_set_profile_field_persists_single_field(tmp_path):
     assert reloaded["review"]["model"] == "old"
 
 
+def test_set_profile_field_preserves_shadowed_user_value(tmp_path):
+    _write(
+        tmp_path / ".config" / "revrem" / "profiles.toml",
+        "[profiles.demo]\n"
+        "[profiles.demo.remediation]\n"
+        'model = "user"\n',
+    )
+    _write(
+        tmp_path / ".revrem.toml",
+        "[defaults]\n"
+        "[defaults.remediation]\n"
+        'model = "repo"\n',
+    )
+
+    profiles.set_profile_field("demo", "review.timeout_seconds", "0.5", cwd=tmp_path, home=tmp_path)
+
+    reloaded = profiles.load_profile_file(tmp_path / ".config" / "revrem" / "profiles.toml").raw_profiles["demo"]
+    assert reloaded["remediation"]["model"] == "user"
+    assert reloaded["review"]["timeout_seconds"] == 0.5
+
+
 def test_set_profile_field_preserves_inherited_defaults(tmp_path):
     _write(
         tmp_path / ".revrem.toml",

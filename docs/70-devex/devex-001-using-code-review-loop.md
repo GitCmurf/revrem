@@ -814,12 +814,12 @@ Edit one field without opening `$EDITOR`:
     revrem config set final-pr review.model gpt-5.5
     revrem config set final-pr review.timeout_seconds 0.5
     revrem config set final-pr triage.routing.default_route codex-midi
-revrem config set final-pr budgets.max_wall_seconds 7200
-revrem config set final-pr runtime.provider_retry_attempts 5
-revrem config set final-pr output.no_tty true
-revrem config set final-pr runtime.full_auto off
-revrem config set final-pr description ""
-revrem config set final-pr output.no_tty true --format json
+    revrem config set final-pr budgets.max_wall_seconds 7200
+    revrem config set final-pr runtime.provider_retry_attempts 5
+    revrem config set final-pr output.no_tty true
+    revrem config set final-pr runtime.full_auto off
+    revrem config set final-pr description ""
+    revrem config set final-pr output.no_tty true --format json
 
 Numeric fields (including `...max_iterations`, `...max_tokens`,
 `...max_wall_seconds`, and `...provider_retry_attempts`) are parsed as numeric
@@ -841,6 +841,8 @@ revrem config set final-pr description ""
 ```
 If a profile is defined at both user and project scope, project edits preserve
 user-owned values as inherited, and do not copy those into `.revrem.toml`.
+If a user-owned value conflicts with a project default for the same field, `config set`
+rewrites only the selected field and keeps the user-owned explicit value in place.
 `config set` validates using the full effective chain (user defaults + project
 defaults + profile), including inherited route tables. For routing edits this
 means `triage.routing.default_route` must resolve to a route present in that
