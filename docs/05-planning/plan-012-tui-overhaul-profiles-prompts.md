@@ -3,7 +3,7 @@ document_id: REVREM-PLAN-012
 type: PLAN
 title: TUI Overhaul Plan 4 — Profiles Picker, Prompts Library, Route Editing
 status: Draft
-version: '0.3'
+version: '0.4'
 last_updated: '2026-06-28'
 owner: GitCmurf
 docops_version: '2.0'
@@ -31,7 +31,7 @@ related_ids:
 
 **Goal:** Finish the overhaul's authoring surface. Demote **profiles** to a clean grouped save/load picker (yours vs presets) that loads a profile into the live loop working copy; add a **prompts** library that browses the fragment-composed prompt inventory and lets the operator pick/edit the scalar prompt fields in-loop; and add a **route-row modal** so triage's per-route cells (rendered read-only in Plan 2) become editable through the same working-copy model.
 
-**Architecture:** Three additions on the Plan 2/3 foundation, all routed through the existing `LoopEditModel` working copy and the existing `revrem config` actions. (1) A `ProfilePicker` widget over the existing `profile_view` snapshot, grouped by source, whose load action re-points the loop's `LoopEditModel`; profile lifecycle (new/clone/export/delete/import) reuses the `tui_state` `*_plan_for_name` shell-outs unchanged. (2) A pure `prompt_inventory()` view-model over the packaged prompt fragments + triage contracts, surfaced by a browse-only `PromptLibrary` and a harness-aware `PromptField`; a `PromptEditModal` edits the **scalar** prompt fields (`triage.prompt`, `commit.message_prompt`) into the working copy. (3) A `RouteEditModal` edits triage route **cells** (`triage.routes.<name>.*`) into the working copy; the verified-equivalent `save_profile_raw` persist path keeps route edits CLI-equivalent.
+**Architecture:** Three additions on the Plan 2/3 foundation, all routed through the existing `LoopEditModel` working copy and the existing `revrem config` actions. (1) A `ProfilePicker` widget over the existing `profile_view` snapshot, grouped by source, whose load action re-points the loop's `LoopEditModel`; profile lifecycle (new/clone/export/delete/import) reuses the `tui_state` lifecycle shell-outs unchanged. (2) A pure `prompt_inventory()` view-model over the packaged prompt fragments + triage contracts, surfaced by a browse-only `PromptLibrary` and a harness-aware `PromptField`; a `PromptEditModal` edits the **scalar** prompt fields (`triage.prompt`, `commit.message_prompt`) into the working copy. (3) A `RouteEditModal` edits triage route **cells** (`triage.routes.<name>.*`) into the working copy; before route editing ships, the shared `save_profile_raw` path must materialize inherited route context the same way `set_profile_field` does, so route edits remain one explicit Save instead of immediate per-field writes.
 
 **Tech Stack:** Python 3.12, Textual 8.2.5 (optional, lazy), `pytest` + Textual pilot, the Plan 2 `LoopEditModel` + `tui_loop_widgets` factory pattern, `prompts_composer` (`load_fragment`), and the `profiles` route edit primitives.
 
@@ -48,10 +48,10 @@ related_ids:
 
 Every task's requirements implicitly include this section.
 
-- **Everything routes through the working copy + existing CLI actions.** Prompt and route edits mutate the Plan 2 `LoopEditModel` (`set_field`) and persist through the *same* `save_profile_raw` Save; profile lifecycle (new/clone/export/delete/import/show/edit) reuses the existing `tui_state.*_plan_for_name` shell-outs to `revrem config`. No new persistence primitive is introduced.
+- **Everything routes through the working copy + existing CLI actions.** Prompt and route edits mutate the Plan 2 `LoopEditModel` (`set_field`) and persist through the *same* `save_profile_raw` Save; profile lifecycle (new/clone/export/delete/show/edit) reuses the existing `tui_state.*_plan_for_name` shell-outs to `revrem config`, while import uses `tui_state.import_plan_for_path(path)`. No route edit may persist immediately through `set_profile_field`; if route saves need inherited-context materialization, implement it in `save_profile_raw` first.
 - **Raw TOML keys (verified 2026-06-28).** Scalar prompt fields: `triage.prompt`, `commit.message_prompt`. Route cells: `triage.routes.<name>.harness`, `.model`, `.reasoning_effort`, `.timeout_seconds`, `.sandbox`, `.fallback`. Routing-level (already in Plan 2): `triage.routing.default_route`, `.strict_on_unavailable_route`, `.allow_model_escalation`. (Note: `base`/`max_iterations`/`final_review` live under `[pipeline]`, i.e. `pipeline.*` — relevant only if a modal touches them, which it does not here.)
 - **Two structural limits are explicit scope cuts, not bugs.** The Plan 1 `deep_set_raw` / `save_profile_raw` primitives set a **scalar at a dict path** and **deep-merge** on write. Therefore: (a) **prompt-fragment list editing** (`triage.routing.rule[].then.prompt_fragments` is a *list*) has no working-copy save path — the `PromptLibrary` is **browse-only**, fragment-list mutation and external copy actions are deferred; (b) **route deletion** cannot be expressed (merge-only write cannot remove a key) — `RouteEditModal` supports **edit existing cells + add a route**, deletion is deferred. Both are stated in the relevant tasks and the docs; do not fake them.
-- **Route persistence is CLI-equivalent (verified).** For an inheriting profile, `save_profile_raw("p", {"triage":{"routes":{R:{...}}}})` produced a byte-identical owner file to `set_profile_field("p","triage.routes.R....", ...)` on 2026-06-28. Task 5 locks this with a round-trip test; if a future fallback-closure case diverges, fall back to per-field `set_profile_field` for routes (documented in Task 5).
+- **Route persistence must be made CLI-equivalent before Task 5.** Source inspection on 2026-06-28 shows `set_profile_field` has route/routing-specific inherited-context materialization, while `save_profile_raw` currently deep-merges the authored raw delta into the owner fragment. Treat route equivalence as a required failing test, not a verified premise. The chosen fix is to extend `save_profile_raw` / `write_profile_to_path` inputs so route deltas materialize the same inherited default route and fallback closure as `set_profile_field`; do **not** split route edits into immediate `set_profile_field` writes, because that would violate the Loop screen's one explicit Save model.
 - **Profiles are the save layer, not a settings editor.** The `ProfilePicker` shows identity + a one-line loop summary per row, grouped *yours* (project/user) vs *presets* (builtin); it never tries to render full settings. Builtins are loadable read-only presets. Saving a builtin-backed working copy must surface the existing clone-to-edit message from `profiles.profile_owner_path`; it must not silently write a user/project owner. Operators clone first, then edit the clone.
 - **Optional Textual; config-truthful; degrade gracefully.** Same posture as Plans 2–3: lazy widget factories, `render_shell_text` fallback, guarded empties.
 - **Branch & commits.** Work on `feat/tui-live-runs` (never `main`). Stage files explicitly per task — never `git add -A`. End every commit message with:
@@ -62,14 +62,16 @@ Every task's requirements implicitly include this section.
 
 ## Pre-flight check for the executor
 
-Re-confirm the route-persist equivalence still holds before Task 5 (it gates whether route edits may use the working-copy path):
+Confirm the route-persist equivalence test fails before changing `save_profile_raw`, then make it pass as a prerequisite to Task 5:
 
 ```python
 from code_review_loop import profiles
 # inheriting-route profile in repo A and B; then:
 # save_profile_raw("p", {"triage":{"routes":{"security":{"model":"x"}}}}, cwd=A)
 # set_profile_field("p", "triage.routes.security.model", "x", cwd=B)
-# assert (A/".revrem.toml").read_text() == (B/".revrem.toml").read_text()
+# Expected before the prerequisite fix: these files may diverge because
+# set_profile_field materializes inherited route context and save_profile_raw does not.
+# Expected after the prerequisite fix: byte-identical owner files.
 ```
 
 ---
@@ -77,11 +79,12 @@ from code_review_loop import profiles
 ## File structure
 
 - **Modify** `src/code_review_loop/tui_state.py` — add `profile_picker_groups`, `prompt_inventory`, `prompt_field_label`.
+- **Modify** `src/code_review_loop/profiles.py` — make `save_profile_raw` materialize inherited route context for route-cell deltas before route UI ships.
 - **Modify** `src/code_review_loop/tui_loop_widgets.py` — add lazy factories: `profile_picker_class()`, `prompt_library_class()`, `prompt_edit_modal_class()`, `route_edit_modal_class()`.
 - **Modify** `src/code_review_loop/tui.py` — mount `ProfilePicker` (Profiles workspace) and `PromptLibrary` (Prompts workspace); wire load-into-loop, prompt-edit, and route-edit modals; bindings.
 - **Create** `tests/test_tui_profiles_prompts_view.py` — pure-layer tests.
 - **Modify** `tests/test_tui_pilot_smoke.py` — picker / library / modal pilot tests.
-- **Modify** `docs/70-devex/devex-001-using-code-review-loop.md`, `CHANGELOG.md`.
+- **Modify** `docs/30-design/design-001-loop-first-tui-overhaul.md`, `docs/70-devex/devex-001-using-code-review-loop.md`, `CHANGELOG.md`.
 
 ---
 
@@ -419,7 +422,7 @@ A browse-only inventory of the fragment-composed prompt assets, tagged with trus
 - Test: `tests/test_tui_profiles_prompts_view.py`
 
 **Interfaces:**
-- Consumes: the packaged `code_review_loop.prompts` resources (`fragments/*.txt`, `triage_v1.txt`, `triage_v2.txt`) via `importlib.resources`; `prompts_composer.load_fragment` for trusted-builtin resolution.
+- Consumes: the packaged `code_review_loop.prompts` resources (`fragments/*.txt`, `triage_v1.txt`, `triage_v2.txt`) via `importlib.resources`.
 - Produces:
   - `@dataclass(frozen=True) class PromptAsset`: `name`, `kind` (`"fragment"`/`"contract"`), `trust` (`"builtin"`), `preview` (first ~80 chars).
   - `prompt_inventory() -> tuple[PromptAsset, ...]`.
@@ -756,18 +759,19 @@ Make the Plan 2 read-only triage routes table editable: edit a route's cells and
 
 **Files:**
 - Modify: `src/code_review_loop/tui_loop_widgets.py`, `src/code_review_loop/tui.py`
+- Modify: `src/code_review_loop/profiles.py` (route materialization in `save_profile_raw`, before widget work)
 - Test: `tests/test_tui_pilot_smoke.py`, `tests/test_tui_loop_model.py`
 
 **Interfaces:**
-- Consumes: `LoopEditModel.set_field`/`save`; the loop's triage routes (`profile.triage.routes`); `HARNESS_CHOICES`/`EFFORT_CHOICES` (Plan 2); `profiles.set_profile_field` (for the equivalence test).
+- Consumes: `LoopEditModel.set_field`/`save`; the loop's triage routes (`profile.triage.routes`); `HARNESS_CHOICES`/`EFFORT_CHOICES` (Plan 2); `profiles.set_profile_field` (only as the byte-equivalence oracle for the shared save primitive).
 - Produces: `route_edit_modal_class()` (a `ModalScreen` with per-cell inputs); `action_edit_route` + `action_add_route` on the app, bound on the Loop workspace when triage is focused.
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 0: Fix the shared route-save primitive before UI work**
 
-Append to `tests/test_tui_loop_model.py` (locks route-edit CLI-equivalence, the new risk this task introduces):
+Append to `tests/test_tui_loop_model.py` (locks the architectural requirement that route edits remain in the working copy and persist through one Save):
 
 ```python
-def test_route_cell_edit_round_trips_to_config_set(tmp_path):
+def test_route_cell_edit_save_materializes_inherited_route_like_config_set(tmp_path):
     body = "\n".join(
         (
             "[defaults.triage.routing]",
@@ -799,7 +803,45 @@ def test_route_cell_edit_round_trips_to_config_set(tmp_path):
     assert (repo_model / ".revrem.toml").read_text(encoding="utf-8") == (
         repo_set / ".revrem.toml"
     ).read_text(encoding="utf-8")
+
+
+def test_route_cell_edit_save_materializes_fallback_closure(tmp_path):
+    body = "\n".join(
+        (
+            "[defaults.triage.routing]",
+            "enabled=true",
+            "default_route='foo'",
+            "[defaults.triage.routes.foo]",
+            "harness='codex'",
+            "fallback='bar'",
+            "sandbox='read-only'",
+            "[defaults.triage.routes.bar]",
+            "harness='codex'",
+            "sandbox='workspace-write'",
+            "[profiles.p]",
+            "[profiles.p.pipeline]",
+            "base='main'",
+            "[profiles.p.triage]",
+            "enabled=true",
+        )
+    )
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    (repo / ".revrem.toml").write_text(body + "\n", encoding="utf-8")
+
+    model = LoopEditModel.load("p", cwd=repo)
+    model.set_field("triage.routes.foo.model", "gpt-9")
+    model.save()
+
+    reloaded = profiles.resolve_profile("p", cwd=repo, require_implemented=False)
+    assert reloaded.triage.routes["foo"].fallback == "bar"
+    assert "bar" in reloaded.triage.routes
 ```
+
+Run: `python -m pytest tests/test_tui_loop_model.py -k "route_cell_edit_save" -q`
+Expected before implementation: FAIL — the saved owner file lacks the inherited route rows/materialized fallback closure. Implement inherited route materialization in `save_profile_raw` so the tests pass. Do not route the TUI Save path through per-field `set_profile_field`.
+
+- [ ] **Step 1: Write the failing UI tests**
 
 Append a pilot test to `tests/test_tui_pilot_smoke.py`:
 
@@ -907,10 +949,10 @@ def test_route_add_rejects_invalid_and_duplicate_names(tmp_path):
     asyncio.run(run())
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **Step 2: Run UI tests to verify they fail**
 
-Run: `python -m pytest tests/test_tui_loop_model.py -k route_cell tests/test_tui_pilot_smoke.py -k route_edit -q`
-Expected: FAIL — `_apply_route_edit` not defined (pilot); the model round-trip test should PASS already if Plan 2's `save_profile_raw` path is correct (it is the equivalence lock — keep it).
+Run: `python -m pytest tests/test_tui_pilot_smoke.py -k route_edit -q`
+Expected: FAIL — `_apply_route_edit` not defined.
 
 - [ ] **Step 3: Implement the route-edit apply path + modal**
 
@@ -968,9 +1010,17 @@ In `src/code_review_loop/tui.py`, import `re` near the other standard-library im
         )
 ```
 
-Add the `route_edit_modal_class()` factory to `src/code_review_loop/tui_loop_widgets.py` — a `ModalScreen` (mirror `tui.text_prompt_screen_class`) presenting the route's cells as cyclable/enterable fields and calling back with `(route, cell, value)` tuples on submit. Bind `a` → `action_add_route` on the Loop workspace; the route-edit modal opens from the triage-focused card on `Enter` (extend Plan 2's `action_select`/expand handling to detect a triage-route selection).
+Add the `route_edit_modal_class()` factory to `src/code_review_loop/tui_loop_widgets.py` — a `ModalScreen` (mirror `tui.text_prompt_screen_class`) with a concrete layout:
 
-**Deferred (stated, not built):** route **deletion** (`x remove` in the design mockup) — the working-copy `save_profile_raw` is merge-only and cannot remove a route key; this needs a delete-capable primitive (future plan). The route-edit modal must not offer a remove action that silently no-ops.
+- Header: `Route: <name>` and a one-line status hint.
+- One row per scalar cell: `harness`, `model`, `reasoning_effort`, `timeout_seconds`, `sandbox`, `fallback`.
+- `harness` cycles through Plan 2 `HARNESS_CHOICES`; `reasoning_effort` cycles through Plan 2 `EFFORT_CHOICES`; `model`, `timeout_seconds`, `sandbox`, and `fallback` use text inputs.
+- `Tab` / `Shift+Tab` moves between rows; `Enter` submits the focused cell; `Esc` cancels.
+- Submission calls the callback with `(route, cell, value)`.
+
+Bind `a` → `action_add_route` on the Loop workspace; the route-edit modal opens from the triage-focused card on `Enter` (extend Plan 2's `action_select`/expand handling to detect a selected triage-route row). If the selected row is the routing metadata row rather than a route row, `Enter` expands/collapses instead of opening the modal.
+
+**Deferred (stated, not built):** route **deletion** (`x remove` in the design mockup) — the working-copy `save_profile_raw` is merge-only and cannot remove a route key; this needs a delete-capable primitive (future plan). The route-edit modal must not offer a remove action that silently no-ops. Task 6 updates REVREM-DESIGN-001 §5.1 so the design no longer advertises `x remove` as shipped in this slice.
 
 - [ ] **Step 4: Run tests + full suite**
 
@@ -980,7 +1030,7 @@ Expected: PASS repo-wide.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/code_review_loop/tui_loop_widgets.py src/code_review_loop/tui.py tests/test_tui_pilot_smoke.py tests/test_tui_loop_model.py
+git add src/code_review_loop/profiles.py src/code_review_loop/tui_loop_widgets.py src/code_review_loop/tui.py tests/test_tui_pilot_smoke.py tests/test_tui_loop_model.py
 git commit -m "feat(tui): edit triage route cells + add route via working copy"
 ```
 
@@ -994,6 +1044,12 @@ git commit -m "feat(tui): edit triage route cells + add route via working copy"
 - [ ] **Step 1: Document profiles, prompts, and route editing**
 
 In `docs/70-devex/devex-001-using-code-review-loop.md`, add subsections: the **Profiles** workspace (grouped picker; `Enter` loads a saved loop into the editor; lifecycle actions still shell through `revrem config`; builtins are read-only presets and must be cloned before saving edits); the **Prompts** library (browse fragments + triage contracts; **fragment-list editing is not yet available** — pick scalar prompt fields in-loop with `e`); **route editing** from the triage phase (`Enter` to edit a route's cells, `a` to add a route; **route deletion is not yet available**).
+
+In `docs/30-design/design-001-loop-first-tui-overhaul.md`, reconcile §5.1 with the implemented slice:
+
+- Replace the route footer `↵ edit route · a add · x remove` with `↵ edit route · a add`.
+- Replace the interaction bullet "`a`/`x` add/remove" with "`a` adds; route deletion is deferred until a delete-capable profile-save primitive exists."
+- Add the same limitation to §9 Open questions / future so a future executor sees that route deletion is a known deferred capability, not an accidental omission.
 
 - [ ] **Step 2: CHANGELOG entry**
 
@@ -1027,6 +1083,63 @@ git commit -m "docs(tui): document profiles picker, prompts library, route editi
 
 ---
 
+## Integration Appendix: final app shape and keymap
+
+Before final review, consolidate the three-plan edits across the integration-heavy surfaces. This appendix is the executor's checklist; if implementation names differ, update this section in the same commit that changes them.
+
+**`__init__` final attributes:**
+
+```python
+self._loop_model = None
+self._loop_diagram = None
+self._loop_run_view = None
+self._event_log = None
+self._profile_picker = None
+self._prompt_library = None
+self._workspace = "loop"
+```
+
+**`compose` final panes:**
+
+- `#loop-pane` contains the `LoopDiagram`.
+- `#run-pane` contains `LoopRunView` plus `EventLog`.
+- `#profiles-pane` contains `ProfilePicker`.
+- `#prompts-pane` contains `PromptLibrary`.
+- Existing legacy `#left-pane` / `#right-pane` remain available for fallback/detail content but are hidden on the dedicated Loop/Run/Profiles/Prompts workspaces as documented by each plan.
+
+**`_render_workbench` final visibility rule:**
+
+```python
+on_loop = self._workspace == "loop"
+on_run = self._workspace == "run"
+on_profiles = self._workspace == "profiles"
+on_prompts = self._workspace == "prompts"
+```
+
+Show exactly one dedicated workspace pane for those four booleans. Hide the legacy text panes on all four dedicated workspaces unless a Textual factory returned `None`, in which case fall back to the existing text render.
+
+**`_build_bindings` final workspace keys:**
+
+| Key | Workspace | Primary actions |
+| --- | --- | --- |
+| `1` | Loop | author/edit loop |
+| `2` | Run | live monitor |
+| `3` | Profiles | grouped save/load picker |
+| `4` | Prompts | browse prompt assets |
+
+**Context keys by workspace:**
+
+| Workspace | Keys |
+| --- | --- |
+| Loop | `space` toggle enabled, `Enter` expand/edit or route modal, `m` model, `M` loop meta, `t` timeout, `e` scalar prompt edit, `a` add route when triage focused, `s` save, `r` save-and-run/run |
+| Run | `k` stop/cancel, `l` toggle event/log tail, `o` show/open artifact directory |
+| Profiles | `Enter` load profile into Loop, existing lifecycle keys continue to shell through `revrem config` |
+| Prompts | navigation only; browse prompt inventory, no copy/fragment mutation action |
+
+**Footer/devex requirement:** Task 6 must publish the same per-workspace key table in `docs/70-devex/devex-001-using-code-review-loop.md` so the showcase has one user-facing source of truth.
+
+---
+
 ## Self-review (run by the plan author before execution)
 
 **Spec coverage (REVREM-DESIGN-001 §5.3, §5.4, §6, and §5.1 route editing):**
@@ -1035,11 +1148,11 @@ git commit -m "docs(tui): document profiles picker, prompts library, route editi
 - Prompts library (browse surface) + in-loop picking → Tasks 2–4; fragment-list curation **reserved/deferred** with stated reason (matches §5.4 "library surface + in-loop picking; advanced curation reserved"). ✓
 - Harness-aware prompt field (codex review built-in) → `prompt_field_label` (Task 3). ✓
 - Triage route-row editing and route creation (the Plan 2 read-only table) → `RouteEditModal` + `_apply_route_edit` + `_apply_route_add` (Task 5); deletion deferred with stated reason. New routes validate names and write explicit `harness="codex"` / `sandbox="workspace-write"` defaults without inventing model or reasoning-effort values. ✓
-- All edits flow through the working copy + the verified-equivalent save path → `LoopEditModel.set_field`/`save`; round-trip equivalence test (Task 5). ✓
+- All edits flow through the working copy + explicit Save → `LoopEditModel.set_field`/`save`; Task 5 first fixes and locks route inherited-context materialization in `save_profile_raw`, then route UI tests rely on that shared path. ✓
 
 **Honesty about limits (a reviewer rewards this):** two structurally-identical merge-only/scalar-only gaps (route deletion; fragment-list editing) are both deferred with the *same* root-cause explanation and surfaced in the docs — not one handled and one quietly promised. External copy actions are also deliberately absent from the prompt library in this plan.
 
-**Placeholder scan:** none — every code/test step shows complete content, except Task 5's `route_edit_modal_class` UI body, which is specified by behaviour + the concrete `_apply_route_edit`/`action_add_route` helpers the tests exercise (the modal is a thin affordance over tested helpers; its layout mirrors the existing `TextPrompt` modal). If the executor wants a failing test for the modal's compose, add one asserting the modal yields one input per route cell.
+**Placeholder scan:** none — every code/test step shows complete content, including Task 5's `route_edit_modal_class` layout contract (one row per scalar route cell, cycle widgets for harness/effort, text inputs for scalar free-text cells, callback `(route, cell, value)`). If the executor wants a failing test for the modal's compose, add one asserting the modal yields one input/control per route cell.
 
 **Type consistency:** `profile_picker_groups`/`ProfilePickerRow`, `prompt_inventory`/`PromptAsset`, `prompt_field_label`, and the widget factories `profile_picker_class`/`prompt_library_class`/`route_edit_modal_class` match between definition and `tui.py` use. Raw keys (`triage.prompt`, `commit.message_prompt`, `triage.routes.<name>.<cell>`) match the verified schema. `LoopEditModel.set_field`/`field_value`/`save` calls match Plan 2's signatures.
 

@@ -3,7 +3,7 @@ document_id: REVREM-PLAN-010
 type: PLAN
 title: TUI Overhaul Plan 2 — Loop Screen (editable diagram + working copy)
 status: Draft
-version: '0.4'
+version: '0.5'
 last_updated: '2026-06-28'
 owner: GitCmurf
 docops_version: '2.0'
@@ -62,7 +62,7 @@ Every task's requirements implicitly include this section. These constraints rec
 
 ## Pre-flight note for the executor
 
-REVREM-DESIGN-001's write-path language is **stale**: §2/§3 still imply all config writes shell through `revrem config`, and §4.2 says Save will reuse `config import` while explicitly rejecting `config set`. Plan 1 shipped both `config set` and the `save_profile_raw` library writer, and Plan 2 calls `save_profile_raw` in-process. **Task 1, Step 0 updates those design sections** so the design matches the shipped code before any widget work — otherwise the final whole-branch reviewer will (correctly) flag a code-vs-spec mismatch.
+REVREM-DESIGN-001's write-path language is **stale**: §2/§3 still imply all config writes shell through `revrem config`, §4.2 says Save will reuse `config import` while explicitly rejecting `config set`, and §7 says validation surfaces a `revrem config` error even though Plan 2 saves through `save_profile_raw` and receives `ValueError` directly. Plan 1 shipped both `config set` and the `save_profile_raw` library writer, and Plan 2 calls `save_profile_raw` in-process. **Task 1, Step 0 updates those design sections** so the design matches the shipped code before any widget work — otherwise the final whole-branch reviewer will (correctly) flag a code-vs-spec mismatch.
 
 ---
 
@@ -74,6 +74,7 @@ REVREM-DESIGN-001's write-path language is **stale**: §2/§3 still imply all co
 - **Modify** `src/code_review_loop/tui.py` — mount the `LoopDiagram` into the Loop workspace; reorder nav to Loop-first; wire Save / save-and-run and the dirty `*` indicator.
 - **Create** `tests/test_tui_loop_model.py`, `tests/test_tui_loop_view.py` — pure-layer unit tests.
 - **Modify** `tests/test_tui_pilot_smoke.py` — widget pilot tests + updated nav assertions.
+- **Create** `tests/test_tui_loop_snapshots.py` — SVG/rendered-output snapshots for representative `LoopDiagram` states.
 - **Modify** `docs/30-design/design-001-loop-first-tui-overhaul.md`, `docs/70-devex/devex-001-using-code-review-loop.md`, `CHANGELOG.md`.
 
 ---
@@ -140,6 +141,8 @@ to:
    "everything in the CLI" principle; the TUI deliberately does not use the
    immediate-persist path, because auto-persist conflicts with the "save game" model.
 ```
+
+4. In §7 Error handling, replace any claim that failed TUI saves surface a `revrem config` shell error with library validation wording: `save_profile_raw` calls `parse_profile`, raises `ValueError`, and the TUI shows that error inline while leaving the working copy dirty for correction.
 
 - [ ] **Step 0b: Lock the pipeline raw-key contract before depending on it**
 
@@ -296,6 +299,42 @@ def test_set_field_coercion_equivalent_values_are_not_dirty(tmp_path):
     model.set_field("pipeline.final_review", "true")
     assert model.edits == {}
     assert model.is_dirty is False
+
+
+def test_baseline_projection_covers_every_editable_dotted_key(tmp_path):
+    repo = _project_profile(tmp_path)
+    model = LoopEditModel.load("dogfood", cwd=repo)
+    keys = [
+        "pipeline.max_iterations",
+        "pipeline.final_review",
+        "runtime.inner_check_retries",
+        "review.harness",
+        "review.model",
+        "review.reasoning_effort",
+        "review.timeout_seconds",
+        "triage.enabled",
+        "triage.harness",
+        "triage.model",
+        "triage.reasoning_effort",
+        "triage.timeout_seconds",
+        "triage.routing.default_route",
+        "triage.routing.strict_on_unavailable_route",
+        "triage.routing.allow_model_escalation",
+        "remediation.harness",
+        "remediation.model",
+        "remediation.reasoning_effort",
+        "remediation.timeout_seconds",
+        "commit.enabled",
+        "commit.harness",
+        "commit.message_model",
+        "commit.reasoning_effort",
+        "commit.timeout_seconds",
+    ]
+    raw = _profile_to_raw(model.profile)
+    for key in keys:
+        assert _read_dotted(raw, key) == model.field_value(
+            key, _read_dotted(raw, key)
+        )
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -1089,7 +1128,8 @@ Create `src/code_review_loop/tui_loop_widgets.py` with this contract:
 - `PhaseCard` is a focusable/renderable widget with CSS class `phase-card`; it consumes `tui_state.phase_card_lines(...)` and exposes update/rebuild hooks used by `LoopDiagram`.
 - `TriageRoutesTable` is a renderable widget with CSS class `triage-routes-table`; it consumes `tui_state.triage_routes_lines(model)` and is mounted only when triage is focused and routing is enabled.
 - `LoopDiagram` owns selection state (`focused_index`, `expanded`) and composes one `PhaseCard` per phase plus a `TriageRoutesTable` child when appropriate. It may render rails/header itself, but phase bodies must be child widgets, not concatenated into a single `Static` text blob. Header and rails must call `tui_state.loop_header_text(self.model)` and `tui_state.loop_rail_meta(self.model)`, not `self.model.profile`, so unsaved metadata edits render immediately.
-- Keep `HARNESS_CHOICES` and `EFFORT_CHOICES` as known-valid cycle orders; include `minimal` in effort choices if the profile parser accepts it.
+- Derive `HARNESS_CHOICES` from `harnesses.HARNESS_REGISTRY` filtered to implemented harnesses (stable-sorted by key, with `codex` first if present). Do not hardcode a stale harness list.
+- Derive `EFFORT_CHOICES` from the profile parser's accepted reasoning effort choices (including `minimal` if accepted). Do not invent an `EFFORT_CHOICES` constant that can drift from `profiles`.
 - Implement `current_phase()`, `toggle_enabled()`, `cycle_field(key)`, `set_text_field(key, value)`, `set_loop_meta_field(key, value)`, `toggle_final_review()`, `move(delta)`, and `rebuild()` against raw dotted keys from `tui_state.PHASE_DOTTED` / `LOOP_META_DOTTED`. `current_phase()` clamps `focused_index` into range and returns `tui_state.LOOP_PHASES[self.focused_index]`.
 - Preserve optional dependency behavior: if Textual is unavailable, all factories return `None`.
 
@@ -1261,6 +1301,35 @@ git commit -m "feat(tui): mount interactive loop diagram; loop-first nav"
 
 ---
 
+## Task 4b: LoopDiagram SVG snapshot coverage
+
+Lock the showcase-facing rendered output promised by REVREM-DESIGN-001 §8. These snapshots are not a substitute for the pilot interaction tests; they are a visual regression suite and a source of demo artifacts.
+
+**Files:**
+- Create: `tests/test_tui_loop_snapshots.py`
+
+**Requirements:**
+- Use the repo's Textual snapshot mechanism if available (`pytest-textual-snapshot` / SVG export). If the dependency is absent in the current environment, add a guarded skip and a TODO in the test file rather than replacing snapshots with string-only assertions.
+- Capture at least these `LoopDiagram` states:
+  - triage disabled, `runtime.inner_check_retries = 0`, `pipeline.final_review = false`;
+  - triage enabled with at least two routes and a default route;
+  - `runtime.inner_check_retries = 2` so the inner remediation/check rail is visible;
+  - `pipeline.final_review = true` so the final-review row is visible.
+- Run each snapshot at a stable terminal size (`120x40` minimum; add `80x24` smoke if the widget supports compact layout).
+- Store snapshots in the existing snapshot location used by the project or under `tests/snapshots/tui_loop/`; do not commit transient terminal recordings.
+
+Run: `python -m pytest tests/test_tui_loop_snapshots.py -q`
+Expected: PASS with committed snapshots or SKIP only when the snapshot dependency is not installed.
+
+- [ ] **Commit**
+
+```bash
+git add tests/test_tui_loop_snapshots.py tests/snapshots
+git commit -m "test(tui): snapshot loop diagram states"
+```
+
+---
+
 ## Task 5: Save → profile, save-and-run, and dirty guard
 
 Wire the explicit Save and the save-and-run path, and lock the persisted-edit ⇄ CLI-equivalence guarantee end-to-end.
@@ -1304,7 +1373,9 @@ def test_loop_save_persists_and_clears_dirty(tmp_path):
     asyncio.run(run())
 ```
 
-Add to `tests/test_tui_cli_equivalence.py` a guard that a TUI-saved edit is what a subsequent `revrem --profile` run consumes (reuse that file's existing equivalence helpers; the assertion is that the profile persisted by `LoopEditModel.save()` is byte-identical to the one produced by `profiles.set_profile_field` for the same edit — already covered structurally in `test_tui_loop_model.test_save_round_trips_to_config_set_path`; here assert the launch plan is unchanged):
+Add two guards to `tests/test_tui_cli_equivalence.py`.
+
+First, keep the cheap launch-plan assertion so the TUI still launches by profile name rather than expanding edited settings into argv:
 
 ```python
 def test_loop_save_keeps_launch_plan_cli_equivalent(tmp_path):
@@ -1324,6 +1395,29 @@ def test_loop_save_keeps_launch_plan_cli_equivalent(tmp_path):
     plan = tui_state.launch_plan(profile, dry_run=False)
     assert plan.argv == ("revrem", "--profile", "edit")
 ```
+
+Second, add an end-to-end fake-harness parity test that meets REVREM-DESIGN-001 §8's artifact-equivalence bar:
+
+```python
+def test_loop_save_run_artifacts_match_cli_set_run(tmp_path):
+    from support.run_artifact_compare import assert_equivalent_run_artifacts
+    from code_review_loop import profiles
+    from code_review_loop.tui_loop_model import LoopEditModel
+
+    repo_model = _repo_with_fake_harness_profile(tmp_path / "via_model")
+    repo_cli = _repo_with_fake_harness_profile(tmp_path / "via_cli")
+
+    model = LoopEditModel.load("edit", cwd=repo_model)
+    model.set_field("review.model", "fake-review-model")
+    model.save()
+    profiles.set_profile_field("edit", "review.model", "fake-review-model", cwd=repo_cli)
+
+    model_run = _run_revrem_profile(repo_model, "edit")
+    cli_run = _run_revrem_profile(repo_cli, "edit")
+    assert_equivalent_run_artifacts(model_run, cli_run)
+```
+
+Use the existing fake-harness helpers from `test_tui_cli_equivalence.py`; if they are local to another module, promote only the minimal helper to `tests/support/`. This test proves a working-copy save feeds the same runtime behavior as the equivalent CLI config edit, not just the same launch argv.
 
 - [ ] **Step 2: Run tests to verify they fail**
 
