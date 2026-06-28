@@ -3,7 +3,7 @@ document_id: REVREM-PLAN-010
 type: PLAN
 title: TUI Overhaul Plan 2 — Loop Screen (editable diagram + working copy)
 status: Draft
-version: '0.1'
+version: '0.2'
 last_updated: '2026-06-28'
 owner: GitCmurf
 docops_version: '2.0'
@@ -27,7 +27,7 @@ related_ids:
 
 # TUI Overhaul Plan 2 — Loop Screen (editable diagram + working copy)
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** Implement this plan task-by-task using the repo's normal TDD loop: write the named failing tests first, make the smallest scoped implementation, run the listed verification, then commit only the task's files. Steps use checkbox (`- [ ]`) syntax for tracking. Do not rely on external "superpowers" skills; they are not part of this repository contract.
 
 **Goal:** Make the Loop the editable centre of the TUI — a vertical, config-truthful diagram of real interactive Textual widgets that lets the operator edit harness / model / effort / timeout / enable per phase (and triage's routing-level fields) into an in-memory working copy, then persist the whole copy to the owning profile file in one explicit Save.
 
@@ -44,14 +44,15 @@ related_ids:
 
 ## Global Constraints
 
-Every task's requirements implicitly include this section. Values are copied verbatim from REVREM-DESIGN-001.
+Every task's requirements implicitly include this section. These constraints reconcile REVREM-DESIGN-001 with the Plan 1 profile-edit primitives already shipped.
 
 - **Working copy + explicit save (option A).** Inline edits mutate an in-memory working copy only — never one CLI/disk write per keystroke. A `*` marks unsaved changes. **Save → profile** persists the whole working copy in one call to `profiles.save_profile_raw(name, authored_delta, cwd=..., home=...)`. **Run** launches `revrem --profile NAME`; if the working copy is dirty, Run offers *save-and-run* (persist, then launch).
-- **The diagram is config-truthful.** What is shown equals what the profile will do: the inner remediation⇄checks rail is drawn **only** when `runtime.inner_check_retries > 0`; disabled phases are marked disabled and drop out of the loop rails; the `final review` row is shown **only** when `pipeline.final_review` is true.
-- **Validation timing (explicit Plan-2 scope decision).** Enumerated fields (harness, reasoning effort, the boolean enables, sandbox) are edited by cycling through known-valid choices, so they cannot reach an invalid value in the working copy. Free-text fields (model, timeout) are validated at **Save** time (where `save_profile_raw` → `parse_profile` raises `ValueError`), and the error surfaces on the Save action; the working copy is not blocked per-keystroke. Per-field inline validation as-you-type is deferred to Plan 4. This is a deliberate narrowing of REVREM-DESIGN-001 §7 for this iteration, not an oversight.
+- **The diagram is config-truthful.** What is shown equals what the profile will do: the inner remediation⇄checks rail is drawn **only** when `runtime.inner_check_retries > 0`; disabled phases are marked disabled and drop out of the loop rails; the `final review` row is shown **only** when raw `final_review` resolves true.
+- **Validation timing (explicit Plan-2 scope decision).** Enumerated fields (harness, reasoning effort, the boolean enables) are edited by cycling through known-valid choices, so they cannot reach an invalid value in the working copy. Free-text fields (model, timeout) are edited through text entry and validated at **Save** time (where `save_profile_raw` → `parse_profile` raises `ValueError`), and the error surfaces on the Save action; the working copy is not blocked per-keystroke. Per-field inline validation as-you-type is deferred to Plan 4. This is a deliberate narrowing of REVREM-DESIGN-001 §7 for this iteration, not an oversight. Route sandbox remains read-only in Plan 2 because route-row editing is Plan 4.
 - **CLI-equivalence is preserved.** The TUI still launches runs as `revrem --profile NAME` and persists config through the same library write path the CLI uses. `assert_equivalent_run_artifacts` parity and the existing `test_tui_cli_equivalence.py` must continue to pass.
 - **Textual stays an optional dependency.** All Textual widget/screen classes are defined lazily through factory functions (mirroring the existing `text_prompt_screen_class()` in `tui.py`); importing `code_review_loop.tui` / `tui_loop_widgets` must not require Textual. When Textual is absent, `render_shell_text` remains the headless view.
-- **Scope of edits in Plan 2.** Editable from the loop: per-phase `enabled` (where the phase has one), `harness`, `model` (commit uses `message_model`), `reasoning_effort`, `timeout_seconds`; loop meta `pipeline.max_iterations`, `pipeline.final_review`, `runtime.inner_check_retries`; triage routing-level `triage.routing.default_route`, `triage.routing.strict_on_unavailable_route`, `triage.routing.allow_model_escalation`. **Out of scope (Plan 4):** editing individual triage route-table cells (rendered read-only here), prompt picking/editing, and the profiles/prompts/run screens (left as their current markup until their plans).
+- **Raw dotted-key contract.** `LoopEditModel` stores and saves **raw profile TOML keys**, not display-layer field names. Raw profile keys are `max_iterations` and `final_review` at the profile root, not `pipeline.max_iterations` / `pipeline.final_review`. Nested sections keep their section prefix (`review.model`, `runtime.inner_check_retries`, `triage.routing.default_route`, etc.). Any view-model label may say "pipeline", but the edit key passed to `profiles.deep_set_raw` / `save_profile_raw` must be the raw key.
+- **Scope of edits in Plan 2.** Editable from the loop: per-phase `enabled` (where the phase has one), `harness`, `model` (commit uses `message_model`), `reasoning_effort`, `timeout_seconds`; loop meta raw keys `max_iterations`, `final_review`, `runtime.inner_check_retries`; triage routing-level `triage.routing.default_route`, `triage.routing.strict_on_unavailable_route`, `triage.routing.allow_model_escalation`. **Out of scope (Plan 4):** editing individual triage route-table cells (rendered read-only here), prompt picking/editing, and the profiles/prompts/run screens (left as their current markup until their plans).
 - **Branch & commits.** Work on `feat/tui-live-runs` (never `main`). Stage files explicitly per task — never `git add -A`. End every commit message with:
   ```
   Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
@@ -60,7 +61,7 @@ Every task's requirements implicitly include this section. Values are copied ver
 
 ## Pre-flight note for the executor
 
-REVREM-DESIGN-001 §4.2 is **stale**: it says Save will reuse the `config import` path and explicitly *rejects* adding `config set`. Plan 1 shipped both `config set` and the `save_profile_raw` library writer, and Plan 2 calls `save_profile_raw` in-process. **Task 1, Step 0 updates §4.2** so the design matches the shipped code before any widget work — otherwise the final whole-branch reviewer will (correctly) flag a code-vs-spec mismatch.
+REVREM-DESIGN-001's write-path language is **stale**: §2/§3 still imply all config writes shell through `revrem config`, and §4.2 says Save will reuse `config import` while explicitly rejecting `config set`. Plan 1 shipped both `config set` and the `save_profile_raw` library writer, and Plan 2 calls `save_profile_raw` in-process. **Task 1, Step 0 updates those design sections** so the design matches the shipped code before any widget work — otherwise the final whole-branch reviewer will (correctly) flag a code-vs-spec mismatch.
 
 ---
 
@@ -82,6 +83,7 @@ The pure foundation: holds the resolved baseline profile plus pending edits, ove
 
 **Files:**
 - Create: `src/code_review_loop/tui_loop_model.py`
+- Modify: `src/code_review_loop/profiles.py` (only if the top-level raw-key coercion tests fail)
 - Modify: `docs/30-design/design-001-loop-first-tui-overhaul.md` (§4.2 staleness fix)
 - Test: `tests/test_tui_loop_model.py`
 
@@ -91,14 +93,32 @@ The pure foundation: holds the resolved baseline profile plus pending edits, ove
   - `class LoopEditModel` with: `name: str`, `profile: profiles.Profile`, `cwd: Path`, `home: Path | None`, `edits: dict[str, str]`.
   - `LoopEditModel.load(name, *, cwd, home=None) -> LoopEditModel` (classmethod).
   - `is_dirty -> bool` (property).
-  - `field_value(dotted_key: str, fallback: object) -> object` — coerced pending edit if present, else `fallback`.
+  - `field_value(dotted_key: str, fallback: object) -> object` — coerced pending edit if present, else `fallback`. `dotted_key` is the raw profile TOML key (`max_iterations`, not `pipeline.max_iterations`).
   - `set_field(dotted_key: str, value: str) -> None`.
   - `authored_delta() -> dict[str, object]`.
   - `save() -> Path` — persists `authored_delta()` via `save_profile_raw`, clears `edits`, reloads `profile`.
 
-- [ ] **Step 0: Update the stale design section**
+- [ ] **Step 0: Update stale design sections**
 
-In `docs/30-design/design-001-loop-first-tui-overhaul.md`, replace the parenthetical rejection in §4.2 item 2 so it reflects shipped reality. Change the sentence that currently reads:
+In `docs/30-design/design-001-loop-first-tui-overhaul.md`, fix every stale write-path statement before implementing widgets:
+
+1. In §2 Non-goals, replace:
+
+```
+- Replacing the CLI write path. All edits continue to shell through `revrem config`.
+```
+
+with:
+
+```
+- Replacing the profile persistence semantics. TUI writes continue to use the same
+  profile edit library used by the CLI (`profiles.save_profile_raw` / `config set`);
+  the TUI does not invent a separate config format or hidden run-only overrides.
+```
+
+2. In §3 principle 4, replace "writes config exactly as the CLI does" with "writes config through the same profile edit library as the CLI".
+
+3. In §4.2 item 2, replace the parenthetical rejection so it reflects shipped reality. Change the sentence that currently reads:
 
 ```
 2. **Save → profile** persists the whole working copy in one write. Implementation reuses
@@ -120,6 +140,17 @@ to:
    "everything in the CLI" principle; the TUI deliberately does not use the
    immediate-persist path, because auto-persist conflicts with the "save game" model.
 ```
+
+- [ ] **Step 0b: Lock top-level raw-key coercion before depending on it**
+
+Plan 2 edits `max_iterations` and `final_review` as raw top-level profile keys. Before writing `LoopEditModel`, add focused tests to the existing profile-edit coverage proving these calls work:
+
+```python
+profiles.deep_set_raw({}, "max_iterations", "9") == {"max_iterations": 9}
+profiles.deep_set_raw({}, "final_review", "false") == {"final_review": False}
+```
+
+Also verify `profiles.set_profile_field("dogfood", "max_iterations", "9", cwd=repo)` and `profiles.set_profile_field("dogfood", "final_review", "false", cwd=repo)` persist valid TOML that reloads through `resolve_profile`. If these fail, fix `_coerce_field_value` in `profiles.py` to treat bare keys that match the suffix names as well as dotted nested keys. This is a prerequisite for the Loop screen's meta edits; do not encode fake `pipeline.*` keys to work around it, because `parse_profile` rejects a `[profile.pipeline]` raw table.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -172,10 +203,12 @@ def test_set_field_overlays_and_coerces(tmp_path):
     repo = _project_profile(tmp_path)
     model = LoopEditModel.load("dogfood", cwd=repo)
     model.set_field("review.model", "gpt-5.6")
-    model.set_field("pipeline.max_iterations", "9")
+    model.set_field("max_iterations", "9")
+    model.set_field("final_review", "false")
     assert model.field_value("review.model", "gpt-5.5") == "gpt-5.6"
     # coercion: max_iterations is an int field
-    assert model.field_value("pipeline.max_iterations", 4) == 9
+    assert model.field_value("max_iterations", 4) == 9
+    assert model.field_value("final_review", True) is False
     assert model.is_dirty is True
 
 
@@ -184,10 +217,12 @@ def test_authored_delta_nests_dotted_keys(tmp_path):
     model = LoopEditModel.load("dogfood", cwd=repo)
     model.set_field("review.model", "gpt-5.6")
     model.set_field("runtime.inner_check_retries", "2")
+    model.set_field("max_iterations", "9")
     delta = model.authored_delta()
     assert delta == {
         "review": {"model": "gpt-5.6"},
         "runtime": {"inner_check_retries": 2},
+        "max_iterations": 9,
     }
 
 
@@ -224,7 +259,7 @@ def test_save_round_trips_to_config_set_path(tmp_path):
 def test_save_surfaces_validation_error(tmp_path):
     repo = _project_profile(tmp_path)
     model = LoopEditModel.load("dogfood", cwd=repo)
-    model.set_field("pipeline.max_iterations", "-1")
+    model.set_field("max_iterations", "-1")
     with pytest.raises(ValueError):
         model.save()
     # edits remain so the operator can correct them
@@ -343,6 +378,7 @@ Per-phase card lines, the loop header, and rail metadata — config-truthful, Te
 - Consumes: `LoopEditModel` (Task 1); `profiles.Profile`; existing `harnesses.phase_effort_text(harness, effort)`.
 - Produces (for Tasks 3 & 4):
   - `LOOP_PHASES: tuple[str, ...] = ("review", "triage", "remediation", "checks", "commit")`
+  - `LOOP_META_DOTTED: dict[str, str] = {"max_iterations": "max_iterations", "final_review": "final_review", "inner_check_retries": "runtime.inner_check_retries"}` — raw edit keys for loop-level fields.
   - `PHASE_DOTTED: dict[str, dict[str, str]]` — per-phase map of edit-target dotted keys (see code).
   - `loop_header_text(profile) -> str`
   - `@dataclass(frozen=True) class LoopRailMeta` with `max_iterations: int`, `inner_check_retries: int`, `inner_rail: bool`, `final_review: bool`, `outer_return_label: str`, `inner_return_label: str | None`, `final_review_label: str | None`.
@@ -445,6 +481,12 @@ def test_loop_header_reports_meta(tmp_path):
     )
     header = tui_state.loop_header_text(_model(repo, "p").profile)
     assert "main" in header and "7" in header and "3" in header
+
+
+def test_loop_meta_dotted_uses_raw_profile_keys():
+    assert tui_state.LOOP_META_DOTTED["max_iterations"] == "max_iterations"
+    assert tui_state.LOOP_META_DOTTED["final_review"] == "final_review"
+    assert tui_state.LOOP_META_DOTTED["inner_check_retries"] == "runtime.inner_check_retries"
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -460,6 +502,11 @@ Append to `src/code_review_loop/tui_state.py` (after the existing `pipeline_phas
 LOOP_PHASES: tuple[str, ...] = ("review", "triage", "remediation", "checks", "commit")
 PHASE_ENABLED_GLYPH = "●"  # ●
 PHASE_DISABLED_GLYPH = "○"  # ○
+LOOP_META_DOTTED: dict[str, str] = {
+    "max_iterations": "max_iterations",
+    "final_review": "final_review",
+    "inner_check_retries": "runtime.inner_check_retries",
+}
 
 # Edit-target dotted keys per phase. ``checks`` has no inline single-field edits
 # in Plan 2 (its commands are edited elsewhere); ``commit`` uses ``message_model``.
@@ -747,11 +794,12 @@ The interactive layer: lazy Textual widgets that consume Tasks 2–3, own focus/
 - Test: `tests/test_tui_pilot_smoke.py`
 
 **Interfaces:**
-- Consumes: `LoopEditModel` (Task 1); `tui_state` loop view-models (Tasks 2–3); `harnesses.IMPLEMENTED` harness names + effort choices.
+- Consumes: `LoopEditModel` (Task 1); `tui_state` loop view-models (Tasks 2–3); `harnesses.HARNESS_REGISTRY` implemented harness names + effort choices.
 - Produces:
   - `loop_diagram_class() -> type | None` — lazy factory returning the `LoopDiagram` widget class (or `None` when Textual is unavailable), mirroring `tui.text_prompt_screen_class()`.
   - `HARNESS_CHOICES: tuple[str, ...]`, `EFFORT_CHOICES: tuple[str, ...]` — cycle orders for inline enum editing.
-  - `LoopDiagram` widget: constructed with a `LoopEditModel`; renders header + per-phase `PhaseCard`s + rails + `TriageRoutesTable` (when triage focused); attributes `focused_index: int`, `expanded: bool`; methods `move(delta)`, `toggle_enabled()`, `cycle_field(key)`, `set_text_field(key, value)`, `rebuild()`. Exposes `is_dirty` (delegates to model).
+  - `phase_card_class() -> type | None`, `triage_routes_table_class() -> type | None`, and `loop_diagram_class() -> type | None` lazy factories. `LoopDiagram` must compose real child widgets for `PhaseCard` and, when triage is focused, `TriageRoutesTable`; do not collapse the whole screen into one `Static` text dump.
+  - `LoopDiagram` widget: constructed with a `LoopEditModel`; renders header + per-phase `PhaseCard`s + rails + `TriageRoutesTable` (when triage focused); attributes `focused_index: int`, `expanded: bool`; methods `move(delta)`, `toggle_enabled()`, `cycle_field(key)`, `set_text_field(key, value)`, `set_loop_meta_field(key, value)`, `toggle_final_review()`, `rebuild()`. Exposes `is_dirty` (delegates to model).
 
 - [ ] **Step 1: Write the failing pilot tests**
 
@@ -764,9 +812,10 @@ def test_loop_workspace_renders_real_diagram_widgets(tmp_path):
         repo.mkdir()
         (repo / ".git").mkdir()
         async with pilot_app(cwd=repo, profile_name="security") as (app, pilot):
-            await pilot.press("2")  # Loop workspace (Loop-first nav)
+            await pilot.press("1")  # Loop workspace (Loop-first nav)
             await pilot.pause()
             diagram = app.query_one("#loop-diagram")
+            assert app.query(".phase-card")
             rendered = str(diagram.render())
             assert "review" in rendered
             assert "remediation" in rendered
@@ -786,7 +835,7 @@ def test_loop_inline_edit_marks_dirty_and_overlays(tmp_path):
             encoding="utf-8",
         )
         async with pilot_app(cwd=repo, profile_name="edit") as (app, pilot):
-            await pilot.press("2")
+            await pilot.press("1")
             await pilot.pause()
             diagram = app.query_one("#loop-diagram")
             diagram.cycle_field("harness")  # review is focused_index 0
@@ -794,11 +843,43 @@ def test_loop_inline_edit_marks_dirty_and_overlays(tmp_path):
             assert diagram.is_dirty is True
             status = app.query_one("#status-bar")
             assert "*" in str(status.render())
+            diagram.set_text_field("model", "gpt-5.6")
+            diagram.set_text_field("timeout", "123")
+            assert diagram.model.field_value("review.model", "gpt-5.5") == "gpt-5.6"
+            assert diagram.model.field_value("review.timeout_seconds", None) == 123.0
 
     asyncio.run(run())
 ```
 
-Also update the existing nav assertion in `test_tui_pilot_boots_home_view`: the home view's workspace tabs change from `1 Profiles` to `3 Profiles` under Loop-first nav. Change the assertion `assert "1 Profiles" in rendered` to `assert "3 Profiles" in rendered`.
+Add a focused triage-widget assertion:
+
+```python
+def test_loop_triage_focus_mounts_routes_table(tmp_path):
+    async def run() -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        (repo / ".revrem.toml").write_text(
+            "[profiles.edit]\nbase='main'\n[profiles.edit.triage]\nenabled=true\n"
+            "[profiles.edit.triage.routing]\nenabled=true\ndefault_route='codex-midi'\n"
+            "[profiles.edit.triage.routes.codex-midi]\nharness='codex'\nmodel='gpt-5.4-mini'\n",
+            encoding="utf-8",
+        )
+        async with pilot_app(cwd=repo, profile_name="edit") as (app, pilot):
+            await pilot.press("1")
+            await pilot.press("down")
+            await pilot.pause()
+            assert app.query(".triage-routes-table")
+
+    asyncio.run(run())
+```
+
+Also update the existing nav assertion in `test_tui_pilot_boots_home_view`: the home view's workspace tabs change from `1 Profiles` to `1 Loop` and `3 Profiles` under Loop-first nav. Replace `assert "1 Profiles" in rendered` with:
+
+```python
+assert "1 Loop" in rendered
+assert "3 Profiles" in rendered
+```
 
 - [ ] **Step 2: Run tests to verify they fail**
 
@@ -807,170 +888,16 @@ Expected: FAIL — `#loop-diagram` widget not found.
 
 - [ ] **Step 3: Write the widget module**
 
-Create `src/code_review_loop/tui_loop_widgets.py`:
+Create `src/code_review_loop/tui_loop_widgets.py` with this contract:
 
-```python
-"""Lazy Textual widgets for the TUI Loop screen.
-
-Importing this module never requires Textual; widget classes are built on first
-use through ``loop_diagram_class()`` (mirrors ``tui.text_prompt_screen_class``).
-"""
-
-from __future__ import annotations
-
-from typing import Any
-
-from code_review_loop import harnesses, tui_state
-from code_review_loop.tui_loop_model import LoopEditModel
-
-# Cycle orders for inline enum editing. Kept short and known-valid so the
-# working copy cannot reach an invalid enum value (see Plan 2 validation-timing).
-HARNESS_CHOICES: tuple[str, ...] = tuple(
-    spec.name for spec in harnesses.HARNESS_REGISTRY.values() if spec.implemented
-)
-EFFORT_CHOICES: tuple[str, ...] = ("low", "medium", "high")
-
-_LOOP_DIAGRAM_CLASS: type[Any] | None = None
-
-
-def _cycle(choices: tuple[str, ...], current: object) -> str:
-    if not choices:
-        return str(current or "")
-    try:
-        idx = choices.index(current) if isinstance(current, str) else -1
-    except ValueError:
-        idx = -1
-    return choices[(idx + 1) % len(choices)]
-
-
-def loop_diagram_class() -> type[Any] | None:
-    """Return the LoopDiagram widget class, or None when Textual is unavailable."""
-    global _LOOP_DIAGRAM_CLASS
-    from code_review_loop import tui  # local import to reuse the lazy component loader
-
-    components = tui._load_textual_components()
-    if components is None:
-        return None
-    tui._install_textual_components(components)
-    if _LOOP_DIAGRAM_CLASS is not None:
-        return _LOOP_DIAGRAM_CLASS
-
-    static_cls: Any = tui._Static
-
-    class LoopDiagram(static_cls):  # type: ignore[misc, valid-type]
-        """A focusable, keyboard-driven vertical loop diagram over a LoopEditModel."""
-
-        can_focus = True
-
-        def __init__(self, model: LoopEditModel, **kwargs: Any) -> None:
-            super().__init__("", id=kwargs.pop("id", "loop-diagram"), markup=True, **kwargs)
-            self.model = model
-            self.focused_index = 0
-            self.expanded = False
-
-        # --- rendering -------------------------------------------------
-        def diagram_lines(self) -> list[str]:
-            profile = self.model.profile
-            rail_meta = tui_state.loop_rail_meta(profile)
-            lines: list[str] = [
-                f"[b]LOOP · {tui_state.markup_escape(self.model.name)}[/b]"
-                f"  [muted]{tui_state.markup_escape(tui_state.loop_header_text(profile))}[/]",
-                "",
-            ]
-            for index, phase in enumerate(tui_state.LOOP_PHASES):
-                focused = index == self.focused_index
-                expanded = focused and self.expanded
-                gutter = tui_state.phase_gutter(phase, rail_meta)
-                for offset, raw in enumerate(
-                    tui_state.phase_card_lines(
-                        self.model, phase, focused=focused, expanded=expanded
-                    )
-                ):
-                    text = tui_state.markup_escape(raw)
-                    prefix = tui_state.markup_escape(gutter if offset == 0 else "│ ")
-                    body = f"[status-info]{text}[/]" if focused else text
-                    lines.append(f"{prefix}{body}")
-                if phase == "triage" and focused:
-                    for raw in tui_state.triage_routes_lines(profile):
-                        lines.append(
-                            f"{tui_state.markup_escape('│ ')}"
-                            f"{tui_state.markup_escape(raw)}"
-                        )
-                if phase == "checks" and rail_meta.inner_return_label:
-                    lines.append(
-                        tui_state.markup_escape(
-                            f"│ └◀─ {rail_meta.inner_return_label}"
-                        )
-                    )
-            lines.append(
-                tui_state.markup_escape(f"└◀── {rail_meta.outer_return_label}")
-            )
-            if rail_meta.final_review_label:
-                lines.append("")
-                lines.append(
-                    tui_state.markup_escape(f"⚑ {rail_meta.final_review_label}")
-                )
-            return lines
-
-        def rebuild(self) -> None:
-            self.update("\n".join(self.diagram_lines()))
-
-        def on_mount(self) -> None:
-            self.rebuild()
-
-        # --- selection & edit -----------------------------------------
-        @property
-        def is_dirty(self) -> bool:
-            return self.model.is_dirty
-
-        def current_phase(self) -> str:
-            return tui_state.LOOP_PHASES[self.focused_index]
-
-        def move(self, delta: int) -> None:
-            self.focused_index = (self.focused_index + delta) % len(tui_state.LOOP_PHASES)
-            self.expanded = False
-            self.rebuild()
-
-        def toggle_expand(self) -> None:
-            self.expanded = not self.expanded
-            self.rebuild()
-
-        def toggle_enabled(self) -> None:
-            phase = self.current_phase()
-            dotted = tui_state.PHASE_DOTTED.get(phase, {}).get("enabled") or ""
-            if not dotted:
-                return
-            view = tui_state._phase_view_by_name(self.model.profile).get(phase)
-            current = self.model.field_value(dotted, view.enabled if view else False)
-            self.model.set_field(dotted, "false" if current else "true")
-            self.rebuild()
-
-        def cycle_field(self, key: str) -> None:
-            phase = self.current_phase()
-            dotted = tui_state.PHASE_DOTTED.get(phase, {}).get(key) or ""
-            if not dotted:
-                return
-            view = tui_state._phase_view_by_name(self.model.profile).get(phase)
-            if key == "harness":
-                current = self.model.field_value(dotted, view.harness if view else None)
-                self.model.set_field(dotted, _cycle(HARNESS_CHOICES, current))
-            elif key == "effort":
-                current = self.model.field_value(
-                    dotted, view.reasoning_effort if view else None
-                )
-                self.model.set_field(dotted, _cycle(EFFORT_CHOICES, current))
-            self.rebuild()
-
-        def set_text_field(self, key: str, value: str) -> None:
-            phase = self.current_phase()
-            dotted = tui_state.PHASE_DOTTED.get(phase, {}).get(key) or ""
-            if dotted:
-                self.model.set_field(dotted, value)
-                self.rebuild()
-
-    _LOOP_DIAGRAM_CLASS = LoopDiagram
-    return _LOOP_DIAGRAM_CLASS
-```
+- Importing the module must not import Textual; all Textual imports stay inside lazy factory functions.
+- Provide `phase_card_class()`, `triage_routes_table_class()`, and `loop_diagram_class()` factories. Cache classes after the first successful factory call, mirroring `tui.text_prompt_screen_class()`.
+- `PhaseCard` is a focusable/renderable widget with CSS class `phase-card`; it consumes `tui_state.phase_card_lines(...)` and exposes update/rebuild hooks used by `LoopDiagram`.
+- `TriageRoutesTable` is a renderable widget with CSS class `triage-routes-table`; it consumes `tui_state.triage_routes_lines(...)` and is mounted only when triage is focused and routing is enabled.
+- `LoopDiagram` owns selection state (`focused_index`, `expanded`) and composes one `PhaseCard` per phase plus a `TriageRoutesTable` child when appropriate. It may render rails/header itself, but phase bodies must be child widgets, not concatenated into a single `Static` text blob.
+- Keep `HARNESS_CHOICES` and `EFFORT_CHOICES` as known-valid cycle orders; include `minimal` in effort choices if the profile parser accepts it.
+- Implement `toggle_enabled()`, `cycle_field(key)`, `set_text_field(key, value)`, `set_loop_meta_field(key, value)`, `toggle_final_review()`, `move(delta)`, and `rebuild()` against raw dotted keys from `tui_state.PHASE_DOTTED` / `LOOP_META_DOTTED`.
+- Preserve optional dependency behavior: if Textual is unavailable, all factories return `None`.
 
 - [ ] **Step 4: Mount the widget and reorder nav in `tui.py`**
 
@@ -1069,6 +996,8 @@ def _set_widget_display(app: Any, selector: str, visible: bool) -> None:
         ("space", "toggle_phase", "Toggle phase"),
         ("m", "cycle_harness", "Harness"),
         ("f", "cycle_effort", "Effort"),
+        ("M", "edit_model", "Model"),
+        ("t", "edit_timeout", "Timeout"),
 ```
 
 and the actions on `_RevRemAppMixin`:
@@ -1088,7 +1017,17 @@ and the actions on `_RevRemAppMixin`:
         if self._workspace == "loop" and self._loop_diagram is not None:
             self._loop_diagram.cycle_field("effort")
             self._update_console_status()
+
+    def action_edit_model(self) -> None:
+        if self._workspace == "loop" and self._loop_diagram is not None:
+            self._open_loop_text_field_prompt("model")
+
+    def action_edit_timeout(self) -> None:
+        if self._workspace == "loop" and self._loop_diagram is not None:
+            self._open_loop_text_field_prompt("timeout")
 ```
+
+Implement `_open_loop_text_field_prompt(field)` using the existing prompt-entry infrastructure rather than adding a new Textual dependency path. The callback must call `self._loop_diagram.set_text_field(field, value)`, rebuild the diagram, update the dirty status marker, and leave save-time validation to `LoopEditModel.save()`.
 
 9. **Show the dirty marker.** In `_status_bar_markup`, compute a dirty suffix and append it to the profile name:
 
@@ -1156,7 +1095,7 @@ def test_loop_save_persists_and_clears_dirty(tmp_path):
             encoding="utf-8",
         )
         async with pilot_app(cwd=repo, profile_name="edit") as (app, pilot):
-            await pilot.press("2")
+            await pilot.press("1")
             await pilot.pause()
             diagram = app.query_one("#loop-diagram")
             diagram.model.set_field("review.model", "gpt-5.6")
@@ -1254,10 +1193,10 @@ Note: this **replaces** the existing `("s", "show_profile", "Show")` binding onl
 Run: `python -m pytest tests/test_tui_pilot_smoke.py -k loop_save -q tests/test_tui_cli_equivalence.py -q`
 Expected: PASS.
 
-- [ ] **Step 5: Run the full suite**
+- [ ] **Step 5: Run the repository gate**
 
-Run: `python -m pytest -q`
-Expected: PASS (no regressions across the repo).
+Run: `./scripts/dev-check`
+Expected: PASS (pytest, lint, type, consistency, and Meminit gates clean except for any pre-existing documented warning).
 
 - [ ] **Step 6: Commit**
 
@@ -1291,11 +1230,8 @@ In `CHANGELOG.md`, under the Unreleased section, add:
 
 - [ ] **Step 3: Final full-suite run + lint/format gate**
 
-Run: `python -m pytest -q`
-Expected: PASS.
-
-Run the repository's configured format/lint gate (the same one Plan 1 used; e.g. `ruff check src tests` and `ruff format --check src tests` if configured — match `pyproject.toml`).
-Expected: clean.
+Run: `./scripts/dev-check`
+Expected: PASS (pytest, lint, type, consistency, and Meminit gates clean except for any pre-existing documented warning).
 
 - [ ] **Step 4: Commit**
 
@@ -1312,7 +1248,7 @@ git commit -m "docs(tui): document the interactive loop workspace"
 - Vertical accordion diagram → Task 4 `LoopDiagram.diagram_lines` (header + per-phase + rails). ✓
 - `●/○` enabled/disabled, space toggles → `PHASE_ENABLED_GLYPH`/`PHASE_DISABLED_GLYPH` (Task 2) + `toggle_enabled` (Task 4). ✓
 - Config-truthful rails (inner only when retries>0, final review only when on, disabled drop out) → `loop_rail_meta` (Task 2), tested. ✓
-- Inline single-field edit (harness/model/effort/timeout) → cycle (`m`/`f`) + `set_text_field` (Task 4); model/timeout free-text validated at Save (Global Constraints). ✓
+- Inline single-field edit (harness/model/effort/timeout) → cycle (`m`/`f`) + text-entry actions (`shift+m`/`t`) + `set_text_field` (Task 4); model/timeout free-text validated at Save (Global Constraints). ✓
 - Triage routes table (read-only here) → `triage_routes_lines` (Task 3); route-row modal deferred to Plan 4 (stated). ✓
 - Working copy + explicit save → `LoopEditModel` (Task 1) + `action_save_loop` / save-and-run (Task 5). ✓
 - CLI-equivalence preserved → `test_save_round_trips_to_config_set_path` (Task 1) + launch-plan guard (Task 5) + full `test_tui_cli_equivalence.py`. ✓
@@ -1320,8 +1256,8 @@ git commit -m "docs(tui): document the interactive loop workspace"
 - Stale design §4.2 corrected → Task 1 Step 0. ✓
 - Loop-first nav → Task 4 (with pilot assertion updates). ✓
 
-**Placeholder scan:** No TBD/TODO; every code step shows complete code; every test step shows the test.
+**Placeholder scan:** No TBD/TODO. Test steps show concrete tests. Implementation steps are either paste-ready pure-function snippets or explicit contracts where paste-ready widget code would be misleading; the widget task is acceptance-test driven by real child-widget queries.
 
-**Type consistency:** `field_value(dotted_key, fallback)` signature is identical across Tasks 1, 2, 4. `PHASE_DOTTED`, `LOOP_PHASES`, `loop_rail_meta`, `phase_card_lines`, `triage_routes_lines`, `phase_gutter`, `loop_header_text` names match between definition (Tasks 2–3) and use (Task 4). `loop_diagram_class()` returns the class used by `_loop_diagram_widget`. `commit` edits target `commit.message_model` (not `commit.model`), matching `CommitConfig`.
+**Type consistency:** `field_value(dotted_key, fallback)` signature is identical across Tasks 1, 2, 4. `PHASE_DOTTED`, `LOOP_META_DOTTED`, `LOOP_PHASES`, `loop_rail_meta`, `phase_card_lines`, `triage_routes_lines`, `phase_gutter`, `loop_header_text` names match between definition (Tasks 2–3) and use (Task 4). `loop_diagram_class()` returns the class used by `_loop_diagram_widget`. `commit` edits target raw `commit.message_model` (not `commit.model`), matching `CommitConfig`; loop meta edits target raw `max_iterations` / `final_review`, not display-only `pipeline.*` names.
 
-**Known risk to watch in review:** the `f"{...'│ '}"` nested-quote f-strings in Task 4 Step 3 require Python 3.12 (PEP 701) — which is the project's floor — but the executor should confirm they parse; if the toolchain rejects them, hoist the literal to a local variable. Flag, don't pre-fix.
+**Known risk to watch in review:** Textual widget composition can regress the optional-dependency contract. Confirm `import code_review_loop.tui_loop_widgets` succeeds without Textual installed, and keep all Textual imports inside lazy factories.
