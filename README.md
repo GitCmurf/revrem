@@ -200,12 +200,20 @@ revrem config set final-pr description ""
 ```
 inherited routing siblings (`enabled`, `mode`, `rule`, `strict_on_unavailable_route`,
 `allow_model_escalation`) and inherited route tables unless you explicitly set
-them too. This route validation uses the same merged view, so defaults-based
-route tables are included when checking whether `default_route` is known.
+them too. Route-table edits validate against the inherited context and materialize
+the edited route row in the owning profile; if needed, the inherited default route
+row is also written so the profile can be reloaded independently.
+This route validation uses the same merged view, so defaults-based route tables
+are included when checking whether `default_route` is known.
 `config set` validates using the full effective chain (user defaults + project
-defaults + profile), including inherited route tables. If you edit routing, the
-target route must exist in that merged route table or the edit is rejected.
-This includes both `triage.routing.default_route` and `triage.routes.<name>.*`.
+defaults + profile), including inherited route tables and inherited triage
+contract/routing state. If you edit routing, the target route must exist in that
+merged context, otherwise the edit is rejected.
+`triage.routes.<name>.*` edits are validated against inherited route context and
+persisted with inherited route values (plus the default route row when needed) so
+the owning profile remains loadable when read alone.
+This includes the common inherited-routing scenario where `triage.contract = "v2"` and
+`triage.routing.enabled = true` are supplied only by defaults.
 
 In an interactive terminal, bare `revrem` (or `revrem --wizard`) opens a guided
 setup. It offers your last compatible settings or the recommended defaults,

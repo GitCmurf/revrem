@@ -264,6 +264,39 @@ def test_set_profile_field_does_not_materialize_routing_siblings(tmp_path):
     assert "routes" not in reloaded["triage"]
 
 
+def test_set_profile_field_route_edit_uses_inherited_v2_routing_context(tmp_path):
+    _write(
+        tmp_path / ".config" / "revrem" / "profiles.toml",
+        "[defaults]\n"
+        "[defaults.triage]\n"
+        "enabled = true\n"
+        'contract = "v2"\n'
+        "[defaults.triage.routing]\n"
+        "enabled = true\n"
+        'mode = "first-match"\n'
+        "strict_on_unavailable_route = false\n"
+        "allow_model_escalation = false\n"
+        'default_route = "codex-midi"\n'
+        "[defaults.triage.routes.codex-midi]\n"
+        'harness = "codex"\n'
+        'model = "base-codex"\n'
+        "[profiles.demo]\n",
+    )
+    _write(tmp_path / ".revrem.toml", '[profiles.demo]\nreview.model = "old"\n')
+
+    profiles.set_profile_field(
+        "demo", "triage.routes.codex-midi.model", "gpt-5.4-mini", cwd=tmp_path, home=tmp_path
+    )
+
+    reloaded = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"]
+    resolved = profiles.resolve_profile("demo", cwd=tmp_path, home=tmp_path)
+    assert resolved.triage.contract == "v2"
+    assert reloaded["review"]["model"] == "old"
+    assert reloaded["triage"]["routing"]["default_route"] == "codex-midi"
+    assert reloaded["triage"]["routes"]["codex-midi"]["harness"] == "codex"
+    assert reloaded["triage"]["routes"]["codex-midi"]["model"] == "gpt-5.4-mini"
+
+
 def test_set_profile_field_does_not_materialize_inherited_description(tmp_path):
     _write(
         tmp_path / ".config" / "revrem" / "profiles.toml",
@@ -372,7 +405,8 @@ def test_set_profile_field_can_edit_inherited_route_entry(tmp_path):
         "[defaults.triage.routing]\n"
         'default_route = "codex-midi"\n'
         "[defaults.triage.routes.codex-midi]\n"
-        'harness = "codex"\n',
+        'harness = "codex"\n'
+        'model = "old-model"\n',
     )
     _write(tmp_path / ".revrem.toml", '[profiles.demo]\nreview.model = "old"\n')
 
@@ -382,7 +416,39 @@ def test_set_profile_field_can_edit_inherited_route_entry(tmp_path):
 
     reloaded = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"]
     assert reloaded["review"]["model"] == "old"
+    assert reloaded["triage"]["routes"]["codex-midi"]["harness"] == "codex"
     assert reloaded["triage"]["routes"]["codex-midi"]["model"] == "gpt-5.4-mini"
+
+
+def test_set_profile_field_routes_edit_materializes_non_default_inherited_rows(tmp_path):
+    _write(
+        tmp_path / ".config" / "revrem" / "profiles.toml",
+        "[defaults]\n"
+        "[defaults.triage]\n"
+        "[defaults.triage.routing]\n"
+        'default_route = "codex-midi"\n'
+        "[defaults.triage.routes.codex-midi]\n"
+        'harness = "codex"\n'
+        'model = "base-codex"\n'
+        "[defaults.triage.routes.midtier-coder]\n"
+        'harness = "codex"\n'
+        'model = "base-open"\n',
+    )
+    _write(tmp_path / ".revrem.toml", '[profiles.demo]\nreview.model = "old"\n')
+
+    profiles.set_profile_field(
+        "demo",
+        "triage.routes.midtier-coder.model",
+        "gpt-5.4-mini",
+        cwd=tmp_path,
+        home=tmp_path,
+    )
+
+    reloaded = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"]
+    assert reloaded["triage"]["routes"]["midtier-coder"]["harness"] == "codex"
+    assert reloaded["triage"]["routes"]["midtier-coder"]["model"] == "gpt-5.4-mini"
+    assert reloaded["triage"]["routes"]["codex-midi"]["model"] == "base-codex"
+    assert reloaded["triage"]["routes"]["codex-midi"]["harness"] == "codex"
 
 
 def test_set_profile_field_persists_float_timeout(tmp_path):

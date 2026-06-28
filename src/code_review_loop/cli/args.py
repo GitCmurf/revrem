@@ -657,9 +657,13 @@ def build_config_parser() -> RevRemArgumentParser:
             "(e.g. description \"Local profile\", review.model gpt-5.5, triage.routes.codex-midi.model gpt-5, "
             "output.no_tty true, runtime.full_auto off, triage.routing.default_route codex-midi, "
             "and description \"\", or pipeline.max_iterations 11). With --format json, this command emits a "
-            "object describing the edit and destination path. Routing edits are validated "
-            "against the effective inherited route table after user and project defaults "
-            "are applied; this includes both triage.routing.default_route and triage.routes.* edits."
+            "object describing the edit and destination path. Routing edits are "
+            "validated against the effective inherited route table after user and "
+            "project defaults are applied, including inherited triage.contract and "
+            "routing metadata. For route-table edits, explicit fields are validated "
+            "against inherited routing context, and the edited route (plus any "
+            "required default_route row) is materialized so the owning profile "
+            "stays loadable."
         ),
     )
     set_parser.add_argument("name")

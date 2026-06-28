@@ -848,6 +848,11 @@ rewrites only the selected field and keeps the user-owned explicit value in plac
 defaults + profile), including inherited route tables. For routing edits this
 means `triage.routing.default_route` and `triage.routes.<name>.*` must resolve to
 a route present in that inherited route table, otherwise the edit is rejected.
+For `triage.routes.<name>.*` specifically, explicit route field edits are validated
+against inherited routing context and the edited route row is materialized into the
+owning profile (including inherited values). If the edited route is not the
+inherited `default_route`, that default route row is materialized too so loading the
+profile directly from its owning file stays valid.
 Boolean fields (for example `output.no_tty` and `runtime.full_auto`) are parsed
 from `true/false`, `1/0`, `yes/no`, and `on/off`.
 
