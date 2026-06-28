@@ -1180,11 +1180,13 @@ routing artifacts are also listed under `summary.artifact_paths.prompts` and
 sensitive transcript-like local data. In `routing-N.json`, `prompt.bytes` is
 the UTF-8 byte size of the written prompt artifact, and
 `effective_route.timeout_seconds` records the timeout RevRem will pass to
-remediation execution after inheritance and CLI caps. An explicit CLI
-positive `--timeout-seconds` or `--remediation-timeout-seconds` is treated as
-an upper bound for routed remediation, so a route saved with
-`timeout_seconds = 0` remains unbounded only when the operator does not supply
-a positive CLI cap. Explicit CLI `--timeout-seconds 0` or
+remediation execution after inheritance and CLI caps. If a route omits
+`timeout_seconds`, it inherits the effective remediation phase timeout,
+including `--remediation-timeout-seconds`. An explicit CLI positive
+`--timeout-seconds` or `--remediation-timeout-seconds` is treated as an upper
+bound for routed remediation, so a route saved with `timeout_seconds = 0`
+remains unbounded only when the operator does not supply a positive CLI cap.
+Explicit CLI `--timeout-seconds 0` or
 `--remediation-timeout-seconds 0` keeps the normal zero-means-unbounded
 semantics and does not cap route timeouts; `0` in the routing artifact means
 unbounded.

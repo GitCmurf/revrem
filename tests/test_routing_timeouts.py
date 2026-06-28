@@ -46,6 +46,38 @@ def test_route_timeout_keeps_unbounded_when_no_cli_cap() -> None:
     assert routing_timeouts.effective_route_timeout_display(config, _route(0)) == 0
 
 
+def test_omitted_route_timeout_inherits_remediation_phase_timeout() -> None:
+    config = LoopConfig(
+        timeout_seconds=300,
+        remediation_timeout_seconds=3600,
+        phase_config_field_sources={"remediation": {"timeout_seconds": "cli"}},
+    )
+
+    assert routing_timeouts.effective_route_timeout_seconds(config, _route(None)) == 3600
+    assert routing_timeouts.effective_route_timeout_display(config, _route(None)) == 3600
+
+
+def test_omitted_route_timeout_inherits_profile_remediation_timeout() -> None:
+    config = LoopConfig(
+        timeout_seconds=300,
+        remediation_timeout_seconds=1200,
+        phase_config_field_sources={"remediation": {"timeout_seconds": "profile:dogfood"}},
+    )
+
+    assert routing_timeouts.effective_route_timeout_seconds(config, _route(None)) == 1200
+
+
+def test_omitted_route_timeout_inherits_unbounded_remediation_timeout() -> None:
+    config = LoopConfig(
+        timeout_seconds=300,
+        remediation_timeout_seconds=0,
+        phase_config_field_sources={"remediation": {"timeout_seconds": "cli"}},
+    )
+
+    assert routing_timeouts.effective_route_timeout_seconds(config, _route(None)) is None
+    assert routing_timeouts.effective_route_timeout_display(config, _route(None)) == 0
+
+
 def test_route_timeout_is_min_of_route_and_cli_cap() -> None:
     config = LoopConfig(
         timeout_seconds=600,
@@ -151,6 +183,37 @@ def test_routed_remediation_uses_effective_timeout_for_subprocess(tmp_path) -> N
     assert result.returncode == 0
     assert captured_timeouts == [600]
     assert (tmp_path / "artifacts" / "remediation-1.txt").read_text(encoding="utf-8") == "fixed\n"
+
+
+def test_routed_remediation_uses_inherited_remediation_timeout_for_omitted_route_timeout(
+    tmp_path,
+) -> None:
+    captured_timeouts: list[float | None] = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        captured_timeouts.append(timeout_seconds)
+        return CommandResult(list(args), 0, stdout="fixed\n")
+
+    config = LoopConfig(
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        timeout_seconds=300,
+        remediation_timeout_seconds=3600,
+        output_last_message=False,
+        phase_config_field_sources={"remediation": {"timeout_seconds": "cli"}},
+    )
+    route = _route(None)
+    ctx = RunContext(
+        clock=FakeClock(),
+        identity=FakeRunIdentity(),
+        runner=runner,
+        **phase_harness_kwargs(),
+    )
+
+    result = run_remediation(config, runner, 1, "fix it", resolved_route=route, ctx=ctx)
+
+    assert result.returncode == 0
+    assert captured_timeouts == [3600]
 
 
 def test_routed_remediation_uses_route_timeout_when_cli_zero(tmp_path) -> None:

@@ -107,6 +107,38 @@ def test_config_set_route_edit_materializes_required_default_route_rows(tmp_path
     assert reloaded["triage"]["routes"]["codex-midi"]["model"] == "base-codex"
 
 
+def test_config_set_route_edit_materializes_inherited_fallback_rows(
+    tmp_path, monkeypatch
+):
+    _write(
+        tmp_path / ".config" / "revrem" / "profiles.toml",
+        "[defaults]\n"
+        "[defaults.triage]\n"
+        "[defaults.triage.routing]\n"
+        'default_route = "foo"\n'
+        "[defaults.triage.routes.foo]\n"
+        'harness = "codex"\n'
+        'model = "base-foo"\n'
+        'fallback = "bar"\n'
+        "[defaults.triage.routes.bar]\n"
+        'harness = "codex"\n'
+        'model = "base-bar"\n',
+    )
+    _write(tmp_path / ".revrem.toml", '[profiles.demo]\nreview.model = "old"\n')
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    code = config_cmd.main(["set", "demo", "triage.routes.foo.model", "gpt-5.4-mini"])
+    assert code == 0
+
+    reloaded = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"]
+    assert reloaded["triage"]["routing"]["default_route"] == "foo"
+    assert reloaded["triage"]["routes"]["foo"]["fallback"] == "bar"
+    assert reloaded["triage"]["routes"]["foo"]["model"] == "gpt-5.4-mini"
+    assert reloaded["triage"]["routes"]["bar"]["harness"] == "codex"
+    assert reloaded["triage"]["routes"]["bar"]["model"] == "base-bar"
+
+
 def test_config_set_route_edit_uses_inherited_v2_contract_context(tmp_path, monkeypatch):
     _write(
         tmp_path / ".config" / "revrem" / "profiles.toml",

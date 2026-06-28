@@ -1234,17 +1234,33 @@ def set_profile_field(
                 routes_raw = {}
                 triage_raw["routes"] = routes_raw
 
+            # Persist the full fallback closure for any route we materialize so the
+            # saved owner file remains loadable without inherited context.
+            materialized_routes: set[str] = set()
+
             def _materialize_route(route_name: str) -> None:
-                inherited_route = merged_routes.get(route_name)
-                if not isinstance(inherited_route, dict):
+                if route_name in materialized_routes:
                     return
-                existing = routes_raw.get(route_name)
-                if isinstance(existing, dict):
-                    routes_raw[route_name] = _deep_merge(
-                        _copy.deepcopy(inherited_route), existing
-                    )
+                materialized_routes.add(route_name)
+
+                inherited_route = merged_routes.get(route_name)
+                if isinstance(inherited_route, dict):
+                    existing = routes_raw.get(route_name)
+                    if isinstance(existing, dict):
+                        routes_raw[route_name] = _deep_merge(
+                            _copy.deepcopy(inherited_route), existing
+                        )
+                    else:
+                        routes_raw[route_name] = _copy.deepcopy(inherited_route)
+                    route_raw = routes_raw[route_name]
                 else:
-                    routes_raw[route_name] = _copy.deepcopy(inherited_route)
+                    route_raw = routes_raw.get(route_name)
+                    if not isinstance(route_raw, dict):
+                        return
+
+                fallback_name = route_raw.get("fallback")
+                if isinstance(fallback_name, str):
+                    _materialize_route(fallback_name)
 
             if route_edit:
                 route_name = dotted_key[len("triage.routes.") :].split(".", 1)[0]

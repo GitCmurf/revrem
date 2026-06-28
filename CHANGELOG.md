@@ -61,6 +61,9 @@ This project follows Semantic Versioning once public releases begin.
 - Profile `triage.prompt` text is now appended to the selected structured
   triage contract instead of replacing it, so bundled expert profiles keep the
   v2 JSON schema instructions required for routing.
+- Routed remediation now inherits the remediation phase timeout when a route
+  omits `timeout_seconds`, so `--remediation-timeout-seconds` applies to routed
+  runs instead of falling back to the shared default timeout.
 - Saved summaries now include a compact `command` string when a sanitized
   command line is available, matching the existing `command_line` and
   `invocation.json` metadata.

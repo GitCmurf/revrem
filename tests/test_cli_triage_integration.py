@@ -733,6 +733,106 @@ def test_v2_triage_profile_prompt_is_additive_to_contract_prompt(tmp_path):
     assert prompt_artifact == triage_prompt
 
 
+def test_routed_remediation_with_omitted_route_timeout_inherits_remediation_timeout(tmp_path):
+    calls = []
+
+    triage_payload = {
+        "confirmed_findings": [
+            {
+                "fingerprint": "review-comment:1",
+                "summary": "Fix profile route fallback persistence.",
+                "severity": "medium",
+                "affected_paths": ["src/code_review_loop/profiles.py"],
+                "rationale": "The profile save path can omit inherited fallback route rows.",
+            }
+        ],
+        "rejected_findings": [],
+        "needs_more_info": [],
+        "implementation_order": ["review-comment:1"],
+        "verification_commands": ["pytest -q tests/test_profile_edit_primitives.py"],
+        "classification": {
+            "risk_level": "medium",
+            "refactor_depth": "localised",
+            "domain_tags": ["configuration", "routing"],
+            "affected_modules": ["code_review_loop.profiles"],
+            "estimated_blast_radius": {"finding_count": 1, "module_count": 1},
+            "safety_signals": [],
+            "failed_check_signals": [],
+        },
+        "route_proposal": {
+            "route_tier": "codex-midi",
+            "harness": "codex",
+            "model": "gpt-test",
+            "reasoning_effort": "medium",
+            "sandbox": "workspace-write",
+            "timeout_seconds": 0,
+            "rationale": "Localised medium-risk routing fix.",
+        },
+        "prompt_requirements": {
+            "required_fragments": [],
+            "definition_of_done": ["Profile route fallback persistence is covered."],
+            "triage_prompt_draft": "Fix profile fallback route persistence without scratch files.",
+        },
+        "parsing_warnings": [],
+    }
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[1] == "review":
+            return CommandResult(
+                list(args),
+                0,
+                stdout="Full review comments:\n\n- [P2] Materialize inherited fallback routes\n",
+            )
+        if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
+            return CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
+        return CommandResult(list(args), 0, stdout="remediated\n")
+
+    profile = profiles.Profile(
+        name="docs",
+        triage=profiles.TriageConfig(
+            contract="v2",
+            enabled=True,
+            routing=profiles.TriageRoutingConfig(enabled=True, default_route="codex-midi"),
+            routes={
+                "codex-midi": profiles.TriageRouteConfig(
+                    harness="codex",
+                    model="gpt-test",
+                    reasoning_effort="medium",
+                    sandbox="workspace-write",
+                    timeout_seconds=None,
+                )
+            },
+        ),
+    )
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        remediation_timeout_seconds=3600,
+        triage_enabled=True,
+        triage_contract="v2",
+        profile_v2=profile,
+        final_review=False,
+        phase_config_field_sources={"remediation": {"timeout_seconds": "cli"}},
+    )
+
+    runner_mod.run_loop(config, runner)
+
+    remediation_call = next(
+        call
+        for call in calls
+        if "--sandbox" in call[0] and call[0][call[0].index("--sandbox") + 1] == "workspace-write"
+    )
+    assert remediation_call[2] == 3600
+    routing_json = json.loads((tmp_path / "artifacts" / "routing-1.json").read_text())
+    assert routing_json["effective_route"]["timeout_seconds"] == 3600
+    assert routing_json["policy_decision"]["decision"] == "policy_override"
+    assert "timeout_seconds" in routing_json["policy_decision"]["rationale"]
+
+
 def test_loop_failed_triage_command_writes_diagnostics(tmp_path):
     calls = []
 
