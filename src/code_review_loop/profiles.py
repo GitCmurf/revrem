@@ -1182,10 +1182,6 @@ def set_profile_field(
     # correct validation and cross-field compatibility checks.
     parse_profile(name, merged_updated, source="<edit>")
 
-    # Preserve explicit owner values by rendering only the owning profile's raw
-    # structure when possible. For route-table edits, validate against inherited
-    # context and materialize the effective route rows needed for reload-safe
-    # local config.
     route_edit = dotted_key.startswith("triage.routes.")
     routing_edit = dotted_key.startswith("triage.routing.")
     merged_validation = route_edit or routing_edit
@@ -1256,9 +1252,12 @@ def set_profile_field(
             if isinstance(merged_default_route, str):
                 _materialize_route(merged_default_route)
     edit_reference = parse_profile(name, merged, source="<edit>")
+    parsed_for_write = parse_profile(
+        name, _deep_merge(merged_updated, raw_profile), source="<edit>"
+    )
     return write_profile_to_path(
         owner,
-        parsed,
+        parsed_for_write,
         force=True,
         raw_profile=raw_profile,
         reference=edit_reference,

@@ -670,7 +670,10 @@ def build_config_parser() -> RevRemArgumentParser:
             "routing metadata. For route-table edits, explicit fields are validated "
             "against inherited routing context, and the edited route (plus any "
             "required default_route row) is materialized so the owning profile "
-            "stays loadable."
+            "stays loadable. This also preserves explicitly-owned routing keys "
+            "(like `triage.routing.strict_on_unavailable_route` or "
+            "`triage.routing.allow_model_escalation`) even when project defaults "
+            "differ."
         ),
     )
     set_parser.add_argument("name")

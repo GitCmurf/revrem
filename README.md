@@ -200,6 +200,10 @@ an empty string:
 ```
 revrem config set final-pr description ""
 ```
+For routing edits, explicitly-owned routing keys in the profile are preserved even when
+project defaults differ (for example, `strict_on_unavailable_route` or
+`allow_model_escalation`), so setting `triage.routing.default_route` does not
+accidentally overwrite that explicit sibling state.
 inherited routing siblings (`enabled`, `mode`, `rule`, `strict_on_unavailable_route`,
 `allow_model_escalation`) and inherited route tables unless you explicitly set
 them too. Route-table edits validate against the inherited context and materialize

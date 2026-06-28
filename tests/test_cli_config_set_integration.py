@@ -136,6 +136,43 @@ def test_config_set_route_edit_uses_inherited_v2_contract_context(tmp_path, monk
     assert profiles.resolve_profile("demo", cwd=tmp_path, home=tmp_path).triage.contract == "v2"
 
 
+def test_config_set_routing_default_route_preserves_owner_routing_metadata_over_project_default(
+    tmp_path, monkeypatch
+):
+    _write(
+        tmp_path / ".config" / "revrem" / "profiles.toml",
+        "[profiles.demo]\n"
+        "[profiles.demo.triage]\n"
+        "[profiles.demo.triage.routing]\n"
+        "strict_on_unavailable_route = true\n",
+    )
+    _write(
+        tmp_path / ".revrem.toml",
+        '[defaults]\n'
+        '[defaults.triage]\n'
+        '[defaults.triage.routing]\n'
+        'default_route = "codex-midi"\n'
+        'strict_on_unavailable_route = false\n'
+        '[defaults.triage.routes.codex-midi]\n'
+        'harness = "codex"\n'
+        '[defaults.triage.routes.frontier]\n'
+        'harness = "codex"\n',
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    code = config_cmd.main(
+        ["set", "demo", "triage.routing.default_route", "frontier"]
+    )
+    assert code == 0
+
+    reloaded = profiles.load_profile_file(
+        tmp_path / ".config" / "revrem" / "profiles.toml"
+    ).raw_profiles["demo"]
+    assert reloaded["triage"]["routing"]["default_route"] == "frontier"
+    assert reloaded["triage"]["routing"]["strict_on_unavailable_route"] is True
+
+
 def test_config_set_routing_enabled_edit_uses_inherited_v2_contract_context(tmp_path, monkeypatch):
     _write(
         tmp_path / ".config" / "revrem" / "profiles.toml",

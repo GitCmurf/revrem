@@ -846,6 +846,10 @@ If a profile is defined at both user and project scope, project edits preserve
 user-owned values as inherited, and do not copy those into `.revrem.toml`.
 If a user-owned value conflicts with a project default for the same field, `config set`
 rewrites only the selected field and keeps the user-owned explicit value in place.
+For routing keys, explicitly-owned routing metadata is preserved too; editing
+`triage.routing.default_route` or another sibling routing leaf does not rewrite
+`strict_on_unavailable_route`/`allow_model_escalation` if they were explicitly set
+in the owning profile and differ from project defaults.
 `config set` validates using the full effective chain (user defaults + project
 defaults + profile), including inherited route tables. For routing edits this
 means `triage.routing.enabled`, `triage.routing.default_route`, and `triage.routes.<name>.*`
