@@ -379,6 +379,9 @@ def add_summary_contract_fields(
     summary.setdefault("harness", config.review_harness)
     summary.setdefault("harness_version", None)
     summary.setdefault("command_line", list(config.command_line) if config.command_line else None)
+    command_line = summary.get("command_line")
+    if isinstance(command_line, list) and all(isinstance(part, str) for part in command_line):
+        summary.setdefault("command", " ".join(command_line))
     summary.setdefault("phase_config", phase_config_payload(config))
     coverage = external_review_coverage_payload(config.artifact_dir)
     if coverage:

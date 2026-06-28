@@ -202,6 +202,30 @@ def run_triage(
             False,
             payload,
         )
+    if config.triage_contract == "v2":
+        issue = triage.unstructured_triage_issue(
+            iteration=iteration,
+            artifact=str(triage_artifact),
+            contract=config.triage_contract,
+        )
+        artifacts.write_json_artifact(
+            config.artifact_dir,
+            f"diagnostics-{iteration}.json",
+            diagnostics.doctor_payload([issue]),
+        )
+        phase_support.progress_event(
+            config,
+            "triage",
+            str(iteration),
+            "invalid",
+            "unstructured output; routing skipped",
+            ctx=ctx,
+        )
+        if config.triage_on_invalid == "stop":
+            raise RuntimeError(
+                f"unstructured triage output for iteration {iteration}; see {triage_artifact}"
+            )
+
     return (
         (
             "Triage handoff from the previous review:\n"

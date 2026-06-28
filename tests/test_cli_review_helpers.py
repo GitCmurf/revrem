@@ -138,6 +138,15 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
     )
     assert (
         detect_review_status(
+            "I did not identify any discrete, actionable correctness issues in "
+            "the changed code. I could not run pytest in this read-only sandbox "
+            "because Python could not create a temporary directory, but manual "
+            "review of the diff did not reveal blocking defects."
+        )
+        == "clear"
+    )
+    assert (
+        detect_review_status(
             "I did not identify any discrete, actionable bugs in the diff relative "
             "to the requested base commit. CodeRabbit also completed with zero findings."
         )

@@ -126,10 +126,10 @@ NEGATED_ISSUE_PROSE_RE = re.compile(
     rf"|without(?:\s+any)?(?:\s+{NEGATED_ISSUE_PREFIX_CHAIN_RE})?\s+{NEGATED_ISSUE_WORD_RE}\b"
     rf"|without\s+revealing(?:\s+any)?(?:\s+{NEGATED_ISSUE_PREFIX_CHAIN_RE})?\s+{NEGATED_ISSUE_WORD_RE}\b"
     rf"|(?:did|does|do)\s+not\s+"
-    rf"(?:find|identify|detect|see|spot|surface|observe|notice)\s+"
+    rf"(?:find|identify|detect|see|spot|surface|observe|notice|reveal)\s+"
     rf"(?:any\s+)?(?:{NEGATED_ISSUE_PREFIX_CHAIN_RE}\s+)?{NEGATED_ISSUE_WORD_RE}\b"
     rf"|(?:didn't|doesn't|don't|cannot|can't)\s+"
-    rf"(?:find|identify|detect|see|spot|surface|observe|notice)\s+"
+    rf"(?:find|identify|detect|see|spot|surface|observe|notice|reveal)\s+"
     rf"(?:any\s+)?(?:{NEGATED_ISSUE_PREFIX_CHAIN_RE}\s+)?{NEGATED_ISSUE_WORD_RE}\b"
     rf")",
     re.IGNORECASE,
@@ -152,6 +152,7 @@ CLEAR_PHRASES = (
     "did not identify a discrete introduced correctness, security, or maintainability issue that should block the patch",
     "did not identify any discrete introduced bugs that should block the patch",
     "did not identify any discrete introduced bugs that would block the patch",
+    "did not identify any discrete, actionable correctness issues",
     "did not identify any actionable correctness, security, or maintainability issues",
     "did not identify any introduced, actionable correctness issues",
     "did not identify any introduced correctness, security, or maintainability issues",

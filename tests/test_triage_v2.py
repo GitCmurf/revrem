@@ -335,6 +335,9 @@ def test_load_prompt_v2_includes_v2_fields():
     assert "classification" in prompt
     assert "route_proposal" in prompt
     assert "prompt_requirements" in prompt
+    assert "Return JSON only" in prompt
+    assert "non-whitespace character of your response must be `{`" in prompt
+    assert "non-whitespace character must be `}`" in prompt
     assert "triage-v2" in prompt
     assert '"estimated_blast_radius": {"finding_count": 1, "module_count": 1}' in prompt
     assert "Do not use `findings`, `modules`" in prompt
@@ -346,6 +349,10 @@ def test_load_prompt_v2_includes_v2_fields():
     assert "`parsing_warnings` must be an array of strings" in prompt
     assert "Do not emit JSON null" in prompt
     assert '"timeout_seconds": 0' in prompt
+    assert "Example valid routed response" in prompt
+    assert '"route_tier": "efficient-coder"' in prompt
+    assert "Invalid anti-pattern" in prompt
+    assert "I found the issue and the safest fix is" in prompt
     assert "Prefer a frontier route when findings affect review-status classification" in prompt
     assert "`routing-policy-correctness` or `model-escalation-policy`" in prompt
     assert "Do not treat every timeout/config precedence issue as frontier-worthy" in prompt

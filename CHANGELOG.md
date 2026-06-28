@@ -49,6 +49,18 @@ This project follows Semantic Versioning once public releases begin.
 - Codex review status detection now treats the clear-prose form "No actionable
   correctness, safety, or maintainability defects were found" as clear while
   still refusing contrastive prose that reports a later defect.
+- Codex review status detection now recognizes "I did not identify any
+  discrete, actionable correctness issues" plus negated "did not reveal
+  blocking defects" caveats as clear, while preserving fail-closed behavior for
+  contrastive bug prose.
+- v2 triage runs now record `revrem.triage.unstructured_output` when a triage
+  model returns prose instead of the required JSON payload. With
+  `triage.on_invalid = "continue"` RevRem still falls back to direct
+  remediation, but routing is explicitly reported as skipped; with
+  `triage.on_invalid = "stop"` the run fails before remediation.
+- Saved summaries now include a compact `command` string when a sanitized
+  command line is available, matching the existing `command_line` and
+  `invocation.json` metadata.
 
 ## [0.5.0] - 2026-06-21
 

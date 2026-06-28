@@ -7,6 +7,10 @@ Use these top-level keys exactly:
 `confirmed_findings`, `rejected_findings`, `needs_more_info`,
 `implementation_order`, `verification_commands`, `parsing_warnings`,
 `classification`, `prompt_requirements`, and optionally `route_proposal`.
+Return JSON only. Do not write Markdown, prose summaries, implementation plans,
+patches, shell commands outside JSON strings, or fenced code blocks. The first
+non-whitespace character of your response must be `{` and the last
+non-whitespace character must be `}`.
 
 RevRem stamps `schema_version`, `run_id`, `source_review_artifact`, and
 `prompt_version` after parsing, but if you include `prompt_version` it must be
@@ -144,6 +148,56 @@ Minimal valid `route_proposal` example when you choose to include one:
   "timeout_seconds": 0,
   "rationale": "0 means no route timeout."
 }
+
+Example valid routed response:
+{
+  "confirmed_findings": [
+    {
+      "fingerprint": "review-comment:1",
+      "summary": "Preserve inherited route context",
+      "severity": "medium",
+      "affected_paths": ["src/code_review_loop/profiles.py"],
+      "rationale": "The profile edit path must validate route edits against inherited v2 routing context."
+    }
+  ],
+  "rejected_findings": [],
+  "needs_more_info": [],
+  "implementation_order": ["review-comment:1"],
+  "verification_commands": ["pytest -q tests/test_profile_edit_primitives.py"],
+  "parsing_warnings": ["No f1: fingerprint was present; used review-comment:1."],
+  "classification": {
+    "domain_tags": ["configuration", "routing"],
+    "risk_level": "medium",
+    "refactor_depth": "localised",
+    "affected_modules": ["code_review_loop.profiles"],
+    "estimated_blast_radius": {"finding_count": 1, "module_count": 1},
+    "safety_signals": [],
+    "failed_check_signals": []
+  },
+  "prompt_requirements": {
+    "required_fragments": [],
+    "definition_of_done": [
+      "Add a regression test for inherited v2 routing context.",
+      "Run the focused profile edit tests."
+    ],
+    "triage_prompt_draft": "Fix the profile edit path without creating repository scratch files. Remove any accidental temporary files. Do not claim verification unless the command was actually run or its output is present in the supplied context."
+  },
+  "route_proposal": {
+    "route_tier": "efficient-coder",
+    "harness": "codex",
+    "model": "gpt-5.4-mini",
+    "reasoning_effort": "medium",
+    "sandbox": "workspace-write",
+    "timeout_seconds": 0,
+    "rationale": "Localised medium-risk configuration fix; use the configured midtier route."
+  }
+}
+
+Invalid anti-pattern:
+Do not answer with prose such as "I found the issue and the safest fix is..."
+followed by a patch or checklist. That is not a v2 triage payload. If you return
+prose instead of the JSON object above, RevRem cannot route remediation and will
+record a triage diagnostic.
 
 Contract guidance:
 `affected_paths` should list the minimum files needed to implement the finding.

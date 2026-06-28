@@ -146,6 +146,8 @@ def test_summary_writes_invocation_artifact_and_path(tmp_path):
 
     assert artifact_payload == invocation
     assert summary["invocation"] == invocation
+    assert summary["command_line"] == ["revrem", "--base", "main"]
+    assert summary["command"] == "revrem --base main"
     assert summary["artifact_paths"]["invocation"] == str(invocation_path)
 
 
