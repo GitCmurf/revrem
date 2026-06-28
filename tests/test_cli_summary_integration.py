@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 from pathlib import Path
 
 import tests.support.application_runner as runner_mod
@@ -149,6 +150,35 @@ def test_summary_writes_invocation_artifact_and_path(tmp_path):
     assert summary["command_line"] == ["revrem", "--base", "main"]
     assert summary["command"] == "revrem --base main"
     assert summary["artifact_paths"]["invocation"] == str(invocation_path)
+
+
+def test_summary_quotes_whitespace_arguments_in_command_string(tmp_path):
+    review_outputs = iter(
+        [
+            "Full review comments:\n\n- [P2] Fix init\n",
+            "No actionable findings.\nREVIEW_STATUS: clear\n",
+        ]
+    )
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[1] == "review":
+            return CommandResult(list(args), 0, stdout=next(review_outputs))
+        return CommandResult(list(args), 0, stdout="fixed\n")
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        command_line=("revrem", "--check", "pytest -q"),
+    )
+
+    summary = runner_mod.run_loop(config, runner).to_dict()
+
+    assert summary["command_line"] == ["revrem", "--check", "pytest -q"]
+    assert summary["command"] == shlex.join(("revrem", "--check", "pytest -q"))
+    assert shlex.split(summary["command"]) == ["revrem", "--check", "pytest -q"]
 
 
 def test_summary_collects_commit_message_fallback_artifacts(tmp_path):

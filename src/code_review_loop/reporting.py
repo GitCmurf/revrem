@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 from collections.abc import Iterator
 from contextlib import suppress
 from datetime import datetime
@@ -381,7 +382,7 @@ def add_summary_contract_fields(
     summary.setdefault("command_line", list(config.command_line) if config.command_line else None)
     command_line = summary.get("command_line")
     if isinstance(command_line, list) and all(isinstance(part, str) for part in command_line):
-        summary.setdefault("command", " ".join(command_line))
+        summary.setdefault("command", shlex.join(command_line))
     summary.setdefault("phase_config", phase_config_payload(config))
     coverage = external_review_coverage_payload(config.artifact_dir)
     if coverage:
