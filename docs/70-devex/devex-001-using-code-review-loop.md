@@ -1194,7 +1194,10 @@ names, harnesses, models, reasoning effort, timeout, sandbox, and fallback;
 unbounded route timeouts are rendered as `timeout=none`, and route proposals
 must encode that as integer `timeout_seconds = 0` rather than JSON null. RevRem
 normalizes provider output that makes this specific mistake and records an
-info-level triage note. Codex triage should use `low` or higher reasoning
+info-level triage note. Profile `triage.prompt` text is added as extra
+priority guidance after the selected structured triage contract; it does not
+replace the JSON schema instructions required for v2 routing. Codex triage
+should use `low` or higher reasoning
 effort. RevRem rejects Codex `--triage-reasoning-effort minimal` because
 inherited Codex tools can make the provider request fail before structured
 triage output is produced. The wizard treats stale Codex triage profiles that

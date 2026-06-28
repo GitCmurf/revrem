@@ -59,7 +59,7 @@ def run_triage(
     ctx: RunContext,
 ) -> tuple[str, int, bool, dict[str, Any] | None]:
     command = build_triage_command(config)
-    prompt_root = config.triage_prompt or triage.load_prompt(contract=config.triage_contract)
+    prompt_root = _triage_prompt_root(config)
     prompt_root = _with_route_table(prompt_root, config)
     prompt = f"{prompt_root}\n{prompts_composer.trim_for_prompt(review_output, config.max_remediation_input_chars)}"
     prompt_artifact_path = config.artifact_dir / f"triage-{iteration}-prompt.txt"
@@ -261,6 +261,17 @@ class TriageAdapter:
             is_clear=is_clear,
             payload=payload,
         )
+
+
+def _triage_prompt_root(config: LoopConfig) -> str:
+    prompt_root = triage.load_prompt(contract=config.triage_contract)
+    if not config.triage_prompt:
+        return prompt_root
+    return (
+        f"{prompt_root}\n\n"
+        "Additional profile triage guidance:\n"
+        f"{config.triage_prompt}"
+    )
 
 
 def _with_route_table(prompt_root: str, config: LoopConfig) -> str:

@@ -58,6 +58,9 @@ This project follows Semantic Versioning once public releases begin.
   `triage.on_invalid = "continue"` RevRem still falls back to direct
   remediation, but routing is explicitly reported as skipped; with
   `triage.on_invalid = "stop"` the run fails before remediation.
+- Profile `triage.prompt` text is now appended to the selected structured
+  triage contract instead of replacing it, so bundled expert profiles keep the
+  v2 JSON schema instructions required for routing.
 - Saved summaries now include a compact `command` string when a sanitized
   command line is available, matching the existing `command_line` and
   `invocation.json` metadata.

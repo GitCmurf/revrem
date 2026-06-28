@@ -236,6 +236,9 @@ revrem --base main --max-iterations 2 --check "git diff --check" --save-profile 
 
 For triage, routing, multi-harness setups, and the full wizard reference, see
 the [operator guide](https://github.com/GitCmurf/revrem/blob/main/docs/70-devex/devex-001-using-code-review-loop.md#interactive-wizard).
+Profile `triage.prompt` text is additive guidance: RevRem still prepends the
+selected structured triage contract, then adds the profile guidance and any
+configured route table before the review text.
 
 Bundled expert profiles are available immediately:
 
