@@ -21,6 +21,17 @@ history_command = import_module("code_review_loop.cli.commands.history")
 suppress_command = import_module("code_review_loop.cli.commands.suppress")
 
 
+def test_config_set_help_example_order_preserved():
+    parser = cli_args.build_config_parser()
+    normalized_help = " ".join(parser.format_help().split())
+    assert (
+        "(e.g. description \"Local profile\", review.model gpt-5.5, triage.contract v2, "
+        "triage.routes.codex-midi.model gpt-5, triage.routing.default_route codex-midi, "
+        "triage.routing.enabled true, output.no_tty true, runtime.full_auto off, "
+        "and description \"\", or pipeline.max_iterations 11)." in normalized_help
+    )
+
+
 def _clear_result(summary: dict[str, object]) -> application_mod.ReviewLoopResult:
     return application_mod.ReviewLoopResult(
         summary=summary, outcome=OutcomeClear(reason="review_clear")
