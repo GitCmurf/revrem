@@ -3,7 +3,7 @@ document_id: REVREM-PLAN-011
 type: PLAN
 title: TUI Overhaul Plan 3 — Run / Monitor Live Mode
 status: Draft
-version: '0.5'
+version: '0.6'
 last_updated: '2026-06-28'
 owner: GitCmurf
 docops_version: '2.0'
@@ -31,9 +31,9 @@ related_ids:
 
 **Goal:** Turn the Run workspace into the live face of the loop the operator authored — the *same* vertical diagram, now showing each phase's live status (`✓` done · `▶` running · `·` pending · `⤫` disabled), the outer iteration counter and inner check-retry counter riding on the loop rails, a scrolling event tail, and the run's artifacts. This is the surface the dominant workflow (overnight pre-PR hardening) is watched on: "where is it / how many iterations left / is it converging" at a glance.
 
-**Architecture:** Two layers under one widget set. (1) A pure, Textual-free **derivation** in `tui_state` — `run_loop_view(events, profile) -> RunLoopView` — folds the event stream into a per-phase status map plus iteration / inner-retry counters, translating the runner's phase vocabulary into the diagram's display phases. (2) Real **Textual widgets** in `tui_loop_widgets.py` — `LoopRunView` (the diagram in run mode) and `EventLog` (the tail) — that consume the derivation and reuse the *identical* `loop_rail_meta` / `phase_gutter` pure functions from Plan 2 so the authoring and monitoring diagrams cannot visually drift. The existing `LiveRunController` event/artifact plumbing and the app's 0.5s refresh timer drive updates.
+**Architecture:** Two layers under one widget set. (1) A pure, Textual-free **derivation** in a new `tui_run_state.py` — `run_loop_view(events, profile) -> RunLoopView` — folds the event stream into a per-phase status map plus iteration / inner-retry counters, translating the runner's phase vocabulary into the diagram's display phases. It imports Plan 2's `tui_loop_state` helpers for shared geometry and imports the existing `tui_state.event_views_from_events` / `event_row_text` helpers for event-tail formatting rather than moving home/history code. (2) Real **Textual widgets** in `tui_loop_widgets.py` — `LoopRunView` (the diagram in run mode) and `EventLog` (the tail) — that consume the derivation and reuse the *identical* `loop_rail_meta` / `phase_gutter` pure functions from Plan 2 so the authoring and monitoring diagrams cannot visually drift. The existing `LiveRunController` event/artifact plumbing and the app's 0.5s refresh timer drive updates.
 
-**Tech Stack:** Python 3.12, Textual 8.2.5 (optional `[tui]` extra, lazy-imported), `pytest` + Textual pilot/`run_test`, the existing `events` model + `tui_run_controller.LiveRunController`, and the Plan 2 loop view-models (`loop_rail_meta`, `phase_gutter`, `LOOP_PHASES`).
+**Tech Stack:** Python 3.12, Textual 8.2.5 (optional `[tui]` extra, lazy-imported), `pytest` + Textual pilot/`run_test`, the existing `events` model + `tui_run_controller.LiveRunController`, and the Plan 2 loop view-models (`tui_loop_state.loop_rail_meta`, `phase_gutter`, `LOOP_PHASES`).
 
 ## Plan sequence (this is Plan 3 of 4)
 
@@ -42,7 +42,7 @@ related_ids:
 3. **Plan 3 (this doc):** run / monitor live mode — `LoopRunView`, `EventLog`.
 4. **Plan 4 (REVREM-PLAN-012):** profiles picker + prompts library + route-row modal editing.
 
-> **Sequencing note:** This plan is written against Plan 2's interfaces before Plan 2 has executed. Plan 2's authoring helpers accept either a `LoopEditModel` or a plain `profiles.Profile`; live run mode passes the resolved running profile. Re-confirm `loop_rail_meta`, `phase_gutter`, and `loop_header_text` exist with those documented shapes before starting Task 3.
+> **Sequencing note:** This plan is written against Plan 2's interfaces before Plan 2 has executed. Plan 2's authoring helpers accept either a `LoopEditModel` or a plain `profiles.Profile`; live run mode passes the resolved running profile. Re-confirm `tui_loop_state.loop_rail_meta`, `phase_gutter`, and `loop_header_text` exist with those documented shapes before starting Task 3.
 
 ## Global Constraints
 
@@ -50,6 +50,7 @@ Every task's requirements implicitly include this section.
 
 - **Read-only.** This plan adds no edit or write path; it only *renders* a running profile and the event/artifact stream. No `profiles` write functions are called. (This is why the root-key / coercion concerns from Plan 2 do not apply here.)
 - **Config-truthful, two modes one shape.** `LoopRunView` reuses Plan 2's `loop_rail_meta(source)` and `phase_gutter(phase, rail_meta)` verbatim, passing the running resolved `profiles.Profile` as `source` — the inner rail is shown live only when `runtime.inner_check_retries > 0`, disabled phases render `⤫` and drop from the rails, and the iteration bound on the outer rail is the same `max_iterations`. The authoring and run diagrams share the rail geometry by construction.
+- **Pure means no I/O and no input mutation.** `run_loop_view` may use local accumulator dictionaries while folding events; it must not mutate the supplied event list, profile, controller, or filesystem, and it must be deterministic for the same `(events, profile)` inputs.
 - **Truthful to controller capability.** `LiveRunController` exposes `start` / `refresh` / `cancel` / `finish` / `read_live_events` / `stdout_lines` / `stderr_lines` — there is **no pause**. The Run footer therefore offers *stop* (`k`, the existing cancel), *logs* (`l`, toggle stdout/stderr tail), and *show artifacts* (`o`, displays the directory path) — **not** the speculative "pause" from the REVREM-DESIGN-001 §5.2 mockup. Do not invent a pause control.
 - **Design reconciliation is part of this plan.** REVREM-DESIGN-001 §5.2 still shows `p pause`; Task 0 updates that design text before widget work so implementation, documentation, and review expectations agree.
 - **Phase vocabulary is mapped, not assumed.** The runner emits loop phases as `review`, `triage`, `remediate`, `commit` (note: `remediate`, not `remediation`), and signals checks via `check_result` events rather than a `phase="checks"`. `run_loop_view` translates through an explicit `RUNNER_PHASE_TO_DISPLAY` map (Task 1) — never by assuming runner phase strings equal `LOOP_PHASES`.
@@ -93,7 +94,7 @@ git commit -m "docs(tui): reconcile run monitor controls with controller capabil
 ## File structure
 
 - **Modify** `docs/30-design/design-001-loop-first-tui-overhaul.md` — reconcile Run monitor controls (`k` stop, `l` logs/events, `o` artifacts; no pause).
-- **Modify** `src/code_review_loop/tui_state.py` — add `run_loop_view`, `RunLoopView`, `RunPhaseStatus`, `RUNNER_PHASE_TO_DISPLAY`, `RUN_STATE_GLYPHS`, and an event-tail formatter `event_tail_lines`.
+- **Create** `src/code_review_loop/tui_run_state.py` — add `run_loop_view`, `RunLoopView`, `RunPhaseStatus`, `RUNNER_PHASE_TO_DISPLAY`, `RUN_STATE_GLYPHS`, and an event-tail formatter `event_tail_lines`.
 - **Modify** `src/code_review_loop/tui_loop_widgets.py` — add lazy `loop_run_view_class()` (`LoopRunView`) and `event_log_class()` (`EventLog`).
 - **Modify** `src/code_review_loop/tui.py` — mount `LoopRunView` + `EventLog` into the Run workspace; wire the existing 0.5s refresh + launch auto-switch to them; Run footer controls (`k`/`l`/`o`).
 - **Create** `tests/test_tui_run_view.py` — pure-derivation unit tests (synthetic event lists).
@@ -108,7 +109,7 @@ git commit -m "docs(tui): reconcile run monitor controls with controller capabil
 Fold an event list into per-phase status + counters. This is the testable heart of the live view; everything visual reads from it.
 
 **Files:**
-- Modify: `src/code_review_loop/tui_state.py`
+- Create: `src/code_review_loop/tui_run_state.py`
 - Test: `tests/test_tui_run_view.py`
 
 **Interfaces:**
@@ -130,7 +131,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from code_review_loop import events as event_model
-from code_review_loop import profiles, tui_state
+from code_review_loop import profiles, tui_run_state
 
 
 def _profile(tmp_path: Path, *, triage=False, commit=True, inner=0) -> profiles.Profile:
@@ -160,7 +161,7 @@ def _ev(seq, kind, phase=None, iteration=None, **payload):
 
 
 def test_pending_when_no_events(tmp_path):
-    view = tui_state.run_loop_view((), _profile(tmp_path))
+    view = tui_run_state.run_loop_view((), _profile(tmp_path))
     states = {p.name: p.state for p in view.phases}
     assert states["review"] == "pending"
     assert view.iteration is None
@@ -173,7 +174,7 @@ def test_running_and_done_states_map_remediate(tmp_path):
         _ev(2, "phase_result", "review", 1, detail="2 findings"),
         _ev(3, "phase_start", "remediate", 1),  # runner says "remediate"
     )
-    view = tui_state.run_loop_view(evs, _profile(tmp_path))
+    view = tui_run_state.run_loop_view(evs, _profile(tmp_path))
     states = {p.name: p.state for p in view.phases}
     assert states["review"] == "done"
     assert states["remediation"] == "running"  # mapped to display name
@@ -182,7 +183,7 @@ def test_running_and_done_states_map_remediate(tmp_path):
 
 
 def test_disabled_phases_render_disabled(tmp_path):
-    view = tui_state.run_loop_view((), _profile(tmp_path, triage=False, commit=False))
+    view = tui_run_state.run_loop_view((), _profile(tmp_path, triage=False, commit=False))
     states = {p.name: p.state for p in view.phases}
     assert states["triage"] == "disabled"
     assert states["commit"] == "disabled"
@@ -194,7 +195,7 @@ def test_checks_state_from_check_result_events(tmp_path):
         _ev(2, "phase_result", "remediate", 2),
         _ev(3, "check_result", "test", 2, name="pytest -q", passed=True),
     )
-    view = tui_state.run_loop_view(evs, _profile(tmp_path))
+    view = tui_run_state.run_loop_view(evs, _profile(tmp_path))
     states = {p.name: p.state for p in view.phases}
     assert states["checks"] == "done"
 
@@ -207,7 +208,7 @@ def test_inner_retry_counts_repeated_remediate_in_iteration(tmp_path):
         _ev(4, "phase_start", "remediate", 3),  # second remediate => inner retry 1
         _ev(5, "phase_result", "remediate", 3),
     )
-    view = tui_state.run_loop_view(evs, _profile(tmp_path, inner=2))
+    view = tui_run_state.run_loop_view(evs, _profile(tmp_path, inner=2))
     assert view.inner_check_retries == 2
     assert view.inner_retry == 1
 
@@ -218,7 +219,7 @@ def test_inner_retry_counts_sub_iteration_labels_as_same_outer_iteration(tmp_pat
         _ev(2, "check_result", "test", "1.1", passed=False),
         _ev(3, "phase_start", "remediate", "1.2"),
     )
-    view = tui_state.run_loop_view(evs, _profile(tmp_path, inner=2))
+    view = tui_run_state.run_loop_view(evs, _profile(tmp_path, inner=2))
     assert view.iteration == 1
     assert view.inner_retry == 1
 
@@ -234,11 +235,35 @@ def test_new_outer_iteration_resets_prior_phase_states(tmp_path):
         _ev(7, "check_result", "test", 1, passed=True),
         _ev(8, "phase_start", "review", 2),
     )
-    view = tui_state.run_loop_view(evs, _profile(tmp_path, triage=True, inner=1))
+    view = tui_run_state.run_loop_view(evs, _profile(tmp_path, triage=True, inner=1))
     states = {p.name: p.state for p in view.phases}
     assert states["review"] == "running"
     assert states["triage"] == "pending"
     assert states["remediation"] == "pending"
+    assert states["checks"] == "pending"
+
+
+def test_orphan_check_result_marks_checks_without_remediate_start(tmp_path):
+    evs = (_ev(1, "check_result", "check", "1.1", passed=False),)
+    view = tui_run_state.run_loop_view(evs, _profile(tmp_path))
+    states = {p.name: p.state for p in view.phases}
+    details = {p.name: p.detail for p in view.phases}
+    assert states["checks"] == "done"
+    assert details["checks"] == "failed"
+    assert view.iteration == 1
+
+
+def test_string_outer_iteration_change_resets_prior_states(tmp_path):
+    evs = (
+        _ev(1, "phase_start", "review", "1"),
+        _ev(2, "phase_result", "review", "1"),
+        _ev(3, "check_result", "check", "1.1", passed=True),
+        _ev(4, "phase_start", "review", "2"),
+    )
+    view = tui_run_state.run_loop_view(evs, _profile(tmp_path))
+    states = {p.name: p.state for p in view.phases}
+    assert view.iteration == 2
+    assert states["review"] == "running"
     assert states["checks"] == "pending"
 ```
 
@@ -247,11 +272,11 @@ Before implementing the counter, inspect a real artifact or fixture with `runtim
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `python -m pytest tests/test_tui_run_view.py -q`
-Expected: FAIL — `AttributeError: module 'code_review_loop.tui_state' has no attribute 'run_loop_view'`.
+Expected: FAIL — `ModuleNotFoundError` or `AttributeError` for `code_review_loop.tui_run_state.run_loop_view`.
 
 - [ ] **Step 3: Write the implementation**
 
-Append to `src/code_review_loop/tui_state.py`:
+Create `src/code_review_loop/tui_run_state.py`. Import `dataclass`, `Any`, `profiles`, `tui_loop_state`, and `tui_state.event_detail`. The implementation below keeps local accumulator mutation private to the function and does not mutate inputs.
 
 ```python
 RUNNER_PHASE_TO_DISPLAY: dict[str, str] = {
@@ -285,7 +310,7 @@ class RunLoopView:
 
 
 def _phase_enabled_map(profile: profiles.Profile) -> dict[str, bool]:
-    return {phase.name: phase.enabled for phase in pipeline_phases(profile)}
+    return {phase.name: phase.enabled for phase in tui_state.pipeline_phases(profile)}
 
 
 def _outer_iteration(value: object) -> int | None:
@@ -302,8 +327,8 @@ def run_loop_view(
     events: "tuple[Any, ...] | list[Any]", profile: profiles.Profile
 ) -> RunLoopView:
     enabled = _phase_enabled_map(profile)
-    states: dict[str, str] = {name: "pending" for name in LOOP_PHASES}
-    details: dict[str, str] = {name: "" for name in LOOP_PHASES}
+    states: dict[str, str] = {name: "pending" for name in tui_loop_state.LOOP_PHASES}
+    details: dict[str, str] = {name: "" for name in tui_loop_state.LOOP_PHASES}
     for name, is_on in enabled.items():
         if not is_on:
             states[name] = "disabled"
@@ -362,7 +387,7 @@ def run_loop_view(
     return RunLoopView(
         phases=tuple(
             RunPhaseStatus(name=name, state=states[name], detail=details[name])
-            for name in LOOP_PHASES
+            for name in tui_loop_state.LOOP_PHASES
         ),
         iteration=iteration,
         max_iterations=profile.pipeline.max_iterations,
@@ -371,7 +396,7 @@ def run_loop_view(
     )
 ```
 
-`event_detail(event)` delegates to `events.compact_detail(event)` and is used only for `phase_result` rows here. Checks are signalled through `check_result` events, so their display state/detail stays in the explicit `check_result` branch above rather than relying on a synthetic `phase="checks"` phase result.
+`tui_state.event_detail(event)` delegates to `events.compact_detail(event)` and is used only for `phase_result` rows here. Checks are signalled through `check_result` events, so their display state/detail stays in the explicit `check_result` branch above rather than relying on a synthetic `phase="checks"` phase result.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -381,7 +406,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/code_review_loop/tui_state.py tests/test_tui_run_view.py
+git add src/code_review_loop/tui_run_state.py tests/test_tui_run_view.py
 git commit -m "feat(tui): derive live run-loop status from the event stream"
 ```
 
@@ -392,11 +417,11 @@ git commit -m "feat(tui): derive live run-loop status from the event stream"
 A compact, bounded tail of the event stream for the live `EventLog`, reusing the existing `RunEventView` / `event_row_text` plumbing.
 
 **Files:**
-- Modify: `src/code_review_loop/tui_state.py`
+- Modify: `src/code_review_loop/tui_run_state.py`
 - Test: `tests/test_tui_run_view.py` (add cases)
 
 **Interfaces:**
-- Consumes: `events.Event`; existing `event_views_from_events`, `event_row_text`.
+- Consumes: `events.Event`; existing `tui_state.event_views_from_events`, `tui_state.event_row_text`.
 - Produces: `event_tail_lines(events, *, limit=8) -> tuple[str, ...]`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -406,13 +431,13 @@ Append to `tests/test_tui_run_view.py`:
 ```python
 def test_event_tail_lines_bounded_and_formatted():
     evs = [_ev(i, "phase_output", "review", 1, text=f"line {i}") for i in range(1, 20)]
-    lines = tui_state.event_tail_lines(evs, limit=5)
+    lines = tui_run_state.event_tail_lines(evs, limit=5)
     assert len(lines) == 5
     assert "review" in lines[-1]
 
 
 def test_event_tail_lines_empty():
-    assert tui_state.event_tail_lines(()) == ()
+    assert tui_run_state.event_tail_lines(()) == ()
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -422,7 +447,7 @@ Expected: FAIL — `AttributeError: ... 'event_tail_lines'`.
 
 - [ ] **Step 3: Write the implementation**
 
-Append to `src/code_review_loop/tui_state.py`:
+Append to `src/code_review_loop/tui_run_state.py`:
 
 ```python
 def event_tail_lines(
@@ -430,8 +455,8 @@ def event_tail_lines(
 ) -> tuple[str, ...]:
     if not events:
         return ()
-    views = event_views_from_events(tuple(events)[-limit:])
-    return tuple(event_row_text(view) for view in views)
+    views = tui_state.event_views_from_events(tuple(events)[-limit:])
+    return tuple(tui_state.event_row_text(view) for view in views)
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
@@ -442,7 +467,7 @@ Expected: PASS (all cases).
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/code_review_loop/tui_state.py tests/test_tui_run_view.py
+git add src/code_review_loop/tui_run_state.py tests/test_tui_run_view.py
 git commit -m "feat(tui): add bounded event-tail formatter"
 ```
 
@@ -457,7 +482,7 @@ The live diagram. Reuses Plan 2's `loop_rail_meta` + `phase_gutter` so the run v
 - Test: `tests/test_tui_pilot_smoke.py`
 
 **Interfaces:**
-- Consumes: `run_loop_view`, `RUN_STATE_GLYPHS`, `loop_rail_meta`, `phase_gutter`, `LOOP_PHASES`, `loop_header_text` (Tasks 1 + Plan 2); a `LiveRunController` and a `profiles.Profile` (the running profile).
+- Consumes: `tui_run_state.run_loop_view`, `tui_run_state.RUN_STATE_GLYPHS`, `tui_loop_state.loop_rail_meta`, `phase_gutter`, `LOOP_PHASES`, `loop_header_text` (Tasks 1 + Plan 2); a `LiveRunController` and a `profiles.Profile` (the running profile).
 - Produces: `loop_run_view_class() -> type | None` (lazy factory, same pattern as Plan 2's `loop_diagram_class`); `LoopRunView` widget with `set_state(controller, profile)` and `rebuild()`.
 
 - [ ] **Step 1: Write the failing pilot test**
@@ -600,6 +625,7 @@ _LOOP_RUN_VIEW_CLASS: type[Any] | None = None
 def loop_run_view_class() -> type[Any] | None:
     global _LOOP_RUN_VIEW_CLASS
     from code_review_loop import tui
+    from code_review_loop import tui_loop_state, tui_run_state
 
     components = tui._load_textual_components()
     if components is None:
@@ -632,8 +658,8 @@ def loop_run_view_class() -> type[Any] | None:
                 ]
             if not snapshot.ready:
                 return ["[muted]events: waiting for events.jsonl[/]"]
-            view = tui_state.run_loop_view(snapshot.events, self.profile)
-            rail_meta = tui_state.loop_rail_meta(self.profile)
+            view = tui_run_state.run_loop_view(snapshot.events, self.profile)
+            rail_meta = tui_loop_state.loop_rail_meta(self.profile)
             iter_text = (
                 f"iteration {view.iteration} / {view.max_iterations}"
                 if view.iteration is not None
@@ -646,10 +672,10 @@ def loop_run_view_class() -> type[Any] | None:
                 "",
             ]
             status_by_name = {p.name: p for p in view.phases}
-            for phase in tui_state.LOOP_PHASES:
+            for phase in tui_loop_state.LOOP_PHASES:
                 status = status_by_name[phase]
-                glyph = tui_state.RUN_STATE_GLYPHS.get(status.state, "·")
-                gutter = tui_state.markup_escape(tui_state.phase_gutter(phase, rail_meta))
+                glyph = tui_run_state.RUN_STATE_GLYPHS.get(status.state, "·")
+                gutter = tui_state.markup_escape(tui_loop_state.phase_gutter(phase, rail_meta))
                 detail = f"  {status.detail}" if status.detail else ""
                 lines.append(
                     f"{gutter}{glyph} {tui_state.markup_escape(phase)}"
@@ -695,7 +721,7 @@ Lock the live-monitor rendered output promised by REVREM-DESIGN-001 §8. These s
 - Create: `tests/test_tui_run_snapshots.py`
 
 **Requirements:**
-- Use the repo's Textual snapshot mechanism if available (`pytest-textual-snapshot` / SVG export). If the dependency is absent, add a guarded skip and TODO rather than replacing the coverage with string-only assertions.
+- Add `pytest-textual-snapshot` to the `dev` optional dependency group in `pyproject.toml` if Plan 010 did not already add it; do **not** add it to the runtime `[tui]` extra. Use the repo's Textual snapshot mechanism if available (`pytest-textual-snapshot` / SVG export). If the dependency is still absent, add a guarded skip and TODO rather than replacing the coverage with string-only assertions.
 - Capture at least these `LoopRunView` states:
   - no events yet / pending;
   - review running;
@@ -776,6 +802,7 @@ _EVENT_LOG_CLASS: type[Any] | None = None
 def event_log_class() -> type[Any] | None:
     global _EVENT_LOG_CLASS
     from code_review_loop import tui
+    from code_review_loop import tui_run_state
 
     components = tui._load_textual_components()
     if components is None:
@@ -814,7 +841,7 @@ def event_log_class() -> type[Any] | None:
                 if not snapshot.ready:
                     self.update("[muted]events: waiting for events.jsonl[/]")
                     return
-                body = tui_state.event_tail_lines(snapshot.events, limit=8)
+                body = tui_run_state.event_tail_lines(snapshot.events, limit=8)
                 head = "[b]events[/b]"
             rows = "\n".join(tui_state.markup_escape(line) for line in body) or "[muted]…[/]"
             self.update(f"{head}\n{rows}")
@@ -973,11 +1000,41 @@ def test_live_run_reaches_running_glyph_in_diagram(tmp_path, monkeypatch):
             app.live_run_controller.cancel(grace_seconds=1)
 
     asyncio.run(run())
+
+
+def test_saved_loop_edit_launches_run_with_matching_live_diagram(tmp_path, monkeypatch):
+    """Cross-plan guard: Plan 2 working-copy save feeds Plan 3 live rendering."""
+    from support.git_fixtures import init_repo
+
+    async def run() -> None:
+        repo = init_repo(tmp_path / "repo")
+        _write_live_profile(repo, review_model="slow_cancel", artifact_dir="runs/edited-live")
+        monkeypatch.setattr(tui.sys, "argv", [str(repo / "launcher.py")])
+        async with pilot_app(cwd=repo, profile_name="live") as (app, pilot):
+            await pilot.press("1")  # Loop
+            await pilot.pause()
+            diagram = app.query_one("#loop-diagram")
+            diagram.set_text_field("model", "slow_cancel")
+            diagram.set_loop_meta_field("max_iterations", "3")
+            app.action_save_loop()
+            await pilot.pause()
+            await pilot.press("r")
+            await pilot.press("r")
+            await _wait_for(
+                lambda: app._workspace == "run" and app._loop_run_view is not None,
+                pilot_pause=pilot.pause,
+            )
+            rendered = _render(app, "#loop-run")
+            assert "live" in rendered
+            assert "3" in rendered  # max-iteration rail/header from the saved profile
+            app.live_run_controller.cancel(grace_seconds=1)
+
+    asyncio.run(run())
 ```
 
 - [ ] **Step 2: Run test to verify it fails (or reveals a wiring gap)**
 
-Run: `python -m pytest tests/test_tui_pilot_smoke.py -k reaches_running_glyph -q`
+Run: `python -m pytest tests/test_tui_pilot_smoke.py -k "reaches_running_glyph or saved_loop_edit_launches" -q`
 Expected: FAIL if `_refresh_live_run` does not yet refresh the run widgets, or `_workspace` is not `run`.
 
 - [ ] **Step 3: Implement the integration**
@@ -1063,6 +1120,6 @@ git commit -m "docs(tui): document the live run monitor"
 
 **Placeholder scan:** none — every code/test step shows complete content.
 
-**Type consistency:** `run_loop_view(events, profile)`, `RunLoopView`, `RunPhaseStatus`, `RUN_STATE_GLYPHS`, `event_tail_lines`, `loop_run_view_class`, `event_log_class`, `phase_gutter`, `loop_rail_meta`, `LOOP_PHASES` names match between definition and use across tasks. `LoopRunView.set_state(controller, profile)` and `EventLog.set_controller(controller)` signatures match their `tui.py` call sites.
+**Type consistency:** `tui_run_state.run_loop_view(events, profile)`, `RunLoopView`, `RunPhaseStatus`, `RUN_STATE_GLYPHS`, `event_tail_lines`, `loop_run_view_class`, `event_log_class`, `tui_loop_state.phase_gutter`, `loop_rail_meta`, and `LOOP_PHASES` names match between definition and use across tasks. `LoopRunView.set_state(controller, profile)` and `EventLog.set_controller(controller)` signatures match their `tui.py` call sites.
 
-**Dependency on Plan 2:** reuses `loop_rail_meta`, `phase_gutter`, `LOOP_PHASES`, `loop_header_text`, the `#body`/display-toggle layout, and the `tui_loop_widgets` lazy-factory pattern — all introduced in Plan 2. `loop_rail_meta` / `loop_header_text` accept both `LoopEditModel` and `profiles.Profile`; this plan uses the profile path. Flagged in the sequencing note; re-confirm before Task 3.
+**Dependency on Plan 2:** reuses `tui_loop_state.loop_rail_meta`, `phase_gutter`, `LOOP_PHASES`, `loop_header_text`, the `#body`/display-toggle layout, and the `tui_loop_widgets` lazy-factory pattern — all introduced in Plan 2. `loop_rail_meta` / `loop_header_text` accept both `LoopEditModel` and `profiles.Profile`; this plan uses the profile path. Flagged in the sequencing note; re-confirm before Task 3.

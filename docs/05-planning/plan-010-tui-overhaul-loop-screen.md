@@ -3,14 +3,14 @@ document_id: REVREM-PLAN-010
 type: PLAN
 title: TUI Overhaul Plan 2 — Loop Screen (editable diagram + working copy)
 status: Draft
-version: '0.6'
+version: '0.7'
 last_updated: '2026-06-28'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
 description: 'Plan 2 of the loop-first TUI overhaul (REVREM-DESIGN-001): build the
   authoring Loop screen as real interactive Textual widgets (LoopDiagram / PhaseCard
-  / TriageRoutesTable) fed by pure tui_state view-models, on a working-copy + explicit-save
+  / TriageRoutesTable) fed by pure tui_loop_state view-models, on a working-copy + explicit-save
   state model that persists through the Plan 1 save_profile_raw primitive.'
 keywords:
 - tui
@@ -31,7 +31,7 @@ related_ids:
 
 **Goal:** Make the Loop the editable centre of the TUI — a vertical, config-truthful diagram of real interactive Textual widgets that lets the operator edit harness / model / effort / timeout / enable per phase (and triage's routing-level fields) into an in-memory working copy, then persist the whole copy to the owning profile file in one explicit Save.
 
-**Architecture:** Three layers, bottom-up. (1) A pure, Textual-free **working-copy model** (`LoopEditModel`) holds the resolved baseline `Profile` plus a dict of meaningful pending dotted-key edits; it renders effective field values (edit overlays baseline), drops no-op/reverted edits, produces an authored raw delta, and persists through Plan 1's `profiles.save_profile_raw`. (2) Pure **view-model functions** in `tui_state` turn the model into per-phase card lines, a loop header, rail metadata, and the triage routes table — config-truthful (inner rail only when `runtime.inner_check_retries > 0`, disabled phases marked and dropped from the rails, final review shown only when on). These authoring helpers read effective values from the working copy, while also accepting plain resolved profiles for Plan 3's live view. (3) Real **Textual widgets** in a new `tui_loop_widgets.py` (`PhaseCard`, `TriageRoutesTable`, `LoopDiagram`) consume those view-models, own focus/selection/inline-edit keyboard handling, and mount into the existing app's Loop workspace. The same view-models keep `render_shell_text` working as the headless fallback.
+**Architecture:** Three layers, bottom-up. (1) A pure, Textual-free **working-copy model** (`LoopEditModel`) holds the resolved baseline `Profile` plus a dict of meaningful pending dotted-key edits; it renders effective field values (edit overlays baseline), drops no-op/reverted edits, produces an authored raw delta, and persists through Plan 1's `profiles.save_profile_raw`. (2) Pure **view-model functions** in a new `tui_loop_state.py` turn the model into per-phase card lines, a loop header, rail metadata, and the triage routes table — config-truthful (inner rail only when `runtime.inner_check_retries > 0`, disabled phases marked and dropped from the rails, final review shown only when on). These authoring helpers read effective values from the working copy, while also accepting plain resolved profiles for Plan 3's live view. `tui_state.py` remains the home/shell/history module; it may re-export or import loop helpers only where needed for `render_shell_text`. (3) Real **Textual widgets** in a new `tui_loop_widgets.py` (`PhaseCard`, `TriageRoutesTable`, `LoopDiagram`) consume those view-models, own focus/selection/inline-edit keyboard handling, and mount into the existing app's Loop workspace. The same view-models keep `render_shell_text` working as the headless fallback.
 
 **Tech Stack:** Python 3.12, Textual 8.2.5 (optional `[tui]` extra, lazy-imported), `pytest` + Textual pilot/`run_test`, the Plan 1 `profiles` edit primitives (`deep_set_raw`, `save_profile_raw`, `set_profile_field`).
 
@@ -69,7 +69,7 @@ REVREM-DESIGN-001's write-path language is **stale**: §2/§3 still imply all co
 ## File structure
 
 - **Create** `src/code_review_loop/tui_loop_model.py` — `LoopEditModel` working copy (pure; imports only `profiles`).
-- **Modify** `src/code_review_loop/tui_state.py` — add pure loop view-model functions (header, per-phase card lines, rail metadata, triage routes lines).
+- **Create** `src/code_review_loop/tui_loop_state.py` — pure loop view-model functions (header, per-phase card lines, rail metadata, triage routes lines). Keep `tui_state.py` focused on the existing shell/home/history view-models; only add compatibility imports there if `render_shell_text` needs them.
 - **Create** `src/code_review_loop/tui_loop_widgets.py` — lazy Textual widget factories: `PhaseCard`, `TriageRoutesTable`, `LoopDiagram`.
 - **Modify** `src/code_review_loop/tui.py` — mount the `LoopDiagram` into the Loop workspace; reorder nav to Loop-first; wire Save / save-and-run and the dirty `*` indicator.
 - **Create** `tests/test_tui_loop_model.py`, `tests/test_tui_loop_view.py` — pure-layer unit tests.
@@ -472,12 +472,13 @@ git commit -m "feat(tui): add LoopEditModel working-copy + fix stale design 4.2"
 
 ---
 
-## Task 2: Loop diagram view-models (pure functions in `tui_state`)
+## Task 2: Loop diagram view-models (pure functions in `tui_loop_state`)
 
 Per-phase card lines, the loop header, and rail metadata — config-truthful, Textual-free, so they can be unit-tested directly and reused by `render_shell_text`.
 
 **Files:**
-- Modify: `src/code_review_loop/tui_state.py`
+- Create: `src/code_review_loop/tui_loop_state.py`
+- Modify: `src/code_review_loop/tui_state.py` only if needed to keep `render_shell_text` using the new loop helpers without duplicating logic.
 - Test: `tests/test_tui_loop_view.py`
 
 **Interfaces:**
@@ -501,7 +502,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from code_review_loop import profiles, tui_state
+from code_review_loop import profiles, tui_loop_state
 from code_review_loop.tui_loop_model import LoopEditModel
 
 
@@ -526,7 +527,7 @@ def test_rail_meta_omits_inner_rail_when_retries_zero(tmp_path):
         tmp_path,
         "[profiles.p]\n[profiles.p.pipeline]\nbase='main'\nmax_iterations=5\n[profiles.p.runtime]\ninner_check_retries=0\n",
     )
-    meta = tui_state.loop_rail_meta(_model(repo, "p").profile)
+    meta = tui_loop_state.loop_rail_meta(_model(repo, "p").profile)
     assert meta.inner_rail is False
     assert meta.inner_return_label is None
     assert "iteration < 5" in meta.outer_return_label
@@ -537,7 +538,7 @@ def test_rail_meta_draws_inner_rail_when_retries_positive(tmp_path):
         tmp_path,
         "[profiles.p]\n[profiles.p.pipeline]\nbase='main'\nmax_iterations=5\n[profiles.p.runtime]\ninner_check_retries=2\n",
     )
-    meta = tui_state.loop_rail_meta(_model(repo, "p").profile)
+    meta = tui_loop_state.loop_rail_meta(_model(repo, "p").profile)
     assert meta.inner_rail is True
     assert meta.inner_return_label is not None
     assert "up to 2 inner retries" in meta.inner_return_label
@@ -546,9 +547,25 @@ def test_rail_meta_draws_inner_rail_when_retries_positive(tmp_path):
 def test_rail_meta_final_review_only_when_on(tmp_path):
     on = _repo(tmp_path / "on", "[profiles.p]\n[profiles.p.pipeline]\nbase='main'\nfinal_review=true\n")
     off = _repo(tmp_path / "off", "[profiles.p]\n[profiles.p.pipeline]\nbase='main'\nfinal_review=false\n")
-    assert tui_state.loop_rail_meta(_model(on, "p").profile).final_review is True
-    assert tui_state.loop_rail_meta(_model(off, "p").profile).final_review is False
-    assert tui_state.loop_rail_meta(_model(off, "p").profile).final_review_label is None
+    assert tui_loop_state.loop_rail_meta(_model(on, "p").profile).final_review is True
+    assert tui_loop_state.loop_rail_meta(_model(off, "p").profile).final_review is False
+    assert tui_loop_state.loop_rail_meta(_model(off, "p").profile).final_review_label is None
+
+
+def test_phase_gutter_shows_inner_rail_and_final_review_together(tmp_path):
+    repo = _repo(
+        tmp_path,
+        "[profiles.p]\n[profiles.p.pipeline]\nbase='main'\nfinal_review=true\n"
+        "[profiles.p.runtime]\ninner_check_retries=2\n",
+    )
+    meta = tui_loop_state.loop_rail_meta(_model(repo, "p").profile)
+    remediation = tui_loop_state.phase_gutter("remediation", meta)
+    checks = tui_loop_state.phase_gutter("checks", meta)
+    assert meta.inner_rail is True
+    assert meta.final_review is True
+    assert "inner" in remediation.lower()
+    assert "inner" in checks.lower()
+    assert meta.final_review_label is not None
 
 
 def test_phase_card_summary_shows_harness_model_and_disabled_marker(tmp_path):
@@ -557,13 +574,26 @@ def test_phase_card_summary_shows_harness_model_and_disabled_marker(tmp_path):
         "[profiles.p]\n[profiles.p.pipeline]\nbase='main'\n[profiles.p.review]\nharness='codex'\nmodel='gpt-5.5'\n",
     )
     model = _model(repo, "p")
-    review = tui_state.phase_card_lines(model, "review", focused=False, expanded=False)
+    review = tui_loop_state.phase_card_lines(model, "review", focused=False, expanded=False)
     text = "\n".join(review)
     assert "review" in text and "codex" in text and "gpt-5.5" in text
-    assert text.lstrip().startswith(f"▸ {tui_state.PHASE_ENABLED_GLYPH}")
+    assert text.lstrip().startswith(f"▸ {tui_loop_state.PHASE_ENABLED_GLYPH}")
     # triage defaults off -> disabled glyph
-    triage = tui_state.phase_card_lines(model, "triage", focused=False, expanded=False)
-    assert "\n".join(triage).lstrip().startswith(f"▸ {tui_state.PHASE_DISABLED_GLYPH}")
+    triage = tui_loop_state.phase_card_lines(model, "triage", focused=False, expanded=False)
+    assert "\n".join(triage).lstrip().startswith(f"▸ {tui_loop_state.PHASE_DISABLED_GLYPH}")
+
+
+def test_phase_card_focused_collapsed_remains_single_summary_line(tmp_path):
+    repo = _repo(
+        tmp_path,
+        "[profiles.p]\n[profiles.p.pipeline]\nbase='main'\n[profiles.p.review]\nharness='codex'\nmodel='gpt-5.5'\n",
+    )
+    lines = tui_loop_state.phase_card_lines(
+        _model(repo, "p"), "review", focused=True, expanded=False
+    )
+    assert len(lines) == 1
+    assert lines[0].startswith(">")
+    assert "harness" not in lines[0].lower()
 
 
 def test_phase_card_expanded_shows_edit_fields_with_overlay(tmp_path):
@@ -573,7 +603,7 @@ def test_phase_card_expanded_shows_edit_fields_with_overlay(tmp_path):
     )
     model = _model(repo, "p")
     model.set_field("review.model", "gpt-5.6")
-    expanded = tui_state.phase_card_lines(model, "review", focused=True, expanded=True)
+    expanded = tui_loop_state.phase_card_lines(model, "review", focused=True, expanded=True)
     text = "\n".join(expanded)
     assert text.lstrip().startswith("▾")
     assert "harness" in text and "model" in text and "effort" in text and "timeout" in text
@@ -581,12 +611,41 @@ def test_phase_card_expanded_shows_edit_fields_with_overlay(tmp_path):
     assert "gpt-5.6" in text and "gpt-5.5" not in text
 
 
+def test_phase_card_timeout_overlay_formats_int_and_float_values(tmp_path):
+    repo = _repo(
+        tmp_path,
+        "[profiles.p]\n[profiles.p.pipeline]\nbase='main'\n[profiles.p.review]\nharness='codex'\nmodel='gpt-5.5'\n",
+    )
+    model = _model(repo, "p")
+    model.set_field("review.timeout_seconds", "0.5")
+    assert "0.5s" in "\n".join(
+        tui_loop_state.phase_card_lines(model, "review", focused=False, expanded=False)
+    )
+    model.set_field("review.timeout_seconds", "1")
+    assert "1s" in "\n".join(
+        tui_loop_state.phase_card_lines(model, "review", focused=False, expanded=False)
+    )
+
+
+def test_checks_phase_is_display_only(tmp_path):
+    repo = _repo(
+        tmp_path,
+        "[profiles.p]\n[profiles.p.pipeline]\nbase='main'\nchecks=['pytest -q']\n",
+    )
+    expanded = "\n".join(
+        tui_loop_state.phase_card_lines(_model(repo, "p"), "checks", focused=True, expanded=True)
+    )
+    assert "1 commands" in expanded
+    assert "harness" not in expanded and "model" not in expanded
+    assert tui_loop_state.PHASE_DOTTED["checks"] == {}
+
+
 def test_loop_header_reports_meta(tmp_path):
     repo = _repo(
         tmp_path,
         "[profiles.p]\n[profiles.p.pipeline]\nbase='main'\nmax_iterations=7\n[profiles.p.runtime]\ninner_check_retries=3\n",
     )
-    header = tui_state.loop_header_text(_model(repo, "p").profile)
+    header = tui_loop_state.loop_header_text(_model(repo, "p").profile)
     assert "main" in header and "7" in header and "3" in header
 
 
@@ -600,8 +659,8 @@ def test_loop_header_and_rails_reflect_unsaved_meta_edits(tmp_path):
     model.set_field("pipeline.max_iterations", "11")
     model.set_field("pipeline.final_review", "false")
     model.set_field("runtime.inner_check_retries", "2")
-    header = tui_state.loop_header_text(model)
-    meta = tui_state.loop_rail_meta(model)
+    header = tui_loop_state.loop_header_text(model)
+    meta = tui_loop_state.loop_rail_meta(model)
     assert "11" in header and "2" in header
     assert meta.max_iterations == 11
     assert meta.inner_rail is True
@@ -610,19 +669,19 @@ def test_loop_header_and_rails_reflect_unsaved_meta_edits(tmp_path):
 
 
 def test_loop_meta_dotted_uses_raw_profile_keys():
-    assert tui_state.LOOP_META_DOTTED["max_iterations"] == "pipeline.max_iterations"
-    assert tui_state.LOOP_META_DOTTED["final_review"] == "pipeline.final_review"
-    assert tui_state.LOOP_META_DOTTED["inner_check_retries"] == "runtime.inner_check_retries"
+    assert tui_loop_state.LOOP_META_DOTTED["max_iterations"] == "pipeline.max_iterations"
+    assert tui_loop_state.LOOP_META_DOTTED["final_review"] == "pipeline.final_review"
+    assert tui_loop_state.LOOP_META_DOTTED["inner_check_retries"] == "runtime.inner_check_retries"
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `python -m pytest tests/test_tui_loop_view.py -q`
-Expected: FAIL with `AttributeError: module 'code_review_loop.tui_state' has no attribute 'loop_rail_meta'`.
+Expected: FAIL with `ModuleNotFoundError` or `AttributeError` for `code_review_loop.tui_loop_state.loop_rail_meta`.
 
 - [ ] **Step 3: Write the implementation**
 
-Append to `src/code_review_loop/tui_state.py` (after the existing `pipeline_phases` function). The `dataclass` import is already present at the top of the file.
+Create `src/code_review_loop/tui_loop_state.py`. Import `dataclass`, `Any`, `harnesses`, `profiles`, and reuse `tui_state.pipeline_phases` / `PhaseView` rather than duplicating the phase projection.
 
 ```python
 LOOP_PHASES: tuple[str, ...] = ("review", "triage", "remediation", "checks", "commit")
@@ -812,7 +871,7 @@ def phase_gutter(phase: str, rail_meta: LoopRailMeta) -> str:
     return "│ "  # │
 ```
 
-Note: the `from typing import Any` import is already present at the top of `tui_state.py`; the `"Any"` annotations on `model` avoid a hard import of `LoopEditModel` (keeps `tui_state` free of a circular import — `tui_loop_model` imports `profiles` only, and `tui_state` already imports `profiles`/`harnesses`).
+Note: the `"Any"` annotations on `model` avoid a hard import of `LoopEditModel`. `tui_loop_state` may import the existing `tui_state.pipeline_phases` helper, but `tui_state` must not import `tui_loop_state` at module import time except for a narrow `render_shell_text` compatibility path; this keeps the new loop helpers from turning `tui_state.py` into a catch-all module.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -821,13 +880,13 @@ Expected: PASS.
 
 - [ ] **Step 5: Run the existing view-model + equivalence suites (no regressions)**
 
-Run: `python -m pytest tests/test_tui_state.py tests/test_tui_cli_equivalence.py -q`
+Run: `python -m pytest tests/test_tui_loop_view.py tests/test_tui_state.py tests/test_tui_cli_equivalence.py -q`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/code_review_loop/tui_state.py tests/test_tui_loop_view.py
+git add src/code_review_loop/tui_loop_state.py src/code_review_loop/tui_state.py tests/test_tui_loop_view.py
 git commit -m "feat(tui): add config-truthful loop diagram view-models"
 ```
 
@@ -838,7 +897,7 @@ git commit -m "feat(tui): add config-truthful loop diagram view-models"
 The discriminating case: when triage is focused, render the routing-level line plus a read-only routes table (route-row editing is Plan 4).
 
 **Files:**
-- Modify: `src/code_review_loop/tui_state.py`
+- Modify: `src/code_review_loop/tui_loop_state.py`
 - Test: `tests/test_tui_loop_view.py` (add cases)
 
 **Interfaces:**
@@ -860,7 +919,7 @@ def _routes_repo(tmp_path: Path) -> Path:
             "enabled=true",
             "[profiles.r.triage.routing]",
             "enabled=true",
-            "default_route='remediation'",
+            "default_route='security'",
             "strict_on_unavailable_route=false",
             "allow_model_escalation=true",
             "[profiles.r.triage.routes.security]",
@@ -868,7 +927,7 @@ def _routes_repo(tmp_path: Path) -> Path:
             "model='gpt-5.5'",
             "reasoning_effort='high'",
             "sandbox='read-only'",
-            "fallback='remediation'",
+            "fallback='nit'",
             "[profiles.r.triage.routes.nit]",
             "harness='claude'",
             "model='haiku-4.5'",
@@ -881,9 +940,9 @@ def _routes_repo(tmp_path: Path) -> Path:
 
 def test_triage_routes_lines_show_routing_and_table(tmp_path):
     repo = _routes_repo(tmp_path)
-    lines = tui_state.triage_routes_lines(_model(repo, "r").profile)
+    lines = tui_loop_state.triage_routes_lines(_model(repo, "r").profile)
     text = "\n".join(lines)
-    assert "default" in text and "remediation" in text
+    assert "default" in text and "security" in text
     assert "strict" in text and "escalate" in text
     assert "security" in text and "gpt-5.5" in text and "high" in text
     assert "nit" in text and "haiku-4.5" in text
@@ -894,7 +953,7 @@ def test_triage_routes_lines_empty_when_routing_off(tmp_path):
         tmp_path,
         "[profiles.p]\n[profiles.p.pipeline]\nbase='main'\n[profiles.p.triage]\nenabled=true\n",
     )
-    assert tui_state.triage_routes_lines(_model(repo, "p").profile) == ()
+    assert tui_loop_state.triage_routes_lines(_model(repo, "p").profile) == ()
 
 
 def test_triage_routes_lines_reflect_unsaved_route_edits(tmp_path):
@@ -903,7 +962,7 @@ def test_triage_routes_lines_reflect_unsaved_route_edits(tmp_path):
     model.set_field("triage.routes.security.model", "gpt-9")
     model.set_field("triage.routes.security.sandbox", "workspace-write")
     model.set_field("triage.routes.security.fallback", "nit")
-    text = "\n".join(tui_state.triage_routes_lines(model))
+    text = "\n".join(tui_loop_state.triage_routes_lines(model))
     assert "security" in text and "gpt-9" in text
     assert "workspace-write" in text and "nit" in text
 ```
@@ -911,11 +970,11 @@ def test_triage_routes_lines_reflect_unsaved_route_edits(tmp_path):
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `python -m pytest tests/test_tui_loop_view.py -k triage_routes -q`
-Expected: FAIL with `AttributeError: module 'code_review_loop.tui_state' has no attribute 'triage_routes_lines'`.
+Expected: FAIL with `AttributeError: module 'code_review_loop.tui_loop_state' has no attribute 'triage_routes_lines'`.
 
 - [ ] **Step 3: Write the implementation**
 
-Append to `src/code_review_loop/tui_state.py`:
+Append to `src/code_review_loop/tui_loop_state.py`:
 
 ```python
 def triage_routes_lines(source: "Any") -> tuple[str, ...]:
@@ -963,7 +1022,7 @@ Expected: PASS (all cases).
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/code_review_loop/tui_state.py tests/test_tui_loop_view.py
+git add src/code_review_loop/tui_loop_state.py tests/test_tui_loop_view.py
 git commit -m "feat(tui): add triage routes table view-model"
 ```
 
@@ -979,7 +1038,7 @@ The interactive layer: lazy Textual widgets that consume Tasks 2–3, own focus/
 - Test: `tests/test_tui_pilot_smoke.py`
 
 **Interfaces:**
-- Consumes: `LoopEditModel` (Task 1); `tui_state` loop view-models (Tasks 2–3); `harnesses.HARNESS_REGISTRY` implemented harness names + effort choices.
+- Consumes: `LoopEditModel` (Task 1); `tui_loop_state` loop view-models (Tasks 2–3); `harnesses.HARNESS_REGISTRY` implemented harness names + effort choices.
 - Produces:
   - `loop_diagram_class() -> type | None` — lazy factory returning the `LoopDiagram` widget class (or `None` when Textual is unavailable), mirroring `tui.text_prompt_screen_class()`.
   - `HARNESS_CHOICES: tuple[str, ...]`, `EFFORT_CHOICES: tuple[str, ...]` — cycle orders for inline enum editing.
@@ -988,7 +1047,7 @@ The interactive layer: lazy Textual widgets that consume Tasks 2–3, own focus/
 
 - [ ] **Step 1: Write the failing pilot tests**
 
-Append to `tests/test_tui_pilot_smoke.py` (it already imports `asyncio`, `tui`, and `pilot_app`; add `tui_state` if it is not already imported):
+Append to `tests/test_tui_pilot_smoke.py` (it already imports `asyncio`, `tui`, and `pilot_app`; add `tui_loop_state` if it is not already imported):
 
 ```python
 def test_loop_workspace_renders_real_diagram_widgets(tmp_path):
@@ -1095,7 +1154,7 @@ def test_loop_diagram_current_phase_clamps_index(tmp_path):
             diagram = app.query_one("#loop-diagram")
             diagram.focused_index = 999
             assert diagram.current_phase() == "commit"
-            assert diagram.focused_index == len(tui_state.LOOP_PHASES) - 1
+            assert diagram.focused_index == len(tui_loop_state.LOOP_PHASES) - 1
 
     asyncio.run(run())
 ```
@@ -1125,12 +1184,12 @@ Create `src/code_review_loop/tui_loop_widgets.py` with this contract:
 
 - Importing the module must not import Textual; all Textual imports stay inside lazy factory functions.
 - Provide `phase_card_class()`, `triage_routes_table_class()`, and `loop_diagram_class()` factories. Cache classes after the first successful factory call, mirroring `tui.text_prompt_screen_class()`.
-- `PhaseCard` is a focusable/renderable widget with CSS class `phase-card`; it consumes `tui_state.phase_card_lines(...)` and exposes update/rebuild hooks used by `LoopDiagram`.
-- `TriageRoutesTable` is a renderable widget with CSS class `triage-routes-table`; it consumes `tui_state.triage_routes_lines(model)` and is mounted only when triage is focused and routing is enabled.
-- `LoopDiagram` owns selection state (`focused_index`, `expanded`) and composes one `PhaseCard` per phase plus a `TriageRoutesTable` child when appropriate. It may render rails/header itself, but phase bodies must be child widgets, not concatenated into a single `Static` text blob. Header and rails must call `tui_state.loop_header_text(self.model)` and `tui_state.loop_rail_meta(self.model)`, not `self.model.profile`, so unsaved metadata edits render immediately.
-- Derive `HARNESS_CHOICES` from `harnesses.HARNESS_REGISTRY` filtered to implemented harnesses (stable-sorted by key, with `codex` first if present). Do not hardcode a stale harness list.
-- Derive `EFFORT_CHOICES` from the profile parser's accepted reasoning effort choices (including `minimal` if accepted). Do not invent an `EFFORT_CHOICES` constant that can drift from `profiles`.
-- Implement `current_phase()`, `toggle_enabled()`, `cycle_field(key)`, `set_text_field(key, value)`, `set_loop_meta_field(key, value)`, `toggle_final_review()`, `move(delta)`, and `rebuild()` against raw dotted keys from `tui_state.PHASE_DOTTED` / `LOOP_META_DOTTED`. `current_phase()` clamps `focused_index` into range and returns `tui_state.LOOP_PHASES[self.focused_index]`.
+- `PhaseCard` is a focusable/renderable widget with CSS class `phase-card`; it consumes `tui_loop_state.phase_card_lines(...)` and exposes update/rebuild hooks used by `LoopDiagram`.
+- `TriageRoutesTable` is a renderable widget with CSS class `triage-routes-table`; it consumes `tui_loop_state.triage_routes_lines(model)` and is mounted only when triage is focused and routing is enabled.
+- `LoopDiagram` owns selection state (`focused_index`, `expanded`) and composes one `PhaseCard` per phase plus a `TriageRoutesTable` child when appropriate. It may render rails/header itself, but phase bodies must be child widgets, not concatenated into a single `Static` text blob. Header and rails must call `tui_loop_state.loop_header_text(self.model)` and `tui_loop_state.loop_rail_meta(self.model)`, not `self.model.profile`, so unsaved metadata edits render immediately.
+- Define `HARNESS_CHOICES` in `tui_loop_widgets.py` from `harnesses.HARNESS_REGISTRY` filtered to implemented harnesses (stable-sorted by key, with `codex` first if present). Do not hardcode a stale harness list.
+- Define `EFFORT_CHOICES = profiles.REASONING_EFFORT_CHOICES` in `tui_loop_widgets.py`. Do not invent an effort list that can drift from the profile parser.
+- Implement `current_phase()`, `toggle_enabled()`, `cycle_field(key)`, `set_text_field(key, value)`, `set_loop_meta_field(key, value)`, `toggle_final_review()`, `move(delta)`, and `rebuild()` against raw dotted keys from `tui_loop_state.PHASE_DOTTED` / `LOOP_META_DOTTED`. `current_phase()` clamps `focused_index` into range and returns `tui_loop_state.LOOP_PHASES[self.focused_index]`.
 - Preserve optional dependency behavior: if Textual is unavailable, all factories return `None`.
 
 - [ ] **Step 4: Mount the widget and reorder nav in `tui.py`**
@@ -1341,7 +1400,7 @@ Lock the showcase-facing rendered output promised by REVREM-DESIGN-001 §8. Thes
 - Create: `tests/test_tui_loop_snapshots.py`
 
 **Requirements:**
-- Use the repo's Textual snapshot mechanism if available (`pytest-textual-snapshot` / SVG export). If the dependency is absent in the current environment, add a guarded skip and a TODO in the test file rather than replacing snapshots with string-only assertions.
+- Add `pytest-textual-snapshot` to the `dev` optional dependency group in `pyproject.toml` if no equivalent SVG snapshot helper already exists; do **not** add it to the runtime `[tui]` extra. Use the repo's Textual snapshot mechanism if available (`pytest-textual-snapshot` / SVG export). If the dependency is still absent in the current environment, add a guarded skip and a TODO in the test file rather than replacing snapshots with string-only assertions.
 - Capture at least these `LoopDiagram` states:
   - triage disabled, `runtime.inner_check_retries = 0`, `pipeline.final_review = false`;
   - triage enabled with at least two routes and a default route;
@@ -1539,7 +1598,7 @@ git commit -m "feat(tui): explicit Save and save-and-run for the loop working co
 
 In `docs/70-devex/devex-001-using-code-review-loop.md`, replace the existing pre-overhaul TUI section with the new Loop-first workbench description. Do not add a second conflicting subsection. Include: keys `↑/↓` move phase, `Enter` expand/collapse, `space` toggle a phase, `m` cycle harness, `f` cycle effort, `M` edit model, `t` edit timeout, `i` edit max iterations, `F` toggle final review, `s` save loop to its profile, `r` run (save-and-run when dirty); the `*` next to the profile name means unsaved working-copy changes; the diagram is config-truthful (inner rail only when `runtime.inner_check_retries > 0`, final review only when enabled); triage routes are shown read-only (route editing arrives in Plan 4).
 
-Add a regression test to the existing TUI state tests that calls `tui_state.render_shell_text()` for a profile with triage enabled, at least one route, `runtime.inner_check_retries > 0`, and `pipeline.final_review = true`; assert the result is non-empty and includes the selected profile name plus loop/phase content. This locks the no-Textual fallback after the new view-model functions are added.
+Add a regression test to the existing TUI state tests that calls `tui_state.render_shell_text()` for a profile with triage enabled, at least one route, `runtime.inner_check_retries > 0`, and `pipeline.final_review = true`; assert the result is non-empty and includes the selected profile name plus loop/phase content. This locks the no-Textual fallback after the new `tui_loop_state` functions are added.
 
 - [ ] **Step 2: Add a CHANGELOG entry**
 
@@ -1584,7 +1643,7 @@ git commit -m "docs(tui): document the interactive loop workspace"
 
 **Placeholder scan:** No TBD/TODO. Test steps show concrete tests. Implementation steps are either paste-ready pure-function snippets or explicit contracts where paste-ready widget code would be misleading; the widget task is acceptance-test driven by real child-widget queries.
 
-**Type consistency:** `field_value(dotted_key, fallback)` signature is identical across Tasks 1, 2, 4. `PHASE_DOTTED`, `LOOP_META_DOTTED`, `LOOP_PHASES`, `loop_rail_meta`, `phase_card_lines`, `triage_routes_lines`, `phase_gutter`, `loop_header_text`, and `LoopDiagram.current_phase()` names match between definition (Tasks 2–4) and use (Plan 4). `loop_diagram_class()` returns the class used by `_loop_diagram_widget`. `commit` edits target raw `commit.message_model` (not `commit.model`), matching `CommitConfig`; loop meta edits target raw `pipeline.max_iterations` / `pipeline.final_review` through `i` / `F`, while `M` remains model editing.
+**Type consistency:** `field_value(dotted_key, fallback)` signature is identical across Tasks 1, 2, 4. `tui_loop_state.PHASE_DOTTED`, `LOOP_META_DOTTED`, `LOOP_PHASES`, `loop_rail_meta`, `phase_card_lines`, `triage_routes_lines`, `phase_gutter`, `loop_header_text`, and `LoopDiagram.current_phase()` names match between definition (Tasks 2–4) and use (Plan 4). `loop_diagram_class()` returns the class used by `_loop_diagram_widget`. `commit` edits target raw `commit.message_model` (not `commit.model`), matching `CommitConfig`; loop meta edits target raw `pipeline.max_iterations` / `pipeline.final_review` through `i` / `F`, while `M` remains model editing.
 
 **Raw-key guard scan:** before executing Task 1 and again before final review, run `rg -n 'top-level raw-key|raw top-level|profile root|set_field\("max_iterations|set_field\("final_review|field_value\("max_iterations|field_value\("final_review|== "max_iterations"|== "final_review"|root-level max_iterations|root-level final_review|raw profile keys are max_iterations|fake pipeline' docs/05-planning/plan-010-tui-overhaul-loop-screen.md`. Any hit must be intentionally reviewed; loop metadata belongs under `[profiles.<name>.pipeline]`.
 

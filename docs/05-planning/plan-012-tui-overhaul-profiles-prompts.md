@@ -3,13 +3,13 @@ document_id: REVREM-PLAN-012
 type: PLAN
 title: TUI Overhaul Plan 4 — Profiles Picker, Prompts Library, Route Editing
 status: Draft
-version: '0.5'
+version: '0.6'
 last_updated: '2026-06-28'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
 description: 'Plan 4 of the loop-first TUI overhaul (REVREM-DESIGN-001): demote profiles
-  to a grouped save/load picker, add a browse-only prompts library with harness-aware
+  to a grouped save/load picker, add a browse/apply prompts library with harness-aware
   in-loop picking of the scalar prompt fields, and add a route-row modal that edits
   triage route cells through the working-copy model.'
 keywords:
@@ -31,7 +31,7 @@ related_ids:
 
 **Goal:** Finish the overhaul's authoring surface. Demote **profiles** to a clean grouped save/load picker (yours vs presets) that loads a profile into the live loop working copy; add a **prompts** library that browses the fragment-composed prompt inventory and lets the operator pick/edit the scalar prompt fields in-loop; and add a **route-row modal** so triage's per-route cells (rendered read-only in Plan 2) become editable through the same working-copy model.
 
-**Architecture:** Three additions on the Plan 2/3 foundation, all routed through the existing `LoopEditModel` working copy and the existing `revrem config` actions. (1) A `ProfilePicker` widget over the existing `profile_view` snapshot, grouped by source, whose load action re-points the loop's `LoopEditModel`; profile lifecycle actions reuse the existing `tui_state` shell-out plans (`new`/`clone`/`export`/`delete`/`show`/`edit`) and `import_plan_for_path(path)` for imports. (2) A pure `prompt_inventory()` view-model over the packaged prompt fragments + triage contracts, surfaced by a browse-only `PromptLibrary` and a harness-aware `PromptField`; a `PromptEditModal` edits the **scalar** prompt fields (`triage.prompt`, `commit.message_prompt`) into the working copy. (3) A `RouteEditModal` edits triage route **cells** (`triage.routes.<name>.*`) into the working copy; before route editing ships, the shared `save_profile_raw` path must materialize inherited route context the same way `set_profile_field` does, so route edits remain one explicit Save instead of immediate per-field writes.
+**Architecture:** Three additions on the Plan 2/3 foundation, all routed through the existing `LoopEditModel` working copy and the existing `revrem config` actions. (1) A `ProfilePicker` widget over the existing `profile_view` snapshot, grouped by source, whose load action re-points the loop's `LoopEditModel`; profile lifecycle actions reuse the existing `tui_state` shell-out plans (`new`/`clone`/`export`/`delete`/`show`/`edit`) and `import_plan_for_path(path)` for imports, while new picker view-models live in `tui_profiles_state.py`. (2) A pure `prompt_inventory()` view-model over the packaged prompt fragments + triage contracts lives in `tui_prompts_state.py`, surfaced by a browse/apply `PromptLibrary` and a harness-aware `PromptField`; a `PromptEditModal` edits the **scalar** prompt fields (`triage.prompt`, `commit.message_prompt`) into the working copy, and `g` from Loop targets one of those scalar fields before entering the Prompts workspace. (3) A `RouteEditModal` edits triage route **cells** (`triage.routes.<name>.*`) into the working copy; before route editing ships, the shared `save_profile_raw` path must materialize inherited route context the same way `set_profile_field` does, so route edits remain one explicit Save instead of immediate per-field writes.
 
 **Tech Stack:** Python 3.12, Textual 8.2.5 (optional, lazy), `pytest` + Textual pilot, the Plan 2 `LoopEditModel` + `tui_loop_widgets` factory pattern, `prompts_composer` (`load_fragment`), and the `profiles` route edit primitives.
 
@@ -50,8 +50,8 @@ Every task's requirements implicitly include this section.
 
 - **Everything routes through the working copy + existing CLI actions.** Prompt and route edits mutate the Plan 2 `LoopEditModel` (`set_field`) and persist through the *same* `save_profile_raw` Save; profile lifecycle (new/clone/export/delete/show/edit) reuses the existing `tui_state.*_plan_for_name` shell-outs to `revrem config`, while import uses `tui_state.import_plan_for_path(path)`. No route edit may persist immediately through `set_profile_field`; if route saves need inherited-context materialization, implement it in `save_profile_raw` first.
 - **Raw TOML keys (verified 2026-06-28).** Scalar prompt fields: `triage.prompt`, `commit.message_prompt`. Route cells: `triage.routes.<name>.harness`, `.model`, `.reasoning_effort`, `.timeout_seconds`, `.sandbox`, `.fallback`. Routing-level (already in Plan 2): `triage.routing.default_route`, `.strict_on_unavailable_route`, `.allow_model_escalation`. (Note: `base`/`max_iterations`/`final_review` live under `[pipeline]`, i.e. `pipeline.*` — relevant only if a modal touches them, which it does not here.)
-- **Two structural limits are explicit scope cuts, not bugs.** The Plan 1 `deep_set_raw` / `save_profile_raw` primitives set a **scalar at a dict path** and **deep-merge** on write. Therefore: (a) **prompt-fragment list editing** (`triage.routing.rule[].then.prompt_fragments` is a *list*) has no working-copy save path — the `PromptLibrary` is **browse-only**, fragment-list mutation and external copy actions are deferred; (b) **route deletion** cannot be expressed (merge-only write cannot remove a key) — `RouteEditModal` supports **edit existing cells + add a route**, deletion is deferred. Both are stated in the relevant tasks and the docs; do not fake them.
-- **Route persistence must be made CLI-equivalent before Task 5.** Source inspection on 2026-06-28 shows `set_profile_field` has route/routing-specific inherited-context materialization, while `save_profile_raw` currently deep-merges the authored raw delta into the owner fragment. Treat route equivalence as a required failing test, not a verified premise. The chosen fix is to extend `save_profile_raw` / `write_profile_to_path` inputs so route deltas materialize the same inherited default route and fallback closure as `set_profile_field`; do **not** split route edits into immediate `set_profile_field` writes, because that would violate the Loop screen's one explicit Save model.
+- **Two structural limits are explicit scope cuts, not bugs.** The Plan 1 `deep_set_raw` / `save_profile_raw` primitives set a **scalar at a dict path** and **deep-merge** on write. Therefore: (a) **prompt-fragment list editing** (`triage.routing.rule[].then.prompt_fragments` is a *list*) has no working-copy save path — the `PromptLibrary` can browse assets and apply a selected asset only to targeted scalar prompt fields; fragment-list mutation and external copy actions are deferred; (b) **route deletion** cannot be expressed (merge-only write cannot remove a key) — `RouteEditModal` supports **edit existing cells + add a route**, deletion is deferred. Both are stated in the relevant tasks and the docs; do not fake them.
+- **Route persistence must be made CLI-equivalent before Task 5.** Source inspection on 2026-06-28 shows `set_profile_field` has route/routing-specific inherited-context materialization, while `save_profile_raw` currently deep-merges the authored raw delta into the owner fragment. Treat route equivalence as a required failing test, not a verified premise. The chosen fix is to extend `save_profile_raw` / `write_profile_to_path` inputs so route deltas materialize the same inherited default route and fallback closure as `set_profile_field`; do **not** split route edits into immediate `set_profile_field` writes, because that would violate the Loop screen's one explicit Save model. If the spike shows this cannot be implemented locally without broad serializer redesign, stop Task 5, document the exact divergence, and ship Plan 4 as Profiles + Prompts only with route editing deferred to a follow-up plan.
 - **Profiles are the save layer, not a settings editor.** The `ProfilePicker` shows identity + a one-line loop summary per row, grouped *yours* (project/user) vs *presets* (builtin); it never tries to render full settings. Builtins are loadable read-only presets. Saving a builtin-backed working copy must surface the existing clone-to-edit message from `profiles.profile_owner_path`; it must not silently write a user/project owner. Operators clone first, then edit the clone.
 - **Optional Textual; config-truthful; degrade gracefully.** Same posture as Plans 2–3: lazy widget factories, `render_shell_text` fallback, guarded empties.
 - **Branch & commits.** Work on `feat/tui-live-runs` (never `main`). Stage files explicitly per task — never `git add -A`. End every commit message with:
@@ -60,9 +60,9 @@ Every task's requirements implicitly include this section.
   Claude-Session: https://claude.ai/code/session_01TQ6JtXbH9nrt9DhcXHrKvm
   ```
 
-## Pre-flight check for the executor
+## Pre-flight route-save spike for the executor
 
-Confirm the route-persist equivalence test fails before changing `save_profile_raw`, then make it pass as a prerequisite to Task 5:
+Before Task 1, run a short spike on the route-save primitive. Confirm the route-persist equivalence test fails before changing `save_profile_raw`, estimate the fix, and record the result in the Task 5 notes:
 
 ```python
 from code_review_loop import profiles
@@ -74,14 +74,17 @@ from code_review_loop import profiles
 # Expected after the prerequisite fix: byte-identical owner files.
 ```
 
+Decision gate: if the required `save_profile_raw` change is contained to route/routing materialization and can be covered by the Task 5 tests, proceed. If it requires a broad serializer rewrite or deleting/inverting inherited keys, defer route editing, keep the route table read-only, and still complete the Profiles + Prompts tasks.
+
 ---
 
 ## File structure
 
-- **Modify** `src/code_review_loop/tui_state.py` — add `profile_picker_groups`, `prompt_inventory`, `prompt_field_label`.
+- **Create** `src/code_review_loop/tui_profiles_state.py` — add `profile_picker_groups`.
+- **Create** `src/code_review_loop/tui_prompts_state.py` — add `prompt_inventory`, `prompt_field_label`, and prompt-target helpers.
 - **Modify** `src/code_review_loop/profiles.py` — make `save_profile_raw` materialize inherited route context for route-cell deltas before route UI ships.
 - **Modify** `src/code_review_loop/tui_loop_widgets.py` — add lazy factories: `profile_picker_class()`, `prompt_library_class()`, `prompt_edit_modal_class()`, `route_edit_modal_class()`.
-- **Modify** `src/code_review_loop/tui.py` — mount `ProfilePicker` (Profiles workspace) and `PromptLibrary` (Prompts workspace); wire load-into-loop, prompt-edit, and route-edit modals; bindings.
+- **Modify** `src/code_review_loop/tui.py` — mount `ProfilePicker` (Profiles workspace) and `PromptLibrary` (Prompts workspace); wire load-into-loop, prompt-target/apply, prompt-edit, and route-edit modals; bindings.
 - **Create** `tests/test_tui_profiles_prompts_view.py` — pure-layer tests.
 - **Modify** `tests/test_tui_pilot_smoke.py` — picker / library / modal pilot tests.
 - **Modify** `docs/30-design/design-001-loop-first-tui-overhaul.md`, `docs/70-devex/devex-001-using-code-review-loop.md`, `CHANGELOG.md`.
@@ -91,7 +94,8 @@ from code_review_loop import profiles
 ## Task 1: Profiles picker view-model + widget (grouped save/load)
 
 **Files:**
-- Modify: `src/code_review_loop/tui_state.py`, `src/code_review_loop/tui_loop_widgets.py`, `src/code_review_loop/tui.py`
+- Create: `src/code_review_loop/tui_profiles_state.py`
+- Modify: `src/code_review_loop/tui_loop_widgets.py`, `src/code_review_loop/tui.py`
 - Test: `tests/test_tui_profiles_prompts_view.py`, `tests/test_tui_pilot_smoke.py`
 
 **Interfaces:**
@@ -112,7 +116,13 @@ from pathlib import Path
 
 import pytest
 
-from code_review_loop import profiles, tui_loop_widgets, tui_state
+from code_review_loop import (
+    profiles,
+    tui_loop_widgets,
+    tui_profiles_state,
+    tui_prompts_state,
+    tui_state,
+)
 from code_review_loop.tui_loop_model import LoopEditModel
 
 
@@ -127,7 +137,7 @@ def _snapshot(tmp_path: Path) -> tui_state.HomeSnapshot:
 
 
 def test_picker_groups_yours_before_presets(tmp_path):
-    rows = tui_state.profile_picker_groups(_snapshot(tmp_path))
+    rows = tui_profiles_state.profile_picker_groups(_snapshot(tmp_path))
     assert rows  # non-empty
     groups = [r.group for r in rows]
     # all 'yours' rows come before any 'presets' row
@@ -139,7 +149,7 @@ def test_picker_groups_yours_before_presets(tmp_path):
 
 
 def test_picker_classifies_builtins_as_presets(tmp_path):
-    rows = tui_state.profile_picker_groups(_snapshot(tmp_path))
+    rows = tui_profiles_state.profile_picker_groups(_snapshot(tmp_path))
     builtins = [r for r in rows if r.source_label == "builtin"]
     assert builtins  # the bundled expert profiles
     assert all(r.group == "presets" for r in builtins)
@@ -190,6 +200,32 @@ def test_profiles_workspace_renders_picker_and_loads_into_loop(tmp_path):
             assert "yours" in rendered and "dogfood" in rendered
 
     asyncio.run(run())
+
+
+def test_profile_picker_load_rebuilds_loop_diagram_for_new_profile(tmp_path):
+    async def run() -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        (repo / ".revrem.toml").write_text(
+            "[profiles.a]\n[profiles.a.pipeline]\nbase='main'\nmax_iterations=3\n"
+            "[profiles.a.review]\nmodel='gpt-a'\n"
+            "[profiles.b]\n[profiles.b.pipeline]\nbase='main'\nmax_iterations=9\n"
+            "[profiles.b.review]\nmodel='gpt-b'\n",
+            encoding="utf-8",
+        )
+        async with pilot_app(cwd=repo, profile_name="a") as (app, pilot):
+            await pilot.press("3")
+            await pilot.pause()
+            app._load_profile_into_loop("b")
+            await pilot.pause()
+            assert app._workspace == "loop"
+            assert app._loop_diagram.model.name == "b"
+            assert app._loop_diagram.focused_index == 0
+            assert app._loop_diagram.is_dirty is False
+            assert "gpt-b" in str(app.query_one("#loop-diagram").render())
+
+    asyncio.run(run())
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -199,7 +235,7 @@ Expected: FAIL — `AttributeError: ... 'profile_picker_groups'`.
 
 - [ ] **Step 3: Implement the view-model**
 
-Append to `src/code_review_loop/tui_state.py`:
+Create `src/code_review_loop/tui_profiles_state.py`:
 
 ```python
 @dataclass(frozen=True)
@@ -227,7 +263,7 @@ def _picker_source_label(source: str | None) -> str:
 PROJECT_CONFIG_NAME_DISPLAY = ".revrem.toml"
 
 
-def profile_picker_groups(snapshot: HomeSnapshot) -> tuple[ProfilePickerRow, ...]:
+def profile_picker_groups(snapshot: tui_state.HomeSnapshot) -> tuple[ProfilePickerRow, ...]:
     yours: list[ProfilePickerRow] = []
     presets: list[ProfilePickerRow] = []
     for profile in snapshot.profiles:
@@ -334,7 +370,7 @@ def _profile_picker_widget(app: Any) -> Any | None:
     cls = tui_loop_widgets.profile_picker_class()
     if cls is None:
         return None
-    rows = tui_state.profile_picker_groups(app.model.snapshot)
+    rows = tui_profiles_state.profile_picker_groups(app.model.snapshot)
     widget = cls(rows)
     app._profile_picker = widget
     return widget
@@ -348,7 +384,7 @@ Initialise `self._profile_picker = None` in `__init__`.
         on_profiles = self._workspace == "profiles"
         _set_widget_display(self, "#profiles-pane", on_profiles)
         if on_profiles and self._profile_picker is not None:
-            self._profile_picker.set_rows(tui_state.profile_picker_groups(self.model.snapshot))
+            self._profile_picker.set_rows(tui_profiles_state.profile_picker_groups(self.model.snapshot))
             self._profile_picker.rebuild()
 ```
 
@@ -407,7 +443,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/code_review_loop/tui_state.py src/code_review_loop/tui_loop_widgets.py src/code_review_loop/tui.py tests/test_tui_profiles_prompts_view.py tests/test_tui_pilot_smoke.py
+git add src/code_review_loop/tui_profiles_state.py src/code_review_loop/tui_loop_widgets.py src/code_review_loop/tui.py tests/test_tui_profiles_prompts_view.py tests/test_tui_pilot_smoke.py
 git commit -m "feat(tui): grouped profiles picker that loads into the loop"
 ```
 
@@ -418,7 +454,7 @@ git commit -m "feat(tui): grouped profiles picker that loads into the loop"
 A browse-only inventory of the fragment-composed prompt assets, tagged with trust/source — the data behind the library.
 
 **Files:**
-- Modify: `src/code_review_loop/tui_state.py`
+- Create: `src/code_review_loop/tui_prompts_state.py`
 - Test: `tests/test_tui_profiles_prompts_view.py`
 
 **Interfaces:**
@@ -433,7 +469,7 @@ Append to `tests/test_tui_profiles_prompts_view.py`:
 
 ```python
 def test_prompt_inventory_lists_builtin_fragments_and_contracts():
-    assets = tui_state.prompt_inventory()
+    assets = tui_prompts_state.prompt_inventory()
     names = {a.name for a in assets}
     assert "security-checklist" in names
     assert any(a.kind == "contract" and a.name.startswith("triage_v") for a in assets)
@@ -442,8 +478,8 @@ def test_prompt_inventory_lists_builtin_fragments_and_contracts():
 
 
 def test_prompt_inventory_is_sorted_and_stable():
-    a1 = tui_state.prompt_inventory()
-    a2 = tui_state.prompt_inventory()
+    a1 = tui_prompts_state.prompt_inventory()
+    a2 = tui_prompts_state.prompt_inventory()
     assert a1 == a2
     fragment_names = [a.name for a in a1 if a.kind == "fragment"]
     assert fragment_names == sorted(fragment_names)
@@ -456,7 +492,7 @@ Expected: FAIL — `AttributeError: ... 'prompt_inventory'`.
 
 - [ ] **Step 3: Implement**
 
-Append to `src/code_review_loop/tui_state.py` (add `from importlib.resources import files` near the top imports if not present):
+Create `src/code_review_loop/tui_prompts_state.py`:
 
 ```python
 @dataclass(frozen=True)
@@ -502,8 +538,8 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/code_review_loop/tui_state.py tests/test_tui_profiles_prompts_view.py
-git commit -m "feat(tui): prompt inventory view-model (browse-only)"
+git add src/code_review_loop/tui_prompts_state.py tests/test_tui_profiles_prompts_view.py
+git commit -m "feat(tui): prompt inventory view-model"
 ```
 
 ---
@@ -511,14 +547,14 @@ git commit -m "feat(tui): prompt inventory view-model (browse-only)"
 ## Task 3: Prompts library widget + harness-aware prompt field label
 
 **Files:**
-- Modify: `src/code_review_loop/tui_state.py`, `src/code_review_loop/tui_loop_widgets.py`, `src/code_review_loop/tui.py`
+- Modify: `src/code_review_loop/tui_prompts_state.py`, `src/code_review_loop/tui_loop_widgets.py`, `src/code_review_loop/tui.py`
 - Test: `tests/test_tui_profiles_prompts_view.py`, `tests/test_tui_pilot_smoke.py`
 
 **Interfaces:**
 - Consumes: `prompt_inventory` (Task 2); `harnesses` review capability; the loop's `LoopEditModel` for the scalar prompt field values.
 - Produces:
   - `prompt_field_label(phase, harness, value) -> str` — harness-aware (codex review → `built-in review (codex)`; otherwise the field value or `<default>`).
-  - `prompt_library_class()` lazy widget; `PromptLibrary` browse list (read-only) with `move`, `selected_asset()`, `rebuild`.
+  - `prompt_library_class()` lazy widget; `PromptLibrary` browse list with `move`, `selected_asset()`, `rebuild`. The widget is browse-only unless `app._prompt_target_key` is set by Loop's `g` action; in that targeted mode `Enter` applies the selected asset content into the scalar prompt field and returns to Loop.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -526,13 +562,20 @@ Append to `tests/test_tui_profiles_prompts_view.py`:
 
 ```python
 def test_prompt_field_label_codex_review_is_builtin():
-    assert tui_state.prompt_field_label("review", "codex", None) == "built-in review (codex)"
+    assert tui_prompts_state.prompt_field_label("review", "codex", None) == "built-in review (codex)"
 
 
 def test_prompt_field_label_external_shows_value_or_default():
-    assert tui_state.prompt_field_label("triage", "claude", None) == "<default>"
-    assert tui_state.prompt_field_label("triage", "claude", "Focus on docs drift") == (
+    assert tui_prompts_state.prompt_field_label("triage", "claude", None) == "<default>"
+    assert tui_prompts_state.prompt_field_label("triage", "claude", "Focus on docs drift") == (
         "Focus on docs drift"
+    )
+
+
+def test_prompt_field_label_triage_codex_uses_scalar_value_or_default():
+    assert tui_prompts_state.prompt_field_label("triage", "codex", None) == "<default>"
+    assert tui_prompts_state.prompt_field_label("triage", "codex", "Route carefully") == (
+        "Route carefully"
     )
 ```
 
@@ -560,7 +603,7 @@ Expected: FAIL — `AttributeError: ... 'prompt_field_label'`.
 
 - [ ] **Step 3: Implement the label helper**
 
-Append to `src/code_review_loop/tui_state.py`:
+Append to `src/code_review_loop/tui_prompts_state.py`:
 
 ```python
 def prompt_field_label(phase: str, harness: str | None, value: str | None) -> str:
@@ -573,7 +616,7 @@ def prompt_field_label(phase: str, harness: str | None, value: str | None) -> st
 
 - [ ] **Step 4: Implement the `PromptLibrary` widget**
 
-Append to `src/code_review_loop/tui_loop_widgets.py` (lazy factory). It is **browse-only** — it displays asset name, kind, trust, and preview. `Enter` is unbound here (or may show a status message such as "Prompt library is browse-only"); it must not claim or attempt external copy integration. Fragment-list insertion into a route is deferred (see Global Constraints):
+Append to `src/code_review_loop/tui_loop_widgets.py` (lazy factory). It displays asset name, kind, trust, and preview. It must not claim or attempt external copy integration. Fragment-list insertion into a route is deferred (see Global Constraints):
 
 ```python
 _PROMPT_LIBRARY_CLASS: type[Any] | None = None
@@ -597,7 +640,7 @@ def prompt_library_class() -> type[Any] | None:
 
         def __init__(self, **kwargs: Any) -> None:
             super().__init__("", id=kwargs.pop("id", "prompt-library"), markup=True, **kwargs)
-            self.assets = tui_state.prompt_inventory()
+            self.assets = tui_prompts_state.prompt_inventory()
             self.selected_index = 0
 
         def move(self, delta: int) -> None:
@@ -630,9 +673,44 @@ def prompt_library_class() -> type[Any] | None:
     return _PROMPT_LIBRARY_CLASS
 ```
 
-- [ ] **Step 5: Mount into the Prompts workspace in `tui.py`**
+- [ ] **Step 5: Mount into the Prompts workspace + apply targeted prompts in `tui.py`**
 
-Mirror Task 1's profiles-pane mounting: a `_prompt_library_widget(app)` helper that builds the widget and stores `app._prompt_library`; a `#prompts-pane` `_Vertical` in `compose`; display-toggle in `_render_workbench` (`on_prompts = self._workspace == "prompts"`); navigation delegation in `_move_selection`; CSS `#prompts-pane { width: 1fr; height: 1fr; padding: 0 1; overflow-y: auto; }`. Initialise `self._prompt_library = None` in `__init__`.
+Mirror Task 1's profiles-pane mounting: a `_prompt_library_widget(app)` helper that builds the widget and stores `app._prompt_library`; a `#prompts-pane` `_Vertical` in `compose`; display-toggle in `_render_workbench` (`on_prompts = self._workspace == "prompts"`); navigation delegation in `_move_selection`; CSS `#prompts-pane { width: 1fr; height: 1fr; padding: 0 1; overflow-y: auto; }`. Initialise `self._prompt_library = None`, `self._prompt_target_key = None`, and `self._prompt_return_workspace = None` in `__init__`.
+
+Add Loop key `g` → `action_goto_prompts`. When the Loop focus is on `triage` or `commit`, set `_prompt_target_key` to `triage.prompt` or `commit.message_prompt`, remember the return workspace as `"loop"`, switch to the Prompts workspace, and notify `Select a prompt asset, Enter to apply`. If the focused phase has no scalar prompt field, notify and stay in Loop.
+
+In `action_select`, when on the Prompts workspace and `_prompt_target_key` is set, read `self._prompt_library.selected_asset()`, load its full text from the packaged prompt resource by asset kind/name, call `_apply_prompt_edit(self._prompt_target_key, text)`, clear `_prompt_target_key`, switch back to Loop, and rebuild the diagram. If no target is set, `Enter` only shows a browse status message and does not mutate the working copy.
+
+Add a pilot test:
+
+```python
+def test_loop_goto_prompts_applies_selected_asset_to_scalar_prompt(tmp_path):
+    async def run() -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        (repo / ".revrem.toml").write_text(
+            "[profiles.edit]\n[profiles.edit.pipeline]\nbase='main'\n"
+            "[profiles.edit.triage]\nenabled=true\n",
+            encoding="utf-8",
+        )
+        async with pilot_app(cwd=repo, profile_name="edit") as (app, pilot):
+            await pilot.press("1")
+            await pilot.pause()
+            diagram = app.query_one("#loop-diagram")
+            diagram.focused_index = 1  # triage
+            await pilot.press("g")
+            await pilot.pause()
+            assert app._workspace == "prompts"
+            app._prompt_library.selected_index = 0
+            await pilot.press("enter")
+            await pilot.pause()
+            assert app._workspace == "loop"
+            assert diagram.model.field_value("triage.prompt", None)
+            assert diagram.is_dirty is True
+
+    asyncio.run(run())
+```
 
 - [ ] **Step 6: Run tests + TUI suite**
 
@@ -642,7 +720,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/code_review_loop/tui_state.py src/code_review_loop/tui_loop_widgets.py src/code_review_loop/tui.py tests/test_tui_profiles_prompts_view.py tests/test_tui_pilot_smoke.py
+git add src/code_review_loop/tui_prompts_state.py src/code_review_loop/tui_loop_widgets.py src/code_review_loop/tui.py tests/test_tui_profiles_prompts_view.py tests/test_tui_pilot_smoke.py
 git commit -m "feat(tui): prompts library browse + harness-aware prompt label"
 ```
 
@@ -919,6 +997,27 @@ def test_route_add_creates_saveable_route_with_explicit_defaults(tmp_path):
     assert reloaded.triage.routes["audit"].sandbox == "workspace-write"
 
 
+def test_route_add_from_disabled_routing_enables_v2_context(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    (repo / ".revrem.toml").write_text(
+        "[profiles.p]\n[profiles.p.pipeline]\nbase='main'\n[profiles.p.triage]\nenabled=true\n",
+        encoding="utf-8",
+    )
+    model = LoopEditModel.load("p", cwd=repo)
+    model.set_field("triage.contract", "v2")
+    model.set_field("triage.routing.enabled", "true")
+    model.set_field("triage.routing.default_route", "audit")
+    model.set_field("triage.routes.audit.harness", "codex")
+    model.set_field("triage.routes.audit.sandbox", "workspace-write")
+    model.save()
+    reloaded = profiles.resolve_profile("p", cwd=repo, require_implemented=False)
+    assert reloaded.triage.contract == "v2"
+    assert reloaded.triage.routing.enabled is True
+    assert reloaded.triage.routing.default_route == "audit"
+    assert reloaded.triage.routes["audit"].harness == "codex"
+
+
 def test_route_add_rejects_invalid_and_duplicate_names(tmp_path):
     async def run() -> None:
         repo = tmp_path / "repo"
@@ -992,6 +1091,10 @@ In `src/code_review_loop/tui.py`, import `re` near the other standard-library im
         self._loop_diagram.model.set_field(
             f"triage.routes.{route}.sandbox", "workspace-write"
         )
+        if not self._loop_diagram.model.profile.triage.routing.enabled:
+            self._loop_diagram.model.set_field("triage.contract", "v2")
+            self._loop_diagram.model.set_field("triage.routing.enabled", "true")
+            self._loop_diagram.model.set_field("triage.routing.default_route", route)
         self._loop_diagram.rebuild()
         self._update_console_status()
         _notify(self, f"Added route {route} (unsaved — s to save).")
@@ -1014,7 +1117,7 @@ Add the `route_edit_modal_class()` factory to `src/code_review_loop/tui_loop_wid
 
 - Header: `Route: <name>` and a one-line status hint.
 - One row per scalar cell: `harness`, `model`, `reasoning_effort`, `timeout_seconds`, `sandbox`, `fallback`.
-- `harness` cycles through Plan 2 `HARNESS_CHOICES`; `reasoning_effort` cycles through Plan 2 `EFFORT_CHOICES`; `model`, `timeout_seconds`, `sandbox`, and `fallback` use text inputs.
+- `harness` cycles through Plan 2 `HARNESS_CHOICES`; `reasoning_effort` cycles through Plan 2 `EFFORT_CHOICES`; `fallback` cycles through existing route names plus a blank/no-fallback option; `model`, `timeout_seconds`, and `sandbox` use text inputs.
 - `Tab` / `Shift+Tab` moves between rows; `Enter` submits the focused cell; `Esc` cancels.
 - Submission calls the callback with `(route, cell, value)`.
 
@@ -1043,7 +1146,7 @@ git commit -m "feat(tui): edit triage route cells + add route via working copy"
 
 - [ ] **Step 1: Document profiles, prompts, and route editing**
 
-In `docs/70-devex/devex-001-using-code-review-loop.md`, update the replacement TUI section introduced by Plan 010; do not add conflicting subsections. Cover: the **Profiles** workspace (grouped picker; `Enter` loads a saved loop into the editor; lifecycle actions still shell through `revrem config`; builtins are read-only presets and must be cloned before saving edits); the **Prompts** library (browse fragments + triage contracts; **fragment-list editing is not yet available** — pick scalar prompt fields in-loop with `e`); **route editing** from the triage phase (`Enter` to edit a route's cells, `a` to add a route; **route deletion is not yet available**).
+In `docs/70-devex/devex-001-using-code-review-loop.md`, update the replacement TUI section introduced by Plan 010; do not add conflicting subsections. Cover: the **Profiles** workspace (grouped picker; `Enter` loads a saved loop into the editor; lifecycle actions still shell through `revrem config`; builtins are read-only presets and must be cloned before saving edits); the **Prompts** library (browse fragments + triage contracts; **fragment-list editing is not yet available** — pick scalar prompt fields in-loop with `e`, or press `g` from a triage/commit phase to target a scalar prompt field, choose a prompt asset with `Enter`, and return to Loop); **route editing** from the triage phase (`Enter` to edit a route's cells, `a` to add a route; **route deletion is not yet available**).
 
 In `docs/30-design/design-001-loop-first-tui-overhaul.md`, reconcile §5.1 with the implemented slice:
 
@@ -1057,9 +1160,10 @@ Under Unreleased → Added:
 
 ```
 - TUI: profiles workspace is now a grouped save/load picker that loads a profile
-  into the live loop editor; a browse-only prompts library lists fragment-composed
-  assets; triage route cells and scalar prompt fields (triage.prompt,
-  commit.message_prompt) are editable in-loop through the working copy.
+  into the live loop editor; a prompts library lists fragment-composed assets and
+  can apply a selected asset to targeted scalar prompt fields; triage route cells
+  and scalar prompt fields (triage.prompt, commit.message_prompt) are editable
+  in-loop through the working copy.
 ```
 
 Under Unreleased → Notes (or Known limitations), state the two deferred items:
@@ -1069,7 +1173,40 @@ Under Unreleased → Notes (or Known limitations), state the two deferred items:
   profile-save primitive is merge-only / scalar-only).
 ```
 
-- [ ] **Step 3: Final full-suite + lint/format gate**
+- [ ] **Step 3: Final cross-plan integration + full-suite gate**
+
+Add a final cross-plan pilot test before the full gate:
+
+```python
+def test_picker_loaded_profile_edit_save_run_matches_live_diagram(tmp_path, monkeypatch):
+    from support.git_fixtures import init_repo
+
+    async def run() -> None:
+        repo = init_repo(tmp_path / "repo")
+        _write_live_profile(repo, profile_name="a", review_model="slow_cancel", artifact_dir="runs/a")
+        _write_live_profile(repo, profile_name="b", review_model="slow_cancel", artifact_dir="runs/b")
+        monkeypatch.setattr(tui.sys, "argv", [str(repo / "launcher.py")])
+        async with pilot_app(cwd=repo, profile_name="a") as (app, pilot):
+            await pilot.press("3")
+            await pilot.pause()
+            app._load_profile_into_loop("b")
+            await pilot.pause()
+            diagram = app.query_one("#loop-diagram")
+            diagram.set_loop_meta_field("max_iterations", "4")
+            app.action_save_loop()
+            await pilot.press("r")
+            await pilot.press("r")
+            await _wait_for(
+                lambda: app._workspace == "run" and app._loop_run_view is not None,
+                pilot_pause=pilot.pause,
+            )
+            rendered = _render(app, "#loop-run")
+            assert "b" in rendered
+            assert "4" in rendered
+            app.live_run_controller.cancel(grace_seconds=1)
+
+    asyncio.run(run())
+```
 
 Run: `./scripts/dev-check`
 Expected: PASS.
@@ -1096,6 +1233,8 @@ self._loop_run_view = None
 self._event_log = None
 self._profile_picker = None
 self._prompt_library = None
+self._prompt_target_key = None
+self._prompt_return_workspace = None
 self._workspace = "loop"
 ```
 
@@ -1131,10 +1270,10 @@ Show exactly one dedicated workspace pane for those four booleans. Hide the lega
 
 | Workspace | Keys |
 | --- | --- |
-| Loop | `space` toggle enabled, `Enter` expand/edit or route modal, `m` harness, `f` effort, `M` model, `t` timeout, `i` max iterations, `F` final review, `e` scalar prompt edit, `a` add route when triage focused, `s` save, `r` save-and-run/run |
+| Loop | `space` toggle enabled, `Enter` expand/edit or route modal, `m` harness, `f` effort, `M` model, `t` timeout, `i` max iterations, `F` final review, `e` scalar prompt edit, `g` choose prompt asset for focused triage/commit prompt, `a` add route when triage focused, `s` save, `r` save-and-run/run |
 | Run | `k` stop/cancel, `l` toggle event/log tail, `o` show artifacts directory |
 | Profiles | `Enter` load profile into Loop, existing lifecycle keys continue to shell through `revrem config` |
-| Prompts | navigation only; browse prompt inventory, no copy/fragment mutation action |
+| Prompts | navigate prompt inventory; `Enter` applies to the targeted scalar prompt field only when entered via Loop `g`; no copy/fragment mutation action |
 
 **Footer/devex requirement:** Task 6 must publish the same per-workspace key table in `docs/70-devex/devex-001-using-code-review-loop.md` so the showcase has one user-facing source of truth.
 
@@ -1145,17 +1284,17 @@ Show exactly one dedicated workspace pane for those four booleans. Hide the lega
 **Spec coverage (REVREM-DESIGN-001 §5.3, §5.4, §6, and §5.1 route editing):**
 - Profiles demoted to a grouped save/load picker (yours vs presets), load-into-loop → Task 1. ✓
 - Lifecycle actions still shell through `revrem config` → reused `tui_state.*_plan_for_name` (unchanged). ✓
-- Prompts library (browse surface) + in-loop picking → Tasks 2–4; fragment-list curation **reserved/deferred** with stated reason (matches §5.4 "library surface + in-loop picking; advanced curation reserved"). ✓
-- Harness-aware prompt field (codex review built-in) → `prompt_field_label` (Task 3). ✓
+- Prompts library (browse surface) + in-loop picking → Tasks 2–4; targeted scalar-field apply via Loop `g` is covered; fragment-list curation **reserved/deferred** with stated reason (matches §5.4 "library surface + in-loop picking; advanced curation reserved"). ✓
+- Harness-aware prompt field (codex review built-in; triage/codex scalar labels included) → `prompt_field_label` (Task 3). ✓
 - Triage route-row editing and route creation (the Plan 2 read-only table) → `RouteEditModal` + `_apply_route_edit` + `_apply_route_add` (Task 5); deletion deferred with stated reason. New routes validate names and write explicit `harness="codex"` / `sandbox="workspace-write"` defaults without inventing model or reasoning-effort values. ✓
 - All edits flow through the working copy + explicit Save → `LoopEditModel.set_field`/`save`; Task 5 first fixes and locks route inherited-context materialization in `save_profile_raw`, then route UI tests rely on that shared path. ✓
 
-**Honesty about limits (a reviewer rewards this):** two structurally-identical merge-only/scalar-only gaps (route deletion; fragment-list editing) are both deferred with the *same* root-cause explanation and surfaced in the docs — not one handled and one quietly promised. External copy actions are also deliberately absent from the prompt library in this plan.
+**Honesty about limits (a reviewer rewards this):** two structurally-identical merge-only/scalar-only gaps (route deletion; fragment-list editing) are both deferred with the *same* root-cause explanation and surfaced in the docs — not one handled and one quietly promised. External copy actions are also deliberately absent from the prompt library in this plan; `Enter` applies only to an explicit scalar prompt target set by Loop `g`.
 
 **Placeholder scan:** none — every code/test step shows complete content, including Task 5's `route_edit_modal_class` layout contract (one row per scalar route cell, cycle widgets for harness/effort, text inputs for scalar free-text cells, callback `(route, cell, value)`). If the executor wants a failing test for the modal's compose, add one asserting the modal yields one input/control per route cell.
 
-**Type consistency:** `profile_picker_groups`/`ProfilePickerRow`, `prompt_inventory`/`PromptAsset`, `prompt_field_label`, and the widget factories `profile_picker_class`/`prompt_library_class`/`route_edit_modal_class` match between definition and `tui.py` use. Raw keys (`triage.prompt`, `commit.message_prompt`, `triage.routes.<name>.<cell>`) match the verified schema. `LoopEditModel.set_field`/`field_value`/`save` calls match Plan 2's signatures.
+**Type consistency:** `tui_profiles_state.profile_picker_groups`/`ProfilePickerRow`, `tui_prompts_state.prompt_inventory`/`PromptAsset`, `prompt_field_label`, and the widget factories `profile_picker_class`/`prompt_library_class`/`route_edit_modal_class` match between definition and `tui.py` use. Raw keys (`triage.prompt`, `commit.message_prompt`, `triage.routes.<name>.<cell>`) match the verified schema. `LoopEditModel.set_field`/`field_value`/`save` calls match Plan 2's signatures.
 
-**Prompt-library guard scan:** before final review, run `rg -n 'copy-name|clipboard|copies its name|copy_to_clipboard' docs/05-planning/plan-012-tui-overhaul-profiles-prompts.md`. Hits are allowed only in this guard/self-review section; the implemented PromptLibrary is browse-only.
+**Prompt-library guard scan:** before final review, run `rg -n 'copy-name|clipboard|copies its name|copy_to_clipboard' docs/05-planning/plan-012-tui-overhaul-profiles-prompts.md`. Hits are allowed only in this guard/self-review section; the implemented PromptLibrary has targeted scalar-field apply only and no external copy action.
 
 **Dependency on Plans 2–3:** reuses `LoopEditModel`, `HARNESS_CHOICES`/`EFFORT_CHOICES`, the `#loop-pane`/`app._loop_diagram` wiring, the display-toggle layout, and the `tui_loop_widgets` lazy-factory + `TextPrompt` modal patterns. Flagged in the sequencing note; re-confirm before Task 1.
