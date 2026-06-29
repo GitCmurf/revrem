@@ -194,7 +194,7 @@ runs:
     - name: Upload report artifact
       if: always() && env.REVREM_RUN_DIR != '' && inputs.upload-artifacts == 'true'
       id: upload-report
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: revrem-report
         path: ${{ env.REVREM_REPORT_HTML }}
@@ -213,7 +213,7 @@ runs:
 
     - name: Upload raw run directory
       if: always() && env.REVREM_RUN_DIR != '' && inputs.raw-artifacts == 'true'
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: revrem-run
         path: ${{ env.REVREM_RUN_DIR }}
