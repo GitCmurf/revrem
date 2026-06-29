@@ -3,7 +3,7 @@ document_id: REVREM-PLAN-012
 type: PLAN
 title: TUI Overhaul Plan 4 — Profiles Picker, Prompts Library, Route Editing
 status: Draft
-version: '0.4'
+version: '0.5'
 last_updated: '2026-06-28'
 owner: GitCmurf
 docops_version: '2.0'
@@ -31,7 +31,7 @@ related_ids:
 
 **Goal:** Finish the overhaul's authoring surface. Demote **profiles** to a clean grouped save/load picker (yours vs presets) that loads a profile into the live loop working copy; add a **prompts** library that browses the fragment-composed prompt inventory and lets the operator pick/edit the scalar prompt fields in-loop; and add a **route-row modal** so triage's per-route cells (rendered read-only in Plan 2) become editable through the same working-copy model.
 
-**Architecture:** Three additions on the Plan 2/3 foundation, all routed through the existing `LoopEditModel` working copy and the existing `revrem config` actions. (1) A `ProfilePicker` widget over the existing `profile_view` snapshot, grouped by source, whose load action re-points the loop's `LoopEditModel`; profile lifecycle (new/clone/export/delete/import) reuses the `tui_state` lifecycle shell-outs unchanged. (2) A pure `prompt_inventory()` view-model over the packaged prompt fragments + triage contracts, surfaced by a browse-only `PromptLibrary` and a harness-aware `PromptField`; a `PromptEditModal` edits the **scalar** prompt fields (`triage.prompt`, `commit.message_prompt`) into the working copy. (3) A `RouteEditModal` edits triage route **cells** (`triage.routes.<name>.*`) into the working copy; before route editing ships, the shared `save_profile_raw` path must materialize inherited route context the same way `set_profile_field` does, so route edits remain one explicit Save instead of immediate per-field writes.
+**Architecture:** Three additions on the Plan 2/3 foundation, all routed through the existing `LoopEditModel` working copy and the existing `revrem config` actions. (1) A `ProfilePicker` widget over the existing `profile_view` snapshot, grouped by source, whose load action re-points the loop's `LoopEditModel`; profile lifecycle actions reuse the existing `tui_state` shell-out plans (`new`/`clone`/`export`/`delete`/`show`/`edit`) and `import_plan_for_path(path)` for imports. (2) A pure `prompt_inventory()` view-model over the packaged prompt fragments + triage contracts, surfaced by a browse-only `PromptLibrary` and a harness-aware `PromptField`; a `PromptEditModal` edits the **scalar** prompt fields (`triage.prompt`, `commit.message_prompt`) into the working copy. (3) A `RouteEditModal` edits triage route **cells** (`triage.routes.<name>.*`) into the working copy; before route editing ships, the shared `save_profile_raw` path must materialize inherited route context the same way `set_profile_field` does, so route edits remain one explicit Save instead of immediate per-field writes.
 
 **Tech Stack:** Python 3.12, Textual 8.2.5 (optional, lazy), `pytest` + Textual pilot, the Plan 2 `LoopEditModel` + `tui_loop_widgets` factory pattern, `prompts_composer` (`load_fragment`), and the `profiles` route edit primitives.
 
@@ -1043,7 +1043,7 @@ git commit -m "feat(tui): edit triage route cells + add route via working copy"
 
 - [ ] **Step 1: Document profiles, prompts, and route editing**
 
-In `docs/70-devex/devex-001-using-code-review-loop.md`, add subsections: the **Profiles** workspace (grouped picker; `Enter` loads a saved loop into the editor; lifecycle actions still shell through `revrem config`; builtins are read-only presets and must be cloned before saving edits); the **Prompts** library (browse fragments + triage contracts; **fragment-list editing is not yet available** — pick scalar prompt fields in-loop with `e`); **route editing** from the triage phase (`Enter` to edit a route's cells, `a` to add a route; **route deletion is not yet available**).
+In `docs/70-devex/devex-001-using-code-review-loop.md`, update the replacement TUI section introduced by Plan 010; do not add conflicting subsections. Cover: the **Profiles** workspace (grouped picker; `Enter` loads a saved loop into the editor; lifecycle actions still shell through `revrem config`; builtins are read-only presets and must be cloned before saving edits); the **Prompts** library (browse fragments + triage contracts; **fragment-list editing is not yet available** — pick scalar prompt fields in-loop with `e`); **route editing** from the triage phase (`Enter` to edit a route's cells, `a` to add a route; **route deletion is not yet available**).
 
 In `docs/30-design/design-001-loop-first-tui-overhaul.md`, reconcile §5.1 with the implemented slice:
 
@@ -1077,7 +1077,7 @@ Expected: PASS.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add docs/70-devex/devex-001-using-code-review-loop.md CHANGELOG.md
+git add docs/30-design/design-001-loop-first-tui-overhaul.md docs/70-devex/devex-001-using-code-review-loop.md CHANGELOG.md
 git commit -m "docs(tui): document profiles picker, prompts library, route editing"
 ```
 
@@ -1131,8 +1131,8 @@ Show exactly one dedicated workspace pane for those four booleans. Hide the lega
 
 | Workspace | Keys |
 | --- | --- |
-| Loop | `space` toggle enabled, `Enter` expand/edit or route modal, `m` model, `M` loop meta, `t` timeout, `e` scalar prompt edit, `a` add route when triage focused, `s` save, `r` save-and-run/run |
-| Run | `k` stop/cancel, `l` toggle event/log tail, `o` show/open artifact directory |
+| Loop | `space` toggle enabled, `Enter` expand/edit or route modal, `m` harness, `f` effort, `M` model, `t` timeout, `i` max iterations, `F` final review, `e` scalar prompt edit, `a` add route when triage focused, `s` save, `r` save-and-run/run |
+| Run | `k` stop/cancel, `l` toggle event/log tail, `o` show artifacts directory |
 | Profiles | `Enter` load profile into Loop, existing lifecycle keys continue to shell through `revrem config` |
 | Prompts | navigation only; browse prompt inventory, no copy/fragment mutation action |
 

@@ -3,7 +3,7 @@ document_id: REVREM-PLAN-010
 type: PLAN
 title: TUI Overhaul Plan 2 — Loop Screen (editable diagram + working copy)
 status: Draft
-version: '0.5'
+version: '0.6'
 last_updated: '2026-06-28'
 owner: GitCmurf
 docops_version: '2.0'
@@ -335,6 +335,21 @@ def test_baseline_projection_covers_every_editable_dotted_key(tmp_path):
         assert _read_dotted(raw, key) == model.field_value(
             key, _read_dotted(raw, key)
         )
+
+
+def test_builtin_profile_save_is_readonly_until_cloned(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    home = tmp_path / "home"
+    name = next(
+        item.name
+        for item in profiles.list_profiles(cwd=repo, home=home, include_builtins=True)
+        if item.source == profiles.BUILTIN_PROFILE_SOURCE
+    )
+    model = LoopEditModel.load(name, cwd=repo, home=home)
+    model.set_field("review.model", "gpt-9")
+    with pytest.raises(RuntimeError, match="built-in profile .* is read-only"):
+        model.save()
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -376,36 +391,10 @@ def _read_dotted(data: object, dotted_key: str) -> object:
 
 def _profile_to_raw(profile: profiles.Profile) -> dict[str, object]:
     """Render a resolved profile to raw-ish TOML keys for baseline comparisons."""
-    return {
-        "description": profile.description,
-        "pipeline": {
-            "base": profile.pipeline.base,
-            "max_iterations": profile.pipeline.max_iterations,
-            "final_review": profile.pipeline.final_review,
-            "checks": list(profile.pipeline.checks),
-            "check_timeout_seconds": profile.pipeline.check_timeout_seconds,
-        },
-        "review": asdict(profile.review),
-        "triage": {
-            "enabled": profile.triage.enabled,
-            "contract": profile.triage.contract,
-            "harness": profile.triage.harness,
-            "model": profile.triage.model,
-            "reasoning_effort": profile.triage.reasoning_effort,
-            "timeout_seconds": profile.triage.timeout_seconds,
-            "prompt": profile.triage.prompt,
-            "routing": asdict(profile.triage.routing),
-            "routes": {
-                name: asdict(route) for name, route in profile.triage.routes.items()
-            },
-        },
-        "remediation": asdict(profile.remediation),
-        "commit": asdict(profile.commit),
-        "runtime": asdict(profile.runtime),
-        "output": asdict(profile.output),
-        "budgets": asdict(profile.budgets),
-        "suppressions": asdict(profile.suppressions),
-    }
+    raw = asdict(profile)
+    raw.pop("name", None)
+    raw.pop("source", None)
+    return raw
 
 
 @dataclass
@@ -457,6 +446,8 @@ class LoopEditModel:
         )
 
     def save(self) -> Path:
+        # save_profile_raw/profile_owner_path raises the clone-to-edit RuntimeError
+        # for builtin profiles; keep that message intact for the TUI.
         path = profiles.save_profile_raw(
             self.name, self.authored_delta(), cwd=self.cwd, home=self.home
         )
@@ -470,7 +461,7 @@ class LoopEditModel:
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `python -m pytest tests/test_tui_loop_model.py -q`
-Expected: PASS (6 passed).
+Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -569,10 +560,10 @@ def test_phase_card_summary_shows_harness_model_and_disabled_marker(tmp_path):
     review = tui_state.phase_card_lines(model, "review", focused=False, expanded=False)
     text = "\n".join(review)
     assert "review" in text and "codex" in text and "gpt-5.5" in text
-    assert text.lstrip().startswith(tui_state.PHASE_ENABLED_GLYPH)
+    assert text.lstrip().startswith(f"▸ {tui_state.PHASE_ENABLED_GLYPH}")
     # triage defaults off -> disabled glyph
     triage = tui_state.phase_card_lines(model, "triage", focused=False, expanded=False)
-    assert "\n".join(triage).lstrip().startswith(tui_state.PHASE_DISABLED_GLYPH)
+    assert "\n".join(triage).lstrip().startswith(f"▸ {tui_state.PHASE_DISABLED_GLYPH}")
 
 
 def test_phase_card_expanded_shows_edit_fields_with_overlay(tmp_path):
@@ -584,6 +575,7 @@ def test_phase_card_expanded_shows_edit_fields_with_overlay(tmp_path):
     model.set_field("review.model", "gpt-5.6")
     expanded = tui_state.phase_card_lines(model, "review", focused=True, expanded=True)
     text = "\n".join(expanded)
+    assert text.lstrip().startswith("▾")
     assert "harness" in text and "model" in text and "effort" in text and "timeout" in text
     # overlay reflected, not the baseline
     assert "gpt-5.6" in text and "gpt-5.5" not in text
@@ -794,7 +786,8 @@ def phase_card_lines(
     if phase == "checks" and view.command_count is not None:
         summary_bits.append(f"{view.command_count} commands")
     pointer = ">" if focused else " "
-    summary = f"{pointer} {glyph} {phase} " + " · ".join(summary_bits)
+    chevron = "▾" if expanded else "▸"
+    summary = f"{pointer} {chevron} {glyph} {phase} " + " · ".join(summary_bits)
     lines = [summary.rstrip()]
     if expanded and PHASE_DOTTED.get(phase):
         harness_text = harness if isinstance(harness, str) and harness else "-"
@@ -824,7 +817,7 @@ Note: the `from typing import Any` import is already present at the top of `tui_
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `python -m pytest tests/test_tui_loop_view.py -q`
-Expected: PASS (6 passed).
+Expected: PASS.
 
 - [ ] **Step 5: Run the existing view-model + equivalence suites (no regressions)**
 
@@ -1114,6 +1107,13 @@ assert "1 Loop" in rendered
 assert "3 Profiles" in rendered
 ```
 
+Add a direct unit assertion for the workspace order in `tests/test_tui.py`:
+
+```python
+def test_workspace_order_is_loop_first():
+    assert tui._WORKSPACES == ("loop", "run", "profiles", "prompts")
+```
+
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `python -m pytest tests/test_tui_pilot_smoke.py -k "loop_workspace or loop_inline" -q`
@@ -1137,7 +1137,7 @@ Create `src/code_review_loop/tui_loop_widgets.py` with this contract:
 
 Make these edits in `src/code_review_loop/tui.py`:
 
-1. **Reorder nav.** In `_build_bindings`, change the four workspace bindings so Loop is `1` and the others follow the design order `1 Loop · 2 Run · 3 Profiles · 4 Prompts`:
+1. **Reorder nav.** Change `_WORKSPACES` to `("loop", "run", "profiles", "prompts")`. In `_build_bindings`, change the four workspace bindings so Loop is `1` and the others follow the design order `1 Loop · 2 Run · 3 Profiles · 4 Prompts`:
 
 ```python
         ("1", "workspace_loop", "Loop"),
@@ -1231,6 +1231,8 @@ def _set_widget_display(app: Any, selector: str, visible: bool) -> None:
         ("m", "cycle_harness", "Harness"),
         ("f", "cycle_effort", "Effort"),
         ("M", "edit_model", "Model"),
+        ("i", "edit_max_iterations", "Max iterations"),
+        ("F", "toggle_final_review", "Final review"),
         ("t", "edit_timeout", "Timeout"),
 ```
 
@@ -1259,11 +1261,41 @@ and the actions on `_RevRemAppMixin`:
     def action_edit_timeout(self) -> None:
         if self._workspace == "loop" and self._loop_diagram is not None:
             self._open_loop_text_field_prompt("timeout")
+
+    def action_edit_max_iterations(self) -> None:
+        if self._workspace == "loop" and self._loop_diagram is not None:
+            self._open_loop_meta_prompt("max_iterations")
+
+    def action_toggle_final_review(self) -> None:
+        if self._workspace == "loop" and self._loop_diagram is not None:
+            self._loop_diagram.toggle_final_review()
+            self._update_console_status()
 ```
 
 Implement `_open_loop_text_field_prompt(field)` using the existing prompt-entry infrastructure rather than adding a new Textual dependency path. The callback must call `self._loop_diagram.set_text_field(field, value)`, rebuild the diagram, update the dirty status marker, and leave save-time validation to `LoopEditModel.save()`.
 
-9. **Show the dirty marker.** In `_status_bar_markup`, compute a dirty suffix and append it to the profile name:
+Implement `_open_loop_meta_prompt(field)` the same way, calling `self._loop_diagram.set_loop_meta_field(field, value)`.
+
+9. **Update contextual footer hints.** In the existing `_footer_markup`, replace the old Loop footer with focus-aware hints from the active `LoopDiagram`. At minimum:
+
+```python
+elif app._workspace == "loop":
+    phase = (
+        app._loop_diagram.current_phase()
+        if getattr(app, "_loop_diagram", None) is not None
+        else "review"
+    )
+    route_keys = " [Enter]edit route [a]add route" if phase == "triage" else ""
+    keys = (
+        "[up/down]phase [Enter]expand [space]toggle [m]harness [f]effort "
+        "[M]model [t]timeout [i]iterations [F]final-review "
+        f"[s]save [r]run{route_keys} [?]help"
+    )
+```
+
+The footer should show only actions that are meaningful in the current workspace; keep the existing help overlay path when `app._help_visible` is true.
+
+10. **Show the dirty marker.** In `_status_bar_markup`, compute a dirty suffix and append it to the profile name:
 
 ```python
     dirty = "*" if getattr(app, "_loop_diagram", None) is not None and app._loop_diagram.is_dirty else ""
@@ -1271,7 +1303,7 @@ Implement `_open_loop_text_field_prompt(field)` using the existing prompt-entry 
 
 and change the `profile=` fragment to `profile={tui_state.markup_escape(profile_name)}{dirty}`.
 
-10. **Add CSS for the loop pane.** In `_RevRemAppMixin.CSS`, add:
+11. **Add CSS for the loop pane.** In `_RevRemAppMixin.CSS`, add:
 
 ```css
     #loop-pane {
@@ -1436,7 +1468,9 @@ In `src/code_review_loop/tui.py`:
 
 Note: this **replaces** the existing `("s", "show_profile", "Show")` binding only when on the Loop workspace; keep `show_profile` reachable from the Profiles workspace by leaving its action method in place and dispatching by workspace inside `action_save_loop` (below). To avoid a double-bound key, change the existing `("s", "show_profile", "Show")` entry to be dispatched through the new `action_save_loop`.
 
-2. Add the action:
+2. Extend `_notify(app, message)` to accept an optional keyword-only `severity: str = "information"` and pass it through to Textual's notification mechanism when available. If the current environment lacks severity support, preserve the old message-only behavior but add a visible prefix (`"Saved: ..."` / `"Save failed: ..."`). Save success and save failure must be visually distinguishable in the TUI and in tests.
+
+3. Add the action:
 
 ```python
     def action_save_loop(self) -> None:
@@ -1450,16 +1484,16 @@ Note: this **replaces** the existing `("s", "show_profile", "Show")` binding onl
         try:
             path = self._loop_diagram.model.save()
         except (OSError, ValueError) as exc:
-            _notify(self, f"Save failed: {exc}")
+            _notify(self, f"Save failed: {exc}", severity="error")
             return
         self._refresh_profiles_from_disk()
         # Re-point the diagram at the refreshed model.
         self._render_workbench()
-        _notify(self, f"Saved loop to {path}")
+        _notify(self, f"Saved loop to {path}", severity="information")
         self._update_console_status()
 ```
 
-3. Make Run save-first when dirty. In `action_launch_run`, immediately after resolving `selected`/`profile_name` and before building the plan, add:
+4. Make Run save-first when dirty. In `action_launch_run`, immediately after resolving `selected`/`profile_name` and before building the plan, add:
 
 ```python
         if (
@@ -1470,10 +1504,10 @@ Note: this **replaces** the existing `("s", "show_profile", "Show")` binding onl
             try:
                 self._loop_diagram.model.save()
             except (OSError, ValueError) as exc:
-                _notify(self, f"Save-and-run aborted: {exc}")
+                _notify(self, f"Save-and-run aborted: {exc}", severity="error")
                 return
             self._refresh_profiles_from_disk()
-            _notify(self, f"Saved loop before run: {profile_name}")
+            _notify(self, f"Saved loop before run: {profile_name}", severity="information")
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
@@ -1503,7 +1537,9 @@ git commit -m "feat(tui): explicit Save and save-and-run for the loop working co
 
 - [ ] **Step 1: Document the Loop screen**
 
-In `docs/70-devex/devex-001-using-code-review-loop.md`, add a subsection under the TUI usage describing the Loop workspace: keys `↑/↓` move phase, `Enter` expand/collapse, `space` toggle a phase, `m` cycle harness, `f` cycle effort, `s` save loop to its profile, `r` run (save-and-run when dirty); the `*` next to the profile name means unsaved working-copy changes; the diagram is config-truthful (inner rail only when `runtime.inner_check_retries > 0`, final review only when enabled); triage routes are shown read-only (route editing arrives in a later release).
+In `docs/70-devex/devex-001-using-code-review-loop.md`, replace the existing pre-overhaul TUI section with the new Loop-first workbench description. Do not add a second conflicting subsection. Include: keys `↑/↓` move phase, `Enter` expand/collapse, `space` toggle a phase, `m` cycle harness, `f` cycle effort, `M` edit model, `t` edit timeout, `i` edit max iterations, `F` toggle final review, `s` save loop to its profile, `r` run (save-and-run when dirty); the `*` next to the profile name means unsaved working-copy changes; the diagram is config-truthful (inner rail only when `runtime.inner_check_retries > 0`, final review only when enabled); triage routes are shown read-only (route editing arrives in Plan 4).
+
+Add a regression test to the existing TUI state tests that calls `tui_state.render_shell_text()` for a profile with triage enabled, at least one route, `runtime.inner_check_retries > 0`, and `pipeline.final_review = true`; assert the result is non-empty and includes the selected profile name plus loop/phase content. This locks the no-Textual fallback after the new view-model functions are added.
 
 - [ ] **Step 2: Add a CHANGELOG entry**
 
@@ -1537,17 +1573,18 @@ git commit -m "docs(tui): document the interactive loop workspace"
 - `●/○` enabled/disabled, space toggles → `PHASE_ENABLED_GLYPH`/`PHASE_DISABLED_GLYPH` (Task 2) + `toggle_enabled` (Task 4). ✓
 - Config-truthful rails (inner only when retries>0, final review only when on, disabled drop out) → `loop_rail_meta` (Task 2), tested. ✓
 - Working-copy overlays on all authoring views → `loop_header_text(model)`, `loop_rail_meta(model)`, and `triage_routes_lines(model)` reflect unsaved meta/route edits before Save (Tasks 2–3), tested. ✓
-- Inline single-field edit (harness/model/effort/timeout) → cycle (`m`/`f`) + text-entry actions (`shift+m`/`t`) + `set_text_field` (Task 4); model/timeout free-text validated at Save (Global Constraints). ✓
+- Inline single-field edit (harness/model/effort/timeout) → cycle (`m`/`f`) + text-entry actions (`M`/`t`) + `set_text_field` (Task 4); model/timeout free-text validated at Save (Global Constraints). ✓
 - Triage routes table (read-only here) → `triage_routes_lines` (Task 3); route-row modal deferred to Plan 4 (stated). ✓
+- Triage structural fields scoped deliberately: `triage.prompt` is Plan 4, `triage.contract` and `triage.routing.mode` are structural setup fields, and `triage.on_invalid` remains out of Plan 2's inline edit surface unless a later plan adds a dedicated control. ✓
 - Working copy + explicit save → `LoopEditModel` (Task 1) + `action_save_loop` / save-and-run (Task 5). Dirty state is semantic, so no-op/reverted edits clear `edits` and remove the `*` marker. ✓
-- CLI-equivalence preserved → `test_save_round_trips_to_config_set_path` (Task 1) + launch-plan guard (Task 5) + full `test_tui_cli_equivalence.py`. ✓
+- CLI-equivalence preserved → `test_save_round_trips_to_config_set_path` (Task 1) + launch-plan guard + `assert_equivalent_run_artifacts` fake-harness run parity (Task 5) + full `test_tui_cli_equivalence.py`. ✓
 - Real interactive widgets consuming view-models; `render_shell_text` retained as fallback (untouched). ✓
 - Stale design §4.2 corrected → Task 1 Step 0. ✓
 - Loop-first nav → Task 4 (with pilot assertion updates). ✓
 
 **Placeholder scan:** No TBD/TODO. Test steps show concrete tests. Implementation steps are either paste-ready pure-function snippets or explicit contracts where paste-ready widget code would be misleading; the widget task is acceptance-test driven by real child-widget queries.
 
-**Type consistency:** `field_value(dotted_key, fallback)` signature is identical across Tasks 1, 2, 4. `PHASE_DOTTED`, `LOOP_META_DOTTED`, `LOOP_PHASES`, `loop_rail_meta`, `phase_card_lines`, `triage_routes_lines`, `phase_gutter`, `loop_header_text`, and `LoopDiagram.current_phase()` names match between definition (Tasks 2–4) and use (Plan 4). `loop_diagram_class()` returns the class used by `_loop_diagram_widget`. `commit` edits target raw `commit.message_model` (not `commit.model`), matching `CommitConfig`; loop meta edits target raw `pipeline.max_iterations` / `pipeline.final_review`.
+**Type consistency:** `field_value(dotted_key, fallback)` signature is identical across Tasks 1, 2, 4. `PHASE_DOTTED`, `LOOP_META_DOTTED`, `LOOP_PHASES`, `loop_rail_meta`, `phase_card_lines`, `triage_routes_lines`, `phase_gutter`, `loop_header_text`, and `LoopDiagram.current_phase()` names match between definition (Tasks 2–4) and use (Plan 4). `loop_diagram_class()` returns the class used by `_loop_diagram_widget`. `commit` edits target raw `commit.message_model` (not `commit.model`), matching `CommitConfig`; loop meta edits target raw `pipeline.max_iterations` / `pipeline.final_review` through `i` / `F`, while `M` remains model editing.
 
 **Raw-key guard scan:** before executing Task 1 and again before final review, run `rg -n 'top-level raw-key|raw top-level|profile root|set_field\("max_iterations|set_field\("final_review|field_value\("max_iterations|field_value\("final_review|== "max_iterations"|== "final_review"|root-level max_iterations|root-level final_review|raw profile keys are max_iterations|fake pipeline' docs/05-planning/plan-010-tui-overhaul-loop-screen.md`. Any hit must be intentionally reviewed; loop metadata belongs under `[profiles.<name>.pipeline]`.
 

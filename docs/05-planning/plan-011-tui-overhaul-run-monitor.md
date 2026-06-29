@@ -3,7 +3,7 @@ document_id: REVREM-PLAN-011
 type: PLAN
 title: TUI Overhaul Plan 3 — Run / Monitor Live Mode
 status: Draft
-version: '0.4'
+version: '0.5'
 last_updated: '2026-06-28'
 owner: GitCmurf
 docops_version: '2.0'
@@ -50,7 +50,7 @@ Every task's requirements implicitly include this section.
 
 - **Read-only.** This plan adds no edit or write path; it only *renders* a running profile and the event/artifact stream. No `profiles` write functions are called. (This is why the root-key / coercion concerns from Plan 2 do not apply here.)
 - **Config-truthful, two modes one shape.** `LoopRunView` reuses Plan 2's `loop_rail_meta(source)` and `phase_gutter(phase, rail_meta)` verbatim, passing the running resolved `profiles.Profile` as `source` — the inner rail is shown live only when `runtime.inner_check_retries > 0`, disabled phases render `⤫` and drop from the rails, and the iteration bound on the outer rail is the same `max_iterations`. The authoring and run diagrams share the rail geometry by construction.
-- **Truthful to controller capability.** `LiveRunController` exposes `start` / `refresh` / `cancel` / `finish` / `read_live_events` / `stdout_lines` / `stderr_lines` — there is **no pause**. The Run footer therefore offers *stop* (`k`, the existing cancel), *logs* (`l`, toggle stdout/stderr tail), and *open dir* (`o`) — **not** the speculative "pause" from the REVREM-DESIGN-001 §5.2 mockup. Do not invent a pause control.
+- **Truthful to controller capability.** `LiveRunController` exposes `start` / `refresh` / `cancel` / `finish` / `read_live_events` / `stdout_lines` / `stderr_lines` — there is **no pause**. The Run footer therefore offers *stop* (`k`, the existing cancel), *logs* (`l`, toggle stdout/stderr tail), and *show artifacts* (`o`, displays the directory path) — **not** the speculative "pause" from the REVREM-DESIGN-001 §5.2 mockup. Do not invent a pause control.
 - **Design reconciliation is part of this plan.** REVREM-DESIGN-001 §5.2 still shows `p pause`; Task 0 updates that design text before widget work so implementation, documentation, and review expectations agree.
 - **Phase vocabulary is mapped, not assumed.** The runner emits loop phases as `review`, `triage`, `remediate`, `commit` (note: `remediate`, not `remediation`), and signals checks via `check_result` events rather than a `phase="checks"`. `run_loop_view` translates through an explicit `RUNNER_PHASE_TO_DISPLAY` map (Task 1) — never by assuming runner phase strings equal `LOOP_PHASES`.
 - **Degrade gracefully.** When events are unavailable (`LiveEventSnapshot.error`) or not yet written (`.ready is False`), and when artifacts are missing, the view shows the existing waiting/unavailable states rather than failing. Missing Textual → `render_shell_text` fallback unchanged.
@@ -82,6 +82,13 @@ Before implementation, edit REVREM-DESIGN-001 §5.2 and §9:
 
 Run: `meminit check`
 Expected: PASS, aside from unrelated pre-existing warnings.
+
+Commit:
+
+```bash
+git add docs/30-design/design-001-loop-first-tui-overhaul.md
+git commit -m "docs(tui): reconcile run monitor controls with controller capabilities"
+```
 
 ## File structure
 
@@ -214,6 +221,25 @@ def test_inner_retry_counts_sub_iteration_labels_as_same_outer_iteration(tmp_pat
     view = tui_state.run_loop_view(evs, _profile(tmp_path, inner=2))
     assert view.iteration == 1
     assert view.inner_retry == 1
+
+
+def test_new_outer_iteration_resets_prior_phase_states(tmp_path):
+    evs = (
+        _ev(1, "phase_start", "review", 1),
+        _ev(2, "phase_result", "review", 1, status="findings"),
+        _ev(3, "phase_start", "triage", 1),
+        _ev(4, "phase_result", "triage", 1),
+        _ev(5, "phase_start", "remediate", 1),
+        _ev(6, "phase_result", "remediate", 1),
+        _ev(7, "check_result", "test", 1, passed=True),
+        _ev(8, "phase_start", "review", 2),
+    )
+    view = tui_state.run_loop_view(evs, _profile(tmp_path, triage=True, inner=1))
+    states = {p.name: p.state for p in view.phases}
+    assert states["review"] == "running"
+    assert states["triage"] == "pending"
+    assert states["remediation"] == "pending"
+    assert states["checks"] == "pending"
 ```
 
 Before implementing the counter, inspect a real artifact or fixture with `runtime.inner_check_retries > 0` and confirm the event shape. The runner emits integer outer iterations for normal phase starts, but check-attempt labels may be strings such as `"1.1"`. The counter must normalize both `1` and `"1.2"` to outer iteration `1` before deciding whether to reset `current_iter_remediate_starts`.
@@ -283,6 +309,7 @@ def run_loop_view(
             states[name] = "disabled"
 
     iteration: int | None = None
+    current_outer_iteration: int | None = None
     current_iter_remediate_starts = 0
     last_iteration_for_remediate: int | None = None
     any_check_result = False
@@ -291,6 +318,16 @@ def run_loop_view(
     for event in events:
         event_outer_iteration = _outer_iteration(event.iteration)
         if event_outer_iteration is not None:
+            if current_outer_iteration is not None and event_outer_iteration != current_outer_iteration:
+                for name, is_on in enabled.items():
+                    if is_on:
+                        states[name] = "pending"
+                        details[name] = ""
+                current_iter_remediate_starts = 0
+                last_iteration_for_remediate = None
+                any_check_result = False
+                last_check_passed = None
+            current_outer_iteration = event_outer_iteration
             iteration = event_outer_iteration
 
         display = RUNNER_PHASE_TO_DISPLAY.get(event.phase or "")
@@ -334,10 +371,12 @@ def run_loop_view(
     )
 ```
 
+`event_detail(event)` delegates to `events.compact_detail(event)` and is used only for `phase_result` rows here. Checks are signalled through `check_result` events, so their display state/detail stays in the explicit `check_result` branch above rather than relying on a synthetic `phase="checks"` phase result.
+
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `python -m pytest tests/test_tui_run_view.py -q`
-Expected: PASS (5 passed).
+Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -462,6 +501,18 @@ class _FakeLiveController:
         return self._snapshot
 
 
+def _single_widget_app(widget):
+    components = tui._load_textual_components()
+    if components is None:
+        pytest.skip("Textual is not installed")
+
+    class SingleWidgetApp(components.app.App):  # type: ignore[misc, valid-type]
+        def compose(self):
+            yield widget
+
+    return SingleWidgetApp()
+
+
 def _loop_run_profile(tmp_path):
     repo = tmp_path / "repo"
     (repo / ".git").mkdir(parents=True)
@@ -478,7 +529,7 @@ def test_loop_run_view_waits_when_events_not_ready(tmp_path):
         if cls is None:
             pytest.skip("Textual is not installed")
         profile = _loop_run_profile(tmp_path)
-        async with tui._InlineApp(cls()).run_test() as pilot:
+        async with _single_widget_app(cls()).run_test() as pilot:
             widget = pilot.app.query_one("#loop-run")
             widget.set_state(
                 _FakeLiveController(tui_run_controller.LiveEventSnapshot(ready=False)),
@@ -497,7 +548,7 @@ def test_loop_run_view_reports_event_read_errors(tmp_path):
         if cls is None:
             pytest.skip("Textual is not installed")
         profile = _loop_run_profile(tmp_path)
-        async with tui._InlineApp(cls()).run_test() as pilot:
+        async with _single_widget_app(cls()).run_test() as pilot:
             widget = pilot.app.query_one("#loop-run")
             widget.set_state(
                 _FakeLiveController(
@@ -508,7 +559,7 @@ def test_loop_run_view_reports_event_read_errors(tmp_path):
             widget.rebuild()
             await pilot.pause()
             rendered = str(widget.render())
-            assert "events unavailable" in rendered
+            assert "events: unavailable" in rendered
             assert "bad json" in rendered
 
     asyncio.run(run())
@@ -519,7 +570,7 @@ def test_event_log_waits_when_events_not_ready():
         cls = tui_loop_widgets.event_log_class()
         if cls is None:
             pytest.skip("Textual is not installed")
-        async with tui._InlineApp(cls()).run_test() as pilot:
+        async with _single_widget_app(cls()).run_test() as pilot:
             widget = pilot.app.query_one("#event-log")
             widget.set_controller(
                 _FakeLiveController(tui_run_controller.LiveEventSnapshot(ready=False))
@@ -589,7 +640,7 @@ def loop_run_view_class() -> type[Any] | None:
                 else f"max {view.max_iterations}"
             )
             lines: list[str] = [
-                f"[b]RUN · {tui_state.markup_escape(self.profile.name)}[/b]  "
+                f"[b]RUN · {tui_state.markup_escape(self.profile.name)}[/b]",
                 f"[muted]{tui_state.markup_escape(self.controller.status)} · "
                 f"{tui_state.markup_escape(iter_text)}[/]",
                 "",
@@ -677,7 +728,7 @@ Mount `LoopRunView` and a scrolling `EventLog` into the Run workspace, wire the 
 
 **Interfaces:**
 - Consumes: `loop_run_view_class`, `event_log_class`, `event_tail_lines`, the existing `LiveRunController`, and `tui`'s refresh hooks (`_refresh_live_run`, `set_interval`, `action_launch_run`).
-- Produces: `event_log_class() -> type | None`; `EventLog` widget with `set_controller(controller)` and `rebuild()`; Run-workspace mounting + `o` open-dir / `l` logs-toggle actions.
+- Produces: `event_log_class() -> type | None`; `EventLog` widget with `set_controller(controller)` and `rebuild()`; Run-workspace mounting + `o` show-artifacts / `l` logs-toggle actions.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -839,7 +890,7 @@ In `__init__`, initialise `self._loop_run_view = None` and `self._event_log = No
 
 ```python
         ("l", "toggle_logs", "Logs"),
-        ("o", "open_artifacts", "Open dir"),
+        ("o", "show_artifacts", "Show artifacts"),
 ```
 
 and the actions on `_RevRemAppMixin`:
@@ -850,7 +901,7 @@ and the actions on `_RevRemAppMixin`:
             self._event_log.show_logs = not self._event_log.show_logs
             self._event_log.rebuild()
 
-    def action_open_artifacts(self) -> None:
+    def action_show_artifacts(self) -> None:
         if self.live_run_controller.launch is None:
             _notify(self, "No run artifacts yet.")
             return
@@ -971,7 +1022,7 @@ git commit -m "feat(tui): auto-switch to live run monitor and refresh it in plac
 
 - [ ] **Step 1: Document the Run workspace**
 
-In `docs/70-devex/devex-001-using-code-review-loop.md`, add a subsection describing the live Run monitor: the same loop diagram, now showing `✓` done · `▶` running · `·` pending · `⤫` disabled; the outer `iteration n / max` and inner `inner retry n / N` counters on the rails; the event tail; controls `k` stop · `l` toggle logs/events · `o` show artifacts dir. State plainly that **pause is not available** (the runner is stopped, not paused).
+In `docs/70-devex/devex-001-using-code-review-loop.md`, update the replacement TUI section introduced by Plan 010; do not add a conflicting subsection. Describe the live Run monitor: the same loop diagram, now showing `✓` done · `▶` running · `·` pending · `⤫` disabled; the outer `iteration n / max` and inner `inner retry n / N` counters on the rails; the event tail; controls `k` stop · `l` toggle logs/events · `o` show artifacts dir. State plainly that **pause is not available** (the runner is stopped, not paused).
 
 - [ ] **Step 2: CHANGELOG entry**
 
