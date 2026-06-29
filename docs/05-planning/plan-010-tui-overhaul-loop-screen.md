@@ -4,7 +4,7 @@ type: PLAN
 title: TUI Overhaul Plan 2 — Loop Screen (editable diagram + working copy)
 status: Draft
 version: '0.7'
-last_updated: '2026-06-28'
+last_updated: '2026-06-29'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -1622,6 +1622,19 @@ Expected: PASS (pytest, lint, type, consistency, and Meminit gates clean except 
 git add docs/70-devex/devex-001-using-code-review-loop.md CHANGELOG.md
 git commit -m "docs(tui): document the interactive loop workspace"
 ```
+
+---
+
+## Implementation Follow-up Note
+
+After the Plan 010 implementation review on 2026-06-29, the Save and save-and-run
+paths were tightened so `_refresh_profiles_from_disk()` remains the single owner
+of reloading the Loop diagram after a persisted edit. Callers should not add a
+second immediate `_reload_loop_diagram()` after refresh; doing so is redundant
+because refresh already rebuilds the shell model, reloads the diagram, and renders
+the workbench. The pilot dirty-state test also exercises a `cycle_field(...)`
+edit path before text-field overlays, so widget cycle controls and free-text
+overlays both remain covered.
 
 ---
 

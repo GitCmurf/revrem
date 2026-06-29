@@ -592,7 +592,6 @@ class _RevRemAppMixin:
                 _notify(self, f"Save-and-run aborted: {exc}", severity="error")
                 return
             self._refresh_profiles_from_disk()
-            self._reload_loop_diagram()
             self._update_console_status()
             selected = self._profile_by_name(profile_name)
             if selected is None:
@@ -717,7 +716,6 @@ class _RevRemAppMixin:
             _notify(self, f"Save failed: {exc}", severity="error")
             return
         self._refresh_profiles_from_disk()
-        self._reload_loop_diagram()
         _notify(self, f"Saved loop to {path}")
         self._update_console_status()
 

@@ -110,11 +110,14 @@ def test_loop_inline_edit_marks_dirty_and_overlays(tmp_path):
             await pilot.press("1")
             await pilot.pause()
             diagram = app.query_one("#loop-diagram")
-            diagram.set_text_field("model", "gpt-5.6")
+            original_effort = diagram.model.field_value("review.reasoning_effort", "medium")
+            diagram.cycle_field("effort")
             await pilot.pause()
             assert diagram.is_dirty is True
+            assert diagram.model.field_value("review.reasoning_effort", "medium") != original_effort
             app._update_console_status()
             assert "*" in str(app.query_one("#status-bar").render())
+            diagram.set_text_field("model", "gpt-5.6")
             diagram.set_text_field("timeout", "123")
             assert diagram.model.field_value("review.model", "gpt-5.5") == "gpt-5.6"
             assert diagram.model.field_value("review.timeout_seconds", None) == 123.0
