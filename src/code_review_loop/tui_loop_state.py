@@ -8,8 +8,8 @@ from typing import Any, cast
 from code_review_loop import harnesses, profiles, tui_state
 
 LOOP_PHASES: tuple[str, ...] = ("review", "triage", "remediation", "checks", "commit")
-PHASE_ENABLED_GLYPH = "[ok]"
-PHASE_DISABLED_GLYPH = "[ ]"
+PHASE_ENABLED_GLYPH = "●"
+PHASE_DISABLED_GLYPH = "○"
 PHASE_DOTTED: dict[str, dict[str, str]] = {
     "review": {
         "harness": "review.harness",
@@ -144,12 +144,17 @@ def loop_rail_meta(source: Any) -> LoopRailMeta:
 
 
 def phase_gutter(phase: str, rail_meta: LoopRailMeta) -> str:
+    if phase == "review":
+        return "┌▶"
     if phase == "remediation" and rail_meta.inner_rail:
-        return "│ inner retry ↘"
+        return "│ ┌▶"
     if phase == "checks" and rail_meta.inner_rail:
-        return "│ inner retry ↗"
-    if phase == "commit" and rail_meta.final_review:
-        return "│ final review after loop"
+        return f"│ └◀─ {rail_meta.inner_return_label}"
+    if phase == "commit":
+        lines = [f"└◀──── {rail_meta.outer_return_label}"]
+        if rail_meta.final_review and rail_meta.final_review_label:
+            lines.append(f"⚑ {rail_meta.final_review_label}")
+        return "\n".join(lines)
     return "│"
 
 

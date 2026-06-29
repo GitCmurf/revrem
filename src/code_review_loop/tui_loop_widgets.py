@@ -24,16 +24,16 @@ _TRIAGE_ROUTES_TABLE_CLASS: type[Any] | None = None
 _LOOP_DIAGRAM_CLASS: type[Any] | None = None
 
 
-def _load_components() -> tuple[Any, Any] | None:
+def _load_components() -> tuple[Any, Any, Any] | None:
     from code_review_loop import tui
 
     components = tui._load_textual_components()
     if components is None:
         return None
     tui._install_textual_components(components)
-    if tui._Static is object or tui._Vertical is None:
+    if tui._Static is object or tui._Vertical is None or tui._Horizontal is None:
         return None
-    return tui._Static, tui._Vertical
+    return tui._Static, tui._Vertical, tui._Horizontal
 
 
 def phase_card_class() -> type[Any] | None:
@@ -41,7 +41,7 @@ def phase_card_class() -> type[Any] | None:
     loaded = _load_components()
     if loaded is None:
         return None
-    static_cls, _vertical_cls = loaded
+    static_cls, _vertical_cls, _horizontal_cls = loaded
     if _PHASE_CARD_CLASS is not None:
         return _PHASE_CARD_CLASS
 
@@ -84,7 +84,7 @@ def triage_routes_table_class() -> type[Any] | None:
     loaded = _load_components()
     if loaded is None:
         return None
-    static_cls, _vertical_cls = loaded
+    static_cls, _vertical_cls, _horizontal_cls = loaded
     if _TRIAGE_ROUTES_TABLE_CLASS is not None:
         return _TRIAGE_ROUTES_TABLE_CLASS
 
@@ -112,7 +112,7 @@ def loop_diagram_class() -> type[Any] | None:
     loaded = _load_components()
     if loaded is None:
         return None
-    static_cls, vertical_cls = loaded
+    static_cls, vertical_cls, horizontal_cls = loaded
     card_cls = phase_card_class()
     routes_cls = triage_routes_table_class()
     if card_cls is None or routes_cls is None:
@@ -131,7 +131,7 @@ def loop_diagram_class() -> type[Any] | None:
             self.focused_index = 0
             self.expanded = False
             self._header = static_cls("", id="loop-header", markup=False)
-            self._rail = static_cls("", id="loop-rail", markup=False)
+            self._gutters: dict[str, Any] = {}
             self._cards: dict[str, Any] = {}
             self._routes_table: Any | None = None
 
@@ -141,37 +141,39 @@ def loop_diagram_class() -> type[Any] | None:
 
         def compose(self):
             yield self._header
-            yield self._rail
             for index, phase in enumerate(tui_loop_state.LOOP_PHASES):
-                card = phase_card_cls(
-                    self.model,
-                    phase,
-                    focused=index == self.focused_index,
-                    expanded=self.expanded and index == self.focused_index,
-                )
-                self._cards[phase] = card
-                yield card
+                with horizontal_cls(id=f"loop-row-{phase}", classes="loop-row"):
+                    gutter = static_cls(
+                        "",
+                        id=f"phase-gutter-{phase}",
+                        classes="phase-gutter",
+                        markup=False,
+                    )
+                    self._gutters[phase] = gutter
+                    yield gutter
+                    card = phase_card_cls(
+                        self.model,
+                        phase,
+                        focused=index == self.focused_index,
+                        expanded=self.expanded and index == self.focused_index,
+                    )
+                    self._cards[phase] = card
+                    yield card
             self._routes_table = route_table_cls(self.model)
             yield self._routes_table
 
         def on_mount(self) -> None:
             self.rebuild()
 
-        def render(self) -> str:
-            lines = [tui_loop_state.loop_header_text(self.model)]
-            meta = tui_loop_state.loop_rail_meta(self.model)
-            for phase in tui_loop_state.LOOP_PHASES:
-                lines.append(tui_loop_state.phase_gutter(phase, meta))
-                lines.extend(
-                    tui_loop_state.phase_card_lines(
-                        self.model,
-                        phase,
-                        focused=phase == self.current_phase(),
-                        expanded=self.expanded and phase == self.current_phase(),
-                    )
-                )
-            lines.extend(tui_loop_state.triage_routes_lines(self.model))
-            return "\n".join(lines)
+        def set_model(self, model: Any) -> None:
+            self.model = model
+            for card in self._cards.values():
+                card.model = model
+            if self._routes_table is not None:
+                self._routes_table.model = model
+            self.focused_index = 0
+            self.expanded = False
+            self.rebuild()
 
         def current_phase(self) -> str:
             max_index = len(tui_loop_state.LOOP_PHASES) - 1
@@ -230,12 +232,10 @@ def loop_diagram_class() -> type[Any] | None:
             self.current_phase()
             meta = tui_loop_state.loop_rail_meta(self.model)
             self._header.update(tui_loop_state.loop_header_text(self.model))
-            rail_lines = [
-                tui_loop_state.phase_gutter(phase, meta)
-                for phase in tui_loop_state.LOOP_PHASES
-            ]
-            self._rail.update("\n".join(rail_lines))
             for index, phase in enumerate(tui_loop_state.LOOP_PHASES):
+                gutter = self._gutters.get(phase)
+                if gutter is not None:
+                    gutter.update(tui_loop_state.phase_gutter(phase, meta))
                 card = self._cards.get(phase)
                 if card is not None:
                     card.set_state(

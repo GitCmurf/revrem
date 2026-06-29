@@ -67,8 +67,9 @@ def test_phase_gutter_shows_inner_rail_and_final_review_together(tmp_path: Path)
     checks = tui_loop_state.phase_gutter("checks", meta)
     assert meta.inner_rail is True
     assert meta.final_review is True
-    assert "inner" in remediation.lower()
-    assert "inner" in checks.lower()
+    assert "┌▶" in remediation
+    assert "└◀" in checks
+    assert "up to 2 inner retries" in checks
     assert meta.final_review_label is not None
 
 

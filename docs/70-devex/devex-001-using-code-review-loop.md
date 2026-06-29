@@ -1601,12 +1601,16 @@ Without the `tui` extra, `revrem ui` exits cleanly with an installation hint.
 The CLI remains the authoritative execution path. The TUI now opens on the
 Loop workspace: a real Textual `LoopDiagram` with one focusable phase card per
 phase, config-truthful loop rails, and a read-only triage route table when
-routing is enabled. Workspaces are `1` loop, `2` run, `3` profiles, and
-`4` prompts. The loop workspace edits a working copy in memory; a `*` next to
-the profile name marks unsaved changes. Press `s` to persist the authored raw
-profile delta through `profiles.save_profile_raw`, or press `r` to save first
-and then launch the normal `revrem --profile NAME` run path. If save validation
-fails, the error is shown and the working copy remains dirty.
+routing is enabled. Enabled and disabled phases render as `●` and `○`; the
+left gutter uses box-drawing return rails for the outer review loop and the
+inner remediation/check retry loop. Workspaces are `1` loop, `2` run,
+`3` profiles, and `4` prompts. The loop workspace edits a working copy in
+memory; a `*` next to the profile name marks unsaved changes. Press `s` to
+persist the authored raw profile delta through `profiles.save_profile_raw`, or
+press `r` to save first and then launch the normal `revrem --profile NAME` run
+path. If save validation fails, or the selected profile is a read-only bundled
+profile, the error is shown and the working copy remains dirty; clone a bundled
+profile before editing it.
 
 Loop keys are contextual: `j`/Down and Up move phase focus, `Enter` expands or
 collapses the focused card, `space` toggles phases that can be disabled,
@@ -1618,7 +1622,9 @@ confirms/starts a real live run, `k` cancels an active live run, `e` edits the
 owning profile config, `n` creates, `c` clones, `x` exports, `i` imports outside
 the Loop workspace, `delete` deletes through `revrem config delete --yes`,
 `Esc` returns focus or cancels a prompt, `h`/`?` toggles contextual help, and
-`q` quits.
+`q` quits. Loading another profile into the loop is blocked while the current
+loop has unsaved edits, so a profile switch cannot silently discard the working
+copy.
 
 Live TUI runs are experimental but use the same execution path as the CLI. The
 TUI controller starts a managed `revrem` subprocess with the selected profile,

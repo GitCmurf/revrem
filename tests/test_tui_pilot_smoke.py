@@ -46,12 +46,52 @@ def test_loop_workspace_renders_real_diagram_widgets(tmp_path):
         async with pilot_app(cwd=repo, profile_name="security") as (app, pilot):
             await pilot.press("1")
             await pilot.pause()
-            diagram = app.query_one("#loop-diagram")
             assert app.query(".phase-card")
-            rendered = str(diagram.render())
-            assert "review" in rendered
-            assert "remediation" in rendered
-            assert "base" in rendered
+            header = str(app.query_one("#loop-header").render())
+            review_gutter = str(app.query_one("#phase-gutter-review").render())
+            commit_gutter = str(app.query_one("#phase-gutter-commit").render())
+            review = str(app.query_one("#phase-card-review").render())
+            remediation = str(app.query_one("#phase-card-remediation").render())
+            assert "security" in header and "base" in header
+            assert "┌▶" in review_gutter
+            assert "└◀" in commit_gutter
+            assert "review" in review
+            assert "remediation" in remediation
+
+    asyncio.run(run())
+
+
+def test_loop_iterations_key_opens_iteration_prompt_with_current_value(tmp_path):
+    async def run() -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        (repo / ".revrem.toml").write_text(
+            "[profiles.edit]\n[profiles.edit.pipeline]\nbase='main'\nmax_iterations=7\n",
+            encoding="utf-8",
+        )
+        async with pilot_app(cwd=repo, profile_name="edit") as (app, pilot):
+            await pilot.press("1")
+            await pilot.press("i")
+            await pilot.pause()
+            assert "Edit max_iterations" in str(
+                app.screen.query_one("#prompt-title").render()
+            )
+            assert app.screen.query_one("#prompt-input").value == "7"
+
+    asyncio.run(run())
+
+
+def test_profiles_workspace_i_still_imports_profiles(tmp_path):
+    async def run() -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        async with pilot_app(cwd=repo, profile_name="security") as (app, pilot):
+            await pilot.press("3")
+            await pilot.press("i")
+            await pilot.pause()
+            assert "Import profiles" in str(app.screen.query_one("#prompt-title").render())
 
     asyncio.run(run())
 
@@ -167,6 +207,105 @@ def test_loop_save_persists_and_clears_dirty(tmp_path):
             assert app.query_one("#loop-diagram").is_dirty is False
             persisted = (repo / ".revrem.toml").read_text(encoding="utf-8")
             assert "gpt-5.6" in persisted
+
+    asyncio.run(run())
+
+
+def test_builtin_profile_save_notifies_clone_to_edit(tmp_path):
+    async def run() -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        notifications: list[str] = []
+        async with pilot_app(cwd=repo, profile_name="security") as (app, pilot):
+            app.notify = lambda message, **_kwargs: notifications.append(message)
+            await pilot.press("1")
+            await pilot.pause()
+            diagram = app.query_one("#loop-diagram")
+            diagram.set_text_field("model", "gpt-9")
+            app.action_save_loop()
+            await pilot.pause()
+            assert any("built-in profile 'security' is read-only" in item for item in notifications)
+            assert diagram.is_dirty is True
+
+    asyncio.run(run())
+
+
+def test_builtin_profile_save_and_run_notifies_clone_to_edit(tmp_path):
+    async def run() -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        notifications: list[str] = []
+        async with pilot_app(cwd=repo, profile_name="security") as (app, pilot):
+            app.notify = lambda message, **_kwargs: notifications.append(message)
+            await pilot.press("1")
+            await pilot.pause()
+            diagram = app.query_one("#loop-diagram")
+            diagram.set_text_field("model", "gpt-9")
+            app.action_launch_run()
+            await pilot.pause()
+            assert any("built-in profile 'security' is read-only" in item for item in notifications)
+            assert app.live_run_controller.launch is None
+            assert diagram.is_dirty is True
+
+    asyncio.run(run())
+
+
+def test_profile_selection_reloads_loop_diagram(tmp_path):
+    async def run() -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        (repo / ".revrem.toml").write_text(
+            "[profiles.alpha]\n[profiles.alpha.pipeline]\nbase='main'\n"
+            "[profiles.alpha.review]\nmodel='alpha-model'\n"
+            "[profiles.beta]\n[profiles.beta.pipeline]\nbase='main'\n"
+            "[profiles.beta.review]\nmodel='beta-model'\n",
+            encoding="utf-8",
+        )
+        async with pilot_app(cwd=repo, profile_name="alpha") as (app, pilot):
+            await pilot.press("1")
+            await pilot.pause()
+            assert "alpha" in str(app.query_one("#loop-header").render())
+            await pilot.press("3")
+            await pilot.press("down")
+            await pilot.press("enter")
+            await pilot.press("1")
+            await pilot.pause()
+            assert "beta" in str(app.query_one("#loop-header").render())
+            assert "beta-model" in str(app.query_one("#phase-card-review").render())
+
+    asyncio.run(run())
+
+
+def test_dirty_loop_blocks_profile_switch(tmp_path):
+    async def run() -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        (repo / ".revrem.toml").write_text(
+            "[profiles.alpha]\n[profiles.alpha.pipeline]\nbase='main'\n"
+            "[profiles.alpha.review]\nmodel='alpha-model'\n"
+            "[profiles.beta]\n[profiles.beta.pipeline]\nbase='main'\n"
+            "[profiles.beta.review]\nmodel='beta-model'\n",
+            encoding="utf-8",
+        )
+        notifications: list[str] = []
+        async with pilot_app(cwd=repo, profile_name="alpha") as (app, pilot):
+            app.notify = lambda message, **_kwargs: notifications.append(message)
+            await pilot.press("1")
+            await pilot.pause()
+            diagram = app.query_one("#loop-diagram")
+            diagram.set_text_field("model", "unsaved-alpha")
+            await pilot.press("3")
+            await pilot.press("down")
+            await pilot.press("enter")
+            await pilot.press("1")
+            await pilot.pause()
+            assert any("Save or revert loop changes" in item for item in notifications)
+            assert "alpha" in str(app.query_one("#loop-header").render())
+            assert diagram.model.field_value("review.model", "") == "unsaved-alpha"
 
     asyncio.run(run())
 

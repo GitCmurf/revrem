@@ -17,6 +17,24 @@ def test_workspace_order_is_loop_first():
     assert tui._WORKSPACES == ("loop", "run", "profiles", "prompts")
 
 
+def test_tui_bindings_keep_i_workspace_dispatched():
+    bindings = tui._build_bindings(None)
+    i_bindings = [
+        binding
+        for binding in bindings
+        if getattr(binding, "key", binding[0] if isinstance(binding, tuple) else None) == "i"
+    ]
+    assert len(i_bindings) == 1
+    action = i_bindings[0][1] if isinstance(i_bindings[0], tuple) else i_bindings[0].action
+    assert action == "edit_max_iterations"
+
+
+def test_tui_help_lists_loop_and_profile_i_dispatch():
+    help_text = tui._help_markup(visible=True)
+    assert "\\[i] iterations" in help_text
+    assert "\\[i] import profiles" in help_text
+
+
 def _patch_textual_app_class(monkeypatch, run):
     class FakeRevRemApp(tui.RevRemApp):
         def run(self):

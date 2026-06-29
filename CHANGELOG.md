@@ -52,6 +52,12 @@ This project follows Semantic Versioning once public releases begin.
 
 ### Fixed
 
+- The experimental Loop TUI now keeps the advertised `i` key workspace-dispatched
+  instead of shadowing max-iteration editing with profile import, reports
+  built-in profiles as clone-to-edit on Save/save-and-run, reloads the loop
+  diagram when another profile is selected without discarding dirty edits, and
+  renders the loop through real row/gutter/card widgets with `●`/`○` state
+  glyphs and box-drawing return rails.
 - Codex review status detection now treats the clear-prose form "No actionable
   correctness, safety, or maintainability defects were found" as clear while
   still refusing contrastive prose that reports a later defect.

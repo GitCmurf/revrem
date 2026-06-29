@@ -73,7 +73,7 @@ final_review = false
 inner_check_retries = 2
 """,
     )
-    assert "inner retry" in svg
+    assert "┌▶" in svg and "└◀" in svg
     _assert_svg_snapshot("inner-retries", svg)
 
 
@@ -104,7 +104,7 @@ model = "gpt-5.5"
 """,
         edit_model="gpt-5.6",
     )
-    assert "demo*" in svg and "gpt-5.6" in svg
+    assert "demo" in svg and "*" in svg and "gpt-5.6" in svg
     _assert_svg_snapshot("dirty-edit", svg)
 
 

@@ -9,6 +9,7 @@ import subprocess
 import sys
 import threading
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Literal, NamedTuple
 
@@ -277,13 +278,19 @@ def _build_bindings(binding_cls: Any | None) -> list[Any]:
         ("down", "move_down", "Down"),
         ("up", "move_up", "Up"),
         ("enter", "select", "Select"),
-        ("space", "toggle_phase", "Toggle phase"),
-        ("m", "cycle_harness", "Harness"),
-        ("f", "cycle_effort", "Effort"),
-        ("M", "edit_model", "Model"),
-        ("t", "edit_timeout", "Timeout"),
-        ("i", "edit_max_iterations", "Max iterations"),
-        ("F", "toggle_final_review", "Final review"),
+        _binding("space", "toggle_phase", "Toggle phase", priority=True, binding_cls=binding_cls),
+        _binding("m", "cycle_harness", "Harness", priority=True, binding_cls=binding_cls),
+        _binding("f", "cycle_effort", "Effort", priority=True, binding_cls=binding_cls),
+        _binding("M", "edit_model", "Model", priority=True, binding_cls=binding_cls),
+        _binding("t", "edit_timeout", "Timeout", priority=True, binding_cls=binding_cls),
+        _binding(
+            "i",
+            "edit_max_iterations",
+            "Max iterations",
+            priority=True,
+            binding_cls=binding_cls,
+        ),
+        _binding("F", "toggle_final_review", "Final review", priority=True, binding_cls=binding_cls),
         ("d", "launch_dry_run", "Dry run"),
         ("r", "launch_run", "Run"),
         ("k", "cancel_run", "Cancel run"),
@@ -297,7 +304,6 @@ def _build_bindings(binding_cls: Any | None) -> list[Any]:
         ("n", "new_profile", "New"),
         ("c", "clone_profile", "Clone"),
         ("x", "export_profile", "Export"),
-        ("i", "import_profiles", "Import"),
         ("delete", "delete_profile", "Delete"),
         ("q", "quit", "Quit"),
     ]
@@ -319,6 +325,31 @@ class _RevRemAppMixin:
         height: 1fr;
         padding: 0 1;
         overflow-y: auto;
+    }
+
+    .loop-diagram {
+        width: 1fr;
+        height: auto;
+    }
+
+    .loop-row {
+        height: auto;
+    }
+
+    .phase-gutter {
+        width: 44;
+        height: auto;
+        color: $text-muted;
+    }
+
+    .phase-card {
+        width: 1fr;
+        height: auto;
+    }
+
+    .triage-routes-table {
+        margin-left: 4;
+        height: auto;
     }
 
     #status-bar {
@@ -557,10 +588,12 @@ class _RevRemAppMixin:
         ):
             try:
                 self._loop_diagram.model.save()
-            except (OSError, ValueError) as exc:
+            except (OSError, RuntimeError, ValueError) as exc:
                 _notify(self, f"Save-and-run aborted: {exc}", severity="error")
                 return
             self._refresh_profiles_from_disk()
+            self._reload_loop_diagram()
+            self._update_console_status()
             selected = self._profile_by_name(profile_name)
             if selected is None:
                 _notify(self, "Saved loop, but refreshed profile is unavailable.")
@@ -680,7 +713,7 @@ class _RevRemAppMixin:
             return
         try:
             path = self._loop_diagram.model.save()
-        except (OSError, ValueError) as exc:
+        except (OSError, RuntimeError, ValueError) as exc:
             _notify(self, f"Save failed: {exc}", severity="error")
             return
         self._refresh_profiles_from_disk()
@@ -830,7 +863,7 @@ class _RevRemAppMixin:
         self._prompt_for_text(
             title=f"Edit {field}",
             prompt=f"{self._loop_diagram.current_phase()}.{field}",
-            initial="",
+            initial=self._loop_text_field_value(field),
             on_submit=apply,
         )
 
@@ -845,9 +878,44 @@ class _RevRemAppMixin:
         self._prompt_for_text(
             title=f"Edit {field}",
             prompt=field.replace("_", " "),
-            initial="",
+            initial=self._loop_meta_field_value(field),
             on_submit=apply,
         )
+
+    def _loop_text_field_value(self, field: str) -> str:
+        if self._loop_diagram is None:
+            return ""
+        from code_review_loop import tui_loop_state
+
+        phase = self._loop_diagram.current_phase()
+        dotted = tui_loop_state.PHASE_DOTTED[phase].get(field)
+        if dotted is None:
+            return ""
+        phase_config = getattr(self._loop_diagram.model.profile, phase, None)
+        fallback = None
+        if phase_config is not None:
+            fallback = (
+                getattr(phase_config, "message_model" if phase == "commit" else "model", None)
+                if field == "model"
+                else getattr(phase_config, "timeout_seconds", None)
+            )
+        value = self._loop_diagram.model.field_value(dotted, fallback)
+        return "" if value is None else str(value)
+
+    def _loop_meta_field_value(self, field: str) -> str:
+        if self._loop_diagram is None:
+            return ""
+        from code_review_loop import tui_loop_state
+
+        dotted = tui_loop_state.LOOP_META_DOTTED[field]
+        profile = self._loop_diagram.model.profile
+        fallback = (
+            profile.pipeline.max_iterations
+            if field == "max_iterations"
+            else profile.runtime.inner_check_retries
+        )
+        value = self._loop_diagram.model.field_value(dotted, fallback)
+        return "" if value is None else str(value)
 
     def _create_profile(self, profile_name: str) -> None:
         self._run_captured(
@@ -936,6 +1004,7 @@ class _RevRemAppMixin:
                     break
             else:
                 self._selected_profile_index = 0
+        self._reload_loop_diagram()
         self._render_workbench()
 
     def _run_plan(
@@ -997,6 +1066,8 @@ class _RevRemAppMixin:
     def _set_workspace(self, workspace: str) -> None:
         if workspace not in _WORKSPACES:
             return
+        if workspace == "loop" and self._loop_diagram is not None:
+            self._reload_loop_diagram()
         self._workspace = workspace
         self._focused_pane = "left"
         self._render_workbench()
@@ -1010,16 +1081,34 @@ class _RevRemAppMixin:
             count = len(self.model.snapshot.profiles)
             if count:
                 self._selected_profile_index = (self._selected_profile_index + delta) % count
-        elif self._workspace in {"loop", "prompts", "run"} and self._focused_pane == "left":
+        elif self._workspace in {"prompts", "run"} and self._focused_pane == "left":
             self._selected_phase_index = (self._selected_phase_index + delta) % len(_PHASES)
         elif self._workspace == "run" and self._focused_pane == "right":
             self._selected_run_tab_index = (self._selected_run_tab_index + delta) % len(_RUN_TABS)
         self._render_workbench()
 
     def _select_profile(self, profile_name: str) -> None:
+        if (
+            self._loop_diagram is not None
+            and self._loop_diagram.is_dirty
+            and self._loop_diagram.model.name != profile_name
+        ):
+            _notify(self, "Save or revert loop changes before loading another profile.")
+            return
         for index, profile in enumerate(self.model.snapshot.profiles):
             if profile.name == profile_name:
                 self._selected_profile_index = index
+                selected_profile = self._profile_by_name(profile_name)
+                self.model = replace(
+                    self.model,
+                    selected_profile_name=profile_name,
+                    selected_launch_plan=(
+                        tui_state.launch_plan(selected_profile, dry_run=True)
+                        if selected_profile is not None
+                        else None
+                    ),
+                )
+                self._reload_loop_diagram()
                 return
 
     def _render_workbench(self) -> None:
@@ -1038,6 +1127,8 @@ class _RevRemAppMixin:
     def _reload_loop_diagram(self) -> None:
         if self._loop_diagram is None:
             return
+        if self._loop_diagram.is_dirty:
+            return
         from code_review_loop import tui_loop_model
 
         profile_name = self._profile_name()
@@ -1047,7 +1138,11 @@ class _RevRemAppMixin:
             profile_name, cwd=Path(self.model.snapshot.cwd)
         )
         self._loop_model = self._loop_diagram.model
-        self._loop_diagram.rebuild()
+        set_model = getattr(self._loop_diagram, "set_model", None)
+        if callable(set_model):
+            set_model(self._loop_model)
+        else:
+            self._loop_diagram.rebuild()
 
     def _refresh_live_run(self) -> None:
         if self._cancel_in_progress:
@@ -1684,8 +1779,9 @@ def _help_markup(*, visible: bool) -> str:
     return (
         "[b]Help[/b]\n"
         "Universal: \\[q] quit | \\[Tab] next focus | \\[Shift+Tab] previous focus | \\[Esc] clear focus | \\[h] hide help\n"
+        "Loop: \\[space] toggle phase | \\[m] harness | \\[f] effort | \\[M] model | \\[t] timeout | \\[i] iterations | \\[F] final review | \\[s] save\n"
         "Run: \\[d] dry-run selected profile | \\[r] confirm/start live run | \\[k] cancel active run\n"
-        "Profile: \\[s] show | \\[e] edit | \\[n] new... | \\[c] clone... | \\[x] export | \\[i] import... | \\[delete] delete\n"
+        "Profile: \\[s] show | \\[e] edit | \\[n] new... | \\[c] clone... | \\[x] export | \\[i] import profiles | \\[delete] delete\n"
         "Prompts: Enter submits text; Esc cancels and returns to global keys."
     )
 
