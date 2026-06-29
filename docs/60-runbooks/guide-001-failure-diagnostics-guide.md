@@ -4,7 +4,7 @@ type: GUIDE
 title: Failure Diagnostics Guide
 status: Draft
 version: '0.1'
-last_updated: '2026-06-23'
+last_updated: '2026-06-30'
 owner: GitCmurf
 docops_version: '2.0'
 area: devex
@@ -56,6 +56,7 @@ The primary evidence sources are:
 | Resume precondition | `revrem resume --format json`, `diagnostics.json` | Resume only from max-iteration, budget, or cancellation boundaries; preserve matching repo/head/base; provide fresh budget headroom. |
 | Triage parse or routing | `summary.triage_diagnostics`, `diagnostics-<iteration>.json` | Treat warning diagnostics as degraded routing evidence; fix malformed profile/routing config for blocking diagnostics. |
 | Provider subprocess failure | `summary.phase_failures`, `diagnostics-*-failure.json`, HTML Phase failures section | Fix credentials, quota, provider CLI install, model name, sandbox, or retry after transient provider service failures. |
+| Provider transport/DNS failure | `failure.reason=provider_transient_error`, stderr phrases such as `failed to lookup address information`, `failed to connect to websocket`, `stream disconnected before completion`, or `error sending request for url` | Treat as a retryable provider/network interruption. Rerun or resume from the saved boundary after local network/DNS stabilizes; do not treat benign auth words inside a long transcript as credential evidence. |
 | Provider quota/billing | `failure.reason=provider_quota_exhausted` | Fix provider account billing/quota/credentials before rerunning; increasing RevRem budgets will not help. |
 | Budget ceiling | `summary.budgets`, `cost_charge` / `cost_ceiling_hit` events | Raise the relevant ceiling only after confirming scope still justifies more model spend. |
 | Check failure | `summary.iterations[].checks`, check artifacts, HTML Checks section | Run the failing command locally, fix the product issue or update the profile if the check is no longer valid. |

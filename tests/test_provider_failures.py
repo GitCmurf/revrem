@@ -100,6 +100,34 @@ def _result(returncode: int, *, stdout: str = "", stderr: str = "") -> CommandRe
             "provider_transient_error",
             True,
         ),
+        # Retryable: Codex can include benign auth/setup prose from the reviewed
+        # transcript before ending with a real transport failure. The transport
+        # tail must win over non-error prose such as skill instructions.
+        (
+            {
+                "returncode": 1,
+                "stderr": (
+                    (
+                        "## Security\n"
+                        "- Authentication tokens: use the minimum scope required.\n"
+                        "If not authenticated, tell user: Please authenticate first.\n"
+                        "For more information, try '--help'.\n"
+                    )
+                    * 2_000
+                    + "2026-06-29T23:12:39Z ERROR codex_api::endpoint::responses_websocket: "
+                    "failed to connect to websocket: IO error: failed to lookup "
+                    "address information: Try again, url: "
+                    "wss://chatgpt.com/backend-api/codex/responses\n"
+                    "warning: Falling back from WebSockets to HTTPS transport. "
+                    "stream disconnected before completion: failed to lookup "
+                    "address information: Try again\n"
+                    "ERROR: stream disconnected before completion: error sending "
+                    "request for url (https://chatgpt.com/backend-api/codex/responses)\n"
+                ),
+            },
+            "provider_transient_error",
+            True,
+        ),
         # Retryable: provider applies per-token rate limiting.
         (
             {"returncode": 1, "stderr": "Error: 429 rate limit exceeded"},

@@ -33,7 +33,8 @@ def classify_provider_failure(
     if result.returncode == 0:
         return None
     output = _combined_output(result)
-    normalized = output.lower()
+    classification_output = _classification_output(output)
+    normalized = classification_output.lower()
 
     if result.returncode == -1 and "command timed out after" in normalized:
         return ProviderFailure("provider_timeout", "provider subprocess timed out", False)
@@ -46,7 +47,7 @@ def classify_provider_failure(
     if _matches_any(normalized, MODEL_UNAVAILABLE_PATTERNS):
         return ProviderFailure("provider_model_unavailable", "provider model unavailable", False)
     if _matches_any(normalized, SERVER_ERROR_PATTERNS):
-        ref = _extract_error_ref(output)
+        ref = _extract_error_ref(classification_output)
         suffix = f" ref={ref}" if ref else ""
         return ProviderFailure("provider_server_error", f"provider server error{suffix}", True)
     if _matches_any(normalized, TRANSIENT_PATTERNS):
@@ -64,15 +65,40 @@ def _combined_output(result: CommandResult) -> str:
     return "\n".join(part for part in (stdout, stderr) if part)
 
 
+def _classification_output(output: str) -> str:
+    """Return the portion of provider output used for failure classification.
+
+    Codex review transcripts can contain hundreds of kilobytes of reviewed file
+    contents, tool outputs, or agent instructions before the provider emits the
+    actual subprocess error at the end. Classifying the entire transcript makes
+    benign prose such as "not authenticated" or "try --help" look like provider
+    setup failures. Keep short outputs intact, but classify very large provider
+    transcripts from the failure tail.
+    """
+    max_chars = 50_000
+    if len(output) <= max_chars:
+        return output
+    tail = output[-max_chars:]
+    diagnostic_lines = [
+        line
+        for line in tail.splitlines()
+        if LONG_OUTPUT_DIAGNOSTIC_LINE.search(line.lower())
+    ]
+    return "\n".join(diagnostic_lines) if diagnostic_lines else tail
+
+
 def _matches_any(value: str, patterns: tuple[re.Pattern[str], ...]) -> bool:
     return any(pattern.search(value) for pattern in patterns)
 
 
 AUTH_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"\bauthentication\b"),
-    re.compile(r"\bnot authenticated\b"),
-    re.compile(r"\blogin required\b"),
-    re.compile(r"\bapi key\b"),
+    re.compile(r"\bauthentication required\b"),
+    re.compile(r"(?m)^(?:error|fatal|failed)[:\s-]+not authenticated\b"),
+    re.compile(r"(?m)^not authenticated\b"),
+    re.compile(r"(?m)^(?:error|fatal|failed)[:\s-]+login required\b"),
+    re.compile(r"(?m)^login required\b"),
+    re.compile(r"\binvalid api key\b"),
+    re.compile(r"\bapi key (?:invalid|required|missing|not set|expired)\b"),
 )
 CLI_CONTRACT_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"file not found:"),
@@ -105,11 +131,24 @@ TRANSIENT_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bconnection refused\b"),
     re.compile(r"\bconnection timed out\b"),
     re.compile(r"\btimeout\b"),
+    re.compile(r"\bfailed to lookup address information\b"),
+    re.compile(r"\bfailed to connect to websocket\b"),
+    re.compile(r"\bstream disconnected before completion\b"),
+    re.compile(r"\berror sending request for url\b"),
     re.compile(r"\bnetwork is unreachable\b"),
 )
 RATE_LIMIT_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\brate limit\b"),
     re.compile(r"\btoo many requests\b"),
+)
+LONG_OUTPUT_DIAGNOSTIC_LINE = re.compile(
+    r"\b("
+    r"error|warning|failed|failure|timeout|timed out|"
+    r"stream disconnected|connection|websocket|lookup address|"
+    r"quota|rate limit|too many requests|model not found|unknown model|"
+    r"unsupported model|authentication required|not authenticated|"
+    r"login required|api key|file not found|unknown option|invalid option"
+    r")\b"
 )
 
 
