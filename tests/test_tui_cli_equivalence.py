@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from code_review_loop import harnesses, profiles, tui_run_controller, tui_state
+from code_review_loop.tui_loop_model import LoopEditModel
 from tests.support.git_fixtures import init_repo
 from tests.support.run_artifact_compare import assert_equivalent_run_artifacts
 
@@ -151,6 +152,61 @@ def test_tui_live_run_matches_cli_artifacts(
         summary=_read_summary(tui_dir),
     )
     assert_equivalent_run_artifacts(cli_dir, tui_dir)
+
+
+def test_loop_save_keeps_launch_plan_cli_equivalent(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    (repo / ".revrem.toml").write_text(
+        "[profiles.edit]\n[profiles.edit.pipeline]\nbase='main'\n"
+        "[profiles.edit.review]\nmodel='gpt-5.5'\n",
+        encoding="utf-8",
+    )
+    model = LoopEditModel.load("edit", cwd=repo)
+    model.set_field("review.model", "gpt-5.6")
+    model.save()
+    profile = profiles.resolve_profile("edit", cwd=repo, require_implemented=False)
+    plan = tui_state.launch_plan(profile, dry_run=False)
+    assert plan.argv == ("revrem", "--profile", "edit")
+
+
+def test_loop_save_run_artifacts_match_cli_set_run(tmp_path, monkeypatch):
+    profile_toml = """
+[profiles.equivalence]
+pipeline.max_iterations = 1
+pipeline.final_review = false
+review.harness = "fake"
+review.model = "unsupported"
+remediation.harness = "fake"
+remediation.model = "remediation"
+triage.enabled = false
+"""
+    repo_model = _init_repo(tmp_path / "via_model" / "repo", profile_toml)
+    repo_cli = _init_repo(tmp_path / "via_cli" / "repo", profile_toml)
+    home = tmp_path / "home"
+    home.mkdir()
+    fixture_dir = _fixture_dir(tmp_path / "fixtures")
+    env = {
+        **os.environ,
+        "HOME": str(home),
+        harnesses.FAKE_HARNESS_ENV: "1",
+        harnesses.FAKE_HARNESS_FIXTURE_ENV: str(fixture_dir),
+    }
+    monkeypatch.setenv(harnesses.FAKE_HARNESS_ENV, "1")
+    monkeypatch.setenv(harnesses.FAKE_HARNESS_FIXTURE_ENV, str(fixture_dir))
+    monkeypatch.setenv("HOME", str(home))
+
+    model = LoopEditModel.load("equivalence", cwd=repo_model)
+    model.set_field("review.model", "review_clear")
+    model.save()
+    profiles.set_profile_field("equivalence", "review.model", "review_clear", cwd=repo_cli)
+
+    model_result = _run_cli(repo_model, tmp_path / "runs" / "model", env)
+    cli_result = _run_cli(repo_cli, tmp_path / "runs" / "cli", env)
+
+    assert model_result.returncode == 0, model_result.stderr + model_result.stdout
+    assert cli_result.returncode == 0, cli_result.stderr + cli_result.stdout
+    assert_equivalent_run_artifacts(tmp_path / "runs" / "model", tmp_path / "runs" / "cli")
 
 
 def _init_repo(repo: Path, profile_toml: str) -> Path:

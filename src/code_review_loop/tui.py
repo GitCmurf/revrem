@@ -19,7 +19,7 @@ _TEXTUAL_IMPORT_ERROR: Exception | None = None
 _TEXTUAL_COMPONENTS: _TextualComponents | None = None
 _TEXTUAL_APP_CLASS: type[Any] | None = None
 _TEXT_PROMPT_SCREEN_CLASS: type[Any] | None = None
-_WORKSPACES = ("profiles", "loop", "prompts", "run")
+_WORKSPACES = ("loop", "run", "profiles", "prompts")
 _PHASES = ("review", "triage", "remediation", "checks", "commit")
 _RUN_TABS = ("events", "stdout", "stderr", "summary")
 _FOCUS_PANES = ("left", "right")
@@ -141,6 +141,8 @@ def _textual_unavailable_message() -> str:
 
 
 def _textual_can_launch() -> bool:
+    if importlib.util.find_spec("textual") is None:
+        return False
     return _load_textual_components() is not None
 
 
@@ -267,14 +269,21 @@ def _binding(
 
 def _build_bindings(binding_cls: Any | None) -> list[Any]:
     return [
-        ("1", "workspace_profiles", "Profiles"),
-        ("2", "workspace_loop", "Loop"),
-        ("3", "workspace_prompts", "Prompts"),
-        ("4", "workspace_run", "Run"),
+        ("1", "workspace_loop", "Loop"),
+        ("2", "workspace_run", "Run"),
+        ("3", "workspace_profiles", "Profiles"),
+        ("4", "workspace_prompts", "Prompts"),
         ("j", "move_down", "Down"),
         ("down", "move_down", "Down"),
         ("up", "move_up", "Up"),
         ("enter", "select", "Select"),
+        ("space", "toggle_phase", "Toggle phase"),
+        ("m", "cycle_harness", "Harness"),
+        ("f", "cycle_effort", "Effort"),
+        ("M", "edit_model", "Model"),
+        ("t", "edit_timeout", "Timeout"),
+        ("i", "edit_max_iterations", "Max iterations"),
+        ("F", "toggle_final_review", "Final review"),
         ("d", "launch_dry_run", "Dry run"),
         ("r", "launch_run", "Run"),
         ("k", "cancel_run", "Cancel run"),
@@ -283,7 +292,7 @@ def _build_bindings(binding_cls: Any | None) -> list[Any]:
         ("tab", "focus_next", "Focus next"),
         ("shift+tab", "focus_previous", "Focus previous"),
         _binding("escape", "clear_focus", "Clear focus", priority=True, binding_cls=binding_cls),
-        ("s", "show_profile", "Show"),
+        ("s", "save_loop", "Save"),
         ("e", "edit_profile", "Edit profile"),
         ("n", "new_profile", "New"),
         ("c", "clone_profile", "Clone"),
@@ -303,6 +312,13 @@ class _RevRemAppMixin:
     #body {
         height: 1fr;
         padding: 0 1 1 1;
+    }
+
+    #loop-pane {
+        width: 1fr;
+        height: 1fr;
+        padding: 0 1;
+        overflow-y: auto;
     }
 
     #status-bar {
@@ -437,11 +453,13 @@ class _RevRemAppMixin:
         self._help_visible = False
         self._cancel_in_progress = False
         self._quit_confirmation_pending = False
-        self._workspace: str = "profiles"
+        self._workspace: str = "loop"
         self._focused_pane: str = "left"
         self._selected_profile_index = self._initial_profile_index()
         self._selected_phase_index = 0
         self._selected_run_tab_index = 0
+        self._loop_diagram = None
+        self._loop_model = None
 
     def compose(self):
         yield _Header(show_clock=True)
@@ -453,6 +471,10 @@ class _RevRemAppMixin:
                 markup=True,
             )
             with _Horizontal(id="body"):
+                loop_widget = _loop_diagram_widget(self)
+                if loop_widget is not None:
+                    with _Vertical(id="loop-pane"):
+                        yield loop_widget
                 with _Vertical(id="left-pane"):
                     yield _panel_widget(
                         _left_pane_markup(self),
@@ -499,6 +521,7 @@ class _RevRemAppMixin:
         set_interval = getattr(self, "set_interval", None)
         if callable(set_interval):
             set_interval(0.5, self._refresh_live_run)
+        self._render_workbench()
 
     def on_key(self, event: Any) -> None:
         if getattr(event, "key", None) not in {"?", "question_mark", "h"}:
@@ -527,6 +550,22 @@ class _RevRemAppMixin:
         if selected is None or profile_name is None:
             _notify(self, "No profile is available to run.")
             return
+        if (
+            self._workspace == "loop"
+            and self._loop_diagram is not None
+            and self._loop_diagram.is_dirty
+        ):
+            try:
+                self._loop_diagram.model.save()
+            except (OSError, ValueError) as exc:
+                _notify(self, f"Save-and-run aborted: {exc}", severity="error")
+                return
+            self._refresh_profiles_from_disk()
+            selected = self._profile_by_name(profile_name)
+            if selected is None:
+                _notify(self, "Saved loop, but refreshed profile is unavailable.")
+                return
+            _notify(self, f"Saved loop before run: {profile_name}")
         if self._cancel_in_progress:
             self._pending_live_confirmation_profile = None
             _notify(self, "Live run cancellation is already in progress.")
@@ -615,6 +654,11 @@ class _RevRemAppMixin:
         self._move_selection(-1)
 
     def action_select(self) -> None:
+        if self._workspace == "loop" and self._loop_diagram is not None:
+            self._loop_diagram.expanded = not self._loop_diagram.expanded
+            self._loop_diagram.rebuild()
+            self._update_console_status()
+            return
         if self._workspace == "profiles" and self._focused_pane == "left":
             selected = self._selected_profile_view()
             if selected is not None:
@@ -626,6 +670,58 @@ class _RevRemAppMixin:
         else:
             self._focused_pane = "right"
         self._render_workbench()
+
+    def action_save_loop(self) -> None:
+        if self._workspace != "loop" or self._loop_diagram is None:
+            self.action_show_profile()
+            return
+        if not self._loop_diagram.is_dirty:
+            _notify(self, "No unsaved loop changes.")
+            return
+        try:
+            path = self._loop_diagram.model.save()
+        except (OSError, ValueError) as exc:
+            _notify(self, f"Save failed: {exc}", severity="error")
+            return
+        self._refresh_profiles_from_disk()
+        self._reload_loop_diagram()
+        _notify(self, f"Saved loop to {path}")
+        self._update_console_status()
+
+    def action_toggle_phase(self) -> None:
+        if self._workspace == "loop" and self._loop_diagram is not None:
+            self._loop_diagram.toggle_enabled()
+            self._update_console_status()
+
+    def action_cycle_harness(self) -> None:
+        if self._workspace == "loop" and self._loop_diagram is not None:
+            self._loop_diagram.cycle_field("harness")
+            self._update_console_status()
+
+    def action_cycle_effort(self) -> None:
+        if self._workspace == "loop" and self._loop_diagram is not None:
+            self._loop_diagram.cycle_field("effort")
+            self._update_console_status()
+
+    def action_edit_model(self) -> None:
+        if self._workspace == "loop" and self._loop_diagram is not None:
+            self._open_loop_text_field_prompt("model")
+
+    def action_edit_timeout(self) -> None:
+        if self._workspace == "loop" and self._loop_diagram is not None:
+            self._open_loop_text_field_prompt("timeout")
+
+    def action_edit_max_iterations(self) -> None:
+        if self._workspace != "loop":
+            self.action_import_profiles()
+            return
+        if self._loop_diagram is not None:
+            self._open_loop_meta_prompt("max_iterations")
+
+    def action_toggle_final_review(self) -> None:
+        if self._workspace == "loop" and self._loop_diagram is not None:
+            self._loop_diagram.toggle_final_review()
+            self._update_console_status()
 
     def action_show_profile(self) -> None:
         profile_name = self._profile_name()
@@ -721,6 +817,36 @@ class _RevRemAppMixin:
         push_screen(
             screen_class(title=title, prompt=prompt, initial=initial),
             callback=handle_result,
+        )
+
+    def _open_loop_text_field_prompt(self, field: str) -> None:
+        if self._loop_diagram is None:
+            return
+
+        def apply(value: str) -> None:
+            self._loop_diagram.set_text_field(field, value)
+            self._update_console_status()
+
+        self._prompt_for_text(
+            title=f"Edit {field}",
+            prompt=f"{self._loop_diagram.current_phase()}.{field}",
+            initial="",
+            on_submit=apply,
+        )
+
+    def _open_loop_meta_prompt(self, field: str) -> None:
+        if self._loop_diagram is None:
+            return
+
+        def apply(value: str) -> None:
+            self._loop_diagram.set_loop_meta_field(field, value)
+            self._update_console_status()
+
+        self._prompt_for_text(
+            title=f"Edit {field}",
+            prompt=field.replace("_", " "),
+            initial="",
+            on_submit=apply,
         )
 
     def _create_profile(self, profile_name: str) -> None:
@@ -876,6 +1002,10 @@ class _RevRemAppMixin:
         self._render_workbench()
 
     def _move_selection(self, delta: int) -> None:
+        if self._workspace == "loop" and self._loop_diagram is not None:
+            self._loop_diagram.move(delta)
+            self._update_console_status()
+            return
         if self._workspace == "profiles" and self._focused_pane == "left":
             count = len(self.model.snapshot.profiles)
             if count:
@@ -899,6 +1029,25 @@ class _RevRemAppMixin:
         _update_widget(self, "#footer-bar", _footer_markup(self))
         _set_widget_classes(self, "#screen-home", _pane_classes(self, "left"))
         _set_widget_classes(self, "#screen-run-monitor", _pane_classes(self, "right"))
+        _set_widget_display(self, "#loop-pane", self._workspace == "loop")
+        _set_widget_display(self, "#left-pane", self._workspace != "loop")
+        _set_widget_display(self, "#right-pane", self._workspace != "loop")
+        if self._workspace == "loop" and self._loop_diagram is not None:
+            self._loop_diagram.rebuild()
+
+    def _reload_loop_diagram(self) -> None:
+        if self._loop_diagram is None:
+            return
+        from code_review_loop import tui_loop_model
+
+        profile_name = self._profile_name()
+        if profile_name is None:
+            return
+        self._loop_diagram.model = tui_loop_model.LoopEditModel.load(
+            profile_name, cwd=Path(self.model.snapshot.cwd)
+        )
+        self._loop_model = self._loop_diagram.model
+        self._loop_diagram.rebuild()
 
     def _refresh_live_run(self) -> None:
         if self._cancel_in_progress:
@@ -978,6 +1127,27 @@ def _panel_widget(markup: str, *, widget_id: str, focused: bool = False) -> Any:
     return _Static(markup, id=widget_id, classes=_panel_classes(focused), markup=True)
 
 
+def _loop_diagram_widget(app: Any) -> Any | None:
+    from code_review_loop import tui_loop_model, tui_loop_widgets
+
+    diagram_class = tui_loop_widgets.loop_diagram_class()
+    if diagram_class is None:
+        return None
+    profile_name = app._profile_name()
+    if profile_name is None:
+        return None
+    try:
+        model = tui_loop_model.LoopEditModel.load(
+            profile_name, cwd=Path(app.model.snapshot.cwd)
+        )
+    except (OSError, ValueError):
+        return None
+    app._loop_model = model
+    widget = diagram_class(model)
+    app._loop_diagram = widget
+    return widget
+
+
 def _panel_classes(focused: bool) -> str:
     return "panel panel-focused" if focused else "panel panel-muted"
 
@@ -1010,10 +1180,10 @@ def _right_pane_markup(app: Any) -> str:
 def _workspace_tabs_markup(app: Any) -> str:
     parts = []
     labels = (
-        ("profiles", "1 Profiles"),
-        ("loop", "2 Loop"),
-        ("prompts", "3 Prompts"),
-        ("run", "4 Run"),
+        ("loop", "1 Loop"),
+        ("run", "2 Run"),
+        ("profiles", "3 Profiles"),
+        ("prompts", "4 Prompts"),
     )
     for workspace, label in labels:
         escaped = tui_state.markup_escape(label)
@@ -1192,7 +1362,17 @@ def _footer_markup(app: Any) -> str:
     elif app._workspace == "profiles":
         keys = "[j/down]move [up]move [Enter]select [d]dry-run [r]run [?]help"
     elif app._workspace == "loop":
-        keys = "[j/down]phase [up]phase [Tab]focus [e]edit [d]dry-run [?]help"
+        phase = (
+            app._loop_diagram.current_phase()
+            if getattr(app, "_loop_diagram", None) is not None
+            else "review"
+        )
+        route_keys = " [Enter]routes" if phase == "triage" else ""
+        keys = (
+            "[up/down]phase [Enter]expand [space]toggle [m]harness [f]effort "
+            "[M]model [t]timeout [i]iterations [F]final [s]save [r]run"
+            f"{route_keys} [?]help"
+        )
     elif app._workspace == "prompts":
         keys = "[j/down]source [up]source [e]edit config [Tab]focus [?]help"
     else:
@@ -1467,6 +1647,11 @@ def _live_monitor_markup(controller: tui_run_controller.LiveRunController) -> st
 
 def _status_bar_markup(app: Any) -> str:
     profile_name = app._profile_name() or "<none>"
+    dirty = (
+        "*"
+        if getattr(app, "_loop_diagram", None) is not None and app._loop_diagram.is_dirty
+        else ""
+    )
     status = app.live_run_controller.status
     pending = (
         f" | confirm r for {app._pending_live_confirmation_profile}"
@@ -1480,12 +1665,12 @@ def _status_bar_markup(app: Any) -> str:
     help_hint = "? hide help" if app._help_visible else "? help"
     return (
         f"RevRem  {tui_state.markup_escape(Path(app.model.snapshot.cwd).name or app.model.snapshot.cwd)}"
-        f"  profile={tui_state.markup_escape(profile_name)}"
+        f"  profile={tui_state.markup_escape(profile_name)}{dirty}"
         f"  workspace={tui_state.markup_escape(app._workspace)}"
         f"  focus={tui_state.markup_escape(app._focused_pane)}\n"
         f"command: {tui_state.markup_escape(_command_preview(app))}\n"
         f"live={tui_state.markup_escape(status)}{tui_state.markup_escape(pending)}"
-        f"  1 profiles 2 loop 3 prompts 4 run  {help_hint}  q quit"
+        f"  1 loop 2 run 3 profiles 4 prompts  {help_hint}  q quit"
     )
 
 
@@ -1527,6 +1712,12 @@ def _set_widget_classes(app: Any, selector: str, classes: str) -> None:
     set_classes = getattr(widget, "set_classes", None)
     if callable(set_classes):
         set_classes(classes)
+
+
+def _set_widget_display(app: Any, selector: str, visible: bool) -> None:
+    widget = _resolve_widget(app, selector)
+    if widget is not None:
+        widget.display = visible
 
 
 def _run_background(app: Any, target: Any) -> None:
@@ -1576,9 +1767,12 @@ def current_entrypoint_argv(argv: Sequence[str]) -> list[str]:
     return resolved
 
 
-def _notify(app: Any, message: str) -> None:
+def _notify(app: Any, message: str, *, severity: str = "information") -> None:
     notify = getattr(app, "notify", None)
     if callable(notify):
-        notify(message)
+        try:
+            notify(message, severity=severity)
+        except TypeError:
+            notify(message)
     else:
         print(message)

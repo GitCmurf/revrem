@@ -22,6 +22,9 @@ def test_deep_set_raw_coerces_int_and_bool():
     assert out["pipeline"]["max_iterations"] == 11
     assert isinstance(out["pipeline"]["max_iterations"], int)
 
+    out_final = profiles.deep_set_raw({}, "pipeline.final_review", "false")
+    assert out_final == {"pipeline": {"final_review": False}}
+
     out2 = profiles.deep_set_raw({}, "triage.enabled", "false")
     assert out2["triage"]["enabled"] is False
 
@@ -185,6 +188,23 @@ def test_set_profile_field_persists_single_field(tmp_path):
     reloaded = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"]
     assert reloaded["pipeline"]["max_iterations"] == 11
     assert reloaded["review"]["model"] == "old"
+
+
+def test_set_profile_field_persists_pipeline_final_review(tmp_path):
+    _write(
+        tmp_path / ".revrem.toml",
+        '[profiles.demo]\nreview.model = "old"\n'
+        "[profiles.demo.pipeline]\nmax_iterations = 3\nfinal_review = true\n",
+    )
+    profiles.set_profile_field(
+        "demo", "pipeline.final_review", "false", cwd=tmp_path, home=tmp_path
+    )
+    reloaded = profiles.resolve_profile(
+        "demo", cwd=tmp_path, home=tmp_path, require_implemented=False
+    )
+    raw = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"]
+    assert raw["pipeline"]["final_review"] is False
+    assert reloaded.pipeline.final_review is False
 
 
 def test_set_profile_field_preserves_shadowed_user_value(tmp_path):

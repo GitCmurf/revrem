@@ -8,6 +8,12 @@ This project follows Semantic Versioning once public releases begin.
 
 ### Added
 
+- The experimental TUI now opens on an editable Loop screen backed by real
+  Textual widgets. Operators can adjust phase harness/model/effort/timeout and
+  loop metadata in an in-memory working copy, see a dirty `*`, save through the
+  shared profile writer, and launch via the same `revrem --profile NAME` path.
+  SVG snapshot tests lock representative LoopDiagram states for showcase-facing
+  regressions.
 - `revrem config set <profile> <key> <value>` — non-interactive single-field profile edits (foundation for the loop-first TUI, REVREM-DESIGN-001 / PLAN-009).
 - Manual no-provider GitHub Action smoke workflow
   (`.github/workflows/revrem-action-smoke.yml`) that exercises the local

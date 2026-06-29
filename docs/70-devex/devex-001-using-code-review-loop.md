@@ -1598,27 +1598,27 @@ comment builder consumes.
 ```
 
 Without the `tui` extra, `revrem ui` exits cleanly with an installation hint.
-The CLI remains the authoritative execution path. The TUI renders an
-operator-console view from dependency-free view models for profiles, recent
-runs, harness metadata, phase state, command previews, and artifact links. The
-layout is a stable workbench: the top bar shows the composed command and active
-workspace, the middle area has a focused navigation pane and detail pane, and
-the bottom bar shows live-run status plus context-specific keys. Workspaces are
-`1` profiles, `2` loop, `3` prompts, and `4` run. The profiles workspace selects
-and manages profiles; the loop workspace explains review, triage, remediation,
-checks, and commit; the prompts workspace shows which prompt/config source is
-used by the selected phase; the run workspace shows live events plus stdout,
-stderr, and summary views. The main dashboard has no persistent text inputs, so
-command keys work immediately after launch. Use `--profile NAME` to select the
-initial profile. Key bindings shell through `revrem config` and the normal run
-CLI: `j`/Down and Up move the active selection, `Tab` changes pane focus,
-`Enter` selects or advances the active view, `d` dry-runs the selected profile,
-`r` asks for confirmation and then starts a real live run, `k` cancels an active
-live run, `s` shows the profile, `e` edits it, `n` opens a profile-name prompt
-and creates a profile, `c` opens a target-name prompt and clones the selected
-profile, `x` exports, `i` opens an import-path prompt, `delete` deletes through
-`revrem config delete --yes`, `Esc` returns focus to the navigation pane or
-cancels an open prompt, `h`/`?` toggles contextual help, and `q` quits.
+The CLI remains the authoritative execution path. The TUI now opens on the
+Loop workspace: a real Textual `LoopDiagram` with one focusable phase card per
+phase, config-truthful loop rails, and a read-only triage route table when
+routing is enabled. Workspaces are `1` loop, `2` run, `3` profiles, and
+`4` prompts. The loop workspace edits a working copy in memory; a `*` next to
+the profile name marks unsaved changes. Press `s` to persist the authored raw
+profile delta through `profiles.save_profile_raw`, or press `r` to save first
+and then launch the normal `revrem --profile NAME` run path. If save validation
+fails, the error is shown and the working copy remains dirty.
+
+Loop keys are contextual: `j`/Down and Up move phase focus, `Enter` expands or
+collapses the focused card, `space` toggles phases that can be disabled,
+`m` cycles harness, `f` cycles reasoning effort, `M` edits model, `t` edits
+timeout, `i` edits max iterations, and `F` toggles final review. Free-text
+fields are validated at save time. Other workspaces keep the existing profile
+lifecycle and live-run controls: `d` dry-runs the selected profile, `r`
+confirms/starts a real live run, `k` cancels an active live run, `e` edits the
+owning profile config, `n` creates, `c` clones, `x` exports, `i` imports outside
+the Loop workspace, `delete` deletes through `revrem config delete --yes`,
+`Esc` returns focus or cancels a prompt, `h`/`?` toggles contextual help, and
+`q` quits.
 
 Live TUI runs are experimental but use the same execution path as the CLI. The
 TUI controller starts a managed `revrem` subprocess with the selected profile,

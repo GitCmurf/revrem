@@ -12,6 +12,7 @@ VOLATILE_KEYS = frozenset(
         "artifact_paths",
         "base_commit",
         "bug_report_path",
+        "bytes",
         "command_line",
         "cwd",
         "diagnostic_artifact",

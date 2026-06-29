@@ -13,6 +13,10 @@ from code_review_loop.cli.main import main as cli_main
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_workspace_order_is_loop_first():
+    assert tui._WORKSPACES == ("loop", "run", "profiles", "prompts")
+
+
 def _patch_textual_app_class(monkeypatch, run):
     class FakeRevRemApp(tui.RevRemApp):
         def run(self):
@@ -312,14 +316,14 @@ def test_tui_live_run_action_catches_startup_oserror_and_keeps_setup_failed_stat
     assert app.live_run_controller.status == "setup-failed"
     assert app.live_run_controller.message == "failed to start live run: revrem not found"
     assert app._pending_live_confirmation_profile is None
-    assert app._workspace == "profiles"
+    assert app._workspace == "loop"
     assert app._focused_pane == "left"
 
     run_monitor_updates = [
         value for selector, value in widgets.updates if selector == "#screen-run-monitor"
     ]
     assert run_monitor_updates
-    assert "Profile Detail" in run_monitor_updates[-1]
+    assert "Loop Detail" in run_monitor_updates[-1]
     assert "Live status: setup-failed" not in run_monitor_updates[-1]
     assert "failed to start live run: revrem not found" not in run_monitor_updates[-1]
     assert ("#status-bar", "status-setup-failed") in widgets.classes
@@ -756,6 +760,7 @@ description = "Beta"
     widgets = _WidgetProbe()
     monkeypatch.setattr(app, "query_one", widgets.query_one)
 
+    app.action_workspace_profiles()
     app.action_move_down()
     app.action_select()
 

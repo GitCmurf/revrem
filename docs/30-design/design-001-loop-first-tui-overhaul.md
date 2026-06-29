@@ -68,7 +68,9 @@ fragment-composed and vary by harness *and* model).
 
 **Non-goals**
 - Loop **reordering / topology editing** (not a CLI capability; out of scope).
-- Replacing the CLI write path. All edits continue to shell through `revrem config`.
+- Replacing profile persistence semantics. TUI writes use the same profile edit library
+  used by the CLI (`profiles.save_profile_raw` / `config set`); the TUI does not invent
+  a separate config format or hidden run-only overrides.
 - A standalone visual prompt-fragment composer (future roadmap; this design only reserves
   the library surface).
 
@@ -82,8 +84,8 @@ fragment-composed and vary by harness *and* model).
 3. **Edit where you see it.** Summary always visible per phase; the focused phase expands
    in place to edit. Single fields edit inline; large content (prompts, route rows) opens
    a focused modal.
-4. **CLI-equivalence is preserved.** The TUI launches runs and writes config exactly as
-   the CLI does; `assert_equivalent_run_artifacts` parity is maintained. `render_shell_text`
+4. **CLI-equivalence is preserved.** The TUI launches runs and writes config through the
+   same profile edit library as the CLI; `assert_equivalent_run_artifacts` parity is maintained. `render_shell_text`
    is retained as a headless fallback derived from the same state, but is no longer the
    load-bearing render path.
 5. **Profiles are the save layer, not the settings layer.** They load settings into the
@@ -109,32 +111,29 @@ tui_state view-models  ──►  Textual widgets (interactive)   [primary path]
 
 ### 4.2 Edit path — working copy + explicit save (PREREQUISITE)
 
-**Constraint discovered during design.** The CLI has no non-interactive field-level write.
-`config` exposes `new` (`--description` + `--no-interactive` only), `edit` (opens
-`$EDITOR`, not driveable), `clone`, `delete`, `export`, `import`, `doctor`. There is **no**
-`config set <profile> <key> <value>`, and the run path has no per-field override flags
-(only `--base`). The library *does* have a whole-profile writer
-(`profiles.write_profile_to_path`). So inline editing has **no headless write path today**
-— this is a prerequisite, not an assumption.
+**Shipped prerequisite.** Plan 1 added both the non-interactive
+`revrem config set <profile> <key> <value>` path and the library writer
+`profiles.save_profile_raw(name, authored_delta, ...)`. The TUI uses the library writer
+in-process so loop edits can remain an explicit-save working copy rather than one disk
+write per keystroke.
 
 **Chosen model: working copy + explicit save.** This fits the operator's stated mental
 model ("profiles are the save game").
 
 1. The TUI loads a profile into an **in-memory working copy**. Inline edits mutate the
    working copy only — no CLI call per keystroke. A `*` marks unsaved changes.
-2. **Save → profile** persists the whole working copy in one write. Implementation reuses
-   the non-interactive `config import` path (serialize the working copy to TOML, import
-   under the target name with `--force`) rather than introducing a brand-new granular
-   setter. (Alternative considered: add `revrem config set <profile> <key> <value>` so
-   each edit persists immediately — rejected for this iteration: more CLI surface, and
-   auto-persist conflicts with the "save game" model.)
+2. **Save → profile** persists the whole working copy in one write, via
+   `profiles.save_profile_raw(name, authored_delta, ...)`. Plan 1 also shipped
+   `revrem config set <profile> <key> <value>` for scriptable one-shot edits, but the
+   TUI deliberately does not use the immediate-persist path because auto-persist
+   conflicts with the "save game" model.
 3. **Run** launches `revrem --profile NAME`, so a working copy must be saved first. If the
    working copy is dirty, `run` offers *save-and-run* (persist, then launch). This keeps
    run/artifact CLI-equivalence intact (the run is still `revrem --profile NAME`).
 
-This means **a small non-interactive persist capability is the first implementation task**
-(confirm `config import` can target a named profile non-interactively, or add a thin
-`config write`/`set`). It must land before inline editing is wired up.
+The working copy stores raw profile TOML keys (`pipeline.max_iterations`,
+`review.model`, `commit.message_model`, etc.) so saved profiles round-trip through the
+same parser and serializer as CLI edits.
 
 ### 4.3 Optional-dependency posture
 Textual remains an optional `[tui]` extra. The lazy-import / fallback scaffolding in
@@ -281,12 +280,12 @@ Each widget consumes a view-model and is independently testable.
 
 State model: a single `TuiShellModel`-style object holds the loaded profile, modified
 flag, selected screen/phase, and run state; widgets render from it and emit
-`revrem config` / run intents back to the controller.
+profile-edit library / run intents back to the controller.
 
 ## 7. Error handling
 
-- Config edits that fail validation surface the `revrem config` error inline on the field /
-  modal; the model is not mutated until the command succeeds.
+- Saves that fail validation surface the `save_profile_raw` / profile parser `ValueError`
+  inline; the working copy remains dirty so the operator can correct the field.
 - Run/monitor degrades gracefully when events are unavailable (existing `event_error`
   path) and when artifacts are missing (existing `exists` flag).
 - Missing Textual → headless `render_shell_text`.

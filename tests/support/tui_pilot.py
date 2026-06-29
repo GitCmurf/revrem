@@ -15,6 +15,7 @@ async def pilot_app(
     home: Path | None = None,
     profile_name: str | None = None,
     fake_harness: bool = True,
+    size: tuple[int, int] | None = None,
 ) -> AsyncIterator[tuple[object, object]]:
     previous_fake = os.environ.get("REVREM_ALLOW_FAKE_HARNESS")
     if fake_harness:
@@ -37,7 +38,7 @@ async def pilot_app(
             )
         }
         app = tui.textual_app_class()(model=model, profiles_by_name=profiles_by_name)
-        async with app.run_test() as pilot:
+        async with app.run_test(size=size or (80, 24)) as pilot:
             yield app, pilot
     finally:
         if previous_fake is None:
