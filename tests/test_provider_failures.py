@@ -37,6 +37,24 @@ def _result(returncode: int, *, stdout: str = "", stderr: str = "") -> CommandRe
             "provider_auth_required",
             False,
         ),
+        # Non-retryable: provider reports auth/setup with the common "is required" wording.
+        (
+            {
+                "returncode": 1,
+                "stderr": "Error: API key is required",
+            },
+            "provider_auth_required",
+            False,
+        ),
+        # Non-retryable: provider reports auth/setup with the common "is not set" wording.
+        (
+            {
+                "returncode": 1,
+                "stderr": "Error: API key is not set",
+            },
+            "provider_auth_required",
+            False,
+        ),
         # Non-retryable: provider reports quota exhaustion (Gemini-style).
         (
             {

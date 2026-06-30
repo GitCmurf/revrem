@@ -98,7 +98,7 @@ AUTH_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(?m)^(?:error|fatal|failed)[:\s-]+login required\b"),
     re.compile(r"(?m)^login required\b"),
     re.compile(r"\binvalid api key\b"),
-    re.compile(r"\bapi key (?:invalid|required|missing|not set|expired)\b"),
+    re.compile(r"\bapi key (?:is )?(?:invalid|required|missing|not set|expired)\b"),
 )
 CLI_CONTRACT_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"file not found:"),
