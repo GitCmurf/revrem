@@ -136,6 +136,10 @@ def _capture_loop_svg(
 
 
 def _normalize_svg(svg: str) -> str:
+    # The renderer emits a whitespace-only separator line between SVG groups.
+    # Strip that line so committed snapshots stay CI-clean without changing the
+    # visible rendering content.
+    svg = re.sub(r"(?m)^[ \t]+(?:\n|$)", "", svg)
     normalized = svg.replace("&#160;", " ")
     normalized = re.sub(r"\b\d{1,2}:\d{2}(?::\d{2})?\s?(?:AM|PM)?\b", "<time>", normalized)
     normalized = re.sub(r"pytest-\d+", "pytest-N", normalized)
