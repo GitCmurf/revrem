@@ -215,13 +215,16 @@ inner-retry counters ride on the loop arrows.
 │   12:31:50  remediation  applied 2 fixes                                                   │
 │   12:32:11  checks       running pytest -q …                                               │
 │  ──────────────────────────────────────────────────────────────────────────────────────  │
-│  artifacts: run-2026…06-27 · 14 files      p pause · k stop · l logs · o open dir         │
+│  artifacts: run-2026…06-27 · 14 files      k stop · l logs/events · o open dir            │
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Backed by the existing `run_monitor_view`, `run_event_views`, and artifact/event plumbing.
+Backed by the existing live-run controller, `events.jsonl`, and artifact/event plumbing.
 For the overnight workflow this answers "where is it / how many iterations left / is it
 converging" at a glance, with the event tail and artifacts for a morning post-mortem.
+The first run-monitor slice deliberately does not expose pause/resume: the controller has
+stop/cancel semantics but no pause primitive, so advertising pause would create a false
+operator contract.
 
 ### 5.3 Profiles (save / load)
 

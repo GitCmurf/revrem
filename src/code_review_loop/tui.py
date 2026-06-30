@@ -294,6 +294,8 @@ def _build_bindings(binding_cls: Any | None) -> list[Any]:
         ("d", "launch_dry_run", "Dry run"),
         ("r", "launch_run", "Run"),
         ("k", "cancel_run", "Cancel run"),
+        ("l", "toggle_logs", "Logs"),
+        ("o", "show_artifacts", "Artifacts"),
         _binding("question_mark", "toggle_help", "Help", priority=True, binding_cls=binding_cls),
         _binding("h", "toggle_help", "Help", priority=True, binding_cls=binding_cls),
         ("tab", "focus_next", "Focus next"),
@@ -327,12 +329,28 @@ class _RevRemAppMixin:
         overflow-y: auto;
     }
 
+    #run-pane {
+        width: 1fr;
+        height: 1fr;
+        padding: 0 1;
+        overflow-y: auto;
+    }
+
     .loop-diagram {
         width: 1fr;
         height: auto;
     }
 
+    .loop-run {
+        width: 1fr;
+        height: auto;
+    }
+
     .loop-row {
+        height: auto;
+    }
+
+    .run-row {
         height: auto;
     }
 
@@ -344,6 +362,16 @@ class _RevRemAppMixin:
 
     .phase-card {
         width: 1fr;
+        height: auto;
+    }
+
+    .run-phase {
+        width: 1fr;
+        height: auto;
+    }
+
+    .event-log {
+        margin-top: 1;
         height: auto;
     }
 
@@ -491,6 +519,8 @@ class _RevRemAppMixin:
         self._selected_run_tab_index = 0
         self._loop_diagram = None
         self._loop_model = None
+        self._loop_run_view = None
+        self._event_log = None
 
     def compose(self):
         yield _Header(show_clock=True)
@@ -506,6 +536,12 @@ class _RevRemAppMixin:
                 if loop_widget is not None:
                     with _Vertical(id="loop-pane"):
                         yield loop_widget
+                run_widget = _loop_run_widget(self)
+                event_log = _event_log_widget(self)
+                if run_widget is not None and event_log is not None:
+                    with _Vertical(id="run-pane"):
+                        yield run_widget
+                        yield event_log
                 with _Vertical(id="left-pane"):
                     yield _panel_widget(
                         _left_pane_markup(self),
@@ -629,6 +665,7 @@ class _RevRemAppMixin:
         self._workspace = "run"
         self._focused_pane = "right"
         _notify(self, f"Live run started: {profile_name} ({launch.artifact_dir_arg})")
+        self._render_workbench()
         self._render_live_monitor()
 
     def action_cancel_run(self) -> None:
@@ -638,6 +675,20 @@ class _RevRemAppMixin:
             self._update_console_status()
             return
         self._request_cancel(exit_after=False)
+
+    def action_toggle_logs(self) -> None:
+        if self._workspace != "run" or self._event_log is None:
+            return
+        self._event_log.show_logs = not self._event_log.show_logs
+        self._event_log.rebuild()
+        _notify(self, "Run view: logs" if self._event_log.show_logs else "Run view: events")
+
+    def action_show_artifacts(self) -> None:
+        launch = self.live_run_controller.launch
+        if launch is None:
+            _notify(self, "No run artifacts yet.")
+            return
+        _notify(self, f"Artifacts: {launch.artifact_dir}")
 
     def action_quit(self) -> None:
         if not self._live_run_active():
@@ -1116,11 +1167,16 @@ class _RevRemAppMixin:
         _update_widget(self, "#footer-bar", _footer_markup(self))
         _set_widget_classes(self, "#screen-home", _pane_classes(self, "left"))
         _set_widget_classes(self, "#screen-run-monitor", _pane_classes(self, "right"))
-        _set_widget_display(self, "#loop-pane", self._workspace == "loop")
-        _set_widget_display(self, "#left-pane", self._workspace != "loop")
-        _set_widget_display(self, "#right-pane", self._workspace != "loop")
+        on_loop = self._workspace == "loop"
+        on_run = self._workspace == "run"
+        _set_widget_display(self, "#loop-pane", on_loop)
+        _set_widget_display(self, "#run-pane", on_run)
+        _set_widget_display(self, "#left-pane", not (on_loop or on_run))
+        _set_widget_display(self, "#right-pane", not (on_loop or on_run))
         if self._workspace == "loop" and self._loop_diagram is not None:
             self._loop_diagram.rebuild()
+        if self._workspace == "run":
+            self._update_run_widgets()
 
     def _reload_loop_diagram(self) -> None:
         if self._loop_diagram is None:
@@ -1148,6 +1204,7 @@ class _RevRemAppMixin:
         if self.live_run_controller.status == "idle":
             return
         if self.live_run_controller.status in tui_run_controller.TERMINAL_STATUSES:
+            self._render_live_monitor()
             return
         self.live_run_controller.refresh()
         self._render_live_monitor()
@@ -1181,11 +1238,21 @@ class _RevRemAppMixin:
             exit_app()
 
     def _render_live_monitor(self) -> None:
+        self._update_run_widgets()
         _update_widget(self, "#screen-run-monitor", _right_pane_markup(self))
         _update_widget(self, "#screen-home", _left_pane_markup(self))
         _set_widget_classes(self, "#screen-run-monitor", _pane_classes(self, "right"))
         _set_widget_classes(self, "#screen-home", _pane_classes(self, "left"))
         self._update_console_status()
+
+    def _update_run_widgets(self) -> None:
+        profile = self._profile_by_name(self._profile_name())
+        if self._loop_run_view is not None:
+            self._loop_run_view.set_state(self.live_run_controller, profile)
+            self._loop_run_view.rebuild()
+        if self._event_log is not None:
+            self._event_log.set_controller(self.live_run_controller)
+            self._event_log.rebuild()
 
     def _update_console_status(self) -> None:
         _update_widget(self, "#status-bar", _status_bar_markup(self))
@@ -1238,6 +1305,28 @@ def _loop_diagram_widget(app: Any) -> Any | None:
     app._loop_model = model
     widget = diagram_class(model)
     app._loop_diagram = widget
+    return widget
+
+
+def _loop_run_widget(app: Any) -> Any | None:
+    from code_review_loop import tui_loop_widgets
+
+    run_class = tui_loop_widgets.loop_run_view_class()
+    if run_class is None:
+        return None
+    widget = run_class()
+    app._loop_run_view = widget
+    return widget
+
+
+def _event_log_widget(app: Any) -> Any | None:
+    from code_review_loop import tui_loop_widgets
+
+    log_class = tui_loop_widgets.event_log_class()
+    if log_class is None:
+        return None
+    widget = log_class()
+    app._event_log = widget
     return widget
 
 
@@ -1469,7 +1558,7 @@ def _footer_markup(app: Any) -> str:
     elif app._workspace == "prompts":
         keys = "[j/down]source [up]source [e]edit config [Tab]focus [?]help"
     else:
-        keys = "[j/down]phase [up]phase [Enter]tab [k]cancel [r]run [?]help"
+        keys = "[k]stop [l]logs/events [o]artifacts [r]run [?]help"
     return f"{tui_state.markup_escape(live)}\n{tui_state.markup_escape(keys)}"
 
 
@@ -1709,7 +1798,7 @@ def _controls_markup(app: Any) -> str:
         "[b]Live controls[/b]\n"
         f"{tui_state.markup_escape(live_hint)}\n\n"
         "[b]Essential keys[/b]\n"
-        "\\[d]ry-run  \\[r]un  \\[k]cancel  \\[h]help  \\[q]quit\n\n"
+        "\\[d]ry-run  \\[r]un  \\[k]cancel  \\[l]logs/events  \\[o]artifacts  \\[h]help  \\[q]quit\n\n"
         "[b]Profile actions[/b]\n"
         "\\[s]how  \\[e]dit  \\[n]ew...  \\[c]lone...  e\\[x]port  \\[i]mport..."
     )

@@ -1630,10 +1630,16 @@ Live TUI runs are experimental but use the same execution path as the CLI. The
 TUI controller starts a managed `revrem` subprocess with the selected profile,
 forces machine-friendly child output (`--no-tty`, `--pending-review ignore`,
 `--summary-format json`), reads the child run's `events.jsonl` during refresh,
-and renders those events through the same `RunEventView` path as replay/history.
-The `stdout` and `stderr` run tabs also render child stream buffers while the
-run is active, so operator-visible process output and diagnostics are visible before
-process exit.
+and renders those events into a live Loop view. The Run workspace reuses the
+same phase geometry as the editable Loop screen while switching to status
+glyphs: `✓` done, `▶` running, `·` pending, and `⤫` disabled. Runner phase
+names are mapped explicitly (`remediate` displays as remediation, and checks
+come from `check_result` events), so the monitor reflects the actual event
+stream rather than a guessed phase vocabulary. The event/log pane shows the
+recent event tail by default; press `l` to toggle between events and live
+stdout/stderr buffers, and press `o` to surface the active artifact directory.
+There is no pause key because the live-run controller has stop/cancel semantics
+but no pause/resume primitive.
 During a live refresh, the monitor updates content in place and does not force
 workspace or pane focus changes; operators can keep working in Profiles/Loop/
 Prompts while the background run continues to stream.

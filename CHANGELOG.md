@@ -14,6 +14,11 @@ This project follows Semantic Versioning once public releases begin.
   shared profile writer, and launch via the same `revrem --profile NAME` path.
   SVG snapshot tests lock representative LoopDiagram states for showcase-facing
   regressions.
+- The experimental TUI Run workspace now renders live runs as the same loop
+  diagram shape used for editing, with event-derived phase status glyphs,
+  iteration and inner-retry counters, event/log toggling, artifact-directory
+  feedback, graceful degraded states for missing or unreadable `events.jsonl`,
+  and SVG snapshots for representative live-run states.
 - `revrem config set <profile> <key> <value>` — non-interactive single-field profile edits (foundation for the loop-first TUI, REVREM-DESIGN-001 / PLAN-009).
 - Manual no-provider GitHub Action smoke workflow
   (`.github/workflows/revrem-action-smoke.yml`) that exercises the local

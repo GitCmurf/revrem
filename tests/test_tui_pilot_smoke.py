@@ -6,10 +6,17 @@ import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
+import pytest
 from support.git_fixtures import init_repo
 from support.tui_pilot import pilot_app
 
-from code_review_loop import events, tui, tui_loop_state
+from code_review_loop import (
+    events,
+    tui,
+    tui_loop_state,
+    tui_loop_widgets,
+    tui_run_controller,
+)
 
 
 def test_tui_pilot_boots_home_view(tmp_path):
@@ -337,6 +344,99 @@ def test_tui_pilot_confirmed_launch_reaches_visible_running_state(tmp_path, monk
     asyncio.run(run())
 
 
+def test_run_workspace_mounts_live_loop_and_event_log(tmp_path, monkeypatch):
+    async def run() -> None:
+        repo = init_repo(tmp_path / "repo")
+        _write_live_profile(repo, review_model="slow_cancel", artifact_dir="runs/live-mon")
+        monkeypatch.setattr(tui.sys, "argv", [str(repo / "launcher.py")])
+
+        async with pilot_app(cwd=repo, profile_name="live") as (app, pilot):
+            await pilot.press("r")
+            await pilot.press("r")
+            await _wait_for(
+                lambda: app._workspace == "run"
+                and "live" in _render(app, "#loop-run-header"),
+                pilot_pause=pilot.pause,
+                timeout=12,
+            )
+            assert app.query_one("#loop-run") is not None
+            assert app.query_one("#event-log") is not None
+            assert any(
+                glyph in _render(app, "#run-phase-review") for glyph in ("▶", "✓", "·")
+            )
+            app.live_run_controller.cancel(grace_seconds=1)
+
+    asyncio.run(run())
+
+
+def test_run_workspace_before_launch_shows_empty_state(tmp_path):
+    async def run() -> None:
+        repo = init_repo(tmp_path / "repo")
+        _write_live_profile(repo, review_model="review_clear", artifact_dir="runs/not-started")
+
+        async with pilot_app(cwd=repo, profile_name="live") as (app, pilot):
+            await pilot.press("2")
+            await pilot.pause()
+            assert "No active run." in _render(app, "#loop-run-header")
+
+    asyncio.run(run())
+
+
+def test_run_workspace_toggles_logs_and_shows_artifacts(tmp_path, monkeypatch):
+    async def run() -> None:
+        repo = init_repo(tmp_path / "repo")
+        _write_live_profile(repo, review_model="slow_cancel", artifact_dir="runs/live-log")
+        monkeypatch.setattr(tui.sys, "argv", [str(repo / "launcher.py")])
+        notifications: list[str] = []
+
+        async with pilot_app(cwd=repo, profile_name="live") as (app, pilot):
+            app.notify = lambda message, **_kwargs: notifications.append(message)
+            await pilot.press("r")
+            await pilot.press("r")
+            await _wait_for(
+                lambda: app.live_run_controller.launch is not None,
+                pilot_pause=pilot.pause,
+                timeout=12,
+            )
+            await pilot.press("l")
+            await pilot.pause()
+            assert "logs" in _render(app, "#event-log")
+            await pilot.press("o")
+            await pilot.pause()
+            assert any("runs/live-log" in message for message in notifications)
+            app.live_run_controller.cancel(grace_seconds=1)
+
+    asyncio.run(run())
+
+
+def test_saved_loop_edit_launches_run_with_matching_live_diagram(tmp_path, monkeypatch):
+    async def run() -> None:
+        repo = init_repo(tmp_path / "repo")
+        _write_live_profile(repo, review_model="slow_cancel", artifact_dir="runs/edited-live")
+        monkeypatch.setattr(tui.sys, "argv", [str(repo / "launcher.py")])
+
+        async with pilot_app(cwd=repo, profile_name="live") as (app, pilot):
+            await pilot.press("1")
+            await pilot.pause()
+            diagram = app.query_one("#loop-diagram")
+            diagram.set_loop_meta_field("max_iterations", "3")
+            app.action_save_loop()
+            await pilot.pause()
+            await pilot.press("r")
+            await pilot.press("r")
+            await _wait_for(
+                lambda: app._workspace == "run"
+                and ("iteration 1/3" in _render(app, "#loop-run-header")
+                     or "max 3" in _render(app, "#loop-run-header")),
+                pilot_pause=pilot.pause,
+                timeout=12,
+            )
+            assert "live" in _render(app, "#loop-run-header")
+            app.live_run_controller.cancel(grace_seconds=1)
+
+    asyncio.run(run())
+
+
 def test_tui_pilot_live_monitor_updates_and_cancels_visible_run(tmp_path, monkeypatch):
     async def run() -> None:
         repo = init_repo(tmp_path / "repo")
@@ -349,15 +449,15 @@ def test_tui_pilot_live_monitor_updates_and_cancels_visible_run(tmp_path, monkey
 
             await _wait_for(
                 lambda: (
-                    "phase_start" in _render(app, "#screen-run-monitor")
-                    and "phase_result: findings-summary (1)" in _render(app, "#screen-run-monitor")
+                    "phase_start" in _render(app, "#event-log")
+                    and "findings-summary (1)" in _render(app, "#event-log")
                 ),
                 pilot_pause=pilot.pause,
                 timeout=12,
             )
             await pilot.press("k")
             await _wait_for(
-                lambda: "Live status: cancelled" in _render(app, "#screen-run-monitor"),
+                lambda: "cancelled" in _render(app, "#loop-run-header"),
                 pilot_pause=pilot.pause,
                 timeout=12,
             )
@@ -368,6 +468,81 @@ def test_tui_pilot_live_monitor_updates_and_cancels_visible_run(tmp_path, monkey
             assert summary["stopped_reason"] == "cancelled"
             records, _ = events.read_events(launch.artifact_dir / events.EVENTS_FILENAME)
             assert any(record.kind == "cancellation" for record in records)
+
+    asyncio.run(run())
+
+
+class _FakeLiveController:
+    status = "running"
+
+    def __init__(self, snapshot: tui_run_controller.LiveEventSnapshot) -> None:
+        self._snapshot = snapshot
+
+    def read_live_events(self) -> tui_run_controller.LiveEventSnapshot:
+        return self._snapshot
+
+    def stdout_lines(self) -> tuple[str, ...]:
+        return ()
+
+    def stderr_lines(self) -> tuple[str, ...]:
+        return ()
+
+
+def test_loop_run_view_waits_when_events_not_ready(tmp_path):
+    async def run() -> None:
+        cls = tui_loop_widgets.loop_run_view_class()
+        if cls is None:
+            pytest.skip("Textual is not installed")
+        profile = _loop_run_profile(tmp_path)
+        async with _single_widget_app(cls()).run_test() as pilot:
+            widget = pilot.app.query_one("#loop-run")
+            widget.set_state(
+                _FakeLiveController(tui_run_controller.LiveEventSnapshot(ready=False)),
+                profile,
+            )
+            widget.rebuild()
+            await pilot.pause()
+            assert "events: waiting for events.jsonl" in _render(pilot.app, "#loop-run-header")
+
+    asyncio.run(run())
+
+
+def test_loop_run_view_reports_event_read_errors(tmp_path):
+    async def run() -> None:
+        cls = tui_loop_widgets.loop_run_view_class()
+        if cls is None:
+            pytest.skip("Textual is not installed")
+        profile = _loop_run_profile(tmp_path)
+        async with _single_widget_app(cls()).run_test() as pilot:
+            widget = pilot.app.query_one("#loop-run")
+            widget.set_state(
+                _FakeLiveController(
+                    tui_run_controller.LiveEventSnapshot(error="bad json", ready=True)
+                ),
+                profile,
+            )
+            widget.rebuild()
+            await pilot.pause()
+            rendered = _render(pilot.app, "#loop-run-header")
+            assert "events: unavailable" in rendered
+            assert "bad json" in rendered
+
+    asyncio.run(run())
+
+
+def test_event_log_waits_when_events_not_ready():
+    async def run() -> None:
+        cls = tui_loop_widgets.event_log_class()
+        if cls is None:
+            pytest.skip("Textual is not installed")
+        async with _single_widget_app(cls()).run_test() as pilot:
+            widget = pilot.app.query_one("#event-log")
+            widget.set_controller(
+                _FakeLiveController(tui_run_controller.LiveEventSnapshot(ready=False))
+            )
+            widget.rebuild()
+            await pilot.pause()
+            assert "waiting for events.jsonl" in _render(pilot.app, "#event-log")
 
     asyncio.run(run())
 
@@ -417,6 +592,30 @@ def test_tui_pilot_prompt_escape_cancels_without_running(tmp_path, monkeypatch):
         assert calls == []
 
     asyncio.run(run())
+
+
+def _single_widget_app(widget):
+    components = tui._load_textual_components()
+    if components is None:
+        pytest.skip("Textual is not installed")
+
+    class SingleWidgetApp(components.app.App):  # type: ignore[misc, valid-type]
+        def compose(self):
+            yield widget
+
+    return SingleWidgetApp()
+
+
+def _loop_run_profile(tmp_path: Path):
+    from code_review_loop import profiles
+
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    (repo / ".revrem.toml").write_text(
+        "[profiles.p]\n[profiles.p.pipeline]\nbase='main'\n",
+        encoding="utf-8",
+    )
+    return profiles.resolve_profile("p", cwd=repo, require_implemented=False)
 
 
 def _write_live_profile(repo: Path, *, review_model: str, artifact_dir: str) -> None:

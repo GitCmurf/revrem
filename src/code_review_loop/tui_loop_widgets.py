@@ -22,6 +22,8 @@ EFFORT_CHOICES = profiles.REASONING_EFFORT_CHOICES
 _PHASE_CARD_CLASS: type[Any] | None = None
 _TRIAGE_ROUTES_TABLE_CLASS: type[Any] | None = None
 _LOOP_DIAGRAM_CLASS: type[Any] | None = None
+_LOOP_RUN_VIEW_CLASS: type[Any] | None = None
+_EVENT_LOG_CLASS: type[Any] | None = None
 
 
 def _load_components() -> tuple[Any, Any, Any] | None:
@@ -249,6 +251,168 @@ def loop_diagram_class() -> type[Any] | None:
 
     _LOOP_DIAGRAM_CLASS = LoopDiagram
     return _LOOP_DIAGRAM_CLASS
+
+
+def loop_run_view_class() -> type[Any] | None:
+    global _LOOP_RUN_VIEW_CLASS
+    loaded = _load_components()
+    if loaded is None:
+        return None
+    static_cls, vertical_cls, horizontal_cls = loaded
+    if _LOOP_RUN_VIEW_CLASS is not None:
+        return _LOOP_RUN_VIEW_CLASS
+
+    class LoopRunView(vertical_cls):  # type: ignore[misc, valid-type]
+        def __init__(self) -> None:
+            super().__init__(id="loop-run", classes="loop-run")
+            self.controller: Any | None = None
+            self.profile: Any | None = None
+            self._header = static_cls("", id="loop-run-header", markup=False)
+            self._gutters: dict[str, Any] = {}
+            self._phases: dict[str, Any] = {}
+
+        def compose(self):
+            yield self._header
+            for phase in tui_loop_state.LOOP_PHASES:
+                with horizontal_cls(id=f"run-row-{phase}", classes="run-row"):
+                    gutter = static_cls(
+                        "",
+                        id=f"run-gutter-{phase}",
+                        classes="phase-gutter",
+                        markup=False,
+                    )
+                    self._gutters[phase] = gutter
+                    yield gutter
+                    status = static_cls(
+                        "",
+                        id=f"run-phase-{phase}",
+                        classes="run-phase",
+                        markup=False,
+                    )
+                    self._phases[phase] = status
+                    yield status
+
+        def on_mount(self) -> None:
+            self.rebuild()
+
+        def set_state(self, controller: Any, profile: Any | None) -> None:
+            self.controller = controller
+            self.profile = profile
+
+        def rebuild(self) -> None:
+            from code_review_loop import tui_run_state
+
+            if self.controller is None or self.profile is None:
+                self._header.update("No active run.")
+                self._clear_rows()
+                self.refresh()
+                return
+            if (
+                hasattr(self.controller, "launch")
+                and self.controller.launch is None
+                and getattr(self.controller, "status", "idle") == "idle"
+            ):
+                self._header.update("No active run.")
+                self._clear_rows()
+                self.refresh()
+                return
+            snapshot = self.controller.read_live_events()
+            if snapshot.error:
+                self._header.update(f"events: unavailable ({snapshot.error})")
+                self._clear_rows()
+                self.refresh()
+                return
+            if not snapshot.ready:
+                self._header.update("events: waiting for events.jsonl")
+                self._clear_rows()
+                self.refresh()
+                return
+
+            view = tui_run_state.run_loop_view(snapshot.events, self.profile)
+            status_by_phase = {phase.name: phase for phase in view.phases}
+            iteration = (
+                f"iteration {view.iteration}/{view.max_iterations}"
+                if view.iteration is not None
+                else f"max {view.max_iterations}"
+            )
+            truncated = " · events truncated" if snapshot.truncated else ""
+            self._header.update(
+                f"RUN · {self.profile.name} · {self.controller.status} · {iteration}{truncated}"
+            )
+            rail_meta = tui_loop_state.loop_rail_meta(self.profile)
+            for phase in tui_loop_state.LOOP_PHASES:
+                gutter = self._gutters.get(phase)
+                if gutter is not None:
+                    gutter.update(tui_loop_state.phase_gutter(phase, rail_meta))
+                status_widget = self._phases.get(phase)
+                if status_widget is None:
+                    continue
+                status = status_by_phase[phase]
+                glyph = tui_run_state.RUN_STATE_GLYPHS.get(status.state, "·")
+                detail = f" · {status.detail}" if status.detail else ""
+                if phase == "checks" and view.inner_check_retries > 0:
+                    retry = f" · inner retry {view.inner_retry}/{view.inner_check_retries}"
+                    detail = f"{detail}{retry}"
+                status_widget.update(f"{glyph} {phase} · {status.state}{detail}")
+            self.refresh()
+
+        def _clear_rows(self) -> None:
+            for gutter in self._gutters.values():
+                gutter.update("")
+            for status in self._phases.values():
+                status.update("")
+
+    _LOOP_RUN_VIEW_CLASS = LoopRunView
+    return _LOOP_RUN_VIEW_CLASS
+
+
+def event_log_class() -> type[Any] | None:
+    global _EVENT_LOG_CLASS
+    loaded = _load_components()
+    if loaded is None:
+        return None
+    static_cls, _vertical_cls, _horizontal_cls = loaded
+    if _EVENT_LOG_CLASS is not None:
+        return _EVENT_LOG_CLASS
+
+    class EventLog(static_cls):  # type: ignore[misc, valid-type]
+        def __init__(self) -> None:
+            super().__init__("", id="event-log", classes="event-log", markup=False)
+            self.controller: Any | None = None
+            self.show_logs = False
+            self.rebuild()
+
+        def set_controller(self, controller: Any) -> None:
+            self.controller = controller
+
+        def rebuild(self) -> None:
+            from code_review_loop import tui_run_state
+
+            if self.controller is None:
+                self.update("events: waiting for a run")
+                return
+            if self.show_logs:
+                stdout = tuple(self.controller.stdout_lines())[-8:]
+                stderr = tuple(self.controller.stderr_lines())[-8:]
+                lines = ["logs"]
+                lines.extend(f"stdout: {line}" for line in stdout)
+                lines.extend(f"stderr: {line}" for line in stderr)
+                self.update("\n".join(lines) if len(lines) > 1 else "logs\nNo captured lines yet.")
+                return
+            snapshot = self.controller.read_live_events()
+            if snapshot.error:
+                self.update(f"events: unavailable ({snapshot.error})")
+                return
+            if not snapshot.ready:
+                self.update("events: waiting for events.jsonl")
+                return
+            lines = list(tui_run_state.event_tail_lines(snapshot.events, limit=8))
+            if snapshot.truncated:
+                lines.insert(0, "events: truncated")
+            self.update("\n".join(("events", *lines)) if lines else "events\n…")
+
+    _EVENT_LOG_CLASS = EventLog
+    return _EVENT_LOG_CLASS
 
 
 def _phase_enabled(model: Any, phase: str, dotted: str) -> bool:
