@@ -37,6 +37,16 @@ def _result(returncode: int, *, stdout: str = "", stderr: str = "") -> CommandRe
             "provider_auth_required",
             False,
         ),
+        # Non-retryable: provider reports auth failure with the common
+        # "authentication failed" wording.
+        (
+            {
+                "returncode": 1,
+                "stderr": "Error: authentication failed",
+            },
+            "provider_auth_required",
+            False,
+        ),
         # Non-retryable: provider reports auth/setup with the common "is required" wording.
         (
             {
@@ -51,6 +61,15 @@ def _result(returncode: int, *, stdout: str = "", stderr: str = "") -> CommandRe
             {
                 "returncode": 1,
                 "stderr": "Error: API key is not set",
+            },
+            "provider_auth_required",
+            False,
+        ),
+        # Non-retryable: provider reports auth/setup with the common "not configured" wording.
+        (
+            {
+                "returncode": 1,
+                "stderr": "API key not configured",
             },
             "provider_auth_required",
             False,
