@@ -521,6 +521,7 @@ class _RevRemAppMixin:
         self._loop_model = None
         self._loop_run_view = None
         self._event_log = None
+        self._live_run_profile: profiles.Profile | None = None
 
     def compose(self):
         yield _Header(show_clock=True)
@@ -651,6 +652,7 @@ class _RevRemAppMixin:
             return
         self._pending_live_confirmation_profile = None
         plan = tui_state.launch_plan(selected, dry_run=False)
+        self._live_run_profile = selected
         try:
             launch = self.live_run_controller.start(
                 profile=selected,
@@ -659,6 +661,7 @@ class _RevRemAppMixin:
                 entrypoint_resolver=current_entrypoint_argv,
             )
         except OSError:
+            self._live_run_profile = None
             _notify(self, self.live_run_controller.message or f"Live run failed: {profile_name}")
             self._render_live_monitor()
             return
@@ -666,7 +669,6 @@ class _RevRemAppMixin:
         self._focused_pane = "right"
         _notify(self, f"Live run started: {profile_name} ({launch.artifact_dir_arg})")
         self._render_workbench()
-        self._render_live_monitor()
 
     def action_cancel_run(self) -> None:
         self._quit_confirmation_pending = False
@@ -684,6 +686,8 @@ class _RevRemAppMixin:
         _notify(self, "Run view: logs" if self._event_log.show_logs else "Run view: events")
 
     def action_show_artifacts(self) -> None:
+        if self._workspace != "run":
+            return
         launch = self.live_run_controller.launch
         if launch is None:
             _notify(self, "No run artifacts yet.")
@@ -1238,7 +1242,8 @@ class _RevRemAppMixin:
             exit_app()
 
     def _render_live_monitor(self) -> None:
-        self._update_run_widgets()
+        if self._workspace == "run":
+            self._update_run_widgets()
         _update_widget(self, "#screen-run-monitor", _right_pane_markup(self))
         _update_widget(self, "#screen-home", _left_pane_markup(self))
         _set_widget_classes(self, "#screen-run-monitor", _pane_classes(self, "right"))
@@ -1246,13 +1251,16 @@ class _RevRemAppMixin:
         self._update_console_status()
 
     def _update_run_widgets(self) -> None:
-        profile = self._profile_by_name(self._profile_name())
+        profile = self._live_run_profile
+        if self.live_run_controller.launch is None:
+            profile = self._profile_by_name(self._profile_name())
+        snapshot = self.live_run_controller.read_live_events()
         if self._loop_run_view is not None:
             self._loop_run_view.set_state(self.live_run_controller, profile)
-            self._loop_run_view.rebuild()
+            self._loop_run_view.rebuild(snapshot=snapshot)
         if self._event_log is not None:
             self._event_log.set_controller(self.live_run_controller)
-            self._event_log.rebuild()
+            self._event_log.rebuild(snapshot=snapshot)
 
     def _update_console_status(self) -> None:
         _update_widget(self, "#status-bar", _status_bar_markup(self))
@@ -1867,7 +1875,7 @@ def _help_markup(*, visible: bool) -> str:
         "[b]Help[/b]\n"
         "Universal: \\[q] quit | \\[Tab] next focus | \\[Shift+Tab] previous focus | \\[Esc] clear focus | \\[h] hide help\n"
         "Loop: \\[space] toggle phase | \\[m] harness | \\[f] effort | \\[M] model | \\[t] timeout | \\[i] iterations | \\[F] final review | \\[s] save\n"
-        "Run: \\[d] dry-run selected profile | \\[r] confirm/start live run | \\[k] cancel active run\n"
+        "Run: \\[d] dry-run selected profile | \\[r] confirm/start live run | \\[k] cancel active run | \\[l] logs/events | \\[o] artifacts\n"
         "Profile: \\[s] show | \\[e] edit | \\[n] new... | \\[c] clone... | \\[x] export | \\[i] import profiles | \\[delete] delete\n"
         "Prompts: Enter submits text; Esc cancels and returns to global keys."
     )

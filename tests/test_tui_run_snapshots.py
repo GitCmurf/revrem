@@ -1,16 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-import difflib
-import os
-import re
 from pathlib import Path
 
 import pytest
+from support.snapshot import assert_svg_snapshot, normalize_svg
 
 from code_review_loop import events, profiles, tui, tui_loop_widgets, tui_run_controller
-
-SNAPSHOT_DIR = Path(__file__).resolve().parent / "snapshots" / "tui_run"
 
 
 def test_run_snapshot_waiting(tmp_path: Path) -> None:
@@ -24,7 +20,7 @@ max_iterations = 3
         tui_run_controller.LiveEventSnapshot(ready=False),
     )
     assert "events: waiting for events.jsonl" in svg
-    _assert_svg_snapshot("waiting", svg)
+    assert_svg_snapshot("tui_run/waiting", svg)
 
 
 def test_run_snapshot_review_running(tmp_path: Path) -> None:
@@ -40,7 +36,7 @@ max_iterations = 3
         ),
     )
     assert "▶ review" in svg and "iteration 1/3" in svg
-    _assert_svg_snapshot("review-running", svg)
+    assert_svg_snapshot("tui_run/review-running", svg)
 
 
 def test_run_snapshot_remediation_running_with_routes(tmp_path: Path) -> None:
@@ -69,7 +65,7 @@ model = "gpt-5.4-mini"
         ),
     )
     assert "▶ remediation" in svg and "codex-midi" not in svg
-    _assert_svg_snapshot("remediation-running", svg)
+    assert_svg_snapshot("tui_run/remediation-running", svg)
 
 
 def test_run_snapshot_inner_retry(tmp_path: Path) -> None:
@@ -89,7 +85,7 @@ inner_check_retries = 2
         ),
     )
     assert "inner retry 1/2" in svg
-    _assert_svg_snapshot("inner-retry", svg)
+    assert_svg_snapshot("tui_run/inner-retry", svg)
 
 
 def test_run_snapshot_disabled_triage(tmp_path: Path) -> None:
@@ -108,7 +104,7 @@ enabled = false
         ),
     )
     assert "⤫ triage" in svg and "disabled" in svg
-    _assert_svg_snapshot("disabled-triage", svg)
+    assert_svg_snapshot("tui_run/disabled-triage", svg)
 
 
 def test_run_snapshot_done_clear(tmp_path: Path) -> None:
@@ -133,7 +129,7 @@ checks = ["pytest -q"]
         status="clear",
     )
     assert "✓ checks" in svg and "passed" in svg
-    _assert_svg_snapshot("done-clear", svg)
+    assert_svg_snapshot("tui_run/done-clear", svg)
 
 
 def test_run_snapshot_done_with_findings(tmp_path: Path) -> None:
@@ -153,7 +149,7 @@ checks = ["pytest -q"]
         status="findings",
     )
     assert "findings" in svg and "failed" in svg
-    _assert_svg_snapshot("done-with-findings", svg)
+    assert_svg_snapshot("tui_run/done-with-findings", svg)
 
 
 def _capture_run_svg(
@@ -205,7 +201,7 @@ def _capture_run_svg(
             loop_view.rebuild()
             event_log.rebuild()
             await pilot.pause()
-            return _normalize_svg(
+            return normalize_svg(
                 pilot.app.export_screenshot(title="revrem-run", simplify=True)
             )
 
@@ -258,34 +254,3 @@ class _FakeLiveController:
 
     def stderr_lines(self) -> tuple[str, ...]:
         return ()
-
-
-def _normalize_svg(svg: str) -> str:
-    svg = re.sub(r"(?m)^[ \t]+(?:\n|$)", "", svg)
-    normalized = svg.replace("&#160;", " ")
-    normalized = re.sub(r"\b\d{1,2}:\d{2}(?::\d{2})?\s?(?:AM|PM)?\b", "<time>", normalized)
-    normalized = re.sub(r"pytest-\d+", "pytest-N", normalized)
-    normalized = re.sub(r"terminal-\d+", "terminal-ID", normalized)
-    return normalized
-
-
-def _assert_svg_snapshot(name: str, svg: str) -> None:
-    assert svg.startswith("<svg")
-    assert len(svg) > 1000
-    path = SNAPSHOT_DIR / f"{name}.svg"
-    should_update = os.environ.get("REVREM_UPDATE_SNAPSHOTS") == "1"
-    if should_update or not path.exists():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(svg, encoding="utf-8")
-        return
-    expected = path.read_text(encoding="utf-8")
-    if svg != expected:
-        diff = "".join(
-            difflib.unified_diff(
-                expected.splitlines(keepends=True),
-                svg.splitlines(keepends=True),
-                fromfile=f"{path} (committed)",
-                tofile=f"{path} (actual)",
-            )
-        )
-        raise AssertionError(f"SVG snapshot changed for {name}:\n{diff}")

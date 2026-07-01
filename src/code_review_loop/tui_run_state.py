@@ -133,5 +133,6 @@ def event_tail_lines(
 ) -> tuple[str, ...]:
     if not records:
         return ()
-    views = tui_state.event_views_from_events(tuple(records)[-limit:])
+    tail = records[-limit:]
+    views = tui_state.event_views_from_events(tuple(tail))
     return tuple(tui_state.event_row_text(view) for view in views)

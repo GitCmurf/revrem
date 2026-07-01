@@ -299,7 +299,7 @@ def loop_run_view_class() -> type[Any] | None:
             self.controller = controller
             self.profile = profile
 
-        def rebuild(self) -> None:
+        def rebuild(self, *, snapshot: Any | None = None) -> None:
             from code_review_loop import tui_run_state
 
             if self.controller is None or self.profile is None:
@@ -316,7 +316,8 @@ def loop_run_view_class() -> type[Any] | None:
                 self._clear_rows()
                 self.refresh()
                 return
-            snapshot = self.controller.read_live_events()
+            if snapshot is None:
+                snapshot = self.controller.read_live_events()
             if snapshot.error:
                 self._header.update(f"events: unavailable ({snapshot.error})")
                 self._clear_rows()
@@ -380,12 +381,14 @@ def event_log_class() -> type[Any] | None:
             super().__init__("", id="event-log", classes="event-log", markup=False)
             self.controller: Any | None = None
             self.show_logs = False
-            self.rebuild()
 
         def set_controller(self, controller: Any) -> None:
             self.controller = controller
 
-        def rebuild(self) -> None:
+        def on_mount(self) -> None:
+            self.rebuild()
+
+        def rebuild(self, *, snapshot: Any | None = None) -> None:
             from code_review_loop import tui_run_state
 
             if self.controller is None:
@@ -399,7 +402,8 @@ def event_log_class() -> type[Any] | None:
                 lines.extend(f"stderr: {line}" for line in stderr)
                 self.update("\n".join(lines) if len(lines) > 1 else "logs\nNo captured lines yet.")
                 return
-            snapshot = self.controller.read_live_events()
+            if snapshot is None:
+                snapshot = self.controller.read_live_events()
             if snapshot.error:
                 self.update(f"events: unavailable ({snapshot.error})")
                 return

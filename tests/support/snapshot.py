@@ -12,6 +12,7 @@ from __future__ import annotations
 import difflib
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -48,3 +49,37 @@ def assert_snapshot(name: str, value: Any, *, update: bool = False) -> None:
             f"Golden-master snapshot '{name}' changed. If intentional, record it "
             f"in the behaviour ledger and regenerate with REVREM_UPDATE_SNAPSHOTS=1.\n{diff}"
         )
+
+
+def normalize_svg(svg: str) -> str:
+    # Rich's SVG renderer emits a whitespace-only separator line between SVG
+    # groups. Strip that line so committed snapshots stay CI-clean without
+    # changing visible rendering content.
+    svg = re.sub(r"(?m)^[ \t]+(?:\n|$)", "", svg)
+    normalized = svg.replace("&#160;", " ")
+    normalized = re.sub(r"\b\d{1,2}:\d{2}(?::\d{2})?\s?(?:AM|PM)?\b", "<time>", normalized)
+    normalized = re.sub(r"pytest-\d+", "pytest-N", normalized)
+    normalized = re.sub(r"terminal-\d+", "terminal-ID", normalized)
+    return normalized
+
+
+def assert_svg_snapshot(name: str, svg: str, *, update: bool = False) -> None:
+    assert svg.startswith("<svg")
+    assert len(svg) > 1000
+    path = SNAPSHOT_DIR / f"{name}.svg"
+    should_update = update or os.environ.get("REVREM_UPDATE_SNAPSHOTS") == "1"
+    if should_update or not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(svg, encoding="utf-8")
+        return
+    expected = path.read_text(encoding="utf-8")
+    if svg != expected:
+        diff = "".join(
+            difflib.unified_diff(
+                expected.splitlines(keepends=True),
+                svg.splitlines(keepends=True),
+                fromfile=f"{path} (committed)",
+                tofile=f"{path} (actual)",
+            )
+        )
+        raise AssertionError(f"SVG snapshot changed for {name}:\n{diff}")

@@ -1,14 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-import difflib
-import os
-import re
 from pathlib import Path
 
+from support.snapshot import assert_svg_snapshot, normalize_svg
 from support.tui_pilot import pilot_app
-
-SNAPSHOT_DIR = Path(__file__).resolve().parent / "snapshots" / "tui_loop"
 
 
 def test_loop_snapshot_triage_disabled_final_off(tmp_path: Path) -> None:
@@ -25,7 +21,7 @@ enabled = false
 """,
     )
     assert "review" in svg and "triage" in svg and "final review off" in svg
-    _assert_svg_snapshot("triage-disabled-final-off", svg)
+    assert_svg_snapshot("tui_loop/triage-disabled-final-off", svg)
 
 
 def test_loop_snapshot_triage_routes(tmp_path: Path) -> None:
@@ -57,7 +53,7 @@ sandbox = "read-only"
         focus_delta=1,
     )
     assert "security" in svg and "haiku-4.5" in svg
-    _assert_svg_snapshot("triage-routes", svg)
+    assert_svg_snapshot("tui_loop/triage-routes", svg)
 
 
 def test_loop_snapshot_inner_retries(tmp_path: Path) -> None:
@@ -74,7 +70,7 @@ inner_check_retries = 2
 """,
     )
     assert "┌▶" in svg and "└◀" in svg
-    _assert_svg_snapshot("inner-retries", svg)
+    assert_svg_snapshot("tui_loop/inner-retries", svg)
 
 
 def test_loop_snapshot_final_review_on(tmp_path: Path) -> None:
@@ -89,7 +85,7 @@ final_review = true
 """,
     )
     assert "final review on" in svg
-    _assert_svg_snapshot("final-review-on", svg)
+    assert_svg_snapshot("tui_loop/final-review-on", svg)
 
 
 def test_loop_snapshot_dirty_edit(tmp_path: Path) -> None:
@@ -105,7 +101,7 @@ model = "gpt-5.5"
         edit_model="gpt-5.6",
     )
     assert "demo" in svg and "*" in svg and "gpt-5.6" in svg
-    _assert_svg_snapshot("dirty-edit", svg)
+    assert_svg_snapshot("tui_loop/dirty-edit", svg)
 
 
 def _capture_loop_svg(
@@ -130,40 +126,6 @@ def _capture_loop_svg(
                 diagram.set_text_field("model", edit_model)
                 app._update_console_status()
                 await pilot.pause()
-            return _normalize_svg(app.export_screenshot(title="revrem-loop", simplify=True))
+            return normalize_svg(app.export_screenshot(title="revrem-loop", simplify=True))
 
     return asyncio.run(run())
-
-
-def _normalize_svg(svg: str) -> str:
-    # The renderer emits a whitespace-only separator line between SVG groups.
-    # Strip that line so committed snapshots stay CI-clean without changing the
-    # visible rendering content.
-    svg = re.sub(r"(?m)^[ \t]+(?:\n|$)", "", svg)
-    normalized = svg.replace("&#160;", " ")
-    normalized = re.sub(r"\b\d{1,2}:\d{2}(?::\d{2})?\s?(?:AM|PM)?\b", "<time>", normalized)
-    normalized = re.sub(r"pytest-\d+", "pytest-N", normalized)
-    normalized = re.sub(r"terminal-\d+", "terminal-ID", normalized)
-    return normalized
-
-
-def _assert_svg_snapshot(name: str, svg: str) -> None:
-    assert svg.startswith("<svg")
-    assert len(svg) > 1000
-    path = SNAPSHOT_DIR / f"{name}.svg"
-    should_update = os.environ.get("REVREM_UPDATE_SNAPSHOTS") == "1"
-    if should_update or not path.exists():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(svg, encoding="utf-8")
-        return
-    expected = path.read_text(encoding="utf-8")
-    if svg != expected:
-        diff = "".join(
-            difflib.unified_diff(
-                expected.splitlines(keepends=True),
-                svg.splitlines(keepends=True),
-                fromfile=f"{path} (committed)",
-                tofile=f"{path} (actual)",
-            )
-        )
-        raise AssertionError(f"SVG snapshot changed for {name}:\n{diff}")

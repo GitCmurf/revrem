@@ -327,19 +327,21 @@ def test_tui_pilot_confirmed_launch_reaches_visible_running_state(tmp_path, monk
         monkeypatch.setattr(tui.sys, "argv", [str(repo / "launcher.py")])
 
         async with pilot_app(cwd=repo, profile_name="live") as (app, pilot):
-            await pilot.press("r")
-            await pilot.press("r")
+            try:
+                await pilot.press("r")
+                await pilot.press("r")
 
-            await _wait_for(
-                lambda: "Live status: running" in _render(app, "#screen-run-monitor"),
-                pilot_pause=pilot.pause,
-            )
-            assert "Live run started: live" in _render(app, "#screen-run-monitor") or (
-                app.live_run_controller.launch is not None
-            )
-            assert app.live_run_controller.launch is not None
-            assert app.live_run_controller.launch.artifact_dir == repo / "runs/live-launch"
-            app.live_run_controller.cancel(grace_seconds=1)
+                await _wait_for(
+                    lambda: "Live status: running" in _render(app, "#screen-run-monitor"),
+                    pilot_pause=pilot.pause,
+                )
+                assert "Live run started: live" in _render(app, "#screen-run-monitor") or (
+                    app.live_run_controller.launch is not None
+                )
+                assert app.live_run_controller.launch is not None
+                assert app.live_run_controller.launch.artifact_dir == repo / "runs/live-launch"
+            finally:
+                _cancel_live_run(app)
 
     asyncio.run(run())
 
@@ -351,20 +353,22 @@ def test_run_workspace_mounts_live_loop_and_event_log(tmp_path, monkeypatch):
         monkeypatch.setattr(tui.sys, "argv", [str(repo / "launcher.py")])
 
         async with pilot_app(cwd=repo, profile_name="live") as (app, pilot):
-            await pilot.press("r")
-            await pilot.press("r")
-            await _wait_for(
-                lambda: app._workspace == "run"
-                and "live" in _render(app, "#loop-run-header"),
-                pilot_pause=pilot.pause,
-                timeout=12,
-            )
-            assert app.query_one("#loop-run") is not None
-            assert app.query_one("#event-log") is not None
-            assert any(
-                glyph in _render(app, "#run-phase-review") for glyph in ("▶", "✓", "·")
-            )
-            app.live_run_controller.cancel(grace_seconds=1)
+            try:
+                await pilot.press("r")
+                await pilot.press("r")
+                await _wait_for(
+                    lambda: app._workspace == "run"
+                    and "live" in _render(app, "#loop-run-header"),
+                    pilot_pause=pilot.pause,
+                    timeout=12,
+                )
+                assert app.query_one("#loop-run") is not None
+                assert app.query_one("#event-log") is not None
+                assert any(
+                    glyph in _render(app, "#run-phase-review") for glyph in ("▶", "✓", "·")
+                )
+            finally:
+                _cancel_live_run(app)
 
     asyncio.run(run())
 
@@ -391,20 +395,68 @@ def test_run_workspace_toggles_logs_and_shows_artifacts(tmp_path, monkeypatch):
 
         async with pilot_app(cwd=repo, profile_name="live") as (app, pilot):
             app.notify = lambda message, **_kwargs: notifications.append(message)
-            await pilot.press("r")
-            await pilot.press("r")
-            await _wait_for(
-                lambda: app.live_run_controller.launch is not None,
-                pilot_pause=pilot.pause,
-                timeout=12,
-            )
-            await pilot.press("l")
+            try:
+                await pilot.press("r")
+                await pilot.press("r")
+                await _wait_for(
+                    lambda: app.live_run_controller.launch is not None,
+                    pilot_pause=pilot.pause,
+                    timeout=12,
+                )
+                await pilot.press("l")
+                await pilot.pause()
+                assert "logs" in _render(app, "#event-log")
+                await pilot.press("o")
+                await pilot.pause()
+                assert any("runs/live-log" in message for message in notifications)
+            finally:
+                _cancel_live_run(app)
+
+    asyncio.run(run())
+
+
+def test_artifacts_key_is_run_workspace_scoped(tmp_path, monkeypatch):
+    async def run() -> None:
+        repo = init_repo(tmp_path / "repo")
+        _write_live_profile(repo, review_model="slow_cancel", artifact_dir="runs/scoped")
+        monkeypatch.setattr(tui.sys, "argv", [str(repo / "launcher.py")])
+        notifications: list[str] = []
+
+        async with pilot_app(cwd=repo, profile_name="live") as (app, pilot):
+            app.notify = lambda message, **_kwargs: notifications.append(message)
+            try:
+                await pilot.press("r")
+                await pilot.press("r")
+                await _wait_for(
+                    lambda: app.live_run_controller.launch is not None,
+                    pilot_pause=pilot.pause,
+                    timeout=12,
+                )
+                await pilot.press("1")
+                await pilot.press("o")
+                await pilot.pause()
+                assert not any("Artifacts:" in message for message in notifications)
+                await pilot.press("2")
+                await pilot.press("o")
+                await pilot.pause()
+                assert any("runs/scoped" in message for message in notifications)
+            finally:
+                _cancel_live_run(app)
+
+    asyncio.run(run())
+
+
+def test_help_overlay_lists_run_logs_and_artifacts(tmp_path):
+    async def run() -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        async with pilot_app(cwd=repo, profile_name="security") as (app, pilot):
+            await pilot.press("?")
             await pilot.pause()
-            assert "logs" in _render(app, "#event-log")
-            await pilot.press("o")
-            await pilot.pause()
-            assert any("runs/live-log" in message for message in notifications)
-            app.live_run_controller.cancel(grace_seconds=1)
+            help_text = _render(app, "#footer-bar")
+            assert "\\[l\\] logs/events" in help_text
+            assert "\\[o\\] artifacts" in help_text
 
     asyncio.run(run())
 
@@ -416,23 +468,82 @@ def test_saved_loop_edit_launches_run_with_matching_live_diagram(tmp_path, monke
         monkeypatch.setattr(tui.sys, "argv", [str(repo / "launcher.py")])
 
         async with pilot_app(cwd=repo, profile_name="live") as (app, pilot):
-            await pilot.press("1")
-            await pilot.pause()
-            diagram = app.query_one("#loop-diagram")
-            diagram.set_loop_meta_field("max_iterations", "3")
-            app.action_save_loop()
-            await pilot.pause()
-            await pilot.press("r")
-            await pilot.press("r")
-            await _wait_for(
-                lambda: app._workspace == "run"
-                and ("iteration 1/3" in _render(app, "#loop-run-header")
-                     or "max 3" in _render(app, "#loop-run-header")),
-                pilot_pause=pilot.pause,
-                timeout=12,
-            )
-            assert "live" in _render(app, "#loop-run-header")
-            app.live_run_controller.cancel(grace_seconds=1)
+            try:
+                await pilot.press("1")
+                await pilot.pause()
+                diagram = app.query_one("#loop-diagram")
+                diagram.set_loop_meta_field("max_iterations", "3")
+                app.action_save_loop()
+                await pilot.pause()
+                await pilot.press("r")
+                await pilot.press("r")
+                await _wait_for(
+                    lambda: app._workspace == "run"
+                    and (
+                        "iteration 1/3" in _render(app, "#loop-run-header")
+                        or "max 3" in _render(app, "#loop-run-header")
+                    ),
+                    pilot_pause=pilot.pause,
+                    timeout=12,
+                )
+                assert "live" in _render(app, "#loop-run-header")
+            finally:
+                _cancel_live_run(app)
+
+    asyncio.run(run())
+
+
+def test_run_workspace_keeps_launched_profile_when_selection_changes(tmp_path, monkeypatch):
+    async def run() -> None:
+        repo = init_repo(tmp_path / "repo")
+        (repo / ".revrem.toml").write_text(
+            """
+[profiles.alpha]
+[profiles.alpha.pipeline]
+base = "main"
+max_iterations = 3
+final_review = false
+[profiles.alpha.output]
+artifact_dir = "runs/alpha-live"
+[profiles.alpha.review]
+harness = "fake"
+model = "slow_cancel"
+
+[profiles.beta]
+[profiles.beta.pipeline]
+base = "main"
+max_iterations = 9
+final_review = false
+[profiles.beta.output]
+artifact_dir = "runs/beta-live"
+[profiles.beta.review]
+harness = "fake"
+model = "review_clear"
+""",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(tui.sys, "argv", [str(repo / "launcher.py")])
+
+        async with pilot_app(cwd=repo, profile_name="alpha") as (app, pilot):
+            try:
+                await pilot.press("r")
+                await pilot.press("r")
+                await _wait_for(
+                    lambda: "RUN · alpha" in _render(app, "#loop-run-header"),
+                    pilot_pause=pilot.pause,
+                    timeout=12,
+                )
+                await pilot.press("3")
+                await pilot.press("down")
+                await pilot.press("enter")
+                await pilot.press("2")
+                await pilot.pause()
+                header = _render(app, "#loop-run-header")
+                assert "RUN · alpha" in header
+                assert "beta" not in header
+                assert "iteration 1/3" in header or "max 3" in header
+            finally:
+                _cancel_live_run(app)
 
     asyncio.run(run())
 
@@ -444,30 +555,35 @@ def test_tui_pilot_live_monitor_updates_and_cancels_visible_run(tmp_path, monkey
         monkeypatch.setattr(tui.sys, "argv", [str(repo / "launcher.py")])
 
         async with pilot_app(cwd=repo, profile_name="live") as (app, pilot):
-            await pilot.press("r")
-            await pilot.press("r")
+            try:
+                await pilot.press("r")
+                await pilot.press("r")
 
-            await _wait_for(
-                lambda: (
-                    "phase_start" in _render(app, "#event-log")
-                    and "findings-summary (1)" in _render(app, "#event-log")
-                ),
-                pilot_pause=pilot.pause,
-                timeout=12,
-            )
-            await pilot.press("k")
-            await _wait_for(
-                lambda: "cancelled" in _render(app, "#loop-run-header"),
-                pilot_pause=pilot.pause,
-                timeout=12,
-            )
+                await _wait_for(
+                    lambda: (
+                        "phase_start" in _render(app, "#event-log")
+                        and "findings-summary (1)" in _render(app, "#event-log")
+                    ),
+                    pilot_pause=pilot.pause,
+                    timeout=12,
+                )
+                await pilot.press("k")
+                await _wait_for(
+                    lambda: "cancelled" in _render(app, "#loop-run-header"),
+                    pilot_pause=pilot.pause,
+                    timeout=12,
+                )
 
-            launch = app.live_run_controller.launch
-            assert launch is not None
-            summary = json.loads((launch.artifact_dir / "summary.json").read_text(encoding="utf-8"))
-            assert summary["stopped_reason"] == "cancelled"
-            records, _ = events.read_events(launch.artifact_dir / events.EVENTS_FILENAME)
-            assert any(record.kind == "cancellation" for record in records)
+                launch = app.live_run_controller.launch
+                assert launch is not None
+                summary = json.loads(
+                    (launch.artifact_dir / "summary.json").read_text(encoding="utf-8")
+                )
+                assert summary["stopped_reason"] == "cancelled"
+                records, _ = events.read_events(launch.artifact_dir / events.EVENTS_FILENAME)
+                assert any(record.kind == "cancellation" for record in records)
+            finally:
+                _cancel_live_run(app)
 
     asyncio.run(run())
 
@@ -616,6 +732,12 @@ def _loop_run_profile(tmp_path: Path):
         encoding="utf-8",
     )
     return profiles.resolve_profile("p", cwd=repo, require_implemented=False)
+
+
+def _cancel_live_run(app) -> None:
+    process = app.live_run_controller.process
+    if process is not None and process.poll() is None:
+        app.live_run_controller.cancel(grace_seconds=1)
 
 
 def _write_live_profile(repo: Path, *, review_model: str, artifact_dir: str) -> None:

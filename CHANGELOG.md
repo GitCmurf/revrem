@@ -57,6 +57,9 @@ This project follows Semantic Versioning once public releases begin.
 
 ### Fixed
 
+- The experimental TUI Run workspace now keeps rendering the profile that
+  launched the live run even if the operator browses or selects a different
+  profile while the run is still visible.
 - The experimental Loop TUI now keeps the advertised `i` key workspace-dispatched
   instead of shadowing max-iteration editing with profile import, reports
   built-in profiles as clone-to-edit on Save/save-and-run, reloads the loop
