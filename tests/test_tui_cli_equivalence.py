@@ -16,6 +16,8 @@ from code_review_loop.tui_loop_model import LoopEditModel
 from tests.support.git_fixtures import init_repo
 from tests.support.run_artifact_compare import assert_equivalent_run_artifacts
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+
 
 @pytest.mark.parametrize(
     ("scenario_name", "profile_toml", "expected_code"),
@@ -132,18 +134,20 @@ def test_tui_live_run_matches_cli_artifacts(
     fixture_dir = _fixture_dir(tmp_path / scenario_name / "fixtures")
     cli_dir = tmp_path / scenario_name / "runs" / "cli"
     tui_dir = tmp_path / scenario_name / "runs" / "tui"
-    env = {
-        **os.environ,
-        "HOME": str(home),
-        harnesses.FAKE_HARNESS_ENV: "1",
-        harnesses.FAKE_HARNESS_FIXTURE_ENV: str(fixture_dir),
-    }
+    env = _source_checkout_env(
+        {
+            "HOME": str(home),
+            harnesses.FAKE_HARNESS_ENV: "1",
+            harnesses.FAKE_HARNESS_FIXTURE_ENV: str(fixture_dir),
+        }
+    )
     monkeypatch.setenv(harnesses.FAKE_HARNESS_ENV, "1")
     monkeypatch.setenv(harnesses.FAKE_HARNESS_FIXTURE_ENV, str(fixture_dir))
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("PYTHONPATH", env["PYTHONPATH"])
 
     cli_result = _run_cli(repo=repo, artifact_dir=cli_dir, env=env)
-    tui_status, tui_exit_code = _run_tui_controller(repo=repo, artifact_dir=tui_dir)
+    tui_status, tui_exit_code = _run_tui_controller(repo=repo, artifact_dir=tui_dir, env=env)
 
     assert cli_result.returncode == expected_code, cli_result.stderr + cli_result.stdout
     assert tui_exit_code == expected_code
@@ -186,15 +190,17 @@ triage.enabled = false
     home = tmp_path / "home"
     home.mkdir()
     fixture_dir = _fixture_dir(tmp_path / "fixtures")
-    env = {
-        **os.environ,
-        "HOME": str(home),
-        harnesses.FAKE_HARNESS_ENV: "1",
-        harnesses.FAKE_HARNESS_FIXTURE_ENV: str(fixture_dir),
-    }
+    env = _source_checkout_env(
+        {
+            "HOME": str(home),
+            harnesses.FAKE_HARNESS_ENV: "1",
+            harnesses.FAKE_HARNESS_FIXTURE_ENV: str(fixture_dir),
+        }
+    )
     monkeypatch.setenv(harnesses.FAKE_HARNESS_ENV, "1")
     monkeypatch.setenv(harnesses.FAKE_HARNESS_FIXTURE_ENV, str(fixture_dir))
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("PYTHONPATH", env["PYTHONPATH"])
 
     model = LoopEditModel.load("equivalence", cwd=repo_model)
     model.set_field("review.model", "review_clear")
@@ -233,6 +239,16 @@ def _fixture_dir(path: Path) -> Path:
     return path
 
 
+def _source_checkout_env(extra: dict[str, str]) -> dict[str, str]:
+    env = {**os.environ, **extra}
+    pythonpath_entries = [str(_REPO_ROOT / "src")]
+    existing_pythonpath = env.get("PYTHONPATH")
+    if existing_pythonpath:
+        pythonpath_entries.append(existing_pythonpath)
+    env["PYTHONPATH"] = os.pathsep.join(pythonpath_entries)
+    return env
+
+
 def _run_cli(repo: Path, artifact_dir: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [
@@ -260,6 +276,7 @@ def _run_cli(repo: Path, artifact_dir: Path, env: dict[str, str]) -> subprocess.
 def _run_tui_controller(
     repo: Path,
     artifact_dir: Path,
+    env: dict[str, str],
 ) -> tuple[tui_run_controller.RunControllerStatus, int | None]:
     profile = profiles.resolve_profile("equivalence", cwd=repo)
     profile = replace(profile, output=replace(profile.output, artifact_dir=str(artifact_dir)))
@@ -270,6 +287,7 @@ def _run_tui_controller(
         plan=plan,
         cwd=repo,
         entrypoint_resolver=lambda argv: [sys.executable, "-m", "code_review_loop", *argv[1:]],
+        env=env,
     )
     assert controller.process is not None
     deadline = time.monotonic() + 30

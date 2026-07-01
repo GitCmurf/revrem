@@ -14,6 +14,8 @@ from support.git_fixtures import init_repo
 
 from code_review_loop import events, profiles, tui_run_controller, tui_state
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+
 
 class FixedIdentity:
     def new_run_id(self) -> str:
@@ -287,12 +289,14 @@ triage.enabled = false
     profile = profiles.resolve_profile("cancel-demo", cwd=repo)
     plan = tui_state.launch_plan(profile, dry_run=False)
     controller = tui_run_controller.LiveRunController()
+    env = _source_checkout_env()
 
     launch = controller.start(
         profile=profile,
         plan=plan,
         cwd=repo,
         entrypoint_resolver=lambda argv: [sys.executable, "-m", "code_review_loop", *argv[1:]],
+        env=env,
     )
     deadline = time.monotonic() + 10
     while not (launch.artifact_dir / events.EVENTS_FILENAME).is_file():
@@ -363,12 +367,14 @@ claude = "{provider}"
     profile = profiles.resolve_profile("cancel-nested", cwd=repo)
     plan = tui_state.launch_plan(profile, dry_run=False)
     controller = tui_run_controller.LiveRunController()
+    env = _source_checkout_env()
 
     controller.start(
         profile=profile,
         plan=plan,
         cwd=repo,
         entrypoint_resolver=lambda argv: [sys.executable, "-m", "code_review_loop", *argv[1:]],
+        env=env,
     )
     nested_pid = _wait_for_pid_file(nested_pid_file)
 
@@ -622,3 +628,13 @@ def _pid_is_running(pid: int) -> bool:
         if fields and fields[0] == "Z":
             return False
     return True
+
+
+def _source_checkout_env() -> dict[str, str]:
+    env = dict(os.environ)
+    pythonpath_entries = [str(_REPO_ROOT / "src")]
+    existing_pythonpath = env.get("PYTHONPATH")
+    if existing_pythonpath:
+        pythonpath_entries.append(existing_pythonpath)
+    env["PYTHONPATH"] = os.pathsep.join(pythonpath_entries)
+    return env

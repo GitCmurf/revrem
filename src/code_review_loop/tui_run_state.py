@@ -65,7 +65,7 @@ def run_loop_view(
     remediate_starts_this_iteration = 0
     last_remediate_iteration: int | None = None
     any_check_result = False
-    last_check_passed: bool | None = None
+    last_check_status: str | None = None
 
     for event in records:
         event_outer_iteration = _outer_iteration(getattr(event, "iteration", None))
@@ -75,13 +75,13 @@ def run_loop_view(
                 and event_outer_iteration != current_outer_iteration
             ):
                 for name, is_enabled in enabled.items():
-                    if is_enabled:
+                    if is_enabled or (name == "checks" and any_check_result):
                         states[name] = "pending"
                         details[name] = ""
                 remediate_starts_this_iteration = 0
                 last_remediate_iteration = None
                 any_check_result = False
-                last_check_passed = None
+                last_check_status = None
             current_outer_iteration = event_outer_iteration
             iteration = event_outer_iteration
 
@@ -105,15 +105,21 @@ def run_loop_view(
         if kind == "check_result":
             any_check_result = True
             payload = getattr(event, "payload", {})
+            status = payload.get("status") if isinstance(payload, dict) else None
+            if isinstance(status, str):
+                normalized_status = status.lower()
+                if normalized_status in {"passed", "failed"}:
+                    last_check_status = normalized_status
+                    continue
             passed = payload.get("passed") if isinstance(payload, dict) else None
             if isinstance(passed, bool):
-                last_check_passed = passed
+                last_check_status = "passed" if passed else "failed"
 
-    if states.get("checks") != "disabled" and any_check_result:
+    if any_check_result:
         states["checks"] = "done"
-        if last_check_passed is False:
+        if last_check_status == "failed":
             details["checks"] = "failed"
-        elif last_check_passed is True:
+        elif last_check_status == "passed":
             details["checks"] = "passed"
 
     return RunLoopView(

@@ -9,7 +9,7 @@ import stat
 import subprocess
 import threading
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -118,6 +118,7 @@ class LiveRunController:
         cwd: Path,
         entrypoint_resolver: EntrypointResolver,
         popen_factory: PopenFactory = subprocess.Popen,
+        env: Mapping[str, str] | None = None,
         identity: RunIdentity = SYSTEM_IDENTITY,
     ) -> LiveRunLaunch:
         if self.process is not None and self.process.poll() is None:
@@ -140,6 +141,7 @@ class LiveRunController:
             self.process = popen_factory(
                 argv,
                 cwd=cwd,
+                env=env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
