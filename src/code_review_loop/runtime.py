@@ -378,7 +378,7 @@ def _phase_source_text(value: dict[object, object]) -> str | None:
 def _resume_command(summary: dict[str, object], review_path: str) -> str:
     resume_config = summary.get("resume_config")
     config = resume_config if isinstance(resume_config, dict) else {}
-    command = ["./.venv/bin/revrem"]
+    command = [_resume_executable(summary)]
     base = config.get("base") or summary.get("base")
     if isinstance(base, str) and base:
         command.extend(["--base", base])
@@ -406,6 +406,19 @@ def _resume_command(summary: dict[str, object], review_path: str) -> str:
     if isinstance(hook_policy, str) and hook_policy:
         command.extend(["--commit-on-hook-failure", hook_policy])
     return shlex.join(command)
+
+
+def _resume_executable(summary: Mapping[str, object]) -> str:
+    command_line = summary.get("command_line")
+    if (
+        isinstance(command_line, list)
+        and command_line
+        and isinstance(command_line[0], str)
+        and command_line[0]
+        and "/" not in command_line[0]
+    ):
+        return command_line[0]
+    return "revrem"
 
 
 def _append_phase_resume_overrides(

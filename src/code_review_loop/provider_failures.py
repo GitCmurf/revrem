@@ -46,6 +46,12 @@ def classify_provider_failure(
         return ProviderFailure("provider_quota_exhausted", "provider quota exhausted", False)
     if _matches_any(normalized, MODEL_UNAVAILABLE_PATTERNS):
         return ProviderFailure("provider_model_unavailable", "provider model unavailable", False)
+    if _matches_any(normalized, NETWORK_PATTERNS):
+        return ProviderFailure(
+            "provider_network_unavailable",
+            "provider network/DNS unavailable",
+            True,
+        )
     if _matches_any(normalized, SERVER_ERROR_PATTERNS):
         ref = _extract_error_ref(classification_output)
         suffix = f" ref={ref}" if ref else ""
@@ -134,11 +140,17 @@ TRANSIENT_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bconnection refused\b"),
     re.compile(r"\bconnection timed out\b"),
     re.compile(r"\btimeout\b"),
-    re.compile(r"\bfailed to lookup address information\b"),
-    re.compile(r"\bfailed to connect to websocket\b"),
     re.compile(r"\bstream disconnected before completion\b"),
-    re.compile(r"\berror sending request for url\b"),
+)
+NETWORK_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bfailed to lookup address information\b"),
+    re.compile(r"\btemporary failure in name resolution\b"),
+    re.compile(r"\bcould not resolve host\b"),
+    re.compile(r"\bname or service not known\b"),
+    re.compile(r"\bnodename nor servname provided\b"),
     re.compile(r"\bnetwork is unreachable\b"),
+    re.compile(r"\bno route to host\b"),
+    re.compile(r"\bhttp/request failed: error sending request for url\b"),
 )
 RATE_LIMIT_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\brate limit\b"),

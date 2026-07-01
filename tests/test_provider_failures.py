@@ -162,7 +162,31 @@ def _result(returncode: int, *, stdout: str = "", stderr: str = "") -> CommandRe
                     "request for url (https://chatgpt.com/backend-api/codex/responses)\n"
                 ),
             },
-            "provider_transient_error",
+            "provider_network_unavailable",
+            True,
+        ),
+        # Retryable: local DNS/network outages are more specific than generic
+        # transient provider failures and should tell the operator to check
+        # connectivity before chasing model/provider setup.
+        (
+            {
+                "returncode": 1,
+                "stderr": (
+                    "2026-07-01T20:15:17Z ERROR rmcp::transport::worker: "
+                    "worker quit with fatal: Transport channel closed, when "
+                    "Client(HttpRequest(HttpRequest(\"http/request failed: "
+                    "error sending request for url "
+                    "(https://chatgpt.com/backend-api/ps/mcp)\")))\n"
+                    "ERROR codex_api::endpoint::responses_websocket: failed "
+                    "to connect to websocket: IO error: failed to lookup "
+                    "address information: Try again, url: "
+                    "wss://chatgpt.com/backend-api/codex/responses\n"
+                    "ERROR: stream disconnected before completion: error "
+                    "sending request for url "
+                    "(https://chatgpt.com/backend-api/codex/responses)\n"
+                ),
+            },
+            "provider_network_unavailable",
             True,
         ),
         # Retryable: provider applies per-token rate limiting.

@@ -57,6 +57,11 @@ This project follows Semantic Versioning once public releases begin.
 
 ### Fixed
 
+- Provider subprocess failures now classify local network/DNS outages as
+  `provider_network_unavailable` instead of the less actionable generic
+  `provider_transient_error`, and suggested continuation commands now start
+  with `revrem` instead of a source-checkout-specific `./.venv/bin/revrem`
+  path.
 - The experimental TUI Run workspace now keeps rendering the profile that
   launched the live run even if the operator browses or selects a different
   profile while the run is still visible.

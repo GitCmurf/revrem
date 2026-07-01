@@ -465,7 +465,7 @@ def test_terminal_summary_surfaces_latest_findings_and_paths():
     assert "Phase config:" in text
     assert "Latest review: tmp/run/review-final.txt" in text
     assert (
-        "Continue command: ./.venv/bin/revrem --base main --max-iterations 2 "
+        "Continue command: revrem --base main --max-iterations 2 "
         "--check './.venv/bin/ruff check .' --check './.venv/bin/pytest -q' "
         "--timeout-seconds 0 --review-model gpt-5.5 --review-reasoning-effort low "
         "--remediation-model gpt-5.4-mini --remediation-reasoning-effort medium "
@@ -482,6 +482,27 @@ def test_terminal_summary_surfaces_latest_findings_and_paths():
     assert "failed: ./.venv/bin/pytest -q (tmp/run/check-2-2.txt)" in text
     assert "- [P2] Fix summary counts" in text
     assert "source=cli" in text
+
+
+def test_terminal_summary_resume_command_does_not_emit_dev_venv_executable():
+    text = format_terminal_summary(
+        {
+            "artifact_dir": "tmp/run",
+            "final_status": "findings",
+            "stopped_reason": "max_iterations_reached",
+            "artifact_paths": {"reviews": ["tmp/run/review-final.txt"]},
+            "base": "main",
+            "max_iterations": 1,
+            "command_line": ["/repo/.venv/bin/revrem", "--profile", "docs"],
+            "resume_config": {
+                "base": "main",
+                "max_iterations": 1,
+            },
+        }
+    )
+
+    assert "Continue command: revrem --base main --max-iterations 1" in text
+    assert ".venv/bin/revrem" not in text
 
 
 def test_terminal_summary_resume_command_preserves_forced_route():
