@@ -101,6 +101,20 @@ def test_checks_state_from_check_result_events(tmp_path: Path) -> None:
     assert details["checks"] == "passed"
 
 
+def test_check_phase_start_marks_checks_running(tmp_path: Path) -> None:
+    events = (
+        _ev(1, "phase_start", "remediate", 2),
+        _ev(2, "phase_result", "remediate", 2),
+        _ev(3, "phase_start", "check", 2, message="pytest -q"),
+    )
+    view = tui_run_state.run_loop_view(events, _profile(tmp_path))
+    states = {phase.name: phase.state for phase in view.phases}
+    details = {phase.name: phase.detail for phase in view.phases}
+
+    assert states["checks"] == "running"
+    assert details["checks"] == ""
+
+
 def test_failed_check_result_uses_status_field(tmp_path: Path) -> None:
     events = (
         _ev(1, "phase_start", "remediate", 2),

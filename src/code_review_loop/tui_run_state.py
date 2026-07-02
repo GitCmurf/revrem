@@ -11,6 +11,7 @@ RUNNER_PHASE_TO_DISPLAY: dict[str, str] = {
     "review": "review",
     "triage": "triage",
     "remediate": "remediation",
+    "check": "checks",
     "commit": "commit",
 }
 RUN_STATE_GLYPHS: dict[str, str] = {
