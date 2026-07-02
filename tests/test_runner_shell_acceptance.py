@@ -469,6 +469,49 @@ def test_runner_shell_marks_stale_review_resolved_when_validation_noops(
     assert (config.artifact_dir / "stale-validation-1-prompt.txt").is_file()
 
 
+def test_runner_shell_empty_initial_stale_artifact_falls_back_to_fresh_review(
+    tmp_path: Path,
+) -> None:
+    config = replace(
+        _config(tmp_path, max_iterations=1, triage_enabled=False),
+        commit_after_remediation=False,
+        final_review=False,
+        initial_review_mode="stale",
+    )
+    remediation = StaticRemediationHarness(
+        "REVIEW_STATUS: findings\n"
+        "Full review comments:\n"
+        "- [P2] Fresh finding still applies\n"
+    )
+    ctx, sink = _context(
+        config,
+        review=SequencedReviewHarness(["findings"]),
+        remediation=remediation,
+        runner=_stale_validation_runner("resolved"),
+    )
+    clock = ctx.clock
+    try:
+        state = _state(config)
+
+        result = run_iterations(
+            config=config,
+            state=state,
+            clock=clock,
+            ctx=ctx,
+            snap=_snapshot(config),
+            initial_review_output="",
+            run_id=FIXED_RUN_ID,
+        )
+    finally:
+        sink.close()
+
+    assert result.outcome.reason == "max_iterations_reached"
+    assert result.outcome.__class__.__name__ == "OutcomeUnknown"
+    assert remediation.calls
+    assert "stale_review_resolved" not in state.iterations[0]
+    assert not (config.artifact_dir / "stale-validation-1.txt").exists()
+
+
 def test_runner_shell_resolved_stale_review_skips_triage_routing_and_remediation(
     tmp_path: Path,
 ) -> None:

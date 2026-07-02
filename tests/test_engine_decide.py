@@ -75,12 +75,33 @@ def test_decide_stale_initial_review_validates_before_triage() -> None:
         final_review=True,
         initial_review_mode="stale",
     )
-    acc = LoopAccumulator(pending_check_failures="", last_review_output="actionable finding")
+    acc = LoopAccumulator(
+        pending_check_failures="",
+        last_review_output="actionable finding",
+        stale_review_loaded=True,
+    )
     event = ReviewDone(is_final=False, status="findings")
 
     action = decide(cfg, acc, event, iteration=1)
 
     assert action == RunStaleValidation()
+
+
+def test_decide_stale_initial_review_without_loaded_artifact_uses_normal_flow() -> None:
+    cfg = ConfigSnapshot(
+        max_iterations=3,
+        triage_enabled=True,
+        commit_after_remediation=True,
+        commit_on_hook_failure="fail",
+        final_review=True,
+        initial_review_mode="stale",
+    )
+    acc = LoopAccumulator(pending_check_failures="", last_review_output="actionable finding")
+    event = ReviewDone(is_final=False, status="findings")
+
+    action = decide(cfg, acc, event, iteration=1)
+
+    assert action == RunTriage()
 
 
 def test_decide_stale_validation_resolved_runs_checks_before_exit() -> None:

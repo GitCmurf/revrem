@@ -154,6 +154,7 @@ class _RunnerEngineExecutor:
             inner_check_retry_count=0,
             stale_review_resolved=False,
             stale_review_dirty="",
+            stale_review_loaded=bool(self.initial_review_output),
         )
         self.stale_review_status_before = None
         if iteration == 1 and self.initial_review_output:

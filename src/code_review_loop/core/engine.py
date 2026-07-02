@@ -70,6 +70,7 @@ class LoopAccumulator:
     inner_check_retry_count: int = 0
     stale_review_resolved: bool = False
     stale_review_dirty: str = ""
+    stale_review_loaded: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -336,6 +337,7 @@ def _decide_review(
             event.status == "findings"
             and cfg.initial_review_mode == "stale"
             and iteration == 1
+            and acc.stale_review_loaded
             and not acc.pending_check_failures
         ):
             return RunStaleValidation()
