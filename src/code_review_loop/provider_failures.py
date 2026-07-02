@@ -105,6 +105,7 @@ AUTH_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(?m)^not authenticated\b"),
     re.compile(r"(?m)^(?:error|fatal|failed)[:\s-]+login required\b"),
     re.compile(r"(?m)^login required\b"),
+    re.compile(r"\bincorrect api key provided\b"),
     re.compile(r"\binvalid api key\b"),
     re.compile(r"\bapi key (?:is )?not configured\b"),
     re.compile(r"\bapi key (?:is )?(?:invalid|required|missing|not set|expired)\b"),

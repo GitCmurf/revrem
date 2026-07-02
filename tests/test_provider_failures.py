@@ -65,6 +65,16 @@ def _result(returncode: int, *, stdout: str = "", stderr: str = "") -> CommandRe
             "provider_auth_required",
             False,
         ),
+        # Non-retryable: provider reports the common "Incorrect API key provided"
+        # wording emitted by AuthenticationError wrappers.
+        (
+            {
+                "returncode": 1,
+                "stderr": "AuthenticationError: Incorrect API key provided",
+            },
+            "provider_auth_required",
+            False,
+        ),
         # Non-retryable: provider reports auth/setup with the common "not configured" wording.
         (
             {
