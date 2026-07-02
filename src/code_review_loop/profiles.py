@@ -1204,7 +1204,9 @@ def set_profile_field(
     else:
         parsed = parse_profile(name, updated, source="<edit>")
     raw_profile = updated
-    write_routing_context = dotted_key == "triage.routing.enabled" and parsed.triage.routing.enabled
+    # Enabled routing edits need inherited route rows materialized so the saved
+    # owner profile stays loadable after the inherited context is removed.
+    write_routing_context = parsed.triage.routing.enabled and routing_edit
     if route_edit or write_routing_context:
         raw_profile = _copy.deepcopy(updated)
         triage_raw = raw_profile.setdefault("triage", {})

@@ -115,6 +115,23 @@ def test_failed_check_result_uses_status_field(tmp_path: Path) -> None:
     assert details["checks"] == "failed"
 
 
+def test_later_passing_check_result_does_not_clear_prior_failure(
+    tmp_path: Path,
+) -> None:
+    events = (
+        _ev(1, "phase_start", "remediate", 2),
+        _ev(2, "phase_result", "remediate", 2),
+        _ev(3, "check_result", "test", 2, command="pytest -q", status="failed"),
+        _ev(4, "check_result", "test", 2, command="ruff check .", status="passed"),
+    )
+    view = tui_run_state.run_loop_view(events, _profile(tmp_path))
+    states = {phase.name: phase.state for phase in view.phases}
+    details = {phase.name: phase.detail for phase in view.phases}
+
+    assert states["checks"] == "done"
+    assert details["checks"] == "failed"
+
+
 def test_failed_cleanliness_check_is_visible_without_explicit_pipeline_checks(
     tmp_path: Path,
 ) -> None:

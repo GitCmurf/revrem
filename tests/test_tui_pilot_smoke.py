@@ -132,6 +132,59 @@ def test_loop_inline_edit_marks_dirty_and_overlays(tmp_path):
     asyncio.run(run())
 
 
+def test_loop_cycle_harness_advances_from_effective_codex_value(tmp_path):
+    async def run() -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        (repo / ".revrem.toml").write_text(
+            "[profiles.edit]\n[profiles.edit.pipeline]\nbase='main'\n"
+            "[profiles.edit.review]\nharness='codex'\nmodel='gpt-5.5'\n",
+            encoding="utf-8",
+        )
+        async with pilot_app(cwd=repo, profile_name="edit") as (app, pilot):
+            await pilot.press("1")
+            await pilot.pause()
+            diagram = app.query_one("#loop-diagram")
+            assert diagram.model.is_dirty is False
+            expected = tui_loop_widgets.HARNESS_CHOICES[
+                (tui_loop_widgets.HARNESS_CHOICES.index("codex") + 1)
+                % len(tui_loop_widgets.HARNESS_CHOICES)
+            ]
+            diagram.cycle_field("harness")
+            await pilot.pause()
+            assert diagram.model.field_value("review.harness", "codex") == expected
+
+    asyncio.run(run())
+
+
+def test_loop_cycle_effort_advances_from_effective_low_value(tmp_path):
+    async def run() -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        (repo / ".revrem.toml").write_text(
+            "[profiles.edit]\n[profiles.edit.pipeline]\nbase='main'\n"
+            "[profiles.edit.review]\nharness='codex'\nmodel='gpt-5.5'\n"
+            "reasoning_effort='low'\n",
+            encoding="utf-8",
+        )
+        async with pilot_app(cwd=repo, profile_name="edit") as (app, pilot):
+            await pilot.press("1")
+            await pilot.pause()
+            diagram = app.query_one("#loop-diagram")
+            assert diagram.model.is_dirty is False
+            expected = tui_loop_widgets.EFFORT_CHOICES[
+                (tui_loop_widgets.EFFORT_CHOICES.index("low") + 1)
+                % len(tui_loop_widgets.EFFORT_CHOICES)
+            ]
+            diagram.cycle_field("effort")
+            await pilot.pause()
+            assert diagram.model.field_value("review.reasoning_effort", "low") == expected
+
+    asyncio.run(run())
+
+
 def test_loop_reverted_edit_clears_dirty_marker(tmp_path):
     async def run() -> None:
         repo = tmp_path / "repo"

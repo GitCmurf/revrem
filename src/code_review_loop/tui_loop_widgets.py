@@ -38,6 +38,13 @@ def _load_components() -> tuple[Any, Any, Any] | None:
     return tui._Static, tui._Vertical, tui._Horizontal
 
 
+def _profile_dotted_value(profile: profiles.Profile, dotted: str) -> Any:
+    cursor: Any = profile
+    for part in dotted.split("."):
+        cursor = cursor[part] if isinstance(cursor, dict) else getattr(cursor, part)
+    return cursor
+
+
 def phase_card_class() -> type[Any] | None:
     global _PHASE_CARD_CLASS
     loaded = _load_components()
@@ -204,7 +211,13 @@ def loop_diagram_class() -> type[Any] | None:
             choices = HARNESS_CHOICES if key == "harness" else EFFORT_CHOICES
             if not choices:
                 return
-            current = str(self.model.field_value(dotted, ""))
+            # Fall back to the resolved profile value when there is no unsaved
+            # overlay so cycling advances from what the user currently sees.
+            current = str(
+                self.model.field_value(
+                    dotted, _profile_dotted_value(self.model.profile, dotted)
+                )
+            )
             try:
                 index = choices.index(current)
             except ValueError:

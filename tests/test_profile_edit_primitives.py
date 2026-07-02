@@ -315,6 +315,44 @@ def test_set_profile_field_routing_enabled_edit_uses_inherited_v2_context(tmp_pa
     assert "rule" not in reloaded["triage"]["routing"]
 
 
+def test_set_profile_field_default_route_edit_uses_inherited_v2_route_context(tmp_path):
+    _write(
+        tmp_path / ".config" / "revrem" / "profiles.toml",
+        "[defaults]\n"
+        "[defaults.triage]\n"
+        "enabled = true\n"
+        'contract = "v2"\n'
+        "[defaults.triage.routing]\n"
+        "enabled = true\n"
+        'mode = "first-match"\n'
+        "strict_on_unavailable_route = false\n"
+        "allow_model_escalation = false\n"
+        'default_route = "codex-midi"\n'
+        "[defaults.triage.routes.codex-midi]\n"
+        'harness = "codex"\n'
+        'model = "base-codex"\n'
+        "[defaults.triage.routes.midtier-coder]\n"
+        'harness = "codex"\n'
+        'model = "base-open"\n',
+    )
+    _write(tmp_path / ".revrem.toml", '[profiles.demo]\nreview.model = "old"\n')
+
+    profiles.set_profile_field(
+        "demo", "triage.routing.default_route", "codex-midi", cwd=tmp_path, home=tmp_path
+    )
+
+    reloaded = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"]
+    resolved = profiles.resolve_profile("demo", cwd=tmp_path, home=tmp_path)
+    assert reloaded["review"]["model"] == "old"
+    assert reloaded["triage"]["routing"]["default_route"] == "codex-midi"
+    assert reloaded["triage"]["routes"]["codex-midi"]["harness"] == "codex"
+    assert reloaded["triage"]["routes"]["codex-midi"]["model"] == "base-codex"
+    assert "enabled" not in reloaded["triage"]["routing"]
+    assert "mode" not in reloaded["triage"]["routing"]
+    assert resolved.triage.routing.default_route == "codex-midi"
+    assert resolved.triage.routes["codex-midi"].harness == "codex"
+
+
 def test_set_profile_field_route_edit_uses_inherited_v2_routing_context(tmp_path):
     _write(
         tmp_path / ".config" / "revrem" / "profiles.toml",

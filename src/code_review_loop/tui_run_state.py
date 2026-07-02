@@ -109,11 +109,17 @@ def run_loop_view(
             if isinstance(status, str):
                 normalized_status = status.lower()
                 if normalized_status in {"passed", "failed"}:
-                    last_check_status = normalized_status
+                    if normalized_status == "failed":
+                        last_check_status = "failed"
+                    elif last_check_status is None:
+                        last_check_status = "passed"
                     continue
             passed = payload.get("passed") if isinstance(payload, dict) else None
             if isinstance(passed, bool):
-                last_check_status = "passed" if passed else "failed"
+                if not passed:
+                    last_check_status = "failed"
+                elif last_check_status is None:
+                    last_check_status = "passed"
 
     if any_check_result:
         states["checks"] = "done"

@@ -301,7 +301,9 @@ def test_config_set_can_clear_inherited_description_with_empty_string(tmp_path, 
     assert profiles.resolve_profile("demo", cwd=tmp_path, home=tmp_path).description == ""
 
 
-def test_config_set_does_not_materialize_nested_routing_inheritance(tmp_path, monkeypatch):
+def test_config_set_default_route_materializes_nested_routing_inheritance(
+    tmp_path, monkeypatch
+):
     _write(
         tmp_path / ".revrem.toml",
         '[defaults]\n'
@@ -336,7 +338,10 @@ def test_config_set_does_not_materialize_nested_routing_inheritance(tmp_path, mo
     assert "strict_on_unavailable_route" not in reloaded["triage"]["routing"]
     assert "allow_model_escalation" not in reloaded["triage"]["routing"]
     assert "rule" not in reloaded["triage"]["routing"]
-    assert "routes" not in reloaded["triage"]
+    assert reloaded["triage"]["routes"]["codex-midi"]["harness"] == "codex"
+    resolved = profiles.resolve_profile("demo", cwd=tmp_path, home=tmp_path)
+    assert resolved.triage.routing.default_route == "codex-midi"
+    assert resolved.triage.routes["codex-midi"].harness == "codex"
 
 
 def test_config_set_does_not_materialize_inherited_named_profile_fields(tmp_path, monkeypatch):
