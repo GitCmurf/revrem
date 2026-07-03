@@ -89,6 +89,8 @@ _Horizontal: Any | None = None
 _Vertical: Any | None = None
 _VerticalScroll: Any | None = None
 _Input: Any | None = None
+_Button: Any | None = None
+_Select: Any | None = None
 _ModalScreen: Any | None = None
 _TabbedContent: Any | None = None
 _TabPane: Any | None = None
@@ -129,7 +131,9 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
 
 def run_textual_app(*, selected_profile_name: str | None = None) -> None:
     app_class = textual_app_class()
-    model = tui_state.build_shell_model(cwd=Path.cwd(), selected_profile_name=selected_profile_name)
+    model = tui_state.build_shell_model(
+        cwd=Path.cwd(), selected_profile_name=selected_profile_name
+    )
     profiles_by_name = {
         profile.name: profile
         for profile in profiles.resolve_profiles(
@@ -142,7 +146,9 @@ def run_textual_app(*, selected_profile_name: str | None = None) -> None:
 
 
 def _textual_unavailable_message() -> str:
-    message = f"ERROR: revrem ui requires the optional Textual dependency. {INSTALL_HINT}"
+    message = (
+        f"ERROR: revrem ui requires the optional Textual dependency. {INSTALL_HINT}"
+    )
     if _TEXTUAL_IMPORT_ERROR is not None:
         message += (
             " Textual was found but could not be imported: "
@@ -181,7 +187,7 @@ def _load_textual_components() -> _TextualComponents | None:
 
 def _install_textual_components(components: _TextualComponents) -> None:
     global _Binding, _Header, _Footer, _Static, _Horizontal, _Vertical, _VerticalScroll
-    global _Input, _ModalScreen, _TabbedContent, _TabPane
+    global _Input, _Button, _Select, _ModalScreen, _TabbedContent, _TabPane
     _Binding = getattr(components.binding, "Binding", None)
     _Header = components.widgets.Header
     _Footer = components.widgets.Footer
@@ -190,6 +196,8 @@ def _install_textual_components(components: _TextualComponents) -> None:
     _Vertical = getattr(components.containers, "Vertical", None)
     _VerticalScroll = getattr(components.containers, "VerticalScroll", None)
     _Input = getattr(components.widgets, "Input", None)
+    _Button = getattr(components.widgets, "Button", None)
+    _Select = getattr(components.widgets, "Select", None)
     _ModalScreen = getattr(components.screen, "ModalScreen", None)
     _TabbedContent = getattr(components.widgets, "TabbedContent", None)
     _TabPane = getattr(components.widgets, "TabPane", None)
@@ -226,7 +234,9 @@ def text_prompt_screen_class() -> type[Any] | None:
 
         class TextPrompt(modal_screen):
             BINDINGS = [
-                _binding("escape", "cancel", "Cancel", priority=True, binding_cls=_Binding)
+                _binding(
+                    "escape", "cancel", "Cancel", priority=True, binding_cls=_Binding
+                )
             ]
 
             def __init__(self, *, title: str, prompt: str, initial: str) -> None:
@@ -288,11 +298,21 @@ def _build_bindings(binding_cls: Any | None) -> list[Any]:
         ("down", "move_down", "Down"),
         ("up", "move_up", "Up"),
         ("enter", "select", "Select"),
-        _binding("space", "toggle_phase", "Toggle phase", priority=True, binding_cls=binding_cls),
-        _binding("m", "cycle_harness", "Harness", priority=True, binding_cls=binding_cls),
+        _binding(
+            "space",
+            "toggle_phase",
+            "Toggle phase",
+            priority=True,
+            binding_cls=binding_cls,
+        ),
+        _binding(
+            "m", "cycle_harness", "Harness", priority=True, binding_cls=binding_cls
+        ),
         _binding("f", "cycle_effort", "Effort", priority=True, binding_cls=binding_cls),
         _binding("M", "edit_model", "Model", priority=True, binding_cls=binding_cls),
-        _binding("t", "edit_timeout", "Timeout", priority=True, binding_cls=binding_cls),
+        _binding(
+            "t", "edit_timeout", "Timeout", priority=True, binding_cls=binding_cls
+        ),
         _binding(
             "i",
             "edit_max_iterations",
@@ -300,17 +320,35 @@ def _build_bindings(binding_cls: Any | None) -> list[Any]:
             priority=True,
             binding_cls=binding_cls,
         ),
-        _binding("F", "toggle_final_review", "Final review", priority=True, binding_cls=binding_cls),
+        _binding(
+            "F",
+            "toggle_final_review",
+            "Final review",
+            priority=True,
+            binding_cls=binding_cls,
+        ),
         ("d", "launch_dry_run", "Dry run"),
         ("r", "launch_run", "Run"),
         ("k", "cancel_run", "Cancel run"),
         ("l", "toggle_logs", "Logs"),
         ("o", "show_artifacts", "Artifacts"),
-        _binding("question_mark", "toggle_help", "Help", priority=True, binding_cls=binding_cls),
+        _binding(
+            "question_mark",
+            "toggle_help",
+            "Help",
+            priority=True,
+            binding_cls=binding_cls,
+        ),
         _binding("h", "toggle_help", "Help", priority=True, binding_cls=binding_cls),
         ("tab", "focus_next", "Focus next"),
         ("shift+tab", "focus_previous", "Focus previous"),
-        _binding("escape", "clear_focus", "Clear focus", priority=True, binding_cls=binding_cls),
+        _binding(
+            "escape",
+            "clear_focus",
+            "Clear focus",
+            priority=True,
+            binding_cls=binding_cls,
+        ),
         ("s", "save_loop", "Save"),
         ("e", "edit_context", "Edit"),
         ("g", "goto_prompts", "Prompts"),
@@ -687,7 +725,9 @@ class _RevRemAppMixin:
             return
         if self._pending_live_confirmation_profile != profile_name:
             self._pending_live_confirmation_profile = profile_name
-            _notify(self, f"Press r again to start an experimental live run: {profile_name}")
+            _notify(
+                self, f"Press r again to start an experimental live run: {profile_name}"
+            )
             self._update_console_status()
             return
         self._pending_live_confirmation_profile = None
@@ -702,7 +742,10 @@ class _RevRemAppMixin:
             )
         except OSError:
             self._live_run_profile = None
-            _notify(self, self.live_run_controller.message or f"Live run failed: {profile_name}")
+            _notify(
+                self,
+                self.live_run_controller.message or f"Live run failed: {profile_name}",
+            )
             self._render_live_monitor()
             return
         self._workspace = "run"
@@ -723,7 +766,9 @@ class _RevRemAppMixin:
             return
         self._event_log.show_logs = not self._event_log.show_logs
         self._event_log.rebuild()
-        _notify(self, "Run view: logs" if self._event_log.show_logs else "Run view: events")
+        _notify(
+            self, "Run view: logs" if self._event_log.show_logs else "Run view: events"
+        )
 
     def action_show_artifacts(self) -> None:
         if self._workspace != "run":
@@ -795,7 +840,10 @@ class _RevRemAppMixin:
                 if route is not None:
                     self._open_route_edit_modal(route)
                 return
-            if self._loop_diagram.current_phase() == "triage" and self._loop_diagram.enter_route_mode():
+            if (
+                self._loop_diagram.current_phase() == "triage"
+                and self._loop_diagram.enter_route_mode()
+            ):
                 self._update_console_status()
                 return
             self._loop_diagram.expanded = not self._loop_diagram.expanded
@@ -816,7 +864,9 @@ class _RevRemAppMixin:
                 self._select_profile(selected.name)
                 _notify(self, f"Selected profile: {selected.name}")
         elif self._workspace == "run" and self._focused_pane == "left":
-            self._selected_run_tab_index = (self._selected_run_tab_index + 1) % len(_RUN_TABS)
+            self._selected_run_tab_index = (self._selected_run_tab_index + 1) % len(
+                _RUN_TABS
+            )
             _notify(self, f"Run view: {_RUN_TABS[self._selected_run_tab_index]}")
         else:
             self._focused_pane = "right"
@@ -879,7 +929,8 @@ class _RevRemAppMixin:
             _notify(self, "No profile is available to show.")
             return
         self._run_interactive(
-            tui_state.show_plan_for_name(profile_name), success=f"Shown profile: {profile_name}"
+            tui_state.show_plan_for_name(profile_name),
+            success=f"Shown profile: {profile_name}",
         )
 
     def action_edit_context(self) -> None:
@@ -914,6 +965,7 @@ class _RevRemAppMixin:
 
     def action_add_route(self) -> None:
         if self._workspace != "loop" or self._loop_diagram is None:
+            _notify(self, "Add route: open the Loop workspace and focus triage first.")
             return
         if self._loop_diagram.current_phase() != "triage":
             _notify(self, "Add route: focus triage first.")
@@ -1095,10 +1147,25 @@ class _RevRemAppMixin:
             if result is None:
                 _notify(self, "Route edit cancelled.")
                 return
-            route_name, cell, value = result  # type: ignore[misc]
-            self._apply_route_edit(str(route_name), str(cell), str(value))
+            if (
+                isinstance(result, tuple)
+                and len(result) == 2
+                and isinstance(result[1], dict)
+            ):
+                route_name, values = result
+                self._apply_route_row_edit(str(route_name), values)
+                return
+            _notify(self, "Route edit returned an unexpected result.", severity="error")
 
-        push_screen(modal_class(route=route, values=values), callback=handle_result)
+        route_names = (
+            self._loop_diagram.route_names()
+            if hasattr(self._loop_diagram, "route_names")
+            else tuple(sorted(self._loop_diagram.model.profile.triage.routes))
+        )
+        push_screen(
+            modal_class(route=route, values=values, route_names=route_names),
+            callback=handle_result,
+        )
 
     def _route_values(self, route: str) -> dict[str, str]:
         if self._loop_diagram is None:
@@ -1139,6 +1206,33 @@ class _RevRemAppMixin:
         self._update_console_status()
         _notify(self, f"Set triage.routes.{route}.{cell} (unsaved; press s to save).")
 
+    def _apply_route_row_edit(self, route: str, values: dict[str, object]) -> None:
+        if self._loop_diagram is None:
+            return
+        current = self._route_values(route)
+        changed = False
+        for cell in (
+            "harness",
+            "model",
+            "reasoning_effort",
+            "timeout_seconds",
+            "sandbox",
+            "fallback",
+        ):
+            value = str(values.get(cell, "")).strip()
+            if value == "":
+                continue
+            if value == current.get(cell, ""):
+                continue
+            self._loop_diagram.model.set_field(f"triage.routes.{route}.{cell}", value)
+            changed = True
+        if not changed:
+            _notify(self, f"No changes for route {route}.")
+            return
+        self._loop_diagram.rebuild()
+        self._update_console_status()
+        _notify(self, f"Updated route {route} (unsaved; press s to save).")
+
     def _apply_route_add(self, route: str) -> None:
         if self._loop_diagram is None:
             return
@@ -1149,9 +1243,10 @@ class _RevRemAppMixin:
         if route in self._loop_diagram.model.profile.triage.routes:
             _notify(self, f"Route already exists: {route}")
             return
-        if self._loop_diagram.model.field_value(
-            f"triage.routes.{route}.harness", None
-        ) is not None:
+        if (
+            self._loop_diagram.model.field_value(f"triage.routes.{route}.harness", None)
+            is not None
+        ):
             _notify(self, f"Route already exists: {route}")
             return
         self._loop_diagram.model.set_field(f"triage.routes.{route}.harness", "codex")
@@ -1163,6 +1258,9 @@ class _RevRemAppMixin:
             self._loop_diagram.model.set_field("triage.routing.enabled", "true")
             self._loop_diagram.model.set_field("triage.routing.default_route", route)
         self._loop_diagram.route_mode = True
+        route_names = self._loop_diagram.route_names()
+        if route in route_names:
+            self._loop_diagram.selected_route_index = route_names.index(route)
         self._loop_diagram.rebuild()
         self._update_console_status()
         _notify(self, f"Added route {route} (unsaved; press s to save).")
@@ -1180,7 +1278,11 @@ class _RevRemAppMixin:
         fallback = None
         if phase_config is not None:
             fallback = (
-                getattr(phase_config, "message_model" if phase == "commit" else "model", None)
+                getattr(
+                    phase_config,
+                    "message_model" if phase == "commit" else "model",
+                    None,
+                )
                 if field == "model"
                 else getattr(phase_config, "timeout_seconds", None)
             )
@@ -1215,7 +1317,9 @@ class _RevRemAppMixin:
         )
 
     def _import_profiles(self, path: str) -> None:
-        self._run_captured(tui_state.import_plan_for_path(path), success=f"Imported profiles: {path}")
+        self._run_captured(
+            tui_state.import_plan_for_path(path), success=f"Imported profiles: {path}"
+        )
 
     def _run_interactive(self, plan: tui_state.LaunchPlan, *, success: str) -> None:
         self._run_and_notify(plan, success=success, capture_output=False)
@@ -1232,7 +1336,10 @@ class _RevRemAppMixin:
                 self._refresh_profiles_from_disk()
             _notify(self, success)
             return
-        _notify(self, f"{plan.mode} failed with exit {result.returncode}: {plan.profile_name}")
+        _notify(
+            self,
+            f"{plan.mode} failed with exit {result.returncode}: {plan.profile_name}",
+        )
 
     def _refresh_profiles_from_disk(self) -> None:
         selected_profile_name = self._profile_name()
@@ -1317,9 +1424,30 @@ class _RevRemAppMixin:
             else:
                 self._loop_diagram.model = model
                 self._loop_diagram.rebuild()
-        self._select_profile(name)
-        self._set_workspace("loop")
-        _notify(self, f"Loaded {name} into the loop.")
+        selected_profile = self._profile_by_name(name)
+        for index, profile_view in enumerate(self.model.snapshot.profiles):
+            if profile_view.name == name:
+                self._selected_profile_index = index
+                break
+        self.model = replace(
+            self.model,
+            selected_profile_name=name,
+            selected_launch_plan=(
+                tui_state.launch_plan(selected_profile, dry_run=True)
+                if selected_profile is not None
+                else None
+            ),
+        )
+        self._workspace = "loop"
+        self._focused_pane = "left"
+        self._render_workbench()
+        if model.profile.source == profiles.BUILTIN_PROFILE_SOURCE:
+            _notify(
+                self,
+                f"Loaded preset '{name}' read-only; press c to clone before editing.",
+            )
+        else:
+            _notify(self, f"Loaded {name} into the loop.")
 
     def _run_plan(
         self,
@@ -1333,7 +1461,9 @@ class _RevRemAppMixin:
                 return run_launch_plan(
                     plan, cwd=Path(self.model.snapshot.cwd), capture_output=False
                 )
-        return run_launch_plan(plan, cwd=Path(self.model.snapshot.cwd), capture_output=capture_output)
+        return run_launch_plan(
+            plan, cwd=Path(self.model.snapshot.cwd), capture_output=capture_output
+        )
 
     def _profile_name(self) -> str | None:
         selected = self._selected_profile_view()
@@ -1368,7 +1498,9 @@ class _RevRemAppMixin:
     def _selected_profile_view(self) -> tui_state.ProfileView | None:
         if not self.model.snapshot.profiles:
             return None
-        index = max(0, min(self._selected_profile_index, len(self.model.snapshot.profiles) - 1))
+        index = max(
+            0, min(self._selected_profile_index, len(self.model.snapshot.profiles) - 1)
+        )
         self._selected_profile_index = index
         return self.model.snapshot.profiles[index]
 
@@ -1403,11 +1535,17 @@ class _RevRemAppMixin:
         if self._workspace == "profiles" and self._focused_pane == "left":
             count = len(self.model.snapshot.profiles)
             if count:
-                self._selected_profile_index = (self._selected_profile_index + delta) % count
+                self._selected_profile_index = (
+                    self._selected_profile_index + delta
+                ) % count
         elif self._workspace in {"prompts", "run"} and self._focused_pane == "left":
-            self._selected_phase_index = (self._selected_phase_index + delta) % len(_PHASES)
+            self._selected_phase_index = (self._selected_phase_index + delta) % len(
+                _PHASES
+            )
         elif self._workspace == "run" and self._focused_pane == "right":
-            self._selected_run_tab_index = (self._selected_run_tab_index + delta) % len(_RUN_TABS)
+            self._selected_run_tab_index = (self._selected_run_tab_index + delta) % len(
+                _RUN_TABS
+            )
         self._render_workbench()
 
     def _select_profile(self, profile_name: str) -> None:
@@ -1761,7 +1899,9 @@ def _phase_navigation_markup(app: Any, *, title: str) -> str:
         if phase is None:
             lines.append(f"{marker} [ ] {phase_name}")
         else:
-            lines.append(f"{marker} {_phase_summary_line(phase, selected=index == app._selected_phase_index)}")
+            lines.append(
+                f"{marker} {_phase_summary_line(phase, selected=index == app._selected_phase_index)}"
+            )
     if app._workspace == "run":
         lines.extend(("", "[b]Run tabs[/b]"))
         for index, tab in enumerate(_RUN_TABS):
@@ -1803,8 +1943,12 @@ def _prompt_detail_markup(app: Any) -> str:
     ]
     if phase_name == "triage":
         lines.append("field: triage.prompt")
-        lines.append(f"editable: {_yes_no(profile.triage.prompt is not None)} via revrem config edit")
-        lines.append(f"value: {tui_state.markup_escape(profile.triage.prompt or '<default triage contract prompt>')}")
+        lines.append(
+            f"editable: {_yes_no(profile.triage.prompt is not None)} via revrem config edit"
+        )
+        lines.append(
+            f"value: {tui_state.markup_escape(profile.triage.prompt or '<default triage contract prompt>')}"
+        )
     elif phase_name == "commit":
         lines.append("field: commit.message_prompt")
         lines.append(
@@ -1812,11 +1956,17 @@ def _prompt_detail_markup(app: Any) -> str:
         )
         lines.append(
             "value: "
-            + tui_state.markup_escape(profile.commit.message_prompt or "<default commit-message prompt>")
+            + tui_state.markup_escape(
+                profile.commit.message_prompt or "<default commit-message prompt>"
+            )
         )
     elif phase_name == "review":
-        lines.append("source: native codex review prompt or composed external review prompt")
-        lines.append("editable: no dedicated profile field; edit harness/model/profile settings")
+        lines.append(
+            "source: native codex review prompt or composed external review prompt"
+        )
+        lines.append(
+            "editable: no dedicated profile field; edit harness/model/profile settings"
+        )
     elif phase_name == "remediation":
         fragment_names = sorted(
             {
@@ -1826,8 +1976,13 @@ def _prompt_detail_markup(app: Any) -> str:
             }
         )
         lines.append("source: generated remediation prompt plus route prompt fragments")
-        lines.append("editable: route fragments are configured in triage.routing.rule[].then.prompt_fragments")
-        lines.append("fragments: " + (", ".join(fragment_names) if fragment_names else "none configured"))
+        lines.append(
+            "editable: route fragments are configured in triage.routing.rule[].then.prompt_fragments"
+        )
+        lines.append(
+            "fragments: "
+            + (", ".join(fragment_names) if fragment_names else "none configured")
+        )
     else:
         lines.append("source: verification check commands and failed-check handoff")
         lines.append("editable: pipeline.checks in the owning profile config")
@@ -1875,7 +2030,7 @@ def _footer_markup(app: Any) -> str:
         target = f" for {app._prompt_target_key}" if app._prompt_target_key else ""
         keys = f"[j/down]asset [up]asset [Enter]apply{target} [?]help"
     else:
-        keys = "[k]stop [l]logs/events [o]artifacts [r]run [?]help"
+        keys = "[d]dry-run [r]run [k]stop [l]logs/events [o]artifacts [?]help"
     return f"{tui_state.markup_escape(live)}\n{tui_state.markup_escape(keys)}"
 
 
@@ -1911,7 +2066,9 @@ def _phase_summary_line(phase: tui_state.PhaseView, *, selected: bool) -> str:
         details.append(f"effort={effort}")
     if phase.command_count is not None:
         details.append(f"commands={phase.command_count}")
-    text = f"{marker} {phase.name}: " + ", ".join(tui_state.markup_escape(item) for item in details)
+    text = f"{marker} {phase.name}: " + ", ".join(
+        tui_state.markup_escape(item) for item in details
+    )
     if selected:
         return f"[status-info]{text}[/]"
     if not phase.enabled:
@@ -1925,7 +2082,9 @@ def _phase_marker(phase: tui_state.PhaseView) -> str:
     return "[[ok]]"
 
 
-def _phase_detail_lines(profile: profiles.Profile, phase: tui_state.PhaseView) -> list[str]:
+def _phase_detail_lines(
+    profile: profiles.Profile, phase: tui_state.PhaseView
+) -> list[str]:
     lines = [
         f"state: {'enabled' if phase.enabled else 'disabled'}",
         f"harness: {phase.harness or '-'}",
@@ -1954,7 +2113,11 @@ def _loop_shape_lines(profile: profiles.Profile) -> list[str]:
         lines.append("  -> commit after passing checks")
     else:
         lines.append("  -> commit off")
-    lines.append("  -> final review" if profile.pipeline.final_review else "  -> final review off")
+    lines.append(
+        "  -> final review"
+        if profile.pipeline.final_review
+        else "  -> final review off"
+    )
     return lines
 
 
@@ -1973,7 +2136,11 @@ def _yes_no(value: bool) -> str:
 def _bounded_lines(label: str, lines: Sequence[str], *, limit: int = 12) -> list[str]:
     if not lines:
         return ["", f"[b]{label}[/]", "No captured lines yet."]
-    return ["", f"[b]{label}[/]", *[tui_state.markup_escape(line) for line in lines[-limit:]]]
+    return [
+        "",
+        f"[b]{label}[/]",
+        *[tui_state.markup_escape(line) for line in lines[-limit:]],
+    ]
 
 
 def _summary_lines(controller: tui_run_controller.LiveRunController) -> list[str]:
@@ -1981,13 +2148,19 @@ def _summary_lines(controller: tui_run_controller.LiveRunController) -> list[str
         return ["", "[b]summary[/]", "No live run has been launched."]
     summary_path = controller.launch.artifact_dir / "summary.json"
     if not summary_path.is_file():
-        return ["", "[b]summary[/]", f"waiting for {tui_state.markup_escape(str(summary_path))}"]
+        return [
+            "",
+            "[b]summary[/]",
+            f"waiting for {tui_state.markup_escape(str(summary_path))}",
+        ]
     return ["", "[b]summary[/]", tui_state.markup_escape(str(summary_path))]
 
 
 def _home_markup(app: Any) -> str:
     snapshot = app.model.snapshot
-    implemented = [harness.name for harness in snapshot.harnesses if harness.implemented]
+    implemented = [
+        harness.name for harness in snapshot.harnesses if harness.implemented
+    ]
     reserved_count = sum(1 for harness in snapshot.harnesses if not harness.implemented)
     harness_text = ", ".join(implemented[:5]) or "none"
     if len(implemented) > 5:
@@ -2014,11 +2187,15 @@ def _home_markup(app: Any) -> str:
 
 def _profiles_markup(app: Any) -> str:
     selected = app.model.selected_profile_name
-    profiles_by_name = {profile.name: profile for profile in app.model.snapshot.profiles}
+    profiles_by_name = {
+        profile.name: profile for profile in app.model.snapshot.profiles
+    }
     ordered = []
     if selected and selected in profiles_by_name:
         ordered.append(profiles_by_name[selected])
-    ordered.extend(profile for profile in app.model.snapshot.profiles if profile.name != selected)
+    ordered.extend(
+        profile for profile in app.model.snapshot.profiles if profile.name != selected
+    )
     lines = ["[b]Profiles[/b]"]
     for index, profile in enumerate(ordered[:7]):
         marker = ">" if profile.name == selected else " "
@@ -2060,11 +2237,16 @@ def _pipeline_markup(app: Any) -> str:
             details.append(f"effort={effort}")
         if phase.command_count is not None:
             details.append(f"commands={phase.command_count}")
-        lines.append(f"{phase.name}: " + ", ".join(tui_state.markup_escape(item) for item in details))
+        lines.append(
+            f"{phase.name}: "
+            + ", ".join(tui_state.markup_escape(item) for item in details)
+        )
     if profile.triage.routing.enabled:
         route_count = len(profile.triage.routes)
         route = profile.triage.routing.default_route or "none"
-        lines.append(f"routing: default={tui_state.markup_escape(route)} routes={route_count}")
+        lines.append(
+            f"routing: default={tui_state.markup_escape(route)} routes={route_count}"
+        )
     if app.model.selected_launch_plan is not None:
         lines.append(
             f"Dry-run: {tui_state.markup_escape(app.model.selected_launch_plan.shell_command)}"
@@ -2091,7 +2273,9 @@ def _short_source(source: str | None) -> str:
     return path.name or source
 
 
-def _screen_by_name(model: tui_state.TuiShellModel, name: str) -> tui_state.TuiScreen | None:
+def _screen_by_name(
+    model: tui_state.TuiShellModel, name: str
+) -> tui_state.TuiScreen | None:
     for screen in model.screens:
         if screen.name == name:
             return screen
@@ -2105,7 +2289,9 @@ def _controls_markup(app: Any) -> str:
     elif app._quit_confirmation_pending:
         live_hint = "quit pending: press q again to cancel the run and quit"
     elif app._pending_live_confirmation_profile:
-        live_hint = f"confirm run: press r again for {app._pending_live_confirmation_profile}"
+        live_hint = (
+            f"confirm run: press r again for {app._pending_live_confirmation_profile}"
+        )
     elif app._live_run_active():
         live_hint = "active run: press k to cancel"
     else:
@@ -2128,7 +2314,9 @@ def _live_monitor_markup(controller: tui_run_controller.LiveRunController) -> st
         f"Live status: {tui_state.markup_escape(status)}",
     ]
     if controller.launch is not None:
-        lines.append(f"artifacts: {tui_state.markup_escape(str(controller.launch.artifact_dir))}")
+        lines.append(
+            f"artifacts: {tui_state.markup_escape(str(controller.launch.artifact_dir))}"
+        )
     if controller.message:
         lines.append(f"message: {tui_state.markup_escape(controller.message)}")
     snapshot = controller.read_live_events()
@@ -2140,7 +2328,9 @@ def _live_monitor_markup(controller: tui_run_controller.LiveRunController) -> st
         suffix = " [truncated]" if snapshot.truncated else ""
         lines.append(f"events: {len(snapshot.events)} loaded{suffix}")
         for event in tui_state.event_views_from_events(snapshot.events[-8:]):
-            lines.append(f"  {tui_state.markup_escape(tui_state.event_row_text(event))}")
+            lines.append(
+                f"  {tui_state.markup_escape(tui_state.event_row_text(event))}"
+            )
     return "\n".join(lines)
 
 
@@ -2148,7 +2338,8 @@ def _status_bar_markup(app: Any) -> str:
     profile_name = app._profile_name() or "<none>"
     dirty = (
         "*"
-        if getattr(app, "_loop_diagram", None) is not None and app._loop_diagram.is_dirty
+        if getattr(app, "_loop_diagram", None) is not None
+        and app._loop_diagram.is_dirty
         else ""
     )
     status = app.live_run_controller.status

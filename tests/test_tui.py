@@ -22,10 +22,13 @@ def test_tui_bindings_keep_i_workspace_dispatched():
     i_bindings = [
         binding
         for binding in bindings
-        if getattr(binding, "key", binding[0] if isinstance(binding, tuple) else None) == "i"
+        if getattr(binding, "key", binding[0] if isinstance(binding, tuple) else None)
+        == "i"
     ]
     assert len(i_bindings) == 1
-    action = i_bindings[0][1] if isinstance(i_bindings[0], tuple) else i_bindings[0].action
+    action = (
+        i_bindings[0][1] if isinstance(i_bindings[0], tuple) else i_bindings[0].action
+    )
     assert action == "edit_max_iterations"
 
 
@@ -33,6 +36,16 @@ def test_tui_help_lists_loop_and_profile_i_dispatch():
     help_text = tui._help_markup(visible=True)
     assert "\\[i] iterations" in help_text
     assert "\\[i] import profiles" in help_text
+
+
+def test_tui_run_footer_lists_dry_run_action():
+    app = tui.RevRemApp(
+        model=tui.tui_state.build_shell_model(cwd=Path("/tmp")),
+        profiles_by_name={},
+    )
+    app._workspace = "run"
+
+    assert "\\[d\\]dry-run" in tui._footer_markup(app)
 
 
 def _patch_textual_app_class(monkeypatch, run):
@@ -112,7 +125,9 @@ def test_tui_launch_reports_discoverable_broken_textual(tmp_path: Path) -> None:
     assert "broken textual app import" in result.stderr
 
 
-def test_tui_main_uses_process_argv_when_called_without_explicit_argv(monkeypatch, capsys):
+def test_tui_main_uses_process_argv_when_called_without_explicit_argv(
+    monkeypatch, capsys
+):
     monkeypatch.setattr(tui.sys, "argv", ["revrem", "--dry-run"])
 
     def fail_find_spec(name: str, *args, **kwargs):
@@ -211,9 +226,14 @@ checks = ["git diff --check"]
     monkeypatch.setattr(tui, "run_launch_plan", fake_run_launch_plan)
     app_class = _patch_textual_app_class(
         monkeypatch,
-        lambda self: (self.action_launch_dry_run(), actions.append(type(self).__name__)),
+        lambda self: (
+            self.action_launch_dry_run(),
+            actions.append(type(self).__name__),
+        ),
     )
-    monkeypatch.setattr(app_class, "notify", lambda self, message: notifications.append(message))
+    monkeypatch.setattr(
+        app_class, "notify", lambda self, message: notifications.append(message)
+    )
 
     assert cli_main(["ui"]) == 0
 
@@ -240,9 +260,14 @@ def test_tui_dry_run_action_launches_builtin_profile_without_local_config(
     monkeypatch.setattr(tui, "run_launch_plan", fake_run_launch_plan)
     app_class = _patch_textual_app_class(
         monkeypatch,
-        lambda self: (self.action_launch_dry_run(), actions.append(type(self).__name__)),
+        lambda self: (
+            self.action_launch_dry_run(),
+            actions.append(type(self).__name__),
+        ),
     )
-    monkeypatch.setattr(app_class, "notify", lambda self, message: notifications.append(message))
+    monkeypatch.setattr(
+        app_class, "notify", lambda self, message: notifications.append(message)
+    )
 
     assert cli_main(["ui", "--profile", "security"]) == 0
 
@@ -252,13 +277,17 @@ def test_tui_dry_run_action_launches_builtin_profile_without_local_config(
     assert notifications == ["Dry run completed: security"]
 
 
-def test_tui_live_run_action_requires_confirmation_and_starts_controller(monkeypatch, tmp_path):
+def test_tui_live_run_action_requires_confirmation_and_starts_controller(
+    monkeypatch, tmp_path
+):
     notifications = []
     starts = []
 
     config_path = tmp_path / "home" / ".config" / "revrem" / "profiles.toml"
     config_path.parent.mkdir(parents=True)
-    config_path.write_text('[profiles.final-pr]\ndescription = "Final PR"\n', encoding="utf-8")
+    config_path.write_text(
+        '[profiles.final-pr]\ndescription = "Final PR"\n', encoding="utf-8"
+    )
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setattr(tui.Path, "cwd", lambda: tmp_path)
 
@@ -272,7 +301,9 @@ def test_tui_live_run_action_requires_confirmation_and_starts_controller(monkeyp
         self.action_launch_run()
 
     app_class = _patch_textual_app_class(monkeypatch, fake_run)
-    monkeypatch.setattr(app_class, "notify", lambda self, message: notifications.append(message))
+    monkeypatch.setattr(
+        app_class, "notify", lambda self, message: notifications.append(message)
+    )
 
     assert cli_main(["ui", "--profile", "final-pr"]) == 0
 
@@ -294,11 +325,15 @@ def test_tui_live_run_action_catches_startup_oserror_and_keeps_setup_failed_stat
 
     config_path = tmp_path / "home" / ".config" / "revrem" / "profiles.toml"
     config_path.parent.mkdir(parents=True)
-    config_path.write_text('[profiles.final-pr]\ndescription = "Final PR"\n', encoding="utf-8")
+    config_path.write_text(
+        '[profiles.final-pr]\ndescription = "Final PR"\n', encoding="utf-8"
+    )
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
 
     app = tui.RevRemApp(
-        model=tui.tui_state.build_shell_model(cwd=tmp_path, selected_profile_name="final-pr"),
+        model=tui.tui_state.build_shell_model(
+            cwd=tmp_path, selected_profile_name="final-pr"
+        ),
         profiles_by_name={
             profile.name: profile
             for profile in tui.profiles.resolve_profiles(
@@ -332,13 +367,17 @@ def test_tui_live_run_action_catches_startup_oserror_and_keeps_setup_failed_stat
         "failed to start live run: revrem not found",
     ]
     assert app.live_run_controller.status == "setup-failed"
-    assert app.live_run_controller.message == "failed to start live run: revrem not found"
+    assert (
+        app.live_run_controller.message == "failed to start live run: revrem not found"
+    )
     assert app._pending_live_confirmation_profile is None
     assert app._workspace == "loop"
     assert app._focused_pane == "left"
 
     run_monitor_updates = [
-        value for selector, value in widgets.updates if selector == "#screen-run-monitor"
+        value
+        for selector, value in widgets.updates
+        if selector == "#screen-run-monitor"
     ]
     assert run_monitor_updates
     assert "Loop Detail" in run_monitor_updates[-1]
@@ -347,17 +386,23 @@ def test_tui_live_run_action_catches_startup_oserror_and_keeps_setup_failed_stat
     assert ("#status-bar", "status-setup-failed") in widgets.classes
 
 
-def test_tui_live_run_action_refuses_second_r_while_run_is_active(monkeypatch, tmp_path):
+def test_tui_live_run_action_refuses_second_r_while_run_is_active(
+    monkeypatch, tmp_path
+):
     notifications = []
     starts = []
 
     config_path = tmp_path / "home" / ".config" / "revrem" / "profiles.toml"
     config_path.parent.mkdir(parents=True)
-    config_path.write_text('[profiles.final-pr]\ndescription = "Final PR"\n', encoding="utf-8")
+    config_path.write_text(
+        '[profiles.final-pr]\ndescription = "Final PR"\n', encoding="utf-8"
+    )
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
 
     app = tui.RevRemApp(
-        model=tui.tui_state.build_shell_model(cwd=tmp_path, selected_profile_name="final-pr"),
+        model=tui.tui_state.build_shell_model(
+            cwd=tmp_path, selected_profile_name="final-pr"
+        ),
         profiles_by_name={
             profile.name: profile
             for profile in tui.profiles.resolve_profiles(
@@ -397,11 +442,15 @@ def test_tui_live_run_action_refuses_second_r_while_run_is_cancelling(
 
     config_path = tmp_path / "home" / ".config" / "revrem" / "profiles.toml"
     config_path.parent.mkdir(parents=True)
-    config_path.write_text('[profiles.final-pr]\ndescription = "Final PR"\n', encoding="utf-8")
+    config_path.write_text(
+        '[profiles.final-pr]\ndescription = "Final PR"\n', encoding="utf-8"
+    )
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
 
     app = tui.RevRemApp(
-        model=tui.tui_state.build_shell_model(cwd=tmp_path, selected_profile_name="final-pr"),
+        model=tui.tui_state.build_shell_model(
+            cwd=tmp_path, selected_profile_name="final-pr"
+        ),
         profiles_by_name={
             profile.name: profile
             for profile in tui.profiles.resolve_profiles(
@@ -433,7 +482,9 @@ def test_tui_live_run_action_refuses_second_r_while_run_is_cancelling(
     assert app._pending_live_confirmation_profile is None
 
 
-def test_tui_edit_profile_refreshes_profile_cache_before_next_live_launch(monkeypatch, tmp_path):
+def test_tui_edit_profile_refreshes_profile_cache_before_next_live_launch(
+    monkeypatch, tmp_path
+):
     notifications = []
     launched_artifact_dirs = []
 
@@ -468,7 +519,9 @@ artifact_dir = "{artifact_dir}"
         return types.SimpleNamespace(artifact_dir_arg=profile.output.artifact_dir)
 
     app = tui.RevRemApp(
-        model=tui.tui_state.build_shell_model(cwd=tmp_path, selected_profile_name="final-pr"),
+        model=tui.tui_state.build_shell_model(
+            cwd=tmp_path, selected_profile_name="final-pr"
+        ),
         profiles_by_name={
             profile.name: profile
             for profile in tui.profiles.resolve_profiles(
@@ -479,7 +532,9 @@ artifact_dir = "{artifact_dir}"
         },
     )
     monkeypatch.setattr(tui, "run_launch_plan", fake_run_launch_plan)
-    monkeypatch.setattr(app, "notify", lambda message: notifications.append(message), raising=False)
+    monkeypatch.setattr(
+        app, "notify", lambda message: notifications.append(message), raising=False
+    )
     app.live_run_controller.start = fake_start
 
     app.action_edit_profile()
@@ -494,7 +549,9 @@ artifact_dir = "{artifact_dir}"
     assert launched_artifact_dirs == ["artifacts/new"]
 
 
-def test_tui_edit_profile_keeps_current_session_on_invalid_profile_toml(monkeypatch, tmp_path):
+def test_tui_edit_profile_keeps_current_session_on_invalid_profile_toml(
+    monkeypatch, tmp_path
+):
     notifications = []
     launched_artifact_dirs = []
 
@@ -532,7 +589,9 @@ artifact_dir = "{artifact_dir}"
         return types.SimpleNamespace(artifact_dir_arg=profile.output.artifact_dir)
 
     app = tui.RevRemApp(
-        model=tui.tui_state.build_shell_model(cwd=tmp_path, selected_profile_name="final-pr"),
+        model=tui.tui_state.build_shell_model(
+            cwd=tmp_path, selected_profile_name="final-pr"
+        ),
         profiles_by_name={
             profile.name: profile
             for profile in tui.profiles.resolve_profiles(
@@ -543,7 +602,9 @@ artifact_dir = "{artifact_dir}"
         },
     )
     monkeypatch.setattr(tui, "run_launch_plan", fake_run_launch_plan)
-    monkeypatch.setattr(app, "notify", lambda message: notifications.append(message), raising=False)
+    monkeypatch.setattr(
+        app, "notify", lambda message: notifications.append(message), raising=False
+    )
     app.live_run_controller.start = fake_start
 
     app.action_edit_profile()
@@ -569,7 +630,9 @@ def test_tui_live_monitor_refresh_updates_run_monitor_widget(monkeypatch, tmp_pa
     run_dir = repo / ".revrem" / "runs" / "live"
     run_dir.mkdir(parents=True)
     sink = tui.tui_run_controller.events.JsonlSink(run_dir, "live")
-    sink.emit("phase_start", phase="review", iteration=1, payload={"message": "reviewing"})
+    sink.emit(
+        "phase_start", phase="review", iteration=1, payload={"message": "reviewing"}
+    )
     sink.close()
     app.live_run_controller.launch = tui.tui_run_controller.LiveRunLaunch(
         argv=("revrem",),
@@ -610,7 +673,9 @@ def test_tui_live_monitor_does_not_override_workspace_or_focus(monkeypatch, tmp_
     run_dir = repo / ".revrem" / "runs" / "live"
     run_dir.mkdir(parents=True)
     sink = tui.tui_run_controller.events.JsonlSink(run_dir, "live")
-    sink.emit("phase_start", phase="review", iteration=1, payload={"message": "reviewing"})
+    sink.emit(
+        "phase_start", phase="review", iteration=1, payload={"message": "reviewing"}
+    )
     sink.close()
     app.live_run_controller.launch = tui.tui_run_controller.LiveRunLaunch(
         argv=("revrem",),
@@ -645,7 +710,12 @@ def test_tui_live_monitor_escapes_markup_in_event_detail(monkeypatch, tmp_path):
     run_dir = repo / ".revrem" / "runs" / "live"
     run_dir.mkdir(parents=True)
     sink = tui.tui_run_controller.events.JsonlSink(run_dir, "live")
-    sink.emit("phase_start", phase="review", iteration=1, payload={"message": "[bold]danger[/bold]"})
+    sink.emit(
+        "phase_start",
+        phase="review",
+        iteration=1,
+        payload={"message": "[bold]danger[/bold]"},
+    )
     sink.close()
     app.live_run_controller.launch = tui.tui_run_controller.LiveRunLaunch(
         argv=("revrem",),
@@ -671,8 +741,12 @@ def test_tui_live_monitor_escapes_markup_in_event_detail(monkeypatch, tmp_path):
     assert "[bold]danger[/bold]" not in updates[0]
 
 
-def test_tui_run_workspace_render_uses_tuple_stdout_stderr_tails_without_crash(tmp_path):
-    model = tui.tui_state.build_shell_model(cwd=tmp_path, selected_profile_name="security")
+def test_tui_run_workspace_render_uses_tuple_stdout_stderr_tails_without_crash(
+    tmp_path,
+):
+    model = tui.tui_state.build_shell_model(
+        cwd=tmp_path, selected_profile_name="security"
+    )
     app = tui.RevRemApp(model=model, profiles_by_name={})
     app.live_run_controller.stdout_tail = ("line-1", "line-2")
     app.live_run_controller.stderr_tail = ("err-1",)
@@ -691,8 +765,12 @@ def test_tui_run_workspace_render_uses_tuple_stdout_stderr_tails_without_crash(t
     assert "err-1" in stderr_markup
 
 
-def test_tui_run_workspace_render_uses_live_stdout_stderr_buffers_while_running(tmp_path):
-    model = tui.tui_state.build_shell_model(cwd=tmp_path, selected_profile_name="security")
+def test_tui_run_workspace_render_uses_live_stdout_stderr_buffers_while_running(
+    tmp_path,
+):
+    model = tui.tui_state.build_shell_model(
+        cwd=tmp_path, selected_profile_name="security"
+    )
     app = tui.RevRemApp(model=model, profiles_by_name={})
     app._workspace = "run"
     app.live_run_controller.status = "running"
@@ -724,7 +802,9 @@ checks = ["pytest -q"]
 """,
         encoding="utf-8",
     )
-    model = tui.tui_state.build_shell_model(cwd=tmp_path, selected_profile_name="dogfood")
+    model = tui.tui_state.build_shell_model(
+        cwd=tmp_path, selected_profile_name="dogfood"
+    )
     app = tui.RevRemApp(model=model, profiles_by_name={})
 
     markup = tui._profiles_markup(app)
@@ -736,7 +816,9 @@ checks = ["pytest -q"]
 
 
 def test_tui_workspace_switching_updates_two_pane_workbench(monkeypatch, tmp_path):
-    model = tui.tui_state.build_shell_model(cwd=tmp_path, selected_profile_name="security")
+    model = tui.tui_state.build_shell_model(
+        cwd=tmp_path, selected_profile_name="security"
+    )
     app = tui.RevRemApp(model=model, profiles_by_name={})
     widgets = _WidgetProbe()
     monkeypatch.setattr(app, "query_one", widgets.query_one)
@@ -789,7 +871,9 @@ description = "Beta"
 
 
 def test_tui_focus_toggle_updates_panel_classes(monkeypatch, tmp_path):
-    model = tui.tui_state.build_shell_model(cwd=tmp_path, selected_profile_name="security")
+    model = tui.tui_state.build_shell_model(
+        cwd=tmp_path, selected_profile_name="security"
+    )
     app = tui.RevRemApp(model=model, profiles_by_name={})
     widgets = _WidgetProbe()
     monkeypatch.setattr(app, "query_one", widgets.query_one)
@@ -817,7 +901,9 @@ def test_tui_cancel_action_routes_to_controller(monkeypatch, tmp_path):
     app.live_run_controller.process = types.SimpleNamespace(poll=lambda: None)
     monkeypatch.setattr(app.live_run_controller, "cancel", lambda: "cancelled")
     monkeypatch.setattr(app, "notify", lambda message: notifications.append(message))
-    monkeypatch.setattr(app, "run_worker", lambda target, thread=True: workers.append((target, thread)))
+    monkeypatch.setattr(
+        app, "run_worker", lambda target, thread=True: workers.append((target, thread))
+    )
     monkeypatch.setattr(app, "call_from_thread", lambda callback: callback())
 
     widgets = _WidgetProbe()
@@ -852,7 +938,9 @@ def test_tui_cancel_action_reports_when_no_run_is_active(monkeypatch, tmp_path):
     app.action_cancel_run()
 
     assert notifications == ["No active live run to cancel."]
-    updates = [value for selector, value in widgets.updates if selector == "#footer-bar"]
+    updates = [
+        value for selector, value in widgets.updates if selector == "#footer-bar"
+    ]
     assert any("live: idle" in update for update in updates)
 
 
@@ -868,7 +956,9 @@ def test_tui_quit_warns_before_cancelling_active_run(monkeypatch, tmp_path):
     app.live_run_controller.process = types.SimpleNamespace(poll=lambda: None)
     monkeypatch.setattr(app.live_run_controller, "cancel", lambda: "cancelled")
     monkeypatch.setattr(app, "notify", lambda message: notifications.append(message))
-    monkeypatch.setattr(app, "run_worker", lambda target, thread=True: workers.append(target))
+    monkeypatch.setattr(
+        app, "run_worker", lambda target, thread=True: workers.append(target)
+    )
     monkeypatch.setattr(app, "call_from_thread", lambda callback: callback())
     monkeypatch.setattr(app, "exit", lambda: exits.append(True))
     widgets = _WidgetProbe()
@@ -993,13 +1083,17 @@ def test_tui_help_key_handler_stops_event_and_toggles_help(monkeypatch, tmp_path
     assert any("confirm/start live run" in update for update in updates)
 
 
-def test_tui_edit_action_launches_profile_editor_with_suspended_app(monkeypatch, tmp_path):
+def test_tui_edit_action_launches_profile_editor_with_suspended_app(
+    monkeypatch, tmp_path
+):
     actions = []
     notifications = []
 
     config_path = tmp_path / "home" / ".config" / "revrem" / "profiles.toml"
     config_path.parent.mkdir(parents=True)
-    config_path.write_text('[profiles.final-pr]\ndescription = "Final PR"\n', encoding="utf-8")
+    config_path.write_text(
+        '[profiles.final-pr]\ndescription = "Final PR"\n', encoding="utf-8"
+    )
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
 
     class FakeSuspend:
@@ -1022,7 +1116,9 @@ def test_tui_edit_action_launches_profile_editor_with_suspended_app(monkeypatch,
         lambda self: (self.action_edit_profile(), actions.append(type(self).__name__)),
     )
     monkeypatch.setattr(app_class, "suspend", lambda self: FakeSuspend())
-    monkeypatch.setattr(app_class, "notify", lambda self, message: notifications.append(message))
+    monkeypatch.setattr(
+        app_class, "notify", lambda self, message: notifications.append(message)
+    )
 
     assert cli_main(["ui", "--profile", "final-pr"]) == 0
 
@@ -1041,7 +1137,9 @@ def test_tui_profile_lifecycle_actions_use_config_commands(monkeypatch, tmp_path
 
     config_path = tmp_path / "home" / ".config" / "revrem" / "profiles.toml"
     config_path.parent.mkdir(parents=True)
-    config_path.write_text('[profiles.final-pr]\ndescription = "Final PR"\n', encoding="utf-8")
+    config_path.write_text(
+        '[profiles.final-pr]\ndescription = "Final PR"\n', encoding="utf-8"
+    )
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
 
     monkeypatch.setattr(tui.Path, "cwd", lambda: tmp_path)
@@ -1074,7 +1172,9 @@ def test_tui_profile_lifecycle_actions_use_config_commands(monkeypatch, tmp_path
         ),
     )
     monkeypatch.setattr(app_class, "_prompt_for_text", fake_prompt)
-    monkeypatch.setattr(app_class, "notify", lambda self, message: notifications.append(message))
+    monkeypatch.setattr(
+        app_class, "notify", lambda self, message: notifications.append(message)
+    )
 
     assert cli_main(["ui", "--profile", "final-pr"]) == 0
 

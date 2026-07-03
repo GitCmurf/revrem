@@ -60,6 +60,10 @@ This project follows Semantic Versioning once public releases begin.
 
 ### Fixed
 
+- The experimental TUI now warns when a bundled preset is loaded into the Loop
+  editor as read-only, renders newly added triage routes immediately before
+  Save, edits route rows through constrained Select controls for enumerated
+  fields, and keeps Run footer/help dry-run hints consistent.
 - Provider subprocess failures now classify local network/DNS outages as
   `provider_network_unavailable` instead of the less actionable generic
   `provider_transient_error`, and suggested continuation commands now start

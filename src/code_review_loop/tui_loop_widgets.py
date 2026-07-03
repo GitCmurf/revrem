@@ -220,7 +220,9 @@ def loop_diagram_class() -> type[Any] | None:
             self.rebuild()
 
         def route_names(self) -> tuple[str, ...]:
-            return tuple(sorted(self.model.profile.triage.routes))
+            return tuple(
+                row.name for row in tui_loop_state.triage_route_rows(self.model)
+            )
 
         def selected_route(self) -> str | None:
             names = self.route_names()
@@ -287,7 +289,9 @@ def loop_diagram_class() -> type[Any] | None:
 
         def toggle_final_review(self) -> None:
             dotted = tui_loop_state.LOOP_META_DOTTED["final_review"]
-            current = bool(self.model.field_value(dotted, self.model.profile.pipeline.final_review))
+            current = bool(
+                self.model.field_value(dotted, self.model.profile.pipeline.final_review)
+            )
             self.model.set_field(dotted, "false" if current else "true")
             self.rebuild()
 
@@ -329,15 +333,23 @@ def profile_picker_class() -> type[Any] | None:
     class ProfilePicker(static_cls):  # type: ignore[misc, valid-type]
         can_focus = True
 
-        def __init__(self, rows: tuple[tui_profiles_state.ProfilePickerRow, ...]) -> None:
-            super().__init__("", id="profile-picker", classes="profile-picker", markup=False)
+        def __init__(
+            self, rows: tuple[tui_profiles_state.ProfilePickerRow, ...]
+        ) -> None:
+            super().__init__(
+                "", id="profile-picker", classes="profile-picker", markup=False
+            )
             self.rows = rows
             self.selected_index = 0
             self.rebuild()
 
-        def set_rows(self, rows: tuple[tui_profiles_state.ProfilePickerRow, ...]) -> None:
+        def set_rows(
+            self, rows: tuple[tui_profiles_state.ProfilePickerRow, ...]
+        ) -> None:
             self.rows = rows
-            self.selected_index = 0 if not rows else min(self.selected_index, len(rows) - 1)
+            self.selected_index = (
+                0 if not rows else min(self.selected_index, len(rows) - 1)
+            )
 
         def move(self, delta: int) -> None:
             if self.rows:
@@ -362,9 +374,7 @@ def profile_picker_class() -> type[Any] | None:
                     group = row.group
                     lines.append(f"-- {group} --")
                 pointer = ">" if index == self.selected_index else " "
-                lines.append(
-                    f"{pointer} {row.name}  {row.source_label}  {row.summary}"
-                )
+                lines.append(f"{pointer} {row.name}  {row.source_label}  {row.summary}")
                 if row.description:
                     lines.append(f"  {row.description}")
             self.update("\n".join(lines))
@@ -386,7 +396,9 @@ def prompt_library_class() -> type[Any] | None:
         can_focus = True
 
         def __init__(self) -> None:
-            super().__init__("", id="prompt-library", classes="prompt-library", markup=False)
+            super().__init__(
+                "", id="prompt-library", classes="prompt-library", markup=False
+            )
             self.assets = tui_prompts_state.prompt_inventory()
             self.selected_index = 0
             self.rebuild()
@@ -432,6 +444,8 @@ def route_edit_modal_class() -> type[Any] | None:
         tui._ModalScreen is None
         or tui._Vertical is None
         or tui._Input is None
+        or tui._Button is None
+        or tui._Select is None
         or tui._Static is object
     ):
         return None
@@ -442,24 +456,104 @@ def route_edit_modal_class() -> type[Any] | None:
     vertical_cls: Any = tui._Vertical
     static_cls: Any = tui._Static
     input_cls: Any = tui._Input
+    button_cls: Any = tui._Button
+    select_cls: Any = tui._Select
 
     class RouteEditModal(modal_screen):  # type: ignore[misc, valid-type]
         BINDINGS = [
-            tui._binding("escape", "cancel", "Cancel", priority=True, binding_cls=tui._Binding)
+            tui._binding(
+                "escape", "cancel", "Cancel", priority=True, binding_cls=tui._Binding
+            )
         ]
 
-        def __init__(self, *, route: str, values: dict[str, str]) -> None:
+        def __init__(
+            self,
+            *,
+            route: str,
+            values: dict[str, str],
+            route_names: tuple[str, ...] = (),
+        ) -> None:
             super().__init__()
             self.route = route
             self.values = values
+            self.route_names = route_names
 
         def compose(self):
             with vertical_cls(id="route-edit-dialog"):
-                yield static_cls(f"Route: {self.route}", id="route-edit-title", markup=False)
-                for field in ("harness", "model", "reasoning_effort", "timeout_seconds", "sandbox", "fallback"):
-                    yield static_cls(field, markup=False)
-                    yield input_cls(value=self.values.get(field, ""), id=f"route-edit-{field}")
-                yield static_cls("Enter in a field submits that cell | Esc cancels", markup=False)
+                yield static_cls(
+                    f"Route: {self.route}", id="route-edit-title", markup=False
+                )
+                yield static_cls("harness", markup=False)
+                yield select_cls(
+                    _select_options(
+                        _choices_with_current(
+                            HARNESS_CHOICES, self.values.get("harness", "")
+                        )
+                    ),
+                    allow_blank=False,
+                    value=_select_value(
+                        self.values.get("harness", ""), HARNESS_CHOICES
+                    ),
+                    id="route-edit-harness",
+                )
+                yield static_cls("model", markup=False)
+                yield input_cls(
+                    value=self.values.get("model", ""), id="route-edit-model"
+                )
+                yield static_cls("reasoning_effort", markup=False)
+                yield select_cls(
+                    _select_options(
+                        _choices_with_current(
+                            EFFORT_CHOICES, self.values.get("reasoning_effort", "")
+                        )
+                    ),
+                    allow_blank=True,
+                    value=_select_value(
+                        self.values.get("reasoning_effort", ""),
+                        EFFORT_CHOICES,
+                        blank_ok=True,
+                    ),
+                    id="route-edit-reasoning_effort",
+                )
+                yield static_cls("timeout_seconds", markup=False)
+                yield input_cls(
+                    value=self.values.get("timeout_seconds", ""),
+                    id="route-edit-timeout_seconds",
+                )
+                yield static_cls("sandbox", markup=False)
+                yield select_cls(
+                    _select_options(
+                        _choices_with_current(
+                            profiles.EXEC_SANDBOX_CHOICES,
+                            self.values.get("sandbox", ""),
+                        )
+                    ),
+                    allow_blank=False,
+                    value=_select_value(
+                        self.values.get("sandbox", ""), profiles.EXEC_SANDBOX_CHOICES
+                    ),
+                    id="route-edit-sandbox",
+                )
+                yield static_cls("fallback", markup=False)
+                fallback_choices = tuple(
+                    name for name in self.route_names if name != self.route
+                )
+                yield select_cls(
+                    _select_options(
+                        _choices_with_current(
+                            fallback_choices, self.values.get("fallback", "")
+                        )
+                    ),
+                    allow_blank=True,
+                    value=_select_value(
+                        self.values.get("fallback", ""), fallback_choices, blank_ok=True
+                    ),
+                    id="route-edit-fallback",
+                )
+                yield button_cls("Save route", id="route-edit-save", variant="primary")
+                yield static_cls(
+                    "Enter in a text field saves the row | Esc cancels", markup=False
+                )
 
         def on_mount(self) -> None:
             query_one = getattr(self, "query_one", None)
@@ -468,15 +562,59 @@ def route_edit_modal_class() -> type[Any] | None:
                 set_focus(query_one("#route-edit-harness"))
 
         def on_input_submitted(self, event: Any) -> None:
-            widget_id = getattr(getattr(event, "input", None), "id", "")
-            field = str(widget_id).removeprefix("route-edit-")
-            self.dismiss((self.route, field, getattr(event, "value", "")))
+            self._submit()
+
+        def on_button_pressed(self, event: Any) -> None:
+            if getattr(getattr(event, "button", None), "id", "") == "route-edit-save":
+                self._submit()
+
+        def _submit(self) -> None:
+            values: dict[str, str] = {}
+            for field in (
+                "harness",
+                "model",
+                "reasoning_effort",
+                "timeout_seconds",
+                "sandbox",
+                "fallback",
+            ):
+                widget = self.query_one(f"#route-edit-{field}")
+                if isinstance(widget, select_cls):
+                    value = widget.value
+                    values[field] = "" if value == select_cls.NULL else str(value)
+                else:
+                    values[field] = str(getattr(widget, "value", ""))
+            self.dismiss((self.route, values))
 
         def action_cancel(self) -> None:
             self.dismiss(None)
 
     _ROUTE_EDIT_MODAL_CLASS = RouteEditModal
     return _ROUTE_EDIT_MODAL_CLASS
+
+
+def _choices_with_current(
+    choices: tuple[str, ...], current: str | None
+) -> tuple[str, ...]:
+    if current and current not in choices:
+        return choices + (current,)
+    return choices
+
+
+def _select_options(choices: tuple[str, ...]) -> tuple[tuple[str, str], ...]:
+    return tuple((choice, choice) for choice in choices)
+
+
+def _select_value(
+    current: str | None, choices: tuple[str, ...], *, blank_ok: bool = False
+) -> Any:
+    from code_review_loop import tui
+
+    if current:
+        return current
+    if blank_ok:
+        return tui._Select.NULL
+    return choices[0] if choices else tui._Select.NULL
 
 
 def loop_run_view_class() -> type[Any] | None:
@@ -578,7 +716,9 @@ def loop_run_view_class() -> type[Any] | None:
                 glyph = tui_run_state.RUN_STATE_GLYPHS.get(status.state, "·")
                 detail = f" · {status.detail}" if status.detail else ""
                 if phase == "checks" and view.inner_check_retries > 0:
-                    retry = f" · inner retry {view.inner_retry}/{view.inner_check_retries}"
+                    retry = (
+                        f" · inner retry {view.inner_retry}/{view.inner_check_retries}"
+                    )
                     detail = f"{detail}{retry}"
                 status_widget.update(f"{glyph} {phase} · {status.state}{detail}")
             self.refresh()
@@ -626,7 +766,11 @@ def event_log_class() -> type[Any] | None:
                 lines = ["logs"]
                 lines.extend(f"stdout: {line}" for line in stdout)
                 lines.extend(f"stderr: {line}" for line in stderr)
-                self.update("\n".join(lines) if len(lines) > 1 else "logs\nNo captured lines yet.")
+                self.update(
+                    "\n".join(lines)
+                    if len(lines) > 1
+                    else "logs\nNo captured lines yet."
+                )
                 return
             if snapshot is None:
                 snapshot = self.controller.read_live_events()

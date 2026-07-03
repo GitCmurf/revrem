@@ -248,7 +248,7 @@ separates the operator's saves from preset starting points.
 │                                                                                          │
 │  “Saved from RevRem CLI on 2026-05-05”                                                    │
 │  ─────────────────────────────────────────────────────────────────────────────────────  │
-│  ↵ load into loop · s save current · n new · c clone · e rename · x export · del delete   │
+│  ↵ load into loop · s show · n new · c clone · e edit config · i import · x export · del delete │
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 

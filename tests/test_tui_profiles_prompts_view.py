@@ -67,7 +67,10 @@ def test_prompt_asset_text_loads_fragment_and_contract(tmp_path: Path) -> None:
     assets = tui_prompts_state.prompt_inventory()
     fragment = next(asset for asset in assets if asset.name == "security-checklist")
     contract = next(asset for asset in assets if asset.name == "triage_v2")
-    assert "security" in tui_prompts_state.prompt_asset_text(fragment, cwd=tmp_path).lower()
+    assert (
+        "security"
+        in tui_prompts_state.prompt_asset_text(fragment, cwd=tmp_path).lower()
+    )
     assert "single JSON object" in tui_prompts_state.prompt_asset_text(
         contract, cwd=tmp_path
     )
@@ -112,6 +115,36 @@ def test_triage_route_rows_overlay_edits_and_selection(tmp_path: Path) -> None:
     assert rows[0].name == "security"
     assert rows[0].model == "gpt-9"
     assert rows[0].selected is True
+
+
+def test_triage_route_rows_include_unsaved_new_route(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    (repo / ".revrem.toml").write_text(
+        "[profiles.p]\n"
+        "[profiles.p.pipeline]\n"
+        'base = "main"\n'
+        "[profiles.p.triage]\n"
+        "enabled = true\n"
+        'contract = "v2"\n'
+        "[profiles.p.triage.routing]\n"
+        "enabled = true\n"
+        'default_route = "security"\n'
+        "[profiles.p.triage.routes.security]\n"
+        'harness = "codex"\n'
+        'sandbox = "read-only"\n',
+        encoding="utf-8",
+    )
+    model = LoopEditModel.load("p", cwd=repo)
+    model.set_field("triage.routes.audit.harness", "codex")
+    model.set_field("triage.routes.audit.sandbox", "workspace-write")
+
+    rows = tui_loop_state.triage_route_rows(model, selected_route="audit")
+
+    audit = next(row for row in rows if row.name == "audit")
+    assert audit.harness == "codex"
+    assert audit.sandbox == "workspace-write"
+    assert audit.selected is True
 
 
 def test_builtin_profile_save_is_readonly_until_cloned_from_picker_context(

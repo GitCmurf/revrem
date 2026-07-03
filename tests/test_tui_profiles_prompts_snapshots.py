@@ -68,12 +68,17 @@ model = "haiku-4.5"
 sandbox = "read-only"
 """,
         )
-        async with pilot_app(cwd=repo, profile_name="demo", size=(120, 40)) as (app, pilot):
+        async with pilot_app(cwd=repo, profile_name="demo", size=(120, 40)) as (
+            app,
+            pilot,
+        ):
             await pilot.press("1")
             await pilot.press("down")
             await pilot.press("enter")
             await pilot.pause()
-            return normalize_svg(app.export_screenshot(title="revrem-routes", simplify=True))
+            return normalize_svg(
+                app.export_screenshot(title="revrem-routes", simplify=True)
+            )
 
     svg = asyncio.run(run())
     assert "security" in svg and "fallback" in svg
@@ -91,10 +96,15 @@ def _capture_workspace_svg(
 ) -> str:
     async def run() -> str:
         repo = _repo(tmp_path, profile_toml)
-        async with pilot_app(cwd=repo, profile_name=profile_name, size=(120, 40)) as (app, pilot):
+        async with pilot_app(cwd=repo, profile_name=profile_name, size=(120, 40)) as (
+            app,
+            pilot,
+        ):
             await pilot.press(key)
             await pilot.pause()
-            return normalize_svg(app.export_screenshot(title="revrem-workspace", simplify=True))
+            return normalize_svg(
+                app.export_screenshot(title="revrem-workspace", simplify=True)
+            )
 
     return asyncio.run(run())
 
@@ -132,12 +142,15 @@ def _capture_route_modal_svg() -> str:
                             "sandbox": "read-only",
                             "fallback": "",
                         },
+                        route_names=("security", "fallback-route"),
                     )
                 )
 
         async with ModalApp().run_test(size=(96, 32)) as pilot:
             await pilot.pause()
-            return normalize_svg(pilot.app.export_screenshot(title="revrem-route-modal", simplify=True))
+            return normalize_svg(
+                pilot.app.export_screenshot(title="revrem-route-modal", simplify=True)
+            )
 
     return asyncio.run(run())
 

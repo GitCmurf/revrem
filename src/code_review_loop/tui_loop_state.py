@@ -118,7 +118,9 @@ def loop_header_text(source: Any) -> str:
         source, LOOP_META_DOTTED["max_iterations"], profile.pipeline.max_iterations
     )
     inner_retries = _effective_int(
-        source, LOOP_META_DOTTED["inner_check_retries"], profile.runtime.inner_check_retries
+        source,
+        LOOP_META_DOTTED["inner_check_retries"],
+        profile.runtime.inner_check_retries,
     )
     final_review = _effective_bool(
         source, LOOP_META_DOTTED["final_review"], profile.pipeline.final_review
@@ -137,7 +139,9 @@ def loop_rail_meta(source: Any) -> LoopRailMeta:
         source, LOOP_META_DOTTED["max_iterations"], profile.pipeline.max_iterations
     )
     inner_retries = _effective_int(
-        source, LOOP_META_DOTTED["inner_check_retries"], profile.runtime.inner_check_retries
+        source,
+        LOOP_META_DOTTED["inner_check_retries"],
+        profile.runtime.inner_check_retries,
     )
     final_review = _effective_bool(
         source, LOOP_META_DOTTED["final_review"], profile.pipeline.final_review
@@ -177,7 +181,11 @@ def phase_card_lines(
     phases = _phase_map(profile)
     phase = phases[phase_name]
     dotted = PHASE_DOTTED[phase_name]
-    enabled = _effective_bool(source, dotted.get("enabled", ""), phase.enabled) if dotted.get("enabled") else phase.enabled
+    enabled = (
+        _effective_bool(source, dotted.get("enabled", ""), phase.enabled)
+        if dotted.get("enabled")
+        else phase.enabled
+    )
     harness = _effective_value(source, dotted.get("harness", ""), phase.harness)
     model = _effective_value(source, dotted.get("model", ""), phase.model)
     effort = _effective_value(source, dotted.get("effort", ""), phase.reasoning_effort)
@@ -233,7 +241,9 @@ def phase_card_lines(
     return tuple(lines)
 
 
-def triage_routes_lines(source: Any, *, selected_route: str | None = None) -> tuple[str, ...]:
+def triage_routes_lines(
+    source: Any, *, selected_route: str | None = None
+) -> tuple[str, ...]:
     profile = _profile(source)
     if not profile.triage.routing.enabled:
         return ()
@@ -248,7 +258,9 @@ def triage_routes_lines(source: Any, *, selected_route: str | None = None) -> tu
             str(row.harness) if row.harness else None,
             str(row.effort) if row.effort else None,
         )
-        pointer = f"{'>' if row.selected else ' '} " if selected_route is not None else ""
+        pointer = (
+            f"{'>' if row.selected else ' '} " if selected_route is not None else ""
+        )
         lines.append(
             f"{pointer}{row.name}: {row.harness} · {row.model or '<default>'} · "
             f"{effort_text or '<default>'} · {_format_timeout(row.timeout)} · "
@@ -262,21 +274,42 @@ def triage_route_rows(
 ) -> tuple[TriageRouteRow, ...]:
     profile = _profile(source)
     rows: list[TriageRouteRow] = []
-    for name, route in sorted(profile.triage.routes.items()):
+    route_names = set(profile.triage.routes)
+    edits = getattr(source, "edits", None)
+    if isinstance(edits, dict):
+        for key in edits:
+            if key.startswith("triage.routes."):
+                parts = key.split(".")
+                if len(parts) >= 4 and parts[2]:
+                    route_names.add(parts[2])
+    for name in sorted(route_names):
+        route = profile.triage.routes.get(name)
         prefix = f"triage.routes.{name}"
         rows.append(
             TriageRouteRow(
                 name=name,
-                harness=_effective_value(source, f"{prefix}.harness", route.harness),
-                model=_effective_value(source, f"{prefix}.model", route.model),
+                harness=_effective_value(
+                    source, f"{prefix}.harness", route.harness if route else None
+                ),
+                model=_effective_value(
+                    source, f"{prefix}.model", route.model if route else None
+                ),
                 effort=_effective_value(
-                    source, f"{prefix}.reasoning_effort", route.reasoning_effort
+                    source,
+                    f"{prefix}.reasoning_effort",
+                    route.reasoning_effort if route else None,
                 ),
                 timeout=_effective_value(
-                    source, f"{prefix}.timeout_seconds", route.timeout_seconds
+                    source,
+                    f"{prefix}.timeout_seconds",
+                    route.timeout_seconds if route else None,
                 ),
-                sandbox=_effective_value(source, f"{prefix}.sandbox", route.sandbox),
-                fallback=_effective_value(source, f"{prefix}.fallback", route.fallback),
+                sandbox=_effective_value(
+                    source, f"{prefix}.sandbox", route.sandbox if route else None
+                ),
+                fallback=_effective_value(
+                    source, f"{prefix}.fallback", route.fallback if route else None
+                ),
                 selected=name == selected_route,
             )
         )

@@ -98,7 +98,9 @@ def test_profiles_workspace_i_still_imports_profiles(tmp_path):
             await pilot.press("3")
             await pilot.press("i")
             await pilot.pause()
-            assert "Import profiles" in str(app.screen.query_one("#prompt-title").render())
+            assert "Import profiles" in str(
+                app.screen.query_one("#prompt-title").render()
+            )
 
     asyncio.run(run())
 
@@ -117,11 +119,16 @@ def test_loop_inline_edit_marks_dirty_and_overlays(tmp_path):
             await pilot.press("1")
             await pilot.pause()
             diagram = app.query_one("#loop-diagram")
-            original_effort = diagram.model.field_value("review.reasoning_effort", "medium")
+            original_effort = diagram.model.field_value(
+                "review.reasoning_effort", "medium"
+            )
             diagram.cycle_field("effort")
             await pilot.pause()
             assert diagram.is_dirty is True
-            assert diagram.model.field_value("review.reasoning_effort", "medium") != original_effort
+            assert (
+                diagram.model.field_value("review.reasoning_effort", "medium")
+                != original_effort
+            )
             app._update_console_status()
             assert "*" in str(app.query_one("#status-bar").render())
             diagram.set_text_field("model", "gpt-5.6")
@@ -180,7 +187,9 @@ def test_loop_cycle_effort_advances_from_effective_low_value(tmp_path):
             ]
             diagram.cycle_field("effort")
             await pilot.pause()
-            assert diagram.model.field_value("review.reasoning_effort", "low") == expected
+            assert (
+                diagram.model.field_value("review.reasoning_effort", "low") == expected
+            )
 
     asyncio.run(run())
 
@@ -288,7 +297,10 @@ def test_builtin_profile_save_notifies_clone_to_edit(tmp_path):
             diagram.set_text_field("model", "gpt-9")
             app.action_save_loop()
             await pilot.pause()
-            assert any("built-in profile 'security' is read-only" in item for item in notifications)
+            assert any(
+                "built-in profile 'security' is read-only" in item
+                for item in notifications
+            )
             assert diagram.is_dirty is True
 
     asyncio.run(run())
@@ -308,7 +320,10 @@ def test_builtin_profile_save_and_run_notifies_clone_to_edit(tmp_path):
             diagram.set_text_field("model", "gpt-9")
             app.action_launch_run()
             await pilot.pause()
-            assert any("built-in profile 'security' is read-only" in item for item in notifications)
+            assert any(
+                "built-in profile 'security' is read-only" in item
+                for item in notifications
+            )
             assert app.live_run_controller.launch is None
             assert diagram.is_dirty is True
 
@@ -366,6 +381,37 @@ def test_profiles_workspace_renders_picker_and_loads_into_loop(tmp_path):
             assert app._workspace == "loop"
             assert app._loop_diagram.model.name == "beta"
             assert "beta-model" in _render(app, "#phase-card-review")
+
+    asyncio.run(run())
+
+
+def test_profiles_workspace_warns_when_loading_builtin_preset(tmp_path):
+    async def run() -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        notifications: list[str] = []
+        async with pilot_app(cwd=repo, profile_name="security") as (app, pilot):
+            app.notify = lambda message, **_kwargs: notifications.append(message)
+            await pilot.press("3")
+            await pilot.pause()
+            picker = app.query_one("#profile-picker")
+            for index, row in enumerate(picker.rows):
+                if row.source_label == "builtin":
+                    picker.selected_index = index
+                    picker.rebuild()
+                    break
+            else:  # pragma: no cover - defensive
+                raise AssertionError("expected builtin preset in profile picker")
+            selected = picker.selected_name()
+            await pilot.press("enter")
+            await pilot.pause()
+            assert app._workspace == "loop"
+            assert app._loop_diagram.model.name == selected
+            assert any(
+                "read-only" in message and "press c to clone" in message
+                for message in notifications
+            )
 
     asyncio.run(run())
 
@@ -476,11 +522,54 @@ def test_route_add_and_edit_update_working_copy(tmp_path):
             app._apply_route_add("audit")
             app._apply_route_edit("security", "model", "gpt-9")
             await pilot.pause()
-            assert diagram.model.field_value("triage.routes.audit.harness", None) == "codex"
-            assert diagram.model.field_value(
-                "triage.routes.audit.sandbox", None
-            ) == "workspace-write"
-            assert diagram.model.field_value("triage.routes.security.model", None) == "gpt-9"
+            routes = _render(app, "#triage-routes-table")
+            assert "> audit:" in routes
+            assert (
+                diagram.model.field_value("triage.routes.audit.harness", None)
+                == "codex"
+            )
+            assert (
+                diagram.model.field_value("triage.routes.audit.sandbox", None)
+                == "workspace-write"
+            )
+            assert (
+                diagram.model.field_value("triage.routes.security.model", None)
+                == "gpt-9"
+            )
+            assert diagram.is_dirty is True
+
+    asyncio.run(run())
+
+
+def test_route_edit_modal_updates_working_copy_through_callback(tmp_path):
+    async def run() -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        (repo / ".revrem.toml").write_text(
+            "[profiles.edit]\n[profiles.edit.pipeline]\nbase='main'\n"
+            "[profiles.edit.triage]\nenabled=true\ncontract='v2'\n"
+            "[profiles.edit.triage.routing]\nenabled=true\ndefault_route='security'\n"
+            "[profiles.edit.triage.routes.security]\nharness='codex'\nsandbox='read-only'\n",
+            encoding="utf-8",
+        )
+        async with pilot_app(cwd=repo, profile_name="edit") as (app, pilot):
+            await pilot.press("1")
+            await pilot.press("down")
+            await pilot.press("enter")
+            await pilot.press("enter")
+            await pilot.pause()
+            model_input = app.screen.query_one("#route-edit-model")
+            model_input.value = "gpt-9"
+            app.screen.set_focus(model_input)
+            await pilot.press("enter")
+            await pilot.pause()
+            diagram = app.query_one("#loop-diagram")
+            assert (
+                diagram.model.field_value("triage.routes.security.model", None)
+                == "gpt-9"
+            )
+            assert "gpt-9" in _render(app, "#triage-routes-table")
             assert diagram.is_dirty is True
 
     asyncio.run(run())
@@ -510,10 +599,14 @@ def test_route_add_rejects_invalid_and_duplicate_names(tmp_path):
     asyncio.run(run())
 
 
-def test_tui_pilot_confirmed_launch_reaches_visible_running_state(tmp_path, monkeypatch):
+def test_tui_pilot_confirmed_launch_reaches_visible_running_state(
+    tmp_path, monkeypatch
+):
     async def run() -> None:
         repo = init_repo(tmp_path / "repo")
-        _write_live_profile(repo, review_model="slow_cancel", artifact_dir="runs/live-launch")
+        _write_live_profile(
+            repo, review_model="slow_cancel", artifact_dir="runs/live-launch"
+        )
         monkeypatch.setattr(tui.sys, "argv", [str(repo / "launcher.py")])
 
         async with pilot_app(cwd=repo, profile_name="live") as (app, pilot):
@@ -522,14 +615,18 @@ def test_tui_pilot_confirmed_launch_reaches_visible_running_state(tmp_path, monk
                 await pilot.press("r")
 
                 await _wait_for(
-                    lambda: "Live status: running" in _render(app, "#screen-run-monitor"),
+                    lambda: "Live status: running"
+                    in _render(app, "#screen-run-monitor"),
                     pilot_pause=pilot.pause,
                 )
-                assert "Live run started: live" in _render(app, "#screen-run-monitor") or (
-                    app.live_run_controller.launch is not None
-                )
+                assert "Live run started: live" in _render(
+                    app, "#screen-run-monitor"
+                ) or (app.live_run_controller.launch is not None)
                 assert app.live_run_controller.launch is not None
-                assert app.live_run_controller.launch.artifact_dir == repo / "runs/live-launch"
+                assert (
+                    app.live_run_controller.launch.artifact_dir
+                    == repo / "runs/live-launch"
+                )
             finally:
                 _cancel_live_run(app)
 
@@ -539,7 +636,9 @@ def test_tui_pilot_confirmed_launch_reaches_visible_running_state(tmp_path, monk
 def test_run_workspace_mounts_live_loop_and_event_log(tmp_path, monkeypatch):
     async def run() -> None:
         repo = init_repo(tmp_path / "repo")
-        _write_live_profile(repo, review_model="slow_cancel", artifact_dir="runs/live-mon")
+        _write_live_profile(
+            repo, review_model="slow_cancel", artifact_dir="runs/live-mon"
+        )
         monkeypatch.setattr(tui.sys, "argv", [str(repo / "launcher.py")])
 
         async with pilot_app(cwd=repo, profile_name="live") as (app, pilot):
@@ -555,7 +654,8 @@ def test_run_workspace_mounts_live_loop_and_event_log(tmp_path, monkeypatch):
                 assert app.query_one("#loop-run") is not None
                 assert app.query_one("#event-log") is not None
                 assert any(
-                    glyph in _render(app, "#run-phase-review") for glyph in ("▶", "✓", "·")
+                    glyph in _render(app, "#run-phase-review")
+                    for glyph in ("▶", "✓", "·")
                 )
             finally:
                 _cancel_live_run(app)
@@ -566,7 +666,9 @@ def test_run_workspace_mounts_live_loop_and_event_log(tmp_path, monkeypatch):
 def test_run_workspace_before_launch_shows_empty_state(tmp_path):
     async def run() -> None:
         repo = init_repo(tmp_path / "repo")
-        _write_live_profile(repo, review_model="review_clear", artifact_dir="runs/not-started")
+        _write_live_profile(
+            repo, review_model="review_clear", artifact_dir="runs/not-started"
+        )
 
         async with pilot_app(cwd=repo, profile_name="live") as (app, pilot):
             await pilot.press("2")
@@ -579,7 +681,9 @@ def test_run_workspace_before_launch_shows_empty_state(tmp_path):
 def test_run_workspace_toggles_logs_and_shows_artifacts(tmp_path, monkeypatch):
     async def run() -> None:
         repo = init_repo(tmp_path / "repo")
-        _write_live_profile(repo, review_model="slow_cancel", artifact_dir="runs/live-log")
+        _write_live_profile(
+            repo, review_model="slow_cancel", artifact_dir="runs/live-log"
+        )
         monkeypatch.setattr(tui.sys, "argv", [str(repo / "launcher.py")])
         notifications: list[str] = []
 
@@ -608,7 +712,9 @@ def test_run_workspace_toggles_logs_and_shows_artifacts(tmp_path, monkeypatch):
 def test_artifacts_key_is_run_workspace_scoped(tmp_path, monkeypatch):
     async def run() -> None:
         repo = init_repo(tmp_path / "repo")
-        _write_live_profile(repo, review_model="slow_cancel", artifact_dir="runs/scoped")
+        _write_live_profile(
+            repo, review_model="slow_cancel", artifact_dir="runs/scoped"
+        )
         monkeypatch.setattr(tui.sys, "argv", [str(repo / "launcher.py")])
         notifications: list[str] = []
 
@@ -654,7 +760,9 @@ def test_help_overlay_lists_run_logs_and_artifacts(tmp_path):
 def test_saved_loop_edit_launches_run_with_matching_live_diagram(tmp_path, monkeypatch):
     async def run() -> None:
         repo = init_repo(tmp_path / "repo")
-        _write_live_profile(repo, review_model="slow_cancel", artifact_dir="runs/edited-live")
+        _write_live_profile(
+            repo, review_model="slow_cancel", artifact_dir="runs/edited-live"
+        )
         monkeypatch.setattr(tui.sys, "argv", [str(repo / "launcher.py")])
 
         async with pilot_app(cwd=repo, profile_name="live") as (app, pilot):
@@ -683,7 +791,9 @@ def test_saved_loop_edit_launches_run_with_matching_live_diagram(tmp_path, monke
     asyncio.run(run())
 
 
-def test_run_workspace_keeps_launched_profile_when_selection_changes(tmp_path, monkeypatch):
+def test_run_workspace_keeps_launched_profile_when_selection_changes(
+    tmp_path, monkeypatch
+):
     async def run() -> None:
         repo = init_repo(tmp_path / "repo")
         (repo / ".revrem.toml").write_text(
@@ -741,7 +851,9 @@ model = "review_clear"
 def test_tui_pilot_live_monitor_updates_and_cancels_visible_run(tmp_path, monkeypatch):
     async def run() -> None:
         repo = init_repo(tmp_path / "repo")
-        _write_live_profile(repo, review_model="review_findings", artifact_dir="runs/live-cancel")
+        _write_live_profile(
+            repo, review_model="review_findings", artifact_dir="runs/live-cancel"
+        )
         monkeypatch.setattr(tui.sys, "argv", [str(repo / "launcher.py")])
 
         async with pilot_app(cwd=repo, profile_name="live") as (app, pilot):
@@ -770,7 +882,9 @@ def test_tui_pilot_live_monitor_updates_and_cancels_visible_run(tmp_path, monkey
                     (launch.artifact_dir / "summary.json").read_text(encoding="utf-8")
                 )
                 assert summary["stopped_reason"] == "cancelled"
-                records, _ = events.read_events(launch.artifact_dir / events.EVENTS_FILENAME)
+                records, _ = events.read_events(
+                    launch.artifact_dir / events.EVENTS_FILENAME
+                )
                 assert any(record.kind == "cancellation" for record in records)
             finally:
                 _cancel_live_run(app)
@@ -808,7 +922,9 @@ def test_loop_run_view_waits_when_events_not_ready(tmp_path):
             )
             widget.rebuild()
             await pilot.pause()
-            assert "events: waiting for events.jsonl" in _render(pilot.app, "#loop-run-header")
+            assert "events: waiting for events.jsonl" in _render(
+                pilot.app, "#loop-run-header"
+            )
 
     asyncio.run(run())
 
@@ -856,7 +972,9 @@ def test_event_log_waits_when_events_not_ready():
 def test_tui_pilot_prompt_entry_runs_profile_actions(tmp_path, monkeypatch):
     async def run() -> None:
         repo = init_repo(tmp_path / "repo")
-        _write_live_profile(repo, review_model="review_clear", artifact_dir="runs/live-prompt")
+        _write_live_profile(
+            repo, review_model="review_clear", artifact_dir="runs/live-prompt"
+        )
         calls = []
 
         def fake_run_launch_plan(plan, *, cwd, capture_output=True):
@@ -881,7 +999,9 @@ def test_tui_pilot_prompt_entry_runs_profile_actions(tmp_path, monkeypatch):
 def test_tui_pilot_prompt_escape_cancels_without_running(tmp_path, monkeypatch):
     async def run() -> None:
         repo = init_repo(tmp_path / "repo")
-        _write_live_profile(repo, review_model="review_clear", artifact_dir="runs/live-prompt-cancel")
+        _write_live_profile(
+            repo, review_model="review_clear", artifact_dir="runs/live-prompt-cancel"
+        )
         calls = []
 
         def fake_run_launch_plan(plan, *, cwd, capture_output=True):
