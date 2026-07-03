@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import importlib
 import importlib.util
+import re
 import subprocess
 import sys
 import threading
@@ -13,7 +14,14 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any, Literal, NamedTuple
 
-from code_review_loop import harnesses, profiles, tui_run_controller, tui_state
+from code_review_loop import (
+    harnesses,
+    profiles,
+    tui_profiles_state,
+    tui_prompts_state,
+    tui_run_controller,
+    tui_state,
+)
 
 INSTALL_HINT = "Install it with: python -m pip install 'revrem[tui]'"
 _TEXTUAL_IMPORT_ERROR: Exception | None = None
@@ -24,6 +32,8 @@ _WORKSPACES = ("loop", "run", "profiles", "prompts")
 _PHASES = ("review", "triage", "remediation", "checks", "commit")
 _RUN_TABS = ("events", "stdout", "stderr", "summary")
 _FOCUS_PANES = ("left", "right")
+_PROMPT_FIELD_BY_PHASE = {"triage": "triage.prompt", "commit": "commit.message_prompt"}
+_ROUTE_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 class _TextualFallbackApp:
@@ -302,7 +312,9 @@ def _build_bindings(binding_cls: Any | None) -> list[Any]:
         ("shift+tab", "focus_previous", "Focus previous"),
         _binding("escape", "clear_focus", "Clear focus", priority=True, binding_cls=binding_cls),
         ("s", "save_loop", "Save"),
-        ("e", "edit_profile", "Edit profile"),
+        ("e", "edit_context", "Edit"),
+        ("g", "goto_prompts", "Prompts"),
+        ("a", "add_route", "Add route"),
         ("n", "new_profile", "New"),
         ("c", "clone_profile", "Clone"),
         ("x", "export_profile", "Export"),
@@ -330,6 +342,13 @@ class _RevRemAppMixin:
     }
 
     #run-pane {
+        width: 1fr;
+        height: 1fr;
+        padding: 0 1;
+        overflow-y: auto;
+    }
+
+    #profiles-pane, #prompts-pane {
         width: 1fr;
         height: 1fr;
         padding: 0 1;
@@ -372,6 +391,11 @@ class _RevRemAppMixin:
 
     .event-log {
         margin-top: 1;
+        height: auto;
+    }
+
+    .profile-picker, .prompt-library {
+        width: 1fr;
         height: auto;
     }
 
@@ -479,16 +503,20 @@ class _RevRemAppMixin:
         align: center middle;
     }
 
-    #prompt-dialog {
+    RouteEditModal {
+        align: center middle;
+    }
+
+    #prompt-dialog, #route-edit-dialog {
         width: 64;
-        height: 9;
+        height: auto;
         max-width: 90%;
         border: round $accent;
         background: $surface;
         padding: 1 2;
     }
 
-    #prompt-title {
+    #prompt-title, #route-edit-title {
         text-style: bold;
     }
 
@@ -521,6 +549,10 @@ class _RevRemAppMixin:
         self._loop_model = None
         self._loop_run_view = None
         self._event_log = None
+        self._profile_picker = None
+        self._prompt_library = None
+        self._prompt_target_key: str | None = None
+        self._prompt_return_workspace: str | None = None
         self._live_run_profile: profiles.Profile | None = None
 
     def compose(self):
@@ -543,6 +575,14 @@ class _RevRemAppMixin:
                     with _Vertical(id="run-pane"):
                         yield run_widget
                         yield event_log
+                profile_picker = _profile_picker_widget(self)
+                if profile_picker is not None:
+                    with _Vertical(id="profiles-pane"):
+                        yield profile_picker
+                prompt_library = _prompt_library_widget(self)
+                if prompt_library is not None:
+                    with _Vertical(id="prompts-pane"):
+                        yield prompt_library
                 with _Vertical(id="left-pane"):
                     yield _panel_widget(
                         _left_pane_markup(self),
@@ -711,6 +751,14 @@ class _RevRemAppMixin:
         self._update_console_status()
 
     def action_clear_focus(self) -> None:
+        if (
+            self._workspace == "loop"
+            and self._loop_diagram is not None
+            and self._loop_diagram.route_mode
+        ):
+            self._loop_diagram.exit_route_mode()
+            self._update_console_status()
+            return
         self._focused_pane = "left"
         self._render_workbench()
         _notify(self, "Focus returned to navigation.")
@@ -742,9 +790,25 @@ class _RevRemAppMixin:
 
     def action_select(self) -> None:
         if self._workspace == "loop" and self._loop_diagram is not None:
+            if self._loop_diagram.route_mode:
+                route = self._loop_diagram.selected_route()
+                if route is not None:
+                    self._open_route_edit_modal(route)
+                return
+            if self._loop_diagram.current_phase() == "triage" and self._loop_diagram.enter_route_mode():
+                self._update_console_status()
+                return
             self._loop_diagram.expanded = not self._loop_diagram.expanded
             self._loop_diagram.rebuild()
             self._update_console_status()
+            return
+        if self._workspace == "profiles" and self._profile_picker is not None:
+            selected_name = self._profile_picker.selected_name()
+            if selected_name is not None:
+                self._load_profile_into_loop(selected_name)
+            return
+        if self._workspace == "prompts" and self._prompt_library is not None:
+            self._apply_selected_prompt_asset()
             return
         if self._workspace == "profiles" and self._focused_pane == "left":
             selected = self._selected_profile_view()
@@ -818,6 +882,12 @@ class _RevRemAppMixin:
             tui_state.show_plan_for_name(profile_name), success=f"Shown profile: {profile_name}"
         )
 
+    def action_edit_context(self) -> None:
+        if self._workspace == "loop":
+            self._open_prompt_field_prompt()
+            return
+        self.action_edit_profile()
+
     def action_edit_profile(self) -> None:
         profile_name = self._profile_name()
         if profile_name is None:
@@ -826,6 +896,33 @@ class _RevRemAppMixin:
         self._run_interactive(
             tui_state.edit_plan_for_name(profile_name),
             success=f"Edited profile: {profile_name}",
+        )
+
+    def action_goto_prompts(self) -> None:
+        if self._workspace != "loop" or self._loop_diagram is None:
+            self._set_workspace("prompts")
+            return
+        phase = self._loop_diagram.current_phase()
+        key = _PROMPT_FIELD_BY_PHASE.get(phase)
+        if key is None:
+            _notify(self, f"{phase} has no scalar prompt field.")
+            return
+        self._prompt_target_key = key
+        self._prompt_return_workspace = "loop"
+        self._set_workspace("prompts")
+        _notify(self, f"Select a prompt asset for {key}, then press Enter.")
+
+    def action_add_route(self) -> None:
+        if self._workspace != "loop" or self._loop_diagram is None:
+            return
+        if self._loop_diagram.current_phase() != "triage":
+            _notify(self, "Add route: focus triage first.")
+            return
+        self._prompt_for_text(
+            title="Add route",
+            prompt="New route name",
+            initial="",
+            on_submit=self._apply_route_add,
         )
 
     def action_new_profile(self) -> None:
@@ -934,6 +1031,141 @@ class _RevRemAppMixin:
             initial=self._loop_meta_field_value(field),
             on_submit=apply,
         )
+
+    def _open_prompt_field_prompt(self) -> None:
+        if self._loop_diagram is None:
+            return
+        phase = self._loop_diagram.current_phase()
+        key = _PROMPT_FIELD_BY_PHASE.get(phase)
+        if key is None:
+            _notify(self, f"{phase} has no editable scalar prompt field.")
+            return
+        current = self._loop_diagram.model.field_value(key, "")
+        self._prompt_for_text(
+            title=f"Edit {key}",
+            prompt="Prompt text",
+            initial=current if isinstance(current, str) else "",
+            on_submit=lambda value: self._apply_prompt_edit(key, value),
+        )
+
+    def _apply_prompt_edit(self, key: str, value: str) -> None:
+        if self._loop_diagram is None:
+            return
+        self._loop_diagram.model.set_field(key, value)
+        self._loop_diagram.rebuild()
+        self._update_console_status()
+        _notify(self, f"Set {key} (unsaved; press s to save).")
+
+    def _apply_selected_prompt_asset(self) -> None:
+        if self._prompt_library is None:
+            return
+        asset = self._prompt_library.selected_asset()
+        if asset is None:
+            _notify(self, "No prompt asset selected.")
+            return
+        if self._prompt_target_key is None:
+            _notify(self, f"Prompt asset: {asset.name}")
+            return
+        try:
+            text = tui_prompts_state.prompt_asset_text(
+                asset, cwd=Path(self.model.snapshot.cwd)
+            )
+        except ValueError as exc:
+            _notify(self, f"Prompt apply failed: {exc}", severity="error")
+            return
+        key = self._prompt_target_key
+        self._prompt_target_key = None
+        self._apply_prompt_edit(key, text)
+        self._set_workspace(self._prompt_return_workspace or "loop")
+        self._prompt_return_workspace = None
+
+    def _open_route_edit_modal(self, route: str) -> None:
+        from code_review_loop import tui_loop_widgets
+
+        if self._loop_diagram is None:
+            return
+        modal_class = tui_loop_widgets.route_edit_modal_class()
+        push_screen = getattr(self, "push_screen", None)
+        if modal_class is None or not callable(push_screen):
+            _notify(self, "Route editing requires the interactive Textual modal.")
+            return
+        values = self._route_values(route)
+
+        def handle_result(result: object) -> None:
+            if result is None:
+                _notify(self, "Route edit cancelled.")
+                return
+            route_name, cell, value = result  # type: ignore[misc]
+            self._apply_route_edit(str(route_name), str(cell), str(value))
+
+        push_screen(modal_class(route=route, values=values), callback=handle_result)
+
+    def _route_values(self, route: str) -> dict[str, str]:
+        if self._loop_diagram is None:
+            return {}
+        profile = self._loop_diagram.model.profile
+        route_config = profile.triage.routes.get(route)
+        values: dict[str, str] = {}
+        for cell in (
+            "harness",
+            "model",
+            "reasoning_effort",
+            "timeout_seconds",
+            "sandbox",
+            "fallback",
+        ):
+            fallback = getattr(route_config, cell, None) if route_config else None
+            value = self._loop_diagram.model.field_value(
+                f"triage.routes.{route}.{cell}", fallback
+            )
+            values[cell] = "" if value is None else str(value)
+        return values
+
+    def _apply_route_edit(self, route: str, cell: str, value: str) -> None:
+        if self._loop_diagram is None:
+            return
+        if cell not in {
+            "harness",
+            "model",
+            "reasoning_effort",
+            "timeout_seconds",
+            "sandbox",
+            "fallback",
+        }:
+            _notify(self, f"Unknown route cell: {cell}")
+            return
+        self._loop_diagram.model.set_field(f"triage.routes.{route}.{cell}", value)
+        self._loop_diagram.rebuild()
+        self._update_console_status()
+        _notify(self, f"Set triage.routes.{route}.{cell} (unsaved; press s to save).")
+
+    def _apply_route_add(self, route: str) -> None:
+        if self._loop_diagram is None:
+            return
+        route = route.strip()
+        if _ROUTE_NAME_RE.fullmatch(route) is None:
+            _notify(self, "Invalid route name: use letters, numbers, '-' or '_'.")
+            return
+        if route in self._loop_diagram.model.profile.triage.routes:
+            _notify(self, f"Route already exists: {route}")
+            return
+        if self._loop_diagram.model.field_value(
+            f"triage.routes.{route}.harness", None
+        ) is not None:
+            _notify(self, f"Route already exists: {route}")
+            return
+        self._loop_diagram.model.set_field(f"triage.routes.{route}.harness", "codex")
+        self._loop_diagram.model.set_field(
+            f"triage.routes.{route}.sandbox", "workspace-write"
+        )
+        if not self._loop_diagram.model.profile.triage.routing.enabled:
+            self._loop_diagram.model.set_field("triage.contract", "v2")
+            self._loop_diagram.model.set_field("triage.routing.enabled", "true")
+            self._loop_diagram.model.set_field("triage.routing.default_route", route)
+        self._loop_diagram.route_mode = True
+        self._loop_diagram.rebuild()
+        self._update_console_status()
+        _notify(self, f"Added route {route} (unsaved; press s to save).")
 
     def _loop_text_field_value(self, field: str) -> str:
         if self._loop_diagram is None:
@@ -1060,6 +1292,35 @@ class _RevRemAppMixin:
         self._reload_loop_diagram()
         self._render_workbench()
 
+    def _load_profile_into_loop(self, name: str) -> None:
+        from code_review_loop import tui_loop_model
+
+        if (
+            self._loop_diagram is not None
+            and self._loop_diagram.is_dirty
+            and self._loop_diagram.model.name != name
+        ):
+            _notify(self, "Save or revert loop changes before loading another profile.")
+            return
+        try:
+            model = tui_loop_model.LoopEditModel.load(
+                name, cwd=Path(self.model.snapshot.cwd)
+            )
+        except (OSError, ValueError) as exc:
+            _notify(self, f"Load failed: {exc}", severity="error")
+            return
+        self._loop_model = model
+        if self._loop_diagram is not None:
+            set_model = getattr(self._loop_diagram, "set_model", None)
+            if callable(set_model):
+                set_model(model)
+            else:
+                self._loop_diagram.model = model
+                self._loop_diagram.rebuild()
+        self._select_profile(name)
+        self._set_workspace("loop")
+        _notify(self, f"Loaded {name} into the loop.")
+
     def _run_plan(
         self,
         plan: tui_state.LaunchPlan,
@@ -1121,6 +1382,9 @@ class _RevRemAppMixin:
             return
         if workspace == "loop" and self._loop_diagram is not None:
             self._reload_loop_diagram()
+        if workspace != "prompts":
+            self._prompt_target_key = None
+            self._prompt_return_workspace = None
         self._workspace = workspace
         self._focused_pane = "left"
         self._render_workbench()
@@ -1129,6 +1393,12 @@ class _RevRemAppMixin:
         if self._workspace == "loop" and self._loop_diagram is not None:
             self._loop_diagram.move(delta)
             self._update_console_status()
+            return
+        if self._workspace == "profiles" and self._profile_picker is not None:
+            self._profile_picker.move(delta)
+            return
+        if self._workspace == "prompts" and self._prompt_library is not None:
+            self._prompt_library.move(delta)
             return
         if self._workspace == "profiles" and self._focused_pane == "left":
             count = len(self.model.snapshot.profiles)
@@ -1173,14 +1443,29 @@ class _RevRemAppMixin:
         _set_widget_classes(self, "#screen-run-monitor", _pane_classes(self, "right"))
         on_loop = self._workspace == "loop"
         on_run = self._workspace == "run"
+        on_profiles = self._workspace == "profiles"
+        on_prompts = self._workspace == "prompts"
         _set_widget_display(self, "#loop-pane", on_loop)
         _set_widget_display(self, "#run-pane", on_run)
-        _set_widget_display(self, "#left-pane", not (on_loop or on_run))
-        _set_widget_display(self, "#right-pane", not (on_loop or on_run))
+        _set_widget_display(self, "#profiles-pane", on_profiles)
+        _set_widget_display(self, "#prompts-pane", on_prompts)
+        _set_widget_display(
+            self, "#left-pane", not (on_loop or on_run or on_profiles or on_prompts)
+        )
+        _set_widget_display(
+            self, "#right-pane", not (on_loop or on_run or on_profiles or on_prompts)
+        )
         if self._workspace == "loop" and self._loop_diagram is not None:
             self._loop_diagram.rebuild()
         if self._workspace == "run":
             self._update_run_widgets()
+        if on_profiles and self._profile_picker is not None:
+            self._profile_picker.set_rows(
+                tui_profiles_state.profile_picker_groups(self.model.snapshot)
+            )
+            self._profile_picker.rebuild()
+        if on_prompts and self._prompt_library is not None:
+            self._prompt_library.rebuild()
 
     def _reload_loop_diagram(self) -> None:
         if self._loop_diagram is None:
@@ -1335,6 +1620,28 @@ def _event_log_widget(app: Any) -> Any | None:
         return None
     widget = log_class()
     app._event_log = widget
+    return widget
+
+
+def _profile_picker_widget(app: Any) -> Any | None:
+    from code_review_loop import tui_loop_widgets
+
+    picker_class = tui_loop_widgets.profile_picker_class()
+    if picker_class is None:
+        return None
+    widget = picker_class(tui_profiles_state.profile_picker_groups(app.model.snapshot))
+    app._profile_picker = widget
+    return widget
+
+
+def _prompt_library_widget(app: Any) -> Any | None:
+    from code_review_loop import tui_loop_widgets
+
+    library_class = tui_loop_widgets.prompt_library_class()
+    if library_class is None:
+        return None
+    widget = library_class()
+    app._prompt_library = widget
     return widget
 
 
@@ -1557,14 +1864,16 @@ def _footer_markup(app: Any) -> str:
             if getattr(app, "_loop_diagram", None) is not None
             else "review"
         )
-        route_keys = " [Enter]routes" if phase == "triage" else ""
+        route_keys = " [Enter]routes [a]add-route" if phase == "triage" else ""
         keys = (
             "[up/down]phase [Enter]expand [space]toggle [m]harness [f]effort "
-            "[M]model [t]timeout [i]iterations [F]final [s]save [r]run"
+            "[M]model [t]timeout [i]iterations [F]final [e]prompt [g]prompts "
+            "[s]save [r]run"
             f"{route_keys} [?]help"
         )
     elif app._workspace == "prompts":
-        keys = "[j/down]source [up]source [e]edit config [Tab]focus [?]help"
+        target = f" for {app._prompt_target_key}" if app._prompt_target_key else ""
+        keys = f"[j/down]asset [up]asset [Enter]apply{target} [?]help"
     else:
         keys = "[k]stop [l]logs/events [o]artifacts [r]run [?]help"
     return f"{tui_state.markup_escape(live)}\n{tui_state.markup_escape(keys)}"
@@ -1874,10 +2183,10 @@ def _help_markup(*, visible: bool) -> str:
     return (
         "[b]Help[/b]\n"
         "Universal: \\[q] quit | \\[Tab] next focus | \\[Shift+Tab] previous focus | \\[Esc] clear focus | \\[h] hide help\n"
-        "Loop: \\[space] toggle phase | \\[m] harness | \\[f] effort | \\[M] model | \\[t] timeout | \\[i] iterations | \\[F] final review | \\[s] save\n"
+        "Loop: \\[space] toggle phase | \\[m] harness | \\[f] effort | \\[M] model | \\[t] timeout | \\[i] iterations | \\[F] final review | \\[e] prompt | \\[g] prompts | \\[a] add route | \\[s] save\n"
         "Run: \\[d] dry-run selected profile | \\[r] confirm/start live run | \\[k] cancel active run | \\[l] logs/events | \\[o] artifacts\n"
         "Profile: \\[s] show | \\[e] edit | \\[n] new... | \\[c] clone... | \\[x] export | \\[i] import profiles | \\[delete] delete\n"
-        "Prompts: Enter submits text; Esc cancels and returns to global keys."
+        "Prompts: \\[Enter] apply targeted asset or show selection; Esc cancels prompts/routes."
     )
 
 

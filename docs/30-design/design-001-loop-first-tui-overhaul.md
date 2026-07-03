@@ -183,7 +183,7 @@ Triage focused & ON — the discriminating case; expands into its nested routes 
 │    │   correctness codex│ gpt-5.4  │ med   │ 600s │ read-only │ remediation │             │
 │    │   nit        claude│ haiku-4.5│ low   │ 300s │ none      │ drop        │             │
 │    └────────────────┴───────────┴────────┴───────┴───────────┴─────────────┘             │
-│    [↵ edit route · a add · x remove]                                                       │
+│    [↵ edit route · a add]                                                                  │
 ```
 
 Interaction:
@@ -192,7 +192,9 @@ Interaction:
 - **Prompt** is harness-aware: codex `review` shows `built-in review (codex)`; other
   harnesses show the selected prompt/fragments. `↵ pick` opens the library picker; `e`
   opens a prompt-edit modal.
-- **Route rows** edit in a focused modal (`↵ edit route`); `a`/`x` add/remove.
+- **Route rows** edit in a focused modal (`↵ edit route`); `a` adds routes.
+  Route deletion is deferred until the profile-save primitive can express
+  key removal instead of merge-only writes.
 - Disabled phases render dimmed and drop out of the rails.
 
 ### 5.2 Run / monitor
@@ -310,4 +312,6 @@ profile-edit library / run intents back to the controller.
   quick-edit in loop; deep curation in library).
 - Prompt library data model for harness×model recommendations (roadmap).
 - Whether `presets` editing should be blocked (builtin) vs. clone-to-edit (lean: clone-to-edit).
+- Route deletion from the loop editor. The shipped route editor supports edit
+  and add; deletion needs a delete-capable profile-save primitive.
 ```

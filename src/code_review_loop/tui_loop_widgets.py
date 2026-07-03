@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from code_review_loop import harnesses, profiles, tui_loop_state
+from code_review_loop import (
+    harnesses,
+    profiles,
+    tui_loop_state,
+    tui_profiles_state,
+    tui_prompts_state,
+)
 
 
 def _harness_choices() -> tuple[str, ...]:
@@ -24,6 +30,9 @@ _TRIAGE_ROUTES_TABLE_CLASS: type[Any] | None = None
 _LOOP_DIAGRAM_CLASS: type[Any] | None = None
 _LOOP_RUN_VIEW_CLASS: type[Any] | None = None
 _EVENT_LOG_CLASS: type[Any] | None = None
+_PROFILE_PICKER_CLASS: type[Any] | None = None
+_PROMPT_LIBRARY_CLASS: type[Any] | None = None
+_ROUTE_EDIT_MODAL_CLASS: type[Any] | None = None
 
 
 def _load_components() -> tuple[Any, Any, Any] | None:
@@ -106,10 +115,13 @@ def triage_routes_table_class() -> type[Any] | None:
                 markup=False,
             )
             self.model = model
+            self.selected_route: str | None = None
             self.rebuild()
 
         def rebuild(self) -> None:
-            lines = tui_loop_state.triage_routes_lines(self.model)
+            lines = tui_loop_state.triage_routes_lines(
+                self.model, selected_route=self.selected_route
+            )
             self.update("\n".join(lines))
 
     _TRIAGE_ROUTES_TABLE_CLASS = TriageRoutesTable
@@ -143,6 +155,8 @@ def loop_diagram_class() -> type[Any] | None:
             self._gutters: dict[str, Any] = {}
             self._cards: dict[str, Any] = {}
             self._routes_table: Any | None = None
+            self.route_mode = False
+            self.selected_route_index = 0
 
         @property
         def is_dirty(self) -> bool:
@@ -182,6 +196,8 @@ def loop_diagram_class() -> type[Any] | None:
                 self._routes_table.model = model
             self.focused_index = 0
             self.expanded = False
+            self.route_mode = False
+            self.selected_route_index = 0
             self.rebuild()
 
         def current_phase(self) -> str:
@@ -190,9 +206,41 @@ def loop_diagram_class() -> type[Any] | None:
             return tui_loop_state.LOOP_PHASES[self.focused_index]
 
         def move(self, delta: int) -> None:
+            if self.route_mode:
+                route_names = self.route_names()
+                if route_names:
+                    self.selected_route_index = (
+                        self.selected_route_index + delta
+                    ) % len(route_names)
+                    self.rebuild()
+                return
             self.focused_index = (self.focused_index + delta) % len(
                 tui_loop_state.LOOP_PHASES
             )
+            self.rebuild()
+
+        def route_names(self) -> tuple[str, ...]:
+            return tuple(sorted(self.model.profile.triage.routes))
+
+        def selected_route(self) -> str | None:
+            names = self.route_names()
+            if not names:
+                return None
+            self.selected_route_index = max(
+                0, min(self.selected_route_index, len(names) - 1)
+            )
+            return names[self.selected_route_index]
+
+        def enter_route_mode(self) -> bool:
+            if self.current_phase() != "triage" or not self.route_names():
+                return False
+            self.route_mode = True
+            self.expanded = True
+            self.rebuild()
+            return True
+
+        def exit_route_mode(self) -> None:
+            self.route_mode = False
             self.rebuild()
 
         def toggle_enabled(self) -> None:
@@ -259,11 +307,176 @@ def loop_diagram_class() -> type[Any] | None:
                     )
             if self._routes_table is not None:
                 self._routes_table.display = self.current_phase() == "triage"
+                self._routes_table.selected_route = (
+                    self.selected_route() if self.route_mode else None
+                )
                 self._routes_table.rebuild()
             self.refresh()
 
     _LOOP_DIAGRAM_CLASS = LoopDiagram
     return _LOOP_DIAGRAM_CLASS
+
+
+def profile_picker_class() -> type[Any] | None:
+    global _PROFILE_PICKER_CLASS
+    loaded = _load_components()
+    if loaded is None:
+        return None
+    static_cls, _vertical_cls, _horizontal_cls = loaded
+    if _PROFILE_PICKER_CLASS is not None:
+        return _PROFILE_PICKER_CLASS
+
+    class ProfilePicker(static_cls):  # type: ignore[misc, valid-type]
+        can_focus = True
+
+        def __init__(self, rows: tuple[tui_profiles_state.ProfilePickerRow, ...]) -> None:
+            super().__init__("", id="profile-picker", classes="profile-picker", markup=False)
+            self.rows = rows
+            self.selected_index = 0
+            self.rebuild()
+
+        def set_rows(self, rows: tuple[tui_profiles_state.ProfilePickerRow, ...]) -> None:
+            self.rows = rows
+            self.selected_index = 0 if not rows else min(self.selected_index, len(rows) - 1)
+
+        def move(self, delta: int) -> None:
+            if self.rows:
+                self.selected_index = (self.selected_index + delta) % len(self.rows)
+                self.rebuild()
+
+        def selected_name(self) -> str | None:
+            if not self.rows:
+                return None
+            return self.rows[self.selected_index].name
+
+        def on_mount(self) -> None:
+            self.rebuild()
+
+        def rebuild(self) -> None:
+            lines = ["PROFILES  load a saved loop", ""]
+            group = None
+            if not self.rows:
+                lines.append("No profiles found.")
+            for index, row in enumerate(self.rows):
+                if row.group != group:
+                    group = row.group
+                    lines.append(f"-- {group} --")
+                pointer = ">" if index == self.selected_index else " "
+                lines.append(
+                    f"{pointer} {row.name}  {row.source_label}  {row.summary}"
+                )
+                if row.description:
+                    lines.append(f"  {row.description}")
+            self.update("\n".join(lines))
+
+    _PROFILE_PICKER_CLASS = ProfilePicker
+    return _PROFILE_PICKER_CLASS
+
+
+def prompt_library_class() -> type[Any] | None:
+    global _PROMPT_LIBRARY_CLASS
+    loaded = _load_components()
+    if loaded is None:
+        return None
+    static_cls, _vertical_cls, _horizontal_cls = loaded
+    if _PROMPT_LIBRARY_CLASS is not None:
+        return _PROMPT_LIBRARY_CLASS
+
+    class PromptLibrary(static_cls):  # type: ignore[misc, valid-type]
+        can_focus = True
+
+        def __init__(self) -> None:
+            super().__init__("", id="prompt-library", classes="prompt-library", markup=False)
+            self.assets = tui_prompts_state.prompt_inventory()
+            self.selected_index = 0
+            self.rebuild()
+
+        def move(self, delta: int) -> None:
+            if self.assets:
+                self.selected_index = (self.selected_index + delta) % len(self.assets)
+                self.rebuild()
+
+        def selected_asset(self) -> tui_prompts_state.PromptAsset | None:
+            if not self.assets:
+                return None
+            return self.assets[self.selected_index]
+
+        def on_mount(self) -> None:
+            self.rebuild()
+
+        def rebuild(self) -> None:
+            lines = ["PROMPTS  library", ""]
+            if not self.assets:
+                lines.append("No prompt assets found.")
+            for index, asset in enumerate(self.assets):
+                pointer = ">" if index == self.selected_index else " "
+                lines.append(f"{pointer} {asset.name}  {asset.kind} · {asset.trust}")
+            asset = self.selected_asset()
+            if asset is not None:
+                lines.extend(("", asset.preview))
+            self.update("\n".join(lines))
+
+    _PROMPT_LIBRARY_CLASS = PromptLibrary
+    return _PROMPT_LIBRARY_CLASS
+
+
+def route_edit_modal_class() -> type[Any] | None:
+    global _ROUTE_EDIT_MODAL_CLASS
+    from code_review_loop import tui
+
+    components = tui._load_textual_components()
+    if components is None:
+        return None
+    tui._install_textual_components(components)
+    if (
+        tui._ModalScreen is None
+        or tui._Vertical is None
+        or tui._Input is None
+        or tui._Static is object
+    ):
+        return None
+    if _ROUTE_EDIT_MODAL_CLASS is not None:
+        return _ROUTE_EDIT_MODAL_CLASS
+
+    modal_screen: Any = tui._ModalScreen
+    vertical_cls: Any = tui._Vertical
+    static_cls: Any = tui._Static
+    input_cls: Any = tui._Input
+
+    class RouteEditModal(modal_screen):  # type: ignore[misc, valid-type]
+        BINDINGS = [
+            tui._binding("escape", "cancel", "Cancel", priority=True, binding_cls=tui._Binding)
+        ]
+
+        def __init__(self, *, route: str, values: dict[str, str]) -> None:
+            super().__init__()
+            self.route = route
+            self.values = values
+
+        def compose(self):
+            with vertical_cls(id="route-edit-dialog"):
+                yield static_cls(f"Route: {self.route}", id="route-edit-title", markup=False)
+                for field in ("harness", "model", "reasoning_effort", "timeout_seconds", "sandbox", "fallback"):
+                    yield static_cls(field, markup=False)
+                    yield input_cls(value=self.values.get(field, ""), id=f"route-edit-{field}")
+                yield static_cls("Enter in a field submits that cell | Esc cancels", markup=False)
+
+        def on_mount(self) -> None:
+            query_one = getattr(self, "query_one", None)
+            set_focus = getattr(self, "set_focus", None)
+            if callable(query_one) and callable(set_focus):
+                set_focus(query_one("#route-edit-harness"))
+
+        def on_input_submitted(self, event: Any) -> None:
+            widget_id = getattr(getattr(event, "input", None), "id", "")
+            field = str(widget_id).removeprefix("route-edit-")
+            self.dismiss((self.route, field, getattr(event, "value", "")))
+
+        def action_cancel(self) -> None:
+            self.dismiss(None)
+
+    _ROUTE_EDIT_MODAL_CLASS = RouteEditModal
+    return _ROUTE_EDIT_MODAL_CLASS
 
 
 def loop_run_view_class() -> type[Any] | None:

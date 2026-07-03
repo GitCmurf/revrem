@@ -178,3 +178,106 @@ def test_builtin_profile_save_is_readonly_until_cloned(tmp_path: Path) -> None:
     model.set_field("review.model", "gpt-9")
     with pytest.raises(RuntimeError, match="built-in profile .* is read-only"):
         model.save()
+
+
+def test_route_cell_edit_save_materializes_inherited_route_like_config_set(
+    tmp_path: Path,
+) -> None:
+    body = "\n".join(
+        (
+            "[defaults.triage.routing]",
+            "enabled = true",
+            'default_route = "security"',
+            "[defaults.triage]",
+            'contract = "v2"',
+            "[defaults.triage.routes.security]",
+            'harness = "codex"',
+            'model = "gpt-5.4"',
+            'reasoning_effort = "high"',
+            'sandbox = "read-only"',
+            "[profiles.p]",
+            "[profiles.p.pipeline]",
+            'base = "main"',
+            "[profiles.p.triage]",
+            "enabled = true",
+        )
+    )
+    repo_model = tmp_path / "via_model" / "repo"
+    repo_set = tmp_path / "via_set" / "repo"
+    for repo in (repo_model, repo_set):
+        (repo / ".git").mkdir(parents=True)
+        _write(repo / ".revrem.toml", body + "\n")
+
+    model = LoopEditModel.load("p", cwd=repo_model)
+    model.set_field("triage.routes.security.model", "gpt-9")
+    model.save()
+    profiles.set_profile_field("p", "triage.routes.security.model", "gpt-9", cwd=repo_set)
+
+    assert (repo_model / ".revrem.toml").read_text(encoding="utf-8") == (
+        repo_set / ".revrem.toml"
+    ).read_text(encoding="utf-8")
+
+
+def test_route_cell_edit_save_materializes_fallback_closure(tmp_path: Path) -> None:
+    body = "\n".join(
+        (
+            "[defaults.triage.routing]",
+            "enabled = true",
+            'default_route = "foo"',
+            "[defaults.triage]",
+            'contract = "v2"',
+            "[defaults.triage.routes.foo]",
+            'harness = "codex"',
+            'fallback = "bar"',
+            'sandbox = "read-only"',
+            "[defaults.triage.routes.bar]",
+            'harness = "codex"',
+            'sandbox = "workspace-write"',
+            "[profiles.p]",
+            "[profiles.p.pipeline]",
+            'base = "main"',
+            "[profiles.p.triage]",
+            "enabled = true",
+        )
+    )
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    _write(repo / ".revrem.toml", body + "\n")
+
+    model = LoopEditModel.load("p", cwd=repo)
+    model.set_field("triage.routes.foo.model", "gpt-9")
+    model.save()
+
+    reloaded = profiles.resolve_profile("p", cwd=repo, require_implemented=False)
+    assert reloaded.triage.routes["foo"].fallback == "bar"
+    assert "bar" in reloaded.triage.routes
+
+
+def test_route_add_from_disabled_routing_creates_saveable_v2_context(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    _write(
+        repo / ".revrem.toml",
+        "[profiles.p]\n"
+        "[profiles.p.pipeline]\n"
+        'base = "main"\n'
+        "[profiles.p.triage]\n"
+        "enabled = true\n",
+    )
+
+    model = LoopEditModel.load("p", cwd=repo)
+    model.set_field("triage.contract", "v2")
+    model.set_field("triage.routing.enabled", "true")
+    model.set_field("triage.routing.default_route", "audit")
+    model.set_field("triage.routes.audit.harness", "codex")
+    model.set_field("triage.routes.audit.sandbox", "workspace-write")
+    model.save()
+
+    reloaded = profiles.resolve_profile("p", cwd=repo, require_implemented=False)
+    assert reloaded.triage.contract == "v2"
+    assert reloaded.triage.routing.enabled is True
+    assert reloaded.triage.routing.default_route == "audit"
+    assert reloaded.triage.routes["audit"].harness == "codex"
+    assert reloaded.triage.routes["audit"].sandbox == "workspace-write"

@@ -19,6 +19,9 @@ This project follows Semantic Versioning once public releases begin.
   iteration and inner-retry counters, event/log toggling, artifact-directory
   feedback, graceful degraded states for missing or unreadable `events.jsonl`,
   and SVG snapshots for representative live-run states.
+- The experimental TUI now has a grouped Profiles picker, a Prompts library,
+  scalar prompt-field editing/apply flows, and editable triage route rows that
+  all route through the Loop working copy and explicit profile Save.
 - `revrem config set <profile> <key> <value>` — non-interactive single-field profile edits (foundation for the loop-first TUI, REVREM-DESIGN-001 / PLAN-009).
 - Manual no-provider GitHub Action smoke workflow
   (`.github/workflows/revrem-action-smoke.yml`) that exercises the local
@@ -62,6 +65,9 @@ This project follows Semantic Versioning once public releases begin.
   `provider_transient_error`, and suggested continuation commands now start
   with `revrem` instead of a source-checkout-specific `./.venv/bin/revrem`
   path.
+- TUI working-copy route saves now materialize inherited routing/default-route
+  and fallback context before writing, so route-cell edits remain loadable and
+  match the `revrem config set` route materialization path.
 - The experimental TUI Run workspace now keeps rendering the profile that
   launched the live run even if the operator browses or selects a different
   profile while the run is still visible.

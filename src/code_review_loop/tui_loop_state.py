@@ -60,6 +60,18 @@ class LoopRailMeta:
     final_review_label: str | None
 
 
+@dataclass(frozen=True)
+class TriageRouteRow:
+    name: str
+    harness: object
+    model: object
+    effort: object
+    timeout: object
+    sandbox: object
+    fallback: object
+    selected: bool
+
+
 def _profile(source: Any) -> profiles.Profile:
     if hasattr(source, "profile"):
         return cast(profiles.Profile, source.profile)
@@ -221,7 +233,7 @@ def phase_card_lines(
     return tuple(lines)
 
 
-def triage_routes_lines(source: Any) -> tuple[str, ...]:
+def triage_routes_lines(source: Any, *, selected_route: str | None = None) -> tuple[str, ...]:
     profile = _profile(source)
     if not profile.triage.routing.enabled:
         return ()
@@ -231,19 +243,41 @@ def triage_routes_lines(source: Any) -> tuple[str, ...]:
         f"default {routing.default_route} · strict {routing.strict_on_unavailable_route} · "
         f"escalate {routing.allow_model_escalation}"
     ]
-    for name, route in sorted(profile.triage.routes.items()):
-        prefix = f"triage.routes.{name}"
-        harness = _effective_value(source, f"{prefix}.harness", route.harness)
-        model = _effective_value(source, f"{prefix}.model", route.model)
-        effort = _effective_value(source, f"{prefix}.reasoning_effort", route.reasoning_effort)
-        timeout = _effective_value(source, f"{prefix}.timeout_seconds", route.timeout_seconds)
-        sandbox = _effective_value(source, f"{prefix}.sandbox", route.sandbox)
-        fallback = _effective_value(source, f"{prefix}.fallback", route.fallback)
+    for row in triage_route_rows(source, selected_route=selected_route):
         effort_text = harnesses.phase_effort_text(
-            str(harness) if harness else None, str(effort) if effort else None
+            str(row.harness) if row.harness else None,
+            str(row.effort) if row.effort else None,
         )
+        pointer = f"{'>' if row.selected else ' '} " if selected_route is not None else ""
         lines.append(
-            f"{name}: {harness} · {model or '<default>'} · {effort_text or '<default>'} · "
-            f"{_format_timeout(timeout)} · {sandbox} · fallback {fallback or 'drop'}"
+            f"{pointer}{row.name}: {row.harness} · {row.model or '<default>'} · "
+            f"{effort_text or '<default>'} · {_format_timeout(row.timeout)} · "
+            f"{row.sandbox} · fallback {row.fallback or 'drop'}"
         )
     return tuple(lines)
+
+
+def triage_route_rows(
+    source: Any, *, selected_route: str | None = None
+) -> tuple[TriageRouteRow, ...]:
+    profile = _profile(source)
+    rows: list[TriageRouteRow] = []
+    for name, route in sorted(profile.triage.routes.items()):
+        prefix = f"triage.routes.{name}"
+        rows.append(
+            TriageRouteRow(
+                name=name,
+                harness=_effective_value(source, f"{prefix}.harness", route.harness),
+                model=_effective_value(source, f"{prefix}.model", route.model),
+                effort=_effective_value(
+                    source, f"{prefix}.reasoning_effort", route.reasoning_effort
+                ),
+                timeout=_effective_value(
+                    source, f"{prefix}.timeout_seconds", route.timeout_seconds
+                ),
+                sandbox=_effective_value(source, f"{prefix}.sandbox", route.sandbox),
+                fallback=_effective_value(source, f"{prefix}.fallback", route.fallback),
+                selected=name == selected_route,
+            )
+        )
+    return tuple(rows)

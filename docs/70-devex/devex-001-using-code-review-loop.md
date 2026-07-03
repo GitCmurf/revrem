@@ -1600,7 +1600,7 @@ comment builder consumes.
 Without the `tui` extra, `revrem ui` exits cleanly with an installation hint.
 The CLI remains the authoritative execution path. The TUI now opens on the
 Loop workspace: a real Textual `LoopDiagram` with one focusable phase card per
-phase, config-truthful loop rails, and a read-only triage route table when
+phase, config-truthful loop rails, and an editable triage route table when
 routing is enabled. Enabled and disabled phases render as `●` and `○`; the
 left gutter uses box-drawing return rails for the outer review loop and the
 inner remediation/check retry loop. Workspaces are `1` loop, `2` run,
@@ -1612,19 +1612,40 @@ path. If save validation fails, or the selected profile is a read-only bundled
 profile, the error is shown and the working copy remains dirty; clone a bundled
 profile before editing it.
 
-Loop keys are contextual: `j`/Down and Up move phase focus, `Enter` expands or
-collapses the focused card, `space` toggles phases that can be disabled,
-`m` cycles harness, `f` cycles reasoning effort, `M` edits model, `t` edits
-timeout, `i` edits max iterations, and `F` toggles final review. Free-text
-fields are validated at save time. Other workspaces keep the existing profile
-lifecycle and live-run controls: `d` dry-runs the selected profile, `r`
-confirms/starts a real live run, `k` cancels an active live run, `e` edits the
-owning profile config, `n` creates, `c` clones, `x` exports, `i` imports outside
-the Loop workspace, `delete` deletes through `revrem config delete --yes`,
-`Esc` returns focus or cancels a prompt, `h`/`?` toggles contextual help, and
-`q` quits. Loading another profile into the loop is blocked while the current
-loop has unsaved edits, so a profile switch cannot silently discard the working
-copy.
+Loop keys are contextual: `j`/Down and Up move phase focus, `Enter` expands,
+collapses, or enters triage route-row selection, `space` toggles phases that
+can be disabled, `m` cycles harness, `f` cycles reasoning effort, `M` edits
+model, `t` edits timeout, `i` edits max iterations, `F` toggles final review,
+`e` edits the focused scalar prompt field (`triage.prompt` or
+`commit.message_prompt`), `g` opens the prompt library to apply a selected asset
+to that scalar prompt field, and `a` adds a route when triage is focused.
+Free-text fields are validated at save time. Route rows edit through the same
+working copy and explicit `s` save; route deletion is not available yet because
+the current profile-save primitive is merge-only.
+
+The Profiles workspace is now a grouped save/load picker: project/user
+profiles appear under "yours" and bundled expert profiles appear under
+"presets". `Enter` loads the highlighted profile into the Loop workspace.
+Bundled presets are loadable guidance profiles but remain read-only on save;
+clone them before editing. The profile lifecycle keys still shell through
+`revrem config`: `d` dry-runs, `r` confirms/starts a live run, `e` edits the
+owning config, `n` creates, `c` clones, `x` exports, `i` imports outside the
+Loop workspace, and `delete` deletes through `revrem config delete --yes`.
+
+The Prompts workspace lists built-in prompt fragments and triage contracts.
+When entered from Loop with `g`, `Enter` applies the highlighted asset's full
+text to the targeted scalar prompt field and returns to Loop. When opened
+directly with `4`, `Enter` only reports the highlighted asset. Editing
+`triage.routing.rule[].then.prompt_fragments` lists is deferred because that
+shape is list-valued while the current working-copy editor writes scalar dotted
+keys.
+
+Run controls remain in the Run workspace: `r` confirms/starts a real live run,
+`k` cancels an active live run, `l` toggles events/logs, and `o` surfaces the
+artifact directory. `Esc` exits route selection, returns focus, or cancels a
+prompt; `h`/`?` toggles contextual help, and `q` quits. Loading another profile
+into the loop is blocked while the current loop has unsaved edits, so a profile
+switch cannot silently discard the working copy.
 
 Live TUI runs are experimental but use the same execution path as the CLI. The
 TUI controller starts a managed `revrem` subprocess with the selected profile,

@@ -342,6 +342,34 @@ def test_profile_selection_reloads_loop_diagram(tmp_path):
     asyncio.run(run())
 
 
+def test_profiles_workspace_renders_picker_and_loads_into_loop(tmp_path):
+    async def run() -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        (repo / ".revrem.toml").write_text(
+            "[profiles.alpha]\n[profiles.alpha.pipeline]\nbase='main'\n"
+            "[profiles.alpha.review]\nmodel='alpha-model'\n"
+            "[profiles.beta]\n[profiles.beta.pipeline]\nbase='main'\n"
+            "[profiles.beta.review]\nmodel='beta-model'\n",
+            encoding="utf-8",
+        )
+        async with pilot_app(cwd=repo, profile_name="alpha") as (app, pilot):
+            await pilot.press("3")
+            await pilot.pause()
+            picker = app.query_one("#profile-picker")
+            assert "PROFILES" in _render(app, "#profile-picker")
+            assert "alpha" in _render(app, "#profile-picker")
+            picker.move(1)
+            await pilot.press("enter")
+            await pilot.pause()
+            assert app._workspace == "loop"
+            assert app._loop_diagram.model.name == "beta"
+            assert "beta-model" in _render(app, "#phase-card-review")
+
+    asyncio.run(run())
+
+
 def test_dirty_loop_blocks_profile_switch(tmp_path):
     async def run() -> None:
         repo = tmp_path / "repo"
@@ -369,6 +397,115 @@ def test_dirty_loop_blocks_profile_switch(tmp_path):
             assert any("Save or revert loop changes" in item for item in notifications)
             assert "alpha" in str(app.query_one("#loop-header").render())
             assert diagram.model.field_value("review.model", "") == "unsaved-alpha"
+
+    asyncio.run(run())
+
+
+def test_loop_goto_prompts_applies_selected_asset_to_scalar_prompt(tmp_path):
+    async def run() -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        (repo / ".revrem.toml").write_text(
+            "[profiles.edit]\n[profiles.edit.pipeline]\nbase='main'\n"
+            "[profiles.edit.triage]\nenabled=true\n",
+            encoding="utf-8",
+        )
+        async with pilot_app(cwd=repo, profile_name="edit") as (app, pilot):
+            await pilot.press("1")
+            await pilot.pause()
+            diagram = app.query_one("#loop-diagram")
+            diagram.focused_index = 1
+            await pilot.press("g")
+            await pilot.pause()
+            assert app._workspace == "prompts"
+            assert "PROMPTS" in _render(app, "#prompt-library")
+            await pilot.press("enter")
+            await pilot.pause()
+            assert app._workspace == "loop"
+            assert diagram.model.field_value("triage.prompt", None)
+            assert diagram.is_dirty is True
+
+    asyncio.run(run())
+
+
+def test_prompt_edit_sets_scalar_field_on_working_copy(tmp_path):
+    async def run() -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        (repo / ".revrem.toml").write_text(
+            "[profiles.edit]\n[profiles.edit.pipeline]\nbase='main'\n"
+            "[profiles.edit.commit]\nenabled=true\n",
+            encoding="utf-8",
+        )
+        async with pilot_app(cwd=repo, profile_name="edit") as (app, pilot):
+            await pilot.press("1")
+            await pilot.pause()
+            diagram = app.query_one("#loop-diagram")
+            diagram.focused_index = 4
+            app._apply_prompt_edit(
+                "commit.message_prompt", "Use imperative subject lines"
+            )
+            await pilot.pause()
+            assert diagram.model.field_value("commit.message_prompt", None) == (
+                "Use imperative subject lines"
+            )
+            assert diagram.is_dirty is True
+
+    asyncio.run(run())
+
+
+def test_route_add_and_edit_update_working_copy(tmp_path):
+    async def run() -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        (repo / ".revrem.toml").write_text(
+            "[profiles.edit]\n[profiles.edit.pipeline]\nbase='main'\n"
+            "[profiles.edit.triage]\nenabled=true\ncontract='v2'\n"
+            "[profiles.edit.triage.routing]\nenabled=true\ndefault_route='security'\n"
+            "[profiles.edit.triage.routes.security]\nharness='codex'\nsandbox='read-only'\n",
+            encoding="utf-8",
+        )
+        async with pilot_app(cwd=repo, profile_name="edit") as (app, pilot):
+            await pilot.press("1")
+            await pilot.pause()
+            diagram = app.query_one("#loop-diagram")
+            diagram.focused_index = 1
+            app._apply_route_add("audit")
+            app._apply_route_edit("security", "model", "gpt-9")
+            await pilot.pause()
+            assert diagram.model.field_value("triage.routes.audit.harness", None) == "codex"
+            assert diagram.model.field_value(
+                "triage.routes.audit.sandbox", None
+            ) == "workspace-write"
+            assert diagram.model.field_value("triage.routes.security.model", None) == "gpt-9"
+            assert diagram.is_dirty is True
+
+    asyncio.run(run())
+
+
+def test_route_add_rejects_invalid_and_duplicate_names(tmp_path):
+    async def run() -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        (repo / ".revrem.toml").write_text(
+            "[profiles.edit]\n[profiles.edit.pipeline]\nbase='main'\n"
+            "[profiles.edit.triage]\nenabled=true\ncontract='v2'\n"
+            "[profiles.edit.triage.routing]\nenabled=true\ndefault_route='security'\n"
+            "[profiles.edit.triage.routes.security]\nharness='codex'\nsandbox='read-only'\n",
+            encoding="utf-8",
+        )
+        async with pilot_app(cwd=repo, profile_name="edit") as (app, pilot):
+            await pilot.press("1")
+            await pilot.pause()
+            diagram = app.query_one("#loop-diagram")
+            diagram.focused_index = 1
+            app._apply_route_add("bad.name")
+            app._apply_route_add("security")
+            assert diagram.is_dirty is False
 
     asyncio.run(run())
 
