@@ -423,9 +423,9 @@ def prompt_library_class() -> type[Any] | None:
             for index, asset in enumerate(self.assets):
                 pointer = ">" if index == self.selected_index else " "
                 lines.append(f"{pointer} {asset.name}  {asset.kind} · {asset.trust}")
-            asset = self.selected_asset()
-            if asset is not None:
-                lines.extend(("", asset.preview))
+            selected = self.selected_asset()
+            if selected is not None:
+                lines.extend(("", selected.preview))
             self.update("\n".join(lines))
 
     _PROMPT_LIBRARY_CLASS = PromptLibrary
@@ -461,6 +461,9 @@ def route_edit_modal_class() -> type[Any] | None:
 
     class RouteEditModal(modal_screen):  # type: ignore[misc, valid-type]
         BINDINGS = [
+            tui._binding(
+                "ctrl+s", "submit", "Save route", priority=True, binding_cls=tui._Binding
+            ),
             tui._binding(
                 "escape", "cancel", "Cancel", priority=True, binding_cls=tui._Binding
             )
@@ -552,7 +555,8 @@ def route_edit_modal_class() -> type[Any] | None:
                 )
                 yield button_cls("Save route", id="route-edit-save", variant="primary")
                 yield static_cls(
-                    "Enter in a text field saves the row | Esc cancels", markup=False
+                    "Select fields: Enter opens menu | Ctrl+S saves | Esc cancels",
+                    markup=False,
                 )
 
         def on_mount(self) -> None:
@@ -567,6 +571,9 @@ def route_edit_modal_class() -> type[Any] | None:
         def on_button_pressed(self, event: Any) -> None:
             if getattr(getattr(event, "button", None), "id", "") == "route-edit-save":
                 self._submit()
+
+        def action_submit(self) -> None:
+            self._submit()
 
         def _submit(self) -> None:
             values: dict[str, str] = {}
@@ -610,11 +617,14 @@ def _select_value(
 ) -> Any:
     from code_review_loop import tui
 
+    select_cls = tui._Select
+    if select_cls is None:
+        return None
     if current:
         return current
     if blank_ok:
-        return tui._Select.NULL
-    return choices[0] if choices else tui._Select.NULL
+        return select_cls.NULL
+    return choices[0] if choices else select_cls.NULL
 
 
 def loop_run_view_class() -> type[Any] | None:

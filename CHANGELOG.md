@@ -60,6 +60,10 @@ This project follows Semantic Versioning once public releases begin.
 
 ### Fixed
 
+- The experimental TUI route editor now offers a reliable `Ctrl+S` keyboard
+  save path from Select-backed fields, and the live-run nested-child
+  cancellation regression test tolerates slow CI scheduling while still
+  cleaning up launched children on failure.
 - The experimental TUI now warns when a bundled preset is loaded into the Loop
   editor as read-only, renders newly added triage routes immediately before
   Save, edits route rows through constrained Select controls for enumerated

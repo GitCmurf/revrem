@@ -369,22 +369,30 @@ claude = "{provider}"
     controller = tui_run_controller.LiveRunController()
     env = _source_checkout_env()
 
-    controller.start(
-        profile=profile,
-        plan=plan,
-        cwd=repo,
-        entrypoint_resolver=lambda argv: [sys.executable, "-m", "code_review_loop", *argv[1:]],
-        env=env,
-    )
-    nested_pid = _wait_for_pid_file(nested_pid_file)
+    try:
+        controller.start(
+            profile=profile,
+            plan=plan,
+            cwd=repo,
+            entrypoint_resolver=lambda argv: [
+                sys.executable,
+                "-m",
+                "code_review_loop",
+                *argv[1:],
+            ],
+            env=env,
+        )
+        nested_pid = _wait_for_pid_file(nested_pid_file)
 
-    # Allow the normal SIGINT cancellation path enough headroom to write
-    # summary.json and exit before escalation, even when the suite saturates
-    # CPU; the sibling real-child cancel test uses the same grace.
-    status = controller.cancel(grace_seconds=5)
+        # Allow the normal SIGINT cancellation path enough headroom to write
+        # summary.json and exit before escalation, even when the suite saturates
+        # CPU; the sibling real-child cancel test uses the same grace.
+        status = controller.cancel(grace_seconds=5)
 
-    assert status == "cancelled"
-    _wait_until_not_running(nested_pid)
+        assert status == "cancelled"
+        _wait_until_not_running(nested_pid)
+    finally:
+        controller.cancel(grace_seconds=1)
 
 
 def test_live_events_ignore_stale_explicit_artifact_dir_until_replaced(tmp_path):
@@ -589,7 +597,7 @@ def test_terminal_statuses_cover_all_non_idle_running_states():
 
 
 def _wait_for_pid_file(path: Path) -> int:
-    deadline = time.monotonic() + 10
+    deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
         if path.is_file():
             return int(path.read_text(encoding="utf-8"))

@@ -583,12 +583,12 @@ class _RevRemAppMixin:
         self._selected_profile_index = self._initial_profile_index()
         self._selected_phase_index = 0
         self._selected_run_tab_index = 0
-        self._loop_diagram = None
-        self._loop_model = None
-        self._loop_run_view = None
-        self._event_log = None
-        self._profile_picker = None
-        self._prompt_library = None
+        self._loop_diagram: Any | None = None
+        self._loop_model: Any | None = None
+        self._loop_run_view: Any | None = None
+        self._event_log: Any | None = None
+        self._profile_picker: Any | None = None
+        self._prompt_library: Any | None = None
         self._prompt_target_key: str | None = None
         self._prompt_return_workspace: str | None = None
         self._live_run_profile: profiles.Profile | None = None
@@ -1057,14 +1057,15 @@ class _RevRemAppMixin:
     def _open_loop_text_field_prompt(self, field: str) -> None:
         if self._loop_diagram is None:
             return
+        diagram = self._loop_diagram
 
         def apply(value: str) -> None:
-            self._loop_diagram.set_text_field(field, value)
+            diagram.set_text_field(field, value)
             self._update_console_status()
 
         self._prompt_for_text(
             title=f"Edit {field}",
-            prompt=f"{self._loop_diagram.current_phase()}.{field}",
+            prompt=f"{diagram.current_phase()}.{field}",
             initial=self._loop_text_field_value(field),
             on_submit=apply,
         )
@@ -1072,9 +1073,10 @@ class _RevRemAppMixin:
     def _open_loop_meta_prompt(self, field: str) -> None:
         if self._loop_diagram is None:
             return
+        diagram = self._loop_diagram
 
         def apply(value: str) -> None:
-            self._loop_diagram.set_loop_meta_field(field, value)
+            diagram.set_loop_meta_field(field, value)
             self._update_console_status()
 
         self._prompt_for_text(

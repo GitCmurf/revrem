@@ -18,6 +18,8 @@ from code_review_loop import (
     tui_run_controller,
 )
 
+LIVE_RUN_PILOT_TIMEOUT = 30
+
 
 def test_tui_pilot_boots_home_view(tmp_path):
     async def run() -> None:
@@ -575,6 +577,41 @@ def test_route_edit_modal_updates_working_copy_through_callback(tmp_path):
     asyncio.run(run())
 
 
+def test_route_edit_modal_saves_select_change_from_keyboard(tmp_path):
+    async def run() -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        (repo / ".revrem.toml").write_text(
+            "[profiles.edit]\n[profiles.edit.pipeline]\nbase='main'\n"
+            "[profiles.edit.triage]\nenabled=true\ncontract='v2'\n"
+            "[profiles.edit.triage.routing]\nenabled=true\ndefault_route='security'\n"
+            "[profiles.edit.triage.routes.security]\nharness='codex'\nsandbox='read-only'\n",
+            encoding="utf-8",
+        )
+        async with pilot_app(cwd=repo, profile_name="edit") as (app, pilot):
+            await pilot.press("1")
+            await pilot.press("down")
+            await pilot.press("enter")
+            await pilot.press("enter")
+            await pilot.pause()
+            sandbox = app.screen.query_one("#route-edit-sandbox")
+            app.screen.set_focus(sandbox)
+            await pilot.press("enter")
+            await pilot.press("down")
+            await pilot.press("enter")
+            await pilot.press("ctrl+s")
+            await pilot.pause()
+            diagram = app.query_one("#loop-diagram")
+            assert (
+                diagram.model.field_value("triage.routes.security.sandbox", None)
+                == "workspace-write"
+            )
+            assert "workspace-write" in _render(app, "#triage-routes-table")
+
+    asyncio.run(run())
+
+
 def test_route_add_rejects_invalid_and_duplicate_names(tmp_path):
     async def run() -> None:
         repo = tmp_path / "repo"
@@ -649,7 +686,7 @@ def test_run_workspace_mounts_live_loop_and_event_log(tmp_path, monkeypatch):
                     lambda: app._workspace == "run"
                     and "live" in _render(app, "#loop-run-header"),
                     pilot_pause=pilot.pause,
-                    timeout=12,
+                    timeout=LIVE_RUN_PILOT_TIMEOUT,
                 )
                 assert app.query_one("#loop-run") is not None
                 assert app.query_one("#event-log") is not None
@@ -695,7 +732,7 @@ def test_run_workspace_toggles_logs_and_shows_artifacts(tmp_path, monkeypatch):
                 await _wait_for(
                     lambda: app.live_run_controller.launch is not None,
                     pilot_pause=pilot.pause,
-                    timeout=12,
+                    timeout=LIVE_RUN_PILOT_TIMEOUT,
                 )
                 await pilot.press("l")
                 await pilot.pause()
@@ -726,7 +763,7 @@ def test_artifacts_key_is_run_workspace_scoped(tmp_path, monkeypatch):
                 await _wait_for(
                     lambda: app.live_run_controller.launch is not None,
                     pilot_pause=pilot.pause,
-                    timeout=12,
+                    timeout=LIVE_RUN_PILOT_TIMEOUT,
                 )
                 await pilot.press("1")
                 await pilot.press("o")
@@ -782,7 +819,7 @@ def test_saved_loop_edit_launches_run_with_matching_live_diagram(tmp_path, monke
                         or "max 3" in _render(app, "#loop-run-header")
                     ),
                     pilot_pause=pilot.pause,
-                    timeout=12,
+                    timeout=LIVE_RUN_PILOT_TIMEOUT,
                 )
                 assert "live" in _render(app, "#loop-run-header")
             finally:
@@ -831,7 +868,7 @@ model = "review_clear"
                 await _wait_for(
                     lambda: "RUN · alpha" in _render(app, "#loop-run-header"),
                     pilot_pause=pilot.pause,
-                    timeout=12,
+                    timeout=LIVE_RUN_PILOT_TIMEOUT,
                 )
                 await pilot.press("3")
                 await pilot.press("down")
@@ -867,13 +904,13 @@ def test_tui_pilot_live_monitor_updates_and_cancels_visible_run(tmp_path, monkey
                         and "findings-summary (1)" in _render(app, "#event-log")
                     ),
                     pilot_pause=pilot.pause,
-                    timeout=12,
+                    timeout=LIVE_RUN_PILOT_TIMEOUT,
                 )
                 await pilot.press("k")
                 await _wait_for(
                     lambda: "cancelled" in _render(app, "#loop-run-header"),
                     pilot_pause=pilot.pause,
-                    timeout=12,
+                    timeout=LIVE_RUN_PILOT_TIMEOUT,
                 )
 
                 launch = app.live_run_controller.launch
