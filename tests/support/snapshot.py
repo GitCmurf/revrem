@@ -63,23 +63,37 @@ def normalize_svg(svg: str) -> str:
     return normalized
 
 
-def assert_svg_snapshot(name: str, svg: str, *, update: bool = False) -> None:
+def assert_svg_snapshot(
+    name: str,
+    svg: str,
+    *,
+    update: bool = False,
+    normalize_theme_colors: bool = False,
+) -> None:
     assert svg.startswith("<svg")
     assert len(svg) > 1000
     path = SNAPSHOT_DIR / f"{name}.svg"
     should_update = update or os.environ.get("REVREM_UPDATE_SNAPSHOTS") == "1"
+    comparison_svg = _normalize_svg_theme_colors(svg) if normalize_theme_colors else svg
     if should_update or not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(svg, encoding="utf-8")
+        path.write_text(comparison_svg, encoding="utf-8")
         return
     expected = path.read_text(encoding="utf-8")
-    if svg != expected:
+    comparison_expected = (
+        _normalize_svg_theme_colors(expected) if normalize_theme_colors else expected
+    )
+    if comparison_svg != comparison_expected:
         diff = "".join(
             difflib.unified_diff(
-                expected.splitlines(keepends=True),
-                svg.splitlines(keepends=True),
+                comparison_expected.splitlines(keepends=True),
+                comparison_svg.splitlines(keepends=True),
                 fromfile=f"{path} (committed)",
                 tofile=f"{path} (actual)",
             )
         )
         raise AssertionError(f"SVG snapshot changed for {name}:\n{diff}")
+
+
+def _normalize_svg_theme_colors(svg: str) -> str:
+    return re.sub(r"#[0-9a-fA-F]{6}\b", "#THEME", svg)

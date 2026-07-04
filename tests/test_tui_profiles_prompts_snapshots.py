@@ -88,7 +88,11 @@ sandbox = "read-only"
 def test_route_edit_modal_snapshot() -> None:
     svg = _capture_route_modal_svg()
     assert "Route: security" in svg and "sandbox" in svg
-    assert_svg_snapshot("tui_profiles_prompts/route-edit-modal", svg)
+    assert_svg_snapshot(
+        "tui_profiles_prompts/route-edit-modal",
+        svg,
+        normalize_theme_colors=True,
+    )
 
 
 def _capture_workspace_svg(

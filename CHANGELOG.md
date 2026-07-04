@@ -60,6 +60,9 @@ This project follows Semantic Versioning once public releases begin.
 
 ### Fixed
 
+- The route-edit modal SVG snapshot now ignores nondeterministic Textual theme
+  color drift while still comparing layout and text, avoiding stale-validation
+  dogfood failures caused by focused vs. unfocused widget palette races.
 - Direct remediation retries now keep review findings before failed-check
   context and cap oversized check logs before inserting them into prompts, so
   snapshot/SVG diffs cannot bury the actionable task. Dry-run v2 triage no

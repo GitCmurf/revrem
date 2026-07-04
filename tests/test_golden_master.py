@@ -172,3 +172,15 @@ def test_assert_snapshot_raises_on_mismatch(tmp_path, monkeypatch):
     snap.assert_snapshot("demo", {"a": 1})  # equal -> passes
     with pytest.raises(AssertionError, match="snapshot 'demo' changed"):
         snap.assert_snapshot("demo", {"a": 2})  # changed -> fails
+
+
+def test_assert_svg_snapshot_can_ignore_theme_color_drift(tmp_path, monkeypatch):
+    import support.snapshot as snap
+
+    base = '<svg xmlns="http://www.w3.org/2000/svg">' + "x" * 1001
+    first = base + '<rect fill="#121212"/><style>.a{fill:#e0e0e0}</style></svg>'
+    second = base + '<rect fill="#0178d4"/><style>.a{fill:#fea62b}</style></svg>'
+
+    monkeypatch.setattr(snap, "SNAPSHOT_DIR", tmp_path)
+    snap.assert_svg_snapshot("demo", first, update=True, normalize_theme_colors=True)
+    snap.assert_svg_snapshot("demo", second, normalize_theme_colors=True)
