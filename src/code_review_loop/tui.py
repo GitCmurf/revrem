@@ -12,7 +12,7 @@ import threading
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Literal, NamedTuple
+from typing import Any, Literal, NamedTuple, cast
 
 from code_review_loop import (
     harnesses,
@@ -679,6 +679,21 @@ class _RevRemAppMixin:
 
     def action_launch_dry_run(self) -> None:
         profile_name = self._profile_name()
+        if profile_name is None:
+            _notify(self, "No profile is available to dry-run.")
+            return
+        if (
+            self._loop_diagram is not None
+            and self._loop_diagram.is_dirty
+        ):
+            try:
+                self._loop_diagram.model.save()
+            except (OSError, RuntimeError, ValueError) as exc:
+                _notify(self, f"Save-and-dry-run aborted: {exc}", severity="error")
+                return
+            self._refresh_profiles_from_disk()
+            self._update_console_status()
+            _notify(self, f"Saved loop before dry-run: {profile_name}")
         selected = self._profile_by_name(profile_name)
         if selected is None:
             _notify(self, "No profile is available to dry-run.")
@@ -692,13 +707,11 @@ class _RevRemAppMixin:
 
     def action_launch_run(self) -> None:
         profile_name = self._profile_name()
-        selected = self._profile_by_name(profile_name)
-        if selected is None or profile_name is None:
+        if profile_name is None:
             _notify(self, "No profile is available to run.")
             return
         if (
-            self._workspace == "loop"
-            and self._loop_diagram is not None
+            self._loop_diagram is not None
             and self._loop_diagram.is_dirty
         ):
             try:
@@ -713,6 +726,10 @@ class _RevRemAppMixin:
                 _notify(self, "Saved loop, but refreshed profile is unavailable.")
                 return
             _notify(self, f"Saved loop before run: {profile_name}")
+        selected = self._profile_by_name(profile_name)
+        if selected is None:
+            _notify(self, "No profile is available to run.")
+            return
         if self._cancel_in_progress:
             self._pending_live_confirmation_profile = None
             _notify(self, "Live run cancellation is already in progress.")
@@ -1207,14 +1224,14 @@ class _RevRemAppMixin:
         if self._loop_diagram is None:
             return
         current = self._route_values(route)
-        changes: dict[str, str] = {}
+        changes: dict[str, object] = {}
         clearable_route_fields = {"model", "reasoning_effort", "timeout_seconds", "fallback"}
         for cell in profiles.ROUTE_KEYS:
             value = str(values.get(cell, "")).strip()
             if value == "":
                 if cell not in clearable_route_fields or current.get(cell, "") == "":
                     continue
-                changes[cell] = value
+                changes[cell] = None
                 continue
             if value == current.get(cell, ""):
                 continue
@@ -1226,50 +1243,58 @@ class _RevRemAppMixin:
         if error is not None:
             _notify(self, error, severity="error")
             return
-        for cell, value in changes.items():
-            self._loop_diagram.model.set_field(f"triage.routes.{route}.{cell}", value)
+        for changed_cell in changes:
+            changed_value = changes[changed_cell]
+            self._loop_diagram.model.set_field(
+                f"triage.routes.{route}.{changed_cell}", changed_value
+            )
         self._loop_diagram.rebuild()
         self._update_console_status()
         _notify(self, f"Updated route {route} (unsaved; press s to save).")
 
-    def _route_edit_error(self, route: str, changes: dict[str, str]) -> str | None:
+    def _route_edit_error(self, route: str, changes: dict[str, object]) -> str | None:
         if self._loop_diagram is None:
             return None
         route_names = set(self._loop_diagram.route_names())
         route_names.add(route)
         for cell, value in changes.items():
+            string_value = None if value is None else str(value)
             field = f"triage.routes.{route}.{cell}"
             if cell not in profiles.ROUTE_KEYS:
                 return f"Unknown route cell: {cell}"
             if cell == "harness":
                 try:
-                    profiles.validate_harness_name(value, field=field)
+                    if string_value is None:
+                        return f"{field} must be a harness name"
+                    profiles.validate_harness_name(string_value, field=field)
                 except ValueError as exc:
                     return str(exc)
             elif cell == "reasoning_effort":
-                if value and value not in profiles.REASONING_EFFORT_CHOICES:
+                if string_value and string_value not in profiles.REASONING_EFFORT_CHOICES:
                     return (
                         f"{field} must be one of "
                         f"{', '.join(profiles.REASONING_EFFORT_CHOICES)}"
                     )
             elif cell == "timeout_seconds":
-                if value == "":
+                if string_value is None or string_value == "":
                     continue
                 try:
-                    timeout_seconds = float(value)
+                    timeout_seconds = float(string_value)
                 except ValueError:
                     return f"{field} must be a number"
                 if timeout_seconds < 0:
                     return f"{field} must be 0 or greater"
             elif cell == "sandbox":
-                if value not in profiles.EXEC_SANDBOX_CHOICES:
+                if string_value not in profiles.EXEC_SANDBOX_CHOICES:
                     return (
                         f"{field} must be one of "
                         f"{', '.join(profiles.EXEC_SANDBOX_CHOICES)}"
                     )
-            elif cell == "fallback" and value and value not in route_names:
-                return f"{field} refers to unknown route: {value}"
-        return self._route_fallback_error(route, changes.get("fallback"))
+            elif cell == "fallback" and string_value and string_value not in route_names:
+                return f"{field} refers to unknown route: {string_value}"
+        fallback_value = changes.get("fallback")
+        fallback = None if fallback_value is None else str(fallback_value)
+        return self._route_fallback_error(route, fallback)
 
     def _route_fallback_error(self, route: str, fallback: str | None) -> str | None:
         if self._loop_diagram is None or fallback is None or fallback == "":
@@ -1534,6 +1559,10 @@ class _RevRemAppMixin:
         )
 
     def _profile_name(self) -> str | None:
+        if self._workspace == "profiles" and self._profile_picker is not None:
+            selected_name = cast(str | None, self._profile_picker.selected_name())
+            if selected_name is not None:
+                return selected_name
         selected = self._selected_profile_view()
         return selected.name if selected is not None else None
 
@@ -1683,9 +1712,17 @@ class _RevRemAppMixin:
         profile_name = self._profile_name()
         if profile_name is None:
             return
-        self._loop_diagram.model = tui_loop_model.LoopEditModel.load(
-            profile_name, cwd=Path(self.model.snapshot.cwd)
-        )
+        try:
+            self._loop_diagram.model = tui_loop_model.LoopEditModel.load(
+                profile_name, cwd=Path(self.model.snapshot.cwd)
+            )
+        except (OSError, ValueError) as exc:
+            _notify(
+                self,
+                "Profile reload skipped: invalid profile config on disk; "
+                f"keeping current in-session profile state. ({exc})",
+            )
+            return
         self._loop_model = self._loop_diagram.model
         set_model = getattr(self._loop_diagram, "set_model", None)
         if callable(set_model):

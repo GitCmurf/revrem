@@ -277,6 +277,221 @@ def test_tui_dry_run_action_launches_builtin_profile_without_local_config(
     assert notifications == ["Dry run completed: security"]
 
 
+def test_tui_profile_picker_controls_profile_actions_in_profiles_workspace(
+    monkeypatch, tmp_path
+):
+    actions = []
+    notifications = []
+
+    config_path = tmp_path / ".revrem.toml"
+    config_path.write_text(
+        """
+[profiles.alpha]
+description = "Alpha profile"
+
+[profiles.alpha.pipeline]
+base = "main"
+
+[profiles.beta]
+description = "Beta profile"
+
+[profiles.beta.pipeline]
+base = "main"
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(tui.Path, "cwd", lambda: tmp_path)
+
+    model = tui.tui_state.build_shell_model(cwd=tmp_path, selected_profile_name="alpha")
+    app = tui.RevRemApp(
+        model=model,
+        profiles_by_name={
+            profile.name: profile
+            for profile in tui.profiles.resolve_profiles(
+                cwd=tmp_path,
+                require_implemented=False,
+                include_builtins=True,
+            )
+        },
+    )
+    app._workspace = "profiles"
+    app._loop_diagram = types.SimpleNamespace(
+        is_dirty=False, model=types.SimpleNamespace(), rebuild=lambda: None
+    )
+
+    class _FakePicker:
+        def __init__(self, rows: tuple[str, ...], selected_index: int = 0) -> None:
+            self.rows = rows
+            self.selected_index = selected_index
+
+        def selected_name(self) -> str | None:
+            if not self.rows:
+                return None
+            return self.rows[self.selected_index]
+
+        def set_rows(self, rows: tuple[str, ...]) -> None:
+            self.rows = rows
+
+        def rebuild(self) -> None:
+            pass
+
+    app._profile_picker = _FakePicker(("alpha", "beta"), selected_index=1)
+
+    def fake_run_launch_plan(plan, *, cwd, capture_output=True):
+        actions.append((plan.argv, plan.mode, capture_output, cwd))
+        return types.SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(tui, "run_launch_plan", fake_run_launch_plan)
+    monkeypatch.setattr(
+        app, "notify", lambda message: notifications.append(message), raising=False
+    )
+
+    app.action_launch_dry_run()
+
+    app.action_delete_profile()
+
+    assert actions == [
+        (("revrem", "--profile", "beta", "--dry-run"), "dry-run", True, tmp_path),
+        (("revrem", "config", "delete", "beta", "--yes"), "delete", True, tmp_path),
+    ]
+    assert notifications == ["Dry run completed: beta", "Deleted profile: beta"]
+
+
+def test_tui_profile_workspace_run_uses_profile_picker_selection(
+    monkeypatch, tmp_path
+):
+    notifications = []
+    started = []
+
+    config_path = tmp_path / ".revrem.toml"
+    config_path.write_text(
+        """
+[profiles.alpha]
+description = "Alpha profile"
+
+[profiles.alpha.pipeline]
+base = "main"
+
+[profiles.beta]
+description = "Beta profile"
+
+[profiles.beta.pipeline]
+base = "main"
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(tui.Path, "cwd", lambda: tmp_path)
+
+    model = tui.tui_state.build_shell_model(cwd=tmp_path, selected_profile_name="alpha")
+    app = tui.RevRemApp(
+        model=model,
+        profiles_by_name={
+            profile.name: profile
+            for profile in tui.profiles.resolve_profiles(
+                cwd=tmp_path,
+                require_implemented=False,
+                include_builtins=True,
+            )
+        },
+    )
+    app._workspace = "profiles"
+    app._loop_diagram = types.SimpleNamespace(is_dirty=False)
+
+    class _FakePicker:
+        def __init__(self, rows: tuple[str, ...], selected_index: int = 0) -> None:
+            self.rows = rows
+            self.selected_index = selected_index
+
+        def selected_name(self) -> str | None:
+            if not self.rows:
+                return None
+            return self.rows[self.selected_index]
+
+    app._profile_picker = _FakePicker(("alpha", "beta"), selected_index=1)
+
+    def fake_start(*, profile, **kwargs) -> types.SimpleNamespace:
+        started.append(profile.name)
+        return types.SimpleNamespace(artifact_dir_arg=".revrem/runs/live")
+
+    app.live_run_controller.start = fake_start
+    monkeypatch.setattr(
+        app, "notify", lambda message: notifications.append(message), raising=False
+    )
+
+    app.action_launch_run()
+    app.action_launch_run()
+
+    assert started == ["beta"]
+    assert notifications == [
+        "Press r again to start an experimental live run: beta",
+        "Live run started: beta (.revrem/runs/live)",
+    ]
+
+
+def test_tui_route_edit_error_normalizes_non_string_route_values(tmp_path):
+    config_path = tmp_path / ".revrem.toml"
+    config_path.write_text(
+        """
+[profiles.audit]
+description = "Audit profile"
+
+[profiles.audit.pipeline]
+base = "main"
+
+[profiles.audit.triage]
+enabled = true
+contract = "v2"
+
+[profiles.audit.triage.routing]
+enabled = true
+default_route = "security"
+
+[profiles.audit.triage.routes.security]
+harness = "codex"
+model = "gpt-5.5"
+
+[profiles.audit.triage.routes.backup]
+harness = "codex"
+""",
+        encoding="utf-8",
+    )
+    (tmp_path / ".git").mkdir()
+    model = tui.tui_state.build_shell_model(cwd=tmp_path, selected_profile_name="audit")
+    app = tui.RevRemApp(
+        model=model,
+        profiles_by_name={
+            profile.name: profile
+            for profile in tui.profiles.resolve_profiles(
+                cwd=tmp_path,
+                require_implemented=False,
+                include_builtins=True,
+            )
+        },
+    )
+
+    from code_review_loop import tui_loop_model
+
+    loop_model = tui_loop_model.LoopEditModel.load("audit", cwd=tmp_path)
+
+    class _LoopDiagram:
+        def __init__(self, model: tui_loop_model.LoopEditModel) -> None:
+            self.model = model
+
+        def route_names(self) -> tuple[str, ...]:
+            return tuple(self.model.profile.triage.routes.keys())
+
+    app._loop_diagram = _LoopDiagram(loop_model)
+
+    assert (
+        app._route_edit_error("security", {"timeout_seconds": object()})
+        == "triage.routes.security.timeout_seconds must be a number"
+    )
+    assert (
+        app._route_edit_error("security", {"harness": None})
+        == "triage.routes.security.harness must be a harness name"
+    )
+
+
 def test_tui_live_run_action_requires_confirmation_and_starts_controller(
     monkeypatch, tmp_path
 ):
@@ -432,6 +647,79 @@ def test_tui_live_run_action_refuses_second_r_while_run_is_active(
     ]
     assert starts == []
     assert app._pending_live_confirmation_profile is None
+
+
+def test_tui_run_action_saves_dirty_loop_before_launch_in_non_loop_workspace(
+    monkeypatch, tmp_path
+):
+    notifications = []
+    starts = []
+    saved = []
+
+    config_path = tmp_path / ".revrem.toml"
+    config_path.write_text(
+        """
+[profiles.final-pr]
+description = "Final PR"
+
+[profiles.final-pr.pipeline]
+base = "main"
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(tui.Path, "cwd", lambda: tmp_path)
+
+    model = tui.tui_state.build_shell_model(
+        cwd=tmp_path, selected_profile_name="final-pr"
+    )
+    app = tui.RevRemApp(
+        model=model,
+        profiles_by_name={
+            profile.name: profile
+            for profile in tui.profiles.resolve_profiles(
+                cwd=tmp_path,
+                require_implemented=False,
+                include_builtins=True,
+            )
+        },
+    )
+
+    class _LoopDiagram:
+        def __init__(self) -> None:
+            self.is_dirty = True
+
+            def save() -> None:
+                saved.append("saved")
+                self.is_dirty = False
+
+            self.model = types.SimpleNamespace(save=save)
+
+    app._loop_diagram = _LoopDiagram()
+    app._workspace = "prompts"
+
+    refresh_calls = []
+    monkeypatch.setattr(app, "_refresh_profiles_from_disk", lambda: refresh_calls.append(True))
+
+    def fake_start(*, profile, **kwargs) -> types.SimpleNamespace:
+        starts.append(profile.name)
+        return types.SimpleNamespace(artifact_dir_arg=".revrem/runs/live")
+
+    app.live_run_controller.start = fake_start
+    monkeypatch.setattr(
+        app, "notify", lambda message: notifications.append(message), raising=False
+    )
+
+    app.action_launch_run()
+    app.action_launch_run()
+
+    assert saved == ["saved"]
+    assert refresh_calls == [True]
+    assert starts == ["final-pr"]
+    assert notifications == [
+        "Saved loop before run: final-pr",
+        "Press r again to start an experimental live run: final-pr",
+        "Live run started: final-pr (.revrem/runs/live)",
+    ]
 
 
 def test_tui_live_run_action_refuses_second_r_while_run_is_cancelling(
@@ -619,6 +907,77 @@ artifact_dir = "{artifact_dir}"
     app.action_launch_run()
     assert launched_artifact_dirs == ["artifacts/old"]
     assert notifications[-1].endswith("final-pr (artifacts/old)")
+
+
+def test_tui_workspace_loop_keeps_profile_when_reload_is_invalid(monkeypatch, tmp_path):
+    notifications = []
+    config_path = tmp_path / ".revrem.toml"
+    config_path.write_text(
+        """
+[profiles.final-pr]
+description = "Final PR"
+
+[profiles.final-pr.output]
+artifact_dir = "artifacts/current"
+""",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(tui.Path, "cwd", lambda: tmp_path)
+    model = tui.tui_state.build_shell_model(
+        cwd=tmp_path, selected_profile_name="final-pr"
+    )
+    app = tui.RevRemApp(
+        model=model,
+        profiles_by_name={
+            profile.name: profile
+            for profile in tui.profiles.resolve_profiles(
+                cwd=tmp_path,
+                require_implemented=False,
+                include_builtins=True,
+            )
+        },
+    )
+
+    from code_review_loop import tui_loop_model
+
+    loop_model = tui_loop_model.LoopEditModel.load("final-pr", cwd=tmp_path)
+
+    class _DummyLoopDiagram:
+        def __init__(self, model: tui_loop_model.LoopEditModel) -> None:
+            self.model = model
+            self.is_dirty = False
+
+        def rebuild(self) -> None:
+            pass
+
+        def set_model(self, model: tui_loop_model.LoopEditModel) -> None:
+            self.model = model
+
+        def current_phase(self) -> str:
+            return "review"
+
+    app._loop_diagram = _DummyLoopDiagram(loop_model)
+    app._loop_model = loop_model
+
+    def fail_load(*_args, **_kwargs) -> tui_loop_model.LoopEditModel:
+        raise ValueError("profile invalid")
+
+    monkeypatch.setattr(tui_loop_model.LoopEditModel, "load", fail_load)
+    monkeypatch.setattr(
+        app, "notify", lambda message: notifications.append(message), raising=False
+    )
+
+    app._workspace = "profiles"
+    app.action_workspace_loop()
+
+    assert app._workspace == "loop"
+    assert app._loop_model is loop_model
+    assert any(
+        "Profile reload skipped: invalid profile config on disk; keeping current in-session profile state."
+        in message
+        for message in notifications
+    )
 
 
 def test_tui_live_monitor_refresh_updates_run_monitor_widget(monkeypatch, tmp_path):

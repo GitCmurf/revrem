@@ -1126,6 +1126,11 @@ def write_profile_to_path(
         raise FileExistsError(f"profile already exists: {profile.name}")
     if raw_profile is None:
         raw_profile = profile_file.raw_profiles.get(profile.name)
+    elif _contains_none_patch(raw_profile):
+        raw_profile = _apply_profile_patch_with_clears(
+            profile_file.raw_profiles.get(profile.name, {}),
+            raw_profile,
+        )
     _write_profile_file(
         path,
         defaults=profile_file.defaults,
@@ -1772,28 +1777,62 @@ _BOOL_SUFFIXES = (
 )
 
 
-def _coerce_field_value(dotted_key: str, value: str) -> Any:
+def _coerce_field_value(dotted_key: str, value: object) -> Any:
+    if value is None:
+        return None
+    raw = value if isinstance(value, str) else str(value)
     if dotted_key.endswith(_INT_SUFFIXES):
         try:
-            return int(value)
+            return int(raw)
         except ValueError as exc:
             raise ValueError(f"{dotted_key} must be an integer, got {value!r}") from exc
     if dotted_key.endswith(_FLOAT_SUFFIXES):
         try:
-            return float(value)
+            return float(raw)
         except ValueError as exc:
             raise ValueError(f"{dotted_key} must be a number, got {value!r}") from exc
     if dotted_key.endswith(_BOOL_SUFFIXES):
-        lowered = value.strip().lower()
+        lowered = raw.strip().lower()
         if lowered in ("true", "1", "yes", "on"):
             return True
         if lowered in ("false", "0", "no", "off"):
             return False
         raise ValueError(f"{dotted_key} must be a boolean, got {value!r}")
-    return value
+    return raw
 
 
-def deep_set_raw(raw: dict[str, Any], dotted_key: str, value: str) -> dict[str, Any]:
+def _contains_none_patch(raw_profile: dict[str, Any]) -> bool:
+    for value in raw_profile.values():
+        if value is None:
+            return True
+        if isinstance(value, dict):
+            if _contains_none_patch(value):
+                return True
+        elif isinstance(value, list | tuple) and any(item is None for item in value):
+            return True
+    return False
+
+
+def _apply_profile_patch_with_clears(
+    base: dict[str, Any],
+    patch: dict[str, Any],
+) -> dict[str, Any]:
+    merged = _copy.deepcopy(base)
+    for key, value in patch.items():
+        if value is None:
+            merged.pop(key, None)
+            continue
+        if isinstance(value, dict):
+            current = merged.get(key)
+            if not isinstance(current, dict):
+                current = {}
+            merged[key] = _apply_profile_patch_with_clears(current, value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def deep_set_raw(raw: dict[str, Any], dotted_key: str, value: object) -> dict[str, Any]:
     if not dotted_key:
         raise ValueError("dotted_key must be non-empty")
     coerced = _coerce_field_value(dotted_key, value)

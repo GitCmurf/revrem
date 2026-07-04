@@ -93,6 +93,45 @@ def test_save_persists_delta_reloads_and_clears_dirty(tmp_path: Path) -> None:
     assert raw["pipeline"]["max_iterations"] == 9
 
 
+def test_route_row_clear_save_removes_cleared_route_field(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    _write(
+        repo / ".revrem.toml",
+        "\n".join(
+            (
+                "[profiles.p]",
+                "[profiles.p.pipeline]",
+                'base = "main"',
+                "[profiles.p.triage]",
+                "enabled = true",
+                'contract = "v2"',
+                "[profiles.p.triage.routing]",
+                "enabled = true",
+                'default_route = "security"',
+                "[profiles.p.triage.routes.security]",
+                'harness = "codex"',
+                'model = "gpt-5.4"',
+                'fallback = "backup"',
+                "[profiles.p.triage.routes.backup]",
+                'harness = "codex"',
+            )
+        )
+        + "\n",
+    )
+
+    model = LoopEditModel.load("p", cwd=repo)
+    model.set_field("triage.routes.security.model", None)
+    model.save()
+
+    raw = profiles.load_profile_file(repo / ".revrem.toml").raw_profiles["p"]
+    assert raw["triage"]["routes"]["security"]["harness"] == "codex"
+    assert "model" not in raw["triage"]["routes"]["security"]
+    assert "fallback" in raw["triage"]["routes"]["security"]
+    resolved = profiles.resolve_profile("p", cwd=repo, require_implemented=False)
+    assert resolved.triage.routes["security"].model is None
+
+
 def test_invalid_save_keeps_dirty_edits(tmp_path: Path) -> None:
     repo = _project_profile(tmp_path)
     model = LoopEditModel.load("dogfood", cwd=repo)

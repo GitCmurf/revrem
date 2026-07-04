@@ -38,6 +38,17 @@ def test_deep_set_raw_coerces_timeout_float():
     assert isinstance(out["review"]["timeout_seconds"], float)
 
 
+def test_deep_set_raw_accepts_none_and_non_string_values():
+    out_none = profiles.deep_set_raw({}, "review.model", None)
+    assert out_none["review"]["model"] is None
+
+    out_number = profiles.deep_set_raw({}, "pipeline.max_iterations", 12)
+    assert out_number["pipeline"]["max_iterations"] == 12
+
+    out_flag = profiles.deep_set_raw({}, "pipeline.final_review", True)
+    assert out_flag["pipeline"]["final_review"] is True
+
+
 def test_deep_set_raw_coerces_additional_numeric_fields():
     out = profiles.deep_set_raw({}, "pipeline.check_timeout_seconds", "42")
     assert out["pipeline"]["check_timeout_seconds"] == 42.0

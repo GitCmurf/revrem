@@ -89,6 +89,9 @@ This project follows Semantic Versioning once public releases begin.
 - TUI working-copy route saves now materialize inherited routing/default-route
   and fallback context before writing, so route-cell edits remain loadable and
   match the `revrem config set` route materialization path.
+- Route clear actions in the Loop route editor now persist as field removals
+  (instead of empty strings), and loop refresh/reload paths now keep the
+  in-session profile model when on-disk profile config is invalid.
 - The experimental TUI Run workspace now keeps rendering the profile that
   launched the live run even if the operator browses or selects a different
   profile while the run is still visible.

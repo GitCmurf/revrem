@@ -34,7 +34,7 @@ class LoopEditModel:
     profile: profiles.Profile
     cwd: Path
     home: Path | None = None
-    edits: dict[str, str] = field(default_factory=dict)
+    edits: dict[str, object] = field(default_factory=dict)
 
     @classmethod
     def load(cls, name: str, *, cwd: Path, home: Path | None = None) -> LoopEditModel:
@@ -51,13 +51,15 @@ class LoopEditModel:
         if dotted_key not in self.edits:
             return fallback
         value = self.edits[dotted_key]
+        if value is None:
+            return ""
         try:
             coerced = profiles.deep_set_raw({}, dotted_key, value)
         except ValueError:
             return value
         return _read_dotted(coerced, dotted_key)
 
-    def set_field(self, dotted_key: str, value: str) -> None:
+    def set_field(self, dotted_key: str, value: object) -> None:
         try:
             coerced = profiles.deep_set_raw({}, dotted_key, value)
             proposed = _read_dotted(coerced, dotted_key)
