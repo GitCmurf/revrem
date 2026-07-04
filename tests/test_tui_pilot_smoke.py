@@ -626,6 +626,62 @@ def test_route_row_edit_rejects_invalid_timeout_atomically(tmp_path):
     asyncio.run(run())
 
 
+def test_route_row_edit_can_clear_optional_route_fields(tmp_path):
+    async def run() -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        (repo / ".revrem.toml").write_text(
+            "[profiles.edit]\n[profiles.edit.pipeline]\nbase='main'\n"
+            "[profiles.edit.triage]\nenabled=true\ncontract='v2'\n"
+            "[profiles.edit.triage.routing]\nenabled=true\ndefault_route='security'\n"
+            "[profiles.edit.triage.routes.security]\n"
+            "harness='codex'\n"
+            "model='gpt-5.4-mini'\n"
+            "reasoning_effort='high'\n"
+            "timeout_seconds=900\n"
+            "sandbox='read-only'\n"
+            "fallback='audit'\n"
+            "[profiles.edit.triage.routes.audit]\n"
+            "harness='codex'\n"
+            "sandbox='workspace-write'\n",
+            encoding="utf-8",
+        )
+        async with pilot_app(cwd=repo, profile_name="edit") as (app, pilot):
+            await pilot.press("1")
+            await pilot.pause()
+            diagram = app.query_one("#loop-diagram")
+            app._apply_route_row_edit(
+                "security",
+                {
+                    "model": "",
+                    "reasoning_effort": "",
+                    "timeout_seconds": "",
+                    "fallback": "",
+                },
+            )
+            assert diagram.model.field_value("triage.routes.security.model", None) == ""
+            assert (
+                diagram.model.field_value(
+                    "triage.routes.security.reasoning_effort", None
+                )
+                == ""
+            )
+            assert (
+                diagram.model.field_value(
+                    "triage.routes.security.timeout_seconds", None
+                )
+                == ""
+            )
+            assert diagram.model.field_value("triage.routes.security.fallback", None) == ""
+            assert "security: codex · <default> · <default> · none" in _render(
+                app, "#triage-routes-table"
+            )
+            assert diagram.is_dirty is True
+
+    asyncio.run(run())
+
+
 def test_route_edit_rejects_fallback_cycle(tmp_path):
     async def run() -> None:
         repo = tmp_path / "repo"

@@ -1208,9 +1208,13 @@ class _RevRemAppMixin:
             return
         current = self._route_values(route)
         changes: dict[str, str] = {}
+        clearable_route_fields = {"model", "reasoning_effort", "timeout_seconds", "fallback"}
         for cell in profiles.ROUTE_KEYS:
             value = str(values.get(cell, "")).strip()
             if value == "":
+                if cell not in clearable_route_fields or current.get(cell, "") == "":
+                    continue
+                changes[cell] = value
                 continue
             if value == current.get(cell, ""):
                 continue
@@ -1249,6 +1253,8 @@ class _RevRemAppMixin:
                         f"{', '.join(profiles.REASONING_EFFORT_CHOICES)}"
                     )
             elif cell == "timeout_seconds":
+                if value == "":
+                    continue
                 try:
                     timeout_seconds = float(value)
                 except ValueError:
