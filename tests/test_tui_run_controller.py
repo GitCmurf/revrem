@@ -182,7 +182,7 @@ def test_classify_exit_requires_artifacts_for_clean_cancellation():
     )
     assert (
         tui_run_controller.classify_exit(2, summary={"final_status": "unknown"})
-        == "failed"
+        == "completed-unknown"
     )
     assert tui_run_controller.classify_exit(3) == "budget"
     assert tui_run_controller.classify_exit(4) == "setup-failed"
@@ -595,6 +595,7 @@ def test_terminal_statuses_cover_all_non_idle_running_states():
     assert statuses == {
         "completed-clear",
         "completed-findings",
+        "completed-unknown",
         "budget",
         "setup-failed",
         "cancelled",

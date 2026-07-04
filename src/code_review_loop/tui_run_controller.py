@@ -24,6 +24,7 @@ RunControllerStatus = Literal[
     "running",
     "completed-clear",
     "completed-findings",
+    "completed-unknown",
     "budget",
     "setup-failed",
     "cancelled",
@@ -35,6 +36,7 @@ TERMINAL_STATUSES: frozenset[RunControllerStatus] = frozenset(
     {
         "completed-clear",
         "completed-findings",
+        "completed-unknown",
         "budget",
         "setup-failed",
         "cancelled",
@@ -306,7 +308,11 @@ def classify_exit(
     *,
     summary: dict[str, object] | None = None,
 ) -> RunControllerStatus:
-    """Map process exit code and summary status to live-run terminal status."""
+    """Map process exit code and summary status to live-run terminal status.
+
+    Exit code 2 is used for both terminal findings and unknown-review outcomes.
+    Distinguish those cases so unknown outcomes remain review-level terminals.
+    """
     final_status = str(summary.get("final_status") or "") if summary else ""
     stopped_reason = str(summary.get("stopped_reason") or "") if summary else ""
     if exit_code == 0:
@@ -314,7 +320,11 @@ def classify_exit(
     if exit_code == 2:
         if summary is None:
             return "completed-findings"
-        return "completed-findings" if final_status == "findings" else "failed"
+        if final_status == "findings":
+            return "completed-findings"
+        if final_status == "unknown":
+            return "completed-unknown"
+        return "failed"
     if exit_code == 3:
         return "budget"
     if exit_code == 4:

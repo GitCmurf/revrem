@@ -528,7 +528,7 @@ class _RevRemAppMixin:
         color: $success;
     }
 
-    .status-completed-findings, .status-budget {
+    .status-completed-findings, .status-completed-unknown, .status-budget {
         color: $warning;
     }
 
