@@ -385,7 +385,13 @@ def _descendant_pids(process: subprocess.Popen[str]) -> frozenset[int]:
 def _proc_children_by_parent() -> dict[int, tuple[int, ...]]:
     proc_root = Path("/proc")
     if not proc_root.is_dir():
-        return {}
+        # macOS and many BSDs do not provide /proc.
+        return _proc_children_by_parent_ps()
+    return _proc_children_by_parent_procfs()
+
+
+def _proc_children_by_parent_procfs() -> dict[int, tuple[int, ...]]:
+    proc_root = Path("/proc")
     children: dict[int, list[int]] = {}
     for entry in proc_root.iterdir():
         if not entry.name.isdigit():
@@ -398,6 +404,30 @@ def _proc_children_by_parent() -> dict[int, tuple[int, ...]]:
         ppid = _ppid_from_proc_stat(stat_text)
         if ppid is not None:
             children.setdefault(ppid, []).append(pid)
+    return {ppid: tuple(pids) for ppid, pids in children.items()}
+
+
+def _proc_children_by_parent_ps() -> dict[int, tuple[int, ...]]:
+    # Fallback for non-Linux POSIX hosts.
+    try:
+        ps_rows = subprocess.check_output(
+            ["ps", "-eo", "pid=,ppid="],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return {}
+    children: dict[int, list[int]] = {}
+    for line in ps_rows.splitlines():
+        fields = line.strip().split()
+        if len(fields) != 2:
+            continue
+        try:
+            pid = int(fields[0])
+            ppid = int(fields[1])
+        except ValueError:
+            continue
+        children.setdefault(ppid, []).append(pid)
     return {ppid: tuple(pids) for ppid, pids in children.items()}
 
 

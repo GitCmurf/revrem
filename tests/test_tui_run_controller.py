@@ -403,6 +403,40 @@ claude = "{provider}"
         controller.cancel(grace_seconds=1)
 
 
+def test_proc_children_by_parent_falls_back_to_ps_without_proc(monkeypatch):
+    class _FakeProcPath:
+        def is_dir(self) -> bool:
+            return False
+
+    def _fake_path_factory(value: str) -> _FakeProcPath:
+        assert value == "/proc"
+        return _FakeProcPath()
+
+    def _fake_check_output(cmd, *args, **kwargs):
+        assert cmd == ["ps", "-eo", "pid=,ppid="]
+        assert kwargs["text"] is True
+        return "\n".join(
+            [
+                "  42   1",
+                "105   42",
+                "   6   2",
+            ]
+        )
+
+    monkeypatch.setattr(tui_run_controller, "Path", _fake_path_factory)
+    monkeypatch.setattr(
+        tui_run_controller.subprocess,
+        "check_output",
+        _fake_check_output,
+    )
+
+    assert tui_run_controller._proc_children_by_parent() == {
+        1: (42,),
+        42: (105,),
+        2: (6,),
+    }
+
+
 def test_live_events_ignore_stale_explicit_artifact_dir_until_replaced(tmp_path):
     run_dir = tmp_path / "custom" / "run"
     run_dir.mkdir(parents=True)
