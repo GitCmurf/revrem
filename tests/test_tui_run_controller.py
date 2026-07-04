@@ -176,6 +176,14 @@ def test_start_marks_setup_failed_when_launch_raises(tmp_path):
 def test_classify_exit_requires_artifacts_for_clean_cancellation():
     assert tui_run_controller.classify_exit(0) == "completed-clear"
     assert tui_run_controller.classify_exit(2) == "completed-findings"
+    assert (
+        tui_run_controller.classify_exit(2, summary={"final_status": "findings"})
+        == "completed-findings"
+    )
+    assert (
+        tui_run_controller.classify_exit(2, summary={"final_status": "unknown"})
+        == "failed"
+    )
     assert tui_run_controller.classify_exit(3) == "budget"
     assert tui_run_controller.classify_exit(4) == "setup-failed"
     assert tui_run_controller.classify_exit(5) == "failed"

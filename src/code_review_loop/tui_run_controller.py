@@ -306,12 +306,15 @@ def classify_exit(
     *,
     summary: dict[str, object] | None = None,
 ) -> RunControllerStatus:
+    """Map process exit code and summary status to live-run terminal status."""
     final_status = str(summary.get("final_status") or "") if summary else ""
     stopped_reason = str(summary.get("stopped_reason") or "") if summary else ""
     if exit_code == 0:
         return "completed-clear"
     if exit_code == 2:
-        return "completed-findings"
+        if summary is None:
+            return "completed-findings"
+        return "completed-findings" if final_status == "findings" else "failed"
     if exit_code == 3:
         return "budget"
     if exit_code == 4:
