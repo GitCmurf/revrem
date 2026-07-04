@@ -674,7 +674,7 @@ def test_route_row_edit_can_clear_optional_route_fields(tmp_path):
                 == ""
             )
             assert diagram.model.field_value("triage.routes.security.fallback", None) == ""
-            assert "security: codex · <default> · <default> · none" in _render(
+            assert "security: codex · <default> · <default> · <default>" in _render(
                 app, "#triage-routes-table"
             )
             assert diagram.is_dirty is True

@@ -416,7 +416,7 @@ def parse_triage_route(raw: dict[str, Any], field: str) -> TriageRouteConfig:
     harness = _str(raw.get("harness", "codex"), f"{field}.harness")
     validate_harness_name(harness, field=f"{field}.harness")
     reasoning_effort = _optional_str(raw.get("reasoning_effort"), f"{field}.reasoning_effort")
-    if reasoning_effort is not None and reasoning_effort not in REASONING_EFFORT_CHOICES:
+    if reasoning_effort is not None and reasoning_effort != "" and reasoning_effort not in REASONING_EFFORT_CHOICES:
         raise ValueError(
             f"{field}.reasoning_effort must be one of {', '.join(REASONING_EFFORT_CHOICES)}"
         )
@@ -1184,7 +1184,7 @@ def _materialize_inherited_route_clear_markers(
     *,
     current_profile: dict[str, Any],
 ) -> dict[str, Any]:
-    """Preserve clear of inherited route model/fallback as explicit empty overrides."""
+    """Preserve clear of inherited route fields as explicit overrides."""
     routes = raw_profile.get("triage")
     if not isinstance(routes, dict):
         return raw_profile
@@ -1213,9 +1213,14 @@ def _materialize_inherited_route_clear_markers(
         current_route = current_routes.get(route_name)
         if not isinstance(current_route, dict):
             current_route = {}
-        for field in ("model", "fallback"):
+        for field, clear_value in (
+            ("model", ""),
+            ("fallback", ""),
+            ("reasoning_effort", ""),
+            ("timeout_seconds", 0),
+        ):
             if field in route_delta and route_delta.get(field) is None and field not in current_route:
-                route_delta[field] = ""
+                route_delta[field] = clear_value
     return merged
 
 

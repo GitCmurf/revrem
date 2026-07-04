@@ -108,7 +108,7 @@ def _effective_int(source: Any, dotted_key: str, fallback: int) -> int:
 
 def _format_timeout(value: object) -> str:
     if value is None or value == "":
-        return "none"
+        return "<default>"
     if isinstance(value, int | float):
         return f"{value:g}s"
     return f"{value}s"

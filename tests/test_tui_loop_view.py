@@ -119,6 +119,19 @@ def test_phase_card_expanded_shows_edit_fields_with_overlay(tmp_path: Path) -> N
     assert "gpt-5.6" in text and "gpt-5.5" not in text
 
 
+def test_phase_card_timeout_overlay_shows_default_when_unset(tmp_path: Path) -> None:
+    repo = _repo(
+        tmp_path,
+        "[profiles.p]\n[profiles.p.pipeline]\nbase='main'\n"
+        "[profiles.p.review]\nharness='codex'\nmodel='gpt-5.5'\n",
+    )
+    assert "<default>" in "\n".join(
+        tui_loop_state.phase_card_lines(
+            _model(repo, "p"), "review", focused=False, expanded=False
+        )
+    )
+
+
 def test_phase_card_timeout_overlay_formats_int_and_float_values(tmp_path: Path) -> None:
     repo = _repo(
         tmp_path,
