@@ -18,7 +18,7 @@ from code_review_loop import (
     harnesses,
     profiles,
     tui_profiles_state,
-    tui_prompts_state,
+    tui_prompt_assets,
     tui_run_controller,
     tui_state,
 )
@@ -1120,14 +1120,21 @@ class _RevRemAppMixin:
         if self._prompt_target_key is None:
             _notify(self, f"Prompt asset: {asset.name}")
             return
+        key = self._prompt_target_key
+        if asset.kind == "contract" and key != "triage.prompt":
+            _notify(
+                self,
+                f"Prompt contract {asset.name} can only target triage.prompt.",
+                severity="error",
+            )
+            return
         try:
-            text = tui_prompts_state.prompt_asset_text(
+            text = tui_prompt_assets.prompt_asset_text(
                 asset, cwd=Path(self.model.snapshot.cwd)
             )
         except ValueError as exc:
             _notify(self, f"Prompt apply failed: {exc}", severity="error")
             return
-        key = self._prompt_target_key
         self._prompt_target_key = None
         self._apply_prompt_edit(key, text)
         self._set_workspace(self._prompt_return_workspace or "loop")
@@ -1175,14 +1182,7 @@ class _RevRemAppMixin:
         profile = self._loop_diagram.model.profile
         route_config = profile.triage.routes.get(route)
         values: dict[str, str] = {}
-        for cell in (
-            "harness",
-            "model",
-            "reasoning_effort",
-            "timeout_seconds",
-            "sandbox",
-            "fallback",
-        ):
+        for cell in profiles.ROUTE_KEYS:
             fallback = getattr(route_config, cell, None) if route_config else None
             value = self._loop_diagram.model.field_value(
                 f"triage.routes.{route}.{cell}", fallback
@@ -1193,15 +1193,10 @@ class _RevRemAppMixin:
     def _apply_route_edit(self, route: str, cell: str, value: str) -> None:
         if self._loop_diagram is None:
             return
-        if cell not in {
-            "harness",
-            "model",
-            "reasoning_effort",
-            "timeout_seconds",
-            "sandbox",
-            "fallback",
-        }:
-            _notify(self, f"Unknown route cell: {cell}")
+        value = value.strip()
+        error = self._route_edit_error(route, {cell: value})
+        if error is not None:
+            _notify(self, error, severity="error")
             return
         self._loop_diagram.model.set_field(f"triage.routes.{route}.{cell}", value)
         self._loop_diagram.rebuild()
@@ -1212,44 +1207,109 @@ class _RevRemAppMixin:
         if self._loop_diagram is None:
             return
         current = self._route_values(route)
-        changed = False
-        for cell in (
-            "harness",
-            "model",
-            "reasoning_effort",
-            "timeout_seconds",
-            "sandbox",
-            "fallback",
-        ):
+        changes: dict[str, str] = {}
+        for cell in profiles.ROUTE_KEYS:
             value = str(values.get(cell, "")).strip()
             if value == "":
                 continue
             if value == current.get(cell, ""):
                 continue
-            self._loop_diagram.model.set_field(f"triage.routes.{route}.{cell}", value)
-            changed = True
-        if not changed:
+            changes[cell] = value
+        if not changes:
             _notify(self, f"No changes for route {route}.")
             return
+        error = self._route_edit_error(route, changes)
+        if error is not None:
+            _notify(self, error, severity="error")
+            return
+        for cell, value in changes.items():
+            self._loop_diagram.model.set_field(f"triage.routes.{route}.{cell}", value)
         self._loop_diagram.rebuild()
         self._update_console_status()
         _notify(self, f"Updated route {route} (unsaved; press s to save).")
+
+    def _route_edit_error(self, route: str, changes: dict[str, str]) -> str | None:
+        if self._loop_diagram is None:
+            return None
+        route_names = set(self._loop_diagram.route_names())
+        route_names.add(route)
+        for cell, value in changes.items():
+            field = f"triage.routes.{route}.{cell}"
+            if cell not in profiles.ROUTE_KEYS:
+                return f"Unknown route cell: {cell}"
+            if cell == "harness":
+                try:
+                    profiles.validate_harness_name(value, field=field)
+                except ValueError as exc:
+                    return str(exc)
+            elif cell == "reasoning_effort":
+                if value and value not in profiles.REASONING_EFFORT_CHOICES:
+                    return (
+                        f"{field} must be one of "
+                        f"{', '.join(profiles.REASONING_EFFORT_CHOICES)}"
+                    )
+            elif cell == "timeout_seconds":
+                try:
+                    timeout_seconds = float(value)
+                except ValueError:
+                    return f"{field} must be a number"
+                if timeout_seconds < 0:
+                    return f"{field} must be 0 or greater"
+            elif cell == "sandbox":
+                if value not in profiles.EXEC_SANDBOX_CHOICES:
+                    return (
+                        f"{field} must be one of "
+                        f"{', '.join(profiles.EXEC_SANDBOX_CHOICES)}"
+                    )
+            elif cell == "fallback" and value and value not in route_names:
+                return f"{field} refers to unknown route: {value}"
+        return self._route_fallback_error(route, changes.get("fallback"))
+
+    def _route_fallback_error(self, route: str, fallback: str | None) -> str | None:
+        if self._loop_diagram is None or fallback is None or fallback == "":
+            return None
+        route_names = self._loop_diagram.route_names()
+        fallbacks: dict[str, str] = {}
+        for route_name in route_names:
+            route_config = self._loop_diagram.model.profile.triage.routes.get(route_name)
+            current_fallback = route_config.fallback if route_config else None
+            value = self._loop_diagram.model.field_value(
+                f"triage.routes.{route_name}.fallback", current_fallback
+            )
+            fallbacks[route_name] = "" if value is None else str(value)
+        fallbacks[route] = fallback
+        chain = [route]
+        current = route
+        while fallbacks.get(current):
+            next_route = fallbacks[current]
+            if next_route in chain:
+                return (
+                    f"triage.routes.{route}.fallback creates a fallback cycle: "
+                    f"{' -> '.join((*chain, next_route))}"
+                )
+            chain.append(next_route)
+            current = next_route
+        return None
 
     def _apply_route_add(self, route: str) -> None:
         if self._loop_diagram is None:
             return
         route = route.strip()
         if _ROUTE_NAME_RE.fullmatch(route) is None:
-            _notify(self, "Invalid route name: use letters, numbers, '-' or '_'.")
+            _notify(
+                self,
+                "Invalid route name: use letters, numbers, '-' or '_'.",
+                severity="error",
+            )
             return
         if route in self._loop_diagram.model.profile.triage.routes:
-            _notify(self, f"Route already exists: {route}")
+            _notify(self, f"Route already exists: {route}", severity="error")
             return
         if (
             self._loop_diagram.model.field_value(f"triage.routes.{route}.harness", None)
             is not None
         ):
-            _notify(self, f"Route already exists: {route}")
+            _notify(self, f"Route already exists: {route}", severity="error")
             return
         self._loop_diagram.model.set_field(f"triage.routes.{route}.harness", "codex")
         self._loop_diagram.model.set_field(

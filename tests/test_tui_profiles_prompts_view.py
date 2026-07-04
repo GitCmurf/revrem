@@ -6,6 +6,7 @@ from code_review_loop import (
     profiles,
     tui_loop_state,
     tui_profiles_state,
+    tui_prompt_assets,
     tui_prompts_state,
     tui_state,
 )
@@ -63,17 +64,37 @@ def test_prompt_inventory_is_sorted_and_stable() -> None:
     assert fragment_names == sorted(fragment_names)
 
 
+def test_prompt_view_model_does_not_own_prompt_resolution() -> None:
+    assert not hasattr(tui_prompts_state, "prompt_asset_text")
+    assert not hasattr(tui_prompts_state, "prompts_composer")
+
+
 def test_prompt_asset_text_loads_fragment_and_contract(tmp_path: Path) -> None:
     assets = tui_prompts_state.prompt_inventory()
     fragment = next(asset for asset in assets if asset.name == "security-checklist")
     contract = next(asset for asset in assets if asset.name == "triage_v2")
-    assert (
-        "security"
-        in tui_prompts_state.prompt_asset_text(fragment, cwd=tmp_path).lower()
-    )
-    assert "single JSON object" in tui_prompts_state.prompt_asset_text(
+    assert "security" in tui_prompt_assets.prompt_asset_text(
+        fragment, cwd=tmp_path
+    ).lower()
+    assert "single JSON object" in tui_prompt_assets.prompt_asset_text(
         contract, cwd=tmp_path
     )
+
+
+def test_prompt_asset_text_reports_missing_fragment(tmp_path: Path) -> None:
+    asset = tui_prompts_state.PromptAsset(
+        name="missing-fragment",
+        kind="fragment",
+        trust="builtin",
+        preview="",
+    )
+
+    try:
+        tui_prompt_assets.prompt_asset_text(asset, cwd=tmp_path)
+    except ValueError as exc:
+        assert "prompt fragment is unavailable: missing-fragment" in str(exc)
+    else:  # pragma: no cover - defensive
+        raise AssertionError("missing fragment unexpectedly resolved")
 
 
 def test_prompt_field_label_is_harness_aware() -> None:

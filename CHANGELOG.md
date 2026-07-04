@@ -60,6 +60,10 @@ This project follows Semantic Versioning once public releases begin.
 
 ### Fixed
 
+- The experimental TUI now keeps prompt inventory view-models free of prompt
+  resolution I/O, rejects applying triage contract prompt assets to commit
+  message prompts, and validates route row edits before mutating the Loop
+  working copy.
 - The experimental TUI route editor now offers a reliable `Ctrl+S` keyboard
   save path from Select-backed fields, and the live-run nested-child
   cancellation regression test tolerates slow CI scheduling while still

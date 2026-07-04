@@ -504,6 +504,52 @@ def test_prompt_edit_sets_scalar_field_on_working_copy(tmp_path):
     asyncio.run(run())
 
 
+def test_prompt_contract_only_targets_triage_prompt(tmp_path):
+    async def run() -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        (repo / ".revrem.toml").write_text(
+            "[profiles.edit]\n[profiles.edit.pipeline]\nbase='main'\n"
+            "[profiles.edit.triage]\nenabled=true\n"
+            "[profiles.edit.commit]\nenabled=true\n",
+            encoding="utf-8",
+        )
+        notifications: list[tuple[str, str | None]] = []
+        async with pilot_app(cwd=repo, profile_name="edit") as (app, pilot):
+            app.notify = lambda message, **kwargs: notifications.append(
+                (message, kwargs.get("severity"))
+            )
+            await pilot.press("4")
+            await pilot.pause()
+            library = app.query_one("#prompt-library")
+            for index, asset in enumerate(library.assets):
+                if asset.kind == "contract":
+                    library.selected_index = index
+                    library.rebuild()
+                    break
+            else:  # pragma: no cover - defensive
+                raise AssertionError("expected a contract prompt asset")
+            app._prompt_target_key = "commit.message_prompt"
+            app._apply_selected_prompt_asset()
+            diagram = app.query_one("#loop-diagram")
+            assert (
+                diagram.model.field_value("commit.message_prompt", None)
+                is None
+            )
+            assert any(
+                "can only target triage.prompt" in message and severity == "error"
+                for message, severity in notifications
+            )
+
+            app._prompt_target_key = "triage.prompt"
+            app._apply_selected_prompt_asset()
+            assert diagram.model.field_value("triage.prompt", None)
+            assert diagram.is_dirty is True
+
+    asyncio.run(run())
+
+
 def test_route_add_and_edit_update_working_copy(tmp_path):
     async def run() -> None:
         repo = tmp_path / "repo"
@@ -539,6 +585,80 @@ def test_route_add_and_edit_update_working_copy(tmp_path):
                 == "gpt-9"
             )
             assert diagram.is_dirty is True
+
+    asyncio.run(run())
+
+
+def test_route_row_edit_rejects_invalid_timeout_atomically(tmp_path):
+    async def run() -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        (repo / ".revrem.toml").write_text(
+            "[profiles.edit]\n[profiles.edit.pipeline]\nbase='main'\n"
+            "[profiles.edit.triage]\nenabled=true\ncontract='v2'\n"
+            "[profiles.edit.triage.routing]\nenabled=true\ndefault_route='security'\n"
+            "[profiles.edit.triage.routes.security]\nharness='codex'\nsandbox='read-only'\n",
+            encoding="utf-8",
+        )
+        notifications: list[tuple[str, str | None]] = []
+        async with pilot_app(cwd=repo, profile_name="edit") as (app, pilot):
+            app.notify = lambda message, **kwargs: notifications.append(
+                (message, kwargs.get("severity"))
+            )
+            await pilot.press("1")
+            await pilot.pause()
+            diagram = app.query_one("#loop-diagram")
+            app._apply_route_row_edit(
+                "security",
+                {"model": "gpt-9", "timeout_seconds": "abc"},
+            )
+            assert (
+                diagram.model.field_value("triage.routes.security.model", None)
+                is None
+            )
+            assert diagram.is_dirty is False
+            assert any(
+                "timeout_seconds" in message and severity == "error"
+                for message, severity in notifications
+            )
+
+    asyncio.run(run())
+
+
+def test_route_edit_rejects_fallback_cycle(tmp_path):
+    async def run() -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        (repo / ".revrem.toml").write_text(
+            "[profiles.edit]\n[profiles.edit.pipeline]\nbase='main'\n"
+            "[profiles.edit.triage]\nenabled=true\ncontract='v2'\n"
+            "[profiles.edit.triage.routing]\nenabled=true\ndefault_route='security'\n"
+            "[profiles.edit.triage.routes.security]\n"
+            "harness='codex'\nsandbox='read-only'\n"
+            "[profiles.edit.triage.routes.audit]\n"
+            "harness='codex'\nsandbox='workspace-write'\nfallback='security'\n",
+            encoding="utf-8",
+        )
+        notifications: list[tuple[str, str | None]] = []
+        async with pilot_app(cwd=repo, profile_name="edit") as (app, pilot):
+            app.notify = lambda message, **kwargs: notifications.append(
+                (message, kwargs.get("severity"))
+            )
+            await pilot.press("1")
+            await pilot.pause()
+            diagram = app.query_one("#loop-diagram")
+            app._apply_route_edit("security", "fallback", "audit")
+            assert (
+                diagram.model.field_value("triage.routes.security.fallback", None)
+                is None
+            )
+            assert diagram.is_dirty is False
+            assert any(
+                "fallback cycle" in message and severity == "error"
+                for message, severity in notifications
+            )
 
     asyncio.run(run())
 
