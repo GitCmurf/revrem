@@ -132,6 +132,46 @@ def test_route_row_clear_save_removes_cleared_route_field(tmp_path: Path) -> Non
     assert resolved.triage.routes["security"].model is None
 
 
+def test_route_row_clear_inherited_optional_fields_persists_empty_override(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    _write(
+        repo / ".revrem.toml",
+        "\n".join(
+            (
+                "[defaults.triage.routing]",
+                'default_route = "security"',
+                "[defaults.triage]",
+                'contract = "v2"',
+                "[defaults.triage.routes.security]",
+                'harness = "codex"',
+                'model = "gpt-5.4"',
+                'fallback = "backup"',
+                "[defaults.triage.routes.backup]",
+                'harness = "codex"',
+                "[profiles.p]",
+                "[profiles.p.pipeline]",
+                'base = "main"',
+                "[profiles.p.triage]",
+                "enabled = true",
+            )
+        )
+        + "\n",
+    )
+
+    model = LoopEditModel.load("p", cwd=repo)
+    model.set_field("triage.routes.security.model", None)
+    model.set_field("triage.routes.security.fallback", None)
+    model.save()
+
+    raw = profiles.load_profile_file(repo / ".revrem.toml").raw_profiles["p"]
+    assert raw["triage"]["routes"]["security"]["model"] == ""
+    assert raw["triage"]["routes"]["security"]["fallback"] == ""
+    resolved = profiles.resolve_profile("p", cwd=repo, require_implemented=False)
+    assert resolved.triage.routes["security"].model == ""
+    assert resolved.triage.routes["security"].fallback == ""
+
+
 def test_invalid_save_keeps_dirty_edits(tmp_path: Path) -> None:
     repo = _project_profile(tmp_path)
     model = LoopEditModel.load("dogfood", cwd=repo)

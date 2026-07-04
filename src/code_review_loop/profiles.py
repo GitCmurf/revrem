@@ -1159,11 +1159,15 @@ def save_profile_raw(
 ) -> Path:
     user_file, project_file = load_profile_files(cwd=cwd, home=home)
     merged = _merged_profile_raw_for_edit(name, user_file=user_file, project_file=project_file)
+    owner = profile_owner_path(name, cwd=cwd, home=home, allow_new=True)
+    current = load_profile_file(owner).raw_profiles.get(name, {})
+    raw_profile = _materialize_inherited_route_clear_markers(
+        raw_profile,
+        current_profile=current,
+    )
     merged_updated = _deep_merge(merged, raw_profile)
     parsed = parse_profile(name, merged_updated, source="<edit>")
     edit_reference = parse_profile(name, merged, source="<edit>")
-    owner = profile_owner_path(name, cwd=cwd, home=home, allow_new=True)
-    current = load_profile_file(owner).raw_profiles.get(name, {})
     merged_raw_profile = _deep_merge(current, raw_profile)
     merged_raw_profile = _materialize_route_edit_context(
         merged_raw_profile,
@@ -1173,6 +1177,46 @@ def save_profile_raw(
     return write_profile_to_path(
         owner, parsed, force=True, raw_profile=merged_raw_profile, reference=edit_reference
     )
+
+
+def _materialize_inherited_route_clear_markers(
+    raw_profile: dict[str, Any],
+    *,
+    current_profile: dict[str, Any],
+) -> dict[str, Any]:
+    """Preserve clear of inherited route model/fallback as explicit empty overrides."""
+    routes = raw_profile.get("triage")
+    if not isinstance(routes, dict):
+        return raw_profile
+    routes_delta = routes.get("routes")
+    if not isinstance(routes_delta, dict):
+        return raw_profile
+    current_routes: dict[str, Any] = {}
+    current_triage = current_profile.get("triage")
+    if isinstance(current_triage, dict):
+        current_routes_from_profile = current_triage.get("routes")
+        if isinstance(current_routes_from_profile, dict):
+            current_routes = current_routes_from_profile
+
+    merged = _copy.deepcopy(raw_profile)
+    triage_delta = merged["triage"]
+    if not isinstance(triage_delta, dict):
+        return merged
+    merged_routes = triage_delta.setdefault("routes", {})
+    if not isinstance(merged_routes, dict):
+        merged["triage"]["routes"] = {}
+        merged_routes = merged["triage"]["routes"]
+
+    for route_name, route_delta in merged_routes.items():
+        if not isinstance(route_delta, dict):
+            continue
+        current_route = current_routes.get(route_name)
+        if not isinstance(current_route, dict):
+            current_route = {}
+        for field in ("model", "fallback"):
+            if field in route_delta and route_delta.get(field) is None and field not in current_route:
+                route_delta[field] = ""
+    return merged
 
 
 def set_profile_field(
@@ -1258,7 +1302,13 @@ def _materialize_route_edit_context(
     edited_routes = set(route_names)
     if isinstance(routes_delta, dict):
         edited_routes.update(str(name) for name in routes_delta)
-    routing_edit = isinstance(routing_delta, dict)
+    routing_edit = False
+    edited_default_route: str | None = None
+    if isinstance(routing_delta, dict):
+        routing_edit = True
+        routing_default_route = routing_delta.get("default_route")
+        if isinstance(routing_default_route, str):
+            edited_default_route = routing_default_route
     write_routing_context = (
         parsed.triage.routing.enabled and routing_edit
         if include_routing_context is None
@@ -1268,12 +1318,19 @@ def _materialize_route_edit_context(
         return raw_profile
 
     merged_triage = merged.get("triage")
-    merged_routing = None
-    merged_routes = None
-    merged_default_route = None
+    merged_routing: dict[str, Any] | None = None
+    merged_routes: dict[str, Any] | None = None
+    merged_default_route: str | None = None
+    materialized = _copy.deepcopy(raw_profile)
     if isinstance(merged_triage, dict):
         merged_routing = merged_triage.get("routing")
-        merged_routes = merged_triage.get("routes")
+        merged_routes_candidate = merged_triage.get("routes")
+        if isinstance(merged_routes_candidate, dict):
+            merged_routes = merged_routes_candidate
+
+    if merged_routes is None:
+        return materialized
+    effective_routes = merged_routes
 
     materialized = _copy.deepcopy(raw_profile)
     triage_raw = materialized.setdefault("triage", {})
@@ -1295,9 +1352,6 @@ def _materialize_route_edit_context(
         if "default_route" not in routing_raw and isinstance(merged_default_route, str):
             routing_raw["default_route"] = merged_default_route
 
-    if not isinstance(merged_routes, dict):
-        return materialized
-
     routes_raw = triage_raw.setdefault("routes", {})
     if not isinstance(routes_raw, dict):
         routes_raw = {}
@@ -1310,7 +1364,7 @@ def _materialize_route_edit_context(
             return
         materialized_routes.add(route_name)
 
-        inherited_route = merged_routes.get(route_name)
+        inherited_route = effective_routes.get(route_name)
         if isinstance(inherited_route, dict):
             existing = routes_raw.get(route_name)
             if isinstance(existing, dict):
@@ -1331,8 +1385,11 @@ def _materialize_route_edit_context(
 
     for route_name in sorted(edited_routes):
         _materialize_route(route_name)
-    if isinstance(merged_default_route, str):
-        _materialize_route(merged_default_route)
+    if edited_default_route is None:
+        if isinstance(merged_default_route, str):
+            _materialize_route(merged_default_route)
+    else:
+        _materialize_route(edited_default_route)
     return materialized
 
 
