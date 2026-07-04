@@ -83,6 +83,18 @@ def test_jsonl_sink_writes_schema_valid_events(tmp_path):
         validate(json.loads(line), schema)
 
 
+def test_jsonl_sink_flushes_progress_events_before_close(tmp_path):
+    sink = events.JsonlSink(tmp_path, "run-1")
+
+    sink.emit("phase_start", phase="review", iteration=1, payload={"command": "codex review"})
+
+    records, truncated = events.read_events(tmp_path / "events.jsonl")
+    sink.close()
+
+    assert truncated is False
+    assert [event.kind for event in records] == ["phase_start"]
+
+
 def test_jsonl_sink_truncates_existing_file_for_new_run(tmp_path):
     path = tmp_path / "events.jsonl"
     path.write_text(

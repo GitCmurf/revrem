@@ -543,8 +543,18 @@ def test_prompt_contract_only_targets_triage_prompt(tmp_path):
             )
 
             app._prompt_target_key = "triage.prompt"
+            for index, asset in enumerate(library.assets):
+                if asset.name == "triage_v2":
+                    library.selected_index = index
+                    library.rebuild()
+                    break
+            else:  # pragma: no cover - defensive
+                raise AssertionError("expected triage_v2 prompt asset")
             app._apply_selected_prompt_asset()
-            assert diagram.model.field_value("triage.prompt", None)
+            assert diagram.model.field_value("triage.contract", None) == "v2"
+            assert (
+                diagram.model.field_value("triage.prompt", None) is None
+            )
             assert diagram.is_dirty is True
 
     asyncio.run(run())

@@ -60,6 +60,9 @@ This project follows Semantic Versioning once public releases begin.
 
 ### Fixed
 
+- Live-run `events.jsonl` now flushes every progress event, so cancellation
+  cannot leave a replay-breaking sequence gap by flushing the terminal
+  cancellation event while an earlier phase-start row is still buffered.
 - The route-edit modal SVG snapshot now ignores nondeterministic Textual theme
   color drift while still comparing layout and text, avoiding stale-validation
   dogfood failures caused by focused vs. unfocused widget palette races.

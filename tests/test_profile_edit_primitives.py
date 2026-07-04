@@ -144,6 +144,30 @@ def test_save_profile_raw_does_not_materialize_inherited_defaults(tmp_path):
     assert "triage" not in reloaded
 
 
+def test_save_profile_raw_preserves_shadowed_user_value(tmp_path):
+    _write(
+        tmp_path / ".config" / "revrem" / "profiles.toml",
+        "[profiles.demo]\n"
+        "[profiles.demo.remediation]\n"
+        'model = "user"\n',
+    )
+    _write(
+        tmp_path / ".revrem.toml",
+        "[defaults]\n"
+        "[defaults.remediation]\n"
+        'model = "repo"\n',
+    )
+
+    raw = profiles.deep_set_raw({}, "review.timeout_seconds", "0.5")
+    profiles.save_profile_raw("demo", raw, cwd=tmp_path, home=tmp_path)
+
+    reloaded = profiles.load_profile_file(tmp_path / ".config" / "revrem" / "profiles.toml").raw_profiles[
+        "demo"
+    ]
+    assert reloaded["remediation"]["model"] == "user"
+    assert reloaded["review"]["timeout_seconds"] == 0.5
+
+
 def test_save_profile_raw_validates(tmp_path):
     _write(tmp_path / ".revrem.toml", '[profiles.demo]\nreview.model = "old"\n')
     bad = profiles.deep_set_raw({}, "pipeline.max_iterations", "5")

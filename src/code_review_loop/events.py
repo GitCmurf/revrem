@@ -212,8 +212,10 @@ class JsonlSink:
             ts=utc_iso(self._clock.now()),
         )
         self._handle.write(json.dumps(event.to_dict(), ensure_ascii=False, sort_keys=True) + "\n")
-        if kind in FLUSH_KINDS:
-            self._handle.flush()
+        # These JSONL files are live operator artifacts, not batch logs. Flush
+        # every event so cancellation cannot persist a later terminal event
+        # while an earlier progress event remains in a killed process buffer.
+        self._handle.flush()
         return event
 
     def close(self) -> None:

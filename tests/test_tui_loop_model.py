@@ -204,10 +204,10 @@ def test_route_row_clear_inherited_reasoning_effort_and_timeout(tmp_path: Path) 
 
     raw = profiles.load_profile_file(repo / ".revrem.toml").raw_profiles["p"]
     assert raw["triage"]["routes"]["security"]["reasoning_effort"] == ""
-    assert raw["triage"]["routes"]["security"]["timeout_seconds"] == 0
+    assert "timeout_seconds" not in raw["triage"]["routes"]["security"]
     resolved = profiles.resolve_profile("p", cwd=repo, require_implemented=False)
     assert resolved.triage.routes["security"].reasoning_effort == ""
-    assert resolved.triage.routes["security"].timeout_seconds == 0
+    assert resolved.triage.routes["security"].timeout_seconds == 300
 
 
 def test_invalid_save_keeps_dirty_edits(tmp_path: Path) -> None:

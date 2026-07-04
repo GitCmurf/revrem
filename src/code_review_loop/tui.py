@@ -1145,6 +1145,29 @@ class _RevRemAppMixin:
                 severity="error",
             )
             return
+        if asset.kind == "contract":
+            diagram = self._loop_diagram
+            if diagram is None:
+                return
+            # Contract assets control triage contract version directly. Their
+            # full prompt text must not be injected into triage.prompt to
+            # avoid duplicate additive guidance at runtime.
+            contract = asset.name.removeprefix("triage_")
+            if contract not in profiles.TRIAGE_CONTRACT_CHOICES:
+                _notify(
+                    self,
+                    f"Unsupported triage contract prompt asset: {asset.name}.",
+                    severity="error",
+                )
+                return
+            diagram.model.set_field("triage.contract", contract)
+            self._prompt_target_key = None
+            diagram.rebuild()
+            self._update_console_status()
+            _notify(self, "Set triage.contract from prompt contract asset.")
+            self._set_workspace(self._prompt_return_workspace or "loop")
+            self._prompt_return_workspace = None
+            return
         try:
             text = tui_prompt_assets.prompt_asset_text(
                 asset, cwd=Path(self.model.snapshot.cwd)

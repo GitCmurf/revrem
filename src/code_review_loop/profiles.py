@@ -1166,13 +1166,15 @@ def save_profile_raw(
         current_profile=current,
     )
     merged_updated = _deep_merge(merged, raw_profile)
-    parsed = parse_profile(name, merged_updated, source="<edit>")
     edit_reference = parse_profile(name, merged, source="<edit>")
     merged_raw_profile = _deep_merge(current, raw_profile)
+    parsed = parse_profile(
+        name, _deep_merge(merged_updated, merged_raw_profile), source="<edit>"
+    )
     merged_raw_profile = _materialize_route_edit_context(
         merged_raw_profile,
         merged=merged,
-        parsed=parse_profile(name, _deep_merge(merged_updated, merged_raw_profile), source="<edit>"),
+        parsed=parsed,
     )
     return write_profile_to_path(
         owner, parsed, force=True, raw_profile=merged_raw_profile, reference=edit_reference
@@ -1217,7 +1219,10 @@ def _materialize_inherited_route_clear_markers(
             ("model", ""),
             ("fallback", ""),
             ("reasoning_effort", ""),
-            ("timeout_seconds", 0),
+            # Preserve inherited timeout clearing as an explicit clear marker.
+            # This keeps the inherited route timeout in place instead of forcing
+            # an explicit unbounded (0) override.
+            ("timeout_seconds", None),
         ):
             if field in route_delta and route_delta.get(field) is None and field not in current_route:
                 route_delta[field] = clear_value
