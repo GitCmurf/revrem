@@ -230,6 +230,40 @@ def test_triage_routes_lines_reflect_route_overlays(tmp_path: Path) -> None:
     assert "fallback nit" in text
 
 
+def test_triage_routes_lines_uses_unsaved_routing_enable(tmp_path: Path) -> None:
+    repo = _repo(
+        tmp_path,
+        "[profiles.p]\n[profiles.p.pipeline]\nbase='main'\n"
+        "[profiles.p.triage]\n"
+        "enabled=true\n"
+        'contract = "v2"\n'
+        "[profiles.p.triage.routing]\n"
+        "enabled=false\n"
+        'default_route="security"\n',
+    )
+    model = _model(repo, "p")
+    model.set_field("triage.routes.audit.harness", "codex")
+    model.set_field("triage.routes.audit.sandbox", "workspace-write")
+    model.set_field("triage.routing.enabled", "true")
+
+    text = "\n".join(tui_loop_state.triage_routes_lines(model))
+    assert "audit" in text
+
+
+def test_triage_routes_lines_uses_unsaved_routing_header_values(tmp_path: Path) -> None:
+    repo = _routes_repo(tmp_path)
+    model = _model(repo, "r")
+    model.set_field("triage.routing.default_route", "nit")
+    model.set_field("triage.routing.strict_on_unavailable_route", "true")
+    model.set_field("triage.routing.allow_model_escalation", "false")
+
+    header = tui_loop_state.triage_routes_lines(model)[0]
+
+    assert "default nit" in header
+    assert "strict True" in header
+    assert "escalate False" in header
+
+
 def test_loop_state_accepts_plain_profile() -> None:
     profile = profiles.Profile(name="plain")
     assert "plain" in tui_loop_state.loop_header_text(profile)

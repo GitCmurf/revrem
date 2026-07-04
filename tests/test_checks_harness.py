@@ -17,6 +17,7 @@ from unittest.mock import MagicMock
 
 from code_review_loop.adapters.checks import (
     ChecksAdapter,
+    format_check_failures,
     format_check_result_for_progress,
     format_returncode_for_progress,
     run_worktree_cleanliness_check,
@@ -74,6 +75,30 @@ def test_format_check_result_for_progress_names_timeouts() -> None:
     result = CommandResult(["pytest", "-q"], -1, stderr="Command timed out after 300 seconds\n")
 
     assert format_check_result_for_progress(result) == "timeout after 300s"
+
+
+def test_format_check_failures_caps_huge_snapshot_diffs() -> None:
+    huge_svg_line = "<rect " + "x='1' " * 2000 + "/>"
+    result = CommandResult(
+        ["pytest", "-q"],
+        1,
+        stdout=(
+            "FAILED tests/test_snapshots.py::test_route_edit_modal_snapshot\n"
+            "E           AssertionError: SVG snapshot changed for route-edit-modal:\n"
+            f"{huge_svg_line}\n"
+            f"{huge_svg_line}\n"
+            "1 failed, 1777 passed\n"
+        ),
+    )
+
+    text = format_check_failures([result])
+
+    assert "$ pytest -q" in text
+    assert "SVG snapshot changed" in text
+    assert "1 failed, 1777 passed" in text
+    assert "check output truncated for remediation prompt" in text
+    assert len(text) < 12_000
+    assert text.count("x='1'") < 300
 
 
 # ---------------------------------------------------------------------------

@@ -37,7 +37,12 @@ def classify_provider_failure(
     normalized = classification_output.lower()
 
     if result.returncode == -1 and "command timed out after" in normalized:
-        return ProviderFailure("provider_timeout", "provider subprocess timed out", False)
+        detail = (
+            "provider subprocess timed out without assistant output"
+            if _looks_like_silent_timeout(result)
+            else "provider subprocess timed out"
+        )
+        return ProviderFailure("provider_timeout", detail, False)
     if _matches_any(normalized, AUTH_PATTERNS):
         return ProviderFailure("provider_auth_required", "provider auth/setup required", False)
     if _matches_any(normalized, CLI_CONTRACT_PATTERNS):
@@ -69,6 +74,23 @@ def _combined_output(result: CommandResult) -> str:
     stdout = result.stdout or ""
     stderr = result.stderr or ""
     return "\n".join(part for part in (stdout, stderr) if part)
+
+
+def _looks_like_silent_timeout(result: CommandResult) -> bool:
+    if (result.stdout or "").strip():
+        return False
+    stderr = result.stderr or ""
+    if "Command timed out after" not in stderr:
+        return False
+    partial = stderr.partition("[partial stderr]")[2].strip()
+    if not partial:
+        return True
+    substantive_lines = [
+        line.strip()
+        for line in partial.splitlines()
+        if line.strip() and not line.strip().lower().startswith("warning:")
+    ]
+    return not substantive_lines
 
 
 def _classification_output(output: str) -> str:

@@ -974,6 +974,42 @@ def test_v2_unstructured_triage_stops_when_invalid_policy_is_stop(tmp_path):
     assert remediation_calls == 0
 
 
+def test_v2_dry_run_triage_does_not_fail_on_invalid_policy_stop(tmp_path):
+    calls = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[1] == "review":
+            return CommandResult(
+                list(args),
+                0,
+                stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
+            )
+        raise AssertionError(f"dry run should not execute provider command: {args!r}")
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        triage_enabled=True,
+        triage_contract="v2",
+        triage_on_invalid="stop",
+        dry_run=True,
+        final_review=False,
+    )
+
+    summary = runner_mod.run_loop(config, runner).to_dict()
+
+    assert summary["final_status"] in {"findings", "unknown"}
+    assert summary.get("triage_diagnostics", []) == []
+    assert "DRY_RUN triage skipped" in (tmp_path / "artifacts" / "triage-1.txt").read_text(
+        encoding="utf-8"
+    )
+    assert calls == []
+
+
 def test_loop_malformed_suppressions_fail_open_for_structured_triage(tmp_path):
     repo_root, cwd = make_git_worktree(tmp_path)
     suppressions_path = suppressions.repo_suppressions_path(cwd)

@@ -139,6 +139,8 @@ def run_triage(
             f"codex exec triage failed for iteration {iteration}; see {triage_artifact}"
         )
     phase_support.progress_event(config, "triage", str(iteration), "done", ctx=ctx)
+    if config.dry_run:
+        return review_output, 0, False, None
     triage_output = actionable_review_output(phase_support._combined_output(result))
     if triage.looks_structured_output(triage_output):
         try:

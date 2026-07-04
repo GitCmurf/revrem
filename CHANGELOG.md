@@ -60,6 +60,12 @@ This project follows Semantic Versioning once public releases begin.
 
 ### Fixed
 
+- Direct remediation retries now keep review findings before failed-check
+  context and cap oversized check logs before inserting them into prompts, so
+  snapshot/SVG diffs cannot bury the actionable task. Dry-run v2 triage no
+  longer fails under `triage.on_invalid = "stop"`, staged TUI routing header
+  edits render before Save, and provider timeouts with no assistant output now
+  say so explicitly.
 - The experimental TUI now keeps prompt inventory view-models free of prompt
   resolution I/O, rejects applying triage contract prompt assets to commit
   message prompts, and validates route row edits before mutating the Loop

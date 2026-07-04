@@ -239,6 +239,36 @@ def test_runner_shell_carries_check_failure_into_retry(tmp_path: Path) -> None:
     assert "pytest tests/ failed" in remediation.calls[1].remediation_input
 
 
+def test_runner_shell_no_triage_retry_leads_with_review_before_check_context(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path, max_iterations=2, triage_enabled=False)
+    review = SequencedReviewHarness(["findings", "findings", "clear"])
+    remediation = RecordingRemediationHarness()
+    checks = SequencedChecksHarness([("pytest tests/",), ()])
+    ctx, sink = _context(config, review=review, remediation=remediation, checks=checks)
+    clock = ctx.clock
+    try:
+        state = _state(config)
+
+        run_iterations(
+            config=config,
+            state=state,
+            clock=clock,
+            ctx=ctx,
+            snap=_snapshot(config),
+            initial_review_output="",
+            run_id=FIXED_RUN_ID,
+        )
+    finally:
+        sink.close()
+
+    retry_input = remediation.calls[1].remediation_input
+    assert retry_input.index("review status: findings") < retry_input.index(
+        "Check failures from the previous iteration:"
+    )
+
+
 def test_runner_shell_dense_commit_hook_retry_path_fits_step_budget(tmp_path: Path) -> None:
     config = replace(
         _config(tmp_path, max_iterations=2, triage_enabled=False),

@@ -205,7 +205,7 @@ class _RunnerEngineExecutor:
         iteration = engine_state.iteration
         remediation_input = engine_state.acc.last_review_output
         if engine_state.acc.pending_check_failures:
-            remediation_input = engine_state.acc.pending_check_failures + "\n\n" + remediation_input
+            remediation_input = remediation_input + "\n\n" + engine_state.acc.pending_check_failures
         try:
             source_review_artifact = "review-initial.txt" if iteration == 1 and self.initial_review_output else f"review-{iteration}.txt"
             triage_outcome = self.ctx.phase_triage.execute(
@@ -286,7 +286,7 @@ class _RunnerEngineExecutor:
         if not self.config.triage_enabled:
             remediation_input = engine_state.acc.last_review_output
             if engine_state.acc.pending_check_failures:
-                remediation_input = engine_state.acc.pending_check_failures + "\n\n" + remediation_input
+                remediation_input = remediation_input + "\n\n" + engine_state.acc.pending_check_failures
         try:
             assert_worktree_stable_before_remediation(
                 self.config,

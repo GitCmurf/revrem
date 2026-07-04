@@ -87,6 +87,12 @@ def _effective_value(source: Any, dotted_key: str, fallback: object) -> object:
 
 def _effective_bool(source: Any, dotted_key: str, fallback: bool) -> bool:
     value = _effective_value(source, dotted_key, fallback)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "yes", "on", "1"}:
+            return True
+        if normalized in {"false", "no", "off", "0"}:
+            return False
     return bool(value)
 
 
@@ -245,13 +251,27 @@ def triage_routes_lines(
     source: Any, *, selected_route: str | None = None
 ) -> tuple[str, ...]:
     profile = _profile(source)
-    if not profile.triage.routing.enabled:
+    # Respect unsaved editor overrides for routing enablement while editing.
+    if not _effective_bool(source, "triage.routing.enabled", profile.triage.routing.enabled):
         return ()
     routing = profile.triage.routing
+    default_route = _effective_value(
+        source, "triage.routing.default_route", routing.default_route
+    )
+    strict = _effective_bool(
+        source,
+        "triage.routing.strict_on_unavailable_route",
+        routing.strict_on_unavailable_route,
+    )
+    escalate = _effective_bool(
+        source,
+        "triage.routing.allow_model_escalation",
+        routing.allow_model_escalation,
+    )
     lines = [
         "routing: "
-        f"default {routing.default_route} · strict {routing.strict_on_unavailable_route} · "
-        f"escalate {routing.allow_model_escalation}"
+        f"default {default_route} · strict {strict} · "
+        f"escalate {escalate}"
     ]
     for row in triage_route_rows(source, selected_route=selected_route):
         effort_text = harnesses.phase_effort_text(

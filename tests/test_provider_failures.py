@@ -263,6 +263,25 @@ def test_classify_provider_failure_detects_timeout_after_partial_stdout() -> Non
     assert failure.transient is False
 
 
+def test_classify_provider_failure_describes_silent_timeout() -> None:
+    result = _result(
+        -1,
+        stderr=(
+            "Command timed out after 3600.0 seconds\n"
+            "Command: codex exec --model gpt-5.3-codex-spark -\n"
+            "\n[partial stderr]\n"
+            "warning: `--full-auto` is deprecated; use `--sandbox workspace-write` instead.\n"
+        ),
+    )
+
+    failure = provider_failures.classify_provider_failure(result, harness="codex")
+
+    assert failure is not None
+    assert failure.reason == "provider_timeout"
+    assert failure.transient is False
+    assert failure.detail == "provider subprocess timed out without assistant output"
+
+
 def test_classify_provider_failure_does_not_treat_textual_timeout_finding_as_local_timeout() -> (
     None
 ):
