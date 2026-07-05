@@ -129,6 +129,33 @@ def test_failed_check_result_uses_status_field(tmp_path: Path) -> None:
     assert details["checks"] == "failed"
 
 
+def test_phase_failure_marks_phase_as_failed(tmp_path: Path) -> None:
+    events = (
+        _ev(1, "phase_start", "remediate", 2),
+        _ev(2, "phase_result", "remediate", 2),
+        _ev(3, "failure", "remediate", 2, reason="command failed", message="boom"),
+    )
+    view = tui_run_state.run_loop_view(events, _profile(tmp_path))
+    states = {phase.name: phase.state for phase in view.phases}
+    details = {phase.name: phase.detail for phase in view.phases}
+
+    assert states["remediation"] == "failed"
+    assert details["remediation"] == "command failed"
+
+
+def test_failure_overwrites_running_phase_detail(tmp_path: Path) -> None:
+    events = (
+        _ev(1, "phase_start", "review", 1),
+        _ev(2, "failure", "review", 1, reason="contract invalid"),
+    )
+    view = tui_run_state.run_loop_view(events, _profile(tmp_path, triage=True))
+    states = {phase.name: phase.state for phase in view.phases}
+    details = {phase.name: phase.detail for phase in view.phases}
+
+    assert states["review"] == "failed"
+    assert details["review"] == "contract invalid"
+
+
 def test_later_passing_check_result_does_not_clear_prior_failure(
     tmp_path: Path,
 ) -> None:

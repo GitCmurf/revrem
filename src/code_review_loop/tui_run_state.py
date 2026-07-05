@@ -16,6 +16,7 @@ RUNNER_PHASE_TO_DISPLAY: dict[str, str] = {
 }
 RUN_STATE_GLYPHS: dict[str, str] = {
     "done": "✓",
+    "failed": "✗",
     "running": "▶",
     "pending": "·",
     "disabled": "⤫",
@@ -99,6 +100,11 @@ def run_loop_view(
                     remediate_starts_this_iteration += 1
             elif kind == "phase_result":
                 states[display] = "done"
+                detail = tui_state.event_detail(event)
+                if detail:
+                    details[display] = detail
+            elif kind == "failure":
+                states[display] = "failed"
                 detail = tui_state.event_detail(event)
                 if detail:
                     details[display] = detail
