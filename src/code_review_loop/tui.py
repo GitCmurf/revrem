@@ -1371,6 +1371,7 @@ class _RevRemAppMixin:
         )
         if not self._loop_diagram.model.profile.triage.routing.enabled:
             self._loop_diagram.model.set_field("triage.contract", "v2")
+            self._loop_diagram.model.set_field("triage.enabled", "true")
             self._loop_diagram.model.set_field("triage.routing.enabled", "true")
             self._loop_diagram.model.set_field("triage.routing.default_route", route)
         self._loop_diagram.route_mode = True

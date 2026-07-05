@@ -167,6 +167,7 @@ revrem config edit final-pr
 revrem config set final-pr pipeline.max_iterations 11
 revrem config set final-pr runtime.provider_retry_attempts 5
 revrem config set final-pr triage.contract v2
+revrem config set final-pr triage.enabled true
 revrem config set final-pr triage.routes.codex-midi.model gpt-5.4-mini
 revrem config set final-pr triage.routing.default_route codex-midi
 revrem config set final-pr triage.routing.enabled true

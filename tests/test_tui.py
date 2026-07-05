@@ -492,6 +492,75 @@ harness = "codex"
     )
 
 
+def test_tui_route_add_enables_triage_when_routing_is_disabled(tmp_path):
+    config_path = tmp_path / ".revrem.toml"
+    config_path.write_text(
+        """
+[profiles.audit]
+
+[profiles.audit.pipeline]
+base = "main"
+
+[profiles.audit.triage]
+enabled = false
+contract = "v1"
+
+[profiles.audit.triage.routing]
+enabled = false
+""",
+        encoding="utf-8",
+    )
+    (tmp_path / ".git").mkdir()
+    model = tui.tui_state.build_shell_model(cwd=tmp_path, selected_profile_name="audit")
+    app = tui.RevRemApp(
+        model=model,
+        profiles_by_name={
+            profile.name: profile
+            for profile in tui.profiles.resolve_profiles(
+                cwd=tmp_path,
+                require_implemented=False,
+                include_builtins=True,
+            )
+        },
+    )
+
+    from code_review_loop import tui_loop_model
+
+    class _LoopDiagram:
+        def __init__(self, model: tui_loop_model.LoopEditModel) -> None:
+            self.model = model
+            self.route_mode = False
+            self.selected_route_index: int = -1
+            self.rebuilt = False
+            self.is_dirty = False
+
+        def route_names(self) -> tuple[str, ...]:
+            return tuple(self.model.profile.triage.routes.keys())
+
+        def current_phase(self) -> str:
+            return "triage"
+
+        def rebuild(self) -> None:
+            self.rebuilt = True
+
+    loop_model = tui_loop_model.LoopEditModel.load("audit", cwd=tmp_path)
+    app._loop_diagram = _LoopDiagram(loop_model)
+
+    assert loop_model.profile.triage.enabled is False
+    assert loop_model.profile.triage.routing.enabled is False
+
+    app._apply_route_add("security")
+
+    assert loop_model.field_value("triage.enabled", False) is True
+    assert loop_model.field_value("triage.contract", "v1") == "v2"
+    assert loop_model.field_value("triage.routing.enabled", False) is True
+    assert loop_model.field_value("triage.routing.default_route", "none") == "security"
+    assert loop_model.field_value("triage.routes.security.harness", None) == "codex"
+    assert loop_model.field_value("triage.routes.security.sandbox", None) == "workspace-write"
+    assert app._loop_diagram.route_mode is True
+    assert app._loop_diagram.rebuilt is True
+
+
 def test_tui_live_run_action_requires_confirmation_and_starts_controller(
     monkeypatch, tmp_path
 ):
