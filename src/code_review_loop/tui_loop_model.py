@@ -71,7 +71,7 @@ class LoopEditModel:
         except KeyError:
             self.edits[dotted_key] = value
             return
-        if proposed == baseline:
+        if _same_value(proposed, baseline):
             self.edits.pop(dotted_key, None)
             return
         self.edits[dotted_key] = value
@@ -92,3 +92,9 @@ class LoopEditModel:
             self.name, cwd=self.cwd, home=self.home, require_implemented=False
         )
         return path
+
+
+def _same_value(left: object, right: object) -> bool:
+    if isinstance(left, list | tuple) and isinstance(right, list | tuple):
+        return tuple(left) == tuple(right)
+    return left == right

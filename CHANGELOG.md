@@ -22,6 +22,13 @@ This project follows Semantic Versioning once public releases begin.
 - The experimental TUI now has a grouped Profiles picker, a Prompts library,
   scalar prompt-field editing/apply flows, and editable triage route rows that
   all route through the Loop working copy and explicit profile Save.
+- `revrem ui --skip-splash` starts directly in the Loop workspace; without it,
+  the experimental TUI shows a brief terminal-native retro splash while Textual
+  mounts. The Loop workspace can seed its unsaved working copy from the last
+  replayable profile-based run command, renders numbered segmented phase bands
+  with explicit loop return labels, shows long origin details in a labeled
+  commands panel instead of the top bar, and keeps current-phase actions
+  visible below the diagram.
 - `revrem config set <profile> <key> <value>` — non-interactive single-field profile edits (foundation for the loop-first TUI, REVREM-DESIGN-001 / PLAN-009).
 - Manual no-provider GitHub Action smoke workflow
   (`.github/workflows/revrem-action-smoke.yml`) that exercises the local
@@ -60,6 +67,23 @@ This project follows Semantic Versioning once public releases begin.
 
 ### Fixed
 
+- Explicit `--initial-review-file latest` now uses the newest usable unresolved
+  review artifact without treating a post-run cleanup commit as stale pending
+  review discovery. Compatibility filtering remains available with
+  `--initial-review-mode compatible`, and explicit `latest` fails clearly when
+  no usable review artifact exists.
+
+- The CLI wizard now performs pending-review discovery before its run-shape
+  editing menus. Accepted compatible/stale feedback is serialized as
+  `--initial-review-file` plus `--initial-review-mode`, and fresh starts add
+  `--pending-review ignore` to avoid a second prompt after the wizard exits.
+- Auto-commit message drafting now includes context from earlier uncommitted
+  iterations when checks previously failed and skipped commits, so the drafted
+  subject can describe the whole staged change.
+- The experimental TUI Loop workspace now keeps expansion attached to the
+  selected phase, hides triage route details until triage is explicitly
+  expanded, and gives `Tab` contextual behavior instead of toggling hidden
+  left/right pane state.
 - Live-run `events.jsonl` now flushes every progress event, so cancellation
   cannot leave a replay-breaking sequence gap by flushing the terminal
   cancellation event while an earlier phase-start row is still buffered.

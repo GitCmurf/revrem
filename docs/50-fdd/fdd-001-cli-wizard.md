@@ -50,6 +50,12 @@ and run history.
   through the normal CLI parser. History lookup filters by repository before
   compatibility selection so newer runs from other repositories cannot hide a
   current-repository offer.
+- Before the run-shape editing menus, the wizard performs the same startup
+  pending-review discovery as the normal interactive CLI path. Accepting a
+  compatible or stale review serializes `--initial-review-file` plus
+  `--initial-review-mode compatible|stale`; choosing start-fresh review serializes
+  `--pending-review ignore` so the completed wizard command does not prompt a
+  second time.
 - The first screen is the recommended run-shape diagram. Profile selection is
   available from "choose another profile" and distinguishes `no-profile`
   merged defaults from profiles named `default`.

@@ -67,9 +67,11 @@ def test_phase_gutter_shows_inner_rail_and_final_review_together(tmp_path: Path)
     checks = tui_loop_state.phase_gutter("checks", meta)
     assert meta.inner_rail is True
     assert meta.final_review is True
-    assert "┌▶" in remediation
-    assert "└◀" in checks
-    assert "up to 2 inner retries" in checks
+    assert "03" in remediation
+    assert "04" in checks
+    returns = "\n".join(tui_loop_state.loop_return_lines(_model(repo, "p").profile))
+    assert "INNER RETRY" in returns
+    assert "up to 2 inner retries" in returns
     assert meta.final_review_label is not None
 
 
@@ -82,7 +84,7 @@ def test_phase_card_summary_shows_harness_model_and_disabled_marker(tmp_path: Pa
     model = _model(repo, "p")
     review = tui_loop_state.phase_card_lines(model, "review", focused=False, expanded=False)
     text = "\n".join(review)
-    assert "review" in text and "codex" in text and "gpt-5.5" in text
+    assert "REVIEW" in text and "codex" in text and "gpt-5.5" in text
     assert text.lstrip().startswith(f"▸ {tui_loop_state.PHASE_ENABLED_GLYPH}")
     triage = tui_loop_state.phase_card_lines(model, "triage", focused=False, expanded=False)
     assert "\n".join(triage).lstrip().startswith(

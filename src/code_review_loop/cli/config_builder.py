@@ -426,14 +426,25 @@ def build_loop_config(
     artifact_dir = Path(artifact_dir_value) if artifact_dir_value else default_artifact_dir()
     search_root = artifact_dir if artifact_dir_value else artifact_dir.parent
     current_git_state = (
-        current_git_state_for_latest(cwd, base) if args.initial_review_file == "latest" else None
+        current_git_state_for_latest(cwd, base)
+        if args.initial_review_file == "latest"
+        and args.initial_review_mode == "compatible"
+        else None
     )
     initial_review_file = resolve_initial_review_file(
         args.initial_review_file,
         search_root,
         current_git_state=current_git_state,
     )
+    if args.initial_review_file == "latest" and initial_review_file is None:
+        raise FileNotFoundError(
+            "--initial-review-file latest did not find an unresolved review artifact"
+        )
     initial_review_mode = "explicit" if initial_review_file is not None else "none"
+    if args.initial_review_mode is not None:
+        if initial_review_file is None:
+            raise ValueError("--initial-review-mode requires --initial-review-file")
+        initial_review_mode = args.initial_review_mode
     if initial_review_file is not None and not initial_review_file.is_file():
         raise FileNotFoundError(f"initial review file not found: {initial_review_file}")
     checks = tuple(args.check) if args.check is not None else profile.pipeline.checks

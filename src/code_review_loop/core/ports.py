@@ -118,6 +118,7 @@ class CommitRequest:
 
     iteration: int
     retrying: bool = False
+    context_iterations: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)

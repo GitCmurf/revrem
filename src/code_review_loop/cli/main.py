@@ -234,7 +234,7 @@ def _print_pending_review_summary(
             "Validate it only if you want RevRem to check whether that older "
             "finding still applies to the current checkout."
         )
-        prompt = "Validate this older review? [v]alidate / [d]etails / [f]resh / [c]ancel: "
+        prompt = "Validate this older review? [v]alidate / [d]etails / start [f]resh review / [c]ancel: "
     print(
         f"{heading}\nReview: {candidate.path}\nRun: {candidate.run_dir}\nStatus: {status}",
         file=sys.stderr,

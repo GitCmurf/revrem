@@ -18,8 +18,14 @@ from code_review_loop.adapters.review import build_review_command
 from code_review_loop.adapters.triage import build_triage_command
 from code_review_loop.cli import args as cli_args
 from code_review_loop.cli.config_builder import build_loop_config
+from code_review_loop.cli.config_support import (
+    PendingReviewCandidate,
+    current_git_state_for_latest,
+    find_pending_review_candidate,
+)
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.routing_types import ResolvedRoute
+from code_review_loop.prompts_composer import trim_for_prompt
 from code_review_loop.repo_roots import repo_root_or_cwd
 
 
@@ -74,6 +80,8 @@ class WizardState:
     summary_format: str = "text"
     max_wall_seconds: str = ""
     pending_review: str = "profile"
+    initial_review_file: str = ""
+    initial_review_mode: str = ""
     origin_label: str = ""
     origin_command: str = ""
     stale_triage_reasoning_effort: str = ""
@@ -125,6 +133,8 @@ class RunPreview:
     progress_style: str
     budget_max_wall_seconds: float | int | str | None
     pending_review: str
+    initial_review_file: str | None
+    initial_review_mode: str | None
 
     @property
     def has_unresolved_models(self) -> bool:
@@ -288,6 +298,7 @@ class _Wizard:
         if last_state is None:
             if last_lookup.skipped_reason:
                 self._print_dim(f"Last run skipped: {last_lookup.skipped_reason}")
+            self._apply_startup_pending_review(default_state)
             return default_state
         selected = self._choice(
             "Start from which settings?",
@@ -300,10 +311,106 @@ class _Wizard:
             help_text="Enter starts from the last compatible RevRem run in this repository.",
         )
         if selected == "last":
+            self._apply_startup_pending_review(last_state)
             return last_state
         if selected == "config":
-            return _initial_state(self._choose_profile())
+            state = _initial_state(self._choose_profile())
+            self._apply_startup_pending_review(state)
+            return state
+        self._apply_startup_pending_review(default_state)
         return default_state
+
+    def _apply_startup_pending_review(self, state: WizardState) -> None:
+        if state.initial_review_file or state.pending_review == "ignore":
+            return
+        try:
+            config = _config_for_state(state, self.cwd)
+        except (OSError, RuntimeError, ValueError):
+            return
+        compatible = _pending_review_candidate_for_config(config, compatible=True)
+        mode = "prompt" if state.pending_review == "profile" else state.pending_review
+        if compatible is not None:
+            if mode == "auto":
+                state.initial_review_file = str(compatible.path)
+                state.initial_review_mode = "compatible"
+                state.pending_review = "ignore"
+                self._print_key_value("Pending review", f"using {compatible.path}")
+                return
+            if mode == "prompt":
+                self._prompt_for_startup_pending_review(
+                    state, compatible, compatible=True
+                )
+            return
+        if mode != "prompt":
+            return
+        stale = _pending_review_candidate_for_config(config, compatible=False)
+        if stale is not None:
+            self._prompt_for_startup_pending_review(state, stale, compatible=False)
+
+    def _prompt_for_startup_pending_review(
+        self,
+        state: WizardState,
+        candidate: PendingReviewCandidate,
+        *,
+        compatible: bool,
+    ) -> None:
+        self._print_pending_review_summary(candidate, compatible=compatible)
+        prompt = (
+            "Use this review? [u]se / [d]etails / [f]resh / [c]ancel: "
+            if compatible
+            else "Validate this older review? [v]alidate / [d]etails / start [f]resh review / [c]ancel: "
+        )
+        while True:
+            choice = self._read(prompt).strip().lower()
+            if choice in {"u", "use", "v", "validate", "y", "yes"}:
+                state.initial_review_file = str(candidate.path)
+                state.initial_review_mode = "compatible" if compatible else "stale"
+                state.pending_review = "ignore"
+                return
+            if choice in {"d", "detail", "details", "more"}:
+                self._print_dim(
+                    "\nPending review detail:\n"
+                    f"{trim_for_prompt(candidate.excerpt, state.profile.runtime.terminal_excerpt_chars)}\n"
+                    f"Artifact: {candidate.path}\n"
+                )
+                continue
+            if choice in {"f", "fresh", "n", "no", "skip"}:
+                state.pending_review = "ignore"
+                return
+            if choice in {"c", "cancel", "q", "quit"}:
+                raise WizardCancelled
+            print("Choose u, d, f, or c.", file=self.stderr)
+
+    def _print_pending_review_summary(
+        self, candidate: PendingReviewCandidate, *, compatible: bool
+    ) -> None:
+        status_parts = [
+            part
+            for part in (
+                candidate.final_status,
+                candidate.stopped_reason,
+                candidate.error,
+            )
+            if part
+        ]
+        status = " · ".join(status_parts) if status_parts else "previous non-clear run"
+        excerpt = trim_for_prompt(candidate.excerpt, 500).replace("\n", " ").strip()
+        if compatible:
+            heading = (
+                "RevRem found compatible pending review feedback before the wizard menus."
+            )
+        else:
+            heading = (
+                "RevRem found an older review from a different HEAD/base before the wizard menus. "
+                "Validate it only if you want RevRem to check whether that older finding still applies."
+            )
+        self._print_heading("Pending review")
+        self._print_dim(heading)
+        self._print_key_value("Review", str(candidate.path))
+        self._print_key_value("Run", str(candidate.run_dir))
+        self._print_key_value("Status", status)
+        if excerpt:
+            self._print_dim(f"Excerpt: {excerpt}")
 
     def _choose_profile(self) -> WizardProfileChoice:
         resolved_profiles = tuple(
@@ -1101,6 +1208,10 @@ def _apply_parsed_args(state: WizardState, parsed) -> None:
         state.max_wall_seconds = f"{parsed.max_wall_seconds:g}"
     if parsed.pending_review is not None:
         state.pending_review = parsed.pending_review
+    if parsed.initial_review_file is not None:
+        state.initial_review_file = parsed.initial_review_file
+    if parsed.initial_review_mode is not None:
+        state.initial_review_mode = parsed.initial_review_mode
 
 
 def _apply_str_attr(state: WizardState, name: str, value: str | None) -> None:
@@ -1265,6 +1376,10 @@ def _argv_for_state(state: WizardState) -> list[str]:
         argv.extend(["--summary-format", state.summary_format])
     if state.max_wall_seconds:
         argv.extend(["--max-wall-seconds", state.max_wall_seconds])
+    if state.initial_review_file:
+        argv.extend(["--initial-review-file", state.initial_review_file])
+        if state.initial_review_mode:
+            argv.extend(["--initial-review-mode", state.initial_review_mode])
     if state.pending_review != "profile":
         argv.extend(["--pending-review", state.pending_review])
     return argv
@@ -1274,6 +1389,19 @@ def _config_for_state(state: WizardState, cwd: Path):
     parsed = cli_args.parse_args((*_argv_for_state(state), "--dry-run"))
     config, _source = build_loop_config(parsed, cwd, require_implemented=False)
     return config
+
+
+def _pending_review_candidate_for_config(
+    config: LoopConfig, *, compatible: bool
+) -> PendingReviewCandidate | None:
+    search_root = (
+        config.artifact_dir.parent if config.artifact_dir_is_default else config.artifact_dir
+    )
+    current_git_state = current_git_state_for_latest(config.cwd, config.base)
+    return find_pending_review_candidate(
+        search_root,
+        current_git_state=current_git_state if compatible else None,
+    )
 
 
 def _run_preview(state: WizardState, cwd: Path) -> RunPreview:
@@ -1440,6 +1568,8 @@ def _run_preview(state: WizardState, cwd: Path) -> RunPreview:
         progress_style=config.progress_style,
         budget_max_wall_seconds=config.budget_config.max_wall_seconds,
         pending_review=state.pending_review,
+        initial_review_file=state.initial_review_file or None,
+        initial_review_mode=state.initial_review_mode or None,
     )
 
 
@@ -1452,6 +1582,9 @@ def _run_preview_lines(preview: RunPreview) -> tuple[str, ...]:
     ]
     if preview.budget_max_wall_seconds is not None:
         lines.append(f"budget: max wall {_wall_budget_text(preview.budget_max_wall_seconds)}")
+    if preview.initial_review_file:
+        mode = preview.initial_review_mode or "explicit"
+        lines.append(f"initial review: {mode} · {preview.initial_review_file}")
     if preview.pending_review != "profile":
         lines.append(f"pending review: {preview.pending_review}")
     lines.extend(

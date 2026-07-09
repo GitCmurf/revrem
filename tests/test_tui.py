@@ -71,6 +71,7 @@ class _WidgetProbe:
             "#screen-help",
             "#status-bar",
             "#footer-bar",
+            "#loop-command-panel",
         }:
             raise AssertionError(f"unexpected selector: {selector}")
         probe = self
@@ -1294,8 +1295,33 @@ description = "Beta"
 
     assert app._profile_name() == "beta"
     updates = dict(widgets.updates)
-    assert "revrem --profile beta" in updates["#status-bar"]
+    assert "command in active panel" in updates["#status-bar"]
+    assert "revrem --profile beta" not in updates["#status-bar"]
     assert "> [status-info]beta[/]" in updates["#screen-home"]
+
+
+def test_tui_loop_command_panel_shows_current_actions_and_full_origin(tmp_path):
+    model = tui.tui_state.build_shell_model(cwd=tmp_path, selected_profile_name="security")
+    app = tui.RevRemApp(model=model, profiles_by_name={})
+    app._workspace = "loop"
+    app._loop_origin_label = "last run from 2026-07-05T01:56:47Z: revrem --profile docs --max-iterations 12"
+
+    panel = tui._loop_command_markup(app)
+    status = tui._status_bar_markup(app)
+
+    assert "COMMANDS" in panel
+    assert "phase: review" in panel
+    assert "global: up/down move" in panel
+    assert "command: revrem --profile security" in panel
+    assert "revrem --profile docs --max-iterations 12" in panel
+    assert "--max-iterations 12" not in status
+
+
+def test_tui_splash_uses_terminal_native_retro_art():
+    splash = tui._splash_markup()
+
+    assert "REVIEW  >>  REMEDIATE  >>  VERIFY" in splash
+    assert "press any key" in splash
 
 
 def test_tui_focus_toggle_updates_panel_classes(monkeypatch, tmp_path):
@@ -1470,6 +1496,28 @@ def test_tui_clear_focus_action_clears_input_focus(monkeypatch, tmp_path):
 
     assert app._focused_pane == "left"
     assert notifications == ["Focus returned to navigation."]
+
+
+def test_tui_clear_focus_delegates_escape_to_active_modal(monkeypatch, tmp_path):
+    notifications = []
+    cancelled = []
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    model = tui.tui_state.build_shell_model(cwd=repo, selected_profile_name="security")
+    app = tui.RevRemApp(model=model, profiles_by_name={})
+    monkeypatch.setattr(app, "notify", lambda message: notifications.append(message))
+    monkeypatch.setattr(
+        type(app),
+        "screen",
+        property(lambda self: types.SimpleNamespace(action_cancel=lambda: cancelled.append(True))),
+        raising=False,
+    )
+
+    app.action_clear_focus()
+
+    assert cancelled == [True]
+    assert notifications == []
 
 
 def test_tui_help_toggle_updates_help_and_status_widgets(monkeypatch, tmp_path):

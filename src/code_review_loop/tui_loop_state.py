@@ -133,9 +133,14 @@ def loop_header_text(source: Any) -> str:
     )
     final_text = "final review on" if final_review else "final review off"
     dirty = " *" if bool(getattr(source, "is_dirty", False)) else ""
-    return (
-        f"{profile.name}{dirty} · base {profile.pipeline.base} · max {max_iterations} · "
-        f"inner retries {inner_retries} · {final_text}"
+    return "\n".join(
+        (
+            "LOOP",
+            (
+                f"profile {profile.name}{dirty} | base {profile.pipeline.base} | "
+                f"max {max_iterations} | inner retries {inner_retries} | {final_text}"
+            ),
+        )
     )
 
 
@@ -167,17 +172,32 @@ def loop_rail_meta(source: Any) -> LoopRailMeta:
 
 def phase_gutter(phase: str, rail_meta: LoopRailMeta) -> str:
     if phase == "review":
-        return "┌▶"
+        return "01"
     if phase == "remediation" and rail_meta.inner_rail:
-        return "│ ┌▶"
+        return "03"
     if phase == "checks" and rail_meta.inner_rail:
-        return f"│ └◀─ {rail_meta.inner_return_label}"
+        return "04"
     if phase == "commit":
-        lines = [f"└◀──── {rail_meta.outer_return_label}"]
+        lines = ["05"]
         if rail_meta.final_review and rail_meta.final_review_label:
-            lines.append(f"⚑ {rail_meta.final_review_label}")
+            lines.append("FR")
         return "\n".join(lines)
-    return "│"
+    return {
+        "triage": "02",
+        "remediation": "03",
+        "checks": "04",
+    }.get(phase, "  ")
+
+
+def loop_return_lines(source: Any) -> tuple[str, ...]:
+    meta = loop_rail_meta(source)
+    lines: list[str] = []
+    if meta.inner_rail and meta.inner_return_label:
+        lines.append(f"INNER RETRY  checks -> remediation  ({meta.inner_return_label})")
+    lines.append(f"OUTER LOOP   commit -> review      ({meta.outer_return_label})")
+    if meta.final_review and meta.final_review_label:
+        lines.append(f"FINAL        {meta.final_review_label}")
+    return tuple(lines)
 
 
 def phase_card_lines(
@@ -199,12 +219,22 @@ def phase_card_lines(
     marker = PHASE_ENABLED_GLYPH if enabled else PHASE_DISABLED_GLYPH
     arrow = "▾" if expanded else "▸"
     focus = ">" if focused else " "
+    phase_label = phase_name.upper()
     if phase_name == "checks":
-        commands = phase.command_count or 0
-        summary = f"{focus}{arrow} {marker} checks · {commands} commands"
+        checks = _effective_value(source, "pipeline.checks", profile.pipeline.checks)
+        commands_tuple = (
+            tuple(item for item in checks if isinstance(item, str))
+            if isinstance(checks, list | tuple)
+            else profile.pipeline.checks
+        )
+        commands = len(commands_tuple)
+        summary = f"{focus}{arrow} {marker} {phase_label:<11} | {commands} commands"
         if not expanded:
             return (summary,)
-        return (summary, f"  commands: {commands} commands")
+        lines = [summary, f"  commands: {commands} commands"]
+        lines.extend(f"  {index}. {command}" for index, command in enumerate(commands_tuple, start=1))
+        lines.append("  e edit commands · t timeout · i max iterations · I inner retries")
+        return tuple(lines)
     summary_parts = [str(harness or "-")]
     if model:
         summary_parts.append(str(model))
@@ -214,7 +244,7 @@ def phase_card_lines(
     if effort_text:
         summary_parts.append(effort_text)
     summary_parts.append(_format_timeout(timeout))
-    summary = f"{focus}{arrow} {marker} {phase_name} · " + " · ".join(summary_parts)
+    summary = f"{focus}{arrow} {marker} {phase_label:<11} | " + " | ".join(summary_parts)
     if not expanded:
         return (summary,)
     lines = [

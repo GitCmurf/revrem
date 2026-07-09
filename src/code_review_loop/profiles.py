@@ -1847,6 +1847,17 @@ _BOOL_SUFFIXES = (
 def _coerce_field_value(dotted_key: str, value: object) -> Any:
     if value is None:
         return None
+    if dotted_key == "pipeline.checks":
+        if isinstance(value, list | tuple):
+            if all(isinstance(item, str) for item in value):
+                return list(value)
+            raise ValueError("pipeline.checks must be a list of strings")
+        if isinstance(value, str):
+            separators = value.splitlines()
+            if len(separators) == 1:
+                separators = value.split(";")
+            return [item.strip() for item in separators if item.strip()]
+        raise ValueError("pipeline.checks must be a list of strings")
     raw = value if isinstance(value, str) else str(value)
     if dotted_key.endswith(_INT_SUFFIXES):
         try:

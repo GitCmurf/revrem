@@ -337,6 +337,55 @@ def test_wizard_offers_last_run_as_starting_settings(tmp_path, monkeypatch):
     )
 
 
+def test_wizard_prompts_for_pending_review_before_run_shape_menus(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    run_dir = tmp_path / ".revrem" / "runs" / "pending"
+    run_dir.mkdir(parents=True)
+    review = run_dir / "review-1.txt"
+    review.write_text("Full review comments:\n\n- [P2] Fix startup order\n", encoding="utf-8")
+    (run_dir / "summary.json").write_text(
+        json.dumps(
+            {
+                "final_status": "findings",
+                "stopped_reason": "max_iterations_reached",
+                "artifact_paths": {"reviews": ["review-1.txt"]},
+            }
+        ),
+        encoding="utf-8",
+    )
+    stderr = StringIO()
+
+    result = wizard.run_wizard(
+        cwd=tmp_path,
+        stdin=StringIO("u\n\nprint\n\n"),
+        stdout=StringIO(),
+        stderr=stderr,
+    )
+
+    assert result is not None
+    assert "--initial-review-file" in result.argv
+    assert str(review) in result.argv
+    assert "--initial-review-mode" in result.argv
+    assert "compatible" in result.argv
+    assert result.argv[-2:] == ("--pending-review", "ignore")
+    rendered = stderr.getvalue()
+    assert rendered.index("Pending review") < rendered.index("Run shape: final-pr")
+
+
+def test_initial_review_mode_requires_initial_review_file(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    parsed = wizard.cli_args.parse_args(
+        ("--profile", "final-pr", "--initial-review-mode", "stale", "--dry-run")
+    )
+
+    with pytest.raises(ValueError, match="--initial-review-mode requires"):
+        wizard.build_loop_config(parsed, tmp_path, require_implemented=False)
+
+
 @pytest.mark.parametrize(
     ("saved_flags", "expected_flags"),
     [

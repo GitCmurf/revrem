@@ -127,6 +127,7 @@ def run_commit(
     *,
     ctx: RunContext,
     retrying: bool = False,
+    context_iterations: tuple[int, ...] = (),
 ) -> str:
     phase_support.progress_event(
         config,
@@ -229,7 +230,13 @@ def run_commit(
         )
         raise RuntimeError(f"git staged-diff check failed for iteration {iteration}")
 
-    message = commit_message_for_staged_changes(config, runner, iteration, ctx=ctx)
+    message = commit_message_for_staged_changes(
+        config,
+        runner,
+        iteration,
+        ctx=ctx,
+        context_iterations=context_iterations,
+    )
     if isinstance(message, _AdoptedCommit):
         phase_support.write_artifact(
             config.artifact_dir / f"commit-{iteration}.txt",
@@ -280,7 +287,11 @@ def run_commit(
 
 
 def commit_message_for_staged_changes(
-    config: LoopConfig, runner: Runner, iteration: int, ctx: RunContext
+    config: LoopConfig,
+    runner: Runner,
+    iteration: int,
+    ctx: RunContext,
+    context_iterations: tuple[int, ...] = (),
 ) -> str | _AdoptedCommit:
     timeout_seconds = phase_support.phase_timeout_seconds(config, config.commit_timeout_seconds)
     stat = runner(["git", "diff", "--cached", "--stat"], config.cwd, None, timeout_seconds)
@@ -288,7 +299,11 @@ def commit_message_for_staged_changes(
     stat_stdout = stat.stdout or ""
     names_stdout = names.stdout or ""
     staged_paths = [line.strip() for line in names_stdout.splitlines() if line.strip()]
-    fallback_context = commit_message_fallback_context(config, iteration)
+    fallback_context = commit_message_fallback_context(
+        config,
+        iteration,
+        context_iterations=context_iterations,
+    )
     fallback = deterministic_commit_message(
         staged_paths=staged_paths,
         context=fallback_context,
@@ -709,20 +724,38 @@ def model_commit_message_subject(
     )
 
 
-def commit_message_fallback_context(config: LoopConfig, iteration: int) -> str:
+def commit_message_fallback_context(
+    config: LoopConfig, iteration: int, *, context_iterations: tuple[int, ...] = ()
+) -> str:
     parts: list[str] = []
-    for name in (
+    iterations = context_iterations or (iteration,)
+    for item_iteration in iterations:
+        item_parts: list[str] = []
+        for name in _commit_context_artifact_names(item_iteration):
+            path = config.artifact_dir / name
+            if not path.is_file():
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace").strip()
+            if text:
+                item_parts.append(f"{name}:\n{text}")
+        if item_parts:
+            parts.append(
+                f"Iteration {item_iteration} context:\n" + "\n\n".join(item_parts)
+            )
+    return prompts_composer.trim_for_prompt("\n\n".join(parts), 20_000)
+
+
+def _commit_context_artifact_names(iteration: int) -> tuple[str, ...]:
+    return (
         f"review-{iteration}.txt",
+        f"triage-{iteration}.json",
+        f"triage-{iteration}.txt",
         f"remediation-{iteration}.txt",
         f"remediation-{iteration}-last-message.txt",
-    ):
-        path = config.artifact_dir / name
-        if not path.is_file():
-            continue
-        text = path.read_text(encoding="utf-8", errors="replace").strip()
-        if text:
-            parts.append(text)
-    return prompts_composer.trim_for_prompt("\n\n".join(parts), 20_000)
+        f"check-{iteration}-1.txt",
+        f"check-{iteration}-2.txt",
+        f"check-{iteration}-3.txt",
+    )
 
 
 def deterministic_commit_message(
@@ -865,9 +898,17 @@ def _commit_summary(change_type: str, paths: list[str], *, context: str) -> str:
 def _commit_context_leading_text(context: str) -> str:
     for raw_line in context.splitlines():
         line = _clean_context_line(raw_line)
+        if _is_context_heading_line(line):
+            continue
         if line:
             return line
     return ""
+
+
+def _is_context_heading_line(line: str) -> bool:
+    if re.fullmatch(r"Iteration \d+ context", line):
+        return True
+    return bool(re.fullmatch(r"[-a-z0-9]+-\d+(?:-\d+)?(?:-last-message)?\.(?:txt|json)", line))
 
 
 def _clean_context_line(line: str) -> str:
@@ -1099,6 +1140,7 @@ class CommitAdapter:
             ctx.runner,
             request.iteration,
             retrying=request.retrying,
+            context_iterations=request.context_iterations,
             ctx=ctx,
         )
         return CommitOutcome(

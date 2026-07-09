@@ -288,8 +288,15 @@ pipx install --force "revrem[tui]"
 revrem ui --profile final-pr
 ```
 
-The TUI renders Home, Profiles, Pipeline, Run Monitor, and Controls views, and
-shells through the same CLI command plans as normal terminal usage.
+The TUI opens with a brief terminal-native splash screen; pass
+`revrem ui --skip-splash` to go straight to the Loop view. The TUI renders
+Loop, Run, Profiles, and Prompts workspaces, and shells through the same CLI
+command plans as normal terminal usage. The Loop view is segmented into a loop
+summary, numbered phase bands, explicit retry/return bands, and a labeled
+commands area with current-phase keys, the full command preview, and any
+last-run origin details. When a compatible previous command exists, the Loop
+view can start from that command's settings as an unsaved working copy while
+the top bar stays compact.
 During a live run, the run monitor refreshes continuously and streams stdout/stderr
 into the dedicated tabs while output is still in flight.
 Profile edits done in-session are visible to subsequent live runs without restarting

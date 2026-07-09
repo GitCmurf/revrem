@@ -20,7 +20,7 @@ final_review = false
 enabled = false
 """,
     )
-    assert "review" in svg and "triage" in svg and "final review off" in svg
+    assert "REVIEW" in svg and "TRIAGE" in svg and "final review off" in svg
     assert_svg_snapshot("tui_loop/triage-disabled-final-off", svg)
 
 
@@ -48,9 +48,10 @@ fallback = "nit"
 [profiles.demo.triage.routes.nit]
 harness = "claude"
 model = "haiku-4.5"
-sandbox = "read-only"
+        sandbox = "read-only"
 """,
         focus_delta=1,
+        expand_focused=True,
     )
     assert "security" in svg and "haiku-4.5" in svg
     assert_svg_snapshot("tui_loop/triage-routes", svg)
@@ -69,7 +70,7 @@ final_review = false
 inner_check_retries = 2
 """,
     )
-    assert "┌▶" in svg and "└◀" in svg
+    assert "INNER RETRY" in svg and "OUTER LOOP" in svg
     assert_svg_snapshot("tui_loop/inner-retries", svg)
 
 
@@ -109,6 +110,7 @@ def _capture_loop_svg(
     profile_toml: str,
     *,
     focus_delta: int = 0,
+    expand_focused: bool = False,
     edit_model: str | None = None,
 ) -> str:
     async def run() -> str:
@@ -120,6 +122,8 @@ def _capture_loop_svg(
             await pilot.press("1")
             for _ in range(focus_delta):
                 await pilot.press("down")
+            if expand_focused:
+                await pilot.press("enter")
             await pilot.pause()
             if edit_model is not None:
                 diagram = app.query_one("#loop-diagram")

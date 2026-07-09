@@ -19,6 +19,7 @@ from code_review_loop.adapters.commit import (
     CommitAdapter,
     _commit_message_worktree_status,
     _handle_commit_message_side_effects,
+    commit_message_fallback_context,
 )
 from code_review_loop.adapters.phase_support import CommitFailed
 from code_review_loop.clock import Clock
@@ -129,6 +130,28 @@ class TestCommitAdapter:
         outcome = adapter.execute(CommitRequest(iteration=1), ctx)
 
         assert outcome.status == "skipped_no_changes"
+
+    def test_commit_message_context_includes_prior_uncommitted_iterations(
+        self, tmp_path: Path
+    ) -> None:
+        artifact_dir = tmp_path / "artifacts"
+        artifact_dir.mkdir()
+        (artifact_dir / "review-1.txt").write_text("old finding\n", encoding="utf-8")
+        (artifact_dir / "remediation-1.txt").write_text("old fix\n", encoding="utf-8")
+        (artifact_dir / "check-1-1.txt").write_text("old check failed\n", encoding="utf-8")
+        (artifact_dir / "review-2.txt").write_text("new finding\n", encoding="utf-8")
+        (artifact_dir / "remediation-2.txt").write_text("new fix\n", encoding="utf-8")
+        config = LoopConfig(cwd=tmp_path, artifact_dir=artifact_dir)
+
+        context = commit_message_fallback_context(
+            config, 2, context_iterations=(1, 2)
+        )
+
+        assert "Iteration 1 context" in context
+        assert "old finding" in context
+        assert "old check failed" in context
+        assert "Iteration 2 context" in context
+        assert "new finding" in context
 
     def test_commit_failed_propagates_unchanged(self, tmp_path: Path) -> None:
         (tmp_path / ".git").mkdir()

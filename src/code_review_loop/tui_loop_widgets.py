@@ -150,11 +150,12 @@ def loop_diagram_class() -> type[Any] | None:
             super().__init__(id="loop-diagram", classes="loop-diagram")
             self.model = model
             self.focused_index = 0
-            self.expanded = False
+            self.expanded_phase: str | None = None
             self._header = static_cls("", id="loop-header", markup=False)
             self._gutters: dict[str, Any] = {}
             self._cards: dict[str, Any] = {}
             self._routes_table: Any | None = None
+            self._returns = static_cls("", id="loop-returns", classes="loop-returns", markup=False)
             self.route_mode = False
             self.selected_route_index = 0
 
@@ -178,12 +179,13 @@ def loop_diagram_class() -> type[Any] | None:
                         self.model,
                         phase,
                         focused=index == self.focused_index,
-                        expanded=self.expanded and index == self.focused_index,
+                        expanded=self.expanded_phase == phase,
                     )
                     self._cards[phase] = card
                     yield card
             self._routes_table = route_table_cls(self.model)
             yield self._routes_table
+            yield self._returns
 
         def on_mount(self) -> None:
             self.rebuild()
@@ -195,7 +197,7 @@ def loop_diagram_class() -> type[Any] | None:
             if self._routes_table is not None:
                 self._routes_table.model = model
             self.focused_index = 0
-            self.expanded = False
+            self.expanded_phase = None
             self.route_mode = False
             self.selected_route_index = 0
             self.rebuild()
@@ -237,7 +239,7 @@ def loop_diagram_class() -> type[Any] | None:
             if self.current_phase() != "triage" or not self.route_names():
                 return False
             self.route_mode = True
-            self.expanded = True
+            self.expanded_phase = "triage"
             self.rebuild()
             return True
 
@@ -307,14 +309,18 @@ def loop_diagram_class() -> type[Any] | None:
                 if card is not None:
                     card.set_state(
                         focused=index == self.focused_index,
-                        expanded=self.expanded and index == self.focused_index,
+                        expanded=self.expanded_phase == phase,
                     )
             if self._routes_table is not None:
-                self._routes_table.display = self.current_phase() == "triage"
+                self._routes_table.display = (
+                    self.current_phase() == "triage"
+                    and (self.expanded_phase == "triage" or self.route_mode)
+                )
                 self._routes_table.selected_route = (
                     self.selected_route() if self.route_mode else None
                 )
                 self._routes_table.rebuild()
+            self._returns.update("\n".join(tui_loop_state.loop_return_lines(self.model)))
             self.refresh()
 
     _LOOP_DIAGRAM_CLASS = LoopDiagram

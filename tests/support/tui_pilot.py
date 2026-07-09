@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pytest
+
 from code_review_loop import profiles, tui, tui_state
 
 _TEXTUAL_UNAVAILABLE_PREFIX = "ERROR: revrem ui requires the optional Textual dependency."
@@ -29,6 +30,7 @@ async def pilot_app(
     profile_name: str | None = None,
     fake_harness: bool = True,
     size: tuple[int, int] | None = None,
+    skip_splash: bool = True,
 ) -> AsyncIterator[tuple[object, object]]:
     previous_fake = os.environ.get("REVREM_ALLOW_FAKE_HARNESS")
     if fake_harness:
@@ -50,7 +52,11 @@ async def pilot_app(
                 include_builtins=True,
             )
         }
-        app = _require_textual_app()(model=model, profiles_by_name=profiles_by_name)
+        app = _require_textual_app()(
+            model=model,
+            profiles_by_name=profiles_by_name,
+            skip_splash=skip_splash,
+        )
         async with app.run_test(size=size or (80, 24)) as pilot:
             yield app, pilot
     finally:

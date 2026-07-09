@@ -11,6 +11,7 @@ from code_review_loop import profiles
 from code_review_loop.core.outcome import OutcomeClear
 
 cli_main = import_module("code_review_loop.cli.main")
+config_builder = import_module("code_review_loop.cli.config_builder")
 config_command = import_module("code_review_loop.cli.commands.config")
 history_command = import_module("code_review_loop.cli.commands.history")
 suppress_command = import_module("code_review_loop.cli.commands.suppress")
@@ -407,6 +408,121 @@ def test_main_resolves_latest_initial_review_from_custom_artifact_dir(tmp_path, 
     assert captured_configs[0].artifact_dir == custom_root
     assert captured_configs[0].initial_review_file == custom_review
     assert captured_configs[0].initial_review_file != default_review
+
+
+def test_main_explicit_latest_uses_newest_review_even_after_cleanup_commit(
+    tmp_path, monkeypatch, capsys
+):
+    old_head_review = _write_pending_review(
+        tmp_path,
+        git_state={
+            "available": True,
+            "head": "head-before-cleanup-commit",
+            "base": "main",
+            "base_commit": "base-sha",
+            "merge_base": "base-sha",
+        },
+    )
+    captured_configs = []
+
+    def fake_run_loop(config):
+        captured_configs.append(config)
+        return _clear_result(
+            {
+                "artifact_dir": str(config.artifact_dir),
+                "final_status": "clear",
+                "stopped_reason": "review_clear",
+                "iterations": [],
+            }
+        )
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
+    monkeypatch.setattr(
+        config_builder,
+        "current_git_state_for_latest",
+        lambda cwd, base: {
+            "available": True,
+            "head": "head-after-cleanup-commit",
+            "base": "main",
+            "base_commit": "base-sha",
+            "merge_base": "base-sha",
+        },
+    )
+    monkeypatch.setattr("sys.stdin", _TTYStringIO("f\n"))
+    monkeypatch.setattr("sys.stdout", _TTYStringIO())
+
+    exit_code = cli_main.main(
+        ["--initial-review-file", "latest", "--quiet-progress"]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured_configs[0].initial_review_file == old_head_review
+    assert captured_configs[0].initial_review_mode == "explicit"
+    assert "Validate this older review?" not in captured.err
+
+
+def test_main_explicit_latest_errors_when_no_unresolved_review(tmp_path, monkeypatch, capsys):
+    run = tmp_path / ".revrem" / "runs" / "20260428T010000Z"
+    run.mkdir(parents=True)
+    (run / "summary.json").write_text(
+        json.dumps({"final_status": "clear", "stopped_reason": "review_clear"}),
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+
+    exit_code = cli_main.main(["--initial-review-file", "latest", "--quiet-progress"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "--initial-review-file latest did not find" in captured.err
+
+
+def test_main_latest_compatible_mode_requires_matching_git_state(
+    tmp_path, monkeypatch, capsys
+):
+    _write_pending_review(
+        tmp_path,
+        git_state={
+            "available": True,
+            "head": "old-head",
+            "base": "main",
+            "base_commit": "base-sha",
+            "merge_base": "base-sha",
+        },
+    )
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    monkeypatch.setattr(
+        config_builder,
+        "current_git_state_for_latest",
+        lambda cwd, base: {
+            "available": True,
+            "head": "new-head",
+            "base": "main",
+            "base_commit": "base-sha",
+            "merge_base": "base-sha",
+        },
+    )
+
+    exit_code = cli_main.main(
+        [
+            "--initial-review-file",
+            "latest",
+            "--initial-review-mode",
+            "compatible",
+            "--quiet-progress",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "--initial-review-file latest did not find" in captured.err
 
 
 def test_main_save_profile_writes_project_config_and_exits(tmp_path, monkeypatch, capsys):

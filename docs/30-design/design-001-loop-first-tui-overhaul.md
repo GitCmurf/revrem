@@ -143,8 +143,18 @@ Textual remains an optional `[tui]` extra. The lazy-import / fallback scaffoldin
 ## 5. Screens
 
 Navigation: **`1 Loop · 2 Run · 3 Profiles · 4 Prompts`** (Loop first). Compact top bar:
-`app · loaded profile (with * when modified) · base / iteration summary`. Bottom bar:
-contextual keys for the active screen.
+`app · loaded profile (with * when modified) · workspace · live status`, with
+only a short origin label when the Loop working copy is seeded from run history.
+The Loop workspace owns a visible `COMMANDS` panel below the diagram for
+current-phase keys, global actions, launch command preview, and full origin
+detail. The diagram is segmented into a loop summary band, numbered phase
+bands, explicit inner-retry and outer-loop return bands, and an optional final
+review marker. Bottom bar: live state plus the shortest contextual key strip.
+`revrem ui` may briefly show a splash screen while Textual mounts; operators can
+skip it with `--skip-splash`. The splash is terminal-native retro text art, not
+a bitmap asset, so it works in plain terminal sessions. When a compatible prior
+run command exists, the Loop screen can seed the working copy from that command
+and mark the compact origin while preserving explicit Save semantics.
 
 ### 5.1 Loop (centerpiece)
 

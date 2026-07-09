@@ -378,21 +378,18 @@ revrem \
 
 Use `--initial-review-file latest` with the effective artifact directory. When
 `--artifact-dir` or a profile sets `output.artifact_dir`, `latest` resolves
-under that directory instead of the default workspace-local tree. `latest`
-orders compatible candidates by run/review modification time, then uses the
-newest compatible usable generated review artifact from a non-clear run,
+under that directory instead of the default workspace-local tree. Explicit
+`latest` uses the newest usable generated review artifact from a non-clear run,
 including interrupted runs that have `review-1.txt`, `review-2.txt`, or later
-iteration reviews but no `review-final.txt`. Retry-attempt transcripts such as
-`review-1-attempt-1.txt` are ignored because they contain provider failure
-diagnostics rather than review findings. Imported `review-initial.txt` artifacts
-are also ignored so a restart does not keep reusing stale carried-in feedback.
-When run summaries include git state, `latest` skips artifacts from a different
-current `HEAD` or base. When RevRem can identify the current `HEAD`/base,
-historical summaries that do not record git state are not treated as compatible
-`latest` candidates. If the newest compatible run's
-`summary.json` reports `final_status = "clear"`, or there is no previous
-generated review, RevRem starts with a fresh review instead of reviving older
-feedback.
+iteration reviews but no `review-final.txt`, even if the operator has since
+made a cleanup commit and the saved run `HEAD` no longer matches. Retry-attempt
+transcripts such as `review-1-attempt-1.txt` are ignored because they contain
+provider failure diagnostics rather than review findings. Imported
+`review-initial.txt` artifacts are also ignored so a restart does not keep
+reusing stale carried-in feedback. If no usable unresolved review exists,
+explicit `latest` fails clearly instead of silently starting a fresh review.
+Use `--initial-review-mode compatible` with `latest` only when the review must
+come from a matching `HEAD`/base.
 
 If `--initial-review-file` is omitted, interactive terminal runs also check for
 pending review feedback before making a fresh review provider call. When found,
@@ -400,13 +397,20 @@ RevRem asks whether to use or validate the review, show more detail, start
 fresh, or cancel.
 If the only pending review is from a different `HEAD`/base, the interactive
 prompt offers validation, not ordinary reuse, and labels the mismatch clearly
-so the operator can decide whether that older finding is still relevant.
+so the operator can decide whether that older finding is still relevant. The
+start-fresh choice means "run a new review" and is only part of pending-review
+discovery; it is not shown for an explicit `--initial-review-file`.
 Non-interactive runs do not prompt and start fresh by default. Use
 `--pending-review auto` to reuse the detected compatible review without
 prompting, or `--pending-review ignore` to suppress the startup check. `auto`
 never prompts for incompatible older reviews. An explicit
 `--initial-review-file` path or `latest` always takes precedence over the
 pending-review prompt.
+The interactive wizard performs this pending-review check before its run-shape
+menus. When the operator accepts a compatible or stale review, the generated
+command includes `--initial-review-file` and `--initial-review-mode`; when the
+operator starts fresh, the generated command includes `--pending-review ignore`
+to avoid a second prompt after the wizard exits.
 
 When an operator intentionally uses a pending review from a different
 `HEAD`/base, RevRem treats it as stale-review validation instead of ordinary
@@ -451,6 +455,10 @@ the repository clean, RevRem adopts that commit, records the side-effect
 artifact in `summary.json` under `commit_message_side_effects`, and prints a
 warning that the model/harness is unsuitable for commit-message drafting until
 fixed. Partial HEAD/index mutations remain errors.
+When verification failures caused earlier iterations to skip auto-commit,
+the next passing commit-message prompt includes context from all uncommitted
+iterations since the last successful commit, so the generated subject can name
+the whole staged change rather than only the latest check-passing iteration.
 
 ### Profile-based usage
 
@@ -1605,7 +1613,11 @@ routing is enabled. Enabled and disabled phases render as `●` and `○`; the
 left gutter uses box-drawing return rails for the outer review loop and the
 inner remediation/check retry loop. Workspaces are `1` loop, `2` run,
 `3` profiles, and `4` prompts. The loop workspace edits a working copy in
-memory; a `*` next to the profile name marks unsaved changes. Press `s` to
+memory; a `*` next to the profile name marks unsaved changes. A labeled
+`COMMANDS` panel under the diagram lists current-phase keys, global actions,
+the launch command, and the full last-run origin when the working copy was
+seeded from prior run history; the top bar keeps only a compact origin summary
+so long commands do not dominate the screen. Press `s` to
 persist the authored raw profile delta through `profiles.save_profile_raw`, or
 press `r` to save first and then launch the normal `revrem --profile NAME` run
 path. If save validation fails, or the selected profile is a read-only bundled
@@ -1622,6 +1634,10 @@ to that scalar prompt field, and `a` adds a route when triage is focused.
 Free-text fields are validated at save time. Route rows edit through the same
 working copy and explicit `s` save; route deletion is not available yet because
 the current profile-save primitive is merge-only.
+
+There is no runtime "copy SVG" command in the TUI. The project uses Textual's
+SVG export in the test harness for checked-in snapshots; for ad hoc operator
+captures, use the terminal's screenshot/copy support.
 
 The Profiles workspace is now a grouped save/load picker: project/user
 profiles appear under "yours" and bundled expert profiles appear under

@@ -572,6 +572,15 @@ def build_run_parser() -> RevRemArgumentParser:
         ),
     )
     parser.add_argument(
+        "--initial-review-mode",
+        choices=("explicit", "compatible", "stale"),
+        default=None,
+        help=(
+            "Interpretation mode for --initial-review-file. The wizard uses 'compatible' "
+            "or 'stale' when startup pending-review discovery is accepted."
+        ),
+    )
+    parser.add_argument(
         "--pending-review",
         choices=("prompt", "ignore", "auto"),
         default=None,

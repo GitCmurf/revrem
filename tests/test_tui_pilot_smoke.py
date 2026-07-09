@@ -61,11 +61,13 @@ def test_loop_workspace_renders_real_diagram_widgets(tmp_path):
             commit_gutter = str(app.query_one("#phase-gutter-commit").render())
             review = str(app.query_one("#phase-card-review").render())
             remediation = str(app.query_one("#phase-card-remediation").render())
+            returns = str(app.query_one("#loop-returns").render())
             assert "security" in header and "base" in header
-            assert "┌▶" in review_gutter
-            assert "└◀" in commit_gutter
-            assert "review" in review
-            assert "remediation" in remediation
+            assert "01" in review_gutter
+            assert "05" in commit_gutter
+            assert "OUTER LOOP" in returns
+            assert "REVIEW" in review
+            assert "REMEDIATION" in remediation
 
     asyncio.run(run())
 
@@ -239,6 +241,67 @@ def test_loop_triage_focus_mounts_routes_table(tmp_path):
             await pilot.press("down")
             await pilot.pause()
             assert app.query(".triage-routes-table")
+
+    asyncio.run(run())
+
+
+def test_loop_enter_expands_triage_before_route_focus_and_movement_keeps_expansion(tmp_path):
+    async def run() -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        (repo / ".revrem.toml").write_text(
+            "[profiles.edit]\n[profiles.edit.pipeline]\nbase='main'\nchecks=['pytest -q']\n"
+            "[profiles.edit.triage]\nenabled=true\ncontract='v2'\n"
+            "[profiles.edit.triage.routing]\nenabled=true\ndefault_route='codex-midi'\n"
+            "[profiles.edit.triage.routes.codex-midi]\n"
+            "harness='codex'\nmodel='gpt-5.4-mini'\n",
+            encoding="utf-8",
+        )
+        async with pilot_app(cwd=repo, profile_name="edit") as (app, pilot):
+            await pilot.press("1")
+            await pilot.press("down")
+            await pilot.pause()
+            routes = app.query_one("#triage-routes-table")
+            assert routes.display is False
+            await pilot.press("enter")
+            await pilot.pause()
+            assert routes.display is True
+            assert app.query_one("#loop-diagram").route_mode is False
+            await pilot.press("tab")
+            await pilot.pause()
+            assert app.query_one("#loop-diagram").route_mode is True
+            await pilot.press("escape")
+            await pilot.press("down")
+            await pilot.press("down")
+            await pilot.press("enter")
+            await pilot.pause()
+            assert "commands:" in str(app.query_one("#phase-card-checks").render())
+            assert "harness:" not in str(app.query_one("#phase-card-commit").render()).lower()
+
+    asyncio.run(run())
+
+
+def test_tui_splash_can_be_skipped_or_dismissed(tmp_path):
+    async def run() -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        async with pilot_app(cwd=repo, profile_name="security", skip_splash=False) as (
+            app,
+            pilot,
+        ):
+            assert app._splash_visible is True
+            assert app.query_one("#splash-pane").display is True
+            await pilot.press("enter")
+            await pilot.pause()
+            assert app.query_one("#splash-pane").display is False
+        async with pilot_app(cwd=repo, profile_name="security", skip_splash=True) as (
+            app,
+            pilot,
+        ):
+            await pilot.pause()
+            assert app.query_one("#splash-pane").display is False
 
     asyncio.run(run())
 
