@@ -17,6 +17,7 @@ Document IDs follow `REVREM-TYPE-SEQ` (e.g., `REVREM-ADR-001`).
 ## Project Rules
 
 - The atomic unit of work is code + documentation + tests.
+- For implementation work, finish with one or more local Conventional Commits that leave the workspace clean unless the user explicitly asks to keep changes uncommitted. Split commits by coherent behavior/documentation/test boundaries, and do not push, tag, or open PRs without explicit approval.
 - Keep the runtime dependency-free unless a dependency removes clear operational risk. `tomli-w` is an accepted exception: it eliminates an entire class of TOML encoding bugs (surrogate escapes, escaping edge cases) that would be fragile to maintain by hand.
 - Preserve operator-visible progress and artifact output; this tool is for watched local automation.
 - Keep nested Codex execution bounded by default. Any unbounded mode must be explicit.
