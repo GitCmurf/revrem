@@ -3,7 +3,7 @@ document_id: REVREM-LEDGER-003
 type: LEDGER
 title: Behaviour ledger for the cli.py re-engineering (REVREM-TASK-003)
 status: Approved
-version: '1.7'
+version: '1.8'
 last_updated: '2026-07-10'
 owner: GitCmurf
 docops_version: '2.0'
@@ -55,6 +55,19 @@ There is no silent third option.
 ```
 
 ## Entries
+
+### 2026-07-10 — Hermetic canonical TUI snapshot theme
+
+- **Contract:** human presentation test baseline
+- **What changed:** primary TUI SVG snapshots are captured with color enabled
+  and the `textual-dark` theme, independent of ambient `NO_COLOR` and
+  `TEXTUAL_THEME` values. Light and monochrome modes retain focused smoke tests.
+- **Why:** seven snapshot files had mixed color and monochrome provenance, so
+  identical layouts passed or failed according to the invoking shell.
+- **Before / After:** canonical color bytes replace the contaminated baselines;
+  normalized layout and visible content are unchanged.
+- **schema_version impact:** none. Runtime behavior and artifact schemas are
+  unchanged.
 
 ### 2026-07-10 — Local model invocation telemetry
 

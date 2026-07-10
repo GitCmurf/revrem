@@ -105,6 +105,27 @@ model = "gpt-5.5"
     assert_svg_snapshot("tui_loop/dirty-edit", svg)
 
 
+def test_loop_snapshot_environment_is_hermetic(tmp_path: Path, monkeypatch) -> None:
+    profile = """
+[profiles.demo]
+[profiles.demo.pipeline]
+base = "main"
+"""
+    monochrome_root = tmp_path / "monochrome"
+    monochrome_root.mkdir()
+    monkeypatch.setenv("NO_COLOR", "1")
+    monkeypatch.setenv("TEXTUAL_THEME", "textual-light")
+    from_monochrome_shell = _capture_loop_svg(monochrome_root, profile)
+
+    color_root = tmp_path / "color"
+    color_root.mkdir()
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.setenv("TEXTUAL_THEME", "nord")
+    from_color_shell = _capture_loop_svg(color_root, profile)
+
+    assert from_monochrome_shell == from_color_shell
+
+
 def _capture_loop_svg(
     tmp_path: Path,
     profile_toml: str,

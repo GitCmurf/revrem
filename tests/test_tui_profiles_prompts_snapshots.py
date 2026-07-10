@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 from support.snapshot import assert_svg_snapshot, normalize_svg
-from support.tui_pilot import pilot_app
+from support.tui_pilot import configure_test_app, pilot_app, tui_test_environment
 
 from code_review_loop import tui, tui_loop_widgets
 
@@ -88,11 +88,7 @@ sandbox = "read-only"
 def test_route_edit_modal_snapshot() -> None:
     svg = _capture_route_modal_svg()
     assert "Route: security" in svg and "sandbox" in svg
-    assert_svg_snapshot(
-        "tui_profiles_prompts/route-edit-modal",
-        svg,
-        normalize_theme_colors=True,
-    )
+    assert_svg_snapshot("tui_profiles_prompts/route-edit-modal", svg)
 
 
 def _capture_workspace_svg(
@@ -150,11 +146,14 @@ def _capture_route_modal_svg() -> str:
                     )
                 )
 
-        async with ModalApp().run_test(size=(96, 32)) as pilot:
-            await pilot.pause()
-            return normalize_svg(
-                pilot.app.export_screenshot(title="revrem-route-modal", simplify=True)
-            )
+        with tui_test_environment():
+            app = ModalApp()
+            configure_test_app(app)
+            async with app.run_test(size=(96, 32)) as pilot:
+                await pilot.pause()
+                return normalize_svg(
+                    pilot.app.export_screenshot(title="revrem-route-modal", simplify=True)
+                )
 
     return asyncio.run(run())
 

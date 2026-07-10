@@ -3,8 +3,8 @@ document_id: REVREM-TEST-001
 type: TEST
 title: Utility verification strategy
 status: Draft
-version: '1.8'
-last_updated: '2026-06-21'
+version: '1.9'
+last_updated: '2026-07-10'
 owner: GitCmurf
 docops_version: '2.0'
 area: testing
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-TEST-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.8
-> **Last Updated:** 2026-06-21
+> **Version:** 1.9
+> **Last Updated:** 2026-07-10
 > **Type:** TEST
 > **Area:** testing
 > **Description:** Test and release gates for code-review-loop
@@ -210,6 +210,12 @@ Textual. It also verifies the main dashboard has no persistent text-input
 focus trap, then drives confirmed live-run launch, visible monitor updates,
 cancellation, modal prompt submit, and modal prompt cancel through the real
 widget tree and keybindings.
+The shared Pilot harness owns its visual-test environment: primary SVG
+snapshots always use color-enabled `textual-dark`, restore the caller's
+environment afterward, and therefore do not depend on ambient `NO_COLOR` or
+`TEXTUAL_THEME` values. Representative light-theme and monochrome Pilot tests
+verify that content, focus, and keyboard navigation remain usable outside the
+canonical snapshot theme.
 `tests/test_tui_run_controller.py` covers live-run argv assembly, explicit
 artifact-dir stale event/summary guards, exit classification, process-group
 cancellation escalation, real child-process cancellation, and cleanup of a

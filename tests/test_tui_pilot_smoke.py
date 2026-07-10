@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -19,6 +20,54 @@ from code_review_loop import (
 )
 
 LIVE_RUN_PILOT_TIMEOUT = 30
+
+
+def test_pilot_app_uses_canonical_theme_and_restores_environment(tmp_path, monkeypatch):
+    monkeypatch.setenv("NO_COLOR", "ambient")
+    monkeypatch.setenv("TEXTUAL_THEME", "nord")
+
+    async def run() -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        async with pilot_app(cwd=repo, profile_name="security") as (app, _pilot):
+            assert app.no_color is False
+            assert app.theme == "textual-dark"
+        assert os.environ["NO_COLOR"] == "ambient"
+        assert os.environ["TEXTUAL_THEME"] == "nord"
+
+    asyncio.run(run())
+
+
+def test_pilot_app_explicit_light_and_no_color_modes_remain_usable(tmp_path):
+    async def run() -> None:
+        light_repo = tmp_path / "light"
+        light_repo.mkdir()
+        (light_repo / ".git").mkdir()
+        async with pilot_app(
+            cwd=light_repo,
+            profile_name="security",
+            theme="textual-light",
+        ) as (app, pilot):
+            await pilot.press("1")
+            await pilot.pause()
+            assert app.current_theme.dark is False
+            assert "REVIEW" in str(app.query_one("#phase-card-review").render())
+
+        monochrome_repo = tmp_path / "monochrome"
+        monochrome_repo.mkdir()
+        (monochrome_repo / ".git").mkdir()
+        async with pilot_app(
+            cwd=monochrome_repo,
+            profile_name="security",
+            no_color=True,
+        ) as (app, pilot):
+            await pilot.press("1")
+            await pilot.pause()
+            assert app.no_color is True
+            assert "REVIEW" in str(app.query_one("#phase-card-review").render())
+
+    asyncio.run(run())
 
 
 def test_tui_pilot_boots_home_view(tmp_path):
