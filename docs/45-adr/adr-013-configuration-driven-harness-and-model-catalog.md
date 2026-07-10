@@ -3,7 +3,7 @@ document_id: REVREM-ADR-013
 type: ADR
 title: Configuration Driven Harness and Model Catalog
 status: Draft
-version: '0.1'
+version: '0.2'
 last_updated: '2026-07-10'
 owner: maintainers
 docops_version: '2.0'
@@ -35,6 +35,11 @@ templates. The precedence order is:
 3. `~/.config/revrem/catalog.toml`;
 4. project `.revrem-catalog.toml`.
 
+The Codex cache is an optional external overlay. Codex may replace it while
+RevRem starts, so unreadable, empty, or malformed cache contents are ignored
+for that load and packaged metadata remains authoritative. This keeps CLI and
+TUI behavior deterministic during concurrent Codex activity.
+
 Known model/effort incompatibilities fail before provider execution. Unknown
 models and efforts pass through with a warning, preserving forward compatibility.
 The CLI exposes the effective metadata through `revrem models list`; the wizard
@@ -57,6 +62,8 @@ family is in limited preview.
 - Local stats remain reproducible from run artifacts without a second ledger.
 - Unknown future provider values remain usable, while catalogued invalid pairs
   are rejected with an actionable message.
+- Relative pending-review artifact searches are resolved against the configured
+  repository, never the caller process's ambient working directory.
 
 ## Alternatives Considered
 

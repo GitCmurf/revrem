@@ -1403,6 +1403,8 @@ def _pending_review_candidate_for_config(
     search_root = (
         config.artifact_dir.parent if config.artifact_dir_is_default else config.artifact_dir
     )
+    if not search_root.is_absolute():
+        search_root = config.cwd / search_root
     current_git_state = current_git_state_for_latest(config.cwd, config.base)
     return find_pending_review_candidate(
         search_root,

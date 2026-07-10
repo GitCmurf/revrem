@@ -1507,6 +1507,31 @@ def test_wizard_uses_rich_when_available_and_terminal_supports_it(tmp_path, monk
     assert "Run shape: final-pr (./.revrem.toml)" in printed_values
 
 
+def test_wizard_default_pending_review_search_is_scoped_to_requested_cwd(
+    tmp_path, monkeypatch
+):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    _write_profile(repo / ".revrem.toml")
+    ambient = tmp_path / "ambient"
+    run_dir = ambient / ".revrem" / "runs" / "run-1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "review-final.txt").write_text("finding\n", encoding="utf-8")
+    (run_dir / "summary.json").write_text(
+        '{"final_status":"findings","stopped_reason":"max_iterations_reached"}',
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(ambient)
+
+    stderr = StringIO()
+    result = wizard.run_wizard(cwd=repo, stdin=StringIO("q\n"), stderr=stderr)
+
+    assert result is None
+    assert "Pending review" not in stderr.getvalue()
+    assert "Run shape: final-pr" in stderr.getvalue()
+
+
 def test_wizard_skips_rich_when_no_color_is_set(tmp_path, monkeypatch):
     (tmp_path / ".git").mkdir()
     _write_profile(tmp_path / ".revrem.toml")

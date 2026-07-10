@@ -10,6 +10,7 @@ import subprocess
 import time
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 from code_review_loop import harnesses, waiting_progress
 from code_review_loop.adapters import terminal as terminal_adapter
@@ -69,10 +70,11 @@ def default_runner(
 
 
 def _normalize_codex_json(args: list[str], stdout: str) -> tuple[str, int | None, str | None]:
-    """Keep raw JSONL while returning final assistant text to existing classifiers."""
+    """Keep JSON diagnostics available for failure classification."""
     if "--json" not in args:
         return stdout, None, None
     final_text: str | None = None
+    error_text: list[str] = []
     tokens: int | None = None
     parsed_any = False
     for line in stdout.splitlines():
@@ -85,9 +87,28 @@ def _normalize_codex_json(args: list[str], stdout: str) -> tuple[str, int | None
         parsed_any = True
         item = event.get("item")
         if isinstance(item, dict) and item.get("type") in {"agent_message", "assistant_message"}:
-            candidate = item.get("text") or item.get("content")
+            candidate = _event_text(item)
             if isinstance(candidate, str):
                 final_text = candidate
+        else:
+            if isinstance(item, dict):
+                item_type = item.get("type")
+                if (
+                    isinstance(item_type, str)
+                    and "error" in item_type.lower()
+                    and item_type not in {"agent_message", "assistant_message"}
+                ):
+                    candidate = _event_text(item)
+                    if isinstance(candidate, str):
+                        error_text.append(candidate)
+            event_type = event.get("type")
+            if (
+                isinstance(event_type, str)
+                and "error" in event_type.lower()
+            ):
+                candidate = _event_text(event)
+                if isinstance(candidate, str):
+                    error_text.append(candidate)
         usage = event.get("usage")
         if isinstance(usage, dict):
             total = usage.get("total_tokens")
@@ -103,8 +124,38 @@ def _normalize_codex_json(args: list[str], stdout: str) -> tuple[str, int | None
                 tokens = total
     if not parsed_any:
         return stdout, None, None
-    normalized = (final_text.rstrip() + "\n") if final_text else ""
+    if final_text is not None:
+        normalized = final_text.rstrip() + "\n"
+    elif error_text:
+        normalized = "\n".join(text.strip() for text in error_text if text.strip()).rstrip() + "\n"
+        if not normalized.strip():
+            normalized = stdout
+    else:
+        normalized = stdout
     return normalized, tokens, stdout
+
+
+def _event_text(event: dict[str, Any]) -> str | None:
+    candidate = event.get("text")
+    if isinstance(candidate, str) and candidate.strip():
+        return candidate
+    candidate = event.get("content")
+    if isinstance(candidate, str) and candidate.strip():
+        return candidate
+    if isinstance(candidate, list):
+        block_text = [
+            str(block["text"])
+            for block in candidate
+            if isinstance(block, dict)
+            and isinstance(block.get("text"), str)
+            and block["text"].strip()
+        ]
+        if block_text:
+            return "\n".join(block_text)
+    candidate = event.get("message")
+    if isinstance(candidate, str) and candidate.strip():
+        return candidate
+    return None
 
 
 def run_subprocess_with_terminal_title_refresh(

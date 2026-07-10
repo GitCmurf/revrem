@@ -135,8 +135,18 @@ def _read_toml(path: Path) -> dict[str, Any]:
 def _codex_cache_layer(path: Path) -> dict[str, Any]:
     import json
 
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    entries = raw.get("models", raw if isinstance(raw, list) else [])
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        # Codex owns this optional cache and may be replacing it while RevRem
+        # starts. Packaged metadata remains the safe, deterministic fallback.
+        return {}
+    if isinstance(raw, dict):
+        entries = raw.get("models", [])
+    elif isinstance(raw, list):
+        entries = raw
+    else:
+        entries = []
     models: list[dict[str, Any]] = []
     for entry in entries:
         if not isinstance(entry, dict):

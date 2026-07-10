@@ -264,7 +264,11 @@ revrem stats models --phase review --model gpt-5.6-sol
 
 Catalog precedence is packaged defaults, Codex's local
 `$CODEX_HOME/models_cache.json`, `~/.config/revrem/catalog.toml`, then project
-`.revrem-catalog.toml`. Known-invalid model/effort combinations are rejected;
+`.revrem-catalog.toml`.
+Catalog entries in `.config/revrem/catalog.toml` and `.revrem-catalog.toml` can
+select an audited built-in driver for a harness alias. Executable paths remain
+an explicit runtime choice through `--harness-bin HARNESS=EXECUTABLE`.
+Known-invalid model/effort combinations are rejected;
 unknown future values pass through with a warning. GPT-5.6 Sol and Terra support
 `low`, `medium`, `high`, `xhigh`, `max`, and `ultra`; Luna supports the same
 set except `ultra`.

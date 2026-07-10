@@ -13,6 +13,7 @@ from typing import Any
 from code_review_loop import run_history
 from code_review_loop.cli.args import parse_stats_args
 from code_review_loop.cli.outcome import CommandFailed, CommandOk
+from code_review_loop.repo_roots import repo_root_or_cwd
 
 
 def main(argv: Sequence[str]) -> int:
@@ -46,9 +47,12 @@ def main(argv: Sequence[str]) -> int:
 
 def _invocations(limit: int, *, repo: Path | None) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
+    requested_repo = repo_root_or_cwd(repo) if repo is not None else None
     for record in run_history.read_history(limit=limit):
-        if repo is not None and Path(str(record.get("cwd") or "")).resolve() != repo:
-            continue
+        if requested_repo is not None:
+            record_cwd = Path(str(record.get("cwd") or "")).resolve()
+            if repo_root_or_cwd(record_cwd) != requested_repo:
+                continue
         summary_path = record.get("summary_path")
         if not summary_path:
             continue

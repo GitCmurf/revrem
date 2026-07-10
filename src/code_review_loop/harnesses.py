@@ -472,7 +472,7 @@ def resolve_executable(
     from code_review_loop.model_catalog import load_catalog
 
     catalog_spec = load_catalog().harnesses.get(harness)
-    if catalog_spec is not None and catalog_spec.source == "packaged":
+    if catalog_spec is not None:
         return catalog_spec.executable
     return harness
 
