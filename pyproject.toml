@@ -67,6 +67,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 code_review_loop = [
+  "catalog.toml",
   "expert_profiles/*.toml",
   "prompts/*.txt",
   "prompts/fragments/*.txt",

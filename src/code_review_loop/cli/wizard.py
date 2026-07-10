@@ -11,7 +11,7 @@ from os import environ
 from pathlib import Path
 from typing import TextIO
 
-from code_review_loop import policy, profiles, routing_timeouts, run_history
+from code_review_loop import model_catalog, policy, profiles, routing_timeouts, run_history
 from code_review_loop.adapters.commit import phase_support
 from code_review_loop.adapters.remediation import build_remediation_command
 from code_review_loop.adapters.review import build_review_command
@@ -629,24 +629,30 @@ class _Wizard:
         model_attr: str,
         effort_attr: str,
     ) -> None:
-        implemented_harnesses = tuple(
-            value for value, spec in profiles.HARNESS_REGISTRY.items() if spec.implemented
-        )
+        implemented_harnesses = tuple(sorted({
+            *(value for value, spec in profiles.HARNESS_REGISTRY.items() if spec.implemented),
+            *model_catalog.load_catalog(self.cwd).harnesses,
+        }))
         harness = self._choice(
             f"{label.capitalize()} harness",
             tuple((value, value) for value in implemented_harnesses),
             default=getattr(state, harness_attr),
         )
         setattr(state, harness_attr, harness)
-        setattr(
-            state,
-            model_attr,
-            self._model_text(
-                f"{label.capitalize()} model (blank = profile/default)",
-                default=getattr(state, model_attr),
-            ),
+        catalog_models = model_catalog.load_catalog(self.cwd).models_for(harness)
+        if catalog_models:
+            self._print_dim(
+                "Catalog: "
+                + ", ".join(
+                    f"{item.id} [{'/'.join(item.efforts)}]" for item in catalog_models
+                )
+            )
+        selected_model = self._model_text(
+            f"{label.capitalize()} model (blank = profile/provider default)",
+            default=getattr(state, model_attr),
         )
-        effort_choices: tuple[str, ...] = cli_args.REASONING_EFFORT_CHOICES
+        setattr(state, model_attr, selected_model)
+        effort_choices = model_catalog.effort_choices(harness, selected_model or None, cwd=self.cwd)
         if label == "triage" and harness == "codex":
             effort_choices = tuple(value for value in effort_choices if value != "minimal")
             self._print_dim(

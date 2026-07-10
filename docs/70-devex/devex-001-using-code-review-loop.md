@@ -3,8 +3,8 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.76'
-last_updated: '2026-06-28'
+version: '1.77'
+last_updated: '2026-07-10'
 owner: GitCmurf
 docops_version: '2.0'
 area: devex
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.76
-> **Last Updated:** 2026-06-28
+> **Version:** 1.77
+> **Last Updated:** 2026-07-10
 > **Type:** DEVEX
 > **Area:** devex
 > **Description:** Operator guide for the code-review-loop utility
@@ -914,6 +914,8 @@ Run-history commands:
 
 ```bash
 revrem history list
+revrem models list
+revrem stats models
 revrem history --format json list --limit 20
 ```
 
@@ -1943,6 +1945,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.77 | 2026-07-10 | Codex | Documented the layered model catalog and local model invocation statistics |
 | 1.76 | 2026-06-28 | Codex | Documented stale-review validation ordering before triage/routing/remediation |
 | 1.75 | 2026-06-23 | Codex | Documented bundled expert profiles, examples, completions, demo regeneration, and the failure diagnostics guide |
 | 1.74 | 2026-06-23 | Codex | Aligned the example paid dogfood workflow with the documented `run-dogfood` label gate |

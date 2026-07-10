@@ -43,6 +43,7 @@ from code_review_loop.harnesses import (
     require_implemented_harness,
     validate_harness_name,
 )
+from code_review_loop.model_catalog import KNOWN_EFFORTS
 from code_review_loop.repo_roots import repo_root_or_cwd
 
 USER_CONFIG_RELATIVE = Path(".config") / "revrem" / "profiles.toml"
@@ -50,7 +51,8 @@ PROJECT_CONFIG_NAME = ".revrem.toml"
 TOML_BARE_KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 EXEC_SANDBOX_CHOICES = ("read-only", "workspace-write", "danger-full-access")
 EXEC_COLOR_CHOICES = ("always", "never", "auto")
-REASONING_EFFORT_CHOICES = ("minimal", "low", "medium", "high")
+
+REASONING_EFFORT_CHOICES = KNOWN_EFFORTS
 PROFILE_KEYS = (
     "description",
     "pipeline",
@@ -261,10 +263,6 @@ def parse_phase(raw: dict[str, Any], field: str) -> PhaseConfig:
     harness = _str(raw.get("harness", "codex"), f"{field}.harness")
     validate_harness_name(harness, field=f"{field}.harness")
     reasoning_effort = _optional_str(raw.get("reasoning_effort"), f"{field}.reasoning_effort")
-    if reasoning_effort is not None and reasoning_effort not in REASONING_EFFORT_CHOICES:
-        raise ValueError(
-            f"{field}.reasoning_effort must be one of {', '.join(REASONING_EFFORT_CHOICES)}"
-        )
     return PhaseConfig(
         harness=harness,
         model=_optional_str(raw.get("model"), f"{field}.model"),
@@ -278,10 +276,6 @@ def parse_triage(raw: dict[str, Any], field: str) -> TriageConfig:
     harness = _str(raw.get("harness", "codex"), f"{field}.harness")
     validate_harness_name(harness, field=f"{field}.harness")
     reasoning_effort = _optional_str(raw.get("reasoning_effort"), f"{field}.reasoning_effort")
-    if reasoning_effort is not None and reasoning_effort not in REASONING_EFFORT_CHOICES:
-        raise ValueError(
-            f"{field}.reasoning_effort must be one of {', '.join(REASONING_EFFORT_CHOICES)}"
-        )
     on_invalid = _str(raw.get("on_invalid", "continue"), f"{field}.on_invalid")
     if on_invalid not in TRIAGE_ON_INVALID_CHOICES:
         raise ValueError(
@@ -416,10 +410,6 @@ def parse_triage_route(raw: dict[str, Any], field: str) -> TriageRouteConfig:
     harness = _str(raw.get("harness", "codex"), f"{field}.harness")
     validate_harness_name(harness, field=f"{field}.harness")
     reasoning_effort = _optional_str(raw.get("reasoning_effort"), f"{field}.reasoning_effort")
-    if reasoning_effort is not None and reasoning_effort != "" and reasoning_effort not in REASONING_EFFORT_CHOICES:
-        raise ValueError(
-            f"{field}.reasoning_effort must be one of {', '.join(REASONING_EFFORT_CHOICES)}"
-        )
     sandbox = _str(raw.get("sandbox", "workspace-write"), f"{field}.sandbox")
     if sandbox not in EXEC_SANDBOX_CHOICES:
         raise ValueError(f"{field}.sandbox must be one of {', '.join(EXEC_SANDBOX_CHOICES)}")
@@ -445,10 +435,6 @@ def parse_commit(raw: dict[str, Any]) -> CommitConfig:
     harness = _str(raw.get("harness", "codex"), "commit.harness")
     validate_harness_name(harness, field="commit.harness")
     reasoning_effort = _optional_str(raw.get("reasoning_effort"), "commit.reasoning_effort")
-    if reasoning_effort is not None and reasoning_effort not in REASONING_EFFORT_CHOICES:
-        raise ValueError(
-            f"commit.reasoning_effort must be one of {', '.join(REASONING_EFFORT_CHOICES)}"
-        )
     on_hook_failure = _str(raw.get("on_hook_failure", "remediate"), "commit.on_hook_failure")
     if on_hook_failure not in COMMIT_ON_HOOK_FAILURE_CHOICES:
         raise ValueError(

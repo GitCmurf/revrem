@@ -1,0 +1,53 @@
+schema_version = "1.0"
+
+[[harness]]
+name = "codex"
+driver = "codex"
+executable = "codex"
+
+[[harness]]
+name = "claude"
+driver = "claude"
+executable = "claude"
+
+[[harness]]
+name = "gemini"
+driver = "gemini"
+executable = "gemini"
+
+[[harness]]
+name = "opencode"
+driver = "opencode"
+executable = "opencode"
+
+[[harness]]
+name = "kilo"
+driver = "kilo"
+executable = "kilo"
+
+[[model]]
+id = "gpt-5.6-sol"
+harness = "codex"
+efforts = ["low", "medium", "high", "xhigh", "max", "ultra"]
+default_effort = "low"
+capability_rank = 300
+
+[[model]]
+id = "gpt-5.6-terra"
+harness = "codex"
+efforts = ["low", "medium", "high", "xhigh", "max", "ultra"]
+default_effort = "medium"
+capability_rank = 200
+
+[[model]]
+id = "gpt-5.6-luna"
+harness = "codex"
+efforts = ["low", "medium", "high", "xhigh", "max"]
+default_effort = "medium"
+capability_rank = 100
+
+[[model]]
+id = "gpt-5.5"
+harness = "codex"
+efforts = ["low", "medium", "high", "xhigh"]
+default_effort = "medium"

@@ -25,6 +25,24 @@
   },
   {
     "iteration": "1",
+    "kind": "model_invocation",
+    "payload": {
+      "duration_seconds": 0.0,
+      "harness": "codex",
+      "model": null,
+      "outcome": "ok",
+      "reasoning_effort": null,
+      "returncode": 0,
+      "tokens": null
+    },
+    "phase": "review",
+    "run_id": "deadbeefcafe0000deadbeefcafe0000",
+    "schema_version": "1.0",
+    "seq": 2,
+    "ts": "2026-01-02T03:04:05Z"
+  },
+  {
+    "iteration": "1",
     "kind": "phase_result",
     "payload": {
       "summary": "findings"
@@ -32,7 +50,7 @@
     "phase": "review",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
     "schema_version": "1.0",
-    "seq": 2,
+    "seq": 3,
     "ts": "2026-01-02T03:04:05Z"
   },
   {
@@ -47,6 +65,7 @@
         "workspace-write",
         "--color",
         "never",
+        "--json",
         "--output-last-message",
         "<RUN_DIR>/artifacts/remediation-1-last-message.txt",
         "-"
@@ -62,7 +81,25 @@
     "phase": "remediate",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
     "schema_version": "1.0",
-    "seq": 3,
+    "seq": 4,
+    "ts": "2026-01-02T03:04:05Z"
+  },
+  {
+    "iteration": "1",
+    "kind": "model_invocation",
+    "payload": {
+      "duration_seconds": 0.0,
+      "harness": "codex",
+      "model": null,
+      "outcome": "ok",
+      "reasoning_effort": null,
+      "returncode": 0,
+      "tokens": null
+    },
+    "phase": "remediate",
+    "run_id": "deadbeefcafe0000deadbeefcafe0000",
+    "schema_version": "1.0",
+    "seq": 5,
     "ts": "2026-01-02T03:04:05Z"
   },
   {
@@ -74,7 +111,7 @@
     "phase": "remediate",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
     "schema_version": "1.0",
-    "seq": 4,
+    "seq": 6,
     "ts": "2026-01-02T03:04:05Z"
   },
   {
@@ -88,7 +125,7 @@
     "phase": "check",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
     "schema_version": "1.0",
-    "seq": 5,
+    "seq": 7,
     "ts": "2026-01-02T03:04:05Z"
   },
   {
@@ -103,7 +140,7 @@
     "phase": "check",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
     "schema_version": "1.0",
-    "seq": 6,
+    "seq": 8,
     "ts": "2026-01-02T03:04:05Z"
   },
   {
@@ -115,7 +152,7 @@
     "phase": "check",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
     "schema_version": "1.0",
-    "seq": 7,
+    "seq": 9,
     "ts": "2026-01-02T03:04:05Z"
   },
   {
@@ -128,7 +165,7 @@
     "phase": "artifacts",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
     "schema_version": "1.0",
-    "seq": 8,
+    "seq": 10,
     "ts": "2026-01-02T03:04:05Z"
   },
   {
@@ -142,7 +179,7 @@
     "phase": "artifacts",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
     "schema_version": "1.0",
-    "seq": 9,
+    "seq": 11,
     "ts": "2026-01-02T03:04:05Z"
   },
   {
@@ -156,7 +193,7 @@
     "phase": "artifacts",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
     "schema_version": "1.0",
-    "seq": 10,
+    "seq": 12,
     "ts": "2026-01-02T03:04:05Z"
   },
   {
@@ -170,7 +207,7 @@
     "phase": "artifacts",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
     "schema_version": "1.0",
-    "seq": 11,
+    "seq": 13,
     "ts": "2026-01-02T03:04:05Z"
   },
   {
@@ -184,7 +221,7 @@
     "phase": "artifacts",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
     "schema_version": "1.0",
-    "seq": 12,
+    "seq": 14,
     "ts": "2026-01-02T03:04:05Z"
   },
   {
@@ -196,7 +233,7 @@
     "phase": null,
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
     "schema_version": "1.0",
-    "seq": 13,
+    "seq": 15,
     "ts": "2026-01-02T03:04:05Z"
   }
 ]

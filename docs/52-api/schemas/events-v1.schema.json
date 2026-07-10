@@ -19,7 +19,8 @@
         "cost_charge",
         "cost_ceiling_hit",
         "routing_decision",
-        "routing_outcome"
+        "routing_outcome",
+        "model_invocation"
       ]
     },
     "iteration": {

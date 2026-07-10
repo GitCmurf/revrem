@@ -442,6 +442,7 @@ def test_run_loop_writes_replayable_events_jsonl(tmp_path, capsys):
     assert truncated is False
     assert [event.kind for event in records] == [
         "phase_start",
+        "model_invocation",
         "phase_result",
         "artifact_write",
         "artifact_write",
@@ -453,10 +454,11 @@ def test_run_loop_writes_replayable_events_jsonl(tmp_path, capsys):
     ]
     assert capsys.readouterr().out == (
         "0001|review|1|phase_start: codex review · sandbox read-only · source=direct-config\n"
-        "0002|review|1|phase_result: clear\n"
-        f"0003|artifacts|artifact_write: {tmp_path / 'artifacts' / 'summary.json'}\n"
-        f"0004|artifacts|artifact_write: {tmp_path / 'artifacts' / 'review-1.txt'}\n"
-        "0005|summary|summary: review_clear\n"
+        "0002|review|1|model_invocation\n"
+        "0003|review|1|phase_result: clear\n"
+        f"0004|artifacts|artifact_write: {tmp_path / 'artifacts' / 'summary.json'}\n"
+        f"0005|artifacts|artifact_write: {tmp_path / 'artifacts' / 'review-1.txt'}\n"
+        "0006|summary|summary: review_clear\n"
     )
 
 
@@ -1328,6 +1330,7 @@ def test_commit_message_command_uses_read_only_exec_with_configured_model(tmp_pa
         "read-only",
         "--color",
         "never",
+        "--json",
         "--model",
         "gpt-5.3-codex-spark",
         "-",

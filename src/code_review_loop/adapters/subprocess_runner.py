@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shlex
 import signal
@@ -38,14 +39,18 @@ def default_runner(
             input=input_text,
             timeout=timeout_seconds,
         )
+        stdout, tokens, provider_events = _normalize_codex_json(list(args), completed.stdout)
         return CommandResult(
             args=list(args),
             returncode=completed.returncode,
-            stdout=completed.stdout,
+            stdout=stdout,
             stderr=completed.stderr,
+            tokens=tokens,
+            provider_events=provider_events,
         )
     except subprocess.TimeoutExpired as exc:
         stdout = _timeout_stream_text(exc.output)
+        stdout, tokens, provider_events = _normalize_codex_json(list(args), stdout)
         stderr = _timeout_stream_text(exc.stderr)
         timeout_note = (
             f"Command timed out after {timeout_seconds} second{'s' if timeout_seconds != 1 else ''}\n"
@@ -58,7 +63,48 @@ def default_runner(
             returncode=-1,
             stdout=stdout,
             stderr=stderr,
+            tokens=tokens,
+            provider_events=provider_events,
         )
+
+
+def _normalize_codex_json(args: list[str], stdout: str) -> tuple[str, int | None, str | None]:
+    """Keep raw JSONL while returning final assistant text to existing classifiers."""
+    if "--json" not in args:
+        return stdout, None, None
+    final_text: str | None = None
+    tokens: int | None = None
+    parsed_any = False
+    for line in stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        parsed_any = True
+        item = event.get("item")
+        if isinstance(item, dict) and item.get("type") in {"agent_message", "assistant_message"}:
+            candidate = item.get("text") or item.get("content")
+            if isinstance(candidate, str):
+                final_text = candidate
+        usage = event.get("usage")
+        if isinstance(usage, dict):
+            total = usage.get("total_tokens")
+            if not isinstance(total, int):
+                input_tokens = usage.get("input_tokens")
+                output_tokens = usage.get("output_tokens")
+                total = (
+                    input_tokens + output_tokens
+                    if isinstance(input_tokens, int) and isinstance(output_tokens, int)
+                    else None
+                )
+            if isinstance(total, int):
+                tokens = total
+    if not parsed_any:
+        return stdout, None, None
+    normalized = (final_text.rstrip() + "\n") if final_text else ""
+    return normalized, tokens, stdout
 
 
 def run_subprocess_with_terminal_title_refresh(

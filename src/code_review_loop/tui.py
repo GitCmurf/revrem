@@ -17,6 +17,7 @@ from typing import Any, Literal, NamedTuple, cast
 from code_review_loop import (
     harnesses,
     profiles,
+    tui_loop_state,
     tui_profiles_state,
     tui_prompt_assets,
     tui_run_controller,
@@ -1202,9 +1203,19 @@ class _RevRemAppMixin:
             diagram.set_text_field(field, value)
             self._update_console_status()
 
+        prompt = f"{diagram.current_phase()}.{field}"
+        if field == "model":
+            from code_review_loop import model_catalog
+
+            fields = tui_loop_state.PHASE_DOTTED[diagram.current_phase()]
+            harness_dotted = fields.get("harness")
+            harness = str(diagram.model.field_value(harness_dotted, "codex")) if harness_dotted else "codex"
+            models = model_catalog.load_catalog(Path(self.model.snapshot.cwd)).models_for(harness)
+            if models:
+                prompt += "\nCatalog options: " + ", ".join(item.id for item in models)
         self._prompt_for_text(
             title=f"Edit {field}",
-            prompt=f"{diagram.current_phase()}.{field}",
+            prompt=prompt,
             initial=self._loop_text_field_value(field),
             on_submit=apply,
         )
@@ -1439,12 +1450,6 @@ class _RevRemAppMixin:
                     profiles.validate_harness_name(string_value, field=field)
                 except ValueError as exc:
                     return str(exc)
-            elif cell == "reasoning_effort":
-                if string_value and string_value not in profiles.REASONING_EFFORT_CHOICES:
-                    return (
-                        f"{field} must be one of "
-                        f"{', '.join(profiles.REASONING_EFFORT_CHOICES)}"
-                    )
             elif cell == "timeout_seconds":
                 if string_value is None or string_value == "":
                     continue

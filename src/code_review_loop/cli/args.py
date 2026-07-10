@@ -14,7 +14,9 @@ from code_review_loop.config import EXTERNAL_REVIEW_TRUNCATION_POLICIES
 
 # Argparse choice tuples shared across parsers. Single source of truth so the
 # parent ``cli`` package re-exports them rather than maintaining duplicates.
-REASONING_EFFORT_CHOICES = ("minimal", "low", "medium", "high")
+from code_review_loop.model_catalog import KNOWN_EFFORTS
+
+REASONING_EFFORT_CHOICES = KNOWN_EFFORTS
 PROGRESS_STYLE_CHOICES = ("compact", "verbose", "rich")
 COMMIT_ON_HOOK_FAILURE_CHOICES = profiles.COMMIT_ON_HOOK_FAILURE_CHOICES
 
@@ -118,7 +120,6 @@ def build_run_parser() -> RevRemArgumentParser:
     )
     parser.add_argument(
         "--reasoning-effort",
-        choices=REASONING_EFFORT_CHOICES,
         default=None,
         help=(
             "Optional Codex model_reasoning_effort override for review and remediation; "
@@ -127,20 +128,17 @@ def build_run_parser() -> RevRemArgumentParser:
     )
     parser.add_argument(
         "--review-reasoning-effort",
-        choices=REASONING_EFFORT_CHOICES,
         default=None,
         help="Optional Codex model_reasoning_effort override for review only.",
     )
     parser.add_argument(
         "--triage-reasoning-effort",
-        choices=REASONING_EFFORT_CHOICES,
         default=None,
         help="Optional Codex model_reasoning_effort override for triage only.",
     )
     parser.add_argument(
         "--remediation-reasoning-effort",
         "--remediate-reasoning-effort",
-        choices=REASONING_EFFORT_CHOICES,
         default=None,
         help=(
             "Optional Codex model_reasoning_effort override for remediation only. "
@@ -149,7 +147,6 @@ def build_run_parser() -> RevRemArgumentParser:
     )
     parser.add_argument(
         "--commit-reasoning-effort",
-        choices=REASONING_EFFORT_CHOICES,
         default=None,
         help="Optional Codex model_reasoning_effort override for commit-message drafting only.",
     )
@@ -754,6 +751,39 @@ def build_history_parser() -> RevRemArgumentParser:
 
 def parse_history_args(argv: Sequence[str]) -> argparse.Namespace:
     return build_history_parser().parse_args(argv)
+
+
+def build_models_parser() -> RevRemArgumentParser:
+    parser = _argument_parser(prog="revrem models", description="Inspect the effective model catalog.")
+    subparsers = _subparsers(parser, dest="command", required=True)
+    list_parser = subparsers.add_parser("list", help="List catalog models and supported efforts.")
+    list_parser.add_argument("--harness", default=None)
+    list_parser.add_argument("--all", action="store_true", help="Include models for every harness.")
+    list_parser.add_argument("--format", choices=("text", "json"), default="text")
+    return parser
+
+
+def parse_models_args(argv: Sequence[str]) -> argparse.Namespace:
+    return build_models_parser().parse_args(argv)
+
+
+def build_stats_parser() -> RevRemArgumentParser:
+    parser = _argument_parser(prog="revrem stats", description="Summarize local RevRem telemetry.")
+    subparsers = _subparsers(parser, dest="command", required=True)
+    models = subparsers.add_parser("models", help="Summarize recorded model invocations.")
+    models.add_argument("--limit", type=int, default=100)
+    scope = models.add_mutually_exclusive_group()
+    scope.add_argument("--repo", default=None, help="Only runs for this repository (default: current repository).")
+    scope.add_argument("--all-repos", action="store_true")
+    models.add_argument("--phase")
+    models.add_argument("--harness")
+    models.add_argument("--model")
+    models.add_argument("--format", choices=("text", "json"), default="text")
+    return parser
+
+
+def parse_stats_args(argv: Sequence[str]) -> argparse.Namespace:
+    return build_stats_parser().parse_args(argv)
 
 
 def build_checks_parser() -> RevRemArgumentParser:

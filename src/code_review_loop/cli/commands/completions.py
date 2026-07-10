@@ -43,12 +43,14 @@ def _completion_spec() -> CompletionSpec:
         "doctor": cli_args.build_doctor_parser,
         "history": cli_args.build_history_parser,
         "install-hooks": cli_args.build_install_hooks_parser,
+        "models": cli_args.build_models_parser,
         "policy": cli_args.build_policy_parser,
         "preflight": cli_args.build_doctor_parser,
         "replay": cli_args.build_replay_parser,
         "report": cli_args.build_report_parser,
         "resume": cli_args.build_resume_parser,
         "suppress": cli_args.build_suppress_parser,
+        "stats": cli_args.build_stats_parser,
         "triage": cli_args.build_triage_parser,
     }
     command_words: dict[str, tuple[str, ...]] = {}

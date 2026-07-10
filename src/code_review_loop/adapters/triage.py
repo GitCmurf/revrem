@@ -45,6 +45,7 @@ def build_triage_command(config: LoopConfig) -> list[str]:
             sandbox="read-only",
             color=config.exec_color,
             full_auto=False,
+            json_output=(config.triage_harness == "codex"),
         )
     )
 
@@ -112,6 +113,9 @@ def run_triage(
             label=str(iteration),
             ctx=ctx,
             prompt_artifact=invocation.prompt_artifact,
+            harness=config.triage_harness,
+            model=config.triage_model or config.model,
+            reasoning_effort=config.triage_reasoning_effort or config.reasoning_effort,
         )
     triage_artifact = config.artifact_dir / f"triage-{iteration}.txt"
     phase_support.write_artifact(triage_artifact, phase_support._combined_output(result))

@@ -63,6 +63,7 @@ class CommandResult:
     stderr: str = ""
     tokens: int | None = None
     usd: Decimal | None = None
+    provider_events: str | None = None
 
 
 class ProgressReporter(Protocol):

@@ -156,7 +156,7 @@ def test_project_profiles_route_review_classification_security_to_frontier(profi
     resolved = policy.resolve_routing(profile, context)
 
     assert resolved.route_tier == "codex-frontier"
-    assert resolved.model == "gpt-5.5"
+    assert resolved.model == ("gpt-5.6-sol" if profile_name == "dogfood" else "gpt-5.5")
 
 
 @pytest.mark.parametrize("profile_name", ["default", "dogfood"])
@@ -175,7 +175,7 @@ def test_project_profiles_route_review_safety_signal_to_frontier(profile_name):
     resolved = policy.resolve_routing(profile, context)
 
     assert resolved.route_tier == "codex-frontier"
-    assert resolved.model == "gpt-5.5"
+    assert resolved.model == ("gpt-5.6-sol" if profile_name == "dogfood" else "gpt-5.5")
 
 
 @pytest.mark.parametrize(
@@ -204,7 +204,7 @@ def test_project_profiles_route_routing_policy_safety_to_frontier(
 
     assert resolved.route_tier == "codex-frontier"
     assert resolved.rule_id == expected_rule
-    assert resolved.model == "gpt-5.5"
+    assert resolved.model == ("gpt-5.6-sol" if profile_name == "dogfood" else "gpt-5.5")
 
 
 @pytest.mark.parametrize("profile_name", ["default", "dogfood"])
@@ -223,7 +223,7 @@ def test_project_profiles_keep_local_operator_ux_on_default_route(profile_name):
     resolved = policy.resolve_routing(profile, context)
 
     assert resolved.route_tier == "codex-midi"
-    assert resolved.model == "gpt-5.4-mini"
+    assert resolved.model == ("gpt-5.6-terra" if profile_name == "dogfood" else "gpt-5.4-mini")
 
 
 @pytest.mark.parametrize("profile_name", ["default", "dogfood"])
@@ -242,7 +242,7 @@ def test_project_profiles_keep_local_timeout_config_work_on_default_route(profil
     resolved = policy.resolve_routing(profile, context)
 
     assert resolved.route_tier == "codex-midi"
-    assert resolved.model == "gpt-5.4-mini"
+    assert resolved.model == ("gpt-5.6-terra" if profile_name == "dogfood" else "gpt-5.4-mini")
 
 
 @pytest.mark.parametrize("profile_name", ["default", "dogfood"])
@@ -265,7 +265,7 @@ def test_project_profiles_ignore_model_only_frontier_escalation(profile_name):
     )
 
     assert resolved.route_tier == "codex-midi"
-    assert resolved.model == "gpt-5.4-mini"
+    assert resolved.model == ("gpt-5.6-terra" if profile_name == "dogfood" else "gpt-5.4-mini")
 
 
 def test_resolve_routing_model_escalation():

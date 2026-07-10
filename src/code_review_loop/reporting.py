@@ -10,7 +10,7 @@ from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
-from code_review_loop import __version__, artifacts, budgets, harnesses, run_history
+from code_review_loop import __version__, artifacts, budgets, events, harnesses, run_history
 from code_review_loop.adapters.phase_support import write_artifact
 from code_review_loop.clock import SYSTEM_CLOCK, Clock, utc_iso
 from code_review_loop.config import LoopConfig
@@ -143,6 +143,7 @@ def write_summary(
     add_artifact_paths(summary, config)
     add_triage_diagnostics(summary, config.artifact_dir)
     add_phase_diagnostics(summary, config.artifact_dir)
+    add_model_invocations(summary, config.artifact_dir)
     if budget_state is not None or "budgets" not in summary:
         summary["budgets"] = summary_budget_payload(config, budget_state=budget_state)
     add_timing_warnings(summary)
@@ -151,6 +152,31 @@ def write_summary(
         summary_detail = summary.get("stopped_reason") or summary.get("final_status") or "summary"
         event_sink.emit("summary", payload={"summary": str(summary_detail)})
     artifacts.write_json_artifact(config.artifact_dir, "summary.json", summary)
+
+
+def add_model_invocations(summary: dict[str, object], artifact_dir: Path) -> None:
+    event_path = artifact_dir / events.EVENTS_FILENAME
+    if not event_path.is_file():
+        summary.setdefault("model_invocations", [])
+        return
+    recorded, _truncated = events.read_events(event_path)
+    invocations = [
+        {"phase": event.phase, "iteration": event.iteration, **event.payload}
+        for event in recorded
+        if event.kind == "model_invocation"
+    ]
+    summary["model_invocations"] = invocations
+    token_values: list[int] = []
+    for item in invocations:
+        value = item.get("tokens")
+        if isinstance(value, int):
+            token_values.append(value)
+    if token_values:
+        summary["tokens"] = {
+            "total": sum(token_values),
+            "reported_invocations": len(token_values),
+            "total_invocations": len(invocations),
+        }
 
 
 def write_invocation_artifact(config: LoopConfig, summary: dict[str, object]) -> None:

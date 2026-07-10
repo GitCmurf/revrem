@@ -44,7 +44,7 @@ JSON summary: .revrem/runs/20260509T120823Z/summary.json
 
 ## Why revrem
 
-- **Entirely local.** No hosted service, no telemetry — RevRem runs on your
+- **Entirely local.** No hosted service or remote telemetry — RevRem runs on your
   machine against your checkout.
 - **Bounded and watched.** Iterations are capped by default, and the run exits
   with a clear pass/fail status code you can gate CI or hooks on.
@@ -250,6 +250,25 @@ revrem config clone security security-local
 
 Copyable stack profiles live under [`examples/`](https://github.com/GitCmurf/revrem/tree/main/examples).
 
+## Model Catalog and Local Statistics
+
+Model capabilities are configuration data. Inspect the effective catalog and
+locally recorded timings with:
+
+```bash
+revrem models list
+revrem models list --harness codex --format json
+revrem stats models
+revrem stats models --phase review --model gpt-5.6-sol
+```
+
+Catalog precedence is packaged defaults, Codex's local
+`$CODEX_HOME/models_cache.json`, `~/.config/revrem/catalog.toml`, then project
+`.revrem-catalog.toml`. Known-invalid model/effort combinations are rejected;
+unknown future values pass through with a warning. GPT-5.6 Sol and Terra support
+`low`, `medium`, `high`, `xhigh`, `max`, and `ultra`; Luna supports the same
+set except `ultra`.
+
 ## Safety Model
 
 RevRem is a pre-merge confidence tool, not a substitute for review or tests. Its
@@ -261,7 +280,8 @@ safety posture is built around local operator control:
   after configured checks pass;
 - machine-readable output is opt-in (`--summary-format json`);
 - local run history can be disabled with `--no-run-history`;
-- no hosted service or telemetry is part of RevRem itself.
+- no hosted service or remote telemetry is part of RevRem itself; local run artifacts
+  record model identity, effort, duration, outcome, and token usage when reported.
 
 Use `--commit-after-remediation` only when each verified remediation pass should
 become a git commit. Commit-hook failure handling, `--no-redact` bundle risks,

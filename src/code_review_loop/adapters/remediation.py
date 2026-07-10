@@ -63,7 +63,7 @@ def build_remediation_command(
             sandbox=sandbox,
             color=config.exec_color,
             full_auto=config.full_auto,
-            json_output=config.exec_json,
+            json_output=(harness == "codex"),
             output_last_message_path=output_last_message,
         )
     )
@@ -228,6 +228,7 @@ def _run_remediation_with_retry(
             label=label,
             ctx=ctx,
             prompt_artifact=prompt_artifact,
+            harness=harness,
         )
         last_result = result
         failure = provider_failures.classify_provider_failure(result, harness=harness)

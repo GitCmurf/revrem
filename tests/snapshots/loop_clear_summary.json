@@ -51,6 +51,19 @@
   ],
   "latest_review_excerpt": "{\"findings\": [], \"overall_correctness\": \"patch is correct\"}",
   "max_iterations": 1,
+  "model_invocations": [
+    {
+      "duration_seconds": 0.0,
+      "harness": "codex",
+      "iteration": "1",
+      "model": null,
+      "outcome": "ok",
+      "phase": "review",
+      "reasoning_effort": null,
+      "returncode": 0,
+      "tokens": null
+    }
+  ],
   "pending_check_failures": false,
   "phase_config": {
     "checks": {

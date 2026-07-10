@@ -34,6 +34,7 @@ EVENT_KINDS = (
     "cost_ceiling_hit",
     "routing_decision",
     "routing_outcome",
+    "model_invocation",
 )
 FLUSH_KINDS = frozenset({"phase_result", "failure", "summary", "cancellation", "cost_ceiling_hit"})
 

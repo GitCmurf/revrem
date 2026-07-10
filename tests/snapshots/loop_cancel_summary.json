@@ -46,6 +46,7 @@
   "initial_review_mode": "none",
   "iterations": [],
   "max_iterations": 1,
+  "model_invocations": [],
   "pending_check_failures": false,
   "phase_config": {
     "checks": {

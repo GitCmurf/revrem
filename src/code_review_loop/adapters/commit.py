@@ -399,6 +399,9 @@ def commit_message_for_staged_changes(
         label=str(iteration),
         ctx=ctx,
         prompt_artifact=invocation.prompt_artifact,
+        harness=config.commit_message_harness,
+        model=config.commit_message_model,
+        reasoning_effort=config.commit_reasoning_effort,
     )
     phase_support.write_artifact(
         config.artifact_dir / f"commit-{iteration}-message-draft.txt",

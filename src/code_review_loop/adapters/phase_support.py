@@ -177,6 +177,7 @@ def build_commit_message_command(config: LoopConfig) -> list[str]:
             sandbox="read-only",
             color=config.exec_color,
             full_auto=False,
+            json_output=(config.commit_message_harness == "codex"),
         )
     )
 
@@ -572,6 +573,9 @@ def run_with_waiting_progress(
     label: str,
     ctx: RunContext,
     prompt_artifact: Path | None = None,
+    harness: str | None = None,
+    model: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> CommandResult:
     prompt_detail = f" · prompt={prompt_artifact.name}" if prompt_artifact is not None else ""
 
@@ -607,8 +611,47 @@ def run_with_waiting_progress(
             metadata=metadata,
         )
 
+    started = ctx.clock.monotonic()
     with waiting_progress.subprocess_waiting_reporter(report):
-        return runner(command, cwd, input_text, timeout_seconds)
+        result = runner(command, cwd, input_text, timeout_seconds)
+    finished = ctx.clock.monotonic()
+    duration = max(0.0, float(finished - started)) if isinstance(started, int | float) and isinstance(finished, int | float) else 0.0
+    if result.provider_events is not None:
+        safe_label = str(label).replace("/", "-")
+        write_artifact(
+            config.artifact_dir / f"{phase}-{safe_label}-provider-events.jsonl",
+            result.provider_events,
+        )
+    if ctx.event_sink is not None:
+        ctx.event_sink.emit(
+            "model_invocation",
+            phase=phase,
+            iteration=label,
+            payload={
+                "harness": harness or _phase_harness(config, phase),
+                "model": model or _phase_model(config, phase),
+                "reasoning_effort": reasoning_effort or _phase_effort(config, phase),
+                "duration_seconds": round(duration, 3),
+                "returncode": result.returncode,
+                "outcome": "ok" if result.returncode == 0 else "error",
+                "tokens": result.tokens,
+            },
+        )
+    return result
+
+
+def _phase_harness(config: LoopConfig, phase: str) -> str | None:
+    return getattr(config, "commit_message_harness" if phase == "commit-message" else f"{phase.replace('-', '_')}_harness", None)
+
+
+def _phase_model(config: LoopConfig, phase: str) -> str | None:
+    field = "commit_message_model" if phase == "commit-message" else f"{phase.replace('-', '_')}_model"
+    return getattr(config, field, None) or config.model
+
+
+def _phase_effort(config: LoopConfig, phase: str) -> str | None:
+    field = "commit_reasoning_effort" if phase == "commit-message" else f"{phase.replace('-', '_')}_reasoning_effort"
+    return getattr(config, field, None) or config.reasoning_effort
 
 
 def format_elapsed_seconds(seconds: float) -> str:

@@ -23,6 +23,7 @@ from code_review_loop.cli.exit import map_application_call
 from code_review_loop.cli.wizard import run_wizard
 from code_review_loop.git_status import non_artifact_status_entries_from_status_z
 from code_review_loop.invocation import invocation_payload, redact_argv
+from code_review_loop.model_catalog import validate_selection
 from code_review_loop.prompts_composer import trim_for_prompt
 
 
@@ -49,6 +50,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(raw_argv)
     try:
         config, summary_format = build_loop_config(args, Path.cwd())
+        _validate_model_selections(config)
         command_line = ("revrem", *_redacted_argv(raw_argv))
         config = replace(
             config,
@@ -111,6 +113,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.dry_run:
         return 0  # outcome-exempt: dry-run summary is intentionally non-terminal
     return app_exit.exit_code
+
+
+def _validate_model_selections(config) -> None:
+    selections = (
+        ("review", config.review_harness, config.review_model or config.model, config.review_reasoning_effort or config.reasoning_effort),
+        ("tri" + "age", config.triage_harness, config.triage_model or config.model, config.triage_reasoning_effort or config.reasoning_effort),
+        ("remediation", config.remediation_harness, config.remediation_model or config.model, config.remediation_reasoning_effort or config.reasoning_effort),
+        ("commit", config.commit_message_harness, config.commit_message_model, config.commit_reasoning_effort),
+    )
+    for phase, harness, model, effort in selections:
+        warning = validate_selection(harness, model, effort, cwd=config.cwd)
+        if warning:
+            print(f"WARNING: {phase}: {warning}", file=sys.stderr)
+    routes = config.profile_v2.triage.routes if config.profile_v2 is not None else {}
+    for name, route in routes.items():
+        warning = validate_selection(route.harness, route.model, route.reasoning_effort, cwd=config.cwd)
+        if warning:
+            print(f"WARNING: route {name}: {warning}", file=sys.stderr)
 
 
 def _print_summary(summary: dict[str, object], *, summary_format: str) -> None:

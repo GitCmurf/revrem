@@ -155,7 +155,10 @@ def test_project_dogfood_profile_parses_exact_committed_profile():
     assert dogfood.triage.routing.rule[4].id == "multi-file-gemini"
     assert dogfood.triage.routing.rule[4].when.module_count_gte == 4
     assert dogfood.triage.routes["gemini-pro"].harness == "gemini"
-    assert dogfood.commit.message_model == "gpt-5.3-codex-spark"
+    assert dogfood.review.model == "gpt-5.6-sol"
+    assert dogfood.triage.model == "gpt-5.6-terra"
+    assert dogfood.triage.routes["codex-frontier"].reasoning_effort == "high"
+    assert dogfood.commit.message_model == "gpt-5.6-luna"
     assert dogfood.commit.reasoning_effort == "low"
     assert dogfood.commit.timeout_seconds == 0
     assert dogfood.runtime.provider_retry_attempts == 3
@@ -695,14 +698,8 @@ timeout_seconds = 30
         profiles.load_profile_file(path)
 
 
-@pytest.mark.parametrize(
-    ("section", "value"),
-    [
-        ("review", "ultra"),
-        ("remediation", "urgent"),
-    ],
-)
-def test_profile_rejects_invalid_reasoning_effort_values(tmp_path, section, value):
+@pytest.mark.parametrize(("section", "value"), [("review", "ultra"), ("remediation", "urgent")])
+def test_profile_allows_forward_compatible_reasoning_effort_values(tmp_path, section, value):
     path = tmp_path / "profiles.toml"
     path.write_text(
         f"""
@@ -712,8 +709,8 @@ reasoning_effort = "{value}"
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match=f"bad\\.{section}\\.reasoning_effort must be one of"):
-        profiles.load_profile_file(path)
+    loaded = profiles.load_profile_file(path)
+    assert getattr(loaded.profiles["bad"], section).reasoning_effort == value
 
 
 @pytest.mark.parametrize(

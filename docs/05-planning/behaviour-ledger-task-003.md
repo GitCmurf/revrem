@@ -3,8 +3,8 @@ document_id: REVREM-LEDGER-003
 type: LEDGER
 title: Behaviour ledger for the cli.py re-engineering (REVREM-TASK-003)
 status: Approved
-version: '1.6'
-last_updated: '2026-06-16'
+version: '1.7'
+last_updated: '2026-07-10'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -55,6 +55,21 @@ There is no silent third option.
 ```
 
 ## Entries
+
+### 2026-07-10 — Local model invocation telemetry
+
+- **Contract:** machine and human presentation
+- **What changed:** every completed provider call emits `model_invocation` with
+  phase, harness, requested model and effort, duration, outcome, and optional
+  tokens. Summaries include `model_invocations` and aggregate reported tokens.
+- **Why:** operators need artifact-backed runtime expectations and token-usage
+  coverage for the actual model used by each phase.
+- **Before / After:** event streams gain one event per completed provider call;
+  summaries gain an invocation list and retain `tokens: null` when no call
+  reports usage.
+- **schema_version impact:** the additive event kind is documented in the v1
+  schema; summary schema already permits additive fields. Golden snapshots were
+  intentionally regenerated.
 
 ### 2026-06-17 — Verb-mediated security-risk negations stay clear
 

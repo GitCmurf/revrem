@@ -46,6 +46,19 @@
   "initial_review_mode": "none",
   "iterations": [],
   "max_iterations": 1,
+  "model_invocations": [
+    {
+      "duration_seconds": 0.0,
+      "harness": "codex",
+      "iteration": "1",
+      "model": null,
+      "outcome": "ok",
+      "phase": "review",
+      "reasoning_effort": null,
+      "returncode": 0,
+      "tokens": 100
+    }
+  ],
   "pending_check_failures": false,
   "phase_config": {
     "checks": {
@@ -241,6 +254,10 @@
   "schema_version": "1.1",
   "started_at": "2026-01-02T03:04:05Z",
   "stopped_reason": "budget_ceiling_hit",
-  "tokens": null,
+  "tokens": {
+    "reported_invocations": 1,
+    "total": 100,
+    "total_invocations": 1
+  },
   "usd": null
 }

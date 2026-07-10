@@ -6,6 +6,7 @@ from typing import Any
 
 from code_review_loop import (
     harnesses,
+    model_catalog,
     profiles,
     tui_loop_state,
     tui_profiles_state,
@@ -14,9 +15,11 @@ from code_review_loop import (
 
 
 def _harness_choices() -> tuple[str, ...]:
-    implemented = sorted(
+    implemented_set = set(
         name for name, spec in harnesses.HARNESS_REGISTRY.items() if spec.implemented
     )
+    implemented_set.update(model_catalog.load_catalog().harnesses)
+    implemented = sorted(implemented_set)
     if "codex" in implemented:
         implemented.remove("codex")
         implemented.insert(0, "codex")
@@ -260,7 +263,15 @@ def loop_diagram_class() -> type[Any] | None:
             dotted = tui_loop_state.PHASE_DOTTED[self.current_phase()].get(key)
             if dotted is None:
                 return
-            choices = HARNESS_CHOICES if key == "harness" else EFFORT_CHOICES
+            if key == "harness":
+                choices = HARNESS_CHOICES
+            else:
+                fields = tui_loop_state.PHASE_DOTTED[self.current_phase()]
+                harness_dotted = fields.get("harness")
+                model_dotted = fields.get("model")
+                harness_value = str(self.model.field_value(harness_dotted, "codex")) if harness_dotted else "codex"
+                model_value = str(self.model.field_value(model_dotted, "")) if model_dotted else None
+                choices = model_catalog.effort_choices(harness_value, model_value or None, cwd=self.model.cwd)
             if not choices:
                 return
             # Fall back to the resolved profile value when there is no unsaved
@@ -275,6 +286,12 @@ def loop_diagram_class() -> type[Any] | None:
             except ValueError:
                 index = -1
             self.model.set_field(dotted, choices[(index + 1) % len(choices)])
+            if key == "harness":
+                fields = tui_loop_state.PHASE_DOTTED[self.current_phase()]
+                for dependent in ("model", "effort"):
+                    dependent_dotted = fields.get(dependent)
+                    if dependent_dotted:
+                        self.model.set_field(dependent_dotted, "")
             self.rebuild()
 
         def set_text_field(self, key: str, value: str) -> None:

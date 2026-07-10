@@ -436,8 +436,11 @@ def harness_registry() -> Mapping[str, HarnessSpec]:
 
 def validate_harness_name(name: str, *, field: str = "harness") -> None:
     registry = harness_registry()
-    if name not in registry:
-        known = ", ".join(sorted(registry.keys()))
+    from code_review_loop.model_catalog import load_catalog
+
+    catalog_names = load_catalog().harnesses
+    if name not in registry and name not in catalog_names:
+        known = ", ".join(sorted(set(registry) | set(catalog_names)))
         raise ValueError(f"{field} must be one of: {known}")
 
 
@@ -447,6 +450,11 @@ def require_implemented_harness(name: str, *, field: str = "harness") -> None:
         raise ValueError(
             f"{field}={name!r} is valid profile syntax, but command execution is not implemented"
         )
+    if spec is None:
+        from code_review_loop.model_catalog import load_catalog
+
+        if name not in load_catalog().harnesses:
+            validate_harness_name(name, field=field)
 
 
 def resolve_executable(
@@ -461,11 +469,22 @@ def resolve_executable(
     registry = harness_registry()
     if harness in registry:
         return registry[harness].executable
+    from code_review_loop.model_catalog import load_catalog
+
+    catalog_spec = load_catalog().harnesses.get(harness)
+    if catalog_spec is not None and catalog_spec.source == "packaged":
+        return catalog_spec.executable
     return harness
 
 
 def build_phase_command(request: PhaseCommandRequest) -> list[str]:
     adapter = HARNESS_ADAPTERS.get(request.harness)
+    if adapter is None:
+        from code_review_loop.model_catalog import load_catalog
+
+        catalog_spec = load_catalog().harnesses.get(request.harness)
+        if catalog_spec is not None:
+            adapter = HARNESS_ADAPTERS.get(catalog_spec.driver)
     if adapter is None:
         raise ValueError(f"unknown harness: {request.harness}")
     return adapter.command(request)

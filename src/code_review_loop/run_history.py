@@ -50,6 +50,7 @@ def history_record(summary: dict[str, Any], *, cwd: Path) -> dict[str, Any]:
             artifact_paths.get("summary") if isinstance(artifact_paths, dict) else None
         ),
         "artifact_paths": dict(artifact_paths) if isinstance(artifact_paths, dict) else None,
+        "model_invocation_count": len(summary.get("model_invocations", [])) if isinstance(summary.get("model_invocations"), list) else 0,
     }
 
 
