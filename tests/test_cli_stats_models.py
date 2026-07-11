@@ -58,3 +58,65 @@ def test_stats_models_includes_runs_from_repo_subdirectory(tmp_path, monkeypatch
     assert rows[0]["calls"] == 1
     assert rows[0]["ok"] == 0
     assert rows[0]["phase"] == "review"
+
+
+def test_stats_models_filters_by_repo_before_limit(tmp_path, monkeypatch, capsys):
+    home = tmp_path / "home"
+    monkeypatch.setenv("XDG_DATA_HOME", str(home))
+    repo_root = tmp_path / "repo"
+    (repo_root / ".git").mkdir(parents=True)
+    subdir = repo_root / "sub"
+    subdir.mkdir()
+    other_repo = tmp_path / "other_repo"
+    other_repo.mkdir()
+    (other_repo / ".git").mkdir()
+
+    repo_summary = tmp_path / "repo_summary.json"
+    repo_summary.write_text(
+        json.dumps(
+            {
+                "model_invocations": [
+                    {
+                        "phase": "review",
+                        "harness": "codex",
+                        "model": "gpt-5.6-sol",
+                        "reasoning_effort": "high",
+                        "duration_seconds": 12.0,
+                        "outcome": "ok",
+                        "tokens": 10,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    other_summary_1 = tmp_path / "other_summary_1.json"
+    other_summary_1.write_text(json.dumps({"model_invocations": []}), encoding="utf-8")
+    other_summary_2 = tmp_path / "other_summary_2.json"
+    other_summary_2.write_text(json.dumps({"model_invocations": []}), encoding="utf-8")
+
+    history = home / "revrem" / "runs.jsonl"
+    history.parent.mkdir(parents=True)
+    history.write_text(
+        "\n".join(
+            (
+                json.dumps(
+                    {"cwd": str(other_repo / "."), "summary_path": str(other_summary_2)}
+                ),
+                json.dumps(
+                    {"cwd": str(other_repo / "."), "summary_path": str(other_summary_1)}
+                ),
+                json.dumps({"cwd": str(subdir), "summary_path": str(repo_summary)}),
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert (
+        stats.main(["models", "--repo", str(subdir), "--limit", "1", "--format", "json"])
+        == 0
+    )
+    rows = json.loads(capsys.readouterr().out)
+    assert rows[0]["calls"] == 1
+    assert rows[0]["model"] == "gpt-5.6-sol"

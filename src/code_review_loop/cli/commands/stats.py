@@ -48,11 +48,20 @@ def main(argv: Sequence[str]) -> int:
 def _invocations(limit: int, *, repo: Path | None) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     requested_repo = repo_root_or_cwd(repo) if repo is not None else None
-    for record in run_history.read_history(limit=limit):
+    # Apply repository filtering before truncating by `--limit` so older local
+    # runs from the same repository remain visible.
+    records = (
+        run_history.read_history()
+        if requested_repo is not None
+        else run_history.read_history(limit=limit)
+    )
+    matched_records = 0
+    for record in records:
         if requested_repo is not None:
             record_cwd = Path(str(record.get("cwd") or "")).resolve()
             if repo_root_or_cwd(record_cwd) != requested_repo:
                 continue
+            matched_records += 1
         summary_path = record.get("summary_path")
         if not summary_path:
             continue
@@ -63,6 +72,8 @@ def _invocations(limit: int, *, repo: Path | None) -> list[dict[str, Any]]:
         values = summary.get("model_invocations", [])
         if isinstance(values, list):
             result.extend(item for item in values if isinstance(item, dict))
+        if requested_repo is not None and limit is not None and matched_records >= limit:
+            break
     return result
 
 

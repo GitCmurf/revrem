@@ -14,6 +14,8 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
+from code_review_loop.repo_roots import repo_root_or_cwd
+
 KNOWN_EFFORTS = ("minimal", "low", "medium", "high", "xhigh", "max", "ultra")
 CATALOG_FILENAME = ".revrem-catalog.toml"
 
@@ -54,8 +56,12 @@ class Catalog:
 
 
 def load_catalog(cwd: Path | None = None, *, home: Path | None = None) -> Catalog:
-    """Load catalog layers from least to most specific."""
-    root = (cwd or Path.cwd()).resolve()
+    """Load catalog layers from least to most specific.
+
+    Project catalogs are resolved from the repository root so subdirectory
+    invocations still pick up `.revrem-catalog.toml`.
+    """
+    root = repo_root_or_cwd((cwd or Path.cwd()).resolve())
     user_home = home or Path.home()
     layers: list[tuple[str, dict[str, Any]]] = []
     packaged = files("code_review_loop").joinpath("catalog.toml").read_bytes()

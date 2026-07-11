@@ -30,6 +30,23 @@ def test_project_catalog_overrides_packaged_model(tmp_path, monkeypatch):
     ).efforts == ("low",)
 
 
+def test_project_catalog_uses_repo_root_for_subdirectory_invocations(tmp_path, monkeypatch):
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "missing-codex"))
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / ".git").mkdir()
+    subdirectory = repo_root / "nested"
+    subdirectory.mkdir()
+    (repo_root / ".revrem-catalog.toml").write_text(
+        '[[model]]\nid="gpt-5.6-luna"\nharness="codex"\nefforts=["low"]\n',
+        encoding="utf-8",
+    )
+
+    assert model_catalog.load_catalog(subdirectory, home=tmp_path).model(
+        "codex", "gpt-5.6-luna"
+    ).efforts == ("low",)
+
+
 def test_codex_cache_reasoning_level_shape_overlays_packaged_catalog(tmp_path, monkeypatch):
     codex_home = tmp_path / "codex"
     codex_home.mkdir()
