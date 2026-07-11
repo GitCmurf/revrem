@@ -53,13 +53,12 @@ def _patch_textual_app_class(monkeypatch, run):
         def run(self):
             if self._bootstrap_request is not None:
                 cwd, selected_profile_name = self._bootstrap_request
-                self.model, self.profiles_by_name = tui._build_tui_bootstrap(
-                    cwd, selected_profile_name
-                )
+                result = tui._build_tui_bootstrap(cwd, selected_profile_name)
+                self.model = result.model
+                self.profiles_by_name = result.profiles_by_name
+                self._loop_model = result.loop_model
                 self._selected_profile_index = self._initial_profile_index()
-                self.loop_session = tui.tui_session.LoopSession(
-                    profile_name=self.model.selected_profile_name
-                )
+                self.loop_session = result.loop_session
                 self._bootstrap_loading = False
                 self._bootstrap_request = None
             run(self)
@@ -399,9 +398,7 @@ base = "main"
     assert notifications == ["Dry run completed: beta", "Deleted profile: beta"]
 
 
-def test_tui_profile_workspace_run_uses_profile_picker_selection(
-    monkeypatch, tmp_path
-):
+def test_tui_profile_workspace_run_uses_profile_picker_selection(monkeypatch, tmp_path):
     notifications = []
     started = []
 
@@ -598,7 +595,10 @@ enabled = false
     assert loop_model.field_value("triage.routing.enabled", False) is True
     assert loop_model.field_value("triage.routing.default_route", "none") == "security"
     assert loop_model.field_value("triage.routes.security.harness", None) == "codex"
-    assert loop_model.field_value("triage.routes.security.sandbox", None) == "workspace-write"
+    assert (
+        loop_model.field_value("triage.routes.security.sandbox", None)
+        == "workspace-write"
+    )
     assert app._loop_diagram.route_mode is True
     assert app._loop_diagram.rebuilt is True
 
@@ -809,7 +809,9 @@ base = "main"
     app._workspace = "prompts"
 
     refresh_calls = []
-    monkeypatch.setattr(app, "_refresh_profiles_from_disk", lambda: refresh_calls.append(True))
+    monkeypatch.setattr(
+        app, "_refresh_profiles_from_disk", lambda: refresh_calls.append(True)
+    )
 
     def fake_start(*, profile, **kwargs) -> types.SimpleNamespace:
         starts.append(profile.name)
@@ -1285,7 +1287,7 @@ checks = ["pytest -q"]
     assert "project" in markup
 
 
-def test_tui_workspace_switching_updates_two_pane_workbench(monkeypatch, tmp_path):
+def test_tui_workspace_switching_updates_focused_workbench(monkeypatch, tmp_path):
     model = tui.tui_state.build_shell_model(
         cwd=tmp_path, selected_profile_name="security"
     )
@@ -1300,7 +1302,7 @@ def test_tui_workspace_switching_updates_two_pane_workbench(monkeypatch, tmp_pat
     updates = dict(widgets.updates)
     assert "Loop Phases" in updates["#screen-home"]
     assert "Loop Detail" in updates["#screen-run-monitor"]
-    assert "workspace=loop" in updates["#status-bar"]
+    assert "· Loop ·" in updates["#status-bar"]
 
 
 def test_tui_profile_selection_moves_command_preview(monkeypatch, tmp_path):
@@ -1336,26 +1338,74 @@ description = "Beta"
 
     assert app._profile_name() == "beta"
     updates = dict(widgets.updates)
-    assert "command in active panel" in updates["#status-bar"]
+    assert "· Profiles ·" in updates["#status-bar"]
     assert "revrem --profile beta" not in updates["#status-bar"]
     assert "> [status-info]beta[/]" in updates["#screen-home"]
 
 
 def test_tui_loop_command_panel_shows_current_actions_and_full_origin(tmp_path):
-    model = tui.tui_state.build_shell_model(cwd=tmp_path, selected_profile_name="security")
+    model = tui.tui_state.build_shell_model(
+        cwd=tmp_path, selected_profile_name="security"
+    )
     app = tui.RevRemApp(model=model, profiles_by_name={})
     app._workspace = "loop"
-    app._loop_origin_label = "last run from 2026-07-05T01:56:47Z: revrem --profile docs --max-iterations 12"
+    app.loop_session = tui.tui_session.LoopSession(
+        profile_name="security",
+        origin_label="last run from 2026-07-05T01:56:47Z: revrem --profile docs --max-iterations 12",
+    )
 
     panel = tui._loop_command_markup(app)
     status = tui._status_bar_markup(app)
 
-    assert "COMMANDS" in panel
-    assert "phase: review" in panel
-    assert "global: up/down move" in panel
-    assert "command: revrem --profile security" in panel
+    assert "NEXT RUN" in panel
+    assert "SELECTED PHASE: REVIEW" in panel
+    assert "Review input: Fresh review — initial review file: none" in panel
+    assert "Command: revrem --profile security" in panel
     assert "revrem --profile docs --max-iterations 12" in panel
     assert "--max-iterations 12" not in status
+
+
+def test_tui_loop_command_panel_exposes_unselected_older_review(tmp_path):
+    model = tui.tui_state.build_shell_model(
+        cwd=tmp_path, selected_profile_name="security"
+    )
+    app = tui.RevRemApp(model=model, profiles_by_name={})
+    review = tmp_path / ".revrem" / "runs" / "old" / "review-final.txt"
+    app.loop_session = tui.tui_session.LoopSession(
+        profile_name="security",
+        pending_review=tui.tui_session.PendingReviewSelection(
+            path=review,
+            run_dir=review.parent,
+            final_status="findings",
+            stopped_reason="max_iterations_reached",
+            excerpt="finding",
+            compatible=False,
+            selected=False,
+        ),
+    )
+
+    panel = tui._loop_command_markup(app)
+
+    assert "Review input: Fresh review — initial review file: none" in panel
+    assert f"Older review available: {review}" in panel
+    assert "u to validate" in panel
+
+
+def test_explicit_bootstrap_profile_does_not_replay_last_run(monkeypatch, tmp_path):
+    (tmp_path / ".git").mkdir()
+    monkeypatch.setattr(
+        tui,
+        "_last_run_loop_model",
+        lambda _cwd: (_ for _ in ()).throw(
+            AssertionError("explicit profile must bypass last-run replay")
+        ),
+    )
+
+    result = tui._build_tui_bootstrap(tmp_path, "security")
+
+    assert result.model.selected_profile_name == "security"
+    assert result.loop_session.profile_name == "security"
+    assert result.loop_session.origin_label is None
 
 
 def test_tui_splash_uses_terminal_native_retro_art():
@@ -1551,7 +1601,11 @@ def test_tui_clear_focus_delegates_escape_to_active_modal(monkeypatch, tmp_path)
     monkeypatch.setattr(
         type(app),
         "screen",
-        property(lambda self: types.SimpleNamespace(action_cancel=lambda: cancelled.append(True))),
+        property(
+            lambda self: types.SimpleNamespace(
+                action_cancel=lambda: cancelled.append(True)
+            )
+        ),
         raising=False,
     )
 
@@ -1577,7 +1631,7 @@ def test_tui_help_toggle_updates_help_and_status_widgets(monkeypatch, tmp_path):
     updates = [value for _, value in widgets.updates]
     classes = [value for _, value in widgets.classes]
     assert any("Run: \\[d] dry-run selected profile" in update for update in updates)
-    assert any("? hide help" in update for update in updates)
+    assert any("? Hide help" in update for update in updates)
     assert "status-idle" in classes
 
 

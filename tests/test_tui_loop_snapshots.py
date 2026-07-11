@@ -20,7 +20,7 @@ final_review = false
 enabled = false
 """,
     )
-    assert "REVIEW" in svg and "TRIAGE" in svg and "final review off" in svg
+    assert "REVIEW" in svg and "TRIAGE" in svg and "Final review: off" in svg
     assert_svg_snapshot("tui_loop/triage-disabled-final-off", svg)
 
 
@@ -85,7 +85,7 @@ max_iterations = 4
 final_review = true
 """,
     )
-    assert "final review on" in svg
+    assert "Final review: on" in svg
     assert_svg_snapshot("tui_loop/final-review-on", svg)
 
 
@@ -101,7 +101,7 @@ model = "gpt-5.5"
 """,
         edit_model="gpt-5.6",
     )
-    assert "demo" in svg and "*" in svg and "gpt-5.6" in svg
+    assert "demo" in svg and "Unsaved changes" in svg and "gpt-5.6" in svg
     assert_svg_snapshot("tui_loop/dirty-edit", svg)
 
 
@@ -139,7 +139,10 @@ def _capture_loop_svg(
         repo.mkdir()
         (repo / ".git").mkdir()
         (repo / ".revrem.toml").write_text(profile_toml, encoding="utf-8")
-        async with pilot_app(cwd=repo, profile_name="demo", size=(120, 40)) as (app, pilot):
+        async with pilot_app(cwd=repo, profile_name="demo", size=(120, 40)) as (
+            app,
+            pilot,
+        ):
             await pilot.press("1")
             for _ in range(focus_delta):
                 await pilot.press("down")
@@ -151,6 +154,8 @@ def _capture_loop_svg(
                 diagram.set_text_field("model", edit_model)
                 app._update_console_status()
                 await pilot.pause()
-            return normalize_svg(app.export_screenshot(title="revrem-loop", simplify=True))
+            return normalize_svg(
+                app.export_screenshot(title="revrem-loop", simplify=True)
+            )
 
     return asyncio.run(run())

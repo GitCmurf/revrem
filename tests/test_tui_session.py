@@ -54,6 +54,36 @@ def test_session_rejects_profile_split_brain(tmp_path: Path) -> None:
     profile = _profile(tmp_path)
 
     with pytest.raises(ValueError, match="active loop profile"):
-        LoopSession(profile_name="security").compile_launch_plan(
-            profile, dry_run=False
-        )
+        LoopSession(profile_name="security").compile_launch_plan(profile, dry_run=False)
+
+
+def test_session_compiles_explicitly_selected_stale_review_validation(
+    tmp_path: Path,
+) -> None:
+    profile = _profile(tmp_path)
+    review = tmp_path / ".revrem" / "runs" / "run" / "review-final.txt"
+    review.parent.mkdir(parents=True)
+    review.write_text("finding", encoding="utf-8")
+    session = LoopSession(
+        profile_name="docs",
+        pending_review=PendingReviewSelection(
+            path=review,
+            run_dir=review.parent,
+            final_status="findings",
+            stopped_reason="max_iterations_reached",
+            excerpt="finding",
+            compatible=False,
+            selected=False,
+        ),
+    )
+
+    fresh = session.compile_launch_plan(profile, dry_run=False)
+    stale = session.toggle_pending_review().compile_launch_plan(profile, dry_run=False)
+
+    assert "--initial-review-file" not in fresh.argv
+    assert stale.argv[-4:] == (
+        "--initial-review-file",
+        str(review),
+        "--initial-review-mode",
+        "stale",
+    )

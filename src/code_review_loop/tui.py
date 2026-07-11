@@ -12,7 +12,7 @@ import sys
 import threading
 import time
 from collections.abc import Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal, NamedTuple, cast
 
@@ -83,6 +83,16 @@ class _TextualComponents(NamedTuple):
     containers: Any
     screen: Any
     widgets: Any
+
+
+@dataclass(frozen=True)
+class TuiBootstrapResult:
+    """Complete workbench state installed as one UI-thread transaction."""
+
+    model: tui_state.TuiShellModel
+    profiles_by_name: dict[str, profiles.Profile]
+    loop_model: Any | None
+    loop_session: tui_session.LoopSession
 
 
 _Binding: Any | None = None
@@ -162,7 +172,7 @@ def run_textual_app(
 
 def _build_tui_bootstrap(
     cwd: Path, selected_profile_name: str | None
-) -> tuple[tui_state.TuiShellModel, dict[str, profiles.Profile]]:
+) -> TuiBootstrapResult:
     resolved_profiles = tuple(
         profiles.resolve_profiles(
             cwd=cwd,
@@ -175,7 +185,43 @@ def _build_tui_bootstrap(
         selected_profile_name=selected_profile_name,
         resolved_profiles=resolved_profiles,
     )
-    return model, {profile.name: profile for profile in resolved_profiles}
+    profiles_by_name = {profile.name: profile for profile in resolved_profiles}
+    loop_model: Any | None = None
+    loop_session = tui_session.LoopSession(profile_name=model.selected_profile_name)
+
+    # An explicit --profile is authoritative. Last-run replay is the default
+    # only when the operator did not make an explicit startup selection.
+    seeded = _last_run_loop_model(cwd) if selected_profile_name is None else None
+    if seeded is not None:
+        loop_model, origin, pending = seeded
+        selected = profiles_by_name.get(loop_model.name)
+        if selected is not None:
+            model = replace(
+                model,
+                selected_profile_name=loop_model.name,
+                selected_launch_plan=tui_state.launch_plan(selected, dry_run=True),
+            )
+            loop_session = tui_session.LoopSession(
+                profile_name=loop_model.name,
+                origin_label=origin,
+                pending_review=pending,
+            )
+        else:
+            loop_model = None
+
+    if loop_model is None and model.selected_profile_name is not None:
+        from code_review_loop import tui_loop_model
+
+        loop_model = tui_loop_model.LoopEditModel.load(
+            model.selected_profile_name, cwd=cwd
+        )
+
+    return TuiBootstrapResult(
+        model=model,
+        profiles_by_name=profiles_by_name,
+        loop_model=loop_model,
+        loop_session=loop_session,
+    )
 
 
 def _textual_unavailable_message() -> str:
@@ -422,6 +468,7 @@ class _RevRemAppMixin:
     }
 
     #loop-pane {
+        display: none;
         width: 1fr;
         height: 1fr;
         padding: 0 1;
@@ -429,6 +476,7 @@ class _RevRemAppMixin:
     }
 
     #run-pane {
+        display: none;
         width: 1fr;
         height: 1fr;
         padding: 0 1;
@@ -436,6 +484,7 @@ class _RevRemAppMixin:
     }
 
     #profiles-pane, #prompts-pane {
+        display: none;
         width: 1fr;
         height: 1fr;
         padding: 0 1;
@@ -518,21 +567,9 @@ class _RevRemAppMixin:
 
     #status-bar {
         dock: top;
-        height: 3;
+        height: 2;
         padding: 0 2;
         text-style: bold;
-    }
-
-    #left-pane {
-        width: 38%;
-        min-width: 34;
-        height: 1fr;
-    }
-
-    #right-pane {
-        width: 62%;
-        min-width: 42;
-        height: 1fr;
     }
 
     .panel {
@@ -661,11 +698,9 @@ class _RevRemAppMixin:
         self._selected_run_tab_index = 0
         self._loop_diagram: Any | None = None
         self._loop_model: Any | None = None
-        self._loop_origin_label: str | None = None
         self.loop_session = tui_session.LoopSession(
             profile_name=model.selected_profile_name
         )
-        self._loop_seed_consumed = False
         self._loop_run_view: Any | None = None
         self._event_log: Any | None = None
         self._profile_picker: Any | None = None
@@ -679,6 +714,15 @@ class _RevRemAppMixin:
         self._bootstrap_slow = False
         self._bootstrap_error: str | None = None
         self._bootstrap_started_at = time.monotonic()
+        if bootstrap_request is None and model.selected_profile_name is not None:
+            from code_review_loop import tui_loop_model
+
+            try:
+                self._loop_model = tui_loop_model.LoopEditModel.load(
+                    model.selected_profile_name, cwd=Path(model.snapshot.cwd)
+                )
+            except (OSError, ValueError):
+                self._loop_model = None
 
     def compose(self):
         yield _Header(show_clock=True)
@@ -698,12 +742,12 @@ class _RevRemAppMixin:
                 loop_widget = _loop_diagram_widget(self)
                 if loop_widget is not None:
                     with _Vertical(id="loop-pane"):
-                        yield loop_widget
                         yield _Static(
                             _loop_command_markup(self),
                             id="loop-command-panel",
                             markup=False,
                         )
+                        yield loop_widget
                 run_widget = _loop_run_widget(self)
                 event_log = _event_log_widget(self)
                 if run_widget is not None and event_log is not None:
@@ -718,18 +762,6 @@ class _RevRemAppMixin:
                 if prompt_library is not None:
                     with _Vertical(id="prompts-pane"):
                         yield prompt_library
-                with _Vertical(id="left-pane"):
-                    yield _panel_widget(
-                        _left_pane_markup(self),
-                        widget_id="screen-home",
-                        focused=self._focused_pane == "left",
-                    )
-                with _Vertical(id="right-pane"):
-                    yield _panel_widget(
-                        _right_pane_markup(self),
-                        widget_id="screen-run-monitor",
-                        focused=self._focused_pane == "right",
-                    )
             yield _Static(
                 _footer_markup(self),
                 id="footer-bar",
@@ -804,7 +836,7 @@ class _RevRemAppMixin:
 
         def load() -> None:
             try:
-                model, by_name = _build_tui_bootstrap(cwd, selected_profile_name)
+                result = _build_tui_bootstrap(cwd, selected_profile_name)
             except (OSError, RuntimeError, ValueError) as exc:
                 _call_from_thread(
                     self, lambda exc=exc: self._finish_bootstrap_error(exc)
@@ -812,22 +844,20 @@ class _RevRemAppMixin:
                 return
             _call_from_thread(
                 self,
-                lambda: self._finish_bootstrap(model, by_name),
+                lambda: self._finish_bootstrap(result),
             )
 
         _run_background(self, load)
 
     def _finish_bootstrap(
         self,
-        model: tui_state.TuiShellModel,
-        profiles_by_name: dict[str, profiles.Profile],
+        result: TuiBootstrapResult,
     ) -> None:
-        self.model = model
-        self.profiles_by_name = profiles_by_name
+        self.model = result.model
+        self.profiles_by_name = result.profiles_by_name
+        self._loop_model = result.loop_model
+        self.loop_session = result.loop_session
         self._selected_profile_index = self._initial_profile_index()
-        self.loop_session = tui_session.LoopSession(
-            profile_name=model.selected_profile_name
-        )
         self._bootstrap_loading = False
         self._bootstrap_request = None
         elapsed = time.monotonic() - self._bootstrap_started_at
@@ -849,7 +879,19 @@ class _RevRemAppMixin:
         refresh = getattr(self, "refresh", None)
         if callable(refresh):
             refresh(recompose=True)
+        call_after_refresh = getattr(self, "call_after_refresh", None)
+        if callable(call_after_refresh):
+            call_after_refresh(self._finish_recomposed_workbench)
+            return
+        self._finish_recomposed_workbench()
+
+    def _finish_recomposed_workbench(self) -> None:
+        """Render and focus only after replacement widgets are mounted."""
         self._render_workbench()
+        if self._workspace == "loop" and self._loop_diagram is not None:
+            set_focus = getattr(self, "set_focus", None)
+            if callable(set_focus):
+                set_focus(self._loop_diagram)
 
     def _mark_bootstrap_slow(self) -> None:
         if not self._bootstrap_loading:
@@ -862,10 +904,7 @@ class _RevRemAppMixin:
         if profile_name is None:
             _notify(self, "No profile is available to dry-run.")
             return
-        if (
-            self._loop_diagram is not None
-            and self._loop_diagram.is_dirty
-        ):
+        if self._loop_diagram is not None and self._loop_diagram.is_dirty:
             try:
                 self._loop_diagram.model.save()
             except (OSError, RuntimeError, ValueError) as exc:
@@ -892,10 +931,7 @@ class _RevRemAppMixin:
         if profile_name is None:
             _notify(self, "No profile is available to run.")
             return
-        if (
-            self._loop_diagram is not None
-            and self._loop_diagram.is_dirty
-        ):
+        if self._loop_diagram is not None and self._loop_diagram.is_dirty:
             try:
                 self._loop_diagram.model.save()
             except (OSError, RuntimeError, ValueError) as exc:
@@ -960,11 +996,15 @@ class _RevRemAppMixin:
             return
         self.loop_session = self.loop_session.toggle_pending_review()
         selected = self.loop_session.pending_review
+        if selected is not None and selected.selected and not selected.compatible:
+            message = "Older review will be validated before remediation."
+        elif selected is not None and selected.selected:
+            message = "Compatible review will be reused."
+        else:
+            message = "The next run will start with a fresh review."
         _notify(
             self,
-            "Pending review will be reused."
-            if selected is not None and selected.selected
-            else "The next run will start with a fresh review.",
+            message,
         )
         self._render_workbench()
 
@@ -986,14 +1026,20 @@ class _RevRemAppMixin:
         if pending is None or not pending.selected:
             return True
         if not pending.path.is_file():
+            self.loop_session = replace(self.loop_session, pending_review=None)
             _notify(
                 self,
-                f"Pending review disappeared; press u to start fresh: {pending.path}",
+                f"Review input disappeared; the next run is now fresh: {pending.path}",
                 severity="error",
             )
+            self._render_workbench()
             return False
         previous = pending.git_state
-        if isinstance(previous, dict) and previous.get("available") is True:
+        if (
+            pending.compatible
+            and isinstance(previous, dict)
+            and previous.get("available") is True
+        ):
             from code_review_loop.cli.config_support import current_git_state_for_latest
 
             base = previous.get("base")
@@ -1009,12 +1055,21 @@ class _RevRemAppMixin:
                     for key in ("head", "base", "base_commit", "merge_base")
                 )
             ):
+                self.loop_session = replace(
+                    self.loop_session,
+                    pending_review=replace(
+                        pending,
+                        compatible=False,
+                        selected=False,
+                    ),
+                )
                 _notify(
                     self,
-                    "Pending review no longer matches the current Git state; "
-                    "press u to start fresh.",
+                    "Git state changed. The review is now available for explicit "
+                    "validation; press u to select it.",
                     severity="error",
                 )
+                self._render_workbench()
                 return False
         return True
 
@@ -1389,8 +1444,14 @@ class _RevRemAppMixin:
 
             fields = tui_loop_state.PHASE_DOTTED[diagram.current_phase()]
             harness_dotted = fields.get("harness")
-            harness = str(diagram.model.field_value(harness_dotted, "codex")) if harness_dotted else "codex"
-            models = model_catalog.load_catalog(Path(self.model.snapshot.cwd)).models_for(harness)
+            harness = (
+                str(diagram.model.field_value(harness_dotted, "codex"))
+                if harness_dotted
+                else "codex"
+            )
+            models = model_catalog.load_catalog(
+                Path(self.model.snapshot.cwd)
+            ).models_for(harness)
             if models:
                 prompt += "\nCatalog options: " + ", ".join(item.id for item in models)
         self._prompt_for_text(
@@ -1586,7 +1647,12 @@ class _RevRemAppMixin:
             return
         current = self._route_values(route)
         changes: dict[str, object] = {}
-        clearable_route_fields = {"model", "reasoning_effort", "timeout_seconds", "fallback"}
+        clearable_route_fields = {
+            "model",
+            "reasoning_effort",
+            "timeout_seconds",
+            "fallback",
+        }
         for cell in profiles.ROUTE_KEYS:
             value = str(values.get(cell, "")).strip()
             if value == "":
@@ -1645,7 +1711,9 @@ class _RevRemAppMixin:
                         f"{field} must be one of "
                         f"{', '.join(profiles.EXEC_SANDBOX_CHOICES)}"
                     )
-            elif cell == "fallback" and string_value and string_value not in route_names:
+            elif (
+                cell == "fallback" and string_value and string_value not in route_names
+            ):
                 return f"{field} refers to unknown route: {string_value}"
         fallback_value = changes.get("fallback")
         fallback = None if fallback_value is None else str(fallback_value)
@@ -1657,7 +1725,9 @@ class _RevRemAppMixin:
         route_names = self._loop_diagram.route_names()
         fallbacks: dict[str, str] = {}
         for route_name in route_names:
-            route_config = self._loop_diagram.model.profile.triage.routes.get(route_name)
+            route_config = self._loop_diagram.model.profile.triage.routes.get(
+                route_name
+            )
             current_fallback = route_config.fallback if route_config else None
             value = self._loop_diagram.model.field_value(
                 f"triage.routes.{route_name}.fallback", current_fallback
@@ -1888,7 +1958,6 @@ class _RevRemAppMixin:
             ),
         )
         self.loop_session = tui_session.LoopSession(profile_name=name)
-        self._loop_origin_label = None
         self._workspace = "loop"
         self._focused_pane = "left"
         self._render_workbench()
@@ -2025,7 +2094,6 @@ class _RevRemAppMixin:
                     ),
                 )
                 self.loop_session = tui_session.LoopSession(profile_name=profile_name)
-                self._loop_origin_label = None
                 self._reload_loop_diagram()
                 return
 
@@ -2165,6 +2233,7 @@ class _RevRemAppMixin:
     def _update_console_status(self) -> None:
         _update_widget(self, "#status-bar", _status_bar_markup(self))
         _update_widget(self, "#footer-bar", _footer_markup(self))
+        _update_widget(self, "#loop-command-panel", _loop_command_markup(self))
         _set_widget_classes(
             self,
             "#status-bar",
@@ -2201,57 +2270,12 @@ def _loop_diagram_widget(app: Any) -> Any | None:
     diagram_class = tui_loop_widgets.loop_diagram_class()
     if diagram_class is None:
         return None
-    profile_name = app._profile_name()
-    if profile_name is None:
+    model = getattr(app, "_loop_model", None)
+    if model is None:
         return None
-    try:
-        model = _initial_loop_model(app, profile_name)
-    except (OSError, ValueError):
-        return None
-    app._loop_model = model
     widget = diagram_class(model)
     app._loop_diagram = widget
     return widget
-
-
-def _initial_loop_model(app: Any, profile_name: str) -> Any:
-    from code_review_loop import tui_loop_model
-
-    cwd = Path(app.model.snapshot.cwd)
-    if not getattr(app, "_loop_seed_consumed", False):
-        app._loop_seed_consumed = True
-        seeded = _last_run_loop_model(cwd)
-        if seeded is not None:
-            model, origin, pending = seeded
-            _adopt_loop_profile(app, model.name)
-            app._loop_origin_label = origin
-            app.loop_session = tui_session.LoopSession(
-                profile_name=model.name,
-                origin_label=origin,
-                pending_review=pending,
-            )
-            return model
-    app._loop_origin_label = None
-    return tui_loop_model.LoopEditModel.load(profile_name, cwd=cwd)
-
-
-def _adopt_loop_profile(app: Any, profile_name: str) -> None:
-    """Keep the active profile and seeded loop working copy in lockstep."""
-    for index, profile_view in enumerate(app.model.snapshot.profiles):
-        if profile_view.name != profile_name:
-            continue
-        app._selected_profile_index = index
-        selected = app._profile_by_name(profile_name)
-        app.model = replace(
-            app.model,
-            selected_profile_name=profile_name,
-            selected_launch_plan=(
-                tui_state.launch_plan(selected, dry_run=True)
-                if selected is not None
-                else None
-            ),
-        )
-        return
 
 
 def _last_run_loop_model(
@@ -2277,14 +2301,21 @@ def _last_run_loop_model(
             find_pending_review_candidate,
         )
 
+        current_git_state = current_git_state_for_latest(cwd, config.base)
         candidate = (
             find_pending_review_candidate(
                 lookup.summary_path.parent,
-                current_git_state=current_git_state_for_latest(cwd, config.base),
+                current_git_state=current_git_state,
             )
             if lookup.summary_path is not None
             else None
         )
+        compatible = candidate is not None
+        if candidate is None and lookup.summary_path is not None:
+            candidate = find_pending_review_candidate(
+                lookup.summary_path.parent,
+                current_git_state=None,
+            )
     except (OSError, RuntimeError, ValueError):
         candidate = None
     if candidate is not None:
@@ -2304,6 +2335,8 @@ def _last_run_loop_model(
             final_status=candidate.final_status,
             stopped_reason=candidate.stopped_reason,
             excerpt=candidate.excerpt,
+            compatible=compatible,
+            selected=compatible,
             git_state=git_state,
         )
     return model, origin, pending
@@ -2318,7 +2351,11 @@ def _apply_wizard_state_to_loop_model(model: Any, state: Any) -> None:
 
     pairs = (
         ("pipeline.base", state.base, profile.pipeline.base),
-        ("pipeline.max_iterations", state.max_iterations, profile.pipeline.max_iterations),
+        (
+            "pipeline.max_iterations",
+            state.max_iterations,
+            profile.pipeline.max_iterations,
+        ),
         (
             "runtime.inner_check_retries",
             state.inner_check_retries,
@@ -2332,7 +2369,11 @@ def _apply_wizard_state_to_loop_model(model: Any, state: Any) -> None:
             profile.pipeline.check_timeout_seconds,
         ),
         ("triage.enabled", state.triage_enabled, profile.triage.enabled),
-        ("triage.routing.enabled", state.routing_enabled, profile.triage.routing.enabled),
+        (
+            "triage.routing.enabled",
+            state.routing_enabled,
+            profile.triage.routing.enabled,
+        ),
         (
             "triage.routing.default_route",
             state.routing_default_route,
@@ -2682,7 +2723,7 @@ def _footer_markup(app: Any) -> str:
     elif app._workspace == "profiles":
         keys = "[j/down]move [up]move [Enter]select [d]dry-run [r]run [?]help"
     elif app._workspace == "loop":
-        keys = "[1]loop [2]run [3]profiles [4]prompts [s]save [r]run [d]dry-run [?]help"
+        keys = "[up/down] phase [Enter] details [s] save [r] run [?] help [q] quit"
     elif app._workspace == "prompts":
         target = f" for {app._prompt_target_key}" if app._prompt_target_key else ""
         keys = f"[j/down]asset [up]asset [Enter]apply{target} [?]help"
@@ -2706,24 +2747,68 @@ def _loop_command_markup(app: Any) -> str:
         "checks": "Enter expand | e edit commands | t timeout | i max loops | I inner retries",
         "commit": "Enter expand | space on/off | m harness | M model | f effort | t timeout",
     }
-    origin = _origin_detail(getattr(app, "_loop_origin_label", None))
+    profile = app._profile_by_name(app._profile_name())
+    loop_model = getattr(app, "_loop_model", None)
+    active_profile = loop_model.profile if loop_model is not None else profile
+    dirty = bool(
+        getattr(app, "_loop_diagram", None) is not None and app._loop_diagram.is_dirty
+    )
+    profile_text = app._profile_name() or "<none>"
+    if dirty:
+        profile_text += " — Unsaved changes"
+    base = active_profile.pipeline.base if active_profile is not None else "-"
+    iterations: object = (
+        active_profile.pipeline.max_iterations if active_profile is not None else "-"
+    )
+    final_review_enabled = bool(
+        active_profile is not None and active_profile.pipeline.final_review
+    )
+    if loop_model is not None and active_profile is not None:
+        iterations = loop_model.field_value(
+            "pipeline.max_iterations", active_profile.pipeline.max_iterations
+        )
+        raw_final_review = loop_model.field_value(
+            "pipeline.final_review", active_profile.pipeline.final_review
+        )
+        final_review_enabled = (
+            raw_final_review.strip().lower() in {"true", "yes", "on", "1"}
+            if isinstance(raw_final_review, str)
+            else bool(raw_final_review)
+        )
+    final_review = "on" if final_review_enabled else "off"
+    origin = _origin_detail(app.loop_session.origin_label)
     lines = [
-        "COMMANDS",
-        f"phase: {phase}    {phase_keys.get(phase, 'Enter expand | ? help')}",
-        "global: up/down move | s save | r run | d dry-run | u review reuse | v review details | ? help | q quit",
-        f"command: {_truncate(_command_preview(app), 156)}",
+        "NEXT RUN",
+        f"Profile: {profile_text}",
+        f"Base: {base} | Iterations: {iterations} | Final review: {final_review}",
     ]
     pending = app.loop_session.pending_review
-    if pending is not None:
-        reuse = "selected" if pending.selected else "fresh review selected"
-        status = " · ".join(
-            item for item in (pending.final_status, pending.stopped_reason) if item
-        )
+    if pending is None:
+        lines.append("Review input: Fresh review — initial review file: none")
+    elif pending.selected and pending.compatible:
+        lines.append(f"Review input: Reuse compatible review — {pending.path}")
+    elif pending.selected:
+        lines.append(f"Review input: Validate older review — {pending.path}")
+    elif pending.compatible:
+        lines.append("Review input: Fresh review — initial review file: none")
         lines.append(
-            f"pending review: {reuse} · {status or 'actionable'} · {pending.path}"
+            f"Compatible review available: {pending.path} (u to reuse; v for details)"
+        )
+    else:
+        lines.append("Review input: Fresh review — initial review file: none")
+        lines.append(
+            f"Older review available: {pending.path} (u to validate; v for details)"
         )
     if origin:
-        lines.append(f"origin: {_truncate(origin, 156)}")
+        lines.append(f"Loaded from: {_truncate(origin, 156)}")
+    lines.extend(
+        (
+            f"Command: {_truncate(_command_preview(app), 156)}",
+            "",
+            f"SELECTED PHASE: {phase.upper()}",
+            phase_keys.get(phase, "Enter expand | ? help"),
+        )
+    )
     return "\n".join(lines)
 
 
@@ -3081,13 +3166,6 @@ def _live_monitor_markup(controller: tui_run_controller.LiveRunController) -> st
 
 
 def _status_bar_markup(app: Any) -> str:
-    profile_name = app._profile_name() or "<none>"
-    dirty = (
-        "*"
-        if getattr(app, "_loop_diagram", None) is not None
-        and app._loop_diagram.is_dirty
-        else ""
-    )
     status = app.live_run_controller.status
     pending = (
         f" | confirm r for {app._pending_live_confirmation_profile}"
@@ -3098,25 +3176,13 @@ def _status_bar_markup(app: Any) -> str:
         pending = " | cancelling"
     elif app._quit_confirmation_pending:
         pending = " | quit needs confirmation"
-    help_hint = "? hide help" if app._help_visible else "? help"
-    focus = (
-        f"  focus={tui_state.markup_escape(app._focused_pane)}"
-        if app._workspace not in _WORKSPACES
-        else ""
-    )
-    origin = ""
-    if getattr(app, "_loop_origin_label", None):
-        origin = f"  origin={tui_state.markup_escape(_origin_summary(app._loop_origin_label))}"
+    help_hint = "? Hide help" if app._help_visible else "? Help"
+    workspace = app._workspace.capitalize()
     return (
-        f"RevRem  {tui_state.markup_escape(Path(app.model.snapshot.cwd).name or app.model.snapshot.cwd)}"
-        f"  profile={tui_state.markup_escape(profile_name)}{dirty}"
-        f"  workspace={tui_state.markup_escape(app._workspace)}"
-        f"  live={tui_state.markup_escape(status)}"
-        f"{focus}\n"
-        f"base={tui_state.markup_escape(_profile_base(app))}"
-        f"  command in active panel\n"
-        f"{origin or 'origin=-'}{tui_state.markup_escape(pending)}"
-        f"  1 loop 2 run 3 profiles 4 prompts  {help_hint}  q quit"
+        f"RevRem · {tui_state.markup_escape(Path(app.model.snapshot.cwd).name or app.model.snapshot.cwd)}"
+        f" · {tui_state.markup_escape(workspace)} · {tui_state.markup_escape(status)}"
+        f"{tui_state.markup_escape(pending)}\n"
+        f"[1 Loop]  [2 Run]  [3 Profiles]  [4 Prompts]  {help_hint}  q Quit"
     )
 
 

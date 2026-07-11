@@ -78,16 +78,15 @@ def test_tui_pilot_boots_home_view(tmp_path):
         (repo / ".git").mkdir()
         async with pilot_app(cwd=repo, profile_name="security") as (app, pilot):
             await pilot.pause()
-            home = app.query_one("#screen-home")
-            rendered = str(home.render())
-            assert "Loop" in rendered
-            assert "1 Loop" in rendered
-            assert "3 Profiles" in rendered
-            assert "security" in rendered
+            command_panel = app.query_one("#loop-command-panel")
+            rendered = str(command_panel.render())
+            assert "NEXT RUN" in rendered
+            assert "Profile: security" in rendered
+            assert "Review input:" in rendered
             status = app.query_one("#status-bar")
-            assert "profile=security" in str(status.render())
+            assert "· Loop ·" in str(status.render())
             footer = app.query_one("#footer-bar")
-            assert "?\\]help" in str(footer.render())
+            assert "help" in str(footer.render()).lower()
             await pilot.press("h")
             await pilot.pause()
             assert "confirm/start live run" in str(footer.render())
@@ -112,7 +111,9 @@ def test_loop_workspace_renders_real_diagram_widgets(tmp_path):
             review = str(app.query_one("#phase-card-review").render())
             remediation = str(app.query_one("#phase-card-remediation").render())
             returns = str(app.query_one("#loop-returns").render())
-            assert "security" in header and "base" in header
+            assert header == "LOOP PHASES"
+            next_run = str(app.query_one("#loop-command-panel").render())
+            assert "Profile: security" in next_run and "Base: main" in next_run
             assert "01" in review_gutter
             assert "05" in commit_gutter
             assert "OUTER LOOP" in returns
@@ -184,7 +185,9 @@ def test_loop_inline_edit_marks_dirty_and_overlays(tmp_path):
                 != original_effort
             )
             app._update_console_status()
-            assert "*" in str(app.query_one("#status-bar").render())
+            assert "Unsaved changes" in str(
+                app.query_one("#loop-command-panel").render()
+            )
             diagram.set_text_field("model", "gpt-5.6")
             diagram.set_text_field("timeout", "123")
             assert diagram.model.field_value("review.model", "gpt-5.5") == "gpt-5.6"
@@ -264,11 +267,15 @@ def test_loop_reverted_edit_clears_dirty_marker(tmp_path):
             diagram = app.query_one("#loop-diagram")
             diagram.set_text_field("model", "gpt-5.6")
             app._update_console_status()
-            assert "*" in str(app.query_one("#status-bar").render())
+            assert "Unsaved changes" in str(
+                app.query_one("#loop-command-panel").render()
+            )
             diagram.set_text_field("model", "gpt-5.5")
             app._update_console_status()
             assert diagram.is_dirty is False
-            assert "*" not in str(app.query_one("#status-bar").render())
+            assert "Unsaved changes" not in str(
+                app.query_one("#loop-command-panel").render()
+            )
 
     asyncio.run(run())
 
@@ -295,7 +302,9 @@ def test_loop_triage_focus_mounts_routes_table(tmp_path):
     asyncio.run(run())
 
 
-def test_loop_enter_expands_triage_before_route_focus_and_movement_keeps_expansion(tmp_path):
+def test_loop_enter_expands_triage_before_route_focus_and_movement_keeps_expansion(
+    tmp_path,
+):
     async def run() -> None:
         repo = tmp_path / "repo"
         repo.mkdir()
@@ -327,7 +336,10 @@ def test_loop_enter_expands_triage_before_route_focus_and_movement_keeps_expansi
             await pilot.press("enter")
             await pilot.pause()
             assert "commands:" in str(app.query_one("#phase-card-checks").render())
-            assert "harness:" not in str(app.query_one("#phase-card-commit").render()).lower()
+            assert (
+                "harness:"
+                not in str(app.query_one("#phase-card-commit").render()).lower()
+            )
 
     asyncio.run(run())
 
@@ -390,6 +402,7 @@ def test_async_bootstrap_keeps_loading_visible_until_workbench_is_ready(
                     pilot_pause=pilot.pause,
                     timeout=10,
                 )
+
                 def has_loop_diagram() -> bool:
                     try:
                         return app.query_one("#loop-diagram") is not None
@@ -403,6 +416,33 @@ def test_async_bootstrap_keeps_loading_visible_until_workbench_is_ready(
                 )
                 assert app.model.selected_profile_name == "security"
                 assert app.query_one("#loop-diagram") is not None
+                assert app.query_one("#splash-pane").display is False
+                assert app.query_one("#loop-pane").display is True
+                assert app.query_one("#run-pane").display is False
+                assert app.query_one("#profiles-pane").display is False
+                assert app.query_one("#prompts-pane").display is False
+
+                diagram = app.query_one("#loop-diagram")
+                initial_phase = diagram.current_phase()
+                await pilot.press("down")
+                await pilot.pause()
+                assert diagram.current_phase() != initial_phase
+
+                displays_before = {
+                    selector: app.query_one(selector).display
+                    for selector in (
+                        "#loop-pane",
+                        "#run-pane",
+                        "#profiles-pane",
+                        "#prompts-pane",
+                    )
+                }
+                await pilot.press("1")
+                await pilot.pause()
+                assert {
+                    selector: app.query_one(selector).display
+                    for selector in displays_before
+                } == displays_before
         finally:
             release.set()
 
@@ -513,13 +553,15 @@ def test_profile_selection_reloads_loop_diagram(tmp_path):
         async with pilot_app(cwd=repo, profile_name="alpha") as (app, pilot):
             await pilot.press("1")
             await pilot.pause()
-            assert "alpha" in str(app.query_one("#loop-header").render())
+            assert "Profile: alpha" in str(
+                app.query_one("#loop-command-panel").render()
+            )
             await pilot.press("3")
             await pilot.press("down")
             await pilot.press("enter")
             await pilot.press("1")
             await pilot.pause()
-            assert "beta" in str(app.query_one("#loop-header").render())
+            assert "Profile: beta" in str(app.query_one("#loop-command-panel").render())
             assert "beta-model" in str(app.query_one("#phase-card-review").render())
 
     asyncio.run(run())
@@ -609,7 +651,9 @@ def test_dirty_loop_blocks_profile_switch(tmp_path):
             await pilot.press("1")
             await pilot.pause()
             assert any("Save or revert loop changes" in item for item in notifications)
-            assert "alpha" in str(app.query_one("#loop-header").render())
+            assert "Profile: alpha" in str(
+                app.query_one("#loop-command-panel").render()
+            )
             assert diagram.model.field_value("review.model", "") == "unsaved-alpha"
 
     asyncio.run(run())
@@ -699,10 +743,7 @@ def test_prompt_contract_only_targets_triage_prompt(tmp_path):
             app._prompt_target_key = "commit.message_prompt"
             app._apply_selected_prompt_asset()
             diagram = app.query_one("#loop-diagram")
-            assert (
-                diagram.model.field_value("commit.message_prompt", None)
-                is None
-            )
+            assert diagram.model.field_value("commit.message_prompt", None) is None
             assert any(
                 "can only target triage.prompt" in message and severity == "error"
                 for message, severity in notifications
@@ -718,9 +759,7 @@ def test_prompt_contract_only_targets_triage_prompt(tmp_path):
                 raise AssertionError("expected triage_v2 prompt asset")
             app._apply_selected_prompt_asset()
             assert diagram.model.field_value("triage.contract", None) == "v2"
-            assert (
-                diagram.model.field_value("triage.prompt", None) is None
-            )
+            assert diagram.model.field_value("triage.prompt", None) is None
             assert diagram.is_dirty is True
 
     asyncio.run(run())
@@ -790,8 +829,7 @@ def test_route_row_edit_rejects_invalid_timeout_atomically(tmp_path):
                 {"model": "gpt-9", "timeout_seconds": "abc"},
             )
             assert (
-                diagram.model.field_value("triage.routes.security.model", None)
-                is None
+                diagram.model.field_value("triage.routes.security.model", None) is None
             )
             assert diagram.is_dirty is False
             assert any(
@@ -849,7 +887,9 @@ def test_route_row_edit_can_clear_optional_route_fields(tmp_path):
                 )
                 == ""
             )
-            assert diagram.model.field_value("triage.routes.security.fallback", None) == ""
+            assert (
+                diagram.model.field_value("triage.routes.security.fallback", None) == ""
+            )
             assert (
                 "security: codex · provider default · model default · "
                 "inherit 300s default"
@@ -1005,13 +1045,9 @@ def test_tui_pilot_confirmed_launch_reaches_visible_running_state(
                 await pilot.press("r")
 
                 await _wait_for(
-                    lambda: "Live status: running"
-                    in _render(app, "#screen-run-monitor"),
+                    lambda: "running" in _render(app, "#loop-run-header"),
                     pilot_pause=pilot.pause,
                 )
-                assert "Live run started: live" in _render(
-                    app, "#screen-run-monitor"
-                ) or (app.live_run_controller.launch is not None)
                 assert app.live_run_controller.launch is not None
                 assert (
                     app.live_run_controller.launch.artifact_dir

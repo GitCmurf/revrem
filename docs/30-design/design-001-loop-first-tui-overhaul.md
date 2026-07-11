@@ -3,7 +3,7 @@ document_id: REVREM-DESIGN-001
 type: Design
 title: Loop-First TUI Overhaul
 status: Draft
-version: "0.2"
+version: "0.3"
 last_updated: '2026-07-11'
 owner: GitCmurf
 area: product
@@ -28,7 +28,7 @@ related_ids:
 > **Document ID:** REVREM-DESIGN-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 0.2
+> **Version:** 0.3
 > **Last Updated:** 2026-07-11
 > **Type:** Design
 
@@ -142,12 +142,15 @@ Textual remains an optional `[tui]` extra. The lazy-import / fallback scaffoldin
 
 ## 5. Screens
 
-Navigation: **`1 Loop · 2 Run · 3 Profiles · 4 Prompts`** (Loop first). Compact top bar:
-`app · loaded profile (with * when modified) · workspace · live status`, with
-only a short origin label when the Loop working copy is seeded from run history.
-The Loop workspace owns a visible `COMMANDS` panel below the diagram for
-current-phase keys, global actions, launch command preview, and full origin
-detail. The diagram is segmented into a loop summary band, numbered phase
+Navigation: **`1 Loop · 2 Run · 3 Profiles · 4 Prompts`** (Loop first). A stable
+two-line app bar shows only repository, workspace, live state, and workspace
+navigation. The Loop workspace begins with a labelled **Next Run** summary:
+profile, unsaved state in words, base, iteration bound, final-review state,
+review input, provenance, and launch command. It always says whether the next
+run has an initial-review file. Compatible review is preselected; an actionable
+review from a different Git state remains visible but requires an explicit
+validation choice. Current-phase actions are shown separately from the run
+summary. The diagram is segmented into a loop summary band, numbered phase
 bands, explicit inner-retry and outer-loop return bands, and an optional final
 review marker. Bottom bar: live state plus the shortest contextual key strip.
 `revrem ui` may briefly show a splash screen while Textual mounts; operators can
@@ -155,15 +158,19 @@ skip it with `--skip-splash`. The splash is terminal-native retro text art, not
 a bitmap asset, so it works in plain terminal sessions. When a compatible prior
 run exists, the Loop screen seeds its working copy from the structured
 `summary.resume_config` contract rather than the redacted display command. A
-single Loop session owns the loaded profile, draft, provenance, compatible
-pending review, and launch plan, so header, diagram, save target, preview, and
-run cannot disagree. Compatible actionable review feedback is visibly
-preselected as a run-only input and can be toggled off before launch.
+single Loop session owns the loaded profile, draft, provenance, pending-review
+availability, and launch plan, so the Next Run summary, diagram, save target,
+preview, and run cannot disagree.
 
 Textual mounts an I/O-free first frame before catalog, profile, history, and
-review discovery. Branding remains briefly visible when enabled, a key can
-dismiss it without hiding unfinished loading, and startup reports a slow-load
-state after ten seconds rather than exposing an incomplete workbench.
+review discovery. Background work returns one complete bootstrap result;
+composition does not perform discovery or mutate the active profile. The UI
+installs that result on Textual's thread, recomposes, and activates exactly one
+workspace only after replacement widgets are mounted. Branding remains briefly
+visible when enabled, a key can dismiss it without hiding unfinished loading,
+and startup reports a slow-load state after ten seconds rather than exposing an
+incomplete workbench. An explicit `--profile` always takes precedence over
+last-run replay.
 
 ### 5.1 Loop (centerpiece)
 
@@ -320,6 +327,9 @@ profile-edit library / run intents back to the controller.
   representative profiles: triage off, triage on with routes, `inner_check_retries` 0 vs N,
   final review on/off.
 - **Pilot smoke** (`test_tui_pilot_smoke.py`) extended for navigation and inline editing.
+- **Bootstrap lifecycle tests** assert that the first completed frame contains exactly one
+  workspace, arrow navigation works before a workspace shortcut, and pressing `1` is
+  idempotent.
 - **CLI-equivalence preserved**: `test_tui_cli_equivalence.py` /
   `assert_equivalent_run_artifacts` must continue to pass — TUI-launched runs equal
   CLI-launched runs.

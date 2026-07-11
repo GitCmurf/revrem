@@ -124,29 +124,8 @@ def _phase_map(profile: profiles.Profile) -> dict[str, tui_state.PhaseView]:
 
 
 def loop_header_text(source: Any) -> str:
-    profile = _profile(source)
-    max_iterations = _effective_int(
-        source, LOOP_META_DOTTED["max_iterations"], profile.pipeline.max_iterations
-    )
-    inner_retries = _effective_int(
-        source,
-        LOOP_META_DOTTED["inner_check_retries"],
-        profile.runtime.inner_check_retries,
-    )
-    final_review = _effective_bool(
-        source, LOOP_META_DOTTED["final_review"], profile.pipeline.final_review
-    )
-    final_text = "final review on" if final_review else "final review off"
-    dirty = " *" if bool(getattr(source, "is_dirty", False)) else ""
-    return "\n".join(
-        (
-            "LOOP",
-            (
-                f"profile {profile.name}{dirty} | base {profile.pipeline.base} | "
-                f"max {max_iterations} | inner retries {inner_retries} | {final_text}"
-            ),
-        )
-    )
+    del source
+    return "LOOP PHASES"
 
 
 def loop_rail_meta(source: Any) -> LoopRailMeta:
@@ -249,8 +228,13 @@ def phase_card_lines(
             f"  commands: {commands} commands",
             f"  timeout: {_format_timeout(timeout)}",
         ]
-        lines.extend(f"  {index}. {command}" for index, command in enumerate(commands_tuple, start=1))
-        lines.append("  e edit commands · t timeout · i max iterations · I inner retries")
+        lines.extend(
+            f"  {index}. {command}"
+            for index, command in enumerate(commands_tuple, start=1)
+        )
+        lines.append(
+            "  e edit commands · t timeout · i max iterations · I inner retries"
+        )
         return tuple(lines)
     summary_parts = [str(harness or "-")]
     if model:
@@ -261,7 +245,9 @@ def phase_card_lines(
     if effort_text:
         summary_parts.append(effort_text)
     summary_parts.append(_format_timeout(timeout))
-    summary = f"{focus}{arrow} {marker} {phase_label:<11} | " + " | ".join(summary_parts)
+    summary = f"{focus}{arrow} {marker} {phase_label:<11} | " + " | ".join(
+        summary_parts
+    )
     if not expanded:
         return (summary,)
     lines = [
@@ -299,7 +285,9 @@ def triage_routes_lines(
 ) -> tuple[str, ...]:
     profile = _profile(source)
     # Respect unsaved editor overrides for routing enablement while editing.
-    if not _effective_bool(source, "triage.routing.enabled", profile.triage.routing.enabled):
+    if not _effective_bool(
+        source, "triage.routing.enabled", profile.triage.routing.enabled
+    ):
         return ()
     routing = profile.triage.routing
     default_route = _effective_value(
