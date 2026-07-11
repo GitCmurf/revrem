@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import tomllib
 from dataclasses import dataclass
+from functools import lru_cache
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
@@ -62,11 +63,28 @@ def load_catalog(cwd: Path | None = None, *, home: Path | None = None) -> Catalo
     invocations still pick up `.revrem-catalog.toml`.
     """
     root = repo_root_or_cwd((cwd or Path.cwd()).resolve())
-    user_home = home or Path.home()
+    user_home = (home or Path.home()).resolve()
+    codex_home = Path(os.environ.get("CODEX_HOME", user_home / ".codex")).resolve()
+    source_paths = (
+        codex_home / "models_cache.json",
+        user_home / ".config" / "revrem" / "catalog.toml",
+        root / CATALOG_FILENAME,
+    )
+    signatures = tuple(_source_signature(path) for path in source_paths)
+    return _load_catalog_cached(root, user_home, codex_home, signatures)
+
+
+@lru_cache(maxsize=32)
+def _load_catalog_cached(
+    root: Path,
+    user_home: Path,
+    codex_home: Path,
+    _signatures: tuple[tuple[str, int, int] | None, ...],
+) -> Catalog:
+    """Parse immutable catalog layers once for each observed source version."""
     layers: list[tuple[str, dict[str, Any]]] = []
     packaged = files("code_review_loop").joinpath("catalog.toml").read_bytes()
     layers.append(("packaged", tomllib.loads(packaged.decode("utf-8"))))
-    codex_home = Path(os.environ.get("CODEX_HOME", user_home / ".codex"))
     cache = codex_home / "models_cache.json"
     if cache.is_file():
         layers.append((str(cache), _codex_cache_layer(cache)))
@@ -111,6 +129,14 @@ def load_catalog(cwd: Path | None = None, *, home: Path | None = None) -> Catalo
                 source=source,
             )
     return Catalog(models=models, harnesses=harness_specs)
+
+
+def _source_signature(path: Path) -> tuple[str, int, int] | None:
+    try:
+        stat_result = path.stat()
+    except OSError:
+        return None
+    return (str(path), stat_result.st_mtime_ns, stat_result.st_size)
 
 
 def validate_selection(

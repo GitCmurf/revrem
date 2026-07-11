@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import threading
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -351,6 +352,59 @@ def test_tui_splash_can_be_skipped_or_dismissed(tmp_path):
         ):
             await pilot.pause()
             assert app.query_one("#splash-pane").display is False
+
+    asyncio.run(run())
+
+
+def test_async_bootstrap_keeps_loading_visible_until_workbench_is_ready(
+    tmp_path, monkeypatch
+):
+    async def run() -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        started = threading.Event()
+        release = threading.Event()
+        original = tui._build_tui_bootstrap
+
+        def blocked_bootstrap(cwd, selected_profile_name):
+            started.set()
+            assert release.wait(timeout=10)
+            return original(cwd, selected_profile_name)
+
+        monkeypatch.setattr(tui, "_build_tui_bootstrap", blocked_bootstrap)
+        app = tui.textual_app_class()(
+            model=tui.tui_state.bootstrap_shell_model(repo),
+            profiles_by_name={},
+            skip_splash=False,
+            bootstrap_request=(repo, "security"),
+        )
+        try:
+            async with app.run_test(size=(100, 32)) as pilot:
+                await _wait_for(started.is_set, pilot_pause=pilot.pause)
+                assert app._bootstrap_loading is True
+                assert app.query_one("#splash-pane").display is True
+                release.set()
+                await _wait_for(
+                    lambda: not app._bootstrap_loading,
+                    pilot_pause=pilot.pause,
+                    timeout=10,
+                )
+                def has_loop_diagram() -> bool:
+                    try:
+                        return app.query_one("#loop-diagram") is not None
+                    except Exception:
+                        return False
+
+                await _wait_for(
+                    has_loop_diagram,
+                    pilot_pause=pilot.pause,
+                    timeout=10,
+                )
+                assert app.model.selected_profile_name == "security"
+                assert app.query_one("#loop-diagram") is not None
+        finally:
+            release.set()
 
     asyncio.run(run())
 
@@ -796,9 +850,10 @@ def test_route_row_edit_can_clear_optional_route_fields(tmp_path):
                 == ""
             )
             assert diagram.model.field_value("triage.routes.security.fallback", None) == ""
-            assert "security: codex · <default> · <default> · <default>" in _render(
-                app, "#triage-routes-table"
-            )
+            assert (
+                "security: codex · provider default · model default · "
+                "inherit 300s default"
+            ) in _render(app, "#triage-routes-table")
             assert diagram.is_dirty is True
 
     asyncio.run(run())

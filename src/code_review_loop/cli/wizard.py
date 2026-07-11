@@ -48,6 +48,7 @@ class WizardState:
     profile: profiles.Profile
     base: str
     max_iterations: int
+    inner_check_retries: int
     checks: tuple[str, ...]
     final_review: bool
     triage_enabled: bool
@@ -91,6 +92,7 @@ class WizardState:
 class LastRunLookup:
     state: WizardState | None
     skipped_reason: str | None = None
+    summary_path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -1048,6 +1050,7 @@ def _initial_state(choice: WizardProfileChoice) -> WizardState:
         profile=profile,
         base=profile.pipeline.base,
         max_iterations=profile.pipeline.max_iterations,
+        inner_check_retries=profile.runtime.inner_check_retries,
         checks=profile.pipeline.checks,
         final_review=profile.pipeline.final_review,
         triage_enabled=profile.triage.enabled,
@@ -1075,7 +1078,6 @@ def _initial_state(choice: WizardProfileChoice) -> WizardState:
 
 
 def _last_run_state(cwd: Path) -> LastRunLookup:
-    skipped_reason: str | None = None
     # Normalize both paths to repository roots so subdirectory invocations can
     # reuse the same repository's last run configuration.
     normalized_cwd = repo_root_or_cwd(cwd)
@@ -1087,22 +1089,29 @@ def _last_run_state(cwd: Path) -> LastRunLookup:
             continue
         summary_path = record.get("summary_path")
         if not isinstance(summary_path, str) or not summary_path:
-            skipped_reason = "history record has no summary path"
-            continue
+            return LastRunLookup(
+                state=None, skipped_reason="newest history record has no summary path"
+            )
         path = Path(summary_path)
         if not path.is_absolute():
             path = Path(record_cwd) / path
         if not path.is_file():
-            skipped_reason = f"summary missing: {path}"
-            continue
+            return LastRunLookup(state=None, skipped_reason=f"summary missing: {path}")
         state = _state_from_summary(path, cwd)
         if state is None:
-            skipped_reason = f"summary is not replayable: {path}"
-            continue
+            return LastRunLookup(
+                state=None,
+                skipped_reason=f"newest summary is not replayable: {path}",
+                summary_path=path,
+            )
         if _state_is_previewable(state, cwd):
-            return LastRunLookup(state=state)
-        skipped_reason = f"settings are no longer previewable: {path}"
-    return LastRunLookup(state=None, skipped_reason=skipped_reason)
+            return LastRunLookup(state=state, summary_path=path)
+        return LastRunLookup(
+            state=None,
+            skipped_reason=f"newest settings are no longer previewable: {path}",
+            summary_path=path,
+        )
+    return LastRunLookup(state=None)
 
 
 def _state_from_summary(summary_path: Path, cwd: Path) -> WizardState | None:
@@ -1110,6 +1119,12 @@ def _state_from_summary(summary_path: Path, cwd: Path) -> WizardState | None:
         summary = json.loads(summary_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError, UnicodeDecodeError):
         return None
+    resume_config = summary.get("resume_config")
+    if isinstance(resume_config, dict):
+        state = _state_from_resume_config(resume_config, summary, cwd)
+        if state is not None:
+            return state
+
     command_line = summary.get("command_line")
     if not isinstance(command_line, list) or not command_line:
         invocation = summary.get("invocation")
@@ -1126,6 +1141,124 @@ def _state_from_summary(summary_path: Path, cwd: Path) -> WizardState | None:
     timestamp = f" from {started_at}" if isinstance(started_at, str) and started_at else ""
     state.origin_label = f"last run{timestamp}"
     state.origin_command = shlex.join(("revrem", *argv))
+    return state
+
+
+def _state_from_resume_config(
+    payload: dict[object, object], summary: dict[object, object], cwd: Path
+) -> WizardState | None:
+    """Restore editable settings from the structured, non-display run contract.
+
+    ``command_line`` is intentionally redacted for diagnostics and may therefore
+    contain values that cannot be replayed.  ``resume_config`` is the canonical
+    resolved configuration captured by the runner and is safe to use here.
+    Initial-review selection is deliberately excluded: pending-review discovery
+    owns that independent decision for the next run.
+    """
+    profile_name = payload.get("profile_name")
+    if not isinstance(profile_name, str) or not profile_name:
+        summary_profile = summary.get("profile")
+        profile_name = summary_profile if isinstance(summary_profile, str) else None
+    try:
+        if profile_name:
+            profile = profiles.resolve_profile(
+                profile_name, cwd=cwd, require_implemented=False
+            )
+        else:
+            profile = profiles.resolve_defaults(cwd=cwd, require_implemented=False)
+    except (OSError, ValueError):
+        return None
+
+    state = _initial_state(WizardProfileChoice(profile_name=profile_name, profile=profile))
+
+    def text(key: str) -> str | None:
+        value = payload.get(key)
+        return value if isinstance(value, str) else None
+
+    def number_text(key: str) -> str | None:
+        value = payload.get(key)
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            return None
+        return f"{value:g}"
+
+    def boolean(key: str) -> bool | None:
+        value = payload.get(key)
+        return value if isinstance(value, bool) else None
+
+    def assign_text(attribute: str, key: str) -> None:
+        value = text(key)
+        if value is not None:
+            setattr(state, attribute, value)
+
+    base = text("base")
+    if base is not None:
+        state.base = base
+    max_iterations = payload.get("max_iterations")
+    if isinstance(max_iterations, int) and not isinstance(max_iterations, bool):
+        state.max_iterations = max_iterations
+    inner_check_retries = payload.get("inner_check_retries")
+    if isinstance(inner_check_retries, int) and not isinstance(
+        inner_check_retries, bool
+    ):
+        state.inner_check_retries = inner_check_retries
+    checks = payload.get("check_commands")
+    if isinstance(checks, list) and all(isinstance(item, str) for item in checks):
+        state.checks = tuple(checks)
+    for attribute, key in (
+        ("final_review", "final_review"),
+        ("triage_enabled", "triage_enabled"),
+        ("routing_enabled", "routing_enabled"),
+        ("routing_strict", "routing_strict"),
+        ("allow_model_escalation", "allow_model_escalation"),
+        ("commit_after_remediation", "commit_after_remediation"),
+    ):
+        value = boolean(key)
+        if value is not None:
+            setattr(state, attribute, value)
+    for attribute, key in (
+        ("routing_default_route", "routing_default_route"),
+        ("review_harness", "review_harness"),
+        ("review_model", "review_model"),
+        ("review_reasoning_effort", "review_reasoning_effort"),
+        ("triage_harness", "triage_harness"),
+        ("triage_model", "triage_model"),
+        ("triage_reasoning_effort", "triage_reasoning_effort"),
+        ("remediation_harness", "remediation_harness"),
+        ("remediation_model", "remediation_model"),
+        ("remediation_reasoning_effort", "remediation_reasoning_effort"),
+        ("commit_message_harness", "commit_message_harness"),
+        ("commit_message_model", "commit_message_model"),
+        ("commit_reasoning_effort", "commit_reasoning_effort"),
+        ("progress_style", "progress_style"),
+    ):
+        assign_text(attribute, key)
+    for attribute, key in (
+        ("timeout_seconds", "timeout_seconds"),
+        ("review_timeout_seconds", "review_timeout_seconds"),
+        ("triage_timeout_seconds", "triage_timeout_seconds"),
+        ("remediation_timeout_seconds", "remediation_timeout_seconds"),
+        ("commit_timeout_seconds", "commit_timeout_seconds"),
+        ("max_wall_seconds", "max_wall_seconds"),
+    ):
+        number_value = number_text(key)
+        if number_value is not None:
+            setattr(state, attribute, number_value)
+    phase_config = payload.get("phase_config")
+    if isinstance(phase_config, dict):
+        checks_config = phase_config.get("checks")
+        if isinstance(checks_config, dict):
+            timeout_value = checks_config.get("timeout_seconds")
+            if isinstance(timeout_value, int | float) and not isinstance(
+                timeout_value, bool
+            ):
+                state.check_timeout_seconds = f"{timeout_value:g}"
+    state.initial_review_file = ""
+    state.initial_review_mode = ""
+    state.pending_review = "profile"
+    started_at = summary.get("finished_at") or summary.get("started_at")
+    timestamp = f" from {started_at}" if isinstance(started_at, str) and started_at else ""
+    state.origin_label = f"last run{timestamp}"
+    state.origin_command = shlex.join(("revrem", *_argv_for_state(state)))
     return state
 
 
@@ -1158,6 +1291,8 @@ def _apply_parsed_args(state: WizardState, parsed) -> None:
         state.base = parsed.base
     if parsed.max_iterations is not None:
         state.max_iterations = parsed.max_iterations
+    if parsed.inner_check_retries is not None:
+        state.inner_check_retries = parsed.inner_check_retries
     if parsed.check:
         state.checks = tuple(parsed.check)
     if parsed.final_review is not None:
@@ -1290,6 +1425,8 @@ def _argv_for_state(state: WizardState) -> list[str]:
         argv.extend(["--base", state.base])
     if state.max_iterations != profile.pipeline.max_iterations:
         argv.extend(["--max-iterations", str(state.max_iterations)])
+    if state.inner_check_retries != profile.runtime.inner_check_retries:
+        argv.extend(["--inner-check-retries", str(state.inner_check_retries)])
     if state.checks != profile.pipeline.checks:
         checks = state.checks or ("true",)
         for command in checks:

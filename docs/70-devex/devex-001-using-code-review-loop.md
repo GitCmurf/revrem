@@ -3,8 +3,8 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.77'
-last_updated: '2026-07-10'
+version: '1.78'
+last_updated: '2026-07-11'
 owner: GitCmurf
 docops_version: '2.0'
 area: devex
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.77
-> **Last Updated:** 2026-07-10
+> **Version:** 1.78
+> **Last Updated:** 2026-07-11
 > **Type:** DEVEX
 > **Area:** devex
 > **Description:** Operator guide for the code-review-loop utility
@@ -1618,13 +1618,23 @@ inner remediation/check retry loop. Workspaces are `1` loop, `2` run,
 memory; a `*` next to the profile name marks unsaved changes. A labeled
 `COMMANDS` panel under the diagram lists current-phase keys, global actions,
 the launch command, and the full last-run origin when the working copy was
-seeded from prior run history; the top bar keeps only a compact origin summary
-so long commands do not dominate the screen. Press `s` to
+seeded from prior run history. New summaries replay from structured
+`resume_config`, so redaction in diagnostic command text cannot silently select
+an older run. The loaded profile, loop draft, origin, pending review, preview,
+and launch plan share one session state. Compatible actionable review feedback
+is preselected; press `u` to switch between reuse and a fresh review, or `v` to
+show bounded details. The top bar keeps only a compact origin summary so long
+commands do not dominate the screen. Press `s` to
 persist the authored raw profile delta through `profiles.save_profile_raw`, or
 press `r` to save first and then launch the normal `revrem --profile NAME` run
 path. If save validation fails, or the selected profile is a read-only bundled
 profile, the error is shown and the working copy remains dirty; clone a bundled
 profile before editing it.
+
+Textual mounts before profile, catalog, history, and review discovery. The
+startup pane remains visible until those background reads complete;
+`--skip-splash` removes branding but not loading feedback, and a slow-load
+message appears after ten seconds rather than exposing partial state.
 
 Loop keys are contextual: `j`/Down and Up move phase focus, `Enter` expands,
 collapses, or enters triage route-row selection, `space` toggles phases that
@@ -1945,6 +1955,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.78 | 2026-07-11 | Codex | Documented structured last-run replay, pending-review selection, effective timeout labels, and asynchronous TUI startup |
 | 1.77 | 2026-07-10 | Codex | Documented the layered model catalog and local model invocation statistics |
 | 1.76 | 2026-06-28 | Codex | Documented stale-review validation ordering before triage/routing/remediation |
 | 1.75 | 2026-06-23 | Codex | Documented bundled expert profiles, examples, completions, demo regeneration, and the failure diagnostics guide |

@@ -30,6 +30,25 @@ def test_project_catalog_overrides_packaged_model(tmp_path, monkeypatch):
     ).efforts == ("low",)
 
 
+def test_catalog_cache_invalidates_when_project_layer_changes(tmp_path, monkeypatch):
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "missing-codex"))
+    project = tmp_path / ".revrem-catalog.toml"
+    project.write_text(
+        '[[model]]\nid="local-model"\nharness="codex"\nefforts=["low"]\n',
+        encoding="utf-8",
+    )
+    first = model_catalog.load_catalog(tmp_path, home=tmp_path)
+    project.write_text(
+        '[[model]]\nid="local-model"\nharness="codex"\nefforts=["low","high"]\n',
+        encoding="utf-8",
+    )
+
+    second = model_catalog.load_catalog(tmp_path, home=tmp_path)
+
+    assert first.model("codex", "local-model").efforts == ("low",)
+    assert second.model("codex", "local-model").efforts == ("low", "high")
+
+
 def test_project_catalog_uses_repo_root_for_subdirectory_invocations(tmp_path, monkeypatch):
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "missing-codex"))
     repo_root = tmp_path / "repo"

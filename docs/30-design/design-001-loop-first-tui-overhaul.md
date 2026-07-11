@@ -3,8 +3,8 @@ document_id: REVREM-DESIGN-001
 type: Design
 title: Loop-First TUI Overhaul
 status: Draft
-version: "0.1"
-last_updated: '2026-06-27'
+version: "0.2"
+last_updated: '2026-07-11'
 owner: GitCmurf
 area: product
 docops_version: "2.0"
@@ -28,8 +28,8 @@ related_ids:
 > **Document ID:** REVREM-DESIGN-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 0.1
-> **Last Updated:** 2026-06-27
+> **Version:** 0.2
+> **Last Updated:** 2026-07-11
 > **Type:** Design
 
 # Design: Loop-First TUI Overhaul
@@ -153,8 +153,17 @@ review marker. Bottom bar: live state plus the shortest contextual key strip.
 `revrem ui` may briefly show a splash screen while Textual mounts; operators can
 skip it with `--skip-splash`. The splash is terminal-native retro text art, not
 a bitmap asset, so it works in plain terminal sessions. When a compatible prior
-run command exists, the Loop screen can seed the working copy from that command
-and mark the compact origin while preserving explicit Save semantics.
+run exists, the Loop screen seeds its working copy from the structured
+`summary.resume_config` contract rather than the redacted display command. A
+single Loop session owns the loaded profile, draft, provenance, compatible
+pending review, and launch plan, so header, diagram, save target, preview, and
+run cannot disagree. Compatible actionable review feedback is visibly
+preselected as a run-only input and can be toggled off before launch.
+
+Textual mounts an I/O-free first frame before catalog, profile, history, and
+review discovery. Branding remains briefly visible when enabled, a key can
+dismiss it without hiding unfinished loading, and startup reports a slow-load
+state after ten seconds rather than exposing an incomplete workbench.
 
 ### 5.1 Loop (centerpiece)
 

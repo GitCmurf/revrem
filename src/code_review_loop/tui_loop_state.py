@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from code_review_loop import harnesses, profiles, tui_state
+from code_review_loop.config import DEFAULT_TIMEOUT_SECONDS
 
 LOOP_PHASES: tuple[str, ...] = ("review", "triage", "remediation", "checks", "commit")
 PHASE_ENABLED_GLYPH = "●"
@@ -108,9 +109,13 @@ def _effective_int(source: Any, dotted_key: str, fallback: int) -> int:
 
 def _format_timeout(value: object) -> str:
     if value is None or value == "":
-        return "<default>"
+        return f"{DEFAULT_TIMEOUT_SECONDS}s default"
     if isinstance(value, int | float):
+        if value == 0:
+            return "unbounded"
         return f"{value:g}s"
+    if value == "0":
+        return "unbounded"
     return f"{value}s"
 
 
@@ -228,10 +233,22 @@ def phase_card_lines(
             else profile.pipeline.checks
         )
         commands = len(commands_tuple)
-        summary = f"{focus}{arrow} {marker} {phase_label:<11} | {commands} commands"
+        timeout = _effective_value(
+            source,
+            "pipeline.check_timeout_seconds",
+            profile.pipeline.check_timeout_seconds,
+        )
+        summary = (
+            f"{focus}{arrow} {marker} {phase_label:<11} | {commands} commands | "
+            f"{_format_timeout(timeout)}"
+        )
         if not expanded:
             return (summary,)
-        lines = [summary, f"  commands: {commands} commands"]
+        lines = [
+            summary,
+            f"  commands: {commands} commands",
+            f"  timeout: {_format_timeout(timeout)}",
+        ]
         lines.extend(f"  {index}. {command}" for index, command in enumerate(commands_tuple, start=1))
         lines.append("  e edit commands · t timeout · i max iterations · I inner retries")
         return tuple(lines)
@@ -250,8 +267,8 @@ def phase_card_lines(
     lines = [
         summary,
         f"  harness: {harness or '-'}",
-        f"  model: {model or '<default>'}",
-        f"  effort: {effort or '<default>'}",
+        f"  model: {model or 'provider default'}",
+        f"  effort: {effort or 'model default'}",
         f"  timeout: {_format_timeout(timeout)}",
     ]
     if "enabled" in dotted:
@@ -303,6 +320,11 @@ def triage_routes_lines(
         f"default {default_route} · strict {strict} · "
         f"escalate {escalate}"
     ]
+    remediation_timeout = _effective_value(
+        source,
+        "remediation.timeout_seconds",
+        profile.remediation.timeout_seconds,
+    )
     for row in triage_route_rows(source, selected_route=selected_route):
         effort_text = harnesses.phase_effort_text(
             str(row.harness) if row.harness else None,
@@ -311,9 +333,14 @@ def triage_routes_lines(
         pointer = (
             f"{'>' if row.selected else ' '} " if selected_route is not None else ""
         )
+        route_timeout = (
+            f"inherit {_format_timeout(remediation_timeout)}"
+            if row.timeout is None or row.timeout == ""
+            else _format_timeout(row.timeout)
+        )
         lines.append(
-            f"{pointer}{row.name}: {row.harness} · {row.model or '<default>'} · "
-            f"{effort_text or '<default>'} · {_format_timeout(row.timeout)} · "
+            f"{pointer}{row.name}: {row.harness} · {row.model or 'provider default'} · "
+            f"{effort_text or 'model default'} · {route_timeout} · "
             f"{row.sandbox} · fallback {row.fallback or 'drop'}"
         )
     return tuple(lines)

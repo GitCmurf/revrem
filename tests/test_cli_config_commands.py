@@ -642,6 +642,7 @@ def test_config_import_rejects_missing_source_file(tmp_path, monkeypatch, capsys
 def test_config_list_includes_last_used_from_run_history(tmp_path, monkeypatch, capsys):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
 

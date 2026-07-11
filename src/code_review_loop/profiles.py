@@ -866,6 +866,8 @@ def _profile_to_toml_dict(
         section_dict: dict[str, Any] = {}
         for key, item in asdict(value).items():
             if item is None:
+                if isinstance(raw_section, dict) and raw_section.get(key) == "":
+                    section_dict[key] = ""
                 continue
             clean_item = _profile_toml_value(
                 item,
@@ -922,6 +924,8 @@ def _profile_toml_dict(
     rendered: dict[str, Any] = {}
     for key, item in value.items():
         if item is None:
+            if raw_dict is not None and raw_dict.get(key) == "":
+                rendered[key] = ""
             continue
         explicit = raw_dict is not None and key in raw_dict
 
@@ -1955,7 +1959,9 @@ def _optional_str(value: Any, field: str) -> str | None:
 
 
 def _validate_reasoning_effort(value: str | None, field: str) -> None:
-    if value is None:
+    # Empty string is the persisted clear marker for an inherited optional
+    # effort and remains falsy at command-resolution call sites.
+    if value is None or value == "":
         return
     if value not in KNOWN_EFFORTS:
         known = ", ".join(KNOWN_EFFORTS)

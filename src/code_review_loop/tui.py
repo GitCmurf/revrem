@@ -5,10 +5,12 @@ from __future__ import annotations
 import argparse
 import importlib
 import importlib.util
+import json
 import re
 import subprocess
 import sys
 import threading
+import time
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -21,6 +23,7 @@ from code_review_loop import (
     tui_profiles_state,
     tui_prompt_assets,
     tui_run_controller,
+    tui_session,
     tui_state,
 )
 
@@ -142,18 +145,37 @@ def run_textual_app(
     *, selected_profile_name: str | None = None, skip_splash: bool = False
 ) -> None:
     app_class = textual_app_class()
-    model = tui_state.build_shell_model(
-        cwd=Path.cwd(), selected_profile_name=selected_profile_name
-    )
-    profiles_by_name = {
-        profile.name: profile
-        for profile in profiles.resolve_profiles(
-            cwd=Path(model.snapshot.cwd),
+    cwd = Path.cwd()
+    if selected_profile_name is not None:
+        profiles.resolve_profile(
+            selected_profile_name,
+            cwd=cwd,
+            require_implemented=False,
+        )
+    app_class(
+        model=tui_state.bootstrap_shell_model(cwd),
+        profiles_by_name={},
+        skip_splash=skip_splash,
+        bootstrap_request=(cwd, selected_profile_name),
+    ).run()
+
+
+def _build_tui_bootstrap(
+    cwd: Path, selected_profile_name: str | None
+) -> tuple[tui_state.TuiShellModel, dict[str, profiles.Profile]]:
+    resolved_profiles = tuple(
+        profiles.resolve_profiles(
+            cwd=cwd,
             require_implemented=False,
             include_builtins=True,
         )
-    }
-    app_class(model=model, profiles_by_name=profiles_by_name, skip_splash=skip_splash).run()
+    )
+    model = tui_state.build_shell_model(
+        cwd=cwd,
+        selected_profile_name=selected_profile_name,
+        resolved_profiles=resolved_profiles,
+    )
+    return model, {profile.name: profile for profile in resolved_profiles}
 
 
 def _textual_unavailable_message() -> str:
@@ -350,6 +372,8 @@ def _build_bindings(binding_cls: Any | None) -> list[Any]:
         ("k", "cancel_run", "Cancel run"),
         ("l", "toggle_logs", "Logs"),
         ("o", "show_artifacts", "Artifacts"),
+        ("u", "toggle_pending_review", "Reuse review"),
+        ("v", "show_pending_review", "Review details"),
         _binding(
             "question_mark",
             "toggle_help",
@@ -620,6 +644,7 @@ class _RevRemAppMixin:
         model: tui_state.TuiShellModel,
         profiles_by_name: dict[str, profiles.Profile],
         skip_splash: bool = False,
+        bootstrap_request: tuple[Path, str | None] | None = None,
     ) -> None:
         super().__init__()
         self.model = model
@@ -637,6 +662,9 @@ class _RevRemAppMixin:
         self._loop_diagram: Any | None = None
         self._loop_model: Any | None = None
         self._loop_origin_label: str | None = None
+        self.loop_session = tui_session.LoopSession(
+            profile_name=model.selected_profile_name
+        )
         self._loop_seed_consumed = False
         self._loop_run_view: Any | None = None
         self._event_log: Any | None = None
@@ -646,12 +674,17 @@ class _RevRemAppMixin:
         self._prompt_return_workspace: str | None = None
         self._live_run_profile: profiles.Profile | None = None
         self._splash_visible = not skip_splash
+        self._bootstrap_request = bootstrap_request
+        self._bootstrap_loading = bootstrap_request is not None
+        self._bootstrap_slow = False
+        self._bootstrap_error: str | None = None
+        self._bootstrap_started_at = time.monotonic()
 
     def compose(self):
         yield _Header(show_clock=True)
         if _Horizontal is not None and _Vertical is not None:
             yield _Static(
-                _splash_markup(),
+                _startup_markup(self),
                 id="splash-pane",
                 markup=False,
             )
@@ -732,13 +765,24 @@ class _RevRemAppMixin:
         if callable(set_interval):
             set_interval(0.5, self._refresh_live_run)
         set_timer = getattr(self, "set_timer", None)
-        if callable(set_timer) and self._splash_visible:
+        if callable(set_timer) and self._splash_visible and not self._bootstrap_loading:
             set_timer(0.7, self._dismiss_splash)
+        if self._bootstrap_loading:
+            self._start_bootstrap()
+            if callable(set_timer):
+                set_timer(10.0, self._mark_bootstrap_slow)
         self._render_workbench()
 
     def on_key(self, event: Any) -> None:
         if self._splash_visible:
             self._dismiss_splash()
+            if self._bootstrap_loading:
+                stop = getattr(event, "stop", None)
+                if callable(stop):
+                    stop()
+                return
+        elif self._bootstrap_loading:
+            return
         if getattr(event, "key", None) not in {"?", "question_mark", "h"}:
             return
         stop = getattr(event, "stop", None)
@@ -751,6 +795,67 @@ class _RevRemAppMixin:
             return
         self._splash_visible = False
         self._render_workbench()
+
+    def _start_bootstrap(self) -> None:
+        request = self._bootstrap_request
+        if request is None:
+            return
+        cwd, selected_profile_name = request
+
+        def load() -> None:
+            try:
+                model, by_name = _build_tui_bootstrap(cwd, selected_profile_name)
+            except (OSError, RuntimeError, ValueError) as exc:
+                _call_from_thread(
+                    self, lambda exc=exc: self._finish_bootstrap_error(exc)
+                )
+                return
+            _call_from_thread(
+                self,
+                lambda: self._finish_bootstrap(model, by_name),
+            )
+
+        _run_background(self, load)
+
+    def _finish_bootstrap(
+        self,
+        model: tui_state.TuiShellModel,
+        profiles_by_name: dict[str, profiles.Profile],
+    ) -> None:
+        self.model = model
+        self.profiles_by_name = profiles_by_name
+        self._selected_profile_index = self._initial_profile_index()
+        self.loop_session = tui_session.LoopSession(
+            profile_name=model.selected_profile_name
+        )
+        self._bootstrap_loading = False
+        self._bootstrap_request = None
+        elapsed = time.monotonic() - self._bootstrap_started_at
+        delay = max(0.0, 0.5 - elapsed) if self._splash_visible else 0.0
+        set_timer = getattr(self, "set_timer", None)
+        if delay and callable(set_timer):
+            set_timer(delay, self._complete_bootstrap_view)
+            return
+        self._complete_bootstrap_view()
+
+    def _finish_bootstrap_error(self, exc: Exception) -> None:
+        self._bootstrap_loading = False
+        self._bootstrap_error = str(exc)
+        _update_widget(self, "#splash-pane", _startup_markup(self))
+        self._render_workbench()
+
+    def _complete_bootstrap_view(self) -> None:
+        self._splash_visible = False
+        refresh = getattr(self, "refresh", None)
+        if callable(refresh):
+            refresh(recompose=True)
+        self._render_workbench()
+
+    def _mark_bootstrap_slow(self) -> None:
+        if not self._bootstrap_loading:
+            return
+        self._bootstrap_slow = True
+        _update_widget(self, "#splash-pane", _startup_markup(self))
 
     def action_launch_dry_run(self) -> None:
         profile_name = self._profile_name()
@@ -773,7 +878,9 @@ class _RevRemAppMixin:
         if selected is None:
             _notify(self, "No profile is available to dry-run.")
             return
-        plan = tui_state.launch_plan(selected, dry_run=True)
+        if not self._pending_review_is_launchable():
+            return
+        plan = self._profile_launch_plan(selected, dry_run=True)
         result = run_launch_plan(plan, cwd=Path(self.model.snapshot.cwd))
         if result.returncode == 0:
             _notify(self, f"Dry run completed: {profile_name}")
@@ -823,7 +930,9 @@ class _RevRemAppMixin:
             self._update_console_status()
             return
         self._pending_live_confirmation_profile = None
-        plan = tui_state.launch_plan(selected, dry_run=False)
+        if not self._pending_review_is_launchable():
+            return
+        plan = self._profile_launch_plan(selected, dry_run=False)
         self._live_run_profile = selected
         try:
             launch = self.live_run_controller.start(
@@ -844,6 +953,77 @@ class _RevRemAppMixin:
         self._focused_pane = "right"
         _notify(self, f"Live run started: {profile_name} ({launch.artifact_dir_arg})")
         self._render_workbench()
+
+    def action_toggle_pending_review(self) -> None:
+        if self._workspace != "loop" or self.loop_session.pending_review is None:
+            _notify(self, "No pending review is available for this loop.")
+            return
+        self.loop_session = self.loop_session.toggle_pending_review()
+        selected = self.loop_session.pending_review
+        _notify(
+            self,
+            "Pending review will be reused."
+            if selected is not None and selected.selected
+            else "The next run will start with a fresh review.",
+        )
+        self._render_workbench()
+
+    def action_show_pending_review(self) -> None:
+        pending = self.loop_session.pending_review
+        if self._workspace != "loop" or pending is None:
+            _notify(self, "No pending review is available for this loop.")
+            return
+        excerpt = pending.excerpt.strip().replace("\n", " ")
+        detail = f"Pending review: {pending.path}"
+        if excerpt:
+            detail += f" · {_truncate(excerpt, 500)}"
+        _notify(self, detail)
+
+    def _pending_review_is_launchable(self) -> bool:
+        if self._workspace == "profiles":
+            return True
+        pending = self.loop_session.pending_review
+        if pending is None or not pending.selected:
+            return True
+        if not pending.path.is_file():
+            _notify(
+                self,
+                f"Pending review disappeared; press u to start fresh: {pending.path}",
+                severity="error",
+            )
+            return False
+        previous = pending.git_state
+        if isinstance(previous, dict) and previous.get("available") is True:
+            from code_review_loop.cli.config_support import current_git_state_for_latest
+
+            base = previous.get("base")
+            current = current_git_state_for_latest(
+                Path(self.model.snapshot.cwd),
+                base if isinstance(base, str) and base else "main",
+            )
+            if (
+                current is not None
+                and current.get("available") is True
+                and any(
+                    previous.get(key) != current.get(key)
+                    for key in ("head", "base", "base_commit", "merge_base")
+                )
+            ):
+                _notify(
+                    self,
+                    "Pending review no longer matches the current Git state; "
+                    "press u to start fresh.",
+                    severity="error",
+                )
+                return False
+        return True
+
+    def _profile_launch_plan(
+        self, profile: profiles.Profile, *, dry_run: bool
+    ) -> tui_state.LaunchPlan:
+        if self._workspace == "profiles":
+            return tui_state.launch_plan(profile, dry_run=dry_run)
+        return self.loop_session.compile_launch_plan(profile, dry_run=dry_run)
 
     def action_cancel_run(self) -> None:
         self._quit_confirmation_pending = False
@@ -1707,6 +1887,8 @@ class _RevRemAppMixin:
                 else None
             ),
         )
+        self.loop_session = tui_session.LoopSession(profile_name=name)
+        self._loop_origin_label = None
         self._workspace = "loop"
         self._focused_pane = "left"
         self._render_workbench()
@@ -1842,6 +2024,8 @@ class _RevRemAppMixin:
                         else None
                     ),
                 )
+                self.loop_session = tui_session.LoopSession(profile_name=profile_name)
+                self._loop_origin_label = None
                 self._reload_loop_diagram()
                 return
 
@@ -1857,21 +2041,26 @@ class _RevRemAppMixin:
         on_run = self._workspace == "run"
         on_profiles = self._workspace == "profiles"
         on_prompts = self._workspace == "prompts"
-        splash = bool(getattr(self, "_splash_visible", False))
-        _set_widget_display(self, "#splash-pane", splash)
-        _set_widget_display(self, "#loop-pane", on_loop and not splash)
-        _set_widget_display(self, "#run-pane", on_run and not splash)
-        _set_widget_display(self, "#profiles-pane", on_profiles and not splash)
-        _set_widget_display(self, "#prompts-pane", on_prompts and not splash)
+        startup = bool(
+            getattr(self, "_splash_visible", False)
+            or getattr(self, "_bootstrap_loading", False)
+            or getattr(self, "_bootstrap_error", None)
+        )
+        _update_widget(self, "#splash-pane", _startup_markup(self))
+        _set_widget_display(self, "#splash-pane", startup)
+        _set_widget_display(self, "#loop-pane", on_loop and not startup)
+        _set_widget_display(self, "#run-pane", on_run and not startup)
+        _set_widget_display(self, "#profiles-pane", on_profiles and not startup)
+        _set_widget_display(self, "#prompts-pane", on_prompts and not startup)
         _set_widget_display(
             self,
             "#left-pane",
-            not splash and not (on_loop or on_run or on_profiles or on_prompts),
+            not startup and not (on_loop or on_run or on_profiles or on_prompts),
         )
         _set_widget_display(
             self,
             "#right-pane",
-            not splash and not (on_loop or on_run or on_profiles or on_prompts),
+            not startup and not (on_loop or on_run or on_profiles or on_prompts),
         )
         if self._workspace == "loop" and self._loop_diagram is not None:
             self._loop_diagram.rebuild()
@@ -2033,14 +2222,41 @@ def _initial_loop_model(app: Any, profile_name: str) -> Any:
         app._loop_seed_consumed = True
         seeded = _last_run_loop_model(cwd)
         if seeded is not None:
-            model, origin = seeded
+            model, origin, pending = seeded
+            _adopt_loop_profile(app, model.name)
             app._loop_origin_label = origin
+            app.loop_session = tui_session.LoopSession(
+                profile_name=model.name,
+                origin_label=origin,
+                pending_review=pending,
+            )
             return model
     app._loop_origin_label = None
     return tui_loop_model.LoopEditModel.load(profile_name, cwd=cwd)
 
 
-def _last_run_loop_model(cwd: Path) -> tuple[Any, str] | None:
+def _adopt_loop_profile(app: Any, profile_name: str) -> None:
+    """Keep the active profile and seeded loop working copy in lockstep."""
+    for index, profile_view in enumerate(app.model.snapshot.profiles):
+        if profile_view.name != profile_name:
+            continue
+        app._selected_profile_index = index
+        selected = app._profile_by_name(profile_name)
+        app.model = replace(
+            app.model,
+            selected_profile_name=profile_name,
+            selected_launch_plan=(
+                tui_state.launch_plan(selected, dry_run=True)
+                if selected is not None
+                else None
+            ),
+        )
+        return
+
+
+def _last_run_loop_model(
+    cwd: Path,
+) -> tuple[Any, str, tui_session.PendingReviewSelection | None] | None:
     from code_review_loop import tui_loop_model
     from code_review_loop.cli import wizard
 
@@ -2053,21 +2269,84 @@ def _last_run_loop_model(cwd: Path) -> tuple[Any, str] | None:
     origin = state.origin_label or "last run"
     if state.origin_command:
         origin = f"{origin}: {state.origin_command}"
-    return model, origin
+    pending: tui_session.PendingReviewSelection | None = None
+    try:
+        config = wizard._config_for_state(state, cwd)
+        from code_review_loop.cli.config_support import (
+            current_git_state_for_latest,
+            find_pending_review_candidate,
+        )
+
+        candidate = (
+            find_pending_review_candidate(
+                lookup.summary_path.parent,
+                current_git_state=current_git_state_for_latest(cwd, config.base),
+            )
+            if lookup.summary_path is not None
+            else None
+        )
+    except (OSError, RuntimeError, ValueError):
+        candidate = None
+    if candidate is not None:
+        git_state = None
+        if lookup.summary_path is not None:
+            try:
+                summary = json.loads(lookup.summary_path.read_text(encoding="utf-8"))
+                raw_git_state = (
+                    summary.get("git_state") if isinstance(summary, dict) else None
+                )
+                git_state = raw_git_state if isinstance(raw_git_state, dict) else None
+            except (OSError, json.JSONDecodeError):
+                pass
+        pending = tui_session.PendingReviewSelection(
+            path=candidate.path,
+            run_dir=candidate.run_dir,
+            final_status=candidate.final_status,
+            stopped_reason=candidate.stopped_reason,
+            excerpt=candidate.excerpt,
+            git_state=git_state,
+        )
+    return model, origin, pending
 
 
 def _apply_wizard_state_to_loop_model(model: Any, state: Any) -> None:
     profile = model.profile
+    shared_timeout = state.timeout_seconds
+
+    def phase_timeout(value: str) -> str:
+        return value or shared_timeout
+
     pairs = (
         ("pipeline.base", state.base, profile.pipeline.base),
         ("pipeline.max_iterations", state.max_iterations, profile.pipeline.max_iterations),
+        (
+            "runtime.inner_check_retries",
+            state.inner_check_retries,
+            profile.runtime.inner_check_retries,
+        ),
         ("pipeline.final_review", state.final_review, profile.pipeline.final_review),
+        ("pipeline.checks", state.checks, profile.pipeline.checks),
+        (
+            "pipeline.check_timeout_seconds",
+            phase_timeout(state.check_timeout_seconds),
+            profile.pipeline.check_timeout_seconds,
+        ),
         ("triage.enabled", state.triage_enabled, profile.triage.enabled),
         ("triage.routing.enabled", state.routing_enabled, profile.triage.routing.enabled),
         (
             "triage.routing.default_route",
             state.routing_default_route,
             profile.triage.routing.default_route,
+        ),
+        (
+            "triage.routing.strict_on_unavailable_route",
+            state.routing_strict,
+            profile.triage.routing.strict_on_unavailable_route,
+        ),
+        (
+            "triage.routing.allow_model_escalation",
+            state.allow_model_escalation,
+            profile.triage.routing.allow_model_escalation,
         ),
         ("review.harness", state.review_harness, profile.review.harness),
         ("review.model", state.review_model, profile.review.model or ""),
@@ -2076,6 +2355,11 @@ def _apply_wizard_state_to_loop_model(model: Any, state: Any) -> None:
             state.review_reasoning_effort,
             profile.review.reasoning_effort or "",
         ),
+        (
+            "review.timeout_seconds",
+            phase_timeout(state.review_timeout_seconds),
+            profile.review.timeout_seconds,
+        ),
         ("triage.harness", state.triage_harness, profile.triage.harness),
         ("triage.model", state.triage_model, profile.triage.model or ""),
         (
@@ -2083,12 +2367,22 @@ def _apply_wizard_state_to_loop_model(model: Any, state: Any) -> None:
             state.triage_reasoning_effort,
             profile.triage.reasoning_effort or "",
         ),
+        (
+            "triage.timeout_seconds",
+            phase_timeout(state.triage_timeout_seconds),
+            profile.triage.timeout_seconds,
+        ),
         ("remediation.harness", state.remediation_harness, profile.remediation.harness),
         ("remediation.model", state.remediation_model, profile.remediation.model or ""),
         (
             "remediation.reasoning_effort",
             state.remediation_reasoning_effort,
             profile.remediation.reasoning_effort or "",
+        ),
+        (
+            "remediation.timeout_seconds",
+            phase_timeout(state.remediation_timeout_seconds),
+            profile.remediation.timeout_seconds,
         ),
         ("commit.enabled", state.commit_after_remediation, profile.commit.enabled),
         ("commit.harness", state.commit_message_harness, profile.commit.harness),
@@ -2102,9 +2396,14 @@ def _apply_wizard_state_to_loop_model(model: Any, state: Any) -> None:
             state.commit_reasoning_effort,
             profile.commit.reasoning_effort or "",
         ),
+        (
+            "commit.timeout_seconds",
+            phase_timeout(state.commit_timeout_seconds),
+            profile.commit.timeout_seconds,
+        ),
     )
     for dotted, value, baseline in pairs:
-        if value != baseline:
+        if value is not None and value != baseline:
             model.set_field(dotted, value)
 
 
@@ -2411,9 +2710,18 @@ def _loop_command_markup(app: Any) -> str:
     lines = [
         "COMMANDS",
         f"phase: {phase}    {phase_keys.get(phase, 'Enter expand | ? help')}",
-        "global: up/down move | s save | r run | d dry-run | g prompts | ? help | q quit",
+        "global: up/down move | s save | r run | d dry-run | u review reuse | v review details | ? help | q quit",
         f"command: {_truncate(_command_preview(app), 156)}",
     ]
+    pending = app.loop_session.pending_review
+    if pending is not None:
+        reuse = "selected" if pending.selected else "fresh review selected"
+        status = " · ".join(
+            item for item in (pending.final_status, pending.stopped_reason) if item
+        )
+        lines.append(
+            f"pending review: {reuse} · {status or 'actionable'} · {pending.path}"
+        )
     if origin:
         lines.append(f"origin: {_truncate(origin, 156)}")
     return "\n".join(lines)
@@ -2435,7 +2743,9 @@ def _command_preview(app: Any) -> str:
     profile = app._profile_by_name(app._profile_name())
     if profile is None:
         return "revrem config new final-pr"
-    return tui_state.launch_plan(profile, dry_run=False).shell_command
+    if app._workspace == "profiles":
+        return tui_state.launch_plan(profile, dry_run=False).shell_command
+    return cast(str, app._profile_launch_plan(profile, dry_run=False).shell_command)
 
 
 def _splash_markup() -> str:
@@ -2453,6 +2763,40 @@ def _splash_markup() -> str:
             "        press any key to start",
         )
     )
+
+
+def _startup_markup(app: Any) -> str:
+    error = getattr(app, "_bootstrap_error", None)
+    if error:
+        return "\n".join(
+            (
+                "RevRem could not load the workbench.",
+                "",
+                _truncate(str(error), 500),
+                "",
+                "Press q to quit, then correct the profile or catalog error.",
+            )
+        )
+    loading = bool(getattr(app, "_bootstrap_loading", False))
+    splash = bool(getattr(app, "_splash_visible", False))
+    if splash:
+        text = _splash_markup()
+        if loading:
+            suffix = (
+                "Still loading profiles, catalog, and repository history…"
+                if getattr(app, "_bootstrap_slow", False)
+                else "Loading profiles, catalog, and repository history…"
+            )
+            return f"{text}\n\n        {suffix}"
+        return text
+    if loading:
+        message = (
+            "Still loading profiles, catalog, and repository history…"
+            if getattr(app, "_bootstrap_slow", False)
+            else "Loading RevRem workbench…"
+        )
+        return f"{message}\n\nPress q to quit."
+    return ""
 
 
 def _phase_summary_line(phase: tui_state.PhaseView, *, selected: bool) -> str:

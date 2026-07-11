@@ -63,6 +63,7 @@ def _codex_home(tmp_path, monkeypatch):
     home = tmp_path / "home-global"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("XDG_DATA_HOME", str(home / ".local" / "share"))
     codex_home = tmp_path / "codex-home"
     codex_home.mkdir()
     (codex_home / "config.toml").write_text(
@@ -337,6 +338,78 @@ def test_wizard_offers_last_run_as_starting_settings(tmp_path, monkeypatch):
     )
 
 
+def test_last_run_prefers_structured_resume_config_over_redacted_display_command(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    run_dir = tmp_path / ".revrem" / "runs" / "newest"
+    run_dir.mkdir(parents=True)
+    summary_path = run_dir / "summary.json"
+    summary_path.write_text(
+        json.dumps(
+            {
+                "profile": "final-pr",
+                "finished_at": "2026-07-11T11:56:32Z",
+                "command_line": [
+                    "revrem",
+                    "--profile",
+                    "final-pr",
+                    "--initial-review-file",
+                    ".revrem/runs/old-[REDACTED:generic-token]/review-final.txt",
+                ],
+                "resume_config": {
+                    "profile_name": "final-pr",
+                    "base": "main",
+                    "max_iterations": 2,
+                    "final_review": True,
+                    "triage_enabled": False,
+                    "review_harness": "codex",
+                    "review_model": "gpt-5.6-sol",
+                    "review_reasoning_effort": "low",
+                    "remediation_harness": "codex",
+                    "remediation_model": "gpt-5.3-codex-spark",
+                    "remediation_reasoning_effort": "high",
+                    "commit_after_remediation": True,
+                    "commit_message_harness": "codex",
+                    "commit_message_model": "gpt-5.3-codex-spark",
+                    "commit_reasoning_effort": "low",
+                    "timeout_seconds": 3000,
+                    "review_timeout_seconds": 5400,
+                    "remediation_timeout_seconds": 3600,
+                    "commit_timeout_seconds": 3000,
+                    "check_commands": [],
+                    "phase_config": {
+                        "checks": {"timeout_seconds": 2400}
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    history_path = (
+        tmp_path / "home-global" / ".local" / "share" / "revrem" / "runs.jsonl"
+    )
+    history_path.parent.mkdir(parents=True)
+    history_path.write_text(
+        json.dumps({"cwd": str(tmp_path), "summary_path": str(summary_path)}) + "\n",
+        encoding="utf-8",
+    )
+
+    lookup = wizard._last_run_state(tmp_path)
+
+    assert lookup.state is not None
+    assert lookup.state.origin_label == "last run from 2026-07-11T11:56:32Z"
+    assert lookup.state.profile_name == "final-pr"
+    assert lookup.state.initial_review_file == ""
+    assert lookup.state.review_model == "gpt-5.6-sol"
+    assert lookup.state.review_timeout_seconds == "5400"
+    assert lookup.state.remediation_timeout_seconds == "3600"
+    assert lookup.state.commit_timeout_seconds == "3000"
+    assert lookup.state.check_timeout_seconds == "2400"
+
+
 def test_wizard_prompts_for_pending_review_before_run_shape_menus(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
@@ -527,8 +600,12 @@ def test_wizard_finds_repo_last_run_after_global_history_pollution(tmp_path, mon
         {"cwd": str(tmp_path), "summary_path": str(summary_path)},
         *(
             {
-                "cwd": str(tmp_path / f"other-{index}"),
-                "summary_path": str(tmp_path / f"other-{index}" / "summary.json"),
+                "cwd": str(tmp_path.parent / f"other-{tmp_path.name}-{index}"),
+                "summary_path": str(
+                    tmp_path.parent
+                    / f"other-{tmp_path.name}-{index}"
+                    / "summary.json"
+                ),
             }
             for index in range(12)
         ),
@@ -549,6 +626,39 @@ def test_wizard_finds_repo_last_run_after_global_history_pollution(tmp_path, mon
     assert result is not None
     assert result.argv == ("--profile", "final-pr", "--max-iterations", "4")
     assert "Start from which settings?" in stderr.getvalue()
+
+
+def test_last_run_does_not_mislabel_older_replayable_run_when_newest_is_broken(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    older = tmp_path / "older-summary.json"
+    older.write_text(
+        json.dumps(
+            {"command_line": ["revrem", "--profile", "final-pr", "--max-iterations", "4"]}
+        ),
+        encoding="utf-8",
+    )
+    history_path = (
+        tmp_path / "home-global" / ".local" / "share" / "revrem" / "runs.jsonl"
+    )
+    history_path.parent.mkdir(parents=True)
+    history_path.write_text(
+        json.dumps({"cwd": str(tmp_path), "summary_path": str(older)})
+        + "\n"
+        + json.dumps(
+            {"cwd": str(tmp_path), "summary_path": str(tmp_path / "missing.json")}
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    lookup = wizard._last_run_state(tmp_path)
+
+    assert lookup.state is None
+    assert lookup.skipped_reason == f"summary missing: {tmp_path / 'missing.json'}"
 
 
 def test_wizard_skips_incompatible_last_run_before_previewing(tmp_path, monkeypatch):

@@ -7,7 +7,11 @@ else
   PYTHON=${PYTHON:-python3}
 fi
 
-"$PYTHON" -m pytest -q
+TEST_DATA_HOME=${TMPDIR:-/tmp}/revrem-dev-check-$$
+mkdir -p "$TEST_DATA_HOME"
+trap 'rm -rf "$TEST_DATA_HOME"' EXIT HUP INT TERM
+
+XDG_DATA_HOME="$TEST_DATA_HOME" "$PYTHON" -m pytest -q
 "$PYTHON" -m ruff check .
 
 if "$PYTHON" -m mypy --version >/dev/null 2>&1; then

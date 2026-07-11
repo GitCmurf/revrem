@@ -109,6 +109,24 @@ class HomeSnapshot:
     run_monitors: tuple[RunMonitorView, ...]
 
 
+def bootstrap_shell_model(cwd: Path) -> TuiShellModel:
+    """Return an I/O-free shell used for the first Textual frame."""
+    snapshot = HomeSnapshot(
+        cwd=str(cwd),
+        profiles=(),
+        recent_runs=(),
+        harnesses=(),
+        run_previews=(),
+        run_monitors=(),
+    )
+    return TuiShellModel(
+        snapshot=snapshot,
+        selected_profile_name=None,
+        selected_launch_plan=None,
+        screens=(),
+    )
+
+
 def build_home_snapshot(
     *,
     cwd: Path,
@@ -159,17 +177,19 @@ def build_shell_model(
     history_limit: int = 5,
     history_path: Path | None = None,
     selected_profile_name: str | None = None,
+    resolved_profiles: tuple[profiles.Profile, ...] | None = None,
 ) -> TuiShellModel:
     # Shell mode uses the same operator-facing profile enumeration as the home
     # screen, so bundled profiles must be available here too.
-    resolved_profiles = tuple(
-        profiles.resolve_profiles(
-            cwd=cwd,
-            home=home,
-            require_implemented=False,
-            include_builtins=True,
+    if resolved_profiles is None:
+        resolved_profiles = tuple(
+            profiles.resolve_profiles(
+                cwd=cwd,
+                home=home,
+                require_implemented=False,
+                include_builtins=True,
+            )
         )
-    )
     snapshot = home_snapshot_for_profiles(
         cwd=cwd,
         resolved_profiles=resolved_profiles,

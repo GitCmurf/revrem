@@ -51,6 +51,17 @@ def test_tui_run_footer_lists_dry_run_action():
 def _patch_textual_app_class(monkeypatch, run):
     class FakeRevRemApp(tui.RevRemApp):
         def run(self):
+            if self._bootstrap_request is not None:
+                cwd, selected_profile_name = self._bootstrap_request
+                self.model, self.profiles_by_name = tui._build_tui_bootstrap(
+                    cwd, selected_profile_name
+                )
+                self._selected_profile_index = self._initial_profile_index()
+                self.loop_session = tui.tui_session.LoopSession(
+                    profile_name=self.model.selected_profile_name
+                )
+                self._bootstrap_loading = False
+                self._bootstrap_request = None
             run(self)
 
     FakeRevRemApp.__name__ = "RevRemApp"
@@ -192,6 +203,36 @@ def test_tui_launches_textual_app_with_home_snapshot(monkeypatch, tmp_path):
     assert "[b]Profiles[/b]" in rendered[0]
     assert "[b]Pipeline[/b]" in rendered[0]
     assert "[b]Run Monitor[/b]" in rendered[0]
+
+
+def test_tui_mount_request_does_not_resolve_profiles_before_app_run(
+    monkeypatch, tmp_path
+):
+    observed = []
+
+    class FirstFrameApp:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def run(self):
+            observed.append(self.kwargs)
+
+    monkeypatch.setattr(tui, "textual_app_class", lambda: FirstFrameApp)
+    monkeypatch.setattr(tui.Path, "cwd", lambda: tmp_path)
+    monkeypatch.setattr(
+        tui,
+        "_build_tui_bootstrap",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("bootstrap ran before Textual mounted")
+        ),
+    )
+
+    tui.run_textual_app(skip_splash=False)
+
+    assert len(observed) == 1
+    assert observed[0]["model"].snapshot.cwd == str(tmp_path)
+    assert observed[0]["model"].snapshot.profiles == ()
+    assert observed[0]["bootstrap_request"] == (tmp_path, None)
 
 
 def test_phase_summary_line_escapes_enabled_marker_for_markup():

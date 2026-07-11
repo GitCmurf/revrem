@@ -6,6 +6,16 @@ This project follows Semantic Versioning once public releases begin.
 
 ## [Unreleased]
 
+### Fixed
+
+- The TUI now restores the newest repository run from structured resume data,
+  keeps the active profile and launch command consistent, shows effective
+  timeout values, and preselects an actionable Git-compatible final review.
+  Startup mounts before discovery, avoids duplicate catalog/profile parsing,
+  and retains visible loading feedback until the workbench is ready.
+- Clearing an inherited route reasoning effort now preserves the explicit
+  empty-string profile marker while still rejecting unknown non-empty efforts.
+
 ### Added
 
 - The experimental TUI now opens on an editable Loop screen backed by real
