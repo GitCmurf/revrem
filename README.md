@@ -313,14 +313,17 @@ revrem ui --profile final-pr
 ```
 
 The TUI opens with a brief terminal-native splash screen; pass
-`revrem ui --skip-splash` to go straight to the Loop view. The TUI renders
+`revrem ui --skip-splash` to replace branding with immediate loading feedback.
+The TUI renders
 Loop, Run, Profiles, and Prompts workspaces, and shells through the same CLI
-command plans as normal terminal usage. The Loop view is segmented into a loop
-summary, numbered phase bands, explicit retry/return bands, and a labeled
-commands area with current-phase keys, the full command preview, and any
-last-run origin details. When a compatible previous command exists, the Loop
-view can start from that command's settings as an unsaved working copy while
-the top bar stays compact.
+command plans as normal terminal usage. The Loop view starts with a labelled
+Next Run summary that makes the profile, iteration bound, review source,
+command preview, and prior-run provenance explicit. `Review input` always says
+whether an initial-review file will be passed. Compatible feedback is selected
+for reuse; older feedback is visible but requires an explicit stale-validation
+choice. The phase diagram follows with numbered phase bands and explicit
+retry/return bands. Startup discovery is installed atomically, so only the
+active workspace appears when loading finishes.
 During a live run, the run monitor refreshes continuously and streams stdout/stderr
 into the dedicated tabs while output is still in flight.
 Profile edits done in-session are visible to subsequent live runs without restarting

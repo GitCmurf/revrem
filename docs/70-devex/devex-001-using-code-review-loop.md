@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.78'
+version: '1.79'
 last_updated: '2026-07-11'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.78
+> **Version:** 1.79
 > **Last Updated:** 2026-07-11
 > **Type:** DEVEX
 > **Area:** devex
@@ -1615,24 +1615,29 @@ routing is enabled. Enabled and disabled phases render as `●` and `○`; the
 left gutter uses box-drawing return rails for the outer review loop and the
 inner remediation/check retry loop. Workspaces are `1` loop, `2` run,
 `3` profiles, and `4` prompts. The loop workspace edits a working copy in
-memory; a `*` next to the profile name marks unsaved changes. A labeled
-`COMMANDS` panel under the diagram lists current-phase keys, global actions,
-the launch command, and the full last-run origin when the working copy was
-seeded from prior run history. New summaries replay from structured
+memory; the Next Run summary says `Unsaved changes` when appropriate. That
+summary appears above the diagram and states the profile, base, iteration
+bound, final-review state, review input, launch command, and full last-run
+origin. It says `initial review file: none` for a fresh run and shows the path
+when feedback is selected. New summaries replay from structured
 `resume_config`, so redaction in diagnostic command text cannot silently select
 an older run. The loaded profile, loop draft, origin, pending review, preview,
 and launch plan share one session state. Compatible actionable review feedback
-is preselected; press `u` to switch between reuse and a fresh review, or `v` to
-show bounded details. The top bar keeps only a compact origin summary so long
-commands do not dominate the screen. Press `s` to
+is preselected; press `u` to switch between reuse and a fresh review. Older
+actionable feedback from another Git state remains visible but is not selected
+automatically; `u` selects the read-only stale-validation path and `v` shows
+bounded details. Press `s` to
 persist the authored raw profile delta through `profiles.save_profile_raw`, or
 press `r` to save first and then launch the normal `revrem --profile NAME` run
 path. If save validation fails, or the selected profile is a read-only bundled
 profile, the error is shown and the working copy remains dirty; clone a bundled
 profile before editing it.
 
-Textual mounts before profile, catalog, history, and review discovery. The
-startup pane remains visible until those background reads complete;
+Textual mounts before profile, catalog, history, and review discovery. Those
+reads produce one complete bootstrap result, installed atomically before the
+workbench is shown, so inactive workspaces and split profile/origin state cannot
+leak into the first completed frame. The startup pane remains visible until
+those background reads complete;
 `--skip-splash` removes branding but not loading feedback, and a slow-load
 message appears after ten seconds rather than exposing partial state.
 
@@ -1955,6 +1960,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.79 | 2026-07-11 | Codex | Documented atomic TUI bootstrap, focused Next Run presentation, explicit initial-review state, and stale-review validation selection |
 | 1.78 | 2026-07-11 | Codex | Documented structured last-run replay, pending-review selection, effective timeout labels, and asynchronous TUI startup |
 | 1.77 | 2026-07-10 | Codex | Documented the layered model catalog and local model invocation statistics |
 | 1.76 | 2026-06-28 | Codex | Documented stale-review validation ordering before triage/routing/remediation |
