@@ -698,8 +698,8 @@ timeout_seconds = 30
         profiles.load_profile_file(path)
 
 
-@pytest.mark.parametrize(("section", "value"), [("review", "ultra"), ("remediation", "urgent")])
-def test_profile_allows_forward_compatible_reasoning_effort_values(tmp_path, section, value):
+@pytest.mark.parametrize(("section", "value"), [("review", "urgent"), ("remediation", "urgent")])
+def test_profile_rejects_unknown_reasoning_effort_values(tmp_path, section, value):
     path = tmp_path / "profiles.toml"
     path.write_text(
         f"""
@@ -709,8 +709,8 @@ reasoning_effort = "{value}"
         encoding="utf-8",
     )
 
-    loaded = profiles.load_profile_file(path)
-    assert getattr(loaded.profiles["bad"], section).reasoning_effort == value
+    with pytest.raises(ValueError, match="must be one of"):
+        profiles.load_profile_file(path)
 
 
 @pytest.mark.parametrize(

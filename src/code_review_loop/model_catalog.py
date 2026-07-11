@@ -113,8 +113,14 @@ def load_catalog(cwd: Path | None = None, *, home: Path | None = None) -> Catalo
     return Catalog(models=models, harnesses=harness_specs)
 
 
-def validate_selection(harness: str, model: str | None, effort: str | None, *, cwd: Path | None = None) -> str | None:
+def validate_selection(
+    harness: str, model: str | None, effort: str | None, *, cwd: Path | None = None
+) -> str | None:
     """Reject known-invalid pairs; return a warning for unknown metadata."""
+    if effort is not None and effort not in KNOWN_EFFORTS:
+        raise ValueError(
+            f"reasoning effort {effort!r} is not one of: {', '.join(KNOWN_EFFORTS)}"
+        )
     if not model or not effort:
         return None
     spec = load_catalog(cwd).model(harness, model)

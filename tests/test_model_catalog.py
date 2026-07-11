@@ -98,8 +98,14 @@ def test_known_invalid_selection_rejects_but_unknown_passes_with_warning(tmp_pat
     with pytest.raises(ValueError, match="not supported"):
         model_catalog.validate_selection("codex", "gpt-5.6-luna", "ultra", cwd=tmp_path)
     assert "passing it through" in model_catalog.validate_selection(
-        "codex", "future-model", "quantum", cwd=tmp_path
+        "codex", "future-model", "low", cwd=tmp_path
     )
+
+
+def test_global_effort_vocab_validation_happens_before_catalog_lookup(tmp_path, monkeypatch):
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "missing-codex"))
+    with pytest.raises(ValueError, match="is not one of"):
+        model_catalog.validate_selection("codex", "future-model", "quantum", cwd=tmp_path)
 
 
 def test_project_harness_catalog_uses_catalog_executable(tmp_path, monkeypatch):

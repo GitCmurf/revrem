@@ -316,7 +316,9 @@ def classify_exit(
     final_status = str(summary.get("final_status") or "") if summary else ""
     stopped_reason = str(summary.get("stopped_reason") or "") if summary else ""
     if exit_code == 0:
-        return "completed-clear"
+        if final_status == "clear":
+            return "completed-clear"
+        return "failed"
     if exit_code == 2:
         if summary is None:
             return "completed-findings"
