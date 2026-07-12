@@ -80,7 +80,9 @@ def triage_flags_supplied_while_disabled(args: argparse.Namespace) -> list[str]:
     if args.routing_enabled is True:
         flags.append("--routing")
     if args.routing_strict is not None:
-        flags.append("--routing-strict" if args.routing_strict else "--no-routing-strict")
+        flags.append(
+            "--routing-strict" if args.routing_strict else "--no-routing-strict"
+        )
     if args.allow_model_escalation is not None:
         flags.append(
             "--allow-model-escalation"
@@ -116,7 +118,9 @@ def parse_harness_bin_overrides(values: Sequence[str]) -> dict[str, str]:
         harness = harness.strip()
         executable = executable.strip()
         if not harness or not executable:
-            raise ValueError("--harness-bin must use non-empty HARNESS=EXECUTABLE values")
+            raise ValueError(
+                "--harness-bin must use non-empty HARNESS=EXECUTABLE values"
+            )
         harnesses.validate_harness_name(harness, field="--harness-bin")
         overrides[harness] = executable
     return overrides
@@ -144,7 +148,11 @@ def validate_triage_reasoning_effort(
     triage_harness: str,
     triage_reasoning_effort: str | None,
 ) -> None:
-    if triage_enabled and triage_harness == "codex" and triage_reasoning_effort == "minimal":
+    if (
+        triage_enabled
+        and triage_harness == "codex"
+        and triage_reasoning_effort == "minimal"
+    ):
         raise ValueError(
             "Codex triage cannot use reasoning effort 'minimal' because inherited "
             "Codex tools can make that provider request invalid; use "
@@ -176,7 +184,9 @@ def resolve_external_review_input_chars(
     if args.external_review_input_chars is not None:
         val = int(args.external_review_input_chars)
         source = "cli"
-    elif profile_runtime_key_explicit(profile_name, cwd, "external_review_input_chars"):
+    elif getattr(args, "profile_snapshot", None) or profile_runtime_key_explicit(
+        profile_name, cwd, "external_review_input_chars"
+    ):
         val = profile.runtime.external_review_input_chars
         source = profile_source
     elif is_large_context_gemini_review_model(review_harness, review_model):
@@ -234,10 +244,24 @@ def profile_or_default(
     name: str | None,
     cwd: Path,
     *,
+    snapshot_path: str | None = None,
     require_implemented: bool = True,
 ) -> profiles.Profile:
+    if snapshot_path is not None:
+        if not name:
+            raise ValueError("--profile-snapshot requires --profile")
+        profile_file = profiles.load_profile_file(Path(snapshot_path))
+        profile = profile_file.profiles.get(name)
+        if profile is None:
+            raise ValueError(
+                f"--profile-snapshot does not define profile {name!r}: {snapshot_path}"
+            )
+        profiles.validate_profile(profile, require_implemented=require_implemented)
+        return profile
     if name:
-        return profiles.resolve_profile(name, cwd=cwd, require_implemented=require_implemented)
+        return profiles.resolve_profile(
+            name, cwd=cwd, require_implemented=require_implemented
+        )
     return profiles.resolve_defaults(cwd=cwd, require_implemented=require_implemented)
 
 
@@ -291,7 +315,9 @@ def _resolve_model_phase(
     harnesses.validate_harness_name(harness, field=f"--{phase_name}-harness")
     model = model_override or shared_model_override or phase.model
     reasoning_effort = (
-        reasoning_effort_override or shared_reasoning_effort_override or phase.reasoning_effort
+        reasoning_effort_override
+        or shared_reasoning_effort_override
+        or phase.reasoning_effort
     )
     return ResolvedPhaseConfig(
         harness=harness,
@@ -301,7 +327,9 @@ def _resolve_model_phase(
         timeout_seconds_display=timeout_seconds_display,
         field_sources={
             "harness": "cli" if harness_override else profile_source,
-            "model": _phase_source(profile_name, model_override or shared_model_override),
+            "model": _phase_source(
+                profile_name, model_override or shared_model_override
+            ),
             "reasoning_effort": _phase_source(
                 profile_name,
                 reasoning_effort_override or shared_reasoning_effort_override,
@@ -324,16 +352,27 @@ def build_loop_config(
     """
 
     try:
-        profile = profile_or_default(
-            args.profile,
-            cwd,
-            require_implemented=require_implemented,
-        )
+        snapshot_path = getattr(args, "profile_snapshot", None)
+        if snapshot_path:
+            profile = profile_or_default(
+                args.profile,
+                cwd,
+                snapshot_path=snapshot_path,
+                require_implemented=require_implemented,
+            )
+        else:
+            profile = profile_or_default(
+                args.profile, cwd, require_implemented=require_implemented
+            )
     except TypeError as exc:
         if "require_implemented" not in str(exc):
             raise
         profile = profile_or_default(args.profile, cwd)
-    profile_source = f"profile:{args.profile}" if args.profile else "defaults"
+    profile_source = (
+        f"profile-snapshot:{args.profile_snapshot}"
+        if getattr(args, "profile_snapshot", None)
+        else (f"profile:{args.profile}" if args.profile else "defaults")
+    )
     base = pick(args.base, profile.pipeline.base, "main")
     triage_enabled = pick(args.triage_enabled, profile.triage.enabled, False)
     triage_contract = pick(args.triage_contract, profile.triage.contract, "v1")
@@ -350,7 +389,9 @@ def build_loop_config(
     )
     validate_triage_overrides_enabled(args, triage_enabled=triage_enabled)
     if routing_enabled and triage_contract != "v2":
-        raise ValueError("--routing requires --triage-contract v2 or a v2 triage profile")
+        raise ValueError(
+            "--routing requires --triage-contract v2 or a v2 triage profile"
+        )
     if args.timeout_seconds is not None:
         timeout_seconds = resolve_timeout_seconds(args.timeout_seconds)
         review_timeout_seconds = timeout_seconds
@@ -360,11 +401,15 @@ def build_loop_config(
         timeout_seconds_display = args.timeout_seconds
         review_timeout_seconds_display = args.timeout_seconds
         remediation_timeout_seconds_display = args.timeout_seconds
-        triage_timeout_seconds_display = args.timeout_seconds if triage_enabled else None
+        triage_timeout_seconds_display = (
+            args.timeout_seconds if triage_enabled else None
+        )
         check_timeout_seconds_display = args.timeout_seconds
     else:
         timeout_seconds = DEFAULT_TIMEOUT_SECONDS
-        review_timeout_seconds = resolve_profile_timeout_seconds(profile.review.timeout_seconds)
+        review_timeout_seconds = resolve_profile_timeout_seconds(
+            profile.review.timeout_seconds
+        )
         remediation_timeout_seconds = resolve_profile_timeout_seconds(
             profile.remediation.timeout_seconds
         )
@@ -385,7 +430,9 @@ def build_loop_config(
         remediation_timeout_seconds_display = profile.remediation.timeout_seconds
         if remediation_timeout_seconds_display is None:
             remediation_timeout_seconds_display = DEFAULT_TIMEOUT_SECONDS
-        triage_timeout_seconds_display = profile.triage.timeout_seconds if triage_enabled else None
+        triage_timeout_seconds_display = (
+            profile.triage.timeout_seconds if triage_enabled else None
+        )
         if triage_enabled and triage_timeout_seconds_display is None:
             triage_timeout_seconds_display = DEFAULT_TIMEOUT_SECONDS
         check_timeout_seconds_display = (
@@ -423,7 +470,9 @@ def build_loop_config(
         else profile.commit.enabled
     )
     artifact_dir_value = args.artifact_dir or profile.output.artifact_dir
-    artifact_dir = Path(artifact_dir_value) if artifact_dir_value else default_artifact_dir()
+    artifact_dir = (
+        Path(artifact_dir_value) if artifact_dir_value else default_artifact_dir()
+    )
     search_root = artifact_dir if artifact_dir_value else artifact_dir.parent
     current_git_state = (
         current_git_state_for_latest(cwd, base)
@@ -485,20 +534,28 @@ def build_loop_config(
         ),
     )
     if not args.dry_run:
-        harnesses.require_implemented_harness(review_phase.harness, field="review.harness")
+        harnesses.require_implemented_harness(
+            review_phase.harness, field="review.harness"
+        )
         harnesses.require_implemented_harness(
             remediation_phase.harness,
             field="remediation.harness",
         )
-    triage_reasoning_effort = args.triage_reasoning_effort or profile.triage.reasoning_effort
+    triage_reasoning_effort = (
+        args.triage_reasoning_effort or profile.triage.reasoning_effort
+    )
     triage_harness = args.triage_harness or profile.triage.harness
     harnesses.validate_harness_name(triage_harness, field="--triage-harness")
     if triage_enabled and not args.dry_run:
         harnesses.require_implemented_harness(triage_harness, field="triage.harness")
     commit_message_harness = args.commit_message_harness or profile.commit.harness
-    harnesses.validate_harness_name(commit_message_harness, field="--commit-message-harness")
+    harnesses.validate_harness_name(
+        commit_message_harness, field="--commit-message-harness"
+    )
     if commit_after_remediation and not args.dry_run:
-        harnesses.require_implemented_harness(commit_message_harness, field="commit.harness")
+        harnesses.require_implemented_harness(
+            commit_message_harness, field="commit.harness"
+        )
     triage_model = args.triage_model or profile.triage.model
     validate_triage_reasoning_effort(
         triage_enabled=triage_enabled,
@@ -559,14 +616,22 @@ def build_loop_config(
             )
         )
     )
-    commit_on_hook_failure = args.commit_on_hook_failure or profile.commit.on_hook_failure
+    commit_on_hook_failure = (
+        args.commit_on_hook_failure or profile.commit.on_hook_failure
+    )
     budget_config = budgets.BudgetConfig(
-        max_wall_seconds=pick(args.max_wall_seconds, profile.budgets.max_wall_seconds, None),
+        max_wall_seconds=pick(
+            args.max_wall_seconds, profile.budgets.max_wall_seconds, None
+        ),
         max_tokens=pick(args.max_tokens, profile.budgets.max_tokens, None),
         max_usd=(
-            budgets.parse_usd(args.max_usd) if args.max_usd is not None else profile.budgets.max_usd
+            budgets.parse_usd(args.max_usd)
+            if args.max_usd is not None
+            else profile.budgets.max_usd
         ),
-        soft_warn_fraction=pick(args.soft_warn_fraction, profile.budgets.soft_warn_fraction, 0.8),
+        soft_warn_fraction=pick(
+            args.soft_warn_fraction, profile.budgets.soft_warn_fraction, 0.8
+        ),
     )
     budgets.validate_config(budget_config)
     harness_executables = {
@@ -580,7 +645,8 @@ def build_loop_config(
         enabled=routing_enabled,
         strict_on_unavailable_route=routing_strict,
         allow_model_escalation=allow_model_escalation,
-        default_route=args.routing_default_route or profile.triage.routing.default_route,
+        default_route=args.routing_default_route
+        or profile.triage.routing.default_route,
     )
     effective_triage = replace(
         profile.triage,
@@ -617,7 +683,9 @@ def build_loop_config(
         "cli"
         if args.external_review_warning_seconds is not None
         else (
-            "profile" if profile.runtime.external_review_warning_seconds is not None else "default"
+            "profile"
+            if profile.runtime.external_review_warning_seconds is not None
+            else "default"
         )
     )
     external_review_warning_seconds = resolve_external_review_warning_seconds(
@@ -679,8 +747,12 @@ def build_loop_config(
                 args.triage_timeout_seconds,
             ),
             "contract": "cli" if args.triage_contract is not None else profile_source,
-            "routing_enabled": ("cli" if args.routing_enabled is not None else profile_source),
-            "routing_strict": ("cli" if args.routing_strict is not None else profile_source),
+            "routing_enabled": (
+                "cli" if args.routing_enabled is not None else profile_source
+            ),
+            "routing_strict": (
+                "cli" if args.routing_strict is not None else profile_source
+            ),
             "routing_default_route": (
                 "cli" if args.routing_default_route is not None else profile_source
             ),
@@ -693,14 +765,22 @@ def build_loop_config(
             "sandbox": "cli" if args.exec_sandbox is not None else profile_source,
         },
         "commit_message": {
-            "enabled": ("cli" if args.commit_after_remediation is not None else profile_source),
-            "harness": ("cli" if args.commit_message_harness is not None else profile_source),
-            "model": _phase_source(args.profile, args.commit_message_model or args.model),
+            "enabled": (
+                "cli" if args.commit_after_remediation is not None else profile_source
+            ),
+            "harness": (
+                "cli" if args.commit_message_harness is not None else profile_source
+            ),
+            "model": _phase_source(
+                args.profile, args.commit_message_model or args.model
+            ),
             "reasoning_effort": (
                 "cli"
                 if args.commit_reasoning_effort is not None
                 else (
-                    "inherited:remediation" if commit_reasoning_effort_inherited else profile_source
+                    "inherited:remediation"
+                    if commit_reasoning_effort_inherited
+                    else profile_source
                 )
             ),
             "timeout_seconds": _timeout_source(
@@ -713,7 +793,8 @@ def build_loop_config(
             "commands": "cli" if args.check is not None else profile_source,
             "timeout_seconds": (
                 "cli"
-                if args.check_timeout_seconds is not None or args.timeout_seconds is not None
+                if args.check_timeout_seconds is not None
+                or args.timeout_seconds is not None
                 else (
                     profile_source
                     if profile.pipeline.check_timeout_seconds is not None
@@ -729,7 +810,9 @@ def build_loop_config(
                 "cli" if args.provider_retry_attempts is not None else profile_source
             ),
             "provider_retry_backoff_seconds": (
-                "cli" if args.provider_retry_backoff_seconds is not None else profile_source
+                "cli"
+                if args.provider_retry_backoff_seconds is not None
+                else profile_source
             ),
             "external_review_input_chars": external_review_input_chars_source,
             "external_review_warning_seconds": external_review_warning_seconds_source,
@@ -757,9 +840,11 @@ def build_loop_config(
         remediation_reasoning_effort=remediation_phase.reasoning_effort,
         commit_after_remediation=commit_after_remediation,
         commit_message_model=commit_message_model,
-        commit_message_prompt=args.commit_message_prompt or profile.commit.message_prompt,
+        commit_message_prompt=args.commit_message_prompt
+        or profile.commit.message_prompt,
         commit_message_prompt_overridden=(
-            args.commit_message_prompt is not None or profile.commit.message_prompt is not None
+            args.commit_message_prompt is not None
+            or profile.commit.message_prompt is not None
         ),
         commit_on_hook_failure=commit_on_hook_failure,
         commit_reasoning_effort=commit_reasoning_effort,
@@ -774,7 +859,9 @@ def build_loop_config(
         triage_prompt=profile.triage.prompt,
         triage_on_invalid=profile.triage.on_invalid,
         triage_contract=triage_contract,
-        exec_sandbox=pick(args.exec_sandbox, profile.runtime.exec_sandbox, "workspace-write"),
+        exec_sandbox=pick(
+            args.exec_sandbox, profile.runtime.exec_sandbox, "workspace-write"
+        ),
         exec_color=pick(args.exec_color, profile.runtime.exec_color, "never"),
         full_auto=pick(args.full_auto, profile.runtime.full_auto, True),
         exec_json=pick(args.exec_json, profile.runtime.exec_json, False),
@@ -819,7 +906,9 @@ def build_loop_config(
             False,
         ),
         progress=not pick(args.quiet_progress, profile.output.quiet_progress, False),
-        progress_style=pick(args.progress_style, profile.output.progress_style, "compact"),
+        progress_style=pick(
+            args.progress_style, profile.output.progress_style, "compact"
+        ),
         terminal_title=pick(args.terminal_title, profile.output.terminal_title, False),
         no_tty=pick(args.no_tty, profile.output.no_tty, False),
         initial_review_file=initial_review_file,
@@ -871,12 +960,17 @@ def profile_from_loop_config(
                 if config.profile_v2 is not None
                 else profiles.TriageRoutingConfig()
             ),
-            routes=(dict(config.profile_v2.triage.routes) if config.profile_v2 is not None else {}),
+            routes=(
+                dict(config.profile_v2.triage.routes)
+                if config.profile_v2 is not None
+                else {}
+            ),
         ),
         remediation=profiles.PhaseConfig(
             harness=config.remediation_harness,
             model=config.remediation_model or config.model,
-            reasoning_effort=config.remediation_reasoning_effort or config.reasoning_effort,
+            reasoning_effort=config.remediation_reasoning_effort
+            or config.reasoning_effort,
             timeout_seconds=config.remediation_timeout_seconds_display,
         ),
         commit=profiles.CommitConfig(
@@ -887,7 +981,9 @@ def profile_from_loop_config(
             on_hook_failure=config.commit_on_hook_failure,
             reasoning_effort=config.commit_reasoning_effort,
             timeout_seconds=(
-                config.commit_timeout_seconds_display if config.commit_after_remediation else None
+                config.commit_timeout_seconds_display
+                if config.commit_after_remediation
+                else None
             ),
         ),
         output=profiles.OutputConfig(

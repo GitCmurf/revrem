@@ -9,10 +9,12 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, NamedTuple, cast
 
@@ -1053,23 +1055,31 @@ class _RevRemAppMixin:
         if profile_name is None:
             _notify(self, "No profile is available to dry-run.")
             return
-        if self._loop_diagram is not None and self._loop_diagram.is_dirty:
-            try:
-                self._loop_diagram.model.save()
-            except (OSError, RuntimeError, ValueError) as exc:
-                _notify(self, f"Save-and-dry-run aborted: {exc}", severity="error")
-                return
-            self._refresh_profiles_from_disk()
-            self._update_console_status()
-            _notify(self, f"Saved loop before dry-run: {profile_name}")
         selected = self._profile_by_name(profile_name)
         if selected is None:
             _notify(self, "No profile is available to dry-run.")
             return
         if not self._pending_review_is_launchable():
             return
-        plan = self._profile_launch_plan(selected, dry_run=True)
-        result = run_launch_plan(plan, cwd=Path(self.model.snapshot.cwd))
+        if self._workspace == "profiles":
+            plan = tui_state.launch_plan(selected, dry_run=True)
+            result = run_launch_plan(plan, cwd=Path(self.model.snapshot.cwd))
+        else:
+            effective = (
+                self._loop_diagram.model.effective_profile()
+                if self._workspace == "loop" and self._loop_diagram is not None
+                else selected
+            )
+            with tempfile.TemporaryDirectory(prefix="revrem-tui-") as temp_dir:
+                snapshot = Path(temp_dir) / "profile.toml"
+                snapshot.write_text(
+                    profiles.profile_to_toml(effective, include_wrapper=True),
+                    encoding="utf-8",
+                )
+                plan = self.loop_session.compile_launch_plan(
+                    effective, dry_run=True, profile_snapshot=snapshot
+                )
+                result = run_launch_plan(plan, cwd=Path(self.model.snapshot.cwd))
         if result.returncode == 0:
             _notify(self, f"Dry run completed: {profile_name}")
             return
@@ -1080,19 +1090,6 @@ class _RevRemAppMixin:
         if profile_name is None:
             _notify(self, "No profile is available to run.")
             return
-        if self._loop_diagram is not None and self._loop_diagram.is_dirty:
-            try:
-                self._loop_diagram.model.save()
-            except (OSError, RuntimeError, ValueError) as exc:
-                _notify(self, f"Save-and-run aborted: {exc}", severity="error")
-                return
-            self._refresh_profiles_from_disk()
-            self._update_console_status()
-            selected = self._profile_by_name(profile_name)
-            if selected is None:
-                _notify(self, "Saved loop, but refreshed profile is unavailable.")
-                return
-            _notify(self, f"Saved loop before run: {profile_name}")
         selected = self._profile_by_name(profile_name)
         if selected is None:
             _notify(self, "No profile is available to run.")
@@ -1117,14 +1114,20 @@ class _RevRemAppMixin:
         self._pending_live_confirmation_profile = None
         if not self._pending_review_is_launchable():
             return
-        plan = self._profile_launch_plan(selected, dry_run=False)
-        self._live_run_profile = selected
+        effective = (
+            self._loop_diagram.model.effective_profile()
+            if self._workspace == "loop" and self._loop_diagram is not None
+            else selected
+        )
+        plan = self._profile_launch_plan(effective, dry_run=False)
+        self._live_run_profile = effective
         try:
             launch = self.live_run_controller.start(
                 profile=selected,
                 plan=plan,
                 cwd=Path(self.model.snapshot.cwd),
                 entrypoint_resolver=current_entrypoint_argv,
+                snapshot_profile=self._workspace == "loop",
             )
         except OSError:
             self._live_run_profile = None
@@ -3017,6 +3020,7 @@ def _loop_settings_markup(app: Any) -> str:
     profile = loop_model.profile if loop_model is not None else None
     if profile is None:
         return "RUN SETTINGS\nNo active profile."
+    assert loop_model is not None
     base = loop_model.field_value("pipeline.base", profile.pipeline.base)
     iterations = loop_model.field_value(
         "pipeline.max_iterations", profile.pipeline.max_iterations
@@ -3416,11 +3420,30 @@ def _status_bar_classes(status: tui_run_controller.RunControllerStatus) -> str:
     return f"status-{status}"
 
 
-def _origin_summary(origin: str | None) -> str:
+def _origin_summary(origin: str | None, *, now: datetime | None = None) -> str:
     if not origin:
         return "-"
     label, _, _command = origin.partition(": ")
-    return _truncate(label, 72)
+    match = re.search(r"\bfrom\s+(\S+)", label)
+    if match is None:
+        return "previous run"
+    try:
+        occurred = datetime.fromisoformat(match.group(1).replace("Z", "+00:00"))
+    except ValueError:
+        return "previous run"
+    now = now or datetime.now(occurred.tzinfo)  # det-exempt: human display clock
+    days = (now.date() - occurred.date()).days
+    if days == 0:
+        date_label = "today"
+    elif days == 1:
+        date_label = "yesterday"
+    elif 2 <= days < 7:
+        date_label = occurred.strftime("%A")
+    elif occurred.year == now.year:
+        date_label = f"{occurred.day} {occurred.strftime('%B')}"
+    else:
+        date_label = f"{occurred.day}-{occurred.month}-{occurred.strftime('%y')}"
+    return f"[status-info]{date_label}[/] [muted]{occurred:%H:%M}[/]"
 
 
 def _origin_detail(origin: str | None) -> str:

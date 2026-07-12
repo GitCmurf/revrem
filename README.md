@@ -328,6 +328,9 @@ Checks always runs the built-in worktree-cleanliness check. Focus Checks and
 press `p` to choose repository-detected recommendations, recent repo-local
 command sets, custom commands, or built-in cleanliness only. Press `?` or `h`
 for contextual modal help.
+`r` and `d` execute the in-memory Loop working copy without saving it; `s` is
+the only persistence action. Live runs retain the exact effective profile as a
+generated profile-snapshot artifact, so bundled read-only profiles remain runnable.
 During a live run, the run monitor refreshes continuously and streams stdout/stderr
 into the dedicated tabs while output is still in flight.
 Profile edits done in-session are visible to subsequent live runs without restarting

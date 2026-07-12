@@ -127,9 +127,10 @@ model ("profiles are the save game").
    `revrem config set <profile> <key> <value>` for scriptable one-shot edits, but the
    TUI deliberately does not use the immediate-persist path because auto-persist
    conflicts with the "save game" model.
-3. **Run** launches `revrem --profile NAME`, so a working copy must be saved first. If the
-   working copy is dirty, `run` offers *save-and-run* (persist, then launch). This keeps
-   run/artifact CLI-equivalence intact (the run is still `revrem --profile NAME`).
+3. **Run** and **dry-run** execute the validated working copy without persisting it.
+   The CLI receives an exact generated `--profile-snapshot`, retained with live-run
+   artifacts for reproducibility. Saving remains explicit, and bundled profiles can
+   be run without weakening their read-only persistence contract.
 
 The working copy stores raw profile TOML keys (`pipeline.max_iterations`,
 `review.model`, `commit.message_model`, etc.) so saved profiles round-trip through the

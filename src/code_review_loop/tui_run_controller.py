@@ -10,7 +10,7 @@ import subprocess
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import IO, Literal
@@ -122,10 +122,28 @@ class LiveRunController:
         popen_factory: PopenFactory = subprocess.Popen,
         env: Mapping[str, str] | None = None,
         identity: RunIdentity = SYSTEM_IDENTITY,
+        snapshot_profile: bool = False,
     ) -> LiveRunLaunch:
         if self.process is not None and self.process.poll() is None:
             raise RuntimeError("a live run is already active")
-        launch = prepare_live_run_launch(profile=profile, plan=plan, cwd=cwd, identity=identity)
+        launch = prepare_live_run_launch(
+            profile=profile, plan=plan, cwd=cwd, identity=identity
+        )
+        if snapshot_profile:
+            launch.artifact_dir.mkdir(parents=True, exist_ok=True)
+            snapshot_path = (
+                launch.artifact_dir / f"profile-snapshot-{identity.new_run_id()}.toml"
+            )
+            snapshot_path.write_text(
+                profiles.profile_to_toml(profile, include_wrapper=True),
+                encoding="utf-8",
+            )
+            argv_with_snapshot = (
+                *launch.argv,
+                "--profile-snapshot",
+                str(snapshot_path),
+            )
+            launch = replace(launch, argv=argv_with_snapshot)
         argv = entrypoint_resolver(launch.argv)
         self.status = "starting"
         self.launch = launch
@@ -155,8 +173,12 @@ class LiveRunController:
             self.message = f"failed to start live run: {exc}"
             raise
         self._drain_threads = [
-            _drain_stream(self.process.stdout, self._stdout_buffer, name="revrem-tui-stdout"),
-            _drain_stream(self.process.stderr, self._stderr_buffer, name="revrem-tui-stderr"),
+            _drain_stream(
+                self.process.stdout, self._stdout_buffer, name="revrem-tui-stdout"
+            ),
+            _drain_stream(
+                self.process.stderr, self._stderr_buffer, name="revrem-tui-stderr"
+            ),
         ]
         self.status = "running"
         return launch
@@ -209,7 +231,10 @@ class LiveRunController:
         self.status = classify_exit(exit_code, summary=summary)
         if summary is None and exit_code != 0:
             detail = "\n".join((*self.stderr_tail, *self.stdout_tail)).strip()
-            self.message = detail or f"run exited with code {exit_code} before writing summary.json"
+            self.message = (
+                detail
+                or f"run exited with code {exit_code} before writing summary.json"
+            )
         return self.status
 
     def stdout_lines(self) -> tuple[str, ...]:
@@ -255,7 +280,10 @@ class LiveRunController:
         if not stat.S_ISREG(stat_result.st_mode):
             return LiveEventSnapshot(ready=False)
         cache_key = (stat_result.st_size, stat_result.st_mtime_ns)
-        if cache_key == self._events_cache_key and self._events_cache_snapshot is not None:
+        if (
+            cache_key == self._events_cache_key
+            and self._events_cache_snapshot is not None
+        ):
             return self._events_cache_snapshot
         snapshot = self._read_live_events_uncached(events_path)
         self._events_cache_key = cache_key
@@ -279,7 +307,9 @@ def prepare_live_run_launch(
     cwd: Path,
     identity: RunIdentity = SYSTEM_IDENTITY,
 ) -> LiveRunLaunch:
-    artifact_dir_arg = profile.output.artifact_dir or str(default_live_artifact_dir(identity=identity))
+    artifact_dir_arg = profile.output.artifact_dir or str(
+        default_live_artifact_dir(identity=identity)
+    )
     artifact_dir = _resolve_child_path(artifact_dir_arg, cwd=cwd)
     argv = (
         *plan.argv,

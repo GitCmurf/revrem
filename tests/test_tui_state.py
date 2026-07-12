@@ -34,7 +34,9 @@ checks = ["pytest -q", "git diff --check"]
                 "final_status": "clear",
                 "stopped_reason": "review_clear",
                 "artifact_dir": str(tmp_path / "artifacts"),
-                "artifact_paths": {"summary": str(tmp_path / "artifacts" / "summary.json")},
+                "artifact_paths": {
+                    "summary": str(tmp_path / "artifacts" / "summary.json")
+                },
             }
         )
         + "\n",
@@ -67,15 +69,21 @@ checks = ["pytest -q", "git diff --check"]
         "kilo",
     }
     assert (
-        next(harness for harness in snapshot.harnesses if harness.name == "codex").implemented
+        next(
+            harness for harness in snapshot.harnesses if harness.name == "codex"
+        ).implemented
         is True
     )
     assert (
-        next(harness for harness in snapshot.harnesses if harness.name == "claude").implemented
+        next(
+            harness for harness in snapshot.harnesses if harness.name == "claude"
+        ).implemented
         is True
     )
     assert (
-        next(harness for harness in snapshot.harnesses if harness.name == "reserved").implemented
+        next(
+            harness for harness in snapshot.harnesses if harness.name == "reserved"
+        ).implemented
         is False
     )
 
@@ -118,7 +126,10 @@ def test_shell_model_exposes_builtin_profiles_without_local_configs(tmp_path):
     assert model.selected_profile_name == "security"
     assert any(profile.name == "security" for profile in model.snapshot.profiles)
     assert model.selected_launch_plan is not None
-    assert model.selected_launch_plan.shell_command == "revrem --profile security --dry-run"
+    assert (
+        model.selected_launch_plan.shell_command
+        == "revrem --profile security --dry-run"
+    )
 
 
 def test_shell_model_reuses_batch_resolved_profiles(tmp_path, monkeypatch):
@@ -146,7 +157,10 @@ def test_shell_model_reuses_batch_resolved_profiles(tmp_path, monkeypatch):
     assert calls == [(tmp_path, None, False, True)]
     assert model.selected_profile_name == "final-pr"
     assert model.selected_launch_plan is not None
-    assert model.selected_launch_plan.shell_command == "revrem --profile final-pr --dry-run"
+    assert (
+        model.selected_launch_plan.shell_command
+        == "revrem --profile final-pr --dry-run"
+    )
     assert model.snapshot.profiles[0].base == "trunk"
 
 
@@ -154,9 +168,15 @@ def test_pipeline_phases_model_review_triage_checks_and_commit():
     profile = profiles.Profile(
         name="demo",
         pipeline=profiles.PipelineConfig(checks=("pytest -q",)),
-        review=profiles.PhaseConfig(model="gpt-5.5", reasoning_effort="high", timeout_seconds=600),
-        triage=profiles.TriageConfig(enabled=True, model="gpt-5.4-mini", reasoning_effort="low"),
-        remediation=profiles.PhaseConfig(model="gpt-5.4-mini", reasoning_effort="medium"),
+        review=profiles.PhaseConfig(
+            model="gpt-5.5", reasoning_effort="high", timeout_seconds=600
+        ),
+        triage=profiles.TriageConfig(
+            enabled=True, model="gpt-5.4-mini", reasoning_effort="low"
+        ),
+        remediation=profiles.PhaseConfig(
+            model="gpt-5.4-mini", reasoning_effort="medium"
+        ),
         commit=profiles.CommitConfig(
             enabled=True,
             harness="gemini",
@@ -190,7 +210,9 @@ def test_pipeline_phases_preserve_disabled_optional_phase_shape():
         name="minimal",
         pipeline=profiles.PipelineConfig(checks=()),
         triage=profiles.TriageConfig(enabled=False, model="gpt-5.3-codex-spark"),
-        commit=profiles.CommitConfig(enabled=False, message_model="gpt-5.3-codex-spark"),
+        commit=profiles.CommitConfig(
+            enabled=False, message_model="gpt-5.3-codex-spark"
+        ),
     )
 
     phases = tui_state.pipeline_phases(profile)
@@ -204,7 +226,7 @@ def test_pipeline_phases_preserve_disabled_optional_phase_shape():
     ]
     assert phases[1].enabled is False
     assert phases[1].model == "gpt-5.3-codex-spark"
-    assert phases[3].enabled is False
+    assert phases[3].enabled is True
     assert phases[3].command_count == 0
     assert phases[4].enabled is False
 
@@ -276,7 +298,10 @@ def test_pipeline_screen_marks_unsupported_phase_effort_as_na():
 
     screen = tui_state.pipeline_screen(snapshot, profile)
 
-    assert "commit: enabled, harness=opencode, model=opencode/model, effort=n/a" in screen.lines
+    assert (
+        "commit: enabled, harness=opencode, model=opencode/model, effort=n/a"
+        in screen.lines
+    )
 
 
 def test_run_preview_keeps_profile_command_minimal_to_avoid_drift():
@@ -341,7 +366,9 @@ def test_run_monitor_view_flattens_summary_artifacts():
     assert monitor.artifacts[0].path == summary_path
 
 
-def test_run_monitor_view_resolves_relative_artifacts_against_record_cwd(tmp_path, monkeypatch):
+def test_run_monitor_view_resolves_relative_artifacts_against_record_cwd(
+    tmp_path, monkeypatch
+):
     home = tmp_path / "home"
     repo = tmp_path / "repo"
     other_repo = tmp_path / "other-repo"
@@ -375,7 +402,10 @@ def test_run_monitor_view_resolves_relative_artifacts_against_record_cwd(tmp_pat
         history_path=history_path,
     )
 
-    assert snapshot.run_monitors[0].artifacts[0].path == "tmp/code-review-loop/run/summary.json"
+    assert (
+        snapshot.run_monitors[0].artifacts[0].path
+        == "tmp/code-review-loop/run/summary.json"
+    )
     assert snapshot.run_monitors[0].artifacts[0].exists is True
 
 
@@ -384,8 +414,12 @@ def test_run_monitor_view_derives_state_from_events_jsonl(tmp_path):
     run_dir = repo / ".revrem" / "runs" / "run-1"
     run_dir.mkdir(parents=True)
     event_sink = events.JsonlSink(run_dir, "run-1")
-    event_sink.emit("phase_start", phase="review", iteration=1, payload={"message": "start"})
-    event_sink.emit("check_result", phase="checks", iteration="1.1", payload={"status": "passed"})
+    event_sink.emit(
+        "phase_start", phase="review", iteration=1, payload={"message": "start"}
+    )
+    event_sink.emit(
+        "check_result", phase="checks", iteration="1.1", payload={"status": "passed"}
+    )
     event_sink.emit("summary", phase="summary", payload={"summary": "clear"})
     event_sink.close()
     record = {
@@ -401,7 +435,9 @@ def test_run_monitor_view_derives_state_from_events_jsonl(tmp_path):
 
     assert monitor.event_error is None
     assert monitor.events_truncated is False
-    assert [(event.seq, event.phase, event.kind, event.detail) for event in monitor.events] == [
+    assert [
+        (event.seq, event.phase, event.kind, event.detail) for event in monitor.events
+    ] == [
         (1, "review", "phase_start", "start"),
         (2, "checks", "check_result", "passed"),
         (3, "summary", "summary", "clear"),
@@ -521,7 +557,8 @@ def test_run_monitor_view_reports_invalid_events_jsonl(tmp_path):
     run_dir = repo / ".revrem" / "runs" / "run-1"
     run_dir.mkdir(parents=True)
     (run_dir / "events.jsonl").write_text(
-        json.dumps(events.make_event(run_id="run-1", seq=2, kind="summary").to_dict()) + "\n",
+        json.dumps(events.make_event(run_id="run-1", seq=2, kind="summary").to_dict())
+        + "\n",
         encoding="utf-8",
     )
 

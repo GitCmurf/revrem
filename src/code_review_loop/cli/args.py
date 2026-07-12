@@ -51,14 +51,28 @@ def build_run_parser() -> RevRemArgumentParser:
             "  revrem --profile dogfood --no-allow-model-escalation\n"
         ),
     )
-    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {__version__}"
+    )
     parser.add_argument(
         "--wizard",
         action="store_true",
         help="Launch the interactive command-building wizard.",
     )
-    parser.add_argument("--profile", default=None, help="Named profile from RevRem TOML config.")
-    parser.add_argument("--base", default=None, help="Base branch passed to codex review.")
+    parser.add_argument(
+        "--profile", default=None, help="Named profile from RevRem TOML config."
+    )
+    parser.add_argument(
+        "--profile-snapshot",
+        default=None,
+        help=(
+            "Load an exact resolved profile from this TOML file. Requires --profile; "
+            "ambient profile files are ignored and CLI options still override it."
+        ),
+    )
+    parser.add_argument(
+        "--base", default=None, help="Base branch passed to codex review."
+    )
     parser.add_argument(
         "--max-iterations",
         type=int,
@@ -111,7 +125,9 @@ def build_run_parser() -> RevRemArgumentParser:
         "--remediate-harness",
         dest="remediation_harness",
         default=None,
-        help=("Optional harness override for remediation only. Alias: --remediate-harness."),
+        help=(
+            "Optional harness override for remediation only. Alias: --remediate-harness."
+        ),
     )
     parser.add_argument(
         "--remediation-model",
@@ -621,7 +637,9 @@ def build_config_parser() -> RevRemArgumentParser:
     subparsers = _subparsers(parser, dest="command", required=True)
 
     list_parser = subparsers.add_parser("list", help="List available profiles.")
-    list_parser.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)
+    list_parser.add_argument(
+        "--format", choices=("text", "json"), default=argparse.SUPPRESS
+    )
     show = subparsers.add_parser("show", help="Show a resolved profile.")
     show.add_argument("name")
     show.add_argument("--format", choices=("toml", "json"), default=argparse.SUPPRESS)
@@ -666,10 +684,10 @@ def build_config_parser() -> RevRemArgumentParser:
             "(not materialized in the owning profile). Explicit values already present "
             "in the owning profile are retained. Only the requested field is rewritten "
             "(top-level or dotted), even if it conflicts with an inherited default. "
-            "(e.g. description \"Local profile\", review.model gpt-5.5, triage.contract v2, "
+            '(e.g. description "Local profile", review.model gpt-5.5, triage.contract v2, '
             "triage.routes.codex-midi.model gpt-5, triage.routing.default_route codex-midi, "
             "triage.routing.enabled true, output.no_tty true, runtime.full_auto off, "
-            "and description \"\", or pipeline.max_iterations 11). With --format json, this command emits a "
+            'and description "", or pipeline.max_iterations 11). With --format json, this command emits a '
             "object describing the edit and destination path. Routing edits are "
             "validated against the effective inherited route table after user and "
             "project defaults are applied, including inherited triage.contract and "
@@ -695,13 +713,15 @@ def build_config_parser() -> RevRemArgumentParser:
         "value",
         help=(
             "Field value; numeric fields accept numbers, booleans use true/false (or "
-            "1/0, yes/no, on/off). Use an empty string (\"\") to explicitly clear "
+            '1/0, yes/no, on/off). Use an empty string ("") to explicitly clear '
             "top-level description."
         ),
     )
     set_parser.add_argument("--format", choices=("json",), default=argparse.SUPPRESS)
 
-    clone = subparsers.add_parser("clone", help="Clone a resolved profile into the user config.")
+    clone = subparsers.add_parser(
+        "clone", help="Clone a resolved profile into the user config."
+    )
     clone.add_argument("source")
     clone.add_argument("target")
     clone.add_argument("--force", action="store_true")
@@ -725,7 +745,9 @@ def build_config_parser() -> RevRemArgumentParser:
     import_parser.add_argument("path")
     import_parser.add_argument("--force", action="store_true")
 
-    doctor = subparsers.add_parser("doctor", help="Show config paths and merge diagnostics.")
+    doctor = subparsers.add_parser(
+        "doctor", help="Show config paths and merge diagnostics."
+    )
     doctor.add_argument("--profile", default=None)
     doctor.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)
     return parser
@@ -745,7 +767,9 @@ def build_history_parser() -> RevRemArgumentParser:
 
     list_parser = subparsers.add_parser("list", help="List recent runs.")
     list_parser.add_argument("--limit", type=int, default=10)
-    list_parser.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)
+    list_parser.add_argument(
+        "--format", choices=("text", "json"), default=argparse.SUPPRESS
+    )
     return parser
 
 
@@ -754,11 +778,17 @@ def parse_history_args(argv: Sequence[str]) -> argparse.Namespace:
 
 
 def build_models_parser() -> RevRemArgumentParser:
-    parser = _argument_parser(prog="revrem models", description="Inspect the effective model catalog.")
+    parser = _argument_parser(
+        prog="revrem models", description="Inspect the effective model catalog."
+    )
     subparsers = _subparsers(parser, dest="command", required=True)
-    list_parser = subparsers.add_parser("list", help="List catalog models and supported efforts.")
+    list_parser = subparsers.add_parser(
+        "list", help="List catalog models and supported efforts."
+    )
     list_parser.add_argument("--harness", default=None)
-    list_parser.add_argument("--all", action="store_true", help="Include models for every harness.")
+    list_parser.add_argument(
+        "--all", action="store_true", help="Include models for every harness."
+    )
     list_parser.add_argument("--format", choices=("text", "json"), default="text")
     return parser
 
@@ -768,12 +798,20 @@ def parse_models_args(argv: Sequence[str]) -> argparse.Namespace:
 
 
 def build_stats_parser() -> RevRemArgumentParser:
-    parser = _argument_parser(prog="revrem stats", description="Summarize local RevRem telemetry.")
+    parser = _argument_parser(
+        prog="revrem stats", description="Summarize local RevRem telemetry."
+    )
     subparsers = _subparsers(parser, dest="command", required=True)
-    models = subparsers.add_parser("models", help="Summarize recorded model invocations.")
+    models = subparsers.add_parser(
+        "models", help="Summarize recorded model invocations."
+    )
     models.add_argument("--limit", type=int, default=100)
     scope = models.add_mutually_exclusive_group()
-    scope.add_argument("--repo", default=None, help="Only runs for this repository (default: current repository).")
+    scope.add_argument(
+        "--repo",
+        default=None,
+        help="Only runs for this repository (default: current repository).",
+    )
     scope.add_argument("--all-repos", action="store_true")
     models.add_argument("--phase")
     models.add_argument("--harness")
@@ -841,12 +879,18 @@ def build_doctor_parser() -> RevRemArgumentParser:
     parser.add_argument(
         "--strict", action="store_true", help="Exit non-zero when warnings are present."
     )
-    parser.add_argument("--profile", default=None, help="Resolve defaults from a named profile.")
+    parser.add_argument(
+        "--profile", default=None, help="Resolve defaults from a named profile."
+    )
     parser.add_argument(
         "--base", default=None, help="Base ref to validate. Defaults to profile/main."
     )
-    parser.add_argument("--codex-bin", default=None, help="Codex executable path/name to validate.")
-    parser.add_argument("--artifact-dir", default=None, help="Artifact directory to validate.")
+    parser.add_argument(
+        "--codex-bin", default=None, help="Codex executable path/name to validate."
+    )
+    parser.add_argument(
+        "--artifact-dir", default=None, help="Artifact directory to validate."
+    )
     parser.add_argument(
         "--check",
         action="append",
@@ -923,7 +967,9 @@ def build_resume_parser() -> RevRemArgumentParser:
         prog="revrem resume",
         description="Validate whether a previous RevRem run is safe to resume.",
     )
-    parser.add_argument("run_dir", help="Run directory containing summary.json and events.jsonl.")
+    parser.add_argument(
+        "run_dir", help="Run directory containing summary.json and events.jsonl."
+    )
     parser.add_argument("--format", choices=("text", "json"), default="text")
     return parser
 
@@ -953,7 +999,9 @@ def build_suppress_parser() -> RevRemArgumentParser:
     remove = subparsers.add_parser("remove", help="Remove a suppression.")
     remove.add_argument("fingerprint")
 
-    check = subparsers.add_parser("check", help="Exit 0 when a fingerprint is suppressed.")
+    check = subparsers.add_parser(
+        "check", help="Exit 0 when a fingerprint is suppressed."
+    )
     check.add_argument("fingerprint")
 
     subparsers.add_parser("list", help="List suppressions.")
@@ -1032,7 +1080,9 @@ def build_policy_parser() -> RevRemArgumentParser:
     parser.add_argument("--format", choices=("text", "json"), default=None)
     subparsers = _subparsers(parser, dest="command", required=True)
 
-    lint = subparsers.add_parser("lint", help="Lint routing rules and routes in a profile.")
+    lint = subparsers.add_parser(
+        "lint", help="Lint routing rules and routes in a profile."
+    )
     lint.add_argument("--profile", required=True)
     lint.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)
     lint.add_argument(
@@ -1040,7 +1090,9 @@ def build_policy_parser() -> RevRemArgumentParser:
         action="store_true",
         help="Validate route fallback chains for implemented harness support even when routing is disabled.",
     )
-    review = subparsers.add_parser("review", help="Summarize routing outcomes from run artifacts.")
+    review = subparsers.add_parser(
+        "review", help="Summarize routing outcomes from run artifacts."
+    )
     review.add_argument("--artifact-dir", required=True)
     review.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)
     return parser
@@ -1063,7 +1115,9 @@ def build_triage_parser() -> RevRemArgumentParser:
     )
     explain.add_argument("run_dir")
     explain.add_argument("--iteration", type=int, default=1)
-    explain.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS)
+    explain.add_argument(
+        "--format", choices=("text", "json"), default=argparse.SUPPRESS
+    )
     return parser
 
 

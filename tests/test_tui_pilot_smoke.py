@@ -385,7 +385,7 @@ def test_loop_enter_expands_triage_before_route_focus_and_movement_keeps_expansi
             await pilot.press("down")
             await pilot.press("enter")
             await pilot.pause()
-            assert "commands:" in str(app.query_one("#phase-card-checks").render())
+            assert "configured:" in str(app.query_one("#phase-card-checks").render())
             assert (
                 "harness:"
                 not in str(app.query_one("#phase-card-commit").render()).lower()
@@ -564,7 +564,7 @@ def test_builtin_profile_save_notifies_clone_to_edit(tmp_path):
     asyncio.run(run())
 
 
-def test_builtin_profile_save_and_run_notifies_clone_to_edit(tmp_path):
+def test_builtin_profile_run_uses_dirty_working_copy_without_saving(tmp_path):
     async def run() -> None:
         repo = tmp_path / "repo"
         repo.mkdir()
@@ -578,12 +578,10 @@ def test_builtin_profile_save_and_run_notifies_clone_to_edit(tmp_path):
             diagram.set_text_field("model", "gpt-9")
             app.action_launch_run()
             await pilot.pause()
-            assert any(
-                "built-in profile 'security' is read-only" in item
-                for item in notifications
-            )
+            assert any("Press r again" in item for item in notifications)
             assert app.live_run_controller.launch is None
             assert diagram.is_dirty is True
+            assert diagram.model.effective_profile().review.model == "gpt-9"
 
     asyncio.run(run())
 
@@ -1224,11 +1222,12 @@ def test_help_overlay_lists_run_logs_and_artifacts(tmp_path):
         repo.mkdir()
         (repo / ".git").mkdir()
         async with pilot_app(cwd=repo, profile_name="security") as (app, pilot):
+            await pilot.press("2")
             await pilot.press("?")
             await pilot.pause()
-            help_text = _render(app, "#footer-bar")
-            assert "\\[l\\] logs/events" in help_text
-            assert "\\[o\\] artifacts" in help_text
+            help_text = str(app.screen.query_one("#help-content").render())
+            assert "l Logs/events" in help_text
+            assert "o Artifacts" in help_text
 
     asyncio.run(run())
 

@@ -68,7 +68,7 @@ model = "haiku-4.5"
 sandbox = "read-only"
 """,
         )
-        async with pilot_app(cwd=repo, profile_name="demo", size=(120, 40)) as (
+        async with pilot_app(cwd=repo, profile_name="demo", size=(120, 50)) as (
             app,
             pilot,
         ):

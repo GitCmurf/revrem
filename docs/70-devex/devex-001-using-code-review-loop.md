@@ -1626,12 +1626,13 @@ and launch plan share one session state. Compatible actionable review feedback
 is preselected; press `u` to switch between reuse and a fresh review. Older
 actionable feedback from another Git state remains visible but is not selected
 automatically; `u` selects the read-only stale-validation path and `v` shows
-bounded details. Press `s` to
-persist the authored raw profile delta through `profiles.save_profile_raw`, or
-press `r` to save first and then launch the normal `revrem --profile NAME` run
-path. If save validation fails, or the selected profile is a read-only bundled
-profile, the error is shown and the working copy remains dirty; clone a bundled
-profile before editing it.
+bounded details. Press `s` to persist the authored raw profile delta through
+`profiles.save_profile_raw`. Press `r` or `d` to execute the validated in-memory
+working copy without saving it. The TUI records that effective configuration as
+a profile-snapshot run artifact; bundled profiles are therefore runnable while
+remaining read-only. Clone a bundled profile only when its changes should persist.
+Last-run provenance uses human calendar labels such as `today`, `yesterday`, or
+the weekday plus a compact time rather than exposing storage timestamps.
 
 Textual mounts before profile, catalog, history, and review discovery. Those
 reads produce one complete bootstrap result, installed atomically before the

@@ -278,7 +278,8 @@ checks = ["git diff --check"]
 
     assert cli_main(["ui"]) == 0
 
-    assert actions[0][0] == ("revrem", "--profile", "final-pr", "--dry-run")
+    assert actions[0][0][:4] == ("revrem", "--profile", "final-pr", "--dry-run")
+    assert "--profile-snapshot" in actions[0][0]
     assert actions[0][1] == tmp_path
     assert actions[1] == "RevRemApp"
     assert notifications == ["Dry run completed: final-pr"]
@@ -312,7 +313,8 @@ def test_tui_dry_run_action_launches_builtin_profile_without_local_config(
 
     assert cli_main(["ui", "--profile", "security"]) == 0
 
-    assert actions[0][0] == ("revrem", "--profile", "security", "--dry-run")
+    assert actions[0][0][:4] == ("revrem", "--profile", "security", "--dry-run")
+    assert "--profile-snapshot" in actions[0][0]
     assert actions[0][1] == tmp_path
     assert actions[1] == "RevRemApp"
     assert notifications == ["Dry run completed: security"]
@@ -760,7 +762,7 @@ def test_tui_live_run_action_refuses_second_r_while_run_is_active(
     assert app._pending_live_confirmation_profile is None
 
 
-def test_tui_run_action_saves_dirty_loop_before_launch_in_non_loop_workspace(
+def test_tui_run_action_does_not_save_dirty_loop_in_non_loop_workspace(
     monkeypatch, tmp_path
 ):
     notifications = []
@@ -825,11 +827,10 @@ base = "main"
     app.action_launch_run()
     app.action_launch_run()
 
-    assert saved == ["saved"]
-    assert refresh_calls == [True]
+    assert saved == []
+    assert refresh_calls == []
     assert starts == ["final-pr"]
     assert notifications == [
-        "Saved loop before run: final-pr",
         "Press r again to start an experimental live run: final-pr",
         "Live run started: final-pr (.revrem/runs/live)",
     ]
@@ -1360,8 +1361,28 @@ def test_tui_loop_command_panel_shows_current_actions_and_full_origin(tmp_path):
     assert "NEXT RUN" in panel
     assert "Review input: Fresh review — initial review file: none" in panel
     assert "Command: revrem --profile security" in panel
-    assert "last run from 2026-07-05T01:56:47Z" in panel
+    assert "Loaded from: [status-info]5 July[/] [muted]01:56[/]" in panel
     assert "--max-iterations 12" not in status
+
+
+def test_tui_origin_summary_uses_human_calendar_bands():
+    from datetime import UTC, datetime
+
+    now = datetime(2026, 7, 12, 12, 0, tzinfo=UTC)
+    assert "today" in tui._origin_summary("last run from 2026-07-12T08:01:00Z", now=now)
+    assert "yesterday" in tui._origin_summary(
+        "last run from 2026-07-11T11:56:00Z", now=now
+    )
+    assert "Friday" in tui._origin_summary(
+        "last run from 2026-07-10T11:56:00Z", now=now
+    )
+    assert "5 July" in tui._origin_summary(
+        "last run from 2026-07-05T11:56:00Z", now=now
+    )
+    assert "31-12-25" in tui._origin_summary(
+        "last run from 2025-12-31T11:56:00Z", now=now
+    )
+    assert tui._origin_summary("last run from nonsense", now=now) == "previous run"
 
 
 def test_tui_loop_command_panel_exposes_unselected_older_review(tmp_path):

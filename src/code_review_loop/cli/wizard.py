@@ -18,14 +18,11 @@ from code_review_loop import (
     routing_timeouts,
     run_history,
 )
-from code_review_loop.check_presets import (
-    CheckPreset,
-    detect_check_presets as _detect_check_presets,
-)
 from code_review_loop.adapters.commit import phase_support
 from code_review_loop.adapters.remediation import build_remediation_command
 from code_review_loop.adapters.review import build_review_command
 from code_review_loop.adapters.triage import build_triage_command
+from code_review_loop.check_presets import detect_check_presets as _detect_check_presets
 from code_review_loop.cli import args as cli_args
 from code_review_loop.cli.config_builder import build_loop_config
 from code_review_loop.cli.config_support import (

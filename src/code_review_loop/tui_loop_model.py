@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from functools import reduce
 from pathlib import Path
 from typing import Any
@@ -20,7 +20,7 @@ def _read_dotted(raw: dict[str, Any], dotted_key: str) -> Any:
 
 
 def _profile_to_raw(profile: profiles.Profile) -> dict[str, Any]:
-    raw = asdict(profile)
+    raw = profiles.profile_to_dict(profile)
     raw.pop("name", None)
     raw.pop("source", None)
     return raw
@@ -82,6 +82,13 @@ class LoopEditModel:
             self.edits.items(),
             {},
         )
+
+    def effective_profile(self) -> profiles.Profile:
+        """Return the validated resolved profile represented by this working copy."""
+        raw = _profile_to_raw(self.profile)
+        for dotted_key, value in self.edits.items():
+            raw = profiles.deep_set_raw(raw, dotted_key, value)
+        return profiles.parse_profile(self.name, raw, source="tui-working-copy")
 
     def save(self) -> Path:
         path = profiles.save_profile_raw(

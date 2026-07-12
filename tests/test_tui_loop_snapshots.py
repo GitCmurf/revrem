@@ -52,6 +52,7 @@ model = "haiku-4.5"
 """,
         focus_delta=1,
         expand_focused=True,
+        size=(120, 50),
     )
     assert "security" in svg and "haiku-4.5" in svg
     assert_svg_snapshot("tui_loop/triage-routes", svg)
@@ -133,13 +134,14 @@ def _capture_loop_svg(
     focus_delta: int = 0,
     expand_focused: bool = False,
     edit_model: str | None = None,
+    size: tuple[int, int] = (120, 40),
 ) -> str:
     async def run() -> str:
         repo = tmp_path / "repo"
         repo.mkdir()
         (repo / ".git").mkdir()
         (repo / ".revrem.toml").write_text(profile_toml, encoding="utf-8")
-        async with pilot_app(cwd=repo, profile_name="demo", size=(120, 40)) as (
+        async with pilot_app(cwd=repo, profile_name="demo", size=size) as (
             app,
             pilot,
         ):

@@ -51,13 +51,20 @@ class LoopSession:
         )
 
     def compile_launch_plan(
-        self, profile: profiles.Profile, *, dry_run: bool
+        self,
+        profile: profiles.Profile,
+        *,
+        dry_run: bool,
+        profile_snapshot: Path | None = None,
     ) -> tui_state.LaunchPlan:
         if self.profile_name is not None and profile.name != self.profile_name:
             raise ValueError(
                 f"active loop profile is {self.profile_name!r}, not {profile.name!r}"
             )
         plan = tui_state.launch_plan(profile, dry_run=dry_run)
+        if profile_snapshot is not None:
+            argv = (*plan.argv, "--profile-snapshot", str(profile_snapshot))
+            plan = replace(plan, argv=argv, shell_command=shlex.join(argv))
         pending = self.pending_review
         if pending is None or not pending.selected:
             return plan
