@@ -367,7 +367,11 @@ def build_loop_config(
     except TypeError as exc:
         if "require_implemented" not in str(exc):
             raise
-        profile = profile_or_default(args.profile, cwd)
+        profile = (
+            profile_or_default(args.profile, cwd, snapshot_path=snapshot_path)
+            if snapshot_path
+            else profile_or_default(args.profile, cwd)
+        )
     profile_source = (
         f"profile-snapshot:{args.profile_snapshot}"
         if getattr(args, "profile_snapshot", None)

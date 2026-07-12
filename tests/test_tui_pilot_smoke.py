@@ -101,6 +101,26 @@ def test_tui_pilot_boots_home_view(tmp_path):
     asyncio.run(run())
 
 
+def test_next_run_renders_human_date_without_markup_leaks(tmp_path):
+    async def run() -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        async with pilot_app(cwd=repo, profile_name="security") as (app, pilot):
+            app.loop_session = tui.tui_session.LoopSession(
+                profile_name="security",
+                origin_label="last run from 2026-07-11T11:56:00Z",
+            )
+            app._update_console_status()
+            await pilot.pause()
+            rendered = str(app.query_one("#loop-command-panel").render())
+            assert "11:56" in rendered
+            assert "status-info" not in rendered
+            assert "[muted]" not in rendered
+
+    asyncio.run(run())
+
+
 def test_loop_workspace_renders_real_diagram_widgets(tmp_path):
     async def run() -> None:
         repo = tmp_path / "repo"
@@ -235,7 +255,7 @@ def test_loop_inline_edit_marks_dirty_and_overlays(tmp_path):
                 != original_effort
             )
             app._update_console_status()
-            assert "Unsaved changes" in str(
+            assert "Modified" in str(
                 app.query_one("#loop-command-panel").render()
             )
             diagram.set_text_field("model", "gpt-5.6")
@@ -317,13 +337,13 @@ def test_loop_reverted_edit_clears_dirty_marker(tmp_path):
             diagram = app.query_one("#loop-diagram")
             diagram.set_text_field("model", "gpt-5.6")
             app._update_console_status()
-            assert "Unsaved changes" in str(
+            assert "Modified" in str(
                 app.query_one("#loop-command-panel").render()
             )
             diagram.set_text_field("model", "gpt-5.5")
             app._update_console_status()
             assert diagram.is_dirty is False
-            assert "Unsaved changes" not in str(
+            assert "Modified" not in str(
                 app.query_one("#loop-command-panel").render()
             )
 

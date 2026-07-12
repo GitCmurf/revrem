@@ -492,6 +492,8 @@ def _build_bindings(binding_cls: Any | None) -> list[Any]:
         ("2", "workspace_run", "Run"),
         ("3", "workspace_profiles", "Profiles"),
         ("4", "workspace_prompts", "Prompts"),
+        ("left", "workspace_previous", "Previous workspace"),
+        ("right", "workspace_next", "Next workspace"),
         ("j", "move_down", "Down"),
         ("down", "move_down", "Down"),
         ("up", "move_up", "Up"),
@@ -736,7 +738,7 @@ class _RevRemAppMixin:
 
     #footer-bar {
         dock: bottom;
-        height: 2;
+        height: 1;
         padding: 0 2;
         background: $surface;
     }
@@ -891,7 +893,7 @@ class _RevRemAppMixin:
                         yield _Static(
                             _loop_command_markup(self),
                             id="loop-command-panel",
-                            markup=False,
+                            markup=True,
                         )
                         yield _Static(
                             _loop_settings_markup(self),
@@ -1065,21 +1067,29 @@ class _RevRemAppMixin:
             plan = tui_state.launch_plan(selected, dry_run=True)
             result = run_launch_plan(plan, cwd=Path(self.model.snapshot.cwd))
         else:
-            effective = (
-                self._loop_diagram.model.effective_profile()
-                if self._workspace == "loop" and self._loop_diagram is not None
-                else selected
-            )
-            with tempfile.TemporaryDirectory(prefix="revrem-tui-") as temp_dir:
-                snapshot = Path(temp_dir) / "profile.toml"
-                snapshot.write_text(
-                    profiles.profile_to_toml(effective, include_wrapper=True),
-                    encoding="utf-8",
+            try:
+                effective = (
+                    self._loop_diagram.model.effective_profile()
+                    if self._workspace == "loop" and self._loop_diagram is not None
+                    else selected
                 )
-                plan = self.loop_session.compile_launch_plan(
-                    effective, dry_run=True, profile_snapshot=snapshot
+                with tempfile.TemporaryDirectory(prefix="revrem-tui-") as temp_dir:
+                    snapshot = Path(temp_dir) / "profile.toml"
+                    snapshot.write_text(
+                        profiles.profile_to_toml(effective, include_wrapper=True),
+                        encoding="utf-8",
+                    )
+                    plan = self.loop_session.compile_launch_plan(
+                        effective, dry_run=True, profile_snapshot=snapshot
+                    )
+                    result = run_launch_plan(plan, cwd=Path(self.model.snapshot.cwd))
+            except (OSError, RuntimeError, ValueError) as exc:
+                _notify(
+                    self,
+                    f"Dry run could not build its launch plan: {exc}",
+                    severity="error",
                 )
-                result = run_launch_plan(plan, cwd=Path(self.model.snapshot.cwd))
+                return
         if result.returncode == 0:
             _notify(self, f"Dry run completed: {profile_name}")
             return
@@ -1123,7 +1133,7 @@ class _RevRemAppMixin:
         self._live_run_profile = effective
         try:
             launch = self.live_run_controller.start(
-                profile=selected,
+                profile=effective,
                 plan=plan,
                 cwd=Path(self.model.snapshot.cwd),
                 entrypoint_resolver=current_entrypoint_argv,
@@ -1335,6 +1345,20 @@ class _RevRemAppMixin:
 
     def action_workspace_run(self) -> None:
         self._set_workspace("run")
+
+    def action_workspace_previous(self) -> None:
+        self._cycle_workspace(-1)
+
+    def action_workspace_next(self) -> None:
+        self._cycle_workspace(1)
+
+    def _cycle_workspace(self, delta: int) -> None:
+        if _ModalScreen is not None and isinstance(
+            getattr(self, "screen", None), _ModalScreen
+        ):
+            return
+        index = _WORKSPACES.index(self._workspace)
+        self._set_workspace(_WORKSPACES[(index + delta) % len(_WORKSPACES)])
 
     def action_move_down(self) -> None:
         self._move_selection(1)
@@ -2165,7 +2189,11 @@ class _RevRemAppMixin:
 
         if (
             self._loop_diagram is not None
-            and self._loop_diagram.is_dirty
+            and getattr(
+                self._loop_diagram.model,
+                "is_user_modified",
+                self._loop_diagram.is_dirty,
+            )
             and self._loop_diagram.model.name != name
         ):
             _notify(self, "Save or revert loop changes before loading another profile.")
@@ -2534,6 +2562,7 @@ def _last_run_loop_model(
         return None
     model = tui_loop_model.LoopEditModel.load(state.profile_name, cwd=cwd)
     _apply_wizard_state_to_loop_model(model, state)
+    model.mark_replay_baseline()
     origin = state.origin_label or "last run"
     if state.origin_command:
         origin = f"{origin}: {state.origin_command}"
@@ -2961,57 +2990,90 @@ def _run_workspace_markup(app: Any) -> str:
 
 
 def _footer_markup(app: Any) -> str:
-    live = _live_hint(app)
     if app._workspace == "profiles":
-        keys = "[j/down]move [up]move [Enter]select [d]dry-run [r]run [?]help"
+        hints = (
+            ("↑/↓", "Move"),
+            ("Enter", "Load"),
+            ("d", "Dry-run"),
+            ("r", "Run"),
+            ("?", "Help"),
+        )
     elif app._workspace == "loop":
-        keys = "[up/down] phase [Enter] details [s] save [r] run [?] help [q] quit"
+        hints = (
+            ("↑/↓", "Phase"),
+            ("Enter", "Details"),
+            ("s", "Save"),
+            ("r", "Run"),
+            ("?", "Help"),
+            ("q", "Quit"),
+        )
     elif app._workspace == "prompts":
         target = f" for {app._prompt_target_key}" if app._prompt_target_key else ""
-        keys = f"[j/down]asset [up]asset [Enter]apply{target} [?]help"
+        hints = (
+            ("↑/↓", "Asset"),
+            ("Enter", f"Apply{target}"),
+            ("?", "Help"),
+            ("q", "Quit"),
+        )
     else:
-        keys = "[d]dry-run [r]run [k]stop [l]logs/events [o]artifacts [?]help"
-    return f"{tui_state.markup_escape(live)}\n{tui_state.markup_escape(keys)}"
+        hints = (
+            ("d", "Dry-run"),
+            ("r", "Run"),
+            ("k", "Stop"),
+            ("l", "Logs/events"),
+            ("o", "Artifacts"),
+            ("?", "Help"),
+        )
+    return "  ".join(
+        f"\\[{key}] {tui_state.markup_escape(label)}" for key, label in hints
+    )
 
 
 def _loop_command_markup(app: Any) -> str:
     if app._workspace != "loop":
         return ""
-    dirty = bool(
-        getattr(app, "_loop_diagram", None) is not None and app._loop_diagram.is_dirty
-    )
+    model = getattr(app, "_loop_model", None)
     profile_text = app._profile_name() or "<none>"
-    if dirty:
-        profile_text += " — Unsaved changes"
+    if model is not None and model.is_user_modified:
+        profile_text += " · Modified"
+    elif model is not None and model.is_dirty:
+        profile_text += " · Replayed settings"
     origin = _origin_detail(app.loop_session.origin_label)
     lines = [
-        "NEXT RUN",
-        f"Profile: {profile_text}",
+        "[b]NEXT RUN[/]",
+        f"Profile: {tui_state.markup_escape(profile_text)}",
     ]
     pending = app.loop_session.pending_review
     if pending is None:
         lines.append("Review input: Fresh review — initial review file: none")
     elif pending.selected and pending.compatible:
         lines.append(
-            f"Review input: Reuse compatible review — {_display_path(app, pending.path)}"
+            "Review input: Reuse compatible review — "
+            f"{tui_state.markup_escape(_display_path(app, pending.path))}"
         )
     elif pending.selected:
         lines.append(
-            f"Review input: Validate older review — {_display_path(app, pending.path)}"
+            "Review input: Validate older review — "
+            f"{tui_state.markup_escape(_display_path(app, pending.path))}"
         )
     elif pending.compatible:
         lines.append("Review input: Fresh review — initial review file: none")
         lines.append(
-            f"Compatible review available: {_display_path(app, pending.path)} (u reuse · v details)"
+            "Compatible review available: "
+            f"{tui_state.markup_escape(_display_path(app, pending.path))} (u reuse · v details)"
         )
     else:
         lines.append("Review input: Fresh review — initial review file: none")
         lines.append(
-            f"Older review available: {_display_path(app, pending.path)} (u validate · v details)"
+            "Older review available: "
+            f"{tui_state.markup_escape(_display_path(app, pending.path))} (u validate · v details)"
         )
     if origin:
         lines.append(f"Loaded from: {_origin_summary(origin)}")
-    lines.append(f"Command: {_truncate(_command_preview(app), 156)}")
+    lines.append(
+        "Launch: effective working copy of "
+        f"{tui_state.markup_escape(app._profile_name() or '<none>')} · snapshot saved with run"
+    )
     return "\n".join(lines)
 
 
@@ -3406,13 +3468,20 @@ def _status_bar_markup(app: Any) -> str:
         pending = " | cancelling"
     elif app._quit_confirmation_pending:
         pending = " | quit needs confirmation"
-    help_hint = "? Help"
     workspace = app._workspace.capitalize()
+    tabs = []
+    for key, name in zip(
+        ("1", "2", "3", "4"),
+        ("Loop", "Run", "Profiles", "Prompts"),
+        strict=True,
+    ):
+        label = f"{key} {name}"
+        tabs.append(f"[workspace-active]{label}[/]" if name == workspace else label)
     return (
         f"RevRem · {tui_state.markup_escape(Path(app.model.snapshot.cwd).name or app.model.snapshot.cwd)}"
         f" · {tui_state.markup_escape(workspace)} · {tui_state.markup_escape(status)}"
         f"{tui_state.markup_escape(pending)}\n"
-        f"[1 Loop]  [2 Run]  [3 Profiles]  [4 Prompts]  {help_hint}  q Quit"
+        f"{' · '.join(tabs)} · ? Help · q Quit"
     )
 
 

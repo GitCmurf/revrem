@@ -328,6 +328,9 @@ Checks always runs the built-in worktree-cleanliness check. Focus Checks and
 press `p` to choose repository-detected recommendations, recent repo-local
 command sets, custom commands, or built-in cleanliness only. Press `?` or `h`
 for contextual modal help.
+Use `Left` and `Right` to cycle between workspaces; `1`–`4` remain direct
+shortcuts. Header tabs use semantic active styling, while square brackets are
+reserved for footer keycaps.
 `r` and `d` execute the in-memory Loop working copy without saving it; `s` is
 the only persistence action. Live runs retain the exact effective profile as a
 generated profile-snapshot artifact, so bundled read-only profiles remain runnable.

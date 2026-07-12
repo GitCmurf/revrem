@@ -45,7 +45,23 @@ def test_tui_run_footer_lists_dry_run_action():
     )
     app._workspace = "run"
 
-    assert "\\[d\\]dry-run" in tui._footer_markup(app)
+    footer = tui._footer_markup(app)
+    assert "\\[d] Dry-run" in footer
+    assert "\\]" not in footer
+
+
+def test_workspace_arrows_cycle_and_wrap():
+    app = tui.RevRemApp(
+        model=tui.tui_state.build_shell_model(cwd=Path("/tmp")),
+        profiles_by_name={},
+    )
+
+    app.action_workspace_next()
+    assert app._workspace == "run"
+    app.action_workspace_previous()
+    assert app._workspace == "loop"
+    app.action_workspace_previous()
+    assert app._workspace == "prompts"
 
 
 def _patch_textual_app_class(monkeypatch, run):
@@ -1360,7 +1376,7 @@ def test_tui_loop_command_panel_shows_current_actions_and_full_origin(tmp_path):
 
     assert "NEXT RUN" in panel
     assert "Review input: Fresh review — initial review file: none" in panel
-    assert "Command: revrem --profile security" in panel
+    assert "Launch: effective working copy of security" in panel
     assert "Loaded from: [status-info]5 July[/] [muted]01:56[/]" in panel
     assert "--max-iterations 12" not in status
 
@@ -1506,7 +1522,7 @@ def test_tui_cancel_action_reports_when_no_run_is_active(monkeypatch, tmp_path):
     updates = [
         value for selector, value in widgets.updates if selector == "#footer-bar"
     ]
-    assert any("live: idle" in update for update in updates)
+    assert any("[q] Quit" in update for update in updates)
 
 
 def test_tui_quit_warns_before_cancelling_active_run(monkeypatch, tmp_path):

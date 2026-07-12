@@ -35,6 +35,7 @@ class LoopEditModel:
     cwd: Path
     home: Path | None = None
     edits: dict[str, object] = field(default_factory=dict)
+    replay_baseline: dict[str, object] = field(default_factory=dict)
 
     @classmethod
     def load(cls, name: str, *, cwd: Path, home: Path | None = None) -> LoopEditModel:
@@ -46,6 +47,13 @@ class LoopEditModel:
     @property
     def is_dirty(self) -> bool:
         return bool(self.edits)
+
+    @property
+    def is_user_modified(self) -> bool:
+        return self.edits != self.replay_baseline
+
+    def mark_replay_baseline(self) -> None:
+        self.replay_baseline = dict(self.edits)
 
     def field_value(self, dotted_key: str, fallback: object) -> object:
         if dotted_key not in self.edits:
@@ -95,6 +103,7 @@ class LoopEditModel:
             self.name, self.authored_delta(), cwd=self.cwd, home=self.home
         )
         self.edits.clear()
+        self.replay_baseline.clear()
         self.profile = profiles.resolve_profile(
             self.name, cwd=self.cwd, home=self.home, require_implemented=False
         )

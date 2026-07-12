@@ -121,7 +121,8 @@ write per keystroke.
 model ("profiles are the save game").
 
 1. The TUI loads a profile into an **in-memory working copy**. Inline edits mutate the
-   working copy only — no CLI call per keystroke. A `*` marks unsaved changes.
+   working copy only — no CLI call per keystroke. Replayed settings and subsequent
+   operator modifications are presented as distinct states.
 2. **Save → profile** persists the whole working copy in one write, via
    `profiles.save_profile_raw(name, authored_delta, ...)`. Plan 1 also shipped
    `revrem config set <profile> <key> <value>` for scriptable one-shot edits, but the

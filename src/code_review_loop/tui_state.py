@@ -380,7 +380,7 @@ def render_shell_text(model: TuiShellModel) -> str:
 
 
 def markup_escape(value: str) -> str:
-    return value.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
+    return value.replace("\\", "\\\\").replace("[", "\\[")
 
 
 def harness_views() -> tuple[HarnessView, ...]:

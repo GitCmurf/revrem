@@ -102,7 +102,7 @@ model = "gpt-5.5"
 """,
         edit_model="gpt-5.6",
     )
-    assert "demo" in svg and "Unsaved changes" in svg and "gpt-5.6" in svg
+    assert "demo" in svg and "Modified" in svg and "gpt-5.6" in svg
     assert_svg_snapshot("tui_loop/dirty-edit", svg)
 
 

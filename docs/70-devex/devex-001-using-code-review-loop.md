@@ -1615,8 +1615,11 @@ routing is enabled. Enabled and disabled phases render as `●` and `○`; the
 left gutter uses box-drawing return rails for the outer review loop and the
 inner remediation/check retry loop. Workspaces are `1` loop, `2` run,
 `3` profiles, and `4` prompts. The loop workspace edits a working copy in
-memory; the Next Run summary says `Unsaved changes` when appropriate. That
-summary states the profile, review input, launch command, and concise last-run
+memory. `Left` and `Right` cycle through the workspaces with wraparound; number
+keys jump directly. Header tabs use semantic active styling without brackets,
+while footer brackets consistently denote pressable keys. The Next Run summary
+distinguishes replayed settings from subsequent `Modified` operator edits. That
+summary states the profile, review input, effective launch source, and concise last-run
 origin. An editable Run Settings card immediately below it owns base, maximum
 iterations, and final review. It says `initial review file: none` for a fresh run and shows the path
 when feedback is selected. New summaries replay from structured
