@@ -89,7 +89,12 @@ def test_tui_pilot_boots_home_view(tmp_path):
             assert "help" in str(footer.render()).lower()
             await pilot.press("h")
             await pilot.pause()
-            assert "confirm/start live run" in str(footer.render())
+            help_text = str(app.screen.query_one("#help-content").render())
+            assert "Run settings" in help_text
+            assert "\\[" not in help_text
+            await pilot.press("escape")
+            await pilot.pause()
+            _assert_no_widget(app, "#help-dialog")
             _assert_no_widget(app, "#profile-name")
             _assert_no_widget(app, "#profile-path")
 
@@ -113,7 +118,9 @@ def test_loop_workspace_renders_real_diagram_widgets(tmp_path):
             returns = str(app.query_one("#loop-returns").render())
             assert header == "LOOP PHASES"
             next_run = str(app.query_one("#loop-command-panel").render())
-            assert "Profile: security" in next_run and "Base: main" in next_run
+            settings = str(app.query_one("#loop-settings-panel").render())
+            assert "Profile: security" in next_run
+            assert "Base: main" in settings
             assert "01" in review_gutter
             assert "05" in commit_gutter
             assert "OUTER LOOP" in returns
@@ -140,6 +147,49 @@ def test_loop_iterations_key_opens_iteration_prompt_with_current_value(tmp_path)
                 app.screen.query_one("#prompt-title").render()
             )
             assert app.screen.query_one("#prompt-input").value == "7"
+
+    asyncio.run(run())
+
+
+def test_loop_settings_exposes_base_iterations_and_final_review(tmp_path):
+    async def run() -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        async with pilot_app(cwd=repo, profile_name="security") as (app, pilot):
+            settings = str(app.query_one("#loop-settings-panel").render())
+            assert "Base: main" in settings
+            assert "Max iterations: 2" in settings
+            assert "b edit base" in settings
+            await pilot.press("b")
+            await pilot.pause()
+            assert "Edit base" in str(app.screen.query_one("#prompt-title").render())
+            assert app.screen.query_one("#prompt-input").value == "main"
+
+    asyncio.run(run())
+
+
+def test_checks_picker_offers_detected_repo_gate_and_applies_it(tmp_path):
+    async def run() -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        (repo / "scripts").mkdir()
+        (repo / "scripts" / "dev-check").write_text("#!/bin/sh\n", encoding="utf-8")
+        async with pilot_app(cwd=repo, profile_name="security") as (app, pilot):
+            await pilot.press("down", "down", "down")
+            await pilot.press("p")
+            await pilot.pause()
+            picker = str(app.screen.query_one("#check-picker-content").render())
+            assert "Recommended" in picker
+            assert "./scripts/dev-check" in picker
+            await pilot.press("enter")
+            await pilot.pause()
+            diagram = app.query_one("#loop-diagram")
+            assert diagram.model.field_value("pipeline.checks", ()) == [
+                "./scripts/dev-check"
+            ]
+            assert "1 configured" in str(app.query_one("#phase-card-checks").render())
 
     asyncio.run(run())
 

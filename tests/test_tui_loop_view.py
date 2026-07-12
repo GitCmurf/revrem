@@ -70,10 +70,13 @@ def test_phase_gutter_shows_inner_rail_and_final_review_together(
     meta = tui_loop_state.loop_rail_meta(_model(repo, "p").profile)
     remediation = tui_loop_state.phase_gutter("remediation", meta)
     checks = tui_loop_state.phase_gutter("checks", meta)
+    commit = tui_loop_state.phase_gutter("commit", meta)
     assert meta.inner_rail is True
     assert meta.final_review is True
     assert "03" in remediation
     assert "04" in checks
+    assert commit == "05"
+    assert "FR" not in commit
     returns = "\n".join(tui_loop_state.loop_return_lines(_model(repo, "p").profile))
     assert "INNER RETRY" in returns
     assert "up to 2 inner retries" in returns
@@ -184,7 +187,10 @@ def test_checks_phase_is_display_only(tmp_path: Path) -> None:
             _model(repo, "p"), "checks", focused=True, expanded=True
         )
     )
-    assert "1 commands" in expanded
+    assert "1 configured" in expanded
+    assert "built-in: worktree cleanliness" in expanded
+    assert "check-failure retries: 0" in expanded
+    assert "p choose checks" in expanded
     assert "harness" not in expanded and "model" not in expanded
     assert tui_loop_state.PHASE_DOTTED["checks"] == {}
 

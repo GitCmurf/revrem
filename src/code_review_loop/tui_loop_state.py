@@ -44,6 +44,7 @@ PHASE_DOTTED: dict[str, dict[str, str]] = {
     },
 }
 LOOP_META_DOTTED = {
+    "base": "pipeline.base",
     "max_iterations": "pipeline.max_iterations",
     "final_review": "pipeline.final_review",
     "inner_check_retries": "runtime.inner_check_retries",
@@ -162,10 +163,7 @@ def phase_gutter(phase: str, rail_meta: LoopRailMeta) -> str:
     if phase == "checks" and rail_meta.inner_rail:
         return "04"
     if phase == "commit":
-        lines = ["05"]
-        if rail_meta.final_review and rail_meta.final_review_label:
-            lines.append("FR")
-        return "\n".join(lines)
+        return "05"
     return {
         "triage": "02",
         "remediation": "03",
@@ -217,24 +215,27 @@ def phase_card_lines(
             "pipeline.check_timeout_seconds",
             profile.pipeline.check_timeout_seconds,
         )
-        summary = (
-            f"{focus}{arrow} {marker} {phase_label:<11} | {commands} commands | "
-            f"{_format_timeout(timeout)}"
-        )
+        configured = f"{commands} configured" if commands else "cleanliness only"
+        summary = f"{focus}{arrow} {marker} {phase_label:<11} | {configured} | {_format_timeout(timeout)}"
         if not expanded:
             return (summary,)
+        retries = _effective_int(
+            source,
+            LOOP_META_DOTTED["inner_check_retries"],
+            profile.runtime.inner_check_retries,
+        )
         lines = [
             summary,
-            f"  commands: {commands} commands",
+            "  built-in: worktree cleanliness",
+            f"  configured: {commands if commands else 'none'}",
             f"  timeout: {_format_timeout(timeout)}",
+            f"  check-failure retries: {retries}",
         ]
         lines.extend(
             f"  {index}. {command}"
             for index, command in enumerate(commands_tuple, start=1)
         )
-        lines.append(
-            "  e edit commands · t timeout · i max iterations · I inner retries"
-        )
+        lines.append("  p choose checks · e custom commands · t timeout · I retries")
         return tuple(lines)
     summary_parts = [str(harness or "-")]
     if model:
@@ -277,6 +278,14 @@ def phase_card_lines(
                 f"  allow escalation: {escalate}",
             )
         )
+    actions = {
+        "review": "  m harness · M model · f effort · t timeout",
+        "triage": "  space on/off · m harness · M model · f effort · t timeout · e prompt · g library · a route",
+        "remediation": "  m harness · M model · f effort · t timeout",
+        "commit": "  space on/off · m harness · M model · f effort · t timeout · e message prompt · g library",
+    }
+    if phase_name in actions:
+        lines.append(actions[phase_name])
     return tuple(lines)
 
 

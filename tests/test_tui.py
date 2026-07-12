@@ -34,8 +34,8 @@ def test_tui_bindings_keep_i_workspace_dispatched():
 
 def test_tui_help_lists_loop_and_profile_i_dispatch():
     help_text = tui._help_markup(visible=True)
-    assert "\\[i] iterations" in help_text
-    assert "\\[i] import profiles" in help_text
+    assert "i max iterations" in help_text
+    assert "b base" in help_text
 
 
 def test_tui_run_footer_lists_dry_run_action():
@@ -1358,10 +1358,9 @@ def test_tui_loop_command_panel_shows_current_actions_and_full_origin(tmp_path):
     status = tui._status_bar_markup(app)
 
     assert "NEXT RUN" in panel
-    assert "SELECTED PHASE: REVIEW" in panel
     assert "Review input: Fresh review — initial review file: none" in panel
     assert "Command: revrem --profile security" in panel
-    assert "revrem --profile docs --max-iterations 12" in panel
+    assert "last run from 2026-07-05T01:56:47Z" in panel
     assert "--max-iterations 12" not in status
 
 
@@ -1387,8 +1386,8 @@ def test_tui_loop_command_panel_exposes_unselected_older_review(tmp_path):
     panel = tui._loop_command_markup(app)
 
     assert "Review input: Fresh review — initial review file: none" in panel
-    assert f"Older review available: {review}" in panel
-    assert "u to validate" in panel
+    assert "Older review available: .revrem/runs/old/review-final.txt" in panel
+    assert "u validate" in panel
 
 
 def test_explicit_bootstrap_profile_does_not_replay_last_run(monkeypatch, tmp_path):
@@ -1615,43 +1614,36 @@ def test_tui_clear_focus_delegates_escape_to_active_modal(monkeypatch, tmp_path)
     assert notifications == []
 
 
-def test_tui_help_toggle_updates_help_and_status_widgets(monkeypatch, tmp_path):
+def test_tui_help_text_is_structured_and_unescaped(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / ".git").mkdir()
     model = tui.tui_state.build_shell_model(cwd=repo, selected_profile_name="security")
     app = tui.RevRemApp(model=model, profiles_by_name={})
 
+    text = tui._help_text(app)
+
+    assert "Run settings" in text
+    assert "i Max iterations" in text
+    assert "[b]" not in text
+    assert "\\[" not in text
+
+
+def test_tui_help_action_opens_help_screen(monkeypatch, tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    model = tui.tui_state.build_shell_model(cwd=repo, selected_profile_name="security")
+    app = tui.RevRemApp(model=model, profiles_by_name={})
     widgets = _WidgetProbe()
     monkeypatch.setattr(app, "query_one", widgets.query_one)
-
+    pushed = []
+    monkeypatch.setattr(
+        app, "push_screen", lambda screen: pushed.append(screen), raising=False
+    )
     app.action_toggle_help()
 
-    assert app._help_visible is True
-    updates = [value for _, value in widgets.updates]
-    classes = [value for _, value in widgets.classes]
-    assert any("Run: \\[d] dry-run selected profile" in update for update in updates)
-    assert any("? Hide help" in update for update in updates)
-    assert "status-idle" in classes
-
-
-def test_tui_help_key_handler_stops_event_and_toggles_help(monkeypatch, tmp_path):
-    stopped = []
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    (repo / ".git").mkdir()
-    model = tui.tui_state.build_shell_model(cwd=repo, selected_profile_name="security")
-    app = tui.RevRemApp(model=model, profiles_by_name={})
-    widgets = _WidgetProbe()
-    monkeypatch.setattr(app, "query_one", widgets.query_one)
-    event = types.SimpleNamespace(key="h", stop=lambda: stopped.append(True))
-
-    app.on_key(event)
-
-    assert stopped == [True]
-    assert app._help_visible is True
-    updates = [value for _, value in widgets.updates]
-    assert any("confirm/start live run" in update for update in updates)
+    assert len(pushed) == 1
 
 
 def test_tui_edit_action_launches_profile_editor_with_suspended_app(

@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Literal, NamedTuple, cast
 
 from code_review_loop import (
+    check_presets,
     harnesses,
     profiles,
     tui_loop_state,
@@ -32,6 +33,8 @@ _TEXTUAL_IMPORT_ERROR: Exception | None = None
 _TEXTUAL_COMPONENTS: _TextualComponents | None = None
 _TEXTUAL_APP_CLASS: type[Any] | None = None
 _TEXT_PROMPT_SCREEN_CLASS: type[Any] | None = None
+_HELP_SCREEN_CLASS: type[Any] | None = None
+_CHECK_PICKER_SCREEN_CLASS: type[Any] | None = None
 _WORKSPACES = ("loop", "run", "profiles", "prompts")
 _PHASES = ("review", "triage", "remediation", "checks", "commit")
 _RUN_TABS = ("events", "stdout", "stderr", "summary")
@@ -93,6 +96,14 @@ class TuiBootstrapResult:
     profiles_by_name: dict[str, profiles.Profile]
     loop_model: Any | None
     loop_session: tui_session.LoopSession
+
+
+@dataclass(frozen=True)
+class _CheckChoice:
+    key: str
+    label: str
+    checks: tuple[str, ...] | None
+    group: str
 
 
 _Binding: Any | None = None
@@ -351,6 +362,112 @@ def text_prompt_screen_class() -> type[Any] | None:
     return _TEXT_PROMPT_SCREEN_CLASS
 
 
+def help_screen_class() -> type[Any] | None:
+    global _HELP_SCREEN_CLASS
+    components = _load_textual_components()
+    if components is None:
+        return None
+    _install_textual_components(components)
+    if _ModalScreen is None or _Vertical is None or _Static is object:
+        return None
+    if _HELP_SCREEN_CLASS is None:
+        modal_screen: Any = _ModalScreen
+        vertical: Any = _Vertical
+        static: Any = _Static
+
+        class HelpScreen(modal_screen):
+            BINDINGS = [
+                _binding("escape", "cancel", "Close", priority=True),
+                _binding("?", "cancel", "Close", priority=True),
+                _binding("h", "cancel", "Close", priority=True),
+            ]
+
+            def __init__(self, content: str) -> None:
+                super().__init__()
+                self.content = content
+
+            def compose(self):
+                with vertical(id="help-dialog"):
+                    yield static(self.content, id="help-content", markup=False)
+                    yield static("Esc, ? or h closes help", markup=False)
+
+            def action_cancel(self) -> None:
+                self.dismiss(None)
+
+        _HELP_SCREEN_CLASS = HelpScreen
+    return _HELP_SCREEN_CLASS
+
+
+def check_picker_screen_class() -> type[Any] | None:
+    global _CHECK_PICKER_SCREEN_CLASS
+    components = _load_textual_components()
+    if components is None:
+        return None
+    _install_textual_components(components)
+    if _ModalScreen is None or _Vertical is None or _Static is object:
+        return None
+    if _CHECK_PICKER_SCREEN_CLASS is None:
+        modal_screen: Any = _ModalScreen
+        vertical: Any = _Vertical
+        static: Any = _Static
+
+        class CheckPickerScreen(modal_screen):
+            BINDINGS = [
+                _binding("up", "move_up", "Up", priority=True),
+                _binding("k", "move_up", "Up", priority=True),
+                _binding("down", "move_down", "Down", priority=True),
+                _binding("j", "move_down", "Down", priority=True),
+                _binding("enter", "select", "Select", priority=True),
+                _binding("escape", "cancel", "Cancel", priority=True),
+            ]
+
+            def __init__(self, choices: tuple[_CheckChoice, ...]) -> None:
+                super().__init__()
+                self.choices = choices
+                self.selected_index = 0
+                self._body: Any | None = None
+
+            def compose(self):
+                with vertical(id="check-picker-dialog"):
+                    self._body = static("", id="check-picker-content", markup=False)
+                    yield self._body
+                    yield static(
+                        "Up/Down choose · Enter apply · Esc cancel", markup=False
+                    )
+
+            def on_mount(self) -> None:
+                self._rebuild()
+
+            def action_move_up(self) -> None:
+                self._move(-1)
+
+            def action_move_down(self) -> None:
+                self._move(1)
+
+            def action_select(self) -> None:
+                if self.choices:
+                    self.dismiss(self.choices[self.selected_index].key)
+
+            def action_cancel(self) -> None:
+                self.dismiss(None)
+
+            def _move(self, delta: int) -> None:
+                if self.choices:
+                    self.selected_index = (self.selected_index + delta) % len(
+                        self.choices
+                    )
+                    self._rebuild()
+
+            def _rebuild(self) -> None:
+                if self._body is not None:
+                    self._body.update(
+                        _check_picker_text(self.choices, self.selected_index)
+                    )
+
+        _CHECK_PICKER_SCREEN_CLASS = CheckPickerScreen
+    return _CHECK_PICKER_SCREEN_CLASS
+
+
 def _binding(
     key: str,
     action: str,
@@ -399,6 +516,7 @@ def _build_bindings(binding_cls: Any | None) -> list[Any]:
             priority=True,
             binding_cls=binding_cls,
         ),
+        _binding("b", "edit_base", "Base", priority=True, binding_cls=binding_cls),
         _binding(
             "I",
             "edit_inner_retries",
@@ -421,13 +539,12 @@ def _build_bindings(binding_cls: Any | None) -> list[Any]:
         ("u", "toggle_pending_review", "Reuse review"),
         ("v", "show_pending_review", "Review details"),
         _binding(
-            "question_mark",
-            "toggle_help",
-            "Help",
+            "p",
+            "choose_checks",
+            "Choose checks",
             priority=True,
             binding_cls=binding_cls,
         ),
-        _binding("h", "toggle_help", "Help", priority=True, binding_cls=binding_cls),
         ("tab", "focus_next", "Focus next"),
         ("shift+tab", "focus_previous", "Focus previous"),
         _binding(
@@ -563,6 +680,33 @@ class _RevRemAppMixin:
         border: round $accent;
         background: $surface;
         color: $text;
+    }
+
+    #loop-settings-panel {
+        margin-top: 1;
+        padding: 0 1;
+        height: auto;
+        border: round $surface;
+        background: $panel;
+        color: $text;
+    }
+
+    HelpScreen, CheckPickerScreen {
+        align: center middle;
+    }
+
+    #help-dialog, #check-picker-dialog {
+        width: 90%;
+        max-width: 110;
+        height: 80%;
+        border: round $accent;
+        background: $surface;
+        padding: 1 2;
+        overflow-y: auto;
+    }
+
+    #help-content, #check-picker-content {
+        height: auto;
     }
 
     #status-bar {
@@ -745,6 +889,11 @@ class _RevRemAppMixin:
                         yield _Static(
                             _loop_command_markup(self),
                             id="loop-command-panel",
+                            markup=False,
+                        )
+                        yield _Static(
+                            _loop_settings_markup(self),
+                            id="loop-settings-panel",
                             markup=False,
                         )
                         yield loop_widget
@@ -1118,9 +1267,18 @@ class _RevRemAppMixin:
         self._request_cancel(exit_after=True)
 
     def action_toggle_help(self) -> None:
-        self._help_visible = not self._help_visible
-        _update_widget(self, "#screen-help", _help_markup(visible=self._help_visible))
-        self._update_console_status()
+        screen_class = help_screen_class()
+        push_screen = getattr(self, "push_screen", None)
+        if screen_class is None or not callable(push_screen):
+            _notify(self, _help_text(self))
+            return
+        active_screen = getattr(self, "screen", None)
+        if isinstance(active_screen, screen_class):
+            active_screen.dismiss(None)
+            return
+        if _ModalScreen is not None and isinstance(active_screen, _ModalScreen):
+            return
+        push_screen(screen_class(_help_text(self)))
 
     def action_clear_focus(self) -> None:
         if _cancel_active_modal(self):
@@ -1283,9 +1441,73 @@ class _RevRemAppMixin:
         if self._loop_diagram is not None:
             self._open_loop_meta_prompt("max_iterations")
 
-    def action_edit_inner_retries(self) -> None:
+    def action_edit_base(self) -> None:
         if self._workspace == "loop" and self._loop_diagram is not None:
-            self._open_loop_meta_prompt("inner_check_retries")
+            self._open_loop_meta_prompt("base")
+
+    def action_edit_inner_retries(self) -> None:
+        if self._workspace != "loop" or self._loop_diagram is None:
+            return
+        if self._loop_diagram.current_phase() != "checks":
+            _notify(self, "Check-failure retries: focus the Checks phase first.")
+            return
+        self._open_loop_meta_prompt("inner_check_retries")
+
+    def action_choose_checks(self) -> None:
+        if (
+            self._workspace != "loop"
+            or self._loop_diagram is None
+            or self._loop_diagram.current_phase() != "checks"
+        ):
+            _notify(self, "Choose checks: focus the Checks phase first.")
+            return
+        current = self._current_check_commands()
+        detected = check_presets.detect_check_presets(Path(self.model.snapshot.cwd))
+        recent = check_presets.recent_check_presets(
+            Path(self.model.snapshot.cwd),
+            excluded=tuple(item.checks for item in detected),
+        )
+        choices: list[_CheckChoice] = []
+        if current:
+            choices.append(
+                _CheckChoice(
+                    "current", "Keep current configured checks", current, "Current"
+                )
+            )
+        choices.extend(
+            _CheckChoice(item.key, item.label, item.checks, "Recommended")
+            for item in detected
+        )
+        choices.extend(
+            _CheckChoice(item.key, item.label, item.checks, "Recent runs")
+            for item in recent
+            if item.checks != current
+        )
+        choices.extend(
+            (
+                _CheckChoice("custom", "Enter custom commands", None, "Other"),
+                _CheckChoice("builtin-only", "Built-in cleanliness only", (), "Other"),
+            )
+        )
+        screen_class = check_picker_screen_class()
+        push_screen = getattr(self, "push_screen", None)
+        if screen_class is None or not callable(push_screen):
+            _notify(self, "Check selection requires the interactive Textual picker.")
+            return
+
+        by_key = {choice.key: choice for choice in choices}
+
+        def handle_result(key: str | None) -> None:
+            if key is None or key == "current":
+                return
+            if key == "custom":
+                self._open_checks_prompt()
+                return
+            choice = by_key.get(key)
+            if choice is not None and choice.checks is not None:
+                self._apply_check_commands(choice.checks)
+
+        push_screen(screen_class(tuple(choices)), callback=handle_result)
 
     def action_toggle_final_review(self) -> None:
         if self._workspace == "loop" and self._loop_diagram is not None:
@@ -1481,13 +1703,7 @@ class _RevRemAppMixin:
         if self._loop_diagram is None:
             return
         diagram = self._loop_diagram
-        current = diagram.model.field_value(
-            "pipeline.checks", diagram.model.profile.pipeline.checks
-        )
-        if isinstance(current, list | tuple):
-            initial = "; ".join(str(item) for item in current)
-        else:
-            initial = ""
+        initial = "; ".join(self._current_check_commands())
 
         def apply(value: str) -> None:
             diagram.model.set_field("pipeline.checks", value)
@@ -1501,6 +1717,29 @@ class _RevRemAppMixin:
             initial=initial,
             on_submit=apply,
         )
+
+    def _current_check_commands(self) -> tuple[str, ...]:
+        if self._loop_diagram is None:
+            return ()
+        current = self._loop_diagram.model.field_value(
+            "pipeline.checks", self._loop_diagram.model.profile.pipeline.checks
+        )
+        if not isinstance(current, list | tuple):
+            return ()
+        return tuple(str(item) for item in current if isinstance(item, str))
+
+    def _apply_check_commands(self, checks: tuple[str, ...]) -> None:
+        if self._loop_diagram is None:
+            return
+        self._loop_diagram.model.set_field("pipeline.checks", list(checks))
+        self._loop_diagram.rebuild()
+        self._update_console_status()
+        label = (
+            f"Selected {len(checks)} configured checks"
+            if checks
+            else "Selected built-in cleanliness only"
+        )
+        _notify(self, f"{label} (unsaved; press s to save).")
 
     def _open_prompt_field_prompt(self) -> None:
         if self._loop_diagram is None:
@@ -1815,11 +2054,11 @@ class _RevRemAppMixin:
 
         dotted = tui_loop_state.LOOP_META_DOTTED[field]
         profile = self._loop_diagram.model.profile
-        fallback = (
-            profile.pipeline.max_iterations
-            if field == "max_iterations"
-            else profile.runtime.inner_check_retries
-        )
+        fallback = {
+            "base": profile.pipeline.base,
+            "max_iterations": profile.pipeline.max_iterations,
+            "inner_check_retries": profile.runtime.inner_check_retries,
+        }[field]
         value = self._loop_diagram.model.field_value(dotted, fallback)
         return "" if value is None else str(value)
 
@@ -2103,6 +2342,7 @@ class _RevRemAppMixin:
         _update_widget(self, "#screen-run-monitor", _right_pane_markup(self))
         _update_widget(self, "#footer-bar", _footer_markup(self))
         _update_widget(self, "#loop-command-panel", _loop_command_markup(self))
+        _update_widget(self, "#loop-settings-panel", _loop_settings_markup(self))
         _set_widget_classes(self, "#screen-home", _pane_classes(self, "left"))
         _set_widget_classes(self, "#screen-run-monitor", _pane_classes(self, "right"))
         on_loop = self._workspace == "loop"
@@ -2234,6 +2474,7 @@ class _RevRemAppMixin:
         _update_widget(self, "#status-bar", _status_bar_markup(self))
         _update_widget(self, "#footer-bar", _footer_markup(self))
         _update_widget(self, "#loop-command-panel", _loop_command_markup(self))
+        _update_widget(self, "#loop-settings-panel", _loop_settings_markup(self))
         _set_widget_classes(
             self,
             "#status-bar",
@@ -2718,9 +2959,7 @@ def _run_workspace_markup(app: Any) -> str:
 
 def _footer_markup(app: Any) -> str:
     live = _live_hint(app)
-    if app._help_visible:
-        keys = _help_markup(visible=True).replace("\n", " | ")
-    elif app._workspace == "profiles":
+    if app._workspace == "profiles":
         keys = "[j/down]move [up]move [Enter]select [d]dry-run [r]run [?]help"
     elif app._workspace == "loop":
         keys = "[up/down] phase [Enter] details [s] save [r] run [?] help [q] quit"
@@ -2735,81 +2974,68 @@ def _footer_markup(app: Any) -> str:
 def _loop_command_markup(app: Any) -> str:
     if app._workspace != "loop":
         return ""
-    phase = (
-        app._loop_diagram.current_phase()
-        if getattr(app, "_loop_diagram", None) is not None
-        else "review"
-    )
-    phase_keys = {
-        "review": "Enter expand | m harness | M model | f effort | t timeout | e edit prompt",
-        "triage": "Enter expand/routes | Tab route focus | a add route | space on/off | e edit prompt",
-        "remediation": "Enter expand | m harness | M model | f effort | t timeout | e edit prompt",
-        "checks": "Enter expand | e edit commands | t timeout | i max loops | I inner retries",
-        "commit": "Enter expand | space on/off | m harness | M model | f effort | t timeout",
-    }
-    profile = app._profile_by_name(app._profile_name())
-    loop_model = getattr(app, "_loop_model", None)
-    active_profile = loop_model.profile if loop_model is not None else profile
     dirty = bool(
         getattr(app, "_loop_diagram", None) is not None and app._loop_diagram.is_dirty
     )
     profile_text = app._profile_name() or "<none>"
     if dirty:
         profile_text += " — Unsaved changes"
-    base = active_profile.pipeline.base if active_profile is not None else "-"
-    iterations: object = (
-        active_profile.pipeline.max_iterations if active_profile is not None else "-"
-    )
-    final_review_enabled = bool(
-        active_profile is not None and active_profile.pipeline.final_review
-    )
-    if loop_model is not None and active_profile is not None:
-        iterations = loop_model.field_value(
-            "pipeline.max_iterations", active_profile.pipeline.max_iterations
-        )
-        raw_final_review = loop_model.field_value(
-            "pipeline.final_review", active_profile.pipeline.final_review
-        )
-        final_review_enabled = (
-            raw_final_review.strip().lower() in {"true", "yes", "on", "1"}
-            if isinstance(raw_final_review, str)
-            else bool(raw_final_review)
-        )
-    final_review = "on" if final_review_enabled else "off"
     origin = _origin_detail(app.loop_session.origin_label)
     lines = [
         "NEXT RUN",
         f"Profile: {profile_text}",
-        f"Base: {base} | Iterations: {iterations} | Final review: {final_review}",
     ]
     pending = app.loop_session.pending_review
     if pending is None:
         lines.append("Review input: Fresh review — initial review file: none")
     elif pending.selected and pending.compatible:
-        lines.append(f"Review input: Reuse compatible review — {pending.path}")
+        lines.append(
+            f"Review input: Reuse compatible review — {_display_path(app, pending.path)}"
+        )
     elif pending.selected:
-        lines.append(f"Review input: Validate older review — {pending.path}")
+        lines.append(
+            f"Review input: Validate older review — {_display_path(app, pending.path)}"
+        )
     elif pending.compatible:
         lines.append("Review input: Fresh review — initial review file: none")
         lines.append(
-            f"Compatible review available: {pending.path} (u to reuse; v for details)"
+            f"Compatible review available: {_display_path(app, pending.path)} (u reuse · v details)"
         )
     else:
         lines.append("Review input: Fresh review — initial review file: none")
         lines.append(
-            f"Older review available: {pending.path} (u to validate; v for details)"
+            f"Older review available: {_display_path(app, pending.path)} (u validate · v details)"
         )
     if origin:
-        lines.append(f"Loaded from: {_truncate(origin, 156)}")
-    lines.extend(
+        lines.append(f"Loaded from: {_origin_summary(origin)}")
+    lines.append(f"Command: {_truncate(_command_preview(app), 156)}")
+    return "\n".join(lines)
+
+
+def _loop_settings_markup(app: Any) -> str:
+    loop_model = getattr(app, "_loop_model", None)
+    profile = loop_model.profile if loop_model is not None else None
+    if profile is None:
+        return "RUN SETTINGS\nNo active profile."
+    base = loop_model.field_value("pipeline.base", profile.pipeline.base)
+    iterations = loop_model.field_value(
+        "pipeline.max_iterations", profile.pipeline.max_iterations
+    )
+    raw_final = loop_model.field_value(
+        "pipeline.final_review", profile.pipeline.final_review
+    )
+    final_enabled = (
+        raw_final.strip().lower() in {"true", "yes", "on", "1"}
+        if isinstance(raw_final, str)
+        else bool(raw_final)
+    )
+    return "\n".join(
         (
-            f"Command: {_truncate(_command_preview(app), 156)}",
-            "",
-            f"SELECTED PHASE: {phase.upper()}",
-            phase_keys.get(phase, "Enter expand | ? help"),
+            "RUN SETTINGS",
+            f"Base: {base} | Max iterations: {iterations} | Final review: {'on' if final_enabled else 'off'}",
+            "b edit base · i edit max iterations · F toggle final review",
         )
     )
-    return "\n".join(lines)
 
 
 def _live_hint(app: Any) -> str:
@@ -3176,7 +3402,7 @@ def _status_bar_markup(app: Any) -> str:
         pending = " | cancelling"
     elif app._quit_confirmation_pending:
         pending = " | quit needs confirmation"
-    help_hint = "? Hide help" if app._help_visible else "? Help"
+    help_hint = "? Help"
     workspace = app._workspace.capitalize()
     return (
         f"RevRem · {tui_state.markup_escape(Path(app.model.snapshot.cwd).name or app.model.snapshot.cwd)}"
@@ -3203,6 +3429,13 @@ def _origin_detail(origin: str | None) -> str:
     return origin
 
 
+def _display_path(app: Any, path: Path) -> str:
+    try:
+        return str(path.resolve().relative_to(Path(app.model.snapshot.cwd).resolve()))
+    except ValueError:
+        return str(path)
+
+
 def _profile_base(app: Any) -> str:
     profile = app._profile_by_name(app._profile_name())
     return str(profile.pipeline.base) if profile is not None else "-"
@@ -3212,6 +3445,8 @@ def _cancel_active_modal(app: Any) -> bool:
     screen = getattr(app, "screen", None)
     if screen is None or screen is app:
         return False
+    if _ModalScreen is not None and not isinstance(screen, _ModalScreen):
+        return False
     action_cancel = getattr(screen, "action_cancel", None)
     if callable(action_cancel):
         action_cancel()
@@ -3220,16 +3455,103 @@ def _cancel_active_modal(app: Any) -> bool:
 
 
 def _help_markup(*, visible: bool) -> str:
-    if not visible:
-        return "[b]Help[/b]\nPress \\[h] for full keybindings."
     return (
-        "[b]Help[/b]\n"
-        "Universal: \\[q] quit | \\[Tab] next focus | \\[Shift+Tab] previous focus | \\[Esc] clear focus | \\[h] hide help\n"
-        "Loop: \\[space] toggle phase | \\[m] harness | \\[f] effort | \\[M] model | \\[t] timeout | \\[i] iterations | \\[F] final review | \\[e] prompt | \\[g] prompts | \\[a] add route | \\[s] save\n"
-        "Run: \\[d] dry-run selected profile | \\[r] confirm/start live run | \\[k] cancel active run | \\[l] logs/events | \\[o] artifacts\n"
-        "Profile: \\[s] show | \\[e] edit | \\[n] new... | \\[c] clone... | \\[x] export | \\[i] import profiles | \\[delete] delete\n"
-        "Prompts: \\[Enter] apply targeted asset or show selection; Esc cancels prompts/routes."
+        "Help\nPress ? or h for keybindings." if not visible else _generic_help_text()
     )
+
+
+def _help_text(app: Any) -> str:
+    lines = [
+        "HELP",
+        "",
+        "Navigation",
+        "  Up/Down or j/k move · Enter expands/selects · Esc closes or clears focus",
+        "  1 Loop · 2 Run · 3 Profiles · 4 Prompts · q Quit",
+        "",
+    ]
+    if app._workspace == "loop":
+        phase = (
+            app._loop_diagram.current_phase()
+            if getattr(app, "_loop_diagram", None) is not None
+            else "review"
+        )
+        lines.extend(
+            (
+                "Run settings",
+                "  b Base · i Max iterations · F Final review",
+                "",
+                f"Selected phase: {phase}",
+                f"  {_phase_help_text(phase)}",
+                "",
+                "Review input",
+                "  u Toggle reuse/validation · v Details",
+                "",
+                "Run",
+                "  d Dry-run · r Confirm/start · k Cancel · s Save profile",
+            )
+        )
+    elif app._workspace == "run":
+        lines.extend(("Run", "  l Logs/events · o Artifacts · k Cancel · d Dry-run"))
+    elif app._workspace == "profiles":
+        lines.extend(
+            (
+                "Profiles",
+                "  Enter load · n New · c Clone · e Edit · x Export · Delete remove",
+            )
+        )
+    else:
+        lines.extend(("Prompts", "  Enter apply · Esc return"))
+    return "\n".join(lines)
+
+
+def _generic_help_text() -> str:
+    return "\n".join(
+        (
+            "HELP",
+            "Up/Down move · Enter select · Esc close",
+            "1 Loop · 2 Run · 3 Profiles · 4 Prompts · q Quit",
+            "Loop: b base · i max iterations · F final review · s save",
+            "Run: d dry-run · r start · k cancel",
+        )
+    )
+
+
+def _phase_help_text(phase: str) -> str:
+    return {
+        "review": "m Harness · M Model · f Effort · t Timeout",
+        "triage": "Space On/off · m Harness · M Model · f Effort · t Timeout · e Prompt · g Library · a Route",
+        "remediation": "m Harness · M Model · f Effort · t Timeout",
+        "checks": "p Choose checks · e Custom commands · t Timeout · I Check-failure retries",
+        "commit": "Space On/off · m Harness · M Model · f Effort · t Timeout · e Message prompt · g Library",
+    }.get(phase, "Enter expand")
+
+
+def _check_picker_text(choices: tuple[_CheckChoice, ...], selected_index: int) -> str:
+    lines = [
+        "CHOOSE VERIFICATION CHECKS",
+        "Built-in worktree cleanliness always runs.",
+        "",
+    ]
+    group: str | None = None
+    for index, choice in enumerate(choices):
+        if choice.group != group:
+            group = choice.group
+            lines.append(f"-- {group} --")
+        marker = ">" if index == selected_index else " "
+        lines.append(f"{marker} {choice.label}")
+    if choices:
+        selected = choices[max(0, min(selected_index, len(choices) - 1))]
+        lines.extend(("", "Commands"))
+        if selected.checks is None:
+            lines.append("  Enter commands manually after selecting this option.")
+        elif selected.checks:
+            lines.extend(
+                f"  {index}. {command}"
+                for index, command in enumerate(selected.checks, 1)
+            )
+        else:
+            lines.append("  No configured commands; built-in cleanliness only.")
+    return "\n".join(lines)
 
 
 def _resolve_widget(app: Any, selector: str) -> Any | None:

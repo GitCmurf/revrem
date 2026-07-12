@@ -3,7 +3,7 @@ document_id: REVREM-DESIGN-001
 type: Design
 title: Loop-First TUI Overhaul
 status: Draft
-version: "0.3"
+version: "0.4"
 last_updated: '2026-07-11'
 owner: GitCmurf
 area: product
@@ -28,7 +28,7 @@ related_ids:
 > **Document ID:** REVREM-DESIGN-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 0.3
+> **Version:** 0.4
 > **Last Updated:** 2026-07-11
 > **Type:** Design
 
@@ -144,13 +144,14 @@ Textual remains an optional `[tui]` extra. The lazy-import / fallback scaffoldin
 
 Navigation: **`1 Loop · 2 Run · 3 Profiles · 4 Prompts`** (Loop first). A stable
 two-line app bar shows only repository, workspace, live state, and workspace
-navigation. The Loop workspace begins with a labelled **Next Run** summary:
-profile, unsaved state in words, base, iteration bound, final-review state,
-review input, provenance, and launch command. It always says whether the next
+navigation. The Loop workspace begins with a concise labelled **Next Run**
+summary for profile, review input, provenance, and launch command, followed by
+an editable **Run Settings** card for base, maximum outer iterations, and
+final-review state. It always says whether the next
 run has an initial-review file. Compatible review is preselected; an actionable
 review from a different Git state remains visible but requires an explicit
-validation choice. Current-phase actions are shown separately from the run
-summary. The diagram is segmented into a loop summary band, numbered phase
+validation choice. Current-phase actions render inside the expanded owning
+phase. The diagram is segmented into a loop summary band, numbered phase
 bands, explicit inner-retry and outer-loop return bands, and an optional final
 review marker. Bottom bar: live state plus the shortest contextual key strip.
 `revrem ui` may briefly show a splash screen while Textual mounts; operators can
@@ -177,6 +178,12 @@ last-run replay.
 Vertical accordion. Each phase shows a one-line summary always; the focused phase expands
 in place. `●`/`○` = enabled/disabled (space toggles). The left gutter draws the loop
 rails; arrows carry their real exit condition and bound.
+
+Checks is always enabled because RevRem always runs its built-in worktree-cleanliness
+check. Its card distinguishes that mandatory check from configured commands, offers
+repository-detected and recent repo-local command sets through a selector, and owns the
+check-failure retry setting. Full help is a scrollable modal; the footer remains a short
+contextual action strip and never flattens escaped markup.
 
 Flat phase focused (review):
 

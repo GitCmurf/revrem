@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.79'
+version: '1.80'
 last_updated: '2026-07-11'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.79
+> **Version:** 1.80
 > **Last Updated:** 2026-07-11
 > **Type:** DEVEX
 > **Area:** devex
@@ -1616,9 +1616,9 @@ left gutter uses box-drawing return rails for the outer review loop and the
 inner remediation/check retry loop. Workspaces are `1` loop, `2` run,
 `3` profiles, and `4` prompts. The loop workspace edits a working copy in
 memory; the Next Run summary says `Unsaved changes` when appropriate. That
-summary appears above the diagram and states the profile, base, iteration
-bound, final-review state, review input, launch command, and full last-run
-origin. It says `initial review file: none` for a fresh run and shows the path
+summary states the profile, review input, launch command, and concise last-run
+origin. An editable Run Settings card immediately below it owns base, maximum
+iterations, and final review. It says `initial review file: none` for a fresh run and shows the path
 when feedback is selected. New summaries replay from structured
 `resume_config`, so redaction in diagnostic command text cannot silently select
 an older run. The loaded profile, loop draft, origin, pending review, preview,
@@ -1644,13 +1644,21 @@ message appears after ten seconds rather than exposing partial state.
 Loop keys are contextual: `j`/Down and Up move phase focus, `Enter` expands,
 collapses, or enters triage route-row selection, `space` toggles phases that
 can be disabled, `m` cycles harness, `f` cycles reasoning effort, `M` edits
-model, `t` edits timeout, `i` edits max iterations, `F` toggles final review,
+model, `t` edits timeout, `b` edits base, `i` edits max iterations, and `F`
+toggles final review.
 `e` edits the focused scalar prompt field (`triage.prompt` or
 `commit.message_prompt`), `g` opens the prompt library to apply a selected asset
 to that scalar prompt field, and `a` adds a route when triage is focused.
 Free-text fields are validated at save time. Route rows edit through the same
 working copy and explicit `s` save; route deletion is not available yet because
 the current profile-save primitive is merge-only.
+
+Checks always includes RevRem's built-in worktree-cleanliness check, even when
+there are no configured commands. Focus Checks and press `p` to choose from
+repository-detected recommendations, deduplicated command sets from recent
+repo-local runs, custom commands, or built-in cleanliness only. `I` edits the
+number of check-failure remediation retries. Press `?` or `h` for the scrollable
+contextual help modal; `Esc`, `?`, or `h` closes it without changing the footer.
 
 There is no runtime "copy SVG" command in the TUI. The project uses Textual's
 SVG export in the test harness for checked-in snapshots; for ad hoc operator
@@ -1960,6 +1968,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.80 | 2026-07-12 | Codex | Documented editable Run Settings, truthful built-in checks, detected/recent check selection, contextual phase actions, and modal help |
 | 1.79 | 2026-07-11 | Codex | Documented atomic TUI bootstrap, focused Next Run presentation, explicit initial-review state, and stale-review validation selection |
 | 1.78 | 2026-07-11 | Codex | Documented structured last-run replay, pending-review selection, effective timeout labels, and asynchronous TUI startup |
 | 1.77 | 2026-07-10 | Codex | Documented the layered model catalog and local model invocation statistics |
