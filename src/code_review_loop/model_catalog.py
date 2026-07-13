@@ -18,6 +18,7 @@ from typing import Any
 from code_review_loop.repo_roots import repo_root_or_cwd
 
 KNOWN_EFFORTS = ("minimal", "low", "medium", "high", "xhigh", "max", "ultra")
+IMPLEMENTED_CATALOG_DRIVERS = ("codex", "claude", "gemini", "opencode", "kilo")
 CATALOG_FILENAME = ".revrem-catalog.toml"
 
 
@@ -103,7 +104,7 @@ def _load_catalog_cached(
                 continue
             name = str(entry["name"])
             driver = str(entry.get("driver", name))
-            if driver not in {"codex", "claude", "gemini", "opencode", "kilo", "reserved"}:
+            if driver not in IMPLEMENTED_CATALOG_DRIVERS:
                 raise ValueError(f"catalog harness {name!r} selects unknown built-in driver {driver!r}")
             harness_specs[name] = HarnessCatalogSpec(
                 name=name,

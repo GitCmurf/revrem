@@ -141,6 +141,17 @@ def test_project_harness_catalog_uses_catalog_executable(tmp_path, monkeypatch):
     ) == "/opt/team-codex"
 
 
+def test_project_catalog_rejects_reserved_driver(tmp_path, monkeypatch):
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "missing-codex"))
+    (tmp_path / ".revrem-catalog.toml").write_text(
+        '[[harness]]\nname="team-reserved"\ndriver="reserved"\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="unknown built-in driver 'reserved'"):
+        model_catalog.load_catalog(tmp_path, home=tmp_path)
+
+
 def test_codex_cache_list_json_shape(tmp_path, monkeypatch):
     codex_home = tmp_path / "codex"
     codex_home.mkdir()
