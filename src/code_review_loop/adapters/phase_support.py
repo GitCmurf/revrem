@@ -641,16 +641,33 @@ def run_with_waiting_progress(
 
 
 def _phase_harness(config: LoopConfig, phase: str) -> str | None:
-    return getattr(config, "commit_message_harness" if phase == "commit-message" else f"{phase.replace('-', '_')}_harness", None)
+    if phase == "commit-message":
+        return config.commit_message_harness
+    phase_field = {"remediate": "remediation", "stale-validation": "review"}.get(
+        phase, phase
+    )
+    return getattr(config, f"{phase_field.replace('-', '_')}_harness", None)
 
 
 def _phase_model(config: LoopConfig, phase: str) -> str | None:
-    field = "commit_message_model" if phase == "commit-message" else f"{phase.replace('-', '_')}_model"
+    if phase == "commit-message":
+        field = "commit_message_model"
+    else:
+        phase_field = {"remediate": "remediation", "stale-validation": "review"}.get(
+            phase, phase
+        )
+        field = f"{phase_field.replace('-', '_')}_model"
     return getattr(config, field, None) or config.model
 
 
 def _phase_effort(config: LoopConfig, phase: str) -> str | None:
-    field = "commit_reasoning_effort" if phase == "commit-message" else f"{phase.replace('-', '_')}_reasoning_effort"
+    if phase == "commit-message":
+        field = "commit_reasoning_effort"
+    else:
+        phase_field = {"remediate": "remediation", "stale-validation": "review"}.get(
+            phase, phase
+        )
+        field = f"{phase_field.replace('-', '_')}_reasoning_effort"
     return getattr(config, field, None) or config.reasoning_effort
 
 

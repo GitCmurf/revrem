@@ -118,19 +118,45 @@ def main(argv: Sequence[str] | None = None) -> int:
 def _validate_model_selections(config) -> None:
     selections = (
         ("review", config.review_harness, config.review_model or config.model, config.review_reasoning_effort or config.reasoning_effort),
-        ("tri" + "age", config.triage_harness, config.triage_model or config.model, config.triage_reasoning_effort or config.reasoning_effort),
         ("remediation", config.remediation_harness, config.remediation_model or config.model, config.remediation_reasoning_effort or config.reasoning_effort),
-        ("commit", config.commit_message_harness, config.commit_message_model, config.commit_reasoning_effort),
     )
+    if config.triage_enabled:
+        selections += (
+            (
+                "triage",
+                config.triage_harness,
+                config.triage_model or config.model,
+                config.triage_reasoning_effort or config.reasoning_effort,
+            ),
+        )
+    if config.commit_after_remediation:
+        selections += (
+            (
+                "commit",
+                config.commit_message_harness,
+                config.commit_message_model,
+                config.commit_reasoning_effort,
+            ),
+        )
     for phase, harness, model, effort in selections:
         warning = validate_selection(harness, model, effort, cwd=config.cwd)
         if warning:
             print(f"WARNING: {phase}: {warning}", file=sys.stderr)
-    routes = config.profile_v2.triage.routes if config.profile_v2 is not None else {}
-    for name, route in routes.items():
-        warning = validate_selection(route.harness, route.model, route.reasoning_effort, cwd=config.cwd)
-        if warning:
-            print(f"WARNING: route {name}: {warning}", file=sys.stderr)
+    if (
+        config.profile_v2 is not None
+        and config.profile_v2.triage.routing.enabled
+        and config.triage_enabled
+    ):
+        routes = config.profile_v2.triage.routes
+        for name, route in routes.items():
+            warning = validate_selection(
+                route.harness,
+                route.model,
+                route.reasoning_effort,
+                cwd=config.cwd,
+            )
+            if warning:
+                print(f"WARNING: route {name}: {warning}", file=sys.stderr)
 
 
 def _print_summary(summary: dict[str, object], *, summary_format: str) -> None:

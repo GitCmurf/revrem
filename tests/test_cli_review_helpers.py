@@ -20,6 +20,9 @@ from code_review_loop.adapters.commit import (
 from code_review_loop.adapters.phase_support import (
     DEFAULT_COMMIT_MESSAGE_PROMPT,
     build_commit_message_command,
+    _phase_harness,
+    _phase_model,
+    _phase_effort,
     normalize_revrem_conventional_subject,
     progress_event,
     run_with_waiting_progress,
@@ -248,6 +251,41 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
         == "clear"
     )
     assert detect_review_status("This would warrant an inline finding.") == "unknown"
+
+
+def test_phase_field_aliases_use_remediation_and_review_fields():
+    config = LoopConfig(
+        review_harness="codex",
+        review_model="gpt-review",
+        review_reasoning_effort="high",
+        remediation_harness="claude",
+        remediation_model="gpt-remediation",
+        remediation_reasoning_effort="low",
+        model="global-model",
+        reasoning_effort="global-effort",
+    )
+
+    assert _phase_harness(config, "remediate") == "claude"
+    assert _phase_model(config, "remediate") == "gpt-remediation"
+    assert _phase_effort(config, "remediate") == "low"
+    assert _phase_harness(config, "stale-validation") == "codex"
+    assert _phase_model(config, "stale-validation") == "gpt-review"
+    assert _phase_effort(config, "stale-validation") == "high"
+
+
+def test_phase_field_aliases_fall_back_to_global_model_when_alias_missing():
+    config = LoopConfig(
+        review_harness="codex",
+        remediation_harness="claude",
+        model="global-model",
+        reasoning_effort="global-effort",
+    )
+
+    assert _phase_model(config, "remediate") == "global-model"
+    assert _phase_effort(config, "remediate") == "global-effort"
+
+
+def test_detect_review_status_accepts_json_clear_payloads():
     assert (
         detect_review_status(
             "The changes add the alias and tests without any clear regressions or actionable bugs."

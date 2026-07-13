@@ -1568,3 +1568,157 @@ def test_routing_override_requires_v2_contract(tmp_path, monkeypatch):
     exit_code = cli_main.main(["--routing", "--dry-run"])
 
     assert exit_code == 1
+
+
+def test_validate_model_selections_skips_triage_and_routes_when_triage_disabled(
+    tmp_path, monkeypatch
+):
+    calls = []
+
+    def fake_validate_selection(harness, model, effort, cwd):
+        calls.append((harness, model, effort))
+        return None
+
+    monkeypatch.setattr(
+        cli_main,
+        "validate_selection",
+        fake_validate_selection,
+    )
+    config = LoopConfig(
+        cwd=tmp_path,
+        review_harness="codex",
+        review_model="review-model",
+        review_reasoning_effort="medium",
+        remediation_model="remediation-model",
+        remediation_reasoning_effort="low",
+        triage_enabled=False,
+        triage_model="triage-model",
+        triage_reasoning_effort="low",
+        commit_after_remediation=False,
+        commit_message_harness="gemini",
+        commit_message_model="commit-model",
+        commit_reasoning_effort="high",
+        profile_v2=profiles.Profile(
+            name="final-pr",
+            triage=profiles.TriageConfig(
+                routes={
+                    "stale": profiles.TriageRouteConfig(
+                        harness="claude",
+                        model="route-model",
+                    )
+                }
+            ),
+        ),
+    )
+
+    cli_main._validate_model_selections(config)
+
+    assert calls == [
+        ("codex", "review-model", "medium"),
+        ("codex", "remediation-model", "low"),
+    ]
+
+
+def test_validate_model_selections_skips_routing_when_routing_disabled(
+    tmp_path, monkeypatch
+):
+    calls = []
+
+    def fake_validate_selection(harness, model, effort, cwd):
+        calls.append((harness, model, effort))
+        return None
+
+    monkeypatch.setattr(
+        cli_main,
+        "validate_selection",
+        fake_validate_selection,
+    )
+    config = LoopConfig(
+        cwd=tmp_path,
+        review_harness="codex",
+        review_model="review-model",
+        review_reasoning_effort="medium",
+        triage_enabled=True,
+        triage_harness="gemini",
+        triage_model="triage-model",
+        triage_reasoning_effort="low",
+        remediation_model="remediation-model",
+        remediation_reasoning_effort="low",
+        commit_after_remediation=False,
+        profile_v2=profiles.Profile(
+            name="final-pr",
+            triage=profiles.TriageConfig(
+                enabled=True,
+                routing=profiles.TriageRoutingConfig(enabled=False),
+                routes={
+                    "stale": profiles.TriageRouteConfig(
+                        harness="claude",
+                        model="route-model",
+                    )
+                },
+            ),
+        ),
+    )
+
+    cli_main._validate_model_selections(config)
+
+    assert calls == [
+        ("codex", "review-model", "medium"),
+        ("codex", "remediation-model", "low"),
+        ("gemini", "triage-model", "low"),
+    ]
+
+
+def test_validate_model_selections_only_validates_commit_message_when_enabled(
+    tmp_path, monkeypatch
+):
+    calls = []
+
+    def fake_validate_selection(harness, model, effort, cwd):
+        calls.append((harness, model, effort))
+        return None
+
+    monkeypatch.setattr(
+        cli_main,
+        "validate_selection",
+        fake_validate_selection,
+    )
+    config = LoopConfig(
+        cwd=tmp_path,
+        review_harness="codex",
+        review_model="review-model",
+        review_reasoning_effort="medium",
+        remediation_model="remediation-model",
+        remediation_reasoning_effort="low",
+        commit_after_remediation=False,
+        commit_message_harness="gemini",
+        commit_message_model="commit-model",
+        commit_reasoning_effort="high",
+        triage_enabled=False,
+    )
+    cli_main._validate_model_selections(config)
+    assert calls == [
+        ("codex", "review-model", "medium"),
+        ("codex", "remediation-model", "low"),
+    ]
+
+    calls[:] = []
+    config = LoopConfig(
+        cwd=tmp_path,
+        review_harness="codex",
+        review_model="review-model",
+        review_reasoning_effort="medium",
+        remediation_model="remediation-model",
+        remediation_reasoning_effort="low",
+        commit_after_remediation=True,
+        commit_message_harness="gemini",
+        commit_message_model="commit-model",
+        commit_reasoning_effort="high",
+        triage_enabled=False,
+    )
+    cli_main._validate_model_selections(config)
+    assert calls == [
+        ("codex", "review-model", "medium"),
+        ("codex", "remediation-model", "low"),
+        ("gemini", "commit-model", "high"),
+    ]

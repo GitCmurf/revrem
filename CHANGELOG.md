@@ -20,6 +20,10 @@ This project follows Semantic Versioning once public releases begin.
   summaries against each run record's working directory, and validate catalog
   `[[harness]]` / `[[model]]` records for required identifying fields before
   indexing.
+- Model telemetry now resolves remediation and stale-validation phases to the
+  configured `remediation`/`review` model and effort fields, and model
+  validation now skips disabled triage/remediation-routing/commit post-review
+  phases at startup.
 
 ### Added
 
