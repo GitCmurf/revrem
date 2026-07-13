@@ -102,7 +102,11 @@ def _load_catalog_cached(
         for entry in raw.get("harness", []):
             if not isinstance(entry, dict):
                 continue
-            name = str(entry["name"])
+            name = entry.get("name")
+            if not isinstance(name, str) or not name:
+                raise ValueError(
+                    f"catalog harness entry in {source} is missing required field 'name'"
+                )
             driver = str(entry.get("driver", name))
             if driver not in IMPLEMENTED_CATALOG_DRIVERS:
                 raise ValueError(f"catalog harness {name!r} selects unknown built-in driver {driver!r}")
@@ -116,7 +120,11 @@ def _load_catalog_cached(
             if not isinstance(entry, dict):
                 continue
             harness = str(entry.get("harness", "codex"))
-            model_id = str(entry["id"])
+            model_id = entry.get("id")
+            if not isinstance(model_id, str) or not model_id:
+                raise ValueError(
+                    f"catalog model entry in {source} is missing required field 'id'"
+                )
             previous = models.get((harness, model_id))
             efforts = tuple(str(value) for value in entry.get("efforts", previous.efforts if previous else ()))
             default = entry.get("default_effort", previous.default_effort if previous else None)

@@ -65,8 +65,14 @@ def _invocations(limit: int, *, repo: Path | None) -> list[dict[str, Any]]:
         summary_path = record.get("summary_path")
         if not summary_path:
             continue
+        resolved_summary_path = _resolve_summary_path(
+            str(summary_path),
+            Path(str(record.get("cwd") or "")).resolve(),
+        )
+        if resolved_summary_path is None:
+            continue
         try:
-            summary = json.loads(Path(str(summary_path)).read_text(encoding="utf-8"))
+            summary = json.loads(resolved_summary_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
         values = summary.get("model_invocations", [])
@@ -75,6 +81,15 @@ def _invocations(limit: int, *, repo: Path | None) -> list[dict[str, Any]]:
         if requested_repo is not None and limit is not None and matched_records >= limit:
             break
     return result
+
+
+def _resolve_summary_path(value: str, record_cwd: Path) -> Path | None:
+    path = Path(value)
+    candidates = [path] if path.is_absolute() else [record_cwd / path]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
 
 
 def _matches(row: dict[str, Any], args: Any) -> bool:

@@ -498,10 +498,11 @@ def prepare_prompt_invocation(
     prompt_artifact_path: Path | None = None,
 ) -> PromptInvocation:
     """Adapt prompt delivery to each harness' non-interactive CLI contract."""
+    protocol_harness = _resolve_catalog_driver(harness)
     if prompt is None:
         return PromptInvocation(list(command), None, "none")
     encoded = prompt.encode("utf-8")
-    if harness == "opencode":
+    if protocol_harness == "opencode":
         if prompt_artifact_path is None:
             raise ValueError("opencode prompt delivery requires a prompt artifact path")
         adapted = list(command)
@@ -515,7 +516,7 @@ def prepare_prompt_invocation(
             prompt_bytes=len(encoded),
             prompt_artifact=prompt_artifact_path,
         )
-    if harness == "gemini":
+    if protocol_harness == "gemini":
         if len(encoded) > GEMINI_ARGV_PROMPT_MAX_BYTES:
             raise ValueError(
                 "gemini prompt exceeds RevRem's current --prompt delivery cap "
@@ -538,6 +539,15 @@ def prepare_prompt_invocation(
         prompt_chars=len(prompt),
         prompt_bytes=len(encoded),
     )
+
+
+def _resolve_catalog_driver(name: str) -> str:
+    from code_review_loop.model_catalog import load_catalog
+
+    catalog_spec = load_catalog().harnesses.get(name)
+    if catalog_spec is not None:
+        return catalog_spec.driver
+    return name
 
 
 def harness_capabilities_payload(name: str) -> dict[str, Any]:

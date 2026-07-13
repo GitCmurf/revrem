@@ -120,3 +120,52 @@ def test_stats_models_filters_by_repo_before_limit(tmp_path, monkeypatch, capsys
     rows = json.loads(capsys.readouterr().out)
     assert rows[0]["calls"] == 1
     assert rows[0]["model"] == "gpt-5.6-sol"
+
+
+def test_stats_models_all_repos_resolves_relative_summary_path_against_record_cwd(
+    tmp_path, monkeypatch, capsys
+):
+    home = tmp_path / "home"
+    monkeypatch.setenv("XDG_DATA_HOME", str(home))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    summary_dir = repo / ".revrem" / "runs" / "run-1"
+    summary_dir.mkdir(parents=True)
+    summary = summary_dir / "summary.json"
+    summary.write_text(
+        json.dumps(
+            {
+                "model_invocations": [
+                    {
+                        "phase": "review",
+                        "harness": "codex",
+                        "model": "gpt-5.6-sol",
+                        "reasoning_effort": "high",
+                        "duration_seconds": 12.0,
+                        "outcome": "ok",
+                        "tokens": 42,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    history = home / "revrem" / "runs.jsonl"
+    history.parent.mkdir(parents=True)
+    history.write_text(
+        json.dumps(
+            {
+                "cwd": str(repo),
+                "summary_path": ".revrem/runs/run-1/summary.json",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "outside").mkdir()
+    monkeypatch.chdir(tmp_path / "outside")
+
+    assert stats.main(["models", "--all-repos", "--format", "json"]) == 0
+    rows = json.loads(capsys.readouterr().out)
+    assert rows[0]["calls"] == 1
+    assert rows[0]["model"] == "gpt-5.6-sol"

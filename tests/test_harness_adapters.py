@@ -272,6 +272,54 @@ def test_prompt_invocation_passes_gemini_prompt_via_argv_prompt():
     assert stdin is None
 
 
+def test_prompt_invocation_uses_alias_gemini_protocol(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".revrem-catalog.toml").write_text(
+        '[[harness]]\nname="team-gemini"\ndriver="gemini"\n',
+        encoding="utf-8",
+    )
+
+    command, stdin = harnesses.prepare_prompt_invocation(
+        "team-gemini",
+        ["team-gemini", "--approval-mode", "auto_edit"],
+        "review prompt",
+    )
+
+    assert command == [
+        "team-gemini",
+        "--approval-mode",
+        "auto_edit",
+        "--prompt",
+        "review prompt",
+    ]
+    assert stdin is None
+
+
+def test_prompt_invocation_uses_alias_opencode_protocol(tmp_path, monkeypatch):
+    prompt_path = tmp_path / "prompt.txt"
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".revrem-catalog.toml").write_text(
+        '[[harness]]\nname="team-opencode"\ndriver="opencode"\n',
+        encoding="utf-8",
+    )
+
+    command, stdin = harnesses.prepare_prompt_invocation(
+        "team-opencode",
+        ["team-opencode", "run"],
+        "review prompt",
+        prompt_artifact_path=prompt_path,
+    )
+
+    assert command == [
+        "team-opencode",
+        "run",
+        "Follow the attached RevRem prompt exactly.",
+        "--file",
+        str(prompt_path),
+    ]
+    assert stdin is None
+
+
 def test_prompt_invocation_rejects_oversized_gemini_argv_prompt():
     prompt = "x" * (harnesses.GEMINI_ARGV_PROMPT_MAX_BYTES + 1)
 

@@ -15,6 +15,11 @@ This project follows Semantic Versioning once public releases begin.
   and retains visible loading feedback until the workbench is ready.
 - Clearing an inherited route reasoning effort now preserves the explicit
   empty-string profile marker while still rejecting unknown non-empty efforts.
+- Codex and catalog-backed harness flows now preserve actionable provider-failure
+  signals for post-assistant JSON error events, resolve relative model telemetry
+  summaries against each run record's working directory, and validate catalog
+  `[[harness]]` / `[[model]]` records for required identifying fields before
+  indexing.
 
 ### Added
 

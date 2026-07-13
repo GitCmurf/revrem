@@ -73,6 +73,9 @@ def classify_provider_failure(
 def _combined_output(result: CommandResult) -> str:
     stdout = result.stdout or ""
     stderr = result.stderr or ""
+    provider_events = result.provider_events or ""
+    if provider_events:
+        return "\n".join(part for part in (stdout, stderr, provider_events) if part)
     return "\n".join(part for part in (stdout, stderr) if part)
 
 

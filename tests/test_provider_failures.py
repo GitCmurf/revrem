@@ -21,8 +21,20 @@ from tests.support.fakes import FakeClock, FakeRunIdentity
 from tests.support.phase_harnesses import phase_harness_kwargs
 
 
-def _result(returncode: int, *, stdout: str = "", stderr: str = "") -> CommandResult:
-    return CommandResult(["harness"], returncode, stdout=stdout, stderr=stderr)
+def _result(
+    returncode: int,
+    *,
+    stdout: str = "",
+    stderr: str = "",
+    provider_events: str | None = None,
+) -> CommandResult:
+    return CommandResult(
+        ["harness"],
+        returncode,
+        stdout=stdout,
+        stderr=stderr,
+        provider_events=provider_events,
+    )
 
 
 @pytest.mark.parametrize(
@@ -237,6 +249,23 @@ def test_classify_provider_failure_reason_and_transient(
     assert failure is not None
     assert failure.reason == expected_reason
     assert failure.transient is expected_transient
+
+
+def test_classify_provider_failure_uses_provider_events() -> None:
+    result = _result(
+        1,
+        stdout="done\n",
+        provider_events=(
+            '{"type":"item.completed","item":{"type":"assistant_message","text":"done"}}\n'
+            '{"type":"item.completed","item":{"type":"error","message":"failed to lookup address information"}}\n'
+        ),
+    )
+
+    failure = provider_failures.classify_provider_failure(result, harness="codex")
+
+    assert failure is not None
+    assert failure.reason == "provider_network_unavailable"
+    assert failure.transient is True
 
 
 def test_classify_provider_failure_returns_none_for_success() -> None:

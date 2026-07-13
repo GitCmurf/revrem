@@ -66,6 +66,28 @@ def test_project_catalog_uses_repo_root_for_subdirectory_invocations(tmp_path, m
     ).efforts == ("low",)
 
 
+def test_project_catalog_requires_harness_name(tmp_path, monkeypatch):
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "missing-codex"))
+    (tmp_path / ".revrem-catalog.toml").write_text(
+        '[[harness]]\ndriver="gemini"\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="harness entry in .* is missing required field 'name'"):
+        model_catalog.load_catalog(tmp_path, home=tmp_path)
+
+
+def test_project_catalog_requires_model_id(tmp_path, monkeypatch):
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "missing-codex"))
+    (tmp_path / ".revrem-catalog.toml").write_text(
+        '[[model]]\nharness="codex"\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="model entry in .* is missing required field 'id'"):
+        model_catalog.load_catalog(tmp_path, home=tmp_path)
+
+
 def test_codex_cache_reasoning_level_shape_overlays_packaged_catalog(tmp_path, monkeypatch):
     codex_home = tmp_path / "codex"
     codex_home.mkdir()
