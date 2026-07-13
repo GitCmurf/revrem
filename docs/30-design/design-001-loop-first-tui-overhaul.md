@@ -263,6 +263,21 @@ The first run-monitor slice deliberately does not expose pause/resume: the contr
 stop/cancel semantics but no pause primitive, so advertising pause would create a false
 operator contract.
 
+While a run is active, the phase rail remains the primary progress view. Once a terminal
+summary exists, the monitor instead presents a human outcome, an iteration-by-iteration
+completion table, duration and recorded model telemetry, then the next safe action.
+Internal states such as `completed-unknown` are not operator copy. A `review_unknown`
+result is labelled **review inconclusive** and downstream phases are **not run**, never
+pending; its primary recovery prepares a fresh review from the effective
+post-remediation configuration. Actionable findings at a clean resumable boundary offer
+a prepared continuation from the latest review.
+
+The detail area defaults to a scrollable timeline with local wall time and elapsed
+seconds. Adjacent artifact writes collapse into a count so phase transitions remain
+visible; raw sequence numbers and full paths remain available in Raw Events and
+Artifacts. `Tab` cycles Timeline, Raw Events, Logs, and Summary, while arrow keys scroll.
+Semantic colour always accompanies explicit text and glyphs so `NO_COLOR` remains usable.
+
 ### 5.3 Profiles (save / load)
 
 A picker, not a settings editor. Each row: identity + one-line loop summary. Light grouping

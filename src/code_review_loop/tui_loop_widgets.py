@@ -158,7 +158,9 @@ def loop_diagram_class() -> type[Any] | None:
             self._gutters: dict[str, Any] = {}
             self._cards: dict[str, Any] = {}
             self._routes_table: Any | None = None
-            self._returns = static_cls("", id="loop-returns", classes="loop-returns", markup=False)
+            self._returns = static_cls(
+                "", id="loop-returns", classes="loop-returns", markup=False
+            )
             self.route_mode = False
             self.selected_route_index = 0
 
@@ -269,9 +271,19 @@ def loop_diagram_class() -> type[Any] | None:
                 fields = tui_loop_state.PHASE_DOTTED[self.current_phase()]
                 harness_dotted = fields.get("harness")
                 model_dotted = fields.get("model")
-                harness_value = str(self.model.field_value(harness_dotted, "codex")) if harness_dotted else "codex"
-                model_value = str(self.model.field_value(model_dotted, "")) if model_dotted else None
-                choices = model_catalog.effort_choices(harness_value, model_value or None, cwd=self.model.cwd)
+                harness_value = (
+                    str(self.model.field_value(harness_dotted, "codex"))
+                    if harness_dotted
+                    else "codex"
+                )
+                model_value = (
+                    str(self.model.field_value(model_dotted, ""))
+                    if model_dotted
+                    else None
+                )
+                choices = model_catalog.effort_choices(
+                    harness_value, model_value or None, cwd=self.model.cwd
+                )
             if not choices:
                 return
             # Fall back to the resolved profile value when there is no unsaved
@@ -329,15 +341,16 @@ def loop_diagram_class() -> type[Any] | None:
                         expanded=self.expanded_phase == phase,
                     )
             if self._routes_table is not None:
-                self._routes_table.display = (
-                    self.current_phase() == "triage"
-                    and (self.expanded_phase == "triage" or self.route_mode)
+                self._routes_table.display = self.current_phase() == "triage" and (
+                    self.expanded_phase == "triage" or self.route_mode
                 )
                 self._routes_table.selected_route = (
                     self.selected_route() if self.route_mode else None
                 )
                 self._routes_table.rebuild()
-            self._returns.update("\n".join(tui_loop_state.loop_return_lines(self.model)))
+            self._returns.update(
+                "\n".join(tui_loop_state.loop_return_lines(self.model))
+            )
             self.refresh()
 
     _LOOP_DIAGRAM_CLASS = LoopDiagram
@@ -485,11 +498,15 @@ def route_edit_modal_class() -> type[Any] | None:
     class RouteEditModal(modal_screen):  # type: ignore[misc, valid-type]
         BINDINGS = [
             tui._binding(
-                "ctrl+s", "submit", "Save route", priority=True, binding_cls=tui._Binding
+                "ctrl+s",
+                "submit",
+                "Save route",
+                priority=True,
+                binding_cls=tui._Binding,
             ),
             tui._binding(
                 "escape", "cancel", "Cancel", priority=True, binding_cls=tui._Binding
-            )
+            ),
         ]
 
         def __init__(
@@ -726,6 +743,18 @@ def loop_run_view_class() -> type[Any] | None:
                 self.refresh()
                 return
 
+            summary_reader = getattr(self.controller, "read_summary", None)
+            summary = summary_reader() if callable(summary_reader) else None
+            if isinstance(summary, dict) and getattr(
+                self.controller, "status", ""
+            ) not in {
+                "running",
+                "starting",
+                "idle",
+            }:
+                self._rebuild_terminal(summary, snapshot=snapshot)
+                return
+
             view = tui_run_state.run_loop_view(snapshot.events, self.profile)
             status_by_phase = {phase.name: phase for phase in view.phases}
             iteration = (
@@ -754,6 +783,77 @@ def loop_run_view_class() -> type[Any] | None:
                     )
                     detail = f"{detail}{retry}"
                 status_widget.update(f"{glyph} {phase} · {status.state}{detail}")
+                status_widget.set_classes(
+                    "run-phase "
+                    + {
+                        "done": "status-success",
+                        "failed": "status-error",
+                        "running": "status-info",
+                        "disabled": "muted",
+                    }.get(status.state, "muted")
+                )
+            self.refresh()
+
+        def _rebuild_terminal(
+            self, summary: dict[str, object], *, snapshot: Any
+        ) -> None:
+            from rich.text import Text
+
+            from code_review_loop import tui_run_state
+
+            outcome = tui_run_state.run_outcome_view(summary)
+            assert self.profile is not None
+            header = Text()
+            style = {"success": "green", "warning": "yellow", "error": "red"}.get(
+                outcome.severity, "cyan"
+            )
+            header.append(f"RUN {outcome.title}", style=f"bold {style}")
+            header.append(f" · {self.profile.name}\n")
+            header.append(outcome.headline, style=f"bold {style}")
+            header.append(f"\n{outcome.explanation}")
+            meta = [
+                value
+                for value in (
+                    outcome.duration,
+                    outcome.finished and f"finished {outcome.finished}",
+                    outcome.telemetry,
+                )
+                if value
+            ]
+            if meta:
+                header.append("\n" + " · ".join(meta), style="dim")
+            actions: list[str] = []
+            if outcome.retry_review:
+                actions.extend(("R prepare retry", "v diagnostics"))
+            if outcome.resumable:
+                actions.append("c prepare continuation")
+            if actions:
+                header.append("\nNext: " + " · ".join(actions), style="bold")
+            self._header.update(header)
+            rows = {row.iteration: row for row in outcome.iterations}
+            for index, phase in enumerate(tui_loop_state.LOOP_PHASES, start=1):
+                gutter = self._gutters.get(phase)
+                if gutter is not None:
+                    gutter.update(f"{index:02d}" if index < 5 else "FR")
+                widget = self._phases.get(phase)
+                if widget is None:
+                    continue
+                if index <= len(rows):
+                    row = rows[index]
+                    widget.update(
+                        f"Iteration {row.iteration}: review {row.review} · "
+                        f"remediation {row.remediation} · checks {row.checks} · commit {row.commit}"
+                    )
+                    widget.set_classes(
+                        "run-phase "
+                        + (
+                            "status-warning"
+                            if row.review == "unknown"
+                            else "status-success"
+                        )
+                    )
+                else:
+                    widget.update("")
             self.refresh()
 
         def _clear_rows(self) -> None:
@@ -776,15 +876,22 @@ def event_log_class() -> type[Any] | None:
         return _EVENT_LOG_CLASS
 
     class EventLog(static_cls):  # type: ignore[misc, valid-type]
+        can_focus = True
+        BINDINGS = [("l", "cycle_mode", "Detail view")]
+
         def __init__(self) -> None:
             super().__init__("", id="event-log", classes="event-log", markup=False)
             self.controller: Any | None = None
-            self.show_logs = False
+            self.mode = "timeline"
 
         def set_controller(self, controller: Any) -> None:
             self.controller = controller
 
         def on_mount(self) -> None:
+            self.rebuild()
+
+        def action_cycle_mode(self) -> None:
+            self.mode = "timeline" if self.mode == "logs" else "logs"
             self.rebuild()
 
         def rebuild(self, *, snapshot: Any | None = None) -> None:
@@ -793,9 +900,9 @@ def event_log_class() -> type[Any] | None:
             if self.controller is None:
                 self.update("events: waiting for a run")
                 return
-            if self.show_logs:
-                stdout = tuple(self.controller.stdout_lines())[-8:]
-                stderr = tuple(self.controller.stderr_lines())[-8:]
+            if self.mode == "logs":
+                stdout = tuple(self.controller.stdout_lines())
+                stderr = tuple(self.controller.stderr_lines())
                 lines = ["logs"]
                 lines.extend(f"stdout: {line}" for line in stdout)
                 lines.extend(f"stderr: {line}" for line in stderr)
@@ -813,10 +920,31 @@ def event_log_class() -> type[Any] | None:
             if not snapshot.ready:
                 self.update("events: waiting for events.jsonl")
                 return
-            lines = list(tui_run_state.event_tail_lines(snapshot.events, limit=8))
+            if self.mode == "events":
+                lines = list(tui_run_state.raw_event_lines(snapshot.events))
+                heading = "RAW EVENTS"
+            elif self.mode == "summary":
+                reader = getattr(self.controller, "read_summary", None)
+                summary = reader() if callable(reader) else None
+                lines = [
+                    f"{key}: {value}"
+                    for key, value in (summary or {}).items()
+                    if key
+                    in {
+                        "final_status",
+                        "stopped_reason",
+                        "duration_seconds",
+                        "tokens",
+                        "usd",
+                    }
+                ]
+                heading = "SUMMARY"
+            else:
+                lines = list(tui_run_state.timeline_lines(snapshot.events))
+                heading = "TIMELINE"
             if snapshot.truncated:
                 lines.insert(0, "events: truncated")
-            self.update("\n".join(("events", *lines)) if lines else "events\n…")
+            self.update("\n".join((heading, *lines)) if lines else f"{heading}\n…")
 
     _EVENT_LOG_CLASS = EventLog
     return _EVENT_LOG_CLASS

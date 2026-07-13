@@ -255,9 +255,7 @@ def test_loop_inline_edit_marks_dirty_and_overlays(tmp_path):
                 != original_effort
             )
             app._update_console_status()
-            assert "Modified" in str(
-                app.query_one("#loop-command-panel").render()
-            )
+            assert "Modified" in str(app.query_one("#loop-command-panel").render())
             diagram.set_text_field("model", "gpt-5.6")
             diagram.set_text_field("timeout", "123")
             assert diagram.model.field_value("review.model", "gpt-5.5") == "gpt-5.6"
@@ -337,15 +335,11 @@ def test_loop_reverted_edit_clears_dirty_marker(tmp_path):
             diagram = app.query_one("#loop-diagram")
             diagram.set_text_field("model", "gpt-5.6")
             app._update_console_status()
-            assert "Modified" in str(
-                app.query_one("#loop-command-panel").render()
-            )
+            assert "Modified" in str(app.query_one("#loop-command-panel").render())
             diagram.set_text_field("model", "gpt-5.5")
             app._update_console_status()
             assert diagram.is_dirty is False
-            assert "Modified" not in str(
-                app.query_one("#loop-command-panel").render()
-            )
+            assert "Modified" not in str(app.query_one("#loop-command-panel").render())
 
     asyncio.run(run())
 
@@ -1358,7 +1352,7 @@ def test_tui_pilot_live_monitor_updates_and_cancels_visible_run(tmp_path, monkey
 
                 await _wait_for(
                     lambda: (
-                        "phase_start" in _render(app, "#event-log")
+                        "phase start" in _render(app, "#event-log")
                         and "findings-summary (1)" in _render(app, "#event-log")
                     ),
                     pilot_pause=pilot.pause,

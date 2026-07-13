@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC
 from pathlib import Path
 
 from code_review_loop import events as event_model
@@ -80,7 +81,9 @@ def test_running_and_done_states_map_remediate(tmp_path: Path) -> None:
 
 
 def test_disabled_phases_render_disabled(tmp_path: Path) -> None:
-    view = tui_run_state.run_loop_view((), _profile(tmp_path, triage=False, commit=False))
+    view = tui_run_state.run_loop_view(
+        (), _profile(tmp_path, triage=False, commit=False)
+    )
     states = {phase.name: phase.state for phase in view.phases}
 
     assert states["triage"] == "disabled"
@@ -237,7 +240,9 @@ def test_new_outer_iteration_resets_prior_phase_states(tmp_path: Path) -> None:
     assert states["checks"] == "pending"
 
 
-def test_orphan_check_result_marks_checks_without_remediate_start(tmp_path: Path) -> None:
+def test_orphan_check_result_marks_checks_without_remediate_start(
+    tmp_path: Path,
+) -> None:
     events = (_ev(1, "check_result", "check", "1.1", status="failed"),)
     view = tui_run_state.run_loop_view(events, _profile(tmp_path))
     states = {phase.name: phase.state for phase in view.phases}
@@ -264,7 +269,9 @@ def test_string_outer_iteration_change_resets_prior_states(tmp_path: Path) -> No
 
 
 def test_event_tail_lines_bounded_and_formatted() -> None:
-    events = [_ev(i, "phase_output", "review", 1, text=f"line {i}") for i in range(1, 20)]
+    events = [
+        _ev(i, "phase_output", "review", 1, text=f"line {i}") for i in range(1, 20)
+    ]
 
     lines = tui_run_state.event_tail_lines(events, limit=5)
 
@@ -274,3 +281,82 @@ def test_event_tail_lines_bounded_and_formatted() -> None:
 
 def test_event_tail_lines_empty() -> None:
     assert tui_run_state.event_tail_lines(()) == ()
+
+
+def test_unknown_terminal_outcome_is_explained_and_stops_later_work() -> None:
+    view = tui_run_state.run_outcome_view(
+        {
+            "final_status": "unknown",
+            "stopped_reason": "review_unknown",
+            "duration_seconds": 508.7,
+            "finished_at": "2026-07-13T00:20:24Z",
+            "tokens": {"total": 1_186_486},
+            "model_invocations": [{}, {}, {}, {}],
+            "latest_review_excerpt": "Verification could not run.",
+            "iterations": [
+                {
+                    "iteration": 1,
+                    "review_status": "findings",
+                    "checks": [{"status": "passed"}],
+                    "check_failures": 0,
+                    "commit_status": "committed",
+                },
+                {"iteration": 2, "review_status": "unknown"},
+            ],
+        }
+    )
+
+    assert view.title == "NEEDS ATTENTION"
+    assert view.headline == "Review inconclusive"
+    assert view.explanation == "Verification could not run."
+    assert view.duration == "8m 29s"
+    assert view.telemetry == "4 model calls · 1,186,486 tokens"
+    assert view.retry_review is True
+    assert view.resumable is False
+    assert view.iterations[0].commit == "committed"
+    assert view.iterations[1].remediation == "not run"
+    assert view.iterations[1].checks == "not run"
+    assert view.iterations[1].commit == "not run"
+
+
+def test_timeline_has_wall_time_elapsed_time_and_groups_artifacts() -> None:
+    records = (
+        event_model.Event(
+            "r", 1, "phase_start", "review", 1, {}, "2026-07-13T00:00:00Z"
+        ),
+        event_model.Event(
+            "r",
+            2,
+            "artifact_write",
+            "artifacts",
+            1,
+            {"path": "a"},
+            "2026-07-13T00:00:02Z",
+        ),
+        event_model.Event(
+            "r",
+            3,
+            "artifact_write",
+            "artifacts",
+            1,
+            {"path": "b"},
+            "2026-07-13T00:00:03Z",
+        ),
+        event_model.Event(
+            "r",
+            4,
+            "phase_result",
+            "review",
+            1,
+            {"status": "unknown"},
+            "2026-07-13T00:00:05Z",
+        ),
+    )
+
+    lines = tui_run_state.timeline_lines(records, local_tz=UTC)
+
+    assert lines[0].startswith("00:00:00  +   0s")
+    assert "ARTIFACTS    2 files written" in lines[1]
+    assert lines[-1].startswith("00:00:05  +   5s")
+    assert "phase result · unknown" in lines[-1]
+    assert not any("0001|" in line for line in lines)

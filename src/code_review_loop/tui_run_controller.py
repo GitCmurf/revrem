@@ -263,6 +263,10 @@ class LiveRunController:
             return None
         return payload if isinstance(payload, dict) else None
 
+    def read_summary(self) -> dict[str, object] | None:
+        """Return the current run's summary when it belongs to this launch."""
+        return self._read_summary()
+
     def read_live_events(self) -> LiveEventSnapshot:
         # Called on every refresh tick. Cache the parsed snapshot keyed on the
         # file's (size, mtime_ns) so an unchanged events.jsonl is not re-read and

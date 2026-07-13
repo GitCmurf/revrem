@@ -537,8 +537,11 @@ def _build_bindings(binding_cls: Any | None) -> list[Any]:
         ),
         ("d", "launch_dry_run", "Dry run"),
         ("r", "launch_run", "Run"),
+        ("R", "prepare_review_retry", "Retry review"),
         ("k", "cancel_run", "Cancel run"),
-        ("l", "toggle_logs", "Logs"),
+        _binding(
+            "l", "toggle_logs", "Detail view", priority=True, binding_cls=binding_cls
+        ),
         ("o", "show_artifacts", "Artifacts"),
         ("u", "toggle_pending_review", "Reuse review"),
         ("v", "show_pending_review", "Review details"),
@@ -563,7 +566,7 @@ def _build_bindings(binding_cls: Any | None) -> list[Any]:
         ("g", "goto_prompts", "Prompts"),
         ("a", "add_route", "Add route"),
         ("n", "new_profile", "New"),
-        ("c", "clone_profile", "Clone"),
+        ("c", "context_continue", "Continue"),
         ("x", "export_profile", "Export"),
         ("delete", "delete_profile", "Delete"),
         ("q", "quit", "Quit"),
@@ -653,7 +656,13 @@ class _RevRemAppMixin:
 
     .event-log {
         margin-top: 1;
-        height: auto;
+        height: 1fr;
+        min-height: 6;
+        overflow-y: auto;
+    }
+
+    .event-log:focus {
+        border-left: thick $accent;
     }
 
     .profile-picker, .prompt-library {
@@ -1171,6 +1180,27 @@ class _RevRemAppMixin:
         self._render_workbench()
 
     def action_show_pending_review(self) -> None:
+        if self._workspace == "run":
+            summary = self.live_run_controller.read_summary()
+            if not isinstance(summary, dict):
+                _notify(self, "No completed run diagnostics are available.")
+                return
+            details = [
+                f"Outcome: {summary.get('stopped_reason', 'unknown')}",
+                str(
+                    summary.get("latest_review_excerpt")
+                    or "No review excerpt recorded."
+                ),
+            ]
+            for key in ("bug_report_path", "latest_review_path"):
+                if summary.get(key):
+                    details.append(f"{key.replace('_', ' ')}: {summary[key]}")
+            screen_class = help_screen_class()
+            if screen_class is not None:
+                push_screen = getattr(self, "push_screen", None)
+                if callable(push_screen):
+                    push_screen(screen_class("\n\n".join(details)))
+            return
         pending = self.loop_session.pending_review
         if self._workspace != "loop" or pending is None:
             _notify(self, "No pending review is available for this loop.")
@@ -1253,11 +1283,92 @@ class _RevRemAppMixin:
     def action_toggle_logs(self) -> None:
         if self._workspace != "run" or self._event_log is None:
             return
-        self._event_log.show_logs = not self._event_log.show_logs
+        current = getattr(self._event_log, "mode", "timeline")
+        self._event_log.mode = "timeline" if current == "logs" else "logs"
         self._event_log.rebuild()
-        _notify(
-            self, "Run view: logs" if self._event_log.show_logs else "Run view: events"
+        _notify(self, f"Run detail: {self._event_log.mode}")
+
+    def action_prepare_review_retry(self) -> None:
+        if self._workspace != "run":
+            return
+        summary = self.live_run_controller.read_summary()
+        if (
+            not isinstance(summary, dict)
+            or summary.get("stopped_reason") != "review_unknown"
+        ):
+            _notify(self, "This run does not need an inconclusive-review retry.")
+            return
+        self._prepare_terminal_followup(summary, reuse_review=False)
+        _notify(self, "Fresh review prepared from the run's effective configuration.")
+
+    def action_context_continue(self) -> None:
+        if self._workspace == "profiles":
+            self.action_clone_profile()
+            return
+        if self._workspace != "run":
+            return
+        summary = self.live_run_controller.read_summary()
+        launch = self.live_run_controller.launch
+        if not isinstance(summary, dict) or launch is None:
+            _notify(self, "No completed run summary is available.")
+            return
+        from code_review_loop import resume
+
+        issues = resume.resume_precondition_issues(
+            launch.artifact_dir, cwd=Path(self.model.snapshot.cwd)
         )
+        blocking = [issue.message for issue in issues if issue.severity == "blocking"]
+        if blocking:
+            _notify(
+                self, "Continuation blocked: " + "; ".join(blocking), severity="error"
+            )
+            return
+        self._prepare_terminal_followup(summary, reuse_review=True)
+        _notify(self, "Continuation prepared from the latest actionable review.")
+
+    def _prepare_terminal_followup(
+        self, summary: dict[str, object], *, reuse_review: bool
+    ) -> None:
+        from code_review_loop import resume, tui_loop_model
+
+        profile = self._live_run_profile
+        launch = self.live_run_controller.launch
+        if profile is None or launch is None:
+            raise RuntimeError("completed run configuration is unavailable")
+        model = tui_loop_model.LoopEditModel(
+            name=profile.name, profile=profile, cwd=Path(self.model.snapshot.cwd)
+        )
+        model.mark_replay_baseline()
+        self._loop_model = model
+        if self._loop_diagram is not None:
+            self._loop_diagram.set_model(model)
+        pending = None
+        if reuse_review:
+            review_path = resume.latest_resume_review_path(
+                summary, run_dir=launch.artifact_dir
+            )
+            if review_path is not None:
+                raw_git_state = summary.get("git_state")
+                pending = tui_session.PendingReviewSelection(
+                    path=review_path,
+                    run_dir=launch.artifact_dir,
+                    final_status=str(summary.get("final_status") or "") or None,
+                    stopped_reason=str(summary.get("stopped_reason") or "") or None,
+                    excerpt=str(summary.get("latest_review_excerpt") or ""),
+                    compatible=True,
+                    selected=True,
+                    git_state=(
+                        raw_git_state if isinstance(raw_git_state, dict) else None
+                    ),
+                )
+        self.loop_session = tui_session.LoopSession(
+            profile_name=profile.name,
+            origin_label=f"prepared from run {launch.artifact_dir.name}",
+            pending_review=pending,
+        )
+        self._workspace = "loop"
+        self._focused_pane = "left"
+        self._render_workbench()
 
     def action_show_artifacts(self) -> None:
         if self._workspace != "run":
@@ -1326,7 +1437,12 @@ class _RevRemAppMixin:
             _notify(self, "Loop focus has no secondary target here.")
             return
         if self._workspace == "run":
-            self.action_toggle_logs()
+            if self._event_log is not None:
+                modes = ("timeline", "events", "logs", "summary")
+                current = getattr(self._event_log, "mode", "timeline")
+                self._event_log.mode = modes[(modes.index(current) + 1) % len(modes)]
+                self._event_log.rebuild()
+                _notify(self, f"Run detail: {self._event_log.mode}")
             return
         self._focused_pane = "right" if self._focused_pane == "left" else "left"
         self._render_workbench()
@@ -1361,9 +1477,19 @@ class _RevRemAppMixin:
         self._set_workspace(_WORKSPACES[(index + delta) % len(_WORKSPACES)])
 
     def action_move_down(self) -> None:
+        if self._workspace == "run" and self._event_log is not None:
+            scroll = getattr(self._event_log, "scroll_down", None)
+            if callable(scroll):
+                scroll(animate=False)
+            return
         self._move_selection(1)
 
     def action_move_up(self) -> None:
+        if self._workspace == "run" and self._event_log is not None:
+            scroll = getattr(self._event_log, "scroll_up", None)
+            if callable(scroll):
+                scroll(animate=False)
+            return
         self._move_selection(-1)
 
     def action_select(self) -> None:
@@ -2990,6 +3116,7 @@ def _run_workspace_markup(app: Any) -> str:
 
 
 def _footer_markup(app: Any) -> str:
+    hints: tuple[tuple[str, str], ...]
     if app._workspace == "profiles":
         hints = (
             ("↑/↓", "Move"),
@@ -3016,14 +3143,35 @@ def _footer_markup(app: Any) -> str:
             ("q", "Quit"),
         )
     else:
-        hints = (
-            ("d", "Dry-run"),
-            ("r", "Run"),
-            ("k", "Stop"),
-            ("l", "Logs/events"),
-            ("o", "Artifacts"),
-            ("?", "Help"),
-        )
+        summary = app.live_run_controller.read_summary()
+        reason = summary.get("stopped_reason") if isinstance(summary, dict) else None
+        if reason == "review_unknown":
+            hints = (
+                ("R", "Prepare retry"),
+                ("v", "Diagnostics"),
+                ("Tab", "Detail view"),
+                ("↑/↓", "Scroll"),
+                ("o", "Artifacts"),
+                ("?", "Help"),
+            )
+        elif isinstance(summary, dict):
+            hints = (
+                ("r", "New run"),
+                ("c", "Prepare continuation"),
+                ("Tab", "Detail view"),
+                ("↑/↓", "Scroll"),
+                ("o", "Artifacts"),
+                ("?", "Help"),
+            )
+        else:
+            hints = (
+                ("d", "Dry-run"),
+                ("r", "Run"),
+                ("k", "Stop"),
+                ("Tab", "Detail view"),
+                ("o", "Artifacts"),
+                ("?", "Help"),
+            )
     return "  ".join(
         f"\\[{key}] {tui_state.markup_escape(label)}" for key, label in hints
     )
@@ -3113,7 +3261,7 @@ def _live_hint(app: Any) -> str:
         return f"live: press r again to start {app._pending_live_confirmation_profile}"
     if app._live_run_active():
         return "live: running; press k to cancel"
-    return f"live: {app.live_run_controller.status}"
+    return f"live: {_operator_run_status(app.live_run_controller.status)}"
 
 
 def _command_preview(app: Any) -> str:
@@ -3479,7 +3627,8 @@ def _status_bar_markup(app: Any) -> str:
         tabs.append(f"[workspace-active]{label}[/]" if name == workspace else label)
     return (
         f"RevRem · {tui_state.markup_escape(Path(app.model.snapshot.cwd).name or app.model.snapshot.cwd)}"
-        f" · {tui_state.markup_escape(workspace)} · {tui_state.markup_escape(status)}"
+        f" · {tui_state.markup_escape(workspace)} · "
+        f"{tui_state.markup_escape(_operator_run_status(status))}"
         f"{tui_state.markup_escape(pending)}\n"
         f"{' · '.join(tabs)} · ? Help · q Quit"
     )
@@ -3487,6 +3636,17 @@ def _status_bar_markup(app: Any) -> str:
 
 def _status_bar_classes(status: tui_run_controller.RunControllerStatus) -> str:
     return f"status-{status}"
+
+
+def _operator_run_status(status: str) -> str:
+    return {
+        "completed-clear": "complete",
+        "completed-findings": "action needed",
+        "completed-unknown": "needs attention",
+        "setup-failed": "setup failed",
+        "failed-forced-cleanup": "failed after forced cleanup",
+        "interrupted-before-run-initialized": "interrupted",
+    }.get(status, status)
 
 
 def _origin_summary(origin: str | None, *, now: datetime | None = None) -> str:

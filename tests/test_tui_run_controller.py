@@ -115,7 +115,12 @@ def test_live_run_controller_starts_child_with_machine_friendly_argv(tmp_path):
         profile=profile,
         plan=plan,
         cwd=tmp_path,
-        entrypoint_resolver=lambda argv: ["python", "-m", "code_review_loop", *argv[1:]],
+        entrypoint_resolver=lambda argv: [
+            "python",
+            "-m",
+            "code_review_loop",
+            *argv[1:],
+        ],
         popen_factory=fake_popen,
         identity=FixedIdentity(),
     )
@@ -179,7 +184,10 @@ def test_classify_exit_requires_artifacts_for_clean_cancellation():
         tui_run_controller.classify_exit(0, summary={"final_status": "clear"})
         == "completed-clear"
     )
-    assert tui_run_controller.classify_exit(0, summary={"final_status": "findings"}) == "failed"
+    assert (
+        tui_run_controller.classify_exit(0, summary={"final_status": "findings"})
+        == "failed"
+    )
     assert tui_run_controller.classify_exit(0, summary={}) == "failed"
     assert tui_run_controller.classify_exit(2) == "completed-findings"
     assert (
@@ -272,7 +280,9 @@ def test_controller_cancels_real_revrem_child_and_reads_cancellation_summary(
 ):
     repo = tmp_path / "repo"
     repo.mkdir()
-    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True
+    )
     subprocess.run(
         ["git", "config", "user.email", "test@example.com"],
         cwd=repo,
@@ -286,8 +296,12 @@ def test_controller_cancels_real_revrem_child_and_reads_cancellation_summary(
         capture_output=True,
     )
     (repo / "README.md").write_text("# Fixture\n", encoding="utf-8")
-    subprocess.run(["git", "add", "README.md"], cwd=repo, check=True, capture_output=True)
-    subprocess.run(["git", "commit", "-m", "initial"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "add", "README.md"], cwd=repo, check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "initial"], cwd=repo, check=True, capture_output=True
+    )
     (repo / ".revrem.toml").write_text(
         """
 [profiles.cancel-demo]
@@ -309,21 +323,34 @@ triage.enabled = false
         profile=profile,
         plan=plan,
         cwd=repo,
-        entrypoint_resolver=lambda argv: [sys.executable, "-m", "code_review_loop", *argv[1:]],
+        entrypoint_resolver=lambda argv: [
+            sys.executable,
+            "-m",
+            "code_review_loop",
+            *argv[1:],
+        ],
         env=env,
     )
     deadline = time.monotonic() + 10
     while not (launch.artifact_dir / events.EVENTS_FILENAME).is_file():
         if time.monotonic() > deadline:
-            raise AssertionError("timed out waiting for events.jsonl")
+            raise AssertionError(
+                "timed out waiting for events.jsonl; "
+                f"status={controller.refresh()}; stderr={controller.stderr_lines()!r}; "
+                f"stdout={controller.stdout_lines()!r}"
+            )
         time.sleep(0.01)
 
     status = controller.cancel(grace_seconds=5)
 
-    summary = json.loads((launch.artifact_dir / "summary.json").read_text(encoding="utf-8"))
+    summary = json.loads(
+        (launch.artifact_dir / "summary.json").read_text(encoding="utf-8")
+    )
     assert status == "cancelled"
     assert summary["stopped_reason"] == "cancelled"
-    assert any(event.kind == "cancellation" for event in controller.read_live_events().events)
+    assert any(
+        event.kind == "cancellation" for event in controller.read_live_events().events
+    )
 
 
 def test_cancel_reaps_nested_provider_child_with_own_session(tmp_path, monkeypatch):

@@ -58,9 +58,21 @@ model = "gpt-5.4-mini"
 """,
         _snapshot(
             _event(1, "phase_start", phase="review", iteration=1),
-            _event(2, "phase_result", phase="review", iteration=1, payload={"status": "clear"}),
+            _event(
+                2,
+                "phase_result",
+                phase="review",
+                iteration=1,
+                payload={"status": "clear"},
+            ),
             _event(3, "phase_start", phase="triage", iteration=1),
-            _event(4, "phase_result", phase="triage", iteration=1, payload={"status": "routed"}),
+            _event(
+                4,
+                "phase_result",
+                phase="triage",
+                iteration=1,
+                payload={"status": "routed"},
+            ),
             _event(5, "phase_start", phase="remediate", iteration=1),
         ),
     )
@@ -101,7 +113,13 @@ enabled = false
 """,
         _snapshot(
             _event(1, "phase_start", phase="review", iteration=1),
-            _event(2, "phase_result", phase="review", iteration=1, payload={"status": "clear"}),
+            _event(
+                2,
+                "phase_result",
+                phase="review",
+                iteration=1,
+                payload={"status": "clear"},
+            ),
         ),
     )
     assert "⤫ triage" in svg and "disabled" in svg
@@ -120,12 +138,30 @@ checks = ["pytest -q"]
 """,
         _snapshot(
             _event(1, "phase_start", phase="review", iteration=1),
-            _event(2, "phase_result", phase="review", iteration=1, payload={"status": "clear"}),
+            _event(
+                2,
+                "phase_result",
+                phase="review",
+                iteration=1,
+                payload={"status": "clear"},
+            ),
             _event(3, "phase_start", phase="remediate", iteration=1),
-            _event(4, "phase_result", phase="remediate", iteration=1, payload={"status": "skipped"}),
+            _event(
+                4,
+                "phase_result",
+                phase="remediate",
+                iteration=1,
+                payload={"status": "skipped"},
+            ),
             _event(5, "check_result", iteration=1, payload={"passed": True}),
             _event(6, "phase_start", phase="commit", iteration=1),
-            _event(7, "phase_result", phase="commit", iteration=1, payload={"status": "skipped"}),
+            _event(
+                7,
+                "phase_result",
+                phase="commit",
+                iteration=1,
+                payload={"status": "skipped"},
+            ),
         ),
         status="clear",
     )
@@ -144,7 +180,13 @@ checks = ["pytest -q"]
 """,
         _snapshot(
             _event(1, "phase_start", phase="review", iteration=1),
-            _event(2, "phase_result", phase="review", iteration=1, payload={"status": "findings"}),
+            _event(
+                2,
+                "phase_result",
+                phase="review",
+                iteration=1,
+                payload={"status": "findings"},
+            ),
             _event(3, "check_result", iteration=1, payload={"passed": False}),
         ),
         status="findings",
@@ -153,12 +195,60 @@ checks = ["pytest -q"]
     assert_svg_snapshot("tui_run/done-with-findings", svg)
 
 
+def test_run_snapshot_review_inconclusive(tmp_path: Path) -> None:
+    summary = {
+        "final_status": "unknown",
+        "stopped_reason": "review_unknown",
+        "duration_seconds": 508.7,
+        "finished_at": "2026-07-13T00:20:24Z",
+        "tokens": {"total": 1_186_486},
+        "model_invocations": [{}, {}, {}, {}],
+        "latest_review_excerpt": "No regression was confirmed; verification could not run.",
+        "iterations": [
+            {
+                "iteration": 1,
+                "review_status": "findings",
+                "checks": [{}],
+                "check_failures": 0,
+                "commit_status": "committed",
+            },
+            {"iteration": 2, "review_status": "unknown"},
+        ],
+    }
+    svg = _capture_run_svg(
+        tmp_path,
+        """
+[profiles.demo]
+[profiles.demo.pipeline]
+max_iterations = 2
+""",
+        _snapshot(
+            _event(1, "phase_start", phase="review", iteration=2),
+            _event(
+                2,
+                "phase_result",
+                phase="review",
+                iteration=2,
+                payload={"status": "unknown"},
+            ),
+        ),
+        status="completed-unknown",
+        summary=summary,
+    )
+    assert "NEEDS ATTENTION" in svg
+    assert "Review inconclusive" in svg
+    assert "not run" in svg
+    assert "1,186,486 tokens" in svg
+    assert_svg_snapshot("tui_run/review-inconclusive", svg)
+
+
 def _capture_run_svg(
     tmp_path: Path,
     profile_toml: str,
     snapshot: tui_run_controller.LiveEventSnapshot,
     *,
     status: str = "running",
+    summary: dict[str, object] | None = None,
 ) -> str:
     async def run() -> str:
         profile = _profile(tmp_path, profile_toml)
@@ -168,7 +258,7 @@ def _capture_run_svg(
         if view_cls is None or log_cls is None or components is None:
             pytest.skip("Textual is not installed")
 
-        controller = _FakeLiveController(snapshot, status=status)
+        controller = _FakeLiveController(snapshot, status=status, summary=summary)
         loop_view = view_cls()
         event_log = log_cls()
 
@@ -242,13 +332,21 @@ def _event(
 
 class _FakeLiveController:
     def __init__(
-        self, snapshot: tui_run_controller.LiveEventSnapshot, *, status: str
+        self,
+        snapshot: tui_run_controller.LiveEventSnapshot,
+        *,
+        status: str,
+        summary: dict[str, object] | None = None,
     ) -> None:
         self._snapshot = snapshot
         self.status = status
+        self._summary = summary
 
     def read_live_events(self) -> tui_run_controller.LiveEventSnapshot:
         return self._snapshot
+
+    def read_summary(self) -> dict[str, object] | None:
+        return self._summary
 
     def stdout_lines(self) -> tuple[str, ...]:
         return ("review stdout",)
