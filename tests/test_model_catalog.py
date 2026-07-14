@@ -154,6 +154,19 @@ def test_alias_harness_selection_validates_against_selected_driver(tmp_path, mon
         model_catalog.validate_selection("team-codex", "gpt-5.6-luna", "ultra", cwd=tmp_path)
 
 
+def test_catalog_models_for_alias_returns_driver_models(tmp_path, monkeypatch):
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "missing-codex"))
+    (tmp_path / ".revrem-catalog.toml").write_text(
+        '[[harness]]\nname="team-codex"\ndriver="codex"\n',
+        encoding="utf-8",
+    )
+
+    catalog = model_catalog.load_catalog(tmp_path, home=tmp_path)
+    models = catalog.models_for("team-codex")
+
+    assert any(item.harness == "codex" for item in models)
+
+
 def test_codex_cache_scalar_reasoning_levels_are_ignored(tmp_path, monkeypatch):
     codex_home = tmp_path / "codex"
     codex_home.mkdir()

@@ -583,6 +583,7 @@ def run_with_waiting_progress(
         metadata: dict[str, Any] = {"elapsed_seconds": round(elapsed_seconds, 3)}
         if prompt_artifact is not None:
             metadata["prompt_artifact"] = str(prompt_artifact)
+        review_harness = harness or config.review_harness
         detail = (
             f"{format_elapsed_seconds(elapsed_seconds)} elapsed · provider still running"
             f"{prompt_detail}"
@@ -590,7 +591,7 @@ def run_with_waiting_progress(
         warning_seconds = config.external_review_warning_seconds
         if (
             phase == "review"
-            and config.review_harness not in {"codex", "fake"}
+            and review_harness not in {"codex", "fake"}
             and warning_seconds > 0
             and elapsed_seconds >= warning_seconds
         ):

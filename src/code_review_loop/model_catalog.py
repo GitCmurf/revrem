@@ -59,7 +59,15 @@ class Catalog:
     def models_for(self, harness: str | None = None) -> tuple[ModelSpec, ...]:
         values = list(self.models.values())
         if harness:
-            values = [item for item in values if item.harness == harness]
+            catalog_spec = self.harnesses.get(harness)
+            if catalog_spec is not None:
+                values = [
+                    item
+                    for item in values
+                    if item.harness in {harness, catalog_spec.driver}
+                ]
+            else:
+                values = [item for item in values if item.harness == harness]
         return tuple(sorted(values, key=lambda item: (item.harness, -(item.capability_rank or 0), item.id)))
 
 

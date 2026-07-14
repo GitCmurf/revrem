@@ -63,7 +63,7 @@ def build_remediation_command(
             sandbox=sandbox,
             color=config.exec_color,
             full_auto=config.full_auto,
-            json_output=(harnesses._resolve_catalog_driver(harness) == "codex"),
+            json_output=(config.exec_json and harnesses._resolve_catalog_driver(harness) == "codex"),
             output_last_message_path=output_last_message,
         )
     )

@@ -88,12 +88,13 @@ def run_codex_review(
     ctx: RunContext,
 ) -> tuple[str, CommandResult]:
     display_label = display_label or artifact_label
+    review_harness = harnesses._resolve_catalog_driver(config.review_harness)
     command = build_review_command(config)
     review_prompt = None
     external_prompt: ExternalReviewPrompt | None = None
     if ctx.git_context_cache is not None:
         ctx.git_context_cache.invalidate_head_sha(str(config.cwd))
-    if config.review_harness not in {"codex", "fake"}:
+    if review_harness not in {"codex", "fake"}:
         review_context = build_external_review_context(
             config, git_context_cache=ctx.git_context_cache
         )
@@ -223,6 +224,7 @@ def run_codex_review(
             review_prompt,
             display_label,
             invocation.prompt_artifact,
+            review_harness=review_harness,
             ctx=ctx,
         )
     combined = phase_support._combined_output(result)
@@ -231,14 +233,15 @@ def run_codex_review(
     observation = _write_provider_observation(
         config,
         result,
+        review_harness=review_harness,
         artifact_label=artifact_label,
         display_label=display_label,
     )
     phase_support.record_model_charge(
         config, result, phase="review", iteration=display_label, ctx=ctx
     )
-    if review_failed_to_run(result, config.review_harness):
-        failure = provider_failures.classify_provider_failure(result, harness=config.review_harness)
+    if review_failed_to_run(result, review_harness):
+        failure = provider_failures.classify_provider_failure(result, harness=review_harness)
         _write_review_failure_diagnostic(
             config,
             result,
@@ -246,6 +249,7 @@ def run_codex_review(
             display_label=display_label,
             artifact_path=artifact_path,
             command=command,
+            review_harness=review_harness,
             failure=failure,
             observation=observation,
         )
@@ -262,9 +266,9 @@ def run_codex_review(
             f"{config.review_harness} review failed for {artifact_label}"
             f"{failure_detail}; see {artifact_path}"
         )
-    status = detect_review_status(combined, harness=config.review_harness)
+    status = detect_review_status(combined, harness=review_harness)
     if config.debug_status_detection:
-        diagnostics = review_status_diagnostics(combined, harness=config.review_harness)
+        diagnostics = review_status_diagnostics(combined, harness=review_harness)
         phase_support.write_artifact(
             config.artifact_dir / f"{artifact_label}-status.json",
             json.dumps(diagnostics, indent=2, sort_keys=True) + "\n",
@@ -293,10 +297,11 @@ def _write_provider_observation(
     config: LoopConfig,
     result: CommandResult,
     *,
+    review_harness: str,
     artifact_label: str,
     display_label: str,
 ) -> dict[str, object] | None:
-    if config.review_harness != "codex":
+    if review_harness != "codex":
         return None
     observation = provider_observations.codex_observation(
         result,
@@ -339,6 +344,7 @@ def _write_review_failure_diagnostic(
     display_label: str,
     artifact_path: Path,
     command: Sequence[str],
+    review_harness: str,
     failure: provider_failures.ProviderFailure | None,
     observation: dict[str, object] | None,
 ) -> None:
@@ -367,7 +373,7 @@ def _write_review_failure_diagnostic(
         }
     if observation is not None:
         payload["provider_observation"] = observation
-    retry_command = _codex_review_retry_command(config)
+    retry_command = _codex_review_retry_command(config, review_harness=review_harness)
     if retry_command is not None:
         payload["retry_command"] = retry_command
         payload["redirected_retry_command"] = {
@@ -389,8 +395,8 @@ def _redacted_failure_excerpt(text: str, max_chars: int = 2_000) -> str:
     return prompts_composer.trim_for_prompt(redacted, max_chars)
 
 
-def _codex_review_retry_command(config: LoopConfig) -> list[str] | None:
-    if config.review_harness != "codex":
+def _codex_review_retry_command(config: LoopConfig, *, review_harness: str) -> list[str] | None:
+    if review_harness != "codex":
         return None
     command = [phase_support._resolve_executable("codex", config)]
     model = config.review_model or config.model
@@ -450,10 +456,11 @@ def run_review_with_retry(
     display_label: str,
     prompt_artifact: Path | None,
     *,
+    review_harness: str,
     ctx: RunContext,
 ) -> CommandResult:
     attempts = (
-        config.provider_retry_attempts if config.review_harness not in {"codex", "fake"} else 1
+        config.provider_retry_attempts if review_harness not in {"codex", "fake"} else 1
     )
     last_result: CommandResult | None = None
     for attempt in range(1, attempts + 1):
@@ -466,13 +473,14 @@ def run_review_with_retry(
             phase_support.phase_timeout_seconds(config, config.review_timeout_seconds),
             phase="review",
             label=display_label,
+            harness=review_harness,
             ctx=ctx,
             prompt_artifact=prompt_artifact,
         )
         last_result = result
-        failure = provider_failures.classify_provider_failure(result, harness=config.review_harness)
+        failure = provider_failures.classify_provider_failure(result, harness=review_harness)
         if (
-            not review_failed_to_run(result, config.review_harness)
+            not review_failed_to_run(result, review_harness)
             or failure is None
             or not failure.transient
         ):
@@ -782,12 +790,13 @@ def review_failed_to_run(result: CommandResult, harness: str) -> bool:
         return True
     if result.returncode >= 2:
         return True
-    if detect_review_status(phase_support._combined_output(result), harness=harness) in {
+    protocol_harness = harnesses._resolve_catalog_driver(harness)
+    if detect_review_status(phase_support._combined_output(result), harness=protocol_harness) in {
         "clear",
         "findings",
     }:
         return False
-    if provider_failures.classify_provider_failure(result, harness=harness) is not None:
+    if provider_failures.classify_provider_failure(result, harness=protocol_harness) is not None:
         return True
 
     stderr = result.stderr.lower()

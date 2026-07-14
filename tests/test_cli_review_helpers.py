@@ -19,10 +19,10 @@ from code_review_loop.adapters.commit import (
 )
 from code_review_loop.adapters.phase_support import (
     DEFAULT_COMMIT_MESSAGE_PROMPT,
-    build_commit_message_command,
+    _phase_effort,
     _phase_harness,
     _phase_model,
-    _phase_effort,
+    build_commit_message_command,
     normalize_revrem_conventional_subject,
     progress_event,
     run_with_waiting_progress,
@@ -1158,6 +1158,40 @@ def test_external_review_prompt_ignores_remediation_input_cap(tmp_path):
     assert len(prompt) <= 1200
 
 
+def test_catalog_review_alias_uses_native_codex_protocol(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".revrem-catalog.toml").write_text(
+        '[[harness]]\nname="team-codex"\ndriver="codex"\nexecutable="codex"\n',
+        encoding="utf-8",
+    )
+    calls: list[tuple[list[str], str | None]] = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text))
+        return CommandResult(
+            list(args),
+            0,
+            stdout='{"findings": [], "overall_correctness": "patch is correct"}\n',
+        )
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="team-codex",
+    )
+
+    summary = runner_mod.run_loop(config, runner).to_dict()
+
+    assert summary["final_status"] == "clear"
+    assert "--file" not in calls[0][0]
+    assert calls[0][0][0] == "codex"
+    assert "review" in calls[0][0]
+    assert "--base" in calls[0][0]
+
+
 def test_external_review_waiting_progress_warns_after_quiet_threshold(tmp_path):
     sink = events.InMemorySink("run1")
     config = LoopConfig(
@@ -1289,7 +1323,7 @@ def test_codex_review_retry_command_uses_effective_review_reasoning_effort(tmp_p
         review_reasoning_effort="high",
     )
 
-    command = review_impl._codex_review_retry_command(config)
+    command = review_impl._codex_review_retry_command(config, review_harness="codex")
 
     assert command == [
         "codex",
@@ -1354,6 +1388,7 @@ def test_remediation_command_uses_catalog_driver_json_output_for_alias(tmp_path,
         base="main",
         max_iterations=1,
         codex_bin="codex",
+        exec_json=True,
         cwd=tmp_path,
         artifact_dir=tmp_path / "artifacts",
         remediation_harness="team-codex",
@@ -1362,6 +1397,29 @@ def test_remediation_command_uses_catalog_driver_json_output_for_alias(tmp_path,
     )
     command = remediation_impl.build_remediation_command(config)
     assert "--json" in command
+
+
+def test_remediation_command_does_not_enable_json_output_when_exec_json_is_disabled_for_alias(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".revrem-catalog.toml").write_text(
+        '[[harness]]\nname="team-codex"\ndriver="codex"\nexecutable="codex"\n',
+        encoding="utf-8",
+    )
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        remediation_harness="team-codex",
+        remediation_model="gpt-5.4-mini",
+        remediation_reasoning_effort="low",
+    )
+
+    command = remediation_impl.build_remediation_command(config)
+    assert "--json" not in command
 
 
 def test_triage_command_uses_catalog_driver_json_output_for_alias(tmp_path, monkeypatch):

@@ -218,6 +218,25 @@ providers that omit stable IDs, use a non-alarming notes heading.
 `4` when the summary, event stream, `HEAD`, or base commit do not match. When
 the checks pass, it rebuilds the loop config from `resume_config`, starts from
 the latest review artifact as `review-initial.txt`, and avoids re-running
+
+## Catalog aliases and protocol behavior
+
+If you define a catalog harness alias, for example:
+
+```toml
+[[harness]]
+name = "team-codex"
+driver = "codex"
+```
+
+RevRem resolves that alias to its driver before selecting review protocol behavior.
+That means `--review-harness team-codex` follows the native Codex review flow
+(no prompt-file injection), while command and artifact output still report the
+configured harness.
+
+For remediation, JSON output is controlled by the resolved runtime
+`exec_json` setting: `--no-exec-json` disables `--json` even when a catalog
+alias points at `codex`.
 completed review phases. Resume uses the recorded review artifact path from
 `summary.json` as written so default relative artifact directories keep working;
 older summaries that only stored a bare filename still fall back to the run

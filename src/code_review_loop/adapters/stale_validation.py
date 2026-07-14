@@ -32,6 +32,7 @@ def run_stale_validation(
     prompt_artifact = config.artifact_dir / f"{label}-prompt.txt"
     phase_support.write_artifact(prompt_artifact, prompt)
     command = _build_validation_command(config)
+    review_harness = harnesses._resolve_catalog_driver(config.review_harness)
     invocation = harnesses.prepare_prompt_invocation(
         config.review_harness,
         command,
@@ -67,7 +68,7 @@ def run_stale_validation(
     from code_review_loop.adapters.review import review_failed_to_run
 
     attempts = (
-        config.provider_retry_attempts if config.review_harness not in {"codex", "fake"} else 1
+        config.provider_retry_attempts if review_harness not in {"codex", "fake"} else 1
     )
     last_result = None
     for attempt in range(1, attempts + 1):
@@ -84,9 +85,9 @@ def run_stale_validation(
             prompt_artifact=invocation.prompt_artifact,
         )
         last_result = result
-        failure = provider_failures.classify_provider_failure(result, harness=config.review_harness)
+        failure = provider_failures.classify_provider_failure(result, harness=review_harness)
         if (
-            not review_failed_to_run(result, config.review_harness)
+            not review_failed_to_run(result, review_harness)
             or failure is None
             or not failure.transient
         ):
@@ -116,7 +117,7 @@ def run_stale_validation(
     )
     status = cast(StaleValidationStatus, stale_review.validation_status(combined))
     if result.returncode != 0:
-        failure = provider_failures.classify_provider_failure(result, harness=config.review_harness)
+        failure = provider_failures.classify_provider_failure(result, harness=review_harness)
         failure_detail = f": {failure.detail}" if failure else ""
         phase_support.progress_event(
             config,

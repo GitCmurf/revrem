@@ -116,27 +116,37 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _validate_model_selections(config) -> None:
-    selections = (
-        ("review", config.review_harness, config.review_model or config.model, config.review_reasoning_effort or config.reasoning_effort),
-        ("remediation", config.remediation_harness, config.remediation_model or config.model, config.remediation_reasoning_effort or config.reasoning_effort),
-    )
+    selections: list[tuple[str, str, str | None, str | None]] = [
+        (
+            "review",
+            config.review_harness,
+            config.review_model or config.model,
+            config.review_reasoning_effort or config.reasoning_effort,
+        ),
+        (
+            "remediation",
+            config.remediation_harness,
+            config.remediation_model or config.model,
+            config.remediation_reasoning_effort or config.reasoning_effort,
+        ),
+    ]
     if config.triage_enabled:
-        selections += (
+        selections.append(
             (
                 "triage",
                 config.triage_harness,
                 config.triage_model or config.model,
                 config.triage_reasoning_effort or config.reasoning_effort,
-            ),
+            )
         )
     if config.commit_after_remediation:
-        selections += (
+        selections.append(
             (
                 "commit",
                 config.commit_message_harness,
                 config.commit_message_model,
                 config.commit_reasoning_effort,
-            ),
+            )
         )
     for phase, harness, model, effort in selections:
         warning = validate_selection(harness, model, effort, cwd=config.cwd)
