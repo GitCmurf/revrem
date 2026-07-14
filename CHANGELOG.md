@@ -24,6 +24,10 @@ This project follows Semantic Versioning once public releases begin.
   configured `remediation`/`review` model and effort fields, and model
   validation now skips disabled triage/remediation-routing/commit post-review
   phases at startup.
+- Catalog aliases now resolve to their declared driver for model validation and
+  remediation/triage protocol selection, malformed scalar Codex cache reasoning
+  metadata is ignored in favor of packaged model metadata, and `revrem models`
+  now exits cleanly with an actionable error when catalog files are invalid.
 
 ### Added
 

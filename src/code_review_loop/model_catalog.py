@@ -48,7 +48,13 @@ class Catalog:
     def model(self, harness: str, model: str | None) -> ModelSpec | None:
         if not model:
             return None
-        return self.models.get((harness, model))
+        direct = self.models.get((harness, model))
+        if direct is not None:
+            return direct
+        harness_spec = self.harnesses.get(harness)
+        if harness_spec is None:
+            return None
+        return self.models.get((harness_spec.driver, model))
 
     def models_for(self, harness: str | None = None) -> tuple[ModelSpec, ...]:
         values = list(self.models.values())
@@ -179,6 +185,35 @@ def _read_toml(path: Path) -> dict[str, Any]:
         return tomllib.load(handle)
 
 
+def _extract_codex_cache_reasoning_efforts(entry: dict[str, Any]) -> list[str] | None:
+    effort_fields = (
+        "supported_reasoning_levels",
+        "supported_reasoning_efforts",
+        "reasoning_efforts",
+    )
+    has_effort_field = any(name in entry for name in effort_fields)
+    effort_source = next(
+        (
+            entry[name]
+            for name in effort_fields
+            if entry.get(name)
+        ),
+        None,
+    )
+    if not has_effort_field:
+        return None
+    if effort_source is None:
+        return []
+    if not isinstance(effort_source, (list, tuple)):
+        return None
+    efforts: list[str] = []
+    for item in effort_source:
+        value = item.get("effort") if isinstance(item, dict) else item
+        if value:
+            efforts.append(str(value))
+    return efforts
+
+
 def _codex_cache_layer(path: Path) -> dict[str, Any]:
     import json
 
@@ -201,26 +236,13 @@ def _codex_cache_layer(path: Path) -> dict[str, Any]:
         model_id = entry.get("slug") or entry.get("id") or entry.get("model")
         if not model_id:
             continue
-        efforts_raw = (
-            entry.get("supported_reasoning_levels")
-            or entry.get("supported_reasoning_efforts")
-            or entry.get("reasoning_efforts")
-            or []
-        )
-        efforts = [item.get("effort") if isinstance(item, dict) else item for item in efforts_raw]
         model: dict[str, Any] = {
             "id": model_id,
             "harness": "codex",
         }
-        if any(
-            key in entry
-            for key in (
-                "supported_reasoning_levels",
-                "supported_reasoning_efforts",
-                "reasoning_efforts",
-            )
-        ):
-            model["efforts"] = [str(item) for item in efforts if item]
+        efforts = _extract_codex_cache_reasoning_efforts(entry)
+        if efforts is not None:
+            model["efforts"] = efforts
         default_effort = (
             entry.get("default_reasoning_level")
             or entry.get("default_reasoning_effort")

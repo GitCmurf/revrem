@@ -1344,6 +1344,47 @@ def test_triage_command_uses_read_only_exec_with_phase_model(tmp_path):
     assert command[-1] == "-"
 
 
+def test_remediation_command_uses_catalog_driver_json_output_for_alias(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".revrem-catalog.toml").write_text(
+        '[[harness]]\nname="team-codex"\ndriver="codex"\nexecutable="codex"\n',
+        encoding="utf-8",
+    )
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        remediation_harness="team-codex",
+        remediation_model="gpt-5.4-mini",
+        remediation_reasoning_effort="low",
+    )
+    command = remediation_impl.build_remediation_command(config)
+    assert "--json" in command
+
+
+def test_triage_command_uses_catalog_driver_json_output_for_alias(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".revrem-catalog.toml").write_text(
+        '[[harness]]\nname="team-codex"\ndriver="codex"\nexecutable="codex"\n',
+        encoding="utf-8",
+    )
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        triage_harness="team-codex",
+        triage_model="gpt-5.4-mini",
+        triage_reasoning_effort="low",
+    )
+
+    command = triage_impl.build_triage_command(config)
+    assert "--json" in command
+
+
 def test_commit_message_command_uses_read_only_exec_with_configured_model(tmp_path):
     config = LoopConfig(
         base="main",

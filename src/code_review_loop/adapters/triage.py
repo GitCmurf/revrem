@@ -45,7 +45,9 @@ def build_triage_command(config: LoopConfig) -> list[str]:
             sandbox="read-only",
             color=config.exec_color,
             full_auto=False,
-            json_output=(config.triage_harness == "codex"),
+            json_output=(
+                harnesses._resolve_catalog_driver(config.triage_harness) == "codex"
+            ),
         )
     )
 

@@ -143,6 +143,39 @@ def test_known_invalid_selection_rejects_but_unknown_passes_with_warning(tmp_pat
     )
 
 
+def test_alias_harness_selection_validates_against_selected_driver(tmp_path, monkeypatch):
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "missing-codex"))
+    (tmp_path / ".revrem-catalog.toml").write_text(
+        '[[harness]]\nname="team-codex"\ndriver="codex"\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="not supported"):
+        model_catalog.validate_selection("team-codex", "gpt-5.6-luna", "ultra", cwd=tmp_path)
+
+
+def test_codex_cache_scalar_reasoning_levels_are_ignored(tmp_path, monkeypatch):
+    codex_home = tmp_path / "codex"
+    codex_home.mkdir()
+    (codex_home / "models_cache.json").write_text(
+        json.dumps(
+            {
+                "models": [
+                    {
+                        "slug": "gpt-5.6-sol",
+                        "supported_reasoning_levels": "high",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+
+    model = model_catalog.load_catalog(tmp_path, home=tmp_path).model("codex", "gpt-5.6-sol")
+    assert model.efforts == ("low", "medium", "high", "xhigh", "max", "ultra")
+
+
 def test_global_effort_vocab_validation_happens_before_catalog_lookup(tmp_path, monkeypatch):
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "missing-codex"))
     with pytest.raises(ValueError, match="is not one of"):
@@ -202,3 +235,15 @@ def test_models_list_json(tmp_path, monkeypatch, capsys):
     assert models.main(["list", "--format", "json"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert any(row["id"] == "gpt-5.6-sol" and "xhigh" in row["efforts"] for row in payload)
+
+
+def test_models_list_reports_catalog_validation_errors(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "missing-codex"))
+    (tmp_path / ".revrem-catalog.toml").write_text(
+        '[[harness]]\ndriver="codex"\n',
+        encoding="utf-8",
+    )
+
+    assert models.main(["list"]) == 1
+    assert "ERROR:" in capsys.readouterr().err
