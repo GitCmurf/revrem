@@ -456,9 +456,10 @@ def run_review_with_retry(
     display_label: str,
     prompt_artifact: Path | None,
     *,
-    review_harness: str,
+    review_harness: str | None = None,
     ctx: RunContext,
 ) -> CommandResult:
+    review_harness = review_harness or config.review_harness
     attempts = (
         config.provider_retry_attempts if review_harness not in {"codex", "fake"} else 1
     )

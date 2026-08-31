@@ -1504,6 +1504,44 @@ def test_tui_cancel_action_routes_to_controller(monkeypatch, tmp_path):
     assert any(selector == "#screen-run-monitor" for selector, _ in widgets.updates)
 
 
+def test_tui_cancel_action_clears_state_and_reports_cancellation_error(monkeypatch, tmp_path):
+    notifications = []
+    workers = []
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    model = tui.tui_state.build_shell_model(cwd=repo, selected_profile_name="security")
+    app = tui.RevRemApp(model=model, profiles_by_name={})
+    app.live_run_controller.launch = tui.tui_run_controller.LiveRunLaunch(
+        argv=("revrem",),
+        artifact_dir_arg=".revrem/runs/live",
+        artifact_dir=repo / ".revrem" / "runs" / "live",
+    )
+    app.live_run_controller.process = types.SimpleNamespace(poll=lambda: None)
+
+    def cancel():
+        raise RuntimeError("process exited while cancelling")
+
+    monkeypatch.setattr(app.live_run_controller, "cancel", cancel)
+    monkeypatch.setattr(app, "notify", lambda message: notifications.append(message))
+    monkeypatch.setattr(
+        app, "run_worker", lambda target, thread=True: workers.append((target, thread))
+    )
+    monkeypatch.setattr(app, "call_from_thread", lambda callback: callback())
+    widgets = _WidgetProbe()
+    monkeypatch.setattr(app, "query_one", widgets.query_one)
+
+    app.action_cancel_run()
+    workers[0][0]()
+
+    assert app._cancel_in_progress is False
+    assert notifications == [
+        "Live run cancellation requested.",
+        "Live run cancel failed: process exited while cancelling",
+    ]
+    assert any(selector == "#screen-run-monitor" for selector, _ in widgets.updates)
+
+
 def test_tui_cancel_action_reports_when_no_run_is_active(monkeypatch, tmp_path):
     notifications = []
     repo = tmp_path / "repo"

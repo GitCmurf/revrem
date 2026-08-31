@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from code_review_loop import policy, routing_artifacts, routing_timeouts
+from code_review_loop import events, policy, routing_artifacts, routing_timeouts
 from code_review_loop.adapters.phase_support import phase_timeout_seconds
 from code_review_loop.adapters.remediation import run_remediation
 from code_review_loop.cli import args as cli_args
@@ -183,6 +183,36 @@ def test_routed_remediation_uses_effective_timeout_for_subprocess(tmp_path) -> N
     assert result.returncode == 0
     assert captured_timeouts == [600]
     assert (tmp_path / "artifacts" / "remediation-1.txt").read_text(encoding="utf-8") == "fixed\n"
+
+
+def test_routed_remediation_records_effective_route_settings_in_telemetry(tmp_path) -> None:
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        return CommandResult(list(args), 0, stdout="fixed\n")
+
+    config = LoopConfig(
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        remediation_harness="gemini",
+        remediation_model="global-model",
+        remediation_reasoning_effort="low",
+        output_last_message=False,
+    )
+    route = _route(60)
+    sink = events.InMemorySink("run-1")
+    ctx = RunContext(
+        clock=FakeClock(),
+        identity=FakeRunIdentity(),
+        runner=runner,
+        event_sink=sink,
+        **phase_harness_kwargs(),
+    )
+
+    run_remediation(config, runner, 1, "fix it", resolved_route=route, ctx=ctx)
+
+    invocation = next(event for event in sink.events if event.kind == "model_invocation")
+    assert invocation.payload["harness"] == "codex"
+    assert invocation.payload["model"] == "gpt-5.4-mini"
+    assert invocation.payload["reasoning_effort"] == "medium"
 
 
 def test_routed_remediation_uses_inherited_remediation_timeout_for_omitted_route_timeout(

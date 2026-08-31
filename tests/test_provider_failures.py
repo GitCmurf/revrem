@@ -517,6 +517,45 @@ def test_run_review_with_retry_does_not_retry_codex_proxy_quota_exhausted(
     assert len(calls) == 1
 
 
+def test_run_review_with_retry_uses_explicit_harness_over_config_for_retry_policy(
+    tmp_path: Path,
+) -> None:
+    calls: list[list[str]] = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append(list(args))
+        return CommandResult(list(args), 1, stderr="Error: rate limit exceeded")
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        review_harness="opencode",
+        review_model="provider/model",
+    )
+    ctx = RunContext(
+        runner=runner,
+        clock=FakeClock(),
+        identity=FakeRunIdentity(),
+        **phase_harness_kwargs(),
+    )
+
+    result = review_impl.run_review_with_retry(
+        config,
+        runner,
+        ["codex"],
+        None,
+        "1",
+        None,
+        review_harness="codex",
+        ctx=ctx,
+    )
+
+    assert result.returncode == 1
+    assert len(calls) == 1
+
+
 def test_run_review_with_retry_does_not_retry_timeout(tmp_path: Path) -> None:
     calls: list[list[str]] = []
 

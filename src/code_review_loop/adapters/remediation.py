@@ -91,6 +91,16 @@ def run_remediation(
     )
     command = build_remediation_command(config, last_message_path, resolved_route=resolved_route)
     remediation_harness = resolved_route.harness if resolved_route else config.remediation_harness
+    remediation_model = (
+        (resolved_route.model if resolved_route else None)
+        or config.remediation_model
+        or config.model
+    )
+    remediation_reasoning_effort = (
+        (resolved_route.reasoning_effort if resolved_route else None)
+        or config.remediation_reasoning_effort
+        or config.reasoning_effort
+    )
 
     if resolved_route:
         prompt = remediation_input
@@ -122,12 +132,8 @@ def run_remediation(
         phase_support.resolved_phase_detail(
             command,
             harness=remediation_harness,
-            model=(resolved_route.model if resolved_route else None)
-            or config.remediation_model
-            or config.model,
-            reasoning_effort=(resolved_route.reasoning_effort if resolved_route else None)
-            or config.remediation_reasoning_effort
-            or config.reasoning_effort,
+            model=remediation_model,
+            reasoning_effort=remediation_reasoning_effort,
             timeout_seconds=(
                 routing_timeouts.effective_route_timeout_display(config, resolved_route)
                 if resolved_route
@@ -162,6 +168,8 @@ def run_remediation(
             ctx=ctx,
             prompt_artifact=invocation.prompt_artifact,
             harness=remediation_harness,
+            model=remediation_model,
+            reasoning_effort=remediation_reasoning_effort,
             timeout_is_effective=timeout_is_effective,
         )
     phase_support.write_artifact(
@@ -202,6 +210,8 @@ def _run_remediation_with_retry(
     ctx: RunContext,
     prompt_artifact: Path | None,
     harness: str,
+    model: str | None,
+    reasoning_effort: str | None,
     timeout_is_effective: bool = False,
 ) -> CommandResult:
     """Run the remediation subprocess with bounded transient retry.
@@ -229,6 +239,8 @@ def _run_remediation_with_retry(
             ctx=ctx,
             prompt_artifact=prompt_artifact,
             harness=harness,
+            model=model,
+            reasoning_effort=reasoning_effort,
         )
         last_result = result
         failure = provider_failures.classify_provider_failure(result, harness=harness)

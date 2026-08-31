@@ -65,7 +65,6 @@
         "workspace-write",
         "--color",
         "never",
-        "--json",
         "--output-last-message",
         "<RUN_DIR>/artifacts/remediation-1-last-message.txt",
         "-"

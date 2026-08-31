@@ -2587,14 +2587,22 @@ class _RevRemAppMixin:
         self._update_console_status()
 
         def cancel_and_update() -> None:
-            status = self.live_run_controller.cancel()
+            status: str | None = None
+            error: Exception | None = None
+            try:
+                status = self.live_run_controller.cancel()
+            except Exception as exc:
+                error = exc
 
             def finish_update() -> None:
                 self._cancel_in_progress = False
                 self._quit_confirmation_pending = False
-                _notify(self, f"Live run cancel completed: {status}")
+                if error is None:
+                    _notify(self, f"Live run cancel completed: {status}")
+                else:
+                    _notify(self, f"Live run cancel failed: {error}")
                 self._render_live_monitor()
-                if exit_after:
+                if exit_after and error is None:
                     self._exit_app()
 
             _call_from_thread(self, finish_update)

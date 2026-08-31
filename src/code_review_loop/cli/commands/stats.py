@@ -97,7 +97,7 @@ def _matches(row: dict[str, Any], args: Any) -> bool:
 
 
 def _summarize(key: tuple[str, str, str, str], rows: list[dict[str, Any]]) -> dict[str, Any]:
-    durations = sorted(float(row.get("duration_seconds") or 0) for row in rows)
+    durations = sorted(_duration_seconds(row.get("duration_seconds")) for row in rows)
     tokens = [row["tokens"] for row in rows if isinstance(row.get("tokens"), int)]
     p95_index = max(0, min(len(durations) - 1, math.ceil(0.95 * len(durations)) - 1))
     return {
@@ -106,3 +106,14 @@ def _summarize(key: tuple[str, str, str, str], rows: list[dict[str, Any]]) -> di
         "token_coverage": f"{len(tokens)}/{len(rows)}", "tokens": sum(tokens) if tokens else None,
         "duration_seconds": {"min": min(durations), "mean": statistics.fmean(durations), "p50": statistics.median(durations), "p95": durations[p95_index], "max": max(durations)},
     }
+
+
+def _duration_seconds(value: object) -> float:
+    """Normalize malformed local telemetry durations for best-effort stats."""
+    if isinstance(value, bool):
+        return 0.0  # outcome-exempt: telemetry value, not a command exit code
+    try:
+        duration = float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0  # outcome-exempt: telemetry value, not a command exit code
+    return duration if math.isfinite(duration) else 0.0

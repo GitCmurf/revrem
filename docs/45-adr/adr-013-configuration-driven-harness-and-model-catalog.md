@@ -47,9 +47,12 @@ and TUI use the same catalog for discoverability and compatible effort cycling.
 
 Each provider call emits a local `model_invocation` event containing phase,
 harness, actual requested model, effort, duration, outcome, and token usage when
-the harness reports it. Summaries retain those events and `revrem stats models`
-aggregates per-run artifacts referenced by local run history. RevRem creates no
-remote telemetry stream and does not infer prices.
+the harness reports it. Routed remediation records the selected route's harness,
+model, and effort rather than the global remediation defaults. Summaries retain
+those events and `revrem stats models` aggregates per-run artifacts referenced
+by local run history; malformed or non-finite local durations are normalized to
+zero so one corrupted artifact cannot prevent best-effort reporting. RevRem
+creates no remote telemetry stream and does not infer prices.
 
 The project dogfood profile moves to GPT-5.6 because it is controlled locally.
 Shipped general-purpose and expert-profile defaults remain unchanged while the
