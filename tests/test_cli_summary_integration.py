@@ -4,6 +4,8 @@ import json
 import shlex
 from pathlib import Path
 
+import pytest
+
 import tests.support.application_runner as runner_mod
 from code_review_loop import artifacts, reporting
 from code_review_loop.cli.main import _redacted_argv
@@ -503,6 +505,33 @@ def test_terminal_summary_resume_command_does_not_emit_dev_venv_executable():
 
     assert "Continue command: revrem --base main --max-iterations 1" in text
     assert ".venv/bin/revrem" not in text
+
+
+@pytest.mark.parametrize(
+    ("full_auto", "expected_flag"),
+    [(False, "--no-full-auto"), (True, "--full-auto")],
+)
+def test_terminal_summary_resume_command_preserves_full_auto_mode(
+    full_auto: bool, expected_flag: str
+) -> None:
+    text = format_terminal_summary(
+        {
+            "artifact_dir": "tmp/run",
+            "final_status": "findings",
+            "stopped_reason": "max_iterations_reached",
+            "artifact_paths": {"reviews": ["tmp/run/review-final.txt"]},
+            "base": "main",
+            "max_iterations": 1,
+            "profile": "dogfood",
+            "resume_config": {
+                "base": "main",
+                "max_iterations": 1,
+                "full_auto": full_auto,
+            },
+        }
+    )
+
+    assert expected_flag in text
 
 
 def test_terminal_summary_resume_command_preserves_forced_route():

@@ -3,8 +3,8 @@ document_id: REVREM-LEDGER-003
 type: LEDGER
 title: Behaviour ledger for the cli.py re-engineering (REVREM-TASK-003)
 status: Approved
-version: '1.8'
-last_updated: '2026-07-10'
+version: '1.9'
+last_updated: '2026-08-31'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -55,6 +55,21 @@ There is no silent third option.
 ```
 
 ## Entries
+
+### 2026-08-31 — RevRem retains commit ownership during remediation
+
+- **Contract:** machine and provider instruction
+- **What changed:** remediation prompts now tell providers not to stage or
+  commit because RevRem owns the verified commit phase. Small prompt budgets
+  retain the mandatory header and an explicit original-review omission marker.
+- **Why:** provider-created commits could otherwise bypass RevRem's configured
+  verification and be mistaken for a successful RevRem commit.
+- **Before / After:** the fixed findings-path fixture's prompt telemetry changes
+  from 1,035 to 1,150 bytes/characters in
+  `tests/snapshots/loop_findings_events.json`; event shape is unchanged.
+- **schema_version impact:** none. Only payload values change; the event schema
+  and field meanings are unchanged.
+- **CHANGELOG:** `[Unreleased]` Fixed entry for remediation commit ownership.
 
 ### 2026-07-10 — Hermetic canonical TUI snapshot theme
 

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 from support.phase_harnesses import phase_harness_kwargs
 
+from code_review_loop.adapters import remediation as remediation_impl
 from code_review_loop.adapters.remediation import RemediationAdapter
 from code_review_loop.clock import Clock
 from code_review_loop.config import LoopConfig
@@ -183,6 +185,39 @@ class TestRemediationAdapter:
                 RemediationRequest(iteration=1, remediation_input="fix"),
                 ctx,
             )
+
+    def test_rejects_head_changes_made_inside_remediation(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        artifact_dir = tmp_path / "artifacts"
+        artifact_dir.mkdir()
+        (tmp_path / ".git").mkdir()
+        config = LoopConfig(
+            base="main",
+            max_iterations=1,
+            cwd=tmp_path,
+            artifact_dir=artifact_dir,
+        )
+        heads = iter(("before-sha", "after-sha"))
+        monkeypatch.setattr(
+            remediation_impl.git_adapter,
+            "git_preflight_stdout",
+            lambda _cwd, _args: next(heads),
+        )
+        ctx = _ctx(runner=MagicMock(return_value=CommandResult(["codex"], 0)))
+        adapter = RemediationAdapter(config)
+
+        with pytest.raises(RuntimeError, match="changed HEAD outside RevRem's commit phase"):
+            adapter.execute(
+                RemediationRequest(iteration=1, remediation_input="fix"),
+                ctx,
+            )
+
+        diagnostic_path = artifact_dir / "diagnostics-remediation-1-failure.json"
+        diagnostic = json.loads(diagnostic_path.read_text(encoding="utf-8"))
+        assert diagnostic["kind"] == "remediation_head_changed"
+        assert diagnostic["head_before"] == "before-sha"
+        assert diagnostic["head_after"] == "after-sha"
 
 
 class TestEngineDispatch:

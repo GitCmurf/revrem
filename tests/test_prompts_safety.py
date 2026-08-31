@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from code_review_loop import policy, prompts_composer
+from code_review_loop.adapters import phase_support
 
 
 def test_compose_remediation_prompt_safety_sections_not_truncated(tmp_path):
@@ -33,10 +34,19 @@ def test_compose_remediation_prompt_safety_sections_not_truncated(tmp_path):
     )
 
     assert "You are running a bounded review-remediation loop" in prompt
+    assert "Do not stage or commit changes" in prompt
+    assert "RevRem owns the commit phase" in prompt
     assert "CRITICAL_SAFETY_FIX" in prompt
     assert "sec-rule" in prompt
     assert len(prompt) <= max_chars
     assert "[... omitted" in prompt  # Review context should be truncated
+
+
+def test_direct_remediation_prompt_reserves_commit_ownership_for_revrem():
+    prompt = phase_support.DEFAULT_REMEDIATION_PROMPT
+
+    assert "Do not stage or commit changes" in prompt
+    assert "RevRem owns the commit phase" in prompt
 
 
 def test_compose_remediation_prompt_fails_if_header_too_large(tmp_path):

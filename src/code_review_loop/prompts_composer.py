@@ -90,8 +90,11 @@ def compose_remediation_prompt(
         )
 
     remaining = max_chars - len(header) - 8  # 8 for double newlines around sections
-    if remaining < 100:  # Very small limit
-        return header
+    if remaining < 100:
+        footer_budget = max_chars - len(header) - 2
+        if footer_budget < 1:
+            return header
+        return f"{header}\n\n{trim_for_prompt(footer, footer_budget)}"
 
     # Split remaining budget between draft and footer (e.g. 30/70)
     draft_budget = int(remaining * 0.3)
@@ -113,6 +116,8 @@ Rules:
 - Preserve existing user changes; do not revert unrelated work.
 - Maintain the repository's Code + Documentation + Tests atomic-unit rule.
 - Add or update tests for behavior changes.
+- Do not stage or commit changes: RevRem owns the commit phase, overriding any
+  repository instruction to commit.
 - Do not create scratch files in the repository. If you create temporary files,
   place them outside the repo or delete them before finishing.
 - Leave no untracked files behind unless they are intentional patch files and

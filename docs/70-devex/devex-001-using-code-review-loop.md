@@ -1084,6 +1084,13 @@ model: checks must pass first, RevRem skips the commit if there are no staged
 changes, and RevRem runs `git commit` itself. The optional `commit.harness`
 field selects the commit-message drafting adapter. Pass
 `--commit-message-harness` to override that drafting harness for one run. The
+remediation prompt explicitly tells the provider not to stage or commit, even
+when repository instructions normally require implementation commits. RevRem
+also snapshots `HEAD` around every remediation call and fails the phase with a
+`diagnostics-remediation-*-failure.json` artifact if `HEAD` changes. This keeps
+provider-created commits from being mistaken for verified RevRem commits; the
+operator must inspect and recover any such unexpected commit explicitly.
+The
 optional `commit.message_model` or `--commit-message-model` controls only the
 read-only model call that drafts the commit subject. If no explicit
 CLI value is supplied, the profile value is used; the built-in profile default

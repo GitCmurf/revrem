@@ -13,12 +13,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from code_review_loop import (
+    artifacts,
     harnesses,
     policy,
     prompts_composer,
     provider_failures,
     routing_timeouts,
 )
+from code_review_loop.adapters import git as git_adapter
 from code_review_loop.adapters import phase_support
 from code_review_loop.core.ports import (
     CommandResult,
@@ -131,6 +133,7 @@ def run_remediation(
     command = invocation.command
     prompt_input = invocation.stdin
     prompt_metadata = phase_support.prompt_invocation_metadata(invocation)
+    repository_head_before = _repository_head_for_guard(config)
 
     phase_support.set_phase_terminal_title(config, "remediate", label)
     phase_support.ensure_model_budget(
@@ -192,6 +195,36 @@ def run_remediation(
     phase_support.record_model_charge(
         config, result, phase="remediate", iteration=iteration, ctx=ctx
     )
+    repository_head_after = _repository_head_for_guard(config)
+    if repository_head_before != repository_head_after and (
+        repository_head_before is not None or repository_head_after is not None
+    ):
+        diagnostic_path = artifacts.write_json_artifact(
+            config.artifact_dir,
+            f"diagnostics-{artifact_stem}-failure.json",
+            {
+                "kind": "remediation_head_changed",
+                "phase": "remediate",
+                "iteration": label,
+                "head_before": repository_head_before,
+                "head_after": repository_head_after,
+                "message": "Repository HEAD changed during the remediation phase.",
+            },
+        )
+        detail = "provider changed HEAD outside RevRem's commit phase"
+        phase_support.progress_event(
+            config,
+            "remediate",
+            label,
+            "failed",
+            detail,
+            ctx=ctx,
+            metadata={
+                "reason": "remediation_head_changed",
+                "diagnostic_artifact": str(diagnostic_path),
+            },
+        )
+        raise RuntimeError(f"{detail}; see {diagnostic_path}")
     if result.returncode != 0:
         failure = provider_failures.classify_provider_failure(
             result, harness=remediation_harness
@@ -212,6 +245,12 @@ def run_remediation(
         )
     phase_support.progress_event(config, "remediate", label, "done", ctx=ctx)
     return result
+
+
+def _repository_head_for_guard(config: LoopConfig) -> str | None:
+    if config.dry_run or phase_support.lexical_git_repo_root(config.cwd) is None:
+        return None
+    return git_adapter.git_preflight_stdout(config.cwd, ["rev-parse", "HEAD"])
 
 
 def _run_remediation_with_retry(

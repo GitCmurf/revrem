@@ -8,6 +8,10 @@ This project follows Semantic Versioning once public releases begin.
 
 ### Fixed
 
+- Remediation providers are now explicitly forbidden from staging or committing;
+  RevRem detects unexpected `HEAD` changes, preserves full-auto mode in resume
+  commands, and retains an omission marker when mandatory prompt instructions
+  leave only a small review-context budget.
 - The TUI now restores the newest repository run from structured resume data,
   keeps the active profile and launch command consistent, shows effective
   timeout values, and preselects an actionable Git-compatible final review.

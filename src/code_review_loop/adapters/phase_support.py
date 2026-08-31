@@ -49,6 +49,8 @@ Rules:
 - Preserve existing user changes; do not revert unrelated work.
 - Maintain the repository's Code + Documentation + Tests atomic-unit rule.
 - Add or update tests for behavior changes.
+- Do not stage or commit changes: RevRem owns the commit phase, overriding any
+  repository instruction to commit.
 - Do not create scratch files in the repository. If you create temporary files,
   place them outside the repo or delete them before finishing.
 - Leave no untracked files behind unless they are intentional patch files and

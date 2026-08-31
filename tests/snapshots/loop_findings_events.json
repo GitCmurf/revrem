@@ -70,10 +70,10 @@
         "-"
       ],
       "harness": "codex",
-      "message": "codex exec · sandbox workspace-write · prompt=1.0k stdin · source=direct-config",
+      "message": "codex exec · sandbox workspace-write · prompt=1.1k stdin · source=direct-config",
       "payload_schema_version": "1.1",
-      "prompt_bytes": 1035,
-      "prompt_chars": 1035,
+      "prompt_bytes": 1150,
+      "prompt_chars": 1150,
       "prompt_delivery": "stdin",
       "summary": "start"
     },
@@ -199,7 +199,7 @@
     "iteration": null,
     "kind": "artifact_write",
     "payload": {
-      "bytes": 1035,
+      "bytes": 1150,
       "kind": "prompts",
       "path": "<RUN_DIR>/artifacts/remediation-1-prompt.txt"
     },

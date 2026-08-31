@@ -395,6 +395,9 @@ def _resume_command(summary: dict[str, object], review_path: str) -> str:
     timeout_seconds = config.get("timeout_seconds")
     if isinstance(timeout_seconds, int | float):
         command.extend(["--timeout-seconds", _format_number(timeout_seconds)])
+    full_auto = config.get("full_auto")
+    if isinstance(full_auto, bool):
+        command.append("--full-auto" if full_auto else "--no-full-auto")
     _append_phase_resume_overrides(command, config, summary)
     commit_after = config.get("commit_after_remediation")
     if isinstance(commit_after, bool):
