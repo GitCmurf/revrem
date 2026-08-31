@@ -13,6 +13,8 @@ This project follows Semantic Versioning once public releases begin.
   escalating to `SIGTERM`.
 - The locked development and release toolchain has been refreshed to its latest
   compatible versions, including mypy 2.3, Ruff 0.16, pytest 9.1, and Twine 7.
+- Pre-commit now uses `pre-commit-hooks` 6.0.0 and a Ruff hook aligned with the
+  locked Ruff 0.16.5 toolchain.
 - The development lockfile now uses `cryptography` 50.0.1, closing
   CVE-2026-69247 in the transitive `twine`/`keyring` toolchain.
 - Remediation providers are now explicitly forbidden from staging or committing;
