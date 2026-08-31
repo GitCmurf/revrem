@@ -1543,10 +1543,10 @@ jobs:
     if: github.event.pull_request.head.repo.fork == false && contains(github.event.pull_request.labels.*.name, 'run-dogfood')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Install dogfood dependencies

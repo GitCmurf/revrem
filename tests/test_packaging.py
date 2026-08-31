@@ -81,6 +81,26 @@ def test_ci_builds_and_smokes_revrem_wheel():
     )
 
 
+def test_active_github_actions_use_current_immutable_pins():
+    checkout = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1"
+    setup_python = "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0"
+    upload_artifact = (
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1"
+    )
+    ci = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    release = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    scorecard = (ROOT / ".github/workflows/scorecard.yml").read_text(encoding="utf-8")
+    action = (ROOT / "action.yml").read_text(encoding="utf-8")
+
+    assert ci.count(checkout) == 2
+    assert ci.count(setup_python) == 2
+    assert checkout in release
+    assert setup_python in release
+    assert upload_artifact in release
+    assert checkout in scorecard
+    assert action.count(upload_artifact) == 2
+
+
 def test_release_workflow_uses_trusted_publishing_and_dry_run():
     workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
 
