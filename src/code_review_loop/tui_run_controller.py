@@ -203,8 +203,18 @@ class LiveRunController:
             _terminate_descendants(descendant_pids, grace_seconds=grace_seconds)
             return status
         except subprocess.TimeoutExpired:
-            _signal_process_group(self.process, signal.SIGTERM)
-            _signal_process_groups_by_pid(descendant_pids, signal.SIGTERM)
+            pass
+        # The child has entered its controlled cancellation path and is writing
+        # terminal artifacts. Avoid interrupting that finalization with SIGTERM.
+        if self._cancellation_acknowledged():
+            try:
+                status = self.finish(self.process.wait(timeout=grace_seconds))
+                _terminate_descendants(descendant_pids, grace_seconds=grace_seconds)
+                return status
+            except subprocess.TimeoutExpired:
+                pass
+        _signal_process_group(self.process, signal.SIGTERM)
+        _signal_process_groups_by_pid(descendant_pids, signal.SIGTERM)
         try:
             status = self.finish(self.process.wait(timeout=grace_seconds))
             _terminate_descendants(descendant_pids, grace_seconds=grace_seconds)
@@ -266,6 +276,9 @@ class LiveRunController:
     def read_summary(self) -> dict[str, object] | None:
         """Return the current run's summary when it belongs to this launch."""
         return self._read_summary()
+
+    def _cancellation_acknowledged(self) -> bool:
+        return any(event.kind == "cancellation" for event in self.read_live_events().events)
 
     def read_live_events(self) -> LiveEventSnapshot:
         # Called on every refresh tick. Cache the parsed snapshot keyed on the

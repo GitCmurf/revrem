@@ -1745,9 +1745,11 @@ a non-fatal notification, and the current in-session profile remains active.
 Cancellation runs in a background worker and sends `SIGINT` to the child process
 group first, so a normal active run writes the standard `cancellation` event and
 `summary.json` with exit code `5`; `SIGTERM` and `SIGKILL` are reserved for
-forced cleanup if the child does not exit. A direct interrupt path that exits
-before writing `summary.json` now surfaces as `interrupted-before-run-initialized`
-in the TUI monitor. The controller snapshots descendant
+forced cleanup if the child does not exit. Once the child acknowledges `SIGINT`
+with its `cancellation` event, the controller allows one additional bounded grace
+interval for `summary.json` finalization before escalating. A direct interrupt
+path that exits before writing `summary.json` now surfaces as
+`interrupted-before-run-initialized` in the TUI monitor. The controller snapshots descendant
 PIDs before cancellation and performs bounded cleanup of those known nested
 provider children after the managed child exits. When no live run is active, cancellation is a no-op with
 explicit feedback. Quitting during an active live run requires a second `q`,

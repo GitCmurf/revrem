@@ -275,6 +275,58 @@ def test_cancel_reports_forced_cleanup_after_escalation(monkeypatch):
     ]
 
 
+def test_cancel_allows_acknowledged_child_to_finish_before_escalating(tmp_path, monkeypatch):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    sink = events.JsonlSink(run_dir, "run-id")
+    sink.emit(
+        "cancellation",
+        phase="run",
+        payload={"reason": "operator_interrupt", "message": "cancelled by operator"},
+    )
+    sink.close()
+
+    class FinalizingProcess(FakeProcess):
+        def __init__(self):
+            super().__init__(returncode=None)  # type: ignore[arg-type]
+            self.wait_calls = 0
+
+        def wait(self, timeout: float | None = None) -> int:
+            self.wait_calls += 1
+            if self.wait_calls == 1:
+                raise subprocess.TimeoutExpired(["fake"], timeout)
+            (run_dir / "summary.json").write_text(
+                json.dumps({"final_status": "error", "stopped_reason": "cancelled"}),
+                encoding="utf-8",
+            )
+            self.returncode = 5
+            return 5
+
+    process = FinalizingProcess()
+    signals = []
+    monkeypatch.setattr(tui_run_controller.os, "getpgid", lambda pid: 999)
+    monkeypatch.setattr(
+        tui_run_controller.os,
+        "killpg",
+        lambda pgid, signum: signals.append((pgid, signum)),
+    )
+    controller = tui_run_controller.LiveRunController(
+        process=process,
+        status="running",
+        launch=tui_run_controller.LiveRunLaunch(
+            argv=("revrem",),
+            artifact_dir_arg=str(run_dir),
+            artifact_dir=run_dir,
+        ),
+    )
+
+    status = controller.cancel(grace_seconds=0)
+
+    assert status == "cancelled"
+    assert process.wait_calls == 2
+    assert signals == [(999, tui_run_controller.signal.SIGINT)]
+
+
 def test_controller_cancels_real_revrem_child_and_reads_cancellation_summary(
     tmp_path, monkeypatch
 ):

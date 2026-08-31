@@ -8,6 +8,9 @@ This project follows Semantic Versioning once public releases begin.
 
 ### Fixed
 
+- Live-run cancellation now gives a child that has emitted its cancellation
+  event one additional bounded grace interval to finish `summary.json` before
+  escalating to `SIGTERM`.
 - The development lockfile now uses `cryptography` 50.0.1, closing
   CVE-2026-69247 in the transitive `twine`/`keyring` toolchain.
 - Remediation providers are now explicitly forbidden from staging or committing;
