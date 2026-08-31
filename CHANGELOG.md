@@ -8,6 +8,8 @@ This project follows Semantic Versioning once public releases begin.
 
 ### Fixed
 
+- The development lockfile now uses `cryptography` 50.0.1, closing
+  CVE-2026-69247 in the transitive `twine`/`keyring` toolchain.
 - Remediation providers are now explicitly forbidden from staging or committing;
   RevRem detects unexpected `HEAD` changes, preserves full-auto mode in resume
   commands, and retains an omission marker when mandatory prompt instructions

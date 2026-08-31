@@ -192,6 +192,17 @@ def test_uv_lock_contains_single_tomli_w_entry():
     assert tomli_w_packages[0]["version"] == "1.2.0"
 
 
+def test_uv_lock_uses_cryptography_with_cve_2026_69247_fixed():
+    lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
+    cryptography_packages = [
+        package for package in lock["package"] if package["name"] == "cryptography"
+    ]
+
+    assert len(cryptography_packages) == 1
+    version = tuple(int(part) for part in cryptography_packages[0]["version"].split("."))
+    assert version >= (50, 0, 0)
+
+
 def test_package_data_includes_versioned_prompts():
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
