@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 
+from code_review_loop.adapters.phase_support import TRIAGE_PHASE
 from code_review_loop.cli.args import parse_args
 from code_review_loop.cli.commands.profile import save_profile_from_args
 from code_review_loop.cli.config_builder import build_loop_config
@@ -133,7 +134,7 @@ def _validate_model_selections(config) -> None:
     if config.triage_enabled:
         selections.append(
             (
-                "triage",
+                TRIAGE_PHASE,
                 config.triage_harness,
                 config.triage_model or config.model,
                 config.triage_reasoning_effort or config.reasoning_effort,

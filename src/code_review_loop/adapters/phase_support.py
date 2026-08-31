@@ -27,6 +27,8 @@ from code_review_loop.core.review_interpretation import (
 )
 from code_review_loop.repo_roots import lexical_git_repo_root as _lexical_git_repo_root
 
+TRIAGE_PHASE = "triage"
+
 PROGRESS_PHASE_CODES = {
     "check": "chk",
     "commit": "com",

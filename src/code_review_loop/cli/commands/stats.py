@@ -112,8 +112,10 @@ def _duration_seconds(value: object) -> float:
     """Normalize malformed local telemetry durations for best-effort stats."""
     if isinstance(value, bool):
         return 0.0  # outcome-exempt: telemetry value, not a command exit code
+    if not isinstance(value, (int, float, str)):
+        return 0.0  # outcome-exempt: malformed telemetry is excluded from stats
     try:
-        duration = float(value or 0)
+        duration = float(value)
     except (TypeError, ValueError):
         return 0.0  # outcome-exempt: telemetry value, not a command exit code
     return duration if math.isfinite(duration) else 0.0
