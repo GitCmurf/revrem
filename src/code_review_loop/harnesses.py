@@ -97,7 +97,9 @@ def resolve_commit_message_reasoning_effort(
             requested=requested_effort,
             adjustment=CODEX_MINIMAL_UNSUPPORTED_ADJUSTMENT,
         )
-    return ReasoningEffortResolution(effective=requested_effort, requested=requested_effort)
+    return ReasoningEffortResolution(
+        effective=requested_effort, requested=requested_effort
+    )
 
 
 def reasoning_effort_supported(harness: str) -> bool:
@@ -156,8 +158,13 @@ class CodexHarnessAdapter(HarnessAdapter):
             command.append("--json")
         if request.model:
             command.extend(["--model", request.model])
-        if request.role == "remediation" and request.output_last_message_path is not None:
-            command.extend(["--output-last-message", str(request.output_last_message_path)])
+        if (
+            request.role == "remediation"
+            and request.output_last_message_path is not None
+        ):
+            command.extend(
+                ["--output-last-message", str(request.output_last_message_path)]
+            )
         command.append("-")
         return command
 
@@ -425,7 +432,9 @@ def _kilo_permission_args(request: PhaseCommandRequest) -> list[str]:
 
 
 PRODUCTION_HARNESS_REGISTRY = MappingProxyType(HARNESS_REGISTRY)
-TEST_HARNESS_REGISTRY = MappingProxyType({**HARNESS_REGISTRY, "fake": FAKE_HARNESS_SPEC})
+TEST_HARNESS_REGISTRY = MappingProxyType(
+    {**HARNESS_REGISTRY, "fake": FAKE_HARNESS_SPEC}
+)
 
 
 def harness_registry() -> Mapping[str, HarnessSpec]:
@@ -550,6 +559,11 @@ def _resolve_catalog_driver(name: str) -> str:
     return name
 
 
+def resolved_harness_spec(name: str) -> HarnessSpec | None:
+    """Return capabilities for a direct harness or a catalog alias's driver."""
+    return harness_registry().get(_resolve_catalog_driver(name))
+
+
 def harness_capabilities_payload(name: str) -> dict[str, Any]:
     spec = harness_registry().get(name)
     if spec is None or spec.capabilities is None:
@@ -623,7 +637,9 @@ def run_fake_harness_command(args: list[str] | tuple[str, ...]) -> tuple[int, st
         )
 
     fixture_dir = os.environ.get(FAKE_HARNESS_FIXTURE_ENV)
-    base = Path(fixture_dir) / scenario if fixture_dir else HARNESS_FIXTURES_DIR / scenario
+    base = (
+        Path(fixture_dir) / scenario if fixture_dir else HARNESS_FIXTURES_DIR / scenario
+    )
 
     # Use specialized filenames for each role
     if phase == "review":

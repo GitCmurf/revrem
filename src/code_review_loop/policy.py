@@ -24,13 +24,15 @@ class RoutingContext:
 
 def check_route_capabilities(route_cfg: TriageRouteConfig) -> list[str]:
     """Verify that the harness for a route is implemented and supports required capabilities."""
-    from code_review_loop.harnesses import harness_registry
+    from code_review_loop.harnesses import resolved_harness_spec
 
-    spec = harness_registry().get(route_cfg.harness)
+    spec = resolved_harness_spec(route_cfg.harness)
     if not spec:
         return [f"Unknown harness: {route_cfg.harness}"]
     if not spec.implemented:
-        return [f"Harness {route_cfg.harness!r} is valid syntax, but not yet implemented."]
+        return [
+            f"Harness {route_cfg.harness!r} is valid syntax, but not yet implemented."
+        ]
     if not spec.capabilities:
         return [f"Harness {route_cfg.harness!r} has no capabilities defined."]
 
@@ -51,7 +53,11 @@ def check_route_capabilities(route_cfg: TriageRouteConfig) -> list[str]:
     # (run_with_timeout / default_runner), independent of whether the harness
     # CLI exposes a native timeout flag. A route with timeout_seconds is
     # therefore valid on any harness; caps.timeout_supported is metadata only.
-    if caps.supported_models and route_cfg.model and route_cfg.model not in caps.supported_models:
+    if (
+        caps.supported_models
+        and route_cfg.model
+        and route_cfg.model not in caps.supported_models
+    ):
         issues.append(
             f"Harness {route_cfg.harness!r} does not support model {route_cfg.model!r}. "
             f"Supported: {', '.join(caps.supported_models)}"
@@ -140,7 +146,9 @@ def resolve_routing(
             if routing_config.strict_on_unavailable_route:
                 raise ValueError(f"Route tier {current_tier!r} not defined in profile.")
             if current_tier == routing_config.default_route:
-                raise ValueError(f"Default route tier {current_tier!r} not defined in profile.")
+                raise ValueError(
+                    f"Default route tier {current_tier!r} not defined in profile."
+                )
             fallbacks_considered.append(current_tier)
             current_tier = routing_config.default_route
             continue
@@ -226,15 +234,26 @@ def _match_rule(rule: TriageRoutingRule, context: RoutingContext) -> bool:
     if cond.risk_level_max and not _risk_lte(context.risk_level, cond.risk_level_max):
         return False
 
-    if cond.refactor_depth_any and context.refactor_depth not in cond.refactor_depth_any:
+    if (
+        cond.refactor_depth_any
+        and context.refactor_depth not in cond.refactor_depth_any
+    ):
         return False
 
-    if cond.module_count_gte is not None and context.module_count < cond.module_count_gte:
+    if (
+        cond.module_count_gte is not None
+        and context.module_count < cond.module_count_gte
+    ):
         return False
-    if cond.module_count_lt is not None and context.module_count >= cond.module_count_lt:
+    if (
+        cond.module_count_lt is not None
+        and context.module_count >= cond.module_count_lt
+    ):
         return False
 
-    if cond.domain_tags_any and not any(tag in cond.domain_tags_any for tag in context.domain_tags):
+    if cond.domain_tags_any and not any(
+        tag in cond.domain_tags_any for tag in context.domain_tags
+    ):
         return False
 
     if cond.safety_signals_any and not any(

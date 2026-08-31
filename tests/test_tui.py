@@ -7,7 +7,7 @@ import sys
 import types
 from pathlib import Path
 
-from code_review_loop import tui
+from code_review_loop import tui, tui_loop_model
 from code_review_loop.cli.main import main as cli_main
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -1504,7 +1504,9 @@ def test_tui_cancel_action_routes_to_controller(monkeypatch, tmp_path):
     assert any(selector == "#screen-run-monitor" for selector, _ in widgets.updates)
 
 
-def test_tui_cancel_action_clears_state_and_reports_cancellation_error(monkeypatch, tmp_path):
+def test_tui_cancel_action_clears_state_and_reports_cancellation_error(
+    monkeypatch, tmp_path
+):
     notifications = []
     workers = []
     repo = tmp_path / "repo"
@@ -1628,6 +1630,87 @@ def test_tui_refresh_stops_after_terminal_status(monkeypatch, tmp_path):
     )
 
     app._refresh_live_run()
+
+
+def test_tui_refresh_renders_terminal_state_only_once(monkeypatch, tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    model = tui.tui_state.build_shell_model(cwd=repo, selected_profile_name="security")
+    app = tui.RevRemApp(model=model, profiles_by_name={})
+    app.live_run_controller.status = "completed-clear"
+    renders = []
+    monkeypatch.setattr(app, "_render_live_monitor", lambda: renders.append(True))
+
+    app._refresh_live_run()
+    app._refresh_live_run()
+
+    assert renders == [True]
+
+
+def test_tui_pending_review_revalidates_against_effective_base(monkeypatch, tmp_path):
+    model = tui.tui_state.build_shell_model(
+        cwd=tmp_path, selected_profile_name="security"
+    )
+    app = tui.RevRemApp(model=model, profiles_by_name={})
+    review = tmp_path / "review-final.txt"
+    review.write_text("finding", encoding="utf-8")
+    app.loop_session = tui.tui_session.LoopSession(
+        profile_name="security",
+        pending_review=tui.tui_session.PendingReviewSelection(
+            path=review,
+            run_dir=tmp_path,
+            final_status="findings",
+            stopped_reason="max_iterations_reached",
+            excerpt="finding",
+            compatible=True,
+            selected=True,
+            git_state={"available": True, "base": "main", "head": "old"},
+        ),
+    )
+    bases = []
+    monkeypatch.setattr(
+        tui.run_recovery,
+        "current_git_state",
+        lambda _cwd, base: bases.append(base) or {"available": True, "head": "new"},
+    )
+    monkeypatch.setattr(app, "_render_workbench", lambda: None)
+
+    assert app._pending_review_is_launchable("release") is False
+    assert bases == ["release"]
+    assert app.loop_session.pending_review is not None
+    assert app.loop_session.pending_review.selected is False
+    assert app.loop_session.pending_review.compatible is False
+
+
+def test_tui_live_run_rejects_invalid_unsaved_loop_edits(monkeypatch, tmp_path):
+    profile = tui.profiles.resolve_profile(
+        "security", cwd=tmp_path, require_implemented=False
+    )
+    model = tui.tui_state.build_shell_model(
+        cwd=tmp_path, selected_profile_name="security"
+    )
+    app = tui.RevRemApp(model=model, profiles_by_name={"security": profile})
+    loop_model = tui_loop_model.LoopEditModel(
+        name="security", profile=profile, cwd=tmp_path
+    )
+    loop_model.set_field("pipeline.max_iterations", "not-a-number")
+    app._loop_diagram = types.SimpleNamespace(model=loop_model)
+    notifications = []
+    starts = []
+    monkeypatch.setattr(
+        app, "notify", lambda message, **_kwargs: notifications.append(message)
+    )
+    monkeypatch.setattr(app, "_render_workbench", lambda: None)
+    app.live_run_controller.start = lambda **_kwargs: starts.append(True)
+
+    app.action_launch_run()
+    app.action_launch_run()
+
+    assert starts == []
+    assert any(
+        message.startswith("Cannot start live run:") for message in notifications
+    )
 
 
 def test_tui_refresh_stops_while_cancel_is_in_progress(monkeypatch, tmp_path):

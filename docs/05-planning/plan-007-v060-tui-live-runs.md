@@ -297,6 +297,8 @@ Every slice must obey these.
    dependency-free run-directory path factory shared with CLI, if that is cleaner
    than local duplication. The TUI must not import `code_review_loop.cli`,
    `code_review_loop.runner`, `runner_shell`, `core.engine`, or `application`.
+   Persisted-run discovery is exposed through the neutral `run_recovery` module;
+   neither UI may depend on the other UI's private recovery helpers.
    `lint-imports` enforces the runner/core side today; add a TUI→CLI guard if
    needed so this boundary stays machine-checked. (`pyproject.toml`
    `[tool.importlinter]` already forbids `core` → `tui` and isolates the runner;

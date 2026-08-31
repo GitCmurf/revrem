@@ -16,12 +16,14 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Literal, NamedTuple, cast
 
 from code_review_loop import (
     check_presets,
     harnesses,
     profiles,
+    run_recovery,
     tui_loop_state,
     tui_profiles_state,
     tui_prompt_assets,
@@ -845,6 +847,7 @@ class _RevRemAppMixin:
         self.profiles_by_name = profiles_by_name
         self.live_run_controller = tui_run_controller.LiveRunController()
         self._pending_live_confirmation_profile: str | None = None
+        self._rendered_terminal_status: str | None = None
         self._help_visible = False
         self._cancel_in_progress = False
         self._quit_confirmation_pending = False
@@ -1131,14 +1134,20 @@ class _RevRemAppMixin:
             self._update_console_status()
             return
         self._pending_live_confirmation_profile = None
-        if not self._pending_review_is_launchable():
+        try:
+            effective = (
+                self._loop_diagram.model.effective_profile()
+                if self._workspace == "loop" and self._loop_diagram is not None
+                else selected
+            )
+            plan = self._profile_launch_plan(effective, dry_run=False)
+        except (OSError, RuntimeError, ValueError) as exc:
+            _notify(self, f"Cannot start live run: {exc}", severity="error")
+            self._render_workbench()
             return
-        effective = (
-            self._loop_diagram.model.effective_profile()
-            if self._workspace == "loop" and self._loop_diagram is not None
-            else selected
-        )
-        plan = self._profile_launch_plan(effective, dry_run=False)
+        if not self._pending_review_is_launchable(effective.pipeline.base):
+            return
+        self._rendered_terminal_status = None
         self._live_run_profile = effective
         try:
             launch = self.live_run_controller.start(
@@ -1211,7 +1220,7 @@ class _RevRemAppMixin:
             detail += f" · {_truncate(excerpt, 500)}"
         _notify(self, detail)
 
-    def _pending_review_is_launchable(self) -> bool:
+    def _pending_review_is_launchable(self, effective_base: str | None = None) -> bool:
         if self._workspace == "profiles":
             return True
         pending = self.loop_session.pending_review
@@ -1232,10 +1241,10 @@ class _RevRemAppMixin:
             and isinstance(previous, dict)
             and previous.get("available") is True
         ):
-            from code_review_loop.cli.config_support import current_git_state_for_latest
+            base = effective_base or previous.get("base")
+            from code_review_loop import run_recovery
 
-            base = previous.get("base")
-            current = current_git_state_for_latest(
+            current = run_recovery.current_git_state(
                 Path(self.model.snapshot.cwd),
                 base if isinstance(base, str) and base else "main",
             )
@@ -2572,8 +2581,11 @@ class _RevRemAppMixin:
             return
         if self.live_run_controller.status == "idle":
             return
-        if self.live_run_controller.status in tui_run_controller.TERMINAL_STATUSES:
-            self._render_live_monitor()
+        status = self.live_run_controller.status
+        if status in tui_run_controller.TERMINAL_STATUSES:
+            if self._rendered_terminal_status != status:
+                self._render_live_monitor()
+                self._rendered_terminal_status = status
             return
         self.live_run_controller.refresh()
         self._render_live_monitor()
@@ -2688,29 +2700,41 @@ def _last_run_loop_model(
     cwd: Path,
 ) -> tuple[Any, str, tui_session.PendingReviewSelection | None] | None:
     from code_review_loop import tui_loop_model
-    from code_review_loop.cli import wizard
 
-    lookup = wizard._last_run_state(cwd)
-    state = lookup.state
-    if state is None or state.profile_name is None:
+    lookup = run_recovery.latest_summary(cwd)
+    if lookup.summary_path is None:
         return None
-    model = tui_loop_model.LoopEditModel.load(state.profile_name, cwd=cwd)
-    _apply_wizard_state_to_loop_model(model, state)
+    try:
+        summary = json.loads(lookup.summary_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(summary, dict):
+        return None
+    resume_config = summary.get("resume_config")
+    profile_name = (
+        resume_config.get("profile_name")
+        if isinstance(resume_config, dict)
+        else summary.get("profile")
+    )
+    if not isinstance(profile_name, str) or not profile_name:
+        return None
+    try:
+        model = tui_loop_model.LoopEditModel.load(profile_name, cwd=cwd)
+        if isinstance(resume_config, dict):
+            _apply_resume_config_to_loop_model(model, resume_config)
+        effective = model.effective_profile()
+    except (OSError, RuntimeError, ValueError):
+        return None
     model.mark_replay_baseline()
-    origin = state.origin_label or "last run"
-    if state.origin_command:
-        origin = f"{origin}: {state.origin_command}"
+    finished_at = summary.get("finished_at") or summary.get("started_at")
+    origin = "last run"
+    if isinstance(finished_at, str) and finished_at:
+        origin = f"last run from {finished_at}"
     pending: tui_session.PendingReviewSelection | None = None
     try:
-        config = wizard._config_for_state(state, cwd)
-        from code_review_loop.cli.config_support import (
-            current_git_state_for_latest,
-            find_pending_review_candidate,
-        )
-
-        current_git_state = current_git_state_for_latest(cwd, config.base)
+        current_git_state = run_recovery.current_git_state(cwd, effective.pipeline.base)
         candidate = (
-            find_pending_review_candidate(
+            run_recovery.find_pending_review(
                 lookup.summary_path.parent,
                 current_git_state=current_git_state,
             )
@@ -2718,8 +2742,8 @@ def _last_run_loop_model(
             else None
         )
         compatible = candidate is not None
-        if candidate is None and lookup.summary_path is not None:
-            candidate = find_pending_review_candidate(
+        if candidate is None:
+            candidate = run_recovery.find_pending_review(
                 lookup.summary_path.parent,
                 current_git_state=None,
             )
@@ -2727,15 +2751,8 @@ def _last_run_loop_model(
         candidate = None
     if candidate is not None:
         git_state = None
-        if lookup.summary_path is not None:
-            try:
-                summary = json.loads(lookup.summary_path.read_text(encoding="utf-8"))
-                raw_git_state = (
-                    summary.get("git_state") if isinstance(summary, dict) else None
-                )
-                git_state = raw_git_state if isinstance(raw_git_state, dict) else None
-            except (OSError, json.JSONDecodeError):
-                pass
+        raw_git_state = summary.get("git_state")
+        git_state = raw_git_state if isinstance(raw_git_state, dict) else None
         pending = tui_session.PendingReviewSelection(
             path=candidate.path,
             run_dir=candidate.run_dir,
@@ -2747,6 +2764,100 @@ def _last_run_loop_model(
             git_state=git_state,
         )
     return model, origin, pending
+
+
+def _apply_resume_config_to_loop_model(
+    model: Any, payload: dict[object, object]
+) -> None:
+    """Apply the structured run contract without depending on CLI wizard state."""
+    profile = model.profile
+
+    def text(key: str, fallback: str = "") -> str:
+        value = payload.get(key)
+        return value if isinstance(value, str) else fallback
+
+    def number_text(key: str) -> str:
+        value = payload.get(key)
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            return ""
+        return f"{value:g}"
+
+    def boolean(key: str, fallback: bool | None) -> bool | None:
+        value = payload.get(key)
+        return value if isinstance(value, bool) else fallback
+
+    checks = payload.get("check_commands")
+    phase_config = payload.get("phase_config")
+    checks_config = (
+        phase_config.get("checks") if isinstance(phase_config, dict) else None
+    )
+    check_timeout = (
+        checks_config.get("timeout_seconds")
+        if isinstance(checks_config, dict)
+        else None
+    )
+    state = SimpleNamespace(
+        base=text("base", profile.pipeline.base),
+        max_iterations=payload.get("max_iterations", profile.pipeline.max_iterations),
+        inner_check_retries=payload.get(
+            "inner_check_retries", profile.runtime.inner_check_retries
+        ),
+        checks=(
+            tuple(checks)
+            if isinstance(checks, list) and all(isinstance(v, str) for v in checks)
+            else profile.pipeline.checks
+        ),
+        final_review=boolean("final_review", profile.pipeline.final_review),
+        triage_enabled=boolean("triage_enabled", profile.triage.enabled),
+        routing_enabled=boolean("routing_enabled", profile.triage.routing.enabled),
+        routing_default_route=text(
+            "routing_default_route", profile.triage.routing.default_route
+        ),
+        routing_strict=boolean(
+            "routing_strict", profile.triage.routing.strict_on_unavailable_route
+        ),
+        allow_model_escalation=boolean(
+            "allow_model_escalation", profile.triage.routing.allow_model_escalation
+        ),
+        review_harness=text("review_harness", profile.review.harness),
+        review_model=text("review_model", profile.review.model or ""),
+        review_reasoning_effort=text(
+            "review_reasoning_effort", profile.review.reasoning_effort or ""
+        ),
+        review_timeout_seconds=number_text("review_timeout_seconds"),
+        triage_harness=text("triage_harness", profile.triage.harness),
+        triage_model=text("triage_model", profile.triage.model or ""),
+        triage_reasoning_effort=text(
+            "triage_reasoning_effort", profile.triage.reasoning_effort or ""
+        ),
+        triage_timeout_seconds=number_text("triage_timeout_seconds"),
+        remediation_harness=text("remediation_harness", profile.remediation.harness),
+        remediation_model=text("remediation_model", profile.remediation.model or ""),
+        remediation_reasoning_effort=text(
+            "remediation_reasoning_effort",
+            profile.remediation.reasoning_effort or "",
+        ),
+        remediation_timeout_seconds=number_text("remediation_timeout_seconds"),
+        commit_after_remediation=boolean(
+            "commit_after_remediation", profile.commit.enabled
+        ),
+        commit_message_harness=text("commit_message_harness", profile.commit.harness),
+        commit_message_model=text(
+            "commit_message_model", profile.commit.message_model or ""
+        ),
+        commit_reasoning_effort=text(
+            "commit_reasoning_effort", profile.commit.reasoning_effort or ""
+        ),
+        commit_timeout_seconds=number_text("commit_timeout_seconds"),
+        timeout_seconds=number_text("timeout_seconds"),
+        check_timeout_seconds=(
+            f"{check_timeout:g}"
+            if isinstance(check_timeout, int | float)
+            and not isinstance(check_timeout, bool)
+            else ""
+        ),
+    )
+    _apply_wizard_state_to_loop_model(model, state)
 
 
 def _apply_wizard_state_to_loop_model(model: Any, state: Any) -> None:

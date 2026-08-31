@@ -16,7 +16,7 @@ from code_review_loop import (
     policy,
     profiles,
     routing_timeouts,
-    run_history,
+    run_recovery,
 )
 from code_review_loop.adapters.commit import phase_support
 from code_review_loop.adapters.remediation import build_remediation_command
@@ -33,7 +33,6 @@ from code_review_loop.cli.config_support import (
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.routing_types import ResolvedRoute
 from code_review_loop.prompts_composer import trim_for_prompt
-from code_review_loop.repo_roots import repo_root_or_cwd
 
 
 @dataclass(frozen=True)
@@ -1116,40 +1115,24 @@ def _initial_state(choice: WizardProfileChoice) -> WizardState:
 
 
 def _last_run_state(cwd: Path) -> LastRunLookup:
-    # Normalize both paths to repository roots so subdirectory invocations can
-    # reuse the same repository's last run configuration.
-    normalized_cwd = repo_root_or_cwd(cwd)
-    for record in run_history.read_history():
-        record_cwd = record.get("cwd")
-        if not isinstance(record_cwd, str):
-            continue
-        if repo_root_or_cwd(Path(record_cwd)) != normalized_cwd:
-            continue
-        summary_path = record.get("summary_path")
-        if not isinstance(summary_path, str) or not summary_path:
-            return LastRunLookup(
-                state=None, skipped_reason="newest history record has no summary path"
-            )
-        path = Path(summary_path)
-        if not path.is_absolute():
-            path = Path(record_cwd) / path
-        if not path.is_file():
-            return LastRunLookup(state=None, skipped_reason=f"summary missing: {path}")
-        state = _state_from_summary(path, cwd)
-        if state is None:
-            return LastRunLookup(
-                state=None,
-                skipped_reason=f"newest summary is not replayable: {path}",
-                summary_path=path,
-            )
-        if _state_is_previewable(state, cwd):
-            return LastRunLookup(state=state, summary_path=path)
+    latest = run_recovery.latest_summary(cwd)
+    path = latest.summary_path
+    if path is None:
+        return LastRunLookup(state=None, skipped_reason=latest.skipped_reason)
+    state = _state_from_summary(path, cwd)
+    if state is None:
         return LastRunLookup(
             state=None,
-            skipped_reason=f"newest settings are no longer previewable: {path}",
+            skipped_reason=f"newest summary is not replayable: {path}",
             summary_path=path,
         )
-    return LastRunLookup(state=None)
+    if _state_is_previewable(state, cwd):
+        return LastRunLookup(state=state, summary_path=path)
+    return LastRunLookup(
+        state=None,
+        skipped_reason=f"newest settings are no longer previewable: {path}",
+        summary_path=path,
+    )
 
 
 def _state_from_summary(summary_path: Path, cwd: Path) -> WizardState | None:

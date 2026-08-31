@@ -36,7 +36,9 @@ def test_resolve_routing_allows_external_timeout_on_non_codex_harness():
         name="test",
         triage=profiles.TriageConfig(
             contract="v2",
-            routing=profiles.TriageRoutingConfig(enabled=True, default_route="frontier-thinking"),
+            routing=profiles.TriageRoutingConfig(
+                enabled=True, default_route="frontier-thinking"
+            ),
             routes={
                 "frontier-thinking": profiles.TriageRouteConfig(
                     harness="claude",
@@ -59,6 +61,26 @@ def test_check_route_capabilities_accepts_timeout_on_non_codex():
     assert policy.check_route_capabilities(route) == []
 
 
+def test_resolve_routing_accepts_catalog_harness_alias(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "missing-codex"))
+    (tmp_path / ".revrem-catalog.toml").write_text(
+        '[[harness]]\nname="team-codex"\ndriver="codex"\n', encoding="utf-8"
+    )
+    profile = profiles.Profile(
+        name="test",
+        triage=profiles.TriageConfig(
+            contract="v2",
+            routing=profiles.TriageRoutingConfig(enabled=True, default_route="team"),
+            routes={"team": profiles.TriageRouteConfig(harness="team-codex")},
+        ),
+    )
+
+    resolved = policy.resolve_routing(profile, _ctx())
+
+    assert resolved.harness == "team-codex"
+
+
 # --- B2: canonical tier vocabulary + escalation gating ----------------------
 
 
@@ -67,14 +89,22 @@ def test_resolve_routing_model_escalation_canonical_tier_names():
         name="test",
         triage=profiles.TriageConfig(
             contract="v2",
-            routing=profiles.TriageRoutingConfig(enabled=True, default_route="midtier-coder"),
+            routing=profiles.TriageRoutingConfig(
+                enabled=True, default_route="midtier-coder"
+            ),
             routes={
-                "midtier-coder": profiles.TriageRouteConfig(harness="codex", model="m1"),
-                "frontier-thinking": profiles.TriageRouteConfig(harness="codex", model="m2"),
+                "midtier-coder": profiles.TriageRouteConfig(
+                    harness="codex", model="m1"
+                ),
+                "frontier-thinking": profiles.TriageRouteConfig(
+                    harness="codex", model="m2"
+                ),
             },
         ),
     )
-    resolved = policy.resolve_routing(profile, _ctx(), model_proposal_tier="frontier-thinking")
+    resolved = policy.resolve_routing(
+        profile, _ctx(), model_proposal_tier="frontier-thinking"
+    )
     assert resolved.route_tier == "frontier-thinking"
 
 
@@ -83,14 +113,22 @@ def test_resolve_routing_security_specialist_outranks_default():
         name="test",
         triage=profiles.TriageConfig(
             contract="v2",
-            routing=profiles.TriageRoutingConfig(enabled=True, default_route="midtier-coder"),
+            routing=profiles.TriageRoutingConfig(
+                enabled=True, default_route="midtier-coder"
+            ),
             routes={
-                "midtier-coder": profiles.TriageRouteConfig(harness="codex", model="m1"),
-                "security-specialist": profiles.TriageRouteConfig(harness="codex", model="m2"),
+                "midtier-coder": profiles.TriageRouteConfig(
+                    harness="codex", model="m1"
+                ),
+                "security-specialist": profiles.TriageRouteConfig(
+                    harness="codex", model="m2"
+                ),
             },
         ),
     )
-    resolved = policy.resolve_routing(profile, _ctx(), model_proposal_tier="security-specialist")
+    resolved = policy.resolve_routing(
+        profile, _ctx(), model_proposal_tier="security-specialist"
+    )
     assert resolved.route_tier == "security-specialist"
 
 
@@ -107,12 +145,18 @@ def test_resolve_routing_escalation_blocked_when_disallowed():
                 allow_model_escalation=False,
             ),
             routes={
-                "midtier-coder": profiles.TriageRouteConfig(harness="codex", model="m1"),
-                "frontier-thinking": profiles.TriageRouteConfig(harness="codex", model="m2"),
+                "midtier-coder": profiles.TriageRouteConfig(
+                    harness="codex", model="m1"
+                ),
+                "frontier-thinking": profiles.TriageRouteConfig(
+                    harness="codex", model="m2"
+                ),
             },
         ),
     )
-    resolved = policy.resolve_routing(profile, _ctx(), model_proposal_tier="frontier-thinking")
+    resolved = policy.resolve_routing(
+        profile, _ctx(), model_proposal_tier="frontier-thinking"
+    )
     assert resolved.route_tier == "midtier-coder"
 
 
@@ -123,14 +167,22 @@ def test_resolve_routing_indeterminate_tier_keeps_policy_route():
         name="test",
         triage=profiles.TriageConfig(
             contract="v2",
-            routing=profiles.TriageRoutingConfig(enabled=True, default_route="midtier-coder"),
+            routing=profiles.TriageRoutingConfig(
+                enabled=True, default_route="midtier-coder"
+            ),
             routes={
-                "midtier-coder": profiles.TriageRouteConfig(harness="codex", model="m1"),
-                "house-special": profiles.TriageRouteConfig(harness="codex", model="m2"),
+                "midtier-coder": profiles.TriageRouteConfig(
+                    harness="codex", model="m1"
+                ),
+                "house-special": profiles.TriageRouteConfig(
+                    harness="codex", model="m2"
+                ),
             },
         ),
     )
-    resolved = policy.resolve_routing(profile, _ctx(), model_proposal_tier="house-special")
+    resolved = policy.resolve_routing(
+        profile, _ctx(), model_proposal_tier="house-special"
+    )
     assert resolved.route_tier == "midtier-coder"
 
 
@@ -166,8 +218,12 @@ def test_deterministic_detection_escalates_domain_tags_any_rule(tmp_path):
                 ),
             ),
             routes={
-                "midtier-coder": profiles.TriageRouteConfig(harness="codex", model="m1"),
-                "frontier-thinking": profiles.TriageRouteConfig(harness="codex", model="m2"),
+                "midtier-coder": profiles.TriageRouteConfig(
+                    harness="codex", model="m1"
+                ),
+                "frontier-thinking": profiles.TriageRouteConfig(
+                    harness="codex", model="m2"
+                ),
             },
         ),
     )
