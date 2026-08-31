@@ -87,6 +87,17 @@ def test_active_github_actions_use_current_immutable_pins():
     upload_artifact = (
         "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1"
     )
+    release_pins = (
+        "anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2",
+        "actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2",
+        "sigstore/gh-action-sigstore-python@790bc6befb9d733738f18d8f895854b453640ec9 # v3.5.0",
+        "pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2",
+        "softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3",
+    )
+    scorecard_pins = (
+        "ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4",
+        "github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9",
+    )
     ci = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     release = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
     scorecard = (ROOT / ".github/workflows/scorecard.yml").read_text(encoding="utf-8")
@@ -97,7 +108,12 @@ def test_active_github_actions_use_current_immutable_pins():
     assert checkout in release
     assert setup_python in release
     assert upload_artifact in release
+    for pin in release_pins:
+        assert pin in release
+    assert release.count(release_pins[3]) == 2
     assert checkout in scorecard
+    for pin in scorecard_pins:
+        assert pin in scorecard
     assert action.count(upload_artifact) == 2
 
 

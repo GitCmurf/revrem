@@ -17,6 +17,8 @@ This project follows Semantic Versioning once public releases begin.
   locked Ruff 0.16.5 toolchain.
 - Active GitHub workflows now use checkout 7.0.1, setup-python 7.0.0, and
   upload-artifact 7.0.1; reusable action steps use immutable commit pins.
+- Release and security workflows now use current immutable pins for SBOM,
+  provenance, Sigstore, PyPI publishing, GitHub Releases, Scorecard, and CodeQL.
 - The development lockfile now uses `cryptography` 50.0.1, closing
   CVE-2026-69247 in the transitive `twine`/`keyring` toolchain.
 - Remediation providers are now explicitly forbidden from staging or committing;
