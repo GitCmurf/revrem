@@ -118,7 +118,7 @@ def test_codex_cache_without_effort_metadata_preserves_packaged_capabilities(tmp
     assert model.efforts == ("low", "medium", "high", "xhigh", "max")
 
 
-@pytest.mark.parametrize("contents", ["", "{not-json"])
+@pytest.mark.parametrize("contents", ["", "{not-json", '{"models": null}'])
 def test_incomplete_codex_cache_fails_open_to_packaged_catalog(
     tmp_path, monkeypatch, contents
 ):
@@ -132,6 +132,40 @@ def test_incomplete_codex_cache_fails_open_to_packaged_catalog(
     )
 
     assert model.efforts == ("low", "medium", "high", "xhigh", "max", "ultra")
+
+
+def test_project_catalog_rejects_scalar_efforts_with_its_source(tmp_path, monkeypatch):
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "missing-codex"))
+    catalog_path = tmp_path / ".revrem-catalog.toml"
+    catalog_path.write_text(
+        '[[model]]\nid="local-model"\nefforts="high"\n', encoding="utf-8"
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=rf"catalog model 'local-model' in {catalog_path} field 'efforts' must be a list or tuple",
+    ):
+        model_catalog.load_catalog(tmp_path, home=tmp_path)
+
+
+def test_catalog_effort_tuples_remain_valid(tmp_path, monkeypatch):
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "missing-codex"))
+    project = tmp_path / ".revrem-catalog.toml"
+    project.write_text('[[model]]\nid="local-model"\n', encoding="utf-8")
+    original_read_toml = model_catalog._read_toml
+
+    def read_toml(path):
+        if path == project:
+            return {
+                "model": [{"id": "local-model", "efforts": ("low", "high")}]
+            }
+        return original_read_toml(path)
+
+    monkeypatch.setattr(model_catalog, "_read_toml", read_toml)
+
+    assert model_catalog.load_catalog(tmp_path, home=tmp_path).model(
+        "codex", "local-model"
+    ).efforts == ("low", "high")
 
 
 def test_known_invalid_selection_rejects_but_unknown_passes_with_warning(tmp_path, monkeypatch):

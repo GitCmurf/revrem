@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
+from itertools import islice
 from pathlib import Path
 from typing import Literal
 
@@ -83,12 +84,17 @@ def recent_check_presets(
     root = repo_root_or_cwd(cwd)
     seen = set(excluded)
     results: list[CheckPreset] = []
-    for record in run_history.read_history(limit=history_limit):
-        record_cwd = record.get("cwd")
-        if not isinstance(record_cwd, str):
-            continue
-        if repo_root_or_cwd(Path(record_cwd)) != root:
-            continue
+    # History is shared across repositories. Select records for this repository
+    # before bounding the candidate set, otherwise newer foreign runs can hide
+    # its most recent presets.
+    repository_records = (
+        record
+        for record in run_history.read_history()
+        if isinstance(record.get("cwd"), str)
+        and repo_root_or_cwd(Path(record["cwd"])) == root
+    )
+    for record in islice(repository_records, history_limit):
+        record_cwd = record["cwd"]
         summary_path = record.get("summary_path")
         if not isinstance(summary_path, str) or not summary_path:
             continue

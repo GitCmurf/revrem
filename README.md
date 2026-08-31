@@ -270,6 +270,8 @@ select one of the audited built-in drivers (`codex`, `claude`, `gemini`,
 `opencode`, or `kilo`) for a harness alias. `reserved` is intentionally not
 supported as a catalog driver. Executable paths remain an explicit runtime
 choice through `--harness-bin HARNESS=EXECUTABLE`.
+Malformed Codex cache entries are ignored, and catalog `efforts` declarations
+must be lists or tuples. Aliases inherit their selected driver's validation.
 Known-invalid model/effort combinations are rejected;
 unknown future values pass through with a warning. GPT-5.6 Sol and Terra support
 `low`, `medium`, `high`, `xhigh`, `max`, and `ultra`; Luna supports the same

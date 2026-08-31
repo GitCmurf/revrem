@@ -987,6 +987,33 @@ def test_main_rejects_codex_triage_minimal_reasoning_effort(
     )
 
 
+def test_main_rejects_minimal_effort_for_codex_triage_harness_alias(
+    tmp_path, monkeypatch, capsys
+):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "missing-codex"))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem-catalog.toml").write_text(
+        '[[harness]]\nname="team-codex"\ndriver="codex"\n', encoding="utf-8"
+    )
+
+    exit_code = cli_main.main(
+        [
+            "--triage",
+            "--triage-harness",
+            "team-codex",
+            "--triage-reasoning-effort",
+            "minimal",
+            "--dry-run",
+        ]
+    )
+
+    assert exit_code == 1
+    assert "Codex triage cannot use reasoning effort 'minimal'" in capsys.readouterr().err
+
+
 def test_main_phase_reasoning_effort_overrides_win_independently(tmp_path, monkeypatch):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))

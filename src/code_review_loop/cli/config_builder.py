@@ -150,7 +150,7 @@ def validate_triage_reasoning_effort(
 ) -> None:
     if (
         triage_enabled
-        and triage_harness == "codex"
+        and harnesses._resolve_catalog_driver(triage_harness) == "codex"
         and triage_reasoning_effort == "minimal"
     ):
         raise ValueError(

@@ -86,3 +86,28 @@ def test_recent_check_presets_ignore_malformed_summaries(
     )
 
     assert check_presets.recent_check_presets(tmp_path) == ()
+
+
+def test_recent_check_presets_filters_by_repository_before_history_limit(
+    tmp_path: Path, monkeypatch
+) -> None:
+    repo = tmp_path / "repo"
+    other = tmp_path / "other"
+    repo.mkdir()
+    other.mkdir()
+    (repo / ".git").mkdir()
+    (other / ".git").mkdir()
+    summary = _summary(repo / "runs" / "local" / "summary.json", ["pytest -q"])
+    records = [
+        {"cwd": str(other), "summary_path": str(other / f"summary-{index}.json")}
+        for index in range(20)
+    ] + [{"cwd": str(repo), "summary_path": str(summary)}]
+    monkeypatch.setattr(
+        check_presets.run_history,
+        "read_history",
+        lambda *, limit=None: records if limit is None else records[:limit],
+    )
+
+    presets = check_presets.recent_check_presets(repo, history_limit=20)
+
+    assert [preset.checks for preset in presets] == [("pytest -q",)]

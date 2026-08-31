@@ -140,7 +140,12 @@ def _load_catalog_cached(
                     f"catalog model entry in {source} is missing required field 'id'"
                 )
             previous = models.get((harness, model_id))
-            efforts = tuple(str(value) for value in entry.get("efforts", previous.efforts if previous else ()))
+            effort_values = entry.get("efforts", previous.efforts if previous else ())
+            if not isinstance(effort_values, (list, tuple)):
+                raise ValueError(
+                    f"catalog model {model_id!r} in {source} field 'efforts' must be a list or tuple"
+                )
+            efforts = tuple(str(value) for value in effort_values)
             default = entry.get("default_effort", previous.default_effort if previous else None)
             rank = entry.get("capability_rank", previous.capability_rank if previous else None)
             models[(harness, model_id)] = ModelSpec(
@@ -237,6 +242,8 @@ def _codex_cache_layer(path: Path) -> dict[str, Any]:
         entries = raw
     else:
         entries = []
+    if not isinstance(entries, list):
+        return {}
     models: list[dict[str, Any]] = []
     for entry in entries:
         if not isinstance(entry, dict):
