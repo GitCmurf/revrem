@@ -1286,9 +1286,9 @@ def save_profile_raw(
         raw_profile,
         current_profile=current,
     )
-    merged_updated = _deep_merge(merged, raw_profile)
+    merged_updated = _apply_profile_patch_with_clears(merged, raw_profile)
     edit_reference = parse_profile(name, merged, source="<edit>")
-    merged_raw_profile = _deep_merge(current, raw_profile)
+    merged_raw_profile = _apply_profile_patch_with_clears(current, raw_profile)
     parsed = parse_profile(
         name, _deep_merge(merged_updated, merged_raw_profile), source="<edit>"
     )

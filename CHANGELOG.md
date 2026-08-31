@@ -12,6 +12,8 @@ This project follows Semantic Versioning once public releases begin.
   RevRem detects unexpected `HEAD` changes, preserves full-auto mode in resume
   commands, and retains an omission marker when mandatory prompt instructions
   leave only a small review-context budget.
+- TUI follow-up profile saves now preserve map-entry deletions from the effective
+  live-run settings, including route rows and harness-executable overrides.
 - The TUI now restores the newest repository run from structured resume data,
   keeps the active profile and launch command consistent, shows effective
   timeout values, and preselects an actionable Git-compatible final review.

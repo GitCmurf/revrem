@@ -104,7 +104,10 @@ class LoopEditModel:
         """Return the validated resolved profile represented by this working copy."""
         raw = _profile_to_raw(self.profile)
         for dotted_key, value in self.edits.items():
-            raw = profiles.deep_set_raw(raw, dotted_key, value)
+            if value is None:
+                _delete_dotted_raw(raw, dotted_key)
+            else:
+                raw = profiles.deep_set_raw(raw, dotted_key, value)
         return profiles.parse_profile(self.name, raw, source="tui-working-copy")
 
     def save(self) -> Path:
@@ -129,11 +132,29 @@ def _raw_differences(
     baseline: dict[str, Any], effective: dict[str, Any], prefix: str = ""
 ) -> dict[str, object]:
     differences: dict[str, object] = {}
-    for key, value in effective.items():
+    for key in sorted(baseline.keys() | effective.keys()):
         dotted_key = f"{prefix}.{key}" if prefix else key
-        baseline_value = baseline.get(key)
+        if key not in effective:
+            differences[dotted_key] = None
+            continue
+        value = effective[key]
+        if key not in baseline:
+            differences[dotted_key] = value
+            continue
+        baseline_value = baseline[key]
         if isinstance(value, dict) and isinstance(baseline_value, dict):
             differences.update(_raw_differences(baseline_value, value, dotted_key))
-        elif key not in baseline or not _same_value(value, baseline_value):
+        elif not _same_value(value, baseline_value):
             differences[dotted_key] = value
     return differences
+
+
+def _delete_dotted_raw(raw: dict[str, Any], dotted_key: str) -> None:
+    cursor: dict[str, Any] = raw
+    parts = dotted_key.split(".")
+    for part in parts[:-1]:
+        value = cursor.get(part)
+        if not isinstance(value, dict):
+            return
+        cursor = value
+    cursor.pop(parts[-1], None)

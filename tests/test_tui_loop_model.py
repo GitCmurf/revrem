@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -91,6 +92,54 @@ def test_save_persists_delta_reloads_and_clears_dirty(tmp_path: Path) -> None:
     raw = profiles.load_profile_file(path).raw_profiles["dogfood"]
     assert raw["review"]["model"] == "gpt-5.6"
     assert raw["pipeline"]["max_iterations"] == 9
+
+
+def test_effective_profile_map_deletions_survive_save_and_reload(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    _write(
+        repo / ".revrem.toml",
+        "\n".join(
+            (
+                "[profiles.p]",
+                "[profiles.p.triage.routing]",
+                'default_route = "keep"',
+                "[profiles.p.triage.routes.keep]",
+                'harness = "codex"',
+                "[profiles.p.triage.routes.remove]",
+                'harness = "codex"',
+                "[profiles.p.runtime.harness_executables]",
+                'codex = "/opt/codex"',
+                'gemini = "/opt/gemini"',
+            )
+        )
+        + "\n",
+    )
+    model = LoopEditModel.load("p", cwd=repo)
+    effective = replace(
+        model.profile,
+        triage=replace(
+            model.profile.triage,
+            routes={"keep": model.profile.triage.routes["keep"]},
+        ),
+        runtime=replace(
+            model.profile.runtime,
+            harness_executables={"codex": "/opt/codex"},
+        ),
+    )
+
+    model.set_effective_profile(effective)
+
+    assert model.edits["triage.routes.remove"] is None
+    assert model.edits["runtime.harness_executables.gemini"] is None
+    assert "remove" not in model.effective_profile().triage.routes
+    assert "gemini" not in model.effective_profile().runtime.harness_executables
+
+    model.save()
+
+    saved = profiles.resolve_profile("p", cwd=repo, require_implemented=False)
+    assert set(saved.triage.routes) == {"keep"}
+    assert saved.runtime.harness_executables == {"codex": "/opt/codex"}
 
 
 def test_route_row_clear_save_removes_cleared_route_field(tmp_path: Path) -> None:

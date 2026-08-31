@@ -1090,8 +1090,7 @@ also snapshots `HEAD` around every remediation call and fails the phase with a
 `diagnostics-remediation-*-failure.json` artifact if `HEAD` changes. This keeps
 provider-created commits from being mistaken for verified RevRem commits; the
 operator must inspect and recover any such unexpected commit explicitly.
-The
-optional `commit.message_model` or `--commit-message-model` controls only the
+The optional `commit.message_model` or `--commit-message-model` controls only the
 read-only model call that drafts the commit subject. If no explicit
 CLI value is supplied, the profile value is used; the built-in profile default
 is `gpt-5.3-codex-spark`. With the default
@@ -1102,6 +1101,9 @@ instead of a subject, RevRem records `commit-N-message-fallback.json` with
 instead of committing the prose. Passing
 `--commit-message-prompt` intentionally disables that default subject policy so
 special-purpose commit formats can be tested without fighting the normalizer.
+When the TUI reconstructs effective settings after a live run, map-entry
+deletions (including route rows and harness-executable overrides) remain
+explicit edits and are preserved if the operator saves the profile.
 If a verified remediation pass produces no staged changes after checks pass,
 RevRem stops the loop immediately with
 `final_status: "clear"` and
