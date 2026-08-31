@@ -1344,9 +1344,9 @@ class _RevRemAppMixin:
         launch = self.live_run_controller.launch
         if profile is None or launch is None:
             raise RuntimeError("completed run configuration is unavailable")
-        model = tui_loop_model.LoopEditModel(
-            name=profile.name, profile=profile, cwd=Path(self.model.snapshot.cwd)
-        )
+        cwd = Path(self.model.snapshot.cwd)
+        model = tui_loop_model.LoopEditModel.load(profile.name, cwd=cwd)
+        model.set_effective_profile(profile)
         model.mark_replay_baseline()
         self._loop_model = model
         if self._loop_diagram is not None:

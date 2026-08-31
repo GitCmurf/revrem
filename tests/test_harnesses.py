@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from code_review_loop import harnesses
+from code_review_loop import harnesses, profiles
 from code_review_loop._compat_jsonschema import validate
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -81,7 +81,10 @@ def test_codex_commit_message_effort_resolution_promotes_known_incompatible_mode
 
 
 def test_commit_message_effort_resolution_does_not_guess_unknown_model_capabilities():
-    for harness, model in (("codex", "gpt-future-codex"), ("gemini", "gpt-5.3-codex-spark")):
+    for harness, model in (
+        ("codex", "gpt-future-codex"),
+        ("gemini", "gpt-5.3-codex-spark"),
+    ):
         resolution = harnesses.resolve_commit_message_reasoning_effort(
             harness=harness,
             model=model,
@@ -133,6 +136,25 @@ def test_fake_harness_is_hidden_unless_explicitly_enabled(monkeypatch):
     payload = harnesses.harness_capabilities_payload("fake")
     assert payload["structured_output_supported"] is True
     assert payload["cost_reporting"] == "tokens"
+
+
+def test_profile_alias_validation_uses_target_repository_catalog(tmp_path, monkeypatch):
+    target = tmp_path / "target"
+    ambient = tmp_path / "ambient"
+    target.mkdir()
+    ambient.mkdir()
+    (target / ".revrem-catalog.toml").write_text(
+        '[[harness]]\nname="target-codex"\ndriver="codex"\nexecutable="target-codex"\n',
+        encoding="utf-8",
+    )
+    (target / ".revrem.toml").write_text(
+        '[profiles.target.review]\nharness="target-codex"\n', encoding="utf-8"
+    )
+    monkeypatch.chdir(ambient)
+
+    profile = profiles.resolve_profile("target", cwd=target, require_implemented=False)
+
+    assert profile.review.harness == "target-codex"
 
 
 def test_harness_registry_is_cached_and_immutable(monkeypatch):
@@ -258,7 +280,9 @@ def test_fake_harness_can_report_deterministic_token_charge():
         == 10
     )
     assert (
-        harnesses.fake_harness_token_charge(["revrem-fake-harness", "review", "--model", "x"])
+        harnesses.fake_harness_token_charge(
+            ["revrem-fake-harness", "review", "--model", "x"]
+        )
         is None
     )
 

@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import types
+from dataclasses import replace
 from pathlib import Path
 
 from code_review_loop import tui, tui_loop_model
@@ -15,6 +16,34 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 
 def test_workspace_order_is_loop_first():
     assert tui._WORKSPACES == ("loop", "run", "profiles", "prompts")
+
+
+def test_loop_model_preserves_effective_settings_as_disk_relative_edits(tmp_path):
+    (tmp_path / ".revrem.toml").write_text(
+        "[profiles.demo.pipeline]\nmax_iterations=2\n"
+        "[profiles.demo.runtime]\nprovider_retry_attempts=2\n",
+        encoding="utf-8",
+    )
+    disk_profile = tui.profiles.resolve_profile(
+        "demo", cwd=tmp_path, require_implemented=False
+    )
+    effective_profile = replace(
+        disk_profile,
+        pipeline=replace(disk_profile.pipeline, max_iterations=5),
+        runtime=replace(disk_profile.runtime, provider_retry_attempts=4),
+    )
+    model = tui_loop_model.LoopEditModel.load("demo", cwd=tmp_path)
+
+    model.set_effective_profile(effective_profile)
+    model.set_field("pipeline.base", "release")
+    model.save()
+
+    saved = tui.profiles.resolve_profile(
+        "demo", cwd=tmp_path, require_implemented=False
+    )
+    assert saved.pipeline.base == "release"
+    assert saved.pipeline.max_iterations == 5
+    assert saved.runtime.provider_retry_attempts == 4
 
 
 def test_tui_bindings_keep_i_workspace_dispatched():

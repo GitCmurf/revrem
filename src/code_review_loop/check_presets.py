@@ -34,8 +34,7 @@ def detect_check_presets(cwd: Path) -> tuple[CheckPreset, ...]:
         )
 
     pyproject = root / "pyproject.toml"
-    tests_dir = root / "tests"
-    if pyproject.is_file() or tests_dir.is_dir():
+    if _python_project_detected(root, pyproject):
         presets.append(
             CheckPreset("python-fast", "Python fast: pytest -q", ("pytest -q",))
         )
@@ -72,6 +71,20 @@ def detect_check_presets(cwd: Path) -> tuple[CheckPreset, ...]:
         )
     )
     return tuple(presets)
+
+
+def _python_project_detected(root: Path, pyproject: Path) -> bool:
+    if (
+        pyproject.is_file()
+        or (root / "pytest.ini").is_file()
+        or (root / "tox.ini").is_file()
+    ):
+        return True
+    return any(root.glob("*.py")) or any(
+        path
+        for directory in ("src", "tests")
+        for path in (root / directory).glob("**/*.py")
+    )
 
 
 def recent_check_presets(

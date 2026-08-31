@@ -55,6 +55,15 @@ class LoopEditModel:
     def mark_replay_baseline(self) -> None:
         self.replay_baseline = dict(self.edits)
 
+    def set_effective_profile(self, effective: profiles.Profile) -> None:
+        """Represent a live effective profile as edits over this disk baseline."""
+        baseline = _profile_to_raw(self.profile)
+        effective_raw = _profile_to_raw(effective)
+        self.edits = {
+            dotted_key: value
+            for dotted_key, value in _raw_differences(baseline, effective_raw).items()
+        }
+
     def field_value(self, dotted_key: str, fallback: object) -> object:
         if dotted_key not in self.edits:
             return fallback
@@ -114,3 +123,17 @@ def _same_value(left: object, right: object) -> bool:
     if isinstance(left, list | tuple) and isinstance(right, list | tuple):
         return tuple(left) == tuple(right)
     return left == right
+
+
+def _raw_differences(
+    baseline: dict[str, Any], effective: dict[str, Any], prefix: str = ""
+) -> dict[str, object]:
+    differences: dict[str, object] = {}
+    for key, value in effective.items():
+        dotted_key = f"{prefix}.{key}" if prefix else key
+        baseline_value = baseline.get(key)
+        if isinstance(value, dict) and isinstance(baseline_value, dict):
+            differences.update(_raw_differences(baseline_value, value, dotted_key))
+        elif key not in baseline or not _same_value(value, baseline_value):
+            differences[dotted_key] = value
+    return differences

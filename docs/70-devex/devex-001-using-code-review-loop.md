@@ -229,7 +229,8 @@ name = "team-codex"
 driver = "codex"
 ```
 
-RevRem resolves that alias to its driver before selecting review protocol behavior.
+RevRem retains the configured alias for command execution, events, and retry diagnostics,
+while resolving its driver before selecting review protocol behavior.
 That means `--review-harness team-codex` follows the native Codex review flow
 (no prompt-file injection), while command and artifact output still report the
 configured harness.

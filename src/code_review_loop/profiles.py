@@ -120,7 +120,14 @@ ROUTING_THEN_KEYS = (
     "allow_model_deescalation",
     "allow_model_escalation",
 )
-ROUTE_KEYS = ("harness", "model", "reasoning_effort", "timeout_seconds", "sandbox", "fallback")
+ROUTE_KEYS = (
+    "harness",
+    "model",
+    "reasoning_effort",
+    "timeout_seconds",
+    "sandbox",
+    "fallback",
+)
 COMMIT_KEYS = (
     "enabled",
     "harness",
@@ -176,7 +183,7 @@ def _repo_root(cwd: Path) -> Path:
     return repo_root_or_cwd(cwd)
 
 
-def load_profile_file(path: Path) -> ProfileFile:
+def load_profile_file(path: Path, *, catalog_cwd: Path | None = None) -> ProfileFile:
     if not path.is_file():
         return ProfileFile(path=path, profiles={})
     raw = tomllib.loads(path.read_text(encoding="utf-8"))
@@ -187,14 +194,18 @@ def load_profile_file(path: Path) -> ProfileFile:
     defaults_raw: dict[str, Any] = {}
     if "defaults" in raw:
         defaults_raw = _table(raw["defaults"], f"{path}:defaults")
-        defaults = parse_profile("<defaults>", defaults_raw, source=str(path))
+        defaults = parse_profile(
+            "<defaults>", defaults_raw, source=str(path), catalog_cwd=catalog_cwd
+        )
     profiles_raw = raw.get("profiles", {})
     profiles_table = _table(profiles_raw, f"{path}:profiles")
     raw_profiles = {
-        name: _table(value, f"{path}:profiles.{name}") for name, value in profiles_table.items()
+        name: _table(value, f"{path}:profiles.{name}")
+        for name, value in profiles_table.items()
     }
     profiles = {
-        name: parse_profile(name, value, source=str(path)) for name, value in raw_profiles.items()
+        name: parse_profile(name, value, source=str(path), catalog_cwd=catalog_cwd)
+        for name, value in raw_profiles.items()
     }
     return ProfileFile(
         path=path,
@@ -205,21 +216,42 @@ def load_profile_file(path: Path) -> ProfileFile:
     )
 
 
-def parse_profile(name: str, raw: dict[str, Any], *, source: str | None = None) -> Profile:
+def parse_profile(
+    name: str,
+    raw: dict[str, Any],
+    *,
+    source: str | None = None,
+    catalog_cwd: Path | None = None,
+) -> Profile:
     _reject_unknown_keys(raw, PROFILE_KEYS, f"{name}")
     description = _optional_str(raw.get("description"), f"{name}.description") or ""
     pipeline = parse_pipeline(_table(raw.get("pipeline", {}), f"{name}.pipeline"))
-    review = parse_phase(_table(raw.get("review", {}), f"{name}.review"), f"{name}.review")
-    triage = parse_triage(_table(raw.get("triage", {}), f"{name}.triage"), f"{name}.triage")
+    review = parse_phase(
+        _table(raw.get("review", {}), f"{name}.review"),
+        f"{name}.review",
+        catalog_cwd=catalog_cwd,
+    )
+    triage = parse_triage(
+        _table(raw.get("triage", {}), f"{name}.triage"),
+        f"{name}.triage",
+        catalog_cwd=catalog_cwd,
+    )
     remediation = parse_phase(
         _table(raw.get("remediation", {}), f"{name}.remediation"),
         f"{name}.remediation",
+        catalog_cwd=catalog_cwd,
     )
     output = parse_output(_table(raw.get("output", {}), f"{name}.output"))
-    commit = parse_commit(_table(raw.get("commit", {}), f"{name}.commit"))
-    runtime = parse_runtime(_table(raw.get("runtime", {}), f"{name}.runtime"))
+    commit = parse_commit(
+        _table(raw.get("commit", {}), f"{name}.commit"), catalog_cwd=catalog_cwd
+    )
+    runtime = parse_runtime(
+        _table(raw.get("runtime", {}), f"{name}.runtime"), catalog_cwd=catalog_cwd
+    )
     budgets = parse_budgets(_table(raw.get("budgets", {}), f"{name}.budgets"))
-    suppressions = parse_suppressions(_table(raw.get("suppressions", {}), f"{name}.suppressions"))
+    suppressions = parse_suppressions(
+        _table(raw.get("suppressions", {}), f"{name}.suppressions")
+    )
     profile = Profile(
         name=name,
         description=description,
@@ -234,7 +266,7 @@ def parse_profile(name: str, raw: dict[str, Any], *, source: str | None = None) 
         suppressions=suppressions,
         source=source,
     )
-    validate_profile(profile, require_implemented=False)
+    validate_profile(profile, require_implemented=False, catalog_cwd=catalog_cwd)
     return profile
 
 
@@ -243,7 +275,9 @@ def parse_pipeline(raw: dict[str, Any]) -> PipelineConfig:
     checks = raw.get("checks", ())
     if checks is None:
         checks = ()
-    if not isinstance(checks, list | tuple) or not all(isinstance(item, str) for item in checks):
+    if not isinstance(checks, list | tuple) or not all(
+        isinstance(item, str) for item in checks
+    ):
         raise ValueError("pipeline.checks must be a list of strings")
     check_timeout_seconds = _optional_float(
         raw.get("check_timeout_seconds"),
@@ -258,25 +292,35 @@ def parse_pipeline(raw: dict[str, Any]) -> PipelineConfig:
     )
 
 
-def parse_phase(raw: dict[str, Any], field: str) -> PhaseConfig:
+def parse_phase(
+    raw: dict[str, Any], field: str, *, catalog_cwd: Path | None = None
+) -> PhaseConfig:
     _reject_unknown_keys(raw, PHASE_KEYS, field)
     harness = _str(raw.get("harness", "codex"), f"{field}.harness")
-    validate_harness_name(harness, field=f"{field}.harness")
-    reasoning_effort = _optional_str(raw.get("reasoning_effort"), f"{field}.reasoning_effort")
+    validate_harness_name(harness, field=f"{field}.harness", cwd=catalog_cwd)
+    reasoning_effort = _optional_str(
+        raw.get("reasoning_effort"), f"{field}.reasoning_effort"
+    )
     _validate_reasoning_effort(reasoning_effort, f"{field}.reasoning_effort")
     return PhaseConfig(
         harness=harness,
         model=_optional_str(raw.get("model"), f"{field}.model"),
         reasoning_effort=reasoning_effort,
-        timeout_seconds=_optional_float(raw.get("timeout_seconds"), f"{field}.timeout_seconds"),
+        timeout_seconds=_optional_float(
+            raw.get("timeout_seconds"), f"{field}.timeout_seconds"
+        ),
     )
 
 
-def parse_triage(raw: dict[str, Any], field: str) -> TriageConfig:
+def parse_triage(
+    raw: dict[str, Any], field: str, *, catalog_cwd: Path | None = None
+) -> TriageConfig:
     _reject_unknown_keys(raw, TRIAGE_KEYS, field)
     harness = _str(raw.get("harness", "codex"), f"{field}.harness")
-    validate_harness_name(harness, field=f"{field}.harness")
-    reasoning_effort = _optional_str(raw.get("reasoning_effort"), f"{field}.reasoning_effort")
+    validate_harness_name(harness, field=f"{field}.harness", cwd=catalog_cwd)
+    reasoning_effort = _optional_str(
+        raw.get("reasoning_effort"), f"{field}.reasoning_effort"
+    )
     _validate_reasoning_effort(reasoning_effort, f"{field}.reasoning_effort")
     on_invalid = _str(raw.get("on_invalid", "continue"), f"{field}.on_invalid")
     if on_invalid not in TRIAGE_ON_INVALID_CHOICES:
@@ -285,14 +329,20 @@ def parse_triage(raw: dict[str, Any], field: str) -> TriageConfig:
         )
     contract = _str(raw.get("contract", "v1"), f"{field}.contract")
     if contract not in TRIAGE_CONTRACT_CHOICES:
-        raise ValueError(f"{field}.contract must be one of {', '.join(TRIAGE_CONTRACT_CHOICES)}")
+        raise ValueError(
+            f"{field}.contract must be one of {', '.join(TRIAGE_CONTRACT_CHOICES)}"
+        )
 
     routing = parse_triage_routing(
         _table(raw.get("routing", {}), f"{field}.routing"), f"{field}.routing"
     )
     routes_raw = _table(raw.get("routes", {}), f"{field}.routes")
     routes = {
-        name: parse_triage_route(_table(value, f"{field}.routes.{name}"), f"{field}.routes.{name}")
+        name: parse_triage_route(
+            _table(value, f"{field}.routes.{name}"),
+            f"{field}.routes.{name}",
+            catalog_cwd=catalog_cwd,
+        )
         for name, value in routes_raw.items()
     }
 
@@ -301,7 +351,9 @@ def parse_triage(raw: dict[str, Any], field: str) -> TriageConfig:
         harness=harness,
         model=_optional_str(raw.get("model"), f"{field}.model"),
         reasoning_effort=reasoning_effort,
-        timeout_seconds=_optional_float(raw.get("timeout_seconds"), f"{field}.timeout_seconds"),
+        timeout_seconds=_optional_float(
+            raw.get("timeout_seconds"), f"{field}.timeout_seconds"
+        ),
         prompt=_optional_str(raw.get("prompt"), f"{field}.prompt"),
         on_invalid=on_invalid,
         contract=contract,
@@ -314,22 +366,29 @@ def parse_triage_routing(raw: dict[str, Any], field: str) -> TriageRoutingConfig
     _reject_unknown_keys(raw, ROUTING_KEYS, field)
     mode = _str(raw.get("mode", "first-match"), f"{field}.mode")
     if mode not in ROUTING_MODE_CHOICES:
-        raise ValueError(f"{field}.mode must be one of {', '.join(ROUTING_MODE_CHOICES)}")
+        raise ValueError(
+            f"{field}.mode must be one of {', '.join(ROUTING_MODE_CHOICES)}"
+        )
 
     rules_raw = raw.get("rule", [])
     if not isinstance(rules_raw, list):
         raise ValueError(f"{field}.rule must be a list of tables")
     rules = tuple(
-        parse_triage_routing_rule(_table(rule_raw, f"{field}.rule[{i}]"), f"{field}.rule[{i}]")
+        parse_triage_routing_rule(
+            _table(rule_raw, f"{field}.rule[{i}]"), f"{field}.rule[{i}]"
+        )
         for i, rule_raw in enumerate(rules_raw)
     )
 
     return TriageRoutingConfig(
         enabled=_bool(raw.get("enabled", False), f"{field}.enabled"),
         mode=mode,
-        default_route=_str(raw.get("default_route", "midtier-coder"), f"{field}.default_route"),
+        default_route=_str(
+            raw.get("default_route", "midtier-coder"), f"{field}.default_route"
+        ),
         strict_on_unavailable_route=_bool(
-            raw.get("strict_on_unavailable_route", True), f"{field}.strict_on_unavailable_route"
+            raw.get("strict_on_unavailable_route", True),
+            f"{field}.strict_on_unavailable_route",
         ),
         rule=rules,
         allow_model_escalation=_bool(
@@ -350,7 +409,9 @@ def parse_triage_routing_rule(raw: dict[str, Any], field: str) -> TriageRoutingR
     return TriageRoutingRule(id=rule_id, when=when, then=then)
 
 
-def parse_triage_routing_rule_when(raw: dict[str, Any], field: str) -> TriageRoutingRuleWhen:
+def parse_triage_routing_rule_when(
+    raw: dict[str, Any], field: str
+) -> TriageRoutingRuleWhen:
     _reject_unknown_keys(raw, ROUTING_WHEN_KEYS, field)
     risk_level_min = _optional_str(raw.get("risk_level_min"), f"{field}.risk_level_min")
     risk_level_max = _optional_str(raw.get("risk_level_max"), f"{field}.risk_level_max")
@@ -366,7 +427,9 @@ def parse_triage_routing_rule_when(raw: dict[str, Any], field: str) -> TriageRou
             f"{field}.risk_level_max must be one of {', '.join(TRIAGE_RISK_LEVEL_CHOICES)}"
         )
     invalid_refactor_depths = [
-        value for value in refactor_depth_any if value not in TRIAGE_REFACTOR_DEPTH_CHOICES
+        value
+        for value in refactor_depth_any
+        if value not in TRIAGE_REFACTOR_DEPTH_CHOICES
     ]
     if invalid_refactor_depths:
         raise ValueError(
@@ -380,8 +443,12 @@ def parse_triage_routing_rule_when(raw: dict[str, Any], field: str) -> TriageRou
         risk_level_min=risk_level_min,
         risk_level_max=risk_level_max,
         refactor_depth_any=refactor_depth_any,
-        module_count_gte=_optional_int(raw.get("module_count_gte"), f"{field}.module_count_gte"),
-        module_count_lt=_optional_int(raw.get("module_count_lt"), f"{field}.module_count_lt"),
+        module_count_gte=_optional_int(
+            raw.get("module_count_gte"), f"{field}.module_count_gte"
+        ),
+        module_count_lt=_optional_int(
+            raw.get("module_count_lt"), f"{field}.module_count_lt"
+        ),
         safety_signals_any=tuple(
             _str_list(raw.get("safety_signals_any", []), f"{field}.safety_signals_any")
         ),
@@ -391,7 +458,9 @@ def parse_triage_routing_rule_when(raw: dict[str, Any], field: str) -> TriageRou
     )
 
 
-def parse_triage_routing_rule_then(raw: dict[str, Any], field: str) -> TriageRoutingRuleThen:
+def parse_triage_routing_rule_then(
+    raw: dict[str, Any], field: str
+) -> TriageRoutingRuleThen:
     _reject_unknown_keys(raw, ROUTING_THEN_KEYS, field)
     return TriageRoutingRuleThen(
         route=_optional_str(raw.get("route"), f"{field}.route"),
@@ -399,7 +468,8 @@ def parse_triage_routing_rule_then(raw: dict[str, Any], field: str) -> TriageRou
             _str_list(raw.get("prompt_fragments", []), f"{field}.prompt_fragments")
         ),
         allow_model_deescalation=_bool(
-            raw.get("allow_model_deescalation", True), f"{field}.allow_model_deescalation"
+            raw.get("allow_model_deescalation", True),
+            f"{field}.allow_model_deescalation",
         ),
         allow_model_escalation=_optional_bool(
             raw.get("allow_model_escalation"), f"{field}.allow_model_escalation"
@@ -407,39 +477,55 @@ def parse_triage_routing_rule_then(raw: dict[str, Any], field: str) -> TriageRou
     )
 
 
-def parse_triage_route(raw: dict[str, Any], field: str) -> TriageRouteConfig:
+def parse_triage_route(
+    raw: dict[str, Any], field: str, *, catalog_cwd: Path | None = None
+) -> TriageRouteConfig:
     _reject_unknown_keys(raw, ROUTE_KEYS, field)
     harness = _str(raw.get("harness", "codex"), f"{field}.harness")
-    validate_harness_name(harness, field=f"{field}.harness")
-    reasoning_effort = _optional_str(raw.get("reasoning_effort"), f"{field}.reasoning_effort")
+    validate_harness_name(harness, field=f"{field}.harness", cwd=catalog_cwd)
+    reasoning_effort = _optional_str(
+        raw.get("reasoning_effort"), f"{field}.reasoning_effort"
+    )
     _validate_reasoning_effort(reasoning_effort, f"{field}.reasoning_effort")
     sandbox = _str(raw.get("sandbox", "workspace-write"), f"{field}.sandbox")
     if sandbox not in EXEC_SANDBOX_CHOICES:
-        raise ValueError(f"{field}.sandbox must be one of {', '.join(EXEC_SANDBOX_CHOICES)}")
+        raise ValueError(
+            f"{field}.sandbox must be one of {', '.join(EXEC_SANDBOX_CHOICES)}"
+        )
 
     return TriageRouteConfig(
         harness=harness,
         model=_optional_str(raw.get("model"), f"{field}.model"),
         reasoning_effort=reasoning_effort,
-        timeout_seconds=_optional_float(raw.get("timeout_seconds"), f"{field}.timeout_seconds"),
+        timeout_seconds=_optional_float(
+            raw.get("timeout_seconds"), f"{field}.timeout_seconds"
+        ),
         sandbox=sandbox,
         fallback=_optional_str(raw.get("fallback"), f"{field}.fallback"),
     )
 
 
 def _str_list(value: Any, field: str) -> list[str]:
-    if not isinstance(value, list | tuple) or not all(isinstance(item, str) for item in value):
+    if not isinstance(value, list | tuple) or not all(
+        isinstance(item, str) for item in value
+    ):
         raise ValueError(f"{field} must be a list of strings")
     return list(value)
 
 
-def parse_commit(raw: dict[str, Any]) -> CommitConfig:
+def parse_commit(
+    raw: dict[str, Any], *, catalog_cwd: Path | None = None
+) -> CommitConfig:
     _reject_unknown_keys(raw, COMMIT_KEYS, "commit")
     harness = _str(raw.get("harness", "codex"), "commit.harness")
-    validate_harness_name(harness, field="commit.harness")
-    reasoning_effort = _optional_str(raw.get("reasoning_effort"), "commit.reasoning_effort")
+    validate_harness_name(harness, field="commit.harness", cwd=catalog_cwd)
+    reasoning_effort = _optional_str(
+        raw.get("reasoning_effort"), "commit.reasoning_effort"
+    )
     _validate_reasoning_effort(reasoning_effort, "commit.reasoning_effort")
-    on_hook_failure = _str(raw.get("on_hook_failure", "remediate"), "commit.on_hook_failure")
+    on_hook_failure = _str(
+        raw.get("on_hook_failure", "remediate"), "commit.on_hook_failure"
+    )
     if on_hook_failure not in COMMIT_ON_HOOK_FAILURE_CHOICES:
         raise ValueError(
             f"commit.on_hook_failure must be one of {', '.join(COMMIT_ON_HOOK_FAILURE_CHOICES)}"
@@ -449,10 +535,14 @@ def parse_commit(raw: dict[str, Any]) -> CommitConfig:
         harness=harness,
         message_model=_optional_str(raw.get("message_model"), "commit.message_model")
         or "gpt-5.3-codex-spark",
-        message_prompt=_optional_str(raw.get("message_prompt"), "commit.message_prompt"),
+        message_prompt=_optional_str(
+            raw.get("message_prompt"), "commit.message_prompt"
+        ),
         on_hook_failure=on_hook_failure,
         reasoning_effort=reasoning_effort,
-        timeout_seconds=_optional_float(raw.get("timeout_seconds"), "commit.timeout_seconds"),
+        timeout_seconds=_optional_float(
+            raw.get("timeout_seconds"), "commit.timeout_seconds"
+        ),
     )
 
 
@@ -478,18 +568,26 @@ def parse_output(raw: dict[str, Any]) -> OutputConfig:
     )
 
 
-def parse_runtime(raw: dict[str, Any]) -> RuntimeConfig:
+def parse_runtime(
+    raw: dict[str, Any], *, catalog_cwd: Path | None = None
+) -> RuntimeConfig:
     _reject_unknown_keys(raw, RUNTIME_KEYS, "runtime")
     harness_executables = _str_map(
         raw.get("harness_executables", {}),
         "runtime.harness_executables",
     )
     for harness_name in harness_executables:
-        validate_harness_name(harness_name, field=f"runtime.harness_executables.{harness_name}")
+        validate_harness_name(
+            harness_name,
+            field=f"runtime.harness_executables.{harness_name}",
+            cwd=catalog_cwd,
+        )
     return RuntimeConfig(
         codex_bin=_str(raw.get("codex_bin", "codex"), "runtime.codex_bin"),
         harness_executables=harness_executables,
-        exec_sandbox=_str(raw.get("exec_sandbox", "workspace-write"), "runtime.exec_sandbox"),
+        exec_sandbox=_str(
+            raw.get("exec_sandbox", "workspace-write"), "runtime.exec_sandbox"
+        ),
         exec_color=_str(raw.get("exec_color", "never"), "runtime.exec_color"),
         exec_json=_bool(raw.get("exec_json", False), "runtime.exec_json"),
         output_last_message=_bool(
@@ -534,13 +632,19 @@ def parse_runtime(raw: dict[str, Any]) -> RuntimeConfig:
 
 def parse_budgets(raw: dict[str, Any]) -> BudgetConfig:
     _reject_unknown_keys(raw, BUDGET_KEYS, "budgets")
-    soft_warn_fraction = _float(raw.get("soft_warn_fraction", 0.8), "budgets.soft_warn_fraction")
+    soft_warn_fraction = _float(
+        raw.get("soft_warn_fraction", 0.8), "budgets.soft_warn_fraction"
+    )
     if not 0 < soft_warn_fraction <= 1:
-        raise ValueError("budgets.soft_warn_fraction must be greater than 0 and no more than 1")
+        raise ValueError(
+            "budgets.soft_warn_fraction must be greater than 0 and no more than 1"
+        )
     max_tokens = _optional_int(raw.get("max_tokens"), "budgets.max_tokens")
     if max_tokens is not None and max_tokens < 0:
         raise ValueError("budgets.max_tokens must be 0 or greater")
-    max_wall_seconds = _optional_float(raw.get("max_wall_seconds"), "budgets.max_wall_seconds")
+    max_wall_seconds = _optional_float(
+        raw.get("max_wall_seconds"), "budgets.max_wall_seconds"
+    )
     if max_wall_seconds is not None and max_wall_seconds < 0:
         raise ValueError("budgets.max_wall_seconds must be 0 or greater")
     max_usd = _optional_decimal(raw.get("max_usd"), "budgets.max_usd")
@@ -605,8 +709,13 @@ def resolve_profiles(
     ]
 
 
-def load_profile_files(*, cwd: Path, home: Path | None = None) -> tuple[ProfileFile, ProfileFile]:
-    return load_profile_file(user_config_path(home)), load_profile_file(project_config_path(cwd))
+def load_profile_files(
+    *, cwd: Path, home: Path | None = None
+) -> tuple[ProfileFile, ProfileFile]:
+    return (
+        load_profile_file(user_config_path(home), catalog_cwd=cwd),
+        load_profile_file(project_config_path(cwd), catalog_cwd=cwd),
+    )
 
 
 def _load_builtin_profile_raw(name: str) -> dict[str, Any] | None:
@@ -662,8 +771,11 @@ def resolve_profile_from_files(
         found = True
     if not found:
         raise FileNotFoundError(f"profile not found: {name}")
-    resolved = parse_profile(name, raw, source=source)
-    validate_profile(resolved, require_implemented=require_implemented)
+    catalog_cwd = project_file.path.parent
+    resolved = parse_profile(name, raw, source=source, catalog_cwd=catalog_cwd)
+    validate_profile(
+        resolved, require_implemented=require_implemented, catalog_cwd=catalog_cwd
+    )
     return resolved
 
 
@@ -673,8 +785,8 @@ def resolve_defaults(
     home: Path | None = None,
     require_implemented: bool = True,
 ) -> Profile:
-    user_file = load_profile_file(user_config_path(home))
-    project_file = load_profile_file(project_config_path(cwd))
+    user_file = load_profile_file(user_config_path(home), catalog_cwd=cwd)
+    project_file = load_profile_file(project_config_path(cwd), catalog_cwd=cwd)
     raw: dict[str, Any] = {}
     source = None
     if user_file.defaults is not None:
@@ -683,8 +795,8 @@ def resolve_defaults(
     if project_file.defaults is not None:
         raw = _deep_merge(raw, project_file.raw_defaults)
         source = str(project_file.path)
-    defaults = parse_profile("<defaults>", raw, source=source)
-    validate_profile(defaults, require_implemented=require_implemented)
+    defaults = parse_profile("<defaults>", raw, source=source, catalog_cwd=cwd)
+    validate_profile(defaults, require_implemented=require_implemented, catalog_cwd=cwd)
     return defaults
 
 
@@ -724,7 +836,9 @@ def profile_list_items(
             source=profile.source,
             last_used_at=last_used_at_by_profile.get(profile.name),
         )
-        for profile in list_profiles(cwd=cwd, home=home, include_builtins=include_builtins)
+        for profile in list_profiles(
+            cwd=cwd, home=home, include_builtins=include_builtins
+        )
     ]
 
 
@@ -835,16 +949,13 @@ def _profile_to_toml_dict(
 ) -> dict[str, Any]:
     result: dict[str, Any] = {}
     explicit_description = raw_profile is not None and "description" in raw_profile
-    if (
-        explicit_description
-        or (
-            profile.description
-            and not (
-                omit_reference_defaults
-                and not explicit_description
-                and reference is not None
-                and profile.description == reference.description
-            )
+    if explicit_description or (
+        profile.description
+        and not (
+            omit_reference_defaults
+            and not explicit_description
+            and reference is not None
+            and profile.description == reference.description
         )
     ):
         result["description"] = profile.description
@@ -861,7 +972,9 @@ def _profile_to_toml_dict(
     ):
         value = getattr(profile, section_name)
         defaults = type(value)()
-        reference_value = getattr(reference, section_name) if reference is not None else None
+        reference_value = (
+            getattr(reference, section_name) if reference is not None else None
+        )
         raw_section = raw_profile.get(section_name) if raw_profile is not None else None
         section_dict: dict[str, Any] = {}
         for key, item in asdict(value).items():
@@ -919,7 +1032,9 @@ def _profile_toml_dict(
 ) -> dict[str, Any] | None:
     raw_dict = raw if isinstance(raw, dict) else None
     defaults_dict = _as_raw_dict(defaults) or {}
-    reference_dict = _as_raw_dict(reference_item) if reference_item is not None else None
+    reference_dict = (
+        _as_raw_dict(reference_item) if reference_item is not None else None
+    )
 
     rendered: dict[str, Any] = {}
     for key, item in value.items():
@@ -943,7 +1058,9 @@ def _profile_toml_dict(
             item,
             raw=raw_dict.get(key) if raw_dict is not None else None,
             defaults=defaults_dict.get(key) if defaults_dict is not None else None,
-            reference_item=reference_dict.get(key) if reference_dict is not None else None,
+            reference_item=(
+                reference_dict.get(key) if reference_dict is not None else None
+            ),
             omit_reference_defaults=omit_reference_defaults,
             omit_builtin_defaults=omit_builtin_defaults,
         )
@@ -1091,15 +1208,19 @@ def write_project_profile(
     _write_profile_file(
         path,
         defaults=profile_file.defaults,
-        raw_defaults=profile_file.raw_defaults if profile_file.defaults is not None else None,
+        raw_defaults=(
+            profile_file.raw_defaults if profile_file.defaults is not None else None
+        ),
         rendered_profiles={
             profile.name: profile,
         },
-        raw_rendered_profiles={
-            profile.name: raw_profile,
-        }
-        if raw_profile is not None
-        else None,
+        raw_rendered_profiles=(
+            {
+                profile.name: raw_profile,
+            }
+            if raw_profile is not None
+            else None
+        ),
         raw_profiles=profile_file.raw_profiles,
         omit_reference_defaults=False,
         omit_builtin_defaults_for_rendered=False,
@@ -1128,15 +1249,19 @@ def write_profile_to_path(
     _write_profile_file(
         path,
         defaults=profile_file.defaults,
-        raw_defaults=profile_file.raw_defaults if profile_file.defaults is not None else None,
+        raw_defaults=(
+            profile_file.raw_defaults if profile_file.defaults is not None else None
+        ),
         rendered_profiles={
             profile.name: profile,
         },
-        raw_rendered_profiles={
-            profile.name: raw_profile,
-        }
-        if raw_profile is not None
-        else None,
+        raw_rendered_profiles=(
+            {
+                profile.name: raw_profile,
+            }
+            if raw_profile is not None
+            else None
+        ),
         raw_profiles=profile_file.raw_profiles,
         omit_reference_defaults=True,
         reference=reference,
@@ -1152,7 +1277,9 @@ def save_profile_raw(
     home: Path | None = None,
 ) -> Path:
     user_file, project_file = load_profile_files(cwd=cwd, home=home)
-    merged = _merged_profile_raw_for_edit(name, user_file=user_file, project_file=project_file)
+    merged = _merged_profile_raw_for_edit(
+        name, user_file=user_file, project_file=project_file
+    )
     owner = profile_owner_path(name, cwd=cwd, home=home, allow_new=True)
     current = load_profile_file(owner).raw_profiles.get(name, {})
     raw_profile = _materialize_inherited_route_clear_markers(
@@ -1171,7 +1298,11 @@ def save_profile_raw(
         parsed=parsed,
     )
     return write_profile_to_path(
-        owner, parsed, force=True, raw_profile=merged_raw_profile, reference=edit_reference
+        owner,
+        parsed,
+        force=True,
+        raw_profile=merged_raw_profile,
+        reference=edit_reference,
     )
 
 
@@ -1218,7 +1349,11 @@ def _materialize_inherited_route_clear_markers(
             # an explicit unbounded (0) override.
             ("timeout_seconds", None),
         ):
-            if field in route_delta and route_delta.get(field) is None and field not in current_route:
+            if (
+                field in route_delta
+                and route_delta.get(field) is None
+                and field not in current_route
+            ):
                 route_delta[field] = clear_value
     return merged
 
@@ -1237,7 +1372,9 @@ def set_profile_field(
     project_file = load_profile_file(project_config_path(cwd))
     current = profile_file.raw_profiles.get(name, {})
     updated = deep_set_raw(current, dotted_key, value)
-    merged = _merged_profile_raw_for_edit(name, user_file=user_file, project_file=project_file)
+    merged = _merged_profile_raw_for_edit(
+        name, user_file=user_file, project_file=project_file
+    )
     merged_updated = deep_set_raw(merged, dotted_key, value)
     # Validate routing-sensitive updates against the full inherited profile chain.
     # Route-table and routing edits both need inherited triage contract/routes for
@@ -1409,7 +1546,9 @@ def delete_user_profile(name: str, *, home: Path | None = None) -> Path:
     _write_profile_file(
         path,
         defaults=profile_file.defaults,
-        raw_defaults=profile_file.raw_defaults if profile_file.defaults is not None else None,
+        raw_defaults=(
+            profile_file.raw_defaults if profile_file.defaults is not None else None
+        ),
         rendered_profiles={},
         raw_profiles=raw_profiles,
     )
@@ -1433,12 +1572,20 @@ def clone_user_profile(
             raise FileNotFoundError(f"built-in profile not found: {source_name}")
         cloned = parse_profile(target_name, raw_source_profile, source=None)
     else:
-        source_file = load_profile_file(Path(source.source)) if source.source is not None else None
+        source_file = (
+            load_profile_file(Path(source.source))
+            if source.source is not None
+            else None
+        )
         raw_source_profile = (
-            source_file.raw_profiles.get(source_name) if source_file is not None else None
+            source_file.raw_profiles.get(source_name)
+            if source_file is not None
+            else None
         )
         cloned = replace(source, name=target_name, source=None)
-    return write_user_profile(cloned, home=home, force=force, raw_profile=raw_source_profile)
+    return write_user_profile(
+        cloned, home=home, force=force, raw_profile=raw_source_profile
+    )
 
 
 def prompt_for_new_profile(
@@ -1503,7 +1650,10 @@ def _prompt_choice(
         value = input_fn(f"{label} ({choices_text}) [{default}]: ").strip() or default
         if value in choices:
             return value
-        print(f"ERROR: {label.lower()} must be one of: {', '.join(choices)}", file=sys.stderr)
+        print(
+            f"ERROR: {label.lower()} must be one of: {', '.join(choices)}",
+            file=sys.stderr,
+        )
 
 
 def _prompt_timeout(
@@ -1527,7 +1677,9 @@ def _prompt_timeout(
         return None if timeout_seconds == 0 else timeout_seconds
 
 
-def import_user_profiles(path: Path, *, home: Path | None = None, force: bool = False) -> Path:
+def import_user_profiles(
+    path: Path, *, home: Path | None = None, force: bool = False
+) -> Path:
     if not path.is_file():
         raise FileNotFoundError(f"profile import file not found: {path}")
     imported = load_profile_file(path)
@@ -1553,7 +1705,9 @@ def minimal_profile(name: str, *, description: str = "") -> Profile:
     return Profile(name=name, description=description)
 
 
-def _walk_route_fallback_chain(routes: dict[str, TriageRouteConfig], route_name: str) -> list[str]:
+def _walk_route_fallback_chain(
+    routes: dict[str, TriageRouteConfig], route_name: str
+) -> list[str]:
     """Return a list of issues for a single route's fallback chain."""
     from code_review_loop import policy
 
@@ -1577,14 +1731,18 @@ def _walk_route_fallback_chain(routes: dict[str, TriageRouteConfig], route_name:
             )
             return issues
         if current_cfg.fallback not in routes:
-            issues.append(f"route {route_name!r} has unknown fallback: {current_cfg.fallback!r}")
+            issues.append(
+                f"route {route_name!r} has unknown fallback: {current_cfg.fallback!r}"
+            )
             return issues
         chain.append(current_cfg.fallback)
         current_route_name = current_cfg.fallback
 
     if not resolved:
         if current_route_name not in routes:
-            issues.append(f"route {route_name!r} has unknown fallback: {current_route_name!r}")
+            issues.append(
+                f"route {route_name!r} has unknown fallback: {current_route_name!r}"
+            )
         else:
             cap_issues = policy.check_route_capabilities(routes[current_route_name])
             issues.append(
@@ -1602,7 +1760,9 @@ def validate_policy(profile: Profile, *, executable_routes: bool = False) -> lis
     # Check rules
     for i, rule in enumerate(triage.routing.rule):
         if rule.then.route and rule.then.route not in triage.routes:
-            issues.append(f"rule {rule.id or i!r} refers to unknown route {rule.then.route!r}")
+            issues.append(
+                f"rule {rule.id or i!r} refers to unknown route {rule.then.route!r}"
+            )
 
     if (
         triage.routing.enabled or triage.routes
@@ -1616,7 +1776,9 @@ def validate_policy(profile: Profile, *, executable_routes: bool = False) -> lis
     return issues
 
 
-def validate_profile(profile: Profile, *, require_implemented: bool) -> None:
+def validate_profile(
+    profile: Profile, *, require_implemented: bool, catalog_cwd: Path | None = None
+) -> None:
     if profile.pipeline.max_iterations < 1:
         raise ValueError("pipeline.max_iterations must be at least 1")
     if (
@@ -1624,10 +1786,16 @@ def validate_profile(profile: Profile, *, require_implemented: bool) -> None:
         and profile.pipeline.check_timeout_seconds < 0
     ):
         raise ValueError("pipeline.check_timeout_seconds must be 0 or greater")
-    for phase_name, phase in (("review", profile.review), ("remediation", profile.remediation)):
+    for phase_name, phase in (
+        ("review", profile.review),
+        ("remediation", profile.remediation),
+    ):
         if phase.timeout_seconds is not None and phase.timeout_seconds < 0:
             raise ValueError(f"{phase_name}.timeout_seconds must be 0 or greater")
-    if profile.triage.timeout_seconds is not None and profile.triage.timeout_seconds < 0:
+    if (
+        profile.triage.timeout_seconds is not None
+        and profile.triage.timeout_seconds < 0
+    ):
         raise ValueError("triage.timeout_seconds must be 0 or greater")
     if profile.runtime.exec_sandbox not in EXEC_SANDBOX_CHOICES:
         known = ", ".join(EXEC_SANDBOX_CHOICES)
@@ -1648,7 +1816,9 @@ def validate_profile(profile: Profile, *, require_implemented: bool) -> None:
     if profile.runtime.external_review_warning_seconds < 0:
         raise ValueError("runtime.external_review_warning_seconds must be 0 or greater")
     if profile.runtime.external_review_truncation_policy not in {"warn", "fail"}:
-        raise ValueError("runtime.external_review_truncation_policy must be one of: warn, fail")
+        raise ValueError(
+            "runtime.external_review_truncation_policy must be one of: warn, fail"
+        )
     if profile.runtime.terminal_excerpt_chars < 1:
         raise ValueError("runtime.terminal_excerpt_chars must be positive")
 
@@ -1661,7 +1831,9 @@ def validate_profile(profile: Profile, *, require_implemented: bool) -> None:
     for i, rule in enumerate(profile.triage.routing.rule):
         field = f"triage.routing.rule[{i}]"
         if rule.then.route and rule.then.route not in profile.triage.routes:
-            raise ValueError(f"{field}.then.route refers to unknown route: {rule.then.route}")
+            raise ValueError(
+                f"{field}.then.route refers to unknown route: {rule.then.route}"
+            )
 
     if (
         (profile.triage.routing.enabled or profile.triage.routes)
@@ -1674,25 +1846,37 @@ def validate_profile(profile: Profile, *, require_implemented: bool) -> None:
 
     for route_name, route in profile.triage.routes.items():
         field = f"triage.routes.{route_name}"
-        validate_harness_name(route.harness, field=f"{field}.harness")
+        validate_harness_name(route.harness, field=f"{field}.harness", cwd=catalog_cwd)
         if route.timeout_seconds is not None and route.timeout_seconds < 0:
             raise ValueError(f"{field}.timeout_seconds must be 0 or greater")
         if route.fallback and route.fallback not in profile.triage.routes:
-            raise ValueError(f"{field}.fallback refers to unknown route: {route.fallback}")
+            raise ValueError(
+                f"{field}.fallback refers to unknown route: {route.fallback}"
+            )
 
     if require_implemented:
-        require_implemented_harness(profile.review.harness, field="review.harness")
-        require_implemented_harness(profile.remediation.harness, field="remediation.harness")
+        require_implemented_harness(
+            profile.review.harness, field="review.harness", cwd=catalog_cwd
+        )
+        require_implemented_harness(
+            profile.remediation.harness, field="remediation.harness", cwd=catalog_cwd
+        )
         if profile.triage.enabled:
-            require_implemented_harness(profile.triage.harness, field="triage.harness")
+            require_implemented_harness(
+                profile.triage.harness, field="triage.harness", cwd=catalog_cwd
+            )
         if profile.commit.enabled:
-            require_implemented_harness(profile.commit.harness, field="commit.harness")
+            require_implemented_harness(
+                profile.commit.harness, field="commit.harness", cwd=catalog_cwd
+            )
 
         # Only enforce route-chain implementation when routing can actually select routes.
         # Disabled routing may still carry draft or experimental route tables for later use.
         if profile.triage.routing.enabled:
             for route_name in profile.triage.routes:
-                route_issues = _walk_route_fallback_chain(profile.triage.routes, route_name)
+                route_issues = _walk_route_fallback_chain(
+                    profile.triage.routes, route_name
+                )
                 if route_issues:
                     raise ValueError(route_issues[0])
 
@@ -1711,10 +1895,14 @@ def _write_profile_file(
 ) -> None:
     blocks: list[str] = []
     if raw_defaults is not None:
-        blocks.append(_raw_profile_to_toml_impl(raw_defaults, root=("defaults",)).rstrip())
+        blocks.append(
+            _raw_profile_to_toml_impl(raw_defaults, root=("defaults",)).rstrip()
+        )
     elif defaults is not None:
         blocks.append(
-            _profile_to_toml_impl(defaults, root=("defaults",), omit_builtin_defaults=True).rstrip()
+            _profile_to_toml_impl(
+                defaults, root=("defaults",), omit_builtin_defaults=True
+            ).rstrip()
         )
     raw_profiles = raw_profiles or {}
     for name in sorted(set(raw_profiles) | set(rendered_profiles)):
@@ -1731,7 +1919,9 @@ def _write_profile_file(
             )
         else:
             blocks.append(
-                _raw_profile_to_toml_impl(raw_profiles[name], root=("profiles", name)).rstrip()
+                _raw_profile_to_toml_impl(
+                    raw_profiles[name], root=("profiles", name)
+                ).rstrip()
             )
     _atomic_write_text(path, "\n\n".join(blocks) + "\n")
 
@@ -1752,7 +1942,9 @@ def _raw_profile_to_toml_impl(raw: dict[str, Any], *, root: tuple[str, ...]) -> 
 
 def _atomic_write_text(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    fd, tmp_name = tempfile.mkstemp(
+        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
+    )
     tmp_path = Path(tmp_name)
     try:
         try:
@@ -1921,7 +2113,9 @@ def deep_set_raw(raw: dict[str, Any], dotted_key: str, value: object) -> dict[st
     return result
 
 
-def _reject_unknown_keys(raw: dict[str, Any], allowed: tuple[str, ...], field: str) -> None:
+def _reject_unknown_keys(
+    raw: dict[str, Any], allowed: tuple[str, ...], field: str
+) -> None:
     unexpected = sorted(key for key in raw if key not in allowed)
     if unexpected:
         keys = ", ".join(unexpected)

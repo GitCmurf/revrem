@@ -337,9 +337,18 @@ def _iteration_outcomes(
         if inconclusive:
             remediation = checks = commit = "not run"
         else:
+            remediation_failed = any(
+                item.get(marker) is True
+                for marker in (
+                    "triage_failed",
+                    "suppressed_findings",
+                    "remediation_failed",
+                )
+            )
             remediation = (
                 "done"
-                if item.get("remediated") is not False
+                if not remediation_failed
+                and item.get("remediated") is not False
                 and (review == "findings" or item.get("checks"))
                 else "skipped"
             )

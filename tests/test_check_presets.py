@@ -38,6 +38,18 @@ def test_detect_check_presets_reports_repository_capabilities(tmp_path: Path) ->
     }
 
 
+def test_detect_check_presets_does_not_infer_python_from_tests_directory(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "app.test.ts").write_text("export {};\n", encoding="utf-8")
+
+    presets = check_presets.detect_check_presets(tmp_path)
+
+    assert "python-fast" not in {preset.key for preset in presets}
+
+
 def test_recent_check_presets_are_repo_local_deduplicated_and_bounded(
     tmp_path: Path, monkeypatch
 ) -> None:

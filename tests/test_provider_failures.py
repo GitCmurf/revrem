@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from code_review_loop import provider_failures
+from code_review_loop.adapters import remediation as remediation_impl
 from code_review_loop.adapters import review as review_impl
 from code_review_loop.adapters.remediation import RemediationAdapter
 from code_review_loop.config import LoopConfig
@@ -196,9 +197,9 @@ def _result(
                 "stderr": (
                     "2026-07-01T20:15:17Z ERROR rmcp::transport::worker: "
                     "worker quit with fatal: Transport channel closed, when "
-                    "Client(HttpRequest(HttpRequest(\"http/request failed: "
+                    'Client(HttpRequest(HttpRequest("http/request failed: '
                     "error sending request for url "
-                    "(https://chatgpt.com/backend-api/ps/mcp)\")))\n"
+                    '(https://chatgpt.com/backend-api/ps/mcp)")))\n'
                     "ERROR codex_api::endpoint::responses_websocket: failed "
                     "to connect to websocket: IO error: failed to lookup "
                     "address information: Try again, url: "
@@ -270,7 +271,9 @@ def test_classify_provider_failure_uses_provider_events() -> None:
 
 def test_classify_provider_failure_returns_none_for_success() -> None:
     assert (
-        provider_failures.classify_provider_failure(_result(0, stdout="ok\n"), harness="harness")
+        provider_failures.classify_provider_failure(
+            _result(0, stdout="ok\n"), harness="harness"
+        )
         is None
     )
 
@@ -329,7 +332,9 @@ def test_classify_provider_failure_does_not_treat_textual_timeout_finding_as_loc
 
 def test_classify_provider_failure_returns_none_for_unrecognised_output() -> None:
     result = _result(1, stderr="some unrelated non-fatal log line")
-    assert provider_failures.classify_provider_failure(result, harness="harness") is None
+    assert (
+        provider_failures.classify_provider_failure(result, harness="harness") is None
+    )
 
 
 def test_classify_provider_failure_ignores_help_text_api_key_mention() -> None:
@@ -337,21 +342,29 @@ def test_classify_provider_failure_ignores_help_text_api_key_mention() -> None:
     a provider authentication failure (no space between ``api`` and ``key``).
     """
     result = _result(1, stderr="Usage: opencode review --api-key YOUR_KEY [opts]")
-    assert provider_failures.classify_provider_failure(result, harness="harness") is None
+    assert (
+        provider_failures.classify_provider_failure(result, harness="harness") is None
+    )
 
 
 def test_classify_provider_failure_ignores_unknownerrors_substring() -> None:
     """``unknownerrors`` (no word boundary) must not match the
     ``UnknownError`` JSON envelope signal."""
     result = _result(1, stderr="recent unknownerrors: 3")
-    assert provider_failures.classify_provider_failure(result, harness="harness") is None
+    assert (
+        provider_failures.classify_provider_failure(result, harness="harness") is None
+    )
 
 
-def test_classify_provider_failure_ignores_temporarily_unavailable_in_cache_message() -> None:
+def test_classify_provider_failure_ignores_temporarily_unavailable_in_cache_message() -> (
+    None
+):
     """Cache messages that mention ``temporarily unavailable`` must not
     trigger the transient failure path on their own."""
     result = _result(1, stderr="cache entry temporarily unavailable, retry later")
-    assert provider_failures.classify_provider_failure(result, harness="harness") is None
+    assert (
+        provider_failures.classify_provider_failure(result, harness="harness") is None
+    )
 
 
 def test_review_failed_to_run_flags_provider_auth_required(tmp_path: Path) -> None:
@@ -364,7 +377,9 @@ def test_review_failed_to_run_flags_provider_auth_required(tmp_path: Path) -> No
     assert review_impl.review_failed_to_run(result, "opencode") is True
 
 
-def test_review_failed_to_run_preserves_returncode_one_findings_with_provider_keywords() -> None:
+def test_review_failed_to_run_preserves_returncode_one_findings_with_provider_keywords() -> (
+    None
+):
     result = _result(
         1,
         stdout=(
@@ -382,7 +397,9 @@ def test_review_failed_to_run_preserves_returncode_one_findings_with_provider_ke
     "harness",
     ["", "opencode", "gemini", "kilo", "codex", "claude"],
 )
-def test_classify_provider_failure_is_harness_agnostic(harness: str, tmp_path: Path) -> None:
+def test_classify_provider_failure_is_harness_agnostic(
+    harness: str, tmp_path: Path
+) -> None:
     """The ``harness`` argument is a forward-compat hook: it must not
     affect the classification outcome until a harness-specific rule is
     introduced deliberately.
@@ -824,7 +841,9 @@ def test_remediation_adapter_retries_transient_failure(
     def recording_sleep(seconds: float) -> None:
         real_sleep_calls.append(seconds)
 
-    monkeypatch.setattr("code_review_loop.adapters.remediation.time.sleep", recording_sleep)
+    monkeypatch.setattr(
+        "code_review_loop.adapters.remediation.time.sleep", recording_sleep
+    )
 
     config = LoopConfig(
         base="main",
@@ -966,7 +985,9 @@ def test_remediation_retry_persists_failed_attempt_artifact(
             return CommandResult(list(args), 1, stderr="Error: 429 rate limit exceeded")
         return CommandResult(list(args), 0, stdout="ok\n")
 
-    monkeypatch.setattr("code_review_loop.adapters.remediation.time.sleep", lambda _s: None)
+    monkeypatch.setattr(
+        "code_review_loop.adapters.remediation.time.sleep", lambda _s: None
+    )
 
     config = LoopConfig(
         base="main",
@@ -1019,7 +1040,9 @@ def test_remediation_adapter_does_not_retry_auth_required_repeatedly(
     def recording_sleep(seconds: float) -> None:
         sleep_calls.append(seconds)
 
-    monkeypatch.setattr("code_review_loop.adapters.remediation.time.sleep", recording_sleep)
+    monkeypatch.setattr(
+        "code_review_loop.adapters.remediation.time.sleep", recording_sleep
+    )
 
     config = LoopConfig(
         base="main",
@@ -1042,3 +1065,51 @@ def test_remediation_adapter_does_not_retry_auth_required_repeatedly(
 
     assert len(calls) == 1
     assert sleep_calls == []
+
+
+def test_codex_catalog_alias_does_not_retry_remediation(
+    tmp_path: Path, monkeypatch
+) -> None:
+    (tmp_path / "artifacts").mkdir()
+    (tmp_path / ".revrem-catalog.toml").write_text(
+        '[[harness]]\nname="team-codex"\ndriver="codex"\nexecutable="team-codex"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    calls: list[list[str]] = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append(list(args))
+        return CommandResult(list(args), 1, stderr="Error: 429 rate limit exceeded")
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        provider_retry_attempts=3,
+    )
+    ctx = RunContext(
+        runner=runner,
+        clock=FakeClock(),
+        identity=FakeRunIdentity(),
+        **phase_harness_kwargs(),
+    )
+    monkeypatch.setattr(remediation_impl.time, "sleep", lambda _seconds: None)
+
+    result = remediation_impl._run_remediation_with_retry(
+        config,
+        runner,
+        ["team-codex"],
+        None,
+        None,
+        "1",
+        ctx=ctx,
+        prompt_artifact=None,
+        harness="team-codex",
+        model=None,
+        reasoning_effort=None,
+    )
+
+    assert result.returncode == 1
+    assert len(calls) == 1

@@ -63,7 +63,10 @@ def build_remediation_command(
             sandbox=sandbox,
             color=config.exec_color,
             full_auto=config.full_auto,
-            json_output=(config.exec_json and harnesses._resolve_catalog_driver(harness) == "codex"),
+            json_output=(
+                config.exec_json
+                and harnesses._resolve_catalog_driver(harness) == "codex"
+            ),
             output_last_message_path=output_last_message,
         )
     )
@@ -89,8 +92,13 @@ def run_remediation(
         if config.output_last_message
         else None
     )
-    command = build_remediation_command(config, last_message_path, resolved_route=resolved_route)
-    remediation_harness = resolved_route.harness if resolved_route else config.remediation_harness
+    command = build_remediation_command(
+        config, last_message_path, resolved_route=resolved_route
+    )
+    remediation_harness = (
+        resolved_route.harness if resolved_route else config.remediation_harness
+    )
+    remediation_driver = harnesses._resolve_catalog_driver(remediation_harness)
     remediation_model = (
         (resolved_route.model if resolved_route else None)
         or config.remediation_model
@@ -104,7 +112,9 @@ def run_remediation(
 
     if resolved_route:
         prompt = remediation_input
-        timeout = routing_timeouts.effective_route_timeout_seconds(config, resolved_route)
+        timeout = routing_timeouts.effective_route_timeout_seconds(
+            config, resolved_route
+        )
         timeout_is_effective = True
     else:
         prompt = f"{phase_support.DEFAULT_REMEDIATION_PROMPT}\n{prompts_composer.trim_for_prompt(remediation_input, config.max_remediation_input_chars)}"
@@ -123,7 +133,9 @@ def run_remediation(
     prompt_metadata = phase_support.prompt_invocation_metadata(invocation)
 
     phase_support.set_phase_terminal_title(config, "remediate", label)
-    phase_support.ensure_model_budget(config, phase="remediate", iteration=iteration, ctx=ctx)
+    phase_support.ensure_model_budget(
+        config, phase="remediate", iteration=iteration, ctx=ctx
+    )
     phase_support.progress_event(
         config,
         "remediate",
@@ -168,6 +180,7 @@ def run_remediation(
             ctx=ctx,
             prompt_artifact=invocation.prompt_artifact,
             harness=remediation_harness,
+            driver=remediation_driver,
             model=remediation_model,
             reasoning_effort=remediation_reasoning_effort,
             timeout_is_effective=timeout_is_effective,
@@ -180,7 +193,9 @@ def run_remediation(
         config, result, phase="remediate", iteration=iteration, ctx=ctx
     )
     if result.returncode != 0:
-        failure = provider_failures.classify_provider_failure(result, harness=remediation_harness)
+        failure = provider_failures.classify_provider_failure(
+            result, harness=remediation_harness
+        )
         failure_detail = f": {failure.detail}" if failure else ""
         phase_support.progress_event(
             config,
@@ -210,6 +225,7 @@ def _run_remediation_with_retry(
     ctx: RunContext,
     prompt_artifact: Path | None,
     harness: str,
+    driver: str | None = None,
     model: str | None,
     reasoning_effort: str | None,
     timeout_is_effective: bool = False,
@@ -221,10 +237,15 @@ def _run_remediation_with_retry(
     Non-transient provider failures (auth, quota, contract) and any failure
     on the codex or fake harness still raise on the first attempt.
     """
-    attempts = 1 if harness in {"codex", "fake"} else max(1, config.provider_retry_attempts)
+    driver = driver or harnesses._resolve_catalog_driver(harness)
+    attempts = (
+        1 if driver in {"codex", "fake"} else max(1, config.provider_retry_attempts)
+    )
     last_result: CommandResult | None = None
     effective_timeout = (
-        timeout if timeout_is_effective else phase_support.phase_timeout_seconds(config, timeout)
+        timeout
+        if timeout_is_effective
+        else phase_support.phase_timeout_seconds(config, timeout)
     )
     for attempt in range(1, attempts + 1):
         result = phase_support.run_with_waiting_progress(
@@ -271,7 +292,9 @@ class RemediationAdapter:
     def __init__(self, config: LoopConfig) -> None:
         self._config = config
 
-    def execute(self, request: RemediationRequest, ctx: RunContext) -> RemediationOutcome:
+    def execute(
+        self, request: RemediationRequest, ctx: RunContext
+    ) -> RemediationOutcome:
         result = run_remediation(
             self._config,
             ctx.runner,

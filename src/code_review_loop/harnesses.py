@@ -443,17 +443,21 @@ def harness_registry() -> Mapping[str, HarnessSpec]:
     return PRODUCTION_HARNESS_REGISTRY
 
 
-def validate_harness_name(name: str, *, field: str = "harness") -> None:
+def validate_harness_name(
+    name: str, *, field: str = "harness", cwd: Path | None = None
+) -> None:
     registry = harness_registry()
     from code_review_loop.model_catalog import load_catalog
 
-    catalog_names = load_catalog().harnesses
+    catalog_names = load_catalog(cwd).harnesses
     if name not in registry and name not in catalog_names:
         known = ", ".join(sorted(set(registry) | set(catalog_names)))
         raise ValueError(f"{field} must be one of: {known}")
 
 
-def require_implemented_harness(name: str, *, field: str = "harness") -> None:
+def require_implemented_harness(
+    name: str, *, field: str = "harness", cwd: Path | None = None
+) -> None:
     spec = harness_registry().get(name)
     if spec and not spec.implemented:
         raise ValueError(
@@ -462,8 +466,8 @@ def require_implemented_harness(name: str, *, field: str = "harness") -> None:
     if spec is None:
         from code_review_loop.model_catalog import load_catalog
 
-        if name not in load_catalog().harnesses:
-            validate_harness_name(name, field=field)
+        if name not in load_catalog(cwd).harnesses:
+            validate_harness_name(name, field=field, cwd=cwd)
 
 
 def resolve_executable(

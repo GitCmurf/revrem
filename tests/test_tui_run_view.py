@@ -319,6 +319,34 @@ def test_unknown_terminal_outcome_is_explained_and_stops_later_work() -> None:
     assert view.iterations[1].commit == "not run"
 
 
+def test_iteration_outcome_marks_unsuccessful_phase_markers_as_not_remediated() -> None:
+    view = tui_run_state.run_outcome_view(
+        {
+            "final_status": "failed",
+            "stopped_reason": "remediation_failed",
+            "iterations": [
+                {"iteration": 1, "review_status": "findings", "triage_failed": True},
+                {
+                    "iteration": 2,
+                    "review_status": "findings",
+                    "suppressed_findings": True,
+                },
+                {
+                    "iteration": 3,
+                    "review_status": "findings",
+                    "remediation_failed": True,
+                },
+            ],
+        }
+    )
+
+    assert [row.remediation for row in view.iterations] == [
+        "skipped",
+        "skipped",
+        "skipped",
+    ]
+
+
 def test_timeline_has_wall_time_elapsed_time_and_groups_artifacts() -> None:
     records = (
         event_model.Event(
