@@ -60,6 +60,7 @@
         }
       ],
       "iteration": 1,
+      "remediated": true,
       "review_status": "findings"
     }
   ],

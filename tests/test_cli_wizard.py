@@ -380,6 +380,8 @@ def test_last_run_prefers_structured_resume_config_over_redacted_display_command
                     "remediation_timeout_seconds": 3600,
                     "commit_timeout_seconds": 3000,
                     "check_commands": [],
+                    "full_auto": False,
+                    "exec_sandbox": "read-only",
                     "phase_config": {
                         "checks": {"timeout_seconds": 2400}
                     },
@@ -408,6 +410,13 @@ def test_last_run_prefers_structured_resume_config_over_redacted_display_command
     assert lookup.state.remediation_timeout_seconds == "3600"
     assert lookup.state.commit_timeout_seconds == "3000"
     assert lookup.state.check_timeout_seconds == "2400"
+    assert lookup.state.full_auto is False
+    assert lookup.state.exec_sandbox == "read-only"
+    assert "--no-full-auto" in wizard._argv_for_state(lookup.state)
+    assert wizard._argv_for_state(lookup.state)[-2:] == [
+        "--exec-sandbox",
+        "read-only",
+    ]
 
 
 def test_wizard_prompts_for_pending_review_before_run_shape_menus(tmp_path, monkeypatch):
@@ -1240,6 +1249,37 @@ model = "gpt-triage"
     rendered = stderr.getvalue()
     assert "minimal: minimal" not in rendered
     assert "Codex triage starts at low effort" in rendered
+
+
+def test_wizard_codex_alias_triage_omits_and_repairs_minimal_effort(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem-catalog.toml").write_text(
+        '[[harness]]\nname = "codex-alias"\ndriver = "codex"\nexecutable = "codex"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / ".revrem.toml").write_text(
+        """
+[profiles.default]
+
+[profiles.default.triage]
+enabled = true
+harness = "codex-alias"
+model = "gpt-triage"
+reasoning_effort = "minimal"
+""",
+        encoding="utf-8",
+    )
+    stdin = StringIO("models\ntriage\n\n\n\nprofile\ndone\nq\n")
+    stderr = StringIO()
+
+    result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=stderr)
+
+    assert result is None
+    rendered = stderr.getvalue()
+    assert "minimal: minimal" not in rendered
+    assert "Codex triage starts at low effort" in rendered
+    assert "keep current/profile (low)" in rendered
 
 
 def test_wizard_can_replace_stale_codex_triage_minimal_effort(tmp_path, monkeypatch):

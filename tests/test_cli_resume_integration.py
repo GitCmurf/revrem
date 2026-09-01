@@ -402,6 +402,7 @@ def test_loop_writes_failure_summary_when_final_review_invocation_fails(tmp_path
         {
             "iteration": 1,
             "review_status": "findings",
+            "remediated": True,
             "check_failures": 0,
             "checks": [
                 {

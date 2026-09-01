@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TextIO
 
 from code_review_loop import (
+    harnesses,
     model_catalog,
     policy,
     profiles,
@@ -83,6 +84,8 @@ class WizardState:
     commit_timeout_seconds: str = ""
     check_timeout_seconds: str = ""
     commit_after_remediation: bool = False
+    full_auto: bool = True
+    exec_sandbox: str = "workspace-write"
     progress_style: str = "compact"
     summary_format: str = "text"
     max_wall_seconds: str = ""
@@ -226,7 +229,7 @@ class _Wizard:
                 raise WizardCancelled
             if next_step == "config":
                 choice = self._choose_profile()
-                state = _initial_state(choice)
+                state = _initial_state(choice, cwd=self.cwd)
                 continue
             if next_step == "settings":
                 self._common_options(state)
@@ -300,7 +303,7 @@ class _Wizard:
 
     def _starting_state(self) -> WizardState:
         default_choice = self._default_profile_choice()
-        default_state = _initial_state(default_choice)
+        default_state = _initial_state(default_choice, cwd=self.cwd)
         last_lookup = _last_run_state(self.cwd)
         last_state = last_lookup.state
         if last_state is None:
@@ -322,7 +325,7 @@ class _Wizard:
             self._apply_startup_pending_review(last_state)
             return last_state
         if selected == "config":
-            state = _initial_state(self._choose_profile())
+            state = _initial_state(self._choose_profile(), cwd=self.cwd)
             self._apply_startup_pending_review(state)
             return state
         self._apply_startup_pending_review(default_state)
@@ -675,7 +678,7 @@ class _Wizard:
         effort_choices = model_catalog.effort_choices(
             harness, selected_model or None, cwd=self.cwd
         )
-        if label == "triage" and harness == "codex":
+        if label == "triage" and _is_codex_triage_harness(harness, cwd=self.cwd):
             effort_choices = tuple(
                 value for value in effort_choices if value != "minimal"
             )
@@ -686,6 +689,7 @@ class _Wizard:
                 _repair_stale_codex_triage_reasoning_effort(
                     harness=harness,
                     reasoning_effort=state.triage_reasoning_effort,
+                    cwd=self.cwd,
                 )
             )
             if stale_triage_reasoning_effort:
@@ -705,7 +709,11 @@ class _Wizard:
             + tuple((value, value) for value in effort_choices),
             default=effort_default,
         )
-        setattr(state, effort_attr, _selected_effort_value(state, label, effort))
+        setattr(
+            state,
+            effort_attr,
+            _selected_effort_value(state, label, effort, cwd=self.cwd),
+        )
 
     def _effective_effort(self, state: WizardState, label: str) -> str:
         try:
@@ -1071,7 +1079,7 @@ def _profile_command(profile_name: str | None) -> tuple[str, ...]:
     return ("revrem",)
 
 
-def _initial_state(choice: WizardProfileChoice) -> WizardState:
+def _initial_state(choice: WizardProfileChoice, *, cwd: Path | None = None) -> WizardState:
     profile = choice.profile
     triage_reasoning_effort = profile.triage.reasoning_effort or ""
     stale_triage_reasoning_effort = ""
@@ -1080,6 +1088,7 @@ def _initial_state(choice: WizardProfileChoice) -> WizardState:
             _repair_stale_codex_triage_reasoning_effort(
                 harness=profile.triage.harness,
                 reasoning_effort=triage_reasoning_effort,
+                cwd=cwd,
             )
         )
     return WizardState(
@@ -1108,6 +1117,8 @@ def _initial_state(choice: WizardProfileChoice) -> WizardState:
         commit_message_model=profile.commit.message_model or "",
         commit_reasoning_effort=profile.commit.reasoning_effort or "",
         commit_after_remediation=profile.commit.enabled,
+        full_auto=profile.runtime.full_auto,
+        exec_sandbox=profile.runtime.exec_sandbox,
         progress_style=profile.output.progress_style,
         summary_format=profile.output.summary_format,
         stale_triage_reasoning_effort=stale_triage_reasoning_effort,
@@ -1193,7 +1204,7 @@ def _state_from_resume_config(
         return None
 
     state = _initial_state(
-        WizardProfileChoice(profile_name=profile_name, profile=profile)
+        WizardProfileChoice(profile_name=profile_name, profile=profile), cwd=cwd
     )
 
     def text(key: str) -> str | None:
@@ -1236,6 +1247,7 @@ def _state_from_resume_config(
         ("routing_strict", "routing_strict"),
         ("allow_model_escalation", "allow_model_escalation"),
         ("commit_after_remediation", "commit_after_remediation"),
+        ("full_auto", "full_auto"),
     ):
         value = boolean(key)
         if value is not None:
@@ -1255,6 +1267,7 @@ def _state_from_resume_config(
         ("commit_message_model", "commit_message_model"),
         ("commit_reasoning_effort", "commit_reasoning_effort"),
         ("progress_style", "progress_style"),
+        ("exec_sandbox", "exec_sandbox"),
     ):
         assign_text(attribute, key)
     for attribute, key in (
@@ -1301,7 +1314,7 @@ def _state_from_argv(argv: tuple[str, ...], cwd: Path) -> WizardState:
     else:
         profile = profiles.resolve_defaults(cwd=cwd, require_implemented=False)
     state = _initial_state(
-        WizardProfileChoice(profile_name=profile_name, profile=profile)
+        WizardProfileChoice(profile_name=profile_name, profile=profile), cwd=cwd
     )
     _apply_parsed_args(state, parsed)
     return state
@@ -1370,6 +1383,10 @@ def _apply_parsed_args(state: WizardState, parsed) -> None:
         state.check_timeout_seconds = f"{parsed.check_timeout_seconds:g}"
     if parsed.commit_after_remediation is not None:
         state.commit_after_remediation = parsed.commit_after_remediation
+    if parsed.full_auto is not None:
+        state.full_auto = parsed.full_auto
+    if parsed.exec_sandbox is not None:
+        state.exec_sandbox = parsed.exec_sandbox
     if parsed.progress_style is not None:
         state.progress_style = parsed.progress_style
     if parsed.summary_format is not None:
@@ -1389,23 +1406,30 @@ def _apply_str_attr(state: WizardState, name: str, value: str | None) -> None:
         setattr(state, name, value)
 
 
+def _is_codex_triage_harness(harness: str, *, cwd: Path | None = None) -> bool:
+    return harnesses._resolve_catalog_driver(harness, cwd=cwd) == "codex"
+
+
 def _repair_stale_codex_triage_reasoning_effort(
     *,
     harness: str,
     reasoning_effort: str,
+    cwd: Path | None = None,
 ) -> tuple[str, str]:
     # Disabled profiles can still carry stale Codex triage state from older saves.
-    if harness == "codex" and reasoning_effort == "minimal":
+    if _is_codex_triage_harness(harness, cwd=cwd) and reasoning_effort == "minimal":
         return "low", "minimal"
     return reasoning_effort, ""
 
 
-def _selected_effort_value(state: WizardState, label: str, effort: str) -> str:
+def _selected_effort_value(
+    state: WizardState, label: str, effort: str, *, cwd: Path | None = None
+) -> str:
     if effort != "profile":
         return effort
     if (
         label == "triage"
-        and state.triage_harness == "codex"
+        and _is_codex_triage_harness(state.triage_harness, cwd=cwd)
         and state.stale_triage_reasoning_effort
         and state.triage_reasoning_effort
     ):
@@ -1560,6 +1584,10 @@ def _argv_for_state(state: WizardState) -> list[str]:
             if state.commit_after_remediation
             else "--no-commit-after-remediation"
         )
+    if state.full_auto != profile.runtime.full_auto:
+        argv.append("--full-auto" if state.full_auto else "--no-full-auto")
+    if state.exec_sandbox != profile.runtime.exec_sandbox:
+        argv.extend(["--exec-sandbox", state.exec_sandbox])
     if state.progress_style != profile.output.progress_style:
         argv.extend(["--progress-style", state.progress_style])
     if state.summary_format != profile.output.summary_format:

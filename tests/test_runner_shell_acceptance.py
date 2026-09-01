@@ -206,6 +206,7 @@ def test_runner_shell_executes_happy_path_without_cli(tmp_path: Path) -> None:
     assert result.cause is None
     assert [iteration["iteration"] for iteration in state.iterations] == [1]
     assert state.iterations[0]["review_status"] == "findings"
+    assert state.iterations[0]["remediated"] is True
     assert result.last_review_output
     records, _ = events.read_events(config.artifact_dir / "events.jsonl")
     assert [record.kind for record in records] == []

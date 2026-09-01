@@ -40,13 +40,15 @@ def build_triage_command(config: LoopConfig) -> list[str]:
             harness=config.triage_harness,
             role="triage",
             executable=phase_support._resolve_executable(config.triage_harness, config),
+            cwd=config.cwd,
             model=config.triage_model,
             reasoning_effort=config.triage_reasoning_effort,
             sandbox="read-only",
             color=config.exec_color,
             full_auto=False,
             json_output=(
-                harnesses._resolve_catalog_driver(config.triage_harness) == "codex"
+                harnesses._resolve_catalog_driver(config.triage_harness, cwd=config.cwd)
+                == "codex"
             ),
         )
     )
@@ -72,6 +74,7 @@ def run_triage(
         command,
         prompt,
         prompt_artifact_path=prompt_artifact_path,
+        cwd=config.cwd,
     )
     command = invocation.command
     prompt_input = invocation.stdin
@@ -93,6 +96,7 @@ def run_triage(
             source=config.phase_config_sources.get("triage", "direct-config"),
             prompt_chars=prompt_metadata.get("prompt_chars"),
             prompt_delivery=prompt_metadata["prompt_delivery"],
+            cwd=config.cwd,
         ),
         ctx=ctx,
         metadata={

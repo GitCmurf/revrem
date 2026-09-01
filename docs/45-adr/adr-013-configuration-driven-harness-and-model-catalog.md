@@ -3,8 +3,8 @@ document_id: REVREM-ADR-013
 type: ADR
 title: Configuration Driven Harness and Model Catalog
 status: Draft
-version: '0.2'
-last_updated: '2026-07-10'
+version: '0.4'
+last_updated: '2026-09-01'
 owner: maintainers
 docops_version: '2.0'
 area: architecture
@@ -58,6 +58,18 @@ The project dogfood profile moves to GPT-5.6 because it is controlled locally.
 Shipped general-purpose and expert-profile defaults remain unchanged while the
 family is in limited preview.
 
+Profile inheritance normally deep-merges map-valued settings. An editor that
+removes an inherited route or harness executable persists the resulting full map
+and records the owning profile's replacement intent explicitly:
+
+```toml
+[profiles.my-profile]
+replace_inherited_maps = ["runtime.harness_executables", "triage.routes"]
+```
+
+Only those two audited paths are accepted. This keeps TOML portable (which has no
+null value), avoids changing shared defaults, and makes save/reload idempotent.
+
 ## Consequences
 
 - Adding a model or effort is normally a catalog edit, not a parser/TUI edit.
@@ -67,6 +79,19 @@ family is in limited preview.
   are rejected with an actionable message.
 - Relative pending-review artifact searches are resolved against the configured
   repository, never the caller process's ambient working directory.
+- Catalog-backed harness aliases, executables, and drivers used for route
+  capability checks, phase commands, and reasoning-effort reporting are
+  resolved against that same configured repository.
+- Triage reasoning-effort selectors apply Codex restrictions to resolved
+  catalog drivers, so aliases cannot offer or retain provider-incompatible
+  effort values.
+- Profile editing and validation use the selected repository's catalog rather
+  than the process's ambient working directory.
+- Structured last-run replay preserves remediation approval and sandbox
+  settings; replay cannot silently replace a restrictive prior run with profile
+  defaults.
+- Explicit map replacement markers preserve inherited route and executable
+  deletions without mutating defaults shared by other profiles.
 
 ## Alternatives Considered
 

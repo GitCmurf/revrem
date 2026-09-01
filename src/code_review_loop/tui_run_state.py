@@ -10,6 +10,7 @@ from code_review_loop import profiles, tui_loop_state, tui_state
 
 RUNNER_PHASE_TO_DISPLAY: dict[str, str] = {
     "review": "review",
+    "stale-validation": "review",
     "triage": "triage",
     "remediate": "remediation",
     "check": "checks",
@@ -347,9 +348,7 @@ def _iteration_outcomes(
             )
             remediation = (
                 "done"
-                if not remediation_failed
-                and item.get("remediated") is not False
-                and (review == "findings" or item.get("checks"))
+                if not remediation_failed and item.get("remediated") is True
                 else "skipped"
             )
             failures = item.get("check_failures")

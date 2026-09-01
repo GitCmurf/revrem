@@ -342,6 +342,7 @@ def commit_message_for_staged_changes(
         command,
         prompt,
         prompt_artifact_path=prompt_artifact_path,
+        cwd=config.cwd,
     )
     command = invocation.command
     prompt_input = invocation.stdin
@@ -375,6 +376,7 @@ def commit_message_for_staged_changes(
             source=config.phase_config_sources.get("commit_message", "direct-config"),
             prompt_chars=prompt_metadata.get("prompt_chars"),
             prompt_delivery=prompt_metadata["prompt_delivery"],
+            cwd=config.cwd,
         ),
         ctx=ctx,
         metadata={

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from code_review_loop.cli.commands import stats
 
 
@@ -46,6 +48,46 @@ def test_stats_models_normalizes_malformed_duration_values(tmp_path, monkeypatch
     row = json.loads(capsys.readouterr().out)[0]
     assert row["calls"] == 2
     assert row["duration_seconds"]["mean"] == 6.0
+
+
+def test_stats_models_excludes_boolean_token_values(tmp_path, monkeypatch, capsys):
+    home = tmp_path / "home"
+    monkeypatch.setenv("XDG_DATA_HOME", str(home))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    summary = tmp_path / "summary.json"
+    summary.write_text(json.dumps({"model_invocations": [
+        {"phase": "review", "harness": "codex", "model": "gpt", "reasoning_effort": "high", "duration_seconds": 1, "outcome": "ok", "tokens": True},
+    ]}), encoding="utf-8")
+    history = home / "revrem" / "runs.jsonl"
+    history.parent.mkdir(parents=True)
+    history.write_text(json.dumps({"cwd": str(repo), "summary_path": str(summary)}) + "\n", encoding="utf-8")
+
+    assert stats.main(["models", "--repo", str(repo), "--format", "json"]) == 0
+    row = json.loads(capsys.readouterr().out)[0]
+    assert row["token_coverage"] == "0/1"
+    assert row["tokens"] is None
+
+
+@pytest.mark.parametrize("summary_payload", [[], "not an object", 7, None])
+def test_stats_models_skips_non_object_summary_payloads(
+    tmp_path, monkeypatch, capsys, summary_payload
+):
+    home = tmp_path / "home"
+    monkeypatch.setenv("XDG_DATA_HOME", str(home))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    summary = tmp_path / "summary.json"
+    summary.write_text(json.dumps(summary_payload), encoding="utf-8")
+    history = home / "revrem" / "runs.jsonl"
+    history.parent.mkdir(parents=True)
+    history.write_text(
+        json.dumps({"cwd": str(repo), "summary_path": str(summary)}) + "\n",
+        encoding="utf-8",
+    )
+
+    assert stats.main(["models", "--repo", str(repo), "--format", "json"]) == 0
+    assert json.loads(capsys.readouterr().out) == []
 
 
 def test_stats_models_includes_runs_from_repo_subdirectory(tmp_path, monkeypatch, capsys):

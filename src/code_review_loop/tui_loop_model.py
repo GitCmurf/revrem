@@ -108,7 +108,12 @@ class LoopEditModel:
                 _delete_dotted_raw(raw, dotted_key)
             else:
                 raw = profiles.deep_set_raw(raw, dotted_key, value)
-        return profiles.parse_profile(self.name, raw, source="tui-working-copy")
+        return profiles.parse_profile(
+            self.name,
+            raw,
+            source="tui-working-copy",
+            catalog_cwd=self.cwd,
+        )
 
     def save(self) -> Path:
         path = profiles.save_profile_raw(

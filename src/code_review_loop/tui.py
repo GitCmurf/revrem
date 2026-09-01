@@ -2776,10 +2776,10 @@ def _apply_resume_config_to_loop_model(
         value = payload.get(key)
         return value if isinstance(value, str) else fallback
 
-    def number_text(key: str) -> str:
+    def number_text(key: str, fallback: float | int | None) -> str:
         value = payload.get(key)
         if isinstance(value, bool) or not isinstance(value, int | float):
-            return ""
+            return "" if fallback is None else f"{fallback:g}"
         return f"{value:g}"
 
     def boolean(key: str, fallback: bool | None) -> bool | None:
@@ -2802,6 +2802,8 @@ def _apply_resume_config_to_loop_model(
         inner_check_retries=payload.get(
             "inner_check_retries", profile.runtime.inner_check_retries
         ),
+        full_auto=boolean("full_auto", profile.runtime.full_auto),
+        exec_sandbox=text("exec_sandbox", profile.runtime.exec_sandbox),
         checks=(
             tuple(checks)
             if isinstance(checks, list) and all(isinstance(v, str) for v in checks)
@@ -2824,20 +2826,26 @@ def _apply_resume_config_to_loop_model(
         review_reasoning_effort=text(
             "review_reasoning_effort", profile.review.reasoning_effort or ""
         ),
-        review_timeout_seconds=number_text("review_timeout_seconds"),
+        review_timeout_seconds=number_text(
+            "review_timeout_seconds", profile.review.timeout_seconds
+        ),
         triage_harness=text("triage_harness", profile.triage.harness),
         triage_model=text("triage_model", profile.triage.model or ""),
         triage_reasoning_effort=text(
             "triage_reasoning_effort", profile.triage.reasoning_effort or ""
         ),
-        triage_timeout_seconds=number_text("triage_timeout_seconds"),
+        triage_timeout_seconds=number_text(
+            "triage_timeout_seconds", profile.triage.timeout_seconds
+        ),
         remediation_harness=text("remediation_harness", profile.remediation.harness),
         remediation_model=text("remediation_model", profile.remediation.model or ""),
         remediation_reasoning_effort=text(
             "remediation_reasoning_effort",
             profile.remediation.reasoning_effort or "",
         ),
-        remediation_timeout_seconds=number_text("remediation_timeout_seconds"),
+        remediation_timeout_seconds=number_text(
+            "remediation_timeout_seconds", profile.remediation.timeout_seconds
+        ),
         commit_after_remediation=boolean(
             "commit_after_remediation", profile.commit.enabled
         ),
@@ -2848,13 +2856,19 @@ def _apply_resume_config_to_loop_model(
         commit_reasoning_effort=text(
             "commit_reasoning_effort", profile.commit.reasoning_effort or ""
         ),
-        commit_timeout_seconds=number_text("commit_timeout_seconds"),
-        timeout_seconds=number_text("timeout_seconds"),
+        commit_timeout_seconds=number_text(
+            "commit_timeout_seconds", profile.commit.timeout_seconds
+        ),
+        timeout_seconds=number_text("timeout_seconds", None),
         check_timeout_seconds=(
             f"{check_timeout:g}"
             if isinstance(check_timeout, int | float)
             and not isinstance(check_timeout, bool)
-            else ""
+            else (
+                ""
+                if profile.pipeline.check_timeout_seconds is None
+                else f"{profile.pipeline.check_timeout_seconds:g}"
+            )
         ),
     )
     _apply_wizard_state_to_loop_model(model, state)
@@ -2879,6 +2893,8 @@ def _apply_wizard_state_to_loop_model(model: Any, state: Any) -> None:
             state.inner_check_retries,
             profile.runtime.inner_check_retries,
         ),
+        ("runtime.full_auto", state.full_auto, profile.runtime.full_auto),
+        ("runtime.exec_sandbox", state.exec_sandbox, profile.runtime.exec_sandbox),
         ("pipeline.final_review", state.final_review, profile.pipeline.final_review),
         ("pipeline.checks", state.checks, profile.pipeline.checks),
         (
@@ -2962,6 +2978,8 @@ def _apply_wizard_state_to_loop_model(model: Any, state: Any) -> None:
         ),
     )
     for dotted, value, baseline in pairs:
+        if value == "" and baseline is None:
+            continue
         if value is not None and value != baseline:
             model.set_field(dotted, value)
 

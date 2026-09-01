@@ -167,7 +167,9 @@ def write_artifact(path: Path, content: str) -> None:
 
 
 def _resolve_executable(harness: str, config: LoopConfig) -> str:
-    return harnesses.resolve_executable(harness, config.harness_executables, config.codex_bin)
+    return harnesses.resolve_executable(
+        harness, config.harness_executables, config.codex_bin, cwd=config.cwd
+    )
 
 
 def build_commit_message_command(config: LoopConfig) -> list[str]:
@@ -176,12 +178,18 @@ def build_commit_message_command(config: LoopConfig) -> list[str]:
             harness=config.commit_message_harness,
             role="commit-message",
             executable=_resolve_executable(config.commit_message_harness, config),
+            cwd=config.cwd,
             model=config.commit_message_model,
             reasoning_effort=config.commit_reasoning_effort,
             sandbox="read-only",
             color=config.exec_color,
             full_auto=False,
-            json_output=(config.commit_message_harness == "codex"),
+            json_output=(
+                harnesses._resolve_catalog_driver(
+                    config.commit_message_harness, cwd=config.cwd
+                )
+                == "codex"
+            ),
         )
     )
 
@@ -479,12 +487,17 @@ def resolved_phase_detail(
     prompt_delivery: str | None = None,
     prompt_context_chars: int | None = None,
     prompt_truncated: bool | None = None,
+    cwd: Path | None = None,
 ) -> str:
     fields = [command_summary_for_progress(command, harness=harness)]
     if model:
         fields.append(model)
     if reasoning_effort:
-        effort = reasoning_effort if harnesses.reasoning_effort_supported(harness) else "n/a"
+        effort = (
+            reasoning_effort
+            if harnesses.reasoning_effort_supported(harness, cwd=cwd)
+            else "n/a"
+        )
         fields.append(f"{effort} effort")
     if timeout_seconds is not None:
         fields.append(f"timeout={timeout_seconds:g}")

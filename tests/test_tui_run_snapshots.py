@@ -211,6 +211,7 @@ def test_run_snapshot_review_inconclusive(tmp_path: Path) -> None:
                 "checks": [{}],
                 "check_failures": 0,
                 "commit_status": "committed",
+                "remediated": True,
             },
             {"iteration": 2, "review_status": "unknown"},
         ],

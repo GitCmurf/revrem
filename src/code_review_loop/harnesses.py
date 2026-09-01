@@ -45,6 +45,7 @@ class PhaseCommandRequest:
     harness: str
     role: str
     executable: str
+    cwd: Path | None = None
     base: str = "main"
     model: str | None = None
     reasoning_effort: str | None = None
@@ -86,9 +87,10 @@ def resolve_commit_message_reasoning_effort(
     harness: str,
     model: str | None,
     requested_effort: str | None,
+    cwd: Path | None = None,
 ) -> ReasoningEffortResolution:
     if (
-        harness == "codex"
+        _resolve_catalog_driver(harness, cwd=cwd) == "codex"
         and requested_effort == "minimal"
         and model in CODEX_MINIMAL_UNSUPPORTED_COMMIT_MODELS
     ):
@@ -102,17 +104,19 @@ def resolve_commit_message_reasoning_effort(
     )
 
 
-def reasoning_effort_supported(harness: str) -> bool:
+def reasoning_effort_supported(harness: str, *, cwd: Path | None = None) -> bool:
     """Return whether RevRem can enforce reasoning effort for this harness.
 
     The resolved phase config may carry a reasoning-effort value for every
     harness, but only adapters that map it into their provider argv should show
     it as an effective operator control.
     """
-    return harness in REASONING_EFFORT_HARNESSES
+    return _resolve_catalog_driver(harness, cwd=cwd) in REASONING_EFFORT_HARNESSES
 
 
-def phase_effort_text(harness: str | None, effort: str | None) -> str | None:
+def phase_effort_text(
+    harness: str | None, effort: str | None, *, cwd: Path | None = None
+) -> str | None:
     """Return the operator-facing effort text for a phase.
 
     Mirrors the prior ``_phase_effort_text`` helpers in ``runtime.py`` and
@@ -122,7 +126,7 @@ def phase_effort_text(harness: str | None, effort: str | None) -> str | None:
     """
     if not effort:
         return None
-    if harness and not reasoning_effort_supported(harness):
+    if harness and not reasoning_effort_supported(harness, cwd=cwd):
         return "n/a"
     return effort
 
@@ -480,6 +484,8 @@ def resolve_executable(
     harness: str,
     harness_executables: dict[str, str],
     codex_bin: str,
+    *,
+    cwd: Path | None = None,
 ) -> str:
     if harness in harness_executables:
         return harness_executables[harness]
@@ -490,7 +496,7 @@ def resolve_executable(
         return registry[harness].executable
     from code_review_loop.model_catalog import load_catalog
 
-    catalog_spec = load_catalog().harnesses.get(harness)
+    catalog_spec = load_catalog(cwd).harnesses.get(harness)
     if catalog_spec is not None:
         return catalog_spec.executable
     return harness
@@ -501,7 +507,7 @@ def build_phase_command(request: PhaseCommandRequest) -> list[str]:
     if adapter is None:
         from code_review_loop.model_catalog import load_catalog
 
-        catalog_spec = load_catalog().harnesses.get(request.harness)
+        catalog_spec = load_catalog(request.cwd).harnesses.get(request.harness)
         if catalog_spec is not None:
             adapter = HARNESS_ADAPTERS.get(catalog_spec.driver)
     if adapter is None:
@@ -515,9 +521,10 @@ def prepare_prompt_invocation(
     prompt: str | None,
     *,
     prompt_artifact_path: Path | None = None,
+    cwd: Path | None = None,
 ) -> PromptInvocation:
     """Adapt prompt delivery to each harness' non-interactive CLI contract."""
-    protocol_harness = _resolve_catalog_driver(harness)
+    protocol_harness = _resolve_catalog_driver(harness, cwd=cwd)
     if prompt is None:
         return PromptInvocation(list(command), None, "none")
     encoded = prompt.encode("utf-8")
@@ -560,18 +567,18 @@ def prepare_prompt_invocation(
     )
 
 
-def _resolve_catalog_driver(name: str) -> str:
+def _resolve_catalog_driver(name: str, *, cwd: Path | None = None) -> str:
     from code_review_loop.model_catalog import load_catalog
 
-    catalog_spec = load_catalog().harnesses.get(name)
+    catalog_spec = load_catalog(cwd).harnesses.get(name)
     if catalog_spec is not None:
         return catalog_spec.driver
     return name
 
 
-def resolved_harness_spec(name: str) -> HarnessSpec | None:
+def resolved_harness_spec(name: str, *, cwd: Path | None = None) -> HarnessSpec | None:
     """Return capabilities for a direct harness or a catalog alias's driver."""
-    return harness_registry().get(_resolve_catalog_driver(name))
+    return harness_registry().get(_resolve_catalog_driver(name, cwd=cwd))
 
 
 def harness_capabilities_payload(name: str) -> dict[str, Any]:

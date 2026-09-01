@@ -311,6 +311,7 @@ class _RunnerEngineExecutor:
                 remediation_result_returncode=rem_outcome.result.returncode,
                 remediation_duration=self.clock.monotonic() - rem_start_time,
             )
+            self.state.iterations[-1]["remediated"] = True
         except budgets.BudgetExceeded:
             raise
         except Exception as exc:

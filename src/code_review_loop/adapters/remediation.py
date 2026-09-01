@@ -60,6 +60,7 @@ def build_remediation_command(
             harness=harness,
             role="remediation",
             executable=phase_support._resolve_executable(harness, config),
+            cwd=config.cwd,
             model=model,
             reasoning_effort=reasoning_effort,
             sandbox=sandbox,
@@ -67,7 +68,7 @@ def build_remediation_command(
             full_auto=config.full_auto,
             json_output=(
                 config.exec_json
-                and harnesses._resolve_catalog_driver(harness) == "codex"
+                and harnesses._resolve_catalog_driver(harness, cwd=config.cwd) == "codex"
             ),
             output_last_message_path=output_last_message,
         )
@@ -100,7 +101,9 @@ def run_remediation(
     remediation_harness = (
         resolved_route.harness if resolved_route else config.remediation_harness
     )
-    remediation_driver = harnesses._resolve_catalog_driver(remediation_harness)
+    remediation_driver = harnesses._resolve_catalog_driver(
+        remediation_harness, cwd=config.cwd
+    )
     remediation_model = (
         (resolved_route.model if resolved_route else None)
         or config.remediation_model
@@ -129,6 +132,7 @@ def run_remediation(
         command,
         prompt,
         prompt_artifact_path=prompt_artifact_path,
+        cwd=config.cwd,
     )
     command = invocation.command
     prompt_input = invocation.stdin
@@ -160,6 +164,7 @@ def run_remediation(
                 if resolved_route
                 else config.phase_config_sources.get("remediation", "direct-config")
             ),
+            cwd=config.cwd,
             prompt_chars=prompt_metadata.get("prompt_chars"),
             prompt_delivery=prompt_metadata["prompt_delivery"],
         ),
@@ -276,7 +281,7 @@ def _run_remediation_with_retry(
     Non-transient provider failures (auth, quota, contract) and any failure
     on the codex or fake harness still raise on the first attempt.
     """
-    driver = driver or harnesses._resolve_catalog_driver(harness)
+    driver = driver or harnesses._resolve_catalog_driver(harness, cwd=config.cwd)
     attempts = (
         1 if driver in {"codex", "fake"} else max(1, config.provider_retry_attempts)
     )

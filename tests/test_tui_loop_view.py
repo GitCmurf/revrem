@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from code_review_loop import profiles, tui_loop_state
+from code_review_loop import profiles, tui_loop_state, tui_loop_widgets
 from code_review_loop.tui_loop_model import LoopEditModel
 
 
@@ -16,6 +16,19 @@ def _repo(path: Path, body: str) -> Path:
 
 def _model(repo: Path, name: str) -> LoopEditModel:
     return LoopEditModel.load(name, cwd=repo)
+
+
+def test_triage_effort_choices_exclude_minimal_for_codex_catalog_alias(tmp_path: Path) -> None:
+    (tmp_path / ".revrem-catalog.toml").write_text(
+        '[[harness]]\nname = "codex-alias"\ndriver = "codex"\nexecutable = "codex"\n',
+        encoding="utf-8",
+    )
+
+    choices = tui_loop_widgets._effort_choices_for_phase(
+        "triage", "codex-alias", None, cwd=tmp_path
+    )
+
+    assert "minimal" not in choices
 
 
 def test_rail_meta_omits_inner_rail_when_retries_zero(tmp_path: Path) -> None:

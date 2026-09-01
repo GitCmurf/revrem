@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.82'
+version: '1.83'
 last_updated: '2026-09-01'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.82
+> **Version:** 1.83
 > **Last Updated:** 2026-09-01
 > **Type:** DEVEX
 > **Area:** devex
@@ -894,6 +894,12 @@ against inherited routing context and the edited route row is materialized into 
 owning profile (including inherited values). If the edited route is not the
 inherited `default_route`, that default route row is materialized too so loading the
 profile directly from its owning file stays valid.
+When the TUI removes a route or per-harness executable that came from defaults,
+the owning profile persists the resulting complete map with an internal
+`replace_inherited_maps` list. Supported entries are `triage.routes` and
+`runtime.harness_executables`. This is normally maintained by RevRem; if profiles
+are edited by hand, retain that list or the next inheritance merge will restore
+the omitted map entries.
 Boolean fields (for example `output.no_tty` and `runtime.full_auto`) are parsed
 from `true/false`, `1/0`, `yes/no`, and `on/off`.
 
@@ -2006,6 +2012,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.83 | 2026-09-01 | Codex | Documented repository-scoped profile editing, safety-preserving last-run replay, and durable inherited-map deletions |
 | 1.82 | 2026-09-01 | Codex | Clarified that Codex automatic approval and explicit sandbox flags are mutually exclusive |
 | 1.81 | 2026-09-01 | Codex | Documented current Codex automatic-approval mapping and text-only watched dogfood output |
 | 1.80 | 2026-07-12 | Codex | Documented editable Run Settings, truthful built-in checks, detected/recent check selection, contextual phase actions, and modal help |

@@ -62,9 +62,13 @@ def test_check_route_capabilities_accepts_timeout_on_non_codex():
 
 
 def test_resolve_routing_accepts_catalog_harness_alias(monkeypatch, tmp_path):
-    monkeypatch.chdir(tmp_path)
+    target = tmp_path / "target"
+    ambient = tmp_path / "ambient"
+    target.mkdir()
+    ambient.mkdir()
+    monkeypatch.chdir(ambient)
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "missing-codex"))
-    (tmp_path / ".revrem-catalog.toml").write_text(
+    (target / ".revrem-catalog.toml").write_text(
         '[[harness]]\nname="team-codex"\ndriver="codex"\n', encoding="utf-8"
     )
     profile = profiles.Profile(
@@ -76,7 +80,7 @@ def test_resolve_routing_accepts_catalog_harness_alias(monkeypatch, tmp_path):
         ),
     )
 
-    resolved = policy.resolve_routing(profile, _ctx())
+    resolved = policy.resolve_routing(profile, _ctx(), cwd=target)
 
     assert resolved.harness == "team-codex"
 

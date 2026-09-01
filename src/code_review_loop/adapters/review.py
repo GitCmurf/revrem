@@ -70,6 +70,7 @@ def build_review_command(config: LoopConfig) -> list[str]:
             harness=config.review_harness,
             role="review",
             executable=phase_support._resolve_executable(config.review_harness, config),
+            cwd=config.cwd,
             base=config.base,
             model=config.review_model or config.model,
             reasoning_effort=config.review_reasoning_effort or config.reasoning_effort,
@@ -89,7 +90,7 @@ def run_codex_review(
 ) -> tuple[str, CommandResult]:
     display_label = display_label or artifact_label
     review_harness = config.review_harness
-    review_driver = harnesses._resolve_catalog_driver(review_harness)
+    review_driver = harnesses._resolve_catalog_driver(review_harness, cwd=config.cwd)
     command = build_review_command(config)
     review_prompt = None
     external_prompt: ExternalReviewPrompt | None = None
@@ -127,6 +128,7 @@ def run_codex_review(
                         ),
                         prompt_chars=None,
                         prompt_delivery=None,
+                        cwd=config.cwd,
                         prompt_context_chars=external_prompt.context_chars,
                         prompt_truncated=external_prompt.truncated,
                     ),
@@ -164,6 +166,7 @@ def run_codex_review(
                 command,
                 review_prompt,
                 prompt_artifact_path=prompt_artifact_path,
+                cwd=config.cwd,
             )
         except ValueError as exc:
             raise RuntimeError(str(exc)) from exc
@@ -175,6 +178,7 @@ def run_codex_review(
                 config.review_harness,
                 command,
                 None,
+                cwd=config.cwd,
             )
         except ValueError as exc:
             raise RuntimeError(str(exc)) from exc
@@ -204,6 +208,7 @@ def run_codex_review(
             prompt_truncated=(
                 external_prompt.truncated if external_prompt is not None else None
             ),
+            cwd=config.cwd,
         ),
         ctx=ctx,
         metadata={
@@ -252,7 +257,7 @@ def run_codex_review(
     phase_support.record_model_charge(
         config, result, phase="review", iteration=display_label, ctx=ctx
     )
-    if review_failed_to_run(result, review_harness):
+    if review_failed_to_run(result, review_harness, cwd=config.cwd):
         failure = provider_failures.classify_provider_failure(
             result, harness=review_harness
         )
@@ -416,7 +421,7 @@ def _redacted_failure_excerpt(text: str, max_chars: int = 2_000) -> str:
 def _codex_review_retry_command(
     config: LoopConfig, *, review_harness: str
 ) -> list[str] | None:
-    if harnesses._resolve_catalog_driver(review_harness) != "codex":
+    if harnesses._resolve_catalog_driver(review_harness, cwd=config.cwd) != "codex":
         return None
     command = [phase_support._resolve_executable(review_harness, config)]
     model = config.review_model or config.model
@@ -481,7 +486,9 @@ def run_review_with_retry(
     ctx: RunContext,
 ) -> CommandResult:
     review_harness = review_harness or config.review_harness
-    review_driver = review_driver or harnesses._resolve_catalog_driver(review_harness)
+    review_driver = review_driver or harnesses._resolve_catalog_driver(
+        review_harness, cwd=config.cwd
+    )
     attempts = (
         config.provider_retry_attempts if review_driver not in {"codex", "fake"} else 1
     )
@@ -505,7 +512,7 @@ def run_review_with_retry(
             result, harness=review_harness
         )
         if (
-            not review_failed_to_run(result, review_harness)
+            not review_failed_to_run(result, review_harness, cwd=config.cwd)
             or failure is None
             or not failure.transient
         ):
@@ -804,7 +811,9 @@ def review_base_hint(config: LoopConfig, base: str) -> str:
     return "Use a base branch that shares history with HEAD, or realign the local branch.\n"
 
 
-def review_failed_to_run(result: CommandResult, harness: str) -> bool:
+def review_failed_to_run(
+    result: CommandResult, harness: str, *, cwd: Path | None = None
+) -> bool:
     """Distinguish review invocation failures from review findings.
 
     The ``harness`` argument is a forward-compat hook: it is forwarded to
@@ -823,7 +832,7 @@ def review_failed_to_run(result: CommandResult, harness: str) -> bool:
         return True
     if result.returncode >= 2:
         return True
-    protocol_harness = harnesses._resolve_catalog_driver(harness)
+    protocol_harness = harnesses._resolve_catalog_driver(harness, cwd=cwd)
     if detect_review_status(
         phase_support._combined_output(result), harness=protocol_harness
     ) in {

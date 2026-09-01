@@ -38,6 +38,19 @@ _PROMPT_LIBRARY_CLASS: type[Any] | None = None
 _ROUTE_EDIT_MODAL_CLASS: type[Any] | None = None
 
 
+def _effort_choices_for_phase(
+    phase: str, harness: str, model: str | None, *, cwd: Any = None
+) -> tuple[str, ...]:
+    """Return editable efforts after applying phase-specific provider rules."""
+    choices = model_catalog.effort_choices(harness, model, cwd=cwd)
+    if (
+        phase == "triage"
+        and harnesses._resolve_catalog_driver(harness, cwd=cwd) == "codex"
+    ):
+        return tuple(value for value in choices if value != "minimal")
+    return choices
+
+
 def _load_components() -> tuple[Any, Any, Any] | None:
     from code_review_loop import tui
 
@@ -281,8 +294,11 @@ def loop_diagram_class() -> type[Any] | None:
                     if model_dotted
                     else None
                 )
-                choices = model_catalog.effort_choices(
-                    harness_value, model_value or None, cwd=self.model.cwd
+                choices = _effort_choices_for_phase(
+                    self.current_phase(),
+                    harness_value,
+                    model_value or None,
+                    cwd=self.model.cwd,
                 )
             if not choices:
                 return

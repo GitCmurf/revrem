@@ -142,6 +142,83 @@ def test_effective_profile_map_deletions_survive_save_and_reload(tmp_path: Path)
     assert saved.runtime.harness_executables == {"codex": "/opt/codex"}
 
 
+def test_inherited_map_deletions_survive_save_and_reload(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    _write(
+        repo / ".revrem.toml",
+        "\n".join(
+            (
+                "[defaults.triage.routing]",
+                'default_route = "keep"',
+                "[defaults.triage.routes.keep]",
+                'harness = "codex"',
+                "[defaults.triage.routes.remove]",
+                'harness = "codex"',
+                "[defaults.runtime.harness_executables]",
+                'codex = "/opt/codex"',
+                'gemini = "/opt/gemini"',
+                "[profiles.p]",
+            )
+        )
+        + "\n",
+    )
+    model = LoopEditModel.load("p", cwd=repo)
+    effective = replace(
+        model.profile,
+        triage=replace(
+            model.profile.triage,
+            routes={"keep": model.profile.triage.routes["keep"]},
+        ),
+        runtime=replace(
+            model.profile.runtime,
+            harness_executables={"codex": "/opt/codex"},
+        ),
+    )
+
+    model.set_effective_profile(effective)
+    model.save()
+
+    saved = profiles.resolve_profile("p", cwd=repo, require_implemented=False)
+    assert set(saved.triage.routes) == {"keep"}
+    assert saved.runtime.harness_executables == {"codex": "/opt/codex"}
+    raw = profiles.load_profile_file(
+        repo / ".revrem.toml", catalog_cwd=repo
+    ).raw_profiles["p"]
+    assert raw["replace_inherited_maps"] == [
+        "runtime.harness_executables",
+        "triage.routes",
+    ]
+
+
+def test_effective_profile_and_save_use_target_repository_catalog(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    ambient = tmp_path / "ambient"
+    (repo / ".git").mkdir(parents=True)
+    ambient.mkdir()
+    _write(
+        repo / ".revrem-catalog.toml",
+        '[[harness]]\nname = "team-codex"\ndriver = "codex"\nexecutable = "codex-team"\n',
+    )
+    _write(
+        repo / ".revrem.toml",
+        "[profiles.p.review]\n"
+        'harness = "team-codex"\n'
+        'model = "gpt-5.6-sol"\n',
+    )
+    model = LoopEditModel.load("p", cwd=repo)
+    monkeypatch.chdir(ambient)
+
+    assert model.effective_profile().review.harness == "team-codex"
+    model.set_field("pipeline.max_iterations", "3")
+    model.save()
+
+    assert model.profile.review.harness == "team-codex"
+    assert model.profile.pipeline.max_iterations == 3
+
+
 def test_route_row_clear_save_removes_cleared_route_field(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     (repo / ".git").mkdir(parents=True)

@@ -147,10 +147,11 @@ def validate_triage_reasoning_effort(
     triage_enabled: bool,
     triage_harness: str,
     triage_reasoning_effort: str | None,
+    cwd: Path | None = None,
 ) -> None:
     if (
         triage_enabled
-        and harnesses._resolve_catalog_driver(triage_harness) == "codex"
+        and harnesses._resolve_catalog_driver(triage_harness, cwd=cwd) == "codex"
         and triage_reasoning_effort == "minimal"
     ):
         raise ValueError(
@@ -310,9 +311,10 @@ def _resolve_model_phase(
     timeout_seconds: float | None,
     timeout_seconds_display: float | None,
     timeout_source: str,
+    cwd: Path,
 ) -> ResolvedPhaseConfig:
     harness = harness_override or phase.harness
-    harnesses.validate_harness_name(harness, field=f"--{phase_name}-harness")
+    harnesses.validate_harness_name(harness, field=f"--{phase_name}-harness", cwd=cwd)
     model = model_override or shared_model_override or phase.model
     reasoning_effort = (
         reasoning_effort_override
@@ -518,6 +520,7 @@ def build_loop_config(
             args.timeout_seconds,
             args.review_timeout_seconds,
         ),
+        cwd=cwd,
     )
     remediation_phase = _resolve_model_phase(
         phase_name="remediation",
@@ -536,35 +539,39 @@ def build_loop_config(
             args.timeout_seconds,
             args.remediation_timeout_seconds,
         ),
+        cwd=cwd,
     )
     if not args.dry_run:
         harnesses.require_implemented_harness(
-            review_phase.harness, field="review.harness"
+            review_phase.harness, field="review.harness", cwd=cwd
         )
         harnesses.require_implemented_harness(
             remediation_phase.harness,
-            field="remediation.harness",
+            field="remediation.harness", cwd=cwd
         )
     triage_reasoning_effort = (
         args.triage_reasoning_effort or profile.triage.reasoning_effort
     )
     triage_harness = args.triage_harness or profile.triage.harness
-    harnesses.validate_harness_name(triage_harness, field="--triage-harness")
+    harnesses.validate_harness_name(triage_harness, field="--triage-harness", cwd=cwd)
     if triage_enabled and not args.dry_run:
-        harnesses.require_implemented_harness(triage_harness, field="triage.harness")
+        harnesses.require_implemented_harness(
+            triage_harness, field="triage.harness", cwd=cwd
+        )
     commit_message_harness = args.commit_message_harness or profile.commit.harness
     harnesses.validate_harness_name(
-        commit_message_harness, field="--commit-message-harness"
+        commit_message_harness, field="--commit-message-harness", cwd=cwd
     )
     if commit_after_remediation and not args.dry_run:
         harnesses.require_implemented_harness(
-            commit_message_harness, field="commit.harness"
+            commit_message_harness, field="commit.harness", cwd=cwd
         )
     triage_model = args.triage_model or profile.triage.model
     validate_triage_reasoning_effort(
         triage_enabled=triage_enabled,
         triage_harness=triage_harness,
         triage_reasoning_effort=triage_reasoning_effort,
+        cwd=cwd,
     )
     commit_reasoning_effort_inherited = (
         args.commit_reasoning_effort is None
@@ -587,6 +594,7 @@ def build_loop_config(
         harness=commit_message_harness,
         model=commit_message_model,
         requested_effort=commit_reasoning_effort,
+        cwd=cwd,
     )
     commit_reasoning_effort = commit_effort_resolution.effective
     commit_reasoning_effort_requested = commit_effort_resolution.requested

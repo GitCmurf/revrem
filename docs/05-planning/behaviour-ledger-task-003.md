@@ -3,8 +3,8 @@ document_id: REVREM-LEDGER-003
 type: LEDGER
 title: Behaviour ledger for the cli.py re-engineering (REVREM-TASK-003)
 status: Approved
-version: '1.9'
-last_updated: '2026-08-31'
+version: '1.12'
+last_updated: '2026-09-01'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -55,6 +55,44 @@ There is no silent third option.
 ```
 
 ## Entries
+
+### 2026-09-01 — Replay safety and inherited-map deletions are durable
+
+- **Contract:** last-run replay and profile working-copy persistence
+- **What changed:** structured last-run replay restores `runtime.full_auto` and
+  `runtime.exec_sandbox` in both the command wizard and TUI. When a TUI save
+  removes entries inherited into `triage.routes` or
+  `runtime.harness_executables`, RevRem writes the complete effective map and a
+  validated `replace_inherited_maps` marker so later resolution cannot merge the
+  deleted entries back.
+- **Why:** replay must not silently relax a previous run's remediation boundary,
+  and a successful Save must reload to the same effective configuration shown to
+  the operator.
+
+
+### 2026-09-01 — Preserve acknowledged cancellation artifacts
+
+- **Contract:** live-run cancellation
+- **What changed:** after a child records a cancellation event, the TUI grants
+  it a separate bounded finalization deadline before force termination.
+- **Why:** terminal summaries are operator-facing artifacts and must survive a
+  controlled cancellation even when normal signal escalation grace is short.
+
+
+### 2026-09-01 — Persist completed remediation in iteration summaries
+
+- **Contract:** machine and human presentation
+- **What changed:** a successful remediation now records `remediated: true` in
+  its iteration summary. Artifact-backed terminal views therefore render the
+  iteration as `remediation done` rather than `remediation skipped`.
+- **Why:** the successful state previously existed only in the live accumulator,
+  leaving replayed summaries unable to distinguish completion from a skipped
+  remediation.
+- **Before / After:** `tests/snapshots/loop_findings_summary.json` gains the
+  additive marker on its completed finding iteration.
+- **schema_version impact:** none. The summary schema permits additive
+  iteration fields; the existing schema version continues to describe it.
+
 
 ### 2026-08-31 — RevRem retains commit ownership during remediation
 

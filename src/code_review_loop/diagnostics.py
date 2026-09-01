@@ -413,7 +413,9 @@ def _required_executables(config: DoctorConfig) -> list[tuple[str, str]]:
 def _resolve_harness_executable(config: DoctorConfig, harness: str) -> str:
     from code_review_loop import harnesses
 
-    return harnesses.resolve_executable(harness, config.harness_executables, config.codex_bin)
+    return harnesses.resolve_executable(
+        harness, config.harness_executables, config.codex_bin, cwd=config.cwd
+    )
 
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:

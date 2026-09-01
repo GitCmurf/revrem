@@ -7,6 +7,8 @@ import pytest
 
 from code_review_loop import harnesses, profiles
 from code_review_loop._compat_jsonschema import validate
+from code_review_loop.adapters import review
+from code_review_loop.config import LoopConfig
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -96,6 +98,28 @@ def test_codex_commit_message_effort_resolution_promotes_known_incompatible_mode
     assert resolution.adjustment == "codex_minimal_unsupported_by_model"
 
 
+def test_codex_alias_uses_target_catalog_for_effort_support(tmp_path, monkeypatch):
+    target = tmp_path / "target"
+    ambient = tmp_path / "ambient"
+    target.mkdir()
+    ambient.mkdir()
+    (target / ".revrem-catalog.toml").write_text(
+        '[[harness]]\nname="team-codex"\ndriver="codex"\n', encoding="utf-8"
+    )
+    monkeypatch.chdir(ambient)
+
+    resolution = harnesses.resolve_commit_message_reasoning_effort(
+        harness="team-codex",
+        model="gpt-5.3-codex-spark",
+        requested_effort="minimal",
+        cwd=target,
+    )
+
+    assert resolution.effective == "low"
+    assert harnesses.reasoning_effort_supported("team-codex", cwd=target)
+    assert harnesses.phase_effort_text("team-codex", "low", cwd=target) == "low"
+
+
 def test_commit_message_effort_resolution_does_not_guess_unknown_model_capabilities():
     for harness, model in (
         ("codex", "gpt-future-codex"),
@@ -171,6 +195,26 @@ def test_profile_alias_validation_uses_target_repository_catalog(tmp_path, monke
     profile = profiles.resolve_profile("target", cwd=target, require_implemented=False)
 
     assert profile.review.harness == "target-codex"
+
+
+def test_review_command_uses_loop_config_cwd_for_catalog_alias(tmp_path, monkeypatch):
+    target = tmp_path / "target"
+    ambient = tmp_path / "ambient"
+    target.mkdir()
+    ambient.mkdir()
+    (target / ".revrem-catalog.toml").write_text(
+        '[[harness]]\nname="target-gemini"\ndriver="gemini"\n'
+        'executable="target-gemini-bin"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(ambient)
+
+    command = review.build_review_command(
+        LoopConfig(cwd=target, review_harness="target-gemini", model="gemini-2.5")
+    )
+
+    assert command[0] == "target-gemini-bin"
+    assert command[command.index("--model") + 1] == "gemini-2.5"
 
 
 def test_harness_registry_is_cached_and_immutable(monkeypatch):

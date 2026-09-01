@@ -80,6 +80,16 @@ def test_running_and_done_states_map_remediate(tmp_path: Path) -> None:
     assert view.iteration == 1
 
 
+def test_stale_validation_maps_to_the_review_phase(tmp_path: Path) -> None:
+    view = tui_run_state.run_loop_view(
+        (_ev(1, "phase_start", "stale-validation", 1),), _profile(tmp_path)
+    )
+
+    states = {phase.name: phase.state for phase in view.phases}
+
+    assert states["review"] == "running"
+
+
 def test_disabled_phases_render_disabled(tmp_path: Path) -> None:
     view = tui_run_state.run_loop_view(
         (), _profile(tmp_path, triage=False, commit=False)
@@ -345,6 +355,32 @@ def test_iteration_outcome_marks_unsuccessful_phase_markers_as_not_remediated() 
         "skipped",
         "skipped",
     ]
+
+
+def test_iteration_outcome_marks_missing_remediation_evidence_as_skipped() -> None:
+    view = tui_run_state.run_outcome_view(
+        {
+            "final_status": "findings",
+            "stopped_reason": "triage_rejected_all",
+            "iterations": [{"iteration": 1, "review_status": "findings"}],
+        }
+    )
+
+    assert view.iterations[0].remediation == "skipped"
+
+
+def test_iteration_outcome_marks_persisted_successful_remediation_done() -> None:
+    view = tui_run_state.run_outcome_view(
+        {
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+            "iterations": [
+                {"iteration": 1, "review_status": "findings", "remediated": True}
+            ],
+        }
+    )
+
+    assert view.iterations[0].remediation == "done"
 
 
 def test_timeline_has_wall_time_elapsed_time_and_groups_artifacts() -> None:

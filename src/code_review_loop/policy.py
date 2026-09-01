@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from code_review_loop.core.routing_types import (
     Profile,
@@ -22,11 +23,13 @@ class RoutingContext:
     failed_checks: tuple[str, ...] = ()
 
 
-def check_route_capabilities(route_cfg: TriageRouteConfig) -> list[str]:
+def check_route_capabilities(
+    route_cfg: TriageRouteConfig, *, cwd: Path | None = None
+) -> list[str]:
     """Verify that the harness for a route is implemented and supports required capabilities."""
     from code_review_loop.harnesses import resolved_harness_spec
 
-    spec = resolved_harness_spec(route_cfg.harness)
+    spec = resolved_harness_spec(route_cfg.harness, cwd=cwd)
     if not spec:
         return [f"Unknown harness: {route_cfg.harness}"]
     if not spec.implemented:
@@ -88,6 +91,7 @@ def resolve_routing(
     context: RoutingContext,
     model_proposal_tier: str | None = None,
     max_timeout_seconds: float | None = None,
+    cwd: Path | None = None,
 ) -> ResolvedRoute:
     routing_config = profile.triage.routing
 
@@ -156,7 +160,7 @@ def resolve_routing(
         route_cfg = profile.triage.routes[current_tier]
 
         issues = [
-            *check_route_capabilities(route_cfg),
+            *check_route_capabilities(route_cfg, cwd=cwd),
             *check_route_budget(route_cfg, max_timeout_seconds=max_timeout_seconds),
         ]
         if not issues:

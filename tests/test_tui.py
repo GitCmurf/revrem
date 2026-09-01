@@ -46,6 +46,25 @@ def test_loop_model_preserves_effective_settings_as_disk_relative_edits(tmp_path
     assert saved.runtime.provider_retry_attempts == 4
 
 
+def test_last_run_replay_preserves_remediation_safety_settings(tmp_path):
+    (tmp_path / ".revrem.toml").write_text(
+        "[profiles.demo.runtime]\n"
+        "full_auto=true\n"
+        'exec_sandbox="workspace-write"\n',
+        encoding="utf-8",
+    )
+    model = tui_loop_model.LoopEditModel.load("demo", cwd=tmp_path)
+
+    tui._apply_resume_config_to_loop_model(
+        model,
+        {"full_auto": False, "exec_sandbox": "read-only"},
+    )
+
+    effective = model.effective_profile()
+    assert effective.runtime.full_auto is False
+    assert effective.runtime.exec_sandbox == "read-only"
+
+
 def test_tui_bindings_keep_i_workspace_dispatched():
     bindings = tui._build_bindings(None)
     i_bindings = [

@@ -75,6 +75,8 @@ def _invocations(limit: int, *, repo: Path | None) -> list[dict[str, Any]]:
             summary = json.loads(resolved_summary_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
+        if not isinstance(summary, dict):
+            continue
         values = summary.get("model_invocations", [])
         if isinstance(values, list):
             result.extend(item for item in values if isinstance(item, dict))
@@ -98,7 +100,11 @@ def _matches(row: dict[str, Any], args: Any) -> bool:
 
 def _summarize(key: tuple[str, str, str, str], rows: list[dict[str, Any]]) -> dict[str, Any]:
     durations = sorted(_duration_seconds(row.get("duration_seconds")) for row in rows)
-    tokens = [row["tokens"] for row in rows if isinstance(row.get("tokens"), int)]
+    tokens = [
+        row["tokens"]
+        for row in rows
+        if isinstance(row.get("tokens"), int) and not isinstance(row.get("tokens"), bool)
+    ]
     p95_index = max(0, min(len(durations) - 1, math.ceil(0.95 * len(durations)) - 1))
     return {
         "phase": key[0], "harness": key[1], "model": key[2], "reasoning_effort": key[3],

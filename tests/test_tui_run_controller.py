@@ -275,7 +275,9 @@ def test_cancel_reports_forced_cleanup_after_escalation(monkeypatch):
     ]
 
 
-def test_cancel_allows_acknowledged_child_to_finish_before_escalating(tmp_path, monkeypatch):
+def test_cancel_allows_acknowledged_child_its_separate_finalization_deadline(
+    tmp_path, monkeypatch
+):
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     sink = events.JsonlSink(run_dir, "run-id")
@@ -295,6 +297,7 @@ def test_cancel_allows_acknowledged_child_to_finish_before_escalating(tmp_path, 
             self.wait_calls += 1
             if self.wait_calls == 1:
                 raise subprocess.TimeoutExpired(["fake"], timeout)
+            assert timeout == 3
             (run_dir / "summary.json").write_text(
                 json.dumps({"final_status": "error", "stopped_reason": "cancelled"}),
                 encoding="utf-8",
@@ -320,7 +323,7 @@ def test_cancel_allows_acknowledged_child_to_finish_before_escalating(tmp_path, 
         ),
     )
 
-    status = controller.cancel(grace_seconds=0)
+    status = controller.cancel(grace_seconds=0, finalization_seconds=3)
 
     assert status == "cancelled"
     assert process.wait_calls == 2

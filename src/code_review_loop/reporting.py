@@ -486,7 +486,7 @@ def phase_config_payload(config: LoopConfig) -> dict[str, object]:
         "harness": config.triage_harness,
         "model": config.triage_model,
         "reasoning_effort": triage_effort,
-        **_provider_effort_fields(config.triage_harness, triage_effort),
+        **_provider_effort_fields(config.triage_harness, triage_effort, cwd=config.cwd),
         "timeout_seconds": config.triage_timeout_seconds_display,
         "contract": config.triage_contract,
         "routing_enabled": (
@@ -517,7 +517,7 @@ def phase_config_payload(config: LoopConfig) -> dict[str, object]:
             "harness": config.review_harness,
             "model": config.review_model or config.model,
             "reasoning_effort": review_effort,
-            **_provider_effort_fields(config.review_harness, review_effort),
+            **_provider_effort_fields(config.review_harness, review_effort, cwd=config.cwd),
             "timeout_seconds": config.review_timeout_seconds_display,
             "sandbox": "read-only",
             "source": config.phase_config_sources.get("review", "direct-config"),
@@ -528,7 +528,7 @@ def phase_config_payload(config: LoopConfig) -> dict[str, object]:
             "harness": config.remediation_harness,
             "model": config.remediation_model or config.model,
             "reasoning_effort": remediation_effort,
-            **_provider_effort_fields(config.remediation_harness, remediation_effort),
+            **_provider_effort_fields(config.remediation_harness, remediation_effort, cwd=config.cwd),
             "timeout_seconds": config.remediation_timeout_seconds_display,
             "sandbox": config.exec_sandbox,
             "source": config.phase_config_sources.get("remediation", "direct-config"),
@@ -539,7 +539,7 @@ def phase_config_payload(config: LoopConfig) -> dict[str, object]:
             "harness": config.commit_message_harness,
             "model": config.commit_message_model,
             "reasoning_effort": commit_effort,
-            **_provider_effort_fields(config.commit_message_harness, commit_effort),
+            **_provider_effort_fields(config.commit_message_harness, commit_effort, cwd=config.cwd),
             "requested_reasoning_effort": config.commit_reasoning_effort_requested,
             "reasoning_effort_adjustment": config.commit_reasoning_effort_adjustment,
             "timeout_seconds": config.commit_timeout_seconds_display,
@@ -570,8 +570,10 @@ def phase_config_payload(config: LoopConfig) -> dict[str, object]:
     }
 
 
-def _provider_effort_fields(harness: str, effort: str | None) -> dict[str, object]:
-    supported = harnesses.reasoning_effort_supported(harness)
+def _provider_effort_fields(
+    harness: str, effort: str | None, *, cwd: Path | None = None
+) -> dict[str, object]:
+    supported = harnesses.reasoning_effort_supported(harness, cwd=cwd)
     return {
         "reasoning_effort_supported": supported,
         "provider_reasoning_effort": effort if supported else None,

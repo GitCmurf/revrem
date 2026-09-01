@@ -232,7 +232,7 @@ def _codex_cache_layer(path: Path) -> dict[str, Any]:
 
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         # Codex owns this optional cache and may be replacing it while RevRem
         # starts. Packaged metadata remains the safe, deterministic fallback.
         return {}

@@ -46,6 +46,11 @@ TERMINAL_STATUSES: frozenset[RunControllerStatus] = frozenset(
     }
 )
 
+# A cancellation acknowledgement means the child has taken ownership of a
+# controlled stop and is writing terminal artifacts.  Keep its deadline
+# independent from the short signal-escalation grace period.
+DEFAULT_CANCELLATION_FINALIZATION_SECONDS = 15.0
+
 PopenFactory = Callable[..., subprocess.Popen[str]]
 EntrypointResolver = Callable[[Sequence[str]], list[str]]
 
@@ -191,7 +196,12 @@ class LiveRunController:
             return self.status
         return self.finish(exit_code)
 
-    def cancel(self, *, grace_seconds: float = 5.0) -> RunControllerStatus:
+    def cancel(
+        self,
+        *,
+        grace_seconds: float = 5.0,
+        finalization_seconds: float = DEFAULT_CANCELLATION_FINALIZATION_SECONDS,
+    ) -> RunControllerStatus:
         if self.process is None:
             return self.status
         if self.process.poll() is not None:
@@ -208,7 +218,7 @@ class LiveRunController:
         # terminal artifacts. Avoid interrupting that finalization with SIGTERM.
         if self._cancellation_acknowledged():
             try:
-                status = self.finish(self.process.wait(timeout=grace_seconds))
+                status = self.finish(self.process.wait(timeout=finalization_seconds))
                 _terminate_descendants(descendant_pids, grace_seconds=grace_seconds)
                 return status
             except subprocess.TimeoutExpired:

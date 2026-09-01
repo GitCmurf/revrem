@@ -134,6 +134,19 @@ def test_incomplete_codex_cache_fails_open_to_packaged_catalog(
     assert model.efforts == ("low", "medium", "high", "xhigh", "max", "ultra")
 
 
+def test_non_utf8_codex_cache_fails_open_to_packaged_catalog(tmp_path, monkeypatch):
+    codex_home = tmp_path / "codex"
+    codex_home.mkdir()
+    (codex_home / "models_cache.json").write_bytes(b"\xff\xfe")
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+
+    model = model_catalog.load_catalog(tmp_path, home=tmp_path).model(
+        "codex", "gpt-5.6-sol"
+    )
+
+    assert model.efforts == ("low", "medium", "high", "xhigh", "max", "ultra")
+
+
 def test_project_catalog_rejects_scalar_efforts_with_its_source(tmp_path, monkeypatch):
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "missing-codex"))
     catalog_path = tmp_path / ".revrem-catalog.toml"

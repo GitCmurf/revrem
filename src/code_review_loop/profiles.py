@@ -55,6 +55,7 @@ EXEC_COLOR_CHOICES = ("always", "never", "auto")
 REASONING_EFFORT_CHOICES = KNOWN_EFFORTS
 PROFILE_KEYS = (
     "description",
+    "replace_inherited_maps",
     "pipeline",
     "review",
     "triage",
@@ -64,6 +65,10 @@ PROFILE_KEYS = (
     "runtime",
     "budgets",
     "suppressions",
+)
+REPLACEABLE_INHERITED_MAPS = (
+    "runtime.harness_executables",
+    "triage.routes",
 )
 PIPELINE_KEYS = (
     "base",
@@ -224,6 +229,17 @@ def parse_profile(
     catalog_cwd: Path | None = None,
 ) -> Profile:
     _reject_unknown_keys(raw, PROFILE_KEYS, f"{name}")
+    replacement_paths = _str_list(
+        raw.get("replace_inherited_maps", ()), f"{name}.replace_inherited_maps"
+    )
+    unknown_replacements = sorted(
+        set(replacement_paths).difference(REPLACEABLE_INHERITED_MAPS)
+    )
+    if unknown_replacements:
+        raise ValueError(
+            f"{name}.replace_inherited_maps must contain only: "
+            f"{', '.join(REPLACEABLE_INHERITED_MAPS)}"
+        )
     description = _optional_str(raw.get("description"), f"{name}.description") or ""
     pipeline = parse_pipeline(_table(raw.get("pipeline", {}), f"{name}.pipeline"))
     review = parse_phase(
@@ -865,10 +881,10 @@ def profile_owner_path(
     allow_new: bool = False,
 ) -> Path:
     project_path = project_config_path(cwd)
-    if name in load_profile_file(project_path).profiles:
+    if name in load_profile_file(project_path, catalog_cwd=cwd).profiles:
         return project_path
     user_path = user_config_path(home)
-    if name in load_profile_file(user_path).profiles:
+    if name in load_profile_file(user_path, catalog_cwd=cwd).profiles:
         return user_path
     if is_builtin_profile(name):
         raise RuntimeError(builtin_profile_readonly_message(name))
@@ -948,6 +964,13 @@ def _profile_to_toml_dict(
     raw_profile: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     result: dict[str, Any] = {}
+    if raw_profile is not None and "replace_inherited_maps" in raw_profile:
+        result["replace_inherited_maps"] = list(
+            _str_list(
+                raw_profile["replace_inherited_maps"],
+                "replace_inherited_maps",
+            )
+        )
     explicit_description = raw_profile is not None and "description" in raw_profile
     if explicit_description or (
         profile.description
@@ -1202,7 +1225,7 @@ def write_project_profile(
     raw_profile: dict[str, Any] | None = None,
 ) -> Path:
     path = project_config_path(cwd)
-    profile_file = load_profile_file(path)
+    profile_file = load_profile_file(path, catalog_cwd=cwd)
     if profile.name in profile_file.profiles and not force:
         raise FileExistsError(f"profile already exists: {profile.name}")
     _write_profile_file(
@@ -1235,8 +1258,9 @@ def write_profile_to_path(
     force: bool = False,
     raw_profile: dict[str, Any] | None = None,
     reference: Profile | None = None,
+    catalog_cwd: Path | None = None,
 ) -> Path:
-    profile_file = load_profile_file(path)
+    profile_file = load_profile_file(path, catalog_cwd=catalog_cwd)
     if profile.name in profile_file.profiles and not force:
         raise FileExistsError(f"profile already exists: {profile.name}")
     if raw_profile is None:
@@ -1281,16 +1305,26 @@ def save_profile_raw(
         name, user_file=user_file, project_file=project_file
     )
     owner = profile_owner_path(name, cwd=cwd, home=home, allow_new=True)
-    current = load_profile_file(owner).raw_profiles.get(name, {})
+    current = load_profile_file(owner, catalog_cwd=cwd).raw_profiles.get(name, {})
     raw_profile = _materialize_inherited_route_clear_markers(
         raw_profile,
         current_profile=current,
     )
     merged_updated = _apply_profile_patch_with_clears(merged, raw_profile)
-    edit_reference = parse_profile(name, merged, source="<edit>")
+    edit_reference = parse_profile(name, merged, source="<edit>", catalog_cwd=cwd)
     merged_raw_profile = _apply_profile_patch_with_clears(current, raw_profile)
+    merged_raw_profile = _materialize_inherited_map_replacements(
+        merged_raw_profile,
+        patch=raw_profile,
+        current_profile=current,
+        inherited_profile=merged,
+        effective_profile=merged_updated,
+    )
     parsed = parse_profile(
-        name, _deep_merge(merged_updated, merged_raw_profile), source="<edit>"
+        name,
+        _deep_merge(merged_updated, merged_raw_profile),
+        source="<edit>",
+        catalog_cwd=cwd,
     )
     merged_raw_profile = _materialize_route_edit_context(
         merged_raw_profile,
@@ -1303,7 +1337,74 @@ def save_profile_raw(
         force=True,
         raw_profile=merged_raw_profile,
         reference=edit_reference,
+        catalog_cwd=cwd,
     )
+
+
+def _materialize_inherited_map_replacements(
+    owner_profile: dict[str, Any],
+    *,
+    patch: dict[str, Any],
+    current_profile: dict[str, Any],
+    inherited_profile: dict[str, Any],
+    effective_profile: dict[str, Any],
+) -> dict[str, Any]:
+    """Persist deletions that a normal TOML deep merge would resurrect."""
+    replacements = set(_replacement_paths(current_profile))
+    for dotted_path in REPLACEABLE_INHERITED_MAPS:
+        patch_map = _raw_dotted_mapping(patch, dotted_path)
+        inherited_map = _raw_dotted_mapping(inherited_profile, dotted_path)
+        if any(
+            value is None and key in inherited_map
+            for key, value in patch_map.items()
+        ):
+            replacements.add(dotted_path)
+    if not replacements:
+        return owner_profile
+
+    materialized = _copy.deepcopy(owner_profile)
+    materialized["replace_inherited_maps"] = sorted(replacements)
+    for dotted_path in sorted(replacements):
+        _set_raw_dotted_mapping(
+            materialized,
+            dotted_path,
+            _raw_dotted_mapping(effective_profile, dotted_path),
+        )
+    return materialized
+
+
+def _replacement_paths(raw: dict[str, Any]) -> tuple[str, ...]:
+    value = raw.get("replace_inherited_maps", ())
+    if not isinstance(value, list | tuple):
+        return ()
+    return tuple(
+        item
+        for item in value
+        if isinstance(item, str) and item in REPLACEABLE_INHERITED_MAPS
+    )
+
+
+def _raw_dotted_mapping(raw: dict[str, Any], dotted_path: str) -> dict[str, Any]:
+    value: Any = raw
+    for part in dotted_path.split("."):
+        if not isinstance(value, dict):
+            return {}
+        value = value.get(part)
+    return value if isinstance(value, dict) else {}
+
+
+def _set_raw_dotted_mapping(
+    raw: dict[str, Any], dotted_path: str, value: dict[str, Any]
+) -> None:
+    cursor = raw
+    parts = dotted_path.split(".")
+    for part in parts[:-1]:
+        child = cursor.get(part)
+        if not isinstance(child, dict):
+            child = {}
+            cursor[part] = child
+        cursor = child
+    cursor[parts[-1]] = _copy.deepcopy(value)
 
 
 def _materialize_inherited_route_clear_markers(
@@ -1367,9 +1468,9 @@ def set_profile_field(
     home: Path | None = None,
 ) -> Path:
     owner = profile_owner_path(name, cwd=cwd, home=home)  # raises for builtin/unknown
-    profile_file = load_profile_file(owner)
-    user_file = load_profile_file(user_config_path(home))
-    project_file = load_profile_file(project_config_path(cwd))
+    profile_file = load_profile_file(owner, catalog_cwd=cwd)
+    user_file = load_profile_file(user_config_path(home), catalog_cwd=cwd)
+    project_file = load_profile_file(project_config_path(cwd), catalog_cwd=cwd)
     current = profile_file.raw_profiles.get(name, {})
     updated = deep_set_raw(current, dotted_key, value)
     merged = _merged_profile_raw_for_edit(
@@ -1379,7 +1480,7 @@ def set_profile_field(
     # Validate routing-sensitive updates against the full inherited profile chain.
     # Route-table and routing edits both need inherited triage contract/routes for
     # correct validation and cross-field compatibility checks.
-    parse_profile(name, merged_updated, source="<edit>")
+    parse_profile(name, merged_updated, source="<edit>", catalog_cwd=cwd)
 
     route_edit = dotted_key.startswith("triage.routes.")
     routing_edit = dotted_key.startswith("triage.routing.")
@@ -1388,9 +1489,9 @@ def set_profile_field(
     if merged_validation:
         # Keep inherited triage contract/routing state (especially v2 routing
         # from defaults/project) while validating the owner-facing route edit.
-        parsed = parse_profile(name, merged_updated, source="<edit>")
+        parsed = parse_profile(name, merged_updated, source="<edit>", catalog_cwd=cwd)
     else:
-        parsed = parse_profile(name, updated, source="<edit>")
+        parsed = parse_profile(name, updated, source="<edit>", catalog_cwd=cwd)
     raw_profile = updated
     # Enabled routing edits need inherited route rows materialized so the saved
     # owner profile stays loadable after the inherited context is removed.
@@ -1407,9 +1508,12 @@ def set_profile_field(
             ),
             include_routing_context=write_routing_context,
         )
-    edit_reference = parse_profile(name, merged, source="<edit>")
+    edit_reference = parse_profile(name, merged, source="<edit>", catalog_cwd=cwd)
     parsed_for_write = parse_profile(
-        name, _deep_merge(merged_updated, raw_profile), source="<edit>"
+        name,
+        _deep_merge(merged_updated, raw_profile),
+        source="<edit>",
+        catalog_cwd=cwd,
     )
     return write_profile_to_path(
         owner,
@@ -1417,6 +1521,7 @@ def set_profile_field(
         force=True,
         raw_profile=raw_profile,
         reference=edit_reference,
+        catalog_cwd=cwd,
     )
 
 
@@ -1706,7 +1811,10 @@ def minimal_profile(name: str, *, description: str = "") -> Profile:
 
 
 def _walk_route_fallback_chain(
-    routes: dict[str, TriageRouteConfig], route_name: str
+    routes: dict[str, TriageRouteConfig],
+    route_name: str,
+    *,
+    catalog_cwd: Path | None = None,
 ) -> list[str]:
     """Return a list of issues for a single route's fallback chain."""
     from code_review_loop import policy
@@ -1720,7 +1828,7 @@ def _walk_route_fallback_chain(
         current_cfg = routes.get(current_route_name)
         if not current_cfg:
             break
-        if not policy.check_route_capabilities(current_cfg):
+        if not policy.check_route_capabilities(current_cfg, cwd=catalog_cwd):
             resolved = True
         if not current_cfg.fallback:
             break
@@ -1744,7 +1852,9 @@ def _walk_route_fallback_chain(
                 f"route {route_name!r} has unknown fallback: {current_route_name!r}"
             )
         else:
-            cap_issues = policy.check_route_capabilities(routes[current_route_name])
+            cap_issues = policy.check_route_capabilities(
+                routes[current_route_name], cwd=catalog_cwd
+            )
             issues.append(
                 f"route {route_name!r} lacks an implemented and compatible fallback chain. "
                 f"Issues for {current_route_name!r}: {'; '.join(cap_issues)}"
@@ -1875,7 +1985,7 @@ def validate_profile(
         if profile.triage.routing.enabled:
             for route_name in profile.triage.routes:
                 route_issues = _walk_route_fallback_chain(
-                    profile.triage.routes, route_name
+                    profile.triage.routes, route_name, catalog_cwd=catalog_cwd
                 )
                 if route_issues:
                     raise ValueError(route_issues[0])
@@ -1986,13 +2096,26 @@ def _merge_dataclass(base: Any, override: Any) -> Any:
 
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
-    merged = dict(base)
+    merged = _copy.deepcopy(base)
+    for dotted_path in _replacement_paths(override):
+        _delete_raw_dotted(merged, dotted_path)
     for key, value in override.items():
         if isinstance(value, dict) and isinstance(merged.get(key), dict):
             merged[key] = _deep_merge(merged[key], value)
         else:
             merged[key] = value
     return merged
+
+
+def _delete_raw_dotted(raw: dict[str, Any], dotted_path: str) -> None:
+    cursor = raw
+    parts = dotted_path.split(".")
+    for part in parts[:-1]:
+        child = cursor.get(part)
+        if not isinstance(child, dict):
+            return
+        cursor = child
+    cursor.pop(parts[-1], None)
 
 
 _INT_SUFFIXES = (
