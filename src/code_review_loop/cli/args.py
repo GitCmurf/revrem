@@ -295,14 +295,14 @@ def build_run_parser() -> RevRemArgumentParser:
         dest="full_auto",
         action="store_true",
         default=None,
-        help="Pass --full-auto to codex exec.",
+        help="Enable provider-supported automatic approval for remediation.",
     )
     full_auto_group.add_argument(
         "--no-full-auto",
         dest="full_auto",
         action="store_false",
         default=None,
-        help="Do not pass --full-auto to codex exec.",
+        help="Disable provider-supported automatic approval for remediation.",
     )
     parser.add_argument(
         "--check",

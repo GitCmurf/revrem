@@ -130,6 +130,7 @@ def test_project_dogfood_profile_parses_exact_committed_profile():
 
     dogfood = loaded.profiles["dogfood"]
     assert dogfood.pipeline.max_iterations == 3
+    assert dogfood.output.summary_format == "text"
     assert dogfood.triage.enabled is True
     assert dogfood.triage.contract == "v2"
     assert dogfood.triage.routing.rule[0].id == "high-risk-frontier"

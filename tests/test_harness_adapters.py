@@ -346,6 +346,23 @@ def test_prompt_invocation_rejects_oversized_multibyte_gemini_argv_prompt():
     "harness,executable,expected_command,expects_stdin",
     [
         (
+            "codex",
+            "codex",
+            [
+                "codex",
+                "exec",
+                "--approve-for-me",
+                "--sandbox",
+                "workspace-write",
+                "--color",
+                "never",
+                "--model",
+                "M",
+                "-",
+            ],
+            True,
+        ),
+        (
             "claude",
             "claude",
             ["claude", "--print", "--permission-mode", "auto", "--model", "M"],

@@ -151,7 +151,7 @@ class CodexHarnessAdapter(HarnessAdapter):
         if request.role == "commit-message":
             command.extend(["-c", 'web_search="disabled"'])
         if request.role == "remediation" and request.full_auto:
-            command.append("--full-auto")
+            command.append("--approve-for-me")
         command.extend(["--sandbox", request.sandbox])
         command.extend(["--color", request.color])
         if request.json_output:

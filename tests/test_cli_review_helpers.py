@@ -1362,7 +1362,7 @@ def test_model_overrides_and_reasoning_effort_are_passed_to_codex(tmp_path):
         "exec",
         "-c",
         'model_reasoning_effort="low"',
-        "--full-auto",
+        "--approve-for-me",
     ]
     assert (
         remediation_command[remediation_command.index("--model") + 1] == "gpt-5.4-mini"

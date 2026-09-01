@@ -18,7 +18,7 @@ line() { printf '%s|%s%s%s|%-4s|%s\n' "$1" "$3" "$2" "$c_off" "$4" "$5"; sleep "
 
 line "12:08:23" "rev" "$c_rev" "1"   "start: codex review --base main"                              0.9
 line "12:10:14" "rev" "$c_rev" "1"   "${c_find}[P1] Preserve failure artifacts when review startup fails${c_off}" 0.7
-line "12:10:15" "rem" "$c_rem" "1"   "start: codex exec --full-auto --sandbox workspace-write ..."  1.1
+line "12:10:15" "rem" "$c_rem" "1"   "start: codex exec --approve-for-me --sandbox workspace-write ..."  1.1
 line "12:13:41" "rem" "$c_rem" "1"   "done"                                                          0.6
 line "12:13:42" "chk" "$c_chk" "1.1" "start: pytest -q"                                              0.9
 line "12:14:18" "chk" "$c_chk" "1.1" "${c_ok}passed${c_off}"                                         0.6

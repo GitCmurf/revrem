@@ -182,7 +182,7 @@ timeout_seconds = 0
 debug_status_detection = true
 progress_style = "rich"
 terminal_title = true
-summary_format = "both"
+summary_format = "text"
 
 [profiles.dogfood.runtime]
 inner_check_retries = 1

@@ -58,9 +58,10 @@ def test_codex_adapter_builds_remediation_exec_command():
         "exec",
         "-c",
         'model_reasoning_effort="low"',
-        "--full-auto",
+        "--approve-for-me",
         "--sandbox",
     ]
+    assert "--full-auto" not in command
     assert command[command.index("--sandbox") + 1] == "workspace-write"
     assert command[command.index("--color") + 1] == "never"
     assert "--json" in command
