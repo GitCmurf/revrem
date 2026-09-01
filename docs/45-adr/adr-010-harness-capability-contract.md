@@ -3,7 +3,7 @@ document_id: REVREM-ADR-010
 type: ADR
 title: Harness Capability Contract
 status: Draft
-version: '0.2'
+version: '0.3'
 last_updated: '2026-09-01'
 owner: __TBD__
 docops_version: '2.0'
@@ -48,9 +48,11 @@ backends. The schema is published as
 
 Codex advertises the primary implemented local behavior. It supports every loop
 phase, timeout/cancellation via RevRem's subprocess wrapper, and no token/USD
-cost reporting. RevRem's provider-neutral `full_auto` setting maps to Codex
-`exec --approve-for-me` plus the configured sandbox; the removed Codex
-`--full-auto` argument is not emitted.
+cost reporting. For workspace-write remediation, RevRem's provider-neutral
+`full_auto` setting maps to Codex `exec --approve-for-me`, which selects the
+workspace-write sandbox itself. RevRem does not combine that mutually exclusive
+flag with `--sandbox`, and the removed Codex `--full-auto` argument is not
+emitted.
 
 The `fake` harness is reserved for the F10 contract runner and is hidden unless
 `REVREM_ALLOW_FAKE_HARNESS=1` is set. When enabled, it routes through an

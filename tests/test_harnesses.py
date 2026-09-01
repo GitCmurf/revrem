@@ -59,14 +59,29 @@ def test_codex_adapter_builds_remediation_exec_command():
         "-c",
         'model_reasoning_effort="low"',
         "--approve-for-me",
-        "--sandbox",
+        "--color",
     ]
     assert "--full-auto" not in command
-    assert command[command.index("--sandbox") + 1] == "workspace-write"
+    assert "--sandbox" not in command
     assert command[command.index("--color") + 1] == "never"
     assert "--json" in command
     assert command[command.index("--model") + 1] == "gpt-5.4-mini"
     assert command[-3:] == ["--output-last-message", "last.txt", "-"]
+
+
+def test_codex_adapter_keeps_explicit_sandbox_without_automatic_approval():
+    command = harnesses.build_phase_command(
+        harnesses.PhaseCommandRequest(
+            harness="codex",
+            role="remediation",
+            executable="codex",
+            sandbox="workspace-write",
+            full_auto=False,
+        )
+    )
+
+    assert "--approve-for-me" not in command
+    assert command[command.index("--sandbox") + 1] == "workspace-write"
 
 
 def test_codex_commit_message_effort_resolution_promotes_known_incompatible_model():

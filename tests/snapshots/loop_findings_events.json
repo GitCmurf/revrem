@@ -61,8 +61,6 @@
         "codex",
         "exec",
         "--approve-for-me",
-        "--sandbox",
-        "workspace-write",
         "--color",
         "never",
         "--output-last-message",

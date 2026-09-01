@@ -150,9 +150,15 @@ class CodexHarnessAdapter(HarnessAdapter):
         command.extend(_codex_config_args(request.reasoning_effort))
         if request.role == "commit-message":
             command.extend(["-c", 'web_search="disabled"'])
-        if request.role == "remediation" and request.full_auto:
+        automatic_approval = (
+            request.role == "remediation"
+            and request.full_auto
+            and request.sandbox == "workspace-write"
+        )
+        if automatic_approval:
             command.append("--approve-for-me")
-        command.extend(["--sandbox", request.sandbox])
+        else:
+            command.extend(["--sandbox", request.sandbox])
         command.extend(["--color", request.color])
         if request.json_output:
             command.append("--json")

@@ -352,8 +352,6 @@ def test_prompt_invocation_rejects_oversized_multibyte_gemini_argv_prompt():
                 "codex",
                 "exec",
                 "--approve-for-me",
-                "--sandbox",
-                "workspace-write",
                 "--color",
                 "never",
                 "--model",

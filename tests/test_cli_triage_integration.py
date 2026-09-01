@@ -824,7 +824,7 @@ def test_routed_remediation_with_omitted_route_timeout_inherits_remediation_time
     remediation_call = next(
         call
         for call in calls
-        if "--sandbox" in call[0] and call[0][call[0].index("--sandbox") + 1] == "workspace-write"
+        if "--approve-for-me" in call[0]
     )
     assert remediation_call[2] == 3600
     routing_json = json.loads((tmp_path / "artifacts" / "routing-1.json").read_text())
@@ -1090,7 +1090,8 @@ def test_loop_malformed_suppressions_fail_open_for_structured_triage(tmp_path):
     assert run_count == 1
     assert remediation_inputs and "Structured triage handoff" in remediation_inputs[0]
     assert "Fix profile merge" in remediation_inputs[0]
-    assert len([call for call in calls if "--sandbox" in call[0]]) == 2
+    assert len([call for call in calls if "--sandbox" in call[0]]) == 1
+    assert len([call for call in calls if "--approve-for-me" in call[0]]) == 1
 
 
 def test_loop_writes_failure_summary_when_triage_fails(tmp_path):

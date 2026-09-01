@@ -3,7 +3,7 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.81'
+version: '1.82'
 last_updated: '2026-09-01'
 owner: GitCmurf
 docops_version: '2.0'
@@ -18,7 +18,7 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.81
+> **Version:** 1.82
 > **Last Updated:** 2026-09-01
 > **Type:** DEVEX
 > **Area:** devex
@@ -693,8 +693,9 @@ Boolean profile values can be overridden from the CLI. Use `--full-auto`,
 `--debug-status-detection`, `--quiet-progress`, or `--terminal-title` to force
 them on for a one-off run; use the matching `--no-*` form, or
 `--skip-final-review`, to force them off. `--full-auto` is RevRem's stable,
-provider-neutral setting; for current Codex remediation it emits
-`codex exec --approve-for-me` with the configured sandbox.
+provider-neutral setting; for current Codex workspace-write remediation it
+emits `codex exec --approve-for-me` without a separate, conflicting `--sandbox`
+argument.
 
 Timeout fields are numeric. A TOML boolean such as `timeout_seconds = false`
 is rejected during profile loading so that accidental type mistakes cannot
@@ -2005,6 +2006,7 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.82 | 2026-09-01 | Codex | Clarified that Codex automatic approval and explicit sandbox flags are mutually exclusive |
 | 1.81 | 2026-09-01 | Codex | Documented current Codex automatic-approval mapping and text-only watched dogfood output |
 | 1.80 | 2026-07-12 | Codex | Documented editable Run Settings, truthful built-in checks, detected/recent check selection, contextual phase actions, and modal help |
 | 1.79 | 2026-07-11 | Codex | Documented atomic TUI bootstrap, focused Next Run presentation, explicit initial-review state, and stale-review validation selection |
