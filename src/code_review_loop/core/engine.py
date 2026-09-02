@@ -47,6 +47,7 @@ class ConfigSnapshot:
     final_review: bool
     inner_check_retries: int = 0
     initial_review_mode: str = "none"
+    final_review_remediation_passes: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -71,6 +72,7 @@ class LoopAccumulator:
     stale_review_resolved: bool = False
     stale_review_dirty: str = ""
     stale_review_loaded: bool = False
+    source_review_artifact: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -203,6 +205,11 @@ class RetryViaChecks:
 
 
 @dataclass(frozen=True)
+class BeginFinalReviewRemediation:
+    """Use final-review findings as one bounded remediation pass."""
+
+
+@dataclass(frozen=True)
 class Stop:
     """Loop exits; outcome carries the terminal state (E1, T2, T3, F2-F6, NF1, …)."""
 
@@ -210,7 +217,8 @@ class Stop:
 
 
 Action = (
-    Continue
+    BeginFinalReviewRemediation
+    | Continue
     | RunReview
     | RunStaleValidation
     | RunTriage
@@ -273,6 +281,7 @@ def run(state: EngineState, ctx: EngineExecutor, *, max_steps: int | None = None
             action,
             (
                 Continue,
+                BeginFinalReviewRemediation,
                 RunReview,
                 RunStaleValidation,
                 RunTriage,
@@ -344,6 +353,10 @@ def _decide_review(
         if cfg.triage_enabled:
             return RunTriage()
         return RunRemediation()
+    if event.status == "findings":
+        recovery_passes_used = max(0, iteration - cfg.max_iterations)
+        if recovery_passes_used < cfg.final_review_remediation_passes:
+            return BeginFinalReviewRemediation()
     if acc.pending_check_failures:
         return Stop(
             OutcomeFindings(

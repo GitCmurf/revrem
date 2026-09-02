@@ -66,10 +66,20 @@ def test_rail_meta_final_review_only_when_on(tmp_path: Path) -> None:
     )
     assert tui_loop_state.loop_rail_meta(_model(on, "p").profile).final_review is True
     assert tui_loop_state.loop_rail_meta(_model(off, "p").profile).final_review is False
-    assert (
-        tui_loop_state.loop_rail_meta(_model(off, "p").profile).final_review_label
-        is None
+    assert tui_loop_state.loop_rail_meta(_model(off, "p").profile).final_review_label is None
+
+
+def test_rail_meta_shows_bounded_final_review_remediation(tmp_path: Path) -> None:
+    repo = _repo(
+        tmp_path,
+        "[profiles.p]\n[profiles.p.pipeline]\nbase='main'\nfinal_review=true\n"
+        "final_review_remediation_passes=1\n",
     )
+
+    meta = tui_loop_state.loop_rail_meta(_model(repo, "p").profile)
+
+    assert meta.final_review_remediation_passes == 1
+    assert meta.final_review_label == "final review -> remediate + verify (up to 1 pass)"
 
 
 def test_phase_gutter_shows_inner_rail_and_final_review_together(
@@ -110,20 +120,12 @@ def test_phase_card_summary_shows_harness_model_and_disabled_marker(
         "[profiles.p.review]\nharness='codex'\nmodel='gpt-5.5'\n",
     )
     model = _model(repo, "p")
-    review = tui_loop_state.phase_card_lines(
-        model, "review", focused=False, expanded=False
-    )
+    review = tui_loop_state.phase_card_lines(model, "review", focused=False, expanded=False)
     text = "\n".join(review)
     assert "REVIEW" in text and "codex" in text and "gpt-5.5" in text
     assert text.lstrip().startswith(f"▸ {tui_loop_state.PHASE_ENABLED_GLYPH}")
-    triage = tui_loop_state.phase_card_lines(
-        model, "triage", focused=False, expanded=False
-    )
-    assert (
-        "\n".join(triage)
-        .lstrip()
-        .startswith(f"▸ {tui_loop_state.PHASE_DISABLED_GLYPH}")
-    )
+    triage = tui_loop_state.phase_card_lines(model, "triage", focused=False, expanded=False)
+    assert "\n".join(triage).lstrip().startswith(f"▸ {tui_loop_state.PHASE_DISABLED_GLYPH}")
 
 
 def test_phase_card_focused_collapsed_remains_single_summary_line(
@@ -150,14 +152,10 @@ def test_phase_card_expanded_shows_edit_fields_with_overlay(tmp_path: Path) -> N
     )
     model = _model(repo, "p")
     model.set_field("review.model", "gpt-5.6")
-    expanded = tui_loop_state.phase_card_lines(
-        model, "review", focused=True, expanded=True
-    )
+    expanded = tui_loop_state.phase_card_lines(model, "review", focused=True, expanded=True)
     text = "\n".join(expanded)
     assert text.startswith(">▾")
-    assert (
-        "harness" in text and "model" in text and "effort" in text and "timeout" in text
-    )
+    assert "harness" in text and "model" in text and "effort" in text and "timeout" in text
     assert "gpt-5.6" in text and "gpt-5.5" not in text
 
 
@@ -170,9 +168,7 @@ def test_phase_card_timeout_overlay_shows_effective_default_when_unset(
         "[profiles.p.review]\nharness='codex'\nmodel='gpt-5.5'\n",
     )
     assert "300s default" in "\n".join(
-        tui_loop_state.phase_card_lines(
-            _model(repo, "p"), "review", focused=False, expanded=False
-        )
+        tui_loop_state.phase_card_lines(_model(repo, "p"), "review", focused=False, expanded=False)
     )
 
 
@@ -201,9 +197,7 @@ def test_checks_phase_is_display_only(tmp_path: Path) -> None:
         "[profiles.p]\n[profiles.p.pipeline]\nbase='main'\nchecks=['pytest -q']\n",
     )
     expanded = "\n".join(
-        tui_loop_state.phase_card_lines(
-            _model(repo, "p"), "checks", focused=True, expanded=True
-        )
+        tui_loop_state.phase_card_lines(_model(repo, "p"), "checks", focused=True, expanded=True)
     )
     assert "1 configured" in expanded
     assert "built-in: worktree cleanliness" in expanded
@@ -231,13 +225,12 @@ def test_loop_header_and_rails_reflect_unsaved_meta_edits(tmp_path: Path) -> Non
 
 
 def test_loop_meta_dotted_uses_raw_profile_keys() -> None:
-    assert (
-        tui_loop_state.LOOP_META_DOTTED["max_iterations"] == "pipeline.max_iterations"
-    )
+    assert tui_loop_state.LOOP_META_DOTTED["max_iterations"] == "pipeline.max_iterations"
     assert tui_loop_state.LOOP_META_DOTTED["final_review"] == "pipeline.final_review"
-    assert tui_loop_state.LOOP_META_DOTTED["inner_check_retries"] == (
-        "runtime.inner_check_retries"
+    assert tui_loop_state.LOOP_META_DOTTED["final_review_remediation_passes"] == (
+        "pipeline.final_review_remediation_passes"
     )
+    assert tui_loop_state.LOOP_META_DOTTED["inner_check_retries"] == ("runtime.inner_check_retries")
 
 
 def _routes_repo(tmp_path: Path) -> Path:

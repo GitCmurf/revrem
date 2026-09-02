@@ -198,7 +198,10 @@ def _resolve_summary_path(value: str, run_dir: Path, search_root: Path) -> Path 
 
 def _is_generated_review_artifact(path: Path) -> bool:
     name = path.name
-    return name == "review-final.txt" or re.fullmatch(r"review-\d+\.txt", name) is not None
+    return (
+        re.fullmatch(r"review-final(?:-recovery-\d+)?\.txt", name) is not None
+        or re.fullmatch(r"review-\d+\.txt", name) is not None
+    )
 
 
 def _optional_summary_str(summary: dict[str, object], key: str) -> str | None:

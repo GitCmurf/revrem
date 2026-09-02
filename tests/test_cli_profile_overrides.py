@@ -44,9 +44,7 @@ def test_profile_snapshot_is_exact_and_cli_overrides_it(tmp_path):
 def test_profile_snapshot_requires_matching_profile(tmp_path):
     snapshot = tmp_path / "snapshot.toml"
     snapshot.write_text("[profiles.other]\n", encoding="utf-8")
-    parsed = cli_args.parse_args(
-        ["--profile", "demo", "--profile-snapshot", str(snapshot)]
-    )
+    parsed = cli_args.parse_args(["--profile", "demo", "--profile-snapshot", str(snapshot)])
 
     with pytest.raises(ValueError, match="does not define profile 'demo'"):
         config_builder.build_loop_config(parsed, tmp_path, require_implemented=False)
@@ -55,9 +53,7 @@ def test_profile_snapshot_requires_matching_profile(tmp_path):
 def test_gemini_snapshot_without_an_explicit_cap_uses_model_default(tmp_path):
     snapshot = tmp_path / "snapshot.toml"
     snapshot.write_text(
-        "[profiles.demo.review]\n"
-        "harness='gemini'\n"
-        "model='gemini-3.1-pro-preview'\n",
+        "[profiles.demo.review]\nharness='gemini'\nmodel='gemini-3.1-pro-preview'\n",
         encoding="utf-8",
     )
     parsed = cli_args.parse_args(
@@ -69,7 +65,10 @@ def test_gemini_snapshot_without_an_explicit_cap_uses_model_default(tmp_path):
     from code_review_loop.config import DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS
 
     assert config.external_review_input_chars == DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS
-    assert config.phase_config_field_sources["runtime"]["external_review_input_chars"] == "model-default"
+    assert (
+        config.phase_config_field_sources["runtime"]["external_review_input_chars"]
+        == "model-default"
+    )
 
 
 def _clear_result(summary: dict[str, object]) -> application_mod.ReviewLoopResult:
@@ -78,9 +77,7 @@ def _clear_result(summary: dict[str, object]) -> application_mod.ReviewLoopResul
     )
 
 
-def test_main_cli_boolean_negations_override_profile_enabled_values(
-    tmp_path, monkeypatch
-):
+def test_main_cli_boolean_negations_override_profile_enabled_values(tmp_path, monkeypatch):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.chdir(tmp_path)
@@ -169,9 +166,7 @@ def test_no_tty_round_trips_through_profile_from_loop_config(tmp_path):
         artifact_dir=tmp_path / "artifacts",
         no_tty=True,
     )
-    saved = config_builder.profile_from_loop_config(
-        "saved", config, summary_format="json"
-    )
+    saved = config_builder.profile_from_loop_config("saved", config, summary_format="json")
     assert saved.output.no_tty is True
 
 
@@ -227,9 +222,7 @@ def test_shared_timeout_overrides_profile_commit_timeout(tmp_path, monkeypatch):
     assert config.timeout_seconds == 30
     assert config.commit_timeout_seconds == 30
     assert config.commit_timeout_seconds_display == 30
-    assert (
-        config.phase_config_field_sources["commit_message"]["timeout_seconds"] == "cli"
-    )
+    assert config.phase_config_field_sources["commit_message"]["timeout_seconds"] == "cli"
 
 
 def test_explicit_commit_timeout_overrides_shared_timeout(tmp_path, monkeypatch):
@@ -261,9 +254,7 @@ def test_explicit_commit_timeout_overrides_shared_timeout(tmp_path, monkeypatch)
     assert config.timeout_seconds == 30
     assert config.commit_timeout_seconds == 45
     assert config.commit_timeout_seconds_display == 45
-    assert (
-        config.phase_config_field_sources["commit_message"]["timeout_seconds"] == "cli"
-    )
+    assert config.phase_config_field_sources["commit_message"]["timeout_seconds"] == "cli"
 
 
 def test_phase_config_payload_marks_unsupported_provider_reasoning_effort():
@@ -312,9 +303,7 @@ def test_phase_config_payload_records_codex_provider_reasoning_effort():
     assert phase_config["commit_message"]["provider_reasoning_effort"] == "minimal"
 
 
-def test_cli_commit_message_harness_overrides_profile_commit_harness(
-    tmp_path, monkeypatch
-):
+def test_cli_commit_message_harness_overrides_profile_commit_harness(tmp_path, monkeypatch):
     monkeypatch.setattr(
         config_builder,
         "profile_or_default",
@@ -344,9 +333,7 @@ def test_cli_commit_message_harness_overrides_profile_commit_harness(
     assert config.phase_config_field_sources["commit_message"]["harness"] == "cli"
 
 
-def test_cli_commit_harness_alias_overrides_profile_commit_harness(
-    tmp_path, monkeypatch
-):
+def test_cli_commit_harness_alias_overrides_profile_commit_harness(tmp_path, monkeypatch):
     monkeypatch.setattr(
         config_builder,
         "profile_or_default",
@@ -433,9 +420,7 @@ def test_cli_review_and_remediation_harnesses_override_profile(tmp_path, monkeyp
     assert saved.remediation.harness == "opencode"
 
 
-def test_gemini_pro_review_uses_large_context_default_when_cap_omitted(
-    tmp_path, monkeypatch
-):
+def test_gemini_pro_review_uses_large_context_default_when_cap_omitted(tmp_path, monkeypatch):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.chdir(tmp_path)
@@ -467,9 +452,7 @@ model = "gemini-3.1-pro-preview"
     assert DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS < GEMINI_ARGV_PROMPT_MAX_BYTES
 
 
-def test_explicit_external_review_cap_overrides_gemini_model_default(
-    tmp_path, monkeypatch
-):
+def test_explicit_external_review_cap_overrides_gemini_model_default(tmp_path, monkeypatch):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.chdir(tmp_path)
@@ -498,10 +481,7 @@ external_review_input_chars = 80000
     config, _summary_format = config_builder.build_loop_config(args, tmp_path)
 
     assert config.external_review_input_chars == 1234
-    assert (
-        config.phase_config_field_sources["runtime"]["external_review_input_chars"]
-        == "cli"
-    )
+    assert config.phase_config_field_sources["runtime"]["external_review_input_chars"] == "cli"
 
     args = cli_args.parse_args(["--profile", "gemini-review", "--dry-run"])
     config, _summary_format = config_builder.build_loop_config(args, tmp_path)
@@ -533,7 +513,10 @@ def test_gemini_alias_uses_resolved_driver_for_model_default(tmp_path, monkeypat
 
     assert config.review_harness == "team-gemini"
     assert config.external_review_input_chars == DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS
-    assert config.phase_config_field_sources["runtime"]["external_review_input_chars"] == "model-default"
+    assert (
+        config.phase_config_field_sources["runtime"]["external_review_input_chars"]
+        == "model-default"
+    )
 
 
 def test_external_review_truncation_policy_cli_overrides_profile(tmp_path, monkeypatch):
@@ -565,9 +548,7 @@ external_review_truncation_policy = "warn"
 
     assert config.external_review_truncation_policy == "fail"
     assert phase_config["runtime"]["external_review_truncation_policy"] == "fail"
-    assert (
-        phase_config["runtime"]["sources"]["external_review_truncation_policy"] == "cli"
-    )
+    assert phase_config["runtime"]["sources"]["external_review_truncation_policy"] == "cli"
     saved = config_builder.profile_from_loop_config(
         "saved",
         config,
@@ -605,18 +586,11 @@ provider_retry_backoff_seconds = 5.0
 
     assert config.provider_retry_attempts == 4
     assert config.provider_retry_backoff_seconds == 2.5
-    assert (
-        config.phase_config_field_sources["runtime"]["provider_retry_attempts"] == "cli"
-    )
-    assert (
-        config.phase_config_field_sources["runtime"]["provider_retry_backoff_seconds"]
-        == "cli"
-    )
+    assert config.phase_config_field_sources["runtime"]["provider_retry_attempts"] == "cli"
+    assert config.phase_config_field_sources["runtime"]["provider_retry_backoff_seconds"] == "cli"
 
 
-def test_cli_commit_reasoning_effort_overrides_profile_commit_effort(
-    tmp_path, monkeypatch
-):
+def test_cli_commit_reasoning_effort_overrides_profile_commit_effort(tmp_path, monkeypatch):
     monkeypatch.setattr(
         config_builder,
         "profile_or_default",
@@ -673,13 +647,8 @@ def test_codex_commit_reasoning_effort_promotes_minimal_to_low(tmp_path, monkeyp
 
     assert config.commit_reasoning_effort == "low"
     assert config.commit_reasoning_effort_requested == "minimal"
-    assert (
-        config.commit_reasoning_effort_adjustment
-        == "codex_minimal_unsupported_by_model"
-    )
-    assert (
-        config.phase_config_field_sources["commit_message"]["reasoning_effort"] == "cli"
-    )
+    assert config.commit_reasoning_effort_adjustment == "codex_minimal_unsupported_by_model"
+    assert config.phase_config_field_sources["commit_message"]["reasoning_effort"] == "cli"
     phase_config = reporting.phase_config_payload(config)
     assert phase_config["commit_message"]["reasoning_effort"] == "low"
     assert phase_config["commit_message"]["requested_reasoning_effort"] == "minimal"
@@ -689,9 +658,7 @@ def test_codex_commit_reasoning_effort_promotes_minimal_to_low(tmp_path, monkeyp
     )
 
 
-def test_codex_commit_reasoning_effort_keeps_minimal_for_unknown_model(
-    tmp_path, monkeypatch
-):
+def test_codex_commit_reasoning_effort_keeps_minimal_for_unknown_model(tmp_path, monkeypatch):
     monkeypatch.setattr(
         config_builder,
         "profile_or_default",
@@ -747,9 +714,7 @@ def test_run_loop_skips_commit_cleanliness_check_during_dry_run(tmp_path):
     assert summary["stopped_reason"] == "max_iterations_reached"
 
 
-def test_main_can_reenable_profile_disabled_true_by_default_booleans(
-    tmp_path, monkeypatch
-):
+def test_main_can_reenable_profile_disabled_true_by_default_booleans(tmp_path, monkeypatch):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.chdir(tmp_path)
@@ -800,6 +765,32 @@ output_last_message = false
     assert config.final_review is True
 
 
+def test_main_can_override_final_review_remediation_passes(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    captured_configs = []
+
+    def fake_run_loop(config):
+        captured_configs.append(config)
+        return _clear_result(
+            {
+                "artifact_dir": str(config.artifact_dir),
+                "final_status": "clear",
+                "stopped_reason": "review_clear",
+                "iterations": [],
+            }
+        )
+
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
+
+    exit_code = cli_main.main(["--final-review-remediation-passes", "2", "--dry-run"])
+
+    assert exit_code == 0
+    assert captured_configs[0].final_review_remediation_passes == 2
+
+
 def test_main_can_disable_profile_commit_with_negative_flag(tmp_path, monkeypatch):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
@@ -837,9 +828,7 @@ enabled = true
     assert captured_configs[0].commit_after_remediation is False
 
 
-def test_main_commit_message_model_override_wins_over_profile_default(
-    tmp_path, monkeypatch
-):
+def test_main_commit_message_model_override_wins_over_profile_default(tmp_path, monkeypatch):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.chdir(tmp_path)
@@ -986,9 +975,7 @@ timeout_seconds = 30
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
-    exit_code = cli_main.main(
-        ["--profile", "final-pr", "--reasoning-effort", "high", "--dry-run"]
-    )
+    exit_code = cli_main.main(["--profile", "final-pr", "--reasoning-effort", "high", "--dry-run"])
 
     assert exit_code == 0
     config = captured_configs[0]
@@ -1000,9 +987,7 @@ timeout_seconds = 30
     assert config.triage_reasoning_effort == "low"
 
 
-def test_main_rejects_codex_triage_minimal_reasoning_effort(
-    tmp_path, monkeypatch, capsys
-):
+def test_main_rejects_codex_triage_minimal_reasoning_effort(tmp_path, monkeypatch, capsys):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.chdir(tmp_path)
@@ -1025,14 +1010,10 @@ def test_main_rejects_codex_triage_minimal_reasoning_effort(
     )
 
     assert exit_code == 1
-    assert (
-        "Codex triage cannot use reasoning effort 'minimal'" in capsys.readouterr().err
-    )
+    assert "Codex triage cannot use reasoning effort 'minimal'" in capsys.readouterr().err
 
 
-def test_main_rejects_minimal_effort_for_codex_triage_harness_alias(
-    tmp_path, monkeypatch, capsys
-):
+def test_main_rejects_minimal_effort_for_codex_triage_harness_alias(tmp_path, monkeypatch, capsys):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "missing-codex"))
@@ -1219,9 +1200,7 @@ harness = "codex"
     assert "--no-routing-strict" in text
 
 
-def test_main_rejects_triage_overrides_when_triage_disabled(
-    tmp_path, monkeypatch, capsys
-):
+def test_main_rejects_triage_overrides_when_triage_disabled(tmp_path, monkeypatch, capsys):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.chdir(tmp_path)
@@ -1273,9 +1252,7 @@ model = "gpt-5.4-mini"
     assert "Add --triage" in stderr
 
 
-def test_main_rejects_routing_overrides_when_triage_disabled(
-    tmp_path, monkeypatch, capsys
-):
+def test_main_rejects_routing_overrides_when_triage_disabled(tmp_path, monkeypatch, capsys):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.chdir(tmp_path)
@@ -1326,9 +1303,7 @@ model = "gpt-5.4-mini"
     assert "Add --triage" in stderr
 
 
-def test_main_accepts_triage_overrides_when_profile_enables_triage(
-    tmp_path, monkeypatch
-):
+def test_main_accepts_triage_overrides_when_profile_enables_triage(tmp_path, monkeypatch):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.chdir(tmp_path)
@@ -1417,9 +1392,7 @@ checks = ["pytest -q"]
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
-    exit_code = cli_main.main(
-        ["--profile", "slow-checks", "--timeout-seconds", "30", "--dry-run"]
-    )
+    exit_code = cli_main.main(["--profile", "slow-checks", "--timeout-seconds", "30", "--dry-run"])
 
     assert exit_code == 0
     config = captured_configs[0]
@@ -1428,9 +1401,7 @@ checks = ["pytest -q"]
     assert config.phase_config_field_sources["checks"]["timeout_seconds"] == "cli"
 
 
-def test_main_triage_cli_negations_override_profile_enabled_values(
-    tmp_path, monkeypatch
-):
+def test_main_triage_cli_negations_override_profile_enabled_values(tmp_path, monkeypatch):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.chdir(tmp_path)
@@ -1467,9 +1438,7 @@ harness = "codex"
 
     monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
 
-    exit_code = cli_main.main(
-        ["--profile", "final-pr", "--no-triage", "--no-routing", "--dry-run"]
-    )
+    exit_code = cli_main.main(["--profile", "final-pr", "--no-triage", "--no-routing", "--dry-run"])
 
     assert exit_code == 0
     config = captured_configs[0]
@@ -1529,9 +1498,7 @@ harness = "codex"
     config = captured_configs[0]
     assert config.profile_v2 is not None
     assert config.profile_v2.triage.routing.allow_model_escalation is False
-    assert (
-        config.phase_config_field_sources["triage"]["allow_model_escalation"] == "cli"
-    )
+    assert config.phase_config_field_sources["triage"]["allow_model_escalation"] == "cli"
 
 
 def test_main_route_cli_override_forces_existing_profile_route(tmp_path, monkeypatch):
@@ -1722,9 +1689,7 @@ def test_validate_model_selections_uses_effective_routed_values(tmp_path, monkey
     assert ("codex", "gpt-5.6-luna", "ultra") in calls
 
 
-def test_validate_model_selections_skips_routing_when_routing_disabled(
-    tmp_path, monkeypatch
-):
+def test_validate_model_selections_skips_routing_when_routing_disabled(tmp_path, monkeypatch):
     calls = []
 
     def fake_validate_selection(harness, model, effort, cwd):

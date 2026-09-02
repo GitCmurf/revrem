@@ -87,6 +87,7 @@ description = "Project-local RevRem dogfood run with full verification, commits,
 
 [profiles.dogfood.pipeline]
 max_iterations = 3
+final_review_remediation_passes = 1
 checks = [
   "./.venv/bin/ruff check .",
   "./.venv/bin/mypy src",

@@ -213,6 +213,61 @@ def test_decide_f5_final_review_findings_exits_findings() -> None:
     assert action == Stop(OutcomeFindings(reason="max_iterations_reached"))
 
 
+def test_decide_final_review_findings_begin_bounded_remediation() -> None:
+    cfg = ConfigSnapshot(
+        max_iterations=3,
+        triage_enabled=True,
+        commit_after_remediation=True,
+        commit_on_hook_failure="fail",
+        final_review=True,
+        final_review_remediation_passes=1,
+    )
+    acc = LoopAccumulator(pending_check_failures="")
+    event = ReviewDone(is_final=True, status="findings")
+
+    action = decide(cfg, acc, event, iteration=3)
+
+    assert type(action).__name__ == "BeginFinalReviewRemediation"
+
+
+def test_decide_final_review_findings_stop_after_recovery_budget() -> None:
+    cfg = ConfigSnapshot(
+        max_iterations=3,
+        triage_enabled=True,
+        commit_after_remediation=True,
+        commit_on_hook_failure="fail",
+        final_review=True,
+        final_review_remediation_passes=1,
+    )
+    acc = LoopAccumulator(pending_check_failures="")
+    event = ReviewDone(is_final=True, status="findings")
+
+    action = decide(cfg, acc, event, iteration=4)
+
+    assert action == Stop(OutcomeFindings(reason="max_iterations_reached"))
+
+
+def test_decide_final_findings_can_recover_pending_check_failures() -> None:
+    cfg = ConfigSnapshot(
+        max_iterations=3,
+        triage_enabled=True,
+        commit_after_remediation=True,
+        commit_on_hook_failure="fail",
+        final_review=True,
+        final_review_remediation_passes=1,
+    )
+    acc = LoopAccumulator(pending_check_failures="pytest failed")
+
+    action = decide(
+        cfg,
+        acc,
+        ReviewDone(is_final=True, status="findings"),
+        iteration=3,
+    )
+
+    assert type(action).__name__ == "BeginFinalReviewRemediation"
+
+
 def test_decide_f6_final_review_unknown_exits_unknown() -> None:
     cfg = ConfigSnapshot(3, True, True, "fail", True)
     acc = LoopAccumulator(pending_check_failures="")

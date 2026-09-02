@@ -460,6 +460,7 @@ def test_resume_config_payload_and_loop_config_restore_trusted_repo(tmp_path):
         cwd=tmp_path,
         artifact_dir=tmp_path / "artifacts",
         trusted_repo=True,
+        final_review_remediation_passes=2,
     )
     payload = resume_mod.resume_config_payload(config)
     run_dir = tmp_path / "run"
@@ -471,6 +472,8 @@ def test_resume_config_payload_and_loop_config_restore_trusted_repo(tmp_path):
 
     assert payload["trusted_repo"] is True
     assert resumed.trusted_repo is True
+    assert payload["final_review_remediation_passes"] == 2
+    assert resumed.final_review_remediation_passes == 2
 
 
 def test_resume_config_payload_omits_default_extension_fields(tmp_path):

@@ -3,7 +3,7 @@ document_id: REVREM-LEDGER-003
 type: LEDGER
 title: Behaviour ledger for the cli.py re-engineering (REVREM-TASK-003)
 status: Approved
-version: '1.13'
+version: '1.14'
 last_updated: '2026-09-02'
 owner: GitCmurf
 docops_version: '2.0'
@@ -55,6 +55,27 @@ There is no silent third option.
 ```
 
 ## Entries
+
+### 2026-09-02 — Bounded final-review remediation
+
+- **Contract:** machine and human presentation
+- **What changed:** actionable final-review findings can consume a separately
+  configured, bounded recovery pass. Each recovery records an additive
+  `final_review_remediation` iteration marker, retains `review-final.txt`, adds
+  `review-final-recovery-N.txt`, and returns to another final review. Live and
+  terminal views label the numbered work `final recovery N/M` rather than an
+  impossible ordinary iteration beyond `max_iterations`.
+- **Why:** the final audit previously found valid issues but could only stop;
+  operators had to start another run manually even though the loop already had
+  all required triage, remediation, verification, and commit capabilities.
+- **Before / After:** final findings previously terminated with
+  `max_iterations_reached`; with recovery budget remaining they now enter the
+  existing bounded phase path, and retain the old terminal outcome when that
+  independent budget is exhausted.
+- **schema_version impact:** none. Summary iteration fields and `resume_config`
+  are additive under the permissive summary v1.1 schema; event iteration values
+  remain integers, dotted numeric substeps, or `final`.
+- **CHANGELOG:** Unreleased / Added.
 
 ### 2026-09-02 — Follow-up recovery and valid detected checks
 
@@ -1148,6 +1169,7 @@ complete set, drawn from the left-column conditions above, is:
 | `config.commit_on_hook_failure` | `str` | config |
 | `config.triage_enabled` | `bool` | config |
 | `config.final_review` | `bool` | config |
+| `config.final_review_remediation_passes` | `int` | config |
 
 Config fields are read-only and can be passed as a bundle. The phase-result
 fields (`review_exc`, `triage_exc`, etc.) represent "what happened this phase"
@@ -1183,12 +1205,13 @@ an unledgered transition.
 | Engine type | Ledger row(s) | Meaning |
 |---|---|---|
 | `LoopStarted` | R1, R2 | Begin an iteration by requesting `RunReview(is_final=False)`. |
-| `ReviewDone` | R3, E1, F2-F6 | Review result gates review failure, early clear, triage/remediation, or final outcomes. |
+| `ReviewDone` | R3, E1, F2-F6, FR1-FR2 | Review result gates review failure, early clear, triage/remediation, final-review recovery, or terminal outcomes. |
 | `TriageDone` | T2-T6 | Triage either exits clear/failed or requests remediation. |
 | `RemediationDone` | M2-M3, CK1 | Remediation failure exits; success requests checks. |
 | `ChecksDone` | CK1, L1-L2, CM1 | Checks update pending failures, then either request commit or advance review. |
 | `CommitDone` | CM1-CM7, L3-L4 | Commit status either exits, retries via hook output, or advances review. |
 | `NoFinalReview` | NF1 | Exhausted loop without final review exits unknown. |
+| `BeginFinalReviewRemediation` | FR1 | Consume one independently bounded recovery pass and route final findings through the normal triage/remediation path. |
 | `Continue` | L1-L4 | Advance to the next iteration. |
 | `RunReview` | R1, R2, F1 | Execute iteration or final review. |
 | `RunTriage` | T1 | Execute triage for review findings. |
@@ -1196,7 +1219,7 @@ an unledgered transition.
 | `RunChecks` | CK1 | Execute verification checks after remediation. |
 | `RunCommit` | CM1-CM7 | Execute optional commit when checks are clear. |
 | `RetryViaCommitHook` | CM3, L4 | Feed retryable commit hook output into the next remediation iteration. |
-| `Stop` | P1, R3, E1, T2-T3, T6, M3, CM2, CM4-CM5, CM7, F2-F6, NF1, X1-X2 | Terminal outcome wrapper applied by the shell. |
+| `Stop` | P1, R3, E1, T2-T3, T6, M3, CM2, CM4-CM5, CM7, F2-F6, FR2, NF1, X1-X2 | Terminal outcome wrapper applied by the shell. |
 
 #### `_run_loop` pre-loop guards (before state is initialised)
 
@@ -1291,10 +1314,17 @@ an unledgered transition.
 |---|---|---|---|
 | F1 | final review runs successfully | `latest_review_excerpt=…` | sets `status` and `final_review` for subsequent branches |
 | F2 | `RuntimeError` from final review | `final_status=error`, `stopped_reason=review_failed`, `error=str(exc)`, `iterations.append({iteration:"final", review_failed:True})` | `raise RunLoopFailed` (summary written) |
-| F3 | `pending_check_failures` after final review | `final_status=findings`, `pending_check_failures=True`, `stopped_reason=max_iterations_reached_with_check_failures` | `return summary` |
+| F3 | `pending_check_failures` after final review and recovery is not selected | `final_status=findings`, `pending_check_failures=True`, `stopped_reason=max_iterations_reached_with_check_failures` | `return summary` |
 | F4 | `status == "clear"` after final review (no pending check failures) | `final_status=clear`, `stopped_reason=review_clear` | `return summary` |
-| F5 | `status == "findings"` after final review | `final_status=findings`, `stopped_reason=max_iterations_reached` | `return summary` |
+| F5 | `status == "findings"` after final review and recovery is disabled | `final_status=findings`, `stopped_reason=max_iterations_reached` | `return summary` |
 | F6 | `status == "unknown"` after final review | `final_status=unknown`, `stopped_reason=max_iterations_reached`, appends `{iteration:"final", review_status:"unknown"}` | `return summary` |
+
+#### Post-loop — bounded final-review recovery
+
+| # | Branch condition | State mutation | Outcome |
+|---|---|---|---|
+| FR1 | final review reports findings and `iteration - max_iterations < final_review_remediation_passes` | increments the internal iteration, appends `final_review_remediation=true`, preserves the final-review artifact as the next triage/remediation source, and clears per-pass retry/routing state | enter the normal triage/remediation/check/commit path, then run a fresh final review |
+| FR2 | a recovery final review still reports findings after the recovery limit is consumed | `final_status=findings`, `stopped_reason=max_iterations_reached` | `return summary` |
 
 #### Post-loop — no final review (`not config.final_review`)
 

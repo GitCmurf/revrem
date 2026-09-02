@@ -180,6 +180,7 @@
     "external_review_truncation_policy": "warn",
     "external_review_warning_seconds": 1800,
     "final_review": false,
+    "final_review_remediation_passes": 0,
     "full_auto": true,
     "harness_executables": {},
     "initial_review_mode": "none",

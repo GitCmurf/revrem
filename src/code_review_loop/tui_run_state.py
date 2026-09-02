@@ -39,6 +39,8 @@ class RunLoopView:
     max_iterations: int
     inner_retry: int
     inner_check_retries: int
+    final_review_remediation_pass: int
+    final_review_remediation_passes: int
 
 
 @dataclass(frozen=True)
@@ -78,9 +80,7 @@ def _outer_iteration(value: object) -> int | None:
     return None
 
 
-def run_loop_view(
-    records: tuple[Any, ...] | list[Any], profile: profiles.Profile
-) -> RunLoopView:
+def run_loop_view(records: tuple[Any, ...] | list[Any], profile: profiles.Profile) -> RunLoopView:
     enabled = _phase_enabled_map(profile)
     states: dict[str, str] = {
         name: ("pending" if enabled.get(name, True) else "disabled")
@@ -169,12 +169,14 @@ def run_loop_view(
         max_iterations=profile.pipeline.max_iterations,
         inner_retry=max(0, remediate_starts_this_iteration - 1),
         inner_check_retries=profile.runtime.inner_check_retries,
+        final_review_remediation_pass=(
+            max(0, iteration - profile.pipeline.max_iterations) if iteration is not None else 0
+        ),
+        final_review_remediation_passes=(profile.pipeline.final_review_remediation_passes),
     )
 
 
-def event_tail_lines(
-    records: tuple[Any, ...] | list[Any], *, limit: int = 8
-) -> tuple[str, ...]:
+def event_tail_lines(records: tuple[Any, ...] | list[Any], *, limit: int = 8) -> tuple[str, ...]:
     if not records:
         return ()
     tail = records[-limit:]
@@ -197,9 +199,7 @@ def run_outcome_view(summary: dict[str, object]) -> RunOutcomeView:
         explanation = "No actionable findings remain."
     elif status == "findings":
         title, headline, severity = "ACTION NEEDED", "Findings remain", "warning"
-        explanation = (
-            "The run stopped with an actionable review that has not been remediated."
-        )
+        explanation = "The run stopped with an actionable review that has not been remediated."
     elif reason == "cancelled":
         title, headline, severity = "STOPPED", "Run cancelled", "warning"
         explanation = "The run stopped at a recorded boundary."
@@ -213,17 +213,14 @@ def run_outcome_view(summary: dict[str, object]) -> RunOutcomeView:
     duration_value = summary.get("duration_seconds")
     duration = (
         format_duration(float(duration_value))
-        if isinstance(duration_value, (int, float))
-        and not isinstance(duration_value, bool)
+        if isinstance(duration_value, (int, float)) and not isinstance(duration_value, bool)
         else None
     )
     invocations = summary.get("model_invocations")
     tokens = summary.get("tokens")
     telemetry: list[str] = []
     if isinstance(invocations, list):
-        telemetry.append(
-            f"{len(invocations)} model call{'s' if len(invocations) != 1 else ''}"
-        )
+        telemetry.append(f"{len(invocations)} model call{'s' if len(invocations) != 1 else ''}")
     token_total = tokens.get("total") if isinstance(tokens, dict) else tokens
     if isinstance(token_total, int) and not isinstance(token_total, bool):
         telemetry.append(f"{token_total:,} tokens")
@@ -286,17 +283,14 @@ def timeline_lines(
         kind = str(getattr(record, "kind", "event")).replace("_", " ")
         detail = tui_state.event_detail(record)
         description = f"{kind} · {detail}" if detail else kind
-        lines.append(
-            _timeline_line(occurred, started, iteration, phase, description, zone)
-        )
+        lines.append(_timeline_line(occurred, started, iteration, phase, description, zone))
     flush_artifacts()
     return tuple(lines)
 
 
 def raw_event_lines(records: tuple[Any, ...] | list[Any]) -> tuple[str, ...]:
     return tuple(
-        tui_state.event_row_text(view)
-        for view in tui_state.event_views_from_events(tuple(records))
+        tui_state.event_row_text(view) for view in tui_state.event_views_from_events(tuple(records))
     )
 
 
@@ -304,14 +298,10 @@ def format_duration(seconds: float) -> str:
     total = max(0, int(round(seconds)))
     minutes, secs = divmod(total, 60)
     hours, minutes = divmod(minutes, 60)
-    return (
-        f"{hours}h {minutes:02d}m {secs:02d}s" if hours else f"{minutes}m {secs:02d}s"
-    )
+    return f"{hours}h {minutes:02d}m {secs:02d}s" if hours else f"{minutes}m {secs:02d}s"
 
 
-def format_finished_at(
-    value: str | None, *, local_tz: tzinfo | None = None
-) -> str | None:
+def format_finished_at(value: str | None, *, local_tz: tzinfo | None = None) -> str | None:
     occurred = _event_datetime(value or "")
     if occurred is None:
         return None
@@ -325,14 +315,28 @@ def _iteration_outcomes(
     raw = summary.get("iterations")
     if not isinstance(raw, list):
         return ()
+    configured_max = summary.get("max_iterations")
+    if not isinstance(configured_max, int) or isinstance(configured_max, bool):
+        resume_config = summary.get("resume_config")
+        configured_max = (
+            resume_config.get("max_iterations") if isinstance(resume_config, dict) else None
+        )
     rows: list[RunIterationOutcome] = []
     for index, item in enumerate(raw, start=1):
         if not isinstance(item, dict):
             continue
         number = item.get("iteration")
-        iteration = number if isinstance(number, int) else (
-            "final" if number == "final" else index
-        )
+        if (
+            item.get("final_review_remediation") is True
+            and isinstance(number, int)
+            and isinstance(configured_max, int)
+            and not isinstance(configured_max, bool)
+        ):
+            iteration: int | str = f"final recovery {max(1, number - configured_max)}"
+        else:
+            iteration = (
+                number if isinstance(number, int) else ("final" if number == "final" else index)
+            )
         review = str(item.get("review_status") or "unknown")
         inconclusive = review == "unknown" or (
             terminal_reason == "review_unknown" and index == len(raw)
@@ -349,9 +353,7 @@ def _iteration_outcomes(
                 )
             )
             remediation = (
-                "done"
-                if not remediation_failed and item.get("remediated") is True
-                else "skipped"
+                "done" if not remediation_failed and item.get("remediated") is True else "skipped"
             )
             failures = item.get("check_failures")
             checks = (
@@ -393,10 +395,6 @@ def _timeline_line(
     description: str,
     local_tz: tzinfo,
 ) -> str:
-    wall = (
-        occurred.astimezone(local_tz).strftime("%H:%M:%S") if occurred else "--:--:--"
-    )
-    elapsed = (
-        int(max(0, (occurred - started).total_seconds())) if occurred and started else 0
-    )
+    wall = occurred.astimezone(local_tz).strftime("%H:%M:%S") if occurred else "--:--:--"
+    elapsed = int(max(0, (occurred - started).total_seconds())) if occurred and started else 0
     return f"{wall}  +{elapsed:>4}s  {iteration:>2}  {phase:<11}  {description}"

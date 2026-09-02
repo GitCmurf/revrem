@@ -84,9 +84,12 @@ def test_loop_snapshot_final_review_on(tmp_path: Path) -> None:
 base = "main"
 max_iterations = 4
 final_review = true
+final_review_remediation_passes = 1
 """,
     )
     assert "Final review: on" in svg
+    assert "Recovery passes: 1" in svg
+    assert "final review -&gt; remediate + verify (up to 1 pass)" in svg
     assert_svg_snapshot("tui_loop/final-review-on", svg)
 
 
@@ -156,8 +159,6 @@ def _capture_loop_svg(
                 diagram.set_text_field("model", edit_model)
                 app._update_console_status()
                 await pilot.pause()
-            return normalize_svg(
-                app.export_screenshot(title="revrem-loop", simplify=True)
-            )
+            return normalize_svg(app.export_screenshot(title="revrem-loop", simplify=True))
 
     return asyncio.run(run())

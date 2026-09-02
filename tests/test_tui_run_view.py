@@ -13,6 +13,7 @@ def _profile(
     triage: bool = False,
     commit: bool = True,
     inner: int = 0,
+    final_recovery: int = 0,
     checks: tuple[str, ...] | None = ("pytest -q",),
 ) -> profiles.Profile:
     repo = tmp_path / "repo"
@@ -22,6 +23,7 @@ def _profile(
         "[profiles.p.pipeline]",
         "base='main'",
         "max_iterations=11",
+        f"final_review_remediation_passes={final_recovery}",
         "[profiles.p.triage]",
         f"enabled={'true' if triage else 'false'}",
         "[profiles.p.commit]",
@@ -29,12 +31,8 @@ def _profile(
         "[profiles.p.runtime]",
         f"inner_check_retries={inner}",
     ]
-    checks_value = (
-        "[]"
-        if checks is None
-        else f"[{', '.join(repr(command) for command in checks)}]"
-    )
-    body.insert(4, f"checks={checks_value}")
+    checks_value = "[]" if checks is None else f"[{', '.join(repr(command) for command in checks)}]"
+    body.insert(5, f"checks={checks_value}")
     (repo / ".revrem.toml").write_text("\n".join(body) + "\n", encoding="utf-8")
     return profiles.resolve_profile("p", cwd=repo, require_implemented=False)
 
@@ -80,6 +78,20 @@ def test_running_and_done_states_map_remediate(tmp_path: Path) -> None:
     assert view.iteration == 1
 
 
+def test_live_view_labels_iterations_beyond_outer_limit_as_final_recovery(
+    tmp_path: Path,
+) -> None:
+    events = (_ev(1, "phase_start", "remediate", 12),)
+
+    view = tui_run_state.run_loop_view(
+        events,
+        _profile(tmp_path, final_recovery=2),
+    )
+
+    assert view.final_review_remediation_pass == 1
+    assert view.final_review_remediation_passes == 2
+
+
 def test_stale_validation_maps_to_the_review_phase(tmp_path: Path) -> None:
     view = tui_run_state.run_loop_view(
         (_ev(1, "phase_start", "stale-validation", 1),), _profile(tmp_path)
@@ -91,9 +103,7 @@ def test_stale_validation_maps_to_the_review_phase(tmp_path: Path) -> None:
 
 
 def test_disabled_phases_render_disabled(tmp_path: Path) -> None:
-    view = tui_run_state.run_loop_view(
-        (), _profile(tmp_path, triage=False, commit=False)
-    )
+    view = tui_run_state.run_loop_view((), _profile(tmp_path, triage=False, commit=False))
     states = {phase.name: phase.state for phase in view.phases}
 
     assert states["triage"] == "disabled"
@@ -279,9 +289,7 @@ def test_string_outer_iteration_change_resets_prior_states(tmp_path: Path) -> No
 
 
 def test_event_tail_lines_bounded_and_formatted() -> None:
-    events = [
-        _ev(i, "phase_output", "review", 1, text=f"line {i}") for i in range(1, 20)
-    ]
+    events = [_ev(i, "phase_output", "review", 1, text=f"line {i}") for i in range(1, 20)]
 
     lines = tui_run_state.event_tail_lines(events, limit=5)
 
@@ -374,9 +382,7 @@ def test_iteration_outcome_marks_persisted_successful_remediation_done() -> None
         {
             "final_status": "clear",
             "stopped_reason": "review_clear",
-            "iterations": [
-                {"iteration": 1, "review_status": "findings", "remediated": True}
-            ],
+            "iterations": [{"iteration": 1, "review_status": "findings", "remediated": True}],
         }
     )
 
@@ -395,11 +401,30 @@ def test_iteration_outcome_preserves_final_review_label() -> None:
     assert view.iterations[0].iteration == "final"
 
 
+def test_iteration_outcome_labels_final_review_remediation_separately() -> None:
+    view = tui_run_state.run_outcome_view(
+        {
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+            "max_iterations": 3,
+            "iterations": [
+                {
+                    "iteration": 4,
+                    "review_status": "findings",
+                    "final_review_remediation": True,
+                    "remediated": True,
+                    "check_failures": 0,
+                }
+            ],
+        }
+    )
+
+    assert view.iterations[0].iteration == "final recovery 1"
+
+
 def test_timeline_has_wall_time_elapsed_time_and_groups_artifacts() -> None:
     records = (
-        event_model.Event(
-            "r", 1, "phase_start", "review", 1, {}, "2026-07-13T00:00:00Z"
-        ),
+        event_model.Event("r", 1, "phase_start", "review", 1, {}, "2026-07-13T00:00:00Z"),
         event_model.Event(
             "r",
             2,

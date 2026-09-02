@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from support.fakes import FakeClock, FakeRunIdentity  # noqa: E402
 from support.phase_harnesses import phase_harness_kwargs  # noqa: E402
 
-from code_review_loop.adapters.phase_support import progress_event
+from code_review_loop.adapters.phase_support import (
+    progress_event,
+    progress_iteration_label,
+    terminal_iteration_label,
+)
 from code_review_loop.adapters.terminal import TerminalProgressReporter  # noqa: E402
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.ports import ProgressReporter, RunContext  # noqa: E402
@@ -73,6 +79,26 @@ def test_progress_event_delegates_to_reporter_when_injected(tmp_path, capsys):
     assert reporter.calls == [("review", "1", "start", "detail text")]
     # No output to stderr — the reporter was invoked instead of legacy path
     assert capsys.readouterr().err == ""
+
+
+def test_progress_event_names_bounded_final_review_recovery_for_operator(tmp_path, capsys):
+    reporter = RecordingReporter()
+    ctx = _make_ctx(reporter)
+    config = _make_config(tmp_path, progress=True, progress_style="compact")
+    config = replace(config, final_review_remediation_passes=2)
+
+    progress_event(config, "remediate", "2", "start", "detail text", ctx=ctx)
+
+    assert reporter.calls == [("remediate", "final recovery 1/2", "start", "detail text")]
+    assert capsys.readouterr().err == ""
+
+
+def test_terminal_iteration_label_preserves_schema_substep_for_display() -> None:
+    assert (
+        terminal_iteration_label("2.1", 1, final_review_remediation_passes=2)
+        == "final recovery 1/2.1"
+    )
+    assert progress_iteration_label("4", 1, final_review_remediation_passes=2) == "4"
 
 
 # ---------------------------------------------------------------------------

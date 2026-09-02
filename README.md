@@ -139,6 +139,9 @@ RevRem is intentionally local, watched, and bounded:
   schema-validated actions and route them to the right harness/model.
 - **Auto-commit** (optional) commits each verified remediation pass after your
   checks pass.
+- **Bounded final-review recovery** (optional) can remediate findings discovered
+  only by the final audit, then re-run that audit without reopening the ordinary
+  iteration limit.
 - **Bug-report bundles** package a failed run into a redacted, shareable archive.
 - **Static HTML reports** render a finished run into a single, self-contained,
   redacted-by-default HTML file (or a machine-readable JSON index) — no model
@@ -165,6 +168,7 @@ Profiles keep long commands repeatable:
 revrem config new final-pr --description "Full PR readiness check"
 revrem config edit final-pr
 revrem config set final-pr pipeline.max_iterations 11
+revrem config set final-pr pipeline.final_review_remediation_passes 1
 revrem config set final-pr runtime.provider_retry_attempts 5
 revrem config set final-pr triage.contract v2
 revrem config set final-pr triage.enabled true

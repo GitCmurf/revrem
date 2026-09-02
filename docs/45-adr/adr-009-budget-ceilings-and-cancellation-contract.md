@@ -3,7 +3,7 @@ document_id: REVREM-ADR-009
 type: ADR
 title: Budget Ceilings And Cancellation Contract
 status: Draft
-version: '0.2'
+version: '0.3'
 last_updated: '2026-09-02'
 owner: __TBD__
 docops_version: '2.0'
@@ -50,6 +50,14 @@ the soft warning fraction. If the ceiling is already hit before the next model
 call, RevRem emits `cost_ceiling_hit`, writes `summary.json`, writes
 `events.jsonl`, appends public `artifact_write` events, and exits through the
 stable budget exit path.
+
+Iteration topology is bounded independently of cost ceilings. Ordinary work is
+capped by `pipeline.max_iterations`; optional remediation initiated by
+final-review findings is capped by
+`pipeline.final_review_remediation_passes` and returns to a fresh final review
+after each recovery. Both declared bounds contribute to the core engine's step
+ceiling. The recovery default is `0`, so enabling final review alone never
+silently adds write-capable model calls.
 
 Token and USD usage are represented as `null` until a harness reports them, and
 then accumulated from `cost_charge` events. They are never silently treated as

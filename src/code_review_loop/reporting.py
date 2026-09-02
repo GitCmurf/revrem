@@ -119,6 +119,10 @@ def commit_message_side_effects(artifact_dir: Path) -> list[dict[str, object]]:
 
 def artifact_sort_key(path: Path) -> tuple[str, int, str]:
     name = path.name
+    final_review_match = re.fullmatch(r"review-final(?:-recovery-(\d+))?(?:-[^.]+)?\.[^.]+", name)
+    if final_review_match:
+        retry = int(final_review_match.group(1) or 0)
+        return ("review", 1_000_000 + retry, name)
     match = re.search(r"-(\d+)(?:-|\.txt$)", name)
     if match:
         return (name.split("-", 1)[0], int(match.group(1)), name)
@@ -326,10 +330,7 @@ def triage_parsing_warning_diagnostic(message: str) -> dict[str, object]:
 
 def _is_fallback_fingerprint_warning(message: str) -> bool:
     normalized = message.lower()
-    return (
-        ("f1:" in normalized or "f1 " in normalized)
-        and "review-comment:" in normalized
-    ) or (
+    return (("f1:" in normalized or "f1 " in normalized) and "review-comment:" in normalized) or (
         "normalized needs_more_info missing fingerprint" in normalized
         and "review-comment:" in normalized
     )
@@ -528,7 +529,9 @@ def phase_config_payload(config: LoopConfig) -> dict[str, object]:
             "harness": config.remediation_harness,
             "model": config.remediation_model or config.model,
             "reasoning_effort": remediation_effort,
-            **_provider_effort_fields(config.remediation_harness, remediation_effort, cwd=config.cwd),
+            **_provider_effort_fields(
+                config.remediation_harness, remediation_effort, cwd=config.cwd
+            ),
             "timeout_seconds": config.remediation_timeout_seconds_display,
             "sandbox": config.exec_sandbox,
             "source": config.phase_config_sources.get("remediation", "direct-config"),

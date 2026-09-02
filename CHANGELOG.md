@@ -52,6 +52,10 @@ This project follows Semantic Versioning once public releases begin.
 
 ### Added
 
+- Optional bounded final-review recovery can route final-audit findings through
+  triage, remediation, verification, and commit before running a fresh final
+  review. CLI and TUI settings expose a separate recovery-pass limit; the
+  default remains zero, while the project dogfood profile enables one pass.
 - The experimental TUI now opens on an editable Loop screen backed by real
   Textual widgets. Operators can adjust phase harness/model/effort/timeout and
   loop metadata in an in-memory working copy, see a dirty `*`, save through the

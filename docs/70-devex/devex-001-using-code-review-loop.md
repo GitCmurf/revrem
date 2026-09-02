@@ -504,6 +504,7 @@ description = "Full PR readiness check"
 [profiles.final-pr.pipeline]
 base = "main"
 max_iterations = 2
+final_review_remediation_passes = 1
 checks = ["pytest -q", "git diff --check"]
 
 [profiles.final-pr.review]
@@ -708,6 +709,13 @@ rejected during profile loading as invalid configuration, matching the CLI's
 `--timeout-seconds` validation.
 `--max-iterations` and profile `pipeline.max_iterations` must be positive
 integers; invalid values fail before the review/remediation loop starts.
+`--final-review-remediation-passes` and profile
+`pipeline.final_review_remediation_passes` must be non-negative integers. The
+default is `0`, which keeps final review audit-only. A positive value permits
+that many additional remediation/check/commit cycles only when a final review
+reports findings; RevRem runs a fresh final review after each completed recovery
+cycle. These passes do not change `max_iterations`, and the combined engine step
+ceiling remains bounded. The project `dogfood` profile enables one recovery pass.
 Generated TOML config output rejects non-finite floats instead of writing
 non-portable `nan` or `inf` tokens.
 When terminal title refresh is enabled, the subprocess wrapper keeps waiting on
@@ -844,6 +852,7 @@ the behavior of portable shared-profile files even when the destination
 Edit one field without opening `$EDITOR`:
 
     revrem config set final-pr pipeline.max_iterations 11
+    revrem config set final-pr pipeline.final_review_remediation_passes 1
     revrem config set final-pr review.model gpt-5.5
     revrem config set final-pr review.timeout_seconds 0.5
     revrem config set final-pr triage.contract v2
@@ -857,7 +866,8 @@ Edit one field without opening `$EDITOR`:
     revrem config set final-pr description ""
     revrem config set final-pr output.no_tty true --format json
 
-Numeric fields (including `...max_iterations`, `...max_tokens`,
+Numeric fields (including `...max_iterations`,
+`...final_review_remediation_passes`, `...max_tokens`,
 `...max_wall_seconds`, and `...provider_retry_attempts`) are parsed as numeric
 values. `*.timeout_seconds` can be fractional (for example `0.5`), and `0`
 means unbounded for phase timeouts.

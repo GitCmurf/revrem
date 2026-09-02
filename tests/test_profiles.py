@@ -31,6 +31,7 @@ description = "User profile"
 [profiles.final-pr.pipeline]
 base = "main"
 max_iterations = 2
+final_review_remediation_passes = 1
 checks = ["pytest -q"]
 
 [profiles.final-pr.review]
@@ -64,6 +65,7 @@ terminal_title = true
     assert resolved.description == "User profile"
     assert resolved.pipeline.base == "trunk"
     assert resolved.pipeline.max_iterations == 2
+    assert resolved.pipeline.final_review_remediation_passes == 1
     assert resolved.pipeline.checks == ("pytest -q", "git diff --check")
     assert resolved.review.model == "gpt-5.4-mini"
     assert resolved.review.reasoning_effort == "medium"
@@ -699,6 +701,23 @@ timeout_seconds = 30
         profiles.load_profile_file(path)
 
 
+def test_profile_rejects_negative_final_review_remediation_passes(tmp_path):
+    path = tmp_path / "profiles.toml"
+    path.write_text(
+        """
+[profiles.bad.pipeline]
+final_review_remediation_passes = -1
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="pipeline.final_review_remediation_passes must be 0 or greater",
+    ):
+        profiles.load_profile_file(path)
+
+
 @pytest.mark.parametrize(("section", "value"), [("review", "urgent"), ("remediation", "urgent")])
 def test_profile_rejects_unknown_reasoning_effort_values(tmp_path, section, value):
     path = tmp_path / "profiles.toml"
@@ -1057,9 +1076,7 @@ model = "project-model"
         encoding="utf-8",
     )
 
-    resolved = profiles.resolve_profile(
-        "security", cwd=repo, home=home, require_implemented=False
-    )
+    resolved = profiles.resolve_profile("security", cwd=repo, home=home, require_implemented=False)
 
     assert resolved.source == profiles.BUILTIN_PROFILE_SOURCE
     assert resolved.review.model == "project-model"
@@ -1108,9 +1125,7 @@ model = "project-model"
         encoding="utf-8",
     )
 
-    resolved = profiles.resolve_profile(
-        "source", cwd=repo, home=home, require_implemented=False
-    )
+    resolved = profiles.resolve_profile("source", cwd=repo, home=home, require_implemented=False)
 
     assert resolved.source == str(user_path)
     assert resolved.review.model == "project-model"

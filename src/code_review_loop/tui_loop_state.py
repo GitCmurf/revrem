@@ -47,6 +47,7 @@ LOOP_META_DOTTED = {
     "base": "pipeline.base",
     "max_iterations": "pipeline.max_iterations",
     "final_review": "pipeline.final_review",
+    "final_review_remediation_passes": "pipeline.final_review_remediation_passes",
     "inner_check_retries": "runtime.inner_check_retries",
 }
 
@@ -57,6 +58,7 @@ class LoopRailMeta:
     inner_retries: int
     inner_rail: bool
     final_review: bool
+    final_review_remediation_passes: int
     outer_return_label: str
     inner_return_label: str | None
     final_review_label: str | None
@@ -142,16 +144,28 @@ def loop_rail_meta(source: Any) -> LoopRailMeta:
     final_review = _effective_bool(
         source, LOOP_META_DOTTED["final_review"], profile.pipeline.final_review
     )
+    final_review_remediation_passes = _effective_int(
+        source,
+        LOOP_META_DOTTED["final_review_remediation_passes"],
+        profile.pipeline.final_review_remediation_passes,
+    )
+    final_review_suffix = "pass" if final_review_remediation_passes == 1 else "passes"
     return LoopRailMeta(
         max_iterations=max_iterations,
         inner_retries=inner_retries,
         inner_rail=inner_retries > 0,
         final_review=final_review,
+        final_review_remediation_passes=final_review_remediation_passes,
         outer_return_label=f"repeat while iteration < {max_iterations}",
-        inner_return_label=(
-            f"up to {inner_retries} inner retries" if inner_retries > 0 else None
+        inner_return_label=(f"up to {inner_retries} inner retries" if inner_retries > 0 else None),
+        final_review_label=(
+            (
+                "final review -> remediate + verify "
+                f"(up to {final_review_remediation_passes} {final_review_suffix})"
+            )
+            if final_review and final_review_remediation_passes > 0
+            else ("final review" if final_review else None)
         ),
-        final_review_label="final review" if final_review else None,
     )
 
 
@@ -216,7 +230,9 @@ def phase_card_lines(
             profile.pipeline.check_timeout_seconds,
         )
         configured = f"{commands} configured" if commands else "cleanliness only"
-        summary = f"{focus}{arrow} {marker} {phase_label:<11} | {configured} | {_format_timeout(timeout)}"
+        summary = (
+            f"{focus}{arrow} {marker} {phase_label:<11} | {configured} | {_format_timeout(timeout)}"
+        )
         if not expanded:
             return (summary,)
         retries = _effective_int(
@@ -232,8 +248,7 @@ def phase_card_lines(
             f"  check-failure retries: {retries}",
         ]
         lines.extend(
-            f"  {index}. {command}"
-            for index, command in enumerate(commands_tuple, start=1)
+            f"  {index}. {command}" for index, command in enumerate(commands_tuple, start=1)
         )
         lines.append("  p choose checks · e custom commands · t timeout · I retries")
         return tuple(lines)
@@ -246,9 +261,7 @@ def phase_card_lines(
     if effort_text:
         summary_parts.append(effort_text)
     summary_parts.append(_format_timeout(timeout))
-    summary = f"{focus}{arrow} {marker} {phase_label:<11} | " + " | ".join(
-        summary_parts
-    )
+    summary = f"{focus}{arrow} {marker} {phase_label:<11} | " + " | ".join(summary_parts)
     if not expanded:
         return (summary,)
     lines = [
@@ -262,9 +275,7 @@ def phase_card_lines(
         lines.insert(1, f"  enabled: {enabled}")
     if phase_name == "triage":
         routing = profile.triage.routing
-        default_route = _effective_value(
-            source, dotted["routing_default"], routing.default_route
-        )
+        default_route = _effective_value(source, dotted["routing_default"], routing.default_route)
         strict = _effective_value(
             source, dotted["routing_strict"], routing.strict_on_unavailable_route
         )
@@ -289,19 +300,13 @@ def phase_card_lines(
     return tuple(lines)
 
 
-def triage_routes_lines(
-    source: Any, *, selected_route: str | None = None
-) -> tuple[str, ...]:
+def triage_routes_lines(source: Any, *, selected_route: str | None = None) -> tuple[str, ...]:
     profile = _profile(source)
     # Respect unsaved editor overrides for routing enablement while editing.
-    if not _effective_bool(
-        source, "triage.routing.enabled", profile.triage.routing.enabled
-    ):
+    if not _effective_bool(source, "triage.routing.enabled", profile.triage.routing.enabled):
         return ()
     routing = profile.triage.routing
-    default_route = _effective_value(
-        source, "triage.routing.default_route", routing.default_route
-    )
+    default_route = _effective_value(source, "triage.routing.default_route", routing.default_route)
     strict = _effective_bool(
         source,
         "triage.routing.strict_on_unavailable_route",
@@ -312,11 +317,7 @@ def triage_routes_lines(
         "triage.routing.allow_model_escalation",
         routing.allow_model_escalation,
     )
-    lines = [
-        "routing: "
-        f"default {default_route} · strict {strict} · "
-        f"escalate {escalate}"
-    ]
+    lines = [f"routing: default {default_route} · strict {strict} · escalate {escalate}"]
     remediation_timeout = _effective_value(
         source,
         "remediation.timeout_seconds",
@@ -327,9 +328,7 @@ def triage_routes_lines(
             str(row.harness) if row.harness else None,
             str(row.effort) if row.effort else None,
         )
-        pointer = (
-            f"{'>' if row.selected else ' '} " if selected_route is not None else ""
-        )
+        pointer = f"{'>' if row.selected else ' '} " if selected_route is not None else ""
         route_timeout = (
             f"inherit {_format_timeout(remediation_timeout)}"
             if row.timeout is None or row.timeout == ""
@@ -365,9 +364,7 @@ def triage_route_rows(
                 harness=_effective_value(
                     source, f"{prefix}.harness", route.harness if route else None
                 ),
-                model=_effective_value(
-                    source, f"{prefix}.model", route.model if route else None
-                ),
+                model=_effective_value(source, f"{prefix}.model", route.model if route else None),
                 effort=_effective_value(
                     source,
                     f"{prefix}.reasoning_effort",

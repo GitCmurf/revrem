@@ -59,6 +59,7 @@ class WizardState:
     inner_check_retries: int
     checks: tuple[str, ...]
     final_review: bool
+    final_review_remediation_passes: int
     triage_enabled: bool
     routing_enabled: bool
     routing_default_route: str
@@ -134,6 +135,7 @@ class RunPreview:
     checks: tuple[str, ...]
     check_timeout: float | int | str | None
     final_review: bool
+    final_review_remediation_passes: int
     commit_message: PhasePreview | None
     summary_format: str
     progress_style: str
@@ -152,8 +154,7 @@ class RunPreview:
             self.commit_message,
         )
         return any(
-            phase is not None
-            and (phase.unresolved_model or phase.blocked_reason is not None)
+            phase is not None and (phase.unresolved_model or phase.blocked_reason is not None)
             for phase in phases
         )
 
@@ -192,9 +193,7 @@ def run_wizard(
 
 
 class _Wizard:
-    def __init__(
-        self, *, cwd: Path, stdin: TextIO, stdout: TextIO, stderr: TextIO
-    ) -> None:
+    def __init__(self, *, cwd: Path, stdin: TextIO, stdout: TextIO, stderr: TextIO) -> None:
         self.cwd = cwd
         self.stdin = stdin
         self.stdout = stdout
@@ -260,9 +259,7 @@ class _Wizard:
                 )
             )
             if preview.has_unresolved_models:
-                self._print_dim(
-                    "Choose explicit models before run, dry-run, or save-profile."
-                )
+                self._print_dim("Choose explicit models before run, dry-run, or save-profile.")
             action = self._choice(
                 "What should the wizard do?",
                 action_options,
@@ -275,9 +272,7 @@ class _Wizard:
             if action == "dry-run":
                 final_argv.append("--dry-run")
             elif action == "save-profile":
-                name = self._text(
-                    "Project profile name", default=state.profile_name or "final-pr"
-                )
+                name = self._text("Project profile name", default=state.profile_name or "final-pr")
                 final_argv.extend(["--dry-run", "--save-profile", name])
             result = self._validate(final_argv, action=action)
             output_stream = self.stdout if action == "print" else self.stderr
@@ -350,9 +345,7 @@ class _Wizard:
                 self._print_key_value("Pending review", f"using {compatible.path}")
                 return
             if mode == "prompt":
-                self._prompt_for_startup_pending_review(
-                    state, compatible, compatible=True
-                )
+                self._prompt_for_startup_pending_review(state, compatible, compatible=True)
             return
         if mode != "prompt":
             return
@@ -435,9 +428,7 @@ class _Wizard:
         options: list[tuple[str, str]] = [
             (
                 "no-profile",
-                self._profile_option_label(
-                    None, defaults, "no profile (merged defaults)"
-                ),
+                self._profile_option_label(None, defaults, "no profile (merged defaults)"),
             )
         ]
         options.extend(
@@ -477,10 +468,15 @@ class _Wizard:
 
         state.checks = self._checks(state.checks)
 
-        final_review = self._yes_no(
-            "Run final review after remediation?", state.final_review
-        )
+        final_review = self._yes_no("Run final review after remediation?", state.final_review)
         state.final_review = final_review
+
+        final_review_remediation_passes = self._text(
+            "Additional remediation passes after final-review findings",
+            default=str(state.final_review_remediation_passes),
+            validator=_non_negative_int,
+        )
+        state.final_review_remediation_passes = int(final_review_remediation_passes)
 
         progress = self._choice(
             "Progress style",
@@ -597,9 +593,7 @@ class _Wizard:
             state.triage_timeout_seconds = self._timeout_text(
                 "Triage timeout",
                 current=state.triage_timeout_seconds,
-                keep_label=_timeout_keep_label(
-                    preview.triage.timeout if preview.triage else None
-                ),
+                keep_label=_timeout_keep_label(preview.triage.timeout if preview.triage else None),
                 validator=_non_negative_float_or_blank,
             )
         else:
@@ -668,22 +662,16 @@ class _Wizard:
         if catalog_models:
             self._print_dim(
                 "Catalog: "
-                + ", ".join(
-                    f"{item.id} [{'/'.join(item.efforts)}]" for item in catalog_models
-                )
+                + ", ".join(f"{item.id} [{'/'.join(item.efforts)}]" for item in catalog_models)
             )
         selected_model = self._model_text(
             f"{label.capitalize()} model (blank = profile/provider default)",
             default=getattr(state, model_attr),
         )
         setattr(state, model_attr, selected_model)
-        effort_choices = model_catalog.effort_choices(
-            harness, selected_model or None, cwd=self.cwd
-        )
+        effort_choices = model_catalog.effort_choices(harness, selected_model or None, cwd=self.cwd)
         if label == "triage" and _is_codex_triage_harness(harness, cwd=self.cwd):
-            effort_choices = tuple(
-                value for value in effort_choices if value != "minimal"
-            )
+            effort_choices = tuple(value for value in effort_choices if value != "minimal")
             self._print_dim(
                 "Codex triage starts at low effort; minimal is provider-incompatible with inherited tools."
             )
@@ -791,8 +779,7 @@ class _Wizard:
             state.routing_default_route = self._choice(
                 "Default remediation route",
                 tuple(
-                    (name, _route_label(state.profile.triage.routes[name]))
-                    for name in route_names
+                    (name, _route_label(state.profile.triage.routes[name])) for name in route_names
                 ),
                 default=(
                     state.routing_default_route
@@ -828,9 +815,7 @@ class _Wizard:
             if mode == preset.key:
                 return preset.checks
         checks: list[str] = []
-        self._print_dim(
-            "Enter one manual shell command per line. Leave blank when done."
-        )
+        self._print_dim("Enter one manual shell command per line. Leave blank when done.")
         while True:
             command = self._text("Check command", default="")
             if not command:
@@ -841,10 +826,7 @@ class _Wizard:
     def _validate(self, argv: list[str], *, action: str) -> WizardResult:
         argv = list(argv)  # Defensive copy to avoid shared mutation
         validation_argv = list(argv)
-        if (
-            action in {"run", "print", "save-profile"}
-            and "--dry-run" not in validation_argv
-        ):
+        if action in {"run", "print", "save-profile"} and "--dry-run" not in validation_argv:
             # Command-shape validation should not fail just because a provider
             # executable is unavailable before the operator has chosen to run.
             validation_argv.append("--dry-run")
@@ -853,13 +835,9 @@ class _Wizard:
                 parsed = cli_args.parse_args(validation_argv)
                 build_loop_config(parsed, self.cwd, require_implemented=False)
                 shell_command = shlex.join(("revrem", *argv))
-                return WizardResult(
-                    argv=tuple(argv), shell_command=shell_command, action=action
-                )
+                return WizardResult(argv=tuple(argv), shell_command=shell_command, action=action)
             except (SystemExit, ValueError, OSError) as exc:
-                message = (
-                    f"exit {exc.code}" if isinstance(exc, SystemExit) else str(exc)
-                )
+                message = f"exit {exc.code}" if isinstance(exc, SystemExit) else str(exc)
                 print(f"Validation failed: {message}", file=self.stderr)
                 if not self._yes_no("Choose a different action?", default=True):
                     raise WizardCancelled from exc
@@ -896,9 +874,7 @@ class _Wizard:
             if help_text:
                 self._print_dim(help_text)
             for index, (value, description) in enumerate(options, start=1):
-                self._print_option(
-                    index, value, description, is_default=value == default
-                )
+                self._print_option(index, value, description, is_default=value == default)
             raw = self._read(f"Choice [{default}]: ").strip()
             if not raw:
                 return default
@@ -1101,6 +1077,7 @@ def _initial_state(choice: WizardProfileChoice, *, cwd: Path | None = None) -> W
         inner_check_retries=profile.runtime.inner_check_retries,
         checks=profile.pipeline.checks,
         final_review=profile.pipeline.final_review,
+        final_review_remediation_passes=(profile.pipeline.final_review_remediation_passes),
         triage_enabled=profile.triage.enabled,
         routing_enabled=profile.triage.routing.enabled and bool(profile.triage.routes),
         routing_default_route=profile.triage.routing.default_route,
@@ -1172,9 +1149,7 @@ def _state_from_summary(summary_path: Path, cwd: Path) -> WizardState | None:
     except (SystemExit, ValueError, OSError):
         return None
     started_at = summary.get("started_at") or summary.get("finished_at")
-    timestamp = (
-        f" from {started_at}" if isinstance(started_at, str) and started_at else ""
-    )
+    timestamp = f" from {started_at}" if isinstance(started_at, str) and started_at else ""
     state.origin_label = f"last run{timestamp}"
     state.origin_command = shlex.join(("revrem", *argv))
     return state
@@ -1197,9 +1172,7 @@ def _state_from_resume_config(
         profile_name = summary_profile if isinstance(summary_profile, str) else None
     try:
         if profile_name:
-            profile = profiles.resolve_profile(
-                profile_name, cwd=cwd, require_implemented=False
-            )
+            profile = profiles.resolve_profile(profile_name, cwd=cwd, require_implemented=False)
         else:
             profile = profiles.resolve_defaults(cwd=cwd, require_implemented=False)
     except (OSError, ValueError):
@@ -1210,9 +1183,7 @@ def _state_from_resume_config(
     except ValueError:
         return None
 
-    state = _initial_state(
-        WizardProfileChoice(profile_name=profile_name, profile=profile), cwd=cwd
-    )
+    state = _initial_state(WizardProfileChoice(profile_name=profile_name, profile=profile), cwd=cwd)
 
     def text(key: str) -> str | None:
         value = payload.get(key)
@@ -1239,10 +1210,13 @@ def _state_from_resume_config(
     max_iterations = payload.get("max_iterations")
     if isinstance(max_iterations, int) and not isinstance(max_iterations, bool):
         state.max_iterations = max_iterations
-    inner_check_retries = payload.get("inner_check_retries")
-    if isinstance(inner_check_retries, int) and not isinstance(
-        inner_check_retries, bool
+    final_review_remediation_passes = payload.get("final_review_remediation_passes")
+    if isinstance(final_review_remediation_passes, int) and not isinstance(
+        final_review_remediation_passes, bool
     ):
+        state.final_review_remediation_passes = final_review_remediation_passes
+    inner_check_retries = payload.get("inner_check_retries")
+    if isinstance(inner_check_retries, int) and not isinstance(inner_check_retries, bool):
         state.inner_check_retries = inner_check_retries
     checks = payload.get("check_commands")
     if isinstance(checks, list) and all(isinstance(item, str) for item in checks):
@@ -1293,17 +1267,13 @@ def _state_from_resume_config(
         checks_config = phase_config.get("checks")
         if isinstance(checks_config, dict):
             timeout_value = checks_config.get("timeout_seconds")
-            if isinstance(timeout_value, int | float) and not isinstance(
-                timeout_value, bool
-            ):
+            if isinstance(timeout_value, int | float) and not isinstance(timeout_value, bool):
                 state.check_timeout_seconds = f"{timeout_value:g}"
     state.initial_review_file = ""
     state.initial_review_mode = ""
     state.pending_review = "profile"
     started_at = summary.get("finished_at") or summary.get("started_at")
-    timestamp = (
-        f" from {started_at}" if isinstance(started_at, str) and started_at else ""
-    )
+    timestamp = f" from {started_at}" if isinstance(started_at, str) and started_at else ""
     state.origin_label = f"last run{timestamp}"
     state.origin_command = shlex.join(("revrem", *_argv_for_state(state)))
     return state
@@ -1320,9 +1290,7 @@ def _state_from_argv(argv: tuple[str, ...], cwd: Path) -> WizardState:
         )
     else:
         profile = profiles.resolve_defaults(cwd=cwd, require_implemented=False)
-    state = _initial_state(
-        WizardProfileChoice(profile_name=profile_name, profile=profile), cwd=cwd
-    )
+    state = _initial_state(WizardProfileChoice(profile_name=profile_name, profile=profile), cwd=cwd)
     _apply_parsed_args(state, parsed)
     return state
 
@@ -1342,6 +1310,8 @@ def _apply_parsed_args(state: WizardState, parsed) -> None:
         state.base = parsed.base
     if parsed.max_iterations is not None:
         state.max_iterations = parsed.max_iterations
+    if parsed.final_review_remediation_passes is not None:
+        state.final_review_remediation_passes = parsed.final_review_remediation_passes
     if parsed.inner_check_retries is not None:
         state.inner_check_retries = parsed.inner_check_retries
     if parsed.check:
@@ -1448,23 +1418,15 @@ def _selected_effort_value(
 
 def _configured_effort(state: WizardState, label: str) -> str:
     if label == "review":
-        return (
-            state.review_reasoning_effort or state.profile.review.reasoning_effort or ""
-        )
+        return state.review_reasoning_effort or state.profile.review.reasoning_effort or ""
     if label == "triage":
-        return (
-            state.triage_reasoning_effort or state.profile.triage.reasoning_effort or ""
-        )
+        return state.triage_reasoning_effort or state.profile.triage.reasoning_effort or ""
     if label == "remediation":
         return (
-            state.remediation_reasoning_effort
-            or state.profile.remediation.reasoning_effort
-            or ""
+            state.remediation_reasoning_effort or state.profile.remediation.reasoning_effort or ""
         )
     if label == "commit message":
-        return (
-            state.commit_reasoning_effort or state.profile.commit.reasoning_effort or ""
-        )
+        return state.commit_reasoning_effort or state.profile.commit.reasoning_effort or ""
     return ""
 
 
@@ -1505,6 +1467,13 @@ def _argv_for_state(state: WizardState) -> list[str]:
             argv.extend(["--check", command])
     if state.final_review != profile.pipeline.final_review:
         argv.append("--final-review" if state.final_review else "--skip-final-review")
+    if state.final_review_remediation_passes != profile.pipeline.final_review_remediation_passes:
+        argv.extend(
+            [
+                "--final-review-remediation-passes",
+                str(state.final_review_remediation_passes),
+            ]
+        )
     if state.triage_enabled != profile.triage.enabled:
         argv.append("--triage" if state.triage_enabled else "--no-triage")
     if state.triage_enabled:
@@ -1518,9 +1487,7 @@ def _argv_for_state(state: WizardState) -> list[str]:
         ):
             argv.extend(["--route", state.routing_default_route])
         if state.routing_strict is not None:
-            argv.append(
-                "--routing-strict" if state.routing_strict else "--no-routing-strict"
-            )
+            argv.append("--routing-strict" if state.routing_strict else "--no-routing-strict")
         if state.allow_model_escalation is not None:
             argv.append(
                 "--allow-model-escalation"
@@ -1558,9 +1525,7 @@ def _argv_for_state(state: WizardState) -> list[str]:
     if state.remediation_reasoning_effort and state.remediation_reasoning_effort != (
         profile.remediation.reasoning_effort or ""
     ):
-        argv.extend(
-            ["--remediation-reasoning-effort", state.remediation_reasoning_effort]
-        )
+        argv.extend(["--remediation-reasoning-effort", state.remediation_reasoning_effort])
     if state.commit_message_harness != profile.commit.harness:
         argv.extend(["--commit-message-harness", state.commit_message_harness])
     if state.commit_message_model != (profile.commit.message_model or ""):
@@ -1577,12 +1542,8 @@ def _argv_for_state(state: WizardState) -> list[str]:
         state.triage_timeout_seconds, state.timeout_seconds
     ):
         argv.extend(["--triage-timeout-seconds", state.triage_timeout_seconds])
-    if _timeout_override_needed(
-        state.remediation_timeout_seconds, state.timeout_seconds
-    ):
-        argv.extend(
-            ["--remediation-timeout-seconds", state.remediation_timeout_seconds]
-        )
+    if _timeout_override_needed(state.remediation_timeout_seconds, state.timeout_seconds):
+        argv.extend(["--remediation-timeout-seconds", state.remediation_timeout_seconds])
     if _timeout_override_needed(state.commit_timeout_seconds, state.timeout_seconds):
         argv.extend(["--commit-timeout-seconds", state.commit_timeout_seconds])
     if _timeout_override_needed(state.check_timeout_seconds, state.timeout_seconds):
@@ -1622,9 +1583,7 @@ def _pending_review_candidate_for_config(
     config: LoopConfig, *, compatible: bool
 ) -> PendingReviewCandidate | None:
     search_root = (
-        config.artifact_dir.parent
-        if config.artifact_dir_is_default
-        else config.artifact_dir
+        config.artifact_dir.parent if config.artifact_dir_is_default else config.artifact_dir
     )
     if not search_root.is_absolute():
         search_root = config.cwd / search_root
@@ -1654,9 +1613,7 @@ def _run_preview(state: WizardState, cwd: Path) -> RunPreview:
         config.review_reasoning_effort or config.reasoning_effort,
         config.review_timeout_seconds_display,
         cwd=cwd,
-        effort_source=config.phase_config_field_sources.get("review", {}).get(
-            "reasoning_effort"
-        ),
+        effort_source=config.phase_config_field_sources.get("review", {}).get("reasoning_effort"),
         blocked_reason=review_blocked_reason,
     )
     triage_command, triage_blocked_reason = (
@@ -1701,9 +1658,7 @@ def _run_preview(state: WizardState, cwd: Path) -> RunPreview:
         blocked_reason=remediation_blocked_reason,
     )
     routes: list[PhasePreview] = []
-    routing_enabled = (
-        config.profile_v2 is not None and config.profile_v2.triage.routing.enabled
-    )
+    routing_enabled = config.profile_v2 is not None and config.profile_v2.triage.routing.enabled
     if config.triage_enabled and routing_enabled and config.profile_v2 is not None:
         for name in sorted(config.profile_v2.triage.routes):
             resolved_route, route_blocked_reason = _resolve_preview_route(
@@ -1737,9 +1692,7 @@ def _run_preview(state: WizardState, cwd: Path) -> RunPreview:
                     or config.remediation_reasoning_effort
                     or config.reasoning_effort
                 )
-                timeout = routing_timeouts.effective_route_timeout_display(
-                    config, resolved_route
-                )
+                timeout = routing_timeouts.effective_route_timeout_display(config, resolved_route)
                 label = _resolved_route_label(name, resolved_route)
                 harness = resolved_route.harness
                 route_command, build_blocked_reason = _build_preview_command(
@@ -1765,9 +1718,7 @@ def _run_preview(state: WizardState, cwd: Path) -> RunPreview:
                 )
             )
     commit_command, commit_blocked_reason = (
-        _build_preview_command(
-            lambda: tuple(phase_support.build_commit_message_command(config))
-        )
+        _build_preview_command(lambda: tuple(phase_support.build_commit_message_command(config)))
         if config.commit_after_remediation
         else ((), None)
     )
@@ -1780,9 +1731,9 @@ def _run_preview(state: WizardState, cwd: Path) -> RunPreview:
             config.commit_reasoning_effort,
             config.commit_timeout_seconds_display,
             cwd=cwd,
-            effort_source=config.phase_config_field_sources.get(
-                "commit_message", {}
-            ).get("reasoning_effort"),
+            effort_source=config.phase_config_field_sources.get("commit_message", {}).get(
+                "reasoning_effort"
+            ),
             blocked_reason=commit_blocked_reason,
         )
         if config.commit_after_remediation
@@ -1802,6 +1753,7 @@ def _run_preview(state: WizardState, cwd: Path) -> RunPreview:
         checks=tuple(config.check_commands),
         check_timeout=config.check_timeout_seconds_display,
         final_review=config.final_review,
+        final_review_remediation_passes=config.final_review_remediation_passes,
         commit_message=commit_message,
         summary_format=state.summary_format,
         progress_style=config.progress_style,
@@ -1820,9 +1772,7 @@ def _run_preview_lines(preview: RunPreview) -> tuple[str, ...]:
         f"terminal output: {preview.summary_format} summary, {preview.progress_style} progress",
     ]
     if preview.budget_max_wall_seconds is not None:
-        lines.append(
-            f"budget: max wall {_wall_budget_text(preview.budget_max_wall_seconds)}"
-        )
+        lines.append(f"budget: max wall {_wall_budget_text(preview.budget_max_wall_seconds)}")
     if preview.initial_review_file:
         mode = preview.initial_review_mode or "explicit"
         lines.append(f"initial review: {mode} · {preview.initial_review_file}")
@@ -1849,9 +1799,7 @@ def _run_preview_lines(preview: RunPreview) -> tuple[str, ...]:
         if preview.routes:
             lines.append("|   routes:")
             for route in preview.routes:
-                lines.append(
-                    f"|   - {route.label}: {_phase_summary_for_preview(route)}"
-                )
+                lines.append(f"|   - {route.label}: {_phase_summary_for_preview(route)}")
                 lines.append(f"|     provider command: {shlex.join(route.command)}")
     if preview.routes:
         lines.extend(
@@ -1873,9 +1821,7 @@ def _run_preview_lines(preview: RunPreview) -> tuple[str, ...]:
             )
         )
     lines.extend(_check_preview_lines(preview.checks, preview.check_timeout))
-    lines.append(
-        f"|   +-- if verify fails: {_inner_retry_text(preview.inner_check_retries)}"
-    )
+    lines.append(f"|   +-- if verify fails: {_inner_retry_text(preview.inner_check_retries)}")
     if preview.commit_message is None:
         lines.extend(("|", "+-- if verify passes: commit off"))
     else:
@@ -1890,6 +1836,12 @@ def _run_preview_lines(preview: RunPreview) -> tuple[str, ...]:
     lines.append("")
     if preview.final_review:
         lines.append("+-- after pass limit: final review enabled")
+        if preview.final_review_remediation_passes:
+            suffix = "pass" if preview.final_review_remediation_passes == 1 else "passes"
+            lines.append(
+                "+-- if final review finds issues: remediate + verify + review "
+                f"up to {preview.final_review_remediation_passes} additional {suffix}"
+            )
     else:
         lines.append("+-- after pass limit: final review off")
     if preview.has_unresolved_models:
@@ -1923,9 +1875,9 @@ def _phase_preview(
     default_source = source
     if model is None or effort is None:
         provider_default = _provider_default(harness, cwd)
-        used_provider_default = (
-            model is None and provider_default.model is not None
-        ) or (effort is None and provider_default.effort is not None)
+        used_provider_default = (model is None and provider_default.model is not None) or (
+            effort is None and provider_default.effort is not None
+        )
         model = model or provider_default.model
         effort = effort or provider_default.effort
         if used_provider_default:
@@ -1940,13 +1892,10 @@ def _phase_preview(
         effort_source=effort_source,
         source=default_source,
         unresolved_model=(
-            model is None
-            and harnesses._resolve_catalog_driver(harness, cwd=cwd) != "codex"
+            model is None and harnesses._resolve_catalog_driver(harness, cwd=cwd) != "codex"
         )
         or blocked_reason is not None,
-        allows_provider_default=(
-            harnesses._resolve_catalog_driver(harness, cwd=cwd) == "codex"
-        ),
+        allows_provider_default=(harnesses._resolve_catalog_driver(harness, cwd=cwd) == "codex"),
         blocked_reason=blocked_reason,
     )
 
@@ -1983,9 +1932,7 @@ def _phase_summary_for_preview(phase: PhasePreview) -> str:
         model = "model unresolved"
     text = f"uses {phase.harness}:{model}"
     if phase.effort:
-        suffix = (
-            " via remediation" if phase.effort_source == "inherited:remediation" else ""
-        )
+        suffix = " via remediation" if phase.effort_source == "inherited:remediation" else ""
         text += f"({phase.effort}{suffix})"
     if phase.timeout is not None:
         text += f", timeout {_timeout_text(phase.timeout)}"
@@ -2049,20 +1996,14 @@ def _resolved_route_source(route: ResolvedRoute | None) -> str | None:
 
 
 def _timeout_row(preview: RunPreview, state: WizardState) -> str:
-    shared = (
-        _timeout_text(state.timeout_seconds)
-        if state.timeout_seconds
-        else "profile/default"
-    )
-    review = (
-        _timeout_text(preview.review.timeout)
-        if preview.review.timeout is not None
-        else "none"
-    )
+    shared = _timeout_text(state.timeout_seconds) if state.timeout_seconds else "profile/default"
+    review = _timeout_text(preview.review.timeout) if preview.review.timeout is not None else "none"
     triage = (
         _timeout_text(preview.triage.timeout)
         if preview.triage is not None and preview.triage.timeout is not None
-        else "off" if preview.triage is None else "none"
+        else "off"
+        if preview.triage is None
+        else "none"
     )
     remediation = (
         _timeout_text(preview.remediation.timeout)
@@ -2071,15 +2012,12 @@ def _timeout_row(preview: RunPreview, state: WizardState) -> str:
     )
     commit = (
         _timeout_text(preview.commit_message.timeout)
-        if preview.commit_message is not None
-        and preview.commit_message.timeout is not None
-        else "off" if preview.commit_message is None else "none"
-    )
-    checks = (
-        _timeout_text(preview.check_timeout)
-        if preview.check_timeout is not None
+        if preview.commit_message is not None and preview.commit_message.timeout is not None
+        else "off"
+        if preview.commit_message is None
         else "none"
     )
+    checks = _timeout_text(preview.check_timeout) if preview.check_timeout is not None else "none"
     return (
         f"current: review {review}; triage {triage}; remediation {remediation}; "
         f"commit {commit}; checks {checks}; shared fallback {shared}"
@@ -2104,9 +2042,7 @@ class ProviderDefault:
 def _provider_default(harness: str, cwd: Path) -> ProviderDefault:
     if harnesses._resolve_catalog_driver(harness, cwd=cwd) != "codex":
         return ProviderDefault()
-    config_path = (
-        Path(environ.get("CODEX_HOME", Path.home() / ".codex")) / "config.toml"
-    )
+    config_path = Path(environ.get("CODEX_HOME", Path.home() / ".codex")) / "config.toml"
     try:
         raw = tomllib.loads(config_path.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError):
@@ -2269,6 +2205,16 @@ def _positive_int(value: str) -> str | None:
         return "Enter a whole number."
     if parsed < 1:
         return "Enter a number greater than zero."
+    return None
+
+
+def _non_negative_int(value: str) -> str | None:
+    try:
+        parsed = int(value)
+    except ValueError:
+        return "Enter a whole number."
+    if parsed < 0:
+        return "Enter 0 or a positive whole number."
     return None
 
 

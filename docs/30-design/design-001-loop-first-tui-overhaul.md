@@ -3,8 +3,8 @@ document_id: REVREM-DESIGN-001
 type: Design
 title: Loop-First TUI Overhaul
 status: Draft
-version: "0.4"
-last_updated: '2026-07-11'
+version: "0.5"
+last_updated: '2026-09-02'
 owner: GitCmurf
 area: product
 docops_version: "2.0"
@@ -28,8 +28,8 @@ related_ids:
 > **Document ID:** REVREM-DESIGN-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 0.4
-> **Last Updated:** 2026-07-11
+> **Version:** 0.5
+> **Last Updated:** 2026-09-02
 > **Type:** Design
 
 # Design: Loop-First TUI Overhaul
@@ -149,8 +149,8 @@ two-line app bar shows only repository, workspace, live state, and workspace
 navigation. The Loop workspace begins with a concise labelled **Next Run**
 summary for profile, review input, provenance, and launch command, followed by
 an editable **Run Settings** card for base, maximum outer iterations, and
-final-review state. It always says whether the next
-run has an initial-review file. Compatible review is preselected; an actionable
+final-review state plus its independent remediation-pass limit. It always says
+whether the next run has an initial-review file. Compatible review is preselected; an actionable
 review from a different Git state remains visible but requires an explicit
 validation choice. Current-phase actions render inside the expanded owning
 phase. The diagram is segmented into a loop summary band, numbered phase
@@ -203,7 +203,7 @@ Flat phase focused (review):
 │  │     ● commit ───────────────────────────────────────────── codex · gpt-5.3-spark · 300s│
 │  └◀──── not clear & iteration < 11 → review                                                │
 │                                                                                           │
-│  ⚑ final review  (runs once when the loop ends) ─────────────────── codex · gpt-5.5 · med │
+│  ⚑ final review ─ findings → remediate/verify/review (up to 1 pass) codex · gpt-5.5 · med │
 └───────────────────────────────────────────────────────────────────────────────────────────┘
  ↑↓ phase · space enable · ↵ expand/edit · e prompt · r run · d dry-run · s save→profile · ? help
 ```
@@ -266,8 +266,10 @@ operator contract.
 While a run is active, the phase rail remains the primary progress view. Once a terminal
 summary exists, the monitor instead presents a human outcome, an iteration-by-iteration
 completion table, duration and recorded model telemetry, then the next safe action.
-Terminal final-review results remain labelled **Final review** in that table;
-they are not presented as an additional numbered remediation iteration.
+Terminal final-review results remain labelled **Final review** in that table.
+When bounded final-review recovery is enabled, its work is labelled **Final
+recovery N/M** rather than as ordinary iteration `max + N`; each recovery ends
+with another final review and cannot exceed the configured recovery limit.
 Internal states such as `completed-unknown` are not operator copy. A `review_unknown`
 result is labelled **review inconclusive** and downstream phases are **not run**, never
 pending; its primary recovery prepares a fresh review from the effective

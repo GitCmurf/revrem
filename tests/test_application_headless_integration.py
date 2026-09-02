@@ -17,6 +17,7 @@ from tests.support.headless import (
     RecordingRemediationHarness,
     SequencedChecksHarness,
     SequencedReviewHarness,
+    StaticTriageHarness,
 )
 
 
@@ -79,6 +80,42 @@ def test_headless_application_findings_remediation_checks_final_clear(tmp_path: 
     assert [request.iteration for request in run.remediation.calls] == [1]
     assert [request.iteration for request in run.checks.calls] == [1]
     assert [request.display_label for request in run.review.calls] == ["1", "final"]
+
+
+def test_headless_final_review_recovery_reenters_triage_with_final_artifact(
+    tmp_path: Path,
+) -> None:
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        final_review_remediation_passes=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        progress=False,
+        triage_enabled=True,
+    )
+    triage = StaticTriageHarness()
+    run = HeadlessRun(
+        config=config,
+        review=SequencedReviewHarness(["findings", "findings", "clear"]),
+        triage=triage,
+        checks=SequencedChecksHarness([(), ()]),
+    )
+
+    result = run.run()
+
+    assert result.final_status == "clear"
+    assert [request.source_review_artifact for request in triage.calls] == [
+        "review-1.txt",
+        "review-final.txt",
+    ]
+    assert [request.iteration for request in run.remediation.calls] == [1, 2]
+    assert [request.artifact_label for request in run.review.calls] == [
+        "review-1",
+        "review-final",
+        "review-final-recovery-1",
+    ]
 
 
 def test_headless_application_check_failure_feeds_next_iteration(tmp_path: Path) -> None:

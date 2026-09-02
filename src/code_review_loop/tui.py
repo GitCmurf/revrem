@@ -167,9 +167,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def run_textual_app(
-    *, selected_profile_name: str | None = None, skip_splash: bool = False
-) -> None:
+def run_textual_app(*, selected_profile_name: str | None = None, skip_splash: bool = False) -> None:
     app_class = textual_app_class()
     cwd = Path.cwd()
     if selected_profile_name is not None:
@@ -186,9 +184,7 @@ def run_textual_app(
     ).run()
 
 
-def _build_tui_bootstrap(
-    cwd: Path, selected_profile_name: str | None
-) -> TuiBootstrapResult:
+def _build_tui_bootstrap(cwd: Path, selected_profile_name: str | None) -> TuiBootstrapResult:
     resolved_profiles = tuple(
         profiles.resolve_profiles(
             cwd=cwd,
@@ -228,9 +224,7 @@ def _build_tui_bootstrap(
     if loop_model is None and model.selected_profile_name is not None:
         from code_review_loop import tui_loop_model
 
-        loop_model = tui_loop_model.LoopEditModel.load(
-            model.selected_profile_name, cwd=cwd
-        )
+        loop_model = tui_loop_model.LoopEditModel.load(model.selected_profile_name, cwd=cwd)
 
     return TuiBootstrapResult(
         model=model,
@@ -241,9 +235,7 @@ def _build_tui_bootstrap(
 
 
 def _textual_unavailable_message() -> str:
-    message = (
-        f"ERROR: revrem ui requires the optional Textual dependency. {INSTALL_HINT}"
-    )
+    message = f"ERROR: revrem ui requires the optional Textual dependency. {INSTALL_HINT}"
     if _TEXTUAL_IMPORT_ERROR is not None:
         message += (
             " Textual was found but could not be imported: "
@@ -328,11 +320,7 @@ def text_prompt_screen_class() -> type[Any] | None:
         input_widget: Any = _Input
 
         class TextPrompt(modal_screen):
-            BINDINGS = [
-                _binding(
-                    "escape", "cancel", "Cancel", priority=True, binding_cls=_Binding
-                )
-            ]
+            BINDINGS = [_binding("escape", "cancel", "Cancel", priority=True, binding_cls=_Binding)]
 
             def __init__(self, *, title: str, prompt: str, initial: str) -> None:
                 super().__init__()
@@ -436,9 +424,7 @@ def check_picker_screen_class() -> type[Any] | None:
                 with vertical(id="check-picker-dialog"):
                     self._body = static("", id="check-picker-content", markup=False)
                     yield self._body
-                    yield static(
-                        "Up/Down choose · Enter apply · Esc cancel", markup=False
-                    )
+                    yield static("Up/Down choose · Enter apply · Esc cancel", markup=False)
 
             def on_mount(self) -> None:
                 self._rebuild()
@@ -458,16 +444,12 @@ def check_picker_screen_class() -> type[Any] | None:
 
             def _move(self, delta: int) -> None:
                 if self.choices:
-                    self.selected_index = (self.selected_index + delta) % len(
-                        self.choices
-                    )
+                    self.selected_index = (self.selected_index + delta) % len(self.choices)
                     self._rebuild()
 
             def _rebuild(self) -> None:
                 if self._body is not None:
-                    self._body.update(
-                        _check_picker_text(self.choices, self.selected_index)
-                    )
+                    self._body.update(_check_picker_text(self.choices, self.selected_index))
 
         _CHECK_PICKER_SCREEN_CLASS = CheckPickerScreen
     return _CHECK_PICKER_SCREEN_CLASS
@@ -508,14 +490,10 @@ def _build_bindings(binding_cls: Any | None) -> list[Any]:
             priority=True,
             binding_cls=binding_cls,
         ),
-        _binding(
-            "m", "cycle_harness", "Harness", priority=True, binding_cls=binding_cls
-        ),
+        _binding("m", "cycle_harness", "Harness", priority=True, binding_cls=binding_cls),
         _binding("f", "cycle_effort", "Effort", priority=True, binding_cls=binding_cls),
         _binding("M", "edit_model", "Model", priority=True, binding_cls=binding_cls),
-        _binding(
-            "t", "edit_timeout", "Timeout", priority=True, binding_cls=binding_cls
-        ),
+        _binding("t", "edit_timeout", "Timeout", priority=True, binding_cls=binding_cls),
         _binding(
             "i",
             "edit_max_iterations",
@@ -538,13 +516,18 @@ def _build_bindings(binding_cls: Any | None) -> list[Any]:
             priority=True,
             binding_cls=binding_cls,
         ),
+        _binding(
+            "A",
+            "edit_final_review_remediation_passes",
+            "Final recovery",
+            priority=True,
+            binding_cls=binding_cls,
+        ),
         ("d", "launch_dry_run", "Dry run"),
         ("r", "launch_run", "Run"),
         ("R", "prepare_review_retry", "Retry review"),
         ("k", "cancel_run", "Stop/cancel"),
-        _binding(
-            "l", "toggle_logs", "Detail view", priority=True, binding_cls=binding_cls
-        ),
+        _binding("l", "toggle_logs", "Detail view", priority=True, binding_cls=binding_cls),
         ("o", "show_artifacts", "Artifacts"),
         ("u", "toggle_pending_review", "Reuse review"),
         ("v", "show_pending_review", "Review details"),
@@ -859,9 +842,7 @@ class _RevRemAppMixin:
         self._selected_run_tab_index = 0
         self._loop_diagram: Any | None = None
         self._loop_model: Any | None = None
-        self.loop_session = tui_session.LoopSession(
-            profile_name=model.selected_profile_name
-        )
+        self.loop_session = tui_session.LoopSession(profile_name=model.selected_profile_name)
         self._loop_run_view: Any | None = None
         self._event_log: Any | None = None
         self._profile_picker: Any | None = None
@@ -1004,9 +985,7 @@ class _RevRemAppMixin:
             try:
                 result = _build_tui_bootstrap(cwd, selected_profile_name)
             except (OSError, RuntimeError, ValueError) as exc:
-                _call_from_thread(
-                    self, lambda exc=exc: self._finish_bootstrap_error(exc)
-                )
+                _call_from_thread(self, lambda exc=exc: self._finish_bootstrap_error(exc))
                 return
             _call_from_thread(
                 self,
@@ -1131,9 +1110,7 @@ class _RevRemAppMixin:
             return
         if self._pending_live_confirmation_profile != profile_name:
             self._pending_live_confirmation_profile = profile_name
-            _notify(
-                self, f"Press r again to start an experimental live run: {profile_name}"
-            )
+            _notify(self, f"Press r again to start an experimental live run: {profile_name}")
             self._update_console_status()
             return
         self._pending_live_confirmation_profile = None
@@ -1199,10 +1176,7 @@ class _RevRemAppMixin:
                 return
             details = [
                 f"Outcome: {summary.get('stopped_reason', 'unknown')}",
-                str(
-                    summary.get("latest_review_excerpt")
-                    or "No review excerpt recorded."
-                ),
+                str(summary.get("latest_review_excerpt") or "No review excerpt recorded."),
             ]
             for key in ("bug_report_path", "latest_review_path"):
                 if summary.get(key):
@@ -1239,11 +1213,7 @@ class _RevRemAppMixin:
             self._render_workbench()
             return False
         previous = pending.git_state
-        if (
-            pending.compatible
-            and isinstance(previous, dict)
-            and previous.get("available") is True
-        ):
+        if pending.compatible and isinstance(previous, dict) and previous.get("available") is True:
             base = effective_base or previous.get("base")
             from code_review_loop import run_recovery
 
@@ -1304,10 +1274,7 @@ class _RevRemAppMixin:
         if self._workspace != "run":
             return
         summary = self.live_run_controller.read_summary()
-        if (
-            not isinstance(summary, dict)
-            or summary.get("stopped_reason") != "review_unknown"
-        ):
+        if not isinstance(summary, dict) or summary.get("stopped_reason") != "review_unknown":
             _notify(self, "This run does not need an inconclusive-review retry.")
             return
         try:
@@ -1340,9 +1307,7 @@ class _RevRemAppMixin:
         )
         blocking = [issue.message for issue in issues if issue.severity == "blocking"]
         if blocking:
-            _notify(
-                self, "Continuation blocked: " + "; ".join(blocking), severity="error"
-            )
+            _notify(self, "Continuation blocked: " + "; ".join(blocking), severity="error")
             return
         try:
             self._prepare_terminal_followup(summary, reuse_review=True)
@@ -1356,9 +1321,7 @@ class _RevRemAppMixin:
             return
         _notify(self, "Continuation prepared from the latest actionable review.")
 
-    def _prepare_terminal_followup(
-        self, summary: dict[str, object], *, reuse_review: bool
-    ) -> None:
+    def _prepare_terminal_followup(self, summary: dict[str, object], *, reuse_review: bool) -> None:
         from code_review_loop import resume, tui_loop_model
 
         profile = self._live_run_profile
@@ -1374,9 +1337,7 @@ class _RevRemAppMixin:
             self._loop_diagram.set_model(model)
         pending = None
         if reuse_review:
-            review_path = resume.latest_resume_review_path(
-                summary, run_dir=launch.artifact_dir
-            )
+            review_path = resume.latest_resume_review_path(summary, run_dir=launch.artifact_dir)
             if review_path is not None:
                 raw_git_state = summary.get("git_state")
                 pending = tui_session.PendingReviewSelection(
@@ -1387,9 +1348,7 @@ class _RevRemAppMixin:
                     excerpt=str(summary.get("latest_review_excerpt") or ""),
                     compatible=True,
                     selected=True,
-                    git_state=(
-                        raw_git_state if isinstance(raw_git_state, dict) else None
-                    ),
+                    git_state=(raw_git_state if isinstance(raw_git_state, dict) else None),
                 )
         self.loop_session = tui_session.LoopSession(
             profile_name=profile.name,
@@ -1499,9 +1458,7 @@ class _RevRemAppMixin:
         self._cycle_workspace(1)
 
     def _cycle_workspace(self, delta: int) -> None:
-        if _ModalScreen is not None and isinstance(
-            getattr(self, "screen", None), _ModalScreen
-        ):
+        if _ModalScreen is not None and isinstance(getattr(self, "screen", None), _ModalScreen):
             return
         index = _WORKSPACES.index(self._workspace)
         self._set_workspace(_WORKSPACES[(index + delta) % len(_WORKSPACES)])
@@ -1570,9 +1527,7 @@ class _RevRemAppMixin:
                 self._select_profile(selected.name)
                 _notify(self, f"Selected profile: {selected.name}")
         elif self._workspace == "run" and self._focused_pane == "left":
-            self._selected_run_tab_index = (self._selected_run_tab_index + 1) % len(
-                _RUN_TABS
-            )
+            self._selected_run_tab_index = (self._selected_run_tab_index + 1) % len(_RUN_TABS)
             _notify(self, f"Run view: {_RUN_TABS[self._selected_run_tab_index]}")
         else:
             self._focused_pane = "right"
@@ -1636,6 +1591,10 @@ class _RevRemAppMixin:
             return
         self._open_loop_meta_prompt("inner_check_retries")
 
+    def action_edit_final_review_remediation_passes(self) -> None:
+        if self._workspace == "loop" and self._loop_diagram is not None:
+            self._open_loop_meta_prompt("final_review_remediation_passes")
+
     def action_choose_checks(self) -> None:
         if (
             self._workspace != "loop"
@@ -1653,13 +1612,10 @@ class _RevRemAppMixin:
         choices: list[_CheckChoice] = []
         if current:
             choices.append(
-                _CheckChoice(
-                    "current", "Keep current configured checks", current, "Current"
-                )
+                _CheckChoice("current", "Keep current configured checks", current, "Current")
             )
         choices.extend(
-            _CheckChoice(item.key, item.label, item.checks, "Recommended")
-            for item in detected
+            _CheckChoice(item.key, item.label, item.checks, "Recommended") for item in detected
         )
         choices.extend(
             _CheckChoice(item.key, item.label, item.checks, "Recent runs")
@@ -1709,10 +1665,7 @@ class _RevRemAppMixin:
 
     def action_edit_context(self) -> None:
         if self._workspace == "loop":
-            if (
-                self._loop_diagram is not None
-                and self._loop_diagram.current_phase() == "checks"
-            ):
+            if self._loop_diagram is not None and self._loop_diagram.current_phase() == "checks":
                 self._open_checks_prompt()
                 return
             self._open_prompt_field_prompt()
@@ -1854,9 +1807,7 @@ class _RevRemAppMixin:
                 if harness_dotted
                 else "codex"
             )
-            models = model_catalog.load_catalog(
-                Path(self.model.snapshot.cwd)
-            ).models_for(harness)
+            models = model_catalog.load_catalog(Path(self.model.snapshot.cwd)).models_for(harness)
             if models:
                 prompt += "\nCatalog options: " + ", ".join(item.id for item in models)
         self._prompt_for_text(
@@ -1990,9 +1941,7 @@ class _RevRemAppMixin:
             self._prompt_return_workspace = None
             return
         try:
-            text = tui_prompt_assets.prompt_asset_text(
-                asset, cwd=Path(self.model.snapshot.cwd)
-            )
+            text = tui_prompt_assets.prompt_asset_text(asset, cwd=Path(self.model.snapshot.cwd))
         except ValueError as exc:
             _notify(self, f"Prompt apply failed: {exc}", severity="error")
             return
@@ -2017,11 +1966,7 @@ class _RevRemAppMixin:
             if result is None:
                 _notify(self, "Route edit cancelled.")
                 return
-            if (
-                isinstance(result, tuple)
-                and len(result) == 2
-                and isinstance(result[1], dict)
-            ):
+            if isinstance(result, tuple) and len(result) == 2 and isinstance(result[1], dict):
                 route_name, values = result
                 self._apply_route_row_edit(str(route_name), values)
                 return
@@ -2050,9 +1995,7 @@ class _RevRemAppMixin:
         values: dict[str, str] = {}
         for cell in profiles.ROUTE_KEYS:
             fallback = getattr(route_config, cell, None) if route_config else None
-            value = self._loop_diagram.model.field_value(
-                f"triage.routes.{route}.{cell}", fallback
-            )
+            value = self._loop_diagram.model.field_value(f"triage.routes.{route}.{cell}", fallback)
             values[cell] = "" if value is None else str(value)
         return values
 
@@ -2138,13 +2081,8 @@ class _RevRemAppMixin:
                     return f"{field} must be 0 or greater"
             elif cell == "sandbox":
                 if string_value not in profiles.EXEC_SANDBOX_CHOICES:
-                    return (
-                        f"{field} must be one of "
-                        f"{', '.join(profiles.EXEC_SANDBOX_CHOICES)}"
-                    )
-            elif (
-                cell == "fallback" and string_value and string_value not in route_names
-            ):
+                    return f"{field} must be one of {', '.join(profiles.EXEC_SANDBOX_CHOICES)}"
+            elif cell == "fallback" and string_value and string_value not in route_names:
                 return f"{field} refers to unknown route: {string_value}"
         fallback_value = changes.get("fallback")
         fallback = None if fallback_value is None else str(fallback_value)
@@ -2156,9 +2094,7 @@ class _RevRemAppMixin:
         route_names = self._loop_diagram.route_names()
         fallbacks: dict[str, str] = {}
         for route_name in route_names:
-            route_config = self._loop_diagram.model.profile.triage.routes.get(
-                route_name
-            )
+            route_config = self._loop_diagram.model.profile.triage.routes.get(route_name)
             current_fallback = route_config.fallback if route_config else None
             value = self._loop_diagram.model.field_value(
                 f"triage.routes.{route_name}.fallback", current_fallback
@@ -2192,16 +2128,11 @@ class _RevRemAppMixin:
         if route in self._loop_diagram.model.profile.triage.routes:
             _notify(self, f"Route already exists: {route}", severity="error")
             return
-        if (
-            self._loop_diagram.model.field_value(f"triage.routes.{route}.harness", None)
-            is not None
-        ):
+        if self._loop_diagram.model.field_value(f"triage.routes.{route}.harness", None) is not None:
             _notify(self, f"Route already exists: {route}", severity="error")
             return
         self._loop_diagram.model.set_field(f"triage.routes.{route}.harness", "codex")
-        self._loop_diagram.model.set_field(
-            f"triage.routes.{route}.sandbox", "workspace-write"
-        )
+        self._loop_diagram.model.set_field(f"triage.routes.{route}.sandbox", "workspace-write")
         if not self._loop_diagram.model.profile.triage.routing.enabled:
             self._loop_diagram.model.set_field("triage.contract", "v2")
             self._loop_diagram.model.set_field("triage.enabled", "true")
@@ -2249,6 +2180,7 @@ class _RevRemAppMixin:
         fallback = {
             "base": profile.pipeline.base,
             "max_iterations": profile.pipeline.max_iterations,
+            "final_review_remediation_passes": (profile.pipeline.final_review_remediation_passes),
             "inner_check_retries": profile.runtime.inner_check_retries,
         }[field]
         value = self._loop_diagram.model.field_value(dotted, fallback)
@@ -2364,9 +2296,7 @@ class _RevRemAppMixin:
             _notify(self, "Save or revert loop changes before loading another profile.")
             return
         try:
-            model = tui_loop_model.LoopEditModel.load(
-                name, cwd=Path(self.model.snapshot.cwd)
-            )
+            model = tui_loop_model.LoopEditModel.load(name, cwd=Path(self.model.snapshot.cwd))
         except (OSError, ValueError) as exc:
             _notify(self, f"Load failed: {exc}", severity="error")
             return
@@ -2457,9 +2387,7 @@ class _RevRemAppMixin:
     def _selected_profile_view(self) -> tui_state.ProfileView | None:
         if not self.model.snapshot.profiles:
             return None
-        index = max(
-            0, min(self._selected_profile_index, len(self.model.snapshot.profiles) - 1)
-        )
+        index = max(0, min(self._selected_profile_index, len(self.model.snapshot.profiles) - 1))
         self._selected_profile_index = index
         return self.model.snapshot.profiles[index]
 
@@ -2494,17 +2422,11 @@ class _RevRemAppMixin:
         if self._workspace == "profiles" and self._focused_pane == "left":
             count = len(self.model.snapshot.profiles)
             if count:
-                self._selected_profile_index = (
-                    self._selected_profile_index + delta
-                ) % count
+                self._selected_profile_index = (self._selected_profile_index + delta) % count
         elif self._workspace in {"prompts", "run"} and self._focused_pane == "left":
-            self._selected_phase_index = (self._selected_phase_index + delta) % len(
-                _PHASES
-            )
+            self._selected_phase_index = (self._selected_phase_index + delta) % len(_PHASES)
         elif self._workspace == "run" and self._focused_pane == "right":
-            self._selected_run_tab_index = (self._selected_run_tab_index + delta) % len(
-                _RUN_TABS
-            )
+            self._selected_run_tab_index = (self._selected_run_tab_index + delta) % len(_RUN_TABS)
         self._render_workbench()
 
     def _select_profile(self, profile_name: str) -> None:
@@ -2796,9 +2718,7 @@ def _last_run_loop_model(
     return model, origin, pending
 
 
-def _apply_resume_config_to_loop_model(
-    model: Any, payload: dict[object, object]
-) -> None:
+def _apply_resume_config_to_loop_model(model: Any, payload: dict[object, object]) -> None:
     """Apply the structured run contract without depending on CLI wizard state."""
     model.set_effective_profile(resume.rehydrate_profile_triage(model.profile, payload))
     profile = model.profile
@@ -2819,20 +2739,18 @@ def _apply_resume_config_to_loop_model(
 
     checks = payload.get("check_commands")
     phase_config = payload.get("phase_config")
-    checks_config = (
-        phase_config.get("checks") if isinstance(phase_config, dict) else None
-    )
+    checks_config = phase_config.get("checks") if isinstance(phase_config, dict) else None
     check_timeout = (
-        checks_config.get("timeout_seconds")
-        if isinstance(checks_config, dict)
-        else None
+        checks_config.get("timeout_seconds") if isinstance(checks_config, dict) else None
     )
     state = SimpleNamespace(
         base=text("base", profile.pipeline.base),
         max_iterations=payload.get("max_iterations", profile.pipeline.max_iterations),
-        inner_check_retries=payload.get(
-            "inner_check_retries", profile.runtime.inner_check_retries
+        final_review_remediation_passes=payload.get(
+            "final_review_remediation_passes",
+            profile.pipeline.final_review_remediation_passes,
         ),
+        inner_check_retries=payload.get("inner_check_retries", profile.runtime.inner_check_retries),
         full_auto=boolean("full_auto", profile.runtime.full_auto),
         exec_sandbox=text("exec_sandbox", profile.runtime.exec_sandbox),
         checks=(
@@ -2844,9 +2762,7 @@ def _apply_resume_config_to_loop_model(
         triage_enabled=boolean("triage_enabled", profile.triage.enabled),
         triage_contract=text("triage_contract", profile.triage.contract),
         routing_enabled=boolean("routing_enabled", profile.triage.routing.enabled),
-        routing_default_route=text(
-            "routing_default_route", profile.triage.routing.default_route
-        ),
+        routing_default_route=text("routing_default_route", profile.triage.routing.default_route),
         routing_strict=boolean(
             "routing_strict", profile.triage.routing.strict_on_unavailable_route
         ),
@@ -2878,13 +2794,9 @@ def _apply_resume_config_to_loop_model(
         remediation_timeout_seconds=number_text(
             "remediation_timeout_seconds", profile.remediation.timeout_seconds
         ),
-        commit_after_remediation=boolean(
-            "commit_after_remediation", profile.commit.enabled
-        ),
+        commit_after_remediation=boolean("commit_after_remediation", profile.commit.enabled),
         commit_message_harness=text("commit_message_harness", profile.commit.harness),
-        commit_message_model=text(
-            "commit_message_model", profile.commit.message_model or ""
-        ),
+        commit_message_model=text("commit_message_model", profile.commit.message_model or ""),
         commit_reasoning_effort=text(
             "commit_reasoning_effort", profile.commit.reasoning_effort or ""
         ),
@@ -2899,8 +2811,7 @@ def _apply_resume_config_to_loop_model(
         ),
         check_timeout_seconds=(
             f"{check_timeout:g}"
-            if isinstance(check_timeout, int | float)
-            and not isinstance(check_timeout, bool)
+            if isinstance(check_timeout, int | float) and not isinstance(check_timeout, bool)
             else (
                 ""
                 if profile.pipeline.check_timeout_seconds is None
@@ -2924,6 +2835,11 @@ def _apply_wizard_state_to_loop_model(model: Any, state: Any) -> None:
             "pipeline.max_iterations",
             state.max_iterations,
             profile.pipeline.max_iterations,
+        ),
+        (
+            "pipeline.final_review_remediation_passes",
+            state.final_review_remediation_passes,
+            profile.pipeline.final_review_remediation_passes,
         ),
         (
             "runtime.inner_check_retries",
@@ -3249,12 +3165,8 @@ def _prompt_detail_markup(app: Any) -> str:
             )
         )
     elif phase_name == "review":
-        lines.append(
-            "source: native codex review prompt or composed external review prompt"
-        )
-        lines.append(
-            "editable: no dedicated profile field; edit harness/model/profile settings"
-        )
+        lines.append("source: native codex review prompt or composed external review prompt")
+        lines.append("editable: no dedicated profile field; edit harness/model/profile settings")
     elif phase_name == "remediation":
         fragment_names = sorted(
             {
@@ -3268,8 +3180,7 @@ def _prompt_detail_markup(app: Any) -> str:
             "editable: route fragments are configured in triage.routing.rule[].then.prompt_fragments"
         )
         lines.append(
-            "fragments: "
-            + (", ".join(fragment_names) if fragment_names else "none configured")
+            "fragments: " + (", ".join(fragment_names) if fragment_names else "none configured")
         )
     else:
         lines.append("source: verification check commands and failed-check handoff")
@@ -3352,9 +3263,7 @@ def _footer_markup(app: Any) -> str:
                 ("o", "Artifacts"),
                 ("?", "Help"),
             )
-    return "  ".join(
-        f"\\[{key}] {tui_state.markup_escape(label)}" for key, label in hints
-    )
+    return "  ".join(f"\\[{key}] {tui_state.markup_escape(label)}" for key, label in hints)
 
 
 def _loop_command_markup(app: Any) -> str:
@@ -3412,22 +3321,23 @@ def _loop_settings_markup(app: Any) -> str:
         return "RUN SETTINGS\nNo active profile."
     assert loop_model is not None
     base = loop_model.field_value("pipeline.base", profile.pipeline.base)
-    iterations = loop_model.field_value(
-        "pipeline.max_iterations", profile.pipeline.max_iterations
-    )
-    raw_final = loop_model.field_value(
-        "pipeline.final_review", profile.pipeline.final_review
-    )
+    iterations = loop_model.field_value("pipeline.max_iterations", profile.pipeline.max_iterations)
+    raw_final = loop_model.field_value("pipeline.final_review", profile.pipeline.final_review)
     final_enabled = (
         raw_final.strip().lower() in {"true", "yes", "on", "1"}
         if isinstance(raw_final, str)
         else bool(raw_final)
     )
+    final_recovery = loop_model.field_value(
+        "pipeline.final_review_remediation_passes",
+        profile.pipeline.final_review_remediation_passes,
+    )
     return "\n".join(
         (
             "RUN SETTINGS",
-            f"Base: {base} | Max iterations: {iterations} | Final review: {'on' if final_enabled else 'off'}",
-            "b edit base · i edit max iterations · F toggle final review",
+            f"Base: {base} | Max iterations: {iterations}",
+            f"Final review: {'on' if final_enabled else 'off'} | Recovery passes: {final_recovery}",
+            "b edit base · i edit max · F toggle final · A edit recovery passes",
         )
     )
 
@@ -3517,9 +3427,7 @@ def _phase_summary_line(phase: tui_state.PhaseView, *, selected: bool) -> str:
         details.append(f"effort={effort}")
     if phase.command_count is not None:
         details.append(f"commands={phase.command_count}")
-    text = f"{marker} {phase.name}: " + ", ".join(
-        tui_state.markup_escape(item) for item in details
-    )
+    text = f"{marker} {phase.name}: " + ", ".join(tui_state.markup_escape(item) for item in details)
     if selected:
         return f"[status-info]{text}[/]"
     if not phase.enabled:
@@ -3533,9 +3441,7 @@ def _phase_marker(phase: tui_state.PhaseView) -> str:
     return "[[ok]]"
 
 
-def _phase_detail_lines(
-    profile: profiles.Profile, phase: tui_state.PhaseView
-) -> list[str]:
+def _phase_detail_lines(profile: profiles.Profile, phase: tui_state.PhaseView) -> list[str]:
     lines = [
         f"state: {'enabled' if phase.enabled else 'disabled'}",
         f"harness: {phase.harness or '-'}",
@@ -3564,11 +3470,12 @@ def _loop_shape_lines(profile: profiles.Profile) -> list[str]:
         lines.append("  -> commit after passing checks")
     else:
         lines.append("  -> commit off")
-    lines.append(
-        "  -> final review"
-        if profile.pipeline.final_review
-        else "  -> final review off"
-    )
+    lines.append("  -> final review" if profile.pipeline.final_review else "  -> final review off")
+    if profile.pipeline.final_review and profile.pipeline.final_review_remediation_passes > 0:
+        lines.append(
+            "     -> findings: remediate + verify + review "
+            f"(up to {profile.pipeline.final_review_remediation_passes})"
+        )
     return lines
 
 
@@ -3609,9 +3516,7 @@ def _summary_lines(controller: tui_run_controller.LiveRunController) -> list[str
 
 def _home_markup(app: Any) -> str:
     snapshot = app.model.snapshot
-    implemented = [
-        harness.name for harness in snapshot.harnesses if harness.implemented
-    ]
+    implemented = [harness.name for harness in snapshot.harnesses if harness.implemented]
     reserved_count = sum(1 for harness in snapshot.harnesses if not harness.implemented)
     harness_text = ", ".join(implemented[:5]) or "none"
     if len(implemented) > 5:
@@ -3638,15 +3543,11 @@ def _home_markup(app: Any) -> str:
 
 def _profiles_markup(app: Any) -> str:
     selected = app.model.selected_profile_name
-    profiles_by_name = {
-        profile.name: profile for profile in app.model.snapshot.profiles
-    }
+    profiles_by_name = {profile.name: profile for profile in app.model.snapshot.profiles}
     ordered = []
     if selected and selected in profiles_by_name:
         ordered.append(profiles_by_name[selected])
-    ordered.extend(
-        profile for profile in app.model.snapshot.profiles if profile.name != selected
-    )
+    ordered.extend(profile for profile in app.model.snapshot.profiles if profile.name != selected)
     lines = ["[b]Profiles[/b]"]
     for index, profile in enumerate(ordered[:7]):
         marker = ">" if profile.name == selected else " "
@@ -3689,15 +3590,12 @@ def _pipeline_markup(app: Any) -> str:
         if phase.command_count is not None:
             details.append(f"commands={phase.command_count}")
         lines.append(
-            f"{phase.name}: "
-            + ", ".join(tui_state.markup_escape(item) for item in details)
+            f"{phase.name}: " + ", ".join(tui_state.markup_escape(item) for item in details)
         )
     if profile.triage.routing.enabled:
         route_count = len(profile.triage.routes)
         route = profile.triage.routing.default_route or "none"
-        lines.append(
-            f"routing: default={tui_state.markup_escape(route)} routes={route_count}"
-        )
+        lines.append(f"routing: default={tui_state.markup_escape(route)} routes={route_count}")
     if app.model.selected_launch_plan is not None:
         lines.append(
             f"Dry-run: {tui_state.markup_escape(app.model.selected_launch_plan.shell_command)}"
@@ -3724,9 +3622,7 @@ def _short_source(source: str | None) -> str:
     return path.name or source
 
 
-def _screen_by_name(
-    model: tui_state.TuiShellModel, name: str
-) -> tui_state.TuiScreen | None:
+def _screen_by_name(model: tui_state.TuiShellModel, name: str) -> tui_state.TuiScreen | None:
     for screen in model.screens:
         if screen.name == name:
             return screen
@@ -3740,9 +3636,7 @@ def _controls_markup(app: Any) -> str:
     elif app._quit_confirmation_pending:
         live_hint = "quit pending: press q again to cancel the run and quit"
     elif app._pending_live_confirmation_profile:
-        live_hint = (
-            f"confirm run: press r again for {app._pending_live_confirmation_profile}"
-        )
+        live_hint = f"confirm run: press r again for {app._pending_live_confirmation_profile}"
     elif app._live_run_active():
         live_hint = "active run: press k to cancel"
     else:
@@ -3765,9 +3659,7 @@ def _live_monitor_markup(controller: tui_run_controller.LiveRunController) -> st
         f"Live status: {tui_state.markup_escape(status)}",
     ]
     if controller.launch is not None:
-        lines.append(
-            f"artifacts: {tui_state.markup_escape(str(controller.launch.artifact_dir))}"
-        )
+        lines.append(f"artifacts: {tui_state.markup_escape(str(controller.launch.artifact_dir))}")
     if controller.message:
         lines.append(f"message: {tui_state.markup_escape(controller.message)}")
     snapshot = controller.read_live_events()
@@ -3779,9 +3671,7 @@ def _live_monitor_markup(controller: tui_run_controller.LiveRunController) -> st
         suffix = " [truncated]" if snapshot.truncated else ""
         lines.append(f"events: {len(snapshot.events)} loaded{suffix}")
         for event in tui_state.event_views_from_events(snapshot.events[-8:]):
-            lines.append(
-                f"  {tui_state.markup_escape(tui_state.event_row_text(event))}"
-            )
+            lines.append(f"  {tui_state.markup_escape(tui_state.event_row_text(event))}")
     return "\n".join(lines)
 
 
@@ -3887,9 +3777,7 @@ def _cancel_active_modal(app: Any) -> bool:
 
 
 def _help_markup(*, visible: bool) -> str:
-    return (
-        "Help\nPress ? or h for keybindings." if not visible else _generic_help_text()
-    )
+    return "Help\nPress ? or h for keybindings." if not visible else _generic_help_text()
 
 
 def _help_text(app: Any) -> str:
@@ -3910,7 +3798,7 @@ def _help_text(app: Any) -> str:
         lines.extend(
             (
                 "Run settings",
-                "  b Base · i Max iterations · F Final review",
+                "  b Base · i Max iterations · F Final review · A Final recovery passes",
                 "",
                 f"Selected phase: {phase}",
                 f"  {_phase_help_text(phase)}",
@@ -3942,7 +3830,7 @@ def _generic_help_text() -> str:
             "HELP",
             "Up/Down move · Enter select · Esc close",
             "1 Loop · 2 Run · 3 Profiles · 4 Prompts · q Quit",
-            "Loop: b base · i max iterations · F final review · s save",
+            "Loop: b base · i max iterations · F final review · A recovery passes · s save",
             "Run: d dry-run · r start · k cancel",
         )
     )
@@ -3978,8 +3866,7 @@ def _check_picker_text(choices: tuple[_CheckChoice, ...], selected_index: int) -
             lines.append("  Enter commands manually after selecting this option.")
         elif selected.checks:
             lines.extend(
-                f"  {index}. {command}"
-                for index, command in enumerate(selected.checks, 1)
+                f"  {index}. {command}" for index, command in enumerate(selected.checks, 1)
             )
         else:
             lines.append("  No configured commands; built-in cleanliness only.")

@@ -38,9 +38,7 @@ _PROMPT_LIBRARY_CLASS: type[Any] | None = None
 _ROUTE_EDIT_MODAL_CLASS: type[Any] | None = None
 
 
-def _terminal_iteration_gutter(
-    index: int, *, visible_rows: int, row_count: int
-) -> str:
+def _terminal_iteration_gutter(index: int, *, visible_rows: int, row_count: int) -> str:
     """Label occupied terminal rows numerically and reserve FR for an empty slot."""
     if index < visible_rows:
         return f"{index:02d}"
@@ -54,10 +52,7 @@ def _effort_choices_for_phase(
 ) -> tuple[str, ...]:
     """Return editable efforts after applying phase-specific provider rules."""
     choices = model_catalog.effort_choices(harness, model, cwd=cwd)
-    if (
-        phase == "triage"
-        and harnesses._resolve_catalog_driver(harness, cwd=cwd) == "codex"
-    ):
+    if phase == "triage" and harnesses._resolve_catalog_driver(harness, cwd=cwd) == "codex":
         return tuple(value for value in choices if value != "minimal")
     return choices
 
@@ -91,9 +86,7 @@ def phase_card_class() -> type[Any] | None:
         return _PHASE_CARD_CLASS
 
     class PhaseCard(static_cls):  # type: ignore[misc, valid-type]
-        def __init__(
-            self, model: Any, phase_name: str, *, focused: bool, expanded: bool
-        ) -> None:
+        def __init__(self, model: Any, phase_name: str, *, focused: bool, expanded: bool) -> None:
             super().__init__(
                 "",
                 id=f"phase-card-{phase_name}",
@@ -182,9 +175,7 @@ def loop_diagram_class() -> type[Any] | None:
             self._gutters: dict[str, Any] = {}
             self._cards: dict[str, Any] = {}
             self._routes_table: Any | None = None
-            self._returns = static_cls(
-                "", id="loop-returns", classes="loop-returns", markup=False
-            )
+            self._returns = static_cls("", id="loop-returns", classes="loop-returns", markup=False)
             self.route_mode = False
             self.selected_route_index = 0
 
@@ -240,28 +231,22 @@ def loop_diagram_class() -> type[Any] | None:
             if self.route_mode:
                 route_names = self.route_names()
                 if route_names:
-                    self.selected_route_index = (
-                        self.selected_route_index + delta
-                    ) % len(route_names)
+                    self.selected_route_index = (self.selected_route_index + delta) % len(
+                        route_names
+                    )
                     self.rebuild()
                 return
-            self.focused_index = (self.focused_index + delta) % len(
-                tui_loop_state.LOOP_PHASES
-            )
+            self.focused_index = (self.focused_index + delta) % len(tui_loop_state.LOOP_PHASES)
             self.rebuild()
 
         def route_names(self) -> tuple[str, ...]:
-            return tuple(
-                row.name for row in tui_loop_state.triage_route_rows(self.model)
-            )
+            return tuple(row.name for row in tui_loop_state.triage_route_rows(self.model))
 
         def selected_route(self) -> str | None:
             names = self.route_names()
             if not names:
                 return None
-            self.selected_route_index = max(
-                0, min(self.selected_route_index, len(names) - 1)
-            )
+            self.selected_route_index = max(0, min(self.selected_route_index, len(names) - 1))
             return names[self.selected_route_index]
 
         def enter_route_mode(self) -> bool:
@@ -304,9 +289,7 @@ def loop_diagram_class() -> type[Any] | None:
                     else "codex"
                 )
                 model_value = (
-                    str(self.model.field_value(model_dotted, ""))
-                    if model_dotted
-                    else None
+                    str(self.model.field_value(model_dotted, "")) if model_dotted else None
                 )
                 choices = _effort_choices_for_phase(
                     self.current_phase(),
@@ -319,9 +302,7 @@ def loop_diagram_class() -> type[Any] | None:
             # Fall back to the resolved profile value when there is no unsaved
             # overlay so cycling advances from what the user currently sees.
             current = str(
-                self.model.field_value(
-                    dotted, _profile_dotted_value(self.model.profile, dotted)
-                )
+                self.model.field_value(dotted, _profile_dotted_value(self.model.profile, dotted))
             )
             try:
                 index = choices.index(current)
@@ -350,9 +331,7 @@ def loop_diagram_class() -> type[Any] | None:
 
         def toggle_final_review(self) -> None:
             dotted = tui_loop_state.LOOP_META_DOTTED["final_review"]
-            current = bool(
-                self.model.field_value(dotted, self.model.profile.pipeline.final_review)
-            )
+            current = bool(self.model.field_value(dotted, self.model.profile.pipeline.final_review))
             self.model.set_field(dotted, "false" if current else "true")
             self.rebuild()
 
@@ -378,9 +357,7 @@ def loop_diagram_class() -> type[Any] | None:
                     self.selected_route() if self.route_mode else None
                 )
                 self._routes_table.rebuild()
-            self._returns.update(
-                "\n".join(tui_loop_state.loop_return_lines(self.model))
-            )
+            self._returns.update("\n".join(tui_loop_state.loop_return_lines(self.model)))
             self.refresh()
 
     _LOOP_DIAGRAM_CLASS = LoopDiagram
@@ -399,23 +376,15 @@ def profile_picker_class() -> type[Any] | None:
     class ProfilePicker(static_cls):  # type: ignore[misc, valid-type]
         can_focus = True
 
-        def __init__(
-            self, rows: tuple[tui_profiles_state.ProfilePickerRow, ...]
-        ) -> None:
-            super().__init__(
-                "", id="profile-picker", classes="profile-picker", markup=False
-            )
+        def __init__(self, rows: tuple[tui_profiles_state.ProfilePickerRow, ...]) -> None:
+            super().__init__("", id="profile-picker", classes="profile-picker", markup=False)
             self.rows = rows
             self.selected_index = 0
             self.rebuild()
 
-        def set_rows(
-            self, rows: tuple[tui_profiles_state.ProfilePickerRow, ...]
-        ) -> None:
+        def set_rows(self, rows: tuple[tui_profiles_state.ProfilePickerRow, ...]) -> None:
             self.rows = rows
-            self.selected_index = (
-                0 if not rows else min(self.selected_index, len(rows) - 1)
-            )
+            self.selected_index = 0 if not rows else min(self.selected_index, len(rows) - 1)
 
         def move(self, delta: int) -> None:
             if self.rows:
@@ -462,9 +431,7 @@ def prompt_library_class() -> type[Any] | None:
         can_focus = True
 
         def __init__(self) -> None:
-            super().__init__(
-                "", id="prompt-library", classes="prompt-library", markup=False
-            )
+            super().__init__("", id="prompt-library", classes="prompt-library", markup=False)
             self.assets = tui_prompts_state.prompt_inventory()
             self.selected_index = 0
             self.rebuild()
@@ -534,9 +501,7 @@ def route_edit_modal_class() -> type[Any] | None:
                 priority=True,
                 binding_cls=tui._Binding,
             ),
-            tui._binding(
-                "escape", "cancel", "Cancel", priority=True, binding_cls=tui._Binding
-            ),
+            tui._binding("escape", "cancel", "Cancel", priority=True, binding_cls=tui._Binding),
         ]
 
         def __init__(
@@ -555,9 +520,7 @@ def route_edit_modal_class() -> type[Any] | None:
 
         def compose(self):
             with vertical_cls(id="route-edit-dialog"):
-                yield static_cls(
-                    f"Route: {self.route}", id="route-edit-title", markup=False
-                )
+                yield static_cls(f"Route: {self.route}", id="route-edit-title", markup=False)
                 yield static_cls("harness", markup=False)
                 yield select_cls(
                     _select_options(
@@ -572,9 +535,7 @@ def route_edit_modal_class() -> type[Any] | None:
                     id="route-edit-harness",
                 )
                 yield static_cls("model", markup=False)
-                yield input_cls(
-                    value=self.values.get("model", ""), id="route-edit-model"
-                )
+                yield input_cls(value=self.values.get("model", ""), id="route-edit-model")
                 yield static_cls("reasoning_effort", markup=False)
                 yield select_cls(
                     _select_options(
@@ -610,14 +571,10 @@ def route_edit_modal_class() -> type[Any] | None:
                     id="route-edit-sandbox",
                 )
                 yield static_cls("fallback", markup=False)
-                fallback_choices = tuple(
-                    name for name in self.route_names if name != self.route
-                )
+                fallback_choices = tuple(name for name in self.route_names if name != self.route)
                 yield select_cls(
                     _select_options(
-                        _choices_with_current(
-                            fallback_choices, self.values.get("fallback", "")
-                        )
+                        _choices_with_current(fallback_choices, self.values.get("fallback", ""))
                     ),
                     allow_blank=True,
                     value=_select_value(
@@ -672,9 +629,7 @@ def route_edit_modal_class() -> type[Any] | None:
     return _ROUTE_EDIT_MODAL_CLASS
 
 
-def _choices_with_current(
-    choices: tuple[str, ...], current: str | None
-) -> tuple[str, ...]:
+def _choices_with_current(choices: tuple[str, ...], current: str | None) -> tuple[str, ...]:
     if current and current not in choices:
         return choices + (current,)
     return choices
@@ -684,9 +639,7 @@ def _select_options(choices: tuple[str, ...]) -> tuple[tuple[str, str], ...]:
     return tuple((choice, choice) for choice in choices)
 
 
-def _select_value(
-    current: str | None, choices: tuple[str, ...], *, blank_ok: bool = False
-) -> Any:
+def _select_value(current: str | None, choices: tuple[str, ...], *, blank_ok: bool = False) -> Any:
     from code_review_loop import tui
 
     select_cls = tui._Select
@@ -777,9 +730,7 @@ def loop_run_view_class() -> type[Any] | None:
 
             summary_reader = getattr(self.controller, "read_summary", None)
             summary = summary_reader() if callable(summary_reader) else None
-            if isinstance(summary, dict) and getattr(
-                self.controller, "status", ""
-            ) not in {
+            if isinstance(summary, dict) and getattr(self.controller, "status", "") not in {
                 "running",
                 "starting",
                 "idle",
@@ -789,11 +740,18 @@ def loop_run_view_class() -> type[Any] | None:
 
             view = tui_run_state.run_loop_view(snapshot.events, self.profile)
             status_by_phase = {phase.name: phase for phase in view.phases}
-            iteration = (
-                f"iteration {view.iteration}/{view.max_iterations}"
-                if view.iteration is not None
-                else f"max {view.max_iterations}"
-            )
+            if view.final_review_remediation_pass:
+                iteration = (
+                    "final recovery "
+                    f"{view.final_review_remediation_pass}/"
+                    f"{view.final_review_remediation_passes}"
+                )
+            else:
+                iteration = (
+                    f"iteration {view.iteration}/{view.max_iterations}"
+                    if view.iteration is not None
+                    else f"max {view.max_iterations}"
+                )
             truncated = " · events truncated" if snapshot.truncated else ""
             self._header.update(
                 f"RUN · {self.profile.name} · {self.controller.status} · {iteration}{truncated}"
@@ -810,9 +768,7 @@ def loop_run_view_class() -> type[Any] | None:
                 glyph = tui_run_state.RUN_STATE_GLYPHS.get(status.state, "·")
                 detail = f" · {status.detail}" if status.detail else ""
                 if phase == "checks" and view.inner_check_retries > 0:
-                    retry = (
-                        f" · inner retry {view.inner_retry}/{view.inner_check_retries}"
-                    )
+                    retry = f" · inner retry {view.inner_retry}/{view.inner_check_retries}"
                     detail = f"{detail}{retry}"
                 status_widget.update(f"{glyph} {phase} · {status.state}{detail}")
                 status_widget.set_classes(
@@ -826,9 +782,7 @@ def loop_run_view_class() -> type[Any] | None:
                 )
             self.refresh()
 
-        def _rebuild_terminal(
-            self, summary: dict[str, object], *, snapshot: Any
-        ) -> None:
+        def _rebuild_terminal(self, summary: dict[str, object], *, snapshot: Any) -> None:
             from rich.text import Text
 
             from code_review_loop import tui_run_state
@@ -876,9 +830,7 @@ def loop_run_view_class() -> type[Any] | None:
                 if widget is None:
                     continue
                 displayed_rows = (
-                    rows[index - 1 : index]
-                    if index < visible_rows
-                    else rows[index - 1 :]
+                    rows[index - 1 : index] if index < visible_rows else rows[index - 1 :]
                 )
                 if displayed_rows:
                     widget.update(
@@ -950,11 +902,7 @@ def event_log_class() -> type[Any] | None:
                 lines = ["logs"]
                 lines.extend(f"stdout: {line}" for line in stdout)
                 lines.extend(f"stderr: {line}" for line in stderr)
-                self.update(
-                    "\n".join(lines)
-                    if len(lines) > 1
-                    else "logs\nNo captured lines yet."
-                )
+                self.update("\n".join(lines) if len(lines) > 1 else "logs\nNo captured lines yet.")
                 return
             if snapshot is None:
                 snapshot = self.controller.read_live_events()

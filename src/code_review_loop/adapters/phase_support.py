@@ -185,9 +185,7 @@ def build_commit_message_command(config: LoopConfig) -> list[str]:
             color=config.exec_color,
             full_auto=False,
             json_output=(
-                harnesses._resolve_catalog_driver(
-                    config.commit_message_harness, cwd=config.cwd
-                )
+                harnesses._resolve_catalog_driver(config.commit_message_harness, cwd=config.cwd)
                 == "codex"
             ),
         )
@@ -449,28 +447,43 @@ def progress_event(
             iteration=label,
             payload=payload,
         )
+    display_label = progress_iteration_label(
+        label,
+        config.max_iterations,
+        final_review_remediation_passes=config.final_review_remediation_passes,
+    )
     if ctx.progress_reporter is not None:
-        ctx.progress_reporter.phase(phase, label, status, detail)
+        ctx.progress_reporter.phase(phase, display_label, status, detail)
         return
     if not config.progress:
         return
     if config.progress_style == "rich":
-        if progress.print_rich_event(phase, label, status, detail):
+        if progress.print_rich_event(phase, display_label, status, detail):
             return
-        warn_rich_unavailable(phase, label)
+        warn_rich_unavailable(phase, display_label)
         if detail:
-            print_compact_progress(phase, label, one_line_progress_text(detail), head=f"{status}: ")
+            print_compact_progress(
+                phase,
+                display_label,
+                one_line_progress_text(detail),
+                head=f"{status}: ",
+            )
         else:
-            print_compact_progress(phase, label, status)
+            print_compact_progress(phase, display_label, status)
         return
     if config.progress_style == "verbose":
         suffix = f": {one_line_progress_text(detail)}" if detail else ""
-        progress_log(config, f"{phase} {label}: {status}{suffix}")
+        progress_log(config, f"{phase} {display_label}: {status}{suffix}")
         return
     if detail:
-        print_compact_progress(phase, label, one_line_progress_text(detail), head=f"{status}: ")
+        print_compact_progress(
+            phase,
+            display_label,
+            one_line_progress_text(detail),
+            head=f"{status}: ",
+        )
     else:
-        print_compact_progress(phase, label, status)
+        print_compact_progress(phase, display_label, status)
 
 
 def resolved_phase_detail(
@@ -494,9 +507,7 @@ def resolved_phase_detail(
         fields.append(model)
     if reasoning_effort:
         effort = (
-            reasoning_effort
-            if harnesses.reasoning_effort_supported(harness, cwd=cwd)
-            else "n/a"
+            reasoning_effort if harnesses.reasoning_effort_supported(harness, cwd=cwd) else "n/a"
         )
         fields.append(f"{effort} effort")
     if timeout_seconds is not None:
@@ -633,7 +644,11 @@ def run_with_waiting_progress(
     with waiting_progress.subprocess_waiting_reporter(report):
         result = runner(command, cwd, input_text, timeout_seconds)
     finished = ctx.clock.monotonic()
-    duration = max(0.0, float(finished - started)) if isinstance(started, int | float) and isinstance(finished, int | float) else 0.0
+    duration = (
+        max(0.0, float(finished - started))
+        if isinstance(started, int | float) and isinstance(finished, int | float)
+        else 0.0
+    )
     if result.provider_events is not None:
         safe_label = str(label).replace("/", "-")
         write_artifact(
@@ -661,9 +676,7 @@ def run_with_waiting_progress(
 def _phase_harness(config: LoopConfig, phase: str) -> str | None:
     if phase == "commit-message":
         return config.commit_message_harness
-    phase_field = {"remediate": "remediation", "stale-validation": "review"}.get(
-        phase, phase
-    )
+    phase_field = {"remediate": "remediation", "stale-validation": "review"}.get(phase, phase)
     return getattr(config, f"{phase_field.replace('-', '_')}_harness", None)
 
 
@@ -671,9 +684,7 @@ def _phase_model(config: LoopConfig, phase: str) -> str | None:
     if phase == "commit-message":
         field = "commit_message_model"
     else:
-        phase_field = {"remediate": "remediation", "stale-validation": "review"}.get(
-            phase, phase
-        )
+        phase_field = {"remediate": "remediation", "stale-validation": "review"}.get(phase, phase)
         field = f"{phase_field.replace('-', '_')}_model"
     return getattr(config, field, None) or config.model
 
@@ -682,9 +693,7 @@ def _phase_effort(config: LoopConfig, phase: str) -> str | None:
     if phase == "commit-message":
         field = "commit_reasoning_effort"
     else:
-        phase_field = {"remediate": "remediation", "stale-validation": "review"}.get(
-            phase, phase
-        )
+        phase_field = {"remediate": "remediation", "stale-validation": "review"}.get(phase, phase)
         field = f"{phase_field.replace('-', '_')}_reasoning_effort"
     return getattr(config, field, None) or config.reasoning_effort
 
@@ -803,12 +812,42 @@ def set_phase_terminal_title(config: LoopConfig, phase: str, label: str) -> None
     _set_phase_terminal_title(config, phase, label)
 
 
-def terminal_iteration_label(label: str, max_iterations: int) -> str:
-    if label.isdecimal():
+def terminal_iteration_label(
+    label: str,
+    max_iterations: int,
+    *,
+    final_review_remediation_passes: int = 0,
+) -> str:
+    display_label = progress_iteration_label(
+        label,
+        max_iterations,
+        final_review_remediation_passes=final_review_remediation_passes,
+    )
+    if display_label != label:
+        return display_label
+    match = re.fullmatch(r"(?P<iteration>\d+)(?P<substep>(?:\.\d+)*)", label)
+    if match and not match.group("substep"):
         return f"{label}/{max_iterations}"
     if label == "final":
         return "final"
     return label
+
+
+def progress_iteration_label(
+    label: str,
+    max_iterations: int,
+    *,
+    final_review_remediation_passes: int = 0,
+) -> str:
+    """Translate only bounded recovery iterations for operator-facing progress."""
+
+    match = re.fullmatch(r"(?P<iteration>\d+)(?P<substep>(?:\.\d+)*)", label)
+    if not match:
+        return label
+    recovery = int(match.group("iteration")) - max_iterations
+    if not 0 < recovery <= final_review_remediation_passes:
+        return label
+    return f"final recovery {recovery}/{final_review_remediation_passes}{match.group('substep')}"
 
 
 def sanitize_commit_message(

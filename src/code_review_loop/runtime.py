@@ -72,6 +72,14 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
             if not isinstance(item, dict):
                 continue
             iteration = item.get("iteration")
+            configured_max = summary.get("max_iterations")
+            if (
+                item.get("final_review_remediation") is True
+                and isinstance(iteration, int)
+                and isinstance(configured_max, int)
+                and not isinstance(configured_max, bool)
+            ):
+                iteration = f"final recovery {max(1, iteration - configured_max)}"
             review_status = item.get("review_status", "unknown")
             check_failures = item.get("check_failures")
             check_text = (
@@ -150,6 +158,7 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
                 cmd_list = retry.get("command")
                 if isinstance(cmd_list, list) and all(isinstance(x, str) for x in cmd_list):
                     import shlex
+
                     lines.append(f"Retry final review: {shlex.join(cmd_list)}")
             elif isinstance(retry, str) and retry:
                 lines.append(f"Retry final review: {retry}")
@@ -385,6 +394,18 @@ def _resume_command(summary: dict[str, object], review_path: str) -> str:
     max_iterations = config.get("max_iterations") or summary.get("max_iterations")
     if isinstance(max_iterations, int):
         command.extend(["--max-iterations", str(max_iterations)])
+    final_review_remediation_passes = config.get("final_review_remediation_passes")
+    if (
+        isinstance(final_review_remediation_passes, int)
+        and not isinstance(final_review_remediation_passes, bool)
+        and final_review_remediation_passes > 0
+    ):
+        command.extend(
+            [
+                "--final-review-remediation-passes",
+                str(final_review_remediation_passes),
+            ]
+        )
     profile = summary.get("profile")
     if isinstance(profile, str) and profile:
         command.extend(["--profile", profile])

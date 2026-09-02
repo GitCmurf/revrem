@@ -833,6 +833,27 @@ def test_terminal_summary_prefers_commit_output_artifact():
     assert "Latest commit artifact: tmp/run/commit-1.txt" in text
 
 
+def test_terminal_summary_labels_final_review_remediation_pass():
+    summary = {
+        "artifact_dir": "tmp/run",
+        "final_status": "clear",
+        "stopped_reason": "review_clear",
+        "max_iterations": 3,
+        "iterations": [
+            {
+                "iteration": 4,
+                "review_status": "findings",
+                "final_review_remediation": True,
+                "check_failures": 0,
+            }
+        ],
+    }
+
+    text = format_terminal_summary(summary)
+
+    assert "final recovery 1: review=findings, check failures: 0" in text
+
+
 def test_terminal_summary_finds_commit_output_artifact_with_windows_separators():
     summary = {
         "artifact_dir": "tmp/run",

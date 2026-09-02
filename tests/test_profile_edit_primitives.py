@@ -25,6 +25,9 @@ def test_deep_set_raw_coerces_int_and_bool():
     out_final = profiles.deep_set_raw({}, "pipeline.final_review", "false")
     assert out_final == {"pipeline": {"final_review": False}}
 
+    out_final_recovery = profiles.deep_set_raw({}, "pipeline.final_review_remediation_passes", "2")
+    assert out_final_recovery == {"pipeline": {"final_review_remediation_passes": 2}}
+
     out2 = profiles.deep_set_raw({}, "triage.enabled", "false")
     assert out2["triage"]["enabled"] is False
 
@@ -103,15 +106,20 @@ def test_profile_owner_path_unknown_requires_allow_new(tmp_path):
 
 
 def test_profile_owner_path_rejects_builtin(tmp_path):
-    name = next(p.name for p in profiles.list_profiles(cwd=tmp_path, include_builtins=True)
-                if profiles.is_builtin_profile(p.name))
+    name = next(
+        p.name
+        for p in profiles.list_profiles(cwd=tmp_path, include_builtins=True)
+        if profiles.is_builtin_profile(p.name)
+    )
     with pytest.raises(RuntimeError):
         profiles.profile_owner_path(name, cwd=tmp_path, home=tmp_path)
 
 
 def test_save_profile_raw_round_trips_minimal_toml(tmp_path):
-    _write(tmp_path / ".revrem.toml",
-           '[profiles.demo]\nreview.model = "old"\npipeline.max_iterations = 3\n')
+    _write(
+        tmp_path / ".revrem.toml",
+        '[profiles.demo]\nreview.model = "old"\npipeline.max_iterations = 3\n',
+    )
     raw = dict(profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"])
     raw = profiles.deep_set_raw(raw, "review.model", "gpt-5.5")
     path = profiles.save_profile_raw("demo", raw, cwd=tmp_path, home=tmp_path)
@@ -126,11 +134,7 @@ def test_save_profile_raw_round_trips_minimal_toml(tmp_path):
 def test_save_profile_raw_does_not_materialize_inherited_defaults(tmp_path):
     _write(
         tmp_path / ".config" / "revrem" / "profiles.toml",
-        "[defaults]\n"
-        "[defaults.output]\n"
-        "no_tty = true\n"
-        "[defaults.triage]\n"
-        "enabled = true\n",
+        "[defaults]\n[defaults.output]\nno_tty = true\n[defaults.triage]\nenabled = true\n",
     )
     _write(tmp_path / ".revrem.toml", '[profiles.demo]\nreview.model = "old"\n')
 
@@ -147,23 +151,19 @@ def test_save_profile_raw_does_not_materialize_inherited_defaults(tmp_path):
 def test_save_profile_raw_preserves_shadowed_user_value(tmp_path):
     _write(
         tmp_path / ".config" / "revrem" / "profiles.toml",
-        "[profiles.demo]\n"
-        "[profiles.demo.remediation]\n"
-        'model = "user"\n',
+        '[profiles.demo]\n[profiles.demo.remediation]\nmodel = "user"\n',
     )
     _write(
         tmp_path / ".revrem.toml",
-        "[defaults]\n"
-        "[defaults.remediation]\n"
-        'model = "repo"\n',
+        '[defaults]\n[defaults.remediation]\nmodel = "repo"\n',
     )
 
     raw = profiles.deep_set_raw({}, "review.timeout_seconds", "0.5")
     profiles.save_profile_raw("demo", raw, cwd=tmp_path, home=tmp_path)
 
-    reloaded = profiles.load_profile_file(tmp_path / ".config" / "revrem" / "profiles.toml").raw_profiles[
-        "demo"
-    ]
+    reloaded = profiles.load_profile_file(
+        tmp_path / ".config" / "revrem" / "profiles.toml"
+    ).raw_profiles["demo"]
     assert reloaded["remediation"]["model"] == "user"
     assert reloaded["review"]["timeout_seconds"] == 0.5
 
@@ -216,10 +216,11 @@ def test_save_profile_raw_preserves_sibling_profiles(tmp_path):
 
 
 def test_set_profile_field_persists_single_field(tmp_path):
-    _write(tmp_path / ".revrem.toml",
-           '[profiles.demo]\nreview.model = "old"\npipeline.max_iterations = 3\n')
-    profiles.set_profile_field("demo", "pipeline.max_iterations", "11",
-                               cwd=tmp_path, home=tmp_path)
+    _write(
+        tmp_path / ".revrem.toml",
+        '[profiles.demo]\nreview.model = "old"\npipeline.max_iterations = 3\n',
+    )
+    profiles.set_profile_field("demo", "pipeline.max_iterations", "11", cwd=tmp_path, home=tmp_path)
     reloaded = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"]
     assert reloaded["pipeline"]["max_iterations"] == 11
     assert reloaded["review"]["model"] == "old"
@@ -245,20 +246,18 @@ def test_set_profile_field_persists_pipeline_final_review(tmp_path):
 def test_set_profile_field_preserves_shadowed_user_value(tmp_path):
     _write(
         tmp_path / ".config" / "revrem" / "profiles.toml",
-        "[profiles.demo]\n"
-        "[profiles.demo.remediation]\n"
-        'model = "user"\n',
+        '[profiles.demo]\n[profiles.demo.remediation]\nmodel = "user"\n',
     )
     _write(
         tmp_path / ".revrem.toml",
-        "[defaults]\n"
-        "[defaults.remediation]\n"
-        'model = "repo"\n',
+        '[defaults]\n[defaults.remediation]\nmodel = "repo"\n',
     )
 
     profiles.set_profile_field("demo", "review.timeout_seconds", "0.5", cwd=tmp_path, home=tmp_path)
 
-    reloaded = profiles.load_profile_file(tmp_path / ".config" / "revrem" / "profiles.toml").raw_profiles["demo"]
+    reloaded = profiles.load_profile_file(
+        tmp_path / ".config" / "revrem" / "profiles.toml"
+    ).raw_profiles["demo"]
     assert reloaded["remediation"]["model"] == "user"
     assert reloaded["review"]["timeout_seconds"] == 0.5
 
@@ -266,18 +265,16 @@ def test_set_profile_field_preserves_shadowed_user_value(tmp_path):
 def test_set_profile_field_preserves_inherited_defaults(tmp_path):
     _write(
         tmp_path / ".revrem.toml",
-        '[defaults]\n'
-        '[defaults.triage]\n'
-        'enabled = true\n'
-        '[defaults.triage.routing]\n'
+        "[defaults]\n"
+        "[defaults.triage]\n"
+        "enabled = true\n"
+        "[defaults.triage.routing]\n"
         'default_route = "security"\n\n'
-        '[profiles.demo]\n'
+        "[profiles.demo]\n"
         'review.model = "old"\n',
     )
 
-    profiles.set_profile_field(
-        "demo", "review.timeout_seconds", "0.5", cwd=tmp_path, home=tmp_path
-    )
+    profiles.set_profile_field("demo", "review.timeout_seconds", "0.5", cwd=tmp_path, home=tmp_path)
     reloaded = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"]
     assert reloaded["review"]["model"] == "old"
     assert reloaded["review"]["timeout_seconds"] == 0.5
@@ -287,21 +284,21 @@ def test_set_profile_field_preserves_inherited_defaults(tmp_path):
 def test_set_profile_field_does_not_materialize_routing_siblings(tmp_path):
     _write(
         tmp_path / ".revrem.toml",
-        '[defaults]\n'
-        '[defaults.triage]\n'
-        'enabled = true\n'
+        "[defaults]\n"
+        "[defaults.triage]\n"
+        "enabled = true\n"
         'contract = "v2"\n'
-        '[defaults.triage.routing]\n'
-        'enabled = true\n'
+        "[defaults.triage.routing]\n"
+        "enabled = true\n"
         'mode = "first-match"\n'
-        'strict_on_unavailable_route = false\n'
-        'allow_model_escalation = false\n'
+        "strict_on_unavailable_route = false\n"
+        "allow_model_escalation = false\n"
         'default_route = "codex-midi"\n'
-        '[defaults.triage.routes.codex-midi]\n'
+        "[defaults.triage.routes.codex-midi]\n"
         'harness = "codex"\n'
-        '[defaults.triage.routes.midtier-coder]\n'
+        "[defaults.triage.routes.midtier-coder]\n"
         'harness = "codex"\n'
-        '[profiles.demo]\n'
+        "[profiles.demo]\n"
         'review.model = "old"\n',
     )
 
@@ -424,19 +421,14 @@ def test_set_profile_field_route_edit_uses_inherited_v2_routing_context(tmp_path
 def test_set_profile_field_does_not_materialize_inherited_description(tmp_path):
     _write(
         tmp_path / ".config" / "revrem" / "profiles.toml",
-        "[defaults]\n"
-        'description = "Global description"\n'
-        "[defaults.review]\n"
-        'harness = "codex"\n',
+        '[defaults]\ndescription = "Global description"\n[defaults.review]\nharness = "codex"\n',
     )
     _write(
         tmp_path / ".revrem.toml",
         '[profiles.demo]\nreview.model = "old"\n',
     )
 
-    profiles.set_profile_field(
-        "demo", "review.timeout_seconds", "0.5", cwd=tmp_path, home=tmp_path
-    )
+    profiles.set_profile_field("demo", "review.timeout_seconds", "0.5", cwd=tmp_path, home=tmp_path)
 
     reloaded = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"]
     assert "description" not in reloaded
@@ -449,8 +441,7 @@ def test_set_profile_field_does_not_materialize_inherited_description(tmp_path):
 def test_set_profile_field_clears_inherited_description_with_empty_string(tmp_path):
     _write(
         tmp_path / ".config" / "revrem" / "profiles.toml",
-        "[defaults]\n"
-        'description = "Global description"\n'
+        '[defaults]\ndescription = "Global description"\n',
     )
     _write(
         tmp_path / ".revrem.toml",
@@ -472,18 +463,15 @@ def test_set_profile_field_preserves_inherited_defaults_from_user_file(tmp_path)
         "no_tty = true\n"
         "[defaults.triage]\n"
         "enabled = true\n"
-        '[defaults.triage.routing]\n'
+        "[defaults.triage.routing]\n"
         'default_route = "codex-midi"\n',
     )
     _write(
         tmp_path / ".revrem.toml",
-        "[profiles.demo]\n"
-        'review.model = "old"\n',
+        '[profiles.demo]\nreview.model = "old"\n',
     )
 
-    profiles.set_profile_field(
-        "demo", "review.timeout_seconds", "0.5", cwd=tmp_path, home=tmp_path
-    )
+    profiles.set_profile_field("demo", "review.timeout_seconds", "0.5", cwd=tmp_path, home=tmp_path)
 
     reloaded = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"]
     assert reloaded["review"]["model"] == "old"
@@ -502,7 +490,7 @@ def test_set_profile_field_validates_against_inherited_project_defaults(tmp_path
         "[defaults.triage.routes.codex-midi]\n"
         'harness = "codex"\n',
     )
-    _write(tmp_path / ".revrem.toml", "[profiles.demo]\nreview.model = \"old\"\n")
+    _write(tmp_path / ".revrem.toml", '[profiles.demo]\nreview.model = "old"\n')
 
     with pytest.raises(
         ValueError,
@@ -577,9 +565,7 @@ def test_set_profile_field_routes_edit_materializes_non_default_inherited_rows(t
 
 def test_set_profile_field_persists_float_timeout(tmp_path):
     _write(tmp_path / ".revrem.toml", '[profiles.demo]\nreview.model = "old"\n')
-    profiles.set_profile_field(
-        "demo", "review.timeout_seconds", "0.5", cwd=tmp_path, home=tmp_path
-    )
+    profiles.set_profile_field("demo", "review.timeout_seconds", "0.5", cwd=tmp_path, home=tmp_path)
     reloaded = profiles.load_profile_file(tmp_path / ".revrem.toml").raw_profiles["demo"]
     assert reloaded["review"]["timeout_seconds"] == 0.5
 
@@ -599,6 +585,7 @@ def test_set_profile_field_coerces_boolean_fields(tmp_path):
 
 
 # ── Regression tests for REVREM-PLAN-009 final review ────────────────────────
+
 
 def test_profile_owner_path_local_shadows_builtin(tmp_path):
     """A LOCAL profile whose name collides with a builtin must remain editable.

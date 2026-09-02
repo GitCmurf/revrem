@@ -3,8 +3,8 @@ document_id: REVREM-FDD-001
 type: FDD
 title: CLI Wizard
 status: Draft
-version: '0.2'
-last_updated: '2026-06-15'
+version: '0.3'
+last_updated: '2026-09-02'
 owner: GitCmurf
 docops_version: '2.0'
 area: cli
@@ -76,6 +76,10 @@ and run history.
   remediation pass limit, terminal output mode, review, triage, routing,
   remediation, verification checks, inner check retry policy, conditional
   commit-message drafting, final-review behavior, and budgets.
+- Run settings expose the independent final-review remediation limit. When it
+  is non-zero, the preview shows that final-review findings can trigger up to
+  that many additional triage, remediate, verify, commit, and final-review
+  cycles; it never folds these cycles into the ordinary remediation pass limit.
 - The normal path accepts the preview. Edit screens cover run settings
   (base branch, pass limit, checks, final review, output, wall-clock budget)
   and model settings. Model settings are presented as a phase table: review,

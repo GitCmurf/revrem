@@ -207,7 +207,9 @@ def test_wizard_can_choose_builtin_profile_without_local_config(tmp_path, monkey
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    wizard_app = wizard._Wizard(cwd=tmp_path, stdin=StringIO(), stdout=StringIO(), stderr=StringIO())
+    wizard_app = wizard._Wizard(
+        cwd=tmp_path, stdin=StringIO(), stdout=StringIO(), stderr=StringIO()
+    )
     captured = {}
 
     def fake_choice(prompt, options, default=None, help_text=None):
@@ -382,17 +384,13 @@ def test_last_run_prefers_structured_resume_config_over_redacted_display_command
                     "check_commands": [],
                     "full_auto": False,
                     "exec_sandbox": "read-only",
-                    "phase_config": {
-                        "checks": {"timeout_seconds": 2400}
-                    },
+                    "phase_config": {"checks": {"timeout_seconds": 2400}},
                 },
             }
         ),
         encoding="utf-8",
     )
-    history_path = (
-        tmp_path / "home-global" / ".local" / "share" / "revrem" / "runs.jsonl"
-    )
+    history_path = tmp_path / "home-global" / ".local" / "share" / "revrem" / "runs.jsonl"
     history_path.parent.mkdir(parents=True)
     history_path.write_text(
         json.dumps({"cwd": str(tmp_path), "summary_path": str(summary_path)}) + "\n",
@@ -474,9 +472,7 @@ def test_last_run_skips_stale_structured_parser_choices(tmp_path, monkeypatch):
         ),
         encoding="utf-8",
     )
-    history_path = (
-        tmp_path / "home-global" / ".local" / "share" / "revrem" / "runs.jsonl"
-    )
+    history_path = tmp_path / "home-global" / ".local" / "share" / "revrem" / "runs.jsonl"
     history_path.parent.mkdir(parents=True)
     history_path.write_text(
         json.dumps({"cwd": str(tmp_path), "summary_path": str(summary_path)}) + "\n",
@@ -486,10 +482,7 @@ def test_last_run_skips_stale_structured_parser_choices(tmp_path, monkeypatch):
     lookup = wizard._last_run_state(tmp_path)
 
     assert lookup.state is None
-    assert (
-        lookup.skipped_reason
-        == f"newest settings are no longer previewable: {summary_path}"
-    )
+    assert lookup.skipped_reason == f"newest settings are no longer previewable: {summary_path}"
 
 
 def test_wizard_prompts_for_pending_review_before_run_shape_menus(tmp_path, monkeypatch):
@@ -684,9 +677,7 @@ def test_wizard_finds_repo_last_run_after_global_history_pollution(tmp_path, mon
             {
                 "cwd": str(tmp_path.parent / f"other-{tmp_path.name}-{index}"),
                 "summary_path": str(
-                    tmp_path.parent
-                    / f"other-{tmp_path.name}-{index}"
-                    / "summary.json"
+                    tmp_path.parent / f"other-{tmp_path.name}-{index}" / "summary.json"
                 ),
             }
             for index in range(12)
@@ -718,21 +709,15 @@ def test_last_run_does_not_mislabel_older_replayable_run_when_newest_is_broken(
     _write_profile(tmp_path / ".revrem.toml")
     older = tmp_path / "older-summary.json"
     older.write_text(
-        json.dumps(
-            {"command_line": ["revrem", "--profile", "final-pr", "--max-iterations", "4"]}
-        ),
+        json.dumps({"command_line": ["revrem", "--profile", "final-pr", "--max-iterations", "4"]}),
         encoding="utf-8",
     )
-    history_path = (
-        tmp_path / "home-global" / ".local" / "share" / "revrem" / "runs.jsonl"
-    )
+    history_path = tmp_path / "home-global" / ".local" / "share" / "revrem" / "runs.jsonl"
     history_path.parent.mkdir(parents=True)
     history_path.write_text(
         json.dumps({"cwd": str(tmp_path), "summary_path": str(older)})
         + "\n"
-        + json.dumps(
-            {"cwd": str(tmp_path), "summary_path": str(tmp_path / "missing.json")}
-        )
+        + json.dumps({"cwd": str(tmp_path), "summary_path": str(tmp_path / "missing.json")})
         + "\n",
         encoding="utf-8",
     )
@@ -990,6 +975,7 @@ description = "Dogfood"
 
 [profiles.dogfood.pipeline]
 max_iterations = 3
+final_review_remediation_passes = 1
 checks = ["pytest -q"]
 
 [profiles.dogfood.remediation]
@@ -1013,6 +999,10 @@ inner_check_retries = 1
     assert "remediation passes: max 3" in rendered
     assert "if verify fails: retry remediation up to 1 time" in rendered
     assert "+-- if verify passes: commit enabled" in rendered
+    assert (
+        "if final review finds issues: remediate + verify + review up to 1 additional pass"
+        in rendered
+    )
     assert "commit message: uses codex:gpt-5.3-codex-spark" in rendered
     assert "provider command: codex exec" in rendered
 
@@ -1030,6 +1020,7 @@ def test_wizard_builds_common_overrides_and_quotes_checks(tmp_path, monkeypatch)
         "git diff --check\n"
         "\n"
         "n\n"
+        "2\n"
         "verbose\n"
         "both\n"
         "600\n"
@@ -1073,6 +1064,8 @@ def test_wizard_builds_common_overrides_and_quotes_checks(tmp_path, monkeypatch)
         "--check",
         "git diff --check",
         "--skip-final-review",
+        "--final-review-remediation-passes",
+        "2",
         "--no-triage",
         "--remediation-model",
         "gpt-test",
@@ -1180,9 +1173,7 @@ enabled = false
     assert "--triage-reasoning-effort" in result.argv
 
 
-def test_wizard_omits_stale_triage_overrides_after_disabling_triage(
-    tmp_path, monkeypatch
-):
+def test_wizard_omits_stale_triage_overrides_after_disabling_triage(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
     (tmp_path / ".revrem.toml").write_text(
@@ -1244,7 +1235,10 @@ reasoning_effort = "minimal"
     assert "--triage-reasoning-effort" in result.argv
     assert "low" in result.argv
     rendered = stderr.getvalue()
-    assert "Profile repair: Codex triage reasoning_effort minimal will be replaced with low" in rendered
+    assert (
+        "Profile repair: Codex triage reasoning_effort minimal will be replaced with low"
+        in rendered
+    )
 
 
 def test_wizard_keeps_repaired_triage_effort_when_profile_selected_from_disabled_profile(
@@ -1274,7 +1268,10 @@ reasoning_effort = "minimal"
     assert "low" in result.argv
     assert "" not in result.argv
     rendered = stderr.getvalue()
-    assert "Profile repair: Codex triage reasoning_effort minimal will be replaced with low" in rendered
+    assert (
+        "Profile repair: Codex triage reasoning_effort minimal will be replaced with low"
+        in rendered
+    )
     assert "profile: keep current/profile (low)" in rendered
 
 
@@ -1362,9 +1359,7 @@ def test_wizard_preview_allows_codex_alias_provider_default(tmp_path, monkeypatc
         encoding="utf-8",
     )
 
-    preview = wizard._phase_preview(
-        "review", "team-codex", (), None, None, None, cwd=tmp_path
-    )
+    preview = wizard._phase_preview("review", "team-codex", (), None, None, None, cwd=tmp_path)
 
     assert preview.unresolved_model is False
     assert "provider default" in wizard._phase_summary_for_preview(preview)
@@ -1393,7 +1388,10 @@ reasoning_effort = "minimal"
     assert "--triage-reasoning-effort" in result.argv
     assert "low" in result.argv
     rendered = stderr.getvalue()
-    assert "Profile repair: Codex triage reasoning_effort minimal will be replaced with low" in rendered
+    assert (
+        "Profile repair: Codex triage reasoning_effort minimal will be replaced with low"
+        in rendered
+    )
     assert "profile: keep current/profile (low)" in rendered
     assert "low: low" in rendered
 
@@ -1424,7 +1422,10 @@ reasoning_effort = "minimal"
     assert "low" in result.argv
     assert "" not in result.argv
     rendered = stderr.getvalue()
-    assert "Profile repair: Codex triage reasoning_effort minimal will be replaced with low" in rendered
+    assert (
+        "Profile repair: Codex triage reasoning_effort minimal will be replaced with low"
+        in rendered
+    )
     assert "profile: keep current/profile (low)" in rendered
 
 
@@ -1619,7 +1620,7 @@ def test_wizard_detects_repo_check_presets(tmp_path, monkeypatch):
     )
     (tmp_path / "src").mkdir()
     (tmp_path / "AGENTS.md").write_text("<!-- MEMINIT_PROTOCOL: begin -->", encoding="utf-8")
-    stdin = StringIO("settings\n\n\nrepo-gate\n\n\n\n\naccept\nprint\n\n")
+    stdin = StringIO("settings\n\n\nrepo-gate\n\n\n\n\n\naccept\nprint\n\n")
     stderr = StringIO()
 
     result = wizard.run_wizard(cwd=tmp_path, stdin=stdin, stdout=StringIO(), stderr=stderr)
@@ -1746,9 +1747,7 @@ def test_wizard_uses_rich_when_available_and_terminal_supports_it(tmp_path, monk
     assert "Run shape: final-pr (./.revrem.toml)" in printed_values
 
 
-def test_wizard_default_pending_review_search_is_scoped_to_requested_cwd(
-    tmp_path, monkeypatch
-):
+def test_wizard_default_pending_review_search_is_scoped_to_requested_cwd(tmp_path, monkeypatch):
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / ".git").mkdir()

@@ -237,6 +237,9 @@ def resume_loop_config(
         triage_reasoning_effort=_resume_optional_str(resume_config, "triage_reasoning_effort"),
         triage_enabled=_resume_bool(resume_config, "triage_enabled", False),
         final_review=_resume_bool(resume_config, "final_review", True),
+        final_review_remediation_passes=_resume_int(
+            resume_config, "final_review_remediation_passes", 0
+        ),
         timeout_seconds=_resume_optional_float(resume_config, "timeout_seconds"),
         review_timeout_seconds=_resume_optional_float(resume_config, "review_timeout_seconds"),
         remediation_timeout_seconds=_resume_optional_float(
@@ -341,6 +344,7 @@ def resume_config_payload(config: LoopConfig) -> dict[str, object]:
         "triage_model": config.triage_model,
         "triage_enabled": config.triage_enabled,
         "final_review": config.final_review,
+        "final_review_remediation_passes": config.final_review_remediation_passes,
         "check_commands": list(config.check_commands),
         "timeout_seconds": config.timeout_seconds_display,
         "review_timeout_seconds": config.review_timeout_seconds_display,
