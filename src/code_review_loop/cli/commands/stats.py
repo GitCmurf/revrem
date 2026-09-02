@@ -41,7 +41,10 @@ def main(argv: Sequence[str]) -> int:
     else:
         print("PHASE          HARNESS  MODEL            EFFORT  CALLS  OK  TOKEN_COVERAGE  MEAN    P95")
         for item in payload:
-            print(f"{item['phase']:<14} {item['harness']:<8} {item['model']:<16} {item['reasoning_effort']:<7} {item['calls']:>5} {item['ok']:>3} {item['token_coverage']:<14} {item['duration_seconds']['mean']:>6.1f}s {item['duration_seconds']['p95']:>6.1f}s")
+            duration = item["duration_seconds"]
+            mean = _format_duration(duration["mean"])
+            p95 = _format_duration(duration["p95"])
+            print(f"{item['phase']:<14} {item['harness']:<8} {item['model']:<16} {item['reasoning_effort']:<7} {item['calls']:>5} {item['ok']:>3} {item['token_coverage']:<14} {mean:>6} {p95:>6}")
     return CommandOk().exit_code
 
 
@@ -78,7 +81,7 @@ def _invocations(limit: int, *, repo: Path | None) -> list[dict[str, Any]]:
             continue
         try:
             summary = json.loads(resolved_summary_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             continue
         if not isinstance(summary, dict):
             continue
@@ -104,29 +107,46 @@ def _matches(row: dict[str, Any], args: Any) -> bool:
 
 
 def _summarize(key: tuple[str, str, str, str], rows: list[dict[str, Any]]) -> dict[str, Any]:
-    durations = sorted(_duration_seconds(row.get("duration_seconds")) for row in rows)
+    durations = sorted(
+        duration
+        for row in rows
+        if (duration := _duration_seconds(row.get("duration_seconds"))) is not None
+    )
     tokens = [
         row["tokens"]
         for row in rows
         if isinstance(row.get("tokens"), int) and not isinstance(row.get("tokens"), bool)
     ]
-    p95_index = max(0, min(len(durations) - 1, math.ceil(0.95 * len(durations)) - 1))
+    duration_summary: dict[str, float | None]
+    if durations:
+        p95_index = max(0, min(len(durations) - 1, math.ceil(0.95 * len(durations)) - 1))
+        duration_summary = {
+            "min": min(durations), "mean": statistics.fmean(durations),
+            "p50": statistics.median(durations), "p95": durations[p95_index],
+            "max": max(durations),
+        }
+    else:
+        duration_summary = {"min": None, "mean": None, "p50": None, "p95": None, "max": None}
     return {
         "phase": key[0], "harness": key[1], "model": key[2], "reasoning_effort": key[3],
         "calls": len(rows), "ok": sum(row.get("outcome") == "ok" for row in rows),
         "token_coverage": f"{len(tokens)}/{len(rows)}", "tokens": sum(tokens) if tokens else None,
-        "duration_seconds": {"min": min(durations), "mean": statistics.fmean(durations), "p50": statistics.median(durations), "p95": durations[p95_index], "max": max(durations)},
+        "duration_seconds": duration_summary,
     }
 
 
-def _duration_seconds(value: object) -> float:
+def _duration_seconds(value: object) -> float | None:
     """Normalize malformed local telemetry durations for best-effort stats."""
     if isinstance(value, bool):
-        return 0.0  # outcome-exempt: telemetry value, not a command exit code
+        return None
     if not isinstance(value, (int, float, str)):
-        return 0.0  # outcome-exempt: malformed telemetry is excluded from stats
+        return None
     try:
         duration = float(value)
     except (TypeError, ValueError):
-        return 0.0  # outcome-exempt: telemetry value, not a command exit code
-    return duration if math.isfinite(duration) else 0.0
+        return None
+    return duration if math.isfinite(duration) else None
+
+
+def _format_duration(value: float | None) -> str:
+    return f"{value:.1f}s" if value is not None else "n/a"

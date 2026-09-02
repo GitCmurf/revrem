@@ -231,24 +231,9 @@ def profile_runtime_key_explicit(
     *,
     snapshot_path: str | None = None,
 ) -> bool:
-    try:
-        if snapshot_path:
-            profile_files = (profiles.load_profile_file(Path(snapshot_path)),)
-        else:
-            profile_files = profiles.load_profile_files(cwd=cwd)
-    except (OSError, ValueError):
-        return False
-    raw_sections: list[dict[str, object]] = []
-    for profile_file in profile_files:
-        if profile_file.raw_defaults:
-            raw_sections.append(profile_file.raw_defaults)
-        if profile_name and profile_name in profile_file.raw_profiles:
-            raw_sections.append(profile_file.raw_profiles[profile_name])
-    for raw in raw_sections:
-        runtime = raw.get("runtime")
-        if isinstance(runtime, dict) and key in runtime:
-            return True
-    return False
+    return profiles.profile_runtime_key_explicit(
+        profile_name, cwd, key, snapshot_path=snapshot_path
+    )
 
 
 def profile_or_default(

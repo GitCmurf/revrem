@@ -38,6 +38,17 @@ _PROMPT_LIBRARY_CLASS: type[Any] | None = None
 _ROUTE_EDIT_MODAL_CLASS: type[Any] | None = None
 
 
+def _terminal_iteration_gutter(
+    index: int, *, visible_rows: int, row_count: int
+) -> str:
+    """Label occupied terminal rows numerically and reserve FR for an empty slot."""
+    if index < visible_rows:
+        return f"{index:02d}"
+    if row_count == visible_rows:
+        return f"{index:02d}"
+    return f"{index:02d}+" if row_count > visible_rows else "FR"
+
+
 def _effort_choices_for_phase(
     phase: str, harness: str, model: str | None, *, cwd: Any = None
 ) -> tuple[str, ...]:
@@ -857,9 +868,9 @@ def loop_run_view_class() -> type[Any] | None:
                 gutter = self._gutters.get(phase)
                 if gutter is not None:
                     gutter.update(
-                        f"{index:02d}"
-                        if index < visible_rows
-                        else (f"{index:02d}+" if len(rows) > visible_rows else "FR")
+                        _terminal_iteration_gutter(
+                            index, visible_rows=visible_rows, row_count=len(rows)
+                        )
                     )
                 widget = self._phases.get(phase)
                 if widget is None:
@@ -872,7 +883,7 @@ def loop_run_view_class() -> type[Any] | None:
                 if displayed_rows:
                     widget.update(
                         "\n".join(
-                            f"Iteration {item.iteration}: review {item.review} · "
+                            f"{'Final review' if item.iteration == 'final' else f'Iteration {item.iteration}'}: review {item.review} · "
                             f"remediation {item.remediation} · checks {item.checks} · commit {item.commit}"
                             for item in displayed_rows
                         )

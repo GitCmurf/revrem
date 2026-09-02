@@ -923,6 +923,35 @@ def profile_to_json(profile: Profile) -> str:
     return json.dumps(profile_to_dict(profile), indent=2, sort_keys=True) + "\n"
 
 
+def profile_runtime_key_explicit(
+    profile_name: str | None,
+    cwd: Path,
+    key: str,
+    *,
+    snapshot_path: str | None = None,
+) -> bool:
+    """Return whether a runtime key was authored rather than defaulted."""
+    try:
+        profile_files: tuple[ProfileFile, ...]
+        if snapshot_path:
+            profile_files = (load_profile_file(Path(snapshot_path)),)
+        else:
+            profile_files = load_profile_files(cwd=cwd)
+    except (OSError, ValueError):
+        return False
+    raw_sections: list[dict[str, object]] = []
+    for profile_file in profile_files:
+        if profile_file.raw_defaults:
+            raw_sections.append(profile_file.raw_defaults)
+        if profile_name and profile_name in profile_file.raw_profiles:
+            raw_sections.append(profile_file.raw_profiles[profile_name])
+    for raw in raw_sections:
+        runtime = raw.get("runtime")
+        if isinstance(runtime, dict) and key in runtime:
+            return True
+    return False
+
+
 def _json_ready(value: Any) -> Any:
     if isinstance(value, Decimal):
         return str(value)
@@ -952,12 +981,14 @@ def profile_to_toml(
     *,
     include_wrapper: bool = False,
     omit_builtin_defaults: bool = False,
+    raw_profile: dict[str, Any] | None = None,
 ) -> str:
     """Serialize a profile, optionally retaining model-aware defaults as implicit."""
     return _profile_to_toml_impl(
         profile,
         root=("profiles", profile.name) if include_wrapper else None,
         omit_builtin_defaults=omit_builtin_defaults,
+        raw_profile=raw_profile,
     )
 
 

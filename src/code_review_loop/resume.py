@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from decimal import Decimal
 from pathlib import Path
 from typing import TypeVar
@@ -456,6 +456,20 @@ def _resume_profile_v2(
         triage=profiles.parse_triage(triage_payload, "resume_config.profile_v2.triage"),
         source="summary.json",
     )
+
+
+def rehydrate_profile_triage(
+    profile: profiles.Profile, resume_config: dict[object, object]
+) -> profiles.Profile:
+    """Overlay the persisted effective triage snapshot onto a current profile.
+
+    Run recovery must retain route tables and prompt settings that were effective
+    when the run began, even if the profile on disk has changed since then.
+    Other profile sections remain current until an explicit recovery override
+    changes them.
+    """
+    snapshot = _resume_profile_v2(resume_config, profile.name)
+    return profile if snapshot is None else replace(profile, triage=snapshot.triage)
 
 
 def latest_resume_review_path(summary: dict[str, object], *, run_dir: Path) -> Path | None:

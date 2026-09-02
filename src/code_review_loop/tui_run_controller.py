@@ -147,12 +147,7 @@ class LiveRunController:
             snapshot_path = (
                 launch.artifact_dir / f"profile-snapshot-{identity.new_run_id()}.toml"
             )
-            snapshot_path.write_text(
-                profiles.profile_to_toml(
-                    profile, include_wrapper=True, omit_builtin_defaults=True
-                ),
-                encoding="utf-8",
-            )
+            snapshot_path.write_text(profile_snapshot_toml(profile, cwd=cwd), encoding="utf-8")
             argv_with_snapshot = (
                 *launch.argv,
                 "--profile-snapshot",
@@ -368,6 +363,25 @@ def prepare_live_run_launch(
 def default_live_artifact_dir(*, identity: RunIdentity = SYSTEM_IDENTITY) -> Path:
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     return Path(".revrem") / "runs" / f"{timestamp}-{identity.new_run_id()}"
+
+
+def profile_snapshot_toml(profile: profiles.Profile, *, cwd: Path) -> str:
+    """Serialize a launch snapshot without turning implicit defaults explicit."""
+    raw_profile: dict[str, object] = {}
+    if profiles.profile_runtime_key_explicit(
+        profile.name, cwd, "external_review_input_chars"
+    ):
+        raw_profile = {
+            "runtime": {
+                "external_review_input_chars": profile.runtime.external_review_input_chars
+            }
+        }
+    return profiles.profile_to_toml(
+        profile,
+        include_wrapper=True,
+        omit_builtin_defaults=True,
+        raw_profile=raw_profile,
+    )
 
 
 def classify_exit(

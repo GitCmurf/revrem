@@ -23,6 +23,7 @@ from code_review_loop import (
     check_presets,
     harnesses,
     profiles,
+    resume,
     run_recovery,
     tui_loop_state,
     tui_profiles_state,
@@ -1088,7 +1089,9 @@ class _RevRemAppMixin:
                 with tempfile.TemporaryDirectory(prefix="revrem-tui-") as temp_dir:
                     snapshot = Path(temp_dir) / "profile.toml"
                     snapshot.write_text(
-                        profiles.profile_to_toml(effective, include_wrapper=True),
+                        tui_run_controller.profile_snapshot_toml(
+                            effective, cwd=Path(self.model.snapshot.cwd)
+                        ),
                         encoding="utf-8",
                     )
                     plan = self.loop_session.compile_launch_plan(
@@ -2779,6 +2782,7 @@ def _apply_resume_config_to_loop_model(
     model: Any, payload: dict[object, object]
 ) -> None:
     """Apply the structured run contract without depending on CLI wizard state."""
+    model.set_effective_profile(resume.rehydrate_profile_triage(model.profile, payload))
     profile = model.profile
 
     def text(key: str, fallback: str = "") -> str:

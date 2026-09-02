@@ -1689,6 +1689,39 @@ def test_validate_model_selections_skips_triage_and_routes_when_triage_disabled(
     ]
 
 
+def test_validate_model_selections_uses_effective_routed_values(tmp_path, monkeypatch):
+    calls = []
+
+    def fake_validate_selection(harness, model, effort, cwd):
+        calls.append((harness, model, effort))
+        return None
+
+    monkeypatch.setattr(cli_main, "validate_selection", fake_validate_selection)
+    config = LoopConfig(
+        cwd=tmp_path,
+        model="gpt-5.6-luna",
+        reasoning_effort="ultra",
+        review_model="review-model",
+        review_reasoning_effort="medium",
+        remediation_model=None,
+        remediation_reasoning_effort=None,
+        triage_enabled=True,
+        commit_after_remediation=False,
+        profile_v2=profiles.Profile(
+            name="routed",
+            triage=profiles.TriageConfig(
+                enabled=True,
+                routing=profiles.TriageRoutingConfig(enabled=True),
+                routes={"inherited": profiles.TriageRouteConfig(harness="codex")},
+            ),
+        ),
+    )
+
+    cli_main._validate_model_selections(config)
+
+    assert ("codex", "gpt-5.6-luna", "ultra") in calls
+
+
 def test_validate_model_selections_skips_routing_when_routing_disabled(
     tmp_path, monkeypatch
 ):

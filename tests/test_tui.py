@@ -103,6 +103,36 @@ def test_last_run_replay_applies_triage_contract_before_enabled_routing(tmp_path
     assert effective.triage.routing.enabled is True
 
 
+def test_last_run_replay_rehydrates_persisted_triage_routes_and_prompt(tmp_path):
+    (tmp_path / ".revrem.toml").write_text(
+        "[profiles.demo.triage]\ncontract='v2'\nprompt='ambient'\n"
+        "[profiles.demo.triage.routing]\nenabled=true\ndefault_route='ambient'\n"
+        "[profiles.demo.triage.routes.ambient]\nharness='codex'\n",
+        encoding="utf-8",
+    )
+    model = tui_loop_model.LoopEditModel.load("demo", cwd=tmp_path)
+
+    tui._apply_resume_config_to_loop_model(
+        model,
+        {
+            "profile_v2": {
+                "name": "demo",
+                "triage": {
+                    "contract": "v2",
+                    "prompt": "persisted",
+                    "routing": {"enabled": True, "default_route": "persisted"},
+                    "routes": {"persisted": {"harness": "codex"}},
+                },
+            }
+        },
+    )
+
+    effective = model.effective_profile()
+    assert effective.triage.prompt == "persisted"
+    assert effective.triage.routing.default_route == "persisted"
+    assert set(effective.triage.routes) == {"persisted"}
+
+
 def test_tui_bindings_keep_i_workspace_dispatched():
     bindings = tui._build_bindings(None)
     i_bindings = [

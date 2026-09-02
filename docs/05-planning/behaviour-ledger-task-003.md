@@ -122,6 +122,19 @@ There is no silent third option.
 - **schema_version impact:** none. Runtime behavior and artifact schemas are
   unchanged.
 
+### 2026-09-02 — Version local model invocation telemetry as event v1.1
+
+- **Contract:** machine
+- **What changed:** events that include the additive `model_invocation` kind
+  are emitted as `schema_version: "1.1"`; readers continue to accept frozen
+  `1.0` artifacts.
+- **Why:** v1.0 consumers must reject an event kind that was not part of their
+  contract, while current consumers need a declared compatible minor version.
+- **Before / After:** a provider invocation emitted under `1.0` now emits under
+  `1.1`; the historical v1.0 schema remains unchanged and rejects it.
+- **schema_version impact:** bumped 1.0 -> 1.1 for newly emitted events.
+- **CHANGELOG:** `[Unreleased]` Fixed entry for event-schema compatibility.
+
 ### 2026-07-10 — Local model invocation telemetry
 
 - **Contract:** machine and human presentation
@@ -133,9 +146,8 @@ There is no silent third option.
 - **Before / After:** event streams gain one event per completed provider call;
   summaries gain an invocation list and retain `tokens: null` when no call
   reports usage.
-- **schema_version impact:** the additive event kind is documented in the v1
-  schema; summary schema already permits additive fields. Golden snapshots were
-  intentionally regenerated.
+- **schema_version impact:** originally recorded as additive under v1.0; the
+  corrective v1.1 event-version entry above supersedes that versioning detail.
 
 ### 2026-06-17 — Verb-mediated security-risk negations stay clear
 

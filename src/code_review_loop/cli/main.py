@@ -162,8 +162,12 @@ def _validate_model_selections(config) -> None:
         for name, route in routes.items():
             warning = validate_selection(
                 route.harness,
-                route.model,
-                route.reasoning_effort,
+                route.model or config.remediation_model or config.model,
+                (
+                    route.reasoning_effort
+                    or config.remediation_reasoning_effort
+                    or config.reasoning_effort
+                ),
                 cwd=config.cwd,
             )
             if warning:

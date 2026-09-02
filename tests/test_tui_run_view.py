@@ -383,6 +383,18 @@ def test_iteration_outcome_marks_persisted_successful_remediation_done() -> None
     assert view.iterations[0].remediation == "done"
 
 
+def test_iteration_outcome_preserves_final_review_label() -> None:
+    view = tui_run_state.run_outcome_view(
+        {
+            "final_status": "failed",
+            "stopped_reason": "review_failed",
+            "iterations": [{"iteration": "final", "review_failed": True}],
+        }
+    )
+
+    assert view.iterations[0].iteration == "final"
+
+
 def test_timeline_has_wall_time_elapsed_time_and_groups_artifacts() -> None:
     records = (
         event_model.Event(

@@ -172,6 +172,19 @@ def test_profile_snapshot_keeps_gemini_default_context_cap_implicit(tmp_path):
     assert "external_review_input_chars" not in snapshot
 
 
+def test_profile_snapshot_keeps_explicit_default_context_cap(tmp_path):
+    (tmp_path / ".revrem.toml").write_text(
+        "[profiles.demo.review]\nharness = \"gemini\"\nmodel = \"gemini-3.1-pro-preview\"\n"
+        "[profiles.demo.runtime]\nexternal_review_input_chars = 80000\n",
+        encoding="utf-8",
+    )
+    profile = profiles.resolve_profile("demo", cwd=tmp_path, home=tmp_path)
+
+    snapshot = tui_run_controller.profile_snapshot_toml(profile, cwd=tmp_path)
+
+    assert "external_review_input_chars = 80000" in snapshot
+
+
 def test_start_marks_setup_failed_when_launch_raises(tmp_path):
     profile = profiles.Profile(name="demo")
     plan = tui_state.LaunchPlan(

@@ -16,6 +16,7 @@ from code_review_loop import (
     model_catalog,
     policy,
     profiles,
+    resume,
     routing_timeouts,
     run_recovery,
 )
@@ -115,6 +116,7 @@ class PhasePreview:
     effort_source: str | None = None
     source: str | None = None
     unresolved_model: bool = False
+    allows_provider_default: bool = False
     blocked_reason: str | None = None
 
 
@@ -1203,6 +1205,11 @@ def _state_from_resume_config(
     except (OSError, ValueError):
         return None
 
+    try:
+        profile = resume.rehydrate_profile_triage(profile, payload)
+    except ValueError:
+        return None
+
     state = _initial_state(
         WizardProfileChoice(profile_name=profile_name, profile=profile), cwd=cwd
     )
@@ -1932,8 +1939,14 @@ def _phase_preview(
         timeout=timeout,
         effort_source=effort_source,
         source=default_source,
-        unresolved_model=(model is None and harness != "codex")
+        unresolved_model=(
+            model is None
+            and harnesses._resolve_catalog_driver(harness, cwd=cwd) != "codex"
+        )
         or blocked_reason is not None,
+        allows_provider_default=(
+            harnesses._resolve_catalog_driver(harness, cwd=cwd) == "codex"
+        ),
         blocked_reason=blocked_reason,
     )
 
@@ -1964,7 +1977,7 @@ def _route_preview_timeout(
 def _phase_summary_for_preview(phase: PhasePreview) -> str:
     if phase.model:
         model = phase.model
-    elif phase.harness == "codex" and not phase.unresolved_model:
+    elif phase.allows_provider_default and not phase.unresolved_model:
         model = "provider default"
     else:
         model = "model unresolved"
@@ -2089,7 +2102,7 @@ class ProviderDefault:
 
 
 def _provider_default(harness: str, cwd: Path) -> ProviderDefault:
-    if harness != "codex":
+    if harnesses._resolve_catalog_driver(harness, cwd=cwd) != "codex":
         return ProviderDefault()
     config_path = (
         Path(environ.get("CODEX_HOME", Path.home() / ".codex")) / "config.toml"

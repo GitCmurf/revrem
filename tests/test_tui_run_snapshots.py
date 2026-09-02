@@ -256,7 +256,7 @@ max_iterations = 2
     assert "Review inconclusive" in svg
     assert "not run" in svg
     assert "1,186,486 tokens" in svg
-    assert_svg_snapshot("tui_run/review-inconclusive", svg)
+    assert_svg_snapshot("tui_run/review-inconclusive", svg, normalize_theme_colors=True)
 
 
 def _capture_run_svg(

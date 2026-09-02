@@ -8,6 +8,8 @@ This project follows Semantic Versioning once public releases begin.
 
 ### Fixed
 
+- Newly emitted event streams use schema version 1.1 for `model_invocation`,
+  while readers retain support for immutable v1.0 artifacts.
 - Live-run cancellation now gives a child that has emitted its cancellation
   event one additional bounded grace interval to finish `summary.json` before
   escalating to `SIGTERM`.

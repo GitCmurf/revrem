@@ -419,6 +419,42 @@ def test_last_run_prefers_structured_resume_config_over_redacted_display_command
     ]
 
 
+def test_last_run_rehydrates_persisted_triage_snapshot_before_overrides(tmp_path):
+    (tmp_path / ".revrem.toml").write_text(
+        "[profiles.demo.triage]\n"
+        "enabled = true\n"
+        "contract = 'v2'\n"
+        "prompt = 'ambient prompt'\n"
+        "[profiles.demo.triage.routing]\n"
+        "enabled = true\n"
+        "default_route = 'ambient'\n"
+        "[profiles.demo.triage.routes.ambient]\n"
+        "harness = 'codex'\n",
+        encoding="utf-8",
+    )
+    payload = {
+        "profile_name": "demo",
+        "triage_enabled": True,
+        "profile_v2": {
+            "name": "demo",
+            "triage": {
+                "enabled": True,
+                "contract": "v2",
+                "prompt": "persisted prompt",
+                "routing": {"enabled": True, "default_route": "persisted"},
+                "routes": {"persisted": {"harness": "codex", "model": "gpt-5.6-sol"}},
+            },
+        },
+    }
+
+    state = wizard._state_from_resume_config(payload, {}, tmp_path)
+
+    assert state is not None
+    assert state.profile.triage.prompt == "persisted prompt"
+    assert state.profile.triage.routing.default_route == "persisted"
+    assert set(state.profile.triage.routes) == {"persisted"}
+
+
 def test_last_run_skips_stale_structured_parser_choices(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
@@ -1317,6 +1353,21 @@ reasoning_effort = "minimal"
     assert "minimal: minimal" not in rendered
     assert "Codex triage starts at low effort" in rendered
     assert "keep current/profile (low)" in rendered
+
+
+def test_wizard_preview_allows_codex_alias_provider_default(tmp_path, monkeypatch):
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "missing-codex"))
+    (tmp_path / ".revrem-catalog.toml").write_text(
+        '[[harness]]\nname = "team-codex"\ndriver = "codex"\n',
+        encoding="utf-8",
+    )
+
+    preview = wizard._phase_preview(
+        "review", "team-codex", (), None, None, None, cwd=tmp_path
+    )
+
+    assert preview.unresolved_model is False
+    assert "provider default" in wizard._phase_summary_for_preview(preview)
 
 
 def test_wizard_can_replace_stale_codex_triage_minimal_effort(tmp_path, monkeypatch):

@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from code_review_loop import events
-from code_review_loop._compat_jsonschema import validate
+from code_review_loop._compat_jsonschema import Draft202012Validator, validate
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -73,7 +73,7 @@ def test_jsonl_sink_writes_schema_valid_events(tmp_path):
     sink.emit("phase_result", phase="review", iteration=1, payload={"status": "clear"})
     sink.close()
     schema = json.loads(
-        (ROOT / "docs/52-api/schemas/events-v1.schema.json").read_text(encoding="utf-8")
+        (ROOT / "docs/52-api/schemas/events-v1.1.schema.json").read_text(encoding="utf-8")
     )
 
     lines = (tmp_path / "events.jsonl").read_text(encoding="utf-8").splitlines()
@@ -81,6 +81,37 @@ def test_jsonl_sink_writes_schema_valid_events(tmp_path):
     assert len(lines) == 2
     for line in lines:
         validate(json.loads(line), schema)
+
+
+def test_event_schema_v1_0_remains_immutable_while_v1_1_accepts_invocations():
+    v1_0 = json.loads(
+        (ROOT / "docs/52-api/schemas/_history/events-v1.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    v1_1 = json.loads(
+        (ROOT / "docs/52-api/schemas/events-v1.1.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    invocation = events.make_event(run_id="run-1", seq=1, kind="model_invocation")
+
+    assert invocation.schema_version == "1.1"
+    validate(invocation.to_dict(), v1_1)
+    assert list(Draft202012Validator(v1_0).iter_errors(invocation.to_dict()))
+
+
+def test_event_reader_retains_v1_0_schema_version(tmp_path):
+    path = tmp_path / "events.jsonl"
+    legacy = events.make_event(
+        run_id="legacy", seq=1, kind="summary", schema_version="1.0"
+    )
+    path.write_text(json.dumps(legacy.to_dict()) + "\n", encoding="utf-8")
+
+    records, truncated = events.read_events(path)
+
+    assert truncated is False
+    assert records[0].schema_version == "1.0"
 
 
 def test_jsonl_sink_flushes_progress_events_before_close(tmp_path):

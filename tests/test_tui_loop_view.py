@@ -96,6 +96,11 @@ def test_phase_gutter_shows_inner_rail_and_final_review_together(
     assert meta.final_review_label is not None
 
 
+def test_terminal_iteration_gutter_labels_fifth_completed_row_before_final_review():
+    assert tui_loop_widgets._terminal_iteration_gutter(5, visible_rows=5, row_count=5) == "05"
+    assert tui_loop_widgets._terminal_iteration_gutter(5, visible_rows=5, row_count=4) == "FR"
+
+
 def test_phase_card_summary_shows_harness_model_and_disabled_marker(
     tmp_path: Path,
 ) -> None:

@@ -16,7 +16,8 @@ from typing import Any, Protocol, cast
 from code_review_loop import artifacts
 from code_review_loop.clock import SYSTEM_CLOCK, Clock, utc_iso
 
-EVENT_SCHEMA_VERSION = "1.0"
+EVENT_SCHEMA_VERSION = "1.1"
+SUPPORTED_EVENT_SCHEMA_VERSIONS = frozenset({"1.0", EVENT_SCHEMA_VERSION})
 EVENTS_FILENAME = "events.jsonl"
 EVENT_KINDS = (
     "phase_start",
@@ -260,11 +261,14 @@ def make_event(
     iteration: int | str | None = None,
     payload: dict[str, Any] | None = None,
     ts: str | None = None,
+    schema_version: str = EVENT_SCHEMA_VERSION,
 ) -> Event:
     if seq < 1:
         raise ValueError("event seq must be positive")
     if kind not in EVENT_KINDS:
         raise ValueError(f"unsupported event kind: {kind}")
+    if schema_version not in SUPPORTED_EVENT_SCHEMA_VERSIONS:
+        raise ValueError("unsupported event schema_version")
     return Event(
         run_id=run_id,
         seq=seq,
@@ -278,6 +282,7 @@ def make_event(
         .replace(
             "+00:00", "Z"
         ),  # det-exempt: fallback when no ts is supplied; production sinks pass an injected-Clock ts
+        schema_version=schema_version,
     )
 
 
@@ -330,7 +335,8 @@ def first_run_id(path: Path) -> str | None:
 
 
 def event_from_dict(payload: dict[str, Any]) -> Event:
-    if payload.get("schema_version") != EVENT_SCHEMA_VERSION:
+    schema_version = payload.get("schema_version")
+    if schema_version not in SUPPORTED_EVENT_SCHEMA_VERSIONS:
         raise ValueError("unsupported event schema_version")
     run_id = payload.get("run_id")
     seq = payload.get("seq")
@@ -361,6 +367,7 @@ def event_from_dict(payload: dict[str, Any]) -> Event:
         iteration=iteration,
         payload=event_payload,
         ts=ts,
+        schema_version=schema_version,
     )
 
 

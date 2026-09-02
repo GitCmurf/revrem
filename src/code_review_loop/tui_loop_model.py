@@ -144,6 +144,9 @@ def _raw_differences(
             continue
         value = effective[key]
         if key not in baseline:
+            if isinstance(value, dict):
+                differences.update(_raw_differences({}, value, dotted_key))
+                continue
             differences[dotted_key] = value
             continue
         baseline_value = baseline[key]

@@ -266,6 +266,8 @@ operator contract.
 While a run is active, the phase rail remains the primary progress view. Once a terminal
 summary exists, the monitor instead presents a human outcome, an iteration-by-iteration
 completion table, duration and recorded model telemetry, then the next safe action.
+Terminal final-review results remain labelled **Final review** in that table;
+they are not presented as an additional numbered remediation iteration.
 Internal states such as `completed-unknown` are not operator copy. A `review_unknown`
 result is labelled **review inconclusive** and downstream phases are **not run**, never
 pending; its primary recovery prepares a fresh review from the effective

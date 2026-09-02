@@ -46,7 +46,7 @@ def test_stats_models_skips_history_records_without_a_cwd(tmp_path, monkeypatch,
     assert json.loads(capsys.readouterr().out) == []
 
 
-def test_stats_models_normalizes_malformed_duration_values(tmp_path, monkeypatch, capsys):
+def test_stats_models_excludes_malformed_duration_values(tmp_path, monkeypatch, capsys):
     home = tmp_path / "home"
     monkeypatch.setenv("XDG_DATA_HOME", str(home))
     repo = tmp_path / "repo"
@@ -63,7 +63,53 @@ def test_stats_models_normalizes_malformed_duration_values(tmp_path, monkeypatch
     assert stats.main(["models", "--repo", str(repo), "--format", "json"]) == 0
     row = json.loads(capsys.readouterr().out)[0]
     assert row["calls"] == 2
-    assert row["duration_seconds"]["mean"] == 6.0
+    assert row["duration_seconds"]["mean"] == 12.0
+
+
+def test_stats_models_reports_no_duration_coverage_as_nulls(tmp_path, monkeypatch, capsys):
+    home = tmp_path / "home"
+    monkeypatch.setenv("XDG_DATA_HOME", str(home))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    summary = tmp_path / "summary.json"
+    summary.write_text(json.dumps({"model_invocations": [
+        {"phase": "review", "harness": "codex", "model": "gpt", "reasoning_effort": "high", "duration_seconds": None},
+        {"phase": "review", "harness": "codex", "model": "gpt", "reasoning_effort": "high", "duration_seconds": "nan"},
+    ]}), encoding="utf-8")
+    history = home / "revrem" / "runs.jsonl"
+    history.parent.mkdir(parents=True)
+    history.write_text(json.dumps({"cwd": str(repo), "summary_path": str(summary)}) + "\n", encoding="utf-8")
+
+    assert stats.main(["models", "--repo", str(repo), "--format", "json"]) == 0
+    row = json.loads(capsys.readouterr().out)[0]
+    assert row["duration_seconds"] == {
+        "min": None, "mean": None, "p50": None, "p95": None, "max": None,
+    }
+
+
+def test_stats_models_skips_non_utf8_summary(tmp_path, monkeypatch, capsys):
+    home = tmp_path / "home"
+    monkeypatch.setenv("XDG_DATA_HOME", str(home))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    invalid_summary = tmp_path / "invalid-summary.json"
+    invalid_summary.write_bytes(b"\x80")
+    valid_summary = tmp_path / "valid-summary.json"
+    valid_summary.write_text(json.dumps({"model_invocations": [
+        {"phase": "review", "harness": "codex", "model": "gpt", "reasoning_effort": "high", "duration_seconds": 3},
+    ]}), encoding="utf-8")
+    history = home / "revrem" / "runs.jsonl"
+    history.parent.mkdir(parents=True)
+    history.write_text(
+        "\n".join(
+            json.dumps({"cwd": str(repo), "summary_path": str(path)})
+            for path in (invalid_summary, valid_summary)
+        ) + "\n",
+        encoding="utf-8",
+    )
+
+    assert stats.main(["models", "--repo", str(repo), "--format", "json"]) == 0
+    assert json.loads(capsys.readouterr().out)[0]["calls"] == 1
 
 
 def test_stats_models_excludes_boolean_token_values(tmp_path, monkeypatch, capsys):

@@ -10,7 +10,7 @@ distinct label shapes:
 * **Schema-compatible ``iteration`` values** for ``phase_start`` and
   ``phase_result`` events use a dotted numeric sub-index (e.g. ``"1.1"``,
   ``"1.1.1"``) so the produced ``events.jsonl`` validates against
-  ``docs/52-api/schemas/events-v1.schema.json``.
+  ``docs/52-api/schemas/events-v1.1.schema.json``.
 
 These helpers centralize that split so the runner shell, the events
 schema, and the devex guide can be updated in lockstep.
@@ -32,7 +32,7 @@ def artifact_label(iteration: int, retry_count: int) -> str:
 def event_iteration_label(iteration: int, retry_count: int) -> str:
     """Return the schema-compatible ``iteration`` value for one retry.
 
-    RevRem's ``events-v1`` schema restricts ``iteration`` to integers,
+    RevRem's ``events-v1.1`` schema restricts ``iteration`` to integers,
     the literal ``"final"``, or dotted numeric strings (e.g.
     ``"1"``, ``"1.1"``, ``"1.1.1"``). Retry sub-attempts are encoded as
     a dotted sub-index so the emitted labels stay schema-compatible even

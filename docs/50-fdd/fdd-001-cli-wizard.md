@@ -106,6 +106,12 @@ and run history.
   previous command, including `--routing-strict`, `--no-routing-strict`, and
   `--no-allow-model-escalation`, so the previewed command does not fall back to
   profile defaults for those fields.
+- Last-run recovery rehydrates the persisted effective triage routing and
+  prompt snapshot before applying explicit recovery overrides. This preserves
+  unsaved route-table edits and prompt settings when the profile later changes.
+- Catalog aliases use their resolved provider driver when deciding whether a
+  provider default can satisfy a missing model, so a Codex alias remains
+  runnable without an explicit model.
 - Profiles without routes explain how to choose or create a routed profile
   instead of only saying routing is unavailable. This repository's project
   `default` profile keeps triage opt-in but includes v2 route definitions.

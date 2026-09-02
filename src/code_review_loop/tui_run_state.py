@@ -43,7 +43,7 @@ class RunLoopView:
 
 @dataclass(frozen=True)
 class RunIterationOutcome:
-    iteration: int
+    iteration: int | str
     review: str
     remediation: str
     checks: str
@@ -330,7 +330,9 @@ def _iteration_outcomes(
         if not isinstance(item, dict):
             continue
         number = item.get("iteration")
-        iteration = number if isinstance(number, int) else index
+        iteration = number if isinstance(number, int) else (
+            "final" if number == "final" else index
+        )
         review = str(item.get("review_status") or "unknown")
         inconclusive = review == "unknown" or (
             terminal_reason == "review_unknown" and index == len(raw)
