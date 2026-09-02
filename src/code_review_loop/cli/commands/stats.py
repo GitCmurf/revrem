@@ -57,8 +57,13 @@ def _invocations(limit: int, *, repo: Path | None) -> list[dict[str, Any]]:
     )
     matched_records = 0
     for record in records:
+        raw_cwd = record.get("cwd")
+        # A missing cwd must never resolve to the caller's repository. It
+        # cannot establish ownership or resolve a relative artifact safely.
+        if not isinstance(raw_cwd, str) or not raw_cwd.strip():
+            continue
+        record_cwd = Path(raw_cwd).resolve()
         if requested_repo is not None:
-            record_cwd = Path(str(record.get("cwd") or "")).resolve()
             if repo_root_or_cwd(record_cwd) != requested_repo:
                 continue
             matched_records += 1
@@ -67,7 +72,7 @@ def _invocations(limit: int, *, repo: Path | None) -> list[dict[str, Any]]:
             continue
         resolved_summary_path = _resolve_summary_path(
             str(summary_path),
-            Path(str(record.get("cwd") or "")).resolve(),
+            record_cwd,
         )
         if resolved_summary_path is None:
             continue

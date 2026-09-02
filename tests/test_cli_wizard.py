@@ -419,6 +419,43 @@ def test_last_run_prefers_structured_resume_config_over_redacted_display_command
     ]
 
 
+def test_last_run_skips_stale_structured_parser_choices(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    _write_profile(tmp_path / ".revrem.toml")
+    run_dir = tmp_path / ".revrem" / "runs" / "newest"
+    run_dir.mkdir(parents=True)
+    summary_path = run_dir / "summary.json"
+    summary_path.write_text(
+        json.dumps(
+            {
+                "profile": "final-pr",
+                "resume_config": {
+                    "profile_name": "final-pr",
+                    "progress_style": "obsolete-progress-style",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    history_path = (
+        tmp_path / "home-global" / ".local" / "share" / "revrem" / "runs.jsonl"
+    )
+    history_path.parent.mkdir(parents=True)
+    history_path.write_text(
+        json.dumps({"cwd": str(tmp_path), "summary_path": str(summary_path)}) + "\n",
+        encoding="utf-8",
+    )
+
+    lookup = wizard._last_run_state(tmp_path)
+
+    assert lookup.state is None
+    assert (
+        lookup.skipped_reason
+        == f"newest settings are no longer previewable: {summary_path}"
+    )
+
+
 def test_wizard_prompts_for_pending_review_before_run_shape_menus(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()

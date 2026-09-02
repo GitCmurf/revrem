@@ -14,11 +14,11 @@ from code_review_loop import (
 )
 
 
-def _harness_choices() -> tuple[str, ...]:
+def _harness_choices(*, cwd: Any = None) -> tuple[str, ...]:
     implemented_set = set(
         name for name, spec in harnesses.HARNESS_REGISTRY.items() if spec.implemented
     )
-    implemented_set.update(model_catalog.load_catalog().harnesses)
+    implemented_set.update(model_catalog.load_catalog(cwd).harnesses)
     implemented = sorted(implemented_set)
     if "codex" in implemented:
         implemented.remove("codex")
@@ -279,7 +279,10 @@ def loop_diagram_class() -> type[Any] | None:
             if dotted is None:
                 return
             if key == "harness":
-                choices = HARNESS_CHOICES
+                # The edit model can point at a different repository than the
+                # process that imported this module. Resolve aliases at use
+                # time so cycling follows that workspace's catalog.
+                choices = _harness_choices(cwd=self.model.cwd)
             else:
                 fields = tui_loop_state.PHASE_DOTTED[self.current_phase()]
                 harness_dotted = fields.get("harness")
@@ -531,11 +534,13 @@ def route_edit_modal_class() -> type[Any] | None:
             route: str,
             values: dict[str, str],
             route_names: tuple[str, ...] = (),
+            cwd: Any = None,
         ) -> None:
             super().__init__()
             self.route = route
             self.values = values
             self.route_names = route_names
+            self.cwd = cwd
 
         def compose(self):
             with vertical_cls(id="route-edit-dialog"):
@@ -546,12 +551,12 @@ def route_edit_modal_class() -> type[Any] | None:
                 yield select_cls(
                     _select_options(
                         _choices_with_current(
-                            HARNESS_CHOICES, self.values.get("harness", "")
+                            _harness_choices(cwd=self.cwd), self.values.get("harness", "")
                         )
                     ),
                     allow_blank=False,
                     value=_select_value(
-                        self.values.get("harness", ""), HARNESS_CHOICES
+                        self.values.get("harness", ""), _harness_choices(cwd=self.cwd)
                     ),
                     id="route-edit-harness",
                 )
@@ -846,25 +851,37 @@ def loop_run_view_class() -> type[Any] | None:
             if actions:
                 header.append("\nNext: " + " · ".join(actions), style="bold")
             self._header.update(header)
-            rows = {row.iteration: row for row in outcome.iterations}
+            rows = list(outcome.iterations)
+            visible_rows = len(tui_loop_state.LOOP_PHASES)
             for index, phase in enumerate(tui_loop_state.LOOP_PHASES, start=1):
                 gutter = self._gutters.get(phase)
                 if gutter is not None:
-                    gutter.update(f"{index:02d}" if index < 5 else "FR")
+                    gutter.update(
+                        f"{index:02d}"
+                        if index < visible_rows
+                        else (f"{index:02d}+" if len(rows) > visible_rows else "FR")
+                    )
                 widget = self._phases.get(phase)
                 if widget is None:
                     continue
-                if index <= len(rows):
-                    row = rows[index]
+                displayed_rows = (
+                    rows[index - 1 : index]
+                    if index < visible_rows
+                    else rows[index - 1 :]
+                )
+                if displayed_rows:
                     widget.update(
-                        f"Iteration {row.iteration}: review {row.review} · "
-                        f"remediation {row.remediation} · checks {row.checks} · commit {row.commit}"
+                        "\n".join(
+                            f"Iteration {item.iteration}: review {item.review} · "
+                            f"remediation {item.remediation} · checks {item.checks} · commit {item.commit}"
+                            for item in displayed_rows
+                        )
                     )
                     widget.set_classes(
                         "run-phase "
                         + (
                             "status-warning"
-                            if row.review == "unknown"
+                            if any(item.review == "unknown" for item in displayed_rows)
                             else "status-success"
                         )
                     )

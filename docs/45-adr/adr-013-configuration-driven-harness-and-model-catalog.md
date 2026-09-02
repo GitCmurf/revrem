@@ -3,8 +3,8 @@ document_id: REVREM-ADR-013
 type: ADR
 title: Configuration Driven Harness and Model Catalog
 status: Draft
-version: '0.4'
-last_updated: '2026-09-01'
+version: '0.5'
+last_updated: '2026-09-02'
 owner: maintainers
 docops_version: '2.0'
 area: architecture
@@ -82,14 +82,28 @@ null value), avoids changing shared defaults, and makes save/reload idempotent.
 - Catalog-backed harness aliases, executables, and drivers used for route
   capability checks, phase commands, and reasoning-effort reporting are
   resolved against that same configured repository.
+- Catalog aliases cannot use a built-in harness name. This prevents one name
+  from resolving to a catalog driver in one execution path and a built-in
+  executable in another.
 - Triage reasoning-effort selectors apply Codex restrictions to resolved
   catalog drivers, so aliases cannot offer or retain provider-incompatible
   effort values.
 - Profile editing and validation use the selected repository's catalog rather
   than the process's ambient working directory.
+- Optional external Codex cache entries are accepted only when their model
+  identifiers are nonempty strings; malformed entries are skipped so packaged
+  and project catalog operations remain available.
+- Replayed TUI routing applies its triage contract before its enabled state,
+  and loop harness cycling resolves aliases lazily from the edited workspace.
+- Wizard previews treat stale persisted parser choices as non-previewable
+  history rather than allowing them to terminate the interactive session.
 - Structured last-run replay preserves remediation approval and sandbox
   settings; replay cannot silently replace a restrictive prior run with profile
   defaults.
+- TUI resume replay also restores every explicit wall-time, token, and USD
+  ceiling into its editable budget configuration. Profile snapshots retain
+  model-aware defaults, and Gemini aliases select review context caps from
+  their resolved driver rather than their display alias.
 - Explicit map replacement markers preserve inherited route and executable
   deletions without mutating defaults shared by other profiles.
 

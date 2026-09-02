@@ -3,8 +3,8 @@ document_id: REVREM-ADR-009
 type: ADR
 title: Budget Ceilings And Cancellation Contract
 status: Draft
-version: '0.1'
-last_updated: '2026-05-13'
+version: '0.2'
+last_updated: '2026-09-02'
 owner: __TBD__
 docops_version: '2.0'
 area: architecture
@@ -66,6 +66,11 @@ cancellation, but it keeps the same best-effort artifact and exit-code path.
 The subprocess wrapper already kills the active child process group when
 unwinding from an interrupt, so cancellation does not leave the model/check
 process running under normal local execution.
+
+When the live TUI later escalates cancellation to descendants, it records each
+descendant's PID together with its OS process-start identity. It revalidates
+that identity immediately before every delayed TERM or KILL signal; a PID that
+has exited, been reused, or cannot be identified is never signalled.
 
 Resume remains part of this ADR's contract but is not complete in the first
 implementation slices. The intended semantics remain:

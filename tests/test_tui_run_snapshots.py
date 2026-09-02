@@ -23,6 +23,22 @@ max_iterations = 3
     assert_svg_snapshot("tui_run/waiting", svg)
 
 
+def test_completed_run_renders_sixth_iteration(tmp_path: Path) -> None:
+    iterations = [
+        {"iteration": number, "review_status": "findings", "checks": [{}], "remediated": True}
+        for number in range(1, 7)
+    ]
+    svg = _capture_run_svg(
+        tmp_path,
+        "[profiles.demo]\n[profiles.demo.pipeline]\nmax_iterations = 6\n",
+        _snapshot(),
+        status="completed-findings",
+        summary={"final_status": "findings", "iterations": iterations},
+    )
+
+    assert "Iteration 6: review findings" in svg
+
+
 def test_run_snapshot_review_running(tmp_path: Path) -> None:
     svg = _capture_run_svg(
         tmp_path,

@@ -147,6 +147,31 @@ def test_live_run_controller_starts_child_with_machine_friendly_argv(tmp_path):
     assert calls[0][1]["start_new_session"] is True
 
 
+def test_profile_snapshot_keeps_gemini_default_context_cap_implicit(tmp_path):
+    profile = profiles.Profile(
+        name="demo",
+        review=profiles.PhaseConfig(
+            harness="gemini", model="gemini-3.1-pro-preview"
+        ),
+    )
+    plan = tui_state.LaunchPlan(
+        profile_name="demo", mode="run", argv=("revrem", "--profile", "demo"), shell_command=""
+    )
+    controller = tui_run_controller.LiveRunController()
+    launch = controller.start(
+        profile=profile,
+        plan=plan,
+        cwd=tmp_path,
+        entrypoint_resolver=list,
+        popen_factory=lambda *_args, **_kwargs: FakeProcess(),
+        identity=FixedIdentity(),
+        snapshot_profile=True,
+    )
+
+    snapshot = Path(launch.argv[-1]).read_text(encoding="utf-8")
+    assert "external_review_input_chars" not in snapshot
+
+
 def test_start_marks_setup_failed_when_launch_raises(tmp_path):
     profile = profiles.Profile(name="demo")
     plan = tui_state.LaunchPlan(
@@ -273,6 +298,27 @@ def test_cancel_reports_forced_cleanup_after_escalation(monkeypatch):
         (999, tui_run_controller.signal.SIGTERM),
         (999, tui_run_controller.signal.SIGKILL),
     ]
+
+
+def test_delayed_descendant_termination_skips_pid_reused_by_another_process(monkeypatch):
+    original = tui_run_controller.DescendantIdentity(pid=456, start_time="100")
+    signals: list[tuple[int, int]] = []
+
+    monkeypatch.setattr(tui_run_controller.os, "kill", lambda pid, signum: None)
+    monkeypatch.setattr(
+        tui_run_controller,
+        "_descendant_identity",
+        lambda pid: tui_run_controller.DescendantIdentity(pid=pid, start_time="200"),
+    )
+    monkeypatch.setattr(
+        tui_run_controller,
+        "_signal_pid_group",
+        lambda pid, signum: signals.append((pid, signum)) or True,
+    )
+
+    tui_run_controller._terminate_descendants(frozenset({original}), grace_seconds=0)
+
+    assert signals == []
 
 
 def test_cancel_allows_acknowledged_child_its_separate_finalization_deadline(

@@ -290,6 +290,36 @@ def test_loop_cycle_harness_advances_from_effective_codex_value(tmp_path):
     asyncio.run(run())
 
 
+def test_loop_cycle_harness_uses_the_active_workspace_catalog(tmp_path):
+    async def run() -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        (repo / ".revrem-catalog.toml").write_text(
+            '[[harness]]\nname="team-codex"\ndriver="codex"\n', encoding="utf-8"
+        )
+        (repo / ".revrem.toml").write_text(
+            "[profiles.edit.pipeline]\nbase='main'\n"
+            "[profiles.edit.review]\nharness='codex'\nmodel='gpt-5.5'\n",
+            encoding="utf-8",
+        )
+        async with pilot_app(cwd=repo, profile_name="edit") as (app, pilot):
+            await pilot.press("1")
+            await pilot.pause()
+            diagram = app.query_one("#loop-diagram")
+            choices = tui_loop_widgets._harness_choices(cwd=repo)
+            assert "team-codex" in choices
+            alias_index = choices.index("team-codex")
+            diagram.model.set_field(
+                "review.harness", choices[(alias_index - 1) % len(choices)]
+            )
+            diagram.cycle_field("harness")
+            await pilot.pause()
+            assert diagram.model.field_value("review.harness", "codex") == "team-codex"
+
+    asyncio.run(run())
+
+
 def test_loop_cycle_effort_advances_from_effective_low_value(tmp_path):
     async def run() -> None:
         repo = tmp_path / "repo"

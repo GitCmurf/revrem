@@ -91,6 +91,17 @@ def test_route_edit_modal_snapshot() -> None:
     assert_svg_snapshot("tui_profiles_prompts/route-edit-modal", svg)
 
 
+def test_route_edit_modal_uses_active_workspace_harness_alias(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".revrem-catalog.toml").write_text(
+        '[[harness]]\nname = "team-gemini"\ndriver = "gemini"\n',
+        encoding="utf-8",
+    )
+
+    assert "team-gemini" in _capture_route_modal_svg(cwd=repo, open_harness=True)
+
+
 def _capture_workspace_svg(
     tmp_path: Path, key: str, profile_toml: str, *, profile_name: str = "demo"
 ) -> str:
@@ -109,7 +120,9 @@ def _capture_workspace_svg(
     return asyncio.run(run())
 
 
-def _capture_route_modal_svg() -> str:
+def _capture_route_modal_svg(
+    *, cwd: Path | None = None, open_harness: bool = False
+) -> str:
     async def run() -> str:
         modal_cls = tui_loop_widgets.route_edit_modal_class()
         components = tui._load_textual_components()
@@ -143,6 +156,7 @@ def _capture_route_modal_svg() -> str:
                             "fallback": "",
                         },
                         route_names=("security", "fallback-route"),
+                        cwd=cwd,
                     )
                 )
 
@@ -151,6 +165,10 @@ def _capture_route_modal_svg() -> str:
             configure_test_app(app)
             async with app.run_test(size=(96, 32)) as pilot:
                 await pilot.pause()
+                if open_harness:
+                    app.screen.set_focus(app.screen.query_one("#route-edit-harness"))
+                    await pilot.press("enter")
+                    await pilot.pause()
                 return normalize_svg(
                     pilot.app.export_screenshot(title="revrem-route-modal", simplify=True)
                 )

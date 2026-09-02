@@ -121,6 +121,10 @@ def _load_catalog_cached(
                 raise ValueError(
                     f"catalog harness entry in {source} is missing required field 'name'"
                 )
+            if source != "packaged" and name in IMPLEMENTED_CATALOG_DRIVERS:
+                raise ValueError(
+                    f"catalog harness {name!r} collides with a built-in harness name"
+                )
             driver = str(entry.get("driver", name))
             if driver not in IMPLEMENTED_CATALOG_DRIVERS:
                 raise ValueError(f"catalog harness {name!r} selects unknown built-in driver {driver!r}")
@@ -249,7 +253,10 @@ def _codex_cache_layer(path: Path) -> dict[str, Any]:
         if not isinstance(entry, dict):
             continue
         model_id = entry.get("slug") or entry.get("id") or entry.get("model")
-        if not model_id:
+        # Codex owns this optional cache.  Do not let a malformed external
+        # entry turn into a catalog validation failure for otherwise usable
+        # packaged/project metadata.
+        if not isinstance(model_id, str) or not model_id:
             continue
         model: dict[str, Any] = {
             "id": model_id,

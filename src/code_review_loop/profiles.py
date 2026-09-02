@@ -947,11 +947,17 @@ def _profile_last_used_at_by_name(history_path: Path | None = None) -> dict[str,
     return last_used_at_by_name
 
 
-def profile_to_toml(profile: Profile, *, include_wrapper: bool = False) -> str:
+def profile_to_toml(
+    profile: Profile,
+    *,
+    include_wrapper: bool = False,
+    omit_builtin_defaults: bool = False,
+) -> str:
+    """Serialize a profile, optionally retaining model-aware defaults as implicit."""
     return _profile_to_toml_impl(
         profile,
         root=("profiles", profile.name) if include_wrapper else None,
-        omit_builtin_defaults=False,
+        omit_builtin_defaults=omit_builtin_defaults,
     )
 
 

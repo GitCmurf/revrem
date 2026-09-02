@@ -185,12 +185,17 @@ def resolve_external_review_input_chars(
     if args.external_review_input_chars is not None:
         val = int(args.external_review_input_chars)
         source = "cli"
-    elif getattr(args, "profile_snapshot", None) or profile_runtime_key_explicit(
-        profile_name, cwd, "external_review_input_chars"
+    elif profile_runtime_key_explicit(
+        profile_name,
+        cwd,
+        "external_review_input_chars",
+        snapshot_path=getattr(args, "profile_snapshot", None),
     ):
         val = profile.runtime.external_review_input_chars
         source = profile_source
-    elif is_large_context_gemini_review_model(review_harness, review_model):
+    elif is_large_context_gemini_review_model(
+        harnesses._resolve_catalog_driver(review_harness, cwd=cwd), review_model
+    ):
         val = DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS
         source = "model-default"
     else:
@@ -223,13 +228,18 @@ def profile_runtime_key_explicit(
     profile_name: str | None,
     cwd: Path,
     key: str,
+    *,
+    snapshot_path: str | None = None,
 ) -> bool:
     try:
-        user_file, project_file = profiles.load_profile_files(cwd=cwd)
+        if snapshot_path:
+            profile_files = (profiles.load_profile_file(Path(snapshot_path)),)
+        else:
+            profile_files = profiles.load_profile_files(cwd=cwd)
     except (OSError, ValueError):
         return False
     raw_sections: list[dict[str, object]] = []
-    for profile_file in (user_file, project_file):
+    for profile_file in profile_files:
         if profile_file.raw_defaults:
             raw_sections.append(profile_file.raw_defaults)
         if profile_name and profile_name in profile_file.raw_profiles:

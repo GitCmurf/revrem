@@ -52,6 +52,26 @@ def test_profile_snapshot_requires_matching_profile(tmp_path):
         config_builder.build_loop_config(parsed, tmp_path, require_implemented=False)
 
 
+def test_gemini_snapshot_without_an_explicit_cap_uses_model_default(tmp_path):
+    snapshot = tmp_path / "snapshot.toml"
+    snapshot.write_text(
+        "[profiles.demo.review]\n"
+        "harness='gemini'\n"
+        "model='gemini-3.1-pro-preview'\n",
+        encoding="utf-8",
+    )
+    parsed = cli_args.parse_args(
+        ["--profile", "demo", "--profile-snapshot", str(snapshot), "--dry-run"]
+    )
+
+    config, _ = config_builder.build_loop_config(parsed, tmp_path)
+
+    from code_review_loop.config import DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS
+
+    assert config.external_review_input_chars == DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS
+    assert config.phase_config_field_sources["runtime"]["external_review_input_chars"] == "model-default"
+
+
 def _clear_result(summary: dict[str, object]) -> application_mod.ReviewLoopResult:
     return application_mod.ReviewLoopResult(
         summary=summary, outcome=OutcomeClear(reason="review_clear")
@@ -491,6 +511,29 @@ external_review_input_chars = 80000
         config.phase_config_field_sources["runtime"]["external_review_input_chars"]
         == "profile:gemini-review"
     )
+
+
+def test_gemini_alias_uses_resolved_driver_for_model_default(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem-catalog.toml").write_text(
+        "[[harness]]\nname = 'team-gemini'\ndriver = 'gemini'\n",
+        encoding="utf-8",
+    )
+    (tmp_path / ".revrem.toml").write_text(
+        "[profiles.demo.review]\nharness = 'team-gemini'\nmodel = 'gemini-3.1-pro-preview'\n",
+        encoding="utf-8",
+    )
+
+    args = cli_args.parse_args(["--profile", "demo", "--dry-run"])
+    config, _ = config_builder.build_loop_config(args, tmp_path)
+
+    from code_review_loop.config import DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS
+
+    assert config.review_harness == "team-gemini"
+    assert config.external_review_input_chars == DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS
+    assert config.phase_config_field_sources["runtime"]["external_review_input_chars"] == "model-default"
 
 
 def test_external_review_truncation_policy_cli_overrides_profile(tmp_path, monkeypatch):

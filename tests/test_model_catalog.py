@@ -77,6 +77,18 @@ def test_project_catalog_requires_harness_name(tmp_path, monkeypatch):
         model_catalog.load_catalog(tmp_path, home=tmp_path)
 
 
+def test_project_catalog_rejects_alias_that_collides_with_built_in_harness(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "missing-codex"))
+    (tmp_path / ".revrem-catalog.toml").write_text(
+        '[[harness]]\nname="codex"\ndriver="gemini"\n', encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="collides with a built-in harness name"):
+        model_catalog.load_catalog(tmp_path, home=tmp_path)
+
+
 def test_project_catalog_requires_model_id(tmp_path, monkeypatch):
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "missing-codex"))
     (tmp_path / ".revrem-catalog.toml").write_text(
@@ -138,6 +150,27 @@ def test_non_utf8_codex_cache_fails_open_to_packaged_catalog(tmp_path, monkeypat
     codex_home = tmp_path / "codex"
     codex_home.mkdir()
     (codex_home / "models_cache.json").write_bytes(b"\xff\xfe")
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+
+    model = model_catalog.load_catalog(tmp_path, home=tmp_path).model(
+        "codex", "gpt-5.6-sol"
+    )
+
+    assert model.efforts == ("low", "medium", "high", "xhigh", "max", "ultra")
+
+
+@pytest.mark.parametrize(
+    ("identifier_key", "identifier"),
+    [("slug", 42), ("id", ["gpt-5.6-sol"]), ("model", {"id": "gpt-5.6-sol"})],
+)
+def test_malformed_codex_cache_identifiers_are_skipped(
+    tmp_path, monkeypatch, identifier_key, identifier
+):
+    codex_home = tmp_path / "codex"
+    codex_home.mkdir()
+    (codex_home / "models_cache.json").write_text(
+        json.dumps({"models": [{identifier_key: identifier}]}), encoding="utf-8"
+    )
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
 
     model = model_catalog.load_catalog(tmp_path, home=tmp_path).model(

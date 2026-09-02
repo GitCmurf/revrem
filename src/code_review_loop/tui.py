@@ -540,7 +540,7 @@ def _build_bindings(binding_cls: Any | None) -> list[Any]:
         ("d", "launch_dry_run", "Dry run"),
         ("r", "launch_run", "Run"),
         ("R", "prepare_review_retry", "Retry review"),
-        ("k", "cancel_run", "Cancel run"),
+        ("k", "cancel_run", "Stop/cancel"),
         _binding(
             "l", "toggle_logs", "Detail view", priority=True, binding_cls=binding_cls
         ),
@@ -2012,7 +2012,12 @@ class _RevRemAppMixin:
             else tuple(sorted(self._loop_diagram.model.profile.triage.routes))
         )
         push_screen(
-            modal_class(route=route, values=values, route_names=route_names),
+            modal_class(
+                route=route,
+                values=values,
+                route_names=route_names,
+                cwd=self._loop_diagram.model.cwd,
+            ),
             callback=handle_result,
         )
 
@@ -2094,7 +2099,11 @@ class _RevRemAppMixin:
                 try:
                     if string_value is None:
                         return f"{field} must be a harness name"
-                    profiles.validate_harness_name(string_value, field=field)
+                    profiles.validate_harness_name(
+                        string_value,
+                        field=field,
+                        cwd=self._loop_diagram.model.cwd,
+                    )
                 except ValueError as exc:
                     return str(exc)
             elif cell == "timeout_seconds":
@@ -2811,6 +2820,7 @@ def _apply_resume_config_to_loop_model(
         ),
         final_review=boolean("final_review", profile.pipeline.final_review),
         triage_enabled=boolean("triage_enabled", profile.triage.enabled),
+        triage_contract=text("triage_contract", profile.triage.contract),
         routing_enabled=boolean("routing_enabled", profile.triage.routing.enabled),
         routing_default_route=text(
             "routing_default_route", profile.triage.routing.default_route
@@ -2860,6 +2870,11 @@ def _apply_resume_config_to_loop_model(
             "commit_timeout_seconds", profile.commit.timeout_seconds
         ),
         timeout_seconds=number_text("timeout_seconds", None),
+        max_wall_seconds=number_text("max_wall_seconds", profile.budgets.max_wall_seconds),
+        max_tokens=number_text("max_tokens", profile.budgets.max_tokens),
+        max_usd=text(
+            "max_usd", "" if profile.budgets.max_usd is None else str(profile.budgets.max_usd)
+        ),
         check_timeout_seconds=(
             f"{check_timeout:g}"
             if isinstance(check_timeout, int | float)
@@ -2895,6 +2910,9 @@ def _apply_wizard_state_to_loop_model(model: Any, state: Any) -> None:
         ),
         ("runtime.full_auto", state.full_auto, profile.runtime.full_auto),
         ("runtime.exec_sandbox", state.exec_sandbox, profile.runtime.exec_sandbox),
+        ("budgets.max_wall_seconds", state.max_wall_seconds, profile.budgets.max_wall_seconds),
+        ("budgets.max_tokens", state.max_tokens, profile.budgets.max_tokens),
+        ("budgets.max_usd", state.max_usd, profile.budgets.max_usd),
         ("pipeline.final_review", state.final_review, profile.pipeline.final_review),
         ("pipeline.checks", state.checks, profile.pipeline.checks),
         (
@@ -2903,6 +2921,9 @@ def _apply_wizard_state_to_loop_model(model: Any, state: Any) -> None:
             profile.pipeline.check_timeout_seconds,
         ),
         ("triage.enabled", state.triage_enabled, profile.triage.enabled),
+        # The contract is a prerequisite for enabled routing.  Replays may
+        # contain a v2 override even when the saved profile still uses v1.
+        ("triage.contract", state.triage_contract, profile.triage.contract),
         (
             "triage.routing.enabled",
             state.routing_enabled,
@@ -3854,7 +3875,7 @@ def _help_text(app: Any) -> str:
         "HELP",
         "",
         "Navigation",
-        "  Up/Down or j/k move · Enter expands/selects · Esc closes or clears focus",
+        "  Up/Down or j move · Enter expands/selects · Esc closes or clears focus",
         "  1 Loop · 2 Run · 3 Profiles · 4 Prompts · q Quit",
         "",
     ]
@@ -3876,11 +3897,11 @@ def _help_text(app: Any) -> str:
                 "  u Toggle reuse/validation · v Details",
                 "",
                 "Run",
-                "  d Dry-run · r Confirm/start · k Cancel · s Save profile",
+                "  d Dry-run · r Confirm/start · k Stop/cancel · s Save profile",
             )
         )
     elif app._workspace == "run":
-        lines.extend(("Run", "  l Logs/events · o Artifacts · k Cancel · d Dry-run"))
+        lines.extend(("Run", "  l Logs/events · o Artifacts · k Stop/cancel · d Dry-run"))
     elif app._workspace == "profiles":
         lines.extend(
             (

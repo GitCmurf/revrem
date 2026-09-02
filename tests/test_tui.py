@@ -65,6 +65,44 @@ def test_last_run_replay_preserves_remediation_safety_settings(tmp_path):
     assert effective.runtime.exec_sandbox == "read-only"
 
 
+def test_last_run_replay_preserves_explicit_budget_ceilings(tmp_path):
+    (tmp_path / ".revrem.toml").write_text("[profiles.demo]\n", encoding="utf-8")
+    model = tui_loop_model.LoopEditModel.load("demo", cwd=tmp_path)
+
+    tui._apply_resume_config_to_loop_model(
+        model,
+        {"max_wall_seconds": 12.5, "max_tokens": 1234, "max_usd": "4.56"},
+    )
+
+    effective = model.effective_profile()
+    assert effective.budgets.max_wall_seconds == 12.5
+    assert effective.budgets.max_tokens == 1234
+    assert str(effective.budgets.max_usd) == "4.56"
+
+
+def test_last_run_replay_applies_triage_contract_before_enabled_routing(tmp_path):
+    (tmp_path / ".revrem.toml").write_text(
+        "[profiles.demo.triage]\n"
+        'contract="v1"\n'
+        "[profiles.demo.triage.routing]\n"
+        "enabled=false\n"
+        "default_route='midtier-coder'\n"
+        "[profiles.demo.triage.routes.midtier-coder]\n"
+        "harness='codex'\n",
+        encoding="utf-8",
+    )
+    model = tui_loop_model.LoopEditModel.load("demo", cwd=tmp_path)
+
+    tui._apply_resume_config_to_loop_model(
+        model,
+        {"triage_contract": "v2", "routing_enabled": True},
+    )
+
+    effective = model.effective_profile()
+    assert effective.triage.contract == "v2"
+    assert effective.triage.routing.enabled is True
+
+
 def test_tui_bindings_keep_i_workspace_dispatched():
     bindings = tui._build_bindings(None)
     i_bindings = [
@@ -84,6 +122,23 @@ def test_tui_help_lists_loop_and_profile_i_dispatch():
     help_text = tui._help_markup(visible=True)
     assert "i max iterations" in help_text
     assert "b base" in help_text
+
+
+def test_tui_help_advertises_only_navigation_keys_and_labels_stop():
+    help_text = tui._help_text(
+        types.SimpleNamespace(_workspace="run", _loop_diagram=None)
+    )
+
+    assert "Up/Down or j move" in help_text
+    assert "j/k move" not in help_text
+    assert "k Stop/cancel" in help_text
+
+    k_binding = next(
+        binding
+        for binding in tui._build_bindings(None)
+        if binding[0] == "k"
+    )
+    assert k_binding == ("k", "cancel_run", "Stop/cancel")
 
 
 def test_tui_run_footer_lists_dry_run_action():
@@ -595,6 +650,33 @@ harness = "codex"
         app._route_edit_error("security", {"harness": None})
         == "triage.routes.security.harness must be a harness name"
     )
+
+
+def test_tui_route_validation_uses_the_active_workspace_catalog(tmp_path):
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem-catalog.toml").write_text(
+        '[[harness]]\nname="team-gemini"\ndriver="gemini"\n', encoding="utf-8"
+    )
+    (tmp_path / ".revrem.toml").write_text(
+        "[profiles.audit.triage]\ncontract='v2'\n"
+        "[profiles.audit.triage.routing]\nenabled=true\ndefault_route='security'\n"
+        "[profiles.audit.triage.routes.security]\nharness='codex'\n",
+        encoding="utf-8",
+    )
+    model = tui.tui_state.build_shell_model(cwd=tmp_path, selected_profile_name="audit")
+    app = tui.RevRemApp(model=model, profiles_by_name={})
+    loop_model = tui_loop_model.LoopEditModel.load("audit", cwd=tmp_path)
+
+    class _LoopDiagram:
+        def __init__(self, model: tui_loop_model.LoopEditModel) -> None:
+            self.model = model
+
+        def route_names(self) -> tuple[str, ...]:
+            return tuple(self.model.profile.triage.routes)
+
+    app._loop_diagram = _LoopDiagram(loop_model)
+
+    assert app._route_edit_error("security", {"harness": "team-gemini"}) is None
 
 
 def test_tui_route_add_enables_triage_when_routing_is_disabled(tmp_path):

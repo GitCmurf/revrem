@@ -85,6 +85,14 @@ class FileIdentity:
     mtime_ns: int
 
 
+@dataclass(frozen=True)
+class DescendantIdentity:
+    """A descendant PID paired with an OS-provided, reuse-resistant identity."""
+
+    pid: int
+    start_time: str
+
+
 @dataclass
 class _BoundedLines:
     max_lines: int = 200
@@ -140,7 +148,9 @@ class LiveRunController:
                 launch.artifact_dir / f"profile-snapshot-{identity.new_run_id()}.toml"
             )
             snapshot_path.write_text(
-                profiles.profile_to_toml(profile, include_wrapper=True),
+                profiles.profile_to_toml(
+                    profile, include_wrapper=True, omit_builtin_defaults=True
+                ),
                 encoding="utf-8",
             )
             argv_with_snapshot = (
@@ -206,11 +216,11 @@ class LiveRunController:
             return self.status
         if self.process.poll() is not None:
             return self.finish(self.process.returncode)
-        descendant_pids = _descendant_pids(self.process)
+        descendants = _descendant_identities(self.process)
         _signal_process_group(self.process, signal.SIGINT)
         try:
             status = self.finish(self.process.wait(timeout=grace_seconds))
-            _terminate_descendants(descendant_pids, grace_seconds=grace_seconds)
+            _terminate_descendants(descendants, grace_seconds=grace_seconds)
             return status
         except subprocess.TimeoutExpired:
             pass
@@ -219,19 +229,19 @@ class LiveRunController:
         if self._cancellation_acknowledged():
             try:
                 status = self.finish(self.process.wait(timeout=finalization_seconds))
-                _terminate_descendants(descendant_pids, grace_seconds=grace_seconds)
+                _terminate_descendants(descendants, grace_seconds=grace_seconds)
                 return status
             except subprocess.TimeoutExpired:
                 pass
         _signal_process_group(self.process, signal.SIGTERM)
-        _signal_process_groups_by_pid(descendant_pids, signal.SIGTERM)
+        _signal_descendant_process_groups(descendants, signal.SIGTERM)
         try:
             status = self.finish(self.process.wait(timeout=grace_seconds))
-            _terminate_descendants(descendant_pids, grace_seconds=grace_seconds)
+            _terminate_descendants(descendants, grace_seconds=grace_seconds)
             return status
         except subprocess.TimeoutExpired:
             _signal_process_group(self.process, signal.SIGKILL)
-            _signal_process_groups_by_pid(descendant_pids, signal.SIGKILL)
+            _signal_descendant_process_groups(descendants, signal.SIGKILL)
             self.process.wait(timeout=grace_seconds)
             self.status = "failed-forced-cleanup"
             self.exit_code = self.process.returncode
@@ -425,7 +435,9 @@ def _signal_process_group(process: subprocess.Popen[str], signum: int) -> None:
         process.send_signal(signum)
 
 
-def _descendant_pids(process: subprocess.Popen[str]) -> frozenset[int]:
+def _descendant_identities(
+    process: subprocess.Popen[str],
+) -> frozenset[DescendantIdentity]:
     pid = getattr(process, "pid", None)
     if pid is None:
         return frozenset()
@@ -438,7 +450,11 @@ def _descendant_pids(process: subprocess.Popen[str]) -> frozenset[int]:
             continue
         descendants.add(child_pid)
         pending.extend(children_by_parent.get(child_pid, ()))
-    return frozenset(descendants)
+    return frozenset(
+        identity
+        for child_pid in descendants
+        if (identity := _descendant_identity(child_pid)) is not None
+    )
 
 
 def _proc_children_by_parent() -> dict[int, tuple[int, ...]]:
@@ -505,35 +521,82 @@ def _ppid_from_proc_stat(stat_text: str) -> int | None:
         return None
 
 
-def _terminate_descendants(pids: frozenset[int], *, grace_seconds: float) -> None:
-    alive = _alive_pids(pids)
+def _descendant_identity(pid: int) -> DescendantIdentity | None:
+    """Return a stable process identity, or None when one cannot be established.
+
+    A bare PID is deliberately insufficient: it can name an unrelated process
+    after the recorded child exits. Linux exposes the start tick in procfs;
+    other POSIX systems use ``ps`` as a best-effort equivalent. If neither is
+    available, cancellation leaves that descendant alone rather than risking an
+    unrelated process.
+    """
+    proc_stat = Path(f"/proc/{pid}/stat")
+    try:
+        start_time = _start_time_from_proc_stat(proc_stat.read_text(encoding="utf-8"))
+    except OSError:
+        start_time = None
+    if start_time is not None:
+        return DescendantIdentity(pid=pid, start_time=start_time)
+    try:
+        output = subprocess.check_output(
+            ["ps", "-o", "lstart=", "-p", str(pid)],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return None
+    return DescendantIdentity(pid=pid, start_time=output) if output else None
+
+
+def _start_time_from_proc_stat(stat_text: str) -> str | None:
+    close_paren = stat_text.rfind(")")
+    if close_paren == -1:
+        return None
+    fields = stat_text[close_paren + 1 :].strip().split()
+    # Fields after the command begin with state (field 3); starttime is field 22.
+    return fields[19] if len(fields) > 19 else None
+
+
+def _terminate_descendants(
+    descendants: frozenset[DescendantIdentity], *, grace_seconds: float
+) -> None:
+    alive = _alive_descendants(descendants)
     if not alive:
         return
-    _signal_process_groups_by_pid(alive, signal.SIGTERM)
+    _signal_descendant_process_groups(alive, signal.SIGTERM)
     deadline = time.monotonic() + grace_seconds
     while alive and time.monotonic() < deadline:
         time.sleep(0.01)
-        alive = _alive_pids(alive)
+        alive = _alive_descendants(alive)
     if alive:
-        _signal_process_groups_by_pid(alive, signal.SIGKILL)
+        _signal_descendant_process_groups(alive, signal.SIGKILL)
 
 
-def _alive_pids(pids: frozenset[int]) -> frozenset[int]:
-    alive: set[int] = set()
-    for pid in pids:
+def _alive_descendants(
+    descendants: frozenset[DescendantIdentity],
+) -> frozenset[DescendantIdentity]:
+    alive: set[DescendantIdentity] = set()
+    for descendant in descendants:
         try:
-            os.kill(pid, 0)
+            os.kill(descendant.pid, 0)
         except ProcessLookupError:
             continue
         except PermissionError:
-            alive.add(pid)
-        else:
-            alive.add(pid)
+            pass
+        if _descendant_identity(descendant.pid) == descendant:
+            alive.add(descendant)
     return frozenset(alive)
 
 
-def _signal_process_groups_by_pid(pids: frozenset[int], signum: int) -> None:
-    for pid in sorted(pids):
+def _signal_descendant_process_groups(
+    descendants: frozenset[DescendantIdentity], signum: int
+) -> None:
+    # Revalidate immediately before every delayed termination signal. The
+    # identity may change between the earlier liveness check and this loop.
+    for descendant in sorted(descendants, key=lambda item: item.pid):
+        if _descendant_identity(descendant.pid) != descendant:
+            continue
+        pid = descendant.pid
         if pid == os.getpid():
             continue
         if _signal_pid_group(pid, signum):

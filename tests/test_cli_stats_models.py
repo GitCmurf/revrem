@@ -30,6 +30,22 @@ def test_stats_models_aggregates_local_summary(tmp_path, monkeypatch, capsys):
     assert row["duration_seconds"]["p95"] == 18.0
 
 
+@pytest.mark.parametrize("cwd", [None, ""])
+def test_stats_models_skips_history_records_without_a_cwd(tmp_path, monkeypatch, capsys, cwd):
+    home = tmp_path / "home"
+    monkeypatch.setenv("XDG_DATA_HOME", str(home))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    summary = tmp_path / "summary.json"
+    summary.write_text(json.dumps({"model_invocations": [{"model": "wrong"}]}), encoding="utf-8")
+    history = home / "revrem" / "runs.jsonl"
+    history.parent.mkdir(parents=True)
+    history.write_text(json.dumps({"cwd": cwd, "summary_path": str(summary)}) + "\n", encoding="utf-8")
+
+    assert stats.main(["models", "--repo", str(repo), "--format", "json"]) == 0
+    assert json.loads(capsys.readouterr().out) == []
+
+
 def test_stats_models_normalizes_malformed_duration_values(tmp_path, monkeypatch, capsys):
     home = tmp_path / "home"
     monkeypatch.setenv("XDG_DATA_HOME", str(home))

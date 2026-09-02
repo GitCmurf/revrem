@@ -1323,7 +1323,9 @@ def _state_from_argv(argv: tuple[str, ...], cwd: Path) -> WizardState:
 def _state_is_previewable(state: WizardState, cwd: Path) -> bool:
     try:
         preview = _run_preview(state, cwd)
-    except (OSError, RuntimeError, ValueError):
+    except (OSError, RuntimeError, SystemExit, ValueError):
+        # Structured resume data can outlive parser choices.  Previewing must
+        # fail closed for that stale run rather than terminating the wizard.
         return False
     return not preview.has_unresolved_models
 
