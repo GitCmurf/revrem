@@ -1310,7 +1310,16 @@ class _RevRemAppMixin:
         ):
             _notify(self, "This run does not need an inconclusive-review retry.")
             return
-        self._prepare_terminal_followup(summary, reuse_review=False)
+        try:
+            self._prepare_terminal_followup(summary, reuse_review=False)
+        except (FileNotFoundError, ValueError):
+            _notify(
+                self,
+                "Cannot prepare retry: the launched profile was deleted or is invalid; "
+                "keeping the completed run visible.",
+                severity="error",
+            )
+            return
         _notify(self, "Fresh review prepared from the run's effective configuration.")
 
     def action_context_continue(self) -> None:
@@ -1335,7 +1344,16 @@ class _RevRemAppMixin:
                 self, "Continuation blocked: " + "; ".join(blocking), severity="error"
             )
             return
-        self._prepare_terminal_followup(summary, reuse_review=True)
+        try:
+            self._prepare_terminal_followup(summary, reuse_review=True)
+        except (FileNotFoundError, ValueError):
+            _notify(
+                self,
+                "Cannot prepare continuation: the launched profile was deleted or is "
+                "invalid; keeping the completed run visible.",
+                severity="error",
+            )
+            return
         _notify(self, "Continuation prepared from the latest actionable review.")
 
     def _prepare_terminal_followup(

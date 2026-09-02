@@ -44,7 +44,7 @@ def detect_check_presets(cwd: Path) -> tuple[CheckPreset, ...]:
         text = _read_text_best_effort(pyproject)
         if "[tool.ruff" in text or "ruff" in text:
             static_checks.append("ruff check .")
-        if "[tool.mypy" in text or "mypy" in text:
+        if ("[tool.mypy" in text or "mypy" in text) and (root / "src").is_dir():
             static_checks.append("mypy src")
     if static_checks:
         presets.append(

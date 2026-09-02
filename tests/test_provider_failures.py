@@ -295,6 +295,20 @@ def test_classify_provider_failure_detects_timeout_after_partial_stdout() -> Non
     assert failure.transient is False
 
 
+def test_classify_provider_failure_detects_timeout_before_provider_event_truncation() -> None:
+    result = _result(
+        -1,
+        stderr="Command timed out after 1800.0 seconds\n",
+        provider_events="assistant event\n" * 50_001,
+    )
+
+    failure = provider_failures.classify_provider_failure(result, harness="codex")
+
+    assert failure is not None
+    assert failure.reason == "provider_timeout"
+    assert failure.transient is False
+
+
 def test_classify_provider_failure_describes_silent_timeout() -> None:
     result = _result(
         -1,

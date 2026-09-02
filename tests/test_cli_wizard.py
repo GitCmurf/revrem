@@ -1617,6 +1617,7 @@ def test_wizard_detects_repo_check_presets(tmp_path, monkeypatch):
         "[tool.ruff]\n[tool.mypy]\n",
         encoding="utf-8",
     )
+    (tmp_path / "src").mkdir()
     (tmp_path / "AGENTS.md").write_text("<!-- MEMINIT_PROTOCOL: begin -->", encoding="utf-8")
     stdin = StringIO("settings\n\n\nrepo-gate\n\n\n\n\naccept\nprint\n\n")
     stderr = StringIO()

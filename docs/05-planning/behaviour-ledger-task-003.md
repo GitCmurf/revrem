@@ -3,8 +3,8 @@ document_id: REVREM-LEDGER-003
 type: LEDGER
 title: Behaviour ledger for the cli.py re-engineering (REVREM-TASK-003)
 status: Approved
-version: '1.12'
-last_updated: '2026-09-01'
+version: '1.13'
+last_updated: '2026-09-02'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -55,6 +55,19 @@ There is no silent third option.
 ```
 
 ## Entries
+
+### 2026-09-02 — Follow-up recovery and valid detected checks
+
+- **Contract:** human presentation
+- **What changed:** provider timeout classification reads RevRem's stderr
+  timeout marker before truncating provider transcripts. The run monitor keeps
+  its completed-run view and presents an error when a retry or continuation
+  cannot reload a deleted or invalid launched profile. Repository detection
+  only offers `mypy src` where a `src/` directory exists.
+- **Why:** oversized provider events must not turn a non-retryable timeout into
+  an interruption, follow-up actions must remain safe after profile edits, and
+  detected checks must be runnable in the target repository.
+- **schema_version impact:** none.
 
 ### 2026-09-01 — Replay safety and inherited-map deletions are durable
 

@@ -8,6 +8,8 @@ import types
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
 from code_review_loop import tui, tui_loop_model
 from code_review_loop.cli.main import main as cli_main
 
@@ -1268,6 +1270,57 @@ artifact_dir = "artifacts/current"
         in message
         for message in notifications
     )
+
+
+@pytest.mark.parametrize(
+    ("action", "load_error"),
+    [
+        ("action_prepare_review_retry", FileNotFoundError("profile deleted")),
+        ("action_prepare_review_retry", ValueError("profile invalid")),
+        ("action_context_continue", FileNotFoundError("profile deleted")),
+        ("action_context_continue", ValueError("profile invalid")),
+    ],
+)
+def test_tui_follow_up_profile_reload_failures_keep_completed_run_visible(
+    monkeypatch, tmp_path, action, load_error
+):
+    notifications = []
+    model = tui.tui_state.build_shell_model(
+        cwd=tmp_path, selected_profile_name="final-pr"
+    )
+    app = tui.RevRemApp(model=model, profiles_by_name={})
+    app._workspace = "run"
+    app._live_run_profile = types.SimpleNamespace(name="final-pr")
+    app.live_run_controller.launch = tui.tui_run_controller.LiveRunLaunch(
+        argv=("revrem",),
+        artifact_dir_arg=".revrem/runs/completed",
+        artifact_dir=tmp_path / ".revrem" / "runs" / "completed",
+    )
+    app.live_run_controller.read_summary = lambda: {"stopped_reason": "review_unknown"}
+    monkeypatch.setattr(
+        tui_loop_model.LoopEditModel,
+        "load",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(load_error),
+    )
+    monkeypatch.setattr(
+        app,
+        "notify",
+        lambda message, **_kwargs: notifications.append(message),
+        raising=False,
+    )
+    if action == "action_context_continue":
+        monkeypatch.setattr(
+            tui.resume,
+            "resume_precondition_issues",
+            lambda *_args, **_kwargs: (),
+        )
+
+    getattr(app, action)()
+
+    assert app._workspace == "run"
+    assert len(notifications) == 1
+    assert "launched profile was deleted or is invalid" in notifications[0]
+    assert "keeping the completed run visible" in notifications[0]
 
 
 def test_tui_live_monitor_refresh_updates_run_monitor_widget(monkeypatch, tmp_path):

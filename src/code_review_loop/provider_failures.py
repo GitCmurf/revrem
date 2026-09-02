@@ -36,7 +36,9 @@ def classify_provider_failure(
     classification_output = _classification_output(output)
     normalized = classification_output.lower()
 
-    if result.returncode == -1 and "command timed out after" in normalized:
+    # RevRem's timeout marker is emitted on stderr. Check it before output
+    # truncation so a large provider event stream cannot hide the marker.
+    if result.returncode == -1 and "command timed out after" in (result.stderr or "").lower():
         detail = (
             "provider subprocess timed out without assistant output"
             if _looks_like_silent_timeout(result)

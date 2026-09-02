@@ -22,6 +22,7 @@ def test_detect_check_presets_reports_repository_capabilities(tmp_path: Path) ->
     (tmp_path / "pyproject.toml").write_text(
         "[tool.ruff]\n[tool.mypy]\n", encoding="utf-8"
     )
+    (tmp_path / "src").mkdir()
     (tmp_path / "AGENTS.md").write_text(
         "<!-- MEMINIT_PROTOCOL: begin -->", encoding="utf-8"
     )
@@ -48,6 +49,19 @@ def test_detect_check_presets_does_not_infer_python_from_tests_directory(
     presets = check_presets.detect_check_presets(tmp_path)
 
     assert "python-fast" not in {preset.key for preset in presets}
+
+
+def test_detect_check_presets_omits_mypy_src_without_src_layout(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.ruff]\n[tool.mypy]\n", encoding="utf-8"
+    )
+
+    presets = check_presets.detect_check_presets(tmp_path)
+
+    static = next(preset for preset in presets if preset.key == "python-static")
+    assert static.checks == ("ruff check .",)
+    assert "mypy src" not in static.label
 
 
 def test_recent_check_presets_are_repo_local_deduplicated_and_bounded(
