@@ -183,6 +183,10 @@ This project follows Semantic Versioning once public releases begin.
 - Codex review status detection now treats the clear-prose form "No actionable
   correctness, safety, or maintainability defects were found" as clear while
   still refusing contrastive prose that reports a later defect.
+- Codex review status detection now also accepts the narrower clear-prose form
+  "No actionable correctness issues were found", including when a read-only
+  sandbox prevented an otherwise optional build, while still rejecting later
+  contrastive security or maintainability findings.
 - Codex review status detection now recognizes "I did not identify any
   discrete, actionable correctness issues" plus negated "did not reveal
   blocking defects" caveats as clear, while preserving fail-closed behavior for

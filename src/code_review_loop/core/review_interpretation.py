@@ -157,6 +157,7 @@ CLEAR_PHRASES = (
     "did not identify any introduced, actionable correctness issues",
     "did not identify any introduced correctness, security, or maintainability issues",
     "did not identify any introduced correctness, security, or maintainability issues that warrant an inline finding",
+    "no actionable correctness issues were found",
     "no actionable correctness, security, or maintainability issues were found",
     "no actionable correctness, security, or maintainability issues were identified",
     "no actionable correctness, safety, or maintainability defects were found",

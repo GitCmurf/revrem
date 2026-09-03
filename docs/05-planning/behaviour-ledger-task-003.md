@@ -199,6 +199,23 @@ There is no silent third option.
   corrects status classification.
 - **CHANGELOG:** Unreleased / Fixed.
 
+### 2026-09-03 — Narrow correctness-only clear prose is classified
+
+- **Contract:** machine
+- **What changed:** Codex review-status interpretation now recognizes the
+  standalone form "No actionable correctness issues were found" as a clear
+  signal when no affirmative correctness, security, or maintainability finding
+  follows.
+- **Why:** A live cross-repository review returned that exact conclusion after
+  all configured checks passed, but RevRem stopped with `review_unknown` because
+  the phrase was narrower than the existing all-scope clear corpus.
+- **Before / After:** the observed clear review now classifies as `clear`; a
+  contrastive continuation such as "but a security risk remains" still fails
+  closed as `unknown`.
+- **schema_version impact:** none. The artifact schema is unchanged; this only
+  corrects status classification.
+- **CHANGELOG:** Unreleased / Fixed.
+
 ### 2026-06-16 — Contrastive non-correctness review prose stays non-clear
 
 - **Contract:** machine

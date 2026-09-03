@@ -110,6 +110,14 @@ def test_detect_review_status_accepts_exact_clear_review_lines():
     )
     assert (
         detect_review_status(
+            "No actionable correctness issues were found. Unit, lint, formatting, "
+            "and Playwright checks passed; a fresh build was blocked only by the "
+            "read-only review sandbox."
+        )
+        == "clear"
+    )
+    assert (
+        detect_review_status(
             "No actionable correctness, security, or maintainability issues were "
             "identified in the diff. The full test suite also passed locally."
         )
