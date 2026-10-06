@@ -37,9 +37,13 @@ from code_review_loop.core.ports import (
     RunContext,
 )
 from code_review_loop.core.review_interpretation import (
+    actionable_review_output,
     detect_review_status,
+    has_affirmative_issue_prose,
+    has_non_correctness_issue_prose,
     review_status_diagnostics,
 )
+from code_review_loop.git_status import is_artifact_path
 from code_review_loop.redaction import redact_text
 
 if TYPE_CHECKING:
@@ -286,8 +290,21 @@ def run_codex_review(
             f"{failure_detail}; see {artifact_path}"
         )
     status = detect_review_status(combined, harness=review_driver)
+    empty_comparison = None
+    if status == "unknown" and review_driver == "codex":
+        empty_comparison = confirm_empty_comparison(config, combined)
+        if empty_comparison is not None:
+            status = "clear"
+            artifacts.write_json_artifact(
+                config.artifact_dir,
+                f"diagnostics-{artifact_label}-empty-comparison.json",
+                empty_comparison,
+            )
     if config.debug_status_detection:
         diagnostics = review_status_diagnostics(combined, harness=review_driver)
+        if empty_comparison is not None:
+            diagnostics.update(status="clear", status_source="git_empty_comparison",
+                               status_deciding_signal="git_empty_comparison")
         phase_support.write_artifact(
             config.artifact_dir / f"{artifact_label}-status.json",
             json.dumps(diagnostics, indent=2, sort_keys=True) + "\n",
@@ -312,6 +329,37 @@ def run_codex_review(
     else:
         phase_support.progress_event(config, "review", display_label, status, ctx=ctx)
     return status, result
+
+
+def confirm_empty_comparison(config: LoopConfig, output: str) -> dict[str, object] | None:
+    """Ground a successful Codex no-changes claim in fresh Git state.
+
+    Check all three trees independently: a staged change can be cancelled by an
+    unstaged edit, and a clean worktree can still differ from the merge base.
+    Every Git failure or non-artifact untracked file keeps the result unknown.
+    """
+    text = actionable_review_output(output)
+    if "no changes" not in text.lower():
+        return None
+    if has_affirmative_issue_prose(text) or has_non_correctness_issue_prose(text):
+        return None
+    merge = run_git_preflight(config.cwd, ["merge-base", "HEAD", config.base])
+    if merge.returncode != 0 or not merge.stdout.strip():
+        return None
+    base = merge.stdout.strip()
+    for tree in ([base, "HEAD"], ["--cached", base], [base]):
+        diff = run_git_preflight(
+            config.cwd, ["diff", "--quiet", "--no-ext-diff", "--ignore-submodules=none", *tree, "--"])
+        if diff.returncode != 0:
+            return None
+    untracked = run_git_preflight(config.cwd, ["ls-files", "--others", "--exclude-standard", "-z"])
+    if untracked.returncode != 0 or any(
+        path and not is_artifact_path(config, path) for path in untracked.stdout.split("\0")
+    ):
+        return None
+    return {"status": "clear", "status_source": "git_empty_comparison",
+            "merge_base": base, "verified_trees": ["HEAD", "index", "worktree"],
+            "non_artifact_untracked_files": 0}
 
 
 def _write_provider_observation(

@@ -139,7 +139,11 @@ pruning is intentionally absent. On the first migration from the old installer,
 original launchers are preserved beside each command as
 `*.before-managed-install`; no managed rollback exists until the second
 promotion. Restore those backups manually if abandoning the initial migration.
-The old `stable-venv` and source snapshots are retained.
+The old `stable-venv` and source snapshots are retained. If the original
+launchers belonged to uv or pipx, their environment is also retained. After
+switching, use this promotion workflow for updates: the previous package
+manager's upgrade/uninstall commands can overwrite or remove the same launcher
+paths. Do not alternate package managers for this installation.
 
 ### Release and promote the next version
 
@@ -158,7 +162,11 @@ revrem --base main --review-model gpt-6-astra \
 ```
 
 Replace the check with the target repository's actual test command. The model
-catalog is metadata, not an account-access check. For current acceptance evidence
+catalog is metadata, not an account-access check. If Codex reports no changes
+without a recognised clear verdict, RevRem verifies the merge-base comparison
+against HEAD, the index and working tree and checks for non-artifact untracked
+files. Only an empty comparison can clear the run; it writes
+`diagnostics-review-*-empty-comparison.json` and preserves the original review. For current acceptance evidence
 and remaining rollout gates, see
 [deployment readiness](../05-planning/plan-013-system-wide-deployment-readiness.md).
 

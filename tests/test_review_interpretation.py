@@ -472,12 +472,12 @@ EMPTY_DIFF_REVIEW = (
 )
 
 
-def test_astra_empty_diff_final_review_clears_with_diagnostics():
+def test_empty_diff_claim_requires_git_proof_outside_text_classifier():
     # Sanitised text from the installed-wheel Astra acceptance on 2026-10-06.
-    assert detect_review_status(EMPTY_DIFF_REVIEW) == "clear"
+    assert detect_review_status(EMPTY_DIFF_REVIEW) == "unknown"
     diagnostic = review_status_diagnostics(EMPTY_DIFF_REVIEW)
-    assert diagnostic["status_source"] == "codex_empty_diff_prose"
-    assert diagnostic["status"] == "clear"
+    assert diagnostic["status_source"] == "none"
+    assert diagnostic["status"] == "unknown"
 
 
 @pytest.mark.parametrize("suffix,expected", [

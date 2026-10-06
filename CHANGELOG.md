@@ -17,8 +17,11 @@ This project follows Semantic Versioning once public releases begin.
 
 ### Fixed
 
-- Astra's complete empty-diff review response now clears a run; added findings
-  or other prose retain conservative status handling.
+- Codex no-changes claims now require Git confirmation of the committed,
+  staged and working trees, with no non-artifact untracked files, before clearing
+  otherwise unknown reviews. Provider output and confirmation evidence are retained.
+- The TUI cancellation test waits for a phase event rather than an events file
+  created before the child's cancellation handler is active.
 
 - Legacy triage now gives explicit string IDs to uniquely identifiable review
   comments without stable fingerprints, matching the v2 guidance.

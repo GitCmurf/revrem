@@ -446,10 +446,12 @@ triage.enabled = false
         env=env,
     )
     deadline = time.monotonic() + 10
-    while not (launch.artifact_dir / events.EVENTS_FILENAME).is_file():
+    # File creation happens during prepare_run, before cancellation is caught.
+    # A phase event proves the child entered its controlled run lifecycle.
+    while not any(event.kind == "phase_start" for event in controller.read_live_events().events):
         if time.monotonic() > deadline:
             raise AssertionError(
-                "timed out waiting for events.jsonl; "
+                "timed out waiting for a phase_start event; "
                 f"status={controller.refresh()}; stderr={controller.stderr_lines()!r}; "
                 f"stdout={controller.stdout_lines()!r}"
             )

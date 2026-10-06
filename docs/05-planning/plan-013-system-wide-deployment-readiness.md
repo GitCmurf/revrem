@@ -49,6 +49,13 @@ the repository contains later live-TUI, model-catalog and bounded final-review
 remediation work. PLAN-007 records its implementation, while older roadmap
 sections describe historical baselines. No new public release is implied.
 
+The existing account-wide command resolves to uv's `revrem` environment and
+reports **0.4.0**. This is a different install from the checkout. The existing
+command remains untouched during readiness work; isolated rehearsal destinations
+live under `/tmp`. The local `origin/main` tracking ref predates 142 commits on
+this branch at the first implementation commit; integration into the public
+release branch still needs an explicit decision.
+
 The initial deployment path copied source into a shared interpreter and installed
 only `tomli-w`, although package metadata also requires `jsonschema`. It did not
 exercise an installed wheel or offer an activation/rollback transaction.
@@ -87,15 +94,19 @@ An editor test also assumed an unqualified `python` command was on PATH.
   no stable `f1:` ID. The prompt now permits the same explicit comment-order
   fallback as v2; schema validation still rejects null confirmed fingerprints.
 - Astra's explicit empty-diff response was classified as unknown after a
-  successful repair. A full-response matcher now accepts that narrow form;
-  mixed prose, failed review statements and explicit findings remain non-clear.
+  successful repair. No-changes claims now require fresh Git confirmation of
+  HEAD, the index and working tree against the merge base, plus no non-artifact
+  untracked files. Unknown prose alone cannot clear a run; evidence is retained.
+- The cancellation integration test waited for an events file created before
+  controlled cancellation begins. It now waits for a phase-start event. No
+  timeout was increased and early interruption remains a distinct result.
 
 <!-- MEMINIT_SECTION: verification_matrix -->
 <!-- AGENT: List verification criteria, verification steps, and exit gates. -->
 
 ## 4. Verification Plan
 
-Verification record (2026-10-06; update with final results before handoff):
+Verification record (2026-10-06, Linux / Python 3.12):
 
 | Check | Evidence |
 | --- | --- |
@@ -106,8 +117,15 @@ Verification record (2026-10-06; update with final results before handoff):
 | `gpt-6.1-luna` | HTTP 400: not supported with this ChatGPT account |
 | Model metadata | Codex local cache: Astra/Sol low through ultra; Luna low through max |
 | Promotion regressions | Activation, rollback, failed build, dirty tree, lock and quoted paths tested |
-| Full gates | Pending final run |
-| Installed acceptance | Pending final run |
+| Full regression suite | 2,007 passed, 10 opt-in provider cases skipped; 256.85 seconds |
+| Static and governance gates | Ruff, mypy (117 source files), 10 import contracts and DocOps pass |
+| DocOps | 46 documents pass; one pre-existing filename warning in PLAN-005 |
+| Installed acceptance | Minimal and TUI wheel installs pass models, doctor, clear/findings loops, reports and expert profiles |
+| Live installed loop | Astra review, Luna v2 triage, Sol 6.1 repair, checks and final audit: clear in 92.70 seconds |
+| Empty final comparison | Diagnostic confirms HEAD, index and worktree against the merge base, with zero non-artifact untracked files |
+| Installed TUI | All four workspaces navigate at 80x24 and 120x40 |
+| Promotion and rollback | TUI promotion, minimal upgrade and offline rollback all pass in `/tmp` |
+| Repeatable account probes | Three opt-in tests pass in 48.26 seconds |
 
 The [official model guide](https://developers.openai.com/api/docs/guides/latest-model)
 lists Astra 6, Sol 6.1 and Luna 6. API effort settings and Codex's local model
@@ -115,13 +133,23 @@ metadata are different interfaces; the packaged effort ranges target Codex.
 Re-run account checks with
 `REVREM_LIVE_CURRENT_MODELS=1 ./.venv/bin/python -m pytest tests/test_live_current_models.py -q`.
 Raw model transcripts and local generated artifacts must remain outside Git.
+The final pytest hook passed all tests but pre-commit noticed documentation
+updates made while it ran. The non-test hooks were rerun after those updates;
+pytest was not repeated for documentation-only changes.
+
+The external CodeRabbit submission was rejected by automatic approval review
+because disclosure to that service was not explicitly authorised. An approval
+question is pending. Local review and verification were completed; no diff was
+sent to CodeRabbit.
 
 The first three-model loop detected and fixed an injected `a - b` regression,
 and its arithmetic checks passed. Its overall run did not clear: v1 triage first
 returned a null fingerprint, and the fixture left setup files untracked, which
 correctly failed the built-in cleanliness gate. The installed v2 acceptance with a fully tracked baseline passed review, triage,
 remediation and both checks. It exposed the empty-diff final-status gap above;
-repeat acceptance follows that regression fix.
+repeat acceptance after Git confirmation finished `clear` with no check failures.
+The recorded result is from the installed wheel, using real model calls, not the
+source checkout or fake harness.
 
 <!-- MEMINIT_SECTION: risk_management -->
 <!-- AGENT: Identify risks, impact, and mitigation strategies. -->
@@ -135,13 +163,35 @@ repeat acceptance follows that regression fix.
 - First migration preserves legacy launcher backups; automatic managed rollback
   becomes available after a second promotion. Old environments are not deleted.
 - Public versioning, branch merge, release provenance/Scorecard follow-ups and
-  secondary-provider live certification remain distinct from local Codex use.
+  fresh secondary-provider certification remain distinct from local Codex use.
+  TASK-006 already records historical Gemini proof; the other provider probes
+  were not requested or run in this pass.
 - Host sandbox restrictions can prevent socket/TUI tests. Record the execution
   context and run those gates with suitable permissions; do not skip them to
   claim a pass.
 
 <!-- MEMINIT_SECTION: version_history -->
 <!-- AGENT: Track version changes with dates, authors, and change summaries. -->
+
+## Deployment sequence
+
+1. Activate the verified clean commit
+   with `./scripts/promote-stable --extras tui`. This replaces both account-wide
+   launchers, retaining the old uv symlinks as `*.before-managed-install` backups.
+   Use the promotion script for subsequent updates; uv still owns the retained
+   old environment and its upgrade/uninstall commands can overwrite or remove
+   these command paths. Do not run both update mechanisms for RevRem.
+2. Confirm `./scripts/promote-stable --status`, `revrem --version`, and
+   `revrem doctor` from the target repository with its actual test command.
+3. Merge the example current-Codex profile into existing user or project
+   profiles only if desired. Do not replace established profile configuration.
+4. Decide branch integration and public versioning separately. No push, tag,
+   release, Git hook or global profile mutation was performed in this work.
+5. For broader provider adoption, refresh provider-specific live evidence and
+   resolve the documented external-prompt truncation coverage work (TD-008).
+   The remaining ANSI-state refactor (TD-009) and release provenance/Scorecard
+   follow-ups are recorded maintenance work, not assertions of failed Codex
+   installation acceptance.
 
 ## 6. Version History
 
