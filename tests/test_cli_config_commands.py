@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import sys
 from importlib import import_module
 from types import SimpleNamespace
@@ -432,7 +433,7 @@ def test_config_commands_create_show_list_and_delete_profile(tmp_path, monkeypat
     editor.write_text(
         "#!/bin/sh\n"
         'printf \'%s\\n\' "$1" > "$EDITOR_LOG"\n'
-        "python -c 'from pathlib import Path; import sys; "
+        f"{shlex.quote(sys.executable)} -c 'from pathlib import Path; import sys; "
         'path = Path(sys.argv[1]); text = path.read_text(encoding="utf-8"); '
         'path.write_text(text.replace("Smoke profile", "Edited profile"), encoding="utf-8")\' "$1"\n',
         encoding="utf-8",

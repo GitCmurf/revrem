@@ -6,7 +6,24 @@ This project follows Semantic Versioning once public releases begin.
 
 ## [Unreleased]
 
+### Added
+
+- Current Codex catalog entries for GPT-6 Astra, GPT-6.1 Sol, GPT-6 Sol and
+  GPT-6 Luna, a bounded cross-repository example profile, and opt-in live probes.
+- Isolated wheel promotion with dependency checks, source/wheel manifests,
+  failure recovery, preserved legacy launchers and offline rollback.
+- Installed-package acceptance in CI and promotion: catalog, doctor, deterministic
+  clear/findings loops, report generation and bundled expert-profile loading.
+
 ### Fixed
+
+- Astra's complete empty-diff review response now clears a run; added findings
+  or other prose retain conservative status handling.
+
+- Legacy triage now gives explicit string IDs to uniquely identifiable review
+  comments without stable fingerprints, matching the v2 guidance.
+- Local development gates require mypy and import contracts; the editor test
+  uses the running Python interpreter instead of assuming a `python` alias.
 
 - Newly emitted event streams use schema version 1.1 for `model_invocation`,
   while readers retain support for immutable v1.0 artifacts.

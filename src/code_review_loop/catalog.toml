@@ -51,3 +51,31 @@ id = "gpt-5.5"
 harness = "codex"
 efforts = ["low", "medium", "high", "xhigh"]
 default_effort = "medium"
+
+[[model]]
+id = "gpt-6-astra"
+harness = "codex"
+efforts = ["low", "medium", "high", "xhigh", "max", "ultra"]
+default_effort = "medium"
+capability_rank = 600
+
+[[model]]
+id = "gpt-6.1-sol"
+harness = "codex"
+efforts = ["low", "medium", "high", "xhigh", "max", "ultra"]
+default_effort = "low"
+capability_rank = 500
+
+[[model]]
+id = "gpt-6-sol"
+harness = "codex"
+efforts = ["low", "medium", "high", "xhigh", "max", "ultra"]
+default_effort = "medium"
+capability_rank = 400
+
+[[model]]
+id = "gpt-6-luna"
+harness = "codex"
+efforts = ["low", "medium", "high", "xhigh", "max"]
+default_effort = "medium"
+capability_rank = 350

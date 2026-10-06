@@ -95,6 +95,7 @@ jobs:
           .pkg-smoke/bin/revrem --version
           .pkg-smoke/bin/revrem --help
           .pkg-smoke/bin/code-review-loop --version
+          python scripts/smoke_installed.py "$PWD/.pkg-smoke/bin/python"
           test -d tests/fixtures/reference-repo/.git || git -C tests/fixtures/reference-repo init
           git -C tests/fixtures/reference-repo config user.email "ci@example.invalid"
           git -C tests/fixtures/reference-repo config user.name "RevRem CI"

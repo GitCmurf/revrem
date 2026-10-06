@@ -340,3 +340,45 @@ def test_models_list_reports_catalog_validation_errors(tmp_path, monkeypatch, ca
 
     assert models.main(["list"]) == 1
     assert "ERROR:" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("model,default,highest", [
+    ("gpt-6-astra", "medium", "ultra"),
+    ("gpt-6.1-sol", "low", "ultra"),
+    ("gpt-6-sol", "medium", "ultra"),
+    ("gpt-6-luna", "medium", "max"),
+])
+def test_current_codex_models_work_without_local_cache(tmp_path, monkeypatch, model, default, highest):
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "absent"))
+    monkeypatch.setattr(model_catalog.Path, "home", lambda: tmp_path)
+    spec = model_catalog.load_catalog(tmp_path, home=tmp_path).model("codex", model)
+    assert spec is not None
+    assert spec.default_effort == default
+    assert spec.efforts[-1] == highest
+    for role in ("review", "triage", "remediation", "commit-message"):
+        command = harnesses.build_phase_command(harnesses.PhaseCommandRequest(
+            harness="codex", role=role, executable="codex", cwd=tmp_path,
+            model=model, reasoning_effort=highest,
+        ))
+        assert command[command.index("--model") + 1] == model
+        assert f'model_reasoning_effort="{highest}"' in command
+    with pytest.raises(ValueError, match="is not supported"):
+        model_catalog.validate_selection("codex", model, "minimal", cwd=tmp_path)
+
+
+def test_current_codex_example_resolves_bounded_models(tmp_path, monkeypatch):
+    import shutil
+    from pathlib import Path
+
+    from code_review_loop.profiles import resolve_profile
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    source = Path(__file__).resolve().parents[1] / "examples/current-codex/.revrem.toml"
+    shutil.copy(source, tmp_path / ".revrem.toml")
+    profile = resolve_profile("current-codex", cwd=tmp_path)
+    assert profile.review.model == "gpt-6-astra"
+    assert profile.remediation.model == "gpt-6.1-sol"
+    assert profile.triage.model == "gpt-6-luna"
+    assert profile.triage.contract == "v2"
+    assert profile.pipeline.max_iterations == 2
+    assert profile.budgets.max_wall_seconds == 900

@@ -14,11 +14,8 @@ trap 'rm -rf "$TEST_DATA_HOME"' EXIT HUP INT TERM
 XDG_DATA_HOME="$TEST_DATA_HOME" "$PYTHON" -m pytest -q
 "$PYTHON" -m ruff check .
 
-if "$PYTHON" -m mypy --version >/dev/null 2>&1; then
-  "$PYTHON" -m mypy src
-else
-  printf '%s\n' 'mypy not installed; skipping type check' >&2
-fi
+"$PYTHON" -m mypy src
+"$PYTHON" -c 'from importlinter.cli import lint_imports_command; lint_imports_command()'
 
 if command -v meminit >/dev/null 2>&1; then
   meminit doctor --format json

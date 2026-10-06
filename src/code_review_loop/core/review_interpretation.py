@@ -139,6 +139,19 @@ CONTRASTIVE_CLAUSE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Codex may report a verified empty comparison instead of saying "no findings".
+# Match the entire response: any additional claim must retain normal review handling.
+EMPTY_DIFF_REVIEW_RE = re.compile(
+    r"the diff against [0-9a-f]{7,64} is empty, so there are no changes to review\."
+    r"(?: the checks in [a-z0-9_./-]+ pass\.)?",
+    re.IGNORECASE,
+)
+
+
+def is_empty_diff_review(output: str) -> bool:
+    return EMPTY_DIFF_REVIEW_RE.fullmatch(" ".join(output.split())) is not None
+
+
 CLEAR_PHRASES = (
     # Keep only negated forms here. Broad phrases like "warrant an inline finding"
     # can appear in positive review prose and must not force a clear status.
@@ -481,6 +494,9 @@ def _detect_review_status_from_actionable(actionable_output: str) -> str:
     if any(marker in normalized for marker in finding_markers):
         return "findings"
 
+    if is_empty_diff_review(actionable_output):
+        return "clear"
+
     normalized_lines = [line.strip().lower() for line in actionable_output.splitlines()]
     clear_lines = {
         "no findings.",
@@ -545,6 +561,8 @@ def review_status_diagnostics(output: str, *, harness: str = "codex") -> dict[st
         )
     ):
         status_source = "finding_markers"
+    elif harness not in PROMPTED_REVIEW_HARNESSES and is_empty_diff_review(actionable_output):
+        status_source = "codex_empty_diff_prose"
     elif (
         harness not in PROMPTED_REVIEW_HARNESSES
         and any(

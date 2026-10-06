@@ -464,3 +464,32 @@ def test_strip_finding_priority_extracts_priority_tag() -> None:
 def test_strip_finding_priority_returns_empty_tag_for_no_match() -> None:
     assert strip_finding_priority("No priority tag here") == ("", "No priority tag here")
     assert strip_finding_priority("") == ("", "")
+
+
+EMPTY_DIFF_REVIEW = (
+    "The diff against " + "a" * 40 + " is empty, "
+    "so there are no changes to review. The checks in check.py pass."
+)
+
+
+def test_astra_empty_diff_final_review_clears_with_diagnostics():
+    # Sanitised text from the installed-wheel Astra acceptance on 2026-10-06.
+    assert detect_review_status(EMPTY_DIFF_REVIEW) == "clear"
+    diagnostic = review_status_diagnostics(EMPTY_DIFF_REVIEW)
+    assert diagnostic["status_source"] == "codex_empty_diff_prose"
+    assert diagnostic["status"] == "clear"
+
+
+@pytest.mark.parametrize("suffix,expected", [
+    (" However, the command failed before reading the diff.", "unknown"),
+    (" The frontend silently drops updates.", "unknown"),
+    ("\n- [P1] Fix the addition regression — calculator.py:3", "findings"),
+    ("\nREVIEW_STATUS: findings", "findings"),
+])
+def test_empty_diff_summary_cannot_hide_other_review_text(suffix, expected):
+    assert detect_review_status(EMPTY_DIFF_REVIEW + suffix) == expected
+
+
+def test_empty_diff_heuristic_does_not_apply_to_prompted_harnesses():
+    assert detect_review_status(EMPTY_DIFF_REVIEW, harness="claude") == "unknown"
+    assert review_status_diagnostics(EMPTY_DIFF_REVIEW, harness="claude")["status_source"] == "none"

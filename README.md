@@ -253,6 +253,8 @@ revrem config clone security security-local
 ```
 
 Copyable stack profiles live under [`examples/`](https://github.com/GitCmurf/revrem/tree/main/examples).
+The [current Codex example](examples/current-codex/README.md) combines Astra
+review, Luna triage and Sol 6.1 remediation with explicit time limits.
 
 ## Model Catalog and Local Statistics
 
@@ -276,6 +278,12 @@ supported as a catalog driver. Executable paths remain an explicit runtime
 choice through `--harness-bin HARNESS=EXECUTABLE`.
 Malformed Codex cache entries are ignored, and catalog `efforts` declarations
 must be lists or tuples. Aliases inherit their selected driver's validation.
+The bundled catalog includes `gpt-6-astra`, `gpt-6.1-sol`, `gpt-6-sol`,
+and `gpt-6-luna`, even before Codex creates a local model cache. Codex supports
+`low` through `ultra` for Astra and Sol, and `low` through `max` for Luna.
+`gpt-6.1-luna` is not a documented model ID. Catalog presence describes supported
+configuration; your Codex account must still have access.
+
 Known-invalid model/effort combinations are rejected;
 unknown future values pass through with a warning. GPT-5.6 Sol and Terra support
 `low`, `medium`, `high`, `xhigh`, `max`, and `ultra`; Luna supports the same
@@ -387,7 +395,7 @@ pre-commit run --all-files
 
 Ruff, mypy, pytest, DocOps checks, and `git diff --check` are required local and
 CI gates. For a stable `revrem` command usable from other repositories, promote
-a snapshot with `./scripts/promote-stable` — see the
+an isolated installed snapshot with `./scripts/promote-stable --extras tui` — see the
 [operator guide](https://github.com/GitCmurf/revrem/blob/main/docs/70-devex/devex-001-using-code-review-loop.md#promote-a-stable-local-version).
 
 See [CONTRIBUTING.md](https://github.com/GitCmurf/revrem/blob/main/CONTRIBUTING.md) for contribution expectations, governed

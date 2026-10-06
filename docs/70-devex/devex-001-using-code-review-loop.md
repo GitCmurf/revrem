@@ -88,58 +88,79 @@ this repository:
 
 ### Promote a stable local version
 
-Other repositories should use a promoted stable install, not the editable
-development environment in this checkout:
+Commit the candidate changes first, then promote from this checkout:
 
 ```bash
-./scripts/promote-stable
+./scripts/promote-stable --extras tui
+./scripts/promote-stable --status
 ```
 
-The promotion script runs `./scripts/dev-check` unless
-`REVREM_SKIP_CHECKS=1` is set, copies a source snapshot under
-`~/.local/share/revrem/releases/`, creates a stable interpreter at
-`~/.local/share/revrem/stable-venv`, recreating an older or missing stable
-venv before updating:
+This installs `revrem` and its compatibility alias under `~/.local/bin`, usable
+from every repository on your account's PATH. It does not require root or modify
+other users' environments. Omit `--extras tui` for the minimal CLI install.
 
-```text
-~/.local/bin/code-review-loop
-~/.local/bin/revrem
-```
+Promotion requires a clean worktree, runs `./scripts/dev-check`, archives the
+exact commit, builds a wheel, and installs it with all declared dependencies into
+a new virtualenv under `~/.local/share/revrem/releases/`. It checks dependency
+consistency, CLI startup, bundled resources, deterministic loops and HTML reports
+outside the checkout before
+switching the `current` symlink. Both launchers follow that pointer and resolve
+the release before starting, so an already running process retains its release.
+`PYTHONPATH` cannot override the installed application. No editable install or
+shared virtualenv is used. A manifest records the commit, wheel hash, Python,
+installed dependencies and whether the development checks were skipped.
 
-Override paths only when needed:
+For an isolated rehearsal, override both destinations:
 
 ```bash
-REVREM_STABLE_HOME=~/tools/revrem \
-REVREM_BIN_DIR=~/.local/bin \
-./scripts/promote-stable
+REVREM_STABLE_HOME=/tmp/revrem-rehearsal \
+REVREM_BIN_DIR=/tmp/revrem-rehearsal-bin \
+./scripts/promote-stable --extras tui
 ```
 
-This creates a deliberate boundary: active edits are tested through
-`./.venv/bin/...`; other repos consume only the last promoted version on
-`PATH`.
+`REVREM_SKIP_CHECKS=1` skips only development checks for a commit already
+verified; installed-package checks always run. `REVREM_STABLE_VENV` is obsolete
+and rejected because releases now own independent environments. Pip honours its
+normal index and wheel-cache settings; network access may be needed to build
+and install. Promotions and rollbacks use an exclusive lock.
 
-### Release and promote the next version
-
-Use this sequence when the current development snapshot is ready to become the
-stable local version:
+Rollback to the previous managed release without fetching dependencies:
 
 ```bash
-# Edit pyproject.toml and src/code_review_loop/__init__.py to the next version.
-./scripts/dev-check
-git diff --check
-git add pyproject.toml src/code_review_loop/__init__.py
-git commit -m "chore: bump version to <version>"
-git tag v<version>
-./scripts/promote-stable
+./scripts/promote-stable --rollback
+./scripts/promote-stable --status
 revrem --version
 ```
 
-`./scripts/promote-stable` reruns `./scripts/dev-check` before it updates
-`~/.local/bin/revrem` and `~/.local/bin/code-review-loop`. It also refreshes
-the stable runtime dependency install on every promotion so an older stable
-virtualenv keeps working after the launcher source tree advances. In sandboxed
-agent sessions, `git tag` may need explicit escalation because Git writes tag
-refs, and annotated tags also write tag objects, under `.git`.
+The previous release is smoke-tested before activation. Rollback swaps current
+and previous, so it can also undo a rollback. Failed builds leave the active
+release unchanged. Keep old release directories while runs use them; automatic
+pruning is intentionally absent. On the first migration from the old installer,
+original launchers are preserved beside each command as
+`*.before-managed-install`; no managed rollback exists until the second
+promotion. Restore those backups manually if abandoning the initial migration.
+The old `stable-venv` and source snapshots are retained.
+
+### Release and promote the next version
+
+Local promotion and public release are separate actions. Promotion needs no tag,
+push or PyPI publication. For public releases, follow
+[the release runbook](../60-runbooks/runbook-001-release-and-rollback.md).
+
+Before using a promoted command in another repository:
+
+```bash
+revrem doctor --base main --check "your-project-test-command"
+revrem --base main --review-model gpt-6-astra \
+  --remediation-model gpt-6.1-sol --triage --triage-model gpt-6-luna \
+  --reasoning-effort medium --max-iterations 2 --max-wall-seconds 900 \
+  --timeout-seconds 300 --check "your-project-test-command"
+```
+
+Replace the check with the target repository's actual test command. The model
+catalog is metadata, not an account-access check. For current acceptance evidence
+and remaining rollout gates, see
+[deployment readiness](../05-planning/plan-013-system-wide-deployment-readiness.md).
 
 ### Recommended final PR command
 
