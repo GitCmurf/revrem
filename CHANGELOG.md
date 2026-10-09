@@ -45,7 +45,7 @@ This project follows Semantic Versioning once public releases begin.
 - TUI regression fixtures now own their profiles and fake remediation harnesses,
   so tests and profile snapshots work without personal configuration or Codex.
 - Updated locked development dependencies to urllib3 2.8.0 and virtualenv
-  21.7.12 to address the outstanding HTTP decompression and environment-creation
+  21.7.13 to address the outstanding HTTP decompression and environment-creation
   dependency alerts.
 - Empty-comparison confirmation checks untracked files across the repository
   when invoked from a subdirectory, using root-relative artifact exclusions.

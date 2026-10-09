@@ -241,7 +241,7 @@ def test_uv_lock_uses_cryptography_with_cve_2026_69247_fixed():
 
 def test_uv_lock_uses_patched_http_and_environment_tools():
     lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
-    for name, minimum in (("urllib3", (2, 8, 0)), ("virtualenv", (21, 7, 12))):
+    for name, minimum in (("urllib3", (2, 8, 0)), ("virtualenv", (21, 7, 13))):
         packages = [package for package in lock["package"] if package["name"] == name]
         assert len(packages) == 1
         version = tuple(int(part) for part in packages[0]["version"].split("."))

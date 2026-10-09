@@ -223,6 +223,9 @@ including malformed personal configuration and Git overrides. The full local dev
 mypy, all 10 import contracts and DocOps. The later wizard snapshot regression
 also passed its focused wizard suite. Non-pytest pre-commit hooks passed.
 Qodo review is blocked by an inactive subscription. Paid RevRem dogfooding remains disabled.
+A fresh GitHub alert then identified virtualenv 21.7.12 as affected by shell
+activation path command injection; the development lock and regression floor
+were advanced to the patched 21.7.13. Default-branch alerts remain until merge.
 No merge, version bump, tag or public release has been performed. Subsequent PR
 fixes do not automatically update the installed `1d90958` release.
 
