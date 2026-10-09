@@ -20,6 +20,7 @@ from code_review_loop.adapters.commit import (
     _commit_message_worktree_status,
     _handle_commit_message_side_effects,
     commit_message_fallback_context,
+    deterministic_commit_message,
 )
 from code_review_loop.adapters.phase_support import CommitFailed
 from code_review_loop.clock import Clock
@@ -530,3 +531,6 @@ def test_recovery_commit_context_retains_source_findings(tmp_path, iteration, so
     config = LoopConfig(cwd=tmp_path, artifact_dir=tmp_path, max_iterations=2)
     context = commit_message_fallback_context(config, iteration)
     assert f"{source}:\nrecovery finding" in context
+    subject = deterministic_commit_message(staged_paths=["src/parser.py"], context=context)
+    assert subject == "chore(parser): recovery (RevRem)"
+    assert "review-final" not in subject

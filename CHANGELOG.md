@@ -17,6 +17,9 @@ This project follows Semantic Versioning once public releases begin.
 
 ### Fixed
 
+- Saved empty route-effort markers remain valid at launch with routing enabled
+  or disabled. Recovery commit subjects skip final-review artifact headings.
+
 - Wizard replay retains restored triage routes and prompts through a private
   profile snapshot under `.revrem/tmp/wizard`, shared by preview and launch commands.
 

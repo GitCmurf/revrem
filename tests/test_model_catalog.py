@@ -426,3 +426,20 @@ def test_cli_rejects_invalid_effort_for_disabled_phase(tmp_path, monkeypatch, ca
     assert code == 1
     assert "reasoning effort 'bogus'" in capsys.readouterr().err
     assert not (tmp_path / ".revrem.toml").exists()
+
+
+@pytest.mark.parametrize("routing", [True, False])
+def test_saved_empty_route_effort_allows_cli_launch(tmp_path, monkeypatch, routing):
+    from importlib import import_module
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".revrem.toml").write_text(
+        "[profiles.clear.triage]\nenabled=true\ncontract='v2'\n"
+        f"[profiles.clear.triage.routing]\nenabled={str(routing).lower()}\n"
+        'default_route="cleared"\n'
+        '[profiles.clear.triage.routes.cleared]\nharness="codex"\nreasoning_effort=""\n',
+        encoding="utf-8",
+    )
+    assert import_module("code_review_loop.cli.main").main([
+        "--profile", "clear", "--dry-run", "--pending-review", "ignore"
+    ]) == 0

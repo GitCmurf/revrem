@@ -921,6 +921,8 @@ def _commit_context_leading_text(context: str) -> str:
 def _is_context_heading_line(line: str) -> bool:
     if re.fullmatch(r"Iteration \d+ context", line):
         return True
+    if re.fullmatch(r"review-final(?:-recovery-\d+)?\.txt", line):
+        return True
     return bool(re.fullmatch(r"[-a-z0-9]+-\d+(?:-\d+)?(?:-last-message)?\.(?:txt|json)", line))
 
 

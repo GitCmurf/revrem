@@ -130,7 +130,7 @@ def _validate_model_selections(config) -> None:
             )
     if config.profile_v2 is not None:
         for name, route in config.profile_v2.triage.routes.items():
-            if route.reasoning_effort is not None and route.reasoning_effort not in KNOWN_EFFORTS:
+            if route.reasoning_effort and route.reasoning_effort not in KNOWN_EFFORTS:
                 raise ValueError(f"route {name}: unknown reasoning effort {route.reasoning_effort!r}")
     selections: list[tuple[str, str, str | None, str | None]] = [
         (
