@@ -6,6 +6,8 @@ This project follows Semantic Versioning once public releases begin.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-09
+
 ### Added
 
 - Current Codex catalog entries for GPT-6 Astra, GPT-6.1 Sol, GPT-6 Sol and
@@ -16,6 +18,9 @@ This project follows Semantic Versioning once public releases begin.
   clear/findings loops, report generation and bundled expert-profile loading.
 
 ### Fixed
+
+- Release candidates are marked as prereleases on GitHub and do not replace
+  the latest stable release.
 
 - Update the pinned setuptools build backend to 84.0.0, incorporating dependency
   PR #51 alongside the newer dependency versions already included in this branch.
