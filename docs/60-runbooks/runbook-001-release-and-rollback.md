@@ -3,8 +3,8 @@ document_id: REVREM-RUNBOOK-001
 type: RUNBOOK
 title: Release And Rollback
 status: Approved
-version: '0.2'
-last_updated: '2026-05-15'
+version: '0.3'
+last_updated: '2026-10-09'
 owner: GitCmurf
 docops_version: '2.0'
 area: release
@@ -51,9 +51,14 @@ Create Trusted Publisher entries in both PyPI and TestPyPI:
 
 - owner: `GitCmurf`
 - repository: `revrem`
-- workflow name: `Release`
+- workflow filename: `release.yml` (not the display name `Release`)
 - environment: `release`
 - package name: `revrem`
+
+Use the project's Publishing settings, or create a pending publisher from
+the account's Publishing page if the project does not exist yet. PyPI and
+TestPyPI need separate entries. See the
+[PyPI publisher setup guide](https://docs.pypi.org/trusted-publishers/adding-a-publisher/).
 
 Do not add a long-lived PyPI token for the normal path. If an emergency token is
 used, record why it was needed, where it was stored, who can access it, and when
@@ -69,8 +74,10 @@ Expected artifacts:
 - wheel;
 - `SHA256SUMS`;
 - CycloneDX SBOM;
-- Sigstore signature/certificate outputs;
 - GitHub build-provenance attestation.
+
+Dry-run mode skips Sigstore signing. Verify the signature bundles from the
+RC and final tag workflows instead.
 
 Inspect the workflow log for:
 
@@ -90,10 +97,11 @@ an unpushed local branch:
 3. Run the `Release` workflow with `dry_run=true` and archive the workflow URL
    in the release issue or PR closeout note.
 4. Confirm the dry-run artifact contains the sdist, wheel, `SHA256SUMS`,
-   CycloneDX SBOM, Sigstore outputs, and GitHub build-provenance attestation.
+   CycloneDX SBOM, and GitHub build-provenance attestation.
 5. Confirm no PyPI/TestPyPI publish step ran during dry-run mode.
 6. Confirm PyPI and TestPyPI Trusted Publisher entries target owner
-   `GitCmurf`, repository `revrem`, workflow `Release`, and package `revrem`.
+   `GitCmurf`, repository `revrem`, workflow filename `release.yml`, environment
+   `release`, and package `revrem`.
 7. Publish an RC tag to TestPyPI, install it in a clean environment, and run
    `revrem --version`, `revrem --help`, and
    `revrem doctor --format json --base main --codex-bin git` in a throwaway
@@ -218,5 +226,6 @@ Record the reason in `CHANGELOG.md` and in the GitHub Release body.
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 0.3 | 2026-10-09 | Codex | Corrected publisher workflow filename and dry-run signing expectations |
 | 0.2 | 2026-05-13 | Codex | Added explicit TASK-002 external gate checklist |
 | 0.1 | 2026-05-13 | GitCmurf | Initial release and rollback runbook |
