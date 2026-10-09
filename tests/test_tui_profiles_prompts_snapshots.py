@@ -107,7 +107,7 @@ def _capture_workspace_svg(
 ) -> str:
     async def run() -> str:
         repo = _repo(tmp_path, profile_toml)
-        async with pilot_app(cwd=repo, profile_name=profile_name, size=(120, 40)) as (
+        async with pilot_app(cwd=repo, home=tmp_path / "home", profile_name=profile_name, size=(120, 40)) as (
             app,
             pilot,
         ):

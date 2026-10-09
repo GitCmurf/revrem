@@ -1224,7 +1224,10 @@ def test_tui_follow_up_profile_reload_failures_keep_completed_run_visible(
     monkeypatch, tmp_path, action, load_error
 ):
     notifications = []
-    model = tui.tui_state.build_shell_model(cwd=tmp_path, selected_profile_name="final-pr")
+    (tmp_path / ".revrem.toml").write_text("[profiles.final-pr]\n", encoding="utf-8")
+    model = tui.tui_state.build_shell_model(
+        cwd=tmp_path, home=tmp_path / "home", selected_profile_name="final-pr"
+    )
     app = tui.RevRemApp(model=model, profiles_by_name={})
     app._workspace = "run"
     app._live_run_profile = types.SimpleNamespace(name="final-pr")

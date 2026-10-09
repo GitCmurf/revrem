@@ -239,6 +239,15 @@ def test_uv_lock_uses_cryptography_with_cve_2026_69247_fixed():
     assert version >= (50, 0, 0)
 
 
+def test_uv_lock_uses_patched_http_and_environment_tools():
+    lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
+    for name, minimum in (("urllib3", (2, 8, 0)), ("virtualenv", (21, 7, 12))):
+        packages = [package for package in lock["package"] if package["name"] == name]
+        assert len(packages) == 1
+        version = tuple(int(part) for part in packages[0]["version"].split("."))
+        assert version >= minimum, f"{name} must include the October dependency-alert fixes"
+
+
 def test_package_data_includes_versioned_prompts():
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 

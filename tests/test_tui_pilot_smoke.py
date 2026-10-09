@@ -1327,6 +1327,11 @@ artifact_dir = "runs/alpha-live"
 [profiles.alpha.review]
 harness = "fake"
 model = "slow_cancel"
+[profiles.alpha.remediation]
+harness = "fake"
+model = "slow_cancel"
+[profiles.alpha.triage]
+enabled = false
 
 [profiles.beta]
 [profiles.beta.pipeline]
@@ -1338,6 +1343,11 @@ artifact_dir = "runs/beta-live"
 [profiles.beta.review]
 harness = "fake"
 model = "review_clear"
+[profiles.beta.remediation]
+harness = "fake"
+model = "review_clear"
+[profiles.beta.triage]
+enabled = false
 """,
             encoding="utf-8",
         )

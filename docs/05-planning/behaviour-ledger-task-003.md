@@ -3,8 +3,8 @@ document_id: REVREM-LEDGER-003
 type: LEDGER
 title: Behaviour ledger for the cli.py re-engineering (REVREM-TASK-003)
 status: Approved
-version: '1.14'
-last_updated: '2026-09-02'
+version: '1.15'
+last_updated: '2026-10-09'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -55,6 +55,18 @@ There is no silent third option.
 ```
 
 ## Entries
+
+### 2026-10-09 — Isolate the profile-picker snapshot (PR #52)
+
+- **Contract:** human, test-fixture correction only.
+- **What changed:** the profile-picker capture uses an explicit empty user home.
+  The golden SVG no longer contains the developer's ambient `final-pr` profile;
+  project profiles and built-in presets remain visible.
+- **Evidence:** the old snapshot failed on both GitHub Python jobs and locally
+  with user profile discovery isolated. Regenerate only this SVG after isolating
+  its fixture; no application rendering or machine schema changes are intended.
+
+
 
 ### 2026-09-02 — Bounded final-review remediation
 
