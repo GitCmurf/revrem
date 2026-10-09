@@ -3,7 +3,7 @@ document_id: REVREM-LEDGER-003
 type: LEDGER
 title: Behaviour ledger for the cli.py re-engineering (REVREM-TASK-003)
 status: Approved
-version: '1.17'
+version: '1.18'
 last_updated: '2026-10-09'
 owner: GitCmurf
 docops_version: '2.0'
@@ -55,6 +55,15 @@ There is no silent third option.
 ```
 
 ## Entries
+
+### 2026-10-09 — Stabilize report fixtures across release versions (PR #53)
+
+- **Contract:** human, test-fixture correction only.
+- **What changed:** six historical report goldens use a fixed renderer version
+  in their tests. A separate assertion checks the actual current-version footer.
+- **Evidence:** the 0.6.0rc1 bump changed only the six version footers; the report
+  suite passes with presentation fixtures and runtime version checked separately.
+- **schema_version impact:** none; runtime report output is unchanged.
 
 ### 2026-10-09 — Reset checks when remediation retries (PR #52)
 

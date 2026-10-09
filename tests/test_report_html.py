@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from code_review_loop import events
+from code_review_loop import __version__, events, report_html
 from code_review_loop.cli.commands import report as report_command
 from code_review_loop.report_html import build_report_index, render_report
 from tests.support.run_fixtures import RUN_SCENARIOS, load_run
@@ -604,8 +604,17 @@ def _diff(expected: str, actual: str) -> str:
 
 
 @pytest.mark.parametrize("scenario", _GOLDEN_SCENARIOS)
-def test_report_matches_golden_html(scenario: str):
+def test_report_matches_golden_html(scenario: str, monkeypatch):
+    # Keep presentation fixtures stable across release-version changes.
+    monkeypatch.setattr(report_html, "__version__", "0.5.0")
     _assert_golden_html(scenario)
+
+
+def test_report_footer_uses_current_renderer_version():
+    summary, event_records = _load("clear")
+    rendered = render_report(summary, event_records)
+    assert f"<p>RevRem <code>{__version__}</code>" in rendered
+
 
 
 @pytest.mark.parametrize("scenario", _GOLDEN_SCENARIOS)
